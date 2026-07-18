@@ -11,6 +11,10 @@ from neural_forge.hf_lfm2_cpcf_short_conv_fold import (  # noqa: E402
     Lfm2CpcfShortConvGatePolicy,
     Lfm2CpcfShortConvValidationError,
 )
+from neural_forge.hf_lfm2_cpcf_candidate_replay import (  # noqa: E402
+    CpuReferenceLfm2CpcfCandidateReplayEvaluator,
+    Lfm2CpcfCandidateReplayError,
+)
 from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
     Lfm2CpcfShortConvV4SolverPolicy,
     causal_depthwise_context,
@@ -18,6 +22,7 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (  # noqa: E402
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA,
     Lfm2CpcfShortConvV4FoldCase,
     Lfm2CpcfShortConvV4FoldError,
     _sha,
@@ -204,7 +209,7 @@ def _permissive_gate() -> Lfm2CpcfShortConvGatePolicy:
     )
 
 
-def _compile(fixture, *, gate=None):
+def _compile(fixture, *, gate=None, candidate_replay_evaluator=None):
     values = {key: value for key, value in fixture.items() if key != "originals"}
     dtype_name = str(fixture["target_in_proj_weight_template"].dtype).removeprefix(
         "torch."
@@ -213,6 +218,7 @@ def _compile(fixture, *, gate=None):
         **values,
         solver_policy=_solver_policy(dtype_name),
         gate_policy=_permissive_gate() if gate is None else gate,
+        candidate_replay_evaluator=candidate_replay_evaluator,
     )
 
 
@@ -293,6 +299,63 @@ def test_v4_orchestrator_compiles_target_shaped_state_and_seals_roles() -> None:
         match="changed after authentication",
     ):
         artifact.as_dict()
+
+
+def test_injected_replay_uses_explicit_v5_receipt_without_changing_math() -> None:
+    fixture = _fixture()
+    legacy = _compile(fixture)
+    scheduled = _compile(
+        fixture,
+        candidate_replay_evaluator=(
+            CpuReferenceLfm2CpcfCandidateReplayEvaluator()
+        ),
+    )
+
+    assert legacy.report["schema"] == LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
+    assert scheduled.report["schema"] == LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA
+    assert scheduled.report["legacy_v4_report_claimed"] is False
+    assert (
+        scheduled.report["candidate_replay_backend"]["kind"]
+        == "injected_cpu_reference"
+    )
+    assert (
+        scheduled.report["candidate_replay_backend_report_sha256"]
+        == scheduled.report["candidate_replay_backend"]["report_sha256"]
+    )
+    assert (
+        scheduled.report["candidate_pool_report"][
+            "scheduled_replay_changes_closed_form_solve_math"
+        ]
+        is False
+    )
+    assert (
+        scheduled.report["candidate_selection_reports"]
+        == legacy.report["candidate_selection_reports"]
+    )
+    assert scheduled.report["selection_ranking"] == legacy.report[
+        "selection_ranking"
+    ]
+    assert scheduled.report["selected_candidate_id"] == legacy.report[
+        "selected_candidate_id"
+    ]
+    for name, value in legacy.state_dict().items():
+        assert torch.equal(value, scheduled.state_dict()[name])
+    assert scheduled.verify_authentication()
+
+
+def test_injected_replay_failure_cannot_publish_a_compiled_artifact() -> None:
+    class BrokenEvaluator:
+        def evaluate(self, _items):
+            raise RuntimeError("synthetic backend failure")
+
+    with pytest.raises(
+        Lfm2CpcfCandidateReplayError,
+        match="failed before publication",
+    ):
+        _compile(
+            _fixture(),
+            candidate_replay_evaluator=BrokenEvaluator(),
+        )
 
 
 def test_cases_snapshot_caller_tensors_and_validation_cannot_select_state() -> None:

@@ -27,6 +27,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
+from neural_forge.hf_lfm2_cpcf_candidate_replay import (
+    Lfm2CpcfCandidateReplayEvaluator,
+    evaluate_lfm2_cpcf_candidate_states_with_backend,
+)
 from neural_forge.hf_lfm2_cpcf_short_conv_fold import (
     Lfm2CpcfShortConvGatePolicy,
     Lfm2CpcfShortConvValidationError,
@@ -51,11 +55,17 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
 
 
 LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA = "neural-forge-lfm2-cpcf-short-conv-fold-v4"
+LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-scheduled-replay"
+)
 LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v4-failure-v1"
 )
 LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v4-failure-v2"
+)
+LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-scheduled-replay-failure-v1"
 )
 
 
@@ -661,7 +671,11 @@ class Lfm2CompiledCpcfShortConvV4Fold:
         )
         if (
             seal != _sha(body)
-            or report.get("schema") != LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
+            or report.get("schema")
+            not in {
+                LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+                LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA,
+            }
             or report.get("compiled_state_sha256") != _state_sha256(self.state_dict())
             or report.get("compiled_short_conv_fold_issued") is not True
             or report.get("promotion_claimed") is not False
@@ -748,6 +762,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     cases: Sequence[Lfm2CpcfShortConvV4FoldCase],
     solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
     gate_policy: Lfm2CpcfShortConvGatePolicy,
+    candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
 ) -> Lfm2CompiledCpcfShortConvV4Fold:
     """Compile one complete v4 operator without executing either model."""
 
@@ -1020,7 +1035,6 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
 
     candidate_states = {}
     candidate_fit_reports = {}
-    selection_reports = {}
     for target_state_sha, candidate_group in deduplicated.items():
         candidate_id = candidate_group["candidate_id"]
         state = candidate_group["state"]
@@ -1053,24 +1067,44 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             },
         }
         provenance = _seal_report(provenance_body)
-        selection = evaluate_candidate_state_target_dtype(
+        candidate_states[candidate_id] = state
+        candidate_fit_reports[candidate_id] = provenance
+
+    candidate_replay_backend = None
+    candidate_replay_work_items = ()
+    if candidate_replay_evaluator is None:
+        selection_reports = {
+            candidate_id: evaluate_candidate_state_target_dtype(
+                cases=split_cases["selection"],
+                in_proj_weight=state["in_proj_weight"],
+                in_proj_bias=state["in_proj_bias"],
+                fir_kernel=state["fir_kernel"],
+                fir_bias=state["fir_bias"],
+                writer_weight=state["writer_weight"],
+                writer_bias=state["writer_bias"],
+                required_split="selection",
+                policy=solver_policy,
+            )
+            for candidate_id, state in candidate_states.items()
+        }
+    else:
+        (
+            selection_reports,
+            candidate_replay_backend,
+            candidate_replay_work_items,
+        ) = evaluate_lfm2_cpcf_candidate_states_with_backend(
+            candidate_states,
             cases=split_cases["selection"],
-            in_proj_weight=state["in_proj_weight"],
-            in_proj_bias=state["in_proj_bias"],
-            fir_kernel=state["fir_kernel"],
-            fir_bias=state["fir_bias"],
-            writer_weight=state["writer_weight"],
-            writer_bias=state["writer_bias"],
             required_split="selection",
             policy=solver_policy,
+            evaluator=candidate_replay_evaluator,
         )
+    for candidate_id, selection in selection_reports.items():
+        target_state_sha = _state_sha256(candidate_states[candidate_id])
         if selection["candidate_state_sha256"] != target_state_sha:
             raise Lfm2CpcfShortConvV4FoldError(
                 "Target-dtype candidate deduplication and replay state differ."
             )
-        candidate_states[candidate_id] = state
-        candidate_fit_reports[candidate_id] = provenance
-        selection_reports[candidate_id] = selection
 
     selection_feasibility = _selection_feasibility_policy(gate_policy)
     ranking = rank_short_conv_v4_selection_candidates(
@@ -1142,6 +1176,79 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         "out_proj.bias": out_bias,
     }
     compiled_state_sha = _state_sha256(state)
+    report_schema = (
+        LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
+        if candidate_replay_evaluator is None
+        else LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA
+    )
+    candidate_pool_body = {
+        "schema": report_schema,
+        "kind": "authenticated_target_dtype_candidate_pool",
+        "policy_sha256": solver_policy.authentication_sha256,
+        "target_dtype": solver_policy.target_dtype,
+        "ridge_candidate_count": len(ridge_results),
+        "raw_candidate_count": len(raw_candidates),
+        "unique_target_dtype_candidate_count": len(candidate_states),
+        "target_dtype_duplicate_count": (
+            len(raw_candidates) - len(candidate_states)
+        ),
+        "accepted_phase_anchors_included": True,
+        "rejected_phase_states_included": False,
+        "prior_to_final_trust_path_fractions": list(
+            fixed_projection_trust_path_fractions()
+        ),
+        "prior_to_first_writer_trust_path_fractions": list(
+            fixed_projection_trust_path_fractions()
+        ),
+        "selection_feasibility_policy": selection_feasibility,
+        "selection_feasibility_policy_sha256": ranking[
+            "selection_feasibility_policy_sha256"
+        ],
+        "fold_case_authentication_sha256": {
+            split: [
+                case.authentication_sha256
+                for case in ordered
+                if case.split == split
+            ]
+            for split in ("fit", "selection", "validation")
+        },
+        "projection_case_authentication_sha256": {
+            split: [
+                case.authentication_sha256
+                for case in split_cases[split]
+            ]
+            for split in ("fit", "selection", "validation")
+        },
+        "candidate_ids": sorted(candidate_states),
+        "candidate_state_sha256": {
+            candidate_id: selection_reports[candidate_id][
+                "candidate_state_sha256"
+            ]
+            for candidate_id in sorted(candidate_states)
+        },
+        "fit_only_candidate_generation": True,
+        "selection_cases_consumed_during_generation": 0,
+        "validation_cases_consumed_during_generation": 0,
+    }
+    if candidate_replay_backend is not None:
+        candidate_pool_body.update(
+            {
+                "candidate_replay_backend_report_sha256": (
+                    candidate_replay_backend["report_sha256"]
+                ),
+                "candidate_replay_work_items": [
+                    item.as_dict() for item in candidate_replay_work_items
+                ],
+                "candidate_replay_work_item_count": len(
+                    candidate_replay_work_items
+                ),
+                "canonical_candidate_replay_order": [
+                    item.payload["candidate_id"]
+                    for item in candidate_replay_work_items
+                ],
+                "scheduled_replay_changes_closed_form_solve_math": False,
+            }
+        )
     common = {
         "solver_schema": LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
         "solver_policy": solver_policy.as_dict(),
@@ -1173,57 +1280,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             candidate_id: dict(report)
             for candidate_id, report in selection_reports.items()
         },
-        "candidate_pool_report": _seal_report(
-            {
-                "schema": LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
-                "kind": "authenticated_target_dtype_candidate_pool",
-                "policy_sha256": solver_policy.authentication_sha256,
-                "target_dtype": solver_policy.target_dtype,
-                "ridge_candidate_count": len(ridge_results),
-                "raw_candidate_count": len(raw_candidates),
-                "unique_target_dtype_candidate_count": len(candidate_states),
-                "target_dtype_duplicate_count": (
-                    len(raw_candidates) - len(candidate_states)
-                ),
-                "accepted_phase_anchors_included": True,
-                "rejected_phase_states_included": False,
-                "prior_to_final_trust_path_fractions": list(
-                    fixed_projection_trust_path_fractions()
-                ),
-                "prior_to_first_writer_trust_path_fractions": list(
-                    fixed_projection_trust_path_fractions()
-                ),
-                "selection_feasibility_policy": selection_feasibility,
-                "selection_feasibility_policy_sha256": ranking[
-                    "selection_feasibility_policy_sha256"
-                ],
-                "fold_case_authentication_sha256": {
-                    split: [
-                        case.authentication_sha256
-                        for case in ordered
-                        if case.split == split
-                    ]
-                    for split in ("fit", "selection", "validation")
-                },
-                "projection_case_authentication_sha256": {
-                    split: [
-                        case.authentication_sha256
-                        for case in split_cases[split]
-                    ]
-                    for split in ("fit", "selection", "validation")
-                },
-                "candidate_ids": sorted(candidate_states),
-                "candidate_state_sha256": {
-                    candidate_id: selection_reports[candidate_id][
-                        "candidate_state_sha256"
-                    ]
-                    for candidate_id in sorted(candidate_states)
-                },
-                "fit_only_candidate_generation": True,
-                "selection_cases_consumed_during_generation": 0,
-                "validation_cases_consumed_during_generation": 0,
-            }
-        ),
+        "candidate_pool_report": _seal_report(candidate_pool_body),
         "selection_ranking": dict(ranking),
         "selected_candidate_id": selected_id,
         "fit_evaluation": dict(evaluations["fit"]),
@@ -1250,9 +1307,29 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             "fallback_paths": 0,
         },
     }
+    if candidate_replay_backend is not None:
+        common.update(
+            {
+                "candidate_replay_backend": dict(
+                    candidate_replay_backend
+                ),
+                "candidate_replay_backend_report_sha256": (
+                    candidate_replay_backend["report_sha256"]
+                ),
+                "selection_candidate_replay_backend": (
+                    "authenticated_injected_backend"
+                ),
+                "fit_and_validation_winner_replay_backend": "cpu_reference",
+                "legacy_v4_report_claimed": False,
+            }
+        )
     if gate_policy.enforce and not gate["passed"]:
         failure_body = {
-            "schema": LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
+            "schema": (
+                LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
+                if candidate_replay_evaluator is None
+                else LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA
+            ),
             **common,
             "compiled_short_conv_fold_issued": False,
             "promotion_claimed": False,
@@ -1269,7 +1346,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             failure,
         )
     body = {
-        "schema": LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+        "schema": report_schema,
         **common,
         "compiled_short_conv_fold_issued": True,
         "promotion_claimed": False,
@@ -1291,6 +1368,8 @@ __all__ = [
     "LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA",
     "Lfm2CompiledCpcfShortConvV4Fold",
     "Lfm2CpcfShortConvV4FoldCase",
     "Lfm2CpcfShortConvV4FoldError",
