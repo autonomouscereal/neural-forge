@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
+    LOCAL_TOKENIZER_PACKAGE_SCHEMA,
     STRICT_TOKENIZER_BRIDGE_FILENAME,
     StrictTokenizerBridgeError,
     compile_hf_target_tokenizer_bridge,
@@ -17,7 +19,9 @@ from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
     fingerprint_hf_tokenizer_semantics,
     load_strict_tokenizer_bridge_artifact,
     seal_strict_tokenizer_bridge_artifact,
+    strict_tokenizer_bridge_target_package_fingerprint,
 )
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_transport_math import build_parent_residual_basis  # noqa: E402
 
 
@@ -106,6 +110,25 @@ def test_sealed_bridge_roundtrips_and_binds_live_tokenizers(
     assert loaded.transport_profile.target_to_donor_row_indices == (3, 1)
     assert loaded.transport_profile.donor_row_capacity == 8
     assert loaded.target_vocabulary_size == 2
+    expected_package = canonical_sha256(
+        {
+            "schema": LOCAL_TOKENIZER_PACKAGE_SCHEMA,
+            "files": [
+                {
+                    "path": name,
+                    "bytes": (root / name).stat().st_size,
+                    "sha256": hashlib.sha256(
+                        (root / name).read_bytes()
+                    ).hexdigest(),
+                }
+                for name in ("tokenizer.json", "tokenizer_config.json")
+            ],
+        }
+    )
+    assert (
+        strict_tokenizer_bridge_target_package_fingerprint(loaded)
+        == expected_package
+    )
     assert len(loaded.artifact_sha256) == 64
     assert (root / STRICT_TOKENIZER_BRIDGE_FILENAME).is_file()
     assert loaded.to_dict()["model_parameter_operations"] == {

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
@@ -22,6 +24,9 @@ from neural_forge.dynamic_target_synthesis import (
     DynamicTargetAdapterRegistry,
     DynamicTargetSynthesisError,
     DynamicTargetSynthesizer,
+)
+from neural_forge.hf_lfm2_dense_budget_model_fold import (
+    DENSE_BUDGET_MODEL_METHOD,
 )
 
 
@@ -201,3 +206,49 @@ def test_planned_materialization_rejects_a_different_source_graph() -> None:
             parent_models={"different-parent": different_parent},
             parent_tokenizer_fingerprints={"different-parent": tokenizer},
         )
+
+
+def test_dense_budget_target_adapter_accepts_pinned_production_method() -> None:
+    parent = _parent(401)
+    tokenizer = _tokenizer_fingerprint()
+    parent_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=tokenizer,
+    )
+    adapter = _adapter()
+    plan = AutomaticDynamicFoldingSystem(
+        target_adapters=DynamicTargetAdapterRegistry((adapter,)),
+        stack_adapters=DynamicFoldStackAdapterRegistry(),
+    ).plan_budgeted_target(
+        parent_graph=parent_graph,
+        budget_request=DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            compression_ratio=4,
+        ),
+        child_name="production-method-blank",
+        selected_candidate_rank=0,
+        tokenizer_fingerprint=tokenizer,
+        adapter_id=adapter.adapter_id,
+    )
+
+    pinned_request = replace(
+        plan.target_request,
+        fold_method_id=DENSE_BUDGET_MODEL_METHOD,
+    )
+    assert adapter.supports(pinned_request, {"parent": parent_graph})
+
+    synthesized = DynamicTargetSynthesizer(
+        inspectors=default_inspector_registry(),
+        adapters=DynamicTargetAdapterRegistry((adapter,)),
+    ).synthesize(
+        request=pinned_request,
+        parent_models={"parent": parent},
+        parent_tokenizer_fingerprints={"parent": tokenizer},
+    )
+
+    assert synthesized.request.fold_method_id == DENSE_BUDGET_MODEL_METHOD
+    assert synthesized.graph.unique_parameter_count == (
+        pinned_request.exact_unique_parameters
+    )

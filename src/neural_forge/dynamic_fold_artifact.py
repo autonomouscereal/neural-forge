@@ -23,7 +23,13 @@ from .dynamic_circuit_ir import (
     canonical_json_bytes,
     canonical_sha256,
 )
-from .dynamic_behavior_gate import observe_model_execution
+from .dynamic_behavior_execution import (
+    BehaviorInferenceExecutionContract,
+    DynamicBehaviorExecutionError,
+    execution_contract_satisfied,
+    inference_execution_contract_from_manifest,
+    observe_model_execution,
+)
 from .dynamic_fold_executor import (
     FoldDecision,
     _FoldOnlyTorchGuard,
@@ -43,7 +49,8 @@ from .dynamic_target_synthesis import (
 )
 
 
-SCHEMA = "neural-forge-dynamic-fold-artifact-v2"
+LEGACY_SCHEMA = "neural-forge-dynamic-fold-artifact-v2"
+SCHEMA = "neural-forge-dynamic-fold-artifact-v3"
 PROVENANCE_SCHEMA = "neural-forge-dynamic-fold-provenance-v1"
 CALLABLE_FINGERPRINT_SCHEMA = "neural-forge-local-callable-fingerprint-v1"
 _PROVENANCE_DIRECTORY = "provenance"
@@ -101,6 +108,7 @@ class DynamicFoldArtifactCertificate:
     fresh_reload_state_inventory: Mapping[str, int | str] | None = None
     fresh_reload_module_forward_calls: int = 0
     fresh_reload_root_forward_calls: int = 0
+    fresh_reload_inference_entrypoint_calls: int = 0
     preparation_guard_applied: bool = False
     preparation_optimizer_constructions: int = 0
     preparation_optimizer_steps: int = 0
@@ -132,10 +140,11 @@ class DynamicFoldArtifactCertificate:
     loader_implementation_fingerprint: str = "0" * 64
     loader_resource_fingerprint: str = "0" * 64
     loader_resource_fingerprint_declared: bool = False
+    certificate_schema: str = SCHEMA
 
     def body(self) -> dict[str, Any]:
-        return {
-            "schema": SCHEMA,
+        body = {
+            "schema": self.certificate_schema,
             "path": self.path,
             "plan_fingerprint": self.plan_fingerprint,
             "run_fingerprint": self.run_fingerprint,
@@ -269,6 +278,14 @@ class DynamicFoldArtifactCertificate:
             "backward_calls": self.backward_calls,
             "autograd_grad_calls": self.autograd_grad_calls,
         }
+        if self.certificate_schema == SCHEMA:
+            body["fresh_reload_inference_entrypoint_calls"] = (
+                self.fresh_reload_inference_entrypoint_calls
+            )
+            body["fresh_reload_declared_inference_path_observed"] = (
+                self.fresh_reload_inference_entrypoint_calls > 0
+            )
+        return body
 
     def as_dict(self) -> dict[str, Any]:
         return {**self.body(), "certificate_sha256": self.certificate_sha256}
@@ -1440,6 +1457,11 @@ def load_dynamic_fold_artifact_certificate(
         ) from exc
     if not isinstance(payload, Mapping):
         raise DynamicFoldArtifactError("Artifact certificate must be one JSON object.")
+    certificate_schema = payload.get("schema")
+    if certificate_schema not in {LEGACY_SCHEMA, SCHEMA}:
+        raise DynamicFoldArtifactError(
+            "Artifact certificate schema is unsupported."
+        )
     decision_payload = payload.get("fresh_reload_decision")
     if not isinstance(decision_payload, Mapping):
         raise DynamicFoldArtifactError(
@@ -1496,6 +1518,16 @@ def load_dynamic_fold_artifact_certificate(
                 "fresh_reload_module_forward_calls"
             ],
             fresh_reload_root_forward_calls=payload["fresh_reload_root_forward_calls"],
+            fresh_reload_inference_entrypoint_calls=(
+                payload.get(
+                    "fresh_reload_inference_entrypoint_calls",
+                    (
+                        payload["fresh_reload_root_forward_calls"]
+                        if certificate_schema == LEGACY_SCHEMA
+                        else None
+                    ),
+                )
+            ),
             preparation_guard_applied=payload["preparation_guard_applied"],
             preparation_optimizer_constructions=payload[
                 "preparation_optimizer_constructions"
@@ -1557,6 +1589,7 @@ def load_dynamic_fold_artifact_certificate(
             loader_resource_fingerprint_declared=payload[
                 "loader_resource_fingerprint_declared"
             ],
+            certificate_schema=certificate_schema,
         )
     except (KeyError, TypeError, ValueError, RuntimeError) as exc:
         raise DynamicFoldArtifactError(
@@ -1598,6 +1631,12 @@ def load_dynamic_fold_artifact_certificate(
         if certificate.behavior_gate_manifest is None
         else dict(certificate.behavior_gate_manifest)
     )
+    try:
+        inference_execution_contract_from_manifest(manifest)
+    except DynamicBehaviorExecutionError as exc:
+        raise DynamicFoldArtifactError(
+            "Artifact behavior-gate inference execution contract is invalid."
+        ) from exc
     manifest_body = dict(manifest)
     manifest_seal = manifest_body.pop("manifest_fingerprint", None)
     if (
@@ -1621,6 +1660,15 @@ def load_dynamic_fold_artifact_certificate(
         or certificate.fresh_reload_root_forward_calls <= 0
         or certificate.fresh_reload_root_forward_calls
         > certificate.fresh_reload_module_forward_calls
+        or isinstance(
+            certificate.fresh_reload_inference_entrypoint_calls,
+            bool,
+        )
+        or not isinstance(
+            certificate.fresh_reload_inference_entrypoint_calls,
+            int,
+        )
+        or certificate.fresh_reload_inference_entrypoint_calls <= 0
     ):
         raise DynamicFoldArtifactError(
             "Artifact certificate does not prove fresh-reloaded model execution."
@@ -1800,11 +1848,15 @@ def publish_dynamic_fold_artifact(
             "behavior_baseline_fingerprint must be a lowercase SHA-256 digest."
         )
     if behavior_gate_manifest is None:
+        default_execution_contract = (
+            BehaviorInferenceExecutionContract.top_level_forward()
+        )
         manifest_body = {
             "schema": "neural-forge-unregistered-behavior-gate-manifest-v1",
             "gate_id": normalized_gate_id,
             "gate_version": normalized_gate_version,
             "baseline_fingerprint": normalized_baseline,
+            "inference_execution": default_execution_contract.as_dict(),
         }
         normalized_manifest_fingerprint = canonical_sha256(manifest_body)
         normalized_manifest = {
@@ -1842,6 +1894,14 @@ def publish_dynamic_fold_artifact(
                 "Behavior-gate manifest is not canonically sealed or differs "
                 "from the declared gate."
             )
+    try:
+        inference_execution_contract = (
+            inference_execution_contract_from_manifest(normalized_manifest)
+        )
+    except DynamicBehaviorExecutionError as exc:
+        raise DynamicFoldArtifactError(
+            "Behavior-gate manifest has an invalid inference execution contract."
+        ) from exc
     destination_path = Path(destination).expanduser().absolute()
     if destination_path.exists():
         raise DynamicFoldArtifactError(
@@ -2021,7 +2081,10 @@ def publish_dynamic_fold_artifact(
             parameter.requires_grad_(False)
         try:
             with _FoldOnlyTorchGuard() as reload_guard:
-                with observe_model_execution(reloaded) as execution_counts:
+                with observe_model_execution(
+                    reloaded,
+                    contract=inference_execution_contract,
+                ) as execution_counts:
                     reload_decision = _decision(fresh_reload_evaluator(reloaded))
         finally:
             for parameter, requires_grad in reload_parameters:
@@ -2029,10 +2092,23 @@ def publish_dynamic_fold_artifact(
                 parameter.requires_grad_(requires_grad)
         reload_module_forward_calls = int(execution_counts["module_forward_calls"])
         reload_root_forward_calls = int(execution_counts["root_forward_calls"])
-        if reload_decision.accepted and reload_root_forward_calls <= 0:
+        reload_inference_entrypoint_calls = int(
+            execution_counts["inference_entrypoint_calls"]
+        )
+        if reload_decision.accepted and not execution_contract_satisfied(
+            execution_counts
+        ):
+            if (
+                inference_execution_contract
+                == BehaviorInferenceExecutionContract.top_level_forward()
+            ):
+                raise DynamicFoldArtifactError(
+                    "Fresh-reload evaluator accepted without executing the "
+                    "published child root."
+                )
             raise DynamicFoldArtifactError(
                 "Fresh-reload evaluator accepted without executing the published "
-                "child root."
+                "child through its declared inference entrypoint and module root."
             )
         if not reload_decision.accepted:
             raise DynamicFoldArtifactError(
@@ -2141,7 +2217,10 @@ def publish_dynamic_fold_artifact(
             parameter.requires_grad_(False)
         try:
             with _FoldOnlyTorchGuard() as final_reload_guard:
-                with observe_model_execution(final_reloaded) as final_execution_counts:
+                with observe_model_execution(
+                    final_reloaded,
+                    contract=inference_execution_contract,
+                ) as final_execution_counts:
                     final_reload_decision = _decision(
                         fresh_reload_evaluator(final_reloaded)
                     )
@@ -2155,9 +2234,23 @@ def publish_dynamic_fold_artifact(
         final_reload_root_forward_calls = int(
             final_execution_counts["root_forward_calls"]
         )
-        if final_reload_decision.accepted and final_reload_root_forward_calls <= 0:
+        final_reload_inference_entrypoint_calls = int(
+            final_execution_counts["inference_entrypoint_calls"]
+        )
+        if final_reload_decision.accepted and not execution_contract_satisfied(
+            final_execution_counts
+        ):
+            if (
+                inference_execution_contract
+                == BehaviorInferenceExecutionContract.top_level_forward()
+            ):
+                raise DynamicFoldArtifactError(
+                    "Final-destination evaluator accepted without executing the "
+                    "child root."
+                )
             raise DynamicFoldArtifactError(
-                "Final-destination evaluator accepted without executing the child root."
+                "Final-destination evaluator accepted without executing the child "
+                "through its declared inference entrypoint and module root."
             )
         if not final_reload_decision.accepted:
             raise DynamicFoldArtifactError(
@@ -2253,6 +2346,9 @@ def publish_dynamic_fold_artifact(
         reload_decision = final_reload_decision
         reload_module_forward_calls = final_reload_module_forward_calls
         reload_root_forward_calls = final_reload_root_forward_calls
+        reload_inference_entrypoint_calls = (
+            final_reload_inference_entrypoint_calls
+        )
         provisional = DynamicFoldArtifactCertificate(
             path=str(destination_path),
             plan_fingerprint=compilation.plan.fingerprint,
@@ -2275,6 +2371,9 @@ def publish_dynamic_fold_artifact(
             fresh_reload_state_inventory=reloaded_inventory,
             fresh_reload_module_forward_calls=reload_module_forward_calls,
             fresh_reload_root_forward_calls=reload_root_forward_calls,
+            fresh_reload_inference_entrypoint_calls=(
+                reload_inference_entrypoint_calls
+            ),
             preparation_guard_applied=preparation_guard_applied,
             preparation_optimizer_constructions=(
                 preparation_counts["optimizer_constructions"]
@@ -2363,6 +2462,9 @@ def publish_dynamic_fold_artifact(
             ),
             fresh_reload_root_forward_calls=(
                 provisional.fresh_reload_root_forward_calls
+            ),
+            fresh_reload_inference_entrypoint_calls=(
+                provisional.fresh_reload_inference_entrypoint_calls
             ),
             preparation_guard_applied=(provisional.preparation_guard_applied),
             preparation_optimizer_constructions=(
@@ -2480,6 +2582,7 @@ __all__ = [
     "authenticate_dynamic_fold_artifact_tree",
     "DynamicFoldArtifactCertificate",
     "DynamicFoldArtifactError",
+    "LEGACY_SCHEMA",
     "load_dynamic_fold_artifact_certificate",
     "remove_authenticated_dynamic_fold_artifact",
     "SCHEMA",

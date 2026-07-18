@@ -17,8 +17,10 @@ from typing import Any
 
 from .dynamic_behavior_gate import (
     BehaviorCallableIdentity,
+    BehaviorInferenceExecutionContract,
     TaskScoreCoveragePolicy,
     build_behavior_gate_binding,
+    execution_contract_satisfied,
     expose_behavior_gate_binding,
     identify_behavior_callable,
     observe_model_execution,
@@ -62,6 +64,10 @@ _STATISTIC_NAMES = (
     "sketch",
     "down_norm",
     "residual_endpoint_mean_square_l2",
+)
+NEO_INFERENCE_EXECUTION_CONTRACT = BehaviorInferenceExecutionContract(
+    entrypoint="chat",
+    required_module_path="language_model",
 )
 
 
@@ -1983,6 +1989,7 @@ class NeoNativeVisionBehaviorGate:
             generator_identity=child_runner_identity,
             scorer_identity=scorer_identity,
             coverage_policy=self.config.coverage_policy.as_dict(),
+            inference_execution_contract=NEO_INFERENCE_EXECUTION_CONTRACT,
         )
         expose_behavior_gate_binding(self, binding)
 
@@ -2095,7 +2102,10 @@ class NeoNativeVisionBehaviorGate:
                 },
             )
         rows = []
-        with observe_model_execution(model) as execution_counts:
+        with observe_model_execution(
+            model,
+            contract=NEO_INFERENCE_EXECUTION_CONTRACT,
+        ) as execution_counts:
             for record in self.behavior_cache.records:
                 raw_output = self.child_runner(model, record)
                 if not isinstance(raw_output, str):
@@ -2118,10 +2128,10 @@ class NeoNativeVisionBehaviorGate:
                         "exact_parent_output": raw_output == record.parent_raw_output,
                     }
                 )
-        if execution_counts["module_forward_calls"] <= 0:
+        if not execution_contract_satisfied(execution_counts):
             raise DynamicNeoFoldError(
                 "Native NEO child runner returned without executing the "
-                "candidate model."
+                "declared chat entrypoint and language_model root."
             )
         by_split = {
             split: self._metrics(tuple(row for row in rows if row["split"] == split))

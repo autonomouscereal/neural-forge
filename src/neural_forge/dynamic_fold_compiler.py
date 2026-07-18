@@ -721,10 +721,14 @@ class DynamicFoldingCompiler:
                 "Dynamic fold execution called a live parent model; production "
                 "folding must use cached evidence only."
             )
-        if compilation.run.observed_final_child_root_forward_calls <= 0:
+        if (
+            compilation.run.observed_final_child_root_forward_calls <= 0
+            or compilation.run.observed_final_child_inference_entrypoint_calls <= 0
+        ):
             raise DynamicFoldCompilerError(
                 "The in-memory final behavior gate accepted without executing "
-                "the child model root."
+                "the child model root required by its declared inference "
+                "entrypoint."
             )
         try:
             artifact = publish_dynamic_fold_artifact(

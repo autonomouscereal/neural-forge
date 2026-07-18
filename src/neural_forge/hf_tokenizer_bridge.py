@@ -44,6 +44,14 @@ TOKENIZER_BRIDGE_CONFIG_KEYS = frozenset(
         CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY,
     }
 )
+LOCAL_TOKENIZER_PACKAGE_SCHEMA = "neural-forge-local-tokenizer-artifacts-v1"
+LOCAL_TOKENIZER_PACKAGE_FILENAMES = (
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "chat_template.jinja",
+    "added_tokens.json",
+)
 
 
 class StrictTokenizerBridgeError(ValueError):
@@ -214,6 +222,38 @@ class StrictTokenizerBridgeArtifact:
             raise StrictTokenizerBridgeError(
                 "Live tokenizer row mapping differs from the sealed profile."
             )
+
+
+def strict_tokenizer_bridge_target_package_fingerprint(
+    bridge: StrictTokenizerBridgeArtifact,
+) -> str:
+    """Derive the capture/replay tokenizer-package identity from bridge seals."""
+
+    if not isinstance(bridge, StrictTokenizerBridgeArtifact):
+        raise StrictTokenizerBridgeError(
+            "bridge must be a StrictTokenizerBridgeArtifact."
+        )
+    bridge.verify_files()
+    records = {record.relative_path: record for record in bridge.target_files}
+    files = [
+        {
+            "path": name,
+            "bytes": records[name].size_bytes,
+            "sha256": records[name].sha256,
+        }
+        for name in LOCAL_TOKENIZER_PACKAGE_FILENAMES
+        if name in records
+    ]
+    if not files or files[0]["path"] != "tokenizer.json":
+        raise StrictTokenizerBridgeError(
+            "Strict tokenizer bridge target lacks tokenizer.json."
+        )
+    return _canonical_sha256(
+        {
+            "schema": LOCAL_TOKENIZER_PACKAGE_SCHEMA,
+            "files": files,
+        }
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1146,6 +1186,8 @@ __all__ = [
     "CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY",
     "CompiledTargetTokenizerBridge",
     "DenseVocabularyProjector",
+    "LOCAL_TOKENIZER_PACKAGE_FILENAMES",
+    "LOCAL_TOKENIZER_PACKAGE_SCHEMA",
     "PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY",
     "STRICT_TOKENIZER_BRIDGE_FILENAME",
     "STRICT_TOKENIZER_BRIDGE_SCHEMA",
@@ -1162,4 +1204,5 @@ __all__ = [
     "load_strict_tokenizer_bridge_artifact",
     "seal_strict_tokenizer_bridge_artifact",
     "strict_tokenizer_bridge_configuration",
+    "strict_tokenizer_bridge_target_package_fingerprint",
 ]

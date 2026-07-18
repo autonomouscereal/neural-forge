@@ -13,12 +13,19 @@ import inspect
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import contextmanager
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from .dynamic_behavior_execution import (
+    BehaviorInferenceExecutionContract,
+    DynamicBehaviorExecutionError,
+    execution_contract_satisfied,
+    inference_execution_contract_from_manifest,
+    observe_model_execution,
+    resolve_behavior_inference_execution_contract,
+)
 from .dynamic_circuit_ir import canonical_sha256
 from .dynamic_fold_executor import (
     FoldDecision,
@@ -27,11 +34,10 @@ from .dynamic_fold_executor import (
 
 
 SCHEMA = "neural-forge-cached-whole-output-gate-v2"
-MANIFEST_SCHEMA = "neural-forge-behavior-gate-manifest-v1"
+MANIFEST_SCHEMA = "neural-forge-behavior-gate-manifest-v2"
 
 
-class DynamicBehaviorGateError(RuntimeError):
-    """The cached baseline, candidate output, or scoring contract is invalid."""
+DynamicBehaviorGateError = DynamicBehaviorExecutionError
 
 
 def _digest(value: Any, name: str) -> str:
@@ -352,6 +358,12 @@ class BehaviorGateBinding:
         )
         normalized = _canonical_copy(dict(self.manifest), "behavior gate manifest")
         seal = normalized.pop("manifest_fingerprint", None)
+        try:
+            inference_execution_contract_from_manifest(normalized)
+        except DynamicBehaviorExecutionError as exc:
+            raise DynamicBehaviorGateError(
+                "Behavior gate inference execution contract is invalid."
+            ) from exc
         if (
             seal != self.manifest_fingerprint
             or canonical_sha256(normalized) != self.manifest_fingerprint
@@ -388,6 +400,9 @@ def build_behavior_gate_binding(
     scorer_identity: BehaviorCallableIdentity | None,
     coverage_policy: Mapping[str, Any],
     components: Sequence[Mapping[str, Any]] = (),
+    inference_execution_contract: (
+        BehaviorInferenceExecutionContract | None
+    ) = None,
 ) -> BehaviorGateBinding:
     if not isinstance(generator_identity, BehaviorCallableIdentity):
         raise DynamicBehaviorGateError(
@@ -399,6 +414,19 @@ def build_behavior_gate_binding(
     ):
         raise DynamicBehaviorGateError(
             "scorer_identity must be BehaviorCallableIdentity or None."
+        )
+    selected_execution_contract = (
+        BehaviorInferenceExecutionContract.top_level_forward()
+        if inference_execution_contract is None
+        else inference_execution_contract
+    )
+    if not isinstance(
+        selected_execution_contract,
+        BehaviorInferenceExecutionContract,
+    ):
+        raise DynamicBehaviorGateError(
+            "inference_execution_contract must be "
+            "BehaviorInferenceExecutionContract or None."
         )
     body = _canonical_copy(
         {
@@ -416,6 +444,7 @@ def build_behavior_gate_binding(
             "generator": generator_identity.as_dict(),
             "scorer": (None if scorer_identity is None else scorer_identity.as_dict()),
             "components": [dict(value) for value in components],
+            "inference_execution": selected_execution_contract.as_dict(),
         },
         "behavior gate manifest",
     )
@@ -440,6 +469,9 @@ def expose_behavior_gate_binding(owner: Any, binding: BehaviorGateBinding) -> No
     owner.behavior_baseline_fingerprint = binding.baseline_fingerprint
     owner.behavior_gate_manifest_fingerprint = binding.manifest_fingerprint
     owner.behavior_gate_manifest = binding.manifest
+    owner.behavior_inference_execution_contract = (
+        inference_execution_contract_from_manifest(binding.manifest)
+    )
 
 
 def resolve_behavior_gate_binding(value: Any) -> BehaviorGateBinding:
@@ -829,54 +861,6 @@ Generator = Callable[
 TaskScorer = Callable[[WholeOutputCase, str], bool | float | None]
 
 
-@contextmanager
-def observe_model_execution(model: Any):
-    """Count real ``nn.Module.__call__`` execution during behavior scoring."""
-
-    named_modules = getattr(model, "named_modules", None)
-    if not callable(named_modules):
-        raise DynamicBehaviorGateError(
-            "Binding behavior evaluation requires a model with named_modules()."
-        )
-    try:
-        modules = tuple(named_modules())
-    except (TypeError, ValueError) as exc:
-        raise DynamicBehaviorGateError(
-            "Could not enumerate modules for behavior execution observation."
-        ) from exc
-    if not modules:
-        raise DynamicBehaviorGateError(
-            "Behavior execution observation found no model modules."
-        )
-    counts = {
-        "module_forward_calls": 0,
-        "root_forward_calls": 0,
-    }
-    handles = []
-
-    def hook(_module: Any, _inputs: Any) -> None:
-        counts["module_forward_calls"] += 1
-
-    def root_hook(_module: Any, _inputs: Any) -> None:
-        counts["module_forward_calls"] += 1
-        counts["root_forward_calls"] += 1
-
-    try:
-        for name, module in modules:
-            register = getattr(module, "register_forward_pre_hook", None)
-            if not callable(register):
-                raise DynamicBehaviorGateError(
-                    f"Model module {name or '<root>'!r} cannot be observed."
-                )
-            handles.append(register(root_hook if not name else hook))
-        yield counts
-    finally:
-        for handle in reversed(handles):
-            remove = getattr(handle, "remove", None)
-            if callable(remove):
-                remove()
-
-
 class CachedWholeOutputBehaviorGate:
     """Use cached parent responses and current child rollouts as a hard gate."""
 
@@ -892,6 +876,9 @@ class CachedWholeOutputBehaviorGate:
         generator_identity: BehaviorCallableIdentity | None = None,
         task_scorer_identity: BehaviorCallableIdentity | None = None,
         baseline_binding: Mapping[str, Any] | None = None,
+        inference_execution_contract: (
+            BehaviorInferenceExecutionContract | None
+        ) = None,
     ) -> None:
         values = tuple(cases)
         if not values or any(
@@ -1005,6 +992,7 @@ class CachedWholeOutputBehaviorGate:
             generator_identity=generator_identity,
             scorer_identity=task_scorer_identity,
             coverage_policy=self.config.task_score_coverage.as_dict(),
+            inference_execution_contract=inference_execution_contract,
         )
         expose_behavior_gate_binding(self, binding)
 
@@ -1034,13 +1022,18 @@ class CachedWholeOutputBehaviorGate:
             "root_forward_calls": 0,
         }
         if verify_model_execution:
-            with observe_model_execution(model) as observed:
+            execution_contract = resolve_behavior_inference_execution_contract(self)
+            with observe_model_execution(
+                model,
+                contract=execution_contract,
+            ) as observed:
                 generated = self.generator(model, self.cases)
             execution_counts = dict(observed)
-            if execution_counts["root_forward_calls"] <= 0:
+            if not execution_contract_satisfied(execution_counts):
                 raise DynamicBehaviorGateError(
                     "Whole-output generator returned without executing the "
-                    "candidate model root."
+                    "candidate model root required by its declared inference "
+                    "entrypoint."
                 )
         else:
             generated = self.generator(model, self.cases)
@@ -1431,6 +1424,7 @@ class CachedWholeOutputBehaviorGate:
 __all__ = [
     "BehaviorCallableIdentity",
     "BehaviorGateBinding",
+    "BehaviorInferenceExecutionContract",
     "CachedWholeOutputBehaviorGate",
     "CandidateWholeOutput",
     "DynamicBehaviorGateError",
@@ -1442,7 +1436,10 @@ __all__ = [
     "WholeOutputMetadata",
     "build_behavior_gate_binding",
     "expose_behavior_gate_binding",
+    "execution_contract_satisfied",
     "identify_behavior_callable",
+    "inference_execution_contract_from_manifest",
     "observe_model_execution",
     "resolve_behavior_gate_binding",
+    "resolve_behavior_inference_execution_contract",
 ]

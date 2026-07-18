@@ -237,14 +237,31 @@ def _rope_evidence_dtype(*values: Any, name: str) -> Any:
     return next(iter(dtypes))
 
 
-def _rope_low_precision_error_bound(evidence_dtype: Any) -> float | None:
-    """Finite-operation envelope for cached FP16/BF16 norm+RoPE rows.
+def _rope_low_precision_reconstruction_error_bound(
+    evidence_dtype: Any,
+) -> float | None:
+    """Finite-operation envelope for cached FP16/BF16 norm+RoPE replay.
 
-    LFM2 rounds the normalized direction, the learned-norm product, both
-    rotary products, and their sum.  A pair-vector forward-error envelope of
-    two dtype epsilons covers those half-ulp stages without accepting the
-    O(1) residual produced by a wrong position or head pairing.
+    Production traces are produced by CUDA while the closed-form compiler
+    deliberately replays RMSNorm on CPU.  Six low-precision rounding
+    frontiers separate those paths: direction cast and learned-weight
+    product on CPU, versus direction cast, learned-weight product, rotary
+    product, and rotary sum on CUDA.  The standard ``gamma_6`` forward-error
+    envelope accounts for their higher-order interaction without admitting
+    the O(1) residual produced by a wrong causal position.
     """
+
+    torch = _torch()
+    if evidence_dtype not in {torch.float16, torch.bfloat16}:
+        return None
+    unit_roundoff = float(torch.finfo(evidence_dtype).eps) / 2.0
+    return (6.0 * unit_roundoff) / (1.0 - 6.0 * unit_roundoff)
+
+
+def _rope_low_precision_geometry_error_bound(
+    evidence_dtype: Any,
+) -> float | None:
+    """Tighter envelope for unit radius and shared Q/K position geometry."""
 
     torch = _torch()
     if evidence_dtype not in {torch.float16, torch.bfloat16}:
@@ -302,7 +319,9 @@ def _validate_rope_reconstruction(
         rotated,
         reconstruction,
     )
-    permitted_error = _rope_low_precision_error_bound(evidence_dtype)
+    permitted_error = _rope_low_precision_reconstruction_error_bound(
+        evidence_dtype
+    )
     if permitted_error is None:
         legal = bool(
             torch.allclose(reconstruction, rotated, rtol=1e-5, atol=1e-7)
@@ -443,7 +462,9 @@ def _validate_shared_qk_rope(
         .max()
         .item()
     )
-    permitted_error = _rope_low_precision_error_bound(evidence_dtype)
+    permitted_error = _rope_low_precision_geometry_error_bound(
+        evidence_dtype
+    )
     if permitted_error is None:
         legal = bool(
             torch.allclose(

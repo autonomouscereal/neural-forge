@@ -18,6 +18,15 @@ from neural_forge.dynamic_parameter_frontier import (
     synthesize_dense_compression_ratio_frontier,
     synthesize_dense_parameter_frontier,
 )
+from neural_forge.dynamic_lfm2_cpcf_production import (
+    Lfm2CpcfProductionBundleError,
+    build_lfm2_cpcf_exact_production_bundle,
+)
+from neural_forge.dynamic_lfm2_cpcf_resources import (
+    Lfm2CpcfProductionWiring,
+    Lfm2CpcfResourceError,
+    build_lfm2_cpcf_production_resources,
+)
 from neural_forge.dynamic_weight_complete_basis import (
     FeatureOrientation,
     ResidualFacingOperator,
@@ -73,9 +82,14 @@ __all__ = [
     "ProductionFoldCapability",
     "PlannedBlankTargetGraphCertificate",
     "Lfm2DenseTargetTopologyCatalog",
+    "Lfm2CpcfProductionBundleError",
+    "Lfm2CpcfProductionWiring",
+    "Lfm2CpcfResourceError",
     "ResidualFacingOperator",
     "WeightCompleteBasisResult",
     "build_weight_complete_basis",
+    "build_lfm2_cpcf_exact_production_bundle",
+    "build_lfm2_cpcf_production_resources",
     "expand_depth_identity",
     "expand_hidden_layer",
     "load_model",

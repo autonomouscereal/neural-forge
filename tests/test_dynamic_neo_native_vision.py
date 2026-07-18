@@ -273,6 +273,11 @@ class _SpatialQwenLanguageModel(torch.nn.Module):
     def get_output_embeddings(self):
         return self.lm_head
 
+    def forward(self, hidden_states):
+        for layer in self.model.layers:
+            hidden_states = layer(hidden_states)
+        return self.lm_head(hidden_states)
+
 
 class _TinyNeoChatModel(torch.nn.Module):
     constructor_calls = 0
@@ -285,9 +290,13 @@ class _TinyNeoChatModel(torch.nn.Module):
         self.language_model = _SpatialQwenLanguageModel(config.llm_config)
 
     def forward(self, hidden_states):
-        for layer in self.language_model.model.layers:
-            hidden_states = layer(hidden_states)
-        return self.language_model.lm_head(hidden_states)
+        return self.language_model(hidden_states)
+
+    def generate(self, hidden_states):
+        return self.language_model(hidden_states)
+
+    def chat(self, hidden_states):
+        return self.generate(hidden_states)
 
 
 def _config(*, intermediate_size: int = 6) -> _NeoConfig:
@@ -847,7 +856,7 @@ def test_neo_dynamic_fold_cache_stack_behavior_artifact_and_receipt(
     assert all(len(selection.compensation_terms) == 3 for selection in cache.selections)
 
     def behavior_runner(model, record) -> str:
-        model(
+        model.chat(
             torch.zeros(
                 (1, 1, model.language_model.lm_head.in_features),
                 dtype=model.language_model.lm_head.weight.dtype,
@@ -873,6 +882,11 @@ def test_neo_dynamic_fold_cache_stack_behavior_artifact_and_receipt(
         "calibration",
         "heldout",
     ]
+    assert final_binding.manifest["inference_execution"]["entrypoint"] == "chat"
+    assert (
+        final_binding.manifest["inference_execution"]["required_module_path"]
+        == "language_model"
+    )
     assert not behavior_gate.evaluate_model(_model(22, intermediate_size=5)).accepted
 
     snapshots = tmp_path / "snapshots"

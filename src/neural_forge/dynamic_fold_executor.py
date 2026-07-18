@@ -16,10 +16,16 @@ import math
 import textwrap
 import threading
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass, field, fields, is_dataclass, replace
 from types import CodeType, MappingProxyType
 from typing import Any, Protocol
 
+from .dynamic_behavior_execution import (
+    BehaviorInferenceExecutionContract,
+    observe_model_execution,
+    resolve_behavior_inference_execution_contract,
+)
 from .dynamic_circuit_ir import JsonScalar, ModelCircuitGraph, canonical_sha256
 from .dynamic_fold_planner import (
     DynamicFoldPlan,
@@ -1083,6 +1089,7 @@ class DynamicFoldRun:
     observed_parent_root_forward_calls: int = 0
     observed_final_child_module_forward_calls: int = 0
     observed_final_child_root_forward_calls: int = 0
+    observed_final_child_inference_entrypoint_calls: int = 0
 
     @property
     def complete(self) -> bool:
@@ -1174,6 +1181,9 @@ class DynamicFoldRun:
             ),
             "observed_final_child_root_forward_calls": (
                 self.observed_final_child_root_forward_calls
+            ),
+            "observed_final_child_inference_entrypoint_calls": (
+                self.observed_final_child_inference_entrypoint_calls
             ),
             "final_child_forward_observation_active": True,
             "evidence_payload_fingerprint_compiler_owned": True,
@@ -1887,57 +1897,60 @@ def run_fold_only_callback(
 class _ParentForwardObserver:
     """Observe parent ``nn.Module.__call__`` use throughout fold execution."""
 
-    def __init__(self, parent_models: Mapping[str, Any]) -> None:
+    def __init__(
+        self,
+        parent_models: Mapping[str, Any],
+        *,
+        execution_contracts: (
+            Mapping[str, BehaviorInferenceExecutionContract] | None
+        ) = None,
+    ) -> None:
         self.parent_models = dict(parent_models)
+        self.execution_contracts = (
+            {} if execution_contracts is None else dict(execution_contracts)
+        )
+        if set(self.execution_contracts) - set(self.parent_models):
+            raise DynamicFoldExecutionError(
+                "Forward observer execution contracts name unknown models."
+            )
         self.module_forward_calls = 0
         self.root_forward_calls = 0
-        self._handles: list[Any] = []
-
-    def _module_hook(self, _module: Any, _inputs: Any) -> None:
-        self.module_forward_calls += 1
-
-    def _root_hook(self, _module: Any, _inputs: Any) -> None:
-        self.module_forward_calls += 1
-        self.root_forward_calls += 1
+        self.inference_entrypoint_calls = 0
+        self._stack: ExitStack | None = None
+        self._counts: list[Mapping[str, int]] = []
 
     def __enter__(self) -> "_ParentForwardObserver":
-        seen: set[int] = set()
+        stack = ExitStack()
         try:
             for parent_name, model in sorted(self.parent_models.items()):
-                named_modules = getattr(model, "named_modules", None)
-                if not callable(named_modules):
-                    raise DynamicFoldExecutionError(
-                        f"Parent {parent_name!r} lacks named_modules(); "
-                        "forward use cannot be observed."
-                    )
-                modules = tuple(named_modules())
-                if not modules:
-                    raise DynamicFoldExecutionError(
-                        f"Parent {parent_name!r} exposes no observable modules."
-                    )
-                for path, module in modules:
-                    if id(module) in seen:
-                        continue
-                    seen.add(id(module))
-                    register = getattr(module, "register_forward_pre_hook", None)
-                    if not callable(register):
-                        raise DynamicFoldExecutionError(
-                            f"Parent module {parent_name}:{path or '<root>'} "
-                            "cannot be observed."
+                self._counts.append(
+                    stack.enter_context(
+                        observe_model_execution(
+                            model,
+                            contract=self.execution_contracts.get(parent_name),
                         )
-                    hook = self._root_hook if not path else self._module_hook
-                    self._handles.append(register(hook))
+                    )
+                )
         except BaseException:
-            self.__exit__(None, None, None)
+            stack.close()
             raise
+        self._stack = stack
         return self
 
     def __exit__(self, _exc_type: Any, _exc: Any, _traceback: Any) -> None:
-        for handle in reversed(self._handles):
-            remove = getattr(handle, "remove", None)
-            if callable(remove):
-                remove()
-        self._handles.clear()
+        if self._stack is not None:
+            self._stack.__exit__(_exc_type, _exc, _traceback)
+            self._stack = None
+        self.module_forward_calls = sum(
+            int(counts["module_forward_calls"]) for counts in self._counts
+        )
+        self.root_forward_calls = sum(
+            int(counts["root_forward_calls"]) for counts in self._counts
+        )
+        self.inference_entrypoint_calls = sum(
+            int(counts["inference_entrypoint_calls"]) for counts in self._counts
+        )
+        self._counts.clear()
 
 
 class DynamicFoldExecutor:
@@ -2747,6 +2760,7 @@ class DynamicFoldExecutor:
         final_evidence_payload_integrity_reverified = False
         final_child_module_forward_calls = 0
         final_child_root_forward_calls = 0
+        final_child_inference_entrypoint_calls = 0
         if status == "complete" and self.final_evaluator is not None:
             synthetic_action = plan.actions[-1] if plan.actions else None
             if synthetic_action is None:
@@ -2864,13 +2878,24 @@ class DynamicFoldExecutor:
                 candidate_state_fingerprint=state,
             )
             try:
-                final_observer = _ParentForwardObserver({"child": context.child_model})
+                final_execution_contract = (
+                    resolve_behavior_inference_execution_contract(
+                        self.final_evaluator
+                    )
+                )
+                final_observer = _ParentForwardObserver(
+                    {"child": context.child_model},
+                    execution_contracts={"child": final_execution_contract},
+                )
                 with final_observer:
                     final_decision = _decision(
                         self.final_evaluator.evaluate(final_context)
                     )
                 final_child_module_forward_calls = final_observer.module_forward_calls
                 final_child_root_forward_calls = final_observer.root_forward_calls
+                final_child_inference_entrypoint_calls = (
+                    final_observer.inference_entrypoint_calls
+                )
                 assert_parents_unchanged("final evaluation")
                 _assert_fold_evidence_payload_unchanged(
                     evidence,
@@ -2939,6 +2964,9 @@ class DynamicFoldExecutor:
                 final_child_module_forward_calls
             ),
             observed_final_child_root_forward_calls=(final_child_root_forward_calls),
+            observed_final_child_inference_entrypoint_calls=(
+                final_child_inference_entrypoint_calls
+            ),
         )
 
 

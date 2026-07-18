@@ -160,6 +160,15 @@ def test_maps_target_records_and_preserves_all_sequence_evidence(
     )
 
     assert adapter.record_count == 2
+    assert (
+        adapter.donor_tokenizer_semantics_sha256
+        == bridge.donor_tokenizer_semantics_sha256
+    )
+    assert (
+        adapter.target_tokenizer_semantics_sha256
+        == bridge.target_tokenizer_semantics_sha256
+    )
+    assert len(adapter.target_tokenizer_package_fingerprint) == 64
     assert [record.split for record in adapter.records] == [
         "calibration",
         "generation",

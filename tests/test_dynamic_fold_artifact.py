@@ -8,8 +8,12 @@ from dataclasses import replace
 import pytest
 
 from neural_forge.dynamic_circuit_ir import canonical_json_bytes, canonical_sha256
+from neural_forge.dynamic_behavior_gate import (
+    BehaviorInferenceExecutionContract,
+)
 from neural_forge.dynamic_fold_artifact import (
     DynamicFoldArtifactError,
+    LEGACY_SCHEMA,
     load_dynamic_fold_artifact_certificate,
     publish_dynamic_fold_artifact,
 )
@@ -101,6 +105,45 @@ def _fresh_accept(model):
     return FoldDecision.accept("fresh reload accepted")
 
 
+def _wrapper_behavior_manifest(
+    contract: BehaviorInferenceExecutionContract,
+) -> tuple[str, int, str, str, dict]:
+    gate_id = "test.wrapper.behavior"
+    gate_version = 1
+    baseline = canonical_sha256({"cached": "wrapper-output"})
+    body = {
+        "schema": "test-wrapper-behavior-gate-v1",
+        "gate_id": gate_id,
+        "gate_version": gate_version,
+        "baseline_fingerprint": baseline,
+        "inference_execution": contract.as_dict(),
+    }
+    fingerprint = canonical_sha256(body)
+    return (
+        gate_id,
+        gate_version,
+        baseline,
+        fingerprint,
+        {**body, "manifest_fingerprint": fingerprint},
+    )
+
+
+def _loader_with_chat(source):
+    model = _loader(source)
+
+    def chat(input_ids):
+        return model.model(input_ids=input_ids, use_cache=False)
+
+    object.__setattr__(model, "chat", chat)
+    return model
+
+
+def _wrapper_fresh_accept(model):
+    with torch.no_grad():
+        model.chat(torch.tensor([[1, 2]], dtype=torch.long))
+    return FoldDecision.accept("wrapper inference accepted")
+
+
 def test_publication_is_atomic_exact_and_freshly_reloaded(tmp_path) -> None:
     child, compilation, tokenizer = _compiled()
 
@@ -147,6 +190,7 @@ def test_publication_is_atomic_exact_and_freshly_reloaded(tmp_path) -> None:
     assert certificate.loader_implementation_fingerprint != "0" * 64
     assert certificate.fresh_reload_module_forward_calls > 0
     assert certificate.fresh_reload_root_forward_calls > 0
+    assert certificate.fresh_reload_inference_entrypoint_calls > 0
     assert certificate.body()["fresh_reload_source"] == (
         "retained-final-destination"
     )
@@ -159,6 +203,37 @@ def test_publication_is_atomic_exact_and_freshly_reloaded(tmp_path) -> None:
         >= certificate.fresh_reload_state_inventory["serialized_state_bytes"]
     )
     assert load_dynamic_fold_artifact_certificate(destination) == certificate
+
+
+def test_legacy_v2_certificate_remains_loadable(tmp_path) -> None:
+    child, compilation, tokenizer = _compiled()
+    destination = tmp_path / "published"
+    publish_dynamic_fold_artifact(
+        compilation=compilation,
+        child_model=child,
+        destination=destination,
+        model_saver=_saver,
+        model_loader=_loader,
+        fresh_reload_evaluator=_fresh_accept,
+        saver_id="test-local-torch-save-v1",
+        loader_id="test-local-torch-load-v1",
+        tokenizer_fingerprint=tokenizer,
+    )
+    certificate_path = destination / "certificate.json"
+    payload = json.loads(certificate_path.read_text(encoding="ascii"))
+    payload["schema"] = LEGACY_SCHEMA
+    payload.pop("fresh_reload_inference_entrypoint_calls")
+    payload.pop("fresh_reload_declared_inference_path_observed")
+    payload.pop("certificate_sha256")
+    payload["certificate_sha256"] = canonical_sha256(payload)
+    certificate_path.write_bytes(canonical_json_bytes(payload) + b"\n")
+
+    loaded = load_dynamic_fold_artifact_certificate(destination)
+
+    assert loaded.certificate_schema == LEGACY_SCHEMA
+    assert loaded.fresh_reload_inference_entrypoint_calls == (
+        loaded.fresh_reload_root_forward_calls
+    )
 
 
 def test_loader_that_ignores_path_and_deepcopies_child_is_rejected(tmp_path) -> None:
@@ -530,6 +605,88 @@ def test_fresh_reload_rejects_leaf_only_cached_acceptance(tmp_path) -> None:
             fresh_reload_evaluator=leaf_only_evaluator,
             saver_id="test-saver",
             loader_id="leaf-only-loader",
+            tokenizer_fingerprint=tokenizer,
+        )
+
+    assert not destination.exists()
+
+
+def test_fresh_reload_accepts_authenticated_wrapper_module_root(tmp_path) -> None:
+    child, compilation, tokenizer = _compiled()
+    destination = tmp_path / "published"
+    contract = BehaviorInferenceExecutionContract(
+        entrypoint="chat",
+        required_module_path="model",
+    )
+    gate_id, gate_version, baseline, fingerprint, manifest = (
+        _wrapper_behavior_manifest(contract)
+    )
+
+    certificate = publish_dynamic_fold_artifact(
+        compilation=compilation,
+        child_model=child,
+        destination=destination,
+        model_saver=_saver,
+        model_loader=_loader_with_chat,
+        fresh_reload_evaluator=_wrapper_fresh_accept,
+        saver_id="test-saver",
+        loader_id="wrapper-loader",
+        behavior_gate_id=gate_id,
+        behavior_gate_version=gate_version,
+        behavior_baseline_fingerprint=baseline,
+        behavior_gate_manifest_fingerprint=fingerprint,
+        behavior_gate_manifest=manifest,
+        tokenizer_fingerprint=tokenizer,
+    )
+
+    assert certificate.fresh_reload_decision.accepted
+    assert certificate.fresh_reload_root_forward_calls > 0
+    assert certificate.fresh_reload_inference_entrypoint_calls > 0
+    assert certificate.behavior_gate_manifest["inference_execution"] == (
+        contract.as_dict()
+    )
+    assert load_dynamic_fold_artifact_certificate(destination) == certificate
+
+
+def test_fresh_reload_wrapper_rejects_unrelated_descendant_execution(tmp_path) -> None:
+    child, compilation, tokenizer = _compiled()
+    destination = tmp_path / "published"
+    contract = BehaviorInferenceExecutionContract(
+        entrypoint="chat",
+        required_module_path="model",
+    )
+    gate_id, gate_version, baseline, fingerprint, manifest = (
+        _wrapper_behavior_manifest(contract)
+    )
+
+    def unrelated_loader(source):
+        model = _loader(source)
+
+        def chat(input_ids):
+            embedded = model.model.embed_tokens(input_ids)
+            return model.lm_head(embedded)
+
+        object.__setattr__(model, "chat", chat)
+        return model
+
+    with pytest.raises(
+        DynamicFoldArtifactError,
+        match="declared inference entrypoint and module root",
+    ):
+        publish_dynamic_fold_artifact(
+            compilation=compilation,
+            child_model=child,
+            destination=destination,
+            model_saver=_saver,
+            model_loader=unrelated_loader,
+            fresh_reload_evaluator=_wrapper_fresh_accept,
+            saver_id="test-saver",
+            loader_id="unrelated-wrapper-loader",
+            behavior_gate_id=gate_id,
+            behavior_gate_version=gate_version,
+            behavior_baseline_fingerprint=baseline,
+            behavior_gate_manifest_fingerprint=fingerprint,
+            behavior_gate_manifest=manifest,
             tokenizer_fingerprint=tokenizer,
         )
 

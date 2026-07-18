@@ -1,20 +1,27 @@
 from __future__ import annotations
 
+import copy
+import threading
 from dataclasses import replace
 
 import pytest
 
 from neural_forge.dynamic_behavior_gate import (
     CachedWholeOutputBehaviorGate,
+    BehaviorGateBinding,
+    BehaviorInferenceExecutionContract,
     CandidateWholeOutput,
     DynamicBehaviorGateError,
     TaskScoreCoveragePolicy,
     WholeOutputCase,
     WholeOutputGateConfig,
     WholeOutputMetadata,
+    execution_contract_satisfied,
     identify_behavior_callable,
+    observe_model_execution,
     resolve_behavior_gate_binding,
 )
+from neural_forge.dynamic_circuit_ir import canonical_sha256
 
 
 torch = pytest.importorskip("torch")
@@ -119,6 +126,249 @@ def test_binding_gate_rejects_leaf_only_execution_with_cached_return() -> None:
         match="without executing the candidate model root",
     ):
         gate.evaluate_model(model)
+
+
+class _WrappedInferenceModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.required_language_model = torch.nn.Linear(2, 2)
+        self.unrelated_vision_leaf = torch.nn.Linear(2, 2)
+
+    def chat(self, values):
+        return self.required_language_model(values)
+
+    def noop_chat(self, values):
+        return values
+
+
+def test_binding_gate_accepts_authenticated_wrapper_inference_path() -> None:
+    model = _WrappedInferenceModel().eval()
+    contract = BehaviorInferenceExecutionContract(
+        entrypoint="chat",
+        required_module_path="required_language_model",
+    )
+
+    def wrapped_generator(candidate, _cases):
+        with torch.no_grad():
+            candidate.chat(torch.ones((1, 2)))
+        return {"case": "answer"}
+
+    gate = CachedWholeOutputBehaviorGate(
+        (WholeOutputCase("case", "Prompt", "answer"),),
+        generator=wrapped_generator,
+        inference_execution_contract=contract,
+    )
+
+    assert gate.evaluate_model(model).accepted
+    binding = resolve_behavior_gate_binding(gate)
+    assert binding.manifest["inference_execution"] == contract.as_dict()
+
+
+def test_binding_gate_rejects_unrelated_descendant_for_declared_wrapper_path() -> None:
+    model = _WrappedInferenceModel().eval()
+
+    def unrelated_generator(candidate, _cases):
+        with torch.no_grad():
+            candidate.unrelated_vision_leaf(torch.ones((1, 2)))
+        return {"case": "cached answer"}
+
+    gate = CachedWholeOutputBehaviorGate(
+        (WholeOutputCase("case", "Prompt", "cached answer"),),
+        generator=unrelated_generator,
+        inference_execution_contract=BehaviorInferenceExecutionContract(
+            entrypoint="chat",
+            required_module_path="required_language_model",
+        ),
+    )
+
+    with pytest.raises(
+        DynamicBehaviorGateError,
+        match="declared inference entrypoint",
+    ):
+        gate.evaluate_model(model)
+
+
+def test_binding_gate_rejects_declared_module_called_outside_entrypoint() -> None:
+    model = _WrappedInferenceModel().eval()
+
+    def bypassed_entrypoint_generator(candidate, _cases):
+        with torch.no_grad():
+            candidate.required_language_model(torch.ones((1, 2)))
+        return {"case": "cached answer"}
+
+    gate = CachedWholeOutputBehaviorGate(
+        (WholeOutputCase("case", "Prompt", "cached answer"),),
+        generator=bypassed_entrypoint_generator,
+        inference_execution_contract=BehaviorInferenceExecutionContract(
+            entrypoint="chat",
+            required_module_path="required_language_model",
+        ),
+    )
+
+    with pytest.raises(
+        DynamicBehaviorGateError,
+        match="declared inference entrypoint",
+    ):
+        gate.evaluate_model(model)
+
+
+def test_binding_gate_rejects_split_entrypoint_and_module_calls() -> None:
+    model = _WrappedInferenceModel().eval()
+
+    def split_generator(candidate, _cases):
+        with torch.no_grad():
+            candidate.noop_chat(torch.ones((1, 2)))
+            candidate.required_language_model(torch.ones((1, 2)))
+        return {"case": "cached answer"}
+
+    gate = CachedWholeOutputBehaviorGate(
+        (WholeOutputCase("case", "Prompt", "cached answer"),),
+        generator=split_generator,
+        inference_execution_contract=BehaviorInferenceExecutionContract(
+            entrypoint="noop_chat",
+            required_module_path="required_language_model",
+        ),
+    )
+
+    with pytest.raises(
+        DynamicBehaviorGateError,
+        match="declared inference entrypoint",
+    ):
+        gate.evaluate_model(model)
+
+
+def test_wrapper_causality_cannot_cross_python_threads() -> None:
+    class _ThreadSplitModel(_WrappedInferenceModel):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = threading.Event()
+            self.release = threading.Event()
+
+        def blocked_chat(self, values):
+            self.entered.set()
+            assert self.release.wait(timeout=5)
+            return values
+
+    model = _ThreadSplitModel().eval()
+    contract = BehaviorInferenceExecutionContract(
+        entrypoint="blocked_chat",
+        required_module_path="required_language_model",
+    )
+    with observe_model_execution(model, contract=contract) as counts:
+        worker = threading.Thread(
+            target=model.blocked_chat,
+            args=(torch.ones((1, 2)),),
+        )
+        worker.start()
+        assert model.entered.wait(timeout=5)
+        with torch.no_grad():
+            model.required_language_model(torch.ones((1, 2)))
+        model.release.set()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+
+    assert counts["inference_entrypoint_calls"] == 1
+    assert counts["root_forward_calls"] == 0
+    assert not execution_contract_satisfied(counts)
+
+
+def test_failed_required_module_forward_cannot_satisfy_gate() -> None:
+    class _FailingModule(torch.nn.Module):
+        def forward(self, _values):
+            raise RuntimeError("intentional failure")
+
+    class _CaughtFailureModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.required_language_model = _FailingModule()
+
+        def chat(self, values):
+            try:
+                return self.required_language_model(values)
+            except RuntimeError:
+                return values
+
+    model = _CaughtFailureModel().eval()
+    gate = CachedWholeOutputBehaviorGate(
+        (WholeOutputCase("case", "Prompt", "cached answer"),),
+        generator=lambda candidate, _cases: (
+            candidate.chat(torch.ones((1, 2))),
+            {"case": "cached answer"},
+        )[1],
+        inference_execution_contract=BehaviorInferenceExecutionContract(
+            entrypoint="chat",
+            required_module_path="required_language_model",
+        ),
+    )
+
+    with pytest.raises(
+        DynamicBehaviorGateError,
+        match="declared inference entrypoint",
+    ):
+        gate.evaluate_model(model)
+
+
+def test_default_inference_contract_remains_top_level_root_forward() -> None:
+    gate = CachedWholeOutputBehaviorGate(
+        (WholeOutputCase("case", "Prompt", "answer"),),
+        generator=lambda model, _cases: (
+            model(torch.ones((1, 2))),
+            {"case": "answer"},
+        )[1],
+    )
+
+    binding = resolve_behavior_gate_binding(gate)
+
+    assert binding.manifest["inference_execution"] == (
+        BehaviorInferenceExecutionContract.top_level_forward().as_dict()
+    )
+    assert gate.evaluate_model(torch.nn.Linear(2, 2).eval()).accepted
+
+
+def test_inference_contract_tamper_fails_even_after_outer_manifest_reseal() -> None:
+    gate = CachedWholeOutputBehaviorGate(
+        (WholeOutputCase("case", "Prompt", "answer"),),
+        generator=_manifest_generator,
+    )
+    binding = resolve_behavior_gate_binding(gate)
+    tampered = copy.deepcopy(binding.as_dict())
+    tampered.pop("manifest_fingerprint")
+    tampered["inference_execution"]["required_module_path"] = "unrelated"
+    resealed = canonical_sha256(tampered)
+
+    with pytest.raises(
+        DynamicBehaviorGateError,
+        match="inference execution contract is invalid",
+    ):
+        BehaviorGateBinding(
+            gate_id=binding.gate_id,
+            gate_version=binding.gate_version,
+            baseline_fingerprint=binding.baseline_fingerprint,
+            manifest_fingerprint=resealed,
+            manifest={**tampered, "manifest_fingerprint": resealed},
+        )
+
+
+def test_mutable_execution_attribute_cannot_override_sealed_manifest() -> None:
+    gate = CachedWholeOutputBehaviorGate(
+        (WholeOutputCase("case", "Prompt", "answer"),),
+        generator=lambda model, _cases: (
+            model(torch.ones((1, 2))),
+            {"case": "answer"},
+        )[1],
+    )
+    gate.behavior_inference_execution_contract = (
+        BehaviorInferenceExecutionContract(
+            entrypoint="chat",
+            required_module_path="required_language_model",
+        )
+    )
+
+    with pytest.raises(
+        DynamicBehaviorGateError,
+        match="differs from its sealed behavior-gate manifest",
+    ):
+        gate.evaluate_model(torch.nn.Linear(2, 2).eval())
 
 
 def test_gate_rejects_a_new_empty_response_even_when_traces_look_good() -> None:

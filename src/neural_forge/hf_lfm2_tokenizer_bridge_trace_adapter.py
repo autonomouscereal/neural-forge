@@ -30,6 +30,7 @@ from typing import Any
 from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     StrictTokenizerBridgeError,
+    strict_tokenizer_bridge_target_package_fingerprint,
 )
 
 
@@ -814,6 +815,18 @@ class Lfm2StrictTokenizerBridgeTraceAdapter:
     @property
     def target_row_capacity(self) -> int:
         return self._bridge.transport_profile.target_row_capacity
+
+    @property
+    def donor_tokenizer_semantics_sha256(self) -> str:
+        return self._bridge.donor_tokenizer_semantics_sha256
+
+    @property
+    def target_tokenizer_semantics_sha256(self) -> str:
+        return self._bridge.target_tokenizer_semantics_sha256
+
+    @property
+    def target_tokenizer_package_fingerprint(self) -> str:
+        return strict_tokenizer_bridge_target_package_fingerprint(self._bridge)
 
     @property
     def mapping(self) -> tuple[int, ...]:

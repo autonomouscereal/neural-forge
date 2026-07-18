@@ -773,6 +773,99 @@ def test_bfloat16_rope_recovery_is_quantization_aware_and_qk_cross_checked() -> 
         )
 
 
+def test_bfloat16_rope_reconstruction_separates_replay_and_geometry_bounds() -> None:
+    epsilon = float(torch.finfo(torch.bfloat16).eps)
+    unit_roundoff = epsilon / 2.0
+    gamma_six = (6.0 * unit_roundoff) / (
+        1.0 - 6.0 * unit_roundoff
+    )
+    assert (
+        fold_module._rope_low_precision_reconstruction_error_bound(
+            torch.bfloat16
+        )
+        == gamma_six
+    )
+    assert fold_module._rope_low_precision_reconstruction_error_bound(
+        torch.float16
+    ) == pytest.approx(
+        (3.0 * float(torch.finfo(torch.float16).eps))
+        / (1.0 - 3.0 * float(torch.finfo(torch.float16).eps))
+    )
+    assert (
+        fold_module._rope_low_precision_reconstruction_error_bound(
+            torch.float32
+        )
+        is None
+    )
+    assert (
+        fold_module._rope_low_precision_geometry_error_bound(
+            torch.bfloat16
+        )
+        == 2.0 * epsilon
+    )
+    normalized = torch.tensor(
+        [[[[4.09375, 0.2451171875]]]],
+        dtype=torch.float64,
+    )
+    cosine = torch.full(
+        (1, 1, 2),
+        -0.70703125,
+        dtype=torch.float64,
+    )
+    sine = cosine.clone()
+    legal_composed_route = torch.tensor(
+        [[[[-2.671875, -3.015625]]]],
+        dtype=torch.float64,
+    )
+    fold_module._validate_rope_reconstruction(
+        normalized,
+        legal_composed_route,
+        cosine,
+        sine,
+        "synthetic.composed_route",
+        evidence_dtype=torch.bfloat16,
+    )
+    illegal_route = legal_composed_route.clone()
+    illegal_route[..., 0] = -2.625
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match="one shared legal RoPE transform",
+    ):
+        fold_module._validate_rope_reconstruction(
+            normalized,
+            illegal_route,
+            cosine,
+            sine,
+            "synthetic.illegal_route",
+            evidence_dtype=torch.bfloat16,
+        )
+    query_cosine = torch.ones((1, 1, 2), dtype=torch.float64)
+    query_sine = torch.zeros((1, 1, 2), dtype=torch.float64)
+    key_cosine = torch.full(
+        (1, 1, 2),
+        float(torch.cos(torch.tensor(0.02)).item()),
+        dtype=torch.float64,
+    )
+    key_sine = torch.full(
+        (1, 1, 2),
+        float(torch.sin(torch.tensor(0.02)).item()),
+        dtype=torch.float64,
+    )
+    assert 2.0 * epsilon < gamma_six
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match="same legal causal positions",
+    ):
+        fold_module._validate_shared_qk_rope(
+            query_cosine,
+            query_sine,
+            key_cosine,
+            key_sine,
+            "synthetic.geometry_remains_tight",
+            evidence_dtype=torch.bfloat16,
+        )
+
+
 def test_full_prefix_phase_assembler_never_concatenates_overlapping_phases() -> None:
     generator = torch.Generator().manual_seed(2026071702)
     tensors: dict[str, torch.Tensor] = {}

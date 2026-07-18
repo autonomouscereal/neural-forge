@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
+from threading import Thread
 
 import pytest
 
@@ -20,6 +21,7 @@ from neural_forge.dynamic_circuit_ir import (
 from neural_forge.dynamic_fold_artifact import (
     DynamicFoldArtifactCertificate,
     _write_provenance_documents,
+    load_dynamic_fold_artifact_certificate,
 )
 from neural_forge.dynamic_fold_compiler import (
     DynamicFoldCompilation,
@@ -351,6 +353,7 @@ def _published_result(
         observed_parent_root_forward_calls=0,
         observed_final_child_module_forward_calls=1,
         observed_final_child_root_forward_calls=1,
+        observed_final_child_inference_entrypoint_calls=1,
     )
     run = replace(run, **dict(run_changes or {}))
     compilation = DynamicFoldCompilation(
@@ -490,6 +493,7 @@ def _published_result(
         fresh_reload_state_inventory=state_inventory,
         fresh_reload_module_forward_calls=1,
         fresh_reload_root_forward_calls=1,
+        fresh_reload_inference_entrypoint_calls=1,
         preparation_guard_applied=True,
         preparation_optimizer_constructions=0,
         preparation_optimizer_steps=0,
@@ -1104,6 +1108,9 @@ def test_search_rejects_training_attempt_recorded_by_fold_run(tmp_path) -> None:
             "observed_final_child_module_forward_calls": 1,
             "observed_final_child_root_forward_calls": 0,
         },
+        {
+            "observed_final_child_inference_entrypoint_calls": 0,
+        },
     ),
 )
 def test_search_requires_zero_parent_and_observed_child_forwards(
@@ -1353,7 +1360,7 @@ def test_search_rejects_unregistered_live_target_inference_state(tmp_path) -> No
     assert list(root.iterdir()) == []
 
 
-def test_runner_exception_after_publication_is_cleaned(tmp_path) -> None:
+def test_runner_exception_after_publication_leaves_unowned_path(tmp_path) -> None:
     runner = FakeRunner(
         {
             "alpha": {
@@ -1381,7 +1388,66 @@ def test_runner_exception_after_publication_is_cleaned(tmp_path) -> None:
     assert result.complete is False
     assert result.attempts[0].status == "infrastructure"
     assert result.attempts[0].error_type == "InfrastructureFailure"
-    assert list(root.iterdir()) == []
+    artifact_path = root / "alpha"
+    artifact = load_dynamic_fold_artifact_certificate(artifact_path)
+    assert Path(artifact.path).resolve(strict=True) == artifact_path.resolve(
+        strict=True
+    )
+
+
+def test_runner_exception_does_not_adopt_concurrent_valid_artifact(
+    tmp_path,
+) -> None:
+    class ConcurrentPublishingFailureRunner(FakeRunner):
+        def run(self, **kwargs):
+            target_request = kwargs["target_request"]
+            destination = Path(kwargs["destination"])
+            errors: list[BaseException] = []
+
+            def publish_concurrently() -> None:
+                try:
+                    _published_result(
+                        target_request=target_request,
+                        evidence_fingerprint=kwargs[
+                            "evidence_fingerprint"
+                        ],
+                        destination=destination,
+                        quality=1.0,
+                    )
+                except BaseException as exc:  # pragma: no cover - assertion aid
+                    errors.append(exc)
+
+            publisher = Thread(target=publish_concurrently)
+            publisher.start()
+            publisher.join()
+            assert errors == []
+            raise InfrastructureFailure(
+                "runner failed while another publisher won the destination"
+            )
+
+    runner = ConcurrentPublishingFailureRunner({})
+    system = AutomaticDynamicFoldSearchSystem(
+        runner,
+        DynamicFoldPortfolioRegistry(
+            (FakePortfolio((_candidate("alpha", priority=1),)),)
+        ),
+    )
+    root = tmp_path / "search"
+
+    result = system.run(
+        parent_models={"parent": object()},
+        objective=_objective(),
+        destination_root=root,
+    )
+
+    assert result.complete is False
+    assert result.attempts[0].status == "infrastructure"
+    assert result.attempts[0].error_type == "InfrastructureFailure"
+    artifact_path = root / "alpha"
+    artifact = load_dynamic_fold_artifact_certificate(artifact_path)
+    assert Path(artifact.path).resolve(strict=True) == artifact_path.resolve(
+        strict=True
+    )
 
 
 def test_exhaustive_search_prunes_provisional_accept_on_later_infrastructure(
@@ -1526,9 +1592,7 @@ def test_duplicate_parent_graph_names_fail_before_certification(tmp_path) -> Non
 
     assert result.complete is False
     assert result.attempts[0].status == "fatal"
-    assert "could not be authenticated and safely removed" in (
-        result.attempts[0].reason
-    )
+    assert "parent graph names must be unique" in result.attempts[0].reason
     assert [path.name for path in root.iterdir()] == ["alpha"]
     assert not (root / "alpha" / "certificate.json").exists()
 

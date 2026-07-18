@@ -94,6 +94,7 @@ TARGET_SELECTION_METHOD = "lfm2_progressive_exact_budget"
 LAYER_METHOD = "lfm2_closed_loop_layer"
 HYBRID_MODEL_METHOD = "lfm2_hybrid_residual_attention_model"
 PRODUCER_FIRST_MODEL_METHOD = "lfm2_producer_first_residual_attention_model"
+_DENSE_BUDGET_MODEL_METHOD = "lfm2_dense_budget_residual_attention_model"
 _DENSE_BUDGET_CATALOG_MARKER = "_neural_forge_dense_topology_catalog"
 _DENSE_BUDGET_CONFIGURATION_KEYS = frozenset(
     {
@@ -1240,11 +1241,13 @@ def _select_lfm2_dense_budgeted_target(
             "Dense budget LFM2 configuration is not the exact catalog schema "
             f"(missing={missing}, extra={extra})."
         )
-    if request.fold_method_id is not None:
+    if request.fold_method_id not in {
+        None,
+        _DENSE_BUDGET_MODEL_METHOD,
+    }:
         raise DynamicLfm2AdapterError(
-            "The dense width/depth budget target has no registered compatible "
-            "fold method yet; target materialization refuses a misleading "
-            "method marker."
+            "The dense width/depth budget target only accepts its registered "
+            "CPCF residual-attention fold method."
         )
     if configuration["model_type"] != "lfm2":
         raise DynamicLfm2AdapterError(
@@ -4094,6 +4097,7 @@ class Lfm2TargetSynthesisAdapter:
                 LAYER_METHOD,
                 HYBRID_MODEL_METHOD,
                 PRODUCER_FIRST_MODEL_METHOD,
+                _DENSE_BUDGET_MODEL_METHOD,
             }
             and any(
                 graph.family == "lfm2" and graph.tokenizer_fingerprint is not None

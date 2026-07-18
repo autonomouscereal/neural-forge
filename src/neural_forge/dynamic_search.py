@@ -631,6 +631,55 @@ class AutomaticDynamicFoldSearchSystem:
             )
 
     @classmethod
+    def _resolve_returned_artifact_ownership(
+        cls,
+        result: Any,
+        destination: Path,
+    ) -> tuple[DynamicFoldArtifactCertificate, Path] | None:
+        """Resolve ownership only from this invocation's returned artifact."""
+
+        if (
+            not isinstance(
+                result,
+                SynthesizedPublishedDynamicFoldCompilation,
+            )
+            or not isinstance(
+                result.published,
+                PublishedDynamicFoldCompilation,
+            )
+            or not isinstance(
+                result.published.artifact,
+                DynamicFoldArtifactCertificate,
+            )
+        ):
+            return None
+        artifact = result.published.artifact
+        try:
+            if (
+                not destination.is_dir()
+                or destination.is_symlink()
+                or artifact.certificate_sha256
+                != canonical_sha256(artifact.body())
+            ):
+                return None
+            resolved_destination = destination.resolve(strict=True)
+            resolved_artifact_path = (
+                Path(artifact.path).expanduser().resolve(strict=True)
+            )
+            if resolved_artifact_path != resolved_destination:
+                return None
+            cls._read_matching_disk_certificate(destination, artifact)
+            loaded_artifact = load_dynamic_fold_artifact_certificate(
+                destination
+            )
+            if loaded_artifact != artifact:
+                return None
+            authenticate_dynamic_fold_artifact_tree(artifact)
+        except (DynamicFoldArtifactError, DynamicFoldSearchError, OSError):
+            return None
+        return artifact, resolved_destination
+
+    @classmethod
     def _validate_published_result(
         cls,
         *,
@@ -1101,10 +1150,13 @@ class AutomaticDynamicFoldSearchSystem:
             or compilation.run.observed_parent_root_forward_calls != 0
             or compilation.run.observed_final_child_module_forward_calls <= 0
             or compilation.run.observed_final_child_root_forward_calls <= 0
+            or compilation.run.observed_final_child_inference_entrypoint_calls
+            <= 0
             or compilation.run.observed_final_child_root_forward_calls
             > compilation.run.observed_final_child_module_forward_calls
             or artifact.fresh_reload_module_forward_calls <= 0
             or artifact.fresh_reload_root_forward_calls <= 0
+            or artifact.fresh_reload_inference_entrypoint_calls <= 0
             or artifact.preparation_parent_module_forward_calls != 0
             or artifact.preparation_parent_root_forward_calls != 0
             or artifact.publication_parent_module_forward_calls != 0
@@ -1351,6 +1403,7 @@ class AutomaticDynamicFoldSearchSystem:
             current_artifact: DynamicFoldArtifactCertificate | None = None
             current_owned_destination: Path | None = None
             current_record_hashes: tuple[str, ...] = ()
+            runner_returned_result = False
             ledger = self._ledger()
             ledger_record_count_before = 0 if ledger is None else len(ledger.records)
             if destination.exists():
@@ -1365,6 +1418,16 @@ class AutomaticDynamicFoldSearchSystem:
                     destination=destination,
                     parent_tokenizer_fingerprints=(parent_tokenizer_fingerprints),
                 )
+                runner_returned_result = True
+                returned_ownership = self._resolve_returned_artifact_ownership(
+                    result,
+                    destination,
+                )
+                if returned_ownership is not None:
+                    current_artifact, current_owned_destination = (
+                        returned_ownership
+                    )
+                    owned_destinations.add(current_owned_destination)
                 artifact, resolved_destination = self._validate_published_result(
                     candidate=candidate,
                     result=result,
@@ -1577,42 +1640,14 @@ class AutomaticDynamicFoldSearchSystem:
                         )
                     except DynamicFoldSearchError as cleanup_error:
                         error = cleanup_error
-                elif destination.exists():
-                    try:
-                        resolved_failed_destination = destination.resolve(strict=True)
-                        disk_artifact = load_dynamic_fold_artifact_certificate(
-                            destination
-                        )
-                        if (
-                            Path(disk_artifact.path).expanduser().resolve(strict=True)
-                            != resolved_failed_destination
-                        ):
-                            raise DynamicFoldArtifactError(
-                                "Post-exception artifact is bound to another "
-                                "destination."
-                            )
-                        owned_destinations.add(resolved_failed_destination)
-                        self._retire_owned_artifact(
-                            root=root,
-                            candidate=candidate,
-                            destination=destination,
-                            artifact=disk_artifact,
-                            owned_destinations=owned_destinations,
-                            record_sha256s=rollback_hashes,
-                            reason=(
-                                "The runner failed after publishing this "
-                                "candidate artifact."
-                            ),
-                        )
-                    except DynamicFoldSearchError as cleanup_error:
-                        error = cleanup_error
-                    except (DynamicFoldArtifactError, OSError) as cleanup_error:
-                        error = DynamicFoldSearchError(
-                            "A runner failed after creating a candidate "
-                            "destination that could not be authenticated and "
-                            "safely removed."
-                        )
-                        error.__cause__ = cleanup_error
+                elif runner_returned_result and destination.exists():
+                    unowned_error = DynamicFoldSearchError(
+                        "A runner returned after creating a candidate "
+                        "destination that could not be authenticated and "
+                        "safely removed as this invocation's artifact."
+                    )
+                    unowned_error.__cause__ = error
+                    error = unowned_error
                 if isinstance(error, DynamicFoldSearchError):
                     disposition = FailureDisposition.FATAL
                 else:
