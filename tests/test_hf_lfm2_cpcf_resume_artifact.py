@@ -506,6 +506,118 @@ def _rewrite_manifest(path: Path, mutate) -> None:
     path.write_bytes(canonical_json_bytes(manifest) + b"\n")
 
 
+def test_evidence_json_uses_dedicated_bounded_json_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    assert resume_module._MAX_JSON_BYTES == 64 * 1024 * 1024
+    assert resume_module._MAX_EVIDENCE_JSON_BYTES == 1024 * 1024 * 1024
+
+    raw = canonical_json_bytes({"payload": "authenticated-progress"}) + b"\n"
+    generic_path = tmp_path / "reports.json"
+    generic_path.write_bytes(raw)
+    evidence_paths = (
+        tmp_path / "completed-layers.json",
+        tmp_path / "diagnostic.json",
+    )
+    for path in evidence_paths:
+        path.write_bytes(raw)
+    record = {
+        "size_bytes": len(raw),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    monkeypatch.setattr(resume_module, "_MAX_JSON_BYTES", len(raw) - 1)
+    monkeypatch.setattr(
+        resume_module,
+        "_MAX_EVIDENCE_JSON_BYTES",
+        len(raw),
+    )
+
+    with pytest.raises(
+        Lfm2CpcfResumeArtifactIntegrityError,
+        match="reports.json exceeds the JSON size limit",
+    ):
+        resume_module._read_canonical_json_with_raw(
+            generic_path,
+            name="reports.json",
+        )
+    with pytest.raises(
+        Lfm2CpcfResumeArtifactIntegrityError,
+        match="reports.json exceeds the JSON size limit",
+    ):
+        resume_module._verify_file_record(
+            tmp_path,
+            {**record, "path": "reports.json"},
+        )
+
+    for evidence_path in evidence_paths:
+        evidence, evidence_raw = resume_module._read_canonical_json_with_raw(
+            evidence_path,
+            name=evidence_path.name,
+        )
+        assert evidence == {"payload": "authenticated-progress"}
+        assert evidence_raw == raw
+        assert (
+            resume_module._verify_file_record(
+                tmp_path,
+                {**record, "path": evidence_path.name},
+            )
+            == raw
+        )
+
+    monkeypatch.setattr(
+        resume_module,
+        "_MAX_EVIDENCE_JSON_BYTES",
+        len(raw) - 1,
+    )
+    for evidence_path in evidence_paths:
+        with pytest.raises(
+            Lfm2CpcfResumeArtifactIntegrityError,
+            match=rf"{evidence_path.name} exceeds the JSON size limit",
+        ):
+            resume_module._read_canonical_json_with_raw(
+                evidence_path,
+                name=evidence_path.name,
+            )
+        with pytest.raises(
+            Lfm2CpcfResumeArtifactIntegrityError,
+            match=rf"{evidence_path.name} exceeds the JSON size limit",
+        ):
+            resume_module._verify_file_record(
+                tmp_path,
+                {**record, "path": evidence_path.name},
+            )
+
+
+@pytest.mark.parametrize(
+    "filename,limit_name",
+    [
+        ("reports.json", "_MAX_JSON_BYTES"),
+        ("completed-layers.json", "_MAX_EVIDENCE_JSON_BYTES"),
+        ("diagnostic.json", "_MAX_EVIDENCE_JSON_BYTES"),
+    ],
+)
+def test_canonical_json_write_rejects_over_cap_before_touching_disk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    filename: str,
+    limit_name: str,
+):
+    value = {"payload": "authenticated-progress"}
+    payload_size = len(canonical_json_bytes(value) + b"\n")
+    allowed_bytes = payload_size - 1
+    destination = tmp_path / filename
+    monkeypatch.setattr(resume_module, limit_name, allowed_bytes)
+
+    with pytest.raises(
+        resume_module.Lfm2CpcfResumeArtifactPublicationError,
+        match=rf"is {payload_size} bytes; maximum allowed is {allowed_bytes} bytes",
+    ):
+        resume_module._write_canonical_json(destination, value)
+
+    assert not destination.exists()
+
+
 def test_boundary_round_trip_has_exact_non_promotable_layout(tmp_path: Path):
     store = Lfm2CpcfResumeArtifactStore(tmp_path / "resume")
     result = _publish_boundary(store)

@@ -108,6 +108,13 @@ _STATUS = "non-promotable-intermediate"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SAFE_TEXT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*\Z")
 _MAX_JSON_BYTES = 64 * 1024 * 1024
+_MAX_EVIDENCE_JSON_BYTES = 1024 * 1024 * 1024
+_EVIDENCE_JSON_FILENAMES = frozenset(
+    {
+        "completed-layers.json",
+        "diagnostic.json",
+    }
+)
 _STAGE_PREFIX = ".cpcf-resume-"
 _STAGE_SUFFIX = ".staging"
 _STAGE_OWNER_FILE = ".owner.json"
@@ -616,6 +623,12 @@ def _write_exclusive(path: Path, payload: bytes) -> None:
 
 def _write_canonical_json(path: Path, value: Mapping[str, Any]) -> bytes:
     payload = canonical_json_bytes(_deep_thaw(value)) + b"\n"
+    maximum_bytes = _maximum_json_bytes(path)
+    if len(payload) > maximum_bytes:
+        raise Lfm2CpcfResumeArtifactPublicationError(
+            f"{path.name} canonical JSON payload is {len(payload)} bytes; "
+            f"maximum allowed is {maximum_bytes} bytes."
+        )
     _write_exclusive(path, payload)
     return payload
 
@@ -817,12 +830,22 @@ def _canonical_json_from_bytes(raw: bytes, *, name: str) -> dict[str, Any]:
     return value
 
 
+def _maximum_json_bytes(path: Path) -> int:
+    if path.name in _EVIDENCE_JSON_FILENAMES:
+        return _MAX_EVIDENCE_JSON_BYTES
+    return _MAX_JSON_BYTES
+
+
 def _read_canonical_json_with_raw(
     path: Path,
     *,
     name: str,
 ) -> tuple[dict[str, Any], bytes]:
-    raw = _read_regular_bytes(path, name=name, maximum_bytes=_MAX_JSON_BYTES)
+    raw = _read_regular_bytes(
+        path,
+        name=name,
+        maximum_bytes=_maximum_json_bytes(path),
+    )
     return _canonical_json_from_bytes(raw, name=name), raw
 
 
@@ -2319,7 +2342,7 @@ def _verify_file_record(
         raw = _read_regular_bytes(
             path,
             name=path.name,
-            maximum_bytes=_MAX_JSON_BYTES,
+            maximum_bytes=_maximum_json_bytes(path),
         )
         actual_size = len(raw)
         actual_sha256 = hashlib.sha256(raw).hexdigest()
