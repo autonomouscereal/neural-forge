@@ -16,6 +16,8 @@ The v5 runtime:
 - releases source evidence before compiling the following layer;
 - loads final-normalization evidence separately and reauthenticates it;
 - optionally injects an authenticated candidate-replay evaluator;
+- optionally invokes a tensor-blind candidate selector while every sealed
+  short-conv candidate state is still retained;
 - samples process RSS through the whole compile; and
 - rolls the exact target blank back if compilation or the RSS gate fails.
 
@@ -57,36 +59,63 @@ hidden width 8, then folds them into an independently created zero blank with:
 - injected CPU-reference candidate replay.
 
 Both layers compile and replay in order. The nested short-conv artifact uses
-the scheduled-replay v5 schema and proves that replay scheduling did not
-change the closed-form solve. The integration test freezes the RSS probe so
-unrelated pytest allocations do not dominate a 43 KB toy tree; independent
-tests exercise the real process-RSS sampler and its failure path. A large
-production cache run is still required for a meaningful physical reduction
-receipt.
+the explicit pre-install-selector v5 schema. An authenticated test selector
+chooses a different retained state from the default v4 ranking, and the
+installed state hash exactly matches that choice. Injected CPU-reference
+candidate replay remains active. This proves the selector is part of the real
+all-layer compile path instead of a post-install report rewrite.
+
+The integration test freezes the RSS probe so unrelated pytest allocations do
+not dominate a 43 KB toy tree; independent tests exercise the real process-RSS
+sampler and its failure path. A large production cache run is still required
+for a meaningful physical reduction receipt.
+
+## Pre-install selector contract
+
+The hook is additive and defaults to `None`. With that default, the committed
+v4 report bytes and compiled state tensors are unchanged.
+
+When enabled, the compiler:
+
+1. seals the complete candidate-ID-to-state-hash inventory and every sealed
+   selection report;
+2. gives the selector only a detached canonical request, never live tensors,
+   fit reports, or validation reports;
+3. re-hashes every retained state and the request after the callback;
+4. requires a sealed v5 report naming an existing candidate ID and its exact
+   live-state hash; and
+5. installs the already-retained state for that ID before releasing the
+   frontier.
+
+The selector receipt binds the request, selector report, default v4 choice,
+chosen ID and state hash, and before/after immutability checks. Selector-backed
+success and enforced-gate failure use explicit v5-only schemas and never claim
+to be legacy v4 artifacts.
+
+`Lfm2CpcfV5EndpointFirstCandidateSelector` exposes the committed source-bound
+endpoint-first policy through this dynamic protocol. A caller may provide
+another authenticated selector, but the model report distinguishes that
+generic hook from the source-bound numerical-policy adapter.
 
 ## Explicit remaining gaps
 
 1. Disk publication and resume are not integrated. Any resume input is
    rejected before model access so v4 and v5 fingerprints cannot mix.
-2. The short-conv v5 numerical primitives from commit `6fd6f61` are
-   source-bound but not active. Honest integration requires a pre-install
-   selector inside candidate-frontier construction, while every candidate
-   state is still available. Post-install rescoring is explicitly refused.
+2. The short-conv v5 endpoint-first policy introduced in commit `6fd6f61`
+   and numerically hardened in commit `8cf34a3` now selects at the correct
+   pre-install frontier, but it only rescales and ranks the candidates the
+   v4 solver already generated. Ridge, basis-residual, and interpolation
+   candidate generation are not active and are not claimed.
+   On the current tiny real-cache fixture, the fixed source-bound gates
+   correctly fail closed because no existing candidate is feasible; the gates
+   were not weakened to manufacture a success.
 3. The two-GPU authenticated replay backend has its own parity proof, but the
    small local all-layer test uses the CPU-reference evaluator. A production
    run may inject the GPU evaluator through the same runtime argument.
 
-The minimum pre-install hook should receive the complete mapping of sealed
-selection reports and the matching authenticated candidate-state hashes,
-return one candidate ID plus the sealed v5 rescore receipt, and let the
-existing compiler install the already-retained state for that exact ID. The
-caller must verify every candidate state before and after the callback.
-
 ## Regression evidence
 
-The focused CPCF and runtime suites completed with:
-
-- 233 passed, 2 skipped for all `test_hf_lfm2_cpcf_*` tests;
-- 18 passed, 1 skipped for circuit-trace/mapping/selective-residency tests;
-- 86 passed for replay-scheduler and resume-artifact tests; and
-- 18 passed for the final v5 runtime plus v5 numerical-policy check.
+After the selector hook and numerical hardening were combined, the canonical
+root verification completed with `263 passed, 2 skipped` across every
+`test_hf_lfm2_cpcf_*` test plus the dynamic replay-scheduler and
+evidence-residency suites. Ruff and `git diff --check` also passed.

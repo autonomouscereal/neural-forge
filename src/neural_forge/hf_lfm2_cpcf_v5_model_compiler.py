@@ -53,6 +53,12 @@ from neural_forge.hf_lfm2_cpcf_installability import (
 from neural_forge.hf_lfm2_cpcf_layer_compiler import (
     compile_and_install_lfm2_cpcf_layer,
 )
+from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
+    Lfm2CpcfShortConvV5CandidateSelector,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
+    rescore_sealed_v4_short_conv_selection_frontier,
+)
 from neural_forge.hf_lfm2_cpcf_model_compiler import (
     LFM2_CPCF_TARGET_PHASE_SCHEMA,
     Lfm2CpcfTargetPhase,
@@ -100,6 +106,24 @@ _RSS_SAMPLE_INTERVAL_SECONDS = 0.05
 
 class Lfm2CpcfV5ModelCompilerError(RuntimeError):
     """Selective evidence, physical residency, or v5 compilation failed."""
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfV5EndpointFirstCandidateSelector:
+    """Apply the source-bound endpoint-first v5 policy before installation."""
+
+    def select(
+        self,
+        request: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        if not isinstance(request, Mapping):
+            raise TypeError("request must be an authenticated mapping.")
+        reports = request.get("candidate_selection_reports")
+        if not isinstance(reports, Mapping):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Candidate-selector request has no sealed selection frontier."
+            )
+        return rescore_sealed_v4_short_conv_selection_frontier(reports)
 
 
 def _torch() -> Any:
@@ -244,7 +268,8 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         "current_plus_next_residency_required": True,
         "physical_rss_gate_required": True,
         "short_conv_v5_numerical_policy_integration_status": (
-            "source_bound_not_yet_preinstall_integrated"
+            "endpoint_first_preinstall_selector_integrated_"
+            "candidate_generation_pending"
         ),
         "resume_implementation_status": "fail_closed_not_yet_integrated",
         "training_steps": 0,
@@ -267,7 +292,7 @@ class Lfm2CpcfV5RuntimePolicy:
     full_phase_tree_logical_bytes: int
     minimum_physical_rss_reduction_fraction: float = 0.10
     rss_sample_interval_seconds: float = _RSS_SAMPLE_INTERVAL_SECONDS
-    require_short_conv_v5_numerical_policy: bool = False
+    require_short_conv_v5_endpoint_first_selector: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -300,11 +325,12 @@ class Lfm2CpcfV5RuntimePolicy:
             )
         object.__setattr__(self, "rss_sample_interval_seconds", interval)
         if not isinstance(
-            self.require_short_conv_v5_numerical_policy,
+            self.require_short_conv_v5_endpoint_first_selector,
             bool,
         ):
             raise Lfm2CpcfV5ModelCompilerError(
-                "require_short_conv_v5_numerical_policy must be boolean."
+                "require_short_conv_v5_endpoint_first_selector must be "
+                "boolean."
             )
 
     @property
@@ -330,8 +356,8 @@ class Lfm2CpcfV5RuntimePolicy:
             "rss_sample_interval_seconds": (
                 self.rss_sample_interval_seconds
             ),
-            "require_short_conv_v5_numerical_policy": (
-                self.require_short_conv_v5_numerical_policy
+            "require_short_conv_v5_endpoint_first_selector": (
+                self.require_short_conv_v5_endpoint_first_selector
             ),
         }
 
@@ -1617,6 +1643,7 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
     planned_target_unique_parameters: int,
     runtime_policy: Lfm2CpcfV5RuntimePolicy,
     candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
+    candidate_selector: Lfm2CpcfShortConvV5CandidateSelector | None = None,
     resume_state: Any | None = None,
 ) -> legacy_model_fold.Lfm2CpcfCompiledModelFold:
     """Compile one dense blank using bounded selective evidence.
@@ -1634,11 +1661,23 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
         )
     if not isinstance(runtime_policy, Lfm2CpcfV5RuntimePolicy):
         raise TypeError("runtime_policy must be Lfm2CpcfV5RuntimePolicy.")
-    if runtime_policy.require_short_conv_v5_numerical_policy:
+    if candidate_selector is not None and not callable(
+        getattr(candidate_selector, "select", None)
+    ):
+        raise TypeError(
+            "candidate_selector must implement select(request)."
+        )
+    if (
+        runtime_policy.require_short_conv_v5_endpoint_first_selector
+        and not isinstance(
+            candidate_selector,
+            Lfm2CpcfV5EndpointFirstCandidateSelector,
+        )
+    ):
         raise Lfm2CpcfV5ModelCompilerError(
-            "The source-bound short-conv v5 numerical policy is not yet "
-            "integrated at the pre-install candidate frontier; refusing "
-            "post-install rescoring or a false v5 numerical receipt."
+            "The required source-bound short-conv v5 endpoint-first selector "
+            "needs Lfm2CpcfV5EndpointFirstCandidateSelector at the "
+            "pre-install candidate frontier."
         )
     if not isinstance(
         evidence_provider,
@@ -1874,6 +1913,7 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                     candidate_replay_evaluator=(
                         candidate_replay_evaluator
                     ),
+                    candidate_selector=candidate_selector,
                 )
                 receipt = legacy_model_fold.Lfm2CpcfCompletedLayerReceipt(
                     result.report
@@ -1925,6 +1965,20 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
         if residency_snapshot is None:
             raise Lfm2CpcfV5ModelCompilerError(
                 "Residency window emitted no completion receipt."
+            )
+        selector_applied_layer_indices = [
+            receipt.layer_index
+            for receipt in completed_receipts
+            if "preinstall_candidate_selector_receipt"
+            in receipt.report["operator_artifact"]
+        ]
+        if (
+            runtime_policy.require_short_conv_v5_endpoint_first_selector
+            and not selector_applied_layer_indices
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "The required short-conv v5 endpoint-first selector was not "
+                "applied to any compiled layer."
             )
         bundle = boundary_compiler.finalize()
         final_payload = evidence_provider.load_final_norm_payload()
@@ -2039,6 +2093,23 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             "candidate_replay_backend_injected": (
                 candidate_replay_evaluator is not None
             ),
+            "preinstall_candidate_selector_provided": (
+                candidate_selector is not None
+            ),
+            "preinstall_candidate_selector_active": bool(
+                selector_applied_layer_indices
+            ),
+            "preinstall_candidate_selector_layer_indices": (
+                selector_applied_layer_indices
+            ),
+            "short_conv_v5_endpoint_first_selector_integrated": (
+                bool(selector_applied_layer_indices)
+                and isinstance(
+                    candidate_selector,
+                    Lfm2CpcfV5EndpointFirstCandidateSelector,
+                )
+            ),
+            "short_conv_v5_numerical_candidate_generation_integrated": False,
             "short_conv_v5_numerical_policy_integrated": False,
             "short_conv_v5_post_install_rescoring_performed": False,
             "legacy_v4_default_or_fingerprint_changed": False,
@@ -2128,6 +2199,7 @@ __all__ = [
     "LFM2_CPCF_V5_MODEL_FOLD_SCHEMA",
     "LFM2_CPCF_V5_PHYSICAL_RSS_SCHEMA",
     "LFM2_CPCF_V5_RESUME_SCHEMA",
+    "Lfm2CpcfV5EndpointFirstCandidateSelector",
     "Lfm2CpcfV5ModelCompilerError",
     "Lfm2CpcfV5RuntimePolicy",
     "build_lfm2_cpcf_v5_target_phase_shells",

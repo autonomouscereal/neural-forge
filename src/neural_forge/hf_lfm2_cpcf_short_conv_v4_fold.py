@@ -25,7 +25,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Protocol
 
 from neural_forge.hf_lfm2_cpcf_candidate_replay import (
     Lfm2CpcfCandidateReplayEvaluator,
@@ -34,6 +34,10 @@ from neural_forge.hf_lfm2_cpcf_candidate_replay import (
 from neural_forge.hf_lfm2_cpcf_short_conv_fold import (
     Lfm2CpcfShortConvGatePolicy,
     Lfm2CpcfShortConvValidationError,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
+    LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
+    verify_lfm2_cpcf_short_conv_v5_report,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
     LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
@@ -58,6 +62,15 @@ LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA = "neural-forge-lfm2-cpcf-short-conv-fold-v4
 LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v5-scheduled-replay"
 )
+LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-preinstall-selector-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_SELECTOR_REQUEST_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-selector-request-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-selector-receipt-v1"
+)
 LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v4-failure-v1"
 )
@@ -67,10 +80,24 @@ LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA = (
 LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v5-scheduled-replay-failure-v1"
 )
+LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-preinstall-selector-"
+    "failure-v1"
+)
 
 
 class Lfm2CpcfShortConvV4FoldError(ValueError):
     """The v4 production fold request or compiled artifact is invalid."""
+
+
+class Lfm2CpcfShortConvV5CandidateSelector(Protocol):
+    """Select one retained candidate from an authenticated v5 request."""
+
+    def select(
+        self,
+        request: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Return a sealed v5 report naming one candidate ID and state SHA."""
 
 
 def _torch() -> Any:
@@ -542,6 +569,168 @@ def _state_sha256(values: Mapping[str, Any]) -> str:
     )
 
 
+def _candidate_state_sha256(
+    candidate_states: Mapping[str, Mapping[str, Any]],
+) -> dict[str, str]:
+    return {
+        candidate_id: _state_sha256(candidate_states[candidate_id])
+        for candidate_id in sorted(candidate_states)
+    }
+
+
+def _run_preinstall_candidate_selector(
+    selector: Lfm2CpcfShortConvV5CandidateSelector,
+    *,
+    candidate_states: Mapping[str, Mapping[str, Any]],
+    selection_reports: Mapping[str, Mapping[str, Any]],
+    ranking: Mapping[str, Any],
+    solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
+) -> tuple[str, Mapping[str, Any]]:
+    """Run one tensor-blind selector while retained candidate states exist."""
+
+    state_sha256_before = _candidate_state_sha256(candidate_states)
+    candidate_ids = sorted(candidate_states)
+    if (
+        candidate_ids != sorted(selection_reports)
+        or any(
+            selection_reports[candidate_id].get("candidate_state_sha256")
+            != state_sha256_before[candidate_id]
+            for candidate_id in candidate_ids
+        )
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Pre-install selector frontier is not bound to live candidates."
+        )
+    selection_report_copies = {
+        candidate_id: _canonical_copy(
+            _deep_thaw(selection_reports[candidate_id]),
+            f"selection report {candidate_id}",
+        )
+        for candidate_id in candidate_ids
+    }
+    default_selected_id = str(ranking["selected_candidate_id"])
+    request_body = {
+        "schema": LFM2_CPCF_SHORT_CONV_V5_SELECTOR_REQUEST_SCHEMA,
+        "solver_policy_sha256": solver_policy.authentication_sha256,
+        "target_dtype": solver_policy.target_dtype,
+        "candidate_ids": candidate_ids,
+        "candidate_state_sha256": state_sha256_before,
+        "candidate_state_inventory_sha256": _sha(state_sha256_before),
+        "candidate_selection_report_sha256": {
+            candidate_id: selection_report_copies[candidate_id][
+                "report_sha256"
+            ]
+            for candidate_id in candidate_ids
+        },
+        "candidate_selection_reports": selection_report_copies,
+        "default_v4_ranking_report_sha256": ranking["report_sha256"],
+        "default_v4_selected_candidate_id": default_selected_id,
+        "candidate_state_tensors_exposed_to_selector": False,
+        "fit_reports_exposed_to_selector": False,
+        "validation_reports_exposed_to_selector": False,
+        "post_install_rescoring": False,
+        "execution": {
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        },
+    }
+    request = _seal_report(request_body)
+    request_bytes = _canonical_json(request)
+    try:
+        selector_report_value = selector.select(request)
+    except BaseException as error:
+        if _candidate_state_sha256(candidate_states) != state_sha256_before:
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Pre-install selector changed a retained candidate state "
+                "before failing."
+            ) from error
+        if _canonical_json(request) != request_bytes:
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Pre-install selector changed its authenticated request "
+                "before failing."
+            ) from error
+        raise
+    state_sha256_after = _candidate_state_sha256(candidate_states)
+    if state_sha256_after != state_sha256_before:
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Pre-install selector changed a retained candidate state."
+        )
+    if _canonical_json(request) != request_bytes:
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Pre-install selector changed its authenticated request."
+        )
+    selector_report = _canonical_copy(
+        _deep_thaw(selector_report_value),
+        "pre-install selector report",
+    )
+    selected_id = selector_report.get("selected_candidate_id")
+    selected_state_sha256 = selector_report.get(
+        "selected_candidate_state_sha256"
+    )
+    execution = selector_report.get("execution")
+    if (
+        not verify_lfm2_cpcf_short_conv_v5_report(selector_report)
+        or selector_report.get("schema")
+        != LFM2_CPCF_SHORT_CONV_V5_SCHEMA
+        or not isinstance(selector_report.get("kind"), str)
+        or not selector_report["kind"]
+        or not isinstance(selected_id, str)
+        or selected_id not in state_sha256_before
+        or selected_state_sha256 != state_sha256_before[selected_id]
+        or selector_report.get("candidate_count") != len(candidate_ids)
+        or selector_report.get("selection_reports_consumed")
+        != len(candidate_ids)
+        or selector_report.get("fit_reports_consumed") != 0
+        or selector_report.get("validation_reports_consumed") != 0
+        or selector_report.get("validation_accessible") is not False
+        or not isinstance(execution, Mapping)
+        or any(
+            execution.get(name) != 0
+            for name in (
+                "training_steps",
+                "backward_calls",
+                "optimizer_steps",
+                "parameters_pruned",
+                "parameters_quantized",
+            )
+        )
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Pre-install selector did not return a sealed, state-bound v5 "
+            "selection report."
+        )
+    receipt_body = {
+        "schema": LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA,
+        "request_sha256": request["report_sha256"],
+        "selector_report": selector_report,
+        "selector_report_sha256": selector_report["report_sha256"],
+        "candidate_state_inventory_sha256": _sha(state_sha256_before),
+        "candidate_count": len(candidate_ids),
+        "default_v4_selected_candidate_id": default_selected_id,
+        "selected_candidate_id": selected_id,
+        "selected_candidate_state_sha256": selected_state_sha256,
+        "selection_changed_from_v4": selected_id != default_selected_id,
+        "all_live_candidate_states_verified_before_callback": True,
+        "all_live_candidate_states_verified_after_callback": True,
+        "live_candidate_state_bytes_unchanged": True,
+        "candidate_state_tensors_exposed_to_selector": False,
+        "fit_reports_exposed_to_selector": False,
+        "validation_reports_exposed_to_selector": False,
+        "post_install_rescoring": False,
+        "execution": {
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        },
+    }
+    return str(selected_id), MappingProxyType(_seal_report(receipt_body))
+
+
 def _selection_feasibility_policy(
     gate_policy: Lfm2CpcfShortConvGatePolicy,
 ) -> dict[str, float]:
@@ -675,6 +864,7 @@ class Lfm2CompiledCpcfShortConvV4Fold:
             not in {
                 LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
                 LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA,
+                LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA,
             }
             or report.get("compiled_state_sha256") != _state_sha256(self.state_dict())
             or report.get("compiled_short_conv_fold_issued") is not True
@@ -763,6 +953,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
     gate_policy: Lfm2CpcfShortConvGatePolicy,
     candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
+    candidate_selector: Lfm2CpcfShortConvV5CandidateSelector | None = None,
 ) -> Lfm2CompiledCpcfShortConvV4Fold:
     """Compile one complete v4 operator without executing either model."""
 
@@ -773,6 +964,12 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         raise Lfm2CpcfShortConvV4FoldError("V4 solver policy authentication failed.")
     if not isinstance(gate_policy, Lfm2CpcfShortConvGatePolicy):
         raise TypeError("gate_policy must be Lfm2CpcfShortConvGatePolicy.")
+    if candidate_selector is not None and not callable(
+        getattr(candidate_selector, "select", None)
+    ):
+        raise TypeError(
+            "candidate_selector must implement select(request)."
+        )
     ordered = _ordered_cases(cases)
     target_dtype, in_shape = _template(
         target_in_proj_weight_template,
@@ -1112,7 +1309,18 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         policy_sha256=solver_policy.authentication_sha256,
         feasibility_policy=selection_feasibility,
     )
-    selected_id = str(ranking["selected_candidate_id"])
+    default_selected_id = str(ranking["selected_candidate_id"])
+    selector_receipt = None
+    if candidate_selector is None:
+        selected_id = default_selected_id
+    else:
+        selected_id, selector_receipt = _run_preinstall_candidate_selector(
+            candidate_selector,
+            candidate_states=candidate_states,
+            selection_reports=selection_reports,
+            ranking=ranking,
+            solver_policy=solver_policy,
+        )
     selected = candidate_states[selected_id]
     in_weight = selected["in_proj_weight"].clone()
     fir_kernel = selected["fir_kernel"].clone()
@@ -1176,11 +1384,12 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         "out_proj.bias": out_bias,
     }
     compiled_state_sha = _state_sha256(state)
-    report_schema = (
-        LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
-        if candidate_replay_evaluator is None
-        else LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA
-    )
+    if candidate_selector is not None:
+        report_schema = LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA
+    elif candidate_replay_evaluator is not None:
+        report_schema = LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA
+    else:
+        report_schema = LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
     candidate_pool_body = {
         "schema": report_schema,
         "kind": "authenticated_target_dtype_candidate_pool",
@@ -1307,6 +1516,24 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             "fallback_paths": 0,
         },
     }
+    if selector_receipt is not None:
+        common.update(
+            {
+                "preinstall_candidate_selector_receipt": dict(
+                    selector_receipt
+                ),
+                "preinstall_candidate_selector_receipt_sha256": (
+                    selector_receipt["report_sha256"]
+                ),
+                "default_v4_selected_candidate_id": default_selected_id,
+                "selection_changed_from_v4": (
+                    selected_id != default_selected_id
+                ),
+                "preinstall_candidate_selector_active": True,
+                "post_install_rescoring_performed": False,
+                "legacy_v4_report_claimed": False,
+            }
+        )
     if candidate_replay_backend is not None:
         common.update(
             {
@@ -1326,9 +1553,13 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     if gate_policy.enforce and not gate["passed"]:
         failure_body = {
             "schema": (
-                LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
-                if candidate_replay_evaluator is None
-                else LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA
+                LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA
+                if candidate_selector is not None
+                else (
+                    LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
+                    if candidate_replay_evaluator is None
+                    else LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA
+                )
             ),
             **common,
             "compiled_short_conv_fold_issued": False,
@@ -1370,8 +1601,13 @@ __all__ = [
     "LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_SELECTOR_REQUEST_SCHEMA",
     "Lfm2CompiledCpcfShortConvV4Fold",
     "Lfm2CpcfShortConvV4FoldCase",
     "Lfm2CpcfShortConvV4FoldError",
+    "Lfm2CpcfShortConvV5CandidateSelector",
     "compile_lfm2_cpcf_short_conv_v4_fold",
 ]

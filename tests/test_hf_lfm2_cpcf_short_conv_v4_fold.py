@@ -7,6 +7,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+import neural_forge.hf_lfm2_cpcf_layer_compiler as layer_compiler  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_short_conv_fold import (  # noqa: E402
     Lfm2CpcfShortConvGatePolicy,
     Lfm2CpcfShortConvValidationError,
@@ -23,10 +24,17 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (  # noqa: E402
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA,
     Lfm2CpcfShortConvV4FoldCase,
     Lfm2CpcfShortConvV4FoldError,
     _sha,
     compile_lfm2_cpcf_short_conv_v4_fold,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (  # noqa: E402
+    LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
+    rescore_sealed_v4_short_conv_selection_frontier,
 )
 
 
@@ -209,7 +217,13 @@ def _permissive_gate() -> Lfm2CpcfShortConvGatePolicy:
     )
 
 
-def _compile(fixture, *, gate=None, candidate_replay_evaluator=None):
+def _compile(
+    fixture,
+    *,
+    gate=None,
+    candidate_replay_evaluator=None,
+    candidate_selector=None,
+):
     values = {key: value for key, value in fixture.items() if key != "originals"}
     dtype_name = str(fixture["target_in_proj_weight_template"].dtype).removeprefix(
         "torch."
@@ -219,6 +233,7 @@ def _compile(fixture, *, gate=None, candidate_replay_evaluator=None):
         solver_policy=_solver_policy(dtype_name),
         gate_policy=_permissive_gate() if gate is None else gate,
         candidate_replay_evaluator=candidate_replay_evaluator,
+        candidate_selector=candidate_selector,
     )
 
 
@@ -343,6 +358,149 @@ def test_injected_replay_uses_explicit_v5_receipt_without_changing_math() -> Non
     assert scheduled.verify_authentication()
 
 
+def test_default_none_selector_is_byte_exact_v4() -> None:
+    fixture = _fixture()
+    implicit = _compile(fixture)
+    explicit = _compile(fixture, candidate_selector=None)
+
+    assert implicit.as_dict() == explicit.as_dict()
+    assert implicit.report["schema"] == LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
+    for name, value in implicit.state_dict().items():
+        assert torch.equal(value, explicit.state_dict()[name])
+
+
+def test_preinstall_selector_rescores_retained_states_before_install() -> None:
+    class EndpointFirstSelector:
+        def __init__(self) -> None:
+            self.requests = []
+
+        def select(self, request):
+            self.requests.append(copy.deepcopy(request))
+            return rescore_sealed_v4_short_conv_selection_frontier(
+                request["candidate_selection_reports"]
+            )
+
+    selector = EndpointFirstSelector()
+    artifact = _compile(
+        _fixture(),
+        candidate_selector=selector,
+    )
+
+    assert len(selector.requests) == 1
+    request = selector.requests[0]
+    assert request["candidate_state_tensors_exposed_to_selector"] is False
+    assert request["fit_reports_exposed_to_selector"] is False
+    assert request["validation_reports_exposed_to_selector"] is False
+    assert artifact.report["schema"] == (
+        LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA
+    )
+    receipt = artifact.report["preinstall_candidate_selector_receipt"]
+    assert receipt["schema"] == (
+        LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA
+    )
+    assert receipt["request_sha256"] == request["report_sha256"]
+    assert receipt["all_live_candidate_states_verified_before_callback"] is True
+    assert receipt["all_live_candidate_states_verified_after_callback"] is True
+    assert receipt["live_candidate_state_bytes_unchanged"] is True
+    assert receipt["post_install_rescoring"] is False
+    assert artifact.report["selected_candidate_id"] == (
+        receipt["selected_candidate_id"]
+    )
+    assert artifact.report["selection_evaluation"][
+        "candidate_state_sha256"
+    ] == (
+        receipt["selected_candidate_state_sha256"]
+    )
+    assert artifact.report["legacy_v4_report_claimed"] is False
+    assert artifact.verify_authentication()
+
+
+def test_preinstall_selector_can_override_and_install_a_retained_state() -> None:
+    class LastCandidateSelector:
+        def select(self, request):
+            candidate_id = request["candidate_ids"][-1]
+            body = {
+                "schema": LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
+                "kind": "authenticated_last_candidate_override",
+                "candidate_count": len(request["candidate_ids"]),
+                "selection_reports_consumed": len(
+                    request["candidate_ids"]
+                ),
+                "fit_reports_consumed": 0,
+                "validation_reports_consumed": 0,
+                "validation_accessible": False,
+                "selected_candidate_id": candidate_id,
+                "selected_candidate_state_sha256": request[
+                    "candidate_state_sha256"
+                ][candidate_id],
+                "execution": {
+                    "training_steps": 0,
+                    "backward_calls": 0,
+                    "optimizer_steps": 0,
+                    "parameters_pruned": 0,
+                    "parameters_quantized": 0,
+                },
+            }
+            return {**body, "report_sha256": _sha(body)}
+
+    baseline = _compile(_fixture())
+    overridden = _compile(
+        _fixture(),
+        candidate_selector=LastCandidateSelector(),
+    )
+    receipt = overridden.report["preinstall_candidate_selector_receipt"]
+
+    assert receipt["selection_changed_from_v4"] is True
+    assert receipt["default_v4_selected_candidate_id"] == (
+        baseline.report["selected_candidate_id"]
+    )
+    assert overridden.report["selected_candidate_id"] == (
+        receipt["selected_candidate_id"]
+    )
+    assert overridden.report["selection_evaluation"][
+        "candidate_state_sha256"
+    ] == receipt["selected_candidate_state_sha256"]
+    assert overridden.verify_authentication()
+
+
+def test_preinstall_selector_request_or_state_hash_tamper_fails_closed() -> None:
+    class MutatingRequestSelector:
+        def select(self, request):
+            request["candidate_ids"].append("forged-candidate")
+            return rescore_sealed_v4_short_conv_selection_frontier(
+                request["candidate_selection_reports"]
+            )
+
+    with pytest.raises(
+        Lfm2CpcfShortConvV4FoldError,
+        match="changed its authenticated request",
+    ):
+        _compile(
+            _fixture(),
+            candidate_selector=MutatingRequestSelector(),
+        )
+
+    class WrongStateSelector:
+        def select(self, request):
+            report = dict(
+                rescore_sealed_v4_short_conv_selection_frontier(
+                    request["candidate_selection_reports"]
+                )
+            )
+            report.pop("report_sha256")
+            report["selected_candidate_state_sha256"] = "f" * 64
+            return {**report, "report_sha256": _sha(report)}
+
+    with pytest.raises(
+        Lfm2CpcfShortConvV4FoldError,
+        match="state-bound v5",
+    ):
+        _compile(
+            _fixture(),
+            candidate_selector=WrongStateSelector(),
+        )
+
+
 def test_injected_replay_failure_cannot_publish_a_compiled_artifact() -> None:
     class BrokenEvaluator:
         def evaluate(self, _items):
@@ -427,6 +585,36 @@ def test_enforced_gate_emits_nonpromotable_self_sealed_failure() -> None:
     assert report["promotion_claimed"] is False
     assert report["promotable_candidate"] is False
     assert report["failure_evidence_only"] is True
+
+
+def test_selector_failure_keeps_authenticated_v5_receipt_through_layer_gate() -> None:
+    class EndpointFirstSelector:
+        def select(self, request):
+            return rescore_sealed_v4_short_conv_selection_frontier(
+                request["candidate_selection_reports"]
+            )
+
+    strict = Lfm2CpcfShortConvGatePolicy(
+        maximum_fit_endpoint_relative_rmse=0.0,
+        maximum_validation_endpoint_relative_rmse=0.0,
+        minimum_fit_endpoint_cosine_similarity=1.0,
+        minimum_validation_endpoint_cosine_similarity=1.0,
+        enforce=True,
+    )
+    with pytest.raises(Lfm2CpcfShortConvValidationError) as raised:
+        _compile(
+            _fixture(validation_offset=10.0),
+            gate=strict,
+            candidate_selector=EndpointFirstSelector(),
+        )
+
+    report = dict(raised.value.report)
+    assert report["schema"] == (
+        LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA
+    )
+    assert report["preinstall_candidate_selector_active"] is True
+    assert report["post_install_rescoring_performed"] is False
+    assert layer_compiler._valid_short_conv_validation_report(report)
 
 
 def test_orchestrator_rejects_mutated_authenticated_case() -> None:

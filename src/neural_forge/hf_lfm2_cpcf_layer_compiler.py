@@ -60,8 +60,11 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA,
     Lfm2CompiledCpcfShortConvV4Fold,
     Lfm2CpcfShortConvV4FoldCase,
+    Lfm2CpcfShortConvV5CandidateSelector,
     compile_lfm2_cpcf_short_conv_v4_fold,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4_policy import (
@@ -4069,6 +4072,107 @@ def _valid_short_conv_v4_validation_report(
         return False
 
 
+def _valid_short_conv_v5_selector_validation_report(
+    report: Mapping[str, Any],
+) -> bool:
+    """Validate a selector-only failure without pretending it is v4."""
+
+    try:
+        receipt = report.get("preinstall_candidate_selector_receipt")
+        selector_report = (
+            receipt.get("selector_report")
+            if isinstance(receipt, Mapping)
+            else None
+        )
+        selection = report.get("selection_evaluation")
+        candidate_reports = report.get("candidate_selection_reports")
+        gate = report.get("behavior_gate")
+        execution = report.get("execution")
+        selected_id = report.get("selected_candidate_id")
+        selected_sha = (
+            selection.get("candidate_state_sha256")
+            if isinstance(selection, Mapping)
+            else None
+        )
+        receipt_body = dict(receipt) if isinstance(receipt, Mapping) else {}
+        receipt_seal = receipt_body.pop("report_sha256", None)
+        selector_body = (
+            dict(selector_report)
+            if isinstance(selector_report, Mapping)
+            else {}
+        )
+        selector_seal = selector_body.pop("report_sha256", None)
+        return bool(
+            report.get("schema")
+            == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA
+            and isinstance(receipt, Mapping)
+            and receipt.get("schema")
+            == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA
+            and isinstance(receipt_seal, str)
+            and _SHA256.fullmatch(receipt_seal) is not None
+            and _sha(receipt_body) == receipt_seal
+            and report.get("preinstall_candidate_selector_receipt_sha256")
+            == receipt_seal
+            and isinstance(selector_report, Mapping)
+            and isinstance(selector_seal, str)
+            and _SHA256.fullmatch(selector_seal) is not None
+            and _sha(selector_body) == selector_seal
+            and receipt.get("selector_report_sha256") == selector_seal
+            and receipt.get(
+                "all_live_candidate_states_verified_before_callback"
+            )
+            is True
+            and receipt.get(
+                "all_live_candidate_states_verified_after_callback"
+            )
+            is True
+            and receipt.get("live_candidate_state_bytes_unchanged") is True
+            and receipt.get("candidate_state_tensors_exposed_to_selector")
+            is False
+            and receipt.get("fit_reports_exposed_to_selector") is False
+            and receipt.get("validation_reports_exposed_to_selector") is False
+            and receipt.get("post_install_rescoring") is False
+            and report.get("post_install_rescoring_performed") is False
+            and report.get("preinstall_candidate_selector_active") is True
+            and report.get("legacy_v4_report_claimed") is False
+            and isinstance(selected_id, str)
+            and bool(selected_id)
+            and receipt.get("selected_candidate_id") == selected_id
+            and selector_report.get("selected_candidate_id") == selected_id
+            and isinstance(selected_sha, str)
+            and _SHA256.fullmatch(selected_sha) is not None
+            and receipt.get("selected_candidate_state_sha256")
+            == selected_sha
+            and selector_report.get("selected_candidate_state_sha256")
+            == selected_sha
+            and isinstance(candidate_reports, Mapping)
+            and isinstance(candidate_reports.get(selected_id), Mapping)
+            and candidate_reports[selected_id].get(
+                "candidate_state_sha256"
+            )
+            == selected_sha
+            and isinstance(gate, Mapping)
+            and gate.get("passed") is False
+            and gate.get("enforced") is True
+            and report.get("compiled_short_conv_fold_issued") is False
+            and report.get("promotion_claimed") is False
+            and report.get("promotable_candidate") is False
+            and report.get("failure_evidence_only") is True
+            and isinstance(execution, Mapping)
+            and all(type(value) is int and value == 0 for value in execution.values())
+            and _recursive_report_seals_valid(report)
+            and _no_recursive_success_claims(report)
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OverflowError,
+        TypeError,
+        ValueError,
+    ):
+        return False
+
+
 def _valid_short_conv_validation_report(
     report: Mapping[str, Any],
 ) -> bool:
@@ -4081,6 +4185,8 @@ def _valid_short_conv_validation_report(
             LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
         }:
             return _valid_short_conv_v4_validation_report(report)
+        if schema == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA:
+            return _valid_short_conv_v5_selector_validation_report(report)
         return False
     except (
         AttributeError,
@@ -4201,6 +4307,7 @@ def compile_and_install_lfm2_cpcf_layer(
     short_conv_gate_policy: Lfm2CpcfShortConvGatePolicy | None = None,
     short_conv_v4_solver_policy: Lfm2CpcfShortConvV4SolverPolicy | None = None,
     candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
+    candidate_selector: Lfm2CpcfShortConvV5CandidateSelector | None = None,
 ) -> Lfm2CpcfCompiledLayerResult:
     """Compile, install, and replay one next sequential LFM2 target layer."""
 
@@ -4238,6 +4345,20 @@ def compile_and_install_lfm2_cpcf_layer(
         raise Lfm2CpcfLayerCompilerError(
             "Injected candidate replay is defined only for the authenticated "
             "short-conv v4 solver lane."
+        )
+    if candidate_selector is not None and not callable(
+        getattr(candidate_selector, "select", None)
+    ):
+        raise TypeError(
+            "candidate_selector must implement select(request)."
+        )
+    if (
+        candidate_selector is not None
+        and short_conv_v4_solver_policy is None
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Pre-install candidate selection is defined only for the "
+            "authenticated short-conv v4 solver lane."
         )
     if input_bank.layer_index != index:
         raise Lfm2CpcfLayerCompilerError(
@@ -4430,6 +4551,7 @@ def compile_and_install_lfm2_cpcf_layer(
                     solver_policy=short_conv_v4_solver_policy,
                     gate_policy=policy,
                     candidate_replay_evaluator=candidate_replay_evaluator,
+                    candidate_selector=candidate_selector,
                 )
             stage = "operator_install"
             operator_install_report = _install_short_conv(

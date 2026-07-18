@@ -31,7 +31,10 @@ def test_v5_has_distinct_compiler_resume_and_artifact_fingerprints() -> None:
     )
     assert implementation[
         "short_conv_v5_numerical_policy_integration_status"
-    ] == "source_bound_not_yet_preinstall_integrated"
+    ] == (
+        "endpoint_first_preinstall_selector_integrated_"
+        "candidate_generation_pending"
+    )
     assert any(
         record["filename"] == "hf_lfm2_cpcf_short_conv_v5.py"
         for record in implementation["ordered_source_files"]
@@ -80,26 +83,28 @@ def test_layer_compiler_exposes_opt_in_candidate_replay_without_new_default():
         layer_compiler.compile_and_install_lfm2_cpcf_layer
     )
     parameter = signature.parameters["candidate_replay_evaluator"]
+    selector_parameter = signature.parameters["candidate_selector"]
 
     assert parameter.default is None
+    assert selector_parameter.default is None
     assert (
         signature.parameters["short_conv_v4_solver_policy"].default
         is None
     )
 
 
-def test_v5_numerical_policy_request_fails_before_touching_models() -> None:
+def test_v5_endpoint_selector_request_fails_before_touching_models() -> None:
     policy = v5.Lfm2CpcfV5RuntimePolicy(
         model_fold_policy=(
             v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()
         ),
         maximum_resident_evidence_bytes=1,
         full_phase_tree_logical_bytes=1,
-        require_short_conv_v5_numerical_policy=True,
+        require_short_conv_v5_endpoint_first_selector=True,
     )
     with pytest.raises(
         v5.Lfm2CpcfV5ModelCompilerError,
-        match="pre-install candidate frontier",
+        match="needs Lfm2CpcfV5EndpointFirstCandidateSelector",
     ):
         v5.compile_lfm2_cpcf_v5_selective_model_fold(
             None,
@@ -213,7 +218,10 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         Lfm2CpcfShortConvV4SolverPolicy,
     )
     from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
-        LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA,
+        LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA,
+    )
+    from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
+        LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
     )
 
     def _model(
@@ -372,6 +380,34 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         short_conv_gate_policy=gate_policy,
         short_conv_v4_solver_policy=solver_policy,
     )
+
+    class _LastCandidateSelector:
+        def select(self, request):
+            selected_id = request["candidate_ids"][-1]
+            body = {
+                "schema": LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
+                "kind": "test_authenticated_last_candidate_override",
+                "candidate_count": len(request["candidate_ids"]),
+                "selection_reports_consumed": len(
+                    request["candidate_ids"]
+                ),
+                "fit_reports_consumed": 0,
+                "validation_reports_consumed": 0,
+                "validation_accessible": False,
+                "selected_candidate_id": selected_id,
+                "selected_candidate_state_sha256": request[
+                    "candidate_state_sha256"
+                ][selected_id],
+                "execution": {
+                    "training_steps": 0,
+                    "backward_calls": 0,
+                    "optimizer_steps": 0,
+                    "parameters_pruned": 0,
+                    "parameters_quantized": 0,
+                },
+            }
+            return {**body, "report_sha256": _sha(body)}
+
     # The process-RSS gate itself is covered above. This integration test
     # freezes the probe so it tests the complete evidence/runtime wiring
     # without depending on unrelated pytest process allocations.
@@ -396,6 +432,7 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         candidate_replay_evaluator=(
             CpuReferenceLfm2CpcfCandidateReplayEvaluator()
         ),
+        candidate_selector=_LastCandidateSelector(),
     )
 
     assert result.report["schema"] == v5.LFM2_CPCF_V5_MODEL_FOLD_SCHEMA
@@ -422,13 +459,27 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         for layer in phase.parent_evidence.layers
     )
     short_conv = result.layer_results[0].report["operator_artifact"]
-    assert short_conv["schema"] == LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA
+    assert short_conv["schema"] == (
+        LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA
+    )
     assert short_conv["legacy_v4_report_claimed"] is False
+    assert short_conv["selection_changed_from_v4"] is True
     assert short_conv["candidate_replay_backend"]["kind"] == (
         "injected_cpu_reference"
     )
     assert result.report["candidate_replay_backend_injected"] is True
+    assert result.report["preinstall_candidate_selector_provided"] is True
+    assert result.report["preinstall_candidate_selector_active"] is True
+    assert result.report[
+        "preinstall_candidate_selector_layer_indices"
+    ] == [0]
     assert result.report["short_conv_v5_numerical_policy_integrated"] is False
+    assert result.report[
+        "short_conv_v5_numerical_candidate_generation_integrated"
+    ] is False
+    assert result.report[
+        "short_conv_v5_endpoint_first_selector_integrated"
+    ] is False
     assert result.report[
         "short_conv_v5_post_install_rescoring_performed"
     ] is False
