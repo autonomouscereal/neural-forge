@@ -35,6 +35,10 @@ class Lfm2CpcfMacrocellReplayError(ValueError):
     """An installed target layer cannot be replayed under the strict contract."""
 
 
+class _FactoryAuthenticatedReplayReport(dict[str, Any]):
+    """Private marker for endpoints authenticated immediately before return."""
+
+
 def _torch() -> Any:
     try:
         import torch
@@ -81,6 +85,18 @@ def _tensor_sha256(value: Any) -> str:
     digest = hashlib.sha256(_canonical_json(descriptor))
     digest.update(detached.view(torch.uint8).numpy().tobytes(order="C"))
     return digest.hexdigest()
+
+
+def _archive_tensor_on_cpu(value: Any) -> Any:
+    """Make one synchronous, contiguous, independently owned CPU copy."""
+
+    torch = _torch()
+    return value.detach().to(
+        device="cpu",
+        non_blocking=False,
+        copy=True,
+        memory_format=torch.contiguous_format,
+    )
 
 
 def _dense_floating_tensor(
@@ -874,18 +890,58 @@ class Lfm2CpcfMacrocellReplay:
         torch = _torch()
         if not all(
             isinstance(value, torch.Tensor)
+            and value.layout == torch.strided
+            and value.device.type == "cpu"
             and value.ndim == 3
             and not value.requires_grad
             and value.grad_fn is None
+            and bool(torch.isfinite(value).all().item())
             for value in tensors
         ):
             raise Lfm2CpcfMacrocellReplayError(
-                "Replay endpoints must be detached rank-three tensors."
+                "Replay endpoints must be finite detached CPU rank-three tensors."
             )
         shape = tuple(tensors[0].shape)
         if any(tuple(value.shape) != shape for value in tensors[1:]):
             raise Lfm2CpcfMacrocellReplayError("Replay endpoint shapes differ.")
-        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+        dtype = tensors[0].dtype
+        if any(value.dtype != dtype for value in tensors[1:]):
+            raise Lfm2CpcfMacrocellReplayError("Replay endpoint dtypes differ.")
+        factory_authenticated = isinstance(
+            self.report,
+            _FactoryAuthenticatedReplayReport,
+        )
+        report = dict(self.report)
+        report_body = dict(report)
+        report_sha256 = report_body.pop("report_sha256", None)
+        if report_sha256 != _sha(report_body):
+            raise Lfm2CpcfMacrocellReplayError("Replay report seal is invalid.")
+        endpoint_hashes = report.get("endpoint_sha256")
+        if not factory_authenticated:
+            endpoint_hashes = {
+                name: _tensor_sha256(value)
+                for name, value in sorted(
+                    {
+                        "operator_input": self.operator_input,
+                        "operator_delta": self.operator_delta,
+                        "post_operator_residual": self.post_operator_residual,
+                        "mlp_input": self.mlp_input,
+                        "mlp_delta": self.mlp_delta,
+                        "post_layer_residual": self.post_layer_residual,
+                    }.items()
+                )
+            }
+        if (
+            report.get("endpoint_sha256") != endpoint_hashes
+            or report.get("runtime_dtype") != _dtype_name(tensors[0])
+            or report.get("returned_tensors_archived_on_cpu") is not True
+            or report.get("accelerator_storage_retained_by_returned_tensors")
+            is not False
+        ):
+            raise Lfm2CpcfMacrocellReplayError(
+                "Replay endpoint archive differs from its authenticated report."
+            )
+        object.__setattr__(self, "report", MappingProxyType(report))
 
     @property
     def replay_sha256(self) -> str:
@@ -1009,8 +1065,15 @@ def replay_lfm2_cpcf_macrocell(
             raise Lfm2CpcfMacrocellReplayError(
                 "Target-native replay produced a non-finite endpoint."
             )
+        # Replay endpoints are long-lived compiler evidence.  Keeping them on
+        # the execution accelerator makes whole-model compilation scale with
+        # ``layers * phases * full-prefix rows`` and can retain tens of GiB on
+        # CUDA even though all downstream closed-form solvers are CPU based.
+        # Use a synchronous copy so the returned archive owns no accelerator
+        # storage or pending transfer while preserving dtype, shape, and bytes.
         detached_endpoints = {
-            name: value.detach().clone() for name, value in endpoint_values.items()
+            name: _archive_tensor_on_cpu(value)
+            for name, value in endpoint_values.items()
         }
         operator_detail_hashes = {
             name: _tensor_sha256(value)
@@ -1082,6 +1145,8 @@ def replay_lfm2_cpcf_macrocell(
         "target_gradients_preserved": True,
         "target_training_modes_preserved": True,
         "returned_tensors_detached": True,
+        "returned_tensors_archived_on_cpu": True,
+        "accelerator_storage_retained_by_returned_tensors": False,
         "execution": {
             "entry_grad_enabled": entry_grad_enabled,
             "grad_enabled_inside_replay": execution_grad_enabled,
@@ -1098,7 +1163,9 @@ def replay_lfm2_cpcf_macrocell(
         },
         "scope": "installed_blank_target_macrocell_actual_child_prefill",
     }
-    report = {**body, "report_sha256": _sha(body)}
+    report = _FactoryAuthenticatedReplayReport(
+        {**body, "report_sha256": _sha(body)}
+    )
     return Lfm2CpcfMacrocellReplay(
         operator_input=detached_endpoints["operator_input"],
         operator_delta=detached_endpoints["operator_delta"],

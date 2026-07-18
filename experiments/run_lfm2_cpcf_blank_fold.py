@@ -525,6 +525,130 @@ def _checkpoint_inventory(directory: Path) -> list[dict[str, Any]]:
     ]
 
 
+def _materialized_lfm2_ffn_width(model: Any, name: str) -> int:
+    """Return the exact FFN width jointly proven by config and live weights."""
+
+    config = getattr(model, "config", None)
+    core = getattr(model, "model", None)
+    layers = tuple(getattr(core, "layers", ()))
+    if (
+        config is None
+        or getattr(config, "model_type", None) != "lfm2"
+        or not layers
+    ):
+        raise Lfm2CpcfBlankFoldRunnerError(
+            f"{name} is not a materialized LFM2 model."
+        )
+    widths = set()
+    for index, layer in enumerate(layers):
+        feed_forward = getattr(layer, "feed_forward", None)
+        w1 = getattr(getattr(feed_forward, "w1", None), "weight", None)
+        w2 = getattr(getattr(feed_forward, "w2", None), "weight", None)
+        w3 = getattr(getattr(feed_forward, "w3", None), "weight", None)
+        if (
+            w1 is None
+            or w2 is None
+            or w3 is None
+            or w1.ndim != 2
+            or w2.ndim != 2
+            or w3.ndim != 2
+            or int(w1.shape[0]) != int(w3.shape[0])
+            or int(w1.shape[0]) != int(w2.shape[1])
+        ):
+            raise Lfm2CpcfBlankFoldRunnerError(
+                f"{name} layer {index} has inconsistent materialized FFN weights."
+            )
+        widths.add(int(w1.shape[0]))
+    if len(widths) != 1:
+        raise Lfm2CpcfBlankFoldRunnerError(
+            f"{name} layers do not share one materialized FFN width."
+        )
+    width = next(iter(widths))
+    configured = getattr(config, "intermediate_size", None)
+    if (
+        isinstance(configured, bool)
+        or not isinstance(configured, int)
+        or configured != width
+        or getattr(config, "block_auto_adjust_ff_dim", None) is not False
+    ):
+        raise Lfm2CpcfBlankFoldRunnerError(
+            f"{name} runtime FFN width is not sealed by intermediate_size with "
+            "block_auto_adjust_ff_dim=False."
+        )
+    return width
+
+
+def _restore_lfm2_ffn_config_alias(model: Any, name: str) -> dict[str, Any]:
+    """Restore the legacy alias consumed by Lfm2Config during local reload."""
+
+    width = _materialized_lfm2_ffn_width(model, name)
+    config = model.config
+    previous = getattr(config, "block_ff_dim", None)
+    if previous is not None and previous != width:
+        raise Lfm2CpcfBlankFoldRunnerError(
+            f"{name} block_ff_dim conflicts with its materialized FFN width."
+        )
+    config.block_ff_dim = width
+    payload = config.to_dict()
+    expected = {
+        "intermediate_size": width,
+        "block_ff_dim": width,
+        "block_auto_adjust_ff_dim": False,
+    }
+    observed = {key: payload.get(key) for key in expected}
+    if observed != expected:
+        raise Lfm2CpcfBlankFoldRunnerError(
+            f"{name} cannot serialize shape-stable LFM2 FFN aliases: "
+            f"{observed} != {expected}."
+        )
+    body = {
+        "scope": name,
+        "materialized_ffn_width": width,
+        "previous_block_ff_dim": previous,
+        "serialized_aliases": observed,
+        "shape_stable": True,
+    }
+    return {**body, "report_sha256": _sha(body)}
+
+
+def _verify_saved_lfm2_ffn_config(
+    directory: Path,
+    *,
+    expected_width: int,
+) -> dict[str, Any]:
+    """Fail closed if checkpoint JSON cannot rebuild the exact FFN shape."""
+
+    config_path = directory / "config.json"
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise Lfm2CpcfBlankFoldRunnerError(
+            f"Could not authenticate saved LFM2 config: {config_path}."
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise Lfm2CpcfBlankFoldRunnerError(
+            "Saved LFM2 config must contain a JSON object."
+        )
+    expected = {
+        "intermediate_size": expected_width,
+        "block_ff_dim": expected_width,
+        "block_auto_adjust_ff_dim": False,
+    }
+    observed = {key: payload.get(key) for key in expected}
+    if observed != expected:
+        raise Lfm2CpcfBlankFoldRunnerError(
+            "Saved config.json cannot reconstruct the materialized LFM2 FFN "
+            f"shape: {observed} != {expected}."
+        )
+    body = {
+        "scope": "saved_config_json",
+        "config_json_sha256": _file_sha256(config_path),
+        "serialized_aliases": observed,
+        "shape_stable": True,
+    }
+    return {**body, "report_sha256": _sha(body)}
+
+
 def _repetition_proxy(token_ids: Sequence[int]) -> dict[str, Any]:
     if not token_ids:
         return {
@@ -666,7 +790,14 @@ def _save_reload_evaluate(
     evaluation_limit: int,
     evaluation_max_new_tokens: int,
 ) -> tuple[
-    tuple[Any, Mapping[str, Any], Mapping[str, Any], list[dict[str, Any]], Path],
+    tuple[
+        Any,
+        Mapping[str, Any],
+        Mapping[str, Any],
+        list[dict[str, Any]],
+        Path,
+        Mapping[str, Any],
+    ],
     dict[str, Any],
 ]:
     from experiments.run_lfm2_residual_attention_fold import (
@@ -685,17 +816,41 @@ def _save_reload_evaluate(
         )
     stage.mkdir()
     try:
+        target_aliases = _restore_lfm2_ffn_config_alias(
+            target_model,
+            "compiled_target_before_save",
+        )
         target_model.save_pretrained(
             stage,
             safe_serialization=True,
         )
         target_tokenizer.save_pretrained(stage)
+        saved_aliases = _verify_saved_lfm2_ffn_config(
+            stage,
+            expected_width=int(target_aliases["materialized_ffn_width"]),
+        )
         saved_files = _checkpoint_inventory(stage)
         reloaded = load_local_lfm2_model(
             stage,
             device=device,
             dtype=dtype,
         )
+        reloaded_aliases = _restore_lfm2_ffn_config_alias(
+            reloaded,
+            "freshly_reloaded_target",
+        )
+        alias_body = {
+            "compiled_target": target_aliases,
+            "saved_config": saved_aliases,
+            "fresh_reload": reloaded_aliases,
+            "materialized_width_preserved": (
+                target_aliases["materialized_ffn_width"]
+                == reloaded_aliases["materialized_ffn_width"]
+            ),
+            "block_ff_dim_restored_after_loader_consumption": True,
+            "shape_stable": True,
+        }
+        alias_audit = {**alias_body, "report_sha256": _sha(alias_body)}
         reloaded_inventory = independent_parameter_inventory(reloaded)
         compression = audit_lfm2_cpcf_parameter_compaction(
             parent_model,
@@ -720,6 +875,7 @@ def _save_reload_evaluate(
             compression,
             saved_files,
             stage,
+            alias_audit,
         ), behavior
     except Exception:
         resolved = stage.resolve()
@@ -1007,6 +1163,7 @@ def run(config: RunnerConfig) -> dict[str, Any]:
         reload_compression,
         saved_files,
         stage,
+        save_reload_config_aliases,
     ) = saved
     del reloaded
     if (
@@ -1076,6 +1233,7 @@ def run(config: RunnerConfig) -> dict[str, Any]:
         "final_norm": dict(compiled_fold.final_norm_report),
         "standalone_whole_response_evaluation": behavior,
         "saved_checkpoint_files": saved_files,
+        "save_reload_config_aliases": dict(save_reload_config_aliases),
         "output_directory": str(output),
         "parent_state_preserved": True,
         "all_target_layers_compiled_sequentially": True,

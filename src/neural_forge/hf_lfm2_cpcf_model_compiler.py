@@ -131,7 +131,17 @@ def _integer_matrix(value: Any, name: str) -> Any:
     return result.clone()
 
 
-def _floating_states(value: Any, name: str, *, hidden_size: int | None = None) -> Any:
+class _OwnedCpuPhaseStates(dict[tuple[int, str], Any]):
+    """Private marker for CPU archives already owned by a phase-state bank."""
+
+
+def _floating_states(
+    value: Any,
+    name: str,
+    *,
+    hidden_size: int | None = None,
+    copy: bool = True,
+) -> Any:
     torch = _torch()
     if (
         not isinstance(value, torch.Tensor)
@@ -153,7 +163,23 @@ def _floating_states(value: Any, name: str, *, hidden_size: int | None = None) -
         )
     if not bool(torch.isfinite(value).all().item()):
         raise Lfm2CpcfModelCompilerError(f"{name} contains NaN or infinity.")
-    return value.detach().clone()
+    # Phase banks are durable compiler archives, not live execution tensors.
+    # Canonical CPU storage keeps accelerator residency independent of corpus
+    # size and layer count.  The copy is synchronous and preserves the exact
+    # dtype/shape/bytes authenticated by the bank seal.
+    detached = value.detach()
+    if (
+        not copy
+        and detached.device.type == "cpu"
+        and detached.is_contiguous()
+    ):
+        return detached
+    return detached.to(
+        device="cpu",
+        non_blocking=False,
+        copy=True,
+        memory_format=torch.contiguous_format,
+    )
 
 
 def _tensor_sha256(value: Any) -> str:
@@ -458,11 +484,14 @@ class Lfm2CpcfPhaseStateBank:
             )
         normalized: dict[tuple[int, str], Any] = {}
         hidden_sizes = set()
+        dtypes = set()
         inventory = []
+        owns_archive = isinstance(self.states, _OwnedCpuPhaseStates)
         for phase in phases:
             state = _floating_states(
                 self.states[phase.identity],
                 f"states[{phase.identity!r}]",
+                copy=not owns_archive,
             )
             if tuple(state.shape[:2]) != (
                 phase.batch_size,
@@ -472,6 +501,7 @@ class Lfm2CpcfPhaseStateBank:
                     f"State {phase.identity!r} differs from its full prefix."
                 )
             hidden_sizes.add(int(state.shape[-1]))
+            dtypes.add(state.dtype)
             normalized[phase.identity] = state
             inventory.append(
                 {
@@ -483,6 +513,10 @@ class Lfm2CpcfPhaseStateBank:
         if len(hidden_sizes) != 1:
             raise Lfm2CpcfModelCompilerError(
                 "Actual child residual widths differ by phase."
+            )
+        if len(dtypes) != 1:
+            raise Lfm2CpcfModelCompilerError(
+                "Actual child residual dtypes differ by phase."
             )
         body = {
             "schema": LFM2_CPCF_TARGET_RUNTIME_SCHEMA,
@@ -537,9 +571,15 @@ def _phase_state_bank(
     states: Mapping[tuple[int, str], Any],
 ) -> Lfm2CpcfPhaseStateBank:
     ordered = tuple(phases)
+    owned = _OwnedCpuPhaseStates()
     inventory = []
     for phase in ordered:
-        state = states[phase.identity]
+        state = _floating_states(
+            states[phase.identity],
+            f"states[{phase.identity!r}]",
+            copy=False,
+        )
+        owned[phase.identity] = state
         inventory.append(
             {
                 "identity": [phase.batch_index, phase.phase],
@@ -552,7 +592,7 @@ def _phase_state_bank(
         "scope": "phase_state_bank",
         "boundary": boundary,
         "layer_index": layer_index,
-        "hidden_size": int(next(iter(states.values())).shape[-1]),
+        "hidden_size": int(next(iter(owned.values())).shape[-1]),
         "ordered_states": inventory,
         "actual_folded_upstream_states": True,
     }
@@ -560,7 +600,7 @@ def _phase_state_bank(
         boundary=boundary,
         layer_index=layer_index,
         phases=ordered,
-        states=states,
+        states=owned,
         state_bank_sha256=_sha(body),
     )
 
@@ -575,6 +615,33 @@ def _model_core(model: Any) -> Any:
             "Target model must be a materialized LFM2 causal language model."
         )
     return core
+
+
+def _layer_runtime(layer: Any) -> tuple[Any, Any]:
+    """Return the one floating device/dtype used by a target layer."""
+
+    torch = _torch()
+    parameters = tuple(layer.parameters())
+    if not parameters:
+        raise Lfm2CpcfModelCompilerError(
+            "Target layer exposes no materialized parameters."
+        )
+    if any(
+        parameter.device.type == "meta"
+        or not torch.is_floating_point(parameter)
+        or parameter.is_complex()
+        for parameter in parameters
+    ):
+        raise Lfm2CpcfModelCompilerError(
+            "Target layer parameters must be materialized real floating tensors."
+        )
+    devices = {parameter.device for parameter in parameters}
+    dtypes = {parameter.dtype for parameter in parameters}
+    if len(devices) != 1 or len(dtypes) != 1:
+        raise Lfm2CpcfModelCompilerError(
+            "Target layer must use one execution device and floating dtype."
+        )
+    return next(iter(devices)), next(iter(dtypes))
 
 
 def _unique_parameter_count(model: Any) -> int:
@@ -771,7 +838,7 @@ def seed_lfm2_cpcf_phase_states(
                 raise Lfm2CpcfModelCompilerError(
                     f"Target phase {phase.identity!r} exceeds the table."
                 )
-            states[phase.identity] = (
+            live_state = (
                 weight.index_select(0, ids.reshape(-1))
                 .reshape(
                     phase.batch_size,
@@ -779,8 +846,14 @@ def seed_lfm2_cpcf_phase_states(
                     int(weight.shape[1]),
                 )
                 .detach()
-                .clone()
             )
+            states[phase.identity] = _floating_states(
+                live_state,
+                f"seed_states[{phase.identity!r}]",
+                hidden_size=int(weight.shape[1]),
+                copy=False,
+            )
+            del live_state, ids
     return _phase_state_bank(
         "input_embeddings",
         0,
@@ -880,12 +953,39 @@ class Lfm2CpcfLayerReplayBank:
             raise Lfm2CpcfModelCompilerError(
                 "Layer replay bank contains an invalid replay."
             )
+        report = dict(self.report)
+        report_body = dict(report)
+        report_sha256 = report_body.pop("report_sha256", None)
+        if report_sha256 != _sha(report_body):
+            raise Lfm2CpcfModelCompilerError(
+                "Layer replay report seal is invalid."
+            )
+        expected_replays = [
+            {
+                "identity": [phase.batch_index, phase.phase],
+                "replay_sha256": self.replays[phase.identity].replay_sha256,
+            }
+            for phase in self.post_layer_bank.phases
+        ]
+        if (
+            report.get("layer_index") != self.layer_index
+            or report.get("input_bank_sha256") != self.input_bank_sha256
+            or report.get("post_layer_bank_sha256")
+            != self.post_layer_bank.state_bank_sha256
+            or report.get("ordered_replay_sha256") != expected_replays
+            or report.get("persistent_replay_storage_device") != "cpu"
+            or report.get("completed_phase_accelerator_storage_retained")
+            is not False
+        ):
+            raise Lfm2CpcfModelCompilerError(
+                "Layer replay archive differs from its authenticated report."
+            )
         object.__setattr__(
             self,
             "replays",
             MappingProxyType(dict(self.replays)),
         )
-        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+        object.__setattr__(self, "report", MappingProxyType(report))
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self.report)
@@ -910,10 +1010,26 @@ def replay_lfm2_cpcf_phase_bank(
             "Input state bank is not the next sequential layer boundary."
         )
     layer = layers[index]
+    runtime_device, runtime_dtype = _layer_runtime(layer)
     replays = {}
     post_states = {}
     for phase in input_bank.phases:
-        residual = input_bank.state(phase)
+        # Stage exactly one phase on the selected execution device.  Both the
+        # input bank and the returned replay are canonical CPU archives, so no
+        # completed phase or historical layer remains accelerator resident.
+        archived_state = input_bank.states[phase.identity]
+        if archived_state.device.type != "cpu":
+            raise Lfm2CpcfModelCompilerError(
+                "Input phase bank is not a canonical CPU archive."
+            )
+        if archived_state.dtype != runtime_dtype:
+            raise Lfm2CpcfModelCompilerError(
+                "Archived state dtype differs from the target layer runtime."
+            )
+        residual = archived_state.to(
+            device=runtime_device,
+            non_blocking=False,
+        )
         if bool(getattr(layer, "is_attention_layer", False)):
             position_embeddings = _rope_from_target(
                 target_model,
@@ -927,6 +1043,7 @@ def replay_lfm2_cpcf_phase_bank(
                 position_embeddings=position_embeddings,
                 additive_causal_mask=mask,
             )
+            del position_embeddings, mask
         else:
             padding_mask = phase.attention_mask.to(
                 device=residual.device,
@@ -936,6 +1053,22 @@ def replay_lfm2_cpcf_phase_bank(
                 layer,
                 residual,
                 padding_mask=padding_mask,
+            )
+            del padding_mask
+        del residual
+        if any(
+            value.device.type != "cpu"
+            for value in (
+                replay.operator_input,
+                replay.operator_delta,
+                replay.post_operator_residual,
+                replay.mlp_input,
+                replay.mlp_delta,
+                replay.post_layer_residual,
+            )
+        ):
+            raise Lfm2CpcfModelCompilerError(
+                "Completed replay endpoints retained execution-device storage."
             )
         replays[phase.identity] = replay
         post_states[phase.identity] = replay.post_layer_residual
@@ -960,6 +1093,10 @@ def replay_lfm2_cpcf_phase_bank(
         ],
         "actual_folded_upstream_input": True,
         "full_prefix_replay": True,
+        "execution_device": str(runtime_device),
+        "execution_dtype": str(runtime_dtype).removeprefix("torch."),
+        "persistent_replay_storage_device": "cpu",
+        "completed_phase_accelerator_storage_retained": False,
         "independent_parent_projection_substitution": False,
         "parent_forward_count": 0,
         "child_model_forward_count": 0,

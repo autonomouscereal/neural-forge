@@ -186,3 +186,85 @@ def test_repetition_proxy_is_diagnostic_not_intelligence_claim() -> None:
     source = inspect.getsource(MODULE._standalone_whole_response_evaluation)
     assert "manual_intelligence_retention_proven" in source
     assert "False" in source
+
+
+def test_local_lfm2_save_reload_preserves_and_restores_ffn_alias(
+    tmp_path: Path,
+) -> None:
+    torch = pytest.importorskip("torch")
+    transformers = pytest.importorskip("transformers")
+    from experiments.run_lfm2_residual_attention_fold import (
+        load_local_lfm2_model,
+    )
+
+    config = transformers.Lfm2Config(
+        vocab_size=24,
+        hidden_size=32,
+        intermediate_size=47,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=16,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+    )
+    model = transformers.Lfm2ForCausalLM(config)
+    before = MODULE._restore_lfm2_ffn_config_alias(
+        model,
+        "test_target_before_save",
+    )
+    checkpoint = tmp_path / "child"
+    model.save_pretrained(checkpoint, safe_serialization=True)
+    saved = MODULE._verify_saved_lfm2_ffn_config(
+        checkpoint,
+        expected_width=47,
+    )
+    reloaded = load_local_lfm2_model(
+        checkpoint,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    consumed_alias = getattr(reloaded.config, "block_ff_dim", None)
+    after = MODULE._restore_lfm2_ffn_config_alias(
+        reloaded,
+        "test_target_after_reload",
+    )
+
+    assert before["materialized_ffn_width"] == 47
+    assert saved["serialized_aliases"]["block_ff_dim"] == 47
+    assert consumed_alias is None
+    assert after["previous_block_ff_dim"] is None
+    assert reloaded.config.block_ff_dim == 47
+    assert reloaded.config.to_dict()["block_ff_dim"] == 47
+    assert {
+        int(layer.feed_forward.w1.weight.shape[0])
+        for layer in reloaded.model.layers
+    } == {47}
+
+
+def test_ffn_alias_audit_rejects_conflicting_serialized_width() -> None:
+    transformers = pytest.importorskip("transformers")
+    config = transformers.Lfm2Config(
+        vocab_size=12,
+        hidden_size=8,
+        intermediate_size=13,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=4,
+        layer_types=["conv"],
+        block_auto_adjust_ff_dim=False,
+    )
+    model = transformers.Lfm2ForCausalLM(config)
+    model.config.block_ff_dim = 12
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfBlankFoldRunnerError,
+        match="conflicts",
+    ):
+        MODULE._restore_lfm2_ffn_config_alias(
+            model,
+            "conflicting_target",
+        )

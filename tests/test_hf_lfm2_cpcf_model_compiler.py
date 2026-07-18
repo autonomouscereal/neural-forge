@@ -118,6 +118,25 @@ def _phases():
     )
 
 
+def _assert_cpu_archived_layer_bank(bank) -> None:
+    assert all(
+        state.device.type == "cpu"
+        for state in bank.post_layer_bank.states.values()
+    )
+    for replay in bank.replays.values():
+        assert all(
+            getattr(replay, name).device.type == "cpu"
+            for name in (
+                "operator_input",
+                "operator_delta",
+                "post_operator_residual",
+                "mlp_input",
+                "mlp_delta",
+                "post_layer_residual",
+            )
+        )
+
+
 def test_target_phase_alignment_builds_full_decode_prefixes() -> None:
     phases = _phases()
 
@@ -151,7 +170,21 @@ def test_tied_install_and_full_prefix_replay_propagate_actual_child_states() -> 
     assert tied_report["native_tie_preserved"] is True
     assert norm_report["installed_norm_count"] == 7
     assert input_bank.states[(0, "decode.001")].shape == (1, 6, 32)
+    assert all(state.device.type == "cpu" for state in input_bank.states.values())
+    _assert_cpu_archived_layer_bank(conv)
+    _assert_cpu_archived_layer_bank(attention)
     for phase in phases:
+        # The next-boundary bank and the replay receipt intentionally share
+        # the one authenticated CPU post-layer archive.  There is no second
+        # retained host copy of the same endpoint.
+        assert (
+            conv.post_layer_bank.states[phase.identity].data_ptr()
+            == conv.replays[phase.identity].post_layer_residual.data_ptr()
+        )
+        assert (
+            attention.post_layer_bank.states[phase.identity].data_ptr()
+            == attention.replays[phase.identity].post_layer_residual.data_ptr()
+        )
         # Every branch writer is still the compiler-owned zero blank.  The
         # replay therefore proves exact identity propagation of the installed
         # tied embeddings through both real target macrocell topologies.
@@ -170,6 +203,62 @@ def test_tied_install_and_full_prefix_replay_propagate_actual_child_states() -> 
     assert attention.report["actual_folded_upstream_input"] is True
     assert attention.report["child_model_forward_count"] == 0
     assert attention.post_layer_bank.layer_index == 2
+
+
+def test_replay_rejects_archive_dtype_drift_instead_of_casting() -> None:
+    target = _target()
+    install_lfm2_cpcf_tied_interface(target, _interface())
+    install_lfm2_cpcf_neutral_norms(target)
+    bank = seed_lfm2_cpcf_phase_states(target, _phases())
+    assert {state.dtype for state in bank.states.values()} == {torch.float32}
+    target.to(dtype=torch.bfloat16)
+
+    with pytest.raises(
+        Lfm2CpcfModelCompilerError,
+        match="dtype differs",
+    ):
+        replay_lfm2_cpcf_phase_bank(
+            target,
+            layer_index=0,
+            input_bank=bank,
+        )
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="CUDA is required to prove CPU archives with a GPU target.",
+)
+def test_sequential_gpu_layer_replay_retains_zero_cuda_archive_storage() -> None:
+    target = _target().to("cuda")
+    install_lfm2_cpcf_tied_interface(target, _interface())
+    install_lfm2_cpcf_neutral_norms(target)
+    phases = _phases()
+    input_bank = seed_lfm2_cpcf_phase_states(target, phases)
+    conv = replay_lfm2_cpcf_phase_bank(
+        target,
+        layer_index=0,
+        input_bank=input_bank,
+    )
+    attention = replay_lfm2_cpcf_phase_bank(
+        target,
+        layer_index=1,
+        input_bank=conv.post_layer_bank,
+    )
+
+    assert next(target.parameters()).device.type == "cuda"
+    assert all(state.device.type == "cpu" for state in input_bank.states.values())
+    _assert_cpu_archived_layer_bank(conv)
+    _assert_cpu_archived_layer_bank(attention)
+    assert conv.report["execution_device"].startswith("cuda")
+    assert attention.report["execution_device"].startswith("cuda")
+    assert attention.post_layer_bank.layer_index == 2
+    for phase in phases:
+        torch.testing.assert_close(
+            attention.post_layer_bank.state(phase),
+            input_bank.state(phase),
+            rtol=0,
+            atol=0,
+        )
 
 
 def test_phase_bank_rejects_skipping_a_sequential_layer() -> None:

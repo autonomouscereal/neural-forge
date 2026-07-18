@@ -12,6 +12,7 @@ transformers = pytest.importorskip("transformers")
 
 from neural_forge.hf_lfm2_cpcf_macrocell_replay import (  # noqa: E402
     LFM2_CPCF_MACROCELL_REPLAY_SCHEMA,
+    Lfm2CpcfMacrocellReplay,
     Lfm2CpcfMacrocellReplayError,
     replay_lfm2_cpcf_macrocell,
 )
@@ -85,6 +86,7 @@ def _actual_prefill_residual(model: Any) -> Any:
             [6, 7, 8, 9, 10],
         ],
         dtype=torch.long,
+        device=model.model.embed_tokens.weight.device,
     )
     with torch.no_grad():
         return model.model.embed_tokens(input_ids).detach().clone()
@@ -316,6 +318,8 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
         )
         assert not observed.requires_grad
         assert observed.grad_fn is None
+        assert observed.device.type == "cpu"
+        assert observed.dtype == dtype
 
     assert torch.equal(residual, residual_before)
     _assert_gradients_equal(gradients_before, layer)
@@ -338,6 +342,8 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
     assert report["target_gradients_preserved"]
     assert report["target_training_modes_preserved"]
     assert report["returned_tensors_detached"]
+    assert report["returned_tensors_archived_on_cpu"]
+    assert not report["accelerator_storage_retained_by_returned_tensors"]
     equations = report["residual_equations"]
     assert equations["post_operator_equals_prefill_plus_operator_delta"]
     assert equations["post_operator_maximum_absolute_error"] == 0.0
@@ -360,6 +366,68 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
     ):
         assert execution[name] == 0
     assert replay.replay_sha256 == report["report_sha256"]
+
+
+def test_replay_archive_rejects_endpoint_bytes_outside_its_seal() -> None:
+    model = _tiny_installed_target(
+        "short_conv",
+        torch.float32,
+        seed=9290,
+    )
+    replay = replay_lfm2_cpcf_macrocell(
+        model.model.layers[0],
+        _actual_prefill_residual(model),
+        padding_mask=torch.ones(2, 5),
+    )
+    changed = replay.post_layer_residual.clone()
+    changed[0, 0, 0] += 1.0
+
+    with pytest.raises(
+        Lfm2CpcfMacrocellReplayError,
+        match="authenticated report",
+    ):
+        Lfm2CpcfMacrocellReplay(
+            operator_input=replay.operator_input,
+            operator_delta=replay.operator_delta,
+            post_operator_residual=replay.post_operator_residual,
+            mlp_input=replay.mlp_input,
+            mlp_delta=replay.mlp_delta,
+            post_layer_residual=changed,
+            report=replay.report,
+        )
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="CUDA is required to prove accelerator-free returned archives.",
+)
+def test_cuda_replay_returns_no_cuda_endpoint_storage() -> None:
+    model = _tiny_installed_target(
+        "full_attention",
+        torch.float32,
+        seed=9291,
+    ).to("cuda")
+    residual = _actual_prefill_residual(model)
+    replay = replay_lfm2_cpcf_macrocell(
+        model.model.layers[0],
+        residual,
+        position_embeddings=_position_embeddings(model, residual),
+        additive_causal_mask=_causal_mask(residual),
+    )
+
+    assert residual.device.type == "cuda"
+    assert replay.report["runtime_device"].startswith("cuda")
+    assert all(
+        getattr(replay, name).device.type == "cpu"
+        for name in (
+            "operator_input",
+            "operator_delta",
+            "post_operator_residual",
+            "mlp_input",
+            "mlp_delta",
+            "post_layer_residual",
+        )
+    )
 
 
 def test_attention_contract_rejects_noncausal_mask_before_replay() -> None:
