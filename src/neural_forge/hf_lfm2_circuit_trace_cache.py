@@ -3963,27 +3963,29 @@ class _Lfm2SelectiveBatchState:
     trace_identity: _Lfm2CircuitTraceFileIdentity
     record_identity: _Lfm2CircuitTraceFileIdentity
     trace_guard: Any
-    safetensors_handle: Any
 
 
 class Lfm2CircuitTraceSelectiveAuthenticatedSession:
     """One immutable cache authentication with repeated bounded selections.
 
     Every committed trace and record file is content-hashed exactly once while
-    this session opens.  The corresponding regular file descriptor and
-    safetensors mapping remain open for the session lifetime.  Later reads
-    load only caller-selected tensor names and compare each selected tensor to
-    its sealed descriptor.  Stable path and handle identities are checked
-    before and after every selection, so replacement or in-place mutation
-    fails closed without rescanning unrelated payload bytes.
+    this session opens.  The corresponding authenticated regular file
+    descriptor remains open for the session lifetime.  A safetensors mapping
+    is opened only while a caller-selected tensor set is cloned into bounded
+    CPU storage, then closed immediately so released layers do not remain
+    physically resident through pinned mappings.  Every selected tensor is
+    compared to its sealed descriptor.  Stable path and handle identities are
+    checked before and after every selection, so replacement or in-place
+    mutation fails closed without rescanning unrelated payload bytes.
 
     The cross-platform TOCTOU boundary is explicit: ``safe_open`` accepts a
     path rather than an existing descriptor.  This implementation requires
     the path identity to equal the already-hashed guard identity immediately
-    before and after ``safe_open`` and keeps both handles pinned thereafter.
-    It detects normal concurrent replacement and mutation.  It does not claim
-    protection from a privileged hostile filesystem that swaps and restores
-    the same path entirely inside that narrow open/stat interval.
+    before and after every ``safe_open`` while keeping the authenticated raw
+    descriptor pinned.  It detects normal concurrent replacement and
+    mutation.  It does not claim protection from a privileged hostile
+    filesystem that swaps and restores the same path entirely inside that
+    narrow open/stat interval.
     """
 
     __slots__ = (
@@ -4121,7 +4123,6 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
             )
         expected_names = tuple(sorted(inventory))
         guard = None
-        handle = None
         try:
             guard = trace_path.open("rb", buffering=0)
             if _handle_file_identity(guard, path=trace_path) != trace_identity:
@@ -4132,33 +4133,30 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                 raise Lfm2CircuitTraceCorruptionError(
                     f"Cache batch {index} trace changed before safetensors open."
                 )
-            handle = safe_open(
+            with safe_open(
                 str(trace_path),
                 framework="pt",
                 device="cpu",
-            )
-            handle.__enter__()
-            metadata = handle.metadata() or {}
-            if metadata != {
-                "schema": BATCH_SCHEMA,
-                "cache_key": str(manifest["cache_key"]),
-                "batch_index": str(index),
-                "input_sha256": str(entry["input_sha256"]),
-            }:
-                raise Lfm2CircuitTraceCorruptionError(
-                    f"Cache batch {index} safetensors metadata is invalid."
-                )
-            if tuple(sorted(handle.keys())) != expected_names:
-                raise Lfm2CircuitTraceCorruptionError(
-                    f"Cache batch {index} safetensors keys changed."
-                )
+            ) as handle:
+                metadata = handle.metadata() or {}
+                if metadata != {
+                    "schema": BATCH_SCHEMA,
+                    "cache_key": str(manifest["cache_key"]),
+                    "batch_index": str(index),
+                    "input_sha256": str(entry["input_sha256"]),
+                }:
+                    raise Lfm2CircuitTraceCorruptionError(
+                        f"Cache batch {index} safetensors metadata is invalid."
+                    )
+                if tuple(sorted(handle.keys())) != expected_names:
+                    raise Lfm2CircuitTraceCorruptionError(
+                        f"Cache batch {index} safetensors keys changed."
+                    )
             if _path_file_identity(trace_path) != trace_identity:
                 raise Lfm2CircuitTraceCorruptionError(
                     f"Cache batch {index} trace changed during safetensors open."
                 )
         except BaseException:
-            if handle is not None:
-                handle.__exit__(None, None, None)
             if guard is not None:
                 guard.close()
             raise
@@ -4183,7 +4181,6 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                     )
                 logical_bytes += size_bytes
         except BaseException:
-            handle.__exit__(None, None, None)
             guard.close()
             raise
         reference = Lfm2CircuitTraceSelectiveBatchReference(
@@ -4204,15 +4201,11 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
             trace_identity=trace_identity,
             record_identity=record_identity,
             trace_guard=guard,
-            safetensors_handle=handle,
         )
 
     @staticmethod
     def _close_batch_state(state: _Lfm2SelectiveBatchState) -> None:
-        try:
-            state.safetensors_handle.__exit__(None, None, None)
-        finally:
-            state.trace_guard.close()
+        state.trace_guard.close()
 
     def _verify_batch_identity(
         self,
@@ -4301,7 +4294,8 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                 "selected_tensor_descriptors_verified_per_load": True,
                 "stable_file_identity_checked_before_and_after_load": True,
                 "authenticated_trace_guard_held_open": True,
-                "safetensors_mapping_held_open": True,
+                "safetensors_mapping_held_open": False,
+                "safetensors_mapping_opened_per_selection_and_closed": True,
                 "unselected_tensor_payloads_loaded": False,
                 "parent_forward_calls": 0,
                 "training_steps": 0,
@@ -4363,20 +4357,48 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                 )
             self._verify_batch_identity(state)
             torch = _torch()
+            safe_open, _save_file = _safetensors()
             tensors: dict[str, Any] = {}
             try:
-                for name in names:
-                    tensor = _cpu_tensor(
-                        torch,
-                        state.safetensors_handle.get_tensor(name),
-                        f"cache batch {index} selected tensor {name}",
-                    )
-                    if _tensor_descriptor(torch, tensor) != inventory[name]:
+                with safe_open(
+                    str(state.trace_path),
+                    framework="pt",
+                    device="cpu",
+                ) as handle:
+                    metadata = handle.metadata() or {}
+                    if metadata != {
+                        "schema": BATCH_SCHEMA,
+                        "cache_key": self.cache_key,
+                        "batch_index": str(index),
+                        "input_sha256": state.reference.input_sha256,
+                    }:
                         raise Lfm2CircuitTraceCorruptionError(
-                            f"Cache batch {index} selected tensor {name!r} "
+                            f"Cache batch {index} safetensors metadata "
                             "changed."
                         )
-                    tensors[name] = tensor
+                    if (
+                        tuple(sorted(handle.keys()))
+                        != state.reference.ordered_tensor_names
+                    ):
+                        raise Lfm2CircuitTraceCorruptionError(
+                            f"Cache batch {index} safetensors keys changed."
+                        )
+                    self._verify_batch_identity(state)
+                    for name in names:
+                        tensor = _cpu_tensor(
+                            torch,
+                            handle.get_tensor(name),
+                            f"cache batch {index} selected tensor {name}",
+                        )
+                        if (
+                            _tensor_descriptor(torch, tensor)
+                            != inventory[name]
+                        ):
+                            raise Lfm2CircuitTraceCorruptionError(
+                                f"Cache batch {index} selected tensor "
+                                f"{name!r} changed."
+                            )
+                        tensors[name] = tensor
                 self._verify_batch_identity(state)
             except BaseException:
                 tensors.clear()
