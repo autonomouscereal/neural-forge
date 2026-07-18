@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +23,12 @@ from neural_forge.hf_lfm2_cpcf_installability import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_cpcf_model_compiler import (  # noqa: E402
     build_lfm2_cpcf_target_phases,
+)
+from neural_forge.hf_lfm2_cpcf_model_fold import (  # noqa: E402
+    Lfm2CpcfModelFoldPolicy,
+)
+from neural_forge.hf_lfm2_cpcf_v5_model_compiler import (  # noqa: E402
+    _SelectiveBoundaryCompiler,
 )
 
 
@@ -434,6 +441,53 @@ def test_bundle_charts_absorb_the_post_operator_to_post_layer_transition():
     assert bundle.report["source_coverage"]["full_source_coverage"] is True
     assert bundle.report["operation_audit"]["parent_forward_count"] == 0
     assert bundle.report["operation_audit"]["training_step_count"] == 0
+
+
+def test_v5_selective_boundary_compiler_is_byte_exact_to_v4():
+    phases = _phases()
+    source_table = _source_table()
+    policy = Lfm2CpcfModelFoldPolicy(
+        state_reconstruction_weight=0.0,
+        minimum_predictive_energy_fraction=0.90,
+        minimum_validation_block_retention=0.90,
+    )
+    expected = fit_lfm2_cpcf_boundary_bundle(
+        phases,
+        source_table,
+        target_hidden_width=2,
+        state_reconstruction_weight=0.0,
+        ridge=policy.ridge,
+        minimum_predictive_energy_fraction=0.90,
+        minimum_validation_block_retention=0.90,
+    )
+    layer_kinds = tuple(
+        layer.operator_kind for layer in phases[0].parent_evidence.layers
+    )
+    catalog = SimpleNamespace(
+        source_width=4,
+        layer_count=len(layer_kinds),
+        phase_references=tuple(
+            SimpleNamespace(layer_operator_kinds=layer_kinds)
+            for _phase in phases
+        ),
+    )
+    compiler = _SelectiveBoundaryCompiler(
+        phases,
+        catalog,
+        source_table,
+        target_hidden_width=2,
+        model_policy=policy,
+    )
+    compiler.fit_interface(phases, target_norm_epsilon=1e-5)
+    for layer_index in range(len(layer_kinds)):
+        compiler.fit_layer(phases, layer_index=layer_index)
+    observed = compiler.finalize()
+
+    assert observed.bundle_sha256 == expected.bundle_sha256
+    assert observed.report == expected.report
+    assert [layer.as_dict() for layer in observed.layers] == [
+        layer.as_dict() for layer in expected.layers
+    ]
 
 
 def test_fit_validation_are_disjoint_and_selection_cannot_affect_fits():

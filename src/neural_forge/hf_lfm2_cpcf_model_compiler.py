@@ -629,6 +629,52 @@ def _phase_state_bank(
     )
 
 
+def rebind_lfm2_cpcf_phase_state_bank(
+    bank: Lfm2CpcfPhaseStateBank,
+    phases: Sequence[Lfm2CpcfTargetPhase],
+) -> Lfm2CpcfPhaseStateBank:
+    """Replace evidence-owning phase objects without copying archived states.
+
+    The v5 selective compiler temporarily binds one authenticated source
+    layer to otherwise tensor-free phase shells.  Once that layer has been
+    compiled, this helper restores the tensor-free shells before the
+    residency window releases the payload.  Only phase objects with the exact
+    same canonical identities and phase seals are admissible, so the state
+    bank seal must remain byte-identical.
+    """
+
+    if not isinstance(bank, Lfm2CpcfPhaseStateBank):
+        raise TypeError("bank must be Lfm2CpcfPhaseStateBank.")
+    ordered = tuple(phases)
+    if not ordered or any(
+        not isinstance(phase, Lfm2CpcfTargetPhase) for phase in ordered
+    ):
+        raise TypeError(
+            "phases must contain Lfm2CpcfTargetPhase objects."
+        )
+    current_lineage = tuple(
+        (phase.identity, phase.phase_sha256) for phase in bank.phases
+    )
+    replacement_lineage = tuple(
+        (phase.identity, phase.phase_sha256) for phase in ordered
+    )
+    if replacement_lineage != current_lineage:
+        raise Lfm2CpcfModelCompilerError(
+            "Phase-state rebinding changed phase identity, order, or seal."
+        )
+    rebound = _phase_state_bank(
+        bank.boundary,
+        bank.layer_index,
+        ordered,
+        bank.states,
+    )
+    if rebound.state_bank_sha256 != bank.state_bank_sha256:
+        raise Lfm2CpcfModelCompilerError(
+            "Phase-state rebinding changed the authenticated bank seal."
+        )
+    return rebound
+
+
 def _model_core(model: Any) -> Any:
     core = getattr(model, "model", None)
     if (
@@ -1665,6 +1711,7 @@ __all__ = [
     "build_lfm2_cpcf_target_phases",
     "install_lfm2_cpcf_neutral_norms",
     "install_lfm2_cpcf_tied_interface",
+    "rebind_lfm2_cpcf_phase_state_bank",
     "replay_lfm2_cpcf_phase_bank",
     "seed_lfm2_cpcf_phase_states",
 ]

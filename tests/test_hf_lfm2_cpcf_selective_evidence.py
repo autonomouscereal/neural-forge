@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -12,6 +13,8 @@ pytest.importorskip("safetensors")
 transformers = pytest.importorskip("transformers")
 
 import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
+import neural_forge.hf_lfm2_cpcf_model_compiler as model_compiler  # noqa: E402
+import neural_forge.hf_lfm2_cpcf_v5_model_compiler as v5  # noqa: E402
 from neural_forge.dynamic_evidence_residency import (  # noqa: E402
     DynamicEvidenceLayerReference,
     DynamicEvidenceResidencyError,
@@ -245,6 +248,165 @@ def test_selective_session_hashes_each_trace_once_and_never_rehashes_per_layer(
         assert "safe_open path/stat interval" in evidence[
             "authentication_contract"
         ]["toctou_boundary"]
+    finally:
+        provider.close()
+
+
+def test_toy_cache_v5_phase_shells_and_active_layers_are_v4_exact(
+    sealed_cache_path,
+) -> None:
+    full_parent_phases = tuple(
+        iter_lfm2_cpcf_compiler_inputs(
+            open_lfm2_circuit_trace_cache(
+                sealed_cache_path,
+                verify=False,
+            )
+        )
+    )
+    records = []
+    target_inputs = (
+        torch.tensor([[1, 2, 3, 4]], dtype=torch.long),
+        torch.tensor([[1, 4, 3, 2]], dtype=torch.long),
+    )
+    forced = (
+        torch.tensor([[5]], dtype=torch.long),
+        torch.tensor([[6]], dtype=torch.long),
+    )
+    for batch_index, reference in enumerate(
+        (
+            full_parent_phases[0],
+            full_parent_phases[2],
+        )
+    ):
+        records.append(
+            SimpleNamespace(
+                ordinal=batch_index,
+                record_id=f"toy-{batch_index}",
+                split="fit" if batch_index == 0 else "validation",
+                donor_cache_input_sha256=reference.input_sha256,
+                alignment_sha256=v5._sha(
+                    {"toy-alignment": batch_index}
+                ),
+                target_input_ids=target_inputs[batch_index],
+                attention_mask=torch.ones_like(
+                    target_inputs[batch_index]
+                ),
+                target_forced_decode_ids=forced[batch_index],
+                position_ids=None,
+            )
+        )
+
+    class _TraceAdapter:
+        def __init__(self, values):
+            self.records = tuple(values)
+
+        def verify(self):
+            return self
+
+    adapter = _TraceAdapter(records)
+    full_target_phases = model_compiler.build_lfm2_cpcf_target_phases(
+        adapter,
+        full_parent_phases,
+    )
+    provider = build_lfm2_cpcf_selective_evidence_provider(
+        open_lfm2_circuit_trace_cache(
+            sealed_cache_path,
+            verify=False,
+        )
+    )
+    try:
+        reference0 = provider.dynamic_catalog.references[0]
+        bootstrap = provider.load_layer_payload(reference0)
+        provider.authenticate_layer_payload(reference0, bootstrap)
+        try:
+            shells = v5.build_lfm2_cpcf_v5_target_phase_shells(
+                adapter,
+                provider.catalog,
+                bootstrap,
+            )
+        finally:
+            provider.release_layer_payload(reference0, bootstrap)
+        assert [phase.as_dict() for phase in shells] == [
+            phase.as_dict() for phase in full_target_phases
+        ]
+        assert all(
+            not layer.tensors
+            for phase in shells
+            for layer in phase.parent_evidence.layers
+        )
+        assert all(
+            not phase.parent_evidence.final_norm_tensors
+            for phase in shells
+        )
+
+        state_bank = model_compiler._phase_state_bank(
+            "toy-input",
+            0,
+            shells,
+            {
+                phase.identity: torch.zeros(
+                    phase.batch_size,
+                    phase.full_prefix_tokens,
+                    3,
+                )
+                for phase in shells
+            },
+        )
+        original_state_pointers = {
+            identity: int(value.data_ptr())
+            for identity, value in state_bank.states.items()
+        }
+        maximum_bytes = sum(
+            reference.logical_bytes
+            for reference in provider.dynamic_catalog.references
+        )
+        with DynamicEvidenceResidencyWindow(
+            provider.dynamic_catalog,
+            provider,
+            maximum_resident_bytes=maximum_bytes,
+        ) as window:
+            resident = window.start()
+            for layer_index in range(provider.catalog.layer_count):
+                materialized = (
+                    v5.materialize_lfm2_cpcf_v5_layer_phases(
+                        shells,
+                        provider.catalog,
+                        resident.payload,
+                    )
+                )
+                for phase_index, phase in enumerate(materialized):
+                    actual = phase.parent_evidence.layers[layer_index]
+                    expected = full_target_phases[
+                        phase_index
+                    ].parent_evidence.layers[layer_index]
+                    assert actual.evidence_sha256 == expected.evidence_sha256
+                    _assert_same_tensors(actual.tensors, expected.tensors)
+                    assert [
+                        layer.layer_index
+                        for layer in phase.parent_evidence.layers
+                        if layer.tensors
+                    ] == [layer_index]
+                rebound = model_compiler.rebind_lfm2_cpcf_phase_state_bank(
+                    state_bank,
+                    materialized,
+                )
+                assert rebound.state_bank_sha256 == (
+                    state_bank.state_bank_sha256
+                )
+                assert {
+                    identity: int(value.data_ptr())
+                    for identity, value in rebound.states.items()
+                } == original_state_pointers
+                resident = window.advance(
+                    completed_layer_index=layer_index
+                )
+            snapshot = window.snapshot()
+            assert snapshot["state"] == "complete"
+            assert snapshot["peak_occupied_layers"] == 2
+            assert snapshot["peak_resident_bytes"] == maximum_bytes
+            assert snapshot["requested_layer_indices"] == [0, 1]
+            assert snapshot["promoted_layer_indices"] == [0, 1]
+            assert snapshot["released_layer_indices"] == [0, 1]
     finally:
         provider.close()
 

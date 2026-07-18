@@ -33,6 +33,9 @@ from typing import Any
 from neural_forge.hf_lfm2_cpcf_boundary_bundle import (
     Lfm2CpcfLayerBoundaryCharts,
 )
+from neural_forge.hf_lfm2_cpcf_candidate_replay import (
+    Lfm2CpcfCandidateReplayEvaluator,
+)
 from neural_forge.hf_lfm2_cpcf_model_compiler import (
     Lfm2CpcfLayerReplayBank,
     Lfm2CpcfPhaseStateBank,
@@ -4197,6 +4200,7 @@ def compile_and_install_lfm2_cpcf_layer(
     ridge: float = 1e-8,
     short_conv_gate_policy: Lfm2CpcfShortConvGatePolicy | None = None,
     short_conv_v4_solver_policy: Lfm2CpcfShortConvV4SolverPolicy | None = None,
+    candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
 ) -> Lfm2CpcfCompiledLayerResult:
     """Compile, install, and replay one next sequential LFM2 target layer."""
 
@@ -4219,6 +4223,21 @@ def compile_and_install_lfm2_cpcf_layer(
     ):
         raise Lfm2CpcfLayerCompilerError(
             "short_conv_v4_solver_policy authentication failed."
+        )
+    if candidate_replay_evaluator is not None and not callable(
+        getattr(candidate_replay_evaluator, "evaluate", None)
+    ):
+        raise TypeError(
+            "candidate_replay_evaluator must implement the authenticated "
+            "candidate replay evaluator protocol."
+        )
+    if (
+        candidate_replay_evaluator is not None
+        and short_conv_v4_solver_policy is None
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Injected candidate replay is defined only for the authenticated "
+            "short-conv v4 solver lane."
         )
     if input_bank.layer_index != index:
         raise Lfm2CpcfLayerCompilerError(
@@ -4410,6 +4429,7 @@ def compile_and_install_lfm2_cpcf_layer(
                     cases=cases,
                     solver_policy=short_conv_v4_solver_policy,
                     gate_policy=policy,
+                    candidate_replay_evaluator=candidate_replay_evaluator,
                 )
             stage = "operator_install"
             operator_install_report = _install_short_conv(
