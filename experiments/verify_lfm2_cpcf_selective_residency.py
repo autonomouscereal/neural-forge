@@ -289,7 +289,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     physical_gate_enforced = physical_limit_bytes > 0
     physical_gate_passed = (
         not physical_gate_enforced
-        or maximum_observed_rss <= physical_limit_bytes
+        or maximum_observed_peak_rss <= physical_limit_bytes
     )
     if (
         [row["layer_index"] for row in layer_receipts] != expected_indices
@@ -341,6 +341,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "maximum_observed_process_high_water_bytes": (
                 maximum_observed_peak_rss
             ),
+            "gate_uses_process_high_water": True,
             "passed": physical_gate_passed,
         },
         "process_memory_samples": samples,

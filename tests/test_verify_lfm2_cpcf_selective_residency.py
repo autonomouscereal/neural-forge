@@ -111,6 +111,7 @@ def test_real_verifier_contract_walks_and_releases_every_layer(
     ]
     assert receipt["residency_snapshot"]["peak_occupied_layers"] == 2
     assert receipt["physical_rss_gate"]["passed"] is True
+    assert receipt["physical_rss_gate"]["gate_uses_process_high_water"] is True
     assert receipt["parent_model_loaded"] is False
     assert receipt["parent_forward_calls"] == 0
     assert receipt["training_steps"] == 0
