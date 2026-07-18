@@ -4334,6 +4334,16 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             == request.get("fit_case_authentication_sha256")
             and isinstance(case_seals, Mapping)
             and set(case_seals) == {"fit", "selection", "validation"}
+            and all(
+                isinstance(values, list)
+                and values
+                and all(
+                    isinstance(value, str)
+                    and _SHA256.fullmatch(value) is not None
+                    for value in values
+                )
+                for values in case_seals.values()
+            )
             and case_seals.get("fit")
             == request.get("fit_case_authentication_sha256")
         ):
@@ -4526,6 +4536,7 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             and report.get("source_channels_pruned") == 0
             and report.get("source_channels_quantized") == 0
             and isinstance(execution, Mapping)
+            and set(execution) == _SHORT_CONV_V4_EXECUTION_FIELDS
             and all(
                 type(value) is int and value == 0
                 for value in execution.values()

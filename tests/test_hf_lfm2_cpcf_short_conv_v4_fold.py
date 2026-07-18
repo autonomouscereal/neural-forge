@@ -831,6 +831,32 @@ def test_numerical_frontier_failure_uses_explicit_v5_validator() -> None:
         ) is (selector is not None)
         assert layer_compiler._valid_short_conv_validation_report(report)
 
+        def reseal_with(mutator):
+            body = copy.deepcopy(report)
+            body.pop("report_sha256")
+            mutator(body)
+            return {**body, "report_sha256": _sha(body)}
+
+        for execution in ({}, {"training_steps": 0}):
+            mutated = reseal_with(
+                lambda body, value=execution: body.__setitem__(
+                    "execution",
+                    value,
+                )
+            )
+            assert not layer_compiler._valid_short_conv_validation_report(
+                mutated
+            )
+        for split in ("selection", "validation"):
+            mutated = reseal_with(
+                lambda body, value=split: body[
+                    "case_authentication_sha256"
+                ].__setitem__(value, [])
+            )
+            assert not layer_compiler._valid_short_conv_validation_report(
+                mutated
+            )
+
 
 def test_orchestrator_rejects_mutated_authenticated_case() -> None:
     fixture = _fixture()
