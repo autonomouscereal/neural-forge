@@ -41,6 +41,7 @@ TIED_CAUSAL_ANCHOR_SPLIT_SCHEMA = (
 TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA = (
     "neural-forge-tied-causal-anchor-residual-v1"
 )
+_BASE_INTERFACE_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
 _SPLITS = ("selection", "fit", "validation")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -96,6 +97,63 @@ def _tensor_sha256(value: Any) -> str:
     digest = hashlib.sha256(_canonical_json(descriptor))
     digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
     return digest.hexdigest()
+
+
+def _interface_tensor_sha256(value: Any) -> str:
+    """Match the tensor seal used by the base tied-interface report."""
+
+    torch = _torch()
+    tensor = value.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(
+        json.dumps(
+            [int(size) for size in tensor.shape],
+            separators=(",", ":"),
+        ).encode("ascii")
+    )
+    digest.update(b"\0")
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _verified_report(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise TiedCausalAnchorFoldError(f"{name} must be a report mapping.")
+    report = dict(value)
+    body = dict(report)
+    seal = body.pop("report_sha256", None)
+    if _digest(seal, f"{name}.report_sha256") != _sha(body):
+        raise TiedCausalAnchorFoldError(f"{name} report seal is invalid.")
+    return report
+
+
+def _verified_base_interface_report(
+    value: Any,
+    *,
+    base_weight: Any,
+    producer_encoder: Any,
+    source_table: Any,
+) -> dict[str, Any]:
+    report = _verified_report(value, "base_interface")
+    expected = {
+        "schema": _BASE_INTERFACE_SCHEMA,
+        "source_width": int(producer_encoder.shape[0]),
+        "target_width": int(producer_encoder.shape[1]),
+        "vocabulary_size": int(base_weight.shape[0]),
+        "target_weight_sha256": _interface_tensor_sha256(base_weight),
+        "producer_encoder_sha256": _interface_tensor_sha256(
+            producer_encoder
+        ),
+        "source_table_sha256": _interface_tensor_sha256(source_table),
+    }
+    if any(report.get(name) != expected_value for name, expected_value in expected.items()):
+        raise TiedCausalAnchorFoldError(
+            "Base interface report does not authenticate its source table, "
+            "target table, producer encoder, or dimensions."
+        )
+    return report
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -615,15 +673,61 @@ class TiedCausalAnchorResidualFold:
         seal = report.get("report_sha256")
         body = dict(report)
         body.pop("report_sha256", None)
+        lineage = report.get("base_interface_lineage")
+        if not isinstance(lineage, Mapping):
+            raise TiedCausalAnchorFoldError(
+                "Causal-anchor base-interface lineage is missing."
+            )
+        base_report = _verified_report(
+            lineage.get("report"),
+            "base_interface_lineage.report",
+        )
+        base_report_sha256 = _digest(
+            base_report.get("report_sha256"),
+            "base_interface_lineage.report.report_sha256",
+        )
+        base_target_sha256 = _digest(
+            base_report.get("target_weight_sha256"),
+            "base_interface_lineage.report.target_weight_sha256",
+        )
+        base_producer_sha256 = _digest(
+            base_report.get("producer_encoder_sha256"),
+            "base_interface_lineage.report.producer_encoder_sha256",
+        )
+        base_source_sha256 = _digest(
+            base_report.get("source_table_sha256"),
+            "base_interface_lineage.report.source_table_sha256",
+        )
+        producer_sha256 = _interface_tensor_sha256(
+            self.interface.producer_encoder
+        )
         if (
             _digest(seal, "report_sha256") != _sha(body)
+            or dict(self.interface.report) != report
             or report.get("target_weight_sha256")
             != _tensor_sha256(self.interface.target_weight)
             or report.get("residual_weight_sha256")
             != _tensor_sha256(residual)
+            or report.get("producer_encoder_sha256")
+            != _tensor_sha256(self.interface.producer_encoder)
+            or report.get("base_interface_report_sha256")
+            != base_report_sha256
+            or lineage.get("report_sha256") != base_report_sha256
+            or lineage.get("target_weight_sha256") != base_target_sha256
+            or lineage.get("producer_encoder_sha256")
+            != base_producer_sha256
+            or lineage.get("source_table_sha256") != base_source_sha256
+            or lineage.get("producer_encoder_sha256") != producer_sha256
+            or base_report.get("schema") != _BASE_INTERFACE_SCHEMA
+            or base_report.get("source_width") != self.interface.source_width
+            or base_report.get("target_width") != self.interface.target_width
+            or base_report.get("vocabulary_size")
+            != self.interface.vocabulary_size
+            or lineage.get("tensor_identity_verified") is not True
         ):
             raise TiedCausalAnchorFoldError(
-                "Causal-anchor residual report or tensor seal is invalid."
+                "Causal-anchor residual report, tensor seal, or base "
+                "ancestry is invalid."
             )
         object.__setattr__(self, "residual_weight", residual)
         object.__setattr__(self, "report", MappingProxyType(report))
@@ -644,6 +748,7 @@ def fit_tied_causal_interface_anchor_residual(
     maximum_relative_table_drift: float = 0.25,
     target_norm_epsilon: float = 1e-5,
     metric_chunk_rows: int = 256,
+    maximum_fit_anchor_rows: int = 4096,
 ) -> TiedCausalAnchorResidualFold:
     """Fit and select one bounded same-shape tied-table anchor residual."""
 
@@ -673,6 +778,16 @@ def fit_tied_causal_interface_anchor_residual(
         raise TiedCausalAnchorFoldError(
             "Causal-anchor folding requires at least two vocabulary rows."
         )
+    base_report = _verified_base_interface_report(
+        base_interface.report,
+        base_weight=base_weight,
+        producer_encoder=encoder,
+        source_table=source_table,
+    )
+    base_report_sha256 = _digest(
+        base_report.get("report_sha256"),
+        "base_interface.report_sha256",
+    )
     splits = _split_inventory(
         selection_split,
         fit_split,
@@ -692,6 +807,15 @@ def fit_tied_causal_interface_anchor_residual(
         "target_norm_epsilon",
     )
     chunk_rows = _positive_int(metric_chunk_rows, "metric_chunk_rows")
+    maximum_fit_rows = _positive_int(
+        maximum_fit_anchor_rows,
+        "maximum_fit_anchor_rows",
+    )
+    if splits["fit"].row_count > maximum_fit_rows:
+        raise TiedCausalAnchorFoldError(
+            "Fit anchor count exceeds the dense observation-space safety "
+            f"ceiling: {splits['fit'].row_count} > {maximum_fit_rows}."
+        )
 
     fit_coordinates = _coordinates(
         splits["fit"],
@@ -789,6 +913,17 @@ def fit_tied_causal_interface_anchor_residual(
         "repaired_dense_tied_parameter_count": int(selected_weight.numel()),
         "additional_runtime_parameter_count": 0,
         "dense_same_shape_tied_table": True,
+        "base_interface_report_sha256": base_report_sha256,
+        "base_interface_lineage": {
+            "report": base_report,
+            "report_sha256": base_report_sha256,
+            "target_weight_sha256": base_report["target_weight_sha256"],
+            "producer_encoder_sha256": base_report[
+                "producer_encoder_sha256"
+            ],
+            "source_table_sha256": base_report["source_table_sha256"],
+            "tensor_identity_verified": True,
+        },
         "producer_encoder_fixed": True,
         "producer_encoder_sha256": _tensor_sha256(encoder),
         "source_tied_table_sha256": _tensor_sha256(source_table),
@@ -804,7 +939,8 @@ def fit_tied_causal_interface_anchor_residual(
         "selection_split_used_for_ridge_margin_selection": True,
         "validation_split_used_for_residual_parameters": False,
         "validation_split_used_for_ridge_margin_selection": False,
-        "validation_first_read_after_candidate_frozen": True,
+        "validation_values_used_for_parameters_or_selection": False,
+        "validation_metrics_first_computed_after_candidate_frozen": True,
         "ridge_candidates": list(ridges),
         "margin_candidates": list(margins),
         "candidate_reports": candidate_reports,
@@ -819,6 +955,8 @@ def fit_tied_causal_interface_anchor_residual(
         "split_metrics": split_metrics,
         "target_norm_epsilon": norm_epsilon,
         "metric_chunk_rows": chunk_rows,
+        "maximum_fit_anchor_rows": maximum_fit_rows,
+        "fit_anchor_row_ceiling_satisfied": True,
         "operation_audit": {
             "parent_forward_count": 0,
             "parent_generation_count": 0,

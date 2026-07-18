@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 
 import pytest
 
@@ -16,26 +18,72 @@ from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
 )
 
 
+def _canonical_sha256(value) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _interface_tensor_sha256(value: torch.Tensor) -> str:
+    tensor = value.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(
+        json.dumps(
+            [int(size) for size in tensor.shape],
+            separators=(",", ":"),
+        ).encode("ascii")
+    )
+    digest.update(b"\0")
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _sealed_report(body: dict) -> dict:
+    return {**body, "report_sha256": _canonical_sha256(body)}
+
+
 def _interface() -> TiedCausalInterfaceFold:
+    target_weight = torch.tensor(
+        [
+            [1.0, 0.0],
+            [-1.0, 0.0],
+            [0.0, 1.0],
+            [0.0, -1.0],
+        ],
+        dtype=torch.float64,
+    )
+    producer_encoder = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [0.0, 0.0],
+        ],
+        dtype=torch.float64,
+    )
+    report = _sealed_report(
+        {
+            "schema": "neural-forge-tied-causal-interface-fold-v1",
+            "source_width": 3,
+            "target_width": 2,
+            "vocabulary_size": 4,
+            "target_weight_sha256": _interface_tensor_sha256(target_weight),
+            "producer_encoder_sha256": _interface_tensor_sha256(
+                producer_encoder
+            ),
+            "source_table_sha256": _interface_tensor_sha256(_source_table()),
+        }
+    )
     return TiedCausalInterfaceFold(
-        target_weight=torch.tensor(
-            [
-                [1.0, 0.0],
-                [-1.0, 0.0],
-                [0.0, 1.0],
-                [0.0, -1.0],
-            ],
-            dtype=torch.float64,
-        ),
-        producer_encoder=torch.tensor(
-            [
-                [1.0, 0.0],
-                [0.0, 1.0],
-                [0.0, 0.0],
-            ],
-            dtype=torch.float64,
-        ),
-        report={"report_sha256": "0" * 64},
+        target_weight=target_weight,
+        producer_encoder=producer_encoder,
+        report=report,
     )
 
 
@@ -94,9 +142,10 @@ def _fold(
     *,
     validation_variant: bool = False,
     drift: float = 1.0,
+    base_interface: TiedCausalInterfaceFold | None = None,
 ):
     return fit_tied_causal_interface_anchor_residual(
-        _interface(),
+        _interface() if base_interface is None else base_interface,
         _source_table(),
         selection_split=_split("selection", "selection"),
         fit_split=_split("fit", "fit"),
@@ -124,6 +173,12 @@ def test_anchor_residual_repairs_fit_decisions_without_extra_parameters() -> Non
     assert report["producer_encoder_fixed"] is True
     assert report["additional_runtime_parameter_count"] == 0
     assert report["dense_same_shape_tied_table"] is True
+    base = _interface()
+    assert report["base_interface_report_sha256"] == base.report[
+        "report_sha256"
+    ]
+    assert report["base_interface_lineage"]["report"] == dict(base.report)
+    assert report["base_interface_lineage"]["tensor_identity_verified"] is True
     assert (
         report["base_dense_tied_parameter_count"]
         == report["repaired_dense_tied_parameter_count"]
@@ -170,7 +225,16 @@ def test_validation_cannot_select_or_change_the_residual() -> None:
         first.report["validation_split_used_for_ridge_margin_selection"]
         is False
     )
-    assert first.report["validation_first_read_after_candidate_frozen"] is True
+    assert (
+        first.report[
+            "validation_metrics_first_computed_after_candidate_frozen"
+        ]
+        is True
+    )
+    assert (
+        first.report["validation_values_used_for_parameters_or_selection"]
+        is False
+    )
 
 
 def test_drift_is_bounded_and_fold_is_deterministic_and_sealed() -> None:
@@ -233,6 +297,64 @@ def test_split_ids_must_be_disjoint_and_target_ids_must_fit_vocabulary() -> None
         )
 
 
+def test_fit_rows_above_dense_solver_safety_ceiling_fail_closed() -> None:
+    with pytest.raises(TiedCausalAnchorFoldError, match="safety ceiling"):
+        fit_tied_causal_interface_anchor_residual(
+            _interface(),
+            _source_table(),
+            selection_split=_split("selection", "selection"),
+            fit_split=_split("fit", "fit"),
+            validation_split=_split(
+                "validation",
+                "validation",
+                validation_variant=True,
+            ),
+            maximum_fit_anchor_rows=1,
+        )
+
+
+def test_base_interface_ancestry_tampering_fails_closed() -> None:
+    base = _interface()
+    invalid_body = dict(base.report)
+    invalid_body.pop("report_sha256")
+    invalid_body["target_weight_sha256"] = "0" * 64
+    invalid_base = TiedCausalInterfaceFold(
+        target_weight=base.target_weight,
+        producer_encoder=base.producer_encoder,
+        report=_sealed_report(invalid_body),
+    )
+    with pytest.raises(TiedCausalAnchorFoldError, match="authenticate"):
+        _fold(base_interface=invalid_base)
+
+    result = _fold()
+    tampered = copy.deepcopy(dict(result.report))
+    lineage = tampered["base_interface_lineage"]
+    nested_body = dict(lineage["report"])
+    nested_body.pop("report_sha256")
+    nested_body["producer_encoder_sha256"] = "1" * 64
+    nested_report = _sealed_report(nested_body)
+    lineage["report"] = nested_report
+    lineage["report_sha256"] = nested_report["report_sha256"]
+    lineage["producer_encoder_sha256"] = "1" * 64
+    tampered["base_interface_report_sha256"] = nested_report[
+        "report_sha256"
+    ]
+    tampered_body = dict(tampered)
+    tampered_body.pop("report_sha256")
+    tampered["report_sha256"] = _canonical_sha256(tampered_body)
+    tampered_interface = TiedCausalInterfaceFold(
+        target_weight=result.interface.target_weight,
+        producer_encoder=result.interface.producer_encoder,
+        report=tampered,
+    )
+    with pytest.raises(TiedCausalAnchorFoldError, match="ancestry"):
+        type(result)(
+            interface=tampered_interface,
+            residual_weight=result.residual_weight,
+            report=tampered,
+        )
+
+
 def test_nonfinite_inputs_and_report_tampering_fail_closed() -> None:
     values = _split("fit", "fit").source_producer_rows.clone()
     values[0, 0] = torch.nan
@@ -248,7 +370,10 @@ def test_nonfinite_inputs_and_report_tampering_fail_closed() -> None:
     result = _fold()
     tampered = copy.deepcopy(dict(result.report))
     tampered["additional_runtime_parameter_count"] = 1
-    with pytest.raises(TiedCausalAnchorFoldError, match="report or tensor seal"):
+    with pytest.raises(
+        TiedCausalAnchorFoldError,
+        match="report, tensor seal, or base ancestry",
+    ):
         type(result)(
             interface=result.interface,
             residual_weight=result.residual_weight,

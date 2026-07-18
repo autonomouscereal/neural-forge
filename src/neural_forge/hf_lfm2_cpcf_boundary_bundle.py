@@ -7,10 +7,14 @@ then serve as the common future/action view for *independent* charts at every
 post-operator and post-layer residual boundary.
 
 Rows tagged ``fit`` are the only rows allowed to influence fitted values.
-Rows tagged ``validation`` are held out for capacity gates.  ``selection``
-rows are authenticated and covered by the receipt, but never enter either
-matrix.  Each phase receives equal total weight so a long prefill cannot
-silently dominate short causal-decode phases.
+``selection`` rows choose only the bounded causal-anchor ridge/margin after
+each candidate has been fitted.  Validation values never influence fitted
+parameters or candidate selection; base-interface diagnostics and boundary
+capacity gates may evaluate them, while causal-anchor validation metrics are
+computed only after the winning residual is frozen.  Each phase receives
+equal total boundary-chart weight so a long prefill cannot silently dominate
+short causal-decode phases.  Anchor evidence uses exactly one endpoint per
+batch row and labeled causal step.
 
 No model is accepted or executed by this module.  It performs no mutation,
 training, pruning, quantization, or optimizer work.
@@ -32,6 +36,10 @@ from neural_forge.hf_cpcf_boundary_chart import (
     fit_cpcf_boundary_chart,
 )
 from neural_forge.hf_lfm2_cpcf_model_compiler import Lfm2CpcfTargetPhase
+from neural_forge.hf_tied_causal_interface_anchor_fold import (
+    TiedCausalAnchorSplit,
+    fit_tied_causal_interface_anchor_residual,
+)
 from neural_forge.hf_tied_causal_interface_fold import (
     TiedCausalInterfaceFold,
     fit_tied_causal_interface,
@@ -39,7 +47,7 @@ from neural_forge.hf_tied_causal_interface_fold import (
 
 
 LFM2_CPCF_BOUNDARY_BUNDLE_SCHEMA = (
-    "neural-forge-lfm2-cpcf-boundary-bundle-v1"
+    "neural-forge-lfm2-cpcf-boundary-bundle-v2"
 )
 LFM2_CPCF_LAYER_CHARTS_SCHEMA = (
     "neural-forge-lfm2-cpcf-layer-boundary-charts-v1"
@@ -47,6 +55,7 @@ LFM2_CPCF_LAYER_CHARTS_SCHEMA = (
 _SPLITS = ("selection", "fit", "validation")
 _BOUNDARIES = ("residual.post_operator", "residual.post_layer")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_DECODE_PHASE = re.compile(r"decode\.(\d{3,})\Z")
 
 
 class Lfm2CpcfBoundaryBundleError(ValueError):
@@ -206,6 +215,17 @@ def _tensor_sha256(value: Any) -> str:
 
 def _report_digest(value: Mapping[str, Any], name: str) -> str:
     return _digest(value.get("report_sha256"), f"{name}.report_sha256")
+
+
+def _verified_report(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfBoundaryBundleError(f"{name} must be a report mapping.")
+    report = dict(value)
+    body = dict(report)
+    seal = body.pop("report_sha256", None)
+    if _digest(seal, f"{name}.report_sha256") != _sha256(body):
+        raise Lfm2CpcfBoundaryBundleError(f"{name} report seal is invalid.")
+    return report
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,6 +395,58 @@ class Lfm2CpcfBoundaryBundle:
         ):
             raise Lfm2CpcfBoundaryBundleError(
                 "Boundary-bundle split hashes differ from its report."
+            )
+        active_report = _verified_report(
+            self.interface.report,
+            "active_interface",
+        )
+        lineage = report.get("interface_lineage")
+        if not isinstance(lineage, Mapping):
+            raise Lfm2CpcfBoundaryBundleError(
+                "Boundary-bundle interface lineage is missing."
+            )
+        base_report = _verified_report(
+            lineage.get("base_interface_report"),
+            "base_interface",
+        )
+        anchor_report = _verified_report(
+            lineage.get("causal_anchor_report"),
+            "causal_anchor",
+        )
+        anchor_base_lineage = anchor_report.get(
+            "base_interface_lineage"
+        )
+        if not isinstance(anchor_base_lineage, Mapping):
+            raise Lfm2CpcfBoundaryBundleError(
+                "Causal-anchor base-interface ancestry is missing."
+            )
+        active_sha = _report_digest(active_report, "active_interface")
+        base_sha = _report_digest(base_report, "base_interface")
+        anchor_sha = _report_digest(anchor_report, "causal_anchor")
+        if (
+            report.get("interface_report_sha256") != active_sha
+            or report.get("base_interface_report_sha256") != base_sha
+            or report.get("causal_anchor_report_sha256") != anchor_sha
+            or lineage.get("active_interface_report_sha256") != active_sha
+            or lineage.get("base_interface_report_sha256") != base_sha
+            or lineage.get("causal_anchor_report_sha256") != anchor_sha
+            or active_report != anchor_report
+            or anchor_report.get("base_interface_report_sha256") != base_sha
+            or anchor_base_lineage.get("report") != base_report
+            or anchor_base_lineage.get("report_sha256") != base_sha
+            or anchor_base_lineage.get("target_weight_sha256")
+            != base_report.get("target_weight_sha256")
+            or anchor_base_lineage.get("producer_encoder_sha256")
+            != base_report.get("producer_encoder_sha256")
+            or anchor_base_lineage.get("source_table_sha256")
+            != base_report.get("source_table_sha256")
+            or anchor_base_lineage.get("tensor_identity_verified") is not True
+            or _tensor_sha256(self.interface.producer_encoder)
+            != base_report.get("producer_encoder_sha256")
+        ):
+            raise Lfm2CpcfBoundaryBundleError(
+                "Boundary-bundle base, anchor, or active interface lineage "
+                "seal is inconsistent."
             )
         object.__setattr__(self, "layers", layers)
         object.__setattr__(
@@ -612,6 +684,201 @@ def _rows(
     return torch.cat(values, dim=0).contiguous()
 
 
+def _causal_anchor_splits(
+    inventory: _PhaseInventory,
+) -> Mapping[str, TiedCausalAnchorSplit]:
+    """Extract one next-token anchor per record and causal endpoint."""
+
+    torch = _torch()
+    grouped: dict[
+        tuple[int, str],
+        list[Lfm2CpcfTargetPhase],
+    ] = {}
+    record_order: list[tuple[int, str]] = []
+    closed: set[tuple[int, str]] = set()
+    previous: tuple[int, str] | None = None
+    for phase in inventory.phases:
+        key = (phase.batch_index, phase.record_id)
+        if key != previous:
+            if previous is not None:
+                closed.add(previous)
+            if key in closed:
+                raise Lfm2CpcfBoundaryBundleError(
+                    "Target phases for one record must be contiguous."
+                )
+            record_order.append(key)
+            previous = key
+        grouped.setdefault(key, []).append(phase)
+    batch_indices = [key[0] for key in record_order]
+    if (
+        batch_indices != sorted(batch_indices)
+        or len(set(batch_indices)) != len(batch_indices)
+    ):
+        raise Lfm2CpcfBoundaryBundleError(
+            "Target records must be unique and ordered by cache batch."
+        )
+
+    split_rows: dict[str, list[tuple[str, int, Any, int]]] = {
+        split: [] for split in _SPLITS
+    }
+    all_row_ids: set[str] = set()
+    final_field = "output.final_norm_output"
+    for key in record_order:
+        phases = grouped[key]
+        first = phases[0]
+        if (
+            first.phase not in {"prefill", "cached_prefill"}
+            or any(
+                phase.batch_index != first.batch_index
+                or phase.record_id != first.record_id
+                or phase.split != first.split
+                or phase.batch_size != first.batch_size
+                or phase.donor_input_sha256 != first.donor_input_sha256
+                or phase.target_alignment_sha256
+                != first.target_alignment_sha256
+                for phase in phases
+            )
+        ):
+            raise Lfm2CpcfBoundaryBundleError(
+                "Causal-anchor records require one canonical prefill and "
+                "stable record, batch, and alignment provenance."
+            )
+        expected_names = (first.phase,) + tuple(
+            f"decode.{index:03d}" for index in range(len(phases) - 1)
+        )
+        observed_names = tuple(phase.phase for phase in phases)
+        if observed_names != expected_names:
+            raise Lfm2CpcfBoundaryBundleError(
+                "Target phases are not in canonical prefill/decode order."
+            )
+
+        for causal_step, (phase, next_phase) in enumerate(
+            zip(phases[:-1], phases[1:], strict=True)
+        ):
+            if (
+                next_phase.full_prefix_tokens != phase.full_prefix_tokens + 1
+                or not torch.equal(
+                    next_phase.input_ids[:, :-1],
+                    phase.input_ids,
+                )
+                or not torch.equal(
+                    next_phase.attention_mask[:, :-1],
+                    phase.attention_mask,
+                )
+                or not torch.equal(
+                    next_phase.position_ids[:, :-1],
+                    phase.position_ids,
+                )
+                or not bool(
+                    (next_phase.attention_mask[:, -1] == 1).all().item()
+                )
+                or not torch.equal(
+                    next_phase.position_ids[:, -1],
+                    phase.position_ids[:, -1] + 1,
+                )
+            ):
+                raise Lfm2CpcfBoundaryBundleError(
+                    "A target decode phase does not append exactly one "
+                    "teacher-forced token to its causal predecessor."
+                )
+            current_match = _DECODE_PHASE.fullmatch(phase.phase)
+            if (
+                causal_step == 0
+                and phase.phase not in {"prefill", "cached_prefill"}
+                or causal_step > 0
+                and (
+                    current_match is None
+                    or int(current_match.group(1)) != causal_step - 1
+                )
+            ):
+                raise Lfm2CpcfBoundaryBundleError(
+                    "Causal phase-to-target labels are not canonical."
+                )
+            endpoints = inventory.tensors[
+                (phase.identity, final_field)
+            ][:, -1, :]
+            for batch_row in range(phase.batch_size):
+                prefix_position = int(
+                    phase.position_ids[batch_row, -1].item()
+                )
+                row_id = (
+                    f"{phase.split}/batch.{phase.batch_index:06d}/"
+                    f"record.{phase.record_id}/batch_row.{batch_row:04d}/"
+                    f"causal.{causal_step:04d}/"
+                    f"prefix.{prefix_position:08d}"
+                )
+                if row_id in all_row_ids:
+                    raise Lfm2CpcfBoundaryBundleError(
+                        "A record/batch-row/causal-position anchor row ID is "
+                        "duplicated."
+                    )
+                all_row_ids.add(row_id)
+                split_rows[phase.split].append(
+                    (
+                        row_id,
+                        prefix_position,
+                        endpoints[batch_row].contiguous(),
+                        int(next_phase.input_ids[batch_row, -1].item()),
+                    )
+                )
+
+    result: dict[str, TiedCausalAnchorSplit] = {}
+    for split in _SPLITS:
+        rows = split_rows[split]
+        if not rows:
+            raise Lfm2CpcfBoundaryBundleError(
+                f"{split} has no labeled causal endpoint; every anchor split "
+                "requires at least one non-final phase."
+            )
+        result[split] = TiedCausalAnchorSplit(
+            name=split,
+            row_ids=tuple(row[0] for row in rows),
+            prefix_positions=torch.tensor(
+                [row[1] for row in rows],
+                dtype=torch.long,
+            ),
+            source_producer_rows=torch.stack(
+                [row[2] for row in rows],
+                dim=0,
+            ).contiguous(),
+            target_next_token_ids=torch.tensor(
+                [row[3] for row in rows],
+                dtype=torch.long,
+            ),
+        )
+    if sum(split.row_count for split in result.values()) != len(all_row_ids):
+        raise Lfm2CpcfBoundaryBundleError(
+            "Causal-anchor extraction did not preserve one unique row ID per "
+            "record, batch row, and causal step."
+        )
+    return MappingProxyType(result)
+
+
+def build_lfm2_cpcf_causal_anchor_splits(
+    phases: Sequence[Lfm2CpcfTargetPhase],
+) -> Mapping[str, TiedCausalAnchorSplit]:
+    """Build sealed leakage-free causal-anchor splits from cached phases."""
+
+    ordered = tuple(phases)
+    if not ordered or not isinstance(
+        ordered[0],
+        Lfm2CpcfTargetPhase,
+    ):
+        raise Lfm2CpcfBoundaryBundleError(
+            "phases must contain ordered Lfm2CpcfTargetPhase objects."
+        )
+    layers = ordered[0].parent_evidence.layers
+    if not layers:
+        raise Lfm2CpcfBoundaryBundleError(
+            "Installable evidence contains no layers."
+        )
+    inventory = _inventory(
+        ordered,
+        source_width=layers[0].source_width,
+    )
+    return _causal_anchor_splits(inventory)
+
+
 def _balanced_phase_weights(
     inventory: _PhaseInventory,
     split: str,
@@ -756,7 +1023,7 @@ def fit_lfm2_cpcf_boundary_bundle(
     fit_final = _rows(inventory, "fit", final_field)
     validation_final = _rows(inventory, "validation", final_field)
 
-    interface = fit_tied_causal_interface(
+    base_interface = fit_tied_causal_interface(
         table,
         fit_final,
         target_width=target_width,
@@ -768,6 +1035,17 @@ def fit_lfm2_cpcf_boundary_bundle(
         minimum_validation_top1_agreement=0.0,
         metric_chunk_rows=chunk_rows,
     )
+    anchor_splits = _causal_anchor_splits(inventory)
+    anchor_fold = fit_tied_causal_interface_anchor_residual(
+        base_interface,
+        table,
+        selection_split=anchor_splits["selection"],
+        fit_split=anchor_splits["fit"],
+        validation_split=anchor_splits["validation"],
+        target_norm_epsilon=target_norm_epsilon,
+        metric_chunk_rows=chunk_rows,
+    )
+    interface = anchor_fold.interface
     fit_future = interface.encode_producer_rows(fit_final)
     validation_future = interface.encode_producer_rows(validation_final)
 
@@ -821,7 +1099,8 @@ def fit_lfm2_cpcf_boundary_bundle(
     body = {
         "schema": LFM2_CPCF_BOUNDARY_BUNDLE_SCHEMA,
         "method": (
-            "tied_causal_interface_then_independent_predictive_boundary_charts"
+            "tied_causal_interface_then_causal_anchor_residual_then_"
+            "independent_predictive_boundary_charts"
         ),
         "source_width": source_width,
         "target_width": target_width,
@@ -832,6 +1111,53 @@ def fit_lfm2_cpcf_boundary_bundle(
             interface.report,
             "interface",
         ),
+        "base_interface_report_sha256": _report_digest(
+            base_interface.report,
+            "base_interface",
+        ),
+        "causal_anchor_report_sha256": _report_digest(
+            anchor_fold.report,
+            "causal_anchor",
+        ),
+        "interface_lineage": {
+            "base_interface_report": dict(base_interface.report),
+            "causal_anchor_report": dict(anchor_fold.report),
+            "base_interface_report_sha256": _report_digest(
+                base_interface.report,
+                "base_interface",
+            ),
+            "causal_anchor_report_sha256": _report_digest(
+                anchor_fold.report,
+                "causal_anchor",
+            ),
+            "active_interface_report_sha256": _report_digest(
+                interface.report,
+                "interface",
+            ),
+            "active_interface_is_anchor_repaired": True,
+            "producer_encoder_fixed_by_anchor_repair": True,
+            "additional_runtime_parameter_count": 0,
+        },
+        "causal_anchor_extraction": {
+            "method": (
+                "one_last_sampled_final_norm_endpoint_per_record_causal_step"
+            ),
+            "label_source": "next_phase_newly_appended_target_token",
+            "phase_label_contract": {
+                "prefill": "forced_decode[0]",
+                "cached_prefill": "forced_decode[0]",
+                "decode.k": "forced_decode[k+1]",
+            },
+            "final_unlabeled_phase_excluded": True,
+            "canonical_prefill_or_cached_prefill_decode_order_required": True,
+            "one_unique_row_id_per_record_batch_row_causal_step": True,
+            "row_id_binds_batch_index_batch_row_and_prefix_position": True,
+            "no_sampled_prefix_row_duplication": True,
+            "split_inventory": {
+                split: anchor_splits[split].as_dict()
+                for split in _SPLITS
+            },
+        },
         "layer_charts": [layer.as_dict() for layer in layers],
         "split_phase_counts": phase_counts,
         "split_row_counts": row_counts,
@@ -844,7 +1170,9 @@ def fit_lfm2_cpcf_boundary_bundle(
             "row_count": row_counts["selection"],
             "phase_sha256": split_phase_hashes["selection"],
             "row_sha256": split_row_hashes["selection"],
-            "used_to_fit_interface": False,
+            "used_to_fit_base_interface": False,
+            "used_to_fit_causal_anchor_values": False,
+            "used_to_select_causal_anchor_ridge_margin": True,
             "used_to_fit_boundary_charts": False,
             "used_for_validation_gates": False,
             "authenticated_and_receipted": True,
@@ -866,10 +1194,10 @@ def fit_lfm2_cpcf_boundary_bundle(
         "interface_top1": {
             "principal_objective": False,
             "capacity_gate_used": False,
-            "fit_rmsnorm_parent_top1_agreement": interface.report["fit"][
+            "fit_rmsnorm_parent_top1_agreement": base_interface.report["fit"][
                 "rmsnorm_parent_top1_agreement"
             ],
-            "validation_rmsnorm_parent_top1_agreement": interface.report[
+            "validation_rmsnorm_parent_top1_agreement": base_interface.report[
                 "validation"
             ]["rmsnorm_parent_top1_agreement"],
             "diagnostic_only": True,
@@ -901,8 +1229,10 @@ def fit_lfm2_cpcf_boundary_bundle(
         },
         "coordinate_contract": {
             "future_coordinates": (
-                "tied_interface_encoded_parent_final_norm_output"
+                "anchor_repaired_tied_interface_encoded_parent_final_norm_"
+                "output"
             ),
+            "active_interface_is_anchor_repaired": True,
             "one_global_residual_basis_used": False,
             "independent_post_operator_and_post_layer_charts": True,
             "residual_write_formula": (
@@ -940,5 +1270,6 @@ __all__ = [
     "Lfm2CpcfBoundaryBundle",
     "Lfm2CpcfBoundaryBundleError",
     "Lfm2CpcfLayerBoundaryCharts",
+    "build_lfm2_cpcf_causal_anchor_splits",
     "fit_lfm2_cpcf_boundary_bundle",
 ]
