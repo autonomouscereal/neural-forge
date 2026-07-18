@@ -32,8 +32,8 @@ def test_v5_has_distinct_compiler_resume_and_artifact_fingerprints() -> None:
     assert implementation[
         "short_conv_v5_numerical_policy_integration_status"
     ] == (
-        "endpoint_first_preinstall_selector_integrated_"
-        "candidate_generation_pending"
+        "generic_numerical_frontier_adapter_integrated_"
+        "real_v5_candidate_generation_pending"
     )
     assert any(
         record["filename"] == "hf_lfm2_cpcf_short_conv_v5.py"
@@ -84,9 +84,13 @@ def test_layer_compiler_exposes_opt_in_candidate_replay_without_new_default():
     )
     parameter = signature.parameters["candidate_replay_evaluator"]
     selector_parameter = signature.parameters["candidate_selector"]
+    frontier_parameter = signature.parameters[
+        "numerical_frontier_adapter"
+    ]
 
     assert parameter.default is None
     assert selector_parameter.default is None
+    assert frontier_parameter.default is None
     assert (
         signature.parameters["short_conv_v4_solver_policy"].default
         is None
@@ -218,7 +222,9 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         Lfm2CpcfShortConvV4SolverPolicy,
     )
     from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
-        LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA,
+        LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA,
+        Lfm2CpcfShortConvNumericalFrontier,
+        Lfm2CpcfShortConvNumericalRawCandidate,
     )
     from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
         LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
@@ -381,9 +387,79 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         short_conv_v4_solver_policy=solver_policy,
     )
 
+    class _ToyNumericalFrontierAdapter:
+        def __init__(self) -> None:
+            self.frontier = None
+
+        def generate(self, request):
+            source_hidden = int(request.report["source_hidden_size"])
+            target_hidden = int(request.report["target_hidden_size"])
+            encoder = torch.zeros(
+                (source_hidden, target_hidden),
+                dtype=torch.float64,
+            )
+            for source_index in range(source_hidden):
+                encoder[
+                    source_index,
+                    source_index % target_hidden,
+                ] = 1.0
+
+            def value(role, amount):
+                template = request.target_templates[role]
+                return (
+                    None
+                    if template is None
+                    else torch.full_like(
+                        template,
+                        amount,
+                        dtype=torch.float64,
+                    )
+                )
+
+            candidates = tuple(
+                Lfm2CpcfShortConvNumericalRawCandidate(
+                    request_sha256=request.request_sha256,
+                    candidate_id=candidate_id,
+                    candidate_kind="e2e_toy_alternate",
+                    in_proj_weight=value("in_proj_weight", amount),
+                    in_proj_bias=value("in_proj_bias", amount),
+                    fir_kernel=value("fir_kernel", amount),
+                    fir_bias=value("fir_bias", amount),
+                    writer_weight=value("writer_weight", amount),
+                    writer_bias=value("writer_bias", amount),
+                    method_provenance={
+                        "method": "e2e_constant_frontier",
+                        "constant": amount,
+                    },
+                )
+                for candidate_id, amount in (
+                    ("e2e-alternate-a", 0.03125),
+                    ("e2e-alternate-z", -0.0625),
+                )
+            )
+            self.frontier = Lfm2CpcfShortConvNumericalFrontier(
+                adapter_id="tests.e2e_toy_frontier",
+                request_sha256=request.request_sha256,
+                context_encoder=encoder,
+                raw_candidates=candidates,
+                fit_case_authentication_sha256=tuple(
+                    request.report["fit_case_authentication_sha256"]
+                ),
+                adapter_provenance={
+                    "implementation": "tests.e2e_toy_frontier.v1",
+                    "real_v5_numerical_algorithm": False,
+                },
+            )
+            return self.frontier
+
     class _LastCandidateSelector:
         def select(self, request):
-            selected_id = request["candidate_ids"][-1]
+            selected_id = next(
+                candidate_id
+                for candidate_id in request["candidate_ids"]
+                if candidate_id
+                != request["default_v4_selected_candidate_id"]
+            )
             body = {
                 "schema": LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
                 "kind": "test_authenticated_last_candidate_override",
@@ -407,6 +483,8 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
                 },
             }
             return {**body, "report_sha256": _sha(body)}
+
+    numerical_adapter = _ToyNumericalFrontierAdapter()
 
     # The process-RSS gate itself is covered above. This integration test
     # freezes the probe so it tests the complete evidence/runtime wiring
@@ -433,6 +511,7 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
             CpuReferenceLfm2CpcfCandidateReplayEvaluator()
         ),
         candidate_selector=_LastCandidateSelector(),
+        numerical_frontier_adapter=numerical_adapter,
     )
 
     assert result.report["schema"] == v5.LFM2_CPCF_V5_MODEL_FOLD_SCHEMA
@@ -460,7 +539,7 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
     )
     short_conv = result.layer_results[0].report["operator_artifact"]
     assert short_conv["schema"] == (
-        LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA
+        LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA
     )
     assert short_conv["legacy_v4_report_claimed"] is False
     assert short_conv["selection_changed_from_v4"] is True
@@ -478,11 +557,38 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         "short_conv_v5_numerical_candidate_generation_integrated"
     ] is False
     assert result.report[
+        "short_conv_numerical_frontier_adapter_provided"
+    ] is True
+    assert result.report[
+        "short_conv_numerical_frontier_adapter_active"
+    ] is True
+    assert result.report[
+        "short_conv_numerical_frontier_adapter_layer_indices"
+    ] == [0]
+    assert result.report[
         "short_conv_v5_endpoint_first_selector_integrated"
     ] is False
     assert result.report[
         "short_conv_v5_post_install_rescoring_performed"
     ] is False
+    selected_raw = next(
+        candidate
+        for candidate in numerical_adapter.frontier.raw_candidates
+        if candidate.candidate_id == short_conv["selected_candidate_id"]
+    )
+    installed_conv = target.model.layers[0].conv
+    assert torch.equal(
+        installed_conv.in_proj.weight,
+        selected_raw.in_proj_weight.to(dtype=torch.float32),
+    )
+    assert torch.equal(
+        installed_conv.conv.weight,
+        selected_raw.fir_kernel.to(dtype=torch.float32).unsqueeze(1),
+    )
+    assert torch.equal(
+        installed_conv.out_proj.weight,
+        selected_raw.writer_weight.to(dtype=torch.float32),
+    )
     assert result.report["physical_rss_receipt"][
         "physical_rss_gate_passed"
     ] is True

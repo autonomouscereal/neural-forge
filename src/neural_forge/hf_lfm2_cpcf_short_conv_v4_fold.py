@@ -23,7 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -71,6 +71,24 @@ LFM2_CPCF_SHORT_CONV_V5_SELECTOR_REQUEST_SCHEMA = (
 LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-v5-selector-receipt-v1"
 )
+LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-numerical-frontier-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-numerical-frontier-request-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-numerical-frontier-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-numerical-raw-candidate-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-numerical-provenance-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_POOL_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-numerical-pool-v1"
+)
 LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v4-failure-v1"
 )
@@ -82,6 +100,10 @@ LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA = (
 )
 LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v5-preinstall-selector-"
+    "failure-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-numerical-frontier-"
     "failure-v1"
 )
 
@@ -569,6 +591,712 @@ def _state_sha256(values: Mapping[str, Any]) -> str:
     )
 
 
+_NUMERICAL_SOURCE_TENSOR_ROLES = frozenset(
+    {
+        "source_in_proj_weight",
+        "source_in_proj_bias",
+        "source_fir_kernel",
+        "source_fir_bias",
+        "source_out_proj_weight",
+        "source_out_proj_bias",
+        "output_encoder",
+    }
+)
+_NUMERICAL_TARGET_TEMPLATE_ROLES = frozenset(
+    {
+        "in_proj_weight",
+        "in_proj_bias",
+        "fir_kernel",
+        "fir_bias",
+        "writer_weight",
+        "writer_bias",
+    }
+)
+_NUMERICAL_CANDIDATE_ROLES = (
+    "in_proj_weight",
+    "in_proj_bias",
+    "fir_kernel",
+    "fir_bias",
+    "writer_weight",
+    "writer_bias",
+)
+_ZERO_EXECUTION = {
+    "parent_model_forward_calls": 0,
+    "target_model_forward_calls": 0,
+    "generation_calls": 0,
+    "training_steps": 0,
+    "backward_calls": 0,
+    "optimizer_steps": 0,
+    "parameters_pruned": 0,
+    "parameters_quantized": 0,
+}
+
+
+def _valid_sha256_text(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _optional_tensor_inventory(
+    values: Mapping[str, Any | None],
+    *,
+    prefix: str,
+) -> dict[str, str | None]:
+    return {
+        name: (
+            None
+            if value is None
+            else _tensor_sha256(value, f"{prefix}.{name}")
+        )
+        for name, value in sorted(values.items())
+    }
+
+
+def _snapshot_numerical_tensor_mapping(
+    values: Mapping[str, Any | None],
+    *,
+    expected_roles: frozenset[str],
+    dimensions: Mapping[str, int],
+    name: str,
+) -> Mapping[str, Any | None]:
+    if not isinstance(values, Mapping) or set(values) != expected_roles:
+        raise Lfm2CpcfShortConvV4FoldError(
+            f"{name} does not contain the exact audited tensor roles."
+        )
+    snapshots = {}
+    for role in sorted(expected_roles):
+        value = values[role]
+        if value is None:
+            if not role.endswith("_bias"):
+                raise Lfm2CpcfShortConvV4FoldError(
+                    f"{name}.{role} cannot be absent."
+                )
+            snapshots[role] = None
+        else:
+            snapshots[role] = _snapshot_float(
+                value,
+                f"{name}.{role}",
+                dimensions=dimensions[role],
+            )
+    return MappingProxyType(snapshots)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfShortConvNumericalFrontierRequest:
+    """Detached fit-only evidence for one optional numerical generator."""
+
+    source_tensors: Mapping[str, Any | None]
+    cases: tuple[Lfm2CpcfShortConvV4FoldCase, ...]
+    parent_contexts: Mapping[str, Any]
+    target_templates: Mapping[str, Any | None]
+    policy: Lfm2CpcfShortConvV4SolverPolicy
+    report: Mapping[str, Any] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.policy, Lfm2CpcfShortConvV4SolverPolicy):
+            raise TypeError("policy must be Lfm2CpcfShortConvV4SolverPolicy.")
+        if not self.policy.verify_authentication():
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical-frontier policy failed authentication."
+            )
+        source = _snapshot_numerical_tensor_mapping(
+            self.source_tensors,
+            expected_roles=_NUMERICAL_SOURCE_TENSOR_ROLES,
+            dimensions={
+                "source_in_proj_weight": 2,
+                "source_in_proj_bias": 1,
+                "source_fir_kernel": 2,
+                "source_fir_bias": 1,
+                "source_out_proj_weight": 2,
+                "source_out_proj_bias": 1,
+                "output_encoder": 2,
+            },
+            name="source_tensors",
+        )
+        templates = _snapshot_numerical_tensor_mapping(
+            self.target_templates,
+            expected_roles=_NUMERICAL_TARGET_TEMPLATE_ROLES,
+            dimensions={
+                "in_proj_weight": 2,
+                "in_proj_bias": 1,
+                "fir_kernel": 2,
+                "fir_bias": 1,
+                "writer_weight": 2,
+                "writer_bias": 1,
+            },
+            name="target_templates",
+        )
+        values = tuple(self.cases)
+        if (
+            not values
+            or any(
+                not isinstance(case, Lfm2CpcfShortConvV4FoldCase)
+                or case.split != "fit"
+                or not case.verify_authentication()
+                for case in values
+            )
+            or len({case.case_id for case in values}) != len(values)
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical-frontier request requires unique authenticated "
+                "fit cases only."
+            )
+        cases = tuple(
+            Lfm2CpcfShortConvV4FoldCase(
+                case_id=case.case_id,
+                split=case.split,
+                suffix_start=case.suffix_start,
+                actual_child_operator_input_history=(
+                    case.actual_child_operator_input_history
+                ),
+                parent_operator_input_history=(
+                    case.parent_operator_input_history
+                ),
+                parent_b_history=case.parent_b_history,
+                parent_c_history=case.parent_c_history,
+                parent_x_history=case.parent_x_history,
+                parent_post_operator_residual_target_space_suffix=(
+                    case.parent_post_operator_residual_target_space_suffix
+                ),
+                actual_child_pre_operator_residual_suffix=(
+                    case.actual_child_pre_operator_residual_suffix
+                ),
+                valid_prefix_mask=case.valid_prefix_mask,
+                authentication_sha256=case.authentication_sha256,
+            )
+            for case in sorted(values, key=lambda item: item.case_id)
+        )
+        if (
+            not isinstance(self.parent_contexts, Mapping)
+            or set(self.parent_contexts) != {case.case_id for case in cases}
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical-frontier parent contexts do not match fit cases."
+            )
+        contexts = MappingProxyType(
+            {
+                case.case_id: _snapshot_float(
+                    self.parent_contexts[case.case_id],
+                    f"parent_contexts.{case.case_id}",
+                    dimensions=3,
+                )
+                for case in cases
+            }
+        )
+        source_hidden = int(source["source_fir_kernel"].shape[0])
+        target_hidden = int(templates["in_proj_weight"].shape[1])
+        if (
+            tuple(source["source_in_proj_weight"].shape)
+            != (3 * source_hidden, source_hidden)
+            or tuple(source["source_out_proj_weight"].shape)
+            != (source_hidden, source_hidden)
+            or tuple(source["output_encoder"].shape)
+            != (source_hidden, target_hidden)
+            or tuple(templates["in_proj_weight"].shape)
+            != (3 * target_hidden, target_hidden)
+            or tuple(templates["writer_weight"].shape)
+            != (target_hidden, target_hidden)
+            or int(templates["fir_kernel"].shape[0]) != target_hidden
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical-frontier request tensor topology is inconsistent."
+            )
+        optional_shapes = {
+            "source_in_proj_bias": (3 * source_hidden,),
+            "source_fir_bias": (source_hidden,),
+            "source_out_proj_bias": (source_hidden,),
+        }
+        target_optional_shapes = {
+            "in_proj_bias": (3 * target_hidden,),
+            "fir_bias": (target_hidden,),
+            "writer_bias": (target_hidden,),
+        }
+        if any(
+            source[role] is not None
+            and tuple(source[role].shape) != shape
+            for role, shape in optional_shapes.items()
+        ) or any(
+            templates[role] is not None
+            and tuple(templates[role].shape) != shape
+            for role, shape in target_optional_shapes.items()
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical-frontier request bias topology is inconsistent."
+            )
+        for case in cases:
+            context = contexts[case.case_id]
+            if (
+                tuple(context.shape[:2])
+                != tuple(case.parent_b_history.shape[:2])
+                or int(context.shape[-1]) != source_hidden
+                or int(
+                    case.actual_child_operator_input_history.shape[-1]
+                )
+                != target_hidden
+            ):
+                raise Lfm2CpcfShortConvV4FoldError(
+                    "Numerical-frontier fit context geometry is inconsistent."
+                )
+        object.__setattr__(self, "source_tensors", source)
+        object.__setattr__(self, "target_templates", templates)
+        object.__setattr__(self, "cases", cases)
+        object.__setattr__(self, "parent_contexts", contexts)
+        object.__setattr__(
+            self,
+            "report",
+            _deep_freeze(_seal_report(self._report_body())),
+        )
+
+    def _report_body(self) -> dict[str, Any]:
+        source_inventory = _optional_tensor_inventory(
+            self.source_tensors,
+            prefix="numerical_frontier.source",
+        )
+        template_inventory = _optional_tensor_inventory(
+            self.target_templates,
+            prefix="numerical_frontier.target_template",
+        )
+        context_inventory = {
+            case.case_id: _tensor_sha256(
+                self.parent_contexts[case.case_id],
+                f"numerical_frontier.parent_context.{case.case_id}",
+            )
+            for case in self.cases
+        }
+        return {
+            "schema": (
+                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA
+            ),
+            "kind": "detached_fit_only_numerical_frontier_request",
+            "policy_sha256": self.policy.authentication_sha256,
+            "target_dtype": self.policy.target_dtype,
+            "source_tensor_sha256": source_inventory,
+            "source_tensor_inventory_sha256": _sha(source_inventory),
+            "fit_case_authentication_sha256": [
+                case.authentication_sha256 for case in self.cases
+            ],
+            "parent_context_sha256": context_inventory,
+            "parent_context_inventory_sha256": _sha(context_inventory),
+            "target_template_sha256": template_inventory,
+            "target_template_inventory_sha256": _sha(template_inventory),
+            "source_hidden_size": int(
+                self.source_tensors["source_fir_kernel"].shape[0]
+            ),
+            "target_hidden_size": int(
+                self.target_templates["in_proj_weight"].shape[1]
+            ),
+            "source_fir_length": int(
+                self.source_tensors["source_fir_kernel"].shape[1]
+            ),
+            "target_fir_length": int(
+                self.target_templates["fir_kernel"].shape[1]
+            ),
+            "selection_cases_exposed": False,
+            "validation_cases_exposed": False,
+            "fit_only": True,
+            "execution": dict(_ZERO_EXECUTION),
+        }
+
+    @property
+    def request_sha256(self) -> str:
+        return str(self.report["report_sha256"])
+
+    def verify_authentication(self) -> bool:
+        try:
+            return bool(
+                self.policy.verify_authentication()
+                and all(case.verify_authentication() for case in self.cases)
+                and _deep_thaw(self.report)
+                == _seal_report(self._report_body())
+            )
+        except (
+            AttributeError,
+            KeyError,
+            OverflowError,
+            TypeError,
+            ValueError,
+        ):
+            return False
+
+    def as_dict(self) -> dict[str, Any]:
+        if not self.verify_authentication():
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical-frontier request changed after authentication."
+            )
+        return _deep_thaw(self.report)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfShortConvNumericalRawCandidate:
+    """One immutable fit-only raw state emitted by a numerical adapter."""
+
+    request_sha256: str
+    candidate_id: str
+    candidate_kind: str
+    in_proj_weight: Any
+    in_proj_bias: Any | None
+    fir_kernel: Any
+    fir_bias: Any | None
+    writer_weight: Any
+    writer_bias: Any | None
+    method_provenance: Mapping[str, Any]
+    report: Mapping[str, Any] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if not _valid_sha256_text(self.request_sha256):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Raw candidate request_sha256 is invalid."
+            )
+        candidate_id = str(self.candidate_id).strip()
+        candidate_kind = str(self.candidate_kind).strip()
+        if not candidate_id or not candidate_kind:
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Raw candidate id and kind must be nonempty."
+            )
+        for role, dimensions in (
+            ("in_proj_weight", 2),
+            ("fir_kernel", 2),
+            ("writer_weight", 2),
+        ):
+            object.__setattr__(
+                self,
+                role,
+                _snapshot_float(
+                    getattr(self, role),
+                    f"raw_candidate.{role}",
+                    dimensions=dimensions,
+                ),
+            )
+        for role in ("in_proj_bias", "fir_bias", "writer_bias"):
+            value = getattr(self, role)
+            if value is not None:
+                object.__setattr__(
+                    self,
+                    role,
+                    _snapshot_float(
+                        value,
+                        f"raw_candidate.{role}",
+                        dimensions=1,
+                    ),
+                )
+        provenance = _canonical_copy(
+            self.method_provenance,
+            "raw candidate method_provenance",
+        )
+        if not isinstance(provenance.get("method"), str) or not provenance[
+            "method"
+        ].strip():
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Raw candidate provenance must name its method."
+            )
+        object.__setattr__(self, "candidate_id", candidate_id)
+        object.__setattr__(self, "candidate_kind", candidate_kind)
+        object.__setattr__(
+            self,
+            "method_provenance",
+            _deep_freeze(provenance),
+        )
+        object.__setattr__(
+            self,
+            "report",
+            _deep_freeze(_seal_report(self._report_body())),
+        )
+
+    def _live_state(self) -> dict[str, Any | None]:
+        return {
+            role: getattr(self, role)
+            for role in _NUMERICAL_CANDIDATE_ROLES
+        }
+
+    def _report_body(self) -> dict[str, Any]:
+        provenance = _deep_thaw(self.method_provenance)
+        return {
+            "schema": (
+                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_SCHEMA
+            ),
+            "kind": "authenticated_fit_only_numerical_raw_candidate",
+            "request_sha256": self.request_sha256,
+            "candidate_id": self.candidate_id,
+            "candidate_kind": self.candidate_kind,
+            "state_sha256": _state_sha256(self._live_state()),
+            "method_provenance": provenance,
+            "method_provenance_sha256": _sha(provenance),
+            "fit_only": True,
+            "selection_cases_consumed": 0,
+            "validation_cases_consumed": 0,
+            "execution": dict(_ZERO_EXECUTION),
+        }
+
+    @property
+    def state_sha256(self) -> str:
+        return str(self.report["state_sha256"])
+
+    def state_dict(self) -> Mapping[str, Any | None]:
+        return MappingProxyType(
+            {
+                role: (
+                    None
+                    if getattr(self, role) is None
+                    else getattr(self, role).clone()
+                )
+                for role in _NUMERICAL_CANDIDATE_ROLES
+            }
+        )
+
+    def verify_authentication(self) -> bool:
+        try:
+            return _deep_thaw(self.report) == _seal_report(
+                self._report_body()
+            )
+        except (
+            AttributeError,
+            KeyError,
+            OverflowError,
+            TypeError,
+            ValueError,
+        ):
+            return False
+
+    def as_dict(self) -> dict[str, Any]:
+        if not self.verify_authentication():
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical raw candidate changed after authentication."
+            )
+        return _deep_thaw(self.report)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfShortConvNumericalFrontier:
+    """One authenticated fit-only raw frontier plus its context encoder."""
+
+    adapter_id: str
+    request_sha256: str
+    context_encoder: Any
+    raw_candidates: tuple[Lfm2CpcfShortConvNumericalRawCandidate, ...]
+    fit_case_authentication_sha256: tuple[str, ...]
+    adapter_provenance: Mapping[str, Any]
+    report: Mapping[str, Any] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        adapter_id = str(self.adapter_id).strip()
+        if not adapter_id or not _valid_sha256_text(self.request_sha256):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical frontier adapter id or request seal is invalid."
+            )
+        encoder = _snapshot_float(
+            self.context_encoder,
+            "numerical_frontier.context_encoder",
+            dimensions=2,
+        )
+        candidates = tuple(self.raw_candidates)
+        if (
+            not candidates
+            or any(
+                not isinstance(
+                    candidate,
+                    Lfm2CpcfShortConvNumericalRawCandidate,
+                )
+                or not candidate.verify_authentication()
+                or candidate.request_sha256 != self.request_sha256
+                for candidate in candidates
+            )
+            or len({candidate.candidate_id for candidate in candidates})
+            != len(candidates)
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical frontier raw candidates are empty, duplicated, "
+                "unsealed, or request-mismatched."
+            )
+        fit_seals = tuple(self.fit_case_authentication_sha256)
+        if (
+            not fit_seals
+            or len(fit_seals) != len(set(fit_seals))
+            or any(not _valid_sha256_text(value) for value in fit_seals)
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical frontier fit coverage is invalid."
+            )
+        provenance = _canonical_copy(
+            self.adapter_provenance,
+            "numerical frontier adapter_provenance",
+        )
+        if (
+            not isinstance(provenance.get("implementation"), str)
+            or not provenance["implementation"].strip()
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical frontier provenance must name its implementation."
+            )
+        object.__setattr__(self, "adapter_id", adapter_id)
+        object.__setattr__(self, "context_encoder", encoder)
+        object.__setattr__(self, "raw_candidates", candidates)
+        object.__setattr__(
+            self,
+            "fit_case_authentication_sha256",
+            fit_seals,
+        )
+        object.__setattr__(
+            self,
+            "adapter_provenance",
+            _deep_freeze(provenance),
+        )
+        object.__setattr__(
+            self,
+            "report",
+            _deep_freeze(_seal_report(self._report_body())),
+        )
+
+    def _numeric_participants(self) -> list[int]:
+        participation = self.context_encoder.abs().sum(dim=1)
+        return [
+            index
+            for index, value in enumerate(participation.tolist())
+            if float(value) > 0.0
+        ]
+
+    def _report_body(self) -> dict[str, Any]:
+        candidate_reports = {
+            candidate.candidate_id: candidate.as_dict()
+            for candidate in self.raw_candidates
+        }
+        participants = self._numeric_participants()
+        source_channels = int(self.context_encoder.shape[0])
+        provenance = _deep_thaw(self.adapter_provenance)
+        return {
+            "schema": (
+                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_SCHEMA
+            ),
+            "kind": "authenticated_fit_only_numerical_frontier",
+            "adapter_id": self.adapter_id,
+            "request_sha256": self.request_sha256,
+            "context_encoder_sha256": _tensor_sha256(
+                self.context_encoder,
+                "numerical_frontier.context_encoder",
+            ),
+            "fit_case_authentication_sha256": list(
+                self.fit_case_authentication_sha256
+            ),
+            "raw_candidate_count": len(self.raw_candidates),
+            "raw_candidate_ids": [
+                candidate.candidate_id
+                for candidate in self.raw_candidates
+            ],
+            "raw_candidate_state_sha256": {
+                candidate.candidate_id: candidate.state_sha256
+                for candidate in self.raw_candidates
+            },
+            "raw_candidate_report_sha256": {
+                candidate.candidate_id: candidate.report["report_sha256"]
+                for candidate in self.raw_candidates
+            },
+            "raw_candidate_reports": candidate_reports,
+            "source_channel_count": source_channels,
+            "source_numeric_participant_indices": participants,
+            "source_channels_selected": len(participants),
+            "source_channels_dropped": source_channels - len(participants),
+            "full_source_numeric_participation": (
+                len(participants) == source_channels
+            ),
+            "adapter_provenance": provenance,
+            "adapter_provenance_sha256": _sha(provenance),
+            "fit_only": True,
+            "selection_cases_consumed": 0,
+            "validation_cases_consumed": 0,
+            "execution": dict(_ZERO_EXECUTION),
+        }
+
+    @property
+    def full_source_numeric_participation(self) -> bool:
+        return bool(self.report["full_source_numeric_participation"])
+
+    @property
+    def source_channels_selected(self) -> int:
+        return int(self.report["source_channels_selected"])
+
+    @property
+    def source_channels_dropped(self) -> int:
+        return int(self.report["source_channels_dropped"])
+
+    def verify_authentication(self) -> bool:
+        try:
+            return bool(
+                all(
+                    candidate.verify_authentication()
+                    for candidate in self.raw_candidates
+                )
+                and _deep_thaw(self.report)
+                == _seal_report(self._report_body())
+            )
+        except (
+            AttributeError,
+            KeyError,
+            OverflowError,
+            TypeError,
+            ValueError,
+        ):
+            return False
+
+    def as_dict(self) -> dict[str, Any]:
+        if not self.verify_authentication():
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical frontier changed after authentication."
+            )
+        return _deep_thaw(self.report)
+
+
+class Lfm2CpcfShortConvNumericalFrontierAdapter(Protocol):
+    """Generate one typed fit-only raw frontier for the existing compiler."""
+
+    def generate(
+        self,
+        request: Lfm2CpcfShortConvNumericalFrontierRequest,
+    ) -> Lfm2CpcfShortConvNumericalFrontier:
+        """Return a sealed raw frontier bound to ``request``."""
+
+
+def _validate_numerical_frontier(
+    frontier: Lfm2CpcfShortConvNumericalFrontier,
+    *,
+    request: Lfm2CpcfShortConvNumericalFrontierRequest,
+) -> None:
+    if (
+        not isinstance(frontier, Lfm2CpcfShortConvNumericalFrontier)
+        or not frontier.verify_authentication()
+        or not request.verify_authentication()
+        or frontier.request_sha256 != request.request_sha256
+        or tuple(frontier.fit_case_authentication_sha256)
+        != tuple(request.report["fit_case_authentication_sha256"])
+        or tuple(frontier.context_encoder.shape)
+        != (
+            int(request.report["source_hidden_size"]),
+            int(request.report["target_hidden_size"]),
+        )
+        or frontier.report["source_channel_count"]
+        != request.report["source_hidden_size"]
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Numerical frontier is not authenticated to the complete fit "
+            "request and context geometry."
+        )
+    for candidate in frontier.raw_candidates:
+        state = candidate.state_dict()
+        for role in _NUMERICAL_CANDIDATE_ROLES:
+            candidate_value = state[role]
+            template_value = request.target_templates[role]
+            if (candidate_value is None) != (template_value is None) or (
+                candidate_value is not None
+                and tuple(candidate_value.shape)
+                != tuple(template_value.shape)
+            ):
+                raise Lfm2CpcfShortConvV4FoldError(
+                    "Numerical raw candidate differs from target topology "
+                    f"for {role}."
+                )
+
+
 def _candidate_state_sha256(
     candidate_states: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, str]:
@@ -865,6 +1593,7 @@ class Lfm2CompiledCpcfShortConvV4Fold:
                 LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
                 LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA,
                 LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA,
+                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA,
             }
             or report.get("compiled_state_sha256") != _state_sha256(self.state_dict())
             or report.get("compiled_short_conv_fold_issued") is not True
@@ -934,100 +1663,34 @@ class Lfm2CompiledCpcfShortConvV4Fold:
         return _deep_thaw(self.report)
 
 
-def compile_lfm2_cpcf_short_conv_v4_fold(
+def _generate_legacy_v4_raw_candidates(
     *,
+    ordered: Sequence[Lfm2CpcfShortConvV4FoldCase],
+    parent_contexts: Mapping[str, Any],
     source_in_proj_weight: Any,
     source_in_proj_bias: Any | None,
-    source_fir_weight: Any,
+    source_kernel: Any,
     source_fir_bias: Any | None,
     source_out_proj_weight: Any,
     source_out_proj_bias: Any | None,
-    target_in_proj_weight_template: Any,
-    target_in_proj_bias_template: Any | None,
-    target_conv_weight_template: Any,
-    target_conv_bias_template: Any | None,
-    target_out_proj_weight_template: Any,
-    target_out_proj_bias_template: Any | None,
     output_encoder: Any,
-    cases: Sequence[Lfm2CpcfShortConvV4FoldCase],
+    target_hidden: int,
+    target_fir_length: int,
+    in_bias_template: Any | None,
+    conv_bias_template: Any | None,
+    out_bias_template: Any | None,
     solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
-    gate_policy: Lfm2CpcfShortConvGatePolicy,
-    candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
-    candidate_selector: Lfm2CpcfShortConvV5CandidateSelector | None = None,
-) -> Lfm2CompiledCpcfShortConvV4Fold:
-    """Compile one complete v4 operator without executing either model."""
+) -> tuple[
+    Any,
+    Mapping[str, Any],
+    Any,
+    Mapping[str, tuple[Lfm2CpcfV4ProjectionCase, ...]],
+    Mapping[str, Any],
+    list[dict[str, Any]],
+]:
+    """Run the byte-stable legacy basis, prior, and fit-path generator."""
 
     torch = _torch()
-    if not isinstance(solver_policy, Lfm2CpcfShortConvV4SolverPolicy):
-        raise TypeError("solver_policy must be Lfm2CpcfShortConvV4SolverPolicy.")
-    if not solver_policy.verify_authentication():
-        raise Lfm2CpcfShortConvV4FoldError("V4 solver policy authentication failed.")
-    if not isinstance(gate_policy, Lfm2CpcfShortConvGatePolicy):
-        raise TypeError("gate_policy must be Lfm2CpcfShortConvGatePolicy.")
-    if candidate_selector is not None and not callable(
-        getattr(candidate_selector, "select", None)
-    ):
-        raise TypeError(
-            "candidate_selector must implement select(request)."
-        )
-    ordered = _ordered_cases(cases)
-    target_dtype, in_shape = _template(
-        target_in_proj_weight_template,
-        "target_in_proj_weight_template",
-        dimensions=2,
-    )
-    conv_dtype, conv_shape = _template(
-        target_conv_weight_template,
-        "target_conv_weight_template",
-        dimensions=3,
-    )
-    out_dtype, out_shape = _template(
-        target_out_proj_weight_template,
-        "target_out_proj_weight_template",
-        dimensions=2,
-    )
-    target_hidden = int(in_shape[1])
-    if (
-        in_shape != (3 * target_hidden, target_hidden)
-        or conv_shape[:2] != (target_hidden, 1)
-        or out_shape != (target_hidden, target_hidden)
-        or not (
-            target_dtype
-            == conv_dtype
-            == out_dtype
-            == getattr(torch, solver_policy.target_dtype)
-        )
-    ):
-        raise Lfm2CpcfShortConvV4FoldError(
-            "Target templates differ from the authenticated v4 dtype/topology."
-        )
-    in_bias_template = _bias_template(
-        target_in_proj_bias_template,
-        "target_in_proj_bias_template",
-        width=3 * target_hidden,
-    )
-    conv_bias_template = _bias_template(
-        target_conv_bias_template,
-        "target_conv_bias_template",
-        width=target_hidden,
-    )
-    out_bias_template = _bias_template(
-        target_out_proj_bias_template,
-        "target_out_proj_bias_template",
-        width=target_hidden,
-    )
-    source_kernel = _source_kernel(source_fir_weight)
-    source_hidden = int(source_kernel.shape[0])
-    parent_contexts = {
-        case.case_id: causal_depthwise_context(
-            case.parent_b_history,
-            case.parent_c_history,
-            case.parent_x_history,
-            source_kernel,
-            source_fir_bias,
-        )
-        for case in ordered
-    }
     basis = build_signed_endpoint_aware_channel_basis(
         tuple(
             Lfm2CpcfV4BasisCase(
@@ -1036,7 +1699,9 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 child_inputs=case.actual_child_operator_input_history[
                     :, case.suffix_start :
                 ],
-                parent_contexts=parent_contexts[case.case_id][:, case.suffix_start :],
+                parent_contexts=parent_contexts[case.case_id][
+                    :, case.suffix_start :
+                ],
                 endpoint_writes=(
                     case.parent_post_operator_residual_target_space_suffix
                     - case.actual_child_pre_operator_residual_suffix
@@ -1062,7 +1727,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         source_fir_bias=source_fir_bias,
         source_out_proj_weight=source_out_proj_weight,
         source_out_proj_bias=source_out_proj_bias,
-        target_fir_length=int(conv_shape[2]),
+        target_fir_length=target_fir_length,
         input_lift=lift_weight,
         input_lift_bias=lift_bias,
         output_encoder=output_encoder,
@@ -1130,7 +1795,8 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             raw_candidates.append(
                 {
                     "candidate_id": (
-                        f"{ridge_id}--anchor-{path_index:02d}-{path_state.stage_id}"
+                        f"{ridge_id}--anchor-{path_index:02d}-"
+                        f"{path_state.stage_id}"
                     ),
                     "ridge_id": ridge_id,
                     "candidate": path_state,
@@ -1170,62 +1836,299 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 }
             )
             if first_writer_state is not None:
-                writer_interpolated = interpolate_short_conv_v4_candidate_state(
-                    left=prior_state,
-                    right=first_writer_state,
-                    fraction=fraction,
-                    stage_id=(
-                        f"prior-to-first-writer-{fraction_index:02d}-"
-                        f"{fraction:.17g}"
-                    ),
+                writer_interpolated = (
+                    interpolate_short_conv_v4_candidate_state(
+                        left=prior_state,
+                        right=first_writer_state,
+                        fraction=fraction,
+                        stage_id=(
+                            f"prior-to-first-writer-{fraction_index:02d}-"
+                            f"{fraction:.17g}"
+                        ),
+                    )
                 )
                 raw_candidates.append(
                     {
                         "candidate_id": (
-                            f"{ridge_id}--writer-trust-{fraction_index:02d}-"
-                            f"{fraction:.17g}"
+                            f"{ridge_id}--writer-trust-"
+                            f"{fraction_index:02d}-{fraction:.17g}"
                         ),
                         "ridge_id": ridge_id,
                         "candidate": writer_interpolated,
-                        "candidate_kind": "prior_to_first_writer_trust_path",
+                        "candidate_kind": (
+                            "prior_to_first_writer_trust_path"
+                        ),
                     }
                 )
+    return (
+        basis,
+        lift_report,
+        priors,
+        MappingProxyType(split_cases),
+        MappingProxyType(ridge_results),
+        raw_candidates,
+    )
+
+
+def compile_lfm2_cpcf_short_conv_v4_fold(
+    *,
+    source_in_proj_weight: Any,
+    source_in_proj_bias: Any | None,
+    source_fir_weight: Any,
+    source_fir_bias: Any | None,
+    source_out_proj_weight: Any,
+    source_out_proj_bias: Any | None,
+    target_in_proj_weight_template: Any,
+    target_in_proj_bias_template: Any | None,
+    target_conv_weight_template: Any,
+    target_conv_bias_template: Any | None,
+    target_out_proj_weight_template: Any,
+    target_out_proj_bias_template: Any | None,
+    output_encoder: Any,
+    cases: Sequence[Lfm2CpcfShortConvV4FoldCase],
+    solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
+    gate_policy: Lfm2CpcfShortConvGatePolicy,
+    candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
+    candidate_selector: Lfm2CpcfShortConvV5CandidateSelector | None = None,
+    numerical_frontier_adapter: (
+        Lfm2CpcfShortConvNumericalFrontierAdapter | None
+    ) = None,
+) -> Lfm2CompiledCpcfShortConvV4Fold:
+    """Compile one complete v4 operator without executing either model."""
+
+    torch = _torch()
+    if not isinstance(solver_policy, Lfm2CpcfShortConvV4SolverPolicy):
+        raise TypeError("solver_policy must be Lfm2CpcfShortConvV4SolverPolicy.")
+    if not solver_policy.verify_authentication():
+        raise Lfm2CpcfShortConvV4FoldError("V4 solver policy authentication failed.")
+    if not isinstance(gate_policy, Lfm2CpcfShortConvGatePolicy):
+        raise TypeError("gate_policy must be Lfm2CpcfShortConvGatePolicy.")
+    if candidate_selector is not None and not callable(
+        getattr(candidate_selector, "select", None)
+    ):
+        raise TypeError(
+            "candidate_selector must implement select(request)."
+        )
+    if numerical_frontier_adapter is not None and not callable(
+        getattr(numerical_frontier_adapter, "generate", None)
+    ):
+        raise TypeError(
+            "numerical_frontier_adapter must implement generate(request)."
+        )
+    ordered = _ordered_cases(cases)
+    target_dtype, in_shape = _template(
+        target_in_proj_weight_template,
+        "target_in_proj_weight_template",
+        dimensions=2,
+    )
+    conv_dtype, conv_shape = _template(
+        target_conv_weight_template,
+        "target_conv_weight_template",
+        dimensions=3,
+    )
+    out_dtype, out_shape = _template(
+        target_out_proj_weight_template,
+        "target_out_proj_weight_template",
+        dimensions=2,
+    )
+    target_hidden = int(in_shape[1])
+    if (
+        in_shape != (3 * target_hidden, target_hidden)
+        or conv_shape[:2] != (target_hidden, 1)
+        or out_shape != (target_hidden, target_hidden)
+        or not (
+            target_dtype
+            == conv_dtype
+            == out_dtype
+            == getattr(torch, solver_policy.target_dtype)
+        )
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Target templates differ from the authenticated v4 dtype/topology."
+        )
+    in_bias_template = _bias_template(
+        target_in_proj_bias_template,
+        "target_in_proj_bias_template",
+        width=3 * target_hidden,
+    )
+    conv_bias_template = _bias_template(
+        target_conv_bias_template,
+        "target_conv_bias_template",
+        width=target_hidden,
+    )
+    out_bias_template = _bias_template(
+        target_out_proj_bias_template,
+        "target_out_proj_bias_template",
+        width=target_hidden,
+    )
+    source_kernel = _source_kernel(source_fir_weight)
+    source_hidden = int(source_kernel.shape[0])
+    parent_contexts = {
+        case.case_id: causal_depthwise_context(
+            case.parent_b_history,
+            case.parent_c_history,
+            case.parent_x_history,
+            source_kernel,
+            source_fir_bias,
+        )
+        for case in ordered
+    }
+    numerical_frontier_request = None
+    numerical_frontier = None
+    if numerical_frontier_adapter is None:
+        (
+            basis,
+            lift_report,
+            priors,
+            split_cases,
+            ridge_results,
+            raw_candidates,
+        ) = _generate_legacy_v4_raw_candidates(
+            ordered=ordered,
+            parent_contexts=parent_contexts,
+            source_in_proj_weight=source_in_proj_weight,
+            source_in_proj_bias=source_in_proj_bias,
+            source_kernel=source_kernel,
+            source_fir_bias=source_fir_bias,
+            source_out_proj_weight=source_out_proj_weight,
+            source_out_proj_bias=source_out_proj_bias,
+            output_encoder=output_encoder,
+            target_hidden=target_hidden,
+            target_fir_length=int(conv_shape[2]),
+            in_bias_template=in_bias_template,
+            conv_bias_template=conv_bias_template,
+            out_bias_template=out_bias_template,
+            solver_policy=solver_policy,
+        )
+    else:
+        numerical_frontier_request = (
+            Lfm2CpcfShortConvNumericalFrontierRequest(
+                source_tensors={
+                    "source_in_proj_weight": source_in_proj_weight,
+                    "source_in_proj_bias": source_in_proj_bias,
+                    "source_fir_kernel": source_kernel,
+                    "source_fir_bias": source_fir_bias,
+                    "source_out_proj_weight": source_out_proj_weight,
+                    "source_out_proj_bias": source_out_proj_bias,
+                    "output_encoder": output_encoder,
+                },
+                cases=tuple(
+                    case for case in ordered if case.split == "fit"
+                ),
+                parent_contexts={
+                    case.case_id: parent_contexts[case.case_id]
+                    for case in ordered
+                    if case.split == "fit"
+                },
+                target_templates={
+                    "in_proj_weight": target_in_proj_weight_template,
+                    "in_proj_bias": in_bias_template,
+                    "fir_kernel": (
+                        target_conv_weight_template[:, 0, :]
+                    ),
+                    "fir_bias": conv_bias_template,
+                    "writer_weight": target_out_proj_weight_template,
+                    "writer_bias": out_bias_template,
+                },
+                policy=solver_policy,
+            )
+        )
+        try:
+            generated_frontier = numerical_frontier_adapter.generate(
+                numerical_frontier_request
+            )
+        except BaseException as error:
+            if not numerical_frontier_request.verify_authentication():
+                raise Lfm2CpcfShortConvV4FoldError(
+                    "Numerical-frontier adapter changed its detached request "
+                    "before failing."
+                ) from error
+            raise
+        if not numerical_frontier_request.verify_authentication():
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical-frontier adapter changed its detached request."
+            )
+        if not isinstance(
+            generated_frontier,
+            Lfm2CpcfShortConvNumericalFrontier,
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Numerical-frontier adapter returned the wrong frontier type."
+            )
+        numerical_frontier = generated_frontier
+        _validate_numerical_frontier(
+            numerical_frontier,
+            request=numerical_frontier_request,
+        )
+        projections = _projection_cases(
+            ordered,
+            parent_contexts=parent_contexts,
+            encoder=numerical_frontier.context_encoder,
+        )
+        split_cases = MappingProxyType(
+            {
+                split: tuple(
+                    case for case in projections if case.split == split
+                )
+                for split in ("fit", "selection", "validation")
+            }
+        )
+        ridge_results = MappingProxyType({})
+        raw_candidates = list(numerical_frontier.raw_candidates)
 
     deduplicated = {}
     for raw in raw_candidates:
-        candidate = raw["candidate"]
-        materialized = {
-            role: (
-                None
-                if getattr(candidate, role) is None
-                else getattr(candidate, role)
-                .detach()
-                .to(device="cpu", dtype=target_dtype)
-                .contiguous()
-            )
-            for role in (
-                "in_proj_weight",
-                "in_proj_bias",
-                "fir_kernel",
-                "fir_bias",
-                "writer_weight",
-                "writer_bias",
-            )
-        }
+        if numerical_frontier is None:
+            candidate = raw["candidate"]
+            materialized = {
+                role: (
+                    None
+                    if getattr(candidate, role) is None
+                    else getattr(candidate, role)
+                    .detach()
+                    .to(device="cpu", dtype=target_dtype)
+                    .contiguous()
+                )
+                for role in _NUMERICAL_CANDIDATE_ROLES
+            }
+            source = {
+                "candidate_id": raw["candidate_id"],
+                "ridge_id": raw["ridge_id"],
+                "candidate_kind": raw["candidate_kind"],
+                "stage_id": candidate.stage_id,
+                "fit_path_state_sha256": candidate.report["state_sha256"],
+                "candidate_report": dict(candidate.report),
+            }
+            raw_candidate_id = raw["candidate_id"]
+        else:
+            candidate_state = raw.state_dict()
+            materialized = {
+                role: (
+                    None
+                    if candidate_state[role] is None
+                    else candidate_state[role]
+                    .detach()
+                    .to(device="cpu", dtype=target_dtype)
+                    .contiguous()
+                )
+                for role in _NUMERICAL_CANDIDATE_ROLES
+            }
+            source = {
+                "candidate_id": raw.candidate_id,
+                "candidate_kind": raw.candidate_kind,
+                "numerical_raw_state_sha256": raw.state_sha256,
+                "numerical_raw_candidate_report": raw.as_dict(),
+                "numerical_raw_candidate_report_sha256": (
+                    raw.report["report_sha256"]
+                ),
+            }
+            raw_candidate_id = raw.candidate_id
         target_state_sha = _state_sha256(materialized)
-        source = {
-            "candidate_id": raw["candidate_id"],
-            "ridge_id": raw["ridge_id"],
-            "candidate_kind": raw["candidate_kind"],
-            "stage_id": candidate.stage_id,
-            "fit_path_state_sha256": candidate.report["state_sha256"],
-            "candidate_report": dict(candidate.report),
-        }
         if target_state_sha in deduplicated:
             deduplicated[target_state_sha]["sources"].append(source)
             continue
         deduplicated[target_state_sha] = {
-            "candidate_id": raw["candidate_id"],
+            "candidate_id": raw_candidate_id,
             "state": materialized,
             "sources": [source],
         }
@@ -1236,36 +2139,81 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         candidate_id = candidate_group["candidate_id"]
         state = candidate_group["state"]
         sources = candidate_group["sources"]
-        provenance_body = {
-            "schema": LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
-            "kind": "authenticated_fit_only_candidate_provenance",
-            "candidate_id": candidate_id,
-            "policy_sha256": solver_policy.authentication_sha256,
-            "target_dtype": solver_policy.target_dtype,
-            "target_dtype_candidate_state_sha256": target_state_sha,
-            "source_alias_count": len(sources),
-            "source_alias_candidate_ids": [
-                source["candidate_id"] for source in sources
-            ],
-            "sources": sources,
-            "fit_only": True,
-            "selection_cases_consumed": 0,
-            "validation_cases_consumed": 0,
-            "actual_target_dtype_materialization_before_deduplication": True,
-            "execution": {
-                "parent_model_forward_calls": 0,
-                "target_model_forward_calls": 0,
-                "generation_calls": 0,
-                "training_steps": 0,
-                "backward_calls": 0,
-                "optimizer_steps": 0,
-                "parameters_pruned": 0,
-                "parameters_quantized": 0,
-            },
-        }
+        if numerical_frontier is None:
+            provenance_body = {
+                "schema": LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+                "kind": "authenticated_fit_only_candidate_provenance",
+                "candidate_id": candidate_id,
+                "policy_sha256": solver_policy.authentication_sha256,
+                "target_dtype": solver_policy.target_dtype,
+                "target_dtype_candidate_state_sha256": target_state_sha,
+                "source_alias_count": len(sources),
+                "source_alias_candidate_ids": [
+                    source["candidate_id"] for source in sources
+                ],
+                "sources": sources,
+                "fit_only": True,
+                "selection_cases_consumed": 0,
+                "validation_cases_consumed": 0,
+                "actual_target_dtype_materialization_before_deduplication": (
+                    True
+                ),
+                "execution": {
+                    "parent_model_forward_calls": 0,
+                    "target_model_forward_calls": 0,
+                    "generation_calls": 0,
+                    "training_steps": 0,
+                    "backward_calls": 0,
+                    "optimizer_steps": 0,
+                    "parameters_pruned": 0,
+                    "parameters_quantized": 0,
+                },
+            }
+        else:
+            provenance_body = {
+                "schema": (
+                    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA
+                ),
+                "kind": (
+                    "authenticated_fit_only_numerical_frontier_candidate_"
+                    "provenance"
+                ),
+                "candidate_id": candidate_id,
+                "policy_sha256": solver_policy.authentication_sha256,
+                "target_dtype": solver_policy.target_dtype,
+                "request_sha256": (
+                    numerical_frontier_request.request_sha256
+                ),
+                "numerical_frontier_report_sha256": (
+                    numerical_frontier.report["report_sha256"]
+                ),
+                "target_dtype_candidate_state_sha256": target_state_sha,
+                "source_alias_count": len(sources),
+                "source_alias_candidate_ids": [
+                    source["candidate_id"] for source in sources
+                ],
+                "sources": sources,
+                "fit_case_authentication_sha256": list(
+                    numerical_frontier.fit_case_authentication_sha256
+                ),
+                "fit_only": True,
+                "selection_cases_consumed": 0,
+                "validation_cases_consumed": 0,
+                "actual_target_dtype_materialization_before_deduplication": (
+                    True
+                ),
+                "legacy_v4_candidate_provenance_claimed": False,
+                "execution": dict(_ZERO_EXECUTION),
+            }
         provenance = _seal_report(provenance_body)
         candidate_states[candidate_id] = state
         candidate_fit_reports[candidate_id] = provenance
+
+    if numerical_frontier is not None:
+        _validate_numerical_frontier(
+            numerical_frontier,
+            request=numerical_frontier_request,
+        )
 
     candidate_replay_backend = None
     candidate_replay_work_items = ()
@@ -1365,10 +2313,15 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         raise Lfm2CpcfShortConvV4FoldError(
             "Frozen winner evaluations do not bind the selected candidate state."
         )
-    full_source_coverage = bool(
-        basis.report["full_source_numeric_participation"]
-        and priors.report["source_channels_dropped"] == 0
-    )
+    if numerical_frontier is None:
+        full_source_coverage = bool(
+            basis.report["full_source_numeric_participation"]
+            and priors.report["source_channels_dropped"] == 0
+        )
+    else:
+        full_source_coverage = (
+            numerical_frontier.full_source_numeric_participation
+        )
     gate = _gate_report(
         policy=gate_policy,
         fit=evaluations["fit"],
@@ -1384,61 +2337,123 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         "out_proj.bias": out_bias,
     }
     compiled_state_sha = _state_sha256(state)
-    if candidate_selector is not None:
+    if numerical_frontier is not None:
+        report_schema = (
+            LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA
+        )
+    elif candidate_selector is not None:
         report_schema = LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA
     elif candidate_replay_evaluator is not None:
         report_schema = LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA
     else:
         report_schema = LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
-    candidate_pool_body = {
-        "schema": report_schema,
-        "kind": "authenticated_target_dtype_candidate_pool",
-        "policy_sha256": solver_policy.authentication_sha256,
-        "target_dtype": solver_policy.target_dtype,
-        "ridge_candidate_count": len(ridge_results),
-        "raw_candidate_count": len(raw_candidates),
-        "unique_target_dtype_candidate_count": len(candidate_states),
-        "target_dtype_duplicate_count": (
-            len(raw_candidates) - len(candidate_states)
-        ),
-        "accepted_phase_anchors_included": True,
-        "rejected_phase_states_included": False,
-        "prior_to_final_trust_path_fractions": list(
-            fixed_projection_trust_path_fractions()
-        ),
-        "prior_to_first_writer_trust_path_fractions": list(
-            fixed_projection_trust_path_fractions()
-        ),
-        "selection_feasibility_policy": selection_feasibility,
-        "selection_feasibility_policy_sha256": ranking[
-            "selection_feasibility_policy_sha256"
-        ],
-        "fold_case_authentication_sha256": {
-            split: [
-                case.authentication_sha256
-                for case in ordered
-                if case.split == split
-            ]
-            for split in ("fit", "selection", "validation")
-        },
-        "projection_case_authentication_sha256": {
-            split: [
-                case.authentication_sha256
-                for case in split_cases[split]
-            ]
-            for split in ("fit", "selection", "validation")
-        },
-        "candidate_ids": sorted(candidate_states),
-        "candidate_state_sha256": {
-            candidate_id: selection_reports[candidate_id][
-                "candidate_state_sha256"
-            ]
-            for candidate_id in sorted(candidate_states)
-        },
-        "fit_only_candidate_generation": True,
-        "selection_cases_consumed_during_generation": 0,
-        "validation_cases_consumed_during_generation": 0,
-    }
+    if numerical_frontier is None:
+        candidate_pool_body = {
+            "schema": report_schema,
+            "kind": "authenticated_target_dtype_candidate_pool",
+            "policy_sha256": solver_policy.authentication_sha256,
+            "target_dtype": solver_policy.target_dtype,
+            "ridge_candidate_count": len(ridge_results),
+            "raw_candidate_count": len(raw_candidates),
+            "unique_target_dtype_candidate_count": len(candidate_states),
+            "target_dtype_duplicate_count": (
+                len(raw_candidates) - len(candidate_states)
+            ),
+            "accepted_phase_anchors_included": True,
+            "rejected_phase_states_included": False,
+            "prior_to_final_trust_path_fractions": list(
+                fixed_projection_trust_path_fractions()
+            ),
+            "prior_to_first_writer_trust_path_fractions": list(
+                fixed_projection_trust_path_fractions()
+            ),
+            "selection_feasibility_policy": selection_feasibility,
+            "selection_feasibility_policy_sha256": ranking[
+                "selection_feasibility_policy_sha256"
+            ],
+            "fold_case_authentication_sha256": {
+                split: [
+                    case.authentication_sha256
+                    for case in ordered
+                    if case.split == split
+                ]
+                for split in ("fit", "selection", "validation")
+            },
+            "projection_case_authentication_sha256": {
+                split: [
+                    case.authentication_sha256
+                    for case in split_cases[split]
+                ]
+                for split in ("fit", "selection", "validation")
+            },
+            "candidate_ids": sorted(candidate_states),
+            "candidate_state_sha256": {
+                candidate_id: selection_reports[candidate_id][
+                    "candidate_state_sha256"
+                ]
+                for candidate_id in sorted(candidate_states)
+            },
+            "fit_only_candidate_generation": True,
+            "selection_cases_consumed_during_generation": 0,
+            "validation_cases_consumed_during_generation": 0,
+        }
+    else:
+        candidate_pool_body = {
+            "schema": LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_POOL_SCHEMA,
+            "kind": (
+                "authenticated_v5_numerical_target_dtype_candidate_pool"
+            ),
+            "policy_sha256": solver_policy.authentication_sha256,
+            "target_dtype": solver_policy.target_dtype,
+            "request_sha256": numerical_frontier_request.request_sha256,
+            "numerical_frontier_report_sha256": (
+                numerical_frontier.report["report_sha256"]
+            ),
+            "raw_candidate_count": len(raw_candidates),
+            "unique_target_dtype_candidate_count": len(candidate_states),
+            "target_dtype_duplicate_count": (
+                len(raw_candidates) - len(candidate_states)
+            ),
+            "selection_feasibility_policy": selection_feasibility,
+            "selection_feasibility_policy_sha256": ranking[
+                "selection_feasibility_policy_sha256"
+            ],
+            "fold_case_authentication_sha256": {
+                split: [
+                    case.authentication_sha256
+                    for case in ordered
+                    if case.split == split
+                ]
+                for split in ("fit", "selection", "validation")
+            },
+            "projection_case_authentication_sha256": {
+                split: [
+                    case.authentication_sha256
+                    for case in split_cases[split]
+                ]
+                for split in ("fit", "selection", "validation")
+            },
+            "candidate_ids": sorted(candidate_states),
+            "candidate_state_sha256": {
+                candidate_id: selection_reports[candidate_id][
+                    "candidate_state_sha256"
+                ]
+                for candidate_id in sorted(candidate_states)
+            },
+            "source_channels_selected": (
+                numerical_frontier.source_channels_selected
+            ),
+            "source_channels_dropped": (
+                numerical_frontier.source_channels_dropped
+            ),
+            "full_source_numeric_participation": (
+                numerical_frontier.full_source_numeric_participation
+            ),
+            "fit_only_candidate_generation": True,
+            "selection_cases_consumed_during_generation": 0,
+            "validation_cases_consumed_during_generation": 0,
+            "legacy_v4_candidate_pool_claimed": False,
+        }
     if candidate_replay_backend is not None:
         candidate_pool_body.update(
             {
@@ -1458,64 +2473,146 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 "scheduled_replay_changes_closed_form_solve_math": False,
             }
         )
-    common = {
-        "solver_schema": LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
-        "solver_policy": solver_policy.as_dict(),
-        "solver_policy_sha256": solver_policy.authentication_sha256,
-        "gate_policy": gate_policy.as_dict(),
-        "source_hidden_size": source_hidden,
-        "target_hidden_size": target_hidden,
-        "source_fir_length": int(source_kernel.shape[1]),
-        "target_fir_length": int(fir_kernel.shape[1]),
-        "hidden_width_compression_ratio": source_hidden / target_hidden,
-        "case_authentication_sha256": {
-            split: [
-                case.authentication_sha256 for case in ordered if case.split == split
-            ]
-            for split in ("fit", "selection", "validation")
-        },
-        "basis": dict(basis.report),
-        "input_lift": dict(lift_report),
-        "transported_priors": dict(priors.report),
-        "ridge_fit_reports": {
-            ridge_id: dict(result.report)
-            for ridge_id, result in ridge_results.items()
-        },
-        "candidate_fit_reports": {
-            candidate_id: dict(report)
-            for candidate_id, report in candidate_fit_reports.items()
-        },
-        "candidate_selection_reports": {
-            candidate_id: dict(report)
-            for candidate_id, report in selection_reports.items()
-        },
-        "candidate_pool_report": _seal_report(candidate_pool_body),
-        "selection_ranking": dict(ranking),
-        "selected_candidate_id": selected_id,
-        "fit_evaluation": dict(evaluations["fit"]),
-        "selection_evaluation": dict(evaluations["selection"]),
-        "validation_evaluation": dict(evaluations["validation"]),
-        "behavior_gate": gate,
-        "compiled_state_sha256": compiled_state_sha,
-        "source_channels_selected": basis.report["source_channels_selected"],
-        "source_channels_dropped": basis.report["source_channels_dropped"],
-        "source_channels_pruned": 0,
-        "source_channels_quantized": 0,
-        "fit_only_parameter_solves": True,
-        "selection_used_only_for_candidate_ranking": True,
-        "validation_used_only_after_candidate_freeze": True,
-        "execution": {
-            "parent_model_forward_calls": 0,
-            "target_model_forward_calls": 0,
-            "generation_calls": 0,
-            "training_steps": 0,
-            "backward_calls": 0,
-            "optimizer_steps": 0,
-            "parameters_pruned": 0,
-            "parameters_quantized": 0,
-            "fallback_paths": 0,
-        },
-    }
+    if numerical_frontier is None:
+        common = {
+            "solver_schema": LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
+            "solver_policy": solver_policy.as_dict(),
+            "solver_policy_sha256": solver_policy.authentication_sha256,
+            "gate_policy": gate_policy.as_dict(),
+            "source_hidden_size": source_hidden,
+            "target_hidden_size": target_hidden,
+            "source_fir_length": int(source_kernel.shape[1]),
+            "target_fir_length": int(fir_kernel.shape[1]),
+            "hidden_width_compression_ratio": (
+                source_hidden / target_hidden
+            ),
+            "case_authentication_sha256": {
+                split: [
+                    case.authentication_sha256
+                    for case in ordered
+                    if case.split == split
+                ]
+                for split in ("fit", "selection", "validation")
+            },
+            "basis": dict(basis.report),
+            "input_lift": dict(lift_report),
+            "transported_priors": dict(priors.report),
+            "ridge_fit_reports": {
+                ridge_id: dict(result.report)
+                for ridge_id, result in ridge_results.items()
+            },
+            "candidate_fit_reports": {
+                candidate_id: dict(report)
+                for candidate_id, report in candidate_fit_reports.items()
+            },
+            "candidate_selection_reports": {
+                candidate_id: dict(report)
+                for candidate_id, report in selection_reports.items()
+            },
+            "candidate_pool_report": _seal_report(candidate_pool_body),
+            "selection_ranking": dict(ranking),
+            "selected_candidate_id": selected_id,
+            "fit_evaluation": dict(evaluations["fit"]),
+            "selection_evaluation": dict(evaluations["selection"]),
+            "validation_evaluation": dict(evaluations["validation"]),
+            "behavior_gate": gate,
+            "compiled_state_sha256": compiled_state_sha,
+            "source_channels_selected": basis.report[
+                "source_channels_selected"
+            ],
+            "source_channels_dropped": basis.report[
+                "source_channels_dropped"
+            ],
+            "source_channels_pruned": 0,
+            "source_channels_quantized": 0,
+            "fit_only_parameter_solves": True,
+            "selection_used_only_for_candidate_ranking": True,
+            "validation_used_only_after_candidate_freeze": True,
+            "execution": {
+                "parent_model_forward_calls": 0,
+                "target_model_forward_calls": 0,
+                "generation_calls": 0,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+                "fallback_paths": 0,
+            },
+        }
+    else:
+        common = {
+            "solver_schema": LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
+            "solver_policy": solver_policy.as_dict(),
+            "solver_policy_sha256": solver_policy.authentication_sha256,
+            "gate_policy": gate_policy.as_dict(),
+            "source_hidden_size": source_hidden,
+            "target_hidden_size": target_hidden,
+            "source_fir_length": int(source_kernel.shape[1]),
+            "target_fir_length": int(fir_kernel.shape[1]),
+            "hidden_width_compression_ratio": (
+                source_hidden / target_hidden
+            ),
+            "case_authentication_sha256": {
+                split: [
+                    case.authentication_sha256
+                    for case in ordered
+                    if case.split == split
+                ]
+                for split in ("fit", "selection", "validation")
+            },
+            "numerical_frontier_request": (
+                numerical_frontier_request.as_dict()
+            ),
+            "numerical_frontier_request_sha256": (
+                numerical_frontier_request.request_sha256
+            ),
+            "numerical_frontier": numerical_frontier.as_dict(),
+            "numerical_frontier_report_sha256": (
+                numerical_frontier.report["report_sha256"]
+            ),
+            "candidate_fit_reports": {
+                candidate_id: dict(report)
+                for candidate_id, report in candidate_fit_reports.items()
+            },
+            "candidate_selection_reports": {
+                candidate_id: dict(report)
+                for candidate_id, report in selection_reports.items()
+            },
+            "candidate_pool_report": _seal_report(candidate_pool_body),
+            "selection_ranking": dict(ranking),
+            "selected_candidate_id": selected_id,
+            "fit_evaluation": dict(evaluations["fit"]),
+            "selection_evaluation": dict(evaluations["selection"]),
+            "validation_evaluation": dict(evaluations["validation"]),
+            "behavior_gate": gate,
+            "compiled_state_sha256": compiled_state_sha,
+            "source_channels_selected": (
+                numerical_frontier.source_channels_selected
+            ),
+            "source_channels_dropped": (
+                numerical_frontier.source_channels_dropped
+            ),
+            "source_channels_pruned": 0,
+            "source_channels_quantized": 0,
+            "fit_only_numerical_generation": True,
+            "selection_used_only_for_candidate_ranking": True,
+            "validation_used_only_after_candidate_freeze": True,
+            "numerical_frontier_adapter_active": True,
+            "legacy_v4_numerical_generation_claimed": False,
+            "legacy_v4_report_claimed": False,
+            "execution": {
+                "parent_model_forward_calls": 0,
+                "target_model_forward_calls": 0,
+                "generation_calls": 0,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+                "fallback_paths": 0,
+            },
+        }
     if selector_receipt is not None:
         common.update(
             {
@@ -1553,12 +2650,16 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     if gate_policy.enforce and not gate["passed"]:
         failure_body = {
             "schema": (
-                LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA
-                if candidate_selector is not None
+                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA
+                if numerical_frontier is not None
                 else (
-                    LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
-                    if candidate_replay_evaluator is None
-                    else LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA
+                    LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA
+                    if candidate_selector is not None
+                    else (
+                        LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
+                        if candidate_replay_evaluator is None
+                        else LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA
+                    )
                 )
             ),
             **common,
@@ -1601,11 +2702,22 @@ __all__ = [
     "LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_POOL_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_SELECTOR_REQUEST_SCHEMA",
     "Lfm2CompiledCpcfShortConvV4Fold",
+    "Lfm2CpcfShortConvNumericalFrontier",
+    "Lfm2CpcfShortConvNumericalFrontierAdapter",
+    "Lfm2CpcfShortConvNumericalFrontierRequest",
+    "Lfm2CpcfShortConvNumericalRawCandidate",
     "Lfm2CpcfShortConvV4FoldCase",
     "Lfm2CpcfShortConvV4FoldError",
     "Lfm2CpcfShortConvV5CandidateSelector",

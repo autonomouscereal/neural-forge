@@ -24,9 +24,16 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (  # noqa: E402
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_POOL_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA,
+    Lfm2CpcfShortConvNumericalFrontier,
+    Lfm2CpcfShortConvNumericalFrontierRequest,
+    Lfm2CpcfShortConvNumericalRawCandidate,
     Lfm2CpcfShortConvV4FoldCase,
     Lfm2CpcfShortConvV4FoldError,
     _sha,
@@ -223,6 +230,7 @@ def _compile(
     gate=None,
     candidate_replay_evaluator=None,
     candidate_selector=None,
+    numerical_frontier_adapter=None,
 ):
     values = {key: value for key, value in fixture.items() if key != "originals"}
     dtype_name = str(fixture["target_in_proj_weight_template"].dtype).removeprefix(
@@ -234,7 +242,79 @@ def _compile(
         gate_policy=_permissive_gate() if gate is None else gate,
         candidate_replay_evaluator=candidate_replay_evaluator,
         candidate_selector=candidate_selector,
+        numerical_frontier_adapter=numerical_frontier_adapter,
     )
+
+
+class _DeterministicToyNumericalFrontierAdapter:
+    def __init__(self) -> None:
+        self.requests = []
+        self.frontier = None
+
+    def generate(
+        self,
+        request: Lfm2CpcfShortConvNumericalFrontierRequest,
+    ) -> Lfm2CpcfShortConvNumericalFrontier:
+        self.requests.append(request)
+        source_hidden = int(request.report["source_hidden_size"])
+        target_hidden = int(request.report["target_hidden_size"])
+        context_encoder = torch.zeros(
+            (source_hidden, target_hidden),
+            dtype=torch.float64,
+        )
+        for source_index in range(source_hidden):
+            context_encoder[
+                source_index,
+                source_index % target_hidden,
+            ] = 1.0
+
+        def value(role: str, amount: float):
+            template = request.target_templates[role]
+            return (
+                None
+                if template is None
+                else torch.full_like(
+                    template,
+                    amount,
+                    dtype=torch.float64,
+                )
+            )
+
+        candidates = tuple(
+            Lfm2CpcfShortConvNumericalRawCandidate(
+                request_sha256=request.request_sha256,
+                candidate_id=candidate_id,
+                candidate_kind="deterministic_test_alternate",
+                in_proj_weight=value("in_proj_weight", amount),
+                in_proj_bias=value("in_proj_bias", amount),
+                fir_kernel=value("fir_kernel", amount),
+                fir_bias=value("fir_bias", amount),
+                writer_weight=value("writer_weight", amount),
+                writer_bias=value("writer_bias", amount),
+                method_provenance={
+                    "method": "deterministic_constant_test_frontier",
+                    "constant": amount,
+                },
+            )
+            for candidate_id, amount in (
+                ("toy-alternate-a", 0.03125),
+                ("toy-alternate-z", -0.0625),
+            )
+        )
+        self.frontier = Lfm2CpcfShortConvNumericalFrontier(
+            adapter_id="tests.deterministic_toy_frontier",
+            request_sha256=request.request_sha256,
+            context_encoder=context_encoder,
+            raw_candidates=candidates,
+            fit_case_authentication_sha256=tuple(
+                request.report["fit_case_authentication_sha256"]
+            ),
+            adapter_provenance={
+                "implementation": "tests.deterministic_toy_frontier.v1",
+                "real_v5_numerical_algorithm": False,
+            },
+        )
+        return self.frontier
 
 
 def test_v4_orchestrator_compiles_target_shaped_state_and_seals_roles() -> None:
@@ -361,12 +441,89 @@ def test_injected_replay_uses_explicit_v5_receipt_without_changing_math() -> Non
 def test_default_none_selector_is_byte_exact_v4() -> None:
     fixture = _fixture()
     implicit = _compile(fixture)
-    explicit = _compile(fixture, candidate_selector=None)
+    explicit = _compile(
+        fixture,
+        candidate_selector=None,
+        numerical_frontier_adapter=None,
+    )
 
     assert implicit.as_dict() == explicit.as_dict()
     assert implicit.report["schema"] == LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
     for name, value in implicit.state_dict().items():
         assert torch.equal(value, explicit.state_dict()[name])
+
+
+def test_typed_numerical_frontier_reuses_replay_and_installs_candidate() -> None:
+    adapter = _DeterministicToyNumericalFrontierAdapter()
+    artifact = _compile(
+        _fixture(),
+        numerical_frontier_adapter=adapter,
+    )
+
+    assert len(adapter.requests) == 1
+    request = adapter.requests[0]
+    assert {case.split for case in request.cases} == {"fit"}
+    assert set(request.parent_contexts) == {
+        case.case_id for case in request.cases
+    }
+    assert request.report["selection_cases_exposed"] is False
+    assert request.report["validation_cases_exposed"] is False
+    assert request.verify_authentication()
+    assert adapter.frontier.verify_authentication()
+    assert artifact.report["schema"] == (
+        LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA
+    )
+    assert artifact.report["numerical_frontier_adapter_active"] is True
+    assert artifact.report["legacy_v4_numerical_generation_claimed"] is False
+    assert artifact.report["legacy_v4_report_claimed"] is False
+    assert artifact.report["candidate_pool_report"]["schema"] == (
+        LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_POOL_SCHEMA
+    )
+    assert all(
+        report["schema"]
+        == LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA
+        for report in artifact.report["candidate_fit_reports"].values()
+    )
+    selected_id = artifact.report["selected_candidate_id"]
+    selected_raw = next(
+        candidate
+        for candidate in adapter.frontier.raw_candidates
+        if candidate.candidate_id == selected_id
+    )
+    selected_state = selected_raw.state_dict()
+    installed_roles = {
+        "in_proj.weight": "in_proj_weight",
+        "in_proj.bias": "in_proj_bias",
+        "conv.weight": "fir_kernel",
+        "conv.bias": "fir_bias",
+        "out_proj.weight": "writer_weight",
+        "out_proj.bias": "writer_bias",
+    }
+    for installed_name, raw_role in installed_roles.items():
+        expected = selected_state[raw_role]
+        if installed_name == "conv.weight":
+            expected = expected.unsqueeze(1)
+        assert torch.equal(
+            artifact.state_dict()[installed_name],
+            expected.to(dtype=torch.float32),
+        )
+    assert artifact.verify_authentication()
+
+
+def test_numerical_frontier_request_mutation_fails_closed() -> None:
+    class MutatingAdapter:
+        def generate(self, request):
+            request.source_tensors["source_fir_kernel"].zero_()
+            raise RuntimeError("mutated detached request")
+
+    with pytest.raises(
+        Lfm2CpcfShortConvV4FoldError,
+        match="changed its detached request before failing",
+    ):
+        _compile(
+            _fixture(),
+            numerical_frontier_adapter=MutatingAdapter(),
+        )
 
 
 def test_preinstall_selector_rescores_retained_states_before_install() -> None:
@@ -615,6 +772,64 @@ def test_selector_failure_keeps_authenticated_v5_receipt_through_layer_gate() ->
     assert report["preinstall_candidate_selector_active"] is True
     assert report["post_install_rescoring_performed"] is False
     assert layer_compiler._valid_short_conv_validation_report(report)
+
+
+def test_numerical_frontier_failure_uses_explicit_v5_validator() -> None:
+    class LastCandidateSelector:
+        def select(self, request):
+            candidate_id = request["candidate_ids"][-1]
+            body = {
+                "schema": LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
+                "kind": "numerical_frontier_failure_selector",
+                "candidate_count": len(request["candidate_ids"]),
+                "selection_reports_consumed": len(
+                    request["candidate_ids"]
+                ),
+                "fit_reports_consumed": 0,
+                "validation_reports_consumed": 0,
+                "validation_accessible": False,
+                "selected_candidate_id": candidate_id,
+                "selected_candidate_state_sha256": request[
+                    "candidate_state_sha256"
+                ][candidate_id],
+                "execution": {
+                    "training_steps": 0,
+                    "backward_calls": 0,
+                    "optimizer_steps": 0,
+                    "parameters_pruned": 0,
+                    "parameters_quantized": 0,
+                },
+            }
+            return {**body, "report_sha256": _sha(body)}
+
+    strict = Lfm2CpcfShortConvGatePolicy(
+        maximum_fit_endpoint_relative_rmse=0.0,
+        maximum_validation_endpoint_relative_rmse=0.0,
+        minimum_fit_endpoint_cosine_similarity=1.0,
+        minimum_validation_endpoint_cosine_similarity=1.0,
+        enforce=True,
+    )
+    for selector in (None, LastCandidateSelector()):
+        with pytest.raises(Lfm2CpcfShortConvValidationError) as raised:
+            _compile(
+                _fixture(validation_offset=10.0),
+                gate=strict,
+                numerical_frontier_adapter=(
+                    _DeterministicToyNumericalFrontierAdapter()
+                ),
+                candidate_selector=selector,
+            )
+
+        report = dict(raised.value.report)
+        assert report["schema"] == (
+            LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA
+        )
+        assert report["numerical_frontier_adapter_active"] is True
+        assert report["legacy_v4_report_claimed"] is False
+        assert (
+            "preinstall_candidate_selector_receipt" in report
+        ) is (selector is not None)
+        assert layer_compiler._valid_short_conv_validation_report(report)
 
 
 def test_orchestrator_rejects_mutated_authenticated_case() -> None:

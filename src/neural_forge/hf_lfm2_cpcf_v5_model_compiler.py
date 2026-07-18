@@ -54,6 +54,7 @@ from neural_forge.hf_lfm2_cpcf_layer_compiler import (
     compile_and_install_lfm2_cpcf_layer,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
+    Lfm2CpcfShortConvNumericalFrontierAdapter,
     Lfm2CpcfShortConvV5CandidateSelector,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
@@ -268,8 +269,8 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         "current_plus_next_residency_required": True,
         "physical_rss_gate_required": True,
         "short_conv_v5_numerical_policy_integration_status": (
-            "endpoint_first_preinstall_selector_integrated_"
-            "candidate_generation_pending"
+            "generic_numerical_frontier_adapter_integrated_"
+            "real_v5_candidate_generation_pending"
         ),
         "resume_implementation_status": "fail_closed_not_yet_integrated",
         "training_steps": 0,
@@ -1644,6 +1645,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
     runtime_policy: Lfm2CpcfV5RuntimePolicy,
     candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
     candidate_selector: Lfm2CpcfShortConvV5CandidateSelector | None = None,
+    numerical_frontier_adapter: (
+        Lfm2CpcfShortConvNumericalFrontierAdapter | None
+    ) = None,
     resume_state: Any | None = None,
 ) -> legacy_model_fold.Lfm2CpcfCompiledModelFold:
     """Compile one dense blank using bounded selective evidence.
@@ -1666,6 +1670,12 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
     ):
         raise TypeError(
             "candidate_selector must implement select(request)."
+        )
+    if numerical_frontier_adapter is not None and not callable(
+        getattr(numerical_frontier_adapter, "generate", None)
+    ):
+        raise TypeError(
+            "numerical_frontier_adapter must implement generate(request)."
         )
     if (
         runtime_policy.require_short_conv_v5_endpoint_first_selector
@@ -1914,6 +1924,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                         candidate_replay_evaluator
                     ),
                     candidate_selector=candidate_selector,
+                    numerical_frontier_adapter=(
+                        numerical_frontier_adapter
+                    ),
                 )
                 receipt = legacy_model_fold.Lfm2CpcfCompletedLayerReceipt(
                     result.report
@@ -1971,6 +1984,14 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             for receipt in completed_receipts
             if "preinstall_candidate_selector_receipt"
             in receipt.report["operator_artifact"]
+        ]
+        numerical_frontier_layer_indices = [
+            receipt.layer_index
+            for receipt in completed_receipts
+            if receipt.report["operator_artifact"].get(
+                "numerical_frontier_adapter_active"
+            )
+            is True
         ]
         if (
             runtime_policy.require_short_conv_v5_endpoint_first_selector
@@ -2108,6 +2129,15 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                     candidate_selector,
                     Lfm2CpcfV5EndpointFirstCandidateSelector,
                 )
+            ),
+            "short_conv_numerical_frontier_adapter_provided": (
+                numerical_frontier_adapter is not None
+            ),
+            "short_conv_numerical_frontier_adapter_active": bool(
+                numerical_frontier_layer_indices
+            ),
+            "short_conv_numerical_frontier_adapter_layer_indices": (
+                numerical_frontier_layer_indices
             ),
             "short_conv_v5_numerical_candidate_generation_integrated": False,
             "short_conv_v5_numerical_policy_integrated": False,

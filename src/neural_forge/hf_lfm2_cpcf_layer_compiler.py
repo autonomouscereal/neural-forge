@@ -60,9 +60,16 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_POOL_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA,
     Lfm2CompiledCpcfShortConvV4Fold,
+    Lfm2CpcfShortConvNumericalFrontierAdapter,
     Lfm2CpcfShortConvV4FoldCase,
     Lfm2CpcfShortConvV5CandidateSelector,
     compile_lfm2_cpcf_short_conv_v4_fold,
@@ -4173,6 +4180,373 @@ def _valid_short_conv_v5_selector_validation_report(
         return False
 
 
+def _valid_short_conv_v5_selector_receipt_only(
+    report: Mapping[str, Any],
+) -> bool:
+    receipt = report.get("preinstall_candidate_selector_receipt")
+    if not isinstance(receipt, Mapping):
+        return False
+    selector_report = receipt.get("selector_report")
+    candidate_reports = report.get("candidate_selection_reports")
+    selected_id = report.get("selected_candidate_id")
+    selection = report.get("selection_evaluation")
+    selected_sha = (
+        selection.get("candidate_state_sha256")
+        if isinstance(selection, Mapping)
+        else None
+    )
+    receipt_body = dict(receipt)
+    receipt_seal = receipt_body.pop("report_sha256", None)
+    selector_body = (
+        dict(selector_report)
+        if isinstance(selector_report, Mapping)
+        else {}
+    )
+    selector_seal = selector_body.pop("report_sha256", None)
+    return bool(
+        receipt.get("schema")
+        == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA
+        and isinstance(receipt_seal, str)
+        and _SHA256.fullmatch(receipt_seal) is not None
+        and _sha(receipt_body) == receipt_seal
+        and report.get("preinstall_candidate_selector_receipt_sha256")
+        == receipt_seal
+        and isinstance(selector_report, Mapping)
+        and isinstance(selector_seal, str)
+        and _SHA256.fullmatch(selector_seal) is not None
+        and _sha(selector_body) == selector_seal
+        and receipt.get("selector_report_sha256") == selector_seal
+        and receipt.get(
+            "all_live_candidate_states_verified_before_callback"
+        )
+        is True
+        and receipt.get(
+            "all_live_candidate_states_verified_after_callback"
+        )
+        is True
+        and receipt.get("live_candidate_state_bytes_unchanged") is True
+        and receipt.get("candidate_state_tensors_exposed_to_selector")
+        is False
+        and receipt.get("fit_reports_exposed_to_selector") is False
+        and receipt.get("validation_reports_exposed_to_selector") is False
+        and receipt.get("post_install_rescoring") is False
+        and report.get("post_install_rescoring_performed") is False
+        and report.get("preinstall_candidate_selector_active") is True
+        and receipt.get("selected_candidate_id") == selected_id
+        and selector_report.get("selected_candidate_id") == selected_id
+        and receipt.get("selected_candidate_state_sha256")
+        == selected_sha
+        and selector_report.get("selected_candidate_state_sha256")
+        == selected_sha
+        and isinstance(candidate_reports, Mapping)
+        and isinstance(candidate_reports.get(selected_id), Mapping)
+        and candidate_reports[selected_id].get(
+            "candidate_state_sha256"
+        )
+        == selected_sha
+    )
+
+
+def _valid_short_conv_v5_numerical_frontier_validation_report(
+    report: Mapping[str, Any],
+) -> bool:
+    """Validate explicit v5 numerical evidence without weakening v4."""
+
+    try:
+        request = report.get("numerical_frontier_request")
+        frontier = report.get("numerical_frontier")
+        candidate_fit = report.get("candidate_fit_reports")
+        candidate_selection = report.get("candidate_selection_reports")
+        pool = report.get("candidate_pool_report")
+        ranking = report.get("selection_ranking")
+        fit_evaluation = report.get("fit_evaluation")
+        selection_evaluation = report.get("selection_evaluation")
+        validation_evaluation = report.get("validation_evaluation")
+        gate = report.get("behavior_gate")
+        gate_policy = report.get("gate_policy")
+        case_seals = report.get("case_authentication_sha256")
+        execution = report.get("execution")
+        solver_policy = parse_lfm2_cpcf_short_conv_v4_solver_policy(
+            report.get("solver_policy")
+        )
+
+        def sealed(
+            value: Any,
+            schema: str,
+        ) -> bool:
+            if not isinstance(value, Mapping) or value.get("schema") != schema:
+                return False
+            body = dict(value)
+            seal = body.pop("report_sha256", None)
+            return bool(
+                isinstance(seal, str)
+                and _SHA256.fullmatch(seal) is not None
+                and _sha(body) == seal
+            )
+
+        if not (
+            report.get("schema")
+            == LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA
+            and solver_policy.verify_authentication()
+            and report.get("solver_policy_sha256")
+            == solver_policy.authentication_sha256
+            and report.get("solver_schema")
+            == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+            and sealed(
+                request,
+                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA,
+            )
+            and sealed(
+                frontier,
+                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_SCHEMA,
+            )
+            and sealed(
+                pool,
+                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_POOL_SCHEMA,
+            )
+        ):
+            return False
+        request_sha = request["report_sha256"]
+        frontier_sha = frontier["report_sha256"]
+        if not (
+            report.get("numerical_frontier_request_sha256") == request_sha
+            and report.get("numerical_frontier_report_sha256")
+            == frontier_sha
+            and frontier.get("request_sha256") == request_sha
+            and pool.get("request_sha256") == request_sha
+            and pool.get("numerical_frontier_report_sha256")
+            == frontier_sha
+            and request.get("fit_only") is True
+            and request.get("selection_cases_exposed") is False
+            and request.get("validation_cases_exposed") is False
+            and request.get("policy_sha256")
+            == solver_policy.authentication_sha256
+            and request.get("source_tensor_inventory_sha256")
+            == _sha(request.get("source_tensor_sha256"))
+            and request.get("parent_context_inventory_sha256")
+            == _sha(request.get("parent_context_sha256"))
+            and request.get("target_template_inventory_sha256")
+            == _sha(request.get("target_template_sha256"))
+            and frontier.get("fit_only") is True
+            and frontier.get("selection_cases_consumed") == 0
+            and frontier.get("validation_cases_consumed") == 0
+            and frontier.get("fit_case_authentication_sha256")
+            == request.get("fit_case_authentication_sha256")
+            and isinstance(case_seals, Mapping)
+            and set(case_seals) == {"fit", "selection", "validation"}
+            and case_seals.get("fit")
+            == request.get("fit_case_authentication_sha256")
+        ):
+            return False
+        raw_reports = frontier.get("raw_candidate_reports")
+        raw_ids = frontier.get("raw_candidate_ids")
+        raw_state_sha = frontier.get("raw_candidate_state_sha256")
+        raw_report_sha = frontier.get("raw_candidate_report_sha256")
+        if not (
+            isinstance(raw_reports, Mapping)
+            and isinstance(raw_ids, list)
+            and raw_ids
+            and len(raw_ids) == len(set(raw_ids))
+            and set(raw_ids) == set(raw_reports)
+            and isinstance(raw_state_sha, Mapping)
+            and set(raw_state_sha) == set(raw_ids)
+            and isinstance(raw_report_sha, Mapping)
+            and set(raw_report_sha) == set(raw_ids)
+            and frontier.get("raw_candidate_count") == len(raw_ids)
+            and all(
+                sealed(
+                    raw_reports[candidate_id],
+                    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_SCHEMA,
+                )
+                and raw_reports[candidate_id].get("candidate_id")
+                == candidate_id
+                and raw_reports[candidate_id].get("request_sha256")
+                == request_sha
+                and raw_reports[candidate_id].get("state_sha256")
+                == raw_state_sha[candidate_id]
+                and raw_reports[candidate_id].get("report_sha256")
+                == raw_report_sha[candidate_id]
+                and raw_reports[candidate_id].get("fit_only") is True
+                and raw_reports[candidate_id].get(
+                    "selection_cases_consumed"
+                )
+                == 0
+                and raw_reports[candidate_id].get(
+                    "validation_cases_consumed"
+                )
+                == 0
+                for candidate_id in raw_ids
+            )
+        ):
+            return False
+        participants = frontier.get("source_numeric_participant_indices")
+        source_count = frontier.get("source_channel_count")
+        selected_count = frontier.get("source_channels_selected")
+        dropped_count = frontier.get("source_channels_dropped")
+        full_coverage = frontier.get("full_source_numeric_participation")
+        if not (
+            type(source_count) is int
+            and source_count > 0
+            and isinstance(participants, list)
+            and participants == sorted(set(participants))
+            and all(
+                type(index) is int and 0 <= index < source_count
+                for index in participants
+            )
+            and selected_count == len(participants)
+            and dropped_count == source_count - len(participants)
+            and full_coverage is (len(participants) == source_count)
+            and pool.get("source_channels_selected") == selected_count
+            and pool.get("source_channels_dropped") == dropped_count
+            and pool.get("full_source_numeric_participation")
+            is full_coverage
+            and report.get("source_channels_selected") == selected_count
+            and report.get("source_channels_dropped") == dropped_count
+        ):
+            return False
+        if not (
+            isinstance(candidate_fit, Mapping)
+            and candidate_fit
+            and isinstance(candidate_selection, Mapping)
+            and set(candidate_fit) == set(candidate_selection)
+            and pool.get("candidate_ids") == sorted(candidate_fit)
+            and pool.get("unique_target_dtype_candidate_count")
+            == len(candidate_fit)
+            and pool.get("raw_candidate_count") == len(raw_ids)
+            and pool.get("target_dtype_duplicate_count")
+            == len(raw_ids) - len(candidate_fit)
+            and pool.get("fit_only_candidate_generation") is True
+            and pool.get("selection_cases_consumed_during_generation") == 0
+            and pool.get("validation_cases_consumed_during_generation") == 0
+            and pool.get("legacy_v4_candidate_pool_claimed") is False
+        ):
+            return False
+        for candidate_id, provenance in candidate_fit.items():
+            selection = candidate_selection[candidate_id]
+            if not (
+                sealed(
+                    provenance,
+                    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA,
+                )
+                and provenance.get("candidate_id") == candidate_id
+                and provenance.get("request_sha256") == request_sha
+                and provenance.get("numerical_frontier_report_sha256")
+                == frontier_sha
+                and provenance.get("fit_case_authentication_sha256")
+                == case_seals["fit"]
+                and provenance.get("fit_only") is True
+                and provenance.get("selection_cases_consumed") == 0
+                and provenance.get("validation_cases_consumed") == 0
+                and provenance.get("legacy_v4_candidate_provenance_claimed")
+                is False
+                and isinstance(selection, Mapping)
+                and selection.get("split") == "selection"
+                and selection.get("candidate_state_sha256")
+                == provenance.get("target_dtype_candidate_state_sha256")
+                and pool["candidate_state_sha256"].get(candidate_id)
+                == selection.get("candidate_state_sha256")
+            ):
+                return False
+        selected_id = report.get("selected_candidate_id")
+        selected_sha = selection_evaluation.get(
+            "candidate_state_sha256"
+        )
+        evaluations = (
+            ("fit", fit_evaluation),
+            ("selection", selection_evaluation),
+            ("validation", validation_evaluation),
+        )
+        if not (
+            isinstance(selected_id, str)
+            and selected_id in candidate_fit
+            and candidate_selection[selected_id].get(
+                "candidate_state_sha256"
+            )
+            == selected_sha
+            and all(
+                isinstance(evaluation, Mapping)
+                and evaluation.get("split") == split
+                and evaluation.get("candidate_state_sha256")
+                == selected_sha
+                and evaluation.get(
+                    "actual_parameter_and_intermediate_target_dtype_replay"
+                )
+                is True
+                for split, evaluation in evaluations
+            )
+            and _valid_short_conv_v4_selection_ranking(
+                ranking,
+                candidate_selection=candidate_selection,
+                solver_policy=solver_policy,
+                feasibility_policy=pool[
+                    "selection_feasibility_policy"
+                ],
+            )
+            and (
+                (
+                    "preinstall_candidate_selector_receipt" not in report
+                    and ranking.get("selected_candidate_id")
+                    == selected_id
+                )
+                or (
+                    "preinstall_candidate_selector_receipt" in report
+                    and report.get("default_v4_selected_candidate_id")
+                    == ranking.get("selected_candidate_id")
+                )
+            )
+            and isinstance(gate_policy, Mapping)
+            and isinstance(gate, Mapping)
+            and _valid_short_conv_v4_behavior_gate(
+                gate,
+                gate_policy=gate_policy,
+                fit_evaluation=fit_evaluation,
+                validation_evaluation=validation_evaluation,
+                full_source_coverage=full_coverage,
+            )
+            and gate.get("passed") is False
+            and gate.get("enforced") is True
+        ):
+            return False
+        selector_present = (
+            "preinstall_candidate_selector_receipt" in report
+        )
+        return bool(
+            (not selector_present)
+            or _valid_short_conv_v5_selector_receipt_only(report)
+        ) and bool(
+            report.get("numerical_frontier_adapter_active") is True
+            and report.get("legacy_v4_numerical_generation_claimed")
+            is False
+            and report.get("legacy_v4_report_claimed") is False
+            and report.get("fit_only_numerical_generation") is True
+            and report.get("selection_used_only_for_candidate_ranking")
+            is True
+            and report.get("validation_used_only_after_candidate_freeze")
+            is True
+            and report.get("source_channels_pruned") == 0
+            and report.get("source_channels_quantized") == 0
+            and isinstance(execution, Mapping)
+            and all(
+                type(value) is int and value == 0
+                for value in execution.values()
+            )
+            and report.get("compiled_short_conv_fold_issued") is False
+            and report.get("promotion_claimed") is False
+            and report.get("promotable_candidate") is False
+            and report.get("failure_evidence_only") is True
+            and _recursive_report_seals_valid(report)
+            and _no_recursive_success_claims(report)
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OverflowError,
+        TypeError,
+        ValueError,
+    ):
+        return False
+
+
 def _valid_short_conv_validation_report(
     report: Mapping[str, Any],
 ) -> bool:
@@ -4187,6 +4561,13 @@ def _valid_short_conv_validation_report(
             return _valid_short_conv_v4_validation_report(report)
         if schema == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA:
             return _valid_short_conv_v5_selector_validation_report(report)
+        if (
+            schema
+            == LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA
+        ):
+            return _valid_short_conv_v5_numerical_frontier_validation_report(
+                report
+            )
         return False
     except (
         AttributeError,
@@ -4308,6 +4689,9 @@ def compile_and_install_lfm2_cpcf_layer(
     short_conv_v4_solver_policy: Lfm2CpcfShortConvV4SolverPolicy | None = None,
     candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
     candidate_selector: Lfm2CpcfShortConvV5CandidateSelector | None = None,
+    numerical_frontier_adapter: (
+        Lfm2CpcfShortConvNumericalFrontierAdapter | None
+    ) = None,
 ) -> Lfm2CpcfCompiledLayerResult:
     """Compile, install, and replay one next sequential LFM2 target layer."""
 
@@ -4358,6 +4742,20 @@ def compile_and_install_lfm2_cpcf_layer(
     ):
         raise Lfm2CpcfLayerCompilerError(
             "Pre-install candidate selection is defined only for the "
+            "authenticated short-conv v4 solver lane."
+        )
+    if numerical_frontier_adapter is not None and not callable(
+        getattr(numerical_frontier_adapter, "generate", None)
+    ):
+        raise TypeError(
+            "numerical_frontier_adapter must implement generate(request)."
+        )
+    if (
+        numerical_frontier_adapter is not None
+        and short_conv_v4_solver_policy is None
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Numerical-frontier generation is defined only for the "
             "authenticated short-conv v4 solver lane."
         )
     if input_bank.layer_index != index:
@@ -4552,6 +4950,9 @@ def compile_and_install_lfm2_cpcf_layer(
                     gate_policy=policy,
                     candidate_replay_evaluator=candidate_replay_evaluator,
                     candidate_selector=candidate_selector,
+                    numerical_frontier_adapter=(
+                        numerical_frontier_adapter
+                    ),
                 )
             stage = "operator_install"
             operator_install_report = _install_short_conv(
