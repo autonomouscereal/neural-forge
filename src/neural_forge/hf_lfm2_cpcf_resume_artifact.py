@@ -2110,7 +2110,21 @@ def _validate_model_failure_report(
         raise Lfm2CpcfResumeArtifactIntegrityError(
             "Inactive model failure carries active layer context."
         )
-    _reject_nested_success_claims(report)
+    # A model-level failure can follow an authenticated, successful prefix.
+    # Those completed layer receipts are validated above as a contiguous,
+    # self-sealed zero-training checkpoint history.  Their operator artifacts
+    # may therefore truthfully carry promotion fields from the earlier
+    # successful layer.  They are historical evidence, not a success claim
+    # for this failed model transaction.  Continue rejecting success claims
+    # everywhere else in the failure document, including the active nested
+    # layer failure.
+    _reject_nested_success_claims(
+        {
+            key: child
+            for key, child in report.items()
+            if key != "completed_layer_receipts"
+        }
+    )
     if (
         bindings.stage_id != stage
         or bindings.guard_proof_sha256 != snapshot_sha

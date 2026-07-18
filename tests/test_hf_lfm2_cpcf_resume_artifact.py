@@ -138,7 +138,10 @@ def _layer_receipts(*, count: int, final_bank_sha256: str):
             "preinstall_replay_sha256": _digest(f"preinstall-{index}"),
             "operator_replay_sha256": _digest(f"operator-replay-{index}"),
             "final_replay_sha256": _digest(f"final-replay-{index}"),
-            "operator_artifact": {"schema": "operator-v1"},
+            "operator_artifact": {
+                "schema": "operator-v1",
+                "promotable_candidate": True,
+            },
             "mlp_artifact": {"schema": "mlp-v1"},
             "operator_install_report": {"installed": True},
             "mlp_install_report": {"installed": True},
@@ -1148,6 +1151,9 @@ def test_model_failure_round_trip_preserves_exact_prefix_and_nested_proofs(
     reopened_report = reopened.diagnostic["report"]
     assert reopened_report["schema"] == ("neural-forge-lfm2-cpcf-model-failure-v3")
     assert reopened_report["completed_layer_count"] == 2
+    assert reopened_report["completed_layer_receipts"][0][
+        "operator_artifact"
+    ]["promotable_candidate"] is True
     assert (
         reopened_report["nested_layer_failure_report"]["input_bank_sha256"]
         == current_runtime_bank_sha
