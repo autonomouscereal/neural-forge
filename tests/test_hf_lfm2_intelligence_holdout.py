@@ -31,6 +31,7 @@ PARENT_STATE = hashlib.sha256(b"holdout-parent-state").hexdigest()
 PARENT_MODEL = hashlib.sha256(b"holdout-parent-model").hexdigest()
 CANDIDATE_STATE = hashlib.sha256(b"holdout-candidate-state").hexdigest()
 EOS_ID = 7
+CHILD_EOS_ID = 13
 
 
 _CODE_BODIES = {
@@ -155,7 +156,11 @@ def _generated_parent_rows(manifest: Any) -> list[dict[str, Any]]:
     ]
 
 
-def _candidate_rows(manifest: Any) -> list[dict[str, Any]]:
+def _candidate_rows(
+    manifest: Any,
+    *,
+    eos_token_id: int = EOS_ID,
+) -> list[dict[str, Any]]:
     return [
         {
             "case_id": spec.case_id,
@@ -164,7 +169,7 @@ def _candidate_rows(manifest: Any) -> list[dict[str, Any]]:
                 5000 + index * 4,
                 5001 + index * 4,
                 5002 + index * 4,
-                EOS_ID,
+                eos_token_id,
             ],
             "generation_limit": spec.generation_limit,
             "topical_relevance": True,
@@ -181,14 +186,22 @@ def _file_sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _write_tokenizer(path: Path) -> str:
+def _write_tokenizer(
+    path: Path,
+    *,
+    eos_token_id: int = EOS_ID,
+) -> str:
     path.mkdir()
     (path / "tokenizer.json").write_text(
         json.dumps(
             {
                 "added_tokens": [
                     {"id": 0, "content": "<pad>", "special": True},
-                    {"id": EOS_ID, "content": "<eos>", "special": True},
+                    {
+                        "id": eos_token_id,
+                        "content": "<eos>",
+                        "special": True,
+                    },
                 ],
                 "model": {"type": "BPE", "vocab": {"hello": 10}},
             },
@@ -248,6 +261,8 @@ def _config(
     ratings_path: Path | None = None,
     ratings_file_sha: str | None = None,
     ratings_sha: str | None = None,
+    child_tokenizer_directory: Path | None = None,
+    expected_child_tokenizer_fingerprint: str | None = None,
 ) -> evaluator.HoldoutEvaluationConfig:
     return evaluator.HoldoutEvaluationConfig(
         parent_envelope=fixture["parent_path"],
@@ -262,6 +277,10 @@ def _config(
         expected_parent_model_fingerprint=PARENT_MODEL,
         tokenizer_directory=fixture["tokenizer_directory"],
         expected_tokenizer_fingerprint=fixture["tokenizer_fingerprint"],
+        child_tokenizer_directory=child_tokenizer_directory,
+        expected_child_tokenizer_fingerprint=(
+            expected_child_tokenizer_fingerprint
+        ),
         candidate_report=fixture["candidate_path"],
         expected_candidate_report_sha256=_file_sha(
             fixture["candidate_path"]
@@ -468,6 +487,149 @@ def test_holdout_evaluator_withholds_then_certifies_packet_bound_review(
     ] == pytest.approx(1.0)
     assert accepted["policy"]["all_required_component_floor_is_0_90"] is True
     assert accepted["semantic_evaluation"]["exact_parent_wording_used"] is False
+
+
+def test_cross_tokenizer_candidate_uses_its_own_sealed_identity_and_eos_domain(
+    tmp_path: Path,
+) -> None:
+    fixture = _sealed_fixture(tmp_path)
+    child_tokenizer_directory = tmp_path / "child-tokenizer"
+    child_tokenizer_fingerprint = _write_tokenizer(
+        child_tokenizer_directory,
+        eos_token_id=CHILD_EOS_ID,
+    )
+    rows = _candidate_rows(
+        fixture["manifest"],
+        eos_token_id=CHILD_EOS_ID,
+    )
+    rows[0]["output_token_ids"] = [
+        5000,
+        EOS_ID,
+        5002,
+        CHILD_EOS_ID,
+    ]
+    candidate = seal_lfm2_intelligence_holdout_candidate_outputs(
+        fixture["manifest"],
+        rows,
+        candidate_state_fingerprint=CANDIDATE_STATE,
+        tokenizer_fingerprint=child_tokenizer_fingerprint,
+        eos_token_ids=[CHILD_EOS_ID],
+    )
+    candidate_path = tmp_path / "cross-candidate.json"
+    _write_json(candidate_path, candidate)
+    cross_fixture = {
+        **fixture,
+        "candidate": candidate,
+        "candidate_path": candidate_path,
+    }
+    config = _config(
+        cross_fixture,
+        tmp_path,
+        suffix="cross-tokenizer",
+        child_tokenizer_directory=child_tokenizer_directory,
+        expected_child_tokenizer_fingerprint=(
+            child_tokenizer_fingerprint
+        ),
+    )
+
+    report = evaluator.evaluate_lfm2_intelligence_holdout(config)
+
+    assert report["inputs"]["tokenizer_mode"] == "cross_tokenizer"
+    assert report["inputs"]["parent_tokenizer_fingerprint"] == (
+        fixture["tokenizer_fingerprint"]
+    )
+    assert report["inputs"]["child_tokenizer_fingerprint"] == (
+        child_tokenizer_fingerprint
+    )
+    assert report["tokenizer_domains"]["parent"]["eos_token_ids"] == [EOS_ID]
+    assert report["tokenizer_domains"]["child"]["eos_token_ids"] == [
+        CHILD_EOS_ID
+    ]
+    assert report["tokenizer_domains"]["child"][
+        "candidate_outputs_sha256"
+    ] == candidate["candidate_outputs_sha256"]
+    assert report["tokenizer_domains"][
+        "numeric_token_id_comparison_across_domains_used"
+    ] is False
+    assert report["semantic_evaluation"][
+        "parent_and_child_token_ids_interpreted_only_in_own_domains"
+    ] is True
+
+
+def test_cross_tokenizer_evaluation_rejects_unsealed_or_misbound_outputs(
+    tmp_path: Path,
+) -> None:
+    fixture = _sealed_fixture(tmp_path)
+    child_tokenizer_directory = tmp_path / "child-tokenizer"
+    child_tokenizer_fingerprint = _write_tokenizer(
+        child_tokenizer_directory,
+        eos_token_id=CHILD_EOS_ID,
+    )
+    misbound = _config(
+        fixture,
+        tmp_path,
+        suffix="misbound-cross-tokenizer",
+        child_tokenizer_directory=child_tokenizer_directory,
+        expected_child_tokenizer_fingerprint=(
+            child_tokenizer_fingerprint
+        ),
+    )
+    with pytest.raises(Lfm2IntelligenceHoldoutError, match="identity"):
+        evaluator.evaluate_lfm2_intelligence_holdout(misbound)
+
+    raw_path = tmp_path / "raw-cross-candidate.json"
+    _write_json(
+        raw_path,
+        {
+            "phase": "reloaded_child",
+            "outputs": _candidate_rows(
+                fixture["manifest"],
+                eos_token_id=CHILD_EOS_ID,
+            ),
+        },
+    )
+    raw_config = evaluator.HoldoutEvaluationConfig(
+        parent_envelope=fixture["parent_path"],
+        expected_parent_envelope_file_sha256=_file_sha(
+            fixture["parent_path"]
+        ),
+        expected_parent_envelope_sha256=fixture["parent"][
+            "envelope_sha256"
+        ],
+        expected_manifest_sha256=fixture["manifest"].manifest_sha256,
+        expected_parent_state_fingerprint=PARENT_STATE,
+        expected_parent_model_fingerprint=PARENT_MODEL,
+        tokenizer_directory=fixture["tokenizer_directory"],
+        expected_tokenizer_fingerprint=fixture["tokenizer_fingerprint"],
+        child_tokenizer_directory=child_tokenizer_directory,
+        expected_child_tokenizer_fingerprint=(
+            child_tokenizer_fingerprint
+        ),
+        candidate_report=raw_path,
+        expected_candidate_report_sha256=_file_sha(raw_path),
+        candidate_phase="reloaded_child",
+        report_path=tmp_path / "raw-cross-report.json",
+        manual_review_packet_path=tmp_path / "raw-cross-packet.json",
+    )
+    with pytest.raises(
+        evaluator.Lfm2HoldoutEvaluationError,
+        match="requires a sealed candidate",
+    ):
+        evaluator.evaluate_lfm2_intelligence_holdout(raw_config)
+
+
+def test_child_tokenizer_binding_is_all_or_none(tmp_path: Path) -> None:
+    fixture = _sealed_fixture(tmp_path)
+    with pytest.raises(
+        evaluator.Lfm2HoldoutEvaluationError,
+        match="directory and fingerprint",
+    ):
+        _config(
+            fixture,
+            tmp_path,
+            suffix="partial-child-binding",
+            child_tokenizer_directory=fixture["tokenizer_directory"],
+        )
 
 
 def test_raw_candidate_report_supports_all_manifest_cases_and_requires_limits(

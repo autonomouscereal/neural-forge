@@ -3,8 +3,8 @@
 
 This command never imports a model loader, executes a model, trains, or calls
 the parent.  It authenticates the one-time parent envelope, a candidate output
-artifact/report, and the bound local tokenizer files before delegating semantic
-and task scoring to ``hf_lfm2_intelligence_gate``.
+artifact/report, and each bound local tokenizer package before delegating
+decoded-text semantic and task scoring to ``hf_lfm2_intelligence_gate``.
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 RUNNER_SCHEMA = "neural-forge-lfm2-intelligence-holdout-evaluation-v1"
+TOKENIZER_DOMAIN_SCHEMA = "neural-forge-lfm2-holdout-tokenizer-domains-v1"
 
 
 class Lfm2HoldoutEvaluationError(RuntimeError):
@@ -227,6 +228,8 @@ class HoldoutEvaluationConfig:
     report_path: Path
     manual_review_packet_path: Path
     candidate_phase: str | None = None
+    child_tokenizer_directory: Path | None = None
+    expected_child_tokenizer_fingerprint: str | None = None
     expected_candidate_outputs_sha256: str | None = None
     expected_candidate_state_fingerprint: str | None = None
     manual_ratings_path: Path | None = None
@@ -244,6 +247,22 @@ class HoldoutEvaluationConfig:
             "expected_candidate_report_sha256",
         ):
             _digest(getattr(self, name), name)
+        child_tokenizer_bindings = (
+            self.child_tokenizer_directory,
+            self.expected_child_tokenizer_fingerprint,
+        )
+        if any(value is None for value in child_tokenizer_bindings) != all(
+            value is None for value in child_tokenizer_bindings
+        ):
+            raise Lfm2HoldoutEvaluationError(
+                "Child tokenizer directory and fingerprint must be supplied "
+                "together."
+            )
+        if self.expected_child_tokenizer_fingerprint is not None:
+            _digest(
+                self.expected_child_tokenizer_fingerprint,
+                "expected_child_tokenizer_fingerprint",
+            )
         candidate_bindings = (
             self.expected_candidate_outputs_sha256,
             self.expected_candidate_state_fingerprint,
@@ -311,6 +330,8 @@ def _load_candidates(
     *,
     manifest: Any,
     eos_token_ids: Sequence[int],
+    expected_tokenizer_fingerprint: str,
+    cross_tokenizer: bool,
 ) -> tuple[Any, dict[str, Any]]:
     _candidate_path, document = _read_json_file(
         config.candidate_report,
@@ -339,9 +360,7 @@ def _load_candidates(
             expected_candidate_state_fingerprint=(
                 config.expected_candidate_state_fingerprint
             ),
-            expected_tokenizer_fingerprint=(
-                config.expected_tokenizer_fingerprint
-            ),
+            expected_tokenizer_fingerprint=expected_tokenizer_fingerprint,
             eos_token_ids=eos_token_ids,
         )
         return evidence.candidates, {
@@ -358,6 +377,11 @@ def _load_candidates(
                 evidence.candidate_state_fingerprint
             ),
         }
+    if cross_tokenizer:
+        raise Lfm2HoldoutEvaluationError(
+            "Cross-tokenizer evaluation requires a sealed candidate output "
+            "artifact bound to the child tokenizer."
+        )
     if (
         config.expected_candidate_outputs_sha256 is not None
         or config.expected_candidate_state_fingerprint is not None
@@ -407,19 +431,42 @@ def evaluate_lfm2_intelligence_holdout(
         ),
         expected_tokenizer_fingerprint=config.expected_tokenizer_fingerprint,
     )
-    special_identity = posthoc.load_bound_special_token_ids(
+    parent_special_identity = posthoc.load_bound_special_token_ids(
         config.tokenizer_directory,
         expected_tokenizer_fingerprint=config.expected_tokenizer_fingerprint,
     )
-    eos_token_ids = special_identity["special_token_ids"]["eos"]
-    if tuple(eos_token_ids) != envelope.eos_token_ids:
+    parent_eos_token_ids = parent_special_identity["special_token_ids"]["eos"]
+    if tuple(parent_eos_token_ids) != envelope.eos_token_ids:
         raise Lfm2HoldoutEvaluationError(
             "Current bound tokenizer EOS IDs differ from the parent envelope."
         )
+    child_tokenizer_directory = (
+        config.tokenizer_directory
+        if config.child_tokenizer_directory is None
+        else config.child_tokenizer_directory
+    )
+    child_tokenizer_fingerprint = (
+        config.expected_tokenizer_fingerprint
+        if config.expected_child_tokenizer_fingerprint is None
+        else config.expected_child_tokenizer_fingerprint
+    )
+    child_special_identity = posthoc.load_bound_special_token_ids(
+        child_tokenizer_directory,
+        expected_tokenizer_fingerprint=child_tokenizer_fingerprint,
+    )
+    child_eos_token_ids = child_special_identity["special_token_ids"]["eos"]
+    cross_tokenizer = (
+        child_tokenizer_fingerprint != envelope.tokenizer_fingerprint
+    )
+    tokenizer_mode = (
+        "cross_tokenizer" if cross_tokenizer else "shared_tokenizer"
+    )
     candidates, candidate_selection = _load_candidates(
         config,
         manifest=envelope.manifest,
-        eos_token_ids=eos_token_ids,
+        eos_token_ids=child_eos_token_ids,
+        expected_tokenizer_fingerprint=child_tokenizer_fingerprint,
+        cross_tokenizer=cross_tokenizer,
     )
     baseline = baseline_from_lfm2_intelligence_holdout_envelope(envelope)
     policy = IntelligenceGatePolicy()
@@ -541,12 +588,44 @@ def evaluate_lfm2_intelligence_holdout(
             "parent_state_fingerprint": envelope.parent_state_fingerprint,
             "parent_model_fingerprint": envelope.parent_model_fingerprint,
             "tokenizer_fingerprint": envelope.tokenizer_fingerprint,
+            "parent_tokenizer_fingerprint": envelope.tokenizer_fingerprint,
+            "child_tokenizer_fingerprint": child_tokenizer_fingerprint,
+            "tokenizer_mode": tokenizer_mode,
             "candidate_report_file_sha256": (
                 config.expected_candidate_report_sha256
             ),
             **candidate_selection,
         },
-        "bound_special_tokens": special_identity,
+        # Retained as the parent/shared-tokenizer alias for v1 consumers.
+        "bound_special_tokens": parent_special_identity,
+        "bound_child_special_tokens": child_special_identity,
+        "tokenizer_domains": {
+            "schema": TOKENIZER_DOMAIN_SCHEMA,
+            "mode": tokenizer_mode,
+            "parent": {
+                "tokenizer_fingerprint": envelope.tokenizer_fingerprint,
+                "special_token_identity_sha256": parent_special_identity[
+                    "special_token_identity_sha256"
+                ],
+                "eos_token_ids": list(parent_eos_token_ids),
+                "output_envelope_sha256": envelope.envelope_sha256,
+            },
+            "child": {
+                "tokenizer_fingerprint": child_tokenizer_fingerprint,
+                "special_token_identity_sha256": child_special_identity[
+                    "special_token_identity_sha256"
+                ],
+                "eos_token_ids": list(child_eos_token_ids),
+                "candidate_outputs_sha256": candidate_selection[
+                    "sealed_candidate_outputs_sha256"
+                ],
+                "candidate_state_fingerprint": candidate_selection[
+                    "candidate_state_fingerprint"
+                ],
+            },
+            "decoded_text_semantic_comparison_used": True,
+            "numeric_token_id_comparison_across_domains_used": False,
+        },
         "execution_audit": {
             "parent_model_loaded": False,
             "candidate_model_loaded": False,
@@ -566,6 +645,7 @@ def evaluate_lfm2_intelligence_holdout(
         "semantic_evaluation": {
             "exact_parent_wording_used": False,
             "exact_parent_token_matching_used": False,
+            "parent_and_child_token_ids_interpreted_only_in_own_domains": True,
             "safe_restricted_ast_for_python": True,
             "manual_packet_required_for_open_ended_claim": True,
         },
@@ -602,8 +682,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--expected-parent-model-fingerprint",
         required=True,
     )
-    parser.add_argument("--tokenizer-directory", type=Path, required=True)
-    parser.add_argument("--expected-tokenizer-fingerprint", required=True)
+    parent_tokenizer = parser.add_mutually_exclusive_group(required=True)
+    parent_tokenizer.add_argument(
+        "--tokenizer-directory",
+        dest="tokenizer_directory",
+        type=Path,
+    )
+    parent_tokenizer.add_argument(
+        "--parent-tokenizer-directory",
+        dest="tokenizer_directory",
+        type=Path,
+    )
+    parent_fingerprint = parser.add_mutually_exclusive_group(required=True)
+    parent_fingerprint.add_argument(
+        "--expected-tokenizer-fingerprint",
+        dest="expected_tokenizer_fingerprint",
+    )
+    parent_fingerprint.add_argument(
+        "--expected-parent-tokenizer-fingerprint",
+        dest="expected_tokenizer_fingerprint",
+    )
+    parser.add_argument("--child-tokenizer-directory", type=Path)
+    parser.add_argument("--expected-child-tokenizer-fingerprint")
     parser.add_argument("--candidate-report", type=Path, required=True)
     parser.add_argument("--expected-candidate-report-sha256", required=True)
     parser.add_argument("--candidate-phase")
