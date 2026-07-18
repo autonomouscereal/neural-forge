@@ -50,9 +50,13 @@ from neural_forge.hf_lfm2_cpcf_short_conv_fold import (
 from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
     LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
     Lfm2CpcfShortConvV4SolverPolicy,
+    fixed_projection_trust_path_fractions,
+    rank_short_conv_v4_selection_candidates,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
+    LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
     Lfm2CompiledCpcfShortConvV4Fold,
     Lfm2CpcfShortConvV4FoldCase,
     compile_lfm2_cpcf_short_conv_v4_fold,
@@ -240,8 +244,10 @@ _SHORT_CONV_V4_FAILURE_REPORT_FIELDS = frozenset(
         "basis",
         "input_lift",
         "transported_priors",
+        "ridge_fit_reports",
         "candidate_fit_reports",
         "candidate_selection_reports",
+        "candidate_pool_report",
         "selection_ranking",
         "selected_candidate_id",
         "fit_evaluation",
@@ -263,6 +269,10 @@ _SHORT_CONV_V4_FAILURE_REPORT_FIELDS = frozenset(
         "failure_evidence_only",
         "report_sha256",
     }
+)
+_SHORT_CONV_V4_FAILURE_V1_REPORT_FIELDS = (
+    _SHORT_CONV_V4_FAILURE_REPORT_FIELDS
+    - {"ridge_fit_reports", "candidate_pool_report"}
 )
 _SHORT_CONV_V4_GATE_CHECK_FIELDS = frozenset(
     {
@@ -3011,9 +3021,846 @@ def _recursive_report_seals_valid(value: Any) -> bool:
     return True
 
 
-def _valid_short_conv_v4_validation_report(
+def _valid_short_conv_v4_candidate_provenance(
+    *,
+    candidate_id: str,
+    provenance: Any,
+    selection: Any,
+    ridge_fit: Mapping[str, Any],
+    solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
+) -> bool:
+    try:
+        if not isinstance(provenance, Mapping) or not isinstance(
+            selection,
+            Mapping,
+        ):
+            return False
+        expected_fields = {
+            "schema",
+            "kind",
+            "candidate_id",
+            "policy_sha256",
+            "target_dtype",
+            "target_dtype_candidate_state_sha256",
+            "source_alias_count",
+            "source_alias_candidate_ids",
+            "sources",
+            "fit_only",
+            "selection_cases_consumed",
+            "validation_cases_consumed",
+            "actual_target_dtype_materialization_before_deduplication",
+            "execution",
+            "report_sha256",
+        }
+        if set(provenance) != expected_fields:
+            return False
+        sources = provenance.get("sources")
+        aliases = provenance.get("source_alias_candidate_ids")
+        alias_count = provenance.get("source_alias_count")
+        target_state_sha = provenance.get(
+            "target_dtype_candidate_state_sha256"
+        )
+        if not (
+            provenance.get("schema") == LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
+            and provenance.get("kind")
+            == "authenticated_fit_only_candidate_provenance"
+            and provenance.get("candidate_id") == candidate_id
+            and provenance.get("policy_sha256")
+            == solver_policy.authentication_sha256
+            and provenance.get("target_dtype") == solver_policy.target_dtype
+            and isinstance(target_state_sha, str)
+            and _SHA256.fullmatch(target_state_sha) is not None
+            and selection.get("candidate_state_sha256") == target_state_sha
+            and type(alias_count) is int
+            and alias_count > 0
+            and isinstance(aliases, list)
+            and len(aliases) == alias_count
+            and len(set(aliases)) == alias_count
+            and aliases[0] == candidate_id
+            and isinstance(sources, list)
+            and len(sources) == alias_count
+            and aliases
+            == [
+                source.get("candidate_id")
+                for source in sources
+                if isinstance(source, Mapping)
+            ]
+            and provenance.get("fit_only") is True
+            and provenance.get("selection_cases_consumed") == 0
+            and provenance.get("validation_cases_consumed") == 0
+            and provenance.get(
+                "actual_target_dtype_materialization_before_deduplication"
+            )
+            is True
+        ):
+            return False
+        execution = provenance.get("execution")
+        if not (
+            isinstance(execution, Mapping)
+            and set(execution)
+            == {
+                "parent_model_forward_calls",
+                "target_model_forward_calls",
+                "generation_calls",
+                "training_steps",
+                "backward_calls",
+                "optimizer_steps",
+                "parameters_pruned",
+                "parameters_quantized",
+            }
+            and all(type(value) is int and value == 0 for value in execution.values())
+        ):
+            return False
+        for source in sources:
+            if not isinstance(source, Mapping) or set(source) != {
+                "candidate_id",
+                "ridge_id",
+                "candidate_kind",
+                "stage_id",
+                "fit_path_state_sha256",
+                "candidate_report",
+            }:
+                return False
+            ridge_id = source.get("ridge_id")
+            candidate_report = source.get("candidate_report")
+            if not (
+                isinstance(ridge_id, str)
+                and ridge_id in ridge_fit
+                and isinstance(ridge_fit[ridge_id], Mapping)
+                and isinstance(candidate_report, Mapping)
+                and source.get("stage_id") == candidate_report.get("stage_id")
+                and source.get("fit_path_state_sha256")
+                == candidate_report.get("state_sha256")
+                and candidate_report.get("policy_sha256")
+                == solver_policy.authentication_sha256
+                and candidate_report.get("alpha")
+                == ridge_fit[ridge_id].get("alpha")
+                and candidate_report.get("fit_case_authentication_sha256")
+                == ridge_fit[ridge_id].get("fit_case_authentication_sha256")
+                and candidate_report.get("fit_only") is True
+                and candidate_report.get("selection_cases_consumed") == 0
+                and candidate_report.get("validation_cases_consumed") == 0
+            ):
+                return False
+            inventory = ridge_fit[ridge_id].get("path_state_inventory")
+            if not isinstance(inventory, list) or not inventory:
+                return False
+            candidate_kind = source.get("candidate_kind")
+            if candidate_kind == "accepted_fit_path_anchor":
+                inventory_record = {
+                    (
+                        value.get("stage_id"),
+                        value.get("state_sha256"),
+                        value.get("candidate_report_sha256"),
+                    )
+                    for value in inventory
+                    if isinstance(value, Mapping)
+                }
+                if not (
+                    candidate_report.get("kind")
+                    == "authenticated_fit_only_projection_path_state"
+                    and (
+                        candidate_report.get("stage_id"),
+                        candidate_report.get("state_sha256"),
+                        candidate_report.get("report_sha256"),
+                    )
+                    in inventory_record
+                ):
+                    return False
+            elif candidate_kind == "prior_to_final_trust_path":
+                if not (
+                    candidate_report.get("kind")
+                    == "authenticated_fit_only_projection_trust_path_state"
+                    and candidate_report.get("left_stage_id")
+                    == inventory[0].get("stage_id")
+                    and candidate_report.get("left_state_sha256")
+                    == inventory[0].get("state_sha256")
+                    and candidate_report.get("left_candidate_report_sha256")
+                    == inventory[0].get("candidate_report_sha256")
+                    and candidate_report.get("right_stage_id")
+                    == inventory[-1].get("stage_id")
+                    and candidate_report.get("right_state_sha256")
+                    == inventory[-1].get("state_sha256")
+                    and candidate_report.get("right_candidate_report_sha256")
+                    == inventory[-1].get("candidate_report_sha256")
+                    and candidate_report.get("fraction")
+                    in fixed_projection_trust_path_fractions()
+                ):
+                    return False
+            elif candidate_kind == "prior_to_first_writer_trust_path":
+                first_writer_record = next(
+                    (
+                        value
+                        for value in inventory
+                        if value.get("stage_id", "").endswith("-writer")
+                    ),
+                    None,
+                )
+                if not (
+                    isinstance(first_writer_record, Mapping)
+                    and candidate_report.get("kind")
+                    == "authenticated_fit_only_projection_trust_path_state"
+                    and candidate_report.get("left_stage_id")
+                    == inventory[0].get("stage_id")
+                    and candidate_report.get("left_state_sha256")
+                    == inventory[0].get("state_sha256")
+                    and candidate_report.get("left_candidate_report_sha256")
+                    == inventory[0].get("candidate_report_sha256")
+                    and candidate_report.get("right_stage_id")
+                    == first_writer_record.get("stage_id")
+                    and candidate_report.get("right_state_sha256")
+                    == first_writer_record.get("state_sha256")
+                    and candidate_report.get("right_candidate_report_sha256")
+                    == first_writer_record.get("candidate_report_sha256")
+                    and candidate_report.get("fraction")
+                    in fixed_projection_trust_path_fractions()
+                ):
+                    return False
+            else:
+                return False
+        return True
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        return False
+
+
+def _valid_short_conv_v4_raw_frontier_coverage(
+    *,
+    candidate_fit: Mapping[str, Any],
+    ridge_fit: Mapping[str, Any],
+    solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
+) -> bool:
+    """Prove every configured pre-dedup path source appears exactly once."""
+
+    try:
+        expected_sources: dict[str, tuple[str, str, str]] = {}
+        fractions = fixed_projection_trust_path_fractions()
+        for ridge_index, alpha in enumerate(solver_policy.ridge_alphas):
+            ridge_id = f"ridge-alpha-{ridge_index:02d}-{alpha:.17g}"
+            ridge = ridge_fit.get(ridge_id)
+            inventory = (
+                ridge.get("path_state_inventory")
+                if isinstance(ridge, Mapping)
+                else None
+            )
+            if not (
+                isinstance(inventory, list)
+                and inventory
+                and all(isinstance(record, Mapping) for record in inventory)
+            ):
+                return False
+            for path_index, record in enumerate(inventory):
+                stage_id = record.get("stage_id")
+                if not isinstance(stage_id, str) or not stage_id:
+                    return False
+                candidate_id = (
+                    f"{ridge_id}--anchor-{path_index:02d}-{stage_id}"
+                )
+                expected_sources[candidate_id] = (
+                    ridge_id,
+                    "accepted_fit_path_anchor",
+                    stage_id,
+                )
+
+            for fraction_index, fraction in enumerate(fractions):
+                stage_id = (
+                    f"prior-to-final-{fraction_index:02d}-{fraction:.17g}"
+                )
+                candidate_id = (
+                    f"{ridge_id}--trust-{fraction_index:02d}-"
+                    f"{fraction:.17g}"
+                )
+                expected_sources[candidate_id] = (
+                    ridge_id,
+                    "prior_to_final_trust_path",
+                    stage_id,
+                )
+
+            first_writer_record = next(
+                (
+                    record
+                    for record in inventory
+                    if record.get("stage_id", "").endswith("-writer")
+                ),
+                None,
+            )
+            if first_writer_record is not None:
+                for fraction_index, fraction in enumerate(fractions):
+                    stage_id = (
+                        f"prior-to-first-writer-{fraction_index:02d}-"
+                        f"{fraction:.17g}"
+                    )
+                    candidate_id = (
+                        f"{ridge_id}--writer-trust-{fraction_index:02d}-"
+                        f"{fraction:.17g}"
+                    )
+                    expected_sources[candidate_id] = (
+                        ridge_id,
+                        "prior_to_first_writer_trust_path",
+                        stage_id,
+                    )
+
+        actual_sources: dict[str, tuple[Any, Any, Any]] = {}
+        for candidate_id, provenance in candidate_fit.items():
+            if not isinstance(provenance, Mapping):
+                return False
+            sources = provenance.get("sources")
+            aliases = provenance.get("source_alias_candidate_ids")
+            if not (
+                isinstance(sources, list)
+                and sources
+                and isinstance(aliases, list)
+                and aliases
+                == [
+                    source.get("candidate_id")
+                    if isinstance(source, Mapping)
+                    else None
+                    for source in sources
+                ]
+                and aliases[0] == candidate_id
+            ):
+                return False
+            for source in sources:
+                if not isinstance(source, Mapping):
+                    return False
+                source_id = source.get("candidate_id")
+                if not isinstance(source_id, str) or source_id in actual_sources:
+                    return False
+                actual_sources[source_id] = (
+                    source.get("ridge_id"),
+                    source.get("candidate_kind"),
+                    source.get("stage_id"),
+                )
+        return actual_sources == expected_sources
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        return False
+
+
+def _valid_short_conv_v4_candidate_pool(
+    *,
+    pool: Any,
+    candidate_fit: Mapping[str, Any],
+    candidate_selection: Mapping[str, Any],
+    ridge_fit: Mapping[str, Any],
+    solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
+    gate_policy: Mapping[str, Any],
+    fold_case_seals: Mapping[str, Any],
+    split_evaluations: Mapping[str, Any],
+) -> bool:
+    try:
+        if not isinstance(pool, Mapping):
+            return False
+        expected_fields = {
+            "schema",
+            "kind",
+            "policy_sha256",
+            "target_dtype",
+            "ridge_candidate_count",
+            "raw_candidate_count",
+            "unique_target_dtype_candidate_count",
+            "target_dtype_duplicate_count",
+            "accepted_phase_anchors_included",
+            "rejected_phase_states_included",
+            "prior_to_final_trust_path_fractions",
+            "prior_to_first_writer_trust_path_fractions",
+            "selection_feasibility_policy",
+            "selection_feasibility_policy_sha256",
+            "fold_case_authentication_sha256",
+            "projection_case_authentication_sha256",
+            "candidate_ids",
+            "candidate_state_sha256",
+            "fit_only_candidate_generation",
+            "selection_cases_consumed_during_generation",
+            "validation_cases_consumed_during_generation",
+            "report_sha256",
+        }
+        if set(pool) != expected_fields:
+            return False
+        counts = {
+            name: pool.get(name)
+            for name in (
+                "ridge_candidate_count",
+                "raw_candidate_count",
+                "unique_target_dtype_candidate_count",
+                "target_dtype_duplicate_count",
+            )
+        }
+        if not all(type(value) is int and value >= 0 for value in counts.values()):
+            return False
+        candidate_ids = pool.get("candidate_ids")
+        state_map = pool.get("candidate_state_sha256")
+        projection_case_seals = pool.get(
+            "projection_case_authentication_sha256"
+        )
+        expected_feasibility = {
+            "maximum_endpoint_relative_rmse": min(
+                float(gate_policy["maximum_fit_endpoint_relative_rmse"]),
+                float(gate_policy["maximum_validation_endpoint_relative_rmse"]),
+            ),
+            "maximum_context_relative_rmse": min(
+                float(gate_policy["maximum_fit_endpoint_relative_rmse"]),
+                float(gate_policy["maximum_validation_endpoint_relative_rmse"]),
+            ),
+            "minimum_endpoint_cosine_similarity": max(
+                float(gate_policy["minimum_fit_endpoint_cosine_similarity"]),
+                float(gate_policy["minimum_validation_endpoint_cosine_similarity"]),
+            ),
+            "minimum_context_cosine_similarity": max(
+                float(gate_policy["minimum_fit_endpoint_cosine_similarity"]),
+                float(gate_policy["minimum_validation_endpoint_cosine_similarity"]),
+            ),
+        }
+        expected_feasibility_sha = _sha(
+            {
+                "schema": LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
+                "kind": "selection_feasibility_policy",
+                **expected_feasibility,
+            }
+        )
+        raw_alias_count = sum(
+            int(value.get("source_alias_count", -1))
+            for value in candidate_fit.values()
+            if isinstance(value, Mapping)
+        )
+        split_names = {"fit", "selection", "validation"}
+        if not (
+            isinstance(fold_case_seals, Mapping)
+            and set(fold_case_seals) == split_names
+            and pool.get("fold_case_authentication_sha256")
+            == dict(fold_case_seals)
+            and isinstance(projection_case_seals, Mapping)
+            and set(projection_case_seals) == split_names
+            and all(
+                isinstance(projection_case_seals[split], list)
+                and projection_case_seals[split]
+                and all(
+                    isinstance(value, str)
+                    and _SHA256.fullmatch(value) is not None
+                    for value in projection_case_seals[split]
+                )
+                for split in split_names
+            )
+            and isinstance(split_evaluations, Mapping)
+            and set(split_evaluations) == split_names
+        ):
+            return False
+
+        def evaluation_projection_seals(value: Any) -> list[Any] | None:
+            if not isinstance(value, Mapping) or not isinstance(
+                value.get("cases"),
+                list,
+            ):
+                return None
+            return [
+                case.get("projection_case_authentication_sha256")
+                if isinstance(case, Mapping)
+                else None
+                for case in value["cases"]
+            ]
+
+        return bool(
+            pool.get("schema") == LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
+            and pool.get("kind") == "authenticated_target_dtype_candidate_pool"
+            and pool.get("policy_sha256")
+            == solver_policy.authentication_sha256
+            and pool.get("target_dtype") == solver_policy.target_dtype
+            and counts["ridge_candidate_count"] == len(ridge_fit)
+            and counts["unique_target_dtype_candidate_count"] == len(candidate_fit)
+            and counts["raw_candidate_count"] == raw_alias_count
+            and counts["raw_candidate_count"]
+            == counts["unique_target_dtype_candidate_count"]
+            + counts["target_dtype_duplicate_count"]
+            and _valid_short_conv_v4_raw_frontier_coverage(
+                candidate_fit=candidate_fit,
+                ridge_fit=ridge_fit,
+                solver_policy=solver_policy,
+            )
+            and isinstance(candidate_ids, list)
+            and candidate_ids == sorted(candidate_fit)
+            and len(candidate_ids) == len(set(candidate_ids))
+            and isinstance(state_map, Mapping)
+            and set(state_map) == set(candidate_fit)
+            and all(
+                isinstance(state_map[candidate_id], str)
+                and _SHA256.fullmatch(state_map[candidate_id]) is not None
+                and isinstance(candidate_selection[candidate_id], Mapping)
+                and state_map[candidate_id]
+                == candidate_selection[candidate_id].get("candidate_state_sha256")
+                for candidate_id in candidate_fit
+            )
+            and pool.get("accepted_phase_anchors_included") is True
+            and pool.get("rejected_phase_states_included") is False
+            and pool.get("prior_to_final_trust_path_fractions")
+            == list(fixed_projection_trust_path_fractions())
+            and pool.get("prior_to_first_writer_trust_path_fractions")
+            == list(fixed_projection_trust_path_fractions())
+            and pool.get("selection_feasibility_policy") == expected_feasibility
+            and pool.get("selection_feasibility_policy_sha256")
+            == expected_feasibility_sha
+            and all(
+                ridge.get("fit_case_authentication_sha256")
+                == projection_case_seals["fit"]
+                for ridge in ridge_fit.values()
+                if isinstance(ridge, Mapping)
+            )
+            and all(
+                evaluation_projection_seals(selection)
+                == projection_case_seals["selection"]
+                for selection in candidate_selection.values()
+            )
+            and all(
+                evaluation_projection_seals(split_evaluations[split])
+                == projection_case_seals[split]
+                for split in split_names
+            )
+            and pool.get("fit_only_candidate_generation") is True
+            and pool.get("selection_cases_consumed_during_generation") == 0
+            and pool.get("validation_cases_consumed_during_generation") == 0
+        )
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        return False
+
+
+def _valid_short_conv_v4_ridge_fit_reports(
+    ridge_fit: Any,
+    *,
+    solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
+) -> bool:
+    try:
+        if not isinstance(ridge_fit, Mapping):
+            return False
+        expected_ids = [
+            f"ridge-alpha-{index:02d}-{alpha:.17g}"
+            for index, alpha in enumerate(solver_policy.ridge_alphas)
+        ]
+        if set(ridge_fit) != set(expected_ids):
+            return False
+        for ridge_id, alpha in zip(expected_ids, solver_policy.ridge_alphas):
+            value = ridge_fit[ridge_id]
+            if not isinstance(value, Mapping):
+                return False
+            inventory = value.get("path_state_inventory")
+            fit_case_seals = value.get("fit_case_authentication_sha256")
+            if not (
+                value.get("schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+                and value.get("kind")
+                == "fixed_bounded_sampled_cp_variable_projection"
+                and value.get("policy_sha256")
+                == solver_policy.authentication_sha256
+                and value.get("alpha") == alpha
+                and value.get("fit_only") is True
+                and value.get("selection_cases_consumed") == 0
+                and value.get("validation_cases_consumed") == 0
+                and isinstance(inventory, list)
+                and inventory
+                and all(
+                    isinstance(item, Mapping)
+                    and set(item)
+                    == {
+                        "stage_id",
+                        "state_sha256",
+                        "candidate_report_sha256",
+                    }
+                    and isinstance(item.get("stage_id"), str)
+                    and isinstance(item.get("state_sha256"), str)
+                    and _SHA256.fullmatch(item["state_sha256"]) is not None
+                    and isinstance(item.get("candidate_report_sha256"), str)
+                    and _SHA256.fullmatch(item["candidate_report_sha256"])
+                    is not None
+                    for item in inventory
+                )
+                and value.get("path_state_count") == len(inventory)
+                and value.get("path_state_inventory_sha256") == _sha(inventory)
+                and value.get("rejected_phases_excluded_from_path") is True
+                and value.get("final_state_is_last_path_state") is True
+                and inventory[-1].get("state_sha256")
+                == value.get("state_sha256")
+                and isinstance(fit_case_seals, list)
+                and fit_case_seals
+                and all(
+                    isinstance(item, str)
+                    and _SHA256.fullmatch(item) is not None
+                    for item in fit_case_seals
+                )
+            ):
+                return False
+        return True
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        return False
+
+
+def _valid_short_conv_v4_selection_ranking(
+    ranking: Any,
+    *,
+    candidate_selection: Mapping[str, Any],
+    solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
+    feasibility_policy: Mapping[str, Any],
+) -> bool:
+    try:
+        if not isinstance(ranking, Mapping):
+            return False
+        recomputed = rank_short_conv_v4_selection_candidates(
+            candidate_selection,
+            policy_sha256=solver_policy.authentication_sha256,
+            feasibility_policy=feasibility_policy,
+        )
+        return dict(ranking) == dict(recomputed)
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        return False
+
+
+def _valid_short_conv_v4_behavior_gate(
+    gate: Any,
+    *,
+    gate_policy: Mapping[str, Any],
+    fit_evaluation: Mapping[str, Any],
+    validation_evaluation: Mapping[str, Any],
+    full_source_coverage: bool,
+) -> bool:
+    try:
+        expected_checks = {
+            "fit_endpoint_relative_rmse": (
+                float(fit_evaluation["maximum_case_relative_rmse"])
+                <= float(gate_policy["maximum_fit_endpoint_relative_rmse"])
+            ),
+            "validation_endpoint_relative_rmse": (
+                float(validation_evaluation["maximum_case_relative_rmse"])
+                <= float(gate_policy["maximum_validation_endpoint_relative_rmse"])
+            ),
+            "fit_endpoint_cosine_similarity": (
+                float(fit_evaluation["minimum_case_cosine_similarity"])
+                >= float(gate_policy["minimum_fit_endpoint_cosine_similarity"])
+            ),
+            "validation_endpoint_cosine_similarity": (
+                float(validation_evaluation["minimum_case_cosine_similarity"])
+                >= float(
+                    gate_policy["minimum_validation_endpoint_cosine_similarity"]
+                )
+            ),
+            "fit_context_relative_rmse": (
+                fit_evaluation.get("context_evidence_present") is True
+                and float(fit_evaluation["maximum_case_context_relative_rmse"])
+                <= float(gate_policy["maximum_fit_endpoint_relative_rmse"])
+            ),
+            "validation_context_relative_rmse": (
+                validation_evaluation.get("context_evidence_present") is True
+                and float(
+                    validation_evaluation["maximum_case_context_relative_rmse"]
+                )
+                <= float(gate_policy["maximum_validation_endpoint_relative_rmse"])
+            ),
+            "fit_context_cosine_similarity": (
+                fit_evaluation.get("context_evidence_present") is True
+                and float(fit_evaluation["minimum_case_context_cosine_similarity"])
+                >= float(gate_policy["minimum_fit_endpoint_cosine_similarity"])
+            ),
+            "validation_context_cosine_similarity": (
+                validation_evaluation.get("context_evidence_present") is True
+                and float(
+                    validation_evaluation["minimum_case_context_cosine_similarity"]
+                )
+                >= float(
+                    gate_policy["minimum_validation_endpoint_cosine_similarity"]
+                )
+            ),
+            "full_source_numeric_participation": full_source_coverage,
+            "actual_fit_target_dtype_replay": (
+                fit_evaluation.get(
+                    "actual_parameter_and_intermediate_target_dtype_replay"
+                )
+                is True
+            ),
+            "actual_validation_target_dtype_replay": (
+                validation_evaluation.get(
+                    "actual_parameter_and_intermediate_target_dtype_replay"
+                )
+                is True
+            ),
+        }
+        expected_failed = [
+            name for name, passed in expected_checks.items() if not passed
+        ]
+        return bool(
+            isinstance(gate, Mapping)
+            and set(gate)
+            == {"policy", "checks", "failed_checks", "passed", "enforced"}
+            and gate.get("policy") == dict(gate_policy)
+            and gate.get("checks") == expected_checks
+            and gate.get("failed_checks") == expected_failed
+            and gate.get("passed") is all(expected_checks.values())
+            and gate.get("enforced") is gate_policy.get("enforce")
+        )
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        return False
+
+
+def _valid_short_conv_v4_legacy_validation_report(
     report: Mapping[str, Any],
 ) -> bool:
+    """Validate immutable v4 failure-v1 receipts emitted before path selection."""
+
+    try:
+        solver_policy = parse_lfm2_cpcf_short_conv_v4_solver_policy(
+            report.get("solver_policy")
+        )
+        gate_policy = report.get("gate_policy")
+        gate = report.get("behavior_gate")
+        checks = gate.get("checks") if isinstance(gate, Mapping) else None
+        failed_checks = (
+            gate.get("failed_checks") if isinstance(gate, Mapping) else None
+        )
+        case_seals = report.get("case_authentication_sha256")
+        execution = report.get("execution")
+        candidate_fit = report.get("candidate_fit_reports")
+        candidate_selection = report.get("candidate_selection_reports")
+        ranking = report.get("selection_ranking")
+        selected = report.get("selected_candidate_id")
+        fit_evaluation = report.get("fit_evaluation")
+        selection_evaluation = report.get("selection_evaluation")
+        validation_evaluation = report.get("validation_evaluation")
+        selected_state_sha = (
+            selection_evaluation.get("candidate_state_sha256")
+            if isinstance(selection_evaluation, Mapping)
+            else None
+        )
+        dimensions = (
+            report.get("source_hidden_size"),
+            report.get("target_hidden_size"),
+            report.get("source_fir_length"),
+            report.get("target_fir_length"),
+        )
+        evaluations = (
+            ("fit", fit_evaluation),
+            ("selection", selection_evaluation),
+            ("validation", validation_evaluation),
+        )
+        return bool(
+            set(report) == _SHORT_CONV_V4_FAILURE_V1_REPORT_FIELDS
+            and report.get("schema") == LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA
+            and report.get("solver_schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+            and report.get("solver_policy_sha256")
+            == solver_policy.authentication_sha256
+            and solver_policy.verify_authentication()
+            and isinstance(gate_policy, Mapping)
+            and set(gate_policy) == _SHORT_CONV_GATE_POLICY_FIELDS
+            and gate_policy.get("enforce") is True
+            and all(
+                not isinstance(gate_policy.get(name), bool)
+                and isinstance(gate_policy.get(name), (int, float))
+                and math.isfinite(float(gate_policy[name]))
+                for name in _SHORT_CONV_GATE_POLICY_FIELDS - {"enforce"}
+            )
+            and isinstance(gate, Mapping)
+            and set(gate)
+            == {"policy", "checks", "failed_checks", "passed", "enforced"}
+            and gate.get("policy") == dict(gate_policy)
+            and gate.get("passed") is False
+            and gate.get("enforced") is True
+            and isinstance(checks, Mapping)
+            and set(checks) == _SHORT_CONV_V4_GATE_CHECK_FIELDS
+            and all(isinstance(value, bool) for value in checks.values())
+            and isinstance(failed_checks, list)
+            and failed_checks
+            and len(failed_checks) == len(set(failed_checks))
+            and set(failed_checks)
+            == {name for name, passed in checks.items() if not passed}
+            and isinstance(case_seals, Mapping)
+            and set(case_seals) == {"fit", "selection", "validation"}
+            and all(
+                isinstance(values, list)
+                and values
+                and all(
+                    isinstance(value, str)
+                    and _SHA256.fullmatch(value) is not None
+                    for value in values
+                )
+                for values in case_seals.values()
+            )
+            and all(type(value) is int and value > 0 for value in dimensions)
+            and report["source_hidden_size"] >= report["target_hidden_size"]
+            and isinstance(
+                report.get("hidden_width_compression_ratio"),
+                (int, float),
+            )
+            and not isinstance(
+                report.get("hidden_width_compression_ratio"),
+                bool,
+            )
+            and math.isfinite(float(report["hidden_width_compression_ratio"]))
+            and float(report["hidden_width_compression_ratio"]) >= 1.0
+            and isinstance(report.get("basis"), Mapping)
+            and isinstance(report.get("input_lift"), Mapping)
+            and isinstance(report.get("transported_priors"), Mapping)
+            and isinstance(candidate_fit, Mapping)
+            and isinstance(candidate_selection, Mapping)
+            and candidate_fit
+            and set(candidate_fit) == set(candidate_selection)
+            and isinstance(selected, str)
+            and selected in candidate_fit
+            and isinstance(selected_state_sha, str)
+            and _SHA256.fullmatch(selected_state_sha) is not None
+            and isinstance(candidate_selection[selected], Mapping)
+            and candidate_selection[selected].get("split") == "selection"
+            and candidate_selection[selected].get("candidate_state_sha256")
+            == selected_state_sha
+            and isinstance(ranking, Mapping)
+            and ranking.get("kind") == "selection_only_candidate_ranking"
+            and ranking.get("selected_candidate_id") == selected
+            and ranking.get("validation_isolation") is True
+            and isinstance(ranking.get("ranking"), list)
+            and ranking["ranking"]
+            and ranking["ranking"][0].get("candidate_id") == selected
+            and ranking["ranking"][0].get("candidate_state_sha256")
+            == selected_state_sha
+            and all(
+                isinstance(evaluation, Mapping)
+                and evaluation.get("schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+                and evaluation.get("kind") == "target_dtype_evaluation"
+                and evaluation.get("split") == split
+                and evaluation.get("policy_sha256")
+                == solver_policy.authentication_sha256
+                and evaluation.get("candidate_state_sha256")
+                == selected_state_sha
+                and evaluation.get(
+                    "actual_parameter_and_intermediate_target_dtype_replay"
+                )
+                is True
+                for split, evaluation in evaluations
+            )
+            and isinstance(report.get("compiled_state_sha256"), str)
+            and _SHA256.fullmatch(report["compiled_state_sha256"]) is not None
+            and all(
+                type(report.get(name)) is int and report[name] >= 0
+                for name in (
+                    "source_channels_selected",
+                    "source_channels_dropped",
+                    "source_channels_pruned",
+                    "source_channels_quantized",
+                )
+            )
+            and report.get("source_channels_pruned") == 0
+            and report.get("source_channels_quantized") == 0
+            and report.get("fit_only_parameter_solves") is True
+            and report.get("selection_used_only_for_candidate_ranking") is True
+            and report.get("validation_used_only_after_candidate_freeze") is True
+            and isinstance(execution, Mapping)
+            and set(execution) == _SHORT_CONV_V4_EXECUTION_FIELDS
+            and all(type(value) is int and value == 0 for value in execution.values())
+            and report.get("compiled_short_conv_fold_issued") is False
+            and report.get("promotion_claimed") is False
+            and report.get("promotable_candidate") is False
+            and report.get("failure_evidence_only") is True
+            and _recursive_report_seals_valid(report)
+            and _no_recursive_success_claims(report)
+        )
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        return False
+
+
+def _valid_short_conv_v4_validation_report_unsafe(
+    report: Mapping[str, Any],
+) -> bool:
+    if report.get("schema") == LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA:
+        return _valid_short_conv_v4_legacy_validation_report(report)
     try:
         solver_policy = parse_lfm2_cpcf_short_conv_v4_solver_policy(
             report.get("solver_policy")
@@ -3030,10 +3877,20 @@ def _valid_short_conv_v4_validation_report(
     selection_evaluation = report.get("selection_evaluation")
     validation_evaluation = report.get("validation_evaluation")
     ranking = report.get("selection_ranking")
+    ridge_fit = report.get("ridge_fit_reports")
     candidate_fit = report.get("candidate_fit_reports")
     candidate_selection = report.get("candidate_selection_reports")
+    candidate_pool = report.get("candidate_pool_report")
     selected_candidate = report.get("selected_candidate_id")
     compiled_state_sha = report.get("compiled_state_sha256")
+    basis = report.get("basis")
+    transported_priors = report.get("transported_priors")
+    full_source_coverage = bool(
+        isinstance(basis, Mapping)
+        and basis.get("full_source_numeric_participation") is True
+        and isinstance(transported_priors, Mapping)
+        and transported_priors.get("source_channels_dropped") == 0
+    )
     selected_candidate_state_sha = (
         selection_evaluation.get("candidate_state_sha256")
         if isinstance(selection_evaluation, Mapping)
@@ -3078,6 +3935,13 @@ def _valid_short_conv_v4_validation_report(
         and len(failed_checks) == len(set(failed_checks))
         and set(failed_checks)
         == {name for name, passed in checks.items() if not passed}
+        and _valid_short_conv_v4_behavior_gate(
+            gate,
+            gate_policy=gate_policy,
+            fit_evaluation=fit_evaluation,
+            validation_evaluation=validation_evaluation,
+            full_source_coverage=full_source_coverage,
+        )
         and isinstance(case_seals, Mapping)
         and set(case_seals) == {"fit", "selection", "validation"}
         and all(
@@ -3095,13 +3959,41 @@ def _valid_short_conv_v4_validation_report(
         and not isinstance(report.get("hidden_width_compression_ratio"), bool)
         and math.isfinite(float(report["hidden_width_compression_ratio"]))
         and float(report["hidden_width_compression_ratio"]) >= 1.0
-        and isinstance(report.get("basis"), Mapping)
+        and isinstance(basis, Mapping)
         and isinstance(report.get("input_lift"), Mapping)
-        and isinstance(report.get("transported_priors"), Mapping)
+        and isinstance(transported_priors, Mapping)
+        and _valid_short_conv_v4_ridge_fit_reports(
+            ridge_fit,
+            solver_policy=solver_policy,
+        )
         and isinstance(candidate_fit, Mapping)
         and isinstance(candidate_selection, Mapping)
         and candidate_fit
         and set(candidate_fit) == set(candidate_selection)
+        and all(
+            _valid_short_conv_v4_candidate_provenance(
+                candidate_id=candidate_id,
+                provenance=candidate_fit[candidate_id],
+                selection=candidate_selection[candidate_id],
+                ridge_fit=ridge_fit,
+                solver_policy=solver_policy,
+            )
+            for candidate_id in candidate_fit
+        )
+        and _valid_short_conv_v4_candidate_pool(
+            pool=candidate_pool,
+            candidate_fit=candidate_fit,
+            candidate_selection=candidate_selection,
+            ridge_fit=ridge_fit,
+            solver_policy=solver_policy,
+            gate_policy=gate_policy,
+            fold_case_seals=case_seals,
+            split_evaluations={
+                "fit": fit_evaluation,
+                "selection": selection_evaluation,
+                "validation": validation_evaluation,
+            },
+        )
         and isinstance(selected_candidate, str)
         and bool(selected_candidate)
         and selected_candidate in candidate_fit
@@ -3111,14 +4003,13 @@ def _valid_short_conv_v4_validation_report(
         and candidate_selection[selected_candidate].get("split") == "selection"
         and candidate_selection[selected_candidate].get("candidate_state_sha256")
         == selected_candidate_state_sha
-        and isinstance(ranking, Mapping)
-        and ranking.get("kind") == "selection_only_candidate_ranking"
+        and _valid_short_conv_v4_selection_ranking(
+            ranking,
+            candidate_selection=candidate_selection,
+            solver_policy=solver_policy,
+            feasibility_policy=candidate_pool["selection_feasibility_policy"],
+        )
         and ranking.get("selected_candidate_id") == selected_candidate
-        and ranking.get("validation_isolation") is True
-        and isinstance(ranking.get("ranking"), list)
-        and ranking["ranking"]
-        and isinstance(ranking["ranking"][0], Mapping)
-        and ranking["ranking"][0].get("candidate_id") == selected_candidate
         and ranking["ranking"][0].get("candidate_state_sha256")
         == selected_candidate_state_sha
         and all(
@@ -3160,15 +4051,42 @@ def _valid_short_conv_v4_validation_report(
     )
 
 
+def _valid_short_conv_v4_validation_report(
+    report: Mapping[str, Any],
+) -> bool:
+    try:
+        return _valid_short_conv_v4_validation_report_unsafe(report)
+    except (
+        AttributeError,
+        KeyError,
+        OverflowError,
+        TypeError,
+        ValueError,
+    ):
+        return False
+
+
 def _valid_short_conv_validation_report(
     report: Mapping[str, Any],
 ) -> bool:
-    schema = report.get("schema")
-    if schema == LFM2_CPCF_SHORT_CONV_FOLD_SCHEMA:
-        return _valid_short_conv_v1_validation_report(report)
-    if schema == LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA:
-        return _valid_short_conv_v4_validation_report(report)
-    return False
+    try:
+        schema = report.get("schema")
+        if schema == LFM2_CPCF_SHORT_CONV_FOLD_SCHEMA:
+            return _valid_short_conv_v1_validation_report(report)
+        if schema in {
+            LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA,
+            LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
+        }:
+            return _valid_short_conv_v4_validation_report(report)
+        return False
+    except (
+        AttributeError,
+        KeyError,
+        OverflowError,
+        TypeError,
+        ValueError,
+    ):
+        return False
 
 
 def _verified_short_conv_validation_failure(

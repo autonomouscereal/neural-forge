@@ -73,6 +73,32 @@ def _verify_sealed_report(report: Mapping[str, Any]) -> bool:
     return isinstance(supplied, str) and supplied == _sha256(body)
 
 
+def _recursive_report_seals_valid(value: Any) -> bool:
+    try:
+        if isinstance(value, Mapping):
+            if "report_sha256" in value and not _verify_sealed_report(value):
+                return False
+            return all(
+                _recursive_report_seals_valid(child) for child in value.values()
+            )
+        if isinstance(value, Sequence) and not isinstance(
+            value,
+            (str, bytes, bytearray),
+        ):
+            return all(_recursive_report_seals_valid(child) for child in value)
+        return True
+    except (Lfm2CpcfShortConvV4Error, TypeError, ValueError):
+        return False
+
+
+def _valid_sha256(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _sha256_text(value: Any, name: str) -> str:
     text = str(value).strip().lower()
     if len(text) != 64 or any(
@@ -3302,9 +3328,10 @@ def solve_bounded_linearized_bcx_projection(
 
 
 @dataclass(frozen=True, slots=True)
-class Lfm2CpcfV4VariableProjectionResult:
-    """State produced by a fixed number of sampled CP factor sweeps."""
+class Lfm2CpcfV4CandidateState:
+    """One authenticated fit-only state on the bounded projection path."""
 
+    stage_id: str
     in_proj_weight: Any
     in_proj_bias: Any | None
     fir_kernel: Any
@@ -3314,6 +3341,299 @@ class Lfm2CpcfV4VariableProjectionResult:
     report: Mapping[str, Any]
 
     def __post_init__(self) -> None:
+        stage_id = str(self.stage_id).strip()
+        if not stage_id:
+            raise Lfm2CpcfShortConvV4Error(
+                "candidate state stage_id must be nonempty text."
+            )
+        object.__setattr__(self, "stage_id", stage_id)
+        object.__setattr__(
+            self,
+            "in_proj_weight",
+            _finite_tensor(
+                self.in_proj_weight,
+                "candidate.in_proj_weight",
+                minimum_dimensions=2,
+                maximum_dimensions=2,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "in_proj_bias",
+            (
+                None
+                if self.in_proj_bias is None
+                else _finite_tensor(
+                    self.in_proj_bias,
+                    "candidate.in_proj_bias",
+                    minimum_dimensions=1,
+                    maximum_dimensions=1,
+                )
+            ),
+        )
+        object.__setattr__(
+            self,
+            "fir_kernel",
+            _finite_tensor(
+                self.fir_kernel,
+                "candidate.fir_kernel",
+                minimum_dimensions=2,
+                maximum_dimensions=2,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "fir_bias",
+            (
+                None
+                if self.fir_bias is None
+                else _finite_tensor(
+                    self.fir_bias,
+                    "candidate.fir_bias",
+                    minimum_dimensions=1,
+                    maximum_dimensions=1,
+                )
+            ),
+        )
+        object.__setattr__(
+            self,
+            "writer_weight",
+            _finite_tensor(
+                self.writer_weight,
+                "candidate.writer_weight",
+                minimum_dimensions=2,
+                maximum_dimensions=2,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "writer_bias",
+            (
+                None
+                if self.writer_bias is None
+                else _finite_tensor(
+                    self.writer_bias,
+                    "candidate.writer_bias",
+                    minimum_dimensions=1,
+                    maximum_dimensions=1,
+                )
+            ),
+        )
+        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "in_proj_weight": self.in_proj_weight,
+            "in_proj_bias": self.in_proj_bias,
+            "fir_kernel": self.fir_kernel,
+            "fir_bias": self.fir_bias,
+            "writer_weight": self.writer_weight,
+            "writer_bias": self.writer_bias,
+        }
+
+    def verify_authentication(self) -> bool:
+        try:
+            report = self.report
+            kind = report.get("kind")
+            path_kind = "authenticated_fit_only_projection_path_state"
+            trust_kind = "authenticated_fit_only_projection_trust_path_state"
+            common_fields = {
+                "schema",
+                "kind",
+                "stage_id",
+                "policy_sha256",
+                "alpha",
+                "state_sha256",
+                "fit_case_authentication_sha256",
+                "fit_only",
+                "selection_cases_consumed",
+                "validation_cases_consumed",
+                "execution",
+                "report_sha256",
+            }
+            path_fields = common_fields | {
+                "parent_state_sha256",
+                "fit_objective",
+                "fit_objective_report_sha256",
+                "phase_report",
+                "phase_report_sha256",
+            }
+            trust_fields = common_fields | {
+                "fraction",
+                "left_stage_id",
+                "left_state_sha256",
+                "left_candidate_report_sha256",
+                "right_stage_id",
+                "right_state_sha256",
+                "right_candidate_report_sha256",
+            }
+            alpha = report.get("alpha")
+            fit_case_seals = report.get("fit_case_authentication_sha256")
+            execution = report.get("execution")
+            if not (
+                _recursive_report_seals_valid(report)
+                and report.get("schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+                and kind in {path_kind, trust_kind}
+                and set(report) == (path_fields if kind == path_kind else trust_fields)
+                and report.get("stage_id") == self.stage_id
+                and _valid_sha256(report.get("policy_sha256"))
+                and not isinstance(alpha, bool)
+                and isinstance(alpha, (int, float))
+                and math.isfinite(float(alpha))
+                and float(alpha) >= 0.0
+                and isinstance(fit_case_seals, list)
+                and fit_case_seals
+                and len(fit_case_seals) == len(set(fit_case_seals))
+                and all(_valid_sha256(value) for value in fit_case_seals)
+                and report.get("fit_only") is True
+                and type(report.get("selection_cases_consumed")) is int
+                and report.get("selection_cases_consumed") == 0
+                and type(report.get("validation_cases_consumed")) is int
+                and report.get("validation_cases_consumed") == 0
+                and report.get("state_sha256")
+                == _state_sha256(
+                    self.state_dict(),
+                    "variable_projection_candidate",
+                )
+                and isinstance(execution, Mapping)
+            ):
+                return False
+
+            zero_execution_fields = {
+                "backward_calls",
+                "optimizer_steps",
+                "training_steps",
+                "parameters_pruned",
+                "parameters_quantized",
+            }
+            if not (
+                zero_execution_fields <= set(execution)
+                and all(
+                    type(execution[field]) is int and execution[field] == 0
+                    for field in zero_execution_fields
+                )
+            ):
+                return False
+
+            if kind == trust_kind:
+                fraction = report.get("fraction")
+                return bool(
+                    set(execution)
+                    == zero_execution_fields
+                    | {"closed_form_tensor_interpolation"}
+                    and execution.get("closed_form_tensor_interpolation") is True
+                    and not isinstance(fraction, bool)
+                    and isinstance(fraction, (int, float))
+                    and math.isfinite(float(fraction))
+                    and 0.0 <= float(fraction) <= 1.0
+                    and all(
+                        isinstance(report.get(field), str)
+                        and bool(report[field].strip())
+                        for field in ("left_stage_id", "right_stage_id")
+                    )
+                    and all(
+                        _valid_sha256(report.get(field))
+                        for field in (
+                            "left_state_sha256",
+                            "left_candidate_report_sha256",
+                            "right_state_sha256",
+                            "right_candidate_report_sha256",
+                        )
+                    )
+                )
+
+            if set(execution) != zero_execution_fields:
+                return False
+            objective = report.get("fit_objective")
+            objective_sha = report.get("fit_objective_report_sha256")
+            objective_cases = (
+                objective.get("cases") if isinstance(objective, Mapping) else None
+            )
+            if not (
+                isinstance(objective, Mapping)
+                and _recursive_report_seals_valid(objective)
+                and objective.get("schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+                and objective.get("kind")
+                == "sampled_coupled_cp_volterra_objective"
+                and objective.get("split") == "fit"
+                and objective.get("case_balanced") is True
+                and isinstance(objective_cases, list)
+                and objective_cases
+                and type(objective.get("case_count")) is int
+                and objective.get("case_count") == len(objective_cases)
+                and objective.get("case_count") == len(fit_case_seals)
+                and objective.get("huge_volterra_tensor_materialized") is False
+                and objective_sha == objective.get("report_sha256")
+                and _valid_sha256(objective_sha)
+            ):
+                return False
+
+            parent_sha = report.get("parent_state_sha256")
+            phase_report = report.get("phase_report")
+            phase_sha = report.get("phase_report_sha256")
+            if self.stage_id == "prior":
+                return bool(
+                    parent_sha is None
+                    and phase_report is None
+                    and phase_sha is None
+                )
+            phase_name = self.stage_id.rsplit("-", 1)[-1]
+            expected_phase_kind = {
+                "writer": "sampled_cp_writer_factor_projection",
+                "fir": "sampled_cp_fir_factor_projection",
+                "bcx": "sampled_cp_linearized_bcx_factor_projection",
+            }.get(phase_name)
+            return bool(
+                expected_phase_kind is not None
+                and _valid_sha256(parent_sha)
+                and isinstance(phase_report, Mapping)
+                and _recursive_report_seals_valid(phase_report)
+                and phase_report.get("schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+                and phase_report.get("kind") == expected_phase_kind
+                and phase_report.get("policy_sha256")
+                == report.get("policy_sha256")
+                and phase_report.get("fit_only") is True
+                and phase_report.get("selection_cases_consumed") == 0
+                and phase_report.get("validation_cases_consumed") == 0
+                and phase_sha == phase_report.get("report_sha256")
+                and _valid_sha256(phase_sha)
+            )
+        except (
+            AttributeError,
+            KeyError,
+            Lfm2CpcfShortConvV4Error,
+            OverflowError,
+            TypeError,
+            ValueError,
+        ):
+            return False
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfV4VariableProjectionResult:
+    """State produced by a fixed number of sampled CP factor sweeps."""
+
+    in_proj_weight: Any
+    in_proj_bias: Any | None
+    fir_kernel: Any
+    fir_bias: Any | None
+    writer_weight: Any
+    writer_bias: Any | None
+    path_states: tuple[Lfm2CpcfV4CandidateState, ...]
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.path_states, tuple)
+            or not self.path_states
+            or any(
+                not isinstance(value, Lfm2CpcfV4CandidateState)
+                for value in self.path_states
+            )
+        ):
+            raise Lfm2CpcfShortConvV4Error(
+                "variable projection path_states must be a nonempty candidate tuple."
+            )
         object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
 
     def verify_authentication(self) -> bool:
@@ -3327,10 +3647,178 @@ class Lfm2CpcfV4VariableProjectionResult:
             "writer_weight": self.writer_weight,
             "writer_bias": self.writer_bias,
         }
-        return self.report.get("state_sha256") == _state_sha256(
-            state,
-            "variable_projection",
+        inventory = [
+            {
+                "stage_id": value.stage_id,
+                "state_sha256": value.report.get("state_sha256"),
+                "candidate_report_sha256": value.report.get("report_sha256"),
+            }
+            for value in self.path_states
+        ]
+        path_chain_valid = bool(
+            self.path_states[0].stage_id == "prior"
+            and self.path_states[0].report.get("parent_state_sha256") is None
+            and len({value.stage_id for value in self.path_states})
+            == len(self.path_states)
+            and all(
+                value.report.get("policy_sha256")
+                == self.report.get("policy_sha256")
+                and value.report.get("alpha") == self.report.get("alpha")
+                and value.report.get("fit_only") is True
+                and value.report.get("selection_cases_consumed") == 0
+                and value.report.get("validation_cases_consumed") == 0
+                and (
+                    index == 0
+                    or value.report.get("parent_state_sha256")
+                    == self.path_states[index - 1].report.get("state_sha256")
+                )
+                for index, value in enumerate(self.path_states)
+            )
         )
+        return bool(
+            self.report.get("state_sha256")
+            == _state_sha256(state, "variable_projection")
+            and all(value.verify_authentication() for value in self.path_states)
+            and path_chain_valid
+            and self.report.get("path_state_inventory") == inventory
+            and self.report.get("path_state_inventory_sha256")
+            == _sha256(inventory)
+            and self.report.get("path_state_count") == len(self.path_states)
+            and self.report.get("rejected_phases_excluded_from_path") is True
+            and self.report.get("final_state_is_last_path_state") is True
+            and self.path_states[-1].report.get("state_sha256")
+            == self.report.get("state_sha256")
+        )
+
+
+def fixed_projection_trust_path_fractions() -> tuple[float, ...]:
+    """Return the bounded interior continuation grid used by the v4 compiler."""
+
+    return (
+        1.0 / 64.0,
+        1.0 / 32.0,
+        1.0 / 16.0,
+        1.0 / 8.0,
+        1.0 / 4.0,
+        1.0 / 2.0,
+    )
+
+
+def interpolate_short_conv_v4_candidate_state(
+    *,
+    left: Lfm2CpcfV4CandidateState,
+    right: Lfm2CpcfV4CandidateState,
+    fraction: float,
+    stage_id: str,
+) -> Lfm2CpcfV4CandidateState:
+    """Interpolate every operator tensor between authenticated fit-only states."""
+
+    if not isinstance(left, Lfm2CpcfV4CandidateState) or not isinstance(
+        right,
+        Lfm2CpcfV4CandidateState,
+    ):
+        raise TypeError("left and right must be Lfm2CpcfV4CandidateState values.")
+    if not left.verify_authentication() or not right.verify_authentication():
+        raise Lfm2CpcfShortConvV4Error(
+            "trust-path endpoints failed authentication."
+        )
+    amount = _positive_float(fraction, "fraction", allow_zero=True)
+    if amount > 1.0:
+        raise Lfm2CpcfShortConvV4Error(
+            "trust-path interpolation fraction must be in [0, 1]."
+        )
+    name = str(stage_id).strip()
+    if not name:
+        raise Lfm2CpcfShortConvV4Error(
+            "trust-path interpolation stage_id must be nonempty text."
+        )
+    if left.report.get("policy_sha256") != right.report.get("policy_sha256"):
+        raise Lfm2CpcfShortConvV4Error(
+            "trust-path endpoints use different solver policies."
+        )
+    if left.report.get("alpha") != right.report.get("alpha"):
+        raise Lfm2CpcfShortConvV4Error(
+            "trust-path endpoints use different ridge alphas."
+        )
+    left_fit_cases = left.report.get("fit_case_authentication_sha256")
+    right_fit_cases = right.report.get("fit_case_authentication_sha256")
+    if (
+        not isinstance(left_fit_cases, list)
+        or not left_fit_cases
+        or left_fit_cases != right_fit_cases
+    ):
+        raise Lfm2CpcfShortConvV4Error(
+            "trust-path endpoints do not bind identical fit evidence."
+        )
+
+    def blend(left_value: Any | None, right_value: Any | None, role: str) -> Any | None:
+        if left_value is None or right_value is None:
+            if left_value is right_value is None:
+                return None
+            raise Lfm2CpcfShortConvV4Error(
+                f"trust-path {role} optional-bias topology differs."
+            )
+        if tuple(left_value.shape) != tuple(right_value.shape):
+            raise Lfm2CpcfShortConvV4Error(
+                f"trust-path {role} tensor shapes differ."
+            )
+        if amount == 0.0:
+            return left_value.clone()
+        if amount == 1.0:
+            return right_value.clone()
+        return left_value.add(
+            right_value.sub(left_value),
+            alpha=amount,
+        ).contiguous()
+
+    state = {
+        role: blend(
+            getattr(left, role),
+            getattr(right, role),
+            role,
+        )
+        for role in (
+            "in_proj_weight",
+            "in_proj_bias",
+            "fir_kernel",
+            "fir_bias",
+            "writer_weight",
+            "writer_bias",
+        )
+    }
+    state_sha = _state_sha256(state, "variable_projection_candidate")
+    body = {
+        "schema": LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
+        "kind": "authenticated_fit_only_projection_trust_path_state",
+        "stage_id": name,
+        "policy_sha256": left.report["policy_sha256"],
+        "alpha": left.report["alpha"],
+        "fraction": amount,
+        "left_stage_id": left.stage_id,
+        "left_state_sha256": left.report["state_sha256"],
+        "left_candidate_report_sha256": left.report["report_sha256"],
+        "right_stage_id": right.stage_id,
+        "right_state_sha256": right.report["state_sha256"],
+        "right_candidate_report_sha256": right.report["report_sha256"],
+        "state_sha256": state_sha,
+        "fit_case_authentication_sha256": list(left_fit_cases),
+        "fit_only": True,
+        "selection_cases_consumed": 0,
+        "validation_cases_consumed": 0,
+        "execution": {
+            "closed_form_tensor_interpolation": True,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        },
+    }
+    return Lfm2CpcfV4CandidateState(
+        stage_id=name,
+        report=_seal_report(body),
+        **state,
+    )
 
 
 def run_fixed_sampled_cp_variable_projection(
@@ -3449,6 +3937,82 @@ def run_fixed_sampled_cp_variable_projection(
             }
         )
 
+    path_states: list[Lfm2CpcfV4CandidateState] = []
+
+    def capture_path_state(
+        *,
+        stage_id: str,
+        fit_objective: Mapping[str, Any],
+        phase_report: Mapping[str, Any] | None,
+    ) -> None:
+        if not _verify_sealed_report(fit_objective):
+            raise Lfm2CpcfShortConvV4Error(
+                "candidate path fit objective failed authentication."
+            )
+        if phase_report is not None and not _verify_sealed_report(phase_report):
+            raise Lfm2CpcfShortConvV4Error(
+                "candidate path phase receipt failed authentication."
+            )
+        current_state = {
+            "in_proj_weight": in_weight,
+            "in_proj_bias": in_bias,
+            "fir_kernel": kernel,
+            "fir_bias": fir_bias,
+            "writer_weight": writer,
+            "writer_bias": writer_bias,
+        }
+        state_sha = _state_sha256(
+            current_state,
+            "variable_projection_candidate",
+        )
+        parent_sha = (
+            None
+            if not path_states
+            else path_states[-1].report["state_sha256"]
+        )
+        body = {
+            "schema": LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
+            "kind": "authenticated_fit_only_projection_path_state",
+            "stage_id": stage_id,
+            "policy_sha256": policy.authentication_sha256,
+            "alpha": _positive_float(alpha, "alpha", allow_zero=True),
+            "parent_state_sha256": parent_sha,
+            "state_sha256": state_sha,
+            "fit_objective": dict(fit_objective),
+            "fit_objective_report_sha256": fit_objective["report_sha256"],
+            "phase_report": (
+                None if phase_report is None else dict(phase_report)
+            ),
+            "phase_report_sha256": (
+                None if phase_report is None else phase_report["report_sha256"]
+            ),
+            "fit_case_authentication_sha256": [
+                case.authentication_sha256 for case in ordered_cases
+            ],
+            "fit_only": True,
+            "selection_cases_consumed": 0,
+            "validation_cases_consumed": 0,
+            "execution": {
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+                "training_steps": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+            },
+        }
+        path_states.append(
+            Lfm2CpcfV4CandidateState(
+                stage_id=stage_id,
+                in_proj_weight=current_state["in_proj_weight"],
+                in_proj_bias=current_state["in_proj_bias"],
+                fir_kernel=current_state["fir_kernel"],
+                fir_bias=current_state["fir_bias"],
+                writer_weight=current_state["writer_weight"],
+                writer_bias=current_state["writer_bias"],
+                report=_seal_report(body),
+            )
+        )
+
     sweep_reports = []
     initial_replays = replay_all()
     initial_objective = sampled_cp_volterra_objective(
@@ -3456,6 +4020,11 @@ def run_fixed_sampled_cp_variable_projection(
         initial_replays,
         required_split="fit",
         context_objective_weight=policy.context_objective_weight,
+    )
+    capture_path_state(
+        stage_id="prior",
+        fit_objective=initial_objective,
+        phase_report=None,
     )
     for pass_index in range(policy.variable_projection_passes):
         before_replays = replay_all()
@@ -3494,6 +4063,12 @@ def run_fixed_sampled_cp_variable_projection(
             writer = previous_writer
             writer_bias = previous_writer_bias
             writer_objective = before_objective
+        else:
+            capture_path_state(
+                stage_id=f"pass-{pass_index:02d}-writer",
+                fit_objective=writer_objective,
+                phase_report=writer_report,
+            )
         writer_replays = replay_all()
         previous_kernel = kernel.clone()
         previous_fir_bias = None if fir_bias is None else fir_bias.clone()
@@ -3531,6 +4106,12 @@ def run_fixed_sampled_cp_variable_projection(
             kernel = previous_kernel
             fir_bias = previous_fir_bias
             fir_objective = writer_objective
+        else:
+            capture_path_state(
+                stage_id=f"pass-{pass_index:02d}-fir",
+                fit_objective=fir_objective,
+                phase_report=fir_report,
+            )
         previous_in_weight = in_weight.clone()
         previous_in_bias = None if in_bias is None else in_bias.clone()
         try:
@@ -3561,6 +4142,12 @@ def run_fixed_sampled_cp_variable_projection(
             in_weight = previous_in_weight
             in_bias = previous_in_bias
             bcx_objective = fir_objective
+        else:
+            capture_path_state(
+                stage_id=f"pass-{pass_index:02d}-bcx",
+                fit_objective=bcx_objective,
+                phase_report=bcx_report,
+            )
         after_objective = bcx_objective
         sweep_reports.append(
             {
@@ -3609,6 +4196,19 @@ def run_fixed_sampled_cp_variable_projection(
         state["fir_bias"] = fir_bias
     if writer_bias is not None:
         state["writer_bias"] = writer_bias
+    path_state_inventory = [
+        {
+            "stage_id": value.stage_id,
+            "state_sha256": value.report["state_sha256"],
+            "candidate_report_sha256": value.report["report_sha256"],
+        }
+        for value in path_states
+    ]
+    final_state_sha256 = _state_sha256(state, "variable_projection")
+    if path_states[-1].report["state_sha256"] != final_state_sha256:
+        raise Lfm2CpcfShortConvV4Error(
+            "final projection state differs from the last accepted path state."
+        )
     body = {
         "schema": LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
         "kind": "fixed_bounded_sampled_cp_variable_projection",
@@ -3632,12 +4232,12 @@ def run_fixed_sampled_cp_variable_projection(
         "fit_only": True,
         "selection_cases_consumed": 0,
         "validation_cases_consumed": 0,
-        "state_sha256": _sha256(
-            {
-                name: _tensor_sha256(value, f"variable_projection.{name}")
-                for name, value in sorted(state.items())
-            }
-        ),
+        "state_sha256": final_state_sha256,
+        "path_state_inventory": path_state_inventory,
+        "path_state_inventory_sha256": _sha256(path_state_inventory),
+        "path_state_count": len(path_states),
+        "rejected_phases_excluded_from_path": True,
+        "final_state_is_last_path_state": True,
         "execution": {
             "fixed_passes": True,
             "closed_form_factor_solves": True,
@@ -3655,6 +4255,7 @@ def run_fixed_sampled_cp_variable_projection(
         fir_bias=None if fir_bias is None else fir_bias.detach(),
         writer_weight=writer.detach(),
         writer_bias=None if writer_bias is None else writer_bias.detach(),
+        path_states=tuple(path_states),
         report=_seal_report(body),
     )
 
@@ -4388,14 +4989,69 @@ def rank_short_conv_v4_selection_candidates(
     candidates: Mapping[str, Mapping[str, Any]],
     *,
     policy_sha256: str,
+    feasibility_policy: Mapping[str, Any] | None = None,
 ) -> Mapping[str, Any]:
-    """Rank target-dtype reports using selection evidence and nothing else."""
+    """Rank target-dtype reports using selection evidence and nothing else.
+
+    When a feasibility policy is supplied, candidates satisfying every fixed
+    endpoint/context gate rank ahead of candidates that merely optimize one
+    metric at the expense of another.  The policy contains thresholds only;
+    it never contains fit or validation observations.
+    """
 
     if not candidates:
         raise Lfm2CpcfShortConvV4Error(
             "selection ranking requires at least one candidate."
         )
     policy_digest = _sha256_text(policy_sha256, "policy_sha256")
+    normalized_feasibility_policy = None
+    if feasibility_policy is not None:
+        if not isinstance(feasibility_policy, Mapping):
+            raise Lfm2CpcfShortConvV4Error(
+                "selection feasibility_policy must be a mapping."
+            )
+        required = {
+            "maximum_endpoint_relative_rmse",
+            "maximum_context_relative_rmse",
+            "minimum_endpoint_cosine_similarity",
+            "minimum_context_cosine_similarity",
+        }
+        if set(feasibility_policy) != required:
+            raise Lfm2CpcfShortConvV4Error(
+                "selection feasibility_policy requires exactly endpoint/context "
+                "relative-RMSE maxima and cosine-similarity minima."
+            )
+        maximum_endpoint = _positive_float(
+            feasibility_policy["maximum_endpoint_relative_rmse"],
+            "maximum_endpoint_relative_rmse",
+            allow_zero=True,
+        )
+        maximum_context = _positive_float(
+            feasibility_policy["maximum_context_relative_rmse"],
+            "maximum_context_relative_rmse",
+            allow_zero=True,
+        )
+        minimum_endpoint = float(
+            feasibility_policy["minimum_endpoint_cosine_similarity"]
+        )
+        minimum_context = float(
+            feasibility_policy["minimum_context_cosine_similarity"]
+        )
+        if (
+            not math.isfinite(minimum_endpoint)
+            or not -1.0 <= minimum_endpoint <= 1.0
+            or not math.isfinite(minimum_context)
+            or not -1.0 <= minimum_context <= 1.0
+        ):
+            raise Lfm2CpcfShortConvV4Error(
+                "selection cosine-similarity minima must be finite in [-1, 1]."
+            )
+        normalized_feasibility_policy = {
+            "maximum_endpoint_relative_rmse": maximum_endpoint,
+            "maximum_context_relative_rmse": maximum_context,
+            "minimum_endpoint_cosine_similarity": minimum_endpoint,
+            "minimum_context_cosine_similarity": minimum_context,
+        }
     normalized = []
     evidence_contract = None
     for candidate_id, report in sorted(candidates.items()):
@@ -4482,7 +5138,7 @@ def rank_short_conv_v4_selection_candidates(
                 "selection candidates require actual parameter-and-intermediate "
                 "target-dtype replay."
             )
-        score = (
+        metric_score = (
             float(report["maximum_case_relative_rmse"]),
             float(report["maximum_case_context_relative_rmse"]),
             -float(report["minimum_case_cosine_similarity"]),
@@ -4497,14 +5153,95 @@ def rank_short_conv_v4_selection_candidates(
             float(report["maximum_case_context_absolute_error"]),
             candidate_id,
         )
-        if not all(math.isfinite(value) for value in score[:-1]):
+        if not all(math.isfinite(value) for value in metric_score[:-1]):
             raise Lfm2CpcfShortConvV4Error("selection ranking metrics must be finite.")
+        feasibility = None
+        score = metric_score
+        if normalized_feasibility_policy is not None:
+            violations = {
+                "endpoint_relative_rmse_excess": max(
+                    0.0,
+                    float(report["maximum_case_relative_rmse"])
+                    - normalized_feasibility_policy[
+                        "maximum_endpoint_relative_rmse"
+                    ],
+                ),
+                "context_relative_rmse_excess": max(
+                    0.0,
+                    float(report["maximum_case_context_relative_rmse"])
+                    - normalized_feasibility_policy[
+                        "maximum_context_relative_rmse"
+                    ],
+                ),
+                "endpoint_cosine_similarity_deficit": max(
+                    0.0,
+                    normalized_feasibility_policy[
+                        "minimum_endpoint_cosine_similarity"
+                    ]
+                    - float(report["minimum_case_cosine_similarity"]),
+                ),
+                "context_cosine_similarity_deficit": max(
+                    0.0,
+                    normalized_feasibility_policy[
+                        "minimum_context_cosine_similarity"
+                    ]
+                    - float(report["minimum_case_context_cosine_similarity"]),
+                ),
+            }
+            slacks = {
+                "endpoint_relative_rmse_slack": (
+                    normalized_feasibility_policy[
+                        "maximum_endpoint_relative_rmse"
+                    ]
+                    - float(report["maximum_case_relative_rmse"])
+                ),
+                "context_relative_rmse_slack": (
+                    normalized_feasibility_policy[
+                        "maximum_context_relative_rmse"
+                    ]
+                    - float(report["maximum_case_context_relative_rmse"])
+                ),
+                "endpoint_cosine_similarity_slack": (
+                    float(report["minimum_case_cosine_similarity"])
+                    - normalized_feasibility_policy[
+                        "minimum_endpoint_cosine_similarity"
+                    ]
+                ),
+                "context_cosine_similarity_slack": (
+                    float(report["minimum_case_context_cosine_similarity"])
+                    - normalized_feasibility_policy[
+                        "minimum_context_cosine_similarity"
+                    ]
+                ),
+            }
+            violation_values = tuple(violations.values())
+            passed = all(value == 0.0 for value in violation_values)
+            feasibility = {
+                "passed": passed,
+                "violations": violations,
+                "slacks": slacks,
+                "failed_checks": [
+                    name for name, value in violations.items() if value > 0.0
+                ],
+                "maximum_violation": max(violation_values),
+                "total_violation": sum(violation_values),
+                "minimum_slack": min(slacks.values()),
+            }
+            score = (
+                0.0 if passed else 1.0,
+                float(feasibility["maximum_violation"]),
+                float(feasibility["total_violation"]),
+                float(len(feasibility["failed_checks"])),
+                -float(feasibility["minimum_slack"]),
+                *metric_score,
+            )
         normalized.append(
             {
                 "candidate_id": candidate_id,
                 "score": score,
                 "evaluation_report_sha256": report_sha,
                 "candidate_state_sha256": candidate_state_sha256,
+                "selection_gate_feasibility": feasibility,
                 "actual_target_dtype_replay": report.get(
                     "actual_parameter_and_intermediate_target_dtype_replay"
                 )
@@ -4522,6 +5259,7 @@ def rank_short_conv_v4_selection_candidates(
             ],
             "evaluation_report_sha256": value["evaluation_report_sha256"],
             "candidate_state_sha256": value["candidate_state_sha256"],
+            "selection_gate_feasibility": value["selection_gate_feasibility"],
             "actual_target_dtype_replay": value["actual_target_dtype_replay"],
         }
         for index, value in enumerate(normalized)
@@ -4540,6 +5278,29 @@ def rank_short_conv_v4_selection_candidates(
         "full_projection_evidence_bound": True,
         "context_state_evidence_ranked": True,
         "worst_case_metrics_ranked_before_means": True,
+        "gate_feasibility_ranked_before_metric_optimization": (
+            normalized_feasibility_policy is not None
+        ),
+        "selection_feasibility_policy": normalized_feasibility_policy,
+        "selection_feasibility_policy_sha256": (
+            None
+            if normalized_feasibility_policy is None
+            else _sha256(
+                {
+                    "schema": LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
+                    "kind": "selection_feasibility_policy",
+                    **normalized_feasibility_policy,
+                }
+            )
+        ),
+        "feasible_candidate_count": (
+            None
+            if normalized_feasibility_policy is None
+            else sum(
+                value["selection_gate_feasibility"]["passed"]
+                for value in normalized
+            )
+        ),
         "all_candidates_used_actual_target_dtype_replay": all(
             value["actual_target_dtype_replay"] for value in normalized
         ),
@@ -4586,6 +5347,7 @@ __all__ = [
     "Lfm2CpcfShortConvV4SolverPolicy",
     "Lfm2CpcfV4BasisCase",
     "Lfm2CpcfV4BoundedStep",
+    "Lfm2CpcfV4CandidateState",
     "Lfm2CpcfV4ChannelBasis",
     "Lfm2CpcfV4EvaluationCase",
     "Lfm2CpcfV4ProjectionCase",
@@ -4603,7 +5365,9 @@ __all__ = [
     "evaluate_candidate_state_target_dtype",
     "evaluate_target_dtype_predictions",
     "fir_penalty_mask",
+    "fixed_projection_trust_path_fractions",
     "fixed_variable_projection_schedule",
+    "interpolate_short_conv_v4_candidate_state",
     "linearized_bcx_affine_design",
     "rank_short_conv_v4_selection_candidates",
     "replay_sampled_cp_volterra",

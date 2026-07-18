@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
     Lfm2CpcfShortConvV4Error,
     Lfm2CpcfShortConvV4SolverPolicy,
     Lfm2CpcfV4BasisCase,
+    Lfm2CpcfV4CandidateState,
     Lfm2CpcfV4EvaluationCase,
     Lfm2CpcfV4ProjectionCase,
     Lfm2CpcfV4RidgeCase,
@@ -23,7 +25,9 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
     evaluate_candidate_state_target_dtype,
     evaluate_target_dtype_predictions,
     fir_penalty_mask,
+    fixed_projection_trust_path_fractions,
     fixed_variable_projection_schedule,
+    interpolate_short_conv_v4_candidate_state,
     rank_short_conv_v4_selection_candidates,
     replay_sampled_cp_volterra,
     run_fixed_sampled_cp_variable_projection,
@@ -371,6 +375,94 @@ def test_target_bfloat16_diagnostics_and_selection_only_ranking() -> None:
     assert ranking["validation_isolation"] is True
 
 
+def test_selection_gate_feasibility_precedes_endpoint_only_optimization() -> None:
+    policy = _policy()
+    case = Lfm2CpcfV4ProjectionCase(
+        "feasibility-shared",
+        "selection",
+        torch.ones((1, 1, 1), dtype=torch.float64),
+        torch.ones((1, 1, 1), dtype=torch.float64),
+        torch.ones((1, 1, 1), dtype=torch.float64),
+        0,
+    )
+    base = evaluate_candidate_state_target_dtype(
+        cases=(case,),
+        in_proj_weight=torch.zeros((3, 1), dtype=torch.float64),
+        in_proj_bias=torch.ones((3,), dtype=torch.float64),
+        fir_kernel=torch.ones((1, 1), dtype=torch.float64),
+        fir_bias=None,
+        writer_weight=torch.ones((1, 1), dtype=torch.float64),
+        writer_bias=None,
+        required_split="selection",
+        policy=policy,
+    )
+
+    def metrics(*, endpoint: float, context: float) -> Any:
+        body = dict(base)
+        body.pop("report_sha256")
+        body.update(
+            {
+                "maximum_case_relative_rmse": endpoint,
+                "maximum_case_context_relative_rmse": context,
+                "minimum_case_cosine_similarity": 0.9,
+                "minimum_case_context_cosine_similarity": 0.9,
+            }
+        )
+        return short_conv_v4_module._seal_report(body)
+
+    endpoint_better_but_infeasible = metrics(endpoint=0.1, context=0.6)
+    balanced_and_feasible = metrics(endpoint=0.4, context=0.4)
+    feasibility = {
+        "maximum_endpoint_relative_rmse": 0.5,
+        "maximum_context_relative_rmse": 0.5,
+        "minimum_endpoint_cosine_similarity": 0.0,
+        "minimum_context_cosine_similarity": 0.0,
+    }
+    ranking = rank_short_conv_v4_selection_candidates(
+        {
+            "a-endpoint-only": endpoint_better_but_infeasible,
+            "z-balanced": balanced_and_feasible,
+        },
+        policy_sha256=policy.authentication_sha256,
+        feasibility_policy=feasibility,
+    )
+    assert ranking["selected_candidate_id"] == "z-balanced"
+    assert ranking["gate_feasibility_ranked_before_metric_optimization"] is True
+    assert ranking["feasible_candidate_count"] == 1
+    assert ranking["ranking"][0]["selection_gate_feasibility"]["passed"] is True
+    assert (
+        ranking["ranking"][1]["selection_gate_feasibility"]["failed_checks"]
+        == ["context_relative_rmse_excess"]
+    )
+
+    equal_boundary = metrics(endpoint=0.5, context=0.5)
+    boundary_ranking = rank_short_conv_v4_selection_candidates(
+        {"equal-boundary": equal_boundary},
+        policy_sha256=policy.authentication_sha256,
+        feasibility_policy=feasibility,
+    )
+    assert boundary_ranking["feasible_candidate_count"] == 1
+    assert (
+        boundary_ranking["ranking"][0]["selection_gate_feasibility"]["passed"]
+        is True
+    )
+    one_catastrophic_miss = metrics(endpoint=0.1, context=1.5)
+    two_tiny_misses = metrics(endpoint=0.51, context=0.51)
+    all_infeasible = rank_short_conv_v4_selection_candidates(
+        {
+            "a-one-catastrophic": one_catastrophic_miss,
+            "z-two-tiny": two_tiny_misses,
+        },
+        policy_sha256=policy.authentication_sha256,
+        feasibility_policy=feasibility,
+    )
+    assert all_infeasible["feasible_candidate_count"] == 0
+    assert all_infeasible["selected_candidate_id"] == "z-two-tiny"
+    assert all_infeasible["ranking"][0]["selection_gate_feasibility"][
+        "maximum_violation"
+    ] == pytest.approx(0.01)
+
+
 def test_validation_isolation_is_enforced_at_every_helper_boundary() -> None:
     policy = _policy()
     values = torch.arange(12, dtype=torch.float64).reshape(6, 2)
@@ -528,6 +620,21 @@ def test_sampled_cp_volterra_replay_and_fixed_bounded_factor_sweeps() -> None:
         * 2
     )
     assert result.report["final_objective"]["mean_case_relative_rmse"] < 1e-9
+    assert [state.stage_id for state in result.path_states] == [
+        "prior",
+        "pass-00-writer",
+        "pass-00-fir",
+        "pass-00-bcx",
+        "pass-01-writer",
+        "pass-01-fir",
+        "pass-01-bcx",
+    ]
+    assert result.report["path_state_count"] == len(result.path_states)
+    assert result.report["final_state_is_last_path_state"] is True
+    assert result.report["state_sha256"] == result.path_states[-1].report[
+        "state_sha256"
+    ]
+    assert all(state.verify_authentication() for state in result.path_states)
     execution = result.report["execution"]
     assert execution["backward_calls"] == 0
     assert execution["optimizer_steps"] == 0
@@ -978,6 +1085,10 @@ def test_context_objective_is_live_and_overshoot_phase_reverts(
         policy=_policy(variable_projection_passes=2),
     )
     assert all(not sweep["bcx_phase_accepted"] for sweep in result.report["sweeps"])
+    assert all(
+        not state.stage_id.endswith("-bcx") for state in result.path_states
+    )
+    assert result.report["rejected_phases_excluded_from_path"] is True
     assert result.report["final_objective_not_worse_than_initial"] is True
     assert (
         result.report["final_objective"]["combined_fit_objective"]
@@ -986,6 +1097,141 @@ def test_context_objective_is_live_and_overshoot_phase_reverts(
     assert result.verify_authentication()
     result.in_proj_weight.add_(1.0)
     assert not result.verify_authentication()
+
+
+def test_projection_trust_path_interpolates_all_roles_and_authenticates() -> None:
+    generator = torch.Generator().manual_seed(7719)
+    child = torch.randn((1, 5, 2), generator=generator, dtype=torch.float64)
+    parameters = {
+        "in_proj_weight": torch.randn(
+            (6, 2), generator=generator, dtype=torch.float64
+        ),
+        "in_proj_bias": torch.randn((6,), generator=generator, dtype=torch.float64),
+        "fir_kernel": torch.randn(
+            (2, 2), generator=generator, dtype=torch.float64
+        ),
+        "fir_bias": torch.randn((2,), generator=generator, dtype=torch.float64),
+        "writer_weight": torch.randn(
+            (2, 2), generator=generator, dtype=torch.float64
+        ),
+        "writer_bias": torch.randn((2,), generator=generator, dtype=torch.float64),
+    }
+    replay = replay_sampled_cp_volterra(child, **parameters)
+    case = Lfm2CpcfV4ProjectionCase(
+        "trust-path",
+        "fit",
+        child,
+        replay.context_history + 0.1,
+        replay.write_history,
+        0,
+    )
+    result = run_fixed_sampled_cp_variable_projection(
+        cases=(case,),
+        initial_in_proj_weight=parameters["in_proj_weight"],
+        initial_in_proj_bias=parameters["in_proj_bias"],
+        initial_fir_kernel=parameters["fir_kernel"],
+        initial_fir_bias=parameters["fir_bias"],
+        initial_writer_weight=parameters["writer_weight"],
+        initial_writer_bias=parameters["writer_bias"],
+        alpha=1e-6,
+        policy=_policy(variable_projection_passes=2),
+    )
+    left = result.path_states[0]
+    right = result.path_states[-1]
+    midpoint = interpolate_short_conv_v4_candidate_state(
+        left=left,
+        right=right,
+        fraction=0.5,
+        stage_id="midpoint",
+    )
+    assert midpoint.verify_authentication()
+    for role in (
+        "in_proj_weight",
+        "in_proj_bias",
+        "fir_kernel",
+        "fir_bias",
+        "writer_weight",
+        "writer_bias",
+    ):
+        assert torch.equal(
+            getattr(midpoint, role),
+            getattr(left, role) + (getattr(right, role) - getattr(left, role)) * 0.5,
+        )
+    assert fixed_projection_trust_path_fractions() == (
+        1 / 64,
+        1 / 32,
+        1 / 16,
+        1 / 8,
+        1 / 4,
+        1 / 2,
+    )
+
+    def resealed_candidate(
+        candidate: Lfm2CpcfV4CandidateState,
+        body: dict[str, Any],
+    ) -> Lfm2CpcfV4CandidateState:
+        body.pop("report_sha256", None)
+        return Lfm2CpcfV4CandidateState(
+            stage_id=candidate.stage_id,
+            in_proj_weight=candidate.in_proj_weight,
+            in_proj_bias=candidate.in_proj_bias,
+            fir_kernel=candidate.fir_kernel,
+            fir_bias=candidate.fir_bias,
+            writer_weight=candidate.writer_weight,
+            writer_bias=candidate.writer_bias,
+            report=short_conv_v4_module._seal_report(body),
+        )
+
+    for field, invalid_value in (
+        ("schema", "forged-schema"),
+        ("kind", "forged-kind"),
+        ("policy_sha256", "not-a-sha"),
+        ("alpha", -1.0),
+        ("fit_only", False),
+        ("selection_cases_consumed", 1),
+    ):
+        forged_body = copy.deepcopy(dict(left.report))
+        forged_body[field] = invalid_value
+        assert not resealed_candidate(left, forged_body).verify_authentication()
+
+    forged_execution = copy.deepcopy(dict(left.report))
+    forged_execution["execution"]["training_steps"] = 1
+    assert not resealed_candidate(left, forged_execution).verify_authentication()
+
+    forged_objective = copy.deepcopy(dict(left.report))
+    objective = forged_objective["fit_objective"]
+    objective.pop("report_sha256")
+    objective["split"] = "selection"
+    forged_objective["fit_objective"] = dict(
+        short_conv_v4_module._seal_report(objective)
+    )
+    forged_objective["fit_objective_report_sha256"] = forged_objective[
+        "fit_objective"
+    ]["report_sha256"]
+    assert not resealed_candidate(left, forged_objective).verify_authentication()
+
+    phase_state = next(
+        state for state in result.path_states if state.stage_id != "prior"
+    )
+    forged_phase_crosslink = copy.deepcopy(dict(phase_state.report))
+    forged_phase_crosslink["phase_report_sha256"] = "0" * 64
+    assert not resealed_candidate(
+        phase_state,
+        forged_phase_crosslink,
+    ).verify_authentication()
+
+    forged_endpoint = copy.deepcopy(dict(midpoint.report))
+    forged_endpoint["left_candidate_report_sha256"] = "not-a-sha"
+    assert not resealed_candidate(
+        midpoint,
+        forged_endpoint,
+    ).verify_authentication()
+
+    left.writer_weight.add_(1.0)
+    assert not left.verify_authentication()
+    assert midpoint.verify_authentication()
+    midpoint.writer_weight.add_(1.0)
+    assert not midpoint.verify_authentication()
 
 
 def test_selection_binds_full_projection_evidence_not_only_targets() -> None:

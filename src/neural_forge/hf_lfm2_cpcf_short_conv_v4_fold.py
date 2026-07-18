@@ -42,6 +42,8 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
     case_balanced_trace_scaled_prior_ridge,
     causal_depthwise_context,
     evaluate_candidate_state_target_dtype,
+    fixed_projection_trust_path_fractions,
+    interpolate_short_conv_v4_candidate_state,
     rank_short_conv_v4_selection_candidates,
     run_fixed_sampled_cp_variable_projection,
     transport_parent_short_conv_priors,
@@ -49,8 +51,11 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
 
 
 LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA = "neural-forge-lfm2-cpcf-short-conv-fold-v4"
-LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA = (
+LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v4-failure-v1"
+)
+LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-fold-v4-failure-v2"
 )
 
 
@@ -85,6 +90,11 @@ def _canonical_json(value: Any) -> bytes:
 
 def _sha(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value)).hexdigest()
+
+
+def _seal_report(body: Mapping[str, Any]) -> dict[str, Any]:
+    detached = _canonical_copy(body, "report")
+    return {**detached, "report_sha256": _sha(detached)}
 
 
 def _canonical_copy(value: Any, name: str) -> dict[str, Any]:
@@ -522,6 +532,29 @@ def _state_sha256(values: Mapping[str, Any]) -> str:
     )
 
 
+def _selection_feasibility_policy(
+    gate_policy: Lfm2CpcfShortConvGatePolicy,
+) -> dict[str, float]:
+    return {
+        "maximum_endpoint_relative_rmse": min(
+            gate_policy.maximum_fit_endpoint_relative_rmse,
+            gate_policy.maximum_validation_endpoint_relative_rmse,
+        ),
+        "maximum_context_relative_rmse": min(
+            gate_policy.maximum_fit_endpoint_relative_rmse,
+            gate_policy.maximum_validation_endpoint_relative_rmse,
+        ),
+        "minimum_endpoint_cosine_similarity": max(
+            gate_policy.minimum_fit_endpoint_cosine_similarity,
+            gate_policy.minimum_validation_endpoint_cosine_similarity,
+        ),
+        "minimum_context_cosine_similarity": max(
+            gate_policy.minimum_fit_endpoint_cosine_similarity,
+            gate_policy.minimum_validation_endpoint_cosine_similarity,
+        ),
+    }
+
+
 def _gate_report(
     *,
     policy: Lfm2CpcfShortConvGatePolicy,
@@ -831,8 +864,8 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         split: tuple(case for case in projections if case.split == split)
         for split in ("fit", "selection", "validation")
     }
-    candidate_results = {}
-    selection_reports = {}
+    ridge_results = {}
+    raw_candidates = []
     initial_in_bias = (
         None
         if in_bias_template is None
@@ -864,7 +897,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         )
     )
     for index, alpha in enumerate(solver_policy.ridge_alphas):
-        candidate_id = f"ridge-alpha-{index:02d}-{alpha:.17g}"
+        ridge_id = f"ridge-alpha-{index:02d}-{alpha:.17g}"
         result = run_fixed_sampled_cp_variable_projection(
             cases=split_cases["fit"],
             initial_in_proj_weight=priors.in_proj_weight,
@@ -876,39 +909,192 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             alpha=alpha,
             policy=solver_policy,
         )
-        candidate_results[candidate_id] = result
-        selection_reports[candidate_id] = evaluate_candidate_state_target_dtype(
+        if not result.verify_authentication():
+            raise Lfm2CpcfShortConvV4FoldError(
+                f"{ridge_id} variable-projection result failed authentication."
+            )
+        ridge_results[ridge_id] = result
+        for path_index, path_state in enumerate(result.path_states):
+            raw_candidates.append(
+                {
+                    "candidate_id": (
+                        f"{ridge_id}--anchor-{path_index:02d}-{path_state.stage_id}"
+                    ),
+                    "ridge_id": ridge_id,
+                    "candidate": path_state,
+                    "candidate_kind": "accepted_fit_path_anchor",
+                }
+            )
+        prior_state = result.path_states[0]
+        final_state = result.path_states[-1]
+        first_writer_state = next(
+            (
+                state
+                for state in result.path_states
+                if state.stage_id.endswith("-writer")
+            ),
+            None,
+        )
+        for fraction_index, fraction in enumerate(
+            fixed_projection_trust_path_fractions()
+        ):
+            interpolated = interpolate_short_conv_v4_candidate_state(
+                left=prior_state,
+                right=final_state,
+                fraction=fraction,
+                stage_id=(
+                    f"prior-to-final-{fraction_index:02d}-{fraction:.17g}"
+                ),
+            )
+            raw_candidates.append(
+                {
+                    "candidate_id": (
+                        f"{ridge_id}--trust-{fraction_index:02d}-"
+                        f"{fraction:.17g}"
+                    ),
+                    "ridge_id": ridge_id,
+                    "candidate": interpolated,
+                    "candidate_kind": "prior_to_final_trust_path",
+                }
+            )
+            if first_writer_state is not None:
+                writer_interpolated = interpolate_short_conv_v4_candidate_state(
+                    left=prior_state,
+                    right=first_writer_state,
+                    fraction=fraction,
+                    stage_id=(
+                        f"prior-to-first-writer-{fraction_index:02d}-"
+                        f"{fraction:.17g}"
+                    ),
+                )
+                raw_candidates.append(
+                    {
+                        "candidate_id": (
+                            f"{ridge_id}--writer-trust-{fraction_index:02d}-"
+                            f"{fraction:.17g}"
+                        ),
+                        "ridge_id": ridge_id,
+                        "candidate": writer_interpolated,
+                        "candidate_kind": "prior_to_first_writer_trust_path",
+                    }
+                )
+
+    deduplicated = {}
+    for raw in raw_candidates:
+        candidate = raw["candidate"]
+        materialized = {
+            role: (
+                None
+                if getattr(candidate, role) is None
+                else getattr(candidate, role)
+                .detach()
+                .to(device="cpu", dtype=target_dtype)
+                .contiguous()
+            )
+            for role in (
+                "in_proj_weight",
+                "in_proj_bias",
+                "fir_kernel",
+                "fir_bias",
+                "writer_weight",
+                "writer_bias",
+            )
+        }
+        target_state_sha = _state_sha256(materialized)
+        source = {
+            "candidate_id": raw["candidate_id"],
+            "ridge_id": raw["ridge_id"],
+            "candidate_kind": raw["candidate_kind"],
+            "stage_id": candidate.stage_id,
+            "fit_path_state_sha256": candidate.report["state_sha256"],
+            "candidate_report": dict(candidate.report),
+        }
+        if target_state_sha in deduplicated:
+            deduplicated[target_state_sha]["sources"].append(source)
+            continue
+        deduplicated[target_state_sha] = {
+            "candidate_id": raw["candidate_id"],
+            "state": materialized,
+            "sources": [source],
+        }
+
+    candidate_states = {}
+    candidate_fit_reports = {}
+    selection_reports = {}
+    for target_state_sha, candidate_group in deduplicated.items():
+        candidate_id = candidate_group["candidate_id"]
+        state = candidate_group["state"]
+        sources = candidate_group["sources"]
+        provenance_body = {
+            "schema": LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+            "kind": "authenticated_fit_only_candidate_provenance",
+            "candidate_id": candidate_id,
+            "policy_sha256": solver_policy.authentication_sha256,
+            "target_dtype": solver_policy.target_dtype,
+            "target_dtype_candidate_state_sha256": target_state_sha,
+            "source_alias_count": len(sources),
+            "source_alias_candidate_ids": [
+                source["candidate_id"] for source in sources
+            ],
+            "sources": sources,
+            "fit_only": True,
+            "selection_cases_consumed": 0,
+            "validation_cases_consumed": 0,
+            "actual_target_dtype_materialization_before_deduplication": True,
+            "execution": {
+                "parent_model_forward_calls": 0,
+                "target_model_forward_calls": 0,
+                "generation_calls": 0,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+            },
+        }
+        provenance = _seal_report(provenance_body)
+        selection = evaluate_candidate_state_target_dtype(
             cases=split_cases["selection"],
-            in_proj_weight=result.in_proj_weight,
-            in_proj_bias=result.in_proj_bias,
-            fir_kernel=result.fir_kernel,
-            fir_bias=result.fir_bias,
-            writer_weight=result.writer_weight,
-            writer_bias=result.writer_bias,
+            in_proj_weight=state["in_proj_weight"],
+            in_proj_bias=state["in_proj_bias"],
+            fir_kernel=state["fir_kernel"],
+            fir_bias=state["fir_bias"],
+            writer_weight=state["writer_weight"],
+            writer_bias=state["writer_bias"],
             required_split="selection",
             policy=solver_policy,
         )
+        if selection["candidate_state_sha256"] != target_state_sha:
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Target-dtype candidate deduplication and replay state differ."
+            )
+        candidate_states[candidate_id] = state
+        candidate_fit_reports[candidate_id] = provenance
+        selection_reports[candidate_id] = selection
+
+    selection_feasibility = _selection_feasibility_policy(gate_policy)
     ranking = rank_short_conv_v4_selection_candidates(
         selection_reports,
         policy_sha256=solver_policy.authentication_sha256,
+        feasibility_policy=selection_feasibility,
     )
     selected_id = str(ranking["selected_candidate_id"])
-    selected = candidate_results[selected_id]
-    in_weight = selected.in_proj_weight.to(dtype=target_dtype).contiguous()
-    fir_kernel = selected.fir_kernel.to(dtype=target_dtype).contiguous()
-    out_weight = selected.writer_weight.to(dtype=target_dtype).contiguous()
+    selected = candidate_states[selected_id]
+    in_weight = selected["in_proj_weight"].clone()
+    fir_kernel = selected["fir_kernel"].clone()
+    out_weight = selected["writer_weight"].clone()
     in_bias = _materialize_bias(
-        selected.in_proj_bias,
+        selected["in_proj_bias"],
         in_bias_template,
         "in_proj_bias",
     )
     fir_bias = _materialize_bias(
-        selected.fir_bias,
+        selected["fir_bias"],
         conv_bias_template,
         "conv_bias",
     )
     out_bias = _materialize_bias(
-        selected.writer_bias,
+        selected["writer_bias"],
         out_bias_template,
         "out_proj_bias",
     )
@@ -975,14 +1161,69 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         "basis": dict(basis.report),
         "input_lift": dict(lift_report),
         "transported_priors": dict(priors.report),
+        "ridge_fit_reports": {
+            ridge_id: dict(result.report)
+            for ridge_id, result in ridge_results.items()
+        },
         "candidate_fit_reports": {
-            candidate_id: dict(result.report)
-            for candidate_id, result in candidate_results.items()
+            candidate_id: dict(report)
+            for candidate_id, report in candidate_fit_reports.items()
         },
         "candidate_selection_reports": {
             candidate_id: dict(report)
             for candidate_id, report in selection_reports.items()
         },
+        "candidate_pool_report": _seal_report(
+            {
+                "schema": LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+                "kind": "authenticated_target_dtype_candidate_pool",
+                "policy_sha256": solver_policy.authentication_sha256,
+                "target_dtype": solver_policy.target_dtype,
+                "ridge_candidate_count": len(ridge_results),
+                "raw_candidate_count": len(raw_candidates),
+                "unique_target_dtype_candidate_count": len(candidate_states),
+                "target_dtype_duplicate_count": (
+                    len(raw_candidates) - len(candidate_states)
+                ),
+                "accepted_phase_anchors_included": True,
+                "rejected_phase_states_included": False,
+                "prior_to_final_trust_path_fractions": list(
+                    fixed_projection_trust_path_fractions()
+                ),
+                "prior_to_first_writer_trust_path_fractions": list(
+                    fixed_projection_trust_path_fractions()
+                ),
+                "selection_feasibility_policy": selection_feasibility,
+                "selection_feasibility_policy_sha256": ranking[
+                    "selection_feasibility_policy_sha256"
+                ],
+                "fold_case_authentication_sha256": {
+                    split: [
+                        case.authentication_sha256
+                        for case in ordered
+                        if case.split == split
+                    ]
+                    for split in ("fit", "selection", "validation")
+                },
+                "projection_case_authentication_sha256": {
+                    split: [
+                        case.authentication_sha256
+                        for case in split_cases[split]
+                    ]
+                    for split in ("fit", "selection", "validation")
+                },
+                "candidate_ids": sorted(candidate_states),
+                "candidate_state_sha256": {
+                    candidate_id: selection_reports[candidate_id][
+                        "candidate_state_sha256"
+                    ]
+                    for candidate_id in sorted(candidate_states)
+                },
+                "fit_only_candidate_generation": True,
+                "selection_cases_consumed_during_generation": 0,
+                "validation_cases_consumed_during_generation": 0,
+            }
+        ),
         "selection_ranking": dict(ranking),
         "selected_candidate_id": selected_id,
         "fit_evaluation": dict(evaluations["fit"]),
@@ -1047,6 +1288,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
 
 
 __all__ = [
+    "LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA",
     "Lfm2CompiledCpcfShortConvV4Fold",

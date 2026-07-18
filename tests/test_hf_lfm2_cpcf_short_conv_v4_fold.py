@@ -228,6 +228,45 @@ def test_v4_orchestrator_compiles_target_shaped_state_and_seals_roles() -> None:
     assert artifact.report["selection_used_only_for_candidate_ranking"] is True
     assert artifact.report["validation_used_only_after_candidate_freeze"] is True
     assert artifact.report["selection_ranking"]["context_state_evidence_ranked"] is True
+    assert (
+        artifact.report["selection_ranking"][
+            "gate_feasibility_ranked_before_metric_optimization"
+        ]
+        is True
+    )
+    pool = artifact.report["candidate_pool_report"]
+    assert pool["accepted_phase_anchors_included"] is True
+    assert pool["rejected_phase_states_included"] is False
+    assert pool["prior_to_final_trust_path_fractions"] == (
+        1 / 64,
+        1 / 32,
+        1 / 16,
+        1 / 8,
+        1 / 4,
+        1 / 2,
+    )
+    assert pool["prior_to_first_writer_trust_path_fractions"] == (
+        1 / 64,
+        1 / 32,
+        1 / 16,
+        1 / 8,
+        1 / 4,
+        1 / 2,
+    )
+    ridge_report = next(iter(artifact.report["ridge_fit_reports"].values()))
+    assert pool["raw_candidate_count"] == ridge_report["path_state_count"] + 12
+    assert pool["unique_target_dtype_candidate_count"] == len(
+        artifact.report["candidate_selection_reports"]
+    )
+    assert set(artifact.report["candidate_fit_reports"]) == set(
+        artifact.report["candidate_selection_reports"]
+    )
+    selected_provenance = artifact.report["candidate_fit_reports"][
+        artifact.report["selected_candidate_id"]
+    ]
+    assert selected_provenance["fit_only"] is True
+    assert selected_provenance["selection_cases_consumed"] == 0
+    assert selected_provenance["validation_cases_consumed"] == 0
     assert artifact.report["fit_evaluation"]["context_evidence_present"] is True
     assert artifact.report["validation_evaluation"]["context_evidence_present"] is True
     assert (
@@ -267,6 +306,29 @@ def test_cases_snapshot_caller_tensors_and_validation_cannot_select_state() -> N
     assert (
         base_artifact.report["selection_ranking"]
         == shifted_artifact.report["selection_ranking"]
+    )
+    base_pool = dict(base_artifact.report["candidate_pool_report"])
+    shifted_pool = dict(shifted_artifact.report["candidate_pool_report"])
+    for key in (
+        "report_sha256",
+        "fold_case_authentication_sha256",
+        "projection_case_authentication_sha256",
+    ):
+        base_pool.pop(key)
+        shifted_pool.pop(key)
+    assert base_pool == shifted_pool
+    for key in (
+        "fold_case_authentication_sha256",
+        "projection_case_authentication_sha256",
+    ):
+        base_bindings = base_artifact.report["candidate_pool_report"][key]
+        shifted_bindings = shifted_artifact.report["candidate_pool_report"][key]
+        assert base_bindings["fit"] == shifted_bindings["fit"]
+        assert base_bindings["selection"] == shifted_bindings["selection"]
+        assert base_bindings["validation"] != shifted_bindings["validation"]
+    assert (
+        base_artifact.report["candidate_fit_reports"]
+        == shifted_artifact.report["candidate_fit_reports"]
     )
     assert (
         base_artifact.report["validation_evaluation"]["report_sha256"]
@@ -361,6 +423,46 @@ def test_orchestrator_materializes_real_bfloat16_parameters_and_arithmetic() -> 
         is True
     )
     assert artifact.report["fit_evaluation"]["target_dtype"] == "bfloat16"
+
+
+def test_bfloat16_two_ridge_frontier_deduplicates_authenticated_states() -> None:
+    fixture = _fixture(target_dtype=torch.bfloat16)
+    values = {key: value for key, value in fixture.items() if key != "originals"}
+    artifact = compile_lfm2_cpcf_short_conv_v4_fold(
+        **values,
+        solver_policy=Lfm2CpcfShortConvV4SolverPolicy(
+            ridge_alphas=(1e-8, 1e-4),
+            variable_projection_passes=2,
+            target_dtype="bfloat16",
+        ),
+        gate_policy=_permissive_gate(),
+    )
+
+    pool = artifact.report["candidate_pool_report"]
+    provenance = artifact.report["candidate_fit_reports"]
+    raw_count = sum(
+        report["source_alias_count"] for report in provenance.values()
+    )
+    assert pool["ridge_candidate_count"] == 2
+    assert pool["raw_candidate_count"] == raw_count
+    assert pool["raw_candidate_count"] > pool["unique_target_dtype_candidate_count"]
+    assert pool["target_dtype_duplicate_count"] == (
+        pool["raw_candidate_count"]
+        - pool["unique_target_dtype_candidate_count"]
+    )
+    assert any(
+        len({source["ridge_id"] for source in report["sources"]}) > 1
+        for report in provenance.values()
+    )
+    assert all(
+        value.dtype == torch.bfloat16 for value in artifact.state_dict().values()
+    )
+    selected = artifact.report["selected_candidate_id"]
+    assert (
+        pool["candidate_state_sha256"][selected]
+        == artifact.report["selection_evaluation"]["candidate_state_sha256"]
+    )
+    assert artifact.verify_authentication()
 
 
 def test_non_enforced_failed_gate_returns_nonpromotable_diagnostic_artifact() -> None:

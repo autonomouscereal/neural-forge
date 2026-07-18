@@ -33,6 +33,7 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
     Lfm2CpcfShortConvV4SolverPolicy,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (  # noqa: E402
+    LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
     Lfm2CompiledCpcfShortConvV4Fold,
     Lfm2CpcfShortConvV4FoldCase,
@@ -1090,6 +1091,104 @@ def test_short_conv_v4_gate_failure_is_strictly_nested_and_rolls_back() -> None:
     forged["report_sha256"] = layer_compiler._sha(forged)
     assert layer_compiler._recursive_report_seals_valid(forged) is True
     assert layer_compiler._valid_short_conv_validation_report(forged) is False
+
+    def reseal(value):
+        value.pop("report_sha256", None)
+        value["report_sha256"] = layer_compiler._sha(value)
+
+    forged_provenance = copy.deepcopy(nested)
+    provenance_id = next(iter(forged_provenance["candidate_fit_reports"]))
+    provenance = forged_provenance["candidate_fit_reports"][provenance_id]
+    provenance["source_alias_count"] += 1
+    reseal(provenance)
+    reseal(forged_provenance)
+    assert layer_compiler._recursive_report_seals_valid(forged_provenance) is True
+    assert (
+        layer_compiler._valid_short_conv_validation_report(forged_provenance)
+        is False
+    )
+
+    forged_pool = copy.deepcopy(nested)
+    pool = forged_pool["candidate_pool_report"]
+    pool["raw_candidate_count"] = "bad"
+    reseal(pool)
+    reseal(forged_pool)
+    assert layer_compiler._recursive_report_seals_valid(forged_pool) is True
+    assert layer_compiler._valid_short_conv_validation_report(forged_pool) is False
+
+    forged_frontier = copy.deepcopy(nested)
+    omitted_id = next(
+        candidate_id
+        for candidate_id, provenance in forged_frontier[
+            "candidate_fit_reports"
+        ].items()
+        if candidate_id != forged_frontier["selected_candidate_id"]
+        and any(
+            source["candidate_kind"] == "accepted_fit_path_anchor"
+            for source in provenance["sources"]
+        )
+    )
+    omitted_provenance = forged_frontier["candidate_fit_reports"].pop(
+        omitted_id
+    )
+    forged_frontier["candidate_selection_reports"].pop(omitted_id)
+    frontier_pool = forged_frontier["candidate_pool_report"]
+    frontier_pool["candidate_ids"] = sorted(
+        forged_frontier["candidate_fit_reports"]
+    )
+    frontier_pool["candidate_state_sha256"].pop(omitted_id)
+    frontier_pool["raw_candidate_count"] -= omitted_provenance[
+        "source_alias_count"
+    ]
+    frontier_pool["unique_target_dtype_candidate_count"] -= 1
+    frontier_pool["target_dtype_duplicate_count"] = (
+        frontier_pool["raw_candidate_count"]
+        - frontier_pool["unique_target_dtype_candidate_count"]
+    )
+    reseal(frontier_pool)
+    forged_frontier["selection_ranking"] = dict(
+        layer_compiler.rank_short_conv_v4_selection_candidates(
+            forged_frontier["candidate_selection_reports"],
+            policy_sha256=forged_frontier["solver_policy_sha256"],
+            feasibility_policy=frontier_pool[
+                "selection_feasibility_policy"
+            ],
+        )
+    )
+    assert (
+        forged_frontier["selection_ranking"]["selected_candidate_id"]
+        == forged_frontier["selected_candidate_id"]
+    )
+    assert frontier_pool["accepted_phase_anchors_included"] is True
+    reseal(forged_frontier)
+    assert layer_compiler._recursive_report_seals_valid(forged_frontier) is True
+    assert (
+        layer_compiler._valid_short_conv_validation_report(forged_frontier)
+        is False
+    )
+
+    forged_ranking = copy.deepcopy(nested)
+    ranking = forged_ranking["selection_ranking"]
+    ranking["ranking"][1], ranking["ranking"][2] = (
+        ranking["ranking"][2],
+        ranking["ranking"][1],
+    )
+    reseal(ranking)
+    reseal(forged_ranking)
+    assert layer_compiler._recursive_report_seals_valid(forged_ranking) is True
+    assert (
+        layer_compiler._valid_short_conv_validation_report(forged_ranking)
+        is False
+    )
+
+    legacy = copy.deepcopy(nested)
+    legacy.pop("ridge_fit_reports")
+    legacy.pop("candidate_pool_report")
+    legacy["schema"] = LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA
+    reseal(legacy)
+    assert layer_compiler._valid_short_conv_validation_report(legacy) is True
+    assert nested["schema"] == LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
+    assert nested["schema"].endswith("failure-v2")
     assert failure.stage == "operator_compile"
     assert failure.rollback_proof["exact_layer_rollback_proven"] is True
     for name, value in layer.state_dict().items():
