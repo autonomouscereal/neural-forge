@@ -688,11 +688,11 @@ class Lfm2CpcfInstallabilityAdapter:
         diagnostics = capture.get("phase_diagnostics")
         if (
             not isinstance(diagnostics, Mapping)
-            or tuple(diagnostics) != tuple(phases)
+            or set(diagnostics) != set(phases)
         ):
             raise Lfm2CpcfInstallabilityError(
                 f"Cache batch {batch_index} phase diagnostics are incomplete "
-                "or reordered."
+                "or contain unexpected phase keys."
             )
         return diagnostics
 
@@ -837,15 +837,22 @@ class Lfm2CpcfInstallabilityAdapter:
             raise Lfm2CpcfInstallabilityError(
                 f"Attention layer {layer_index} additive mask shape changed."
             )
-        probabilities = torch.nn.functional.softmax(
-            scores + additive_mask.to(torch.float64),
-            dim=-1,
-        )
         captured_probabilities = _tensor(
             values["attention.probabilities"],
             "attention.probabilities",
             dimensions=4,
         )
+        if captured_probabilities.dtype != captured_scores.dtype:
+            raise Lfm2CpcfInstallabilityError(
+                f"Attention layer {layer_index} score/probability execution "
+                "dtypes changed."
+            )
+        probabilities = torch.nn.functional.softmax(
+            captured_scores
+            + additive_mask.to(dtype=captured_scores.dtype),
+            dim=-1,
+            dtype=torch.float32,
+        ).to(dtype=captured_probabilities.dtype)
         _close(
             probabilities,
             captured_probabilities,
@@ -853,7 +860,7 @@ class Lfm2CpcfInstallabilityAdapter:
         )
         context = torch.matmul(
             probabilities,
-            repeated_value.to(torch.float64),
+            repeated_value.to(dtype=probabilities.dtype),
         )
         captured_from_probabilities = _tensor(
             values["attention.context_from_probabilities"],

@@ -437,6 +437,75 @@ def test_strict_installability_audit_passes_complete_opt_in_cache() -> None:
     assert cache.load_count == 1
 
 
+def test_canonical_json_phase_key_order_is_not_treated_as_causal_order() -> None:
+    cache = _cache()
+    capture = cache._batch.record["capture"]
+    diagnostics = capture["phase_diagnostics"]
+    capture["phase_diagnostics"] = {
+        name: diagnostics[name] for name in sorted(diagnostics)
+    }
+
+    phases = tuple(iter_lfm2_cpcf_compiler_inputs(cache))
+
+    assert [phase.phase for phase in phases] == ["prefill", "decode.000"]
+    assert cache.parent_forward_count == 0
+
+
+def test_missing_phase_diagnostic_still_fails_closed() -> None:
+    cache = _cache()
+    del cache._batch.record["capture"]["phase_diagnostics"]["decode.000"]
+
+    with pytest.raises(
+        Lfm2CpcfInstallabilityError,
+        match="incomplete or contain unexpected",
+    ):
+        tuple(iter_lfm2_cpcf_compiler_inputs(cache))
+
+    assert cache.parent_forward_count == 0
+
+
+def test_attention_softmax_replays_authenticated_execution_scores() -> None:
+    cache = _cache()
+    values = cache._batch.tensors
+    prefix = "prefill.layer.001."
+    q_norm = values[prefix + "attention.q_normalized_pre_rope"]
+    k_norm = values[prefix + "attention.k_normalized_pre_rope"]
+    q_norm.fill_(8.5)
+    k_norm.fill_(8.5)
+    sampled = int(values[prefix + "attention.q"].shape[2])
+    q = q_norm[:, :, -sampled:, :].clone()
+    k = k_norm[:, :, -sampled:, :].clone()
+    values[prefix + "attention.q"] = q
+    values[prefix + "attention.q_linear"] = q.clone()
+    values[prefix + "attention.k"] = k
+    values[prefix + "attention.k_linear"] = k.clone()
+    values[prefix + "attention.key_history"] = k_norm.clone()
+    repeated_key = k_norm.repeat_interleave(2, dim=1)
+    captured_scores = torch.matmul(
+        q,
+        repeated_key.transpose(2, 3),
+    ) / (2**0.5)
+    captured_scores[..., 0] += 1.5
+    values[prefix + "attention.qk_scores"] = captured_scores
+    probabilities = torch.nn.functional.softmax(
+        captured_scores,
+        dim=-1,
+        dtype=torch.float32,
+    )
+    values[prefix + "attention.probabilities"] = probabilities
+    repeated_value = values[
+        prefix + "attention.value_history"
+    ].repeat_interleave(2, dim=1)
+    context = torch.matmul(probabilities, repeated_value)
+    values[prefix + "attention.context_from_probabilities"] = context
+    values[prefix + "attention.context"] = context.clone()
+
+    phases = tuple(iter_lfm2_cpcf_compiler_inputs(cache))
+
+    assert [phase.phase for phase in phases] == ["prefill", "decode.000"]
+    assert cache.parent_forward_count == 0
+
+
 def test_compiler_input_stream_exposes_exact_installability_tensors() -> None:
     cache = _cache()
 
