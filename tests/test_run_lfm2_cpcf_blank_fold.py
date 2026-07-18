@@ -98,6 +98,9 @@ def test_exact_parameter_budget_remains_generic_until_promotion_audit() -> None:
 def test_trajectory_reader_preserves_whole_record_splits(
     tmp_path: Path,
 ) -> None:
+    assert MODULE.TRAJECTORY_SCHEMA == (
+        "neural-forge-lfm2-bridge-trajectory-text-v1"
+    )
     source = tmp_path / "trajectories.json"
     rows = [
         {

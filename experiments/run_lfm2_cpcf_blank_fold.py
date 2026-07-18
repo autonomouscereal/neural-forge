@@ -53,7 +53,7 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 RUN_SCHEMA = "neural-forge-lfm2-cpcf-blank-fold-run-v1"
 DRY_PLAN_SCHEMA = "neural-forge-lfm2-cpcf-blank-dry-plan-v1"
-TRAJECTORY_SCHEMA = "neural-forge-lfm2-bridge-folding-trajectory-v1"
+TRAJECTORY_SCHEMA = "neural-forge-lfm2-bridge-trajectory-text-v1"
 MINIMUM_CLAIMABLE_COMPRESSION_RATIO = Decimal("100")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _DTYPES = ("bfloat16", "float16", "float32")
