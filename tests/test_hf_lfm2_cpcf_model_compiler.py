@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 import pytest
 
@@ -13,6 +14,7 @@ from neural_forge.hf_lfm2_cpcf_installability import (  # noqa: E402
     Lfm2CpcfInstallablePhaseEvidence,
 )
 from neural_forge.hf_lfm2_cpcf_model_compiler import (  # noqa: E402
+    Lfm2CpcfLayerReplayBank,
     Lfm2CpcfModelCompilerError,
     build_lfm2_cpcf_target_phases,
     install_lfm2_cpcf_neutral_norms,
@@ -27,6 +29,17 @@ from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
 
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _canonical_sha(value) -> str:
+    encoded = json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _target():
@@ -174,17 +187,31 @@ def test_tied_install_and_full_prefix_replay_propagate_actual_child_states() -> 
     _assert_cpu_archived_layer_bank(conv)
     _assert_cpu_archived_layer_bank(attention)
     for phase in phases:
-        # The next-boundary bank and the replay receipt intentionally share
-        # the one authenticated CPU post-layer archive.  There is no second
-        # retained host copy of the same endpoint.
-        assert (
-            conv.post_layer_bank.states[phase.identity].data_ptr()
-            == conv.replays[phase.identity].post_layer_residual.data_ptr()
-        )
-        assert (
-            attention.post_layer_bank.states[phase.identity].data_ptr()
-            == attention.replays[phase.identity].post_layer_residual.data_ptr()
-        )
+        if phase.phase == "prefill":
+            assert (
+                conv.post_layer_bank.states[phase.identity].data_ptr()
+                == conv.replays[phase.identity].post_layer_residual.data_ptr()
+            )
+            assert (
+                attention.post_layer_bank.states[phase.identity].data_ptr()
+                == attention.replays[
+                    phase.identity
+                ].post_layer_residual.data_ptr()
+            )
+        else:
+            # Decode banks retain the complete raw replay in the receipt and
+            # separately stitch only its new suffix onto the already
+            # authenticated causal prefix.
+            assert (
+                conv.post_layer_bank.states[phase.identity].data_ptr()
+                != conv.replays[phase.identity].post_layer_residual.data_ptr()
+            )
+            assert (
+                attention.post_layer_bank.states[phase.identity].data_ptr()
+                != attention.replays[
+                    phase.identity
+                ].post_layer_residual.data_ptr()
+            )
         # Every branch writer is still the compiler-owned zero blank.  The
         # replay therefore proves exact identity propagation of the installed
         # tied embeddings through both real target macrocell topologies.
@@ -202,7 +229,152 @@ def test_tied_install_and_full_prefix_replay_propagate_actual_child_states() -> 
         )
     assert attention.report["actual_folded_upstream_input"] is True
     assert attention.report["child_model_forward_count"] == 0
+    assert (
+        attention.report["canonical_causal_post_layer_state_stitching"]
+        is True
+    )
+    assert attention.report["post_layer_state_assembly"] == (
+        "complete_prefill_plus_ordered_decode_suffixes"
+    )
+    assert attention.report["raw_recomputed_historical_prefix_used"] is False
+    assert attention.report["causal_trajectory_count"] == 1
+    assert attention.report["decode_suffix_stitch_count"] == 2
+    assert [
+        record["source"]
+        for record in attention.report["causal_stitch_records"]
+    ] == [
+        "complete_prefill_replay",
+        "ordered_decode_terminal_suffix",
+        "ordered_decode_terminal_suffix",
+    ]
+    assert torch.equal(
+        attention.post_layer_bank.states[(0, "decode.000")][:, :4, :],
+        attention.post_layer_bank.states[(0, "prefill")],
+    )
+    assert torch.equal(
+        attention.post_layer_bank.states[(0, "decode.001")][:, :5, :],
+        attention.post_layer_bank.states[(0, "decode.000")],
+    )
     assert attention.post_layer_bank.layer_index == 2
+
+
+def test_nonzero_attention_stitches_canonical_prefix_and_raw_suffix() -> None:
+    target = _target()
+    install_lfm2_cpcf_tied_interface(target, _interface())
+    install_lfm2_cpcf_neutral_norms(target)
+    generator = torch.Generator().manual_seed(20260717)
+    with torch.no_grad():
+        for name, parameter in target.model.layers[1].named_parameters():
+            if (
+                name.startswith("self_attn.")
+                and name.endswith("_proj.weight")
+            ):
+                parameter.copy_(
+                    torch.randn(
+                        parameter.shape,
+                        generator=generator,
+                        dtype=parameter.dtype,
+                    )
+                    * 0.05
+                )
+    phases = _phases()
+    input_bank = seed_lfm2_cpcf_phase_states(target, phases)
+    conv = replay_lfm2_cpcf_phase_bank(
+        target,
+        layer_index=0,
+        input_bank=input_bank,
+    )
+    replay = replay_lfm2_cpcf_phase_bank(
+        target,
+        layer_index=1,
+        input_bank=conv.post_layer_bank,
+    )
+
+    assert int(
+        torch.count_nonzero(
+            replay.replays[(0, "prefill")].operator_delta
+        ).item()
+    ) > 0
+    assert not torch.equal(
+        replay.post_layer_bank.states[(0, "prefill")],
+        conv.post_layer_bank.states[(0, "prefill")],
+    )
+    for previous, current in zip(phases, phases[1:]):
+        canonical = replay.post_layer_bank.state(current)
+        prior = replay.post_layer_bank.state(previous)
+        raw = replay.replays[current.identity].post_layer_residual
+        torch.testing.assert_close(
+            canonical[:, : previous.full_prefix_tokens, :],
+            prior,
+            rtol=0,
+            atol=0,
+        )
+        torch.testing.assert_close(
+            canonical[:, -current.sampled_suffix_tokens :, :],
+            raw[:, -current.sampled_suffix_tokens :, :],
+            rtol=0,
+            atol=0,
+        )
+
+
+def test_replay_rejects_corrupted_decode_input_prefix() -> None:
+    target = _target()
+    install_lfm2_cpcf_tied_interface(target, _interface())
+    install_lfm2_cpcf_neutral_norms(target)
+    phases = _phases()
+    bank = seed_lfm2_cpcf_phase_states(target, phases)
+    with torch.no_grad():
+        bank.states[phases[2].identity][:, 0, 0].add_(1.0)
+
+    with pytest.raises(
+        Lfm2CpcfModelCompilerError,
+        match="changed or skipped its authenticated causal prefix",
+    ):
+        replay_lfm2_cpcf_phase_bank(
+            target,
+            layer_index=0,
+            input_bank=bank,
+        )
+
+
+def test_replay_archive_rejects_resealed_drift_bound_loosening() -> None:
+    target = _target()
+    install_lfm2_cpcf_tied_interface(target, _interface())
+    install_lfm2_cpcf_neutral_norms(target)
+    replay = replay_lfm2_cpcf_phase_bank(
+        target,
+        layer_index=0,
+        input_bank=seed_lfm2_cpcf_phase_states(target, _phases()),
+    )
+    with pytest.raises(TypeError):
+        replay.report["causal_stitch_records"][1][
+            "raw_prefix_permitted_relative_error"
+        ] = 1.0
+    report = replay.as_dict()
+    report["causal_stitch_records"][1][
+        "raw_prefix_permitted_relative_error"
+    ] = 1.0
+    report["causal_stitch_records"][1][
+        "raw_prefix_permitted_maximum_absolute_error"
+    ] = 1e9
+    report["causal_stitch_bundle_sha256"] = _canonical_sha(
+        report["causal_stitch_records"]
+    )
+    body = dict(report)
+    body.pop("report_sha256")
+    report["report_sha256"] = _canonical_sha(body)
+
+    with pytest.raises(
+        Lfm2CpcfModelCompilerError,
+        match="unauthenticated drift metrics",
+    ):
+        Lfm2CpcfLayerReplayBank(
+            layer_index=replay.layer_index,
+            input_bank_sha256=replay.input_bank_sha256,
+            replays=replay.replays,
+            post_layer_bank=replay.post_layer_bank,
+            report=report,
+        )
 
 
 def test_replay_rejects_archive_dtype_drift_instead_of_casting() -> None:

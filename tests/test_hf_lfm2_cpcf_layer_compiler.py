@@ -212,10 +212,14 @@ def _attention_evidence(model, residual, sampled):
             "attention.v": value[:, :, -sampled:, :].clone(),
             "attention.context": context.clone(),
             "attention.o": output.clone(),
-            "attention.q_normalized_pre_rope": q_norm.clone(),
-            "attention.k_normalized_pre_rope": k_norm.clone(),
-            "attention.rope_cos": cosine.clone(),
-            "attention.rope_sin": sine.clone(),
+            "attention.q_normalized_pre_rope": q_norm[
+                :, :, -sampled:, :
+            ].clone(),
+            "attention.k_normalized_pre_rope": k_norm[
+                :, :, -sampled:, :
+            ].clone(),
+            "attention.rope_cos": cosine[:, -sampled:, :].clone(),
+            "attention.rope_sin": sine[:, -sampled:, :].clone(),
             "attention.key_history": key.clone(),
             "attention.value_history": value.clone(),
             "attention.qk_scores": scores.clone(),
@@ -327,10 +331,11 @@ def _fixture(kind):
     splits = ("selection", "fit", "validation")
     for ordinal, split in enumerate(splits):
         residual = torch.randn(2, 6, 8, generator=generator) + ordinal * 0.05
+        sampled = 6 if kind == "full_attention" else 4
         tensors = (
-            _attention_evidence(source, residual, 4)
+            _attention_evidence(source, residual, sampled)
             if kind == "full_attention"
-            else _conv_evidence(source, residual, 4)
+            else _conv_evidence(source, residual, sampled)
         )
         donor_sha = _sha(f"donor-{ordinal}")
         layer = Lfm2CpcfInstallableLayerEvidence(
@@ -640,6 +645,195 @@ def test_short_conv_phases_coalesce_into_one_causal_trajectory_per_record() -> N
         assert case.verify_authentication() is True
 
 
+def test_attention_phases_coalesce_exact_k_linear_chronology(
+    monkeypatch,
+) -> None:
+    source, target = _models("full_attention")
+    generator = torch.Generator().manual_seed(2026071704)
+    parent_residual = torch.randn(
+        (1, 4, 8),
+        generator=generator,
+        dtype=torch.float32,
+    )
+    parent_tensors = {
+        "prefill": _attention_evidence(
+            source,
+            parent_residual[:, :3, :],
+            3,
+        ),
+        "decode.000": _attention_evidence(
+            source,
+            parent_residual,
+            1,
+        ),
+    }
+    child_input = torch.randn(
+        (1, 4, 4),
+        generator=generator,
+        dtype=torch.float32,
+    )
+    child_state = torch.randn(
+        (1, 4, 4),
+        generator=generator,
+        dtype=torch.float32,
+    )
+    phases = []
+    states = {}
+    replays = {}
+    for phase_name, width, sampled in (
+        ("prefill", 3, 3),
+        ("decode.000", 4, 1),
+    ):
+        evidence = SimpleNamespace(
+            layer_index=0,
+            operator_kind="full_attention",
+            tensors=parent_tensors[phase_name],
+        )
+        phase = SimpleNamespace(
+            identity=(0, phase_name),
+            batch_index=0,
+            record_id="fit-record",
+            split="fit",
+            phase=phase_name,
+            batch_size=1,
+            full_prefix_tokens=width,
+            sampled_suffix_tokens=sampled,
+            input_ids=torch.arange(width).reshape(1, width),
+            attention_mask=torch.ones((1, width), dtype=torch.long),
+            position_ids=torch.arange(width).reshape(1, width),
+            parent_evidence=SimpleNamespace(layers=(evidence,)),
+        )
+        phases.append(phase)
+        states[phase.identity] = child_state[:, :width, :].clone()
+        replays[phase.identity] = SimpleNamespace(
+            operator_input=child_input[:, :width, :].clone(),
+        )
+
+    class InputBank:
+        def __init__(self) -> None:
+            self.phases = tuple(phases)
+
+        def state(self, phase: SimpleNamespace) -> object:
+            return states[phase.identity].clone()
+
+    def forbidden_recovery(**_kwargs):
+        raise AssertionError("attention chronology used inverse-RoPE recovery")
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "recover_lfm2_full_key_linear_history",
+        forbidden_recovery,
+    )
+    cases = layer_compiler._attention_cases(
+        source_model=source,
+        target_model=target,
+        source_layer=source.model.layers[0],
+        layer_index=0,
+        input_bank=InputBank(),
+        preinstall_replay=SimpleNamespace(replays=replays),
+        chart=_chart("full_attention"),
+    )
+
+    assert len(cases) == 1
+    case = cases[0]
+    expected_key_linear = torch.cat(
+        (
+            parent_tensors["prefill"]["attention.k_linear"],
+            parent_tensors["decode.000"]["attention.k_linear"],
+        ),
+        dim=2,
+    )
+    expected_query = torch.cat(
+        (
+            parent_tensors["prefill"]["attention.q"],
+            parent_tensors["decode.000"]["attention.q"],
+        ),
+        dim=2,
+    )
+    assert torch.equal(case.parent_key_linear, expected_key_linear)
+    assert torch.equal(case.parent_query, expected_query)
+    assert torch.equal(case.target_query_input, child_input)
+    assert torch.equal(case.target_key_value_input, child_input)
+    assert torch.equal(case.target_pre_attention_residual, child_state)
+    assert torch.equal(
+        case.key_mask,
+        torch.ones((1, 4, 4), dtype=torch.bool).tril(),
+    )
+    assert tuple(case.parent_query.shape[2:]) == (4, 2)
+    assert tuple(case.parent_key.shape[2:]) == (4, 2)
+    assert tuple(
+        case.parent_post_attention_residual_target_space.shape
+    ) == (1, 4, 4)
+
+
+def test_attention_trajectory_rejects_sampled_prefill_tail() -> None:
+    source, target = _models("full_attention")
+    generator = torch.Generator().manual_seed(2026071705)
+    tensors = _attention_evidence(
+        source,
+        torch.randn(
+            (1, 3, 8),
+            generator=generator,
+            dtype=torch.float32,
+        ),
+        2,
+    )
+    phase = SimpleNamespace(
+        identity=(0, "prefill"),
+        batch_index=0,
+        record_id="sampled-prefill",
+        split="fit",
+        phase="prefill",
+        batch_size=1,
+        full_prefix_tokens=3,
+        sampled_suffix_tokens=2,
+        input_ids=torch.arange(3).reshape(1, 3),
+        attention_mask=torch.ones((1, 3), dtype=torch.long),
+        position_ids=torch.arange(3).reshape(1, 3),
+        parent_evidence=SimpleNamespace(
+            layers=(
+                SimpleNamespace(
+                    layer_index=0,
+                    operator_kind="full_attention",
+                    tensors=tensors,
+                ),
+            )
+        ),
+    )
+    child = torch.randn(
+        (1, 3, 4),
+        generator=generator,
+        dtype=torch.float32,
+    )
+
+    class InputBank:
+        phases = (phase,)
+
+        @staticmethod
+        def state(_phase: SimpleNamespace) -> object:
+            return child.clone()
+
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="complete prefill Q/K/V trajectory",
+    ):
+        layer_compiler._attention_cases(
+            source_model=source,
+            target_model=target,
+            source_layer=source.model.layers[0],
+            layer_index=0,
+            input_bank=InputBank(),
+            preinstall_replay=SimpleNamespace(
+                replays={
+                    phase.identity: SimpleNamespace(
+                        operator_input=child.clone(),
+                    )
+                }
+            ),
+            chart=_chart("full_attention"),
+        )
+
+
 @pytest.mark.parametrize("kind", ["full_attention", "short_conv"])
 def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
     kind,
@@ -718,6 +912,21 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
     assert policy["validation_used_for_attention_fit"] is False
     assert policy["validation_used_for_mlp_fit"] is False
     assert policy["validation_used_for_short_conv_fit"] is False
+    if kind == "full_attention":
+        assert policy["operator_case_count"] == 1
+        assert policy["attention_fit_case_granularity"] == (
+            "one_complete_causal_trajectory_per_fit_record"
+        )
+        assert policy["attention_key_linear_history"] == (
+            "exact_prefill_plus_ordered_decode_suffixes"
+        )
+        assert policy["attention_inverse_rope_preimage_used"] is False
+        assert policy["attention_repeated_prefix_fit_rows"] is False
+    state_policy = result.report["actual_child_state_policy"]
+    assert state_policy["next_layer_input"] == (
+        "complete_prefill_plus_ordered_decode_suffix_layer_replay"
+    )
+    assert state_policy["recomputed_historical_prefix_propagated"] is False
     assert _state_sha(source.model.layers[0]) == source_before
     assert {
         name: id(parameter)

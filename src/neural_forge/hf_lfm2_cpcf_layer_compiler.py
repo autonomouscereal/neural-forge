@@ -818,16 +818,22 @@ def _attention_cases(
     preinstall_replay: Lfm2CpcfLayerReplayBank,
     chart: Lfm2CpcfLayerBoundaryCharts,
 ) -> tuple[Lfm2CachedAttentionFoldCase, ...]:
+    """Assemble one complete causal attention trajectory per fit record.
+
+    The sealed prefill contains every raw K-linear row.  Each decode phase
+    contains the one newly executed K-linear suffix plus the complete
+    post-RoPE K/V history.  Concatenating those exact raw rows is both more
+    faithful and more stable than assigning an artificial RMSNorm preimage to
+    every historical key.  It also avoids fitting the same prompt prefix once
+    per decode phase.
+    """
+
+    torch = _torch()
     source_attention = getattr(source_layer, "self_attn", None)
     if source_attention is None:
         raise Lfm2CpcfLayerCompilerError(
             "Source attention layer lacks self_attn."
         )
-    k_norm = _weight(
-        source_attention.k_layernorm,
-        "source_attention.k_layernorm",
-        dimensions=1,
-    )
     q_epsilon = _variance_epsilon(
         source_attention.q_layernorm,
         "source_attention.q_layernorm",
@@ -840,113 +846,392 @@ def _attention_cases(
         raise Lfm2CpcfLayerCompilerError(
             "Source Q/K normalization epsilon differs."
         )
-    result = []
+    grouped: dict[
+        tuple[int, str],
+        list[Lfm2CpcfTargetPhase],
+    ] = {}
     for phase in input_bank.phases:
-        if phase.split != "fit":
-            continue
-        tensors = _phase_evidence(phase, layer_index, "full_attention")
-        replay = preinstall_replay.replays[phase.identity]
-        parent_q_linear = _finite_tensor(
-            tensors["attention.q_linear"],
-            "attention.q_linear",
-            dimensions=4,
-        )
-        full_cos, full_sin = _same_rope(
-            source_model,
-            target_model,
-            phase,
-            dtype=parent_q_linear.dtype,
-        )
-        cached_cos = _finite_tensor(
-            tensors["attention.rope_cos"],
-            "attention.rope_cos",
-            dimensions=3,
-        )
-        cached_sin = _finite_tensor(
-            tensors["attention.rope_sin"],
-            "attention.rope_sin",
-            dimensions=3,
-        )
-        current = int(cached_cos.shape[1])
+        if phase.split == "fit":
+            grouped.setdefault(
+                (phase.batch_index, phase.record_id),
+                [],
+            ).append(phase)
+
+    result = []
+    for (batch_index, record_id), trajectory in grouped.items():
+        query_linear_parts = []
+        query_parts = []
+        context_parts = []
+        endpoint_parts = []
+        key_linear_history = None
+        key_history = None
+        value_history = None
+        key_mask_history = None
+        previous_phase: Lfm2CpcfTargetPhase | None = None
+        previous_child_input = None
+        previous_child_state = None
+        previous_input_ids = None
+        previous_attention_mask = None
+        previous_position_ids = None
+        final_phase: Lfm2CpcfTargetPhase | None = None
+        final_child_input = None
+        final_child_state = None
+        final_cos = None
+        final_sin = None
+
+        for phase_index, phase in enumerate(trajectory):
+            expected_phase = (
+                "prefill"
+                if phase_index == 0
+                else f"decode.{phase_index - 1:03d}"
+            )
+            if phase.phase != expected_phase:
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Attention trajectory {batch_index}:{record_id} skips "
+                    f"or reorders causal phase {expected_phase!r}."
+                )
+            if previous_phase is not None and (
+                phase.split != previous_phase.split
+                or phase.full_prefix_tokens
+                != (
+                    previous_phase.full_prefix_tokens
+                    + phase.sampled_suffix_tokens
+                )
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Attention trajectory {batch_index}:{record_id} changed "
+                    "split or target prefix geometry."
+                )
+
+            tensors = _phase_evidence(
+                phase,
+                layer_index,
+                "full_attention",
+            )
+            replay = preinstall_replay.replays[phase.identity]
+            parent_q_linear = _finite_tensor(
+                tensors["attention.q_linear"],
+                f"phase {phase.identity!r} attention.q_linear",
+                dimensions=4,
+            )
+            parent_k_linear = _finite_tensor(
+                tensors["attention.k_linear"],
+                f"phase {phase.identity!r} attention.k_linear",
+                dimensions=4,
+            )
+            parent_query = _finite_tensor(
+                tensors["attention.q"],
+                f"phase {phase.identity!r} attention.q",
+                dimensions=4,
+            )
+            parent_context = _finite_tensor(
+                tensors["attention.context"],
+                f"phase {phase.identity!r} attention.context",
+                dimensions=4,
+            )
+            current_key = _finite_tensor(
+                tensors["attention.k"],
+                f"phase {phase.identity!r} attention.k",
+                dimensions=4,
+            )
+            current_value = _finite_tensor(
+                tensors["attention.v"],
+                f"phase {phase.identity!r} attention.v",
+                dimensions=4,
+            )
+            observed_key_history = _finite_tensor(
+                tensors["attention.key_history"],
+                f"phase {phase.identity!r} attention.key_history",
+                dimensions=4,
+            )
+            observed_value_history = _finite_tensor(
+                tensors["attention.value_history"],
+                f"phase {phase.identity!r} attention.value_history",
+                dimensions=4,
+            )
+            current = phase.sampled_suffix_tokens
+            if (
+                int(parent_q_linear.shape[2]) != current
+                or int(parent_k_linear.shape[2]) != current
+                or int(parent_query.shape[2]) != current
+                or int(parent_context.shape[2]) != current
+                or int(current_key.shape[2]) != current
+                or int(current_value.shape[2]) != current
+                or int(observed_key_history.shape[2])
+                != phase.full_prefix_tokens
+                or tuple(observed_value_history.shape)
+                != tuple(observed_key_history.shape)
+                or tuple(parent_q_linear.shape) != tuple(parent_query.shape)
+                or tuple(parent_k_linear.shape) != tuple(current_key.shape)
+                or tuple(current_value.shape) != tuple(current_key.shape)
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} attention rows do not describe "
+                    "one complete history plus one aligned terminal suffix."
+                )
+
+            full_cos, full_sin = _same_rope(
+                source_model,
+                target_model,
+                phase,
+                dtype=parent_q_linear.dtype,
+            )
+            cached_cos = _finite_tensor(
+                tensors["attention.rope_cos"],
+                f"phase {phase.identity!r} attention.rope_cos",
+                dimensions=3,
+            )
+            cached_sin = _finite_tensor(
+                tensors["attention.rope_sin"],
+                f"phase {phase.identity!r} attention.rope_sin",
+                dimensions=3,
+            )
+            if (
+                tuple(cached_cos.shape)
+                != (
+                    phase.batch_size,
+                    current,
+                    int(parent_q_linear.shape[3]),
+                )
+                or tuple(cached_sin.shape) != tuple(cached_cos.shape)
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} cached RoPE is not its exact "
+                    "terminal query/key suffix."
+                )
+            tolerance = (
+                4.0 * torch.finfo(parent_q_linear.dtype).eps
+                if parent_q_linear.dtype
+                in {torch.float16, torch.bfloat16}
+                else 2e-5
+            )
+            if not (
+                torch.allclose(
+                    full_cos[:, -current:, :].to(torch.float32),
+                    cached_cos.to(torch.float32),
+                    rtol=tolerance,
+                    atol=tolerance,
+                )
+                and torch.allclose(
+                    full_sin[:, -current:, :].to(torch.float32),
+                    cached_sin.to(torch.float32),
+                    rtol=tolerance,
+                    atol=tolerance,
+                )
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    "Static source RoPE differs from sealed parent cache "
+                    f"evidence for phase {phase.identity!r}."
+                )
+            if not (
+                torch.equal(
+                    observed_key_history[:, :, -current:, :],
+                    current_key,
+                )
+                and torch.equal(
+                    observed_value_history[:, :, -current:, :],
+                    current_value,
+                )
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} current K/V rows are not the "
+                    "exact terminal suffix of their sealed histories."
+                )
+
+            observed_mask = _attention_key_mask(
+                tensors["attention.additive_mask"]
+            )
+            if tuple(observed_mask.shape) != (
+                phase.batch_size,
+                current,
+                phase.full_prefix_tokens,
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} attention mask does not cover "
+                    "its terminal queries over the complete key history."
+                )
+            child_input = _finite_tensor(
+                replay.operator_input,
+                f"phase {phase.identity!r} actual child operator input",
+                dimensions=3,
+            )
+            child_state = _finite_tensor(
+                input_bank.state(phase),
+                f"phase {phase.identity!r} actual child pre-operator state",
+                dimensions=3,
+            )
+            if (
+                tuple(child_input.shape[:2])
+                != (phase.batch_size, phase.full_prefix_tokens)
+                or tuple(child_state.shape[:2])
+                != (phase.batch_size, phase.full_prefix_tokens)
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} actual child states do not "
+                    "cover their complete target prefix."
+                )
+
+            if previous_phase is None:
+                if current != phase.full_prefix_tokens:
+                    raise Lfm2CpcfLayerCompilerError(
+                        f"Phase {phase.identity!r} must seal the complete "
+                        "prefill Q/K/V trajectory, not a sampled tail."
+                    )
+                key_linear_history = parent_k_linear
+                key_history = observed_key_history
+                value_history = observed_value_history
+                key_mask_history = observed_mask
+            else:
+                previous_tokens = previous_phase.full_prefix_tokens
+                if not (
+                    _floating_causal_prefix_matches(
+                        previous_child_input,
+                        child_input,
+                    )
+                    and _floating_causal_prefix_matches(
+                        previous_child_state,
+                        child_state,
+                    )
+                    and _integer_causal_prefix_matches(
+                        previous_input_ids,
+                        phase.input_ids,
+                    )
+                    and _integer_causal_prefix_matches(
+                        previous_attention_mask,
+                        phase.attention_mask,
+                    )
+                    and _integer_causal_prefix_matches(
+                        previous_position_ids,
+                        phase.position_ids,
+                    )
+                ):
+                    raise Lfm2CpcfLayerCompilerError(
+                        f"Phase {phase.identity!r} changed an authenticated "
+                        "causal child prefix."
+                    )
+                if (
+                    key_linear_history is None
+                    or key_history is None
+                    or value_history is None
+                    or key_mask_history is None
+                    or int(key_linear_history.shape[2]) != previous_tokens
+                    or not torch.equal(
+                        observed_key_history[:, :, :previous_tokens, :],
+                        key_history,
+                    )
+                    or not torch.equal(
+                        observed_value_history[:, :, :previous_tokens, :],
+                        value_history,
+                    )
+                ):
+                    raise Lfm2CpcfLayerCompilerError(
+                        f"Phase {phase.identity!r} changed its exact sealed "
+                        "parent K/V causal prefix."
+                    )
+                key_linear_history = torch.cat(
+                    (key_linear_history, parent_k_linear),
+                    dim=2,
+                ).contiguous()
+                key_history = observed_key_history
+                value_history = observed_value_history
+                padded_previous_mask = torch.nn.functional.pad(
+                    key_mask_history,
+                    (0, current),
+                    value=False,
+                )
+                key_mask_history = torch.cat(
+                    (padded_previous_mask, observed_mask),
+                    dim=1,
+                ).contiguous()
+
+            endpoint = chart.post_operator.encode_shaped(
+                tensors["residual.post_operator"]
+            )
+            if (
+                int(endpoint.shape[1]) != current
+                or int(key_linear_history.shape[2])
+                != phase.full_prefix_tokens
+                or tuple(key_mask_history.shape)
+                != (
+                    phase.batch_size,
+                    phase.full_prefix_tokens,
+                    phase.full_prefix_tokens,
+                )
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} did not extend one contiguous "
+                    "attention trajectory."
+                )
+            query_linear_parts.append(parent_q_linear)
+            query_parts.append(parent_query)
+            context_parts.append(parent_context)
+            endpoint_parts.append(endpoint)
+            previous_phase = phase
+            previous_child_input = child_input
+            previous_child_state = child_state
+            previous_input_ids = phase.input_ids
+            previous_attention_mask = phase.attention_mask
+            previous_position_ids = phase.position_ids
+            final_phase = phase
+            final_child_input = child_input
+            final_child_state = child_state
+            final_cos = full_cos
+            final_sin = full_sin
+
         if (
-            tuple(cached_sin.shape) != tuple(cached_cos.shape)
-            or current > phase.full_prefix_tokens
+            final_phase is None
+            or final_child_input is None
+            or final_child_state is None
+            or final_cos is None
+            or final_sin is None
+            or key_linear_history is None
+            or key_history is None
+            or value_history is None
+            or key_mask_history is None
         ):
             raise Lfm2CpcfLayerCompilerError(
-                "Cached parent RoPE terms are not a causal suffix."
+                "Attention trajectory did not produce one complete causal case."
             )
-        tolerance = (
-            4.0 * _torch().finfo(parent_q_linear.dtype).eps
-            if parent_q_linear.dtype
-            in {_torch().float16, _torch().bfloat16}
-            else 2e-5
-        )
+        parent_query_linear = torch.cat(
+            query_linear_parts,
+            dim=2,
+        ).contiguous()
+        parent_query = torch.cat(query_parts, dim=2).contiguous()
+        parent_context = torch.cat(context_parts, dim=2).contiguous()
+        parent_endpoint = torch.cat(endpoint_parts, dim=1).contiguous()
         if not (
-            _torch().allclose(
-                full_cos[:, -current:, :].to(_torch().float32),
-                cached_cos.to(_torch().float32),
-                rtol=tolerance,
-                atol=tolerance,
-            )
-            and _torch().allclose(
-                full_sin[:, -current:, :].to(_torch().float32),
-                cached_sin.to(_torch().float32),
-                rtol=tolerance,
-                atol=tolerance,
-            )
+            int(parent_query_linear.shape[2])
+            == int(parent_query.shape[2])
+            == int(parent_context.shape[2])
+            == int(parent_endpoint.shape[1])
+            == final_phase.full_prefix_tokens
         ):
             raise Lfm2CpcfLayerCompilerError(
-                "Static source RoPE differs from sealed parent cache evidence."
+                f"Attention trajectory {batch_index}:{record_id} did not "
+                "cover every causal query row exactly once."
             )
-        key_history = _finite_tensor(
-            tensors["attention.key_history"],
-            "attention.key_history",
-            dimensions=4,
-        )
-        if int(key_history.shape[2]) != phase.full_prefix_tokens:
-            raise Lfm2CpcfLayerCompilerError(
-                "Parent K history does not cover the target full prefix."
-            )
-        full_key_linear = recover_lfm2_full_key_linear_history(
-            parent_key_history=key_history,
-            parent_key_norm_weight=k_norm,
-            full_cosine=full_cos,
-            full_sine=full_sin,
-            norm_epsilon=k_epsilon,
-            cached_current_key_linear=tensors["attention.k_linear"],
-            cached_current_normalized_pre_rope=tensors[
-                "attention.k_normalized_pre_rope"
-            ],
-        )
-        parent_endpoint = chart.post_operator.encode_shaped(
-            tensors["residual.post_operator"]
-        )
         result.append(
             Lfm2CachedAttentionFoldCase(
-                target_query_input=phase.suffix(replay.operator_input),
-                target_key_value_input=replay.operator_input,
-                parent_query_linear=parent_q_linear,
-                parent_key_linear=full_key_linear,
-                parent_value=tensors["attention.value_history"],
-                parent_query=tensors["attention.q"],
+                target_query_input=final_child_input,
+                target_key_value_input=final_child_input,
+                parent_query_linear=parent_query_linear,
+                parent_key_linear=key_linear_history,
+                parent_value=value_history,
+                parent_query=parent_query,
                 parent_key=key_history,
-                parent_context=tensors["attention.context"],
+                parent_context=parent_context,
                 parent_post_attention_residual_target_space=parent_endpoint,
-                target_pre_attention_residual=phase.suffix(
-                    input_bank.state(phase)
-                ),
-                query_cosine=phase.suffix(full_cos),
-                query_sine=phase.suffix(full_sin),
-                key_cosine=full_cos,
-                key_sine=full_sin,
-                key_mask=_attention_key_mask(
-                    tensors["attention.additive_mask"]
-                ),
+                target_pre_attention_residual=final_child_state,
+                query_cosine=final_cos,
+                query_sine=final_sin,
+                key_cosine=final_cos,
+                key_sine=final_sin,
+                key_mask=key_mask_history,
             )
         )
     if not result:
         raise Lfm2CpcfLayerCompilerError(
-            "Attention compilation requires at least one fit phase."
+            "Attention compilation requires at least one fit trajectory."
         )
     return tuple(result)
 
@@ -1977,11 +2262,32 @@ def compile_and_install_lfm2_cpcf_layer(
             },
             "split_phase_counts": split_counts,
             "solver_evidence_policy": {
+                "operator_case_count": len(cases),
                 "selection_used_for_operator_fit": False,
                 "selection_used_for_mlp_fit": False,
                 "validation_used_for_attention_fit": False,
                 "validation_used_for_mlp_fit": False,
                 "validation_used_for_short_conv_fit": False,
+                "attention_fit_case_granularity": (
+                    "one_complete_causal_trajectory_per_fit_record"
+                    if operator_kind == "full_attention"
+                    else "not_applicable"
+                ),
+                "attention_key_linear_history": (
+                    "exact_prefill_plus_ordered_decode_suffixes"
+                    if operator_kind == "full_attention"
+                    else "not_applicable"
+                ),
+                "attention_inverse_rope_preimage_used": (
+                    False
+                    if operator_kind == "full_attention"
+                    else "not_applicable"
+                ),
+                "attention_repeated_prefix_fit_rows": (
+                    False
+                    if operator_kind == "full_attention"
+                    else "not_applicable"
+                ),
                 "short_conv_validation_role": (
                     "post_materialization_heldout_evaluator"
                     if operator_kind == "short_conv"
@@ -1990,14 +2296,15 @@ def compile_and_install_lfm2_cpcf_layer(
             },
             "actual_child_state_policy": {
                 "operator_fit_input": (
-                    "full_prefix_preinstall_target_native_replay"
+                    "causally_stitched_full_prefix_preinstall_target_native_replay"
                 ),
                 "mlp_fit_input": (
                     "suffix_of_full_prefix_installed_operator_replay"
                 ),
                 "next_layer_input": (
-                    "full_prefix_installed_operator_plus_mlp_replay"
+                    "complete_prefill_plus_ordered_decode_suffix_layer_replay"
                 ),
+                "recomputed_historical_prefix_propagated": False,
                 "independent_parent_projection_substitution": False,
             },
             "audit": {
