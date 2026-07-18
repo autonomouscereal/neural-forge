@@ -89,6 +89,11 @@ _COMPATIBLE_COLLECTOR_SOURCE_SHA256 = frozenset(
         # frontier.  The new collector mode is opt-in; the legacy/default
         # cached-verified request and its tensor schema remain byte-identical.
         "7486bfc0712cc9bb3a918407daa46a688ecf8da6737cc7b2f2488aba6acdc8c2",
+        # Frozen CPCF v4r2r1 broad-256 parent cache.  The later source revision
+        # adds read-only selective authenticated-session and residency APIs;
+        # it does not alter capture, tensor inventory, record construction,
+        # parent execution, canonical LFM2 contracts, or runtime algebra.
+        "71e99ee9b1c22ae893b76df90a3de93341e1b894ea7c39606f98d62e18aa13bf",
     }
 )
 _ALLOWED_BATCH_FIELDS = frozenset(
