@@ -831,31 +831,192 @@ def test_numerical_frontier_failure_uses_explicit_v5_validator() -> None:
         ) is (selector is not None)
         assert layer_compiler._valid_short_conv_validation_report(report)
 
+        def reseal_in_place(value):
+            value.pop("report_sha256", None)
+            value["report_sha256"] = _sha(value)
+
         def reseal_with(mutator):
             body = copy.deepcopy(report)
             body.pop("report_sha256")
             mutator(body)
             return {**body, "report_sha256": _sha(body)}
 
+        def assert_rejected(mutator):
+            assert not layer_compiler._valid_short_conv_validation_report(
+                reseal_with(mutator)
+            )
+
+        def rebind_frontier(body):
+            frontier = body["numerical_frontier"]
+            reseal_in_place(frontier)
+            frontier_sha = frontier["report_sha256"]
+            body["numerical_frontier_report_sha256"] = frontier_sha
+            pool = body["candidate_pool_report"]
+            pool["numerical_frontier_report_sha256"] = frontier_sha
+            reseal_in_place(pool)
+            for provenance in body["candidate_fit_reports"].values():
+                provenance[
+                    "numerical_frontier_report_sha256"
+                ] = frontier_sha
+                reseal_in_place(provenance)
+
+        def rebind_request(body):
+            request = body["numerical_frontier_request"]
+            reseal_in_place(request)
+            request_sha = request["report_sha256"]
+            body["numerical_frontier_request_sha256"] = request_sha
+            frontier = body["numerical_frontier"]
+            frontier["request_sha256"] = request_sha
+            for candidate_id, raw in frontier[
+                "raw_candidate_reports"
+            ].items():
+                raw["request_sha256"] = request_sha
+                reseal_in_place(raw)
+                frontier["raw_candidate_report_sha256"][candidate_id] = raw[
+                    "report_sha256"
+                ]
+            body["candidate_pool_report"]["request_sha256"] = request_sha
+            for provenance in body["candidate_fit_reports"].values():
+                provenance["request_sha256"] = request_sha
+                for source in provenance["sources"]:
+                    raw = source["numerical_raw_candidate_report"]
+                    raw["request_sha256"] = request_sha
+                    reseal_in_place(raw)
+                    source["numerical_raw_candidate_report_sha256"] = raw[
+                        "report_sha256"
+                    ]
+            rebind_frontier(body)
+
         for execution in ({}, {"training_steps": 0}):
-            mutated = reseal_with(
+            assert_rejected(
                 lambda body, value=execution: body.__setitem__(
                     "execution",
                     value,
                 )
             )
-            assert not layer_compiler._valid_short_conv_validation_report(
-                mutated
-            )
-        for split in ("selection", "validation"):
-            mutated = reseal_with(
+        for split in ("fit", "selection", "validation"):
+            assert_rejected(
                 lambda body, value=split: body[
                     "case_authentication_sha256"
                 ].__setitem__(value, [])
             )
-            assert not layer_compiler._valid_short_conv_validation_report(
-                mutated
+        for split in ("selection", "validation"):
+            assert_rejected(
+                lambda body, value=split: body[
+                    "case_authentication_sha256"
+                ].__setitem__(value, ["f" * 64])
             )
+
+        def delete_pool_evidence(body, field):
+            pool = body["candidate_pool_report"]
+            pool.pop(field)
+            reseal_in_place(pool)
+
+        for field in (
+            "fold_case_authentication_sha256",
+            "projection_case_authentication_sha256",
+        ):
+            assert_rejected(
+                lambda body, value=field: delete_pool_evidence(body, value)
+            )
+
+        def empty_evaluation(body, split):
+            evaluation = body[f"{split}_evaluation"]
+            evaluation["cases"] = []
+            evaluation["case_count"] = 0
+            reseal_in_place(evaluation)
+
+        for split in ("fit", "selection", "validation"):
+            assert_rejected(
+                lambda body, value=split: empty_evaluation(body, value)
+            )
+
+        def mismatch_pool_policy(body):
+            pool = body["candidate_pool_report"]
+            pool["policy_sha256"] = "e" * 64
+            reseal_in_place(pool)
+
+        assert_rejected(mismatch_pool_policy)
+        assert_rejected(
+            lambda body: body.__setitem__("source_hidden_size", 999)
+        )
+
+        def nonzero_provenance_execution(body):
+            provenance = next(
+                iter(body["candidate_fit_reports"].values())
+            )
+            provenance["execution"]["training_steps"] = 1
+            reseal_in_place(provenance)
+
+        assert_rejected(nonzero_provenance_execution)
+
+        def nonzero_provenance_source_execution(body):
+            provenance = next(
+                iter(body["candidate_fit_reports"].values())
+            )
+            source = provenance["sources"][0]
+            raw = source["numerical_raw_candidate_report"]
+            raw["execution"]["training_steps"] = 1
+            reseal_in_place(raw)
+            source["numerical_raw_candidate_report_sha256"] = raw[
+                "report_sha256"
+            ]
+            reseal_in_place(provenance)
+
+        assert_rejected(nonzero_provenance_source_execution)
+
+        def nonzero_frontier_execution(body):
+            body["numerical_frontier"]["execution"]["training_steps"] = 1
+            rebind_frontier(body)
+
+        assert_rejected(nonzero_frontier_execution)
+
+        def incomplete_request_execution(body):
+            body["numerical_frontier_request"]["execution"].pop(
+                "optimizer_steps"
+            )
+            rebind_request(body)
+
+        assert_rejected(incomplete_request_execution)
+
+        def nonzero_raw_execution(body):
+            frontier = body["numerical_frontier"]
+            candidate_id = frontier["raw_candidate_ids"][0]
+            raw = frontier["raw_candidate_reports"][candidate_id]
+            raw["execution"]["training_steps"] = 1
+            reseal_in_place(raw)
+            frontier["raw_candidate_report_sha256"][candidate_id] = raw[
+                "report_sha256"
+            ]
+            for provenance in body["candidate_fit_reports"].values():
+                for source in provenance["sources"]:
+                    if source["candidate_id"] == candidate_id:
+                        source["numerical_raw_candidate_report"] = (
+                            copy.deepcopy(raw)
+                        )
+                        source[
+                            "numerical_raw_candidate_report_sha256"
+                        ] = raw["report_sha256"]
+            rebind_frontier(body)
+
+        assert_rejected(nonzero_raw_execution)
+
+        if selector is not None:
+
+            def nonzero_selector_execution(body):
+                receipt = body["preinstall_candidate_selector_receipt"]
+                selector_report = receipt["selector_report"]
+                selector_report["execution"]["training_steps"] = 1
+                reseal_in_place(selector_report)
+                receipt["selector_report_sha256"] = selector_report[
+                    "report_sha256"
+                ]
+                reseal_in_place(receipt)
+                body[
+                    "preinstall_candidate_selector_receipt_sha256"
+                ] = receipt["report_sha256"]
+
+            assert_rejected(nonzero_selector_execution)
 
 
 def test_orchestrator_rejects_mutated_authenticated_case() -> None:

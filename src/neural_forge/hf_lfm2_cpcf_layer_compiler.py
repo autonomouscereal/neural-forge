@@ -315,6 +315,236 @@ _SHORT_CONV_V4_EXECUTION_FIELDS = frozenset(
         "fallback_paths",
     }
 )
+_SHORT_CONV_V5_NUMERICAL_EXECUTION_FIELDS = (
+    _SHORT_CONV_V4_EXECUTION_FIELDS - {"fallback_paths"}
+)
+_SHORT_CONV_V5_SELECTOR_EXECUTION_FIELDS = frozenset(
+    {
+        "training_steps",
+        "backward_calls",
+        "optimizer_steps",
+        "parameters_pruned",
+        "parameters_quantized",
+    }
+)
+_SHORT_CONV_V5_NUMERICAL_REQUEST_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "policy_sha256",
+        "target_dtype",
+        "source_tensor_sha256",
+        "source_tensor_inventory_sha256",
+        "fit_case_authentication_sha256",
+        "parent_context_sha256",
+        "parent_context_inventory_sha256",
+        "target_template_sha256",
+        "target_template_inventory_sha256",
+        "source_hidden_size",
+        "target_hidden_size",
+        "source_fir_length",
+        "target_fir_length",
+        "selection_cases_exposed",
+        "validation_cases_exposed",
+        "fit_only",
+        "execution",
+        "report_sha256",
+    }
+)
+_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "request_sha256",
+        "candidate_id",
+        "candidate_kind",
+        "state_sha256",
+        "method_provenance",
+        "method_provenance_sha256",
+        "fit_only",
+        "selection_cases_consumed",
+        "validation_cases_consumed",
+        "execution",
+        "report_sha256",
+    }
+)
+_SHORT_CONV_V5_NUMERICAL_FRONTIER_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "adapter_id",
+        "request_sha256",
+        "context_encoder_sha256",
+        "fit_case_authentication_sha256",
+        "raw_candidate_count",
+        "raw_candidate_ids",
+        "raw_candidate_state_sha256",
+        "raw_candidate_report_sha256",
+        "raw_candidate_reports",
+        "source_channel_count",
+        "source_numeric_participant_indices",
+        "source_channels_selected",
+        "source_channels_dropped",
+        "full_source_numeric_participation",
+        "adapter_provenance",
+        "adapter_provenance_sha256",
+        "fit_only",
+        "selection_cases_consumed",
+        "validation_cases_consumed",
+        "execution",
+        "report_sha256",
+    }
+)
+_SHORT_CONV_V5_NUMERICAL_PROVENANCE_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "candidate_id",
+        "policy_sha256",
+        "target_dtype",
+        "request_sha256",
+        "numerical_frontier_report_sha256",
+        "target_dtype_candidate_state_sha256",
+        "source_alias_count",
+        "source_alias_candidate_ids",
+        "sources",
+        "fit_case_authentication_sha256",
+        "fit_only",
+        "selection_cases_consumed",
+        "validation_cases_consumed",
+        "actual_target_dtype_materialization_before_deduplication",
+        "legacy_v4_candidate_provenance_claimed",
+        "execution",
+        "report_sha256",
+    }
+)
+_SHORT_CONV_V5_NUMERICAL_SOURCE_FIELDS = frozenset(
+    {
+        "candidate_id",
+        "candidate_kind",
+        "numerical_raw_state_sha256",
+        "numerical_raw_candidate_report",
+        "numerical_raw_candidate_report_sha256",
+    }
+)
+_SHORT_CONV_V5_NUMERICAL_POOL_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "policy_sha256",
+        "target_dtype",
+        "request_sha256",
+        "numerical_frontier_report_sha256",
+        "raw_candidate_count",
+        "unique_target_dtype_candidate_count",
+        "target_dtype_duplicate_count",
+        "selection_feasibility_policy",
+        "selection_feasibility_policy_sha256",
+        "fold_case_authentication_sha256",
+        "projection_case_authentication_sha256",
+        "candidate_ids",
+        "candidate_state_sha256",
+        "source_channels_selected",
+        "source_channels_dropped",
+        "full_source_numeric_participation",
+        "fit_only_candidate_generation",
+        "selection_cases_consumed_during_generation",
+        "validation_cases_consumed_during_generation",
+        "legacy_v4_candidate_pool_claimed",
+        "report_sha256",
+    }
+)
+_SHORT_CONV_V5_NUMERICAL_POOL_REPLAY_FIELDS = frozenset(
+    {
+        "candidate_replay_backend_report_sha256",
+        "candidate_replay_work_items",
+        "candidate_replay_work_item_count",
+        "canonical_candidate_replay_order",
+        "scheduled_replay_changes_closed_form_solve_math",
+    }
+)
+_SHORT_CONV_V4_EVALUATION_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "policy_sha256",
+        "split",
+        "target_dtype",
+        "case_balanced",
+        "case_count",
+        "cases",
+        "evidence_sha256",
+        "candidate_state_sha256",
+        "mean_case_relative_rmse",
+        "maximum_case_relative_rmse",
+        "mean_case_cosine_similarity",
+        "minimum_case_cosine_similarity",
+        "maximum_case_absolute_error",
+        "mean_case_target_dtype_drift_relative_rmse",
+        "context_evidence_present",
+        "mean_case_context_relative_rmse",
+        "maximum_case_context_relative_rmse",
+        "mean_case_context_cosine_similarity",
+        "minimum_case_context_cosine_similarity",
+        "maximum_case_context_absolute_error",
+        "mean_case_context_target_dtype_drift_relative_rmse",
+        "actual_parameter_and_intermediate_target_dtype_replay",
+        "final_output_materialization_only",
+        "selection_used_for_parameter_fitting",
+        "validation_used_for_parameter_fitting",
+        "report_sha256",
+    }
+)
+_SHORT_CONV_V4_EVALUATION_CASE_FIELDS = frozenset(
+    {
+        "case_id",
+        "rows",
+        "width",
+        "relative_rmse",
+        "cosine_similarity",
+        "maximum_absolute_error",
+        "mean_absolute_error",
+        "target_dtype_drift_relative_rmse",
+        "fp64_prediction_sha256",
+        "materialized_prediction_sha256",
+        "target_sha256",
+        "valid_rows_sha256",
+        "projection_case_authentication_sha256",
+        "context_rows",
+        "context_width",
+        "context_relative_rmse",
+        "context_cosine_similarity",
+        "context_maximum_absolute_error",
+        "context_target_dtype_drift_relative_rmse",
+        "context_target_sha256",
+        "valid_context_rows_sha256",
+        "case_authentication_sha256",
+        "candidate_state_sha256",
+        "actual_parameter_and_intermediate_target_dtype_replay",
+        "arithmetic_report_sha256",
+    }
+)
+_SHORT_CONV_V5_NUMERICAL_SOURCE_TENSOR_ROLES = frozenset(
+    {
+        "source_in_proj_weight",
+        "source_in_proj_bias",
+        "source_fir_kernel",
+        "source_fir_bias",
+        "source_out_proj_weight",
+        "source_out_proj_bias",
+        "output_encoder",
+    }
+)
+_SHORT_CONV_V5_NUMERICAL_TARGET_TEMPLATE_ROLES = frozenset(
+    {
+        "in_proj_weight",
+        "in_proj_bias",
+        "fir_kernel",
+        "fir_bias",
+        "writer_weight",
+        "writer_bias",
+    }
+)
 _NO_SUCCESS_FIELDS = frozenset(
     {
         "accepted_artifact",
@@ -4180,6 +4410,18 @@ def _valid_short_conv_v5_selector_validation_report(
         return False
 
 
+def _valid_exact_zero_execution(
+    value: Any,
+    *,
+    fields: frozenset[str],
+) -> bool:
+    return bool(
+        isinstance(value, Mapping)
+        and set(value) == fields
+        and all(type(value[field]) is int and value[field] == 0 for field in fields)
+    )
+
+
 def _valid_short_conv_v5_selector_receipt_only(
     report: Mapping[str, Any],
 ) -> bool:
@@ -4203,6 +4445,12 @@ def _valid_short_conv_v5_selector_receipt_only(
         else {}
     )
     selector_seal = selector_body.pop("report_sha256", None)
+    receipt_execution = receipt.get("execution")
+    selector_execution = (
+        selector_report.get("execution")
+        if isinstance(selector_report, Mapping)
+        else None
+    )
     return bool(
         receipt.get("schema")
         == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA
@@ -4230,6 +4478,14 @@ def _valid_short_conv_v5_selector_receipt_only(
         and receipt.get("fit_reports_exposed_to_selector") is False
         and receipt.get("validation_reports_exposed_to_selector") is False
         and receipt.get("post_install_rescoring") is False
+        and _valid_exact_zero_execution(
+            receipt_execution,
+            fields=_SHORT_CONV_V5_SELECTOR_EXECUTION_FIELDS,
+        )
+        and _valid_exact_zero_execution(
+            selector_execution,
+            fields=_SHORT_CONV_V5_SELECTOR_EXECUTION_FIELDS,
+        )
         and report.get("post_install_rescoring_performed") is False
         and report.get("preinstall_candidate_selector_active") is True
         and receipt.get("selected_candidate_id") == selected_id
@@ -4284,6 +4540,85 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 and _sha(body) == seal
             )
 
+        def valid_evaluation(
+            value: Any,
+            *,
+            split: str,
+            candidate_state_sha256: str,
+        ) -> bool:
+            if (
+                not sealed(value, LFM2_CPCF_SHORT_CONV_V4_SCHEMA)
+                or set(value) != _SHORT_CONV_V4_EVALUATION_FIELDS
+            ):
+                return False
+            cases = value.get("cases")
+            if not (
+                value.get("kind") == "target_dtype_evaluation"
+                and value.get("policy_sha256")
+                == solver_policy.authentication_sha256
+                and value.get("target_dtype") == solver_policy.target_dtype
+                and value.get("split") == split
+                and value.get("case_balanced") is True
+                and isinstance(cases, list)
+                and cases
+                and type(value.get("case_count")) is int
+                and value.get("case_count") == len(cases)
+                and isinstance(value.get("evidence_sha256"), str)
+                and _SHA256.fullmatch(value["evidence_sha256"]) is not None
+                and value.get("candidate_state_sha256")
+                == candidate_state_sha256
+                and value.get("context_evidence_present") is True
+                and value.get(
+                    "actual_parameter_and_intermediate_target_dtype_replay"
+                )
+                is True
+                and value.get("final_output_materialization_only") is False
+                and value.get("selection_used_for_parameter_fitting") is False
+                and value.get("validation_used_for_parameter_fitting") is False
+            ):
+                return False
+            case_ids = []
+            for case in cases:
+                if not (
+                    isinstance(case, Mapping)
+                    and set(case) == _SHORT_CONV_V4_EVALUATION_CASE_FIELDS
+                    and isinstance(case.get("case_id"), str)
+                    and bool(case["case_id"].strip())
+                    and type(case.get("rows")) is int
+                    and case["rows"] > 0
+                    and type(case.get("width")) is int
+                    and case["width"] > 0
+                    and type(case.get("context_rows")) is int
+                    and case["context_rows"] > 0
+                    and type(case.get("context_width")) is int
+                    and case["context_width"] > 0
+                    and isinstance(
+                        case.get("projection_case_authentication_sha256"),
+                        str,
+                    )
+                    and _SHA256.fullmatch(
+                        case["projection_case_authentication_sha256"]
+                    )
+                    is not None
+                    and isinstance(
+                        case.get("case_authentication_sha256"),
+                        str,
+                    )
+                    and _SHA256.fullmatch(
+                        case["case_authentication_sha256"]
+                    )
+                    is not None
+                    and case.get("candidate_state_sha256")
+                    == candidate_state_sha256
+                    and case.get(
+                        "actual_parameter_and_intermediate_target_dtype_replay"
+                    )
+                    is True
+                ):
+                    return False
+                case_ids.append(case["case_id"])
+            return len(case_ids) == len(set(case_ids))
+
         if not (
             report.get("schema")
             == LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA
@@ -4304,10 +4639,30 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 pool,
                 LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_POOL_SCHEMA,
             )
+            and set(request) == _SHORT_CONV_V5_NUMERICAL_REQUEST_FIELDS
+            and set(frontier) == _SHORT_CONV_V5_NUMERICAL_FRONTIER_FIELDS
+            and (
+                set(pool) == _SHORT_CONV_V5_NUMERICAL_POOL_FIELDS
+                or set(pool)
+                == (
+                    _SHORT_CONV_V5_NUMERICAL_POOL_FIELDS
+                    | _SHORT_CONV_V5_NUMERICAL_POOL_REPLAY_FIELDS
+                )
+            )
         ):
             return False
         request_sha = request["report_sha256"]
         frontier_sha = frontier["report_sha256"]
+        source_inventory = request.get("source_tensor_sha256")
+        context_inventory = request.get("parent_context_sha256")
+        template_inventory = request.get("target_template_sha256")
+        adapter_provenance = frontier.get("adapter_provenance")
+        dimensions = (
+            report.get("source_hidden_size"),
+            report.get("target_hidden_size"),
+            report.get("source_fir_length"),
+            report.get("target_fir_length"),
+        )
         if not (
             report.get("numerical_frontier_request_sha256") == request_sha
             and report.get("numerical_frontier_report_sha256")
@@ -4316,20 +4671,75 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             and pool.get("request_sha256") == request_sha
             and pool.get("numerical_frontier_report_sha256")
             == frontier_sha
+            and pool.get("kind")
+            == "authenticated_v5_numerical_target_dtype_candidate_pool"
+            and pool.get("policy_sha256")
+            == solver_policy.authentication_sha256
+            and pool.get("target_dtype") == solver_policy.target_dtype
+            and request.get("kind")
+            == "detached_fit_only_numerical_frontier_request"
             and request.get("fit_only") is True
             and request.get("selection_cases_exposed") is False
             and request.get("validation_cases_exposed") is False
             and request.get("policy_sha256")
             == solver_policy.authentication_sha256
+            and request.get("target_dtype") == solver_policy.target_dtype
+            and _valid_exact_zero_execution(
+                request.get("execution"),
+                fields=_SHORT_CONV_V5_NUMERICAL_EXECUTION_FIELDS,
+            )
+            and isinstance(source_inventory, Mapping)
+            and set(source_inventory)
+            == _SHORT_CONV_V5_NUMERICAL_SOURCE_TENSOR_ROLES
+            and isinstance(context_inventory, Mapping)
+            and context_inventory
+            and isinstance(template_inventory, Mapping)
+            and set(template_inventory)
+            == _SHORT_CONV_V5_NUMERICAL_TARGET_TEMPLATE_ROLES
             and request.get("source_tensor_inventory_sha256")
-            == _sha(request.get("source_tensor_sha256"))
+            == _sha(source_inventory)
             and request.get("parent_context_inventory_sha256")
-            == _sha(request.get("parent_context_sha256"))
+            == _sha(context_inventory)
             and request.get("target_template_inventory_sha256")
-            == _sha(request.get("target_template_sha256"))
+            == _sha(template_inventory)
+            and all(type(value) is int and value > 0 for value in dimensions)
+            and dimensions[0] >= dimensions[1]
+            and request.get("source_hidden_size") == dimensions[0]
+            and request.get("target_hidden_size") == dimensions[1]
+            and request.get("source_fir_length") == dimensions[2]
+            and request.get("target_fir_length") == dimensions[3]
+            and isinstance(
+                report.get("hidden_width_compression_ratio"),
+                (int, float),
+            )
+            and not isinstance(
+                report.get("hidden_width_compression_ratio"),
+                bool,
+            )
+            and math.isfinite(
+                float(report["hidden_width_compression_ratio"])
+            )
+            and float(report["hidden_width_compression_ratio"])
+            == dimensions[0] / dimensions[1]
+            and frontier.get("kind")
+            == "authenticated_fit_only_numerical_frontier"
+            and isinstance(frontier.get("adapter_id"), str)
+            and bool(frontier["adapter_id"].strip())
+            and isinstance(frontier.get("context_encoder_sha256"), str)
+            and _SHA256.fullmatch(frontier["context_encoder_sha256"])
+            is not None
+            and isinstance(adapter_provenance, Mapping)
+            and isinstance(adapter_provenance.get("implementation"), str)
+            and bool(adapter_provenance["implementation"].strip())
+            and frontier.get("adapter_provenance_sha256")
+            == _sha(adapter_provenance)
             and frontier.get("fit_only") is True
             and frontier.get("selection_cases_consumed") == 0
             and frontier.get("validation_cases_consumed") == 0
+            and _valid_exact_zero_execution(
+                frontier.get("execution"),
+                fields=_SHORT_CONV_V5_NUMERICAL_EXECUTION_FIELDS,
+            )
             and frontier.get("fit_case_authentication_sha256")
             == request.get("fit_case_authentication_sha256")
             and isinstance(case_seals, Mapping)
@@ -4346,6 +4756,9 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             )
             and case_seals.get("fit")
             == request.get("fit_case_authentication_sha256")
+            and len(context_inventory) == len(case_seals["fit"])
+            and pool.get("fold_case_authentication_sha256")
+            == dict(case_seals)
         ):
             return False
         raw_reports = frontier.get("raw_candidate_reports")
@@ -4368,14 +4781,47 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                     raw_reports[candidate_id],
                     LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_SCHEMA,
                 )
+                and set(raw_reports[candidate_id])
+                == _SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_FIELDS
+                and raw_reports[candidate_id].get("kind")
+                == "authenticated_fit_only_numerical_raw_candidate"
                 and raw_reports[candidate_id].get("candidate_id")
                 == candidate_id
+                and isinstance(
+                    raw_reports[candidate_id].get("candidate_kind"),
+                    str,
+                )
+                and bool(
+                    raw_reports[candidate_id]["candidate_kind"].strip()
+                )
                 and raw_reports[candidate_id].get("request_sha256")
                 == request_sha
                 and raw_reports[candidate_id].get("state_sha256")
                 == raw_state_sha[candidate_id]
+                and isinstance(raw_state_sha[candidate_id], str)
+                and _SHA256.fullmatch(raw_state_sha[candidate_id])
+                is not None
                 and raw_reports[candidate_id].get("report_sha256")
                 == raw_report_sha[candidate_id]
+                and isinstance(
+                    raw_reports[candidate_id].get("method_provenance"),
+                    Mapping,
+                )
+                and isinstance(
+                    raw_reports[candidate_id]["method_provenance"].get(
+                        "method"
+                    ),
+                    str,
+                )
+                and bool(
+                    raw_reports[candidate_id]["method_provenance"][
+                        "method"
+                    ].strip()
+                )
+                and raw_reports[candidate_id].get(
+                    "method_provenance_sha256"
+                )
+                == _sha(raw_reports[candidate_id]["method_provenance"])
                 and raw_reports[candidate_id].get("fit_only") is True
                 and raw_reports[candidate_id].get(
                     "selection_cases_consumed"
@@ -4385,6 +4831,10 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                     "validation_cases_consumed"
                 )
                 == 0
+                and _valid_exact_zero_execution(
+                    raw_reports[candidate_id].get("execution"),
+                    fields=_SHORT_CONV_V5_NUMERICAL_EXECUTION_FIELDS,
+                )
                 for candidate_id in raw_ids
             )
         ):
@@ -4397,6 +4847,7 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
         if not (
             type(source_count) is int
             and source_count > 0
+            and source_count == dimensions[0]
             and isinstance(participants, list)
             and participants == sorted(set(participants))
             and all(
@@ -4414,17 +4865,43 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             and report.get("source_channels_dropped") == dropped_count
         ):
             return False
+        projection_case_seals = pool.get(
+            "projection_case_authentication_sha256"
+        )
+        pool_state_sha = pool.get("candidate_state_sha256")
         if not (
             isinstance(candidate_fit, Mapping)
             and candidate_fit
             and isinstance(candidate_selection, Mapping)
             and set(candidate_fit) == set(candidate_selection)
+            and isinstance(pool_state_sha, Mapping)
+            and set(pool_state_sha) == set(candidate_fit)
             and pool.get("candidate_ids") == sorted(candidate_fit)
+            and len(pool["candidate_ids"]) == len(set(pool["candidate_ids"]))
+            and type(pool.get("unique_target_dtype_candidate_count")) is int
             and pool.get("unique_target_dtype_candidate_count")
             == len(candidate_fit)
+            and type(pool.get("raw_candidate_count")) is int
             and pool.get("raw_candidate_count") == len(raw_ids)
+            and type(pool.get("target_dtype_duplicate_count")) is int
             and pool.get("target_dtype_duplicate_count")
             == len(raw_ids) - len(candidate_fit)
+            and pool["target_dtype_duplicate_count"] >= 0
+            and isinstance(projection_case_seals, Mapping)
+            and set(projection_case_seals)
+            == {"fit", "selection", "validation"}
+            and all(
+                isinstance(projection_case_seals[split], list)
+                and projection_case_seals[split]
+                and all(
+                    isinstance(value, str)
+                    and _SHA256.fullmatch(value) is not None
+                    for value in projection_case_seals[split]
+                )
+                for split in ("fit", "selection", "validation")
+            )
+            and pool.get("selection_feasibility_policy_sha256")
+            == ranking.get("selection_feasibility_policy_sha256")
             and pool.get("fit_only_candidate_generation") is True
             and pool.get("selection_cases_consumed_during_generation") == 0
             and pool.get("validation_cases_consumed_during_generation") == 0
@@ -4433,12 +4910,30 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             return False
         for candidate_id, provenance in candidate_fit.items():
             selection = candidate_selection[candidate_id]
+            candidate_state_sha = provenance.get(
+                "target_dtype_candidate_state_sha256"
+            )
+            sources = provenance.get("sources")
+            aliases = provenance.get("source_alias_candidate_ids")
             if not (
                 sealed(
                     provenance,
                     LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA,
                 )
+                and set(provenance)
+                == _SHORT_CONV_V5_NUMERICAL_PROVENANCE_FIELDS
+                and provenance.get("kind")
+                == (
+                    "authenticated_fit_only_numerical_frontier_candidate_"
+                    "provenance"
+                )
                 and provenance.get("candidate_id") == candidate_id
+                and provenance.get("policy_sha256")
+                == solver_policy.authentication_sha256
+                and provenance.get("target_dtype")
+                == solver_policy.target_dtype
+                and isinstance(candidate_state_sha, str)
+                and _SHA256.fullmatch(candidate_state_sha) is not None
                 and provenance.get("request_sha256") == request_sha
                 and provenance.get("numerical_frontier_report_sha256")
                 == frontier_sha
@@ -4449,12 +4944,62 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 and provenance.get("validation_cases_consumed") == 0
                 and provenance.get("legacy_v4_candidate_provenance_claimed")
                 is False
+                and isinstance(sources, list)
+                and sources
+                and type(provenance.get("source_alias_count")) is int
+                and provenance.get("source_alias_count") == len(sources)
+                and isinstance(aliases, list)
+                and aliases
+                and aliases
+                == [
+                    source.get("candidate_id")
+                    if isinstance(source, Mapping)
+                    else None
+                    for source in sources
+                ]
+                and len(aliases) == len(set(aliases))
+                and candidate_id == aliases[0]
+                and all(
+                    isinstance(source, Mapping)
+                    and set(source)
+                    == _SHORT_CONV_V5_NUMERICAL_SOURCE_FIELDS
+                    and source.get("candidate_id") in raw_reports
+                    and source.get("candidate_kind")
+                    == raw_reports[source["candidate_id"]].get(
+                        "candidate_kind"
+                    )
+                    and source.get("numerical_raw_state_sha256")
+                    == raw_state_sha[source["candidate_id"]]
+                    and isinstance(
+                        source.get("numerical_raw_candidate_report"),
+                        Mapping,
+                    )
+                    and dict(
+                        source["numerical_raw_candidate_report"]
+                    )
+                    == dict(raw_reports[source["candidate_id"]])
+                    and source.get(
+                        "numerical_raw_candidate_report_sha256"
+                    )
+                    == raw_report_sha[source["candidate_id"]]
+                    for source in sources
+                )
+                and provenance.get(
+                    "actual_target_dtype_materialization_before_deduplication"
+                )
+                is True
+                and _valid_exact_zero_execution(
+                    provenance.get("execution"),
+                    fields=_SHORT_CONV_V5_NUMERICAL_EXECUTION_FIELDS,
+                )
                 and isinstance(selection, Mapping)
-                and selection.get("split") == "selection"
-                and selection.get("candidate_state_sha256")
-                == provenance.get("target_dtype_candidate_state_sha256")
-                and pool["candidate_state_sha256"].get(candidate_id)
-                == selection.get("candidate_state_sha256")
+                and valid_evaluation(
+                    selection,
+                    split="selection",
+                    candidate_state_sha256=candidate_state_sha,
+                )
+                and pool_state_sha.get(candidate_id)
+                == candidate_state_sha
             ):
                 return False
         selected_id = report.get("selected_candidate_id")
@@ -4466,6 +5011,15 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             ("selection", selection_evaluation),
             ("validation", validation_evaluation),
         )
+
+        def projection_seals(value: Mapping[str, Any]) -> list[Any]:
+            return [
+                case.get("projection_case_authentication_sha256")
+                if isinstance(case, Mapping)
+                else None
+                for case in value.get("cases", [])
+            ]
+
         if not (
             isinstance(selected_id, str)
             and selected_id in candidate_fit
@@ -4474,15 +5028,24 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             )
             == selected_sha
             and all(
-                isinstance(evaluation, Mapping)
-                and evaluation.get("split") == split
-                and evaluation.get("candidate_state_sha256")
-                == selected_sha
-                and evaluation.get(
-                    "actual_parameter_and_intermediate_target_dtype_replay"
+                valid_evaluation(
+                    evaluation,
+                    split=split,
+                    candidate_state_sha256=selected_sha,
                 )
-                is True
                 for split, evaluation in evaluations
+            )
+            and dict(selection_evaluation)
+            == dict(candidate_selection[selected_id])
+            and all(
+                projection_seals(evaluation)
+                == projection_case_seals[split]
+                for split, evaluation in evaluations
+            )
+            and all(
+                projection_seals(selection)
+                == projection_case_seals["selection"]
+                for selection in candidate_selection.values()
             )
             and _valid_short_conv_v4_selection_ranking(
                 ranking,
@@ -4505,6 +5068,8 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 )
             )
             and isinstance(gate_policy, Mapping)
+            and set(gate_policy) == _SHORT_CONV_GATE_POLICY_FIELDS
+            and gate_policy.get("enforce") is True
             and isinstance(gate, Mapping)
             and _valid_short_conv_v4_behavior_gate(
                 gate,
@@ -4535,11 +5100,12 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             is True
             and report.get("source_channels_pruned") == 0
             and report.get("source_channels_quantized") == 0
-            and isinstance(execution, Mapping)
-            and set(execution) == _SHORT_CONV_V4_EXECUTION_FIELDS
-            and all(
-                type(value) is int and value == 0
-                for value in execution.values()
+            and isinstance(report.get("compiled_state_sha256"), str)
+            and _SHA256.fullmatch(report["compiled_state_sha256"])
+            is not None
+            and _valid_exact_zero_execution(
+                execution,
+                fields=_SHORT_CONV_V4_EXECUTION_FIELDS,
             )
             and report.get("compiled_short_conv_fold_issued") is False
             and report.get("promotion_claimed") is False
