@@ -28,6 +28,11 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
+from neural_forge.hf_lfm2_circuit_trace_cache import (
+    Lfm2CircuitTraceAuthenticatedSession,
+    Lfm2CircuitTraceCache,
+)
+
 
 LFM2_CPCF_INSTALLABLE_LAYER_SCHEMA = (
     "neural-forge-lfm2-cpcf-installable-layer-v1"
@@ -536,17 +541,34 @@ class Lfm2CpcfInstallabilityAdapter:
             raise Lfm2CpcfInstallabilityError(
                 "A verified sealed circuit cache is required."
             )
-        cache.verify()
-        self.cache = cache
+        if isinstance(cache, Lfm2CircuitTraceAuthenticatedSession):
+            authenticated_cache = cache
+        elif isinstance(cache, Lfm2CircuitTraceCache):
+            authenticated_cache = cache.authenticated_session()
+        else:
+            # Preserve the established cache-compatible protocol for tests and
+            # external adapters. Only the canonical on-disk cache can promise
+            # that verification and consumption share one payload read.
+            cache.verify()
+            authenticated_cache = cache
+        self.cache = authenticated_cache
+        self.authenticated_cache_session = (
+            authenticated_cache
+            if isinstance(
+                authenticated_cache,
+                Lfm2CircuitTraceAuthenticatedSession,
+            )
+            else None
+        )
         self.cache_key = _digest(
-            getattr(cache, "cache_key", None),
+            getattr(authenticated_cache, "cache_key", None),
             "cache_key",
         )
         self.batch_count = _positive_int(
-            getattr(cache, "batch_count", None),
+            getattr(authenticated_cache, "batch_count", None),
             "batch_count",
         )
-        manifest = getattr(cache, "manifest", None)
+        manifest = getattr(authenticated_cache, "manifest", None)
         if not isinstance(manifest, Mapping):
             raise Lfm2CpcfInstallabilityError(
                 "Verified cache manifest is unavailable."
@@ -615,6 +637,15 @@ class Lfm2CpcfInstallabilityAdapter:
         self.ordered_input_sha256 = tuple(
             _digest(value, f"batch {index} input identity")
             for index, value in enumerate(ordered)
+        )
+
+    def cache_authentication_evidence(self) -> Mapping[str, Any] | None:
+        """Return the completed one-pass receipt for a canonical disk cache."""
+
+        if self.authenticated_cache_session is None:
+            return None
+        return MappingProxyType(
+            self.authenticated_cache_session.as_dict()
         )
 
     @staticmethod

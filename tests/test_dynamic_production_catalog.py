@@ -456,6 +456,40 @@ def test_facade_rejects_unknown_target_range_and_source_family(tmp_path) -> None
         )
 
 
+def test_facade_enforces_explicit_parent_count_capability(tmp_path) -> None:
+    facade = ProductionDynamicFoldCatalog(
+        (_bundle(),),
+        inspectors=InspectorRegistry((_FamilyInspector(),)),
+        allow_ephemeral_ledger=True,
+    ).assemble()
+
+    with pytest.raises(
+        ProductionDynamicFoldCatalogError,
+        match="Parent-model count is outside",
+    ):
+        facade.run(
+            parent_models={
+                "parent-a": _FamilyModel("lfm2"),
+                "parent-b": _FamilyModel("lfm2"),
+            },
+            objective=_objective(),
+            destination_root=tmp_path / "unsupported-multi-parent",
+        )
+
+    multi_parent_capability = _capability(
+        capability_id="lfm2-text-two-parent",
+    )
+    multi_parent_capability = replace(
+        multi_parent_capability,
+        minimum_parent_models=2,
+        maximum_parent_models=2,
+    )
+    assert multi_parent_capability.supports_parent_count(2) is True
+    assert multi_parent_capability.supports_parent_count(1) is False
+    assert multi_parent_capability.as_dict()["minimum_parent_models"] == 2
+    assert multi_parent_capability.as_dict()["maximum_parent_models"] == 2
+
+
 def test_catalog_refuses_ambiguous_overlapping_target_capabilities() -> None:
     first = _bundle()
     overlapping = _bundle(

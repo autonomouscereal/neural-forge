@@ -52,6 +52,9 @@ BATCH_SCHEMA = "neural-forge-lfm2-parent-circuit-trace-batch-v1"
 COMPLETION_SCHEMA = "neural-forge-lfm2-parent-circuit-trace-completion-v1"
 CHILD_REPLAY_SCHEMA = "neural-forge-lfm2-child-circuit-replay-v1"
 CHILD_REPLAY_BATCH_SCHEMA = "neural-forge-lfm2-child-circuit-replay-batch-v1"
+AUTHENTICATED_SESSION_SCHEMA = (
+    "neural-forge-lfm2-circuit-trace-authenticated-session-v1"
+)
 MANIFEST_FILENAME = "manifest.json"
 COMPLETION_FILENAME = "complete.json"
 TRACE_FILENAME = "trace.safetensors"
@@ -3289,6 +3292,56 @@ def _load_verified_batch(
     return tensors, record
 
 
+def _verify_cache_layout(cache_path: Path, batch_count: int) -> None:
+    """Authenticate the immutable directory shape without reading payloads."""
+
+    expected_root = {
+        MANIFEST_FILENAME,
+        COMPLETION_FILENAME,
+        "batches",
+    }
+    if {path.name for path in cache_path.iterdir()} != expected_root:
+        raise Lfm2CircuitTraceCorruptionError(
+            "Cache root contains unexpected artifacts."
+        )
+    batches_path = cache_path / "batches"
+    if not batches_path.is_dir() or batches_path.is_symlink():
+        raise Lfm2CircuitTraceCorruptionError(
+            "Cache batches directory is missing or unsafe."
+        )
+    expected_batches = {
+        f"batch-{index:06d}" for index in range(batch_count)
+    }
+    if {path.name for path in batches_path.iterdir()} != expected_batches:
+        raise Lfm2CircuitTraceCorruptionError(
+            "Cache batch directory set is incomplete or modified."
+        )
+
+
+def _fresh_verified_cache_state(
+    cache: Lfm2CircuitTraceCache,
+) -> tuple[dict[str, Any], tuple[Mapping[str, Any], ...]]:
+    """Reauthenticate cache metadata and layout against an opened handle."""
+
+    fresh_manifest = _read_canonical_json(cache.path / MANIFEST_FILENAME)
+    fresh_completion = _read_canonical_json(
+        cache.path / COMPLETION_FILENAME
+    )
+    _validate_manifest(fresh_manifest)
+    entries = _validate_completion(fresh_completion, fresh_manifest)
+    if (
+        fresh_manifest["manifest_sha256"]
+        != cache._manifest["manifest_sha256"]
+        or fresh_completion["completion_sha256"]
+        != cache._completion["completion_sha256"]
+    ):
+        raise Lfm2CircuitTraceCorruptionError(
+            "Cache metadata changed after the cache was opened."
+        )
+    _verify_cache_layout(cache.path, cache.batch_count)
+    return fresh_manifest, entries
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2CircuitTraceBatch:
     """One verified, detached CPU circuit trace."""
@@ -3485,37 +3538,7 @@ class Lfm2CircuitTraceCache:
         return self.batch_count
 
     def verify(self) -> Lfm2CircuitTraceCache:
-        fresh_manifest = _read_canonical_json(self.path / MANIFEST_FILENAME)
-        fresh_completion = _read_canonical_json(self.path / COMPLETION_FILENAME)
-        _validate_manifest(fresh_manifest)
-        entries = _validate_completion(fresh_completion, fresh_manifest)
-        if (
-            fresh_manifest["manifest_sha256"] != self._manifest["manifest_sha256"]
-            or fresh_completion["completion_sha256"]
-            != self._completion["completion_sha256"]
-        ):
-            raise Lfm2CircuitTraceCorruptionError(
-                "Cache metadata changed after the cache was opened."
-            )
-        expected_root = {
-            MANIFEST_FILENAME,
-            COMPLETION_FILENAME,
-            "batches",
-        }
-        if {path.name for path in self.path.iterdir()} != expected_root:
-            raise Lfm2CircuitTraceCorruptionError(
-                "Cache root contains unexpected artifacts."
-            )
-        batches_path = self.path / "batches"
-        if not batches_path.is_dir() or batches_path.is_symlink():
-            raise Lfm2CircuitTraceCorruptionError(
-                "Cache batches directory is missing or unsafe."
-            )
-        expected_batches = {f"batch-{index:06d}" for index in range(self.batch_count)}
-        if {path.name for path in batches_path.iterdir()} != expected_batches:
-            raise Lfm2CircuitTraceCorruptionError(
-                "Cache batch directory set is incomplete or modified."
-            )
+        fresh_manifest, entries = _fresh_verified_cache_state(self)
         for entry in entries:
             _load_verified_batch(self.path, fresh_manifest, entry)
         return self
@@ -3542,6 +3565,233 @@ class Lfm2CircuitTraceCache:
     def iter_batches(self) -> Iterator[Lfm2CircuitTraceBatch]:
         for index in range(self.batch_count):
             yield self.load_batch(index)
+
+    def authenticated_session(
+        self,
+    ) -> Lfm2CircuitTraceAuthenticatedSession:
+        """Open a one-pass payload-verifying view of this sealed cache."""
+
+        return Lfm2CircuitTraceAuthenticatedSession(self)
+
+
+class Lfm2CircuitTraceAuthenticatedSession:
+    """Verify one sealed cache exactly as its payloads are consumed.
+
+    A normal :meth:`Lfm2CircuitTraceCache.verify` intentionally scans every
+    batch independently of later consumers.  That remains the conservative
+    compatibility API.  Production folding instead needs the authenticated
+    tensors themselves, so scanning an 85-GB cache and then loading it again
+    is pure duplicate I/O.
+
+    This session authenticates the same manifest, completion document,
+    directory layout, trace-file hash, record-file hash, safetensors metadata,
+    tensor inventory, and per-tensor descriptors.  The only difference is
+    timing: each payload is verified once, in canonical batch order, at the
+    moment it is returned to the caller.  The final batch reauthenticates the
+    metadata and layout and seals a deterministic session receipt.  Consumed
+    batches cannot be loaded again through the session, preventing accidental
+    duplicate payload scans while allowing downstream code to retain the
+    returned detached tensors.
+    """
+
+    __slots__ = (
+        "_cache",
+        "_entries",
+        "_evidence",
+        "_next_batch_index",
+        "_ordered_verified_batches",
+    )
+
+    def __init__(self, cache: Lfm2CircuitTraceCache) -> None:
+        if not isinstance(cache, Lfm2CircuitTraceCache):
+            raise TypeError("cache must be Lfm2CircuitTraceCache.")
+        _fresh_manifest, entries = _fresh_verified_cache_state(cache)
+        self._cache = cache
+        self._entries = tuple(MappingProxyType(dict(entry)) for entry in entries)
+        self._next_batch_index = 0
+        self._ordered_verified_batches: list[dict[str, Any]] = []
+        self._evidence: Mapping[str, Any] | None = None
+
+    @property
+    def path(self) -> Path:
+        return self._cache.path
+
+    @property
+    def manifest(self) -> dict[str, Any]:
+        return self._cache.manifest
+
+    @property
+    def cache_key(self) -> str:
+        return self._cache.cache_key
+
+    @property
+    def parent_fingerprint(self) -> str:
+        return self._cache.parent_fingerprint
+
+    @property
+    def corpus_fingerprint(self) -> str:
+        return self._cache.corpus_fingerprint
+
+    @property
+    def implementation_fingerprint(self) -> str:
+        return self._cache.implementation_fingerprint
+
+    @property
+    def layer_topology_fingerprint(self) -> str:
+        return self._cache.layer_topology_fingerprint
+
+    @property
+    def batch_count(self) -> int:
+        return self._cache.batch_count
+
+    @property
+    def verified_batch_count(self) -> int:
+        return self._next_batch_index
+
+    @property
+    def complete(self) -> bool:
+        return self._evidence is not None
+
+    @property
+    def evidence_sha256(self) -> str:
+        if self._evidence is None:
+            raise Lfm2CircuitTraceCacheError(
+                "Authenticated cache session is not complete."
+            )
+        return str(self._evidence["session_sha256"])
+
+    def __len__(self) -> int:
+        return self.batch_count
+
+    def _completion_entries(self) -> tuple[Mapping[str, Any], ...]:
+        fresh_completion = _read_canonical_json(
+            self.path / COMPLETION_FILENAME
+        )
+        entries = _validate_completion(
+            fresh_completion,
+            self._cache._manifest,
+        )
+        if (
+            fresh_completion["completion_sha256"]
+            != self._cache._completion["completion_sha256"]
+        ):
+            raise Lfm2CircuitTraceCorruptionError(
+                "Cache completion changed during authenticated consumption."
+            )
+        return entries
+
+    def load_batch(self, index: int) -> Lfm2CircuitTraceBatch:
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise TypeError("batch index must be an integer.")
+        if index < 0 or index >= self.batch_count:
+            raise IndexError(
+                f"batch index must be in [0, {self.batch_count}), got {index}."
+            )
+        if index != self._next_batch_index:
+            raise Lfm2CircuitTraceCacheError(
+                "Authenticated cache sessions require each batch exactly "
+                "once in canonical order; expected batch "
+                f"{self._next_batch_index}, got {index}."
+            )
+        fresh_entries = self._completion_entries()
+        entry = fresh_entries[index]
+        if dict(entry) != dict(self._entries[index]):
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} completion binding changed."
+            )
+        tensors, record = _load_verified_batch(
+            self.path,
+            self._cache._manifest,
+            entry,
+        )
+        batch = Lfm2CircuitTraceBatch(
+            index=index,
+            input_sha256=str(record["input_sha256"]),
+            _tensors=MappingProxyType(tensors),
+            _record=MappingProxyType(record),
+        )
+        self._ordered_verified_batches.append(
+            {
+                "batch_index": index,
+                "input_sha256": str(entry["input_sha256"]),
+                "trace_file_sha256": str(entry["trace_file_sha256"]),
+                "record_file_sha256": str(entry["record_file_sha256"]),
+                "record_sha256": str(entry["record_sha256"]),
+            }
+        )
+        self._next_batch_index += 1
+        if self._next_batch_index == self.batch_count:
+            self._finalize()
+        return batch
+
+    def iter_batches(self) -> Iterator[Lfm2CircuitTraceBatch]:
+        while self._next_batch_index < self.batch_count:
+            yield self.load_batch(self._next_batch_index)
+
+    def _finalize(self) -> None:
+        if self._evidence is not None:
+            return
+        if self._next_batch_index != self.batch_count:
+            raise Lfm2CircuitTraceCacheError(
+                "Authenticated cache session cannot finalize before every "
+                "batch has been consumed."
+            )
+        _fresh_manifest, entries = _fresh_verified_cache_state(self._cache)
+        if tuple(dict(entry) for entry in entries) != tuple(
+            dict(entry) for entry in self._entries
+        ):
+            raise Lfm2CircuitTraceCorruptionError(
+                "Cache completion entries changed during authenticated "
+                "consumption."
+            )
+        body = {
+            "schema": AUTHENTICATED_SESSION_SCHEMA,
+            "cache_key": self.cache_key,
+            "manifest_sha256": str(
+                self._cache._manifest["manifest_sha256"]
+            ),
+            "completion_sha256": str(
+                self._cache._completion["completion_sha256"]
+            ),
+            "batch_count": self.batch_count,
+            "ordered_verified_batches": list(
+                self._ordered_verified_batches
+            ),
+            "authentication_contract": {
+                "manifest_verified_before_payload_consumption": True,
+                "completion_verified_before_each_payload": True,
+                "directory_layout_verified_before_and_after": True,
+                "trace_file_sha256_verified_at_load": True,
+                "record_file_sha256_verified_at_load": True,
+                "record_self_hash_verified_at_load": True,
+                "safetensors_metadata_verified_at_load": True,
+                "tensor_inventory_verified_at_load": True,
+                "tensor_descriptors_verified_at_load": True,
+                "canonical_batch_order_required": True,
+                "duplicate_session_payload_loads_permitted": False,
+                "parent_forward_calls": 0,
+                "training_steps": 0,
+            },
+        }
+        self._evidence = MappingProxyType(
+            {
+                **body,
+                "session_sha256": _json_sha256(body),
+            }
+        )
+
+    def verify(self) -> Lfm2CircuitTraceAuthenticatedSession:
+        """Finalize an already consumed session without rereading payloads."""
+
+        self._finalize()
+        return self
+
+    def as_dict(self) -> dict[str, Any]:
+        if self._evidence is None:
+            raise Lfm2CircuitTraceCacheError(
+                "Authenticated cache session is not complete."
+            )
+        return json.loads(_canonical_json(dict(self._evidence)))
 
 
 def open_lfm2_circuit_trace_cache(
@@ -4754,6 +5004,7 @@ capture_lfm2_circuit_trace_cache = build_lfm2_circuit_trace_cache
 
 
 __all__ = [
+    "AUTHENTICATED_SESSION_SCHEMA",
     "BATCH_RECORD_FILENAME",
     "BATCH_SCHEMA",
     "CACHE_SCHEMA",
@@ -4769,6 +5020,7 @@ __all__ = [
     "TRACE_FILENAME",
     "Lfm2ChildReplay",
     "Lfm2ChildReplayBatch",
+    "Lfm2CircuitTraceAuthenticatedSession",
     "Lfm2CircuitTraceBatch",
     "Lfm2CircuitTraceCache",
     "Lfm2CircuitTraceCacheError",

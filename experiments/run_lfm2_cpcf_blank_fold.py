@@ -2246,9 +2246,10 @@ def run(config: RunnerConfig) -> dict[str, Any]:
             "Live local tokenizers differ from the sealed bridge."
         )
 
-    # Metadata is opened first; the installability adapter performs the full
-    # cache verification.  We intentionally do not run its separate audit()
-    # pass, which would rematerialize every broad-cache tensor a second time.
+    # Metadata is opened first. The installability adapter then creates one
+    # authenticated cache session: every broad-cache tensor is verified at the
+    # moment it is consumed, with no preliminary throwaway payload scan.
+    # We intentionally do not run its separate audit() pass.
     cache = open_lfm2_circuit_trace_cache(cache_directory, verify=False)
     parent = load_local_lfm2_model(
         parent_directory,
@@ -2342,6 +2343,17 @@ def run(config: RunnerConfig) -> dict[str, Any]:
         trace_adapter,
         installability.iter_compiler_inputs(),
     )
+    cache_authentication = installability.cache_authentication_evidence()
+    if (
+        not isinstance(cache_authentication, Mapping)
+        or cache_authentication.get("cache_key") != cache.cache_key
+        or cache_authentication.get("batch_count") != cache.batch_count
+        or len(cache_authentication.get("ordered_verified_batches", ()))
+        != cache.batch_count
+    ):
+        raise Lfm2CpcfBlankFoldRunnerError(
+            "One-pass cache authentication did not cover every sealed batch."
+        )
     if len({phase.batch_index for phase in phases}) != cache.batch_count:
         raise Lfm2CpcfBlankFoldRunnerError(
             "Materialized compiler phases do not cover every cache batch."
@@ -2566,6 +2578,9 @@ def run(config: RunnerConfig) -> dict[str, Any]:
         "parent_cache_generation_calls": 0,
         "parent_cache_regeneration_calls": 0,
         "sealed_cache_open_count": 1,
+        "sealed_cache_preflight_payload_loads": 0,
+        "sealed_cache_authenticated_payload_loads": cache.batch_count,
+        "sealed_cache_duplicate_payload_loads": 0,
         "resident_parent_evidence_collections": 1,
         "separate_installability_audit_rematerialization": False,
         "target_generation_calls": behavior["target_generation_calls"],
@@ -2606,6 +2621,7 @@ def run(config: RunnerConfig) -> dict[str, Any]:
         "reloaded_parameter_inventory": dict(reloaded_inventory),
         "compression": dict(reload_compression),
         "compiled_model_fold": compiled_fold.as_dict(),
+        "sealed_cache_authentication": dict(cache_authentication),
         "boundary_bundle": compiled_fold.boundary_bundle.as_dict(),
         "interface_install": dict(compiled_fold.interface_install_report),
         "neutral_norm_install": dict(compiled_fold.neutral_norm_install_report),

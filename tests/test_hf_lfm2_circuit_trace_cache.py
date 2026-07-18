@@ -12,6 +12,7 @@ transformers = pytest.importorskip("transformers")
 import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
 from experiments import run_lfm2_residual_attention_fold as residual  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
+    AUTHENTICATED_SESSION_SCHEMA,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     TRACE_FILENAME,
     Lfm2CircuitTraceCaptureConfig,
@@ -20,6 +21,9 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     build_lfm2_circuit_trace_cache,
     fingerprint_lfm2_parent,
     open_lfm2_circuit_trace_cache,
+)
+from neural_forge.hf_lfm2_cpcf_installability import (  # noqa: E402
+    Lfm2CpcfInstallabilityAdapter,
 )
 
 
@@ -824,6 +828,110 @@ def test_cache_corruption_fails_closed_and_is_not_recomputed(tmp_path) -> None:
         )
     assert len(calls) == call_count
     assert trace_path.read_bytes() == corrupted
+
+
+def test_authenticated_session_verifies_each_payload_once_in_canonical_order(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    model = _parent(seed=333)
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path,
+        model,
+        [_batch(forced=(9,)), _batch(forced=(10,))],
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=2,
+            max_decode_steps=2,
+            capture_causal_circuit_evidence=True,
+        ),
+        input_device="cpu",
+    )
+    opened = open_lfm2_circuit_trace_cache(cache.path, verify=False)
+    payload_loads: list[int] = []
+    original_load = trace_cache._load_verified_batch
+
+    def counted_load(cache_path, manifest, entry):
+        payload_loads.append(int(entry["batch_index"]))
+        return original_load(cache_path, manifest, entry)
+
+    monkeypatch.setattr(
+        trace_cache,
+        "_load_verified_batch",
+        counted_load,
+    )
+    adapter = Lfm2CpcfInstallabilityAdapter(opened)
+
+    # Session construction authenticates metadata/layout only. It never
+    # performs the old throwaway full-payload verification pass.
+    assert payload_loads == []
+    phases = tuple(adapter.iter_compiler_inputs())
+    evidence = dict(adapter.cache_authentication_evidence() or {})
+
+    assert payload_loads == [0, 1]
+    assert [phase.batch_index for phase in phases] == [0, 0, 1, 1]
+    assert evidence["schema"] == AUTHENTICATED_SESSION_SCHEMA
+    assert evidence["cache_key"] == cache.cache_key
+    assert evidence["batch_count"] == 2
+    assert [
+        batch["batch_index"]
+        for batch in evidence["ordered_verified_batches"]
+    ] == [0, 1]
+    body = dict(evidence)
+    claimed = body.pop("session_sha256")
+    assert claimed == trace_cache._json_sha256(body)
+    assert evidence["authentication_contract"][
+        "duplicate_session_payload_loads_permitted"
+    ] is False
+
+    # Repeating the same authenticated consumption produces the exact same
+    # canonical receipt and still performs one payload load per batch.
+    repeated = open_lfm2_circuit_trace_cache(
+        cache.path,
+        verify=False,
+    ).authenticated_session()
+    tuple(repeated.iter_batches())
+    assert repeated.as_dict() == evidence
+    assert payload_loads == [0, 1, 0, 1]
+
+    # The established conservative APIs remain available and unchanged.
+    assert opened.load_batch(0).input_sha256 == cache.load_batch(0).input_sha256
+    assert opened.verify() is opened
+
+
+def test_authenticated_session_fails_closed_on_tamper_and_noncanonical_read(
+    tmp_path,
+) -> None:
+    model = _parent(seed=334)
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path,
+        model,
+        [_batch(forced=(9,)), _batch(forced=(10,))],
+        config=Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2),
+        input_device="cpu",
+    )
+    opened = open_lfm2_circuit_trace_cache(cache.path, verify=False)
+    ordering_session = opened.authenticated_session()
+    with pytest.raises(
+        trace_cache.Lfm2CircuitTraceCacheError,
+        match="canonical order",
+    ):
+        ordering_session.load_batch(1)
+    assert ordering_session.verified_batch_count == 0
+
+    tamper_session = opened.authenticated_session()
+    trace_path = (
+        cache.path / "batches" / "batch-000000" / TRACE_FILENAME
+    )
+    corrupted = bytearray(trace_path.read_bytes())
+    corrupted[-1] ^= 0x01
+    trace_path.write_bytes(corrupted)
+    with pytest.raises(
+        Lfm2CircuitTraceCorruptionError,
+        match="trace file hash changed",
+    ):
+        tamper_session.load_batch(0)
+    assert tamper_session.verified_batch_count == 0
+    assert tamper_session.complete is False
 
 
 def test_mislabeled_short_conv_and_reserved_inputs_fail_before_forward(

@@ -285,6 +285,8 @@ class ProductionFoldCapability:
     target_modalities: tuple[str, ...]
     minimum_target_unique_parameters: int
     maximum_target_unique_parameters: int
+    minimum_parent_models: int = 1
+    maximum_parent_models: int = 1
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -323,12 +325,32 @@ class ProductionFoldCapability:
                 "maximum_target_unique_parameters",
             ),
         )
+        object.__setattr__(
+            self,
+            "minimum_parent_models",
+            _positive_int(
+                self.minimum_parent_models,
+                "minimum_parent_models",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "maximum_parent_models",
+            _positive_int(
+                self.maximum_parent_models,
+                "maximum_parent_models",
+            ),
+        )
         if (
             self.maximum_target_unique_parameters
             < self.minimum_target_unique_parameters
         ):
             raise ProductionDynamicFoldCatalogError(
                 "Capability maximum target size is smaller than its minimum."
+            )
+        if self.maximum_parent_models < self.minimum_parent_models:
+            raise ProductionDynamicFoldCatalogError(
+                "Capability maximum parent count is smaller than its minimum."
             )
 
     def supports(self, request: DynamicTargetRequest) -> bool:
@@ -339,6 +361,15 @@ class ProductionFoldCapability:
             and self.minimum_target_unique_parameters
             <= request.exact_unique_parameters
             <= self.maximum_target_unique_parameters
+        )
+
+    def supports_parent_count(self, parent_count: int) -> bool:
+        return (
+            not isinstance(parent_count, bool)
+            and isinstance(parent_count, int)
+            and self.minimum_parent_models
+            <= parent_count
+            <= self.maximum_parent_models
         )
 
     @property
@@ -355,6 +386,8 @@ class ProductionFoldCapability:
             "target_modalities": list(self.target_modalities),
             "minimum_target_unique_parameters": (self.minimum_target_unique_parameters),
             "maximum_target_unique_parameters": (self.maximum_target_unique_parameters),
+            "minimum_parent_models": self.minimum_parent_models,
+            "maximum_parent_models": self.maximum_parent_models,
         }
 
 
@@ -927,6 +960,11 @@ class ProductionDynamicFoldFacade:
         if not parents:
             raise ProductionDynamicFoldCatalogError(
                 "Production folding requires at least one parent model."
+            )
+        if not bundle.capability.supports_parent_count(len(parents)):
+            raise ProductionDynamicFoldCatalogError(
+                "Parent-model count is outside the registered production "
+                "capability envelope."
             )
         try:
             validate_disjoint_parent_models(parents)
