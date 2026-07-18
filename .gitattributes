@@ -1,2 +1,4 @@
+.gitattributes text eol=lf
 *.sh text eol=lf
+*.py text eol=lf
 experiments/*.jsonl text eol=lf
