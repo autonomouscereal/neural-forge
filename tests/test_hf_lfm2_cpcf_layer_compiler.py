@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
@@ -29,6 +29,14 @@ from neural_forge.hf_lfm2_cpcf_model_compiler import (  # noqa: E402
     install_lfm2_cpcf_neutral_norms,
     seed_lfm2_cpcf_phase_states,
 )
+from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
+    Lfm2CpcfShortConvV4SolverPolicy,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (  # noqa: E402
+    LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
+    Lfm2CompiledCpcfShortConvV4Fold,
+    Lfm2CpcfShortConvV4FoldCase,
+)
 
 
 def _sha(value) -> str:
@@ -47,8 +55,7 @@ def _sha(value) -> str:
 def _rms(module, value):
     direction = value.to(torch.float32)
     direction = direction * torch.rsqrt(
-        direction.square().mean(dim=-1, keepdim=True)
-        + float(module.variance_epsilon)
+        direction.square().mean(dim=-1, keepdim=True) + float(module.variance_epsilon)
     )
     return module.weight * direction.to(value.dtype)
 
@@ -118,9 +125,7 @@ def _mlp_fields(layer, post_operator, sampled):
         "mlp.up": up[:, -sampled:, :].clone(),
         "mlp.post_swiglu": post[:, -sampled:, :].clone(),
         "mlp.down": down[:, -sampled:, :].clone(),
-        "residual.post_layer": (
-            post_operator + down
-        )[:, -sampled:, :].clone(),
+        "residual.post_layer": (post_operator + down)[:, -sampled:, :].clone(),
     }
 
 
@@ -152,11 +157,15 @@ def _attention_evidence(model, residual, sampled):
     query_positions = torch.arange(sequence - sampled, sequence)
     key_positions = torch.arange(sequence)
     allowed = key_positions.reshape(1, -1) <= query_positions.reshape(-1, 1)
-    additive = torch.where(
-        allowed,
-        torch.zeros((), dtype=residual.dtype),
-        torch.full((), torch.finfo(residual.dtype).min, dtype=residual.dtype),
-    ).reshape(1, 1, sampled, sequence).expand(batch, -1, -1, -1)
+    additive = (
+        torch.where(
+            allowed,
+            torch.zeros((), dtype=residual.dtype),
+            torch.full((), torch.finfo(residual.dtype).min, dtype=residual.dtype),
+        )
+        .reshape(1, 1, sampled, sequence)
+        .expand(batch, -1, -1, -1)
+    )
     probabilities = torch.softmax(
         scores + additive,
         dim=-1,
@@ -198,26 +207,20 @@ def _attention_evidence(model, residual, sampled):
             "residual.pre": residual[:, -sampled:, :].clone(),
             "operator.input": operator_input[:, -sampled:, :].clone(),
             "operator.output": output.clone(),
-            "residual.post_operator": full_post_operator[
-                :, -sampled:, :
-            ].clone(),
-            "attention.q_linear": q_linear_heads[
-                :, -sampled:, :, :
-            ].transpose(1, 2).contiguous(),
+            "residual.post_operator": full_post_operator[:, -sampled:, :].clone(),
+            "attention.q_linear": q_linear_heads[:, -sampled:, :, :]
+            .transpose(1, 2)
+            .contiguous(),
             "attention.q": query[:, :, -sampled:, :].clone(),
-            "attention.k_linear": k_linear_heads[
-                :, -sampled:, :, :
-            ].transpose(1, 2).contiguous(),
+            "attention.k_linear": k_linear_heads[:, -sampled:, :, :]
+            .transpose(1, 2)
+            .contiguous(),
             "attention.k": key[:, :, -sampled:, :].clone(),
             "attention.v": value[:, :, -sampled:, :].clone(),
             "attention.context": context.clone(),
             "attention.o": output.clone(),
-            "attention.q_normalized_pre_rope": q_norm[
-                :, :, -sampled:, :
-            ].clone(),
-            "attention.k_normalized_pre_rope": k_norm[
-                :, :, -sampled:, :
-            ].clone(),
+            "attention.q_normalized_pre_rope": q_norm[:, :, -sampled:, :].clone(),
+            "attention.k_normalized_pre_rope": k_norm[:, :, -sampled:, :].clone(),
             "attention.rope_cos": cosine[:, -sampled:, :].clone(),
             "attention.rope_sin": sine[:, -sampled:, :].clone(),
             "attention.key_history": key.clone(),
@@ -260,7 +263,10 @@ def _conv_evidence(model, residual, sampled):
     tensors.update(
         {
             "residual.pre": residual[:, -sampled:, :].clone(),
-            "operator.input": operator_input[:, -sampled:, :].clone(),
+            # V4 consumes the complete cached parent operator-input history
+            # for its affine child-to-parent lift.  The residual endpoint
+            # remains the intentionally sampled suffix.
+            "operator.input": operator_input.clone(),
             "operator.output": output[:, -sampled:, :].clone(),
             "residual.post_operator": post_operator[:, -sampled:, :].clone(),
             "short_conv.b_history": b_value.clone(),
@@ -399,11 +405,8 @@ def test_decode_short_conv_suffixes_reconstruct_complete_causal_histories() -> N
         sampled_suffix_tokens=5,
     )
     prefill_fields = {
-        name: torch.arange(10, dtype=torch.float32).reshape(1, 5, 2)
-        + field_index * 100
-        for field_index, name in enumerate(
-            layer_compiler._SHORT_CONV_HISTORY_FIELDS
-        )
+        name: torch.arange(10, dtype=torch.float32).reshape(1, 5, 2) + field_index * 100
+        for field_index, name in enumerate(layer_compiler._SHORT_CONV_HISTORY_FIELDS)
     }
     complete_prefill = layer_compiler._extend_short_conv_parent_histories(
         prefill,
@@ -423,13 +426,10 @@ def test_decode_short_conv_suffixes_reconstruct_complete_causal_histories() -> N
     )
     decode_fields = {
         name: torch.full((1, 1, 2), 1000.0 + field_index)
-        for field_index, name in enumerate(
-            layer_compiler._SHORT_CONV_HISTORY_FIELDS
-        )
+        for field_index, name in enumerate(layer_compiler._SHORT_CONV_HISTORY_FIELDS)
     }
     decode_fields["short_conv.pre_bx_state"] = (
-        prefill_fields["short_conv.b_history"]
-        * prefill_fields["short_conv.x_history"]
+        prefill_fields["short_conv.b_history"] * prefill_fields["short_conv.x_history"]
     ).transpose(1, 2)[:, :, -3:]
     reconstructed = layer_compiler._extend_short_conv_parent_histories(
         decode_zero,
@@ -452,13 +452,10 @@ def test_decode_short_conv_suffixes_reconstruct_complete_causal_histories() -> N
     )
     next_fields = {
         name: torch.full((1, 1, 2), 2000.0 + field_index)
-        for field_index, name in enumerate(
-            layer_compiler._SHORT_CONV_HISTORY_FIELDS
-        )
+        for field_index, name in enumerate(layer_compiler._SHORT_CONV_HISTORY_FIELDS)
     }
     next_fields["short_conv.pre_bx_state"] = (
-        reconstructed["short_conv.b_history"]
-        * reconstructed["short_conv.x_history"]
+        reconstructed["short_conv.b_history"] * reconstructed["short_conv.x_history"]
     ).transpose(1, 2)[:, :, -3:]
     reconstructed_next = layer_compiler._extend_short_conv_parent_histories(
         decode_one,
@@ -523,7 +520,7 @@ def test_short_conv_phases_coalesce_into_one_causal_trajectory_per_record() -> N
     phases = []
     states = {}
     replays = {}
-    for batch_index, split in enumerate(("fit", "validation")):
+    for batch_index, split in enumerate(("selection", "fit", "validation")):
         generator = torch.Generator().manual_seed(8800 + batch_index)
         parent_prefill = {
             name: torch.randn(
@@ -533,6 +530,11 @@ def test_short_conv_phases_coalesce_into_one_causal_trajectory_per_record() -> N
             )
             for name in layer_compiler._SHORT_CONV_HISTORY_FIELDS
         }
+        parent_prefill["operator.input"] = torch.randn(
+            (1, 3, 3),
+            generator=generator,
+            dtype=torch.float32,
+        )
         parent_decode = {
             name: torch.randn(
                 (1, 1, 3),
@@ -541,6 +543,11 @@ def test_short_conv_phases_coalesce_into_one_causal_trajectory_per_record() -> N
             )
             for name in layer_compiler._SHORT_CONV_HISTORY_FIELDS
         }
+        parent_decode["operator.input"] = torch.randn(
+            (1, 1, 3),
+            generator=generator,
+            dtype=torch.float32,
+        )
         parent_decode["short_conv.pre_bx_state"] = (
             parent_prefill["short_conv.b_history"]
             * parent_prefill["short_conv.x_history"]
@@ -623,8 +630,12 @@ def test_short_conv_phases_coalesce_into_one_causal_trajectory_per_record() -> N
         ),
     )
 
-    assert len(cases) == 2
-    assert tuple(case.split for case in cases) == ("fit", "validation")
+    assert len(cases) == 3
+    assert tuple(case.split for case in cases) == (
+        "selection",
+        "fit",
+        "validation",
+    )
     for case in cases:
         assert ":trajectory:layer.0" in case.case_id
         assert case.suffix_start == 1
@@ -634,14 +645,32 @@ def test_short_conv_phases_coalesce_into_one_causal_trajectory_per_record() -> N
             2,
         )
         assert tuple(case.parent_b_history.shape) == (1, 4, 3)
-        assert tuple(
-            case.parent_post_operator_residual_target_space_suffix.shape
-        ) == (1, 3, 2)
+        assert tuple(case.parent_post_operator_residual_target_space_suffix.shape) == (
+            1,
+            3,
+            2,
+        )
         assert tuple(case.actual_child_pre_operator_residual_suffix.shape) == (
             1,
             3,
             2,
         )
+        assert case.verify_authentication() is True
+
+    v4_cases = layer_compiler._short_conv_cases(
+        layer_index=0,
+        input_bank=InputBank(),
+        preinstall_replay=SimpleNamespace(replays=replays),
+        chart=SimpleNamespace(
+            post_operator=SimpleNamespace(
+                encode_shaped=lambda value: value.clone(),
+            )
+        ),
+        use_v4=True,
+    )
+    assert all(isinstance(case, Lfm2CpcfShortConvV4FoldCase) for case in v4_cases)
+    for case in v4_cases:
+        assert tuple(case.parent_operator_input_history.shape) == (1, 4, 3)
         assert case.verify_authentication() is True
 
 
@@ -761,9 +790,7 @@ def test_attention_phases_coalesce_exact_k_linear_chronology(
     )
     assert tuple(case.parent_query.shape[2:]) == (4, 2)
     assert tuple(case.parent_key.shape[2:]) == (4, 2)
-    assert tuple(
-        case.parent_post_attention_residual_target_space.shape
-    ) == (1, 4, 4)
+    assert tuple(case.parent_post_attention_residual_target_space.shape) == (1, 4, 4)
 
 
 def test_attention_trajectory_rejects_sampled_prefill_tail() -> None:
@@ -875,15 +902,21 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
         original_operator = layer_compiler.compile_lfm2_cpcf_short_conv_fold
 
         def conv_spy(**kwargs):
-            observed["operator_splits"] = tuple(
-                case.split for case in kwargs["cases"]
-            )
+            observed["operator_splits"] = tuple(case.split for case in kwargs["cases"])
             return original_operator(**kwargs)
+
+        def unexpected_v4(**_kwargs):
+            pytest.fail("The v3-compatible default dispatched short-conv v4.")
 
         monkeypatch.setattr(
             layer_compiler,
             "compile_lfm2_cpcf_short_conv_fold",
             conv_spy,
+        )
+        monkeypatch.setattr(
+            layer_compiler,
+            "compile_lfm2_cpcf_short_conv_v4_fold",
+            unexpected_v4,
         )
 
     result = layer_compiler.compile_and_install_lfm2_cpcf_layer(
@@ -901,7 +934,11 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
     if kind == "full_attention":
         assert observed["operator_case_count"] == 1
     else:
-        assert observed["operator_splits"] == ("fit", "validation")
+        assert observed["operator_splits"] == (
+            "selection",
+            "fit",
+            "validation",
+        )
         assert (
             result.operator_artifact.report["behavior_gate"][
                 "heldout_validation_used_for_fitting"
@@ -936,17 +973,149 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
     assert result.report["execution"]["target_model_forward_calls"] == 0
 
 
+def test_short_conv_v4_dispatches_authenticated_residual_endpoint_fold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, target, bank, charts = _fixture("short_conv")
+    solver_policy = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-6,),
+        variable_projection_passes=2,
+        target_dtype="float32",
+    )
+    original = layer_compiler.compile_lfm2_cpcf_short_conv_v4_fold
+    observed = {}
+
+    def v4_spy(**kwargs):
+        observed["source_in_proj_weight"] = kwargs["source_in_proj_weight"]
+        observed["source_fir_weight"] = kwargs["source_fir_weight"]
+        observed["source_out_proj_weight"] = kwargs["source_out_proj_weight"]
+        observed["output_encoder"] = kwargs["output_encoder"]
+        observed["cases"] = tuple(kwargs["cases"])
+        observed["solver_policy"] = kwargs["solver_policy"]
+        return original(**kwargs)
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "compile_lfm2_cpcf_short_conv_v4_fold",
+        v4_spy,
+    )
+    result = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        source,
+        target,
+        layer_index=0,
+        input_bank=bank,
+        boundary_charts=charts,
+        short_conv_v4_solver_policy=solver_policy,
+    )
+
+    source_conv = source.model.layers[0].conv
+    assert observed["source_in_proj_weight"] is source_conv.in_proj.weight
+    assert observed["source_fir_weight"] is source_conv.conv.weight
+    assert observed["source_out_proj_weight"] is source_conv.out_proj.weight
+    assert observed["output_encoder"] is charts.post_operator.mapping.encoder
+    assert observed["solver_policy"] is solver_policy
+    assert tuple(case.split for case in observed["cases"]) == (
+        "selection",
+        "fit",
+        "validation",
+    )
+    assert all(
+        isinstance(case, Lfm2CpcfShortConvV4FoldCase)
+        and tuple(case.parent_operator_input_history.shape) == (2, 6, 8)
+        and case.verify_authentication()
+        for case in observed["cases"]
+    )
+    assert isinstance(result.operator_artifact, Lfm2CompiledCpcfShortConvV4Fold)
+    assert result.operator_artifact.verify_authentication() is True
+    assert (
+        result.operator_artifact.report["solver_policy_sha256"]
+        == solver_policy.authentication_sha256
+    )
+    assert result.operator_install_report["scope"] == (
+        "authenticated_residual_endpoint_cpcf_short_conv_v4_install"
+    )
+    assert result.report["execution"]["training_steps"] == 0
+    assert result.report["execution"]["parameters_pruned"] == 0
+    assert result.report["execution"]["parameters_quantized"] == 0
+
+
+def test_short_conv_v4_gate_failure_is_strictly_nested_and_rolls_back() -> None:
+    source, target, bank, charts = _fixture("short_conv")
+    layer = target.model.layers[0]
+    target_before = copy.deepcopy(layer.state_dict())
+    target_ids = {name: id(value) for name, value in layer.named_parameters()}
+    solver_policy = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-6,),
+        variable_projection_passes=2,
+        target_dtype="float32",
+    )
+    gate_policy = layer_compiler.Lfm2CpcfShortConvGatePolicy(
+        maximum_fit_endpoint_relative_rmse=0.0,
+        maximum_validation_endpoint_relative_rmse=0.0,
+        minimum_fit_endpoint_cosine_similarity=1.0,
+        minimum_validation_endpoint_cosine_similarity=1.0,
+        enforce=True,
+    )
+
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilationFailure,
+        match="failed enforced behavior gates",
+    ) as caught:
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+            short_conv_gate_policy=gate_policy,
+            short_conv_v4_solver_policy=solver_policy,
+        )
+
+    failure = caught.value
+    nested = failure.short_conv_validation_report
+    assert nested is not None
+    assert nested["schema"] == LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
+    assert nested["compiled_short_conv_fold_issued"] is False
+    assert nested["promotion_claimed"] is False
+    assert nested["promotable_candidate"] is False
+    assert nested["failure_evidence_only"] is True
+    assert layer_compiler._valid_short_conv_validation_report(nested) is True
+    forged = copy.deepcopy(nested)
+    selected = forged["selected_candidate_id"]
+    candidate = forged["candidate_selection_reports"][selected]
+    candidate.pop("report_sha256")
+    candidate["promotion_claimed"] = True
+    candidate["report_sha256"] = layer_compiler._sha(candidate)
+    forged.pop("report_sha256")
+    forged["report_sha256"] = layer_compiler._sha(forged)
+    assert layer_compiler._recursive_report_seals_valid(forged) is True
+    assert layer_compiler._valid_short_conv_validation_report(forged) is False
+    assert failure.stage == "operator_compile"
+    assert failure.rollback_proof["exact_layer_rollback_proven"] is True
+    for name, value in layer.state_dict().items():
+        torch.testing.assert_close(value, target_before[name], rtol=0, atol=0)
+    assert {name: id(value) for name, value in layer.named_parameters()} == target_ids
+
+
 def test_layer_transaction_rolls_back_operator_when_mlp_compile_fails(
     monkeypatch,
 ):
     source, target, bank, charts = _fixture("full_attention")
-    target_before = copy.deepcopy(target.model.layers[0].state_dict())
+    layer = target.model.layers[0]
+    layer.register_buffer(
+        "rotary_inv_freq",
+        torch.tensor([2.0]),
+        persistent=False,
+    )
+    target_before = copy.deepcopy(layer.state_dict())
     target_ids = {
         name: id(parameter)
         for name, parameter in target.model.layers[0].named_parameters()
     }
 
     def fail_mlp(**_kwargs):
+        with torch.no_grad():
+            layer.rotary_inv_freq.fill_(11.0)
         raise RuntimeError("forced post-operator failure")
 
     monkeypatch.setattr(
@@ -954,7 +1123,10 @@ def test_layer_transaction_rolls_back_operator_when_mlp_compile_fails(
         "compile_lfm2_structural_residual_mlp_fold",
         fail_mlp,
     )
-    with pytest.raises(RuntimeError, match="forced post-operator failure"):
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilationFailure,
+        match="forced post-operator failure",
+    ) as caught:
         layer_compiler.compile_and_install_lfm2_cpcf_layer(
             source,
             target,
@@ -963,12 +1135,377 @@ def test_layer_transaction_rolls_back_operator_when_mlp_compile_fails(
             boundary_charts=charts,
         )
 
+    failure = caught.value
+    assert failure.stage == "mlp_compile"
+    assert failure.layer_index == 0
+    assert failure.operator_kind == "full_attention"
+    assert failure.input_bank_sha256 == bank.state_bank_sha256
+    assert failure.boundary_charts_sha256 == charts.layer_charts_sha256
+    assert failure.rollback_proof["exact_layer_rollback_proven"] is True
+    assert (
+        failure.rollback_proof["target_all_named_parameters_and_buffers_restored"]
+        is True
+    )
+    assert failure.report["layer_result_issued"] is False
+    assert failure.report["promotion_claimed"] is False
     for name, value in target.model.layers[0].state_dict().items():
         torch.testing.assert_close(value, target_before[name], rtol=0, atol=0)
     assert {
         name: id(parameter)
         for name, parameter in target.model.layers[0].named_parameters()
     } == target_ids
+    assert torch.equal(layer.rotary_inv_freq, torch.tensor([2.0]))
+
+
+def test_short_conv_gate_failure_preserves_nested_report_and_exact_rollback(
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("short_conv")
+    layer = target.model.layers[0]
+    layer.register_buffer(
+        "rotary_inv_freq",
+        torch.tensor([2.0]),
+        persistent=False,
+    )
+    parameter = layer.conv.in_proj.weight
+    original_gradient = torch.full_like(parameter, 7.0)
+    parameter.grad = original_gradient
+    gradient_storage_pointer = int(original_gradient.untyped_storage().data_ptr())
+    target_before = copy.deepcopy(layer.state_dict())
+    target_ids = {name: id(value) for name, value in layer.named_parameters()}
+    nested_body = {
+        "schema": layer_compiler.LFM2_CPCF_SHORT_CONV_FOLD_SCHEMA,
+        "source_hidden_size": 8,
+        "target_hidden_size": 4,
+        "hidden_width_compression_ratio": 2.0,
+        "source_fir_length": 3,
+        "target_fir_length": 3,
+        "target_logical_parameters": 1,
+        "fit_case_count": 1,
+        "validation_case_count": 1,
+        "fit_metrics": {},
+        "validation_metrics": {},
+        "fit_case_reports": [],
+        "validation_case_reports": [],
+        "output_writer_scope": "authenticated_residual_suffix_only",
+        "producer_and_fir_scope": "complete_causal_prefix",
+        "fir_state_policy": (
+            "zero_at_sequence_origin_then_warm_over_every_prefix_token"
+        ),
+        "writer_fit_rows": 1,
+        "fit_prefix_rows": 1,
+        "fit_fir_warmup_rows": 0,
+        "provenance": {},
+        "behavior_gate": {
+            "policy": {
+                "maximum_fit_endpoint_relative_rmse": 1.0,
+                "maximum_validation_endpoint_relative_rmse": 1.0,
+                "minimum_fit_endpoint_cosine_similarity": 0.0,
+                "minimum_validation_endpoint_cosine_similarity": 0.0,
+                "enforce": True,
+            },
+            "checks": {
+                "fit_endpoint_relative_rmse": True,
+                "validation_endpoint_relative_rmse": False,
+                "fit_endpoint_cosine_similarity": True,
+                "validation_endpoint_cosine_similarity": True,
+            },
+            "passed": False,
+            "heldout_validation_used_for_fitting": False,
+        },
+        "audit": {
+            "source_inputs_sha256_before": "1" * 64,
+            "source_inputs_sha256_after": "1" * 64,
+            "source_inputs_unchanged": True,
+            "target_templates_sha256_before": "2" * 64,
+            "target_templates_sha256_after": "2" * 64,
+            "target_templates_unchanged": True,
+            "evidence_sha256_before": "3" * 64,
+            "evidence_sha256_after": "3" * 64,
+            "evidence_unchanged": True,
+            "case_authentication_verified": True,
+            "blank_target_values_used_by_compiler": False,
+            "target_templates_used_for_shape_and_dtype_only": True,
+            "returned_tensors_detached": True,
+        },
+        "execution": {
+            "closed_form_linear_solve": True,
+            "deterministic_barycentric_channel_clustering": True,
+            "parent_model_forward_calls": 0,
+            "target_model_forward_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        },
+        "compiled_state_sha256": "a" * 64,
+    }
+    nested_report = {
+        **nested_body,
+        "report_sha256": layer_compiler._sha(nested_body),
+    }
+    nested_error = layer_compiler.Lfm2CpcfShortConvValidationError(
+        "validation_endpoint_relative_rmse",
+        nested_report,
+    )
+    nested_bytes = layer_compiler._canonical_json(nested_report)
+
+    def fail_short_conv(**_kwargs):
+        with torch.no_grad():
+            parameter.fill_(91.0)
+        original_gradient.data = original_gradient.clone()
+        layer._non_persistent_buffers_set.clear()
+        parameter.requires_grad_(False)
+        parameter.grad = None
+        layer.train()
+        raise nested_error
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "compile_lfm2_cpcf_short_conv_fold",
+        fail_short_conv,
+    )
+
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilationFailure,
+        match="validation_endpoint_relative_rmse",
+    ) as caught:
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+        )
+
+    failure = caught.value
+    assert failure.__cause__ is nested_error
+    assert failure.stage == "operator_compile"
+    assert failure.operator_kind == "short_conv"
+    assert failure.input_bank_sha256 == bank.state_bank_sha256
+    assert failure.boundary_charts_sha256 == charts.layer_charts_sha256
+    assert failure.short_conv_validation_report == nested_error.report
+    assert failure.short_conv_validation_report is not nested_error.report
+    assert failure.short_conv_validation_report_bytes == nested_bytes
+    assert failure.report["nested_short_conv_validation_report"] == nested_report
+    assert (
+        failure.report["nested_short_conv_validation_report_sha256"]
+        == nested_report["report_sha256"]
+    )
+    assert (
+        failure.report["nested_short_conv_validation_report_preserved_byte_for_byte"]
+        is True
+    )
+    assert failure.rollback_proof["exact_layer_rollback_proven"] is True
+    mutable_nested = failure.short_conv_validation_report
+    assert mutable_nested is not None
+    mutable_nested["behavior_gate"]["passed"] = True
+    assert failure.short_conv_validation_report["behavior_gate"]["passed"] is False
+    mutable_report = failure.report
+    mutable_report["nested_short_conv_validation_report"]["behavior_gate"]["passed"] = (
+        True
+    )
+    assert (
+        failure.report["nested_short_conv_validation_report"]["behavior_gate"]["passed"]
+        is False
+    )
+    forged_report = failure.report
+    forged_report["layer_result_issued"] = True
+    forged_body = dict(forged_report)
+    forged_body.pop("report_sha256")
+    forged_report["report_sha256"] = layer_compiler._sha(forged_body)
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="claims|context",
+    ):
+        layer_compiler.Lfm2CpcfLayerCompilationFailure(
+            "forged success",
+            stage=failure.stage,
+            layer_index=failure.layer_index,
+            operator_kind=failure.operator_kind,
+            input_bank_sha256=failure.input_bank_sha256,
+            input_tensor_sha256=failure.input_tensor_sha256,
+            boundary_charts_sha256=(failure.boundary_charts_sha256),
+            boundary_charts_payload_sha256=(failure.boundary_charts_payload_sha256),
+            rollback_proof=failure.rollback_proof,
+            report=forged_report,
+            short_conv_validation_report=(failure.short_conv_validation_report),
+            short_conv_validation_report_bytes=(
+                failure.short_conv_validation_report_bytes
+            ),
+        )
+    forged_nested_body = {
+        **nested_body,
+        "promotion_claimed": True,
+    }
+    forged_nested_report = {
+        **forged_nested_body,
+        "report_sha256": layer_compiler._sha(forged_nested_body),
+    }
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerInstallError,
+        match="success claim",
+    ):
+        layer_compiler._verified_short_conv_validation_failure(
+            layer_compiler.Lfm2CpcfShortConvValidationError(
+                "forged nested success",
+                forged_nested_report,
+            )
+        )
+    for name, value in layer.state_dict().items():
+        torch.testing.assert_close(value, target_before[name], rtol=0, atol=0)
+    assert {name: id(value) for name, value in layer.named_parameters()} == target_ids
+    assert parameter.requires_grad is True
+    assert parameter.grad is original_gradient
+    assert (
+        int(original_gradient.untyped_storage().data_ptr()) == gradient_storage_pointer
+    )
+    assert torch.equal(parameter.grad, torch.full_like(parameter, 7.0))
+    assert "rotary_inv_freq" in layer._non_persistent_buffers_set
+    assert layer.training is False
+
+
+def test_layer_failure_detects_live_evidence_mapping_replacement(
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("short_conv")
+    layer = target.model.layers[0]
+    before = copy.deepcopy(layer.state_dict())
+    evidence = bank.phases[0].parent_evidence.layers[0]
+
+    def replace_evidence(**_kwargs):
+        replacement = dict(evidence.tensors)
+        replacement["operator.input"] = replacement["operator.input"].clone()
+        object.__setattr__(
+            evidence,
+            "tensors",
+            MappingProxyType(replacement),
+        )
+        with torch.no_grad():
+            layer.conv.in_proj.weight.fill_(9.0)
+        raise RuntimeError("evidence mapping replaced")
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "compile_lfm2_cpcf_short_conv_fold",
+        replace_evidence,
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerInstallError,
+        match="rollback could not be proven",
+    ):
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+        )
+
+    for name, value in layer.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
+
+
+def test_layer_failure_detects_boundary_chart_report_mutation(
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("short_conv")
+    layer = target.model.layers[0]
+    before = copy.deepcopy(layer.state_dict())
+
+    def mutate_chart(**_kwargs):
+        object.__setattr__(
+            charts.post_operator,
+            "report",
+            MappingProxyType(
+                {
+                    "report_sha256": charts.post_operator.report["report_sha256"],
+                    "promotion_claimed": True,
+                }
+            ),
+        )
+        with torch.no_grad():
+            layer.conv.in_proj.weight.fill_(9.0)
+        raise RuntimeError("chart report changed")
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "compile_lfm2_cpcf_short_conv_fold",
+        mutate_chart,
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerInstallError,
+        match="rollback could not be proven",
+    ):
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+        )
+
+    for name, value in layer.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
+
+
+def test_layer_failure_detects_phase_token_tensor_mutation(
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("short_conv")
+    phase = bank.phases[0]
+
+    def mutate_tokens(**_kwargs):
+        phase.input_ids.add_(1)
+        raise RuntimeError("phase tokens changed")
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "compile_lfm2_cpcf_short_conv_fold",
+        mutate_tokens,
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerInstallError,
+        match="rollback could not be proven",
+    ):
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+        )
+
+
+def test_layer_keyboard_interrupt_restores_before_propagating(
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("short_conv")
+    layer = target.model.layers[0]
+    parameter = layer.conv.in_proj.weight
+    before = parameter.detach().clone()
+
+    def interrupt(**_kwargs):
+        with torch.no_grad():
+            parameter.fill_(9.0)
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "compile_lfm2_cpcf_short_conv_fold",
+        interrupt,
+    )
+    with pytest.raises(KeyboardInterrupt):
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+        )
+
+    torch.testing.assert_close(parameter, before, rtol=0, atol=0)
 
 
 def test_inverse_rope_and_full_key_recovery_are_functional() -> None:
@@ -986,10 +1523,9 @@ def test_inverse_rope_and_full_key_recovery_are_functional() -> None:
     sine = torch.cat((frequencies.sin(), frequencies.sin()), dim=-1)
     cosine = cosine.expand(2, -1, -1).contiguous()
     sine = sine.expand(2, -1, -1).contiguous()
-    rotated = (
-        normalized * cosine.unsqueeze(1)
-        + _rotate_half(normalized) * sine.unsqueeze(1)
-    )
+    rotated = normalized * cosine.unsqueeze(1) + _rotate_half(
+        normalized
+    ) * sine.unsqueeze(1)
 
     inverted = layer_compiler.invert_lfm2_rope(rotated, cosine, sine)
     torch.testing.assert_close(inverted, normalized, rtol=1e-5, atol=1e-6)
@@ -1007,10 +1543,9 @@ def test_inverse_rope_and_full_key_recovery_are_functional() -> None:
         weight.reshape(1, 1, 1, -1),
         1e-6,
     )
-    reconstructed = (
-        reconstructed * cosine.unsqueeze(1)
-        + _rotate_half(reconstructed) * sine.unsqueeze(1)
-    )
+    reconstructed = reconstructed * cosine.unsqueeze(1) + _rotate_half(
+        reconstructed
+    ) * sine.unsqueeze(1)
     torch.testing.assert_close(reconstructed, rotated, rtol=5e-5, atol=5e-5)
     torch.testing.assert_close(
         recovered[:, :, -2:, :],

@@ -59,6 +59,12 @@ from .hf_lfm2_cpcf_model_fold import (
     Lfm2CpcfModelFoldPolicy,
 )
 from .hf_lfm2_cpcf_short_conv_fold import Lfm2CpcfShortConvGatePolicy
+from .hf_lfm2_cpcf_short_conv_v4 import (
+    Lfm2CpcfShortConvV4SolverPolicy,
+)
+from .hf_lfm2_cpcf_short_conv_v4_policy import (
+    parse_lfm2_cpcf_short_conv_v4_solver_policy,
+)
 from .hf_lfm2_parent_relative_manual_gate import (
     REPORT_SCHEMA as PARENT_RELATIVE_REPORT_SCHEMA,
     RATINGS_SCHEMA as PARENT_RELATIVE_RATINGS_SCHEMA,
@@ -81,9 +87,7 @@ REVIEWED_EVIDENCE_SCHEMA = "neural-forge-lfm2-cpcf-reviewed-promotion-evidence-v
 BEHAVIOR_GATE_ID = "lfm2-cpcf-reviewed-whole-response-replay"
 BEHAVIOR_GATE_VERSION = 1
 IMPLEMENTATION_SEAL_SCHEMA = "neural-forge-lfm2-cpcf-reviewed-gate-implementation-v1"
-ORDERED_PHASE_BINDING_SCHEMA = (
-    "neural-forge-lfm2-cpcf-ordered-phase-binding-v1"
-)
+ORDERED_PHASE_BINDING_SCHEMA = "neural-forge-lfm2-cpcf-ordered-phase-binding-v1"
 
 _EVIDENCE_LOADER_TOKEN = object()
 
@@ -112,9 +116,7 @@ def _positive_int(value: Any, name: str) -> int:
 
 def _nonnegative_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise Lfm2CpcfReviewedPromotionError(
-            f"{name} must be a nonnegative integer."
-        )
+        raise Lfm2CpcfReviewedPromotionError(f"{name} must be a nonnegative integer.")
     return value
 
 
@@ -546,6 +548,14 @@ def _normalize_model_fold_policy(value: Any) -> dict[str, Any]:
         short_conv_policy = Lfm2CpcfShortConvGatePolicy(**dict(short_conv))
         constructor = dict(policy)
         constructor["short_conv_gate_policy"] = short_conv_policy
+        serialized_v4 = constructor.pop(
+            "short_conv_v4_solver_policy",
+            None,
+        )
+        if serialized_v4 is not None:
+            constructor["short_conv_v4_solver_policy"] = (
+                parse_lfm2_cpcf_short_conv_v4_solver_policy(serialized_v4)
+            )
         normalized = Lfm2CpcfModelFoldPolicy(**constructor).as_dict()
     except (TypeError, ValueError) as exc:
         raise Lfm2CpcfReviewedPromotionError(
@@ -693,8 +703,7 @@ def _verify_compiled_model_fold(
         "fallback_paths": 0,
     }
     if (
-        body.get("blank_target_report_sha256")
-        != blank_target_report_sha256
+        body.get("blank_target_report_sha256") != blank_target_report_sha256
         or body.get("source_state_preserved") is not True
         or body.get("target_parameter_count_preserved") is not True
         or body.get("all_layers_compiled_in_order") is not True
@@ -820,17 +829,13 @@ def _extract_cpcf_run_provenance(
     assert isinstance(reloaded_inventory, Mapping)
     assert isinstance(compression, Mapping)
 
-    parent_inventory_document, _parent_inventory_sha256 = (
-        _verify_parameter_inventory(
-            parent_inventory,
-            name="CPCF parent parameter inventory",
-        )
+    parent_inventory_document, _parent_inventory_sha256 = _verify_parameter_inventory(
+        parent_inventory,
+        name="CPCF parent parameter inventory",
     )
-    blank_inventory_document, _blank_inventory_sha256 = (
-        _verify_parameter_inventory(
-            blank_inventory,
-            name="CPCF blank parameter inventory",
-        )
+    blank_inventory_document, _blank_inventory_sha256 = _verify_parameter_inventory(
+        blank_inventory,
+        name="CPCF blank parameter inventory",
     )
     compiled_inventory_document, _compiled_inventory_sha256 = (
         _verify_parameter_inventory(
@@ -844,11 +849,9 @@ def _extract_cpcf_run_provenance(
             name="CPCF reloaded parameter inventory",
         )
     )
-    compression_document, _compression_receipt_sha256 = (
-        _verify_parameter_receipt(
-            compression,
-            name="CPCF reload compression receipt",
-        )
+    compression_document, _compression_receipt_sha256 = _verify_parameter_receipt(
+        compression,
+        name="CPCF reload compression receipt",
     )
 
     cache_key = _digest(inputs.get("cache_key"), "CPCF parent cache key")
@@ -916,8 +919,7 @@ def _extract_cpcf_run_provenance(
     )
     if (
         any(value != exact_parameters for value in observed_target_counts)
-        or compression_document.get("source_unique_parameters")
-        != source_parameters
+        or compression_document.get("source_unique_parameters") != source_parameters
         or not 0 < exact_parameters < source_parameters
     ):
         raise Lfm2CpcfReviewedPromotionError(
@@ -1402,9 +1404,7 @@ class Lfm2CpcfReviewedPromotionEvidence:
         values = {
             "manifest": manifest,
             "cpcf_run_receipt_sha256": cpcf_run_receipt_sha256,
-            "cpcf_run_receipt_document_sha256": (
-                cpcf_run_receipt_document_sha256
-            ),
+            "cpcf_run_receipt_document_sha256": (cpcf_run_receipt_document_sha256),
             "parent_cache_key": parent_cache_key,
             "cache_live_parent_fingerprint": cache_live_parent_fingerprint,
             "live_parent_state_fingerprint": live_parent_state_fingerprint,
@@ -1424,28 +1424,18 @@ class Lfm2CpcfReviewedPromotionEvidence:
             "target_topology_fingerprint": target_topology_fingerprint,
             "blank_target_state_fingerprint": blank_target_state_fingerprint,
             "target_plan_binding_sha256": target_plan_binding_sha256,
-            "compiled_model_fold_result_sha256": (
-                compiled_model_fold_result_sha256
-            ),
+            "compiled_model_fold_result_sha256": (compiled_model_fold_result_sha256),
             "compiled_model_fold_policy": compiled_model_fold_policy,
-            "compiled_model_fold_policy_sha256": (
-                compiled_model_fold_policy_sha256
-            ),
-            "compiled_model_fold_phase_count": (
-                compiled_model_fold_phase_count
-            ),
-            "compiled_model_fold_phase_sha256": (
-                compiled_model_fold_phase_sha256
-            ),
+            "compiled_model_fold_policy_sha256": (compiled_model_fold_policy_sha256),
+            "compiled_model_fold_phase_count": (compiled_model_fold_phase_count),
+            "compiled_model_fold_phase_sha256": (compiled_model_fold_phase_sha256),
             "compiled_model_fold_phase_binding_sha256": (
                 compiled_model_fold_phase_binding_sha256
             ),
             "compiled_blank_target_report_sha256": (
                 compiled_blank_target_report_sha256
             ),
-            "compiled_parameter_receipt_sha256": (
-                compiled_parameter_receipt_sha256
-            ),
+            "compiled_parameter_receipt_sha256": (compiled_parameter_receipt_sha256),
             "candidate_rows": candidate_rows,
             "candidate_state_fingerprint": candidate_state_fingerprint,
             "candidate_outputs_sha256": candidate_outputs_sha256,
@@ -1538,13 +1528,8 @@ class Lfm2CpcfReviewedPromotionEvidence:
                 "compiled_model_fold_phase_count",
             ),
         )
-        compiled_policy = _normalize_model_fold_policy(
-            self.compiled_model_fold_policy
-        )
-        if (
-            canonical_sha256(compiled_policy)
-            != self.compiled_model_fold_policy_sha256
-        ):
+        compiled_policy = _normalize_model_fold_policy(self.compiled_model_fold_policy)
+        if canonical_sha256(compiled_policy) != self.compiled_model_fold_policy_sha256:
             raise Lfm2CpcfReviewedPromotionError(
                 "Typed CPCF compiled model-fold policy seal is invalid."
             )
@@ -1557,12 +1542,9 @@ class Lfm2CpcfReviewedPromotionEvidence:
             _digest(value, "compiled_model_fold_phase_sha256")
             for value in self.compiled_model_fold_phase_sha256
         )
-        if (
-            len(compiled_phase_sha256)
-            != self.compiled_model_fold_phase_count
-            or len(set(compiled_phase_sha256))
-            != len(compiled_phase_sha256)
-        ):
+        if len(compiled_phase_sha256) != self.compiled_model_fold_phase_count or len(
+            set(compiled_phase_sha256)
+        ) != len(compiled_phase_sha256):
             raise Lfm2CpcfReviewedPromotionError(
                 "Typed CPCF compiled model-fold phase sequence is invalid."
             )
@@ -1630,9 +1612,7 @@ class Lfm2CpcfReviewedPromotionEvidence:
             )
         duplicated_fields = {
             "cpcf_run_receipt_sha256": self.cpcf_run_receipt_sha256,
-            "cpcf_run_receipt_document_sha256": (
-                self.cpcf_run_receipt_document_sha256
-            ),
+            "cpcf_run_receipt_document_sha256": (self.cpcf_run_receipt_document_sha256),
             "parent_cache_key": self.parent_cache_key,
             "cache_live_parent_fingerprint": self.cache_live_parent_fingerprint,
             "live_parent_state_fingerprint": self.live_parent_state_fingerprint,
@@ -1647,9 +1627,7 @@ class Lfm2CpcfReviewedPromotionEvidence:
                 self.selected_target_candidate_fingerprint
             ),
             "target_topology_fingerprint": self.target_topology_fingerprint,
-            "blank_target_state_fingerprint": (
-                self.blank_target_state_fingerprint
-            ),
+            "blank_target_state_fingerprint": (self.blank_target_state_fingerprint),
             "target_plan_binding_sha256": self.target_plan_binding_sha256,
             "compiled_model_fold_result_sha256": (
                 self.compiled_model_fold_result_sha256
@@ -1691,16 +1669,10 @@ class Lfm2CpcfReviewedPromotionEvidence:
             != canonical_json_bytes(dict(self.target_requested_budget))
             or normalized.get("compiled_model_fold_phase_count")
             != self.compiled_model_fold_phase_count
-            or canonical_json_bytes(
-                normalized.get("compiled_model_fold_policy")
-            )
+            or canonical_json_bytes(normalized.get("compiled_model_fold_policy"))
             != canonical_json_bytes(dict(self.compiled_model_fold_policy))
-            or canonical_json_bytes(
-                normalized.get("compiled_model_fold_phase_sha256")
-            )
-            != canonical_json_bytes(
-                list(self.compiled_model_fold_phase_sha256)
-            )
+            or canonical_json_bytes(normalized.get("compiled_model_fold_phase_sha256"))
+            != canonical_json_bytes(list(self.compiled_model_fold_phase_sha256))
         ):
             raise Lfm2CpcfReviewedPromotionError(
                 "Reviewed evidence target plan or compiled model-fold sequence "
@@ -1708,12 +1680,8 @@ class Lfm2CpcfReviewedPromotionEvidence:
             )
         expected_plan_binding = canonical_sha256(
             _target_plan_binding_body(
-                parent_graph_fingerprint=(
-                    self.blank_target_parent_graph_fingerprint
-                ),
-                exact_target_unique_parameters=(
-                    self.exact_target_unique_parameters
-                ),
+                parent_graph_fingerprint=(self.blank_target_parent_graph_fingerprint),
+                exact_target_unique_parameters=(self.exact_target_unique_parameters),
                 requested_budget=self.target_requested_budget,
                 frontier_fingerprint=self.target_frontier_fingerprint,
                 target_certificate_sha256=self.target_certificate_sha256,
@@ -1822,48 +1790,34 @@ def _reviewed_evidence_loader_seal_body(
         "manifest_sha256": evidence.manifest.manifest_sha256,
         "manifest_document_sha256": evidence.manifest.document_sha256,
         "cpcf_run_receipt_sha256": evidence.cpcf_run_receipt_sha256,
-        "cpcf_run_receipt_document_sha256": (
-            evidence.cpcf_run_receipt_document_sha256
-        ),
+        "cpcf_run_receipt_document_sha256": (evidence.cpcf_run_receipt_document_sha256),
         "parent_cache_key": evidence.parent_cache_key,
-        "cache_live_parent_fingerprint": (
-            evidence.cache_live_parent_fingerprint
-        ),
+        "cache_live_parent_fingerprint": (evidence.cache_live_parent_fingerprint),
         "live_parent_state_fingerprint": evidence.live_parent_state_fingerprint,
         "trace_adapter_sha256": evidence.trace_adapter_sha256,
         "trajectory_corpus_sha256": evidence.trajectory_corpus_sha256,
         "blank_target_parent_graph_fingerprint": (
             evidence.blank_target_parent_graph_fingerprint
         ),
-        "exact_target_unique_parameters": (
-            evidence.exact_target_unique_parameters
-        ),
+        "exact_target_unique_parameters": (evidence.exact_target_unique_parameters),
         "target_requested_budget": dict(evidence.target_requested_budget),
         "target_frontier_fingerprint": evidence.target_frontier_fingerprint,
         "target_certificate_sha256": evidence.target_certificate_sha256,
         "selected_target_candidate_fingerprint": (
             evidence.selected_target_candidate_fingerprint
         ),
-        "selected_target_candidate_rank": (
-            evidence.selected_target_candidate_rank
-        ),
+        "selected_target_candidate_rank": (evidence.selected_target_candidate_rank),
         "target_topology_fingerprint": evidence.target_topology_fingerprint,
-        "blank_target_state_fingerprint": (
-            evidence.blank_target_state_fingerprint
-        ),
+        "blank_target_state_fingerprint": (evidence.blank_target_state_fingerprint),
         "target_plan_binding_sha256": evidence.target_plan_binding_sha256,
         "compiled_model_fold_result_sha256": (
             evidence.compiled_model_fold_result_sha256
         ),
-        "compiled_model_fold_policy": dict(
-            evidence.compiled_model_fold_policy
-        ),
+        "compiled_model_fold_policy": dict(evidence.compiled_model_fold_policy),
         "compiled_model_fold_policy_sha256": (
             evidence.compiled_model_fold_policy_sha256
         ),
-        "compiled_model_fold_phase_count": (
-            evidence.compiled_model_fold_phase_count
-        ),
+        "compiled_model_fold_phase_count": (evidence.compiled_model_fold_phase_count),
         "compiled_model_fold_phase_sha256": list(
             evidence.compiled_model_fold_phase_sha256
         ),
@@ -1959,9 +1913,7 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
     cpcf_receipt_sha256, cpcf_body = _verify_cpcf_run_receipt(cpcf_document)
     run_provenance = _extract_cpcf_run_provenance(
         cpcf_body,
-        expected_parent_model_fingerprint=(
-            parent_envelope.parent_model_fingerprint
-        ),
+        expected_parent_model_fingerprint=(parent_envelope.parent_model_fingerprint),
     )
     cpcf_inputs = cpcf_body.get("inputs")
     if not isinstance(cpcf_inputs, Mapping):
@@ -2157,9 +2109,7 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
             run_provenance["live_parent_state_fingerprint"]
         ),
         "trace_adapter_sha256": run_provenance["trace_adapter_sha256"],
-        "trajectory_corpus_sha256": (
-            run_provenance["trajectory_corpus_sha256"]
-        ),
+        "trajectory_corpus_sha256": (run_provenance["trajectory_corpus_sha256"]),
         "blank_target_parent_graph_fingerprint": (
             run_provenance["blank_target_parent_graph_fingerprint"]
         ),
@@ -2167,33 +2117,23 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
             run_provenance["exact_target_unique_parameters"]
         ),
         "target_requested_budget": run_provenance["target_requested_budget"],
-        "target_frontier_fingerprint": (
-            run_provenance["target_frontier_fingerprint"]
-        ),
-        "target_certificate_sha256": (
-            run_provenance["target_certificate_sha256"]
-        ),
+        "target_frontier_fingerprint": (run_provenance["target_frontier_fingerprint"]),
+        "target_certificate_sha256": (run_provenance["target_certificate_sha256"]),
         "selected_target_candidate_fingerprint": (
             run_provenance["selected_target_candidate_fingerprint"]
         ),
         "selected_target_candidate_rank": (
             run_provenance["selected_target_candidate_rank"]
         ),
-        "target_topology_fingerprint": (
-            run_provenance["target_topology_fingerprint"]
-        ),
+        "target_topology_fingerprint": (run_provenance["target_topology_fingerprint"]),
         "blank_target_state_fingerprint": (
             run_provenance["blank_target_state_fingerprint"]
         ),
-        "target_plan_binding_sha256": (
-            run_provenance["target_plan_binding_sha256"]
-        ),
+        "target_plan_binding_sha256": (run_provenance["target_plan_binding_sha256"]),
         "compiled_model_fold_result_sha256": (
             run_provenance["compiled_model_fold_result_sha256"]
         ),
-        "compiled_model_fold_policy": (
-            run_provenance["compiled_model_fold_policy"]
-        ),
+        "compiled_model_fold_policy": (run_provenance["compiled_model_fold_policy"]),
         "compiled_model_fold_policy_sha256": (
             run_provenance["compiled_model_fold_policy_sha256"]
         ),
@@ -2298,20 +2238,12 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
     evidence = Lfm2CpcfReviewedPromotionEvidence(
         manifest=manifest,
         cpcf_run_receipt_sha256=cpcf_receipt_sha256,
-        cpcf_run_receipt_document_sha256=(
-            artifacts.cpcf_run_receipt.document_sha256
-        ),
+        cpcf_run_receipt_document_sha256=(artifacts.cpcf_run_receipt.document_sha256),
         parent_cache_key=run_provenance["parent_cache_key"],
-        cache_live_parent_fingerprint=(
-            run_provenance["cache_live_parent_fingerprint"]
-        ),
-        live_parent_state_fingerprint=(
-            run_provenance["live_parent_state_fingerprint"]
-        ),
+        cache_live_parent_fingerprint=(run_provenance["cache_live_parent_fingerprint"]),
+        live_parent_state_fingerprint=(run_provenance["live_parent_state_fingerprint"]),
         trace_adapter_sha256=run_provenance["trace_adapter_sha256"],
-        trajectory_corpus_sha256=(
-            run_provenance["trajectory_corpus_sha256"]
-        ),
+        trajectory_corpus_sha256=(run_provenance["trajectory_corpus_sha256"]),
         blank_target_parent_graph_fingerprint=(
             run_provenance["blank_target_parent_graph_fingerprint"]
         ),
@@ -2319,33 +2251,23 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
             run_provenance["exact_target_unique_parameters"]
         ),
         target_requested_budget=run_provenance["target_requested_budget"],
-        target_frontier_fingerprint=(
-            run_provenance["target_frontier_fingerprint"]
-        ),
-        target_certificate_sha256=(
-            run_provenance["target_certificate_sha256"]
-        ),
+        target_frontier_fingerprint=(run_provenance["target_frontier_fingerprint"]),
+        target_certificate_sha256=(run_provenance["target_certificate_sha256"]),
         selected_target_candidate_fingerprint=(
             run_provenance["selected_target_candidate_fingerprint"]
         ),
         selected_target_candidate_rank=(
             run_provenance["selected_target_candidate_rank"]
         ),
-        target_topology_fingerprint=(
-            run_provenance["target_topology_fingerprint"]
-        ),
+        target_topology_fingerprint=(run_provenance["target_topology_fingerprint"]),
         blank_target_state_fingerprint=(
             run_provenance["blank_target_state_fingerprint"]
         ),
-        target_plan_binding_sha256=(
-            run_provenance["target_plan_binding_sha256"]
-        ),
+        target_plan_binding_sha256=(run_provenance["target_plan_binding_sha256"]),
         compiled_model_fold_result_sha256=(
             run_provenance["compiled_model_fold_result_sha256"]
         ),
-        compiled_model_fold_policy=(
-            run_provenance["compiled_model_fold_policy"]
-        ),
+        compiled_model_fold_policy=(run_provenance["compiled_model_fold_policy"]),
         compiled_model_fold_policy_sha256=(
             run_provenance["compiled_model_fold_policy_sha256"]
         ),
@@ -2677,9 +2599,7 @@ class Lfm2CpcfReviewedPromotionGate(metaclass=_ImmutableReviewedGateMeta):
                         evidence.reviewed_evidence_fingerprint
                     ),
                     "composite_report_sha256": (evidence.composite_report_sha256),
-                    "cpcf_run_receipt_sha256": (
-                        evidence.cpcf_run_receipt_sha256
-                    ),
+                    "cpcf_run_receipt_sha256": (evidence.cpcf_run_receipt_sha256),
                     "cpcf_run_receipt_document_sha256": (
                         evidence.cpcf_run_receipt_document_sha256
                     ),
@@ -2691,18 +2611,14 @@ class Lfm2CpcfReviewedPromotionGate(metaclass=_ImmutableReviewedGateMeta):
                         evidence.live_parent_state_fingerprint
                     ),
                     "trace_adapter_sha256": evidence.trace_adapter_sha256,
-                    "trajectory_corpus_sha256": (
-                        evidence.trajectory_corpus_sha256
-                    ),
+                    "trajectory_corpus_sha256": (evidence.trajectory_corpus_sha256),
                     "blank_target_parent_graph_fingerprint": (
                         evidence.blank_target_parent_graph_fingerprint
                     ),
                     "exact_target_unique_parameters": (
                         evidence.exact_target_unique_parameters
                     ),
-                    "target_plan_binding_sha256": (
-                        evidence.target_plan_binding_sha256
-                    ),
+                    "target_plan_binding_sha256": (evidence.target_plan_binding_sha256),
                     "compiled_model_fold_result_sha256": (
                         evidence.compiled_model_fold_result_sha256
                     ),
@@ -2848,13 +2764,9 @@ class Lfm2CpcfReviewedPromotionGate(metaclass=_ImmutableReviewedGateMeta):
             "composite_promotion_report_sha256": (
                 self.evidence.composite_report_sha256
             ),
-            "cpcf_run_receipt_sha256": (
-                self.evidence.cpcf_run_receipt_sha256
-            ),
+            "cpcf_run_receipt_sha256": (self.evidence.cpcf_run_receipt_sha256),
             "parent_cache_key": self.evidence.parent_cache_key,
-            "target_plan_binding_sha256": (
-                self.evidence.target_plan_binding_sha256
-            ),
+            "target_plan_binding_sha256": (self.evidence.target_plan_binding_sha256),
             "exact_target_unique_parameters": (
                 self.evidence.exact_target_unique_parameters
             ),
@@ -2927,6 +2839,26 @@ def _reviewed_gate_implementation_targets() -> tuple[tuple[str, Any], ...]:
         ("evidence.verify_parameter_inventory", _verify_parameter_inventory),
         ("evidence.verify_parameter_receipt", _verify_parameter_receipt),
         ("evidence.normalize_model_fold_policy", _normalize_model_fold_policy),
+        (
+            "evidence.parse_short_conv_v4_solver_policy",
+            parse_lfm2_cpcf_short_conv_v4_solver_policy,
+        ),
+        (
+            "short_conv_v4_policy.__post_init__",
+            Lfm2CpcfShortConvV4SolverPolicy.__post_init__,
+        ),
+        (
+            "short_conv_v4_policy.authentication_body",
+            Lfm2CpcfShortConvV4SolverPolicy.authentication_body,
+        ),
+        (
+            "short_conv_v4_policy.verify_authentication",
+            Lfm2CpcfShortConvV4SolverPolicy.verify_authentication,
+        ),
+        (
+            "short_conv_v4_policy.as_dict",
+            Lfm2CpcfShortConvV4SolverPolicy.as_dict,
+        ),
         ("evidence.ordered_phase_binding_body", _ordered_phase_binding_body),
         ("evidence.verify_blank_target_report", _verify_blank_target_report),
         ("evidence.verify_compiled_model_fold", _verify_compiled_model_fold),

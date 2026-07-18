@@ -53,6 +53,9 @@ from neural_forge.hf_lfm2_cpcf_model_fold import (
     LFM2_CPCF_PARAMETER_RECEIPT_SCHEMA,
     Lfm2CpcfModelFoldPolicy,
 )
+from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
+    Lfm2CpcfShortConvV4SolverPolicy,
+)
 from neural_forge.hf_lfm2_parent_relative_manual_gate import (
     bind_parent_relative_manual_ratings,
     build_parent_relative_manual_packet,
@@ -212,9 +215,7 @@ def _seal(body: dict[str, Any], field: str) -> dict[str, Any]:
 
 def _parameter_inventory(unique_parameters: int) -> dict[str, Any]:
     body = {
-        "method": (
-            "unique_materialized_parameter_storage_offset_numel_identity"
-        ),
+        "method": ("unique_materialized_parameter_storage_offset_numel_identity"),
         "unique_parameters": unique_parameters,
         "raw_named_parameter_occurrences": 1,
         "raw_named_parameter_numel": unique_parameters,
@@ -245,14 +246,10 @@ def _parameter_receipt(
         "source_unique_parameters": source_parameters,
         "target_unique_parameters": target_parameters,
         "planned_target_unique_parameters": target_parameters,
-        "parameters_removed_from_topology": (
-            source_parameters - target_parameters
-        ),
+        "parameters_removed_from_topology": (source_parameters - target_parameters),
         "realized_compression_ratio": realized_ratio,
         "promotion_compression_ratio": promotion_compression_ratio,
-        "promotion_ratio_met": (
-            realized_ratio >= promotion_compression_ratio
-        ),
+        "promotion_ratio_met": (realized_ratio >= promotion_compression_ratio),
         "valid_lower_ratio_diagnostic_fold": (
             realized_ratio < promotion_compression_ratio
         ),
@@ -283,9 +280,7 @@ def _rebuild_cpcf_compiler_chain(
     source_parameters = int(
         cpcf_body["parent_parameter_inventory"]["unique_parameters"]
     )
-    target_parameters = int(
-        cpcf_body["blank_target"]["target_unique_parameters"]
-    )
+    target_parameters = int(cpcf_body["blank_target"]["target_unique_parameters"])
     parent_inventory = _parameter_inventory(source_parameters)
     blank_inventory = _parameter_inventory(target_parameters)
     compiled_inventory = _parameter_inventory(target_parameters)
@@ -293,9 +288,7 @@ def _rebuild_cpcf_compiler_chain(
     parameter_receipt = _parameter_receipt(
         parent_inventory,
         blank_inventory,
-        promotion_compression_ratio=(
-            resolved_policy.promotion_compression_ratio
-        ),
+        promotion_compression_ratio=(resolved_policy.promotion_compression_ratio),
     )
 
     blank_body = copy.deepcopy(cpcf_body["blank_target"])
@@ -305,9 +298,7 @@ def _rebuild_cpcf_compiler_chain(
             "schema": "neural-forge-lfm2-cpcf-blank-target-v1",
             "parent_unique_parameters": source_parameters,
             "target_unique_parameters": target_parameters,
-            "realized_compression_ratio": (
-                source_parameters / target_parameters
-            ),
+            "realized_compression_ratio": (source_parameters / target_parameters),
             "compiler_created_blank": True,
             "all_parameters_zero": True,
             "dense_materialized_parameters": True,
@@ -335,21 +326,15 @@ def _rebuild_cpcf_compiler_chain(
             canonical_sha256({"compiler_phase": 1}),
         )
     digest_defaults = {
-        "boundary_bundle_sha256": canonical_sha256(
-            {"compiled": "boundary-bundle"}
-        ),
+        "boundary_bundle_sha256": canonical_sha256({"compiled": "boundary-bundle"}),
         "interface_install_report_sha256": canonical_sha256(
             {"compiled": "interface-install"}
         ),
         "neutral_norm_install_report_sha256": canonical_sha256(
             {"compiled": "neutral-norm-install"}
         ),
-        "final_state_bank_sha256": canonical_sha256(
-            {"compiled": "final-state-bank"}
-        ),
-        "final_norm_report_sha256": canonical_sha256(
-            {"compiled": "final-norm"}
-        ),
+        "final_state_bank_sha256": canonical_sha256({"compiled": "final-state-bank"}),
+        "final_norm_report_sha256": canonical_sha256({"compiled": "final-norm"}),
     }
     compiled_body = {
         "schema": LFM2_CPCF_MODEL_FOLD_SCHEMA,
@@ -389,9 +374,7 @@ def _rebuild_cpcf_compiler_chain(
     reload_receipt = _parameter_receipt(
         parent_inventory,
         reloaded_inventory,
-        promotion_compression_ratio=(
-            resolved_policy.promotion_compression_ratio
-        ),
+        promotion_compression_ratio=(resolved_policy.promotion_compression_ratio),
     )
     cpcf_body.update(
         {
@@ -406,9 +389,7 @@ def _rebuild_cpcf_compiler_chain(
     )
     ordered_phase_binding = canonical_sha256(
         {
-            "schema": (
-                "neural-forge-lfm2-cpcf-ordered-phase-binding-v1"
-            ),
+            "schema": ("neural-forge-lfm2-cpcf-ordered-phase-binding-v1"),
             "phase_count": len(ordered_phases),
             "ordered_phase_sha256": list(ordered_phases),
         }
@@ -422,12 +403,8 @@ def _rebuild_cpcf_compiler_chain(
         "compiled_model_fold_phase_count": len(ordered_phases),
         "compiled_model_fold_phase_sha256": list(ordered_phases),
         "compiled_model_fold_phase_binding_sha256": ordered_phase_binding,
-        "compiled_blank_target_report_sha256": (
-            blank_report["report_sha256"]
-        ),
-        "compiled_parameter_receipt_sha256": (
-            parameter_receipt["receipt_sha256"]
-        ),
+        "compiled_blank_target_report_sha256": (blank_report["report_sha256"]),
+        "compiled_parameter_receipt_sha256": (parameter_receipt["receipt_sha256"]),
     }
 
 
@@ -937,15 +914,11 @@ def test_reviewed_gate_accepts_live_and_fresh_reload_and_binds_all_evidence(
         evidence.cache_live_parent_fingerprint
         == receipt["inputs"]["parent_fingerprint"]
     )
+    assert evidence.live_parent_state_fingerprint == blank["parent_state_fingerprint"]
+    assert evidence.trace_adapter_sha256 == (receipt["inputs"]["trace_adapter_sha256"])
     assert (
-        evidence.live_parent_state_fingerprint
-        == blank["parent_state_fingerprint"]
-    )
-    assert evidence.trace_adapter_sha256 == (
-        receipt["inputs"]["trace_adapter_sha256"]
-    )
-    assert evidence.trajectory_corpus_sha256 == (
-        receipt["inputs"]["trajectory_corpus_sha256"]
+        evidence.trajectory_corpus_sha256
+        == (receipt["inputs"]["trajectory_corpus_sha256"])
     )
     assert (
         evidence.blank_target_parent_graph_fingerprint
@@ -954,55 +927,36 @@ def test_reviewed_gate_accepts_live_and_fresh_reload_and_binds_all_evidence(
     assert evidence.exact_target_unique_parameters == 1
     assert dict(evidence.target_requested_budget) == blank["requested_budget"]
     assert evidence.target_frontier_fingerprint == blank["frontier_fingerprint"]
-    assert (
-        evidence.target_certificate_sha256 == blank["target_certificate_sha256"]
-    )
+    assert evidence.target_certificate_sha256 == blank["target_certificate_sha256"]
     assert (
         evidence.selected_target_candidate_fingerprint
         == blank["selected_candidate_fingerprint"]
     )
     assert evidence.selected_target_candidate_rank == 0
+    assert evidence.target_topology_fingerprint == blank["target_topology_fingerprint"]
+    assert evidence.blank_target_state_fingerprint == blank["blank_state_fingerprint"]
     assert (
-        evidence.target_topology_fingerprint
-        == blank["target_topology_fingerprint"]
-    )
-    assert (
-        evidence.blank_target_state_fingerprint
-        == blank["blank_state_fingerprint"]
-    )
-    assert (
-        component["target_plan_binding_sha256"]
-        == evidence.target_plan_binding_sha256
+        component["target_plan_binding_sha256"] == evidence.target_plan_binding_sha256
     )
     assert component["cpcf_run_receipt_sha256"] == receipt["receipt_sha256"]
     assert component["parent_cache_key"] == receipt["inputs"]["cache_key"]
     assert component["exact_target_unique_parameters"] == 1
     compiled = receipt["compiled_model_fold"]
-    assert (
-        evidence.compiled_model_fold_result_sha256
-        == compiled["result_sha256"]
-    )
+    assert evidence.compiled_model_fold_result_sha256 == compiled["result_sha256"]
     assert dict(evidence.compiled_model_fold_policy) == compiled["policy"]
     assert evidence.compiled_model_fold_policy_sha256 == canonical_sha256(
         compiled["policy"]
     )
     assert evidence.compiled_model_fold_phase_count == compiled["phase_count"]
-    assert list(evidence.compiled_model_fold_phase_sha256) == compiled[
-        "phase_sha256"
-    ]
-    assert evidence.compiled_blank_target_report_sha256 == blank[
-        "report_sha256"
-    ]
-    assert evidence.compiled_parameter_receipt_sha256 == compiled[
-        "parameter_receipt"
-    ]["receipt_sha256"]
-    assert component["compiled_model_fold_result_sha256"] == compiled[
-        "result_sha256"
-    ]
+    assert list(evidence.compiled_model_fold_phase_sha256) == compiled["phase_sha256"]
+    assert evidence.compiled_blank_target_report_sha256 == blank["report_sha256"]
+    assert (
+        evidence.compiled_parameter_receipt_sha256
+        == compiled["parameter_receipt"]["receipt_sha256"]
+    )
+    assert component["compiled_model_fold_result_sha256"] == compiled["result_sha256"]
     assert component["compiled_model_fold_policy"] == compiled["policy"]
-    assert component["compiled_model_fold_phase_sha256"] == compiled[
-        "phase_sha256"
-    ]
+    assert component["compiled_model_fold_phase_sha256"] == compiled["phase_sha256"]
 
 
 def _evidence_constructor_fields(
@@ -1236,9 +1190,7 @@ def test_run_receipt_parent_must_match_reviewed_holdout_parent(
     fixture = _fixture(tmp_path)
     body = copy.deepcopy(fixture["documents"]["cpcf"])
     body.pop("receipt_sha256")
-    body["inputs"]["parent_fingerprint"] = canonical_sha256(
-        {"different": "parent"}
-    )
+    body["inputs"]["parent_fingerprint"] = canonical_sha256({"different": "parent"})
     modified = _seal(body, "receipt_sha256")
     artifacts = _replace_artifact(
         fixture["artifacts"],
@@ -1398,6 +1350,36 @@ def test_compiled_model_fold_policy_must_be_complete_and_typed(
         match="no short-conv gate policy",
     ):
         load_lfm2_cpcf_reviewed_promotion_evidence(artifacts)
+
+
+def test_compiled_model_fold_v4_policy_round_trips_typed() -> None:
+    expected = Lfm2CpcfModelFoldPolicy(
+        short_conv_v4_solver_policy=Lfm2CpcfShortConvV4SolverPolicy(
+            ridge_alphas=(1e-8, 1e-4),
+            variable_projection_passes=2,
+            context_objective_weight=0.075,
+        )
+    )
+
+    observed = reviewed_gate_module._normalize_model_fold_policy(expected.as_dict())
+
+    assert observed == expected.as_dict()
+
+
+def test_compiled_model_fold_v4_policy_rejects_authentication_drift() -> None:
+    policy = Lfm2CpcfModelFoldPolicy(
+        short_conv_v4_solver_policy=Lfm2CpcfShortConvV4SolverPolicy(
+            ridge_alphas=(1e-8, 1e-4),
+            variable_projection_passes=2,
+        )
+    ).as_dict()
+    policy["short_conv_v4_solver_policy"]["authentication_sha256"] = "0" * 64
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="invalid",
+    ):
+        reviewed_gate_module._normalize_model_fold_policy(policy)
 
 
 @pytest.mark.parametrize("status,promoted", [("pending", False), ("rejected", False)])
@@ -1582,6 +1564,22 @@ def test_replaced_replay_callable_rejects_before_evaluation(
         match="implementation object was replaced",
     ):
         gate(fixture["model"])
+
+
+def test_replaced_v4_policy_parser_invalidates_implementation_seal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        reviewed_gate_module,
+        "parse_lfm2_cpcf_short_conv_v4_solver_policy",
+        lambda value: value,
+    )
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="implementation object was replaced",
+    ):
+        authenticate_lfm2_cpcf_reviewed_gate_implementation()
 
 
 def test_replay_callable_code_and_resources_are_reauthenticated() -> None:

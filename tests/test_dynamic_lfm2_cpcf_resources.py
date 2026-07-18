@@ -41,6 +41,9 @@ from neural_forge.hf_lfm2_cpcf_model_fold import (
     LFM2_CPCF_MODEL_FOLD_SCHEMA,
     Lfm2CpcfModelFoldPolicy,
 )
+from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
+    Lfm2CpcfShortConvV4SolverPolicy,
+)
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2TargetTokenizedRecord,
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
@@ -198,9 +201,7 @@ def _phase_evidence(
         "batch_index": 0,
         "input_sha256": donor_input_sha256,
         "phase": phase_name,
-        "layer_evidence_sha256": [
-            layer.evidence_sha256 for layer in layers
-        ],
+        "layer_evidence_sha256": [layer.evidence_sha256 for layer in layers],
         "final_norm_field_inventory": {},
         "parent_side_compiler_inputs_ready": True,
     }
@@ -401,12 +402,8 @@ def test_stack_resource_coverage_binds_reviewed_compiler_chain(
         reviewed=reviewed,
     )
 
-    assert fields["coverage_binding_fingerprint"] == (
-        coverage.binding_fingerprint
-    )
-    assert fields["coverage_cache_manifest_sha256"] == (
-        coverage.cache_manifest_sha256
-    )
+    assert fields["coverage_binding_fingerprint"] == (coverage.binding_fingerprint)
+    assert fields["coverage_cache_manifest_sha256"] == (coverage.cache_manifest_sha256)
     assert fields["coverage_phase_count"] == len(case["phases"])
     assert fields["reviewed_compiled_model_fold_result_sha256"] == (
         reviewed.compiled_model_fold_result_sha256
@@ -414,9 +411,10 @@ def test_stack_resource_coverage_binds_reviewed_compiler_chain(
     assert fields["reviewed_compiled_model_fold_policy_sha256"] == (
         reviewed.compiled_model_fold_policy_sha256
     )
-    assert fields[
-        "reviewed_compiled_model_fold_phase_binding_sha256"
-    ] == reviewed.compiled_model_fold_phase_binding_sha256
+    assert (
+        fields["reviewed_compiled_model_fold_phase_binding_sha256"]
+        == reviewed.compiled_model_fold_phase_binding_sha256
+    )
     assert fields["reviewed_compiled_blank_target_report_sha256"] == (
         reviewed.compiled_blank_target_report_sha256
     )
@@ -517,9 +515,7 @@ def test_stack_resource_coverage_rejects_phase_and_policy_drift(
         )
 
     policy_review_drift = SimpleNamespace(**vars(reviewed))
-    policy_review_drift.compiled_model_fold_policy_sha256 = _sha(
-        "wrong-policy"
-    )
+    policy_review_drift.compiled_model_fold_policy_sha256 = _sha("wrong-policy")
     with pytest.raises(
         cpcf_adapter_module.Lfm2CpcfCatalogError,
         match="reviewed compiler policy",
@@ -557,6 +553,36 @@ def test_receipt_policy_is_reconstructed_exactly_and_seal_bound() -> None:
     document["compiled_model_fold"]["policy"]["ridge"] = 0.5
     with pytest.raises(Lfm2CpcfResourceError, match="schema or seal"):
         resources_module._policy_from_receipt(document)
+
+
+def test_receipt_reconstructs_authenticated_v4_solver_policy() -> None:
+    expected = Lfm2CpcfModelFoldPolicy(
+        ridge=3e-8,
+        short_conv_v4_solver_policy=Lfm2CpcfShortConvV4SolverPolicy(
+            ridge_alphas=(1e-8, 1e-4),
+            variable_projection_passes=2,
+            context_objective_weight=0.075,
+            target_dtype="bfloat16",
+        ),
+        promotion_compression_ratio=100.0,
+        require_promotion_ratio=True,
+    )
+    body = {
+        "schema": LFM2_CPCF_MODEL_FOLD_SCHEMA,
+        "policy": expected.as_dict(),
+    }
+    document = {
+        "compiled_model_fold": {
+            **body,
+            "result_sha256": canonical_sha256(body),
+        }
+    }
+
+    observed = resources_module._policy_from_receipt(document)
+
+    assert observed.as_dict() == expected.as_dict()
+    assert observed.short_conv_v4_solver_policy is not None
+    assert observed.short_conv_v4_solver_policy.verify_authentication()
 
 
 def test_budget_receipt_round_trips_typed_ratio() -> None:
@@ -676,11 +702,8 @@ def test_resource_factory_source_has_no_remote_or_legacy_model_loader_path() -> 
     assert "http" + "x." not in source
 
 
-def test_resource_factory_requires_every_independent_production_pin(
-) -> None:
-    signature = inspect.signature(
-        resources_module.build_lfm2_cpcf_production_resources
-    )
+def test_resource_factory_requires_every_independent_production_pin() -> None:
+    signature = inspect.signature(resources_module.build_lfm2_cpcf_production_resources)
     for name in (
         "expected_full_reviewed_evidence_fingerprint",
         "expected_cpcf_run_receipt_sha256",
@@ -693,9 +716,8 @@ def test_resource_factory_requires_every_independent_production_pin(
         "expected_exact_target_unique_parameters",
     ):
         assert signature.parameters[name].default is inspect.Parameter.empty
-    resource_signature = inspect.signature(
-        cpcf_adapter_module.Lfm2CpcfStackResources
+    resource_signature = inspect.signature(cpcf_adapter_module.Lfm2CpcfStackResources)
+    assert (
+        resource_signature.parameters["coverage_binding"].default
+        is inspect.Parameter.empty
     )
-    assert resource_signature.parameters[
-        "coverage_binding"
-    ].default is inspect.Parameter.empty

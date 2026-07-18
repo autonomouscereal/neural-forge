@@ -10,9 +10,10 @@ causal stages:
    resulting actual post-operator residual and normalized MLP input.
 
 Only ``fit`` phases enter attention and MLP closed-form solvers.  The
-suffix-aware short-convolution compiler receives validation cases solely for
-its post-materialization evaluator; its own sealed report proves that those
-cases do not enter any fit.  Selection phases never enter a layer solver.
+suffix-aware short-convolution compiler receives disjoint ``selection`` cases
+for bounded solver choice and ``validation`` cases solely for its final
+post-materialization evaluator; its own sealed report proves that neither
+split enters any fit.
 
 No model forward method, generation, cache update, backward pass, optimizer,
 training, pruning, quantization, or fallback path is used here.
@@ -39,10 +40,25 @@ from neural_forge.hf_lfm2_cpcf_model_compiler import (
     replay_lfm2_cpcf_phase_bank,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_fold import (
+    LFM2_CPCF_SHORT_CONV_FOLD_SCHEMA,
     Lfm2CompiledCpcfShortConvFold,
     Lfm2CpcfShortConvFoldCase,
     Lfm2CpcfShortConvGatePolicy,
+    Lfm2CpcfShortConvValidationError,
     compile_lfm2_cpcf_short_conv_fold,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
+    LFM2_CPCF_SHORT_CONV_V4_SCHEMA,
+    Lfm2CpcfShortConvV4SolverPolicy,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
+    LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
+    Lfm2CompiledCpcfShortConvV4Fold,
+    Lfm2CpcfShortConvV4FoldCase,
+    compile_lfm2_cpcf_short_conv_v4_fold,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v4_policy import (
+    parse_lfm2_cpcf_short_conv_v4_solver_policy,
 )
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (
     Lfm2CachedAttentionFoldCase,
@@ -57,8 +73,239 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (
 
 
 LFM2_CPCF_LAYER_COMPILER_SCHEMA = "neural-forge-lfm2-cpcf-layer-compiler-v1"
+LFM2_CPCF_LAYER_FAILURE_SCHEMA = "neural-forge-lfm2-cpcf-layer-failure-v3"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
-_SPLITS = ("fit", "validation")
+_EVALUATION_SPLITS = ("fit", "validation")
+_SHORT_CONV_CASE_SPLITS = ("selection", "fit", "validation")
+_LAYER_TRANSACTION_STAGES = (
+    "preinstall_replay",
+    "operator_compile",
+    "operator_install",
+    "operator_replay",
+    "mlp_compile",
+    "mlp_install",
+    "final_replay",
+    "endpoint_evaluation",
+    "immutability_audit",
+    "result_seal",
+)
+_LAYER_ROLLBACK_PROOF_FIELDS = frozenset(
+    {
+        "target_state_sha256_before",
+        "target_state_sha256_after",
+        "target_full_inventory_sha256_before",
+        "target_full_inventory_sha256_after",
+        "target_tensor_bytes_restored",
+        "target_tensor_identities_preserved",
+        "target_tensor_aliases_preserved",
+        "target_tensor_shapes_preserved",
+        "target_tensor_dtypes_preserved",
+        "target_all_named_parameters_and_buffers_restored",
+        "target_parameter_and_buffer_registries_restored",
+        "target_nonpersistent_buffer_membership_restored",
+        "target_parameter_gradient_identity_and_bytes_restored",
+        "target_parameter_gradient_storage_aliases_restored",
+        "target_module_modes_restored",
+        "source_state_sha256_before",
+        "source_state_sha256_after",
+        "source_full_inventory_sha256_before",
+        "source_full_inventory_sha256_after",
+        "source_state_preserved",
+        "source_full_inventory_preserved",
+        "evidence_sha256_before",
+        "evidence_sha256_after",
+        "evidence_preserved",
+        "input_tensor_sha256_before",
+        "input_tensor_sha256_after",
+        "input_tensors_preserved",
+        "boundary_charts_sha256_before",
+        "boundary_charts_sha256_after",
+        "boundary_charts_payload_sha256_before",
+        "boundary_charts_payload_sha256_after",
+        "boundary_charts_preserved",
+        "exact_layer_rollback_proven",
+        "proof_sha256",
+    }
+)
+_LAYER_FAILURE_REPORT_FIELDS = frozenset(
+    {
+        "schema",
+        "stage",
+        "layer_index",
+        "operator_kind",
+        "input_bank_sha256",
+        "input_tensor_sha256",
+        "boundary_charts_sha256",
+        "boundary_charts_payload_sha256",
+        "cause",
+        "nested_short_conv_validation_report",
+        "nested_short_conv_validation_report_sha256",
+        "nested_short_conv_validation_report_canonical_bytes_sha256",
+        "nested_short_conv_validation_report_preserved_byte_for_byte",
+        "rollback_proof",
+        "layer_result_issued",
+        "promotion_claimed",
+        "report_sha256",
+    }
+)
+_SHORT_CONV_VALIDATION_REPORT_FIELDS = frozenset(
+    {
+        "schema",
+        "source_hidden_size",
+        "target_hidden_size",
+        "hidden_width_compression_ratio",
+        "source_fir_length",
+        "target_fir_length",
+        "target_logical_parameters",
+        "fit_case_count",
+        "validation_case_count",
+        "fit_metrics",
+        "validation_metrics",
+        "fit_case_reports",
+        "validation_case_reports",
+        "output_writer_scope",
+        "producer_and_fir_scope",
+        "fir_state_policy",
+        "writer_fit_rows",
+        "fit_prefix_rows",
+        "fit_fir_warmup_rows",
+        "provenance",
+        "behavior_gate",
+        "audit",
+        "execution",
+        "compiled_state_sha256",
+        "report_sha256",
+    }
+)
+_SHORT_CONV_GATE_POLICY_FIELDS = frozenset(
+    {
+        "maximum_fit_endpoint_relative_rmse",
+        "maximum_validation_endpoint_relative_rmse",
+        "minimum_fit_endpoint_cosine_similarity",
+        "minimum_validation_endpoint_cosine_similarity",
+        "enforce",
+    }
+)
+_SHORT_CONV_GATE_CHECK_FIELDS = frozenset(
+    {
+        "fit_endpoint_relative_rmse",
+        "validation_endpoint_relative_rmse",
+        "fit_endpoint_cosine_similarity",
+        "validation_endpoint_cosine_similarity",
+    }
+)
+_SHORT_CONV_AUDIT_FIELDS = frozenset(
+    {
+        "source_inputs_sha256_before",
+        "source_inputs_sha256_after",
+        "source_inputs_unchanged",
+        "target_templates_sha256_before",
+        "target_templates_sha256_after",
+        "target_templates_unchanged",
+        "evidence_sha256_before",
+        "evidence_sha256_after",
+        "evidence_unchanged",
+        "case_authentication_verified",
+        "blank_target_values_used_by_compiler",
+        "target_templates_used_for_shape_and_dtype_only",
+        "returned_tensors_detached",
+    }
+)
+_SHORT_CONV_EXECUTION_FIELDS = frozenset(
+    {
+        "closed_form_linear_solve",
+        "deterministic_barycentric_channel_clustering",
+        "parent_model_forward_calls",
+        "target_model_forward_calls",
+        "backward_calls",
+        "optimizer_steps",
+        "training_steps",
+        "parameters_pruned",
+        "parameters_quantized",
+    }
+)
+_SHORT_CONV_V4_FAILURE_REPORT_FIELDS = frozenset(
+    {
+        "schema",
+        "solver_schema",
+        "solver_policy",
+        "solver_policy_sha256",
+        "gate_policy",
+        "source_hidden_size",
+        "target_hidden_size",
+        "source_fir_length",
+        "target_fir_length",
+        "hidden_width_compression_ratio",
+        "case_authentication_sha256",
+        "basis",
+        "input_lift",
+        "transported_priors",
+        "candidate_fit_reports",
+        "candidate_selection_reports",
+        "selection_ranking",
+        "selected_candidate_id",
+        "fit_evaluation",
+        "selection_evaluation",
+        "validation_evaluation",
+        "behavior_gate",
+        "compiled_state_sha256",
+        "source_channels_selected",
+        "source_channels_dropped",
+        "source_channels_pruned",
+        "source_channels_quantized",
+        "fit_only_parameter_solves",
+        "selection_used_only_for_candidate_ranking",
+        "validation_used_only_after_candidate_freeze",
+        "execution",
+        "compiled_short_conv_fold_issued",
+        "promotion_claimed",
+        "promotable_candidate",
+        "failure_evidence_only",
+        "report_sha256",
+    }
+)
+_SHORT_CONV_V4_GATE_CHECK_FIELDS = frozenset(
+    {
+        "fit_endpoint_relative_rmse",
+        "validation_endpoint_relative_rmse",
+        "fit_endpoint_cosine_similarity",
+        "validation_endpoint_cosine_similarity",
+        "fit_context_relative_rmse",
+        "validation_context_relative_rmse",
+        "fit_context_cosine_similarity",
+        "validation_context_cosine_similarity",
+        "full_source_numeric_participation",
+        "actual_fit_target_dtype_replay",
+        "actual_validation_target_dtype_replay",
+    }
+)
+_SHORT_CONV_V4_EXECUTION_FIELDS = frozenset(
+    {
+        "parent_model_forward_calls",
+        "target_model_forward_calls",
+        "generation_calls",
+        "training_steps",
+        "backward_calls",
+        "optimizer_steps",
+        "parameters_pruned",
+        "parameters_quantized",
+        "fallback_paths",
+    }
+)
+_NO_SUCCESS_FIELDS = frozenset(
+    {
+        "accepted_artifact",
+        "behavior_success_proven",
+        "compaction_success_proven",
+        "compiled_model_fold_issued",
+        "layer_result_issued",
+        "parameter_compaction_success_receipt_issued",
+        "promotable_candidate",
+        "promotion_authorized",
+        "promotion_claimed",
+        "success_claimed",
+    }
+)
 
 
 class Lfm2CpcfLayerCompilerError(ValueError):
@@ -67,6 +314,250 @@ class Lfm2CpcfLayerCompilerError(ValueError):
 
 class Lfm2CpcfLayerInstallError(RuntimeError):
     """A target layer installation failed and was rolled back."""
+
+
+class Lfm2CpcfLayerCompilationFailure(Lfm2CpcfLayerInstallError):
+    """A typed layer failure emitted only after exact rollback is proven."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        stage: str,
+        layer_index: int,
+        operator_kind: str,
+        input_bank_sha256: str,
+        input_tensor_sha256: str,
+        boundary_charts_sha256: str,
+        boundary_charts_payload_sha256: str,
+        rollback_proof: Mapping[str, Any],
+        report: Mapping[str, Any],
+        short_conv_validation_report: Mapping[str, Any] | None = None,
+        short_conv_validation_report_bytes: bytes | None = None,
+    ) -> None:
+        super().__init__(message)
+        if stage not in _LAYER_TRANSACTION_STAGES:
+            raise Lfm2CpcfLayerCompilerError(
+                "Layer failure stage is not a strict transaction stage."
+            )
+        index = _nonnegative_int(layer_index, "layer_index")
+        if operator_kind not in {"full_attention", "short_conv"}:
+            raise Lfm2CpcfLayerCompilerError(
+                "Layer failure operator_kind is not canonical LFM2."
+            )
+        input_sha = _digest(input_bank_sha256, "input_bank_sha256")
+        input_tensor_sha = _digest(
+            input_tensor_sha256,
+            "input_tensor_sha256",
+        )
+        charts_sha = _digest(
+            boundary_charts_sha256,
+            "boundary_charts_sha256",
+        )
+        charts_payload_sha = _digest(
+            boundary_charts_payload_sha256,
+            "boundary_charts_payload_sha256",
+        )
+        proof = dict(rollback_proof)
+        proof_sha = _digest(
+            proof.pop("proof_sha256", None),
+            "rollback_proof.proof_sha256",
+        )
+        proof_with_seal = {**proof, "proof_sha256": proof_sha}
+        for name in (
+            "target_state_sha256_before",
+            "target_state_sha256_after",
+            "target_full_inventory_sha256_before",
+            "target_full_inventory_sha256_after",
+            "source_state_sha256_before",
+            "source_state_sha256_after",
+            "source_full_inventory_sha256_before",
+            "source_full_inventory_sha256_after",
+            "evidence_sha256_before",
+            "evidence_sha256_after",
+            "input_tensor_sha256_before",
+            "input_tensor_sha256_after",
+            "boundary_charts_sha256_before",
+            "boundary_charts_sha256_after",
+            "boundary_charts_payload_sha256_before",
+            "boundary_charts_payload_sha256_after",
+        ):
+            _digest(proof.get(name), f"rollback_proof.{name}")
+        true_proof_fields = (
+            "target_tensor_bytes_restored",
+            "target_tensor_identities_preserved",
+            "target_tensor_aliases_preserved",
+            "target_tensor_shapes_preserved",
+            "target_tensor_dtypes_preserved",
+            "target_all_named_parameters_and_buffers_restored",
+            "target_parameter_and_buffer_registries_restored",
+            "target_nonpersistent_buffer_membership_restored",
+            "target_parameter_gradient_identity_and_bytes_restored",
+            "target_parameter_gradient_storage_aliases_restored",
+            "target_module_modes_restored",
+            "source_state_preserved",
+            "source_full_inventory_preserved",
+            "evidence_preserved",
+            "input_tensors_preserved",
+            "boundary_charts_preserved",
+            "exact_layer_rollback_proven",
+        )
+        if (
+            set(proof_with_seal) != _LAYER_ROLLBACK_PROOF_FIELDS
+            or _sha(proof) != proof_sha
+            or any(proof.get(name) is not True for name in true_proof_fields)
+            or proof.get("target_state_sha256_before")
+            != proof.get("target_state_sha256_after")
+            or proof.get("target_full_inventory_sha256_before")
+            != proof.get("target_full_inventory_sha256_after")
+            or proof.get("source_state_sha256_before")
+            != proof.get("source_state_sha256_after")
+            or proof.get("source_full_inventory_sha256_before")
+            != proof.get("source_full_inventory_sha256_after")
+            or proof.get("evidence_sha256_before") != proof.get("evidence_sha256_after")
+            or proof.get("input_tensor_sha256_before")
+            != proof.get("input_tensor_sha256_after")
+            or proof.get("boundary_charts_sha256_before")
+            != proof.get("boundary_charts_sha256_after")
+            or proof.get("boundary_charts_payload_sha256_before")
+            != proof.get("boundary_charts_payload_sha256_after")
+            or proof.get("input_tensor_sha256_before") != input_tensor_sha
+            or proof.get("boundary_charts_sha256_before") != charts_sha
+            or proof.get("boundary_charts_payload_sha256_before") != charts_payload_sha
+        ):
+            raise Lfm2CpcfLayerInstallError(
+                "Layer failure lacks an exact rollback proof."
+            )
+        failure_report = dict(report)
+        report_sha = _digest(
+            failure_report.pop("report_sha256", None),
+            "failure_report.report_sha256",
+        )
+        report_with_seal = {
+            **failure_report,
+            "report_sha256": report_sha,
+        }
+        if (
+            set(report_with_seal) != _LAYER_FAILURE_REPORT_FIELDS
+            or _sha(failure_report) != report_sha
+        ):
+            raise Lfm2CpcfLayerCompilerError("Layer failure report seal is invalid.")
+        if (
+            failure_report.get("schema") != LFM2_CPCF_LAYER_FAILURE_SCHEMA
+            or failure_report.get("stage") != stage
+            or failure_report.get("layer_index") != index
+            or failure_report.get("operator_kind") != operator_kind
+            or failure_report.get("input_bank_sha256") != input_sha
+            or failure_report.get("input_tensor_sha256") != input_tensor_sha
+            or failure_report.get("boundary_charts_sha256") != charts_sha
+            or failure_report.get("boundary_charts_payload_sha256")
+            != charts_payload_sha
+            or failure_report.get("rollback_proof") != proof_with_seal
+            or failure_report.get("layer_result_issued") is not False
+            or failure_report.get("promotion_claimed") is not False
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Layer failure report differs from its typed context."
+            )
+        cause = failure_report.get("cause")
+        if (
+            not isinstance(cause, Mapping)
+            or set(cause) != {"module", "type", "message"}
+            or any(
+                not isinstance(cause.get(name), str)
+                for name in ("module", "type", "message")
+            )
+        ):
+            raise Lfm2CpcfLayerCompilerError("Layer failure cause is not canonical.")
+        nested = short_conv_validation_report
+        nested_bytes = short_conv_validation_report_bytes
+        if (nested is None) != (nested_bytes is None):
+            raise Lfm2CpcfLayerCompilerError(
+                "Short-conv validation report and bytes must travel together."
+            )
+        if nested is not None:
+            observed_bytes = _canonical_json(dict(nested))
+            if observed_bytes != nested_bytes:
+                raise Lfm2CpcfLayerCompilerError(
+                    "Nested short-conv validation report bytes changed."
+                )
+            nested_body = dict(nested)
+            nested_sha = _digest(
+                nested_body.pop("report_sha256", None),
+                "short_conv_validation_report.report_sha256",
+            )
+            if (
+                operator_kind != "short_conv"
+                or stage != "operator_compile"
+                or _sha(nested_body) != nested_sha
+                or not _valid_short_conv_validation_report(nested)
+                or failure_report.get("nested_short_conv_validation_report")
+                != dict(nested)
+                or failure_report.get("nested_short_conv_validation_report_sha256")
+                != nested_sha
+                or failure_report.get(
+                    "nested_short_conv_validation_report_canonical_bytes_sha256"
+                )
+                != hashlib.sha256(nested_bytes).hexdigest()
+                or failure_report.get(
+                    "nested_short_conv_validation_report_preserved_byte_for_byte"
+                )
+                is not True
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    "Nested short-conv validation evidence is not preserved "
+                    "and self-sealed."
+                )
+        elif (
+            failure_report.get("nested_short_conv_validation_report") is not None
+            or failure_report.get("nested_short_conv_validation_report_sha256")
+            is not None
+            or failure_report.get(
+                "nested_short_conv_validation_report_canonical_bytes_sha256"
+            )
+            is not None
+            or failure_report.get(
+                "nested_short_conv_validation_report_preserved_byte_for_byte"
+            )
+            is not False
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Absent short-conv validation evidence is inconsistent."
+            )
+        self.stage = stage
+        self.layer_index = index
+        self.operator_kind = operator_kind
+        self.input_bank_sha256 = input_sha
+        self.input_tensor_sha256 = input_tensor_sha
+        self.boundary_charts_sha256 = charts_sha
+        self.boundary_charts_payload_sha256 = charts_payload_sha
+        self._rollback_proof_bytes = _canonical_json(proof_with_seal)
+        self._short_conv_validation_report_bytes = nested_bytes
+        self._report_bytes = _canonical_json(report_with_seal)
+
+    @property
+    def rollback_proof(self) -> Mapping[str, Any]:
+        """Return an independent canonical copy of the rollback proof."""
+
+        return json.loads(self._rollback_proof_bytes.decode("ascii"))
+
+    @property
+    def short_conv_validation_report(self) -> Mapping[str, Any] | None:
+        """Return an independent canonical copy of nested gate evidence."""
+
+        if self._short_conv_validation_report_bytes is None:
+            return None
+        return json.loads(self._short_conv_validation_report_bytes.decode("ascii"))
+
+    @property
+    def short_conv_validation_report_bytes(self) -> bytes | None:
+        return self._short_conv_validation_report_bytes
+
+    @property
+    def report(self) -> Mapping[str, Any]:
+        """Return an independent canonical copy of the failure report."""
+
+        return json.loads(self._report_bytes.decode("ascii"))
 
 
 def _torch() -> Any:
@@ -98,9 +589,7 @@ def _sha(value: Any) -> str:
 
 def _digest(value: Any, name: str) -> str:
     if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
-        raise Lfm2CpcfLayerCompilerError(
-            f"{name} must be a lowercase SHA-256 digest."
-        )
+        raise Lfm2CpcfLayerCompilerError(f"{name} must be a lowercase SHA-256 digest.")
     return value
 
 
@@ -139,12 +628,7 @@ def _tensor_sha256(value: Any) -> str:
 
 
 def _tensor_bundle_sha256(values: Mapping[str, Any]) -> str:
-    return _sha(
-        {
-            name: _tensor_sha256(value)
-            for name, value in sorted(values.items())
-        }
-    )
+    return _sha({name: _tensor_sha256(value) for name, value in sorted(values.items())})
 
 
 def _short_conv_state_sha256(values: Mapping[str, Any]) -> str:
@@ -160,9 +644,7 @@ def _short_conv_state_sha256(values: Mapping[str, Any]) -> str:
             "layout": str(torch.strided),
         }
         digest = hashlib.sha256(_canonical_json(descriptor))
-        digest.update(
-            tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C")
-        )
+        digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C"))
         inventory[name] = digest.hexdigest()
     return _sha(inventory)
 
@@ -183,59 +665,288 @@ def _model_core(model: Any, name: str) -> Any:
 def _layer(model: Any, index: int, name: str) -> Any:
     layers = tuple(_model_core(model, name).layers)
     if index >= len(layers):
-        raise Lfm2CpcfLayerCompilerError(
-            f"layer_index is outside {name}.model.layers."
-        )
+        raise Lfm2CpcfLayerCompilerError(f"layer_index is outside {name}.model.layers.")
     return layers[index]
+
+
+def _named_values_all(module: Any, method_name: str) -> tuple[tuple[str, Any], ...]:
+    method = getattr(module, method_name, None)
+    if not callable(method):
+        raise Lfm2CpcfLayerCompilerError(f"Layer must expose {method_name}().")
+    try:
+        values = tuple(method(remove_duplicate=False))
+    except TypeError:  # pragma: no cover - older supported Torch boundary
+        values = tuple(method())
+    names = [str(name) for name, _value in values]
+    if len(set(names)) != len(names):
+        raise Lfm2CpcfLayerCompilerError(
+            f"Layer {method_name}() contains duplicate names."
+        )
+    return tuple((str(name), value) for name, value in values)
+
+
+def _named_modules_all(module: Any) -> tuple[tuple[str, Any], ...]:
+    return _named_values_all(module, "named_modules")
+
+
+def _module_owner(
+    module: Any,
+    qualified_name: str,
+) -> tuple[Any, str]:
+    owner_name, _separator, local_name = qualified_name.rpartition(".")
+    modules = dict(_named_modules_all(module))
+    try:
+        return modules[owner_name], local_name
+    except KeyError as exc:
+        raise Lfm2CpcfLayerCompilerError(
+            f"Tensor owner for {qualified_name!r} is absent."
+        ) from exc
 
 
 def _module_tensors(module: Any) -> dict[str, Any]:
     torch = _torch()
-    state = getattr(module, "state_dict", None)
-    if not callable(state):
+    values = _named_values_all(module, "named_parameters") + _named_values_all(
+        module, "named_buffers"
+    )
+    if not values:
+        raise Lfm2CpcfLayerCompilerError("Layer has no named parameters or buffers.")
+    if len({name for name, _value in values}) != len(values):
+        raise Lfm2CpcfLayerCompilerError("Layer parameter and buffer names collide.")
+    if any(not isinstance(value, torch.Tensor) for _name, value in values):
         raise Lfm2CpcfLayerCompilerError(
-            "Source and target layers must expose state_dict()."
+            "Layer parameters and buffers must be tensors."
         )
-    values = state(keep_vars=True)
-    if not isinstance(values, Mapping) or not values:
-        raise Lfm2CpcfLayerCompilerError("Layer state_dict() is empty or invalid.")
-    result = {
-        str(name): value
-        for name, value in values.items()
-        if isinstance(value, torch.Tensor)
+    return dict(values)
+
+
+def _tensor_identity(value: Any) -> tuple[Any, ...]:
+    storage_pointer = (
+        0 if value.numel() == 0 else int(value.untyped_storage().data_ptr())
+    )
+    return (
+        id(value),
+        int(value.data_ptr()),
+        storage_pointer,
+        int(value.storage_offset()),
+        tuple(int(item) for item in value.stride()),
+        tuple(int(item) for item in value.shape),
+        value.dtype,
+        value.device.type,
+        value.device.index,
+    )
+
+
+def _tensor_identity_record(value: Any) -> dict[str, Any]:
+    identity = _tensor_identity(value)
+    return {
+        "object_id": identity[0],
+        "data_pointer": identity[1],
+        "storage_pointer": identity[2],
+        "storage_offset": identity[3],
+        "stride": list(identity[4]),
+        "shape": list(identity[5]),
+        "dtype": str(identity[6]).removeprefix("torch."),
+        "device_type": identity[7],
+        "device_index": identity[8],
     }
-    if len(result) != len(values):
-        raise Lfm2CpcfLayerCompilerError(
-            "Layer state_dict() contains a non-tensor value."
+
+
+def _alias_groups(
+    values: Mapping[str, Any],
+    *,
+    storage: bool,
+) -> list[list[str]]:
+    groups: dict[Any, list[str]] = {}
+    for name, value in values.items():
+        if storage and value.numel() != 0:
+            key = (
+                value.device.type,
+                value.device.index,
+                int(value.untyped_storage().data_ptr()),
+            )
+        elif storage:
+            key = ("empty", id(value))
+        else:
+            key = id(value)
+        groups.setdefault(key, []).append(name)
+    return sorted(
+        (sorted(names) for names in groups.values()),
+        key=lambda names: names,
+    )
+
+
+def _module_registry_inventory(module: Any) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": name,
+            "object_id": id(value),
+            "parameters": [
+                [local_name, None if child is None else id(child)]
+                for local_name, child in value._parameters.items()
+            ],
+            "buffers": [
+                [local_name, None if child is None else id(child)]
+                for local_name, child in value._buffers.items()
+            ],
+            "children": [
+                [local_name, None if child is None else id(child)]
+                for local_name, child in value._modules.items()
+            ],
+            "nonpersistent_buffers": sorted(
+                str(item) for item in value._non_persistent_buffers_set
+            ),
+        }
+        for name, value in _named_modules_all(module)
+    ]
+
+
+def _layer_full_inventory(layer: Any) -> dict[str, Any]:
+    parameters = dict(_named_values_all(layer, "named_parameters"))
+    buffers = dict(_named_values_all(layer, "named_buffers"))
+    tensors = {**parameters, **buffers}
+    if len(tensors) != len(parameters) + len(buffers):
+        raise Lfm2CpcfLayerCompilerError("Layer parameter and buffer names collide.")
+    tensor_inventory = {}
+    for name, value in sorted(tensors.items()):
+        owner, local_name = _module_owner(layer, name)
+        tensor_inventory[name] = {
+            **_tensor_identity_record(value),
+            "role": "parameter" if name in parameters else "buffer",
+            "persistent": (
+                True
+                if name in parameters
+                else local_name not in owner._non_persistent_buffers_set
+            ),
+            "tensor_sha256": _tensor_sha256(value),
+        }
+    gradients = {}
+    gradient_values = {}
+    for name, parameter in sorted(parameters.items()):
+        gradient = parameter.grad
+        if gradient is not None:
+            gradient_values[name] = gradient
+        gradients[name] = {
+            "requires_grad": bool(parameter.requires_grad),
+            "present": gradient is not None,
+            "identity": (
+                None if gradient is None else _tensor_identity_record(gradient)
+            ),
+            "tensor_sha256": (None if gradient is None else _tensor_sha256(gradient)),
+        }
+    return {
+        "tensor_inventory": tensor_inventory,
+        "tensor_object_alias_groups": _alias_groups(
+            tensors,
+            storage=False,
+        ),
+        "tensor_storage_alias_groups": _alias_groups(
+            tensors,
+            storage=True,
+        ),
+        "parameter_gradients": gradients,
+        "gradient_object_alias_groups": _alias_groups(
+            gradient_values,
+            storage=False,
+        ),
+        "gradient_storage_alias_groups": _alias_groups(
+            gradient_values,
+            storage=True,
+        ),
+        "module_registries": _module_registry_inventory(layer),
+        "module_modes": [
+            [name, id(value), bool(value.training)]
+            for name, value in _named_modules_all(layer)
+        ],
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class _GradientSnapshot:
+    requires_grad: bool
+    gradient: Any | None
+    storage_anchor: Any | None
+    value: Any | None
+    identity: tuple[Any, ...] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ModuleRegistrySnapshot:
+    module: Any
+    parameters: tuple[tuple[str, Any], ...]
+    buffers: tuple[tuple[str, Any], ...]
+    children: tuple[tuple[str, Any], ...]
+    nonpersistent_buffers: frozenset[str]
+
+
+def _capture_module_registries(
+    module: Any,
+) -> tuple[_ModuleRegistrySnapshot, ...]:
+    seen = set()
+    result = []
+    for _name, value in _named_modules_all(module):
+        if id(value) in seen:
+            continue
+        seen.add(id(value))
+        result.append(
+            _ModuleRegistrySnapshot(
+                module=value,
+                parameters=tuple(value._parameters.items()),
+                buffers=tuple(value._buffers.items()),
+                children=tuple(value._modules.items()),
+                nonpersistent_buffers=frozenset(value._non_persistent_buffers_set),
+            )
         )
-    return result
+    return tuple(result)
+
+
+def _restore_module_registries(
+    snapshots: Sequence[_ModuleRegistrySnapshot],
+) -> None:
+    for snapshot in snapshots:
+        module = snapshot.module
+        module._parameters.clear()
+        module._parameters.update(snapshot.parameters)
+        module._buffers.clear()
+        module._buffers.update(snapshot.buffers)
+        module._modules.clear()
+        module._modules.update(snapshot.children)
+        module._non_persistent_buffers_set.clear()
+        module._non_persistent_buffers_set.update(snapshot.nonpersistent_buffers)
 
 
 @dataclass(frozen=True, slots=True)
 class _LayerSnapshot:
     tensors: Mapping[str, Any]
-    tensor_ids: Mapping[str, int]
-    tensor_shapes: Mapping[str, tuple[int, ...]]
-    tensor_dtypes: Mapping[str, Any]
+    tensor_storage_anchors: Mapping[str, Any]
+    tensor_identity: Mapping[str, tuple[Any, ...]]
     tensor_bytes_sha256: str
-    parameter_gradients: Mapping[str, tuple[bool, int | None, str | None]]
-    modes: tuple[tuple[str, bool], ...]
+    full_inventory_sha256: str
+    registry_inventory_sha256: str
+    parameter_gradients: Mapping[str, _GradientSnapshot]
+    modes: tuple[tuple[str, int, bool], ...]
+    module_registries: tuple[_ModuleRegistrySnapshot, ...]
 
 
 def _layer_snapshot(layer: Any) -> _LayerSnapshot:
     tensors = _module_tensors(layer)
-    named_parameters = dict(layer.named_parameters())
+    named_parameters = dict(_named_values_all(layer, "named_parameters"))
     gradients = {}
     for name, parameter in named_parameters.items():
         gradient = parameter.grad
-        gradients[name] = (
-            bool(parameter.requires_grad),
-            None if gradient is None else id(gradient),
-            None if gradient is None else _tensor_sha256(gradient),
+        gradients[name] = _GradientSnapshot(
+            requires_grad=bool(parameter.requires_grad),
+            gradient=gradient,
+            storage_anchor=(None if gradient is None else gradient.detach()),
+            value=(
+                None
+                if gradient is None
+                else gradient.detach().to(device="cpu").contiguous().clone()
+            ),
+            identity=(None if gradient is None else _tensor_identity(gradient)),
         )
     modes = tuple(
-        (name, bool(module.training))
-        for name, module in layer.named_modules()
+        (name, id(module), bool(module.training))
+        for name, module in _named_modules_all(layer)
     )
     return _LayerSnapshot(
         tensors=MappingProxyType(
@@ -244,21 +955,24 @@ def _layer_snapshot(layer: Any) -> _LayerSnapshot:
                 for name, value in tensors.items()
             }
         ),
-        tensor_ids=MappingProxyType({name: id(value) for name, value in tensors.items()}),
-        tensor_shapes=MappingProxyType(
-            {name: tuple(value.shape) for name, value in tensors.items()}
+        tensor_storage_anchors=MappingProxyType(
+            {name: value.detach() for name, value in tensors.items()}
         ),
-        tensor_dtypes=MappingProxyType(
-            {name: value.dtype for name, value in tensors.items()}
+        tensor_identity=MappingProxyType(
+            {name: _tensor_identity(value) for name, value in tensors.items()}
         ),
         tensor_bytes_sha256=_tensor_bundle_sha256(tensors),
+        full_inventory_sha256=_sha(_layer_full_inventory(layer)),
+        registry_inventory_sha256=_sha(_module_registry_inventory(layer)),
         parameter_gradients=MappingProxyType(gradients),
         modes=modes,
+        module_registries=_capture_module_registries(layer),
     )
 
 
 def _restore_layer(layer: Any, snapshot: _LayerSnapshot) -> None:
     torch = _torch()
+    _restore_module_registries(snapshot.module_registries)
     current = _module_tensors(layer)
     if set(current) != set(snapshot.tensors):
         raise Lfm2CpcfLayerInstallError(
@@ -266,14 +980,11 @@ def _restore_layer(layer: Any, snapshot: _LayerSnapshot) -> None:
         )
     with torch.no_grad():
         for name, tensor in current.items():
-            if (
-                id(tensor) != snapshot.tensor_ids[name]
-                or tuple(tensor.shape) != snapshot.tensor_shapes[name]
-                or tensor.dtype != snapshot.tensor_dtypes[name]
-            ):
+            if _tensor_identity(tensor) != snapshot.tensor_identity[name]:
+                tensor.data = snapshot.tensor_storage_anchors[name]
+            if _tensor_identity(tensor) != snapshot.tensor_identity[name]:
                 raise Lfm2CpcfLayerInstallError(
-                    "Cannot roll back a target layer whose tensor identity, "
-                    "shape, or dtype changed."
+                    "Cannot restore target tensor storage identity."
                 )
             tensor.copy_(
                 snapshot.tensors[name].to(
@@ -281,42 +992,267 @@ def _restore_layer(layer: Any, snapshot: _LayerSnapshot) -> None:
                     dtype=tensor.dtype,
                 )
             )
+    named_parameters = dict(_named_values_all(layer, "named_parameters"))
+    if set(named_parameters) != set(snapshot.parameter_gradients):
+        raise Lfm2CpcfLayerInstallError(
+            "Cannot roll back a target layer whose Parameter set changed."
+        )
+    for name, parameter in named_parameters.items():
+        gradient_snapshot = snapshot.parameter_gradients[name]
+        parameter.requires_grad_(gradient_snapshot.requires_grad)
+        parameter.grad = gradient_snapshot.gradient
+        if gradient_snapshot.gradient is not None:
+            gradient = gradient_snapshot.gradient
+            with torch.no_grad():
+                if _tensor_identity(gradient) != gradient_snapshot.identity:
+                    gradient.data = gradient_snapshot.storage_anchor
+                gradient.copy_(
+                    gradient_snapshot.value.to(
+                        device=gradient.device,
+                        dtype=gradient.dtype,
+                    )
+                )
+    modules = dict(_named_modules_all(layer))
+    if set(modules) != {name for name, _id, _mode in snapshot.modes}:
+        raise Lfm2CpcfLayerInstallError(
+            "Cannot roll back a target layer whose module tree changed."
+        )
+    for name, identity, mode in snapshot.modes:
+        if id(modules[name]) != identity:
+            raise Lfm2CpcfLayerInstallError(
+                "Cannot roll back a target layer whose module aliases changed."
+            )
+        modules[name].training = mode
 
 
 def _assert_snapshot_identity(layer: Any, snapshot: _LayerSnapshot) -> None:
     current = _module_tensors(layer)
-    if (
-        set(current) != set(snapshot.tensor_ids)
-        or any(id(current[name]) != snapshot.tensor_ids[name] for name in current)
-        or any(
-            tuple(current[name].shape) != snapshot.tensor_shapes[name]
-            for name in current
-        )
-        or any(current[name].dtype != snapshot.tensor_dtypes[name] for name in current)
+    if set(current) != set(snapshot.tensor_identity) or any(
+        _tensor_identity(current[name]) != snapshot.tensor_identity[name]
+        for name in current
     ):
         raise Lfm2CpcfLayerInstallError(
             "Target layer tensor identity, shape, or dtype changed during install."
         )
-    parameter_gradients = {}
-    for name, parameter in layer.named_parameters():
-        gradient = parameter.grad
-        parameter_gradients[name] = (
-            bool(parameter.requires_grad),
-            None if gradient is None else id(gradient),
-            None if gradient is None else _tensor_sha256(gradient),
-        )
-    if parameter_gradients != dict(snapshot.parameter_gradients):
+    named_parameters = dict(_named_values_all(layer, "named_parameters"))
+    if set(named_parameters) != set(snapshot.parameter_gradients):
         raise Lfm2CpcfLayerInstallError(
-            "Target layer gradient state changed during install."
+            "Target layer Parameter set changed during install."
         )
+    for name, parameter in _named_values_all(
+        layer,
+        "named_parameters",
+    ):
+        gradient = parameter.grad
+        expected = snapshot.parameter_gradients[name]
+        if (
+            bool(parameter.requires_grad) != expected.requires_grad
+            or gradient is not expected.gradient
+            or (
+                gradient is not None
+                and (
+                    _tensor_identity(gradient) != expected.identity
+                    or _tensor_sha256(gradient) != _tensor_sha256(expected.value)
+                )
+            )
+        ):
+            raise Lfm2CpcfLayerInstallError(
+                "Target layer gradient state changed during install."
+            )
     modes = tuple(
-        (name, bool(module.training))
-        for name, module in layer.named_modules()
+        (name, id(module), bool(module.training))
+        for name, module in _named_modules_all(layer)
     )
     if modes != snapshot.modes:
         raise Lfm2CpcfLayerInstallError(
             "Target layer training modes changed during install."
         )
+    if _sha(_module_registry_inventory(layer)) != snapshot.registry_inventory_sha256:
+        raise Lfm2CpcfLayerInstallError(
+            "Target layer registries or buffer persistence changed."
+        )
+
+
+def _boundary_charts_payload_sha256(
+    boundary_charts: Lfm2CpcfLayerBoundaryCharts,
+) -> str:
+    values = {}
+    for boundary_name in ("post_operator", "post_layer"):
+        chart = getattr(boundary_charts, boundary_name)
+        mapping = chart.mapping
+        values[f"{boundary_name}.encoder"] = mapping.encoder
+        values[f"{boundary_name}.decoder"] = mapping.decoder
+        for name, tensor in sorted(mapping.feature_predictors.items()):
+            values[f"{boundary_name}.feature_predictors.{name}"] = tensor
+    return _sha(
+        {
+            "layer_charts": boundary_charts.as_dict(),
+            "post_operator_report": dict(boundary_charts.post_operator.report),
+            "post_layer_report": dict(boundary_charts.post_layer.report),
+            "tensor_payload": {
+                name: {
+                    **_tensor_identity_record(value),
+                    "tensor_sha256": _tensor_sha256(value),
+                }
+                for name, value in sorted(values.items())
+            },
+        }
+    )
+
+
+def _live_layer_evidence_sha256(
+    phases: Sequence[Lfm2CpcfTargetPhase],
+    layer_index: int,
+) -> str:
+    inventory = []
+    for phase in phases:
+        evidence = phase.parent_evidence.layers[layer_index]
+        inventory.append(
+            {
+                "identity": [phase.batch_index, phase.phase],
+                "phase_sha256": phase.phase_sha256,
+                "parent_evidence_sha256": (phase.parent_evidence.evidence_sha256),
+                "layer_evidence": evidence.as_dict(),
+                "layer_tensor_identity": {
+                    name: {
+                        **_tensor_identity_record(value),
+                        "tensor_sha256": _tensor_sha256(value),
+                    }
+                    for name, value in sorted(evidence.tensors.items())
+                },
+            }
+        )
+    return _sha(inventory)
+
+
+def _live_input_bank_sha256(
+    input_bank: Lfm2CpcfPhaseStateBank,
+) -> str:
+    phases = []
+    for phase in input_bank.phases:
+        phases.append(
+            {
+                "phase": phase.as_dict(),
+                "input_ids": {
+                    **_tensor_identity_record(phase.input_ids),
+                    "tensor_sha256": _tensor_sha256(phase.input_ids),
+                },
+                "attention_mask": {
+                    **_tensor_identity_record(phase.attention_mask),
+                    "tensor_sha256": _tensor_sha256(phase.attention_mask),
+                },
+                "position_ids": {
+                    **_tensor_identity_record(phase.position_ids),
+                    "tensor_sha256": _tensor_sha256(phase.position_ids),
+                },
+                "parent_evidence_binding": {
+                    "cache_key": phase.parent_evidence.cache_key,
+                    "batch_index": phase.parent_evidence.batch_index,
+                    "input_sha256": phase.parent_evidence.input_sha256,
+                    "phase": phase.parent_evidence.phase,
+                    "evidence_sha256": (phase.parent_evidence.evidence_sha256),
+                },
+                "state": {
+                    **_tensor_identity_record(input_bank.states[phase.identity]),
+                    "tensor_sha256": _tensor_sha256(input_bank.states[phase.identity]),
+                },
+            }
+        )
+    return _sha(
+        {
+            "boundary": input_bank.boundary,
+            "layer_index": input_bank.layer_index,
+            "state_bank_sha256": input_bank.state_bank_sha256,
+            "phases": phases,
+        }
+    )
+
+
+def _prove_exact_layer_rollback(
+    layer: Any,
+    snapshot: _LayerSnapshot,
+    *,
+    source_layer: Any,
+    source_snapshot: _LayerSnapshot,
+    input_bank: Lfm2CpcfPhaseStateBank,
+    layer_index: int,
+    evidence_sha256_before: str,
+    input_sha256_before: str,
+    boundary_charts: Lfm2CpcfLayerBoundaryCharts,
+    boundary_charts_sha256_before: str,
+    boundary_charts_payload_sha256_before: str,
+) -> Mapping[str, Any]:
+    """Verify target rollback and all immutable transaction inputs."""
+
+    _assert_snapshot_identity(layer, snapshot)
+    state_after = _tensor_bundle_sha256(_module_tensors(layer))
+    target_full_inventory_after = _sha(_layer_full_inventory(layer))
+    if (
+        state_after != snapshot.tensor_bytes_sha256
+        or target_full_inventory_after != snapshot.full_inventory_sha256
+    ):
+        raise Lfm2CpcfLayerInstallError(
+            "Target layer tensor bytes failed exact rollback."
+        )
+    _assert_snapshot_identity(source_layer, source_snapshot)
+    source_state_after = _tensor_bundle_sha256(_module_tensors(source_layer))
+    source_full_inventory_after = _sha(_layer_full_inventory(source_layer))
+    evidence_after = _live_layer_evidence_sha256(
+        input_bank.phases,
+        layer_index,
+    )
+    input_after = _live_input_bank_sha256(input_bank)
+    boundary_payload_after = _boundary_charts_payload_sha256(boundary_charts)
+    if (
+        source_state_after != source_snapshot.tensor_bytes_sha256
+        or source_full_inventory_after != source_snapshot.full_inventory_sha256
+        or evidence_after != evidence_sha256_before
+        or input_after != input_sha256_before
+        or boundary_charts.layer_charts_sha256 != boundary_charts_sha256_before
+        or boundary_payload_after != boundary_charts_payload_sha256_before
+    ):
+        raise Lfm2CpcfLayerInstallError(
+            "Layer failure changed source, evidence, incoming states, or "
+            "boundary charts."
+        )
+    body = {
+        "target_state_sha256_before": snapshot.tensor_bytes_sha256,
+        "target_state_sha256_after": state_after,
+        "target_full_inventory_sha256_before": (snapshot.full_inventory_sha256),
+        "target_full_inventory_sha256_after": (target_full_inventory_after),
+        "target_tensor_bytes_restored": True,
+        "target_tensor_identities_preserved": True,
+        "target_tensor_aliases_preserved": True,
+        "target_tensor_shapes_preserved": True,
+        "target_tensor_dtypes_preserved": True,
+        "target_all_named_parameters_and_buffers_restored": True,
+        "target_parameter_and_buffer_registries_restored": True,
+        "target_nonpersistent_buffer_membership_restored": True,
+        "target_parameter_gradient_identity_and_bytes_restored": True,
+        "target_parameter_gradient_storage_aliases_restored": True,
+        "target_module_modes_restored": True,
+        "source_state_sha256_before": source_snapshot.tensor_bytes_sha256,
+        "source_state_sha256_after": source_state_after,
+        "source_full_inventory_sha256_before": (source_snapshot.full_inventory_sha256),
+        "source_full_inventory_sha256_after": (source_full_inventory_after),
+        "source_state_preserved": True,
+        "source_full_inventory_preserved": True,
+        "evidence_sha256_before": evidence_sha256_before,
+        "evidence_sha256_after": evidence_after,
+        "evidence_preserved": True,
+        "input_tensor_sha256_before": input_sha256_before,
+        "input_tensor_sha256_after": input_after,
+        "input_tensors_preserved": True,
+        "boundary_charts_sha256_before": (boundary_charts_sha256_before),
+        "boundary_charts_sha256_after": (boundary_charts.layer_charts_sha256),
+        "boundary_charts_payload_sha256_before": (
+            boundary_charts_payload_sha256_before
+        ),
+        "boundary_charts_payload_sha256_after": (boundary_payload_after),
+        "boundary_charts_preserved": True,
+        "exact_layer_rollback_proven": True,
+    }
+    return MappingProxyType({**body, "proof_sha256": _sha(body)})
 
 
 def _evidence_tensors(
@@ -327,9 +1263,9 @@ def _evidence_tensors(
     for phase in phases:
         evidence = phase.parent_evidence.layers[layer_index]
         for name, value in evidence.tensors.items():
-            result[
-                f"{phase.batch_index}:{phase.phase}:layer.{layer_index}:{name}"
-            ] = value
+            result[f"{phase.batch_index}:{phase.phase}:layer.{layer_index}:{name}"] = (
+                value
+            )
     return result
 
 
@@ -388,9 +1324,7 @@ def _variance_epsilon(module: Any, name: str) -> float:
     value = getattr(module, "variance_epsilon", None)
     epsilon = _nonnegative_float(value, f"{name}.variance_epsilon")
     if epsilon == 0.0:
-        raise Lfm2CpcfLayerCompilerError(
-            f"{name}.variance_epsilon must be positive."
-        )
+        raise Lfm2CpcfLayerCompilerError(f"{name}.variance_epsilon must be positive.")
     return epsilon
 
 
@@ -473,10 +1407,7 @@ def invert_lfm2_rope(
     floor = torch.finfo(torch.float32).tiny
     if bool((radius.to(torch.float32) <= floor).any().item()):
         raise Lfm2CpcfLayerCompilerError("Cannot invert a zero-radius RoPE row.")
-    numerator = (
-        value * cos.unsqueeze(1)
-        - _rotate_half(value) * sin.unsqueeze(1)
-    )
+    numerator = value * cos.unsqueeze(1) - _rotate_half(value) * sin.unsqueeze(1)
     result = numerator / radius.unsqueeze(1)
     if not bool(torch.isfinite(result).all().item()):
         raise Lfm2CpcfLayerCompilerError("Inverse RoPE produced a non-finite row.")
@@ -536,9 +1467,7 @@ def _rmsnorm_preimage(
         ),
         dim=0,
     )
-    candidates = (
-        direction.unsqueeze(0) * scales
-    ).to(dtype=values.dtype)
+    candidates = (direction.unsqueeze(0) * scales).to(dtype=values.dtype)
     predictions = _runtime_rms_norm(
         candidates,
         norm_weight.reshape(1, 1, width),
@@ -546,8 +1475,10 @@ def _rmsnorm_preimage(
     )
     targets = rows.unsqueeze(0)
     errors = (
-        predictions.to(torch.float64) - targets.to(torch.float64)
-    ).square().mean(dim=-1)
+        (predictions.to(torch.float64) - targets.to(torch.float64))
+        .square()
+        .mean(dim=-1)
+    )
     choice = errors.argmin(dim=0)
     row_indices = torch.arange(int(rows.shape[0]))
     selected = candidates[choice, row_indices, :]
@@ -644,10 +1575,9 @@ def recover_lfm2_full_key_linear_history(
         ).reshape(1, 1, 1, -1),
         epsilon,
     )
-    reconstructed = (
-        reconstructed_normalized * full_cosine.unsqueeze(1)
-        + _rotate_half(reconstructed_normalized) * full_sine.unsqueeze(1)
-    )
+    reconstructed = reconstructed_normalized * full_cosine.unsqueeze(1) + _rotate_half(
+        reconstructed_normalized
+    ) * full_sine.unsqueeze(1)
     tolerance = (
         8.0 * torch.finfo(history.dtype).eps
         if history.dtype in {torch.float16, torch.bfloat16}
@@ -708,7 +1638,9 @@ def _same_rope(
     return source_cos, source_sin
 
 
-def _copy_attention_norms(source_attention: Any, target_attention: Any) -> Mapping[str, Any]:
+def _copy_attention_norms(
+    source_attention: Any, target_attention: Any
+) -> Mapping[str, Any]:
     torch = _torch()
     source = {
         "q_layernorm.weight": _weight(
@@ -735,13 +1667,8 @@ def _copy_attention_norms(source_attention: Any, target_attention: Any) -> Mappi
         ),
     }
     if any(not isinstance(value, torch.Tensor) for value in target.values()):
-        raise Lfm2CpcfLayerCompilerError(
-            "Target attention lacks Q/K RMSNorm weights."
-        )
-    if any(
-        tuple(target[name].shape) != tuple(source[name].shape)
-        for name in source
-    ):
+        raise Lfm2CpcfLayerCompilerError("Target attention lacks Q/K RMSNorm weights.")
+    if any(tuple(target[name].shape) != tuple(source[name].shape) for name in source):
         raise Lfm2CpcfLayerCompilerError(
             "Source/target attention norm widths differ; route this layer "
             "through the attention-dimension compiler."
@@ -757,9 +1684,7 @@ def _copy_attention_norms(source_attention: Any, target_attention: Any) -> Mappi
     }
     with torch.no_grad():
         for name, value in target.items():
-            value.copy_(
-                source[name].to(device=value.device, dtype=value.dtype)
-            )
+            value.copy_(source[name].to(device=value.device, dtype=value.dtype))
     body = {
         "scope": "attention_qk_norm_transport",
         "weights": {
@@ -782,9 +1707,10 @@ def _copy_attention_norms(source_attention: Any, target_attention: Any) -> Mappi
         "source_derived": True,
         "training_steps": 0,
     }
-    if not body["parameter_identities_preserved"] or not body[
-        "gradient_state_preserved"
-    ]:
+    if (
+        not body["parameter_identities_preserved"]
+        or not body["gradient_state_preserved"]
+    ):
         raise Lfm2CpcfLayerInstallError(
             "Attention Q/K norm transport changed parameter or gradient identity."
         )
@@ -831,9 +1757,7 @@ def _attention_cases(
     torch = _torch()
     source_attention = getattr(source_layer, "self_attn", None)
     if source_attention is None:
-        raise Lfm2CpcfLayerCompilerError(
-            "Source attention layer lacks self_attn."
-        )
+        raise Lfm2CpcfLayerCompilerError("Source attention layer lacks self_attn.")
     q_epsilon = _variance_epsilon(
         source_attention.q_layernorm,
         "source_attention.q_layernorm",
@@ -843,9 +1767,7 @@ def _attention_cases(
         "source_attention.k_layernorm",
     )
     if not math.isclose(q_epsilon, k_epsilon, rel_tol=0.0, abs_tol=0.0):
-        raise Lfm2CpcfLayerCompilerError(
-            "Source Q/K normalization epsilon differs."
-        )
+        raise Lfm2CpcfLayerCompilerError("Source Q/K normalization epsilon differs.")
     grouped: dict[
         tuple[int, str],
         list[Lfm2CpcfTargetPhase],
@@ -881,9 +1803,7 @@ def _attention_cases(
 
         for phase_index, phase in enumerate(trajectory):
             expected_phase = (
-                "prefill"
-                if phase_index == 0
-                else f"decode.{phase_index - 1:03d}"
+                "prefill" if phase_index == 0 else f"decode.{phase_index - 1:03d}"
             )
             if phase.phase != expected_phase:
                 raise Lfm2CpcfLayerCompilerError(
@@ -893,10 +1813,7 @@ def _attention_cases(
             if previous_phase is not None and (
                 phase.split != previous_phase.split
                 or phase.full_prefix_tokens
-                != (
-                    previous_phase.full_prefix_tokens
-                    + phase.sampled_suffix_tokens
-                )
+                != (previous_phase.full_prefix_tokens + phase.sampled_suffix_tokens)
             ):
                 raise Lfm2CpcfLayerCompilerError(
                     f"Attention trajectory {batch_index}:{record_id} changed "
@@ -957,8 +1874,7 @@ def _attention_cases(
                 or int(parent_context.shape[2]) != current
                 or int(current_key.shape[2]) != current
                 or int(current_value.shape[2]) != current
-                or int(observed_key_history.shape[2])
-                != phase.full_prefix_tokens
+                or int(observed_key_history.shape[2]) != phase.full_prefix_tokens
                 or tuple(observed_value_history.shape)
                 != tuple(observed_key_history.shape)
                 or tuple(parent_q_linear.shape) != tuple(parent_query.shape)
@@ -986,23 +1902,18 @@ def _attention_cases(
                 f"phase {phase.identity!r} attention.rope_sin",
                 dimensions=3,
             )
-            if (
-                tuple(cached_cos.shape)
-                != (
-                    phase.batch_size,
-                    current,
-                    int(parent_q_linear.shape[3]),
-                )
-                or tuple(cached_sin.shape) != tuple(cached_cos.shape)
-            ):
+            if tuple(cached_cos.shape) != (
+                phase.batch_size,
+                current,
+                int(parent_q_linear.shape[3]),
+            ) or tuple(cached_sin.shape) != tuple(cached_cos.shape):
                 raise Lfm2CpcfLayerCompilerError(
                     f"Phase {phase.identity!r} cached RoPE is not its exact "
                     "terminal query/key suffix."
                 )
             tolerance = (
                 4.0 * torch.finfo(parent_q_linear.dtype).eps
-                if parent_q_linear.dtype
-                in {torch.float16, torch.bfloat16}
+                if parent_q_linear.dtype in {torch.float16, torch.bfloat16}
                 else 2e-5
             )
             if not (
@@ -1038,9 +1949,7 @@ def _attention_cases(
                     "exact terminal suffix of their sealed histories."
                 )
 
-            observed_mask = _attention_key_mask(
-                tensors["attention.additive_mask"]
-            )
+            observed_mask = _attention_key_mask(tensors["attention.additive_mask"])
             if tuple(observed_mask.shape) != (
                 phase.batch_size,
                 current,
@@ -1060,11 +1969,12 @@ def _attention_cases(
                 f"phase {phase.identity!r} actual child pre-operator state",
                 dimensions=3,
             )
-            if (
-                tuple(child_input.shape[:2])
-                != (phase.batch_size, phase.full_prefix_tokens)
-                or tuple(child_state.shape[:2])
-                != (phase.batch_size, phase.full_prefix_tokens)
+            if tuple(child_input.shape[:2]) != (
+                phase.batch_size,
+                phase.full_prefix_tokens,
+            ) or tuple(child_state.shape[:2]) != (
+                phase.batch_size,
+                phase.full_prefix_tokens,
             ):
                 raise Lfm2CpcfLayerCompilerError(
                     f"Phase {phase.identity!r} actual child states do not "
@@ -1149,8 +2059,7 @@ def _attention_cases(
             )
             if (
                 int(endpoint.shape[1]) != current
-                or int(key_linear_history.shape[2])
-                != phase.full_prefix_tokens
+                or int(key_linear_history.shape[2]) != phase.full_prefix_tokens
                 or tuple(key_mask_history.shape)
                 != (
                     phase.batch_size,
@@ -1241,6 +2150,10 @@ _SHORT_CONV_HISTORY_FIELDS = (
     "short_conv.c_history",
     "short_conv.x_history",
 )
+_SHORT_CONV_V4_HISTORY_FIELDS = (
+    "operator.input",
+    *_SHORT_CONV_HISTORY_FIELDS,
+)
 
 
 def _extend_short_conv_parent_histories(
@@ -1249,24 +2162,30 @@ def _extend_short_conv_parent_histories(
     *,
     layer_index: int,
     histories: dict[tuple[int, str], Any],
+    include_operator_input: bool = False,
 ) -> dict[str, Any]:
-    """Rebuild full causal B/C/x histories from cached decode suffixes.
+    """Rebuild full causal parent histories from cached decode suffixes.
 
     The strict tokenizer trace adapter maps one target row to one donor row
     without changing batch or sequence geometry.  A prefill therefore seals
     the complete prompt history, while each cached decode phase contributes
-    only its newly executed terminal suffix.  The short-convolution solver
-    needs their authenticated concatenation so its FIR warm state covers the
-    same complete prefix replayed through the child.
+    only its newly executed terminal suffix.  Both short-convolution solvers
+    consume authenticated B/C/x histories.  V4 additionally consumes the
+    complete parent operator-input history for its child-to-parent affine
+    lift; it is never reconstructed from projected B/C/x values.
     """
 
     torch = _torch()
+    history_fields = (
+        _SHORT_CONV_V4_HISTORY_FIELDS
+        if include_operator_input
+        else _SHORT_CONV_HISTORY_FIELDS
+    )
     result = {}
     previous_fields = {
-        field: histories.get((phase.batch_index, field))
-        for field in _SHORT_CONV_HISTORY_FIELDS
+        field: histories.get((phase.batch_index, field)) for field in history_fields
     }
-    for field in _SHORT_CONV_HISTORY_FIELDS:
+    for field in history_fields:
         current = _finite_tensor(
             tensors[field],
             f"phase {phase.identity!r} layer {layer_index} {field}",
@@ -1286,9 +2205,7 @@ def _extend_short_conv_parent_histories(
             history = current
         else:
             previous = histories.get(key)
-            previous_tokens = (
-                phase.full_prefix_tokens - phase.sampled_suffix_tokens
-            )
+            previous_tokens = phase.full_prefix_tokens - phase.sampled_suffix_tokens
             if (
                 previous is None
                 or tuple(previous.shape[:1]) != tuple(current.shape[:1])
@@ -1332,10 +2249,7 @@ def _extend_short_conv_parent_histories(
             )
         pre_bx_state = _finite_tensor(
             tensors["short_conv.pre_bx_state"],
-            (
-                f"phase {phase.identity!r} layer {layer_index} "
-                "short_conv.pre_bx_state"
-            ),
+            (f"phase {phase.identity!r} layer {layer_index} short_conv.pre_bx_state"),
             dimensions=3,
         )
         fir_length = int(pre_bx_state.shape[-1])
@@ -1406,10 +2320,14 @@ def _short_conv_cases(
     input_bank: Lfm2CpcfPhaseStateBank,
     preinstall_replay: Lfm2CpcfLayerReplayBank,
     chart: Lfm2CpcfLayerBoundaryCharts,
-) -> tuple[Lfm2CpcfShortConvFoldCase, ...]:
+    use_v4: bool = False,
+) -> tuple[
+    Lfm2CpcfShortConvFoldCase | Lfm2CpcfShortConvV4FoldCase,
+    ...,
+]:
     grouped: dict[tuple[int, str], list[Lfm2CpcfTargetPhase]] = {}
     for phase in input_bank.phases:
-        if phase.split in _SPLITS:
+        if phase.split in _SHORT_CONV_CASE_SPLITS:
             grouped.setdefault(
                 (phase.batch_index, phase.record_id),
                 [],
@@ -1433,9 +2351,7 @@ def _short_conv_cases(
         final_child_state = None
         for phase_index, phase in enumerate(trajectory):
             expected_phase = (
-                "prefill"
-                if phase_index == 0
-                else f"decode.{phase_index - 1:03d}"
+                "prefill" if phase_index == 0 else f"decode.{phase_index - 1:03d}"
             )
             if phase.phase != expected_phase:
                 raise Lfm2CpcfLayerCompilerError(
@@ -1446,10 +2362,7 @@ def _short_conv_cases(
             if previous_phase is not None and (
                 phase.split != previous_phase.split
                 or phase.full_prefix_tokens
-                != (
-                    previous_phase.full_prefix_tokens
-                    + phase.sampled_suffix_tokens
-                )
+                != (previous_phase.full_prefix_tokens + phase.sampled_suffix_tokens)
             ):
                 raise Lfm2CpcfLayerCompilerError(
                     f"Short-conv trajectory {phase.batch_index}:"
@@ -1462,6 +2375,7 @@ def _short_conv_cases(
                 tensors,
                 layer_index=layer_index,
                 histories=histories,
+                include_operator_input=use_v4,
             )
             replay = preinstall_replay.replays[phase.identity]
             child_input = _finite_tensor(
@@ -1474,11 +2388,12 @@ def _short_conv_cases(
                 f"phase {phase.identity!r} actual child pre-operator state",
                 dimensions=3,
             )
-            if (
-                tuple(child_input.shape[:2])
-                != (phase.batch_size, phase.full_prefix_tokens)
-                or tuple(child_state.shape[:2])
-                != (phase.batch_size, phase.full_prefix_tokens)
+            if tuple(child_input.shape[:2]) != (
+                phase.batch_size,
+                phase.full_prefix_tokens,
+            ) or tuple(child_state.shape[:2]) != (
+                phase.batch_size,
+                phase.full_prefix_tokens,
             ):
                 raise Lfm2CpcfLayerCompilerError(
                     f"Phase {phase.identity!r} actual child states do not "
@@ -1513,12 +2428,9 @@ def _short_conv_cases(
             endpoint = chart.post_operator.encode_shaped(
                 tensors["residual.post_operator"]
             )
-            current_start = (
-                phase.full_prefix_tokens - phase.sampled_suffix_tokens
-            )
-            if (
-                int(endpoint.shape[1]) != phase.sampled_suffix_tokens
-                or (endpoint_end is not None and current_start != endpoint_end)
+            current_start = phase.full_prefix_tokens - phase.sampled_suffix_tokens
+            if int(endpoint.shape[1]) != phase.sampled_suffix_tokens or (
+                endpoint_end is not None and current_start != endpoint_end
             ):
                 raise Lfm2CpcfLayerCompilerError(
                     f"Phase {phase.identity!r} residual endpoint is not the "
@@ -1550,28 +2462,39 @@ def _short_conv_cases(
             )
         endpoint = _torch().cat(endpoint_parts, dim=1).contiguous()
         actual_pre = final_child_state[:, endpoint_start:, :].contiguous()
-        result.append(
-            Lfm2CpcfShortConvFoldCase(
-                case_id=(
-                    f"{final_phase.batch_index}:{final_phase.record_id}:trajectory:"
-                    f"layer.{layer_index}"
-                ),
-                split=final_phase.split,
-                suffix_start=endpoint_start,
-                actual_child_operator_input_history=final_child_input,
-                parent_b_history=parent_histories["short_conv.b_history"],
-                parent_c_history=parent_histories["short_conv.c_history"],
-                parent_x_history=parent_histories["short_conv.x_history"],
-                parent_post_operator_residual_target_space_suffix=endpoint,
-                actual_child_pre_operator_residual_suffix=actual_pre,
-                valid_prefix_mask=final_phase.attention_mask,
+        case_arguments = {
+            "case_id": (
+                f"{final_phase.batch_index}:{final_phase.record_id}:trajectory:"
+                f"layer.{layer_index}"
+            ),
+            "split": final_phase.split,
+            "suffix_start": endpoint_start,
+            "actual_child_operator_input_history": final_child_input,
+            "parent_b_history": parent_histories["short_conv.b_history"],
+            "parent_c_history": parent_histories["short_conv.c_history"],
+            "parent_x_history": parent_histories["short_conv.x_history"],
+            "parent_post_operator_residual_target_space_suffix": endpoint,
+            "actual_child_pre_operator_residual_suffix": actual_pre,
+            "valid_prefix_mask": final_phase.attention_mask,
+        }
+        if use_v4:
+            result.append(
+                Lfm2CpcfShortConvV4FoldCase(
+                    **case_arguments,
+                    parent_operator_input_history=parent_histories["operator.input"],
+                )
             )
-        )
+        else:
+            result.append(Lfm2CpcfShortConvFoldCase(**case_arguments))
     if not any(value.split == "fit" for value in result) or not any(
         value.split == "validation" for value in result
     ):
         raise Lfm2CpcfLayerCompilerError(
             "Short-conv compilation requires fit and validation phases."
+        )
+    if use_v4 and not any(value.split == "selection" for value in result):
+        raise Lfm2CpcfLayerCompilerError(
+            "Short-conv v4 compilation requires selection phases."
         )
     return tuple(result)
 
@@ -1591,9 +2514,7 @@ def _mlp_cases(
         replay = operator_replay.replays[phase.identity]
         target_input = phase.suffix(replay.mlp_input)
         target_pre = phase.suffix(replay.post_operator_residual)
-        parent_endpoint = chart.post_layer.encode_shaped(
-            tensors["residual.post_layer"]
-        )
+        parent_endpoint = chart.post_layer.encode_shaped(tensors["residual.post_layer"])
         result.append(
             Lfm2CachedMlpFoldCase(
                 target_input=target_input.reshape(-1, int(target_input.shape[-1])),
@@ -1628,11 +2549,24 @@ def _mlp_cases(
 
 def _install_short_conv(
     target_short_conv: Any,
-    compiled: Lfm2CompiledCpcfShortConvFold,
+    compiled: Lfm2CompiledCpcfShortConvFold | Lfm2CompiledCpcfShortConvV4Fold,
 ) -> Mapping[str, Any]:
     torch = _torch()
-    if not isinstance(compiled, Lfm2CompiledCpcfShortConvFold):
-        raise TypeError("compiled must be Lfm2CompiledCpcfShortConvFold.")
+    if not isinstance(
+        compiled,
+        (Lfm2CompiledCpcfShortConvFold, Lfm2CompiledCpcfShortConvV4Fold),
+    ):
+        raise TypeError("compiled must be an authenticated LFM2 CPCF short-conv fold.")
+    if (
+        isinstance(
+            compiled,
+            Lfm2CompiledCpcfShortConvV4Fold,
+        )
+        and not compiled.verify_authentication()
+    ):
+        raise Lfm2CpcfLayerInstallError(
+            "Compiled short-conv v4 authentication failed before install."
+        )
     available = {
         "in_proj.weight": getattr(
             getattr(target_short_conv, "in_proj", None),
@@ -1694,8 +2628,7 @@ def _install_short_conv(
         for name in expected
     }
     backup = {
-        name: available[name].detach().to(device="cpu").clone()
-        for name in expected
+        name: available[name].detach().to(device="cpu").clone() for name in expected
     }
     try:
         with torch.no_grad():
@@ -1710,7 +2643,11 @@ def _install_short_conv(
             {name: available[name] for name in expected}
         )
         body = {
-            "scope": "suffix_aware_cpcf_short_conv_install",
+            "scope": (
+                "authenticated_residual_endpoint_cpcf_short_conv_v4_install"
+                if isinstance(compiled, Lfm2CompiledCpcfShortConvV4Fold)
+                else "suffix_aware_cpcf_short_conv_install"
+            ),
             "parameter_identities_preserved": all(
                 id(available[name]) == identities[name] for name in expected
             ),
@@ -1718,9 +2655,7 @@ def _install_short_conv(
             "gradient_state_preserved": all(
                 (
                     bool(available[name].requires_grad),
-                    None
-                    if available[name].grad is None
-                    else id(available[name].grad),
+                    None if available[name].grad is None else id(available[name].grad),
                     None
                     if available[name].grad is None
                     else _tensor_sha256(available[name].grad),
@@ -1804,7 +2739,7 @@ def _split_endpoint_metrics(
 ) -> Mapping[str, Any]:
     torch = _torch()
     result = {}
-    for split in _SPLITS:
+    for split in _EVALUATION_SPLITS:
         operator_predictions = []
         operator_targets = []
         layer_predictions = []
@@ -1816,15 +2751,13 @@ def _split_endpoint_metrics(
             tensors = _phase_evidence(phase, layer_index, chart.operator_kind)
             operator_predictions.append(
                 phase.suffix(
-                    operator_replay.replays[
-                        phase.identity
-                    ].post_operator_residual
+                    operator_replay.replays[phase.identity].post_operator_residual
                 ).to(device="cpu")
             )
             operator_targets.append(
-                chart.post_operator.encode_shaped(
-                    tensors["residual.post_operator"]
-                ).to(device="cpu")
+                chart.post_operator.encode_shaped(tensors["residual.post_operator"]).to(
+                    device="cpu"
+                )
             )
             layer_predictions.append(
                 phase.suffix(
@@ -1832,9 +2765,9 @@ def _split_endpoint_metrics(
                 ).to(device="cpu")
             )
             layer_targets.append(
-                chart.post_layer.encode_shaped(
-                    tensors["residual.post_layer"]
-                ).to(device="cpu")
+                chart.post_layer.encode_shaped(tensors["residual.post_layer"]).to(
+                    device="cpu"
+                )
             )
             phase_seals.append(phase.phase_sha256)
         if not operator_predictions:
@@ -1842,17 +2775,11 @@ def _split_endpoint_metrics(
                 f"Layer evaluation requires at least one {split} phase."
             )
         operator_prediction = torch.cat(
-            [
-                value.reshape(-1, int(value.shape[-1]))
-                for value in operator_predictions
-            ],
+            [value.reshape(-1, int(value.shape[-1])) for value in operator_predictions],
             dim=0,
         )
         operator_target = torch.cat(
-            [
-                value.reshape(-1, int(value.shape[-1]))
-                for value in operator_targets
-            ],
+            [value.reshape(-1, int(value.shape[-1])) for value in operator_targets],
             dim=0,
         )
         layer_prediction = torch.cat(
@@ -1867,9 +2794,7 @@ def _split_endpoint_metrics(
             "split": split,
             "phase_count": len(phase_seals),
             "phase_sha256": phase_seals,
-            "post_operator": dict(
-                _metrics(operator_prediction, operator_target)
-            ),
+            "post_operator": dict(_metrics(operator_prediction, operator_target)),
             "post_layer": dict(_metrics(layer_prediction, layer_target)),
         }
         result[split] = {**body, "report_sha256": _sha(body)}
@@ -1904,12 +2829,10 @@ class Lfm2CpcfCompiledLayerResult:
                 self.operator_artifact,
                 Lfm2CompiledStructuralAttentionFold,
             ):
-                raise TypeError(
-                    "Attention result has the wrong operator artifact."
-                )
+                raise TypeError("Attention result has the wrong operator artifact.")
         elif not isinstance(
             self.operator_artifact,
-            Lfm2CompiledCpcfShortConvFold,
+            (Lfm2CompiledCpcfShortConvFold, Lfm2CompiledCpcfShortConvV4Fold),
         ):
             raise TypeError("Short-conv result has the wrong operator artifact.")
         if not isinstance(
@@ -1926,16 +2849,17 @@ class Lfm2CpcfCompiledLayerResult:
             raise Lfm2CpcfLayerCompilerError(
                 "Layer replay sequence is incomplete or out of order."
             )
-        if set(self.split_metrics) != set(_SPLITS):
+        if set(self.split_metrics) != set(_EVALUATION_SPLITS):
             raise Lfm2CpcfLayerCompilerError(
                 "split_metrics must contain fit and validation."
             )
         result_sha = _digest(self.result_sha256, "result_sha256")
         report = dict(self.report)
-        if report.pop("result_sha256", None) != result_sha or _sha(report) != result_sha:
-            raise Lfm2CpcfLayerCompilerError(
-                "Layer compiler result seal is invalid."
-            )
+        if (
+            report.pop("result_sha256", None) != result_sha
+            or _sha(report) != result_sha
+        ):
+            raise Lfm2CpcfLayerCompilerError("Layer compiler result seal is invalid.")
         object.__setattr__(
             self,
             "operator_install_report",
@@ -1965,6 +2889,386 @@ class Lfm2CpcfCompiledLayerResult:
         return dict(self.report)
 
 
+def _no_recursive_success_claims(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        for name, child in value.items():
+            if name in _NO_SUCCESS_FIELDS and child is not False:
+                return False
+            if not _no_recursive_success_claims(child):
+                return False
+        return True
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        (str, bytes, bytearray),
+    ):
+        return all(_no_recursive_success_claims(child) for child in value)
+    return True
+
+
+def _valid_short_conv_v1_validation_report(
+    report: Mapping[str, Any],
+) -> bool:
+    behavior_gate = report.get("behavior_gate")
+    policy = behavior_gate.get("policy") if isinstance(behavior_gate, Mapping) else None
+    checks = behavior_gate.get("checks") if isinstance(behavior_gate, Mapping) else None
+    audit = report.get("audit")
+    execution = report.get("execution")
+    audit_hashes_match = bool(
+        isinstance(audit, Mapping)
+        and all(
+            isinstance(audit.get(name), str)
+            and _SHA256.fullmatch(audit[name]) is not None
+            for name in (
+                "source_inputs_sha256_before",
+                "source_inputs_sha256_after",
+                "target_templates_sha256_before",
+                "target_templates_sha256_after",
+                "evidence_sha256_before",
+                "evidence_sha256_after",
+            )
+        )
+        and audit.get("source_inputs_sha256_before")
+        == audit.get("source_inputs_sha256_after")
+        and audit.get("target_templates_sha256_before")
+        == audit.get("target_templates_sha256_after")
+        and audit.get("evidence_sha256_before") == audit.get("evidence_sha256_after")
+    )
+    return bool(
+        set(report) == _SHORT_CONV_VALIDATION_REPORT_FIELDS
+        and report.get("schema") == LFM2_CPCF_SHORT_CONV_FOLD_SCHEMA
+        and isinstance(report.get("compiled_state_sha256"), str)
+        and _SHA256.fullmatch(report["compiled_state_sha256"]) is not None
+        and isinstance(behavior_gate, Mapping)
+        and set(behavior_gate)
+        == {
+            "policy",
+            "checks",
+            "passed",
+            "heldout_validation_used_for_fitting",
+        }
+        and behavior_gate.get("passed") is False
+        and behavior_gate.get("heldout_validation_used_for_fitting") is False
+        and isinstance(policy, Mapping)
+        and set(policy) == _SHORT_CONV_GATE_POLICY_FIELDS
+        and policy.get("enforce") is True
+        and all(
+            not isinstance(policy.get(name), bool)
+            and isinstance(policy.get(name), (int, float))
+            and math.isfinite(float(policy[name]))
+            for name in _SHORT_CONV_GATE_POLICY_FIELDS - {"enforce"}
+        )
+        and isinstance(checks, Mapping)
+        and set(checks) == _SHORT_CONV_GATE_CHECK_FIELDS
+        and all(isinstance(value, bool) for value in checks.values())
+        and not all(checks.values())
+        and isinstance(audit, Mapping)
+        and set(audit) == _SHORT_CONV_AUDIT_FIELDS
+        and audit_hashes_match
+        and audit.get("source_inputs_unchanged") is True
+        and audit.get("target_templates_unchanged") is True
+        and audit.get("evidence_unchanged") is True
+        and audit.get("case_authentication_verified") is True
+        and audit.get("blank_target_values_used_by_compiler") is False
+        and audit.get("target_templates_used_for_shape_and_dtype_only") is True
+        and audit.get("returned_tensors_detached") is True
+        and isinstance(execution, Mapping)
+        and set(execution) == _SHORT_CONV_EXECUTION_FIELDS
+        and execution.get("closed_form_linear_solve") is True
+        and execution.get("deterministic_barycentric_channel_clustering") is True
+        and all(
+            type(execution.get(name)) is int and execution[name] == 0
+            for name in (
+                "parent_model_forward_calls",
+                "target_model_forward_calls",
+                "backward_calls",
+                "optimizer_steps",
+                "training_steps",
+                "parameters_pruned",
+                "parameters_quantized",
+            )
+        )
+        and _no_recursive_success_claims(report)
+    )
+
+
+def _recursive_report_seals_valid(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        document = dict(value)
+        if "report_sha256" in document:
+            seal = document.pop("report_sha256")
+            if (
+                not isinstance(seal, str)
+                or _SHA256.fullmatch(seal) is None
+                or _sha(document) != seal
+            ):
+                return False
+        return all(_recursive_report_seals_valid(child) for child in value.values())
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        (str, bytes, bytearray),
+    ):
+        return all(_recursive_report_seals_valid(child) for child in value)
+    return True
+
+
+def _valid_short_conv_v4_validation_report(
+    report: Mapping[str, Any],
+) -> bool:
+    try:
+        solver_policy = parse_lfm2_cpcf_short_conv_v4_solver_policy(
+            report.get("solver_policy")
+        )
+    except Exception:
+        return False
+    gate_policy = report.get("gate_policy")
+    gate = report.get("behavior_gate")
+    checks = gate.get("checks") if isinstance(gate, Mapping) else None
+    failed_checks = gate.get("failed_checks") if isinstance(gate, Mapping) else None
+    case_seals = report.get("case_authentication_sha256")
+    execution = report.get("execution")
+    fit_evaluation = report.get("fit_evaluation")
+    selection_evaluation = report.get("selection_evaluation")
+    validation_evaluation = report.get("validation_evaluation")
+    ranking = report.get("selection_ranking")
+    candidate_fit = report.get("candidate_fit_reports")
+    candidate_selection = report.get("candidate_selection_reports")
+    selected_candidate = report.get("selected_candidate_id")
+    compiled_state_sha = report.get("compiled_state_sha256")
+    selected_candidate_state_sha = (
+        selection_evaluation.get("candidate_state_sha256")
+        if isinstance(selection_evaluation, Mapping)
+        else None
+    )
+    dimensions = (
+        report.get("source_hidden_size"),
+        report.get("target_hidden_size"),
+        report.get("source_fir_length"),
+        report.get("target_fir_length"),
+    )
+    evaluations = (
+        ("fit", fit_evaluation),
+        ("selection", selection_evaluation),
+        ("validation", validation_evaluation),
+    )
+    return bool(
+        set(report) == _SHORT_CONV_V4_FAILURE_REPORT_FIELDS
+        and report.get("schema") == LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
+        and report.get("solver_schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+        and report.get("solver_policy_sha256") == solver_policy.authentication_sha256
+        and solver_policy.verify_authentication()
+        and isinstance(gate_policy, Mapping)
+        and set(gate_policy) == _SHORT_CONV_GATE_POLICY_FIELDS
+        and gate_policy.get("enforce") is True
+        and all(
+            not isinstance(gate_policy.get(name), bool)
+            and isinstance(gate_policy.get(name), (int, float))
+            and math.isfinite(float(gate_policy[name]))
+            for name in _SHORT_CONV_GATE_POLICY_FIELDS - {"enforce"}
+        )
+        and isinstance(gate, Mapping)
+        and set(gate) == {"policy", "checks", "failed_checks", "passed", "enforced"}
+        and gate.get("policy") == dict(gate_policy)
+        and gate.get("passed") is False
+        and gate.get("enforced") is True
+        and isinstance(checks, Mapping)
+        and set(checks) == _SHORT_CONV_V4_GATE_CHECK_FIELDS
+        and all(isinstance(value, bool) for value in checks.values())
+        and isinstance(failed_checks, list)
+        and failed_checks
+        and len(failed_checks) == len(set(failed_checks))
+        and set(failed_checks)
+        == {name for name, passed in checks.items() if not passed}
+        and isinstance(case_seals, Mapping)
+        and set(case_seals) == {"fit", "selection", "validation"}
+        and all(
+            isinstance(values, list)
+            and values
+            and all(
+                isinstance(value, str) and _SHA256.fullmatch(value) is not None
+                for value in values
+            )
+            for values in case_seals.values()
+        )
+        and all(type(value) is int and value > 0 for value in dimensions)
+        and report["source_hidden_size"] >= report["target_hidden_size"]
+        and isinstance(report.get("hidden_width_compression_ratio"), (int, float))
+        and not isinstance(report.get("hidden_width_compression_ratio"), bool)
+        and math.isfinite(float(report["hidden_width_compression_ratio"]))
+        and float(report["hidden_width_compression_ratio"]) >= 1.0
+        and isinstance(report.get("basis"), Mapping)
+        and isinstance(report.get("input_lift"), Mapping)
+        and isinstance(report.get("transported_priors"), Mapping)
+        and isinstance(candidate_fit, Mapping)
+        and isinstance(candidate_selection, Mapping)
+        and candidate_fit
+        and set(candidate_fit) == set(candidate_selection)
+        and isinstance(selected_candidate, str)
+        and bool(selected_candidate)
+        and selected_candidate in candidate_fit
+        and isinstance(selected_candidate_state_sha, str)
+        and _SHA256.fullmatch(selected_candidate_state_sha) is not None
+        and isinstance(candidate_selection[selected_candidate], Mapping)
+        and candidate_selection[selected_candidate].get("split") == "selection"
+        and candidate_selection[selected_candidate].get("candidate_state_sha256")
+        == selected_candidate_state_sha
+        and isinstance(ranking, Mapping)
+        and ranking.get("kind") == "selection_only_candidate_ranking"
+        and ranking.get("selected_candidate_id") == selected_candidate
+        and ranking.get("validation_isolation") is True
+        and isinstance(ranking.get("ranking"), list)
+        and ranking["ranking"]
+        and isinstance(ranking["ranking"][0], Mapping)
+        and ranking["ranking"][0].get("candidate_id") == selected_candidate
+        and ranking["ranking"][0].get("candidate_state_sha256")
+        == selected_candidate_state_sha
+        and all(
+            isinstance(evaluation, Mapping)
+            and evaluation.get("schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+            and evaluation.get("kind") == "target_dtype_evaluation"
+            and evaluation.get("split") == split
+            and evaluation.get("policy_sha256") == solver_policy.authentication_sha256
+            and evaluation.get("candidate_state_sha256") == selected_candidate_state_sha
+            and evaluation.get("actual_parameter_and_intermediate_target_dtype_replay")
+            is True
+            for split, evaluation in evaluations
+        )
+        and isinstance(compiled_state_sha, str)
+        and _SHA256.fullmatch(compiled_state_sha) is not None
+        and all(
+            type(report.get(name)) is int and report[name] >= 0
+            for name in (
+                "source_channels_selected",
+                "source_channels_dropped",
+                "source_channels_pruned",
+                "source_channels_quantized",
+            )
+        )
+        and report.get("source_channels_pruned") == 0
+        and report.get("source_channels_quantized") == 0
+        and report.get("fit_only_parameter_solves") is True
+        and report.get("selection_used_only_for_candidate_ranking") is True
+        and report.get("validation_used_only_after_candidate_freeze") is True
+        and isinstance(execution, Mapping)
+        and set(execution) == _SHORT_CONV_V4_EXECUTION_FIELDS
+        and all(type(value) is int and value == 0 for value in execution.values())
+        and report.get("compiled_short_conv_fold_issued") is False
+        and report.get("promotion_claimed") is False
+        and report.get("promotable_candidate") is False
+        and report.get("failure_evidence_only") is True
+        and _recursive_report_seals_valid(report)
+        and _no_recursive_success_claims(report)
+    )
+
+
+def _valid_short_conv_validation_report(
+    report: Mapping[str, Any],
+) -> bool:
+    schema = report.get("schema")
+    if schema == LFM2_CPCF_SHORT_CONV_FOLD_SCHEMA:
+        return _valid_short_conv_v1_validation_report(report)
+    if schema == LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA:
+        return _valid_short_conv_v4_validation_report(report)
+    return False
+
+
+def _verified_short_conv_validation_failure(
+    error: Exception,
+) -> tuple[Mapping[str, Any] | None, bytes | None, str | None]:
+    if not isinstance(error, Lfm2CpcfShortConvValidationError):
+        return None, None, None
+    report = error.report
+    if not isinstance(report, Mapping):
+        raise Lfm2CpcfLayerInstallError(
+            "Short-conv validation failure lacks a structured report."
+        )
+    report_body = dict(report)
+    report_sha = _digest(
+        report_body.pop("report_sha256", None),
+        "short_conv_validation_report.report_sha256",
+    )
+    if _sha(report_body) != report_sha:
+        raise Lfm2CpcfLayerInstallError(
+            "Short-conv validation failure report is not self-sealed."
+        )
+    if not _valid_short_conv_validation_report(report):
+        raise Lfm2CpcfLayerInstallError(
+            "Short-conv validation failure report has invalid schema, "
+            "gate semantics, or a nested success claim."
+        )
+    report_bytes = _canonical_json(dict(report))
+    return (
+        report,
+        report_bytes,
+        hashlib.sha256(report_bytes).hexdigest(),
+    )
+
+
+def _wrap_layer_failure(
+    error: Exception,
+    *,
+    stage: str,
+    layer_index: int,
+    operator_kind: str,
+    input_bank_sha256: str,
+    input_tensor_sha256: str,
+    boundary_charts_sha256: str,
+    boundary_charts_payload_sha256: str,
+    rollback_proof: Mapping[str, Any],
+) -> Lfm2CpcfLayerCompilationFailure:
+    nested_report, nested_bytes, nested_bytes_sha = (
+        _verified_short_conv_validation_failure(error)
+    )
+    body = {
+        "schema": LFM2_CPCF_LAYER_FAILURE_SCHEMA,
+        "stage": stage,
+        "layer_index": layer_index,
+        "operator_kind": operator_kind,
+        "input_bank_sha256": input_bank_sha256,
+        "input_tensor_sha256": input_tensor_sha256,
+        "boundary_charts_sha256": boundary_charts_sha256,
+        "boundary_charts_payload_sha256": (boundary_charts_payload_sha256),
+        "cause": {
+            "module": type(error).__module__,
+            "type": type(error).__qualname__,
+            "message": str(error),
+        },
+        "nested_short_conv_validation_report": (
+            None if nested_report is None else dict(nested_report)
+        ),
+        "nested_short_conv_validation_report_sha256": (
+            None if nested_report is None else nested_report["report_sha256"]
+        ),
+        "nested_short_conv_validation_report_canonical_bytes_sha256": (
+            nested_bytes_sha
+        ),
+        "nested_short_conv_validation_report_preserved_byte_for_byte": (
+            nested_report is not None
+        ),
+        "rollback_proof": dict(rollback_proof),
+        "layer_result_issued": False,
+        "promotion_claimed": False,
+    }
+    report = {**body, "report_sha256": _sha(body)}
+    message = (
+        f"LFM2 CPCF layer {layer_index} ({operator_kind}) failed at "
+        f"{stage} after exact rollback: {error}"
+    )
+    return Lfm2CpcfLayerCompilationFailure(
+        message,
+        stage=stage,
+        layer_index=layer_index,
+        operator_kind=operator_kind,
+        input_bank_sha256=input_bank_sha256,
+        input_tensor_sha256=input_tensor_sha256,
+        boundary_charts_sha256=boundary_charts_sha256,
+        boundary_charts_payload_sha256=(boundary_charts_payload_sha256),
+        rollback_proof=rollback_proof,
+        report=report,
+        short_conv_validation_report=nested_report,
+        short_conv_validation_report_bytes=nested_bytes,
+    )
+
+
 def compile_and_install_lfm2_cpcf_layer(
     source_model: Any,
     target_model: Any,
@@ -1974,6 +3278,7 @@ def compile_and_install_lfm2_cpcf_layer(
     boundary_charts: Lfm2CpcfLayerBoundaryCharts,
     ridge: float = 1e-8,
     short_conv_gate_policy: Lfm2CpcfShortConvGatePolicy | None = None,
+    short_conv_v4_solver_policy: Lfm2CpcfShortConvV4SolverPolicy | None = None,
 ) -> Lfm2CpcfCompiledLayerResult:
     """Compile, install, and replay one next sequential LFM2 target layer."""
 
@@ -1982,8 +3287,20 @@ def compile_and_install_lfm2_cpcf_layer(
     if not isinstance(input_bank, Lfm2CpcfPhaseStateBank):
         raise TypeError("input_bank must be Lfm2CpcfPhaseStateBank.")
     if not isinstance(boundary_charts, Lfm2CpcfLayerBoundaryCharts):
+        raise TypeError("boundary_charts must be Lfm2CpcfLayerBoundaryCharts.")
+    if short_conv_v4_solver_policy is not None and not isinstance(
+        short_conv_v4_solver_policy,
+        Lfm2CpcfShortConvV4SolverPolicy,
+    ):
         raise TypeError(
-            "boundary_charts must be Lfm2CpcfLayerBoundaryCharts."
+            "short_conv_v4_solver_policy must be Lfm2CpcfShortConvV4SolverPolicy."
+        )
+    if (
+        short_conv_v4_solver_policy is not None
+        and not short_conv_v4_solver_policy.verify_authentication()
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "short_conv_v4_solver_policy authentication failed."
         )
     if input_bank.layer_index != index:
         raise Lfm2CpcfLayerCompilerError(
@@ -1999,7 +3316,7 @@ def compile_and_install_lfm2_cpcf_layer(
         )
     split_counts = {
         split: sum(phase.split == split for phase in input_bank.phases)
-        for split in ("selection", *_SPLITS)
+        for split in _SHORT_CONV_CASE_SPLITS
     }
     if split_counts["fit"] == 0 or split_counts["validation"] == 0:
         raise Lfm2CpcfLayerCompilerError(
@@ -2007,12 +3324,8 @@ def compile_and_install_lfm2_cpcf_layer(
         )
     source_layer = _layer(source_model, index, "source_model")
     target_layer = _layer(target_model, index, "target_model")
-    source_is_attention = bool(
-        getattr(source_layer, "is_attention_layer", False)
-    )
-    target_is_attention = bool(
-        getattr(target_layer, "is_attention_layer", False)
-    )
+    source_is_attention = bool(getattr(source_layer, "is_attention_layer", False))
+    target_is_attention = bool(getattr(target_layer, "is_attention_layer", False))
     operator_kind = "full_attention" if source_is_attention else "short_conv"
     if (
         source_is_attention != target_is_attention
@@ -2033,15 +3346,14 @@ def compile_and_install_lfm2_cpcf_layer(
 
     source_before = _layer_snapshot(source_layer)
     target_before = _layer_snapshot(target_layer)
-    evidence_values = _evidence_tensors(input_bank.phases, index)
-    evidence_before = _tensor_bundle_sha256(evidence_values)
-    input_before = _tensor_bundle_sha256(
-        {
-            f"{phase.batch_index}:{phase.phase}": input_bank.states[phase.identity]
-            for phase in input_bank.phases
-        }
+    evidence_before = _live_layer_evidence_sha256(
+        input_bank.phases,
+        index,
     )
+    input_before = _live_input_bank_sha256(input_bank)
     chart_seal_before = boundary_charts.layer_charts_sha256
+    chart_payload_before = _boundary_charts_payload_sha256(boundary_charts)
+    stage = "preinstall_replay"
 
     try:
         preinstall_replay = replay_lfm2_cpcf_phase_bank(
@@ -2049,6 +3361,7 @@ def compile_and_install_lfm2_cpcf_layer(
             layer_index=index,
             input_bank=input_bank,
         )
+        stage = "operator_compile"
         norm_report: Mapping[str, Any] | None = None
         if operator_kind == "full_attention":
             source_attention = source_layer.self_attn
@@ -2097,30 +3410,27 @@ def compile_and_install_lfm2_cpcf_layer(
                 preinstall_replay=preinstall_replay,
                 chart=boundary_charts,
             )
-            operator_artifact = (
-                compile_lfm2_structural_residual_attention_fold(
-                    source_query_weight=source_attention.q_proj.weight,
-                    source_key_weight=source_attention.k_proj.weight,
-                    source_value_weight=source_attention.v_proj.weight,
-                    source_output_weight=source_attention.out_proj.weight,
-                    target_query_weight_template=target_attention.q_proj.weight,
-                    target_key_weight_template=target_attention.k_proj.weight,
-                    target_value_weight_template=target_attention.v_proj.weight,
-                    target_output_weight_template=target_attention.out_proj.weight,
-                    cases=cases,
-                    head_dim=int(source_attention.head_dim),
-                    query_norm_weight=source_q_norm,
-                    key_norm_weight=source_k_norm,
-                    residual_assignment_sha256=(
-                        boundary_charts.post_operator.report[
-                            "report_sha256"
-                        ]
-                    ),
-                    norm_epsilon=source_q_epsilon,
-                    ridge=ridge_value,
-                    max_prior_delta_ratio=None,
-                )
+            operator_artifact = compile_lfm2_structural_residual_attention_fold(
+                source_query_weight=source_attention.q_proj.weight,
+                source_key_weight=source_attention.k_proj.weight,
+                source_value_weight=source_attention.v_proj.weight,
+                source_output_weight=source_attention.out_proj.weight,
+                target_query_weight_template=target_attention.q_proj.weight,
+                target_key_weight_template=target_attention.k_proj.weight,
+                target_value_weight_template=target_attention.v_proj.weight,
+                target_output_weight_template=target_attention.out_proj.weight,
+                cases=cases,
+                head_dim=int(source_attention.head_dim),
+                query_norm_weight=source_q_norm,
+                key_norm_weight=source_k_norm,
+                residual_assignment_sha256=(
+                    boundary_charts.post_operator.report["report_sha256"]
+                ),
+                norm_epsilon=source_q_epsilon,
+                ridge=ridge_value,
+                max_prior_delta_ratio=None,
             )
+            stage = "operator_install"
             norm_report = _copy_attention_norms(
                 source_attention,
                 target_attention,
@@ -2143,35 +3453,59 @@ def compile_and_install_lfm2_cpcf_layer(
                 input_bank=input_bank,
                 preinstall_replay=preinstall_replay,
                 chart=boundary_charts,
+                use_v4=short_conv_v4_solver_policy is not None,
             )
             policy = (
                 Lfm2CpcfShortConvGatePolicy(enforce=False)
                 if short_conv_gate_policy is None
                 else short_conv_gate_policy
             )
-            operator_artifact = compile_lfm2_cpcf_short_conv_fold(
-                source_fir_weight=source_conv.conv.weight,
-                source_fir_bias=source_conv.conv.bias,
-                target_in_proj_weight_template=target_conv.in_proj.weight,
-                target_in_proj_bias_template=target_conv.in_proj.bias,
-                target_conv_weight_template=target_conv.conv.weight,
-                target_conv_bias_template=target_conv.conv.bias,
-                target_out_proj_weight_template=target_conv.out_proj.weight,
-                target_out_proj_bias_template=target_conv.out_proj.bias,
-                cases=cases,
-                ridge=ridge_value,
-                gate_policy=policy,
-            )
+            if short_conv_v4_solver_policy is None:
+                operator_artifact = compile_lfm2_cpcf_short_conv_fold(
+                    source_fir_weight=source_conv.conv.weight,
+                    source_fir_bias=source_conv.conv.bias,
+                    target_in_proj_weight_template=target_conv.in_proj.weight,
+                    target_in_proj_bias_template=target_conv.in_proj.bias,
+                    target_conv_weight_template=target_conv.conv.weight,
+                    target_conv_bias_template=target_conv.conv.bias,
+                    target_out_proj_weight_template=target_conv.out_proj.weight,
+                    target_out_proj_bias_template=target_conv.out_proj.bias,
+                    cases=cases,
+                    ridge=ridge_value,
+                    gate_policy=policy,
+                )
+            else:
+                operator_artifact = compile_lfm2_cpcf_short_conv_v4_fold(
+                    source_in_proj_weight=source_conv.in_proj.weight,
+                    source_in_proj_bias=source_conv.in_proj.bias,
+                    source_fir_weight=source_conv.conv.weight,
+                    source_fir_bias=source_conv.conv.bias,
+                    source_out_proj_weight=source_conv.out_proj.weight,
+                    source_out_proj_bias=source_conv.out_proj.bias,
+                    target_in_proj_weight_template=target_conv.in_proj.weight,
+                    target_in_proj_bias_template=target_conv.in_proj.bias,
+                    target_conv_weight_template=target_conv.conv.weight,
+                    target_conv_bias_template=target_conv.conv.bias,
+                    target_out_proj_weight_template=target_conv.out_proj.weight,
+                    target_out_proj_bias_template=target_conv.out_proj.bias,
+                    output_encoder=(boundary_charts.post_operator.mapping.encoder),
+                    cases=cases,
+                    solver_policy=short_conv_v4_solver_policy,
+                    gate_policy=policy,
+                )
+            stage = "operator_install"
             operator_install_report = _install_short_conv(
                 target_conv,
                 operator_artifact,
             )
 
+        stage = "operator_replay"
         operator_replay = replay_lfm2_cpcf_phase_bank(
             target_model,
             layer_index=index,
             input_bank=input_bank,
         )
+        stage = "mlp_compile"
         source_mlp = source_layer.feed_forward
         target_mlp = target_layer.feed_forward
         mlp_cases = _mlp_cases(
@@ -2194,15 +3528,18 @@ def compile_and_install_lfm2_cpcf_layer(
             ridge=ridge_value,
             max_prior_delta_ratio=None,
         )
+        stage = "mlp_install"
         mlp_install_report = install_lfm2_structural_mlp_fold(
             target_mlp,
             mlp_artifact,
         ).as_dict()
+        stage = "final_replay"
         final_replay = replay_lfm2_cpcf_phase_bank(
             target_model,
             layer_index=index,
             input_bank=input_bank,
         )
+        stage = "endpoint_evaluation"
         split_metrics = _split_endpoint_metrics(
             layer_index=index,
             input_bank=input_bank,
@@ -2211,32 +3548,30 @@ def compile_and_install_lfm2_cpcf_layer(
             chart=boundary_charts,
         )
 
+        stage = "immutability_audit"
         source_after = _layer_snapshot(source_layer)
-        evidence_after = _tensor_bundle_sha256(evidence_values)
-        input_after = _tensor_bundle_sha256(
-            {
-                f"{phase.batch_index}:{phase.phase}": input_bank.states[
-                    phase.identity
-                ]
-                for phase in input_bank.phases
-            }
+        evidence_after = _live_layer_evidence_sha256(
+            input_bank.phases,
+            index,
         )
+        input_after = _live_input_bank_sha256(input_bank)
+        _assert_snapshot_identity(source_layer, source_before)
         _assert_snapshot_identity(target_layer, target_before)
         if (
-            source_after.tensor_bytes_sha256
-            != source_before.tensor_bytes_sha256
-            or source_after.tensor_ids != source_before.tensor_ids
-            or source_after.parameter_gradients
-            != source_before.parameter_gradients
+            source_after.tensor_bytes_sha256 != source_before.tensor_bytes_sha256
+            or source_after.full_inventory_sha256 != source_before.full_inventory_sha256
+            or source_after.tensor_identity != source_before.tensor_identity
             or source_after.modes != source_before.modes
             or evidence_after != evidence_before
             or input_after != input_before
             or boundary_charts.layer_charts_sha256 != chart_seal_before
+            or _boundary_charts_payload_sha256(boundary_charts) != chart_payload_before
         ):
             raise Lfm2CpcfLayerCompilerError(
                 "Source, evidence, charts, or actual input bank changed during "
                 "closed-form layer compilation."
             )
+        stage = "result_seal"
         body = {
             "schema": LFM2_CPCF_LAYER_COMPILER_SCHEMA,
             "layer_index": index,
@@ -2246,19 +3581,15 @@ def compile_and_install_lfm2_cpcf_layer(
             "input_bank_sha256": input_bank.state_bank_sha256,
             "next_bank_sha256": final_replay.post_layer_bank.state_bank_sha256,
             "boundary_charts_sha256": boundary_charts.layer_charts_sha256,
-            "preinstall_replay_sha256": preinstall_replay.report[
-                "report_sha256"
-            ],
-            "operator_replay_sha256": operator_replay.report[
-                "report_sha256"
-            ],
+            "preinstall_replay_sha256": preinstall_replay.report["report_sha256"],
+            "operator_replay_sha256": operator_replay.report["report_sha256"],
             "final_replay_sha256": final_replay.report["report_sha256"],
             "operator_artifact": operator_artifact.as_dict(),
             "mlp_artifact": mlp_artifact.as_dict(),
             "operator_install_report": dict(operator_install_report),
             "mlp_install_report": dict(mlp_install_report),
             "split_metrics": {
-                split: dict(split_metrics[split]) for split in _SPLITS
+                split: dict(split_metrics[split]) for split in _EVALUATION_SPLITS
             },
             "split_phase_counts": split_counts,
             "solver_evidence_policy": {
@@ -2279,14 +3610,10 @@ def compile_and_install_lfm2_cpcf_layer(
                     else "not_applicable"
                 ),
                 "attention_inverse_rope_preimage_used": (
-                    False
-                    if operator_kind == "full_attention"
-                    else "not_applicable"
+                    False if operator_kind == "full_attention" else "not_applicable"
                 ),
                 "attention_repeated_prefix_fit_rows": (
-                    False
-                    if operator_kind == "full_attention"
-                    else "not_applicable"
+                    False if operator_kind == "full_attention" else "not_applicable"
                 ),
                 "short_conv_validation_role": (
                     "post_materialization_heldout_evaluator"
@@ -2298,9 +3625,7 @@ def compile_and_install_lfm2_cpcf_layer(
                 "operator_fit_input": (
                     "causally_stitched_full_prefix_preinstall_target_native_replay"
                 ),
-                "mlp_fit_input": (
-                    "suffix_of_full_prefix_installed_operator_replay"
-                ),
+                "mlp_fit_input": ("suffix_of_full_prefix_installed_operator_replay"),
                 "next_layer_input": (
                     "complete_prefill_plus_ordered_decode_suffix_layer_replay"
                 ),
@@ -2308,12 +3633,8 @@ def compile_and_install_lfm2_cpcf_layer(
                 "independent_parent_projection_substitution": False,
             },
             "audit": {
-                "source_state_sha256_before": (
-                    source_before.tensor_bytes_sha256
-                ),
-                "source_state_sha256_after": (
-                    source_after.tensor_bytes_sha256
-                ),
+                "source_state_sha256_before": (source_before.tensor_bytes_sha256),
+                "source_state_sha256_after": (source_after.tensor_bytes_sha256),
                 "source_unchanged": True,
                 "evidence_sha256_before": evidence_before,
                 "evidence_sha256_after": evidence_after,
@@ -2358,14 +3679,55 @@ def compile_and_install_lfm2_cpcf_layer(
             report={**body, "result_sha256": result_sha},
             result_sha256=result_sha,
         )
-    except Exception:
-        _restore_layer(target_layer, target_before)
-        raise
+    except BaseException as error:
+        try:
+            _restore_layer(target_layer, target_before)
+            rollback_proof = _prove_exact_layer_rollback(
+                target_layer,
+                target_before,
+                source_layer=source_layer,
+                source_snapshot=source_before,
+                input_bank=input_bank,
+                layer_index=index,
+                evidence_sha256_before=evidence_before,
+                input_sha256_before=input_before,
+                boundary_charts=boundary_charts,
+                boundary_charts_sha256_before=chart_seal_before,
+                boundary_charts_payload_sha256_before=(chart_payload_before),
+            )
+        except BaseException as rollback_error:
+            raise Lfm2CpcfLayerInstallError(
+                f"LFM2 CPCF layer {index} ({operator_kind}) failed at "
+                f"{stage}, and exact layer rollback could not be proven."
+            ) from rollback_error
+        if not isinstance(error, Exception):
+            try:
+                error.add_note(
+                    "LFM2 CPCF layer target was exactly restored before "
+                    "cancellation propagated."
+                )
+            except AttributeError:  # pragma: no cover - Python boundary
+                pass
+            raise
+        failure = _wrap_layer_failure(
+            error,
+            stage=stage,
+            layer_index=index,
+            operator_kind=operator_kind,
+            input_bank_sha256=input_bank.state_bank_sha256,
+            input_tensor_sha256=input_before,
+            boundary_charts_sha256=chart_seal_before,
+            boundary_charts_payload_sha256=chart_payload_before,
+            rollback_proof=rollback_proof,
+        )
+        raise failure from error
 
 
 __all__ = [
     "LFM2_CPCF_LAYER_COMPILER_SCHEMA",
+    "LFM2_CPCF_LAYER_FAILURE_SCHEMA",
     "Lfm2CpcfCompiledLayerResult",
+    "Lfm2CpcfLayerCompilationFailure",
     "Lfm2CpcfLayerCompilerError",
     "Lfm2CpcfLayerInstallError",
     "compile_and_install_lfm2_cpcf_layer",

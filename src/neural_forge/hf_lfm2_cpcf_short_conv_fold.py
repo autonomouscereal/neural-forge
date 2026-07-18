@@ -235,8 +235,10 @@ class Lfm2CpcfShortConvFoldCase:
         if not isinstance(self.case_id, str) or not self.case_id.strip():
             raise Lfm2CpcfShortConvFoldError("case_id must be nonempty text.")
         split = str(self.split).strip().lower()
-        if split not in {"fit", "validation"}:
-            raise Lfm2CpcfShortConvFoldError("split must be 'fit' or 'validation'.")
+        if split not in {"selection", "fit", "validation"}:
+            raise Lfm2CpcfShortConvFoldError(
+                "split must be 'selection', 'fit', or 'validation'."
+            )
         if (
             isinstance(self.suffix_start, bool)
             or not isinstance(self.suffix_start, int)
@@ -955,11 +957,20 @@ def _normalize_cases(
                 "suffix_mask": suffix_mask.contiguous(),
             }
         )
-    if {value["split"] for value in normalized} != {"fit", "validation"}:
+    observed_splits = {value["split"] for value in normalized}
+    if not {"fit", "validation"}.issubset(observed_splits):
         raise Lfm2CpcfShortConvFoldError(
             "At least one fit case and one heldout validation case are required."
         )
-    return normalized
+    split_rank = {"selection": 0, "fit": 1, "validation": 2}
+    return sorted(
+        normalized,
+        key=lambda value: (
+            split_rank[value["split"]],
+            value["case_id"],
+            value["authentication_sha256"],
+        ),
+    )
 
 
 def _split_metrics(

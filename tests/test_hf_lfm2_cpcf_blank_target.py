@@ -98,3 +98,33 @@ def test_blank_request_requires_one_real_parameter_budget() -> None:
             evidence_fingerprint=_sha("cache"),
             child_name="invalid",
         )
+
+
+def test_explicit_parameter_budget_requires_an_exact_catalog_match() -> None:
+    parent = _parent()
+    probe = plan_and_synthesize_lfm2_cpcf_blank(
+        parent,
+        parent_name="parent",
+        parent_tokenizer_fingerprint=_sha("tokenizer"),
+        evidence_fingerprint=_sha("cache"),
+        child_name="ratio-probe",
+        compression_ratio=4,
+        blank_seed=4,
+        device="cpu",
+        dtype=torch.float32,
+    )
+
+    exact = plan_and_synthesize_lfm2_cpcf_blank(
+        parent,
+        parent_name="parent",
+        parent_tokenizer_fingerprint=_sha("tokenizer"),
+        evidence_fingerprint=_sha("cache"),
+        child_name="exact-child",
+        target_unique_parameters=probe.unique_parameters,
+        blank_seed=4,
+        device="cpu",
+        dtype=torch.float32,
+    )
+
+    assert exact.unique_parameters == probe.unique_parameters
+    assert exact.report["requested_budget"]["match_policy"] == "exact"

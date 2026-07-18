@@ -95,6 +95,12 @@ class InfrastructureFailure(RuntimeError):
     pass
 
 
+class SealedCandidateRejected(CandidateRejected):
+    def __init__(self, message: str, report: dict) -> None:
+        super().__init__(message)
+        self.report = report
+
+
 @dataclass(frozen=True)
 class UncertifiedCompleteResult:
     complete: bool = True
@@ -311,9 +317,7 @@ def _published_result(
         evidence_channels=action.evidence_requirements,
         evidence_binding_fingerprint=evidence_binding_fingerprint,
         evidence_derivation_manifest=attempt_evidence_manifest,
-        evidence_derivation_fingerprint=canonical_sha256(
-            attempt_evidence_manifest
-        ),
+        evidence_derivation_fingerprint=canonical_sha256(attempt_evidence_manifest),
         evidence_payload_integrity_reverified=True,
     )
     attempt = replace(attempt, **dict(attempt_changes or {}))
@@ -345,9 +349,7 @@ def _published_result(
         final_evidence_channels=action.evidence_requirements,
         final_evidence_binding_fingerprint=evidence_binding_fingerprint,
         final_evidence_derivation_manifest=final_evidence_manifest,
-        final_evidence_derivation_fingerprint=canonical_sha256(
-            final_evidence_manifest
-        ),
+        final_evidence_derivation_fingerprint=canonical_sha256(final_evidence_manifest),
         final_evidence_payload_integrity_reverified=True,
         observed_parent_module_forward_calls=0,
         observed_parent_root_forward_calls=0,
@@ -784,6 +786,81 @@ def test_search_continues_after_candidate_rejection_and_stops_on_accept(
     assert len(result.fingerprint) == 64
 
 
+def test_search_preserves_only_self_sealed_immutable_failure_diagnostic(
+    tmp_path,
+) -> None:
+    diagnostic_body = {
+        "schema": "neural-forge-synthetic-fold-failure-v1",
+        "layer_result_issued": False,
+        "promotion_claimed": False,
+        "nested": {
+            "behavior_gate": {
+                "passed": False,
+                "checks": ["validation_endpoint_relative_rmse"],
+            }
+        },
+    }
+    diagnostic = {
+        **diagnostic_body,
+        "report_sha256": canonical_sha256(diagnostic_body),
+    }
+    failure = SealedCandidateRejected("fold gate rejected", diagnostic)
+    runner = FakeRunner({"alpha": failure})
+    system = AutomaticDynamicFoldSearchSystem(
+        runner,
+        DynamicFoldPortfolioRegistry(
+            (FakePortfolio((_candidate("alpha", priority=10),)),)
+        ),
+    )
+
+    result = system.run(
+        parent_models={"parent": object()},
+        objective=_objective(),
+        destination_root=tmp_path / "search",
+    )
+
+    attempt = result.attempts[0]
+    assert attempt.status == "candidate_rejected"
+    assert attempt.failure_diagnostic_sha256 == canonical_sha256(diagnostic)
+    assert attempt.as_dict()["failure_diagnostic"] == diagnostic
+    diagnostic["nested"]["behavior_gate"]["passed"] = True
+    assert (
+        attempt.as_dict()["failure_diagnostic"]["nested"]["behavior_gate"]["passed"]
+        is False
+    )
+    with pytest.raises(TypeError):
+        attempt.failure_diagnostic["nested"]["behavior_gate"]["passed"] = True
+
+
+def test_search_drops_forged_success_claiming_failure_report(tmp_path) -> None:
+    forged_body = {
+        "schema": "neural-forge-synthetic-fold-failure-v1",
+        "layer_result_issued": True,
+        "promotion_claimed": True,
+    }
+    forged = {
+        **forged_body,
+        "report_sha256": canonical_sha256(forged_body),
+    }
+    failure = SealedCandidateRejected("forged diagnostic", forged)
+    system = AutomaticDynamicFoldSearchSystem(
+        FakeRunner({"alpha": failure}),
+        DynamicFoldPortfolioRegistry(
+            (FakePortfolio((_candidate("alpha", priority=10),)),)
+        ),
+    )
+
+    result = system.run(
+        parent_models={"parent": object()},
+        objective=_objective(),
+        destination_root=tmp_path / "search",
+    )
+
+    attempt = result.attempts[0]
+    assert attempt.failure_diagnostic is None
+    assert attempt.failure_diagnostic_sha256 is None
+
+
 def test_exhaustive_search_selects_highest_scoring_accepted_candidate(
     tmp_path,
 ) -> None:
@@ -1037,9 +1114,7 @@ def test_retirement_finalization_failure_leaves_deleted_acceptance_blocked(
 
     assert not destination.exists()
     assert owned == set()
-    assert runner.ledger.records[-1].status == (
-        RecordStatus.SUPERSESSION_PENDING.value
-    )
+    assert runner.ledger.records[-1].status == (RecordStatus.SUPERSESSION_PENDING.value)
     assert runner.ledger.decision(signature).allowed is False
 
 
@@ -1117,9 +1192,7 @@ def test_search_requires_zero_parent_and_observed_child_forwards(
     tmp_path,
     run_changes,
 ) -> None:
-    runner = FakeRunner(
-        {"alpha": {"quality": 1.0, "run_changes": run_changes}}
-    )
+    runner = FakeRunner({"alpha": {"quality": 1.0, "run_changes": run_changes}})
     system = AutomaticDynamicFoldSearchSystem(
         runner,
         DynamicFoldPortfolioRegistry(
@@ -1168,9 +1241,7 @@ def test_search_requires_compiler_owned_reverified_evidence_provenance(
     tmp_path,
     outcome_changes,
 ) -> None:
-    runner = FakeRunner(
-        {"alpha": {"quality": 1.0, **outcome_changes}}
-    )
+    runner = FakeRunner({"alpha": {"quality": 1.0, **outcome_changes}})
     system = AutomaticDynamicFoldSearchSystem(
         runner,
         DynamicFoldPortfolioRegistry(
@@ -1408,9 +1479,7 @@ def test_runner_exception_does_not_adopt_concurrent_valid_artifact(
                 try:
                     _published_result(
                         target_request=target_request,
-                        evidence_fingerprint=kwargs[
-                            "evidence_fingerprint"
-                        ],
+                        evidence_fingerprint=kwargs["evidence_fingerprint"],
                         destination=destination,
                         quality=1.0,
                     )

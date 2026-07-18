@@ -81,6 +81,9 @@ from .hf_lfm2_cpcf_model_fold import (
     Lfm2CpcfModelFoldPolicy,
 )
 from .hf_lfm2_cpcf_short_conv_fold import Lfm2CpcfShortConvGatePolicy
+from .hf_lfm2_cpcf_short_conv_v4_policy import (
+    parse_lfm2_cpcf_short_conv_v4_solver_policy,
+)
 from .hf_lfm2_direct_local import (
     Lfm2DirectLocalCheckpointIO,
     load_lfm2_direct_local_model,
@@ -100,9 +103,7 @@ from .hf_tokenizer_bridge import (
 
 SCHEMA = "neural-forge-lfm2-cpcf-production-resources-v1"
 COVERAGE_SCHEMA = "neural-forge-lfm2-cpcf-cache-phase-coverage-v1"
-RECORD_COVERAGE_SCHEMA = (
-    "neural-forge-lfm2-cpcf-cache-record-phase-coverage-v1"
-)
+RECORD_COVERAGE_SCHEMA = "neural-forge-lfm2-cpcf-cache-record-phase-coverage-v1"
 TRAJECTORY_SCHEMA = "neural-forge-lfm2-bridge-trajectory-text-v1"
 
 
@@ -116,9 +117,7 @@ def _digest(value: Any, name: str) -> str:
         or len(value) != 64
         or any(character not in "0123456789abcdef" for character in value)
     ):
-        raise Lfm2CpcfResourceError(
-            f"{name} must be a lowercase SHA-256 digest."
-        )
+        raise Lfm2CpcfResourceError(f"{name} must be a lowercase SHA-256 digest.")
     return value
 
 
@@ -130,9 +129,7 @@ def _positive_int(value: Any, name: str) -> int:
 
 def _nonnegative_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise Lfm2CpcfResourceError(
-            f"{name} must be a nonnegative integer."
-        )
+        raise Lfm2CpcfResourceError(f"{name} must be a nonnegative integer.")
     return value
 
 
@@ -151,9 +148,7 @@ def _local_directory(value: str | os.PathLike[str], name: str) -> Path:
     except OSError as exc:
         raise Lfm2CpcfResourceError(f"{name} does not exist.") from exc
     if not path.is_dir() or path.is_symlink():
-        raise Lfm2CpcfResourceError(
-            f"{name} must be a nonsymlink local directory."
-        )
+        raise Lfm2CpcfResourceError(f"{name} must be a nonsymlink local directory.")
     return path
 
 
@@ -166,9 +161,7 @@ def _local_file(value: str | os.PathLike[str], name: str) -> Path:
     except OSError as exc:
         raise Lfm2CpcfResourceError(f"{name} does not exist.") from exc
     if not path.is_file() or path.is_symlink():
-        raise Lfm2CpcfResourceError(
-            f"{name} must be a nonsymlink local file."
-        )
+        raise Lfm2CpcfResourceError(f"{name} must be a nonsymlink local file.")
     return path
 
 
@@ -284,9 +277,7 @@ def _token_ids(
         or isinstance(values, (str, bytes))
         or not values
         or any(
-            isinstance(value, bool)
-            or not isinstance(value, int)
-            or value < 0
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
             for value in values
         )
     ):
@@ -347,9 +338,7 @@ def _build_trace_adapter(
         expected_artifact_sha256=bridge.artifact_sha256,
     )
     ordered = corpus.get("ordered_batch_input_sha256")
-    observed = tuple(
-        record.donor_cache_input_sha256 for record in trace.records
-    )
+    observed = tuple(record.donor_cache_input_sha256 for record in trace.records)
     if (
         not isinstance(ordered, list)
         or tuple(ordered) != observed
@@ -398,8 +387,7 @@ class Lfm2CpcfRecordPhaseCoverage:
             or len(target_seals) != len(expected)
         ):
             raise Lfm2CpcfResourceError(
-                f"Record {record_id!r} lacks its exact prefill/decode phase "
-                "coverage."
+                f"Record {record_id!r} lacks its exact prefill/decode phase coverage."
             )
         for index, value in enumerate(parent_seals):
             _digest(value, f"parent evidence seal {ordinal}:{index}")
@@ -493,8 +481,7 @@ class Lfm2CpcfCachePhaseCoverageBinding:
                 not isinstance(record, Lfm2CpcfRecordPhaseCoverage)
                 for record in records
             )
-            or tuple(record.ordinal for record in records)
-            != tuple(range(batch_count))
+            or tuple(record.ordinal for record in records) != tuple(range(batch_count))
             or any(record.layer_count != layer_count for record in records)
         ):
             raise Lfm2CpcfResourceError(
@@ -526,9 +513,7 @@ class Lfm2CpcfCachePhaseCoverageBinding:
             "parent_layer_count": self.parent_layer_count,
             "trace_adapter_sha256": self.trace_adapter_sha256,
             "trajectory_corpus_sha256": self.trajectory_corpus_sha256,
-            "trace_record_ordinals": [
-                record.ordinal for record in self.records
-            ],
+            "trace_record_ordinals": [record.ordinal for record in self.records],
             "trace_record_count": len(self.records),
             "phase_count": self.phase_count,
             "records": [record.as_dict() for record in self.records],
@@ -555,16 +540,13 @@ def build_lfm2_cpcf_cache_phase_coverage_binding(
         trace_adapter,
         Lfm2StrictTokenizerBridgeTraceAdapter,
     ):
-        raise TypeError(
-            "trace_adapter must be Lfm2StrictTokenizerBridgeTraceAdapter."
-        )
+        raise TypeError("trace_adapter must be Lfm2StrictTokenizerBridgeTraceAdapter.")
     if not isinstance(parent_graph, ModelCircuitGraph):
         raise TypeError("parent_graph must be ModelCircuitGraph.")
     trace = trace_adapter.verify()
     ordered_phases = tuple(phases)
     if not ordered_phases or any(
-        not isinstance(phase, Lfm2CpcfTargetPhase)
-        for phase in ordered_phases
+        not isinstance(phase, Lfm2CpcfTargetPhase) for phase in ordered_phases
     ):
         raise Lfm2CpcfResourceError(
             "phases must contain materialized CPCF target phases."
@@ -577,9 +559,7 @@ def build_lfm2_cpcf_cache_phase_coverage_binding(
     manifest_body = dict(manifest)
     manifest_body.pop("manifest_sha256", None)
     if canonical_sha256(manifest_body) != manifest_sha256:
-        raise Lfm2CpcfResourceError(
-            "Cache manifest canonical seal is invalid."
-        )
+        raise Lfm2CpcfResourceError("Cache manifest canonical seal is invalid.")
     expected_layer_indices = tuple(parent_graph.layer_indices)
     layer_count = len(expected_layer_indices)
     _positive_int(layer_count, "parent graph layer count")
@@ -596,18 +576,11 @@ def build_lfm2_cpcf_cache_phase_coverage_binding(
             )
         expected_names = (
             "prefill",
-            *(
-                f"decode.{index:03d}"
-                for index in range(record.forced_decode_steps)
-            ),
+            *(f"decode.{index:03d}" for index in range(record.forced_decode_steps)),
         )
-        expected_global.extend(
-            (ordinal, phase_name) for phase_name in expected_names
-        )
+        expected_global.extend((ordinal, phase_name) for phase_name in expected_names)
         selected = tuple(
-            phase
-            for phase in ordered_phases
-            if phase.batch_index == ordinal
+            phase for phase in ordered_phases if phase.batch_index == ordinal
         )
         if tuple(phase.phase for phase in selected) != expected_names:
             raise Lfm2CpcfResourceError(
@@ -617,16 +590,13 @@ def build_lfm2_cpcf_cache_phase_coverage_binding(
         if any(
             phase.record_id != record.record_id
             or phase.split != record.split
-            or phase.donor_input_sha256
-            != record.donor_cache_input_sha256
+            or phase.donor_input_sha256 != record.donor_cache_input_sha256
             or phase.target_alignment_sha256 != record.alignment_sha256
             or phase.parent_evidence.cache_key != cache.cache_key
             or phase.parent_evidence.batch_index != ordinal
             or phase.parent_evidence.phase != phase.phase
             or len(phase.parent_evidence.layers) != layer_count
-            or tuple(
-                layer.layer_index for layer in phase.parent_evidence.layers
-            )
+            or tuple(layer.layer_index for layer in phase.parent_evidence.layers)
             != expected_layer_indices
             for phase in selected
         ):
@@ -644,17 +614,12 @@ def build_lfm2_cpcf_cache_phase_coverage_binding(
                 layer_count=layer_count,
                 phase_names=expected_names,
                 parent_evidence_sha256=tuple(
-                    phase.parent_evidence.evidence_sha256
-                    for phase in selected
+                    phase.parent_evidence.evidence_sha256 for phase in selected
                 ),
-                target_phase_sha256=tuple(
-                    phase.phase_sha256 for phase in selected
-                ),
+                target_phase_sha256=tuple(phase.phase_sha256 for phase in selected),
             )
         )
-    if tuple(phase.identity for phase in ordered_phases) != tuple(
-        expected_global
-    ):
+    if tuple(phase.identity for phase in ordered_phases) != tuple(expected_global):
         raise Lfm2CpcfResourceError(
             "Materialized CPCF phases contain an omission, reordering, or "
             "cross-record insertion."
@@ -686,10 +651,7 @@ def _budget_from_receipt(value: Any) -> DenseParameterBudgetRequest:
         "match_policy",
         "maximum_candidates",
     }
-    if (
-        set(payload) != expected_keys
-        or payload.get("kind") != "budget_request"
-    ):
+    if set(payload) != expected_keys or payload.get("kind") != "budget_request":
         raise Lfm2CpcfResourceError(
             "Receipt requested budget has unknown or incomplete fields."
         )
@@ -703,9 +665,7 @@ def _budget_from_receipt(value: Any) -> DenseParameterBudgetRequest:
             "receipt compression ratio",
         )
         if set(ratio_payload) != {"numerator", "denominator"}:
-            raise Lfm2CpcfResourceError(
-                "Receipt compression ratio is incomplete."
-            )
+            raise Lfm2CpcfResourceError("Receipt compression ratio is incomplete.")
         numerator = _positive_int(
             ratio_payload.get("numerator"),
             "compression ratio numerator",
@@ -761,10 +721,15 @@ def _policy_from_receipt(document: Mapping[str, Any]) -> Lfm2CpcfModelFoldPolicy
         "promotion_compression_ratio",
         "require_promotion_ratio",
     }
-    if set(payload) != expected_keys:
+    optional_v4_key = "short_conv_v4_solver_policy"
+    if set(payload) not in {
+        frozenset(expected_keys),
+        frozenset({*expected_keys, optional_v4_key}),
+    }:
         raise Lfm2CpcfResourceError(
             "CPCF fold policy has unknown or incomplete fields."
         )
+    v4_payload = payload.pop(optional_v4_key, None)
     short_payload = _canonical_mapping(
         payload.pop("short_conv_gate_policy"),
         "short-convolution gate policy",
@@ -780,17 +745,23 @@ def _policy_from_receipt(document: Mapping[str, Any]) -> Lfm2CpcfModelFoldPolicy
         raise Lfm2CpcfResourceError(
             "Short-convolution gate policy has unknown or incomplete fields."
         )
-    policy = Lfm2CpcfModelFoldPolicy(
+    constructor = {
         **payload,
-        short_conv_gate_policy=Lfm2CpcfShortConvGatePolicy(**short_payload),
-    )
+        "short_conv_gate_policy": Lfm2CpcfShortConvGatePolicy(**short_payload),
+    }
+    if v4_payload is not None:
+        try:
+            constructor[optional_v4_key] = parse_lfm2_cpcf_short_conv_v4_solver_policy(
+                v4_payload
+            )
+        except (TypeError, ValueError) as exc:
+            raise Lfm2CpcfResourceError(
+                "Short-convolution v4 solver policy is invalid."
+            ) from exc
+    policy = Lfm2CpcfModelFoldPolicy(**constructor)
     expected_policy = _mapping(body.get("policy"), "CPCF fold policy")
-    if canonical_json_bytes(policy.as_dict()) != canonical_json_bytes(
-        expected_policy
-    ):
-        raise Lfm2CpcfResourceError(
-            "CPCF fold policy does not round-trip exactly."
-        )
+    if canonical_json_bytes(policy.as_dict()) != canonical_json_bytes(expected_policy):
+        raise Lfm2CpcfResourceError("CPCF fold policy does not round-trip exactly.")
     return policy
 
 
@@ -816,8 +787,7 @@ def _mapped_source_tied_table(
         not isinstance(input_weight, torch.nn.Parameter)
         or output_weight is not input_weight
         or input_weight.ndim != 2
-        or int(input_weight.shape[0])
-        != bridge.transport_profile.donor_row_capacity
+        or int(input_weight.shape[0]) != bridge.transport_profile.donor_row_capacity
     ):
         raise Lfm2CpcfResourceError(
             "CPCF requires one native tied parent table matching the strict "
@@ -833,12 +803,7 @@ def _mapped_source_tied_table(
         raise Lfm2CpcfResourceError(
             "Strict bridge references a row outside the parent tied table."
         )
-    return (
-        input_weight.detach()
-        .index_select(0, index)
-        .to(device="cpu")
-        .contiguous()
-    )
+    return input_weight.detach().index_select(0, index).to(device="cpu").contiguous()
 
 
 def _verify_receipt_phase_and_policy_binding(
@@ -873,21 +838,17 @@ def _verify_receipt_phase_and_policy_binding(
     if (
         compiled.get("phase_count") != len(expected_phases)
         or observed_phases != expected_phases
-        or compiled.get("blank_target_report_sha256")
-        != blank_report_sha256
+        or compiled.get("blank_target_report_sha256") != blank_report_sha256
         or canonical_json_bytes(compiled.get("policy"))
         != canonical_json_bytes(policy.as_dict())
-        or compiled.get("result_sha256")
-        != evidence.compiled_model_fold_result_sha256
+        or compiled.get("result_sha256") != evidence.compiled_model_fold_result_sha256
         or canonical_json_bytes(evidence.compiled_model_fold_policy)
         != canonical_json_bytes(policy.as_dict())
         or evidence.compiled_model_fold_policy_sha256 != policy_sha256
         or evidence.compiled_model_fold_phase_count != len(expected_phases)
         or evidence.compiled_model_fold_phase_sha256 != expected_phases
-        or evidence.compiled_model_fold_phase_binding_sha256
-        != phase_binding_sha256
-        or evidence.compiled_blank_target_report_sha256
-        != blank_report_sha256
+        or evidence.compiled_model_fold_phase_binding_sha256 != phase_binding_sha256
+        or evidence.compiled_blank_target_report_sha256 != blank_report_sha256
         or parameter_receipt.get("receipt_sha256")
         != evidence.compiled_parameter_receipt_sha256
     ):
@@ -911,10 +872,7 @@ def _plan_from_reviewed_receipt(
 ) -> tuple[BudgetedDynamicTargetPlan, DynamicTargetSynthesisResult]:
     source_name = _text(parent_name, "parent_name")
     budget = _budget_from_receipt(evidence.target_requested_budget)
-    if (
-        budget.target_vocabulary_size
-        != bridge.transport_profile.target_row_capacity
-    ):
+    if budget.target_vocabulary_size != bridge.transport_profile.target_row_capacity:
         raise Lfm2CpcfResourceError(
             "Receipt target vocabulary differs from the strict bridge."
         )
@@ -945,10 +903,8 @@ def _plan_from_reviewed_receipt(
     ]
     if (
         plan.frontier.fingerprint != evidence.target_frontier_fingerprint
-        or plan.target_certificate.fingerprint
-        != evidence.target_certificate_sha256
-        or candidate.fingerprint
-        != evidence.selected_target_candidate_fingerprint
+        or plan.target_certificate.fingerprint != evidence.target_certificate_sha256
+        or candidate.fingerprint != evidence.selected_target_candidate_fingerprint
         or plan.target_certificate.parent_graph_fingerprint
         != evidence.blank_target_parent_graph_fingerprint
         or plan.target_request.exact_unique_parameters
@@ -1001,9 +957,7 @@ class Lfm2CpcfProductionWiring:
             "parent_graph_fingerprint": self.parent_graph.fingerprint,
             "cache_key": self.cache.cache_key,
             "trace_adapter_sha256": self.trace_adapter.evidence_sha256,
-            "coverage_binding_fingerprint": (
-                self.coverage_binding.binding_fingerprint
-            ),
+            "coverage_binding_fingerprint": (self.coverage_binding.binding_fingerprint),
             "reviewed_evidence_fingerprint": (
                 self.reviewed_evidence.full_reviewed_evidence_fingerprint
             ),
@@ -1011,15 +965,9 @@ class Lfm2CpcfProductionWiring:
             "verified_blank_target_fingerprint": (
                 self.verified_blank_target.fingerprint
             ),
-            "stack_resource_fingerprint": (
-                self.stack_resources.resource_fingerprint
-            ),
-            "checkpoint_io_fingerprint": (
-                self.checkpoint_io.resource_fingerprint
-            ),
-            "production_bundle_fingerprint": (
-                self.production_bundle.fingerprint
-            ),
+            "stack_resource_fingerprint": (self.stack_resources.resource_fingerprint),
+            "checkpoint_io_fingerprint": (self.checkpoint_io.resource_fingerprint),
+            "production_bundle_fingerprint": (self.production_bundle.fingerprint),
             "wiring_fingerprint": self.wiring_fingerprint,
         }
 
@@ -1106,23 +1054,19 @@ def build_lfm2_cpcf_production_resources(
     )
     trajectory_path = _local_file(trajectory_corpus, "trajectory_corpus")
 
-    evidence = load_lfm2_cpcf_reviewed_promotion_evidence(
-        reviewed_artifacts
-    )
+    evidence = load_lfm2_cpcf_reviewed_promotion_evidence(reviewed_artifacts)
     authenticate_lfm2_cpcf_reviewed_promotion_evidence(evidence)
     if (
         evidence.full_reviewed_evidence_fingerprint != expected_full
         or evidence.cpcf_run_receipt_sha256 != expected_receipt
-        or evidence.cpcf_run_receipt_document_sha256
-        != expected_receipt_document
+        or evidence.cpcf_run_receipt_document_sha256 != expected_receipt_document
         or evidence.bridge_artifact_sha256 != expected_bridge
         or evidence.parent_cache_key != expected_cache
         or evidence.blank_target_parent_graph_fingerprint != expected_graph
         or evidence.exact_target_unique_parameters != expected_parameters
     ):
         raise Lfm2CpcfResourceError(
-            "Reviewed evidence differs from an independently supplied "
-            "production pin."
+            "Reviewed evidence differs from an independently supplied production pin."
         )
     receipt = reviewed_artifacts.cpcf_run_receipt.load("CPCF run receipt")
     if (
@@ -1189,8 +1133,7 @@ def build_lfm2_cpcf_production_resources(
     if (
         cache.cache_key != expected_cache
         or cache.parent_fingerprint != parent_model_identity
-        or cache_manifest.get("manifest_sha256")
-        != expected_cache_manifest
+        or cache_manifest.get("manifest_sha256") != expected_cache_manifest
     ):
         raise Lfm2CpcfResourceError(
             "Sealed cache differs from the pinned key, manifest, or direct "
@@ -1248,12 +1191,10 @@ def build_lfm2_cpcf_production_resources(
         target_adapter=target_adapter,
     )
     if (
-        verified_blank.topology_fingerprint
-        != evidence.target_topology_fingerprint
+        verified_blank.topology_fingerprint != evidence.target_topology_fingerprint
         or verified_blank.blank_state_fingerprint
         != evidence.blank_target_state_fingerprint
-        or verified_blank.resource_profile.unique_parameters
-        != expected_parameters
+        or verified_blank.resource_profile.unique_parameters != expected_parameters
     ):
         raise Lfm2CpcfResourceError(
             "Fresh compiler-owned blank differs from the reviewed target "
@@ -1275,31 +1216,23 @@ def build_lfm2_cpcf_production_resources(
         "parent_unique_parameters": parent_graph.unique_parameter_count,
         "target_unique_parameters": expected_parameters,
         "frontier_fingerprint": target_plan.frontier.fingerprint,
-        "target_certificate_sha256": (
-            target_plan.target_certificate.fingerprint
-        ),
+        "target_certificate_sha256": (target_plan.target_certificate.fingerprint),
         "selected_candidate_fingerprint": (
             evidence.selected_target_candidate_fingerprint
         ),
         "selected_candidate_rank": evidence.selected_target_candidate_rank,
-        "target_topology_fingerprint": (
-            verified_blank.topology_fingerprint
-        ),
+        "target_topology_fingerprint": (verified_blank.topology_fingerprint),
         "blank_state_fingerprint": verified_blank.blank_state_fingerprint,
     }
     if (
         blank_body.get("schema") != LFM2_CPCF_BLANK_TARGET_SCHEMA
         or canonical_sha256(blank_body) != blank_report_sha256
-        or any(
-            blank_body.get(name) != value
-            for name, value in blank_bindings.items()
-        )
+        or any(blank_body.get(name) != value for name, value in blank_bindings.items())
         or canonical_json_bytes(blank_body.get("requested_budget"))
         != canonical_json_bytes(dict(evidence.target_requested_budget))
     ):
         raise Lfm2CpcfResourceError(
-            "Receipt blank-target report seal or exact plan/state binding is "
-            "invalid."
+            "Receipt blank-target report seal or exact plan/state binding is invalid."
         )
     _verify_receipt_phase_and_policy_binding(
         receipt,
@@ -1356,8 +1289,7 @@ def build_lfm2_cpcf_production_resources(
         resources=resources,
     )
     if (
-        fingerprint_lfm2_parent(parent).identity_sha256
-        != parent_model_identity
+        fingerprint_lfm2_parent(parent).identity_sha256 != parent_model_identity
         or fingerprint_model_state(parent) != parent_state
     ):
         raise Lfm2CpcfResourceError(

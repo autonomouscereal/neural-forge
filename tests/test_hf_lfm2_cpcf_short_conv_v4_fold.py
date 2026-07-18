@@ -1,0 +1,382 @@
+from __future__ import annotations
+
+import copy
+from typing import Any
+
+import pytest
+
+torch = pytest.importorskip("torch")
+
+from neural_forge.hf_lfm2_cpcf_short_conv_fold import (  # noqa: E402
+    Lfm2CpcfShortConvGatePolicy,
+    Lfm2CpcfShortConvValidationError,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
+    Lfm2CpcfShortConvV4SolverPolicy,
+    causal_depthwise_context,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (  # noqa: E402
+    LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+    Lfm2CpcfShortConvV4FoldCase,
+    Lfm2CpcfShortConvV4FoldError,
+    _sha,
+    compile_lfm2_cpcf_short_conv_v4_fold,
+)
+
+
+def _fixture(
+    *,
+    validation_offset: float = 0.0,
+    target_dtype: Any = torch.float32,
+):
+    generator = torch.Generator().manual_seed(7019)
+    source_hidden = 4
+    target_hidden = 2
+    fir_length = 3
+    source_in = (
+        torch.randn(
+            (3 * source_hidden, source_hidden),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.25
+    )
+    source_in_bias = (
+        torch.randn(
+            (3 * source_hidden,),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.05
+    )
+    source_fir = (
+        torch.randn(
+            (source_hidden, fir_length),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.25
+    )
+    source_fir_bias = (
+        torch.randn(
+            (source_hidden,),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.03
+    )
+    source_out = (
+        torch.randn(
+            (source_hidden, source_hidden),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.2
+    )
+    source_out_bias = (
+        torch.randn(
+            (source_hidden,),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.02
+    )
+    input_lift = torch.randn(
+        (target_hidden, source_hidden),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    input_lift_bias = torch.randn(
+        (source_hidden,),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    output_encoder = torch.randn(
+        (source_hidden, target_hidden),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    cases = []
+    originals = []
+    for ordinal, split in enumerate(("fit", "fit", "selection", "validation")):
+        child = torch.randn(
+            (2, 9 + ordinal, target_hidden),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        parent_input = child @ input_lift + input_lift_bias
+        projected = parent_input @ source_in.T + source_in_bias
+        b_value, c_value, x_value = projected.chunk(3, dim=-1)
+        context = causal_depthwise_context(
+            b_value,
+            c_value,
+            x_value,
+            source_fir,
+            source_fir_bias,
+        )
+        parent_write = context @ source_out.T + source_out_bias
+        actual_pre = torch.randn(
+            (2, int(child.shape[1]), target_hidden),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        endpoint = actual_pre + parent_write @ output_encoder
+        if split == "validation":
+            endpoint = endpoint + validation_offset
+        mask = torch.ones(
+            tuple(child.shape[:2]),
+            dtype=torch.bool,
+        )
+        originals.append(child)
+        cases.append(
+            Lfm2CpcfShortConvV4FoldCase(
+                case_id=f"{split}-{ordinal}",
+                split=split,
+                suffix_start=0,
+                actual_child_operator_input_history=child,
+                parent_operator_input_history=parent_input,
+                parent_b_history=b_value,
+                parent_c_history=c_value,
+                parent_x_history=x_value,
+                parent_post_operator_residual_target_space_suffix=endpoint,
+                actual_child_pre_operator_residual_suffix=actual_pre,
+                valid_prefix_mask=mask,
+            )
+        )
+    templates = {
+        "target_in_proj_weight_template": torch.zeros(
+            (3 * target_hidden, target_hidden),
+            dtype=target_dtype,
+        ),
+        "target_in_proj_bias_template": torch.zeros(
+            (3 * target_hidden,),
+            dtype=target_dtype,
+        ),
+        "target_conv_weight_template": torch.zeros(
+            (target_hidden, 1, fir_length),
+            dtype=target_dtype,
+        ),
+        "target_conv_bias_template": torch.zeros(
+            (target_hidden,),
+            dtype=target_dtype,
+        ),
+        "target_out_proj_weight_template": torch.zeros(
+            (target_hidden, target_hidden),
+            dtype=target_dtype,
+        ),
+        "target_out_proj_bias_template": torch.zeros(
+            (target_hidden,),
+            dtype=target_dtype,
+        ),
+    }
+    return {
+        "source_in_proj_weight": source_in,
+        "source_in_proj_bias": source_in_bias,
+        "source_fir_weight": source_fir[:, None, :],
+        "source_fir_bias": source_fir_bias,
+        "source_out_proj_weight": source_out,
+        "source_out_proj_bias": source_out_bias,
+        "output_encoder": output_encoder,
+        "cases": tuple(cases),
+        "originals": originals,
+        **templates,
+    }
+
+
+def _solver_policy(
+    target_dtype: str = "float32",
+) -> Lfm2CpcfShortConvV4SolverPolicy:
+    return Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-6,),
+        variable_projection_passes=2,
+        target_dtype=target_dtype,
+    )
+
+
+def _permissive_gate() -> Lfm2CpcfShortConvGatePolicy:
+    return Lfm2CpcfShortConvGatePolicy(
+        maximum_fit_endpoint_relative_rmse=1e6,
+        maximum_validation_endpoint_relative_rmse=1e6,
+        minimum_fit_endpoint_cosine_similarity=-1.0,
+        minimum_validation_endpoint_cosine_similarity=-1.0,
+        enforce=True,
+    )
+
+
+def _compile(fixture, *, gate=None):
+    values = {key: value for key, value in fixture.items() if key != "originals"}
+    dtype_name = str(fixture["target_in_proj_weight_template"].dtype).removeprefix(
+        "torch."
+    )
+    return compile_lfm2_cpcf_short_conv_v4_fold(
+        **values,
+        solver_policy=_solver_policy(dtype_name),
+        gate_policy=_permissive_gate() if gate is None else gate,
+    )
+
+
+def test_v4_orchestrator_compiles_target_shaped_state_and_seals_roles() -> None:
+    fixture = _fixture()
+    artifact = _compile(fixture)
+
+    assert artifact.report["schema"] == LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
+    assert artifact.behavior_gate_passed
+    assert artifact.full_source_coverage
+    assert artifact.report["selected_candidate_id"].startswith("ridge-alpha-00")
+    assert artifact.report["fit_only_parameter_solves"] is True
+    assert artifact.report["selection_used_only_for_candidate_ranking"] is True
+    assert artifact.report["validation_used_only_after_candidate_freeze"] is True
+    assert artifact.report["selection_ranking"]["context_state_evidence_ranked"] is True
+    assert artifact.report["fit_evaluation"]["context_evidence_present"] is True
+    assert artifact.report["validation_evaluation"]["context_evidence_present"] is True
+    assert (
+        artifact.report["behavior_gate"]["checks"]["fit_context_relative_rmse"] is True
+    )
+    assert (
+        artifact.report["behavior_gate"]["checks"]["validation_context_relative_rmse"]
+        is True
+    )
+    assert artifact.report["execution"]["training_steps"] == 0
+    assert artifact.report["execution"]["parameters_pruned"] == 0
+    assert artifact.report["execution"]["parameters_quantized"] == 0
+    state = artifact.state_dict()
+    assert tuple(state["in_proj.weight"].shape) == (6, 2)
+    assert tuple(state["conv.weight"].shape) == (2, 1, 3)
+    assert tuple(state["out_proj.weight"].shape) == (2, 2)
+    assert all(value.dtype == torch.float32 for value in state.values())
+    state["in_proj.weight"].zero_()
+    assert artifact.verify_authentication()
+    artifact.in_proj_weight.zero_()
+    assert not artifact.verify_authentication()
+    with pytest.raises(
+        Lfm2CpcfShortConvV4FoldError,
+        match="changed after authentication",
+    ):
+        artifact.as_dict()
+
+
+def test_cases_snapshot_caller_tensors_and_validation_cannot_select_state() -> None:
+    base = _fixture(validation_offset=0.0)
+    shifted = _fixture(validation_offset=100.0)
+    base_artifact = _compile(base)
+    shifted_artifact = _compile(shifted)
+
+    for name, value in base_artifact.state_dict().items():
+        assert torch.equal(value, shifted_artifact.state_dict()[name])
+    assert (
+        base_artifact.report["selection_ranking"]
+        == shifted_artifact.report["selection_ranking"]
+    )
+    assert (
+        base_artifact.report["validation_evaluation"]["report_sha256"]
+        != shifted_artifact.report["validation_evaluation"]["report_sha256"]
+    )
+    case = base["cases"][0]
+    before = case.authentication_sha256
+    base["originals"][0].zero_()
+    assert case.verify_authentication()
+    assert case.authentication_sha256 == before
+
+
+def test_enforced_gate_emits_nonpromotable_self_sealed_failure() -> None:
+    fixture = _fixture(validation_offset=10.0)
+    strict = Lfm2CpcfShortConvGatePolicy(
+        maximum_fit_endpoint_relative_rmse=0.0,
+        maximum_validation_endpoint_relative_rmse=0.0,
+        minimum_fit_endpoint_cosine_similarity=1.0,
+        minimum_validation_endpoint_cosine_similarity=1.0,
+        enforce=True,
+    )
+
+    with pytest.raises(Lfm2CpcfShortConvValidationError) as raised:
+        _compile(fixture, gate=strict)
+
+    report = copy.deepcopy(dict(raised.value.report))
+    seal = report.pop("report_sha256")
+
+    assert seal == _sha(report)
+    assert report["schema"] == LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
+    assert report["behavior_gate"]["passed"] is False
+    assert report["compiled_short_conv_fold_issued"] is False
+    assert report["promotion_claimed"] is False
+    assert report["promotable_candidate"] is False
+    assert report["failure_evidence_only"] is True
+
+
+def test_orchestrator_rejects_mutated_authenticated_case() -> None:
+    fixture = _fixture()
+    fixture["cases"][0].parent_b_history.zero_()
+
+    with pytest.raises(
+        Lfm2CpcfShortConvV4FoldError,
+        match="changed after authentication",
+    ):
+        _compile(fixture)
+
+
+def test_nonzero_suffix_is_aligned_without_using_hidden_prefix_targets() -> None:
+    fixture = _fixture()
+    suffix_cases = []
+    for case in fixture["cases"]:
+        suffix_cases.append(
+            Lfm2CpcfShortConvV4FoldCase(
+                case_id=case.case_id,
+                split=case.split,
+                suffix_start=2,
+                actual_child_operator_input_history=(
+                    case.actual_child_operator_input_history
+                ),
+                parent_operator_input_history=(case.parent_operator_input_history),
+                parent_b_history=case.parent_b_history,
+                parent_c_history=case.parent_c_history,
+                parent_x_history=case.parent_x_history,
+                parent_post_operator_residual_target_space_suffix=(
+                    case.parent_post_operator_residual_target_space_suffix[:, 2:]
+                ),
+                actual_child_pre_operator_residual_suffix=(
+                    case.actual_child_pre_operator_residual_suffix[:, 2:]
+                ),
+                valid_prefix_mask=case.valid_prefix_mask,
+            )
+        )
+    fixture["cases"] = tuple(suffix_cases)
+
+    artifact = _compile(fixture)
+
+    assert artifact.verify_authentication()
+    assert artifact.report["fit_evaluation"]["case_count"] == 2
+
+
+def test_orchestrator_materializes_real_bfloat16_parameters_and_arithmetic() -> None:
+    artifact = _compile(_fixture(target_dtype=torch.bfloat16))
+
+    assert all(
+        value.dtype == torch.bfloat16 for value in artifact.state_dict().values()
+    )
+    assert (
+        artifact.report["fit_evaluation"][
+            "actual_parameter_and_intermediate_target_dtype_replay"
+        ]
+        is True
+    )
+    assert artifact.report["fit_evaluation"]["target_dtype"] == "bfloat16"
+
+
+def test_non_enforced_failed_gate_returns_nonpromotable_diagnostic_artifact() -> None:
+    fixture = _fixture(validation_offset=10.0)
+    diagnostic_gate = Lfm2CpcfShortConvGatePolicy(
+        maximum_fit_endpoint_relative_rmse=0.0,
+        maximum_validation_endpoint_relative_rmse=0.0,
+        minimum_fit_endpoint_cosine_similarity=1.0,
+        minimum_validation_endpoint_cosine_similarity=1.0,
+        enforce=False,
+    )
+
+    artifact = _compile(fixture, gate=diagnostic_gate)
+
+    assert artifact.verify_authentication()
+    assert artifact.behavior_gate_passed is False
+    assert artifact.report["behavior_gate"]["enforced"] is False
+    assert artifact.report["promotable_candidate"] is False
+    assert artifact.report["compiled_short_conv_fold_issued"] is True

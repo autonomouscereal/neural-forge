@@ -240,6 +240,9 @@ def plan_and_synthesize_lfm2_cpcf_blank(
         target_unique_parameters=target_unique_parameters,
         compression_ratio=compression_ratio,
         target_vocabulary_size=target_vocabulary_size,
+        match_policy=(
+            "exact" if target_unique_parameters is not None else "at_or_below"
+        ),
         maximum_candidates=maximum_candidates,
     )
     plan = system.plan_budgeted_target(
@@ -275,6 +278,13 @@ def plan_and_synthesize_lfm2_cpcf_blank(
         )
     source_parameters = int(parent_graph.unique_parameter_count)
     target_parameters = int(synthesis.resource_profile.unique_parameters)
+    if (
+        target_unique_parameters is not None
+        and target_parameters != target_unique_parameters
+    ):
+        raise Lfm2CpcfBlankTargetError(
+            "Catalog target does not exactly match the requested parameter count."
+        )
     if target_parameters >= source_parameters:
         raise Lfm2CpcfBlankTargetError(
             "Catalog target does not compact the parent parameter count."

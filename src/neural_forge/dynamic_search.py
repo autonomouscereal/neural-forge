@@ -15,6 +15,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Protocol
 
 from .dynamic_circuit_ir import (
@@ -88,6 +89,103 @@ def _nonzero_digest(value: Any, name: str) -> str:
     if digest == "0" * 64:
         raise DynamicFoldSearchError(f"{name} must not be unset.")
     return digest
+
+
+def _canonical_json_copy(value: Any, name: str) -> Any:
+    """Detach one finite JSON value from mutable caller-owned containers."""
+
+    try:
+        return json.loads(
+            json.dumps(
+                value,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+    except (TypeError, ValueError) as exc:
+        raise DynamicFoldSearchError(f"{name} must be finite canonical JSON.") from exc
+
+
+def _freeze_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {str(key): _freeze_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _thaw_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return value
+
+
+def _strict_failure_report_semantics(report: Mapping[str, Any]) -> bool:
+    schema = report.get("schema")
+    no_success_fields = (
+        "accepted_artifact",
+        "behavior_success_proven",
+        "compaction_success_proven",
+        "compiled_model_fold_issued",
+        "layer_result_issued",
+        "parameter_compaction_success_receipt_issued",
+        "promotable_candidate",
+        "promotion_authorized",
+        "promotion_claimed",
+        "success_claimed",
+    )
+    return bool(
+        isinstance(schema, str)
+        and "failure" in schema
+        and report.get("promotion_claimed") is False
+        and (
+            report.get("compiled_model_fold_issued") is False
+            or report.get("layer_result_issued") is False
+        )
+        and all(
+            name not in report or report[name] is False for name in no_success_fields
+        )
+    )
+
+
+def _verified_failure_diagnostic(
+    error: BaseException,
+) -> tuple[Mapping[str, Any] | None, str | None]:
+    """Preserve only self-sealed compiler failure evidence.
+
+    Generic exception messages remain ordinary search metadata.  A structured
+    diagnostic crosses this boundary only when its schema explicitly denotes
+    failure, its report hash authenticates every nested field, and it does not
+    claim a compiled or promotable result.
+    """
+
+    candidate = getattr(error, "report", None)
+    if not isinstance(candidate, Mapping):
+        return None, None
+    try:
+        report = _canonical_json_copy(
+            dict(candidate),
+            "failure diagnostic",
+        )
+    except DynamicFoldSearchError:
+        return None, None
+    if not isinstance(report, dict):
+        return None, None
+    body = dict(report)
+    report_sha256 = body.pop("report_sha256", None)
+    if (
+        not isinstance(report_sha256, str)
+        or canonical_sha256(body) != report_sha256
+        or not _strict_failure_report_semantics(report)
+    ):
+        return None, None
+    return _freeze_json(report), canonical_sha256(report)
 
 
 def _validate_evidence_derivation(
@@ -412,6 +510,8 @@ class DynamicFoldSearchAttempt:
     reason: str | None = None
     error_type: str | None = None
     artifact_retained: bool | None = None
+    failure_diagnostic: Mapping[str, Any] | None = None
+    failure_diagnostic_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if self.status not in {
@@ -430,9 +530,49 @@ class DynamicFoldSearchAttempt:
                 raise DynamicFoldSearchError(
                     "Accepted search attempts must report artifact retention."
                 )
+            if (
+                self.failure_diagnostic is not None
+                or self.failure_diagnostic_sha256 is not None
+            ):
+                raise DynamicFoldSearchError(
+                    "Accepted search attempts cannot carry failure evidence."
+                )
         elif self.artifact_retained is not None:
             raise DynamicFoldSearchError(
                 "Rejected search attempts cannot retain a certified artifact."
+            )
+        diagnostic = self.failure_diagnostic
+        diagnostic_sha = self.failure_diagnostic_sha256
+        if (diagnostic is None) != (diagnostic_sha is None):
+            raise DynamicFoldSearchError(
+                "Failure diagnostic content and SHA-256 must travel together."
+            )
+        if diagnostic is not None:
+            detached = _canonical_json_copy(
+                _thaw_json(diagnostic),
+                "failure_diagnostic",
+            )
+            if not isinstance(detached, dict) or _digest(
+                diagnostic_sha,
+                "failure_diagnostic_sha256",
+            ) != canonical_sha256(detached):
+                raise DynamicFoldSearchError(
+                    "Failure diagnostic is not an exact self-sealed report."
+                )
+            report_body = dict(detached)
+            report_sha = report_body.pop("report_sha256", None)
+            if (
+                not isinstance(report_sha, str)
+                or canonical_sha256(report_body) != report_sha
+                or not _strict_failure_report_semantics(detached)
+            ):
+                raise DynamicFoldSearchError(
+                    "Failure diagnostic seal or no-success semantics are invalid."
+                )
+            object.__setattr__(
+                self,
+                "failure_diagnostic",
+                _freeze_json(detached),
             )
 
     def as_dict(self) -> dict[str, Any]:
@@ -445,6 +585,12 @@ class DynamicFoldSearchAttempt:
             "reason": self.reason,
             "error_type": self.error_type,
             "artifact_retained": self.artifact_retained,
+            "failure_diagnostic": (
+                None
+                if self.failure_diagnostic is None
+                else _thaw_json(self.failure_diagnostic)
+            ),
+            "failure_diagnostic_sha256": (self.failure_diagnostic_sha256),
         }
 
 
@@ -658,8 +804,7 @@ class AutomaticDynamicFoldSearchSystem:
             if (
                 not destination.is_dir()
                 or destination.is_symlink()
-                or artifact.certificate_sha256
-                != canonical_sha256(artifact.body())
+                or artifact.certificate_sha256 != canonical_sha256(artifact.body())
             ):
                 return None
             resolved_destination = destination.resolve(strict=True)
@@ -669,9 +814,7 @@ class AutomaticDynamicFoldSearchSystem:
             if resolved_artifact_path != resolved_destination:
                 return None
             cls._read_matching_disk_certificate(destination, artifact)
-            loaded_artifact = load_dynamic_fold_artifact_certificate(
-                destination
-            )
+            loaded_artifact = load_dynamic_fold_artifact_certificate(destination)
             if loaded_artifact != artifact:
                 return None
             authenticate_dynamic_fold_artifact_tree(artifact)
@@ -818,13 +961,9 @@ class AutomaticDynamicFoldSearchSystem:
             )
         artifact_body = artifact.body()
         if (
-            artifact_body.get(
-                "fresh_reload_registered_inference_state_revalidated"
-            )
+            artifact_body.get("fresh_reload_registered_inference_state_revalidated")
             is not True
-            or artifact_body.get(
-                "fresh_reload_structural_buffer_policy_revalidated"
-            )
+            or artifact_body.get("fresh_reload_structural_buffer_policy_revalidated")
             is not True
         ):
             raise DynamicFoldSearchError(
@@ -1046,9 +1185,7 @@ class AutomaticDynamicFoldSearchSystem:
                 "Certified action/final evidence is not rooted in the "
                 "candidate's sealed evidence."
             )
-        action_by_id = {
-            action.action_id: action for action in compilation.plan.actions
-        }
+        action_by_id = {action.action_id: action for action in compilation.plan.actions}
         for attempt in compilation.run.attempts:
             action = action_by_id.get(attempt.action_id)
             if action is None:
@@ -1077,22 +1214,14 @@ class AutomaticDynamicFoldSearchSystem:
             action=compilation.plan.actions[-1],
             child_state_fingerprint=compilation.run.final_state_fingerprint,
             evidence_fingerprint=compilation.run.final_evidence_fingerprint,
-            evidence_root_fingerprint=(
-                compilation.run.final_evidence_root_fingerprint
-            ),
-            payload_fingerprint=(
-                compilation.run.final_evidence_payload_fingerprint
-            ),
+            evidence_root_fingerprint=(compilation.run.final_evidence_root_fingerprint),
+            payload_fingerprint=(compilation.run.final_evidence_payload_fingerprint),
             payload_integrity_mode=(
                 compilation.run.final_evidence_payload_integrity_mode
             ),
             evidence_channels=compilation.run.final_evidence_channels,
-            binding_fingerprint=(
-                compilation.run.final_evidence_binding_fingerprint
-            ),
-            derivation_manifest=(
-                compilation.run.final_evidence_derivation_manifest
-            ),
+            binding_fingerprint=(compilation.run.final_evidence_binding_fingerprint),
+            derivation_manifest=(compilation.run.final_evidence_derivation_manifest),
             derivation_fingerprint=(
                 compilation.run.final_evidence_derivation_fingerprint
             ),
@@ -1150,8 +1279,7 @@ class AutomaticDynamicFoldSearchSystem:
             or compilation.run.observed_parent_root_forward_calls != 0
             or compilation.run.observed_final_child_module_forward_calls <= 0
             or compilation.run.observed_final_child_root_forward_calls <= 0
-            or compilation.run.observed_final_child_inference_entrypoint_calls
-            <= 0
+            or compilation.run.observed_final_child_inference_entrypoint_calls <= 0
             or compilation.run.observed_final_child_root_forward_calls
             > compilation.run.observed_final_child_module_forward_calls
             or artifact.fresh_reload_module_forward_calls <= 0
@@ -1424,9 +1552,7 @@ class AutomaticDynamicFoldSearchSystem:
                     destination,
                 )
                 if returned_ownership is not None:
-                    current_artifact, current_owned_destination = (
-                        returned_ownership
-                    )
+                    current_artifact, current_owned_destination = returned_ownership
                     owned_destinations.add(current_owned_destination)
                 artifact, resolved_destination = self._validate_published_result(
                     candidate=candidate,
@@ -1613,6 +1739,10 @@ class AutomaticDynamicFoldSearchSystem:
                     )
             except Exception as caught:
                 error: Exception = caught
+                (
+                    failure_diagnostic,
+                    failure_diagnostic_sha256,
+                ) = _verified_failure_diagnostic(caught)
                 rollback_hashes = current_record_hashes
                 if not rollback_hashes and ledger is not None:
                     rollback_hashes = tuple(
@@ -1666,6 +1796,8 @@ class AutomaticDynamicFoldSearchSystem:
                         status=disposition.value,
                         reason=str(error),
                         error_type=type(error).__name__,
+                        failure_diagnostic=failure_diagnostic,
+                        failure_diagnostic_sha256=(failure_diagnostic_sha256),
                     )
                 )
                 if disposition is not FailureDisposition.CANDIDATE_REJECTED:

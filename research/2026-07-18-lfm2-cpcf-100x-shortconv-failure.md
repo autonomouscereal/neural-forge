@@ -20,6 +20,26 @@ Relevant 2025-2026 primary sources:
   (2026)](https://arxiv.org/abs/2602.18116)
 - [ICLR 2025 model-folding paper](https://proceedings.iclr.cc/paper_files/paper/2025/file/f102c495b31bcc7b2a11c27de75475fc-Paper-Conference.pdf)
 - [ICLR 2025 tensorized state-space paper](https://proceedings.iclr.cc/paper_files/paper/2025/file/4c12e97f2e05304a451e18c9c945036f-Paper-Conference.pdf)
+- [FLAT-LLM: Fine-grained Low-rank Activation Space Transformation
+  (2026)](https://aclanthology.org/2026.findings-eacl.156/)
+- [IMPACT: Importance-Aware Activation Space Reconstruction
+  (2026)](https://aclanthology.org/2026.acl-long.183/)
+- [The Curious Case of In-Training Compression of State Space Models
+  (ICLR 2026)](https://openreview.net/forum?id=LtzmeSMBTW)
+- [Rethinking the Role of Tensor Decompositions in Post-Training LLM
+  Compression (2026)](https://arxiv.org/abs/2606.03465)
+
+The 2026 evidence sharpens the v4 design. FLAT-LLM reports that activation
+space is a better structural-compression coordinate than raw weight space.
+IMPACT further reports that activation dimensions must be weighted by their
+effect on behavior rather than treated uniformly. The ICLR SSM work uses
+balanced truncation and Hankel singular values to preserve input-output
+behavior. Conversely, the 2026 tensor-decomposition study finds that
+Frobenius-optimal shared subspaces can distort heterogeneous, function-bearing
+operator geometry. Therefore v4 must select directions that are both
+predictable from the incoming child state and observable at the residual
+endpoint. Raw weight SVD, raw activation PCA, or positive channel averaging
+alone is not an adequate objective.
 
 ## Frozen `v3` Experiment
 
@@ -181,6 +201,22 @@ test uses effectively identical channels and does not stress heterogeneous
 channels, signed cancellation, high compression such as 1024-to-128,
 ill-conditioned inputs, distribution shift, or BF16 materialization.
 
+There is a more useful operator view. After mapping the parent operator input
+into child coordinates, each parent short-conv channel contributes one
+lagged cubic (Volterra) rank-one term:
+
+```text
+C_s(current) * K_s(lag) * B_s(lagged) * X_s(lagged) * output_direction_s
+```
+
+A width-128 child is therefore a coupled rank-128 CP approximation of the
+parent's complete input-to-residual operator, not an average of 1,024
+independent B, C, X, FIR, and writer tensors. V4 should fit that structured
+operator from sampled causal evidence with deterministic blockwise
+variable-projection/ALS solves. This avoids materializing the enormous cubic
+coefficient tensor while optimizing the composed function that the child must
+actually execute.
+
 ## Required `v4` Change
 
 `v3` must not be rerun unchanged. It is deterministic against sealed inputs and
@@ -214,11 +250,24 @@ not be weakened to manufacture a candidate.
 6. Transport actual parent input and output projections through the selected
    channel encoder/dual decoder and use those values as priors. Run only a
    small, deterministic number of variable-projection refinements that
-   alternately solve the writer, FIR, and bounded linearized input/context
-   corrections against the composed endpoint.
+   alternately solve the writer, FIR, and bounded B/C/X factor corrections
+   against the composed endpoint. Treat these as a sampled coupled CP/Volterra
+   factorization rather than three unrelated activation regressions.
+   The affine child-to-parent input lift must transport its intercept too:
+   for `h_parent ~= h_child R + r`, a parent role `(W, b)` contributes target
+   prior weight `E^T W R^T` and bias `E^T (b + W r)`.
+   Do not explicitly expand a per-channel Jacobian over the 128 output
+   coordinates. For valid suffix rows `J`, endpoint residual `R`, and writer
+   column `w`, the exact equal-case normal-equation terms are
+   `G = (||w||^2 / O) (J^T J / n)` and
+   `q = J^T (R w) / (n O)`. Accumulate these sufficient statistics by case.
+   This is algebraically identical to the expanded solve while avoiding
+   multi-gigabyte per-channel tensors.
 7. Select activation RMS/mean repair on the selection partition, following
    folding evidence that uncorrected activation-statistic collapse damages
-   merged networks. Recheck after BF16 materialization.
+   merged networks. Recheck after materializing every candidate parameter and
+   replaying B/C/X, FIR, and writer intermediates in BF16; casting only the
+   final FP64 prediction is not a target-dtype evaluation.
 8. Seal and key reusable boundary bundles, incoming state banks, parent
    contexts, Gram/covariance/SVD summaries, and selected solver artifacts by
    parent, cache, corpus, bridge, blank target, layer, incoming state, solver,
@@ -228,6 +277,63 @@ not be weakened to manufacture a candidate.
    collinear distribution shift, scale invariance, unpenalized bias, validation
    isolation, float64/BF16 divergence, failure receipt/resume behavior,
    cold/resumed byte identity, and a synthetic 1024-to-128 stress case.
+
+## Implemented `v4` Production Candidate
+
+The bounded `v4` change is now implemented in the canonical `neural-forge`
+repository. This is implementation and preflight evidence, not an accepted
+compaction result. No real `v4` child has passed the standalone behavior gate
+yet.
+
+The implementation adds:
+
+- composed residual-endpoint short-conv fitting with source-projection priors,
+  signed channel directions, context-aware selection, deterministic
+  variable-projection updates for writer/FIR/B-C-X factors, and target-BF16
+  replay before promotion;
+- strict selection/fit/validation isolation and fail-closed diagnostics that
+  retain the layer, state-bank, solver, per-case, and rollback identities;
+- an exact `2,291,840`-parameter target contract rather than an
+  `at_or_below` budget;
+- authenticated cold-versus-resumed continuation that reinstalls an exact
+  accepted prefix into a fresh blank of the same topology and continues only
+  at the next layer;
+- synchronous checkpoints after the bridged seed and every accepted layer,
+  containing only the child prefix and child state bank, never copied parent
+  evidence;
+- immutable content-addressed boundary/checkpoint/failure artifacts and an
+  invocation-bound, self-sealed, atomically replaced latest-resume pointer;
+- cancellation-safe rollback, transactional standalone publication, and one
+  canonical receipt inside the atomically published output directory.
+
+The full-vocabulary embedding cannot fit in this target: a tied
+`65,536 x 128` table alone is `8,388,608` parameters. The strict 4,096-row
+token bridge is therefore a necessary part of the exact 2.29M experiment, not
+quantization or an attempt to count fewer bytes as fewer parameters.
+
+Local validation after the final resume-pointer audit:
+
+- `122/122` model-fold, resume-store, resume-bridge, runner, rollback,
+  cancellation, tamper, and atomic-pointer tests passed;
+- the broader CPCF regression reported `349 passed, 2 skipped`;
+- the repository-wide run reported `4,114 passed, 6 skipped, 9 failed`.
+
+Eight repository-wide failures are the intentional single-pass replay
+allowlist rejecting local Transformers `5.13.0`; the certified allowlist and
+the production server use Transformers `5.12.1`. The production fold consumes
+sealed cached evidence and does not call that single-pass capture path. The
+ninth failure is an unchanged legacy GPT-2-to-Llama synthetic
+blank-bootstrap fixture that has been stale since an earlier feature-fold
+algorithm change: the candidate improves its RMSE metrics but loses one of 64
+top-1 anchors, so the strict gate correctly rejects publication. These
+failures must not be presented as green, but neither failure is inside the
+changed CPCF `v4` production path.
+
+The next valid evidence is the real offline run against the already sealed
+LFM2 parent, 4,096-token bridge, 256-trajectory corpus, and approximately
+90 GB parent cache. It must use one BF16-capable RTX 3090, publish no candidate
+on any failed layer gate, and retain its latest accepted layer checkpoint for
+an exact resume.
 
 ## Acceptance Rules
 
