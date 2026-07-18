@@ -191,6 +191,103 @@ def test_repetition_proxy_is_diagnostic_not_intelligence_claim() -> None:
     assert "False" in source
 
 
+def test_standalone_receipt_seals_generation_limits_and_token_ids() -> None:
+    torch = pytest.importorskip("torch")
+
+    class Tokenizer:
+        eos_token_id = 99
+        pad_token_id = 0
+
+        def __call__(
+            self,
+            _text: str,
+            *,
+            add_special_tokens: bool,
+            return_tensors: str,
+        ) -> dict[str, object]:
+            assert add_special_tokens is True
+            assert return_tensors == "pt"
+            return {
+                "input_ids": torch.tensor([[11, 12]]),
+                "attention_mask": torch.tensor([[1, 1]]),
+            }
+
+        def decode(
+            self,
+            token_ids: list[int],
+            *,
+            skip_special_tokens: bool,
+        ) -> str:
+            assert skip_special_tokens is True
+            return " ".join(str(token_id) for token_id in token_ids)
+
+    class Model:
+        def __init__(self) -> None:
+            self.max_new_tokens_calls: list[int] = []
+
+        def eval(self) -> None:
+            return None
+
+        def generate(self, **kwargs: object) -> object:
+            input_ids = kwargs["input_ids"]
+            assert isinstance(input_ids, torch.Tensor)
+            self.max_new_tokens_calls.append(int(kwargs["max_new_tokens"]))
+            continuation = torch.tensor(
+                [[21, 22, 23]],
+                device=input_ids.device,
+            )
+            return torch.cat((input_ids, continuation), dim=1)
+
+    rows = [
+        {
+            "id": f"validation-{index}",
+            "split": "validation",
+            "input_text": f"Prompt {index}",
+            "forced_decode_text": f"Reference {index}",
+        }
+        for index in range(3)
+    ]
+    model = Model()
+    report = MODULE._standalone_whole_response_evaluation(
+        model,
+        Tokenizer(),
+        rows=rows,
+        device=torch.device("cpu"),
+        limit=2,
+        max_new_tokens=128,
+    )
+
+    assert report["schema"] == MODULE.STANDALONE_EVALUATION_SCHEMA
+    assert report["requested_case_limit"] == 2
+    assert report["requested_max_new_tokens"] == 128
+    assert report["generation_limit"] == 128
+    assert report["generation_limit_semantics"] == (
+        "maximum_new_tokens_per_case"
+    )
+    assert report["requested_max_new_tokens_matches_generation_limit"] is True
+    assert report["case_count"] == 2
+    assert model.max_new_tokens_calls == [128, 128]
+    assert report[
+        "all_observed_token_counts_match_continuation_token_ids"
+    ] is True
+    assert report["all_observed_token_counts_within_generation_limit"] is True
+    for case in report["cases"]:
+        assert case["continuation_token_ids"] == [21, 22, 23]
+        assert case["observed_continuation_token_count"] == 3
+        assert (
+            case["observed_token_count_matches_continuation_token_ids"] is True
+        )
+        assert case["observed_token_count_within_generation_limit"] is True
+        assert case["repetition_proxy"]["token_count"] == 3
+
+    sealed_body = dict(report)
+    report_sha256 = sealed_body.pop("report_sha256")
+    assert report_sha256 == MODULE._sha(sealed_body)
+    mutated = json.loads(json.dumps(sealed_body))
+    mutated["cases"][0]["continuation_token_ids"][0] = 999
+    assert MODULE._sha(mutated) != report_sha256
+
+
 def test_local_lfm2_save_reload_preserves_and_restores_ffn_alias(
     tmp_path: Path,
 ) -> None:

@@ -54,6 +54,9 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 RUN_SCHEMA = "neural-forge-lfm2-cpcf-blank-fold-run-v1"
 DRY_PLAN_SCHEMA = "neural-forge-lfm2-cpcf-blank-dry-plan-v1"
 TRAJECTORY_SCHEMA = "neural-forge-lfm2-bridge-trajectory-text-v1"
+STANDALONE_EVALUATION_SCHEMA = (
+    "neural-forge-lfm2-cpcf-standalone-whole-response-evaluation-v1"
+)
 MINIMUM_CLAIMABLE_COMPRESSION_RATIO = Decimal("100")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _DTYPES = ("bfloat16", "float16", "float32")
@@ -733,6 +736,11 @@ def _standalone_whole_response_evaluation(
                 skip_special_tokens=True,
             )
             repetition = _repetition_proxy(continuation)
+            observed_token_count = len(continuation)
+            token_count_matches_ids = (
+                repetition["token_count"] == observed_token_count
+            )
+            within_generation_limit = observed_token_count <= max_new_tokens
             nonempty = bool(text.strip())
             control_count = sum(
                 ord(character) < 32 and character not in "\n\r\t"
@@ -750,6 +758,14 @@ def _standalone_whole_response_evaluation(
                     "child_output_sha256": hashlib.sha256(
                         text.encode("utf-8")
                     ).hexdigest(),
+                    "continuation_token_ids": continuation,
+                    "observed_continuation_token_count": observed_token_count,
+                    "observed_token_count_matches_continuation_token_ids": (
+                        token_count_matches_ids
+                    ),
+                    "observed_token_count_within_generation_limit": (
+                        within_generation_limit
+                    ),
                     "nonempty": nonempty,
                     "control_character_count": control_count,
                     "repetition_proxy": repetition,
@@ -761,8 +777,26 @@ def _standalone_whole_response_evaluation(
         bool(result["automatic_coherence_proxy_pass"]) for result in results
     )
     body = {
+        "schema": STANDALONE_EVALUATION_SCHEMA,
         "evaluation_mode": "fresh_reload_standalone_whole_response_generation",
+        "requested_case_limit": limit,
+        "requested_max_new_tokens": max_new_tokens,
+        "generation_limit": max_new_tokens,
+        "generation_limit_semantics": "maximum_new_tokens_per_case",
+        "requested_max_new_tokens_matches_generation_limit": True,
         "case_count": len(results),
+        "all_observed_token_counts_match_continuation_token_ids": all(
+            bool(
+                result[
+                    "observed_token_count_matches_continuation_token_ids"
+                ]
+            )
+            for result in results
+        ),
+        "all_observed_token_counts_within_generation_limit": all(
+            bool(result["observed_token_count_within_generation_limit"])
+            for result in results
+        ),
         "automatic_coherence_proxy_pass_count": passed,
         "automatic_coherence_proxy_pass_fraction": passed / len(results),
         "cases": results,
