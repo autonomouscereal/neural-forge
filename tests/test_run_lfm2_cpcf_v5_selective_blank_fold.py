@@ -591,6 +591,120 @@ def test_cold_resume_store_constructs_and_passes_typed_coordinator(
     assert report["parent_or_cache_tensor_sidecars"] == 0
 
 
+def test_tracking_coordinator_accepts_real_publish_pending_contract(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+
+    args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(tmp_path / "resume"),
+        ]
+    )
+    runtime = MODULE._build_resume_runtime(MODULE.config_from_args(args))
+
+    with pytest.raises(TypeError, match="event must be Lfm2CpcfV5ProgressEvent"):
+        runtime.coordinator.publish_pending(
+            object(),
+            rss_checkpoint_expectation={},
+        )
+    with pytest.raises(TypeError, match="rss_checkpoint_expectation"):
+        runtime.coordinator.publish_pending(object())
+
+    report = runtime.progress.as_dict()
+    assert report["published_pending_prefix_count"] == 0
+    assert report["outstanding_pending_prefix_count"] == 0
+
+
+def test_tracking_coordinator_forwards_exact_rss_expectation_before_recording(
+    tmp_path: Path,
+) -> None:
+    event = object()
+    expectation = {"authenticated": object()}
+    pending = SimpleNamespace(
+        next_layer_index=0,
+        frontier_reference=SimpleNamespace(
+            as_dict=lambda: {
+                "artifact_kind": "boundary",
+                "artifact_key": hashlib.sha256(b"boundary-key").hexdigest(),
+                "manifest_sha256": hashlib.sha256(
+                    b"boundary-manifest"
+                ).hexdigest(),
+            }
+        ),
+        checkpoint=SimpleNamespace(
+            reference=SimpleNamespace(
+                as_dict=lambda: {
+                    "artifact_kind": "checkpoint",
+                    "artifact_key": hashlib.sha256(
+                        b"checkpoint-key"
+                    ).hexdigest(),
+                    "manifest_sha256": hashlib.sha256(
+                        b"checkpoint-manifest"
+                    ).hexdigest(),
+                }
+            )
+        ),
+        frontier_sha256=hashlib.sha256(b"frontier").hexdigest(),
+        event_report_sha256=hashlib.sha256(b"event").hexdigest(),
+    )
+
+    class StrictCoordinator:
+        def __init__(self, store):
+            self.store = store
+
+        def publish_pending(
+            self,
+            received_event,
+            *,
+            rss_checkpoint_expectation,
+        ):
+            assert received_event is event
+            assert rss_checkpoint_expectation is expectation
+            if self.store == "reject":
+                raise RuntimeError("authenticated publication rejected")
+            return pending
+
+    progress = MODULE._ResumeProgressTracker(
+        store_directory=tmp_path,
+        requested_admission_sha256=None,
+    )
+    coordinator = MODULE._tracking_resume_coordinator(
+        StrictCoordinator,
+        "accept",
+        progress,
+    )
+
+    assert (
+        coordinator.publish_pending(
+            event,
+            rss_checkpoint_expectation=expectation,
+        )
+        is pending
+    )
+    assert progress.as_dict()["published_pending_prefix_count"] == 1
+
+    rejected_progress = MODULE._ResumeProgressTracker(
+        store_directory=tmp_path,
+        requested_admission_sha256=None,
+    )
+    rejecting = MODULE._tracking_resume_coordinator(
+        StrictCoordinator,
+        "reject",
+        rejected_progress,
+    )
+    with pytest.raises(RuntimeError, match="authenticated publication rejected"):
+        rejecting.publish_pending(
+            event,
+            rss_checkpoint_expectation=expectation,
+        )
+    assert (
+        rejected_progress.as_dict()["published_pending_prefix_count"] == 0
+    )
+
+
 def test_exact_admission_opens_only_typed_v5_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

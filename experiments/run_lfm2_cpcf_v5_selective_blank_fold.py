@@ -1655,8 +1655,16 @@ def _tracking_resume_coordinator(
     """Construct the typed coordinator with diagnostic-only observation."""
 
     class _RunnerTrackedResumeCoordinator(coordinator_type):
-        def publish_pending(self, event: Any) -> Any:
-            pending = super().publish_pending(event)
+        def publish_pending(
+            self,
+            event: Any,
+            *,
+            rss_checkpoint_expectation: Mapping[str, Any],
+        ) -> Any:
+            pending = super().publish_pending(
+                event,
+                rss_checkpoint_expectation=rss_checkpoint_expectation,
+            )
             progress.record_pending(pending)
             return pending
 
