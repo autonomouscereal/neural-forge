@@ -754,6 +754,7 @@ def test_attention_phases_coalesce_exact_k_linear_chronology(
         "recover_lfm2_full_key_linear_history",
         forbidden_recovery,
     )
+    charts = _chart("full_attention")
     cases = layer_compiler._attention_cases(
         source_model=source,
         target_model=target,
@@ -761,7 +762,7 @@ def test_attention_phases_coalesce_exact_k_linear_chronology(
         layer_index=0,
         input_bank=InputBank(),
         preinstall_replay=SimpleNamespace(replays=replays),
-        chart=_chart("full_attention"),
+        chart=charts,
     )
 
     assert len(cases) == 1
@@ -792,6 +793,233 @@ def test_attention_phases_coalesce_exact_k_linear_chronology(
     assert tuple(case.parent_query.shape[2:]) == (4, 2)
     assert tuple(case.parent_key.shape[2:]) == (4, 2)
     assert tuple(case.parent_post_attention_residual_target_space.shape) == (1, 4, 4)
+    parent_context = torch.cat(
+        (
+            parent_tensors["prefill"]["attention.context"],
+            parent_tensors["decode.000"]["attention.context"],
+        ),
+        dim=2,
+    ).to(torch.float64)
+    output_weight = (
+        source.model.layers[0]
+        .self_attn.out_proj.weight.detach()
+        .to(torch.float64)
+    )
+    output_blocks = output_weight.reshape(8, 4, 2)
+    target_blocks = torch.einsum(
+        "ohd,ot->hdt",
+        output_blocks,
+        charts.post_operator.mapping.encoder,
+    )
+    expected_contribution = torch.einsum(
+        "bhqd,hdt->bhqt",
+        parent_context,
+        target_blocks,
+    )
+    assert torch.allclose(
+        case.parent_contribution,
+        expected_contribution,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    cached_output = torch.cat(
+        (
+            parent_tensors["prefill"]["attention.o"],
+            parent_tensors["decode.000"]["attention.o"],
+        ),
+        dim=1,
+    )
+    assert torch.allclose(
+        case.parent_contribution.sum(dim=1),
+        charts.post_operator.encode_shaped(cached_output),
+        rtol=1e-6,
+        atol=1e-6,
+    )
+    assert torch.allclose(
+        case.query_row_sqrt_weights.square(),
+        torch.tensor(
+            [[2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0, 2.0]],
+            dtype=torch.float64,
+        ),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    assert torch.equal(
+        case.query_row_sqrt_weights,
+        case.key_value_row_sqrt_weights,
+    )
+    assert float(
+        case.query_row_sqrt_weights.square().sum().item()
+    ) == pytest.approx(4.0)
+
+
+def test_attention_o_contribution_accepts_bf16_rounding_but_rejects_mismatch() -> None:
+    generator = torch.Generator().manual_seed(20260719)
+    batch = 2
+    query_heads = 3
+    query_rows = 5
+    head_dim = 2
+    source_width = 7
+    target_width = 4
+    context = (
+        torch.rand(
+            (batch, query_heads, query_rows, head_dim),
+            generator=generator,
+            dtype=torch.float32,
+        )
+        + 0.5
+    ).to(torch.bfloat16)
+    output_weight = (
+        torch.rand(
+            (source_width, query_heads * head_dim),
+            generator=generator,
+            dtype=torch.float32,
+        )
+        + 0.5
+    ).to(torch.bfloat16)
+    encoder = torch.randn(
+        (source_width, target_width),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    output_blocks = torch.einsum(
+        "ohd,ot->hdt",
+        output_weight.to(torch.float64).reshape(
+            source_width,
+            query_heads,
+            head_dim,
+        ),
+        encoder,
+    )
+    source_output = torch.einsum(
+        "bhqd,ohd->bqo",
+        context.to(torch.float32),
+        output_weight.to(torch.float32).reshape(
+            source_width,
+            query_heads,
+            head_dim,
+        ),
+    ).to(torch.bfloat16)
+    target_output = source_output.to(torch.float64) @ encoder
+
+    contribution = layer_compiler._encoded_parent_attention_contribution(
+        parent_context=context,
+        cached_source_output=source_output,
+        cached_target_output=target_output,
+        source_output_weight=output_weight,
+        target_encoder=encoder,
+        target_output_blocks=output_blocks,
+        name="bf16-authentic",
+    )
+    assert tuple(contribution.shape) == (
+        batch,
+        query_heads,
+        query_rows,
+        target_width,
+    )
+
+    mismatched_source_output = (source_output.to(torch.float32) * 1.25).to(
+        torch.bfloat16
+    )
+    mismatched_target_output = (
+        mismatched_source_output.to(torch.float64) @ encoder
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="accumulation-aware rounding bound",
+    ):
+        layer_compiler._encoded_parent_attention_contribution(
+            parent_context=context,
+            cached_source_output=mismatched_source_output,
+            cached_target_output=mismatched_target_output,
+            source_output_weight=output_weight,
+            target_encoder=encoder,
+            target_output_blocks=output_blocks,
+            name="bf16-mismatch",
+        )
+
+
+def test_endpoint_metrics_are_separated_by_exact_causal_phase() -> None:
+    class Phase(SimpleNamespace):
+        @property
+        def identity(self):
+            return self.batch_index, self.phase
+
+        def suffix(self, value):
+            return value[:, -self.sampled_suffix_tokens :, :]
+
+    phases = []
+    operator_replays = {}
+    final_replays = {}
+    for split_index, split in enumerate(("fit", "validation")):
+        for phase_index, (phase_name, prefix, suffix) in enumerate(
+            (("prefill", 3, 3), ("decode.000", 4, 1))
+        ):
+            base = float(10 * split_index + phase_index)
+            operator_target = torch.full((1, suffix, 2), base)
+            layer_target = torch.full((1, suffix, 2), base + 0.5)
+            phase = Phase(
+                batch_index=split_index,
+                split=split,
+                phase=phase_name,
+                batch_size=1,
+                full_prefix_tokens=prefix,
+                sampled_suffix_tokens=suffix,
+                phase_sha256=_sha(f"{split}:{phase_name}"),
+                parent_evidence=SimpleNamespace(
+                    layers=(
+                        SimpleNamespace(
+                            layer_index=0,
+                            operator_kind="full_attention",
+                            tensors={
+                                "residual.post_operator": operator_target,
+                                "residual.post_layer": layer_target,
+                            },
+                        ),
+                    )
+                ),
+            )
+            phases.append(phase)
+            operator_prediction = torch.zeros((1, prefix, 2))
+            layer_prediction = torch.zeros((1, prefix, 2))
+            operator_prediction[:, -suffix:, :] = operator_target + 1.0
+            layer_prediction[:, -suffix:, :] = layer_target + 2.0
+            operator_replays[phase.identity] = SimpleNamespace(
+                post_operator_residual=operator_prediction
+            )
+            final_replays[phase.identity] = SimpleNamespace(
+                post_layer_residual=layer_prediction
+            )
+
+    metrics = layer_compiler._split_endpoint_metrics(
+        layer_index=0,
+        input_bank=SimpleNamespace(phases=tuple(phases)),
+        operator_replay=SimpleNamespace(replays=operator_replays),
+        final_replay=SimpleNamespace(replays=final_replays),
+        chart=SimpleNamespace(
+            operator_kind="full_attention",
+            post_operator=SimpleNamespace(
+                encode_shaped=lambda value: value.clone(),
+            ),
+            post_layer=SimpleNamespace(
+                encode_shaped=lambda value: value.clone(),
+            ),
+        ),
+    )
+
+    for split in ("fit", "validation"):
+        phase_metrics = metrics[split]["phase_metrics"]
+        assert set(phase_metrics) == {"prefill", "decode.000"}
+        assert phase_metrics["prefill"]["post_operator"]["rows"] == 3
+        assert phase_metrics["decode.000"]["post_operator"]["rows"] == 1
+        assert phase_metrics["prefill"]["post_operator"]["rmse"] == pytest.approx(
+            1.0
+        )
+        assert phase_metrics["decode.000"]["post_layer"]["rmse"] == pytest.approx(
+            2.0
+        )
+        assert phase_metrics["prefill"]["phase_count"] == 1
+        assert len(phase_metrics["decode.000"]["report_sha256"]) == 64
 
 
 def test_attention_trajectory_rejects_sampled_prefill_tail() -> None:
@@ -931,6 +1159,8 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
     assert result.next_bank.layer_index == 1
     assert result.input_bank_sha256 == bank.state_bank_sha256
     assert set(result.split_metrics) == {"fit", "validation"}
+    for split in ("fit", "validation"):
+        assert set(result.split_metrics[split]["phase_metrics"]) == {"prefill"}
     assert observed["mlp_case_count"] == 1
     if kind == "full_attention":
         assert observed["operator_case_count"] == 1
@@ -960,6 +1190,14 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
         )
         assert policy["attention_inverse_rope_preimage_used"] is False
         assert policy["attention_repeated_prefix_fit_rows"] is False
+        assert policy["attention_fit_phase_weighting"] == (
+            "equal_total_mass_per_causal_phase_with_global_mean_square_one"
+        )
+        assert policy["attention_parent_residual_contribution"] == (
+            "head_local_O_write_composed_through_post_operator_chart"
+        )
+        assert policy["attention_residual_contribution_direction_preserved"] is True
+    assert policy["endpoint_metrics_by_causal_phase"] is True
     state_policy = result.report["actual_child_state_policy"]
     assert state_policy["next_layer_input"] == (
         "complete_prefill_plus_ordered_decode_suffix_layer_replay"

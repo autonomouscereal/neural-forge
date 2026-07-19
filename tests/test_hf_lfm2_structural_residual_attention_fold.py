@@ -434,6 +434,16 @@ def test_exact_duplicate_attention_oracle_is_full_coverage_and_structural() -> N
     ) == [0, 1]
     assert compiled.as_dict()["full_source_assignment_fraction"] == 1.0
     assert compiled.as_dict()["source_groups_dropped"] == 0
+    assert compiled.as_dict()["query_row_weighting_mode"] == "uniform_default"
+    assert (
+        compiled.as_dict()["key_value_row_weighting_mode"]
+        == "uniform_default"
+    )
+    assert compiled.as_dict()["equal_causal_phase_mass_proven"] is False
+    assert "equal_causal_phase_mass" not in compiled.as_dict()["score_objective"]
+    assert len(
+        compiled.as_dict()["query_row_sqrt_weight_bundle_sha256"]
+    ) == 64
     assert compiled.centered_score_relative_rmse < 1e-10
     assert compiled.residual_endpoint_relative_rmse < 1e-10
 
@@ -461,6 +471,126 @@ def test_exact_duplicate_attention_oracle_is_full_coverage_and_structural() -> N
     assert compiled.parameter_reduction_fraction == pytest.approx(0.75)
     for name, value in source.items():
         assert torch.equal(value, source_before[name])
+
+
+def test_attention_fold_uses_directional_contributions_and_weighted_qkvo_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, case = _duplicate_head_oracle()
+    query_sqrt_weights = torch.tensor(
+        [[0.5, 1.0, 1.5, 2.0]],
+        dtype=torch.float64,
+    )
+    key_value_sqrt_weights = torch.tensor(
+        [[2.0, 1.5, 1.0, 0.5]],
+        dtype=torch.float64,
+    )
+    contribution = torch.zeros((1, 4, 4, 4), dtype=torch.float64)
+    contribution[:, 0, :, 0] = 1.0
+    contribution[:, 1, :, 1] = 1.0
+    contribution[:, 2, :, 0] = 1.0
+    contribution[:, 3, :, 1] = 1.0
+    weighted_case = replace(
+        case,
+        parent_contribution=contribution,
+        query_row_sqrt_weights=query_sqrt_weights,
+        key_value_row_sqrt_weights=key_value_sqrt_weights,
+    )
+    target = _ToyAttention(
+        hidden_size=4,
+        output_size=4,
+        query_heads=2,
+        key_value_heads=1,
+        head_dim=2,
+        dtype=torch.float64,
+    )
+    observed: dict[str, object] = {"fits": {}}
+    original_cluster = fold_module.build_gqa_activation_cluster_plan
+    original_fit = fold_module._fit_linear
+
+    def cluster_spy(*args, **kwargs):
+        observed["contribution_signatures"] = args[4].clone()
+        return original_cluster(*args, **kwargs)
+
+    def fit_spy(input_rows, target_rows, *, role, **kwargs):
+        observed["fits"][role] = (
+            input_rows.clone(),
+            target_rows.clone(),
+        )
+        return original_fit(
+            input_rows,
+            target_rows,
+            role=role,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(
+        fold_module,
+        "build_gqa_activation_cluster_plan",
+        cluster_spy,
+    )
+    monkeypatch.setattr(fold_module, "_fit_linear", fit_spy)
+
+    compiled = _compile(source, weighted_case, target)
+
+    expected_contribution_signature = (
+        contribution * query_sqrt_weights[:, None, :, None]
+    ).permute(1, 0, 2, 3).reshape(4, -1)
+    actual_contribution_signature = observed["contribution_signatures"]
+    assert torch.equal(
+        actual_contribution_signature,
+        expected_contribution_signature,
+    )
+    assert int(actual_contribution_signature.shape[1]) == 16
+    assert not torch.equal(
+        actual_contribution_signature[0],
+        actual_contribution_signature[1],
+    )
+    assert torch.equal(
+        torch.linalg.vector_norm(contribution[0], dim=-1),
+        torch.ones((4, 4), dtype=torch.float64),
+    )
+
+    fits = observed["fits"]
+    expected_query_input = (
+        case.target_query_input.reshape(-1, 4)
+        * query_sqrt_weights.reshape(-1, 1)
+    )
+    expected_key_value_input = (
+        case.target_key_value_input.reshape(-1, 4)
+        * key_value_sqrt_weights.reshape(-1, 1)
+    )
+    expected_output_target = (
+        (
+            case.parent_post_attention_residual_target_space
+            - case.target_pre_attention_residual
+        ).reshape(-1, 4)
+        * query_sqrt_weights.reshape(-1, 1)
+    )
+    assert torch.equal(fits["query"][0], expected_query_input)
+    assert torch.equal(fits["key"][0], expected_key_value_input)
+    assert torch.equal(fits["value"][0], expected_key_value_input)
+    assert torch.allclose(
+        fits["output"][1],
+        expected_output_target,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    report = compiled.as_dict()
+    assert report["query_row_weighting_mode"] == (
+        "caller_supplied_positive_sqrt_row_weights"
+    )
+    assert report["key_value_row_weighting_mode"] == (
+        "caller_supplied_positive_sqrt_row_weights"
+    )
+    assert report["equal_causal_phase_mass_proven"] is False
+    assert report["causal_phase_weighting"] == (
+        "authenticated_cpcf_caller_report_required"
+    )
+    assert (
+        report["query_row_sqrt_weight_bundle_sha256"]
+        != report["key_value_row_sqrt_weight_bundle_sha256"]
+    )
 
 
 def test_structural_attention_allows_preserved_heads_when_hidden_width_shrinks() -> None:

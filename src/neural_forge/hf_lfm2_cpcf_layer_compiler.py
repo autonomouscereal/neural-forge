@@ -1987,6 +1987,314 @@ def _attention_key_mask(additive_mask: Any) -> Any:
     return allowed[:, 0, :, :].contiguous()
 
 
+def _equal_causal_phase_sqrt_weights(
+    phases: Sequence[Lfm2CpcfTargetPhase],
+) -> Mapping[tuple[int, str], Any]:
+    """Give every fit phase equal total least-squares mass.
+
+    The weights retain a global mean square of one, so changing from uniform
+    rows does not silently rescale the ridge term.
+    """
+
+    torch = _torch()
+    fit_phases = tuple(phase for phase in phases if phase.split == "fit")
+    if not fit_phases:
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention phase weighting requires at least one fit phase."
+        )
+    total_rows = sum(
+        phase.batch_size * phase.sampled_suffix_tokens
+        for phase in fit_phases
+    )
+    phase_count = len(fit_phases)
+    result = {}
+    for phase in fit_phases:
+        rows = phase.batch_size * phase.sampled_suffix_tokens
+        row_weight = total_rows / (phase_count * rows)
+        result[phase.identity] = torch.full(
+            (phase.batch_size, phase.sampled_suffix_tokens),
+            math.sqrt(row_weight),
+            dtype=torch.float64,
+        )
+    observed_mass = sum(
+        float(value.square().sum().item()) for value in result.values()
+    )
+    if not math.isclose(
+        observed_mass,
+        float(total_rows),
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Equal causal phase weights do not preserve global row mass."
+        )
+    return MappingProxyType(result)
+
+
+def _attention_output_blocks_in_target_space(
+    *,
+    source_attention: Any,
+    chart: Lfm2CpcfLayerBoundaryCharts,
+) -> Any:
+    """Compose every parent O head block with the predictive boundary chart."""
+
+    torch = _torch()
+    output_weight = _weight(
+        source_attention.out_proj,
+        "source_attention.out_proj",
+        dimensions=2,
+    ).detach().to(device="cpu", dtype=torch.float64)
+    encoder = _finite_tensor(
+        chart.post_operator.mapping.encoder,
+        "post_operator boundary encoder",
+        dimensions=2,
+    ).to(device="cpu", dtype=torch.float64)
+    head_dim = _nonnegative_int(
+        int(source_attention.head_dim),
+        "source_attention.head_dim",
+    )
+    if head_dim == 0:
+        raise Lfm2CpcfLayerCompilerError(
+            "source_attention.head_dim must be positive."
+        )
+    source_width, context_width = map(int, output_weight.shape)
+    if (
+        source_width != chart.source_width
+        or int(encoder.shape[0]) != source_width
+        or context_width % head_dim
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Parent O topology does not compose with the post-operator chart."
+        )
+    query_heads = context_width // head_dim
+    output_blocks = output_weight.reshape(
+        source_width,
+        query_heads,
+        head_dim,
+    )
+    return torch.einsum(
+        "ohd,ot->hdt",
+        output_blocks,
+        encoder,
+    ).contiguous()
+
+
+def _encoded_parent_attention_contribution(
+    *,
+    parent_context: Any,
+    cached_source_output: Any,
+    cached_target_output: Any,
+    source_output_weight: Any,
+    target_encoder: Any,
+    target_output_blocks: Any,
+    name: str,
+) -> Any:
+    """Return the directional target-space residual write of every parent head."""
+
+    torch = _torch()
+    context_native = _finite_tensor(
+        parent_context,
+        f"{name}.context",
+        dimensions=4,
+    )
+    source_output_native = _finite_tensor(
+        cached_source_output,
+        f"{name}.source_output",
+        dimensions=3,
+    )
+    target_output = _finite_tensor(
+        cached_target_output,
+        f"{name}.target_output",
+        dimensions=3,
+    )
+    output_weight_native = _finite_tensor(
+        source_output_weight,
+        f"{name}.source_output_weight",
+        dimensions=2,
+    )
+    encoder = _finite_tensor(
+        target_encoder,
+        f"{name}.target_encoder",
+        dimensions=2,
+    ).to(torch.float64)
+    blocks = _finite_tensor(
+        target_output_blocks,
+        f"{name}.target_output_blocks",
+        dimensions=3,
+    ).to(torch.float64)
+    batch, query_heads, query_rows, head_dim = map(
+        int,
+        context_native.shape,
+    )
+    source_width, context_width = map(int, output_weight_native.shape)
+    target_width = int(encoder.shape[1])
+    if (
+        context_width != query_heads * head_dim
+        or tuple(source_output_native.shape)
+        != (batch, query_rows, source_width)
+        or tuple(target_output.shape)
+        != (batch, query_rows, target_width)
+        or tuple(encoder.shape) != (source_width, target_width)
+        or tuple(blocks.shape[:2]) != (query_heads, head_dim)
+        or int(blocks.shape[2]) != target_width
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} parent context, O output, and target O blocks are misaligned."
+        )
+    context = context_native.to(torch.float64)
+    output_weight = output_weight_native.to(torch.float64)
+    expected_blocks = torch.einsum(
+        "ohd,ot->hdt",
+        output_weight.reshape(
+            source_width,
+            query_heads,
+            head_dim,
+        ),
+        encoder,
+    ).contiguous()
+    block_scale = max(
+        float(expected_blocks.abs().max().item()),
+        torch.finfo(torch.float64).tiny,
+    )
+    if float((blocks - expected_blocks).abs().max().item()) > (
+        32.0 * torch.finfo(torch.float64).eps * block_scale
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} target O blocks do not match the source O/chart composition."
+        )
+    contribution = torch.einsum(
+        "bhqd,hdt->bhqt",
+        context,
+        blocks,
+    ).contiguous()
+    source_prediction = torch.einsum(
+        "bhqd,ohd->bqo",
+        context,
+        output_weight.reshape(
+            source_width,
+            query_heads,
+            head_dim,
+        ),
+    ).contiguous()
+    source_reference = source_output_native.to(torch.float64)
+    encoded_source_reference = torch.matmul(
+        source_reference,
+        encoder,
+    ).contiguous()
+    target_reference = target_output.to(torch.float64)
+    target_reference_scale = max(
+        float(encoded_source_reference.abs().max().item()),
+        torch.finfo(torch.float64).tiny,
+    )
+    if float(
+        (target_reference - encoded_source_reference).abs().max().item()
+    ) > (32.0 * torch.finfo(torch.float64).eps * target_reference_scale):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} cached target O output is not the FP64 chart encoding "
+            "of the cached source O output."
+        )
+
+    # Cached low-precision O output is rounded after an FP32-accumulating
+    # projection.  Authenticate it against that arithmetic contract instead
+    # of allowing an arbitrary multiple of the BF16/FP16 epsilon.  The bound
+    # accounts for dot-product accumulation, optional TF32 FP32 products, and
+    # final output materialization, then transports the source-space bound
+    # through the absolute chart map.
+    dot_terms = context_width
+    accumulator_dtype = (
+        torch.float64
+        if (
+            context_native.dtype == torch.float64
+            and output_weight_native.dtype == torch.float64
+        )
+        else torch.float32
+    )
+    accumulator_unit = torch.finfo(accumulator_dtype).eps / 2.0
+    operation_count = 2 * dot_terms
+    accumulated = operation_count * accumulator_unit
+    accumulation_gamma = (
+        accumulated / (1.0 - accumulated)
+        if accumulated < 1.0
+        else float("inf")
+    )
+    if not math.isfinite(accumulation_gamma):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} O projection is too wide for a finite accumulation bound."
+        )
+    tf32_product_unit = (
+        2.0**-10
+        if (
+            context_native.dtype == torch.float32
+            or output_weight_native.dtype == torch.float32
+        )
+        else 0.0
+    )
+    output_unit = torch.finfo(source_output_native.dtype).eps / 2.0
+    absolute_term_sum = torch.einsum(
+        "bhqd,ohd->bqo",
+        context.abs(),
+        output_weight.abs().reshape(
+            source_width,
+            query_heads,
+            head_dim,
+        ),
+    )
+    source_roundoff_bound = 2.0 * (
+        (accumulation_gamma + tf32_product_unit) * absolute_term_sum
+        + output_unit * source_prediction.abs()
+    )
+    source_floor = (
+        torch.finfo(source_output_native.dtype).tiny
+        * torch.finfo(source_output_native.dtype).eps
+    )
+    source_roundoff_bound = source_roundoff_bound + source_floor
+    source_error_rmse = float(
+        (source_prediction - source_reference).square().mean().sqrt().item()
+    )
+    source_bound_rmse = float(
+        source_roundoff_bound.square().mean().sqrt().item()
+    )
+    if source_error_rmse > source_bound_rmse:
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} cached source O output exceeds its accumulation-aware "
+            f"rounding bound ({source_error_rmse} > {source_bound_rmse})."
+        )
+
+    # The chart and O map are linear, so head-local writes must sum to the
+    # same target-space write as the cached complete parent O output.
+    reconstructed = contribution.sum(dim=1)
+    target_roundoff_bound = torch.matmul(
+        source_roundoff_bound,
+        encoder.abs(),
+    )
+    target_association_scale = torch.matmul(
+        absolute_term_sum,
+        encoder.abs(),
+    )
+    target_roundoff_bound = target_roundoff_bound + (
+        64.0
+        * torch.finfo(torch.float64).eps
+        * target_association_scale
+    )
+    target_error_rmse = float(
+        (reconstructed - target_reference).square().mean().sqrt().item()
+    )
+    target_bound_rmse = float(
+        target_roundoff_bound.square().mean().sqrt().item()
+    )
+    if (
+        int(contribution.shape[-1]) <= 0
+        or not bool(torch.isfinite(contribution).all().item())
+        or target_error_rmse > target_bound_rmse
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} target-space O contribution does not reconstruct the "
+            "FP64-encoded cached complete O write within its accumulation-aware "
+            f"bound ({target_error_rmse} > {target_bound_rmse})."
+        )
+    return contribution
+
+
 def _attention_cases(
     *,
     source_model: Any,
@@ -2021,6 +2329,13 @@ def _attention_cases(
     )
     if not math.isclose(q_epsilon, k_epsilon, rel_tol=0.0, abs_tol=0.0):
         raise Lfm2CpcfLayerCompilerError("Source Q/K normalization epsilon differs.")
+    target_output_blocks = _attention_output_blocks_in_target_space(
+        source_attention=source_attention,
+        chart=chart,
+    )
+    phase_sqrt_weights = _equal_causal_phase_sqrt_weights(
+        input_bank.phases,
+    )
     grouped: dict[
         tuple[int, str],
         list[Lfm2CpcfTargetPhase],
@@ -2037,7 +2352,9 @@ def _attention_cases(
         query_linear_parts = []
         query_parts = []
         context_parts = []
+        contribution_parts = []
         endpoint_parts = []
+        row_sqrt_weight_parts = []
         key_linear_history = None
         key_history = None
         value_history = None
@@ -2310,8 +2627,29 @@ def _attention_cases(
             endpoint = chart.post_operator.encode_shaped(
                 tensors["residual.post_operator"]
             )
+            encoded_output = chart.post_operator.encode_shaped(
+                tensors["attention.o"]
+            )
+            parent_contribution = _encoded_parent_attention_contribution(
+                parent_context=parent_context,
+                cached_source_output=tensors["attention.o"],
+                cached_target_output=encoded_output,
+                source_output_weight=source_attention.out_proj.weight,
+                target_encoder=chart.post_operator.mapping.encoder,
+                target_output_blocks=target_output_blocks,
+                name=f"phase {phase.identity!r} attention",
+            )
+            row_sqrt_weights = phase_sqrt_weights[phase.identity]
             if (
                 int(endpoint.shape[1]) != current
+                or tuple(parent_contribution.shape[:3])
+                != (
+                    phase.batch_size,
+                    int(parent_query.shape[1]),
+                    current,
+                )
+                or tuple(row_sqrt_weights.shape)
+                != (phase.batch_size, current)
                 or int(key_linear_history.shape[2]) != phase.full_prefix_tokens
                 or tuple(key_mask_history.shape)
                 != (
@@ -2327,7 +2665,9 @@ def _attention_cases(
             query_linear_parts.append(parent_q_linear)
             query_parts.append(parent_query)
             context_parts.append(parent_context)
+            contribution_parts.append(parent_contribution)
             endpoint_parts.append(endpoint)
+            row_sqrt_weight_parts.append(row_sqrt_weights)
             previous_phase = phase
             previous_child_input = child_input
             previous_child_state = child_state
@@ -2360,12 +2700,22 @@ def _attention_cases(
         ).contiguous()
         parent_query = torch.cat(query_parts, dim=2).contiguous()
         parent_context = torch.cat(context_parts, dim=2).contiguous()
+        parent_contribution = torch.cat(
+            contribution_parts,
+            dim=2,
+        ).contiguous()
         parent_endpoint = torch.cat(endpoint_parts, dim=1).contiguous()
+        row_sqrt_weights = torch.cat(
+            row_sqrt_weight_parts,
+            dim=1,
+        ).contiguous()
         if not (
             int(parent_query_linear.shape[2])
             == int(parent_query.shape[2])
             == int(parent_context.shape[2])
+            == int(parent_contribution.shape[2])
             == int(parent_endpoint.shape[1])
+            == int(row_sqrt_weights.shape[1])
             == final_phase.full_prefix_tokens
         ):
             raise Lfm2CpcfLayerCompilerError(
@@ -2389,6 +2739,9 @@ def _attention_cases(
                 key_cosine=final_cos,
                 key_sine=final_sin,
                 key_mask=key_mask_history,
+                parent_contribution=parent_contribution,
+                query_row_sqrt_weights=row_sqrt_weights,
+                key_value_row_sqrt_weights=row_sqrt_weights.clone(),
             )
         )
     if not result:
@@ -2998,35 +3351,100 @@ def _split_endpoint_metrics(
         layer_predictions = []
         layer_targets = []
         phase_seals = []
+        phase_groups: dict[str, dict[str, list[Any]]] = {}
         for phase in input_bank.phases:
             if phase.split != split:
                 continue
             tensors = _phase_evidence(phase, layer_index, chart.operator_kind)
-            operator_predictions.append(
-                phase.suffix(
-                    operator_replay.replays[phase.identity].post_operator_residual
-                ).to(device="cpu")
+            operator_prediction = phase.suffix(
+                operator_replay.replays[phase.identity].post_operator_residual
+            ).to(device="cpu")
+            operator_target = chart.post_operator.encode_shaped(
+                tensors["residual.post_operator"]
+            ).to(device="cpu")
+            layer_prediction = phase.suffix(
+                final_replay.replays[phase.identity].post_layer_residual
+            ).to(device="cpu")
+            layer_target = chart.post_layer.encode_shaped(
+                tensors["residual.post_layer"]
+            ).to(device="cpu")
+            operator_predictions.append(operator_prediction)
+            operator_targets.append(operator_target)
+            layer_predictions.append(layer_prediction)
+            layer_targets.append(layer_target)
+            phase_group = phase_groups.setdefault(
+                phase.phase,
+                {
+                    "operator_predictions": [],
+                    "operator_targets": [],
+                    "layer_predictions": [],
+                    "layer_targets": [],
+                    "phase_sha256": [],
+                },
             )
-            operator_targets.append(
-                chart.post_operator.encode_shaped(tensors["residual.post_operator"]).to(
-                    device="cpu"
-                )
+            phase_group["operator_predictions"].append(
+                operator_prediction
             )
-            layer_predictions.append(
-                phase.suffix(
-                    final_replay.replays[phase.identity].post_layer_residual
-                ).to(device="cpu")
-            )
-            layer_targets.append(
-                chart.post_layer.encode_shaped(tensors["residual.post_layer"]).to(
-                    device="cpu"
-                )
-            )
+            phase_group["operator_targets"].append(operator_target)
+            phase_group["layer_predictions"].append(layer_prediction)
+            phase_group["layer_targets"].append(layer_target)
+            phase_group["phase_sha256"].append(phase.phase_sha256)
             phase_seals.append(phase.phase_sha256)
         if not operator_predictions:
             raise Lfm2CpcfLayerCompilerError(
                 f"Layer evaluation requires at least one {split} phase."
             )
+        phase_metrics = {}
+        for phase_name, values in phase_groups.items():
+            phase_operator_prediction = torch.cat(
+                [
+                    value.reshape(-1, int(value.shape[-1]))
+                    for value in values["operator_predictions"]
+                ],
+                dim=0,
+            )
+            phase_operator_target = torch.cat(
+                [
+                    value.reshape(-1, int(value.shape[-1]))
+                    for value in values["operator_targets"]
+                ],
+                dim=0,
+            )
+            phase_layer_prediction = torch.cat(
+                [
+                    value.reshape(-1, int(value.shape[-1]))
+                    for value in values["layer_predictions"]
+                ],
+                dim=0,
+            )
+            phase_layer_target = torch.cat(
+                [
+                    value.reshape(-1, int(value.shape[-1]))
+                    for value in values["layer_targets"]
+                ],
+                dim=0,
+            )
+            phase_body = {
+                "phase": phase_name,
+                "phase_count": len(values["phase_sha256"]),
+                "phase_sha256": list(values["phase_sha256"]),
+                "post_operator": dict(
+                    _metrics(
+                        phase_operator_prediction,
+                        phase_operator_target,
+                    )
+                ),
+                "post_layer": dict(
+                    _metrics(
+                        phase_layer_prediction,
+                        phase_layer_target,
+                    )
+                ),
+            }
+            phase_metrics[phase_name] = {
+                **phase_body,
+                "report_sha256": _sha(phase_body),
+            }
         operator_prediction = torch.cat(
             [value.reshape(-1, int(value.shape[-1])) for value in operator_predictions],
             dim=0,
@@ -3049,6 +3467,7 @@ def _split_endpoint_metrics(
             "phase_sha256": phase_seals,
             "post_operator": dict(_metrics(operator_prediction, operator_target)),
             "post_layer": dict(_metrics(layer_prediction, layer_target)),
+            "phase_metrics": phase_metrics,
         }
         result[split] = {**body, "report_sha256": _sha(body)}
     return MappingProxyType(result)
@@ -5653,6 +6072,20 @@ def compile_and_install_lfm2_cpcf_layer(
                 "attention_repeated_prefix_fit_rows": (
                     False if operator_kind == "full_attention" else "not_applicable"
                 ),
+                "attention_fit_phase_weighting": (
+                    "equal_total_mass_per_causal_phase_with_global_mean_square_one"
+                    if operator_kind == "full_attention"
+                    else "not_applicable"
+                ),
+                "attention_parent_residual_contribution": (
+                    "head_local_O_write_composed_through_post_operator_chart"
+                    if operator_kind == "full_attention"
+                    else "not_applicable"
+                ),
+                "attention_residual_contribution_direction_preserved": (
+                    True if operator_kind == "full_attention" else "not_applicable"
+                ),
+                "endpoint_metrics_by_causal_phase": True,
                 "short_conv_validation_role": (
                     "post_materialization_heldout_evaluator"
                     if operator_kind == "short_conv"

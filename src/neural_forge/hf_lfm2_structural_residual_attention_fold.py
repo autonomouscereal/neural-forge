@@ -134,6 +134,44 @@ def _boolean_tensor(value: Any, name: str, *, shape: tuple[int, ...]) -> Any:
     return value.detach().to(device="cpu").contiguous()
 
 
+def _sqrt_row_weights(
+    value: Any | None,
+    name: str,
+    *,
+    shape: tuple[int, int],
+) -> Any:
+    """Return positive square-root least-squares weights for aligned rows."""
+
+    torch = _torch()
+    if value is None:
+        return torch.ones(shape, dtype=torch.float64)
+    result = _float_tensor(value, name, ndim=2)
+    if tuple(result.shape) != shape or not bool((result > 0.0).all().item()):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} must have shape {shape} and contain only positive values."
+        )
+    return result
+
+
+def _row_weighting_mode(
+    supplied: Sequence[bool],
+    name: str,
+) -> str:
+    """Describe whether aligned row weights came from the caller."""
+
+    values = tuple(supplied)
+    if not values:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} requires at least one case."
+        )
+    supplied_count = sum(values)
+    if supplied_count == 0:
+        return "uniform_default"
+    if supplied_count == len(values):
+        return "caller_supplied_positive_sqrt_row_weights"
+    return "mixed_uniform_default_and_caller_supplied_positive_sqrt_row_weights"
+
+
 def _dense_template(value: Any, name: str, *, ndim: int = 2) -> tuple[Any, tuple[int, ...]]:
     torch = _torch()
     if (
@@ -795,11 +833,18 @@ def _factor_score_barycenter(
     target_query_heads: int,
     target_key_value_heads: int,
     head_dim: int,
+    query_sqrt_weights: Any,
 ) -> tuple[Any, Any]:
-    """Low-rank factor target scores, with deterministic anchor orientation."""
+    """Weighted low-rank score target with deterministic anchor orientation."""
 
     torch = _torch()
     batch, _heads, query_length, key_length = map(int, centered_scores.shape)
+    if tuple(query_sqrt_weights.shape) != (batch, query_length) or not bool(
+        (query_sqrt_weights > 0.0).all().item()
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "query_sqrt_weights do not align with centered score rows."
+        )
     offsets = target_query_heads // target_key_value_heads
     query = torch.zeros(
         (batch, target_query_heads, query_length, head_dim), dtype=torch.float64
@@ -816,7 +861,14 @@ def _factor_score_barycenter(
                 .reshape(offsets * query_length, key_length)
                 * math.sqrt(head_dim)
             )
-            left, singular, right_h = torch.linalg.svd(matrix, full_matrices=False)
+            row_sqrt_weights = query_sqrt_weights[batch_index].repeat(
+                offsets
+            )
+            weighted_matrix = matrix * row_sqrt_weights.unsqueeze(1)
+            left, singular, right_h = torch.linalg.svd(
+                weighted_matrix,
+                full_matrices=False,
+            )
             rank = min(head_dim, int(singular.numel()))
             left_factor = torch.zeros(
                 (offsets * query_length, head_dim), dtype=torch.float64
@@ -825,6 +877,7 @@ def _factor_score_barycenter(
             root = torch.sqrt(singular[:rank].clamp_min(0.0))
             left_factor[:, :rank] = left[:, :rank] * root
             right_factor[:, :rank] = right_h[:rank].T * root
+            left_factor /= row_sqrt_weights.unsqueeze(1)
 
             anchor = key_anchor[batch_index, group]
             cross = right_factor.T @ anchor
@@ -1559,6 +1612,8 @@ class Lfm2CachedAttentionFoldCase:
     key_sine: Any | None = None
     key_mask: Any | None = None
     parent_contribution: Any | None = None
+    query_row_sqrt_weights: Any | None = None
+    key_value_row_sqrt_weights: Any | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1882,6 +1937,10 @@ class Lfm2CompiledStructuralAttentionFold:
     compiled_state_sha256: str
     centered_score_relative_rmse: float
     residual_endpoint_relative_rmse: float
+    query_row_weighting_mode: str
+    key_value_row_weighting_mode: str
+    query_row_sqrt_weight_bundle_sha256: str
+    key_value_row_sqrt_weight_bundle_sha256: str
     prior_correction_reports: tuple[Lfm2PriorCorrectionReport, ...]
     audit: Lfm2StructuralAttentionFoldAudit
 
@@ -1941,6 +2000,19 @@ class Lfm2CompiledStructuralAttentionFold:
             "qk_solver": "closed_form_svd_factorization_plus_linear_regression",
             "v_solver": "full_assignment_barycenter_plus_linear_regression",
             "o_solver": "child_attention_context_to_residual_endpoint_regression",
+            "query_row_weighting_mode": self.query_row_weighting_mode,
+            "key_value_row_weighting_mode": self.key_value_row_weighting_mode,
+            "query_row_sqrt_weight_bundle_sha256": (
+                self.query_row_sqrt_weight_bundle_sha256
+            ),
+            "key_value_row_sqrt_weight_bundle_sha256": (
+                self.key_value_row_sqrt_weight_bundle_sha256
+            ),
+            "equal_causal_phase_mass_proven": False,
+            "causal_phase_weighting": "authenticated_cpcf_caller_report_required",
+            "residual_contribution_signature": (
+                "full_vector_when_supplied_context_magnitude_fallback"
+            ),
             "audit": self.audit.as_dict(),
         }
 
@@ -1967,6 +2039,10 @@ class Lfm2CompiledStructuralAttentionProducerFold:
     source_derived_prior_sha256: str | None
     compiled_state_sha256: str
     centered_score_relative_rmse: float
+    query_row_weighting_mode: str
+    key_value_row_weighting_mode: str
+    query_row_sqrt_weight_bundle_sha256: str
+    key_value_row_sqrt_weight_bundle_sha256: str
     prior_correction_reports: tuple[Lfm2PriorCorrectionReport, ...]
 
     @property
@@ -2053,6 +2129,16 @@ class Lfm2CompiledStructuralAttentionProducerFold:
             "centered_score_relative_rmse": (
                 self.centered_score_relative_rmse
             ),
+            "query_row_weighting_mode": self.query_row_weighting_mode,
+            "key_value_row_weighting_mode": self.key_value_row_weighting_mode,
+            "query_row_sqrt_weight_bundle_sha256": (
+                self.query_row_sqrt_weight_bundle_sha256
+            ),
+            "key_value_row_sqrt_weight_bundle_sha256": (
+                self.key_value_row_sqrt_weight_bundle_sha256
+            ),
+            "equal_causal_phase_mass_proven": False,
+            "causal_phase_weighting": "authenticated_cpcf_caller_report_required",
             "prior_correction_reports": [
                 value.as_dict() for value in self.prior_correction_reports
             ],
@@ -3806,6 +3892,14 @@ def compile_lfm2_structural_residual_attention_fold(
         raise Lfm2StructuralResidualAttentionFoldError(
             "cases must contain at least one Lfm2CachedAttentionFoldCase."
         )
+    query_row_weighting_mode = _row_weighting_mode(
+        tuple(case.query_row_sqrt_weights is not None for case in cases),
+        "query row weighting",
+    )
+    key_value_row_weighting_mode = _row_weighting_mode(
+        tuple(case.key_value_row_sqrt_weights is not None for case in cases),
+        "key/value row weighting",
+    )
 
     source_values = {
         "q_proj.weight": source_query_weight,
@@ -4048,6 +4142,16 @@ def compile_lfm2_structural_residual_attention_fold(
                 shape=(batch, query_length, key_length),
             )
         )
+        query_sqrt_weights = _sqrt_row_weights(
+            case.query_row_sqrt_weights,
+            f"{prefix}.query_row_sqrt_weights",
+            shape=(batch, query_length),
+        )
+        key_value_sqrt_weights = _sqrt_row_weights(
+            case.key_value_row_sqrt_weights,
+            f"{prefix}.key_value_row_sqrt_weights",
+            shape=(batch, key_length),
+        )
         rope_values: dict[str, Any | None] = {}
         supplied_rope = (
             case.query_cosine,
@@ -4173,41 +4277,69 @@ def compile_lfm2_structural_residual_attention_fold(
                 "target_residual": target_residual,
                 "mask": mask,
                 "contribution": contribution,
+                "query_sqrt_weights": query_sqrt_weights,
+                "key_value_sqrt_weights": key_value_sqrt_weights,
                 **rope_values,
             }
         )
+    query_row_sqrt_weight_bundle_sha256 = _state_sha256(
+        {
+            f"case.{index:04d}": value["query_sqrt_weights"]
+            for index, value in enumerate(normalized)
+        }
+    )
+    key_value_row_sqrt_weight_bundle_sha256 = _state_sha256(
+        {
+            f"case.{index:04d}": value["key_value_sqrt_weights"]
+            for index, value in enumerate(normalized)
+        }
+    )
 
     with torch.no_grad():
         query_signatures = torch.cat(
             [
-                value["query"].permute(1, 0, 2, 3).reshape(source_query_heads, -1)
+                (
+                    value["query"]
+                    * value["query_sqrt_weights"][:, None, :, None]
+                )
+                .permute(1, 0, 2, 3)
+                .reshape(source_query_heads, -1)
                 for value in normalized
             ],
             dim=1,
         )
         key_signatures = torch.cat(
             [
-                value["key"].permute(1, 0, 2, 3).reshape(
-                    source_key_value_heads, -1
+                (
+                    value["key"]
+                    * value["key_value_sqrt_weights"][:, None, :, None]
                 )
+                .permute(1, 0, 2, 3)
+                .reshape(source_key_value_heads, -1)
                 for value in normalized
             ],
             dim=1,
         )
         value_signatures = torch.cat(
             [
-                value["value"].permute(1, 0, 2, 3).reshape(
-                    source_key_value_heads, -1
+                (
+                    value["value"]
+                    * value["key_value_sqrt_weights"][:, None, :, None]
                 )
+                .permute(1, 0, 2, 3)
+                .reshape(source_key_value_heads, -1)
                 for value in normalized
             ],
             dim=1,
         )
         context_signatures = torch.cat(
             [
-                value["context"].permute(1, 0, 2, 3).reshape(
-                    source_query_heads, -1
+                (
+                    value["context"]
+                    * value["query_sqrt_weights"][:, None, :, None]
                 )
+                .permute(1, 0, 2, 3)
+                .reshape(source_query_heads, -1)
                 for value in normalized
             ],
             dim=1,
@@ -4215,12 +4347,20 @@ def compile_lfm2_structural_residual_attention_fold(
         contribution_signatures = torch.cat(
             [
                 (
-                    value["context"].square().sum(dim=-1).sqrt()
+                    (
+                        value["context"].square().sum(dim=-1).sqrt()
+                        * value["query_sqrt_weights"][:, None, :]
+                    )
+                    .permute(1, 0, 2)
+                    .reshape(source_query_heads, -1)
                     if value["contribution"] is None
-                    else value["contribution"].square().sum(dim=-1).sqrt()
+                    else (
+                        value["contribution"]
+                        * value["query_sqrt_weights"][:, None, :, None]
+                    )
+                    .permute(1, 0, 2, 3)
+                    .reshape(source_query_heads, -1)
                 )
-                .permute(1, 0, 2)
-                .reshape(source_query_heads, -1)
                 for value in normalized
             ],
             dim=1,
@@ -4309,6 +4449,7 @@ def compile_lfm2_structural_residual_attention_fold(
                 target_query_heads=target_query_heads,
                 target_key_value_heads=target_key_value_heads,
                 head_dim=head_dim,
+                query_sqrt_weights=value["query_sqrt_weights"],
             )
             q_linear_target = _projection_target_from_runtime(
                 factor_q,
@@ -4349,67 +4490,80 @@ def compile_lfm2_structural_residual_attention_fold(
                 }
             )
 
+        query_fit_sqrt = torch.cat(
+            [
+                value["query_sqrt_weights"].reshape(-1, 1)
+                for value in normalized
+            ],
+            dim=0,
+        )
+        key_value_fit_sqrt = torch.cat(
+            [
+                value["key_value_sqrt_weights"].reshape(-1, 1)
+                for value in normalized
+            ],
+            dim=0,
+        )
+        query_input_rows = torch.cat(
+            [
+                value["target_q_input"].reshape(-1, target_hidden)
+                for value in normalized
+            ],
+            dim=0,
+        )
+        key_value_input_rows = torch.cat(
+            [
+                value["target_kv_input"].reshape(-1, target_hidden)
+                for value in normalized
+            ],
+            dim=0,
+        )
+        query_target_rows = torch.cat(
+            [
+                value["q_linear"].permute(0, 2, 1, 3).reshape(
+                    -1, target_query_heads * head_dim
+                )
+                for value in case_targets
+            ],
+            dim=0,
+        )
+        key_target_rows = torch.cat(
+            [
+                value["k_linear"].permute(0, 2, 1, 3).reshape(
+                    -1, target_key_value_heads * head_dim
+                )
+                for value in case_targets
+            ],
+            dim=0,
+        )
+        value_target_rows = torch.cat(
+            [
+                value["value"].permute(0, 2, 1, 3).reshape(
+                    -1, target_key_value_heads * head_dim
+                )
+                for value in case_targets
+            ],
+            dim=0,
+        )
         query_weight, query_fit_report = _fit_linear(
-            torch.cat(
-                [
-                    value["target_q_input"].reshape(-1, target_hidden)
-                    for value in normalized
-                ],
-                dim=0,
-            ),
-            torch.cat(
-                [
-                    value["q_linear"].permute(0, 2, 1, 3).reshape(
-                        -1, target_query_heads * head_dim
-                    )
-                    for value in case_targets
-                ],
-                dim=0,
-            ),
+            query_input_rows * query_fit_sqrt,
+            query_target_rows * query_fit_sqrt,
             role="query",
             ridge=ridge,
             prior=normalized_priors["q_proj.weight"],
             max_prior_delta_ratio=max_prior_delta_ratio,
         )
         key_weight, key_fit_report = _fit_linear(
-            torch.cat(
-                [
-                    value["target_kv_input"].reshape(-1, target_hidden)
-                    for value in normalized
-                ],
-                dim=0,
-            ),
-            torch.cat(
-                [
-                    value["k_linear"].permute(0, 2, 1, 3).reshape(
-                        -1, target_key_value_heads * head_dim
-                    )
-                    for value in case_targets
-                ],
-                dim=0,
-            ),
+            key_value_input_rows * key_value_fit_sqrt,
+            key_target_rows * key_value_fit_sqrt,
             role="key",
             ridge=ridge,
             prior=normalized_priors["k_proj.weight"],
             max_prior_delta_ratio=max_prior_delta_ratio,
         )
         value_weight, value_fit_report = _fit_linear(
-            torch.cat(
-                [
-                    value["target_kv_input"].reshape(-1, target_hidden)
-                    for value in normalized
-                ],
-                dim=0,
-            ),
-            torch.cat(
-                [
-                    value["value"].permute(0, 2, 1, 3).reshape(
-                        -1, target_key_value_heads * head_dim
-                    )
-                    for value in case_targets
-                ],
-                dim=0,
-            ),
+            key_value_input_rows * key_value_fit_sqrt,
+            value_target_rows * key_value_fit_sqrt,
             role="value",
             ridge=ridge,
             prior=normalized_priors["v_proj.weight"],
@@ -4476,8 +4630,12 @@ def compile_lfm2_structural_residual_attention_fold(
                 ) / math.sqrt(head_dim)
                 score_predictions.append(
                     _center_scores(scores, value["mask"])
+                    * value["query_sqrt_weights"][:, None, :, None]
                 )
-                score_targets.append(targets["target_scores"])
+                score_targets.append(
+                    targets["target_scores"]
+                    * value["query_sqrt_weights"][:, None, :, None]
+                )
             source_after = _state_sha256(source_values)
             producer_source_values = {
                 "q_proj.weight": source_query_weight,
@@ -4571,6 +4729,14 @@ def compile_lfm2_structural_residual_attention_fold(
                         ]
                     ),
                 ),
+                query_row_weighting_mode=query_row_weighting_mode,
+                key_value_row_weighting_mode=key_value_row_weighting_mode,
+                query_row_sqrt_weight_bundle_sha256=(
+                    query_row_sqrt_weight_bundle_sha256
+                ),
+                key_value_row_sqrt_weight_bundle_sha256=(
+                    key_value_row_sqrt_weight_bundle_sha256
+                ),
                 prior_correction_reports=(
                     query_fit_report,
                     key_fit_report,
@@ -4619,8 +4785,14 @@ def compile_lfm2_structural_residual_attention_fold(
             scores = torch.matmul(q_child, repeated_k.transpose(-2, -1)) / math.sqrt(
                 head_dim
             )
-            score_predictions.append(_center_scores(scores, value["mask"]))
-            score_targets.append(targets["target_scores"])
+            score_predictions.append(
+                _center_scores(scores, value["mask"])
+                * value["query_sqrt_weights"][:, None, :, None]
+            )
+            score_targets.append(
+                targets["target_scores"]
+                * value["query_sqrt_weights"][:, None, :, None]
+            )
             if value["mask"] is not None:
                 scores = scores.masked_fill(~value["mask"].unsqueeze(1), -1e30)
             probabilities = torch.softmax(scores, dim=-1, dtype=torch.float64)
@@ -4632,11 +4804,13 @@ def compile_lfm2_structural_residual_attention_fold(
                 context.permute(0, 2, 1, 3).reshape(
                     batch * query_length, target_query_heads * head_dim
                 )
+                * value["query_sqrt_weights"].reshape(-1, 1)
             )
             endpoint_rows.append(
                 (
                     value["parent_output"] - value["target_residual"]
                 ).reshape(batch * query_length, target_output)
+                * value["query_sqrt_weights"].reshape(-1, 1)
             )
         child_context_design = torch.cat(child_context_rows, dim=0)
         endpoint_target = torch.cat(endpoint_rows, dim=0)
@@ -4729,6 +4903,14 @@ def compile_lfm2_structural_residual_attention_fold(
         compiled_state_sha256=compiled_sha,
         centered_score_relative_rmse=score_error,
         residual_endpoint_relative_rmse=endpoint_error,
+        query_row_weighting_mode=query_row_weighting_mode,
+        key_value_row_weighting_mode=key_value_row_weighting_mode,
+        query_row_sqrt_weight_bundle_sha256=(
+            query_row_sqrt_weight_bundle_sha256
+        ),
+        key_value_row_sqrt_weight_bundle_sha256=(
+            key_value_row_sqrt_weight_bundle_sha256
+        ),
         prior_correction_reports=(
             query_fit_report,
             key_fit_report,
