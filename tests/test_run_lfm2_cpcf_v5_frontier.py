@@ -42,6 +42,31 @@ def _file_sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _catalog_preparation() -> dict[str, Any]:
+    digests = {
+        name: _digest(f"catalog-{name}")
+        for name in (
+            "preparation_receipt_sha256",
+            "binding_sha256",
+            "artifact_manifest_sha256",
+            "artifact_catalog_sha256",
+            "selective_catalog_sha256",
+            "selective_source_sha256",
+            "selective_provider_sha256",
+            "codec_sha256",
+            "provider_implementation_sha256",
+            "artifact_store_source_sha256",
+            "selective_provider_source_sha256",
+        )
+    }
+    return {
+        "status": "prepared_authenticated_tensor_free_catalog",
+        **digests,
+        "warm_hit_required_for_production_fold": True,
+        "cold_rebuild_permitted_in_production_fold": False,
+    }
+
+
 def _inputs(tmp_path: Path) -> dict[str, Path]:
     paths = {}
     for name in (
@@ -57,9 +82,13 @@ def _inputs(tmp_path: Path) -> dict[str, Path]:
         '{"fixture":"donor-tokenizer"}\n',
         encoding="ascii",
     )
-    corpus = tmp_path / "trajectories.json"
+    corpus_root = tmp_path / "trajectory-input"
+    corpus_root.mkdir()
+    corpus = corpus_root / "trajectories.json"
     corpus.write_text('{"fixture":"cached-only"}\n', encoding="ascii")
-    envelope = tmp_path / "parent-envelope.json"
+    envelope_root = tmp_path / "parent-envelope-input"
+    envelope_root.mkdir()
+    envelope = envelope_root / "parent-envelope.json"
     envelope.write_text('{"fixture":"parent-envelope"}\n', encoding="ascii")
     paths["corpus"] = corpus
     paths["envelope"] = envelope
@@ -89,6 +118,7 @@ def _evidence(
             "holdout-manifest-document"
         ),
         holdout_case_count=64,
+        selective_catalog_preparation=_catalog_preparation(),
     )
 
 
@@ -433,6 +463,9 @@ def _config(
             gpu_selectors=("GPU-test-3090-a", "GPU-test-3090-b"),
         ),
         attempt_id=attempt_id,
+        expected_selective_catalog_receipt_sha256=(
+            _catalog_preparation()["preparation_receipt_sha256"]
+        ),
     )
 
 
@@ -488,6 +521,17 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
     assert report["structural_diagnostics_can_authorize_promotion"] is False
     assert report["publication_authorized"] is False
     assert report["status"] == "capture_quarantine_processes_ready"
+    assert report[
+        "shared_selective_catalog_preparation_receipt_sha256"
+    ] == evidence.selective_catalog_preparation[
+        "preparation_receipt_sha256"
+    ]
+    assert report[
+        "all_ratio_workers_require_exact_authenticated_warm_hit"
+    ] is True
+    assert report[
+        "catalog_cold_rebuilds_permitted_in_ratio_workers"
+    ] is False
 
     all_paths: set[str] = set()
     for lane in plan.lanes:
@@ -514,6 +558,26 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
             lane.catalog_lane.target_plan_fingerprint
         )
         assert "--resume-store-directory" in command
+        store_index = command.index(
+            "--selective-catalog-store-directory"
+        )
+        assert command[store_index + 1] == str(
+            config.selective_catalog_store_directory
+        )
+        receipt_index = command.index(
+            "--selective-catalog-receipt-json"
+        )
+        assert command[receipt_index + 1] == str(
+            config.selective_catalog_receipt_json
+        )
+        receipt_sha_index = command.index(
+            "--expected-selective-catalog-receipt-sha256"
+        )
+        assert command[receipt_sha_index + 1] == (
+            evidence.selective_catalog_preparation[
+                "preparation_receipt_sha256"
+            ]
+        )
         cuda_cap_index = command.index(
             "--maximum-cuda-gib-per-device"
         )
@@ -528,6 +592,15 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
             0,
             1,
         ]
+        assert manifest["selective_catalog_artifact"] == dict(
+            evidence.selective_catalog_preparation
+        )
+        assert manifest[
+            "selective_catalog_authenticated_warm_hit_required"
+        ] is True
+        assert (
+            manifest["selective_catalog_cold_rebuild_permitted"] is False
+        )
 
         capture = manifest["quarantine_capture_template"]
         assert capture["quarantine_capture_request_constructed"] is False
@@ -557,9 +630,233 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
         all_paths.update(path_values)
 
 
+def test_plan_rejects_missing_catalog_and_store_or_receipt_overlap(
+    tmp_path: Path,
+    frontier_fixture,
+) -> None:
+    graph, schedule, bridge_directory = frontier_fixture
+    inputs = _inputs(tmp_path)
+    config = _config(
+        tmp_path,
+        graph=graph,
+        schedule=schedule,
+        inputs=inputs,
+        bridge_directory=bridge_directory,
+    )
+    evidence = _evidence(
+        cache_sha256=config.expected_cache_sha256,
+        corpus=inputs["corpus"],
+        envelope=inputs["envelope"],
+    )
+
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="exact shared authenticated",
+    ):
+        supervisor.build_frontier_supervisor_plan(
+            schedule,
+            config,
+            replace(evidence, selective_catalog_preparation={}),
+        )
+
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="cannot equal, contain, or be contained",
+    ):
+        replace(
+            config,
+            selective_catalog_store_directory=inputs["cache"],
+        )
+
+    invalid_receipts = (
+        config.parent_model_directory / "nested-receipt.json",
+        tmp_path,
+        config.trajectory_corpus,
+        config.parent_envelope.parent / "nested-receipt.json",
+        config.work_directory / "nested-receipt.json",
+        config.selective_catalog_store_directory,
+    )
+    for receipt in invalid_receipts:
+        with pytest.raises(
+            supervisor.Lfm2CpcfV5FrontierSupervisorError,
+            match=(
+                "cannot equal, contain, or be contained|"
+                "must be a regular file path"
+            ),
+        ):
+            replace(
+                config,
+                selective_catalog_receipt_json=receipt,
+            )
+
+
+def test_frontier_catalog_control_paths_accept_safe_sibling_layout(
+    tmp_path: Path,
+    frontier_fixture,
+) -> None:
+    graph, schedule, bridge_directory = frontier_fixture
+    inputs = _inputs(tmp_path)
+    config = _config(
+        tmp_path,
+        graph=graph,
+        schedule=schedule,
+        inputs=inputs,
+        bridge_directory=bridge_directory,
+    )
+
+    assert config.selective_catalog_store_directory == (
+        tmp_path / "selective-catalogs"
+    )
+    assert config.selective_catalog_receipt_json == (
+        tmp_path / "selective-catalog-preparation.json"
+    )
+    assert config.work_directory == tmp_path / "runs"
+    config.selective_catalog_receipt_json.write_text(
+        '{"fixture":"prepared-receipt"}\n',
+        encoding="ascii",
+    )
+    reopened = replace(
+        config,
+        selective_catalog_receipt_json=(
+            config.selective_catalog_receipt_json
+        ),
+    )
+    assert reopened.selective_catalog_receipt_json == (
+        config.selective_catalog_receipt_json
+    )
+    supervisor._assert_catalog_receipt_disjoint(
+        config.selective_catalog_receipt_json,
+        roots={"plan_output": tmp_path / "frontier-plan.json"},
+    )
+
+
+def test_frontier_consumes_exact_runner_catalog_reverification_record() -> None:
+    from experiments import (
+        run_lfm2_cpcf_v5_selective_blank_fold as runner,
+    )
+
+    preparation = _catalog_preparation()
+    emitted = dict(
+        runner.selective_catalog_post_run_reverification_record(
+            preparation
+        )
+    )
+
+    authenticated = (
+        supervisor._authenticate_catalog_post_run_reverification(
+            emitted,
+            catalog_preparation=preparation,
+            name="integration fixture",
+        )
+    )
+    assert dict(authenticated) == emitted
+    assert set(emitted) == {
+        "preparation_receipt_sha256",
+        "binding_sha256",
+        "artifact_manifest_sha256",
+        "artifact_catalog_sha256",
+        "reverified_after_provider_close",
+        "unchanged_across_fold",
+    }
+
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="exact runner-emitted",
+    ):
+        supervisor._authenticate_catalog_post_run_reverification(
+            {
+                "performed": True,
+                "unchanged": True,
+                "preparation_receipt_sha256": preparation[
+                    "preparation_receipt_sha256"
+                ],
+            },
+            catalog_preparation=preparation,
+            name="obsolete frontier fixture",
+        )
+
+
+def test_prepare_only_main_never_discovers_or_allocates_parent(
+    tmp_path: Path,
+    frontier_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    graph, schedule, bridge_directory = frontier_fixture
+    inputs = _inputs(tmp_path)
+    preparation = _catalog_preparation()
+    monkeypatch.setattr(
+        supervisor,
+        "prepare_frontier_selective_catalog",
+        lambda _config: preparation,
+    )
+
+    def forbidden_discovery(_config):
+        raise AssertionError("prepare-only entered parent discovery")
+
+    monkeypatch.setattr(
+        supervisor,
+        "discover_frontier_schedule",
+        forbidden_discovery,
+    )
+    arguments = [
+        "--prepare-selective-catalog-only",
+        "--parent-model-directory",
+        str(inputs["parent"]),
+        "--donor-tokenizer-directory",
+        str(inputs["donor_tokenizer"]),
+        "--target-tokenizer-directory",
+        str(inputs["target_tokenizer"]),
+        "--bridge-directory",
+        str(bridge_directory),
+        "--trace-cache-directory",
+        str(inputs["cache"]),
+        "--trajectory-corpus",
+        str(inputs["corpus"]),
+        "--parent-envelope",
+        str(inputs["envelope"]),
+        "--work-directory",
+        str(tmp_path / "runs"),
+        "--expected-parent-graph-fingerprint",
+        graph.fingerprint,
+        "--expected-bridge-artifact-sha256",
+        schedule.bridge_artifact_sha256,
+        "--expected-cache-sha256",
+        _digest("cache"),
+        "--expected-parent-envelope-file-sha256",
+        _file_sha(inputs["envelope"]),
+    ]
+    result = supervisor.main(arguments)
+
+    assert result == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["preparation_receipt_sha256"] == preparation[
+        "preparation_receipt_sha256"
+    ]
+
+    def forbidden_preparation(_config):
+        raise AssertionError("overlapping plan output reached preparation")
+
+    monkeypatch.setattr(
+        supervisor,
+        "prepare_frontier_selective_catalog",
+        forbidden_preparation,
+    )
+    blocked = supervisor.main(
+        [
+            *arguments,
+            "--plan-output",
+            str(tmp_path / "selective-catalog-preparation.json"),
+        ]
+    )
+    assert blocked == 2
+    assert "plan_output" in capsys.readouterr().err
+
+
 def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
     tmp_path: Path,
     frontier_fixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph, schedule, bridge_directory = frontier_fixture
     inputs = _inputs(tmp_path)
@@ -580,6 +877,11 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
         config,
         evidence,
     )
+    monkeypatch.setattr(
+        supervisor,
+        "authenticate_frontier_catalog_preparation",
+        lambda _config: evidence.selective_catalog_preparation,
+    )
     calls = []
 
     def fake_worker(*args, **kwargs):
@@ -591,13 +893,18 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
         runner_source = _file_sha(supervisor._DIAGNOSTIC_RUNNER)
         target_state = _digest("target-state")
         guard_identity = _digest("fold-only-runtime-guard")
-        source_binding = supervisor._sha(
-            {
-                "selective_source_sha256": selective_source,
-                "compiler_implementation_sha256": compiler_implementation,
-                "runner_source_sha256": runner_source,
-                "fold_only_runtime_guard_identity_sha256": guard_identity,
-            }
+        from experiments import (
+            run_lfm2_cpcf_v5_selective_blank_fold as runner,
+        )
+
+        source_binding = runner._source_binding_sha256(
+            selective_source_sha256=selective_source,
+            compiler_implementation_sha256=compiler_implementation,
+            runner_source_sha256=runner_source,
+            fold_only_runtime_guard_identity_sha256=guard_identity,
+            catalog_preparation=(
+                evidence.selective_catalog_preparation
+            ),
         )
         capture_receipt, final_reload_verification = (
             _write_fake_quarantine_receipt(
@@ -684,6 +991,14 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
             },
             "compiled_model_fold": compiled,
             "compiler_runtime_fold_only_guard": runtime_guard,
+            "selective_catalog_artifact": dict(
+                evidence.selective_catalog_preparation
+            ),
+            "selective_catalog_post_run_reverification": dict(
+                runner.selective_catalog_post_run_reverification_record(
+                    evidence.selective_catalog_preparation
+                )
+            ),
             "resume_progress": {
                 "resume_requested": False,
                 "requested_admission_sha256": None,
@@ -724,6 +1039,14 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
             "compiler_implementation_sha256": compiler_implementation,
             "runner_source_sha256": runner_source,
             "source_binding_sha256": source_binding,
+            "selective_catalog_artifact": dict(
+                evidence.selective_catalog_preparation
+            ),
+            "selective_catalog_post_run_reverification": dict(
+                runner.selective_catalog_post_run_reverification_record(
+                    evidence.selective_catalog_preparation
+                )
+            ),
             "post_capture_source_identities": dict(
                 plan.source_identities
             ),

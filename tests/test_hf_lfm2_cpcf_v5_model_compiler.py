@@ -537,6 +537,48 @@ def test_runtime_contract_binds_transitive_global_from_real_replay_class(
     )
 
 
+def test_runtime_contract_accepts_type_keyed_stdlib_copy_dispatch() -> None:
+    contract_sha = v5._optional_runtime_contract_sha256(
+        Lfm2CpcfShortConvV5NumericalFrontierAdapter(),
+        kind="numerical_frontier",
+    )
+
+    assert len(contract_sha) == 64
+
+
+@pytest.mark.parametrize("category", ("training", "pruning", "quantization"))
+def test_runtime_contract_rejects_forbidden_alias_in_non_string_mapping(
+    category,
+) -> None:
+    from torch.nn.utils import prune
+
+    aliases = {
+        object: {
+            "training": torch.autograd.grad,
+            "pruning": prune.l1_unstructured,
+            "quantization": torch.quantize_per_tensor,
+        }[category]
+    }
+
+    def hidden_dispatch_target():
+        return aliases[object]
+
+    dispatch = {object: hidden_dispatch_target}
+
+    class NumericalAdapter:
+        def generate(self, _request):
+            return dispatch[object]
+
+    with pytest.raises(
+        v5.Lfm2CpcfV5ModelCompilerError,
+        match=rf"forbidden pre-bound {category} alias",
+    ):
+        v5._optional_runtime_contract_sha256(
+            NumericalAdapter(),
+            kind="numerical_frontier",
+        )
+
+
 def test_real_toy_cache_compiles_every_layer_through_selective_v5(
     tmp_path,
     monkeypatch,

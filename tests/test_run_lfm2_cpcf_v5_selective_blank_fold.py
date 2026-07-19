@@ -3,9 +3,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib.util
+import inspect
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,6 +27,32 @@ assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+def _catalog_preparation() -> dict[str, object]:
+    digests = {
+        name: MODULE._sha({"fixture": name})
+        for name in (
+            "preparation_receipt_sha256",
+            "binding_sha256",
+            "artifact_manifest_sha256",
+            "artifact_catalog_sha256",
+            "selective_catalog_sha256",
+            "selective_source_sha256",
+            "selective_provider_sha256",
+            "codec_sha256",
+            "provider_implementation_sha256",
+            "artifact_store_source_sha256",
+            "selective_provider_source_sha256",
+        )
+    }
+    return {
+        "schema": MODULE.SELECTIVE_CATALOG_PREPARATION_SCHEMA,
+        "status": "prepared_authenticated_tensor_free_catalog",
+        **digests,
+        "warm_hit_required_for_production_fold": True,
+        "cold_rebuild_permitted_in_production_fold": False,
+    }
 
 
 def _required_args(tmp_path: Path) -> list[str]:
@@ -88,6 +116,202 @@ def test_parser_reuses_shared_compression_request_and_bounds_memory(
     assert config.resume_store_directory is None
     assert config.resume_admission_sha256 is None
     assert config.forbidden_requests == ()
+
+
+def test_catalog_store_overlap_is_rejected_at_configuration(
+    tmp_path: Path,
+) -> None:
+    args = _required_args(tmp_path)
+    args.extend(
+        (
+            "--selective-catalog-store-directory",
+            str(tmp_path / "cache" / "catalogs"),
+            "--selective-catalog-receipt-json",
+            str(tmp_path / "catalog-preparation.json"),
+        )
+    )
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="cannot equal, contain, or be contained",
+    ):
+        MODULE.config_from_args(MODULE.build_parser().parse_args(args))
+
+
+def test_catalog_receipt_accepts_exact_safe_sibling_layout(
+    tmp_path: Path,
+) -> None:
+    trajectory_root = tmp_path / "trajectory-input"
+    trajectory_root.mkdir()
+    trajectory = trajectory_root / "trajectories.json"
+    trajectory.write_text('{"fixture":"trajectory"}\n', "ascii")
+    args = _required_args(tmp_path)
+    args[args.index("--trajectory-corpus") + 1] = str(trajectory)
+    args[args.index("--diagnostic-json") + 1] = str(
+        tmp_path / "work" / "diagnostic.json"
+    )
+    args.extend(
+        (
+            "--resume-store-directory",
+            str(tmp_path / "resume"),
+            "--selective-catalog-store-directory",
+            str(tmp_path / "catalog-store"),
+            "--selective-catalog-receipt-json",
+            str(tmp_path / "catalog-control" / "preparation.json"),
+        )
+    )
+
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(args)
+    )
+
+    assert config.selective_catalog_receipt_json == (
+        tmp_path / "catalog-control" / "preparation.json"
+    )
+
+
+def test_catalog_receipt_rejects_nested_ancestor_and_equal_paths(
+    tmp_path: Path,
+) -> None:
+    trajectory_root = tmp_path / "trajectory-input"
+    trajectory_root.mkdir()
+    trajectory = trajectory_root / "trajectories.json"
+    trajectory.write_text('{"fixture":"trajectory"}\n', "ascii")
+    args = _required_args(tmp_path)
+    args[args.index("--trajectory-corpus") + 1] = str(trajectory)
+    args[args.index("--diagnostic-json") + 1] = str(
+        tmp_path / "work" / "diagnostic.json"
+    )
+    args.extend(
+        (
+            "--resume-store-directory",
+            str(tmp_path / "resume"),
+            "--selective-catalog-store-directory",
+            str(tmp_path / "catalog-store"),
+            "--selective-catalog-receipt-json",
+            str(tmp_path / "catalog-control" / "preparation.json"),
+        )
+    )
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(args)
+    )
+    invalid_receipts = (
+        config.parent_model_directory / "nested-receipt.json",
+        tmp_path,
+        config.trajectory_corpus,
+        config.resume_store_directory / "nested-receipt.json",
+        config.diagnostic_json,
+        config.selective_catalog_store_directory,
+    )
+
+    for receipt in invalid_receipts:
+        with pytest.raises(
+            MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+            match="cannot equal, contain, or be contained",
+        ):
+            replace(
+                config,
+                selective_catalog_receipt_json=receipt,
+            )
+
+
+def test_production_fold_authenticates_catalog_before_torch_or_model_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "parent",
+        "donor-tokenizer",
+        "target-tokenizer",
+        "bridge",
+        "cache",
+    ):
+        (tmp_path / name).mkdir()
+    trajectory_root = tmp_path / "trajectory-input"
+    trajectory_root.mkdir()
+    trajectory = trajectory_root / "trajectories.json"
+    trajectory.write_text(
+        '{"fixture":"trajectory"}\n',
+        "ascii",
+    )
+    args = _required_args(tmp_path)
+    trajectory_index = args.index("--trajectory-corpus") + 1
+    args[trajectory_index] = str(trajectory)
+    diagnostic_index = args.index("--diagnostic-json") + 1
+    args[diagnostic_index] = str(tmp_path / "work" / "diagnostic.json")
+    args.extend(
+        (
+            "--selective-catalog-store-directory",
+            str(tmp_path / "catalog-store"),
+            "--selective-catalog-receipt-json",
+            str(tmp_path / "catalog-preparation.json"),
+            "--expected-selective-catalog-receipt-sha256",
+            "0" * 64,
+        )
+    )
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(args)
+    )
+
+    def forbidden_torch_configuration():
+        raise AssertionError("torch configured before catalog authentication")
+
+    monkeypatch.setattr(
+        MODULE,
+        "_configure_torch",
+        forbidden_torch_configuration,
+    )
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="receipt is missing",
+    ):
+        MODULE._run(config)
+
+
+def test_catalog_prepare_and_fold_source_order_is_fail_closed() -> None:
+    run_source = inspect.getsource(MODULE._run)
+    prepare_source = inspect.getsource(MODULE.prepare_selective_catalog)
+
+    assert run_source.index(
+        "_read_selective_catalog_preparation(config)"
+    ) < run_source.index("_configure_torch()")
+    assert (
+        "open_lfm2_cpcf_selective_evidence_provider_from_catalog"
+        in run_source
+    )
+    assert (
+        "open_or_build_lfm2_cpcf_selective_evidence_provider"
+        not in run_source
+    )
+    assert "load_local_lfm2_model" not in prepare_source
+    assert "plan_and_synthesize_lfm2_cpcf_blank" not in prepare_source
+    assert "torch.cuda.is_initialized()" in prepare_source
+
+
+def test_catalog_post_run_reverification_record_is_exact() -> None:
+    preparation = _catalog_preparation()
+    record = dict(
+        MODULE.selective_catalog_post_run_reverification_record(
+            preparation
+        )
+    )
+
+    assert dict(
+        MODULE.authenticate_selective_catalog_post_run_reverification(
+            record,
+            catalog_preparation=preparation,
+        )
+    ) == record
+    tampered = dict(record)
+    tampered["artifact_catalog_sha256"] = "0" * 64
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="exact authenticated runner record",
+    ):
+        MODULE.authenticate_selective_catalog_post_run_reverification(
+            tampered,
+            catalog_preparation=preparation,
+        )
 
 
 def test_cuda_allocator_cap_is_enforced_on_both_logical_devices() -> None:
@@ -806,15 +1030,15 @@ def _compiled_consumer_context():
         "report_sha256": MODULE._sha(guard_body),
     }
     zero_audit["compiler_runtime_guard"] = guard_report
-    source_binding_sha = MODULE._sha(
-        {
-            "selective_source_sha256": source_sha,
-            "compiler_implementation_sha256": compiler_sha,
-            "runner_source_sha256": runner_sha,
-            "fold_only_runtime_guard_identity_sha256": guard_identity[
-                "identity_sha256"
-            ],
-        }
+    catalog_preparation = _catalog_preparation()
+    source_binding_sha = MODULE._source_binding_sha256(
+        selective_source_sha256=source_sha,
+        compiler_implementation_sha256=compiler_sha,
+        runner_source_sha256=runner_sha,
+        fold_only_runtime_guard_identity_sha256=guard_identity[
+            "identity_sha256"
+        ],
+        catalog_preparation=catalog_preparation,
     )
     seam = {
         "schema": MODULE.COMPILED_CANDIDATE_CONTEXT_SCHEMA,
@@ -829,6 +1053,24 @@ def _compiled_consumer_context():
         "compiler_sha256": compiler_sha,
         "runner_source_sha256": runner_sha,
         "source_binding_sha256": source_binding_sha,
+        "selective_catalog_preparation_receipt_sha256": (
+            catalog_preparation["preparation_receipt_sha256"]
+        ),
+        "selective_catalog_binding_sha256": catalog_preparation[
+            "binding_sha256"
+        ],
+        "selective_catalog_artifact_manifest_sha256": (
+            catalog_preparation["artifact_manifest_sha256"]
+        ),
+        "selective_catalog_artifact_sha256": catalog_preparation[
+            "artifact_catalog_sha256"
+        ],
+        "selective_catalog_codec_sha256": catalog_preparation[
+            "codec_sha256"
+        ],
+        "selective_catalog_provider_implementation_sha256": (
+            catalog_preparation["provider_implementation_sha256"]
+        ),
         "fold_only_runtime_guard_identity_sha256": guard_identity[
             "identity_sha256"
         ],
@@ -858,6 +1100,12 @@ def _compiled_consumer_context():
         "blank_parameter_inventory": target_auth["parameter_inventory"],
         "compiled_parameter_inventory": target_auth["parameter_inventory"],
         "compiled_candidate_consumer_seam": seam,
+        "selective_catalog_artifact": catalog_preparation,
+        "selective_catalog_post_run_reverification": dict(
+            MODULE.selective_catalog_post_run_reverification_record(
+                catalog_preparation
+            )
+        ),
         "claims": {
             "child_checkpoint_saved": False,
             "publication_attempted": False,
@@ -1422,7 +1670,13 @@ def test_runner_source_has_no_disallowed_execution_or_loader_lane() -> None:
     assert "_build_preregistered_real_v5_numerical_adapter()" in source
     assert '"numerical_frontier_adapter": numerical_adapter' in source
     assert "require_short_conv_v5_real_numerical_frontier_adapter=True" in source
-    assert "build_lfm2_cpcf_selective_evidence_provider(cache)" in source
+    assert (
+        "open_lfm2_cpcf_selective_evidence_provider_from_catalog("
+        in source
+    )
+    assert "prepare_selective_catalog(" in source
+    assert "expected_selective_catalog_receipt_sha256" in source
+    assert "selective_catalog_post_run_reverification" in source
     assert "plan_and_synthesize_lfm2_cpcf_blank(" in source
     assert "Lfm2CpcfV5ResumeCoordinator" in source
     assert "coordinator.open_admitted(" in source

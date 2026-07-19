@@ -450,15 +450,36 @@ def _context(
     }
     guard_report = _sealed(guard_body, "report_sha256")
     zero["compiler_runtime_guard"] = guard_report
-    source_binding = canonical_sha256(
-        {
-            "selective_source_sha256": selective_source,
-            "compiler_implementation_sha256": compiler_implementation,
-            "runner_source_sha256": runner_source,
-            "fold_only_runtime_guard_identity_sha256": guard_identity[
-                "identity_sha256"
-            ],
-        }
+    catalog_preparation = {
+        "schema": runner.SELECTIVE_CATALOG_PREPARATION_SCHEMA,
+        "status": "prepared_authenticated_tensor_free_catalog",
+        **{
+            name: canonical_sha256({"catalog-fixture": name})
+            for name in (
+                "preparation_receipt_sha256",
+                "binding_sha256",
+                "artifact_manifest_sha256",
+                "artifact_catalog_sha256",
+                "selective_catalog_sha256",
+                "selective_source_sha256",
+                "selective_provider_sha256",
+                "codec_sha256",
+                "provider_implementation_sha256",
+                "artifact_store_source_sha256",
+                "selective_provider_source_sha256",
+            )
+        },
+        "warm_hit_required_for_production_fold": True,
+        "cold_rebuild_permitted_in_production_fold": False,
+    }
+    source_binding = runner._source_binding_sha256(
+        selective_source_sha256=selective_source,
+        compiler_implementation_sha256=compiler_implementation,
+        runner_source_sha256=runner_source,
+        fold_only_runtime_guard_identity_sha256=guard_identity[
+            "identity_sha256"
+        ],
+        catalog_preparation=catalog_preparation,
     )
     seam = {
         "target_plan_fingerprint": plan,
@@ -472,6 +493,24 @@ def _context(
         "compiler_sha256": compiler_implementation,
         "runner_source_sha256": runner_source,
         "source_binding_sha256": source_binding,
+        "selective_catalog_preparation_receipt_sha256": (
+            catalog_preparation["preparation_receipt_sha256"]
+        ),
+        "selective_catalog_binding_sha256": catalog_preparation[
+            "binding_sha256"
+        ],
+        "selective_catalog_artifact_manifest_sha256": (
+            catalog_preparation["artifact_manifest_sha256"]
+        ),
+        "selective_catalog_artifact_sha256": catalog_preparation[
+            "artifact_catalog_sha256"
+        ],
+        "selective_catalog_codec_sha256": catalog_preparation[
+            "codec_sha256"
+        ],
+        "selective_catalog_provider_implementation_sha256": (
+            catalog_preparation["provider_implementation_sha256"]
+        ),
         "fold_only_runtime_guard_identity_sha256": guard_identity[
             "identity_sha256"
         ],
@@ -508,6 +547,12 @@ def _context(
             "publication_attempted": False,
         },
         "compiled_candidate_consumer_seam": seam,
+        "selective_catalog_artifact": catalog_preparation,
+        "selective_catalog_post_run_reverification": dict(
+            runner.selective_catalog_post_run_reverification_record(
+                catalog_preparation
+            )
+        ),
     }
     diagnostic = _sealed(diagnostic_body, "receipt_sha256")
     return runner.V5CompiledCandidateConsumerContext(

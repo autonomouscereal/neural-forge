@@ -2120,6 +2120,198 @@ def _optional_runtime_contract_sha256(
     if value is None:
         return _sha({"kind": kind, "provided": False})
 
+    def forbidden_prebound_alias(state_value: Any) -> tuple[str, str] | None:
+        """Identify callable aliases which the process-local guard cannot patch."""
+
+        if isinstance(state_value, ModuleType):
+            module_name = getattr(state_value, "__name__", None)
+            qualname = None
+        elif isinstance(state_value, type) or callable(state_value):
+            function = getattr(state_value, "__func__", state_value)
+            module_name = getattr(function, "__module__", None)
+            qualname = getattr(function, "__qualname__", None)
+            if not isinstance(module_name, str):
+                module_name = getattr(type(state_value), "__module__", None)
+            if not isinstance(qualname, str):
+                qualname = getattr(type(state_value), "__qualname__", None)
+        else:
+            return None
+        if not isinstance(module_name, str):
+            return None
+        symbol = (
+            module_name
+            if not isinstance(qualname, str)
+            else f"{module_name}.{qualname}"
+        )
+        forbidden_module_categories = (
+            ("torch.optim", "training"),
+            ("torch.nn.utils.prune", "pruning"),
+            ("torch.ao.quantization", "quantization"),
+            ("torch.quantization", "quantization"),
+            ("torchao.quantization", "quantization"),
+        )
+        for module_prefix, category in forbidden_module_categories:
+            if module_name == module_prefix or module_name.startswith(
+                f"{module_prefix}."
+            ):
+                return category, symbol
+        if symbol in {
+            "torch.autograd.backward",
+            "torch.autograd.grad",
+            "torch._tensor.Tensor.backward",
+            "torch.autograd.grad_mode.enable_grad",
+            "torch.autograd.grad_mode.set_grad_enabled",
+        }:
+            return "training", symbol
+        callable_name = (
+            None if not isinstance(qualname, str) else qualname.rsplit(".", 1)[-1]
+        )
+        if module_name in {"torch", "torch._C"} and callable_name in {
+            "quantize_per_tensor",
+            "quantize_per_channel",
+            "fake_quantize_per_tensor_affine",
+            "fake_quantize_per_channel_affine",
+        }:
+            return "quantization", symbol
+        return None
+
+    alias_audit_seen: set[int] = set()
+    alias_audit_module_attributes: set[tuple[int, str]] = set()
+
+    def audit_reachable_prebound_aliases(
+        state_value: Any,
+        *,
+        name: str,
+        referenced_names: frozenset[str] = frozenset(),
+    ) -> None:
+        """Scan through a shallow-manifest boundary without losing alias checks."""
+
+        forbidden_alias = forbidden_prebound_alias(state_value)
+        if forbidden_alias is not None:
+            category, symbol = forbidden_alias
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} contains forbidden pre-bound {category} alias "
+                f"{symbol}."
+            )
+        if state_value is None or isinstance(
+            state_value,
+            (bool, int, float, str, bytes, os.PathLike),
+        ):
+            return
+        identity = id(state_value)
+        if isinstance(state_value, ModuleType):
+            for attribute in sorted(referenced_names):
+                # A module's meta-namespace contains unrelated global
+                # registries.  It is source-bound above, but treating the
+                # whole __dict__ as one callable dependency creates false
+                # reachability through library dispatch infrastructure.
+                if attribute.startswith("__") and attribute.endswith("__"):
+                    continue
+                binding = (identity, attribute)
+                if binding in alias_audit_module_attributes:
+                    continue
+                alias_audit_module_attributes.add(binding)
+                if hasattr(state_value, attribute):
+                    audit_reachable_prebound_aliases(
+                        getattr(state_value, attribute),
+                        name=f"{name}.{attribute}",
+                    )
+            return
+        if identity in alias_audit_seen:
+            return
+        alias_audit_seen.add(identity)
+        if isinstance(state_value, type):
+            return
+        if isinstance(state_value, _torch().Tensor):
+            return
+        if isinstance(state_value, Mapping):
+            for key, child in state_value.items():
+                audit_reachable_prebound_aliases(
+                    key,
+                    name=f"{name}.<mapping-key>",
+                )
+                audit_reachable_prebound_aliases(
+                    child,
+                    name=f"{name}.<mapping-value>",
+                )
+            return
+        if isinstance(state_value, (list, tuple, set, frozenset)):
+            for child in state_value:
+                audit_reachable_prebound_aliases(
+                    child,
+                    name=f"{name}[]",
+                )
+            return
+        if callable(state_value):
+            function = getattr(state_value, "__func__", state_value)
+            owner = getattr(state_value, "__self__", None)
+            if getattr(function, "__code__", None) is None:
+                callable_impl = getattr(type(state_value), "__call__", None)
+                if getattr(callable_impl, "__code__", None) is None:
+                    return
+                if owner is None:
+                    owner = state_value
+                function = callable_impl
+            code = function.__code__
+            for child in (
+                getattr(function, "__defaults__", None),
+                getattr(function, "__kwdefaults__", None),
+            ):
+                audit_reachable_prebound_aliases(
+                    child,
+                    name=f"{name}.<callable-state>",
+                )
+            closure = getattr(function, "__closure__", None)
+            if closure is not None:
+                for cell in closure:
+                    audit_reachable_prebound_aliases(
+                        cell.cell_contents,
+                        name=f"{name}.<closure>",
+                    )
+            global_namespace = getattr(function, "__globals__", {})
+            function_names = frozenset(str(value) for value in code.co_names)
+            for global_name in sorted(function_names):
+                if global_name not in global_namespace:
+                    continue
+                child = global_namespace[global_name]
+                audit_reachable_prebound_aliases(
+                    child,
+                    name=f"{name}.__globals__.{global_name}",
+                    referenced_names=(
+                        function_names
+                        if isinstance(child, ModuleType)
+                        else frozenset()
+                    ),
+                )
+            if owner is None or isinstance(owner, type):
+                return
+            state_value = owner
+            identity = id(state_value)
+            if identity in alias_audit_seen:
+                return
+            alias_audit_seen.add(identity)
+        fields: dict[str, Any] = {}
+        raw_dict = getattr(state_value, "__dict__", None)
+        if isinstance(raw_dict, dict):
+            fields.update(raw_dict)
+        for owner_type in type(state_value).__mro__:
+            slots = getattr(owner_type, "__slots__", ())
+            if isinstance(slots, str):
+                slots = (slots,)
+            for field in slots:
+                if (
+                    field in {"__dict__", "__weakref__"}
+                    or field in fields
+                    or not hasattr(state_value, field)
+                ):
+                    continue
+                fields[field] = getattr(state_value, field)
+        for field in sorted(fields):
+            audit_reachable_prebound_aliases(
+                fields[field],
+                name=f"{name}.{field}",
+            )
+
     def instance_state_manifest(
         instance: Any,
         *,
@@ -2162,12 +2354,74 @@ def _optional_runtime_contract_sha256(
             "fields": normalized,
         }
 
+    def mapping_member_manifest(
+        member: Any,
+        *,
+        name: str,
+        active: frozenset[int],
+    ) -> Any:
+        """Bind registry members without expanding every dispatch target graph."""
+
+        audit_reachable_prebound_aliases(member, name=name)
+        if isinstance(member, ModuleType):
+            return runtime_module_manifest(
+                member,
+                name=name,
+                referenced_names=frozenset(),
+                active=active,
+            )
+        if isinstance(member, type):
+            return runtime_class_manifest(
+                member,
+                name=name,
+                bind_python_methods=False,
+                active=active,
+            )
+        if callable(member):
+            function = getattr(member, "__func__", member)
+            if getattr(function, "__code__", None) is None:
+                callable_impl = getattr(type(member), "__call__", None)
+                if getattr(callable_impl, "__code__", None) is not None:
+                    function = callable_impl
+            code = getattr(function, "__code__", None)
+            if code is None:
+                return {
+                    "kind": "native_callable_reference",
+                    "module": getattr(member, "__module__", None),
+                    "qualname": getattr(member, "__qualname__", None),
+                    "type": (
+                        f"{type(member).__module__}.{type(member).__qualname__}"
+                    ),
+                }
+            return {
+                "kind": "python_callable_reference",
+                "manifest": callable_manifest(
+                    member,
+                    name=name,
+                    bind_owner=True,
+                    bind_referenced_globals=False,
+                    active=active,
+                ),
+            }
+        return state_value_manifest(
+            member,
+            name=name,
+            active=active,
+        )
+
     def state_value_manifest(
         state_value: Any,
         *,
         name: str,
         active: frozenset[int],
     ) -> Any:
+        forbidden_alias = forbidden_prebound_alias(state_value)
+        if forbidden_alias is not None:
+            category, symbol = forbidden_alias
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} contains forbidden pre-bound {category} alias "
+                f"{symbol}."
+            )
         if state_value is None or isinstance(
             state_value,
             (bool, int, str),
@@ -2217,17 +2471,45 @@ def _optional_runtime_contract_sha256(
                 "sha256": legacy_model_fold._tensor_sha256(state_value),
             }
         if isinstance(state_value, Mapping):
-            if any(not isinstance(key, str) for key in state_value):
-                raise Lfm2CpcfV5ModelCompilerError(
-                    f"{name} runtime mapping must use string keys."
-                )
+            mapping_identity = id(state_value)
+            mapping_type = (
+                f"{type(state_value).__module__}.{type(state_value).__qualname__}"
+            )
+            if mapping_identity in active:
+                return {
+                    "kind": "mapping",
+                    "type": mapping_type,
+                    "recursive_reference": True,
+                }
+            mapping_active = active | {mapping_identity}
+            if all(isinstance(key, str) for key in state_value):
+                return {
+                    key: mapping_member_manifest(
+                        state_value[key],
+                        name=f"{name}.{key}",
+                        active=mapping_active,
+                    )
+                    for key in sorted(state_value)
+                }
+            entries = [
+                {
+                    "key": mapping_member_manifest(
+                        key,
+                        name=f"{name}.<mapping-key>",
+                        active=mapping_active,
+                    ),
+                    "value": mapping_member_manifest(
+                        child,
+                        name=f"{name}.<mapping-value>",
+                        active=mapping_active,
+                    ),
+                }
+                for key, child in state_value.items()
+            ]
             return {
-                key: state_value_manifest(
-                    state_value[key],
-                    name=f"{name}.{key}",
-                    active=active,
-                )
-                for key in sorted(state_value)
+                "kind": "mapping",
+                "type": mapping_type,
+                "entries": sorted(entries, key=_canonical_json),
             }
         if isinstance(state_value, (list, tuple)):
             return [
@@ -2302,8 +2584,16 @@ def _optional_runtime_contract_sha256(
         class_value: type,
         *,
         name: str,
+        bind_python_methods: bool = True,
         active: frozenset[int] = frozenset(),
     ) -> dict[str, Any]:
+        forbidden_alias = forbidden_prebound_alias(class_value)
+        if forbidden_alias is not None:
+            category, symbol = forbidden_alias
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} contains forbidden pre-bound {category} alias "
+                f"{symbol}."
+            )
         module_name = getattr(class_value, "__module__", None)
         qualname = getattr(class_value, "__qualname__", None)
         module = (
@@ -2327,6 +2617,8 @@ def _optional_runtime_contract_sha256(
         }
         if class_identity in active:
             return {**base, "recursive_reference": True}
+        if not bind_python_methods:
+            return {**base, "python_methods": {}, "reference_only": True}
         class_active = active | {class_identity}
         members = {}
         for member_name, raw_member in sorted(vars(class_value).items()):
@@ -2353,6 +2645,13 @@ def _optional_runtime_contract_sha256(
         referenced_names: frozenset[str],
         active: frozenset[int],
     ) -> dict[str, Any]:
+        forbidden_alias = forbidden_prebound_alias(module_value)
+        if forbidden_alias is not None:
+            category, symbol = forbidden_alias
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} contains forbidden pre-bound {category} alias "
+                f"{symbol}."
+            )
         module_name = getattr(module_value, "__name__", None)
         raw_path = getattr(module_value, "__file__", None)
         if not isinstance(module_name, str):
@@ -2394,6 +2693,13 @@ def _optional_runtime_contract_sha256(
         referenced_names: frozenset[str],
         active: frozenset[int],
     ) -> Any:
+        forbidden_alias = forbidden_prebound_alias(global_value)
+        if forbidden_alias is not None:
+            category, symbol = forbidden_alias
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} contains forbidden pre-bound {category} alias "
+                f"{symbol}."
+            )
         if isinstance(global_value, ModuleType):
             return runtime_module_manifest(
                 global_value,
@@ -2438,8 +2744,16 @@ def _optional_runtime_contract_sha256(
         *,
         name: str,
         bind_owner: bool = False,
+        bind_referenced_globals: bool = True,
         active: frozenset[int] = frozenset(),
     ) -> dict[str, Any]:
+        forbidden_alias = forbidden_prebound_alias(callable_value)
+        if forbidden_alias is not None:
+            category, symbol = forbidden_alias
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} contains forbidden pre-bound {category} alias "
+                f"{symbol}."
+            )
         function = getattr(callable_value, "__func__", callable_value)
         callable_object_owner = None
         if not callable(function) or getattr(function, "__code__", None) is None:
@@ -2511,16 +2825,20 @@ def _optional_runtime_contract_sha256(
                     )
                 }
             ),
-            "referenced_globals": {
-                global_name: runtime_global_manifest(
-                    global_namespace[global_name],
-                    name=f"{name}.__globals__.{global_name}",
-                    referenced_names=referenced_names,
-                    active=callable_active,
-                )
-                for global_name in sorted(referenced_names)
-                if global_name in global_namespace
-            },
+            "referenced_globals": (
+                {
+                    global_name: runtime_global_manifest(
+                        global_namespace[global_name],
+                        name=f"{name}.__globals__.{global_name}",
+                        referenced_names=referenced_names,
+                        active=callable_active,
+                    )
+                    for global_name in sorted(referenced_names)
+                    if global_name in global_namespace
+                }
+                if bind_referenced_globals
+                else {}
+            ),
         }
         owner = getattr(callable_value, "__self__", None)
         if owner is None:

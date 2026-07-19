@@ -112,6 +112,16 @@ _INTELLIGENCE_GATE_SOURCE = (
 _INTELLIGENCE_HOLDOUT_SOURCE = (
     _SOURCE_ROOT / "neural_forge" / "hf_lfm2_intelligence_holdout.py"
 )
+_SELECTIVE_EVIDENCE_SOURCE = (
+    _SOURCE_ROOT
+    / "neural_forge"
+    / "hf_lfm2_cpcf_selective_evidence.py"
+)
+_CATALOG_ARTIFACT_SOURCE = (
+    _SOURCE_ROOT
+    / "neural_forge"
+    / "dynamic_evidence_catalog_artifact.py"
+)
 
 _SHA256 = frozenset("0123456789abcdef")
 _IDENTIFIER_CHARACTERS = frozenset(
@@ -267,6 +277,81 @@ def _new_local_root(
     return lexical
 
 
+def _local_file_target(
+    value: str | os.PathLike[str],
+    *,
+    name: str,
+) -> Path:
+    raw = _path_text(value, name)
+    lexical = Path(raw).expanduser().absolute()
+    if lexical.is_symlink():
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} cannot be a symbolic link."
+        )
+    if lexical.exists() and not lexical.is_file():
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} must be a regular file path."
+        )
+    ancestor = lexical.parent
+    while not ancestor.exists() and ancestor != ancestor.parent:
+        ancestor = ancestor.parent
+    if ancestor.is_symlink() or not ancestor.is_dir():
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} has an unsafe existing ancestor."
+        )
+    return lexical
+
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    left_value = left.expanduser().absolute().resolve(strict=False)
+    right_value = right.expanduser().absolute().resolve(strict=False)
+    return (
+        left_value == right_value
+        or left_value in right_value.parents
+        or right_value in left_value.parents
+    )
+
+
+def _assert_catalog_store_disjoint(
+    store: Path,
+    *,
+    roots: Mapping[str, Path],
+) -> None:
+    overlaps = [
+        name
+        for name, path in roots.items()
+        if _paths_overlap(store, path)
+    ]
+    if overlaps:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "selective catalog store cannot equal, contain, or be contained "
+            "by protected model, tokenizer, trace, work, resume, or "
+            "quarantine roots: "
+            + ", ".join(sorted(overlaps))
+            + "."
+        )
+
+
+def _assert_catalog_receipt_disjoint(
+    receipt: Path,
+    *,
+    roots: Mapping[str, Path],
+) -> None:
+    overlaps = [
+        name
+        for name, path in roots.items()
+        if _paths_overlap(receipt, path)
+    ]
+    if overlaps:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "selective catalog receipt cannot equal, contain, or be contained "
+            "by protected model, tokenizer, trace, corpus, envelope, work, "
+            "resume, quarantine, catalog-store, or output paths: "
+            + ", ".join(sorted(overlaps))
+            + "."
+        )
+
+
 def _freeze_mapping(
     value: Mapping[str, Any] | None,
     *,
@@ -402,6 +487,9 @@ class FrontierSupervisorConfig:
     maximum_candidates_per_ratio: int = 8
     attempt_id: str = "attempt-0001"
     python_executable: str = sys.executable
+    selective_catalog_store_directory: Path | None = None
+    selective_catalog_receipt_json: Path | None = None
+    expected_selective_catalog_receipt_sha256: str | None = None
 
     def __post_init__(self) -> None:
         from neural_forge.dynamic_lfm2_cpcf_v5_frontier import (
@@ -442,6 +530,72 @@ class FrontierSupervisorConfig:
                 name="work_directory",
             ),
         )
+        catalog_store = (
+            self.work_directory.parent / "selective-catalogs"
+            if self.selective_catalog_store_directory is None
+            else _new_local_root(
+                self.selective_catalog_store_directory,
+                name="selective_catalog_store_directory",
+            )
+        )
+        catalog_receipt_candidate = (
+            self.work_directory.parent
+            / "selective-catalog-preparation.json"
+            if self.selective_catalog_receipt_json is None
+            else self.selective_catalog_receipt_json
+        )
+        catalog_receipt = _local_file_target(
+            catalog_receipt_candidate,
+            name="selective_catalog_receipt_json",
+        )
+        _assert_catalog_store_disjoint(
+            catalog_store,
+            roots={
+                "parent_model_directory": self.parent_model_directory,
+                "donor_tokenizer_directory": (
+                    self.donor_tokenizer_directory
+                ),
+                "target_tokenizer_directory": (
+                    self.target_tokenizer_directory
+                ),
+                "bridge_directory": self.bridge_directory,
+                "trace_cache_directory": self.trace_cache_directory,
+                "work_directory": self.work_directory,
+                "selective_catalog_receipt_json": catalog_receipt,
+            },
+        )
+        _assert_catalog_receipt_disjoint(
+            catalog_receipt,
+            roots={
+                "parent_model_directory": self.parent_model_directory,
+                "donor_tokenizer_directory": (
+                    self.donor_tokenizer_directory
+                ),
+                "target_tokenizer_directory": (
+                    self.target_tokenizer_directory
+                ),
+                "bridge_directory": self.bridge_directory,
+                "trace_cache_directory": self.trace_cache_directory,
+                "trajectory_corpus": self.trajectory_corpus,
+                "trajectory_corpus_parent": (
+                    self.trajectory_corpus.parent
+                ),
+                "parent_envelope": self.parent_envelope,
+                "parent_envelope_parent": self.parent_envelope.parent,
+                "work_directory": self.work_directory,
+                "selective_catalog_store_directory": catalog_store,
+            },
+        )
+        object.__setattr__(
+            self,
+            "selective_catalog_store_directory",
+            catalog_store,
+        )
+        object.__setattr__(
+            self,
+            "selective_catalog_receipt_json",
+            catalog_receipt,
+        )
         for name in (
             "expected_parent_graph_fingerprint",
             "expected_bridge_artifact_sha256",
@@ -452,6 +606,15 @@ class FrontierSupervisorConfig:
                 self,
                 name,
                 _digest(getattr(self, name), name),
+            )
+        if self.expected_selective_catalog_receipt_sha256 is not None:
+            object.__setattr__(
+                self,
+                "expected_selective_catalog_receipt_sha256",
+                _digest(
+                    self.expected_selective_catalog_receipt_sha256,
+                    "expected_selective_catalog_receipt_sha256",
+                ),
             )
         if type(self.lifecycle) is not Lfm2CpcfV5FrontierLifecycle:
             raise Lfm2CpcfV5FrontierSupervisorError(
@@ -547,6 +710,12 @@ class FrontierSupervisorConfig:
             "trace_cache_directory": str(self.trace_cache_directory),
             "trajectory_corpus": str(self.trajectory_corpus),
             "parent_envelope": str(self.parent_envelope),
+            "selective_catalog_store_directory": str(
+                self.selective_catalog_store_directory
+            ),
+            "selective_catalog_receipt_json": str(
+                self.selective_catalog_receipt_json
+            ),
         }
 
 
@@ -564,6 +733,9 @@ class FrontierEvidenceBindings:
     holdout_manifest_sha256: str
     holdout_manifest_document_sha256: str
     holdout_case_count: int
+    selective_catalog_preparation: Mapping[str, Any] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         for name in (
@@ -591,6 +763,42 @@ class FrontierEvidenceBindings:
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "The behavioral gate must be the exact 64-case holdout."
             )
+        catalog = dict(self.selective_catalog_preparation)
+        if catalog:
+            required_catalog_digests = (
+                "preparation_receipt_sha256",
+                "binding_sha256",
+                "artifact_manifest_sha256",
+                "artifact_catalog_sha256",
+                "selective_catalog_sha256",
+                "selective_source_sha256",
+                "selective_provider_sha256",
+                "codec_sha256",
+                "provider_implementation_sha256",
+                "artifact_store_source_sha256",
+                "selective_provider_source_sha256",
+            )
+            for name in required_catalog_digests:
+                _digest(
+                    catalog.get(name),
+                    f"selective_catalog_preparation.{name}",
+                )
+            if (
+                catalog.get("status")
+                != "prepared_authenticated_tensor_free_catalog"
+                or catalog.get("warm_hit_required_for_production_fold")
+                is not True
+                or catalog.get("cold_rebuild_permitted_in_production_fold")
+                is not False
+            ):
+                raise Lfm2CpcfV5FrontierSupervisorError(
+                    "Selective catalog preparation lifecycle is invalid."
+                )
+        object.__setattr__(
+            self,
+            "selective_catalog_preparation",
+            MappingProxyType(catalog),
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -614,6 +822,12 @@ class FrontierEvidenceBindings:
                 self.holdout_manifest_document_sha256
             ),
             "holdout_case_count": self.holdout_case_count,
+            "selective_catalog_preparation": dict(
+                self.selective_catalog_preparation
+            ),
+            "selective_catalog_prepared": bool(
+                self.selective_catalog_preparation
+            ),
             "parent_outputs_cached_once": True,
             "parent_trace_generation_permitted": False,
         }
@@ -817,6 +1031,20 @@ class FrontierSupervisorPlan:
             "maximum_parallel_ratio_processes": 1,
             "all_ratio_paths_disjoint": True,
             "all_outputs_no_clobber": True,
+            "shared_selective_catalog_store_directory": str(
+                self.config.selective_catalog_store_directory
+            ),
+            "shared_selective_catalog_receipt_json": str(
+                self.config.selective_catalog_receipt_json
+            ),
+            "shared_selective_catalog_preparation_receipt_sha256": (
+                self.evidence.selective_catalog_preparation.get(
+                    "preparation_receipt_sha256"
+                )
+            ),
+            "all_ratio_workers_require_exact_authenticated_warm_hit": True,
+            "catalog_cold_rebuilds_permitted_in_ratio_workers": False,
+            "catalog_post_run_reverification_required": True,
             "offline": True,
             "cached_parent_evidence_only": True,
             "parent_trace_generation_calls": 0,
@@ -837,6 +1065,7 @@ class FrontierSupervisorPlan:
 
 def _source_identities() -> dict[str, str]:
     sources = {
+        "dynamic_evidence_catalog_artifact": _CATALOG_ARTIFACT_SOURCE,
         "frontier_supervisor": Path(__file__).resolve(),
         "frontier_catalog": _FRONTIER_SOURCE,
         "gpu_replay_parity_receipt": _GPU_PARITY_RECEIPT,
@@ -851,6 +1080,7 @@ def _source_identities() -> dict[str, str]:
         "local_lfm2_loader": _RESIDUAL_RUNNER,
         "intelligence_gate": _INTELLIGENCE_GATE_SOURCE,
         "intelligence_holdout": _INTELLIGENCE_HOLDOUT_SOURCE,
+        "lfm2_selective_evidence_provider": _SELECTIVE_EVIDENCE_SOURCE,
     }
     missing = tuple(name for name, path in sources.items() if not path.is_file())
     if missing:
@@ -863,6 +1093,83 @@ def _source_identities() -> dict[str, str]:
         name: _file_sha256(path)
         for name, path in sorted(sources.items())
     }
+
+
+def authenticate_frontier_catalog_preparation(
+    config: FrontierSupervisorConfig,
+) -> Mapping[str, Any]:
+    """Authenticate the exact shared warm catalog before model allocation."""
+
+    if not isinstance(config, FrontierSupervisorConfig):
+        raise TypeError("config must be FrontierSupervisorConfig.")
+    expected_receipt = config.expected_selective_catalog_receipt_sha256
+    if expected_receipt is None:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Planning or executing a frontier requires the exact prepared "
+            "selective catalog receipt SHA-256 pin."
+        )
+    from experiments import run_lfm2_cpcf_v5_selective_blank_fold as runner
+
+    try:
+        preparation = dict(
+            runner.authenticate_prepared_selective_catalog(
+                trace_cache_directory=config.trace_cache_directory,
+                selective_catalog_store_directory=(
+                    config.selective_catalog_store_directory
+                ),
+                selective_catalog_receipt_json=(
+                    config.selective_catalog_receipt_json
+                ),
+                expected_selective_catalog_receipt_sha256=expected_receipt,
+            )
+        )
+    except Exception as exc:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "The shared selective catalog preparation failed exact "
+            "authentication."
+        ) from exc
+    sources = _source_identities()
+    expected_source_identities = {
+        "dynamic_evidence_catalog_artifact": sources[
+            "dynamic_evidence_catalog_artifact"
+        ],
+        "hf_lfm2_cpcf_selective_evidence": sources[
+            "lfm2_selective_evidence_provider"
+        ],
+    }
+    if (
+        preparation.get("preparation_receipt_sha256")
+        != expected_receipt
+        or preparation.get("source_identities")
+        != expected_source_identities
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "The prepared catalog receipt or its source implementation "
+            "differs from the frontier source bundle."
+        )
+    return MappingProxyType(preparation)
+
+
+def _authenticate_catalog_post_run_reverification(
+    value: Any,
+    *,
+    catalog_preparation: Mapping[str, Any],
+    name: str,
+) -> Mapping[str, Any]:
+    """Authenticate the exact record emitted by the selective fold runner."""
+
+    from experiments import run_lfm2_cpcf_v5_selective_blank_fold as runner
+
+    try:
+        return runner.authenticate_selective_catalog_post_run_reverification(
+            value,
+            catalog_preparation=catalog_preparation,
+        )
+    except Exception as exc:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} differs from the exact runner-emitted selective catalog "
+            "post-run reverification record."
+        ) from exc
 
 
 def _read_parent_envelope(
@@ -948,6 +1255,7 @@ def discover_frontier_schedule(
 ) -> tuple[Any, FrontierEvidenceBindings]:
     """Inspect the local parent once, authenticate evidence, and plan targets."""
 
+    catalog_preparation = authenticate_frontier_catalog_preparation(config)
     from experiments.run_lfm2_residual_attention_fold import (
         load_local_lfm2_model,
         load_local_tokenizer,
@@ -1069,6 +1377,7 @@ def discover_frontier_schedule(
         holdout_manifest_sha256=manifest.manifest_sha256,
         holdout_manifest_document_sha256=manifest.document_sha256,
         holdout_case_count=len(manifest.cases),
+        selective_catalog_preparation=catalog_preparation,
     )
     return schedule, evidence
 
@@ -1116,6 +1425,7 @@ def _diagnostic_command(
     config: FrontierSupervisorConfig,
     lane: Any,
     paths: FrontierLanePaths,
+    evidence: FrontierEvidenceBindings,
 ) -> tuple[str, ...]:
     requested = lane.exact_compression.requested_ratio
     if requested.denominator != 1:
@@ -1171,6 +1481,14 @@ def _diagnostic_command(
         lane.target_plan_fingerprint,
         "--resume-store-directory",
         str(paths.resume_directory),
+        "--selective-catalog-store-directory",
+        str(config.selective_catalog_store_directory),
+        "--selective-catalog-receipt-json",
+        str(config.selective_catalog_receipt_json),
+        "--expected-selective-catalog-receipt-sha256",
+        evidence.selective_catalog_preparation[
+            "preparation_receipt_sha256"
+        ],
     ]
     if lane.resume_reference is not None:
         command.extend(
@@ -1225,6 +1543,9 @@ def _worker_config_record(
         "expected_cache_sha256": config.expected_cache_sha256,
         "expected_parent_envelope_file_sha256": (
             config.expected_parent_envelope_file_sha256
+        ),
+        "expected_selective_catalog_receipt_sha256": (
+            config.expected_selective_catalog_receipt_sha256
         ),
         "lifecycle": config.lifecycle.value,
         "compression_ratios": [ratio],
@@ -1397,6 +1718,19 @@ def build_frontier_supervisor_plan(
         raise TypeError("config must be FrontierSupervisorConfig.")
     if not isinstance(evidence, FrontierEvidenceBindings):
         raise TypeError("evidence must be FrontierEvidenceBindings.")
+    catalog_preparation = dict(
+        evidence.selective_catalog_preparation
+    )
+    if (
+        not catalog_preparation
+        or config.expected_selective_catalog_receipt_sha256 is None
+        or catalog_preparation.get("preparation_receipt_sha256")
+        != config.expected_selective_catalog_receipt_sha256
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Every frontier plan requires the exact shared authenticated "
+            "selective catalog preparation."
+        )
     if (
         schedule.parent_graph_fingerprint
         != config.expected_parent_graph_fingerprint
@@ -1430,6 +1764,29 @@ def build_frontier_supervisor_plan(
         strict=True,
     ):
         paths = _lane_paths(config, catalog_lane, ratio)
+        _assert_catalog_store_disjoint(
+            config.selective_catalog_store_directory,
+            roots={
+                "run_directory": paths.run_directory,
+                "diagnostic_json": paths.diagnostic_json,
+                "resume_directory": paths.resume_directory,
+                "quarantine_directory": paths.quarantine_directory,
+            },
+        )
+        _assert_catalog_receipt_disjoint(
+            config.selective_catalog_receipt_json,
+            roots={
+                "run_directory": paths.run_directory,
+                "diagnostic_json": paths.diagnostic_json,
+                "resume_directory": paths.resume_directory,
+                "quarantine_directory": paths.quarantine_directory,
+                "process_manifest_json": paths.process_manifest_json,
+                "execution_receipt_json": paths.execution_receipt_json,
+                "selective_catalog_store_directory": (
+                    config.selective_catalog_store_directory
+                ),
+            },
+        )
         all_paths.extend(
             (
                 paths.run_directory,
@@ -1444,6 +1801,7 @@ def build_frontier_supervisor_plan(
             config,
             catalog_lane,
             paths,
+            evidence,
         )
         command = _worker_command(config, paths)
         blockers = _execution_blockers(ratio, config.lifecycle.value)
@@ -1473,6 +1831,9 @@ def build_frontier_supervisor_plan(
                 ratio=ratio,
             ),
             "input_bindings": evidence.as_dict(),
+            "selective_catalog_artifact": catalog_preparation,
+            "selective_catalog_authenticated_warm_hit_required": True,
+            "selective_catalog_cold_rebuild_permitted": False,
             "schedule_bindings": {
                 "parent_graph_fingerprint": (
                     schedule.parent_graph_fingerprint
@@ -1683,6 +2044,15 @@ def _config_from_worker_record(
         ],
         attempt_id=record["attempt_id"],
         python_executable=record["python_executable"],
+        selective_catalog_store_directory=Path(
+            record["selective_catalog_store_directory"]
+        ),
+        selective_catalog_receipt_json=Path(
+            record["selective_catalog_receipt_json"]
+        ),
+        expected_selective_catalog_receipt_sha256=record[
+            "expected_selective_catalog_receipt_sha256"
+        ],
     )
 
 
@@ -1835,6 +2205,25 @@ def _run_internal_worker(manifest_path: Path) -> int:
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Worker config differs from its schedule or evidence pins."
             )
+        catalog_preparation = authenticate_frontier_catalog_preparation(
+            config
+        )
+        if (
+            evidence.get("selective_catalog_preparation")
+            != dict(catalog_preparation)
+            or manifest.get("selective_catalog_artifact")
+            != dict(catalog_preparation)
+            or manifest.get(
+                "selective_catalog_authenticated_warm_hit_required"
+            )
+            is not True
+            or manifest.get("selective_catalog_cold_rebuild_permitted")
+            is not False
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Worker does not bind the exact authenticated shared warm "
+                "selective catalog."
+            )
 
         diagnostic_command = manifest.get("diagnostic_runner_command")
         if (
@@ -1861,6 +2250,12 @@ def _run_internal_worker(manifest_path: Path) -> int:
             != config.runtime_limits.maximum_cuda_gib_per_device
             or Path(runner_config.diagnostic_json)
             != Path(paths["diagnostic_json"])
+            or runner_config.selective_catalog_store_directory
+            != config.selective_catalog_store_directory
+            or runner_config.selective_catalog_receipt_json
+            != config.selective_catalog_receipt_json
+            or runner_config.expected_selective_catalog_receipt_sha256
+            != catalog_preparation["preparation_receipt_sha256"]
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Worker runner config lost its automatic plan, CUDA, or "
@@ -1914,6 +2309,27 @@ def _run_internal_worker(manifest_path: Path) -> int:
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Worker result differs from its plan, quarantine path, or "
                 "non-publication lifecycle."
+            )
+        compiled_catalog = result.compile_diagnostic.get(
+            "selective_catalog_artifact"
+        )
+        compiled_catalog_reverification = result.compile_diagnostic.get(
+            "selective_catalog_post_run_reverification"
+        )
+        authenticated_catalog_reverification = (
+            _authenticate_catalog_post_run_reverification(
+                compiled_catalog_reverification,
+                catalog_preparation=catalog_preparation,
+                name="Compiler diagnostic",
+            )
+        )
+        if (
+            not isinstance(compiled_catalog, Mapping)
+            or dict(compiled_catalog) != dict(catalog_preparation)
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiler diagnostic did not retain and freshly reverify the "
+                "exact prepared selective catalog."
             )
         blank = result.compile_diagnostic.get("blank_target")
         if (
@@ -1971,12 +2387,18 @@ def _run_internal_worker(manifest_path: Path) -> int:
                     "checkpoint artifact bound by the catalog lane."
                 )
         post_capture_source_identities = _source_identities()
+        post_capture_catalog_preparation = (
+            authenticate_frontier_catalog_preparation(config)
+        )
         if (
             manifest.get("source_identities")
             != post_capture_source_identities
+            or dict(post_capture_catalog_preparation)
+            != dict(catalog_preparation)
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
-                "Worker source files changed during compilation or capture."
+                "Worker source files or prepared catalog changed during "
+                "compilation or capture."
             )
         runtime_guard = result.compile_diagnostic.get(
             "compiler_runtime_fold_only_guard"
@@ -2082,6 +2504,10 @@ def _run_internal_worker(manifest_path: Path) -> int:
             "compiler_implementation_sha256": result.compiler_sha256,
             "runner_source_sha256": result.runner_source_sha256,
             "source_binding_sha256": result.source_binding_sha256,
+            "selective_catalog_artifact": dict(catalog_preparation),
+            "selective_catalog_post_run_reverification": dict(
+                authenticated_catalog_reverification
+            ),
             "post_capture_source_identities": (
                 post_capture_source_identities
             ),
@@ -2473,6 +2899,16 @@ def execute_single_ratio(
             "Refusing to execute a blocked frontier lane: "
             + " | ".join(lane.execution_blockers)
         )
+    catalog_preparation = authenticate_frontier_catalog_preparation(
+        plan.config
+    )
+    if (
+        dict(catalog_preparation)
+        != dict(plan.evidence.selective_catalog_preparation)
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "The shared selective catalog differs from the planned binding."
+        )
     lane.paths.run_directory.parent.mkdir(parents=True, exist_ok=True)
     try:
         lane.paths.run_directory.mkdir()
@@ -2505,6 +2941,17 @@ def execute_single_ratio(
     if dict(plan.source_identities) != _source_identities():
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Supervisor source files changed across the worker boundary."
+        )
+    post_run_catalog_preparation = (
+        authenticate_frontier_catalog_preparation(plan.config)
+    )
+    if (
+        dict(post_run_catalog_preparation)
+        != dict(catalog_preparation)
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "The shared selective catalog changed across the worker "
+            "boundary."
         )
     receipt = _read_sealed_json(
         lane.paths.execution_receipt_json,
@@ -2586,23 +3033,37 @@ def execute_single_ratio(
             and checkpoint_reference.get("manifest_sha256")
             == resume_reference.resume_artifact_sha256
         )
-    expected_source_binding = _sha(
-        {
-            "selective_source_sha256": receipt.get(
-                "selective_source_sha256"
-            ),
-            "compiler_implementation_sha256": receipt.get(
-                "compiler_implementation_sha256"
-            ),
-            "runner_source_sha256": receipt.get(
-                "runner_source_sha256"
-            ),
-            "fold_only_runtime_guard_identity_sha256": (
-                guard_implementation.get("identity_sha256")
-                if isinstance(guard_implementation, Mapping)
-                else None
-            ),
-        }
+    expected_source_binding = runner._source_binding_sha256(
+        selective_source_sha256=receipt.get(
+            "selective_source_sha256"
+        ),
+        compiler_implementation_sha256=receipt.get(
+            "compiler_implementation_sha256"
+        ),
+        runner_source_sha256=receipt.get("runner_source_sha256"),
+        fold_only_runtime_guard_identity_sha256=(
+            guard_implementation.get("identity_sha256")
+            if isinstance(guard_implementation, Mapping)
+            else None
+        ),
+        catalog_preparation=catalog_preparation,
+    )
+    diagnostic_catalog = diagnostic.get("selective_catalog_artifact")
+    diagnostic_catalog_reverification = diagnostic.get(
+        "selective_catalog_post_run_reverification"
+    )
+    receipt_catalog_reverification = receipt.get(
+        "selective_catalog_post_run_reverification"
+    )
+    _authenticate_catalog_post_run_reverification(
+        diagnostic_catalog_reverification,
+        catalog_preparation=catalog_preparation,
+        name="Retained compiler diagnostic",
+    )
+    _authenticate_catalog_post_run_reverification(
+        receipt_catalog_reverification,
+        catalog_preparation=catalog_preparation,
+        name="Worker execution receipt",
     )
     if (
         receipt.get("status")
@@ -2623,6 +3084,8 @@ def execute_single_ratio(
         or receipt.get("corpus_sha256") != plan.evidence.corpus_sha256
         or receipt.get("source_binding_sha256")
         != expected_source_binding
+        or receipt.get("selective_catalog_artifact")
+        != dict(catalog_preparation)
         or receipt.get("runner_source_sha256")
         != plan.source_identities["v5_diagnostic_runner"]
         or receipt.get("post_capture_source_identities")
@@ -2648,6 +3111,8 @@ def execute_single_ratio(
         != receipt.get("bridge_sha256")
         or inputs.get("trajectory_corpus_sha256")
         != receipt.get("corpus_sha256")
+        or not isinstance(diagnostic_catalog, Mapping)
+        or dict(diagnostic_catalog) != dict(catalog_preparation)
         or not isinstance(compiled, Mapping)
         or compiled.get("result_sha256")
         != receipt.get("compiler_receipt_sha256")
@@ -2791,6 +3256,15 @@ def build_parser() -> argparse.ArgumentParser:
             "worker as a non-promotable standalone quarantine."
         ),
     )
+    mode.add_argument(
+        "--prepare-selective-catalog-only",
+        action="store_true",
+        help=(
+            "Build and authenticate the one shared tensor-free selective "
+            "catalog, then exit before parent, blank-target, or CUDA "
+            "allocation."
+        ),
+    )
     parser.add_argument("--parent-model-directory", type=Path, required=True)
     parser.add_argument("--donor-tokenizer-directory", type=Path, required=True)
     parser.add_argument("--target-tokenizer-directory", type=Path, required=True)
@@ -2799,6 +3273,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trajectory-corpus", type=Path, required=True)
     parser.add_argument("--parent-envelope", type=Path, required=True)
     parser.add_argument("--work-directory", type=Path, required=True)
+    parser.add_argument(
+        "--selective-catalog-store-directory",
+        type=Path,
+        help=(
+            "Shared immutable selective catalog store. Defaults to a sibling "
+            "of the work directory."
+        ),
+    )
+    parser.add_argument(
+        "--selective-catalog-receipt-json",
+        type=Path,
+        help=(
+            "Create-new preparation receipt or exact existing receipt for "
+            "planning and folding."
+        ),
+    )
+    parser.add_argument(
+        "--expected-selective-catalog-receipt-sha256",
+        help=(
+            "Exact prepared receipt SHA-256 required for every planning and "
+            "fold worker process."
+        ),
+    )
     parser.add_argument(
         "--expected-parent-graph-fingerprint",
         required=True,
@@ -2943,6 +3440,60 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
         maximum_candidates_per_ratio=args.maximum_candidates_per_ratio,
         attempt_id=args.attempt_id,
         python_executable=args.python_executable,
+        selective_catalog_store_directory=(
+            args.selective_catalog_store_directory
+        ),
+        selective_catalog_receipt_json=(
+            args.selective_catalog_receipt_json
+        ),
+        expected_selective_catalog_receipt_sha256=(
+            args.expected_selective_catalog_receipt_sha256
+        ),
+    )
+
+
+def prepare_frontier_selective_catalog(
+    config: FrontierSupervisorConfig,
+) -> Mapping[str, Any]:
+    """Run the shared preparation phase without frontier/model discovery."""
+
+    if not isinstance(config, FrontierSupervisorConfig):
+        raise TypeError("config must be FrontierSupervisorConfig.")
+    from experiments import run_lfm2_cpcf_v5_selective_blank_fold as runner
+
+    preparation_args = (
+        "--parent-model-directory",
+        str(config.parent_model_directory),
+        "--donor-tokenizer-directory",
+        str(config.donor_tokenizer_directory),
+        "--target-tokenizer-directory",
+        str(config.target_tokenizer_directory),
+        "--bridge-directory",
+        str(config.bridge_directory),
+        "--trace-cache-directory",
+        str(config.trace_cache_directory),
+        "--trajectory-corpus",
+        str(config.trajectory_corpus),
+        "--diagnostic-json",
+        str(
+            config.work_directory
+            / "catalog-preparation-failure-diagnostic.json"
+        ),
+        "--compression-ratio",
+        "4",
+        "--maximum-process-rss-gib",
+        str(config.runtime_limits.maximum_process_rss_gib),
+        "--selective-catalog-store-directory",
+        str(config.selective_catalog_store_directory),
+        "--selective-catalog-receipt-json",
+        str(config.selective_catalog_receipt_json),
+        "--prepare-selective-catalog-only",
+    )
+    runner_config = runner.config_from_args(
+        runner.build_parser().parse_args(preparation_args)
+    )
+    return MappingProxyType(
+        dict(runner.prepare_selective_catalog(runner_config))
     )
 
 
@@ -2960,6 +3511,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(raw)
     try:
         config = config_from_args(args)
+        if args.plan_output is not None:
+            _assert_catalog_receipt_disjoint(
+                config.selective_catalog_receipt_json,
+                roots={
+                    "plan_output": _new_local_root(
+                        args.plan_output,
+                        name="plan_output",
+                    )
+                },
+            )
+        if args.prepare_selective_catalog_only:
+            preparation = dict(
+                prepare_frontier_selective_catalog(config)
+            )
+            print(json.dumps(preparation, indent=2, sort_keys=True))
+            return 0
         schedule, evidence = discover_frontier_schedule(config)
         plan = build_frontier_supervisor_plan(
             schedule,

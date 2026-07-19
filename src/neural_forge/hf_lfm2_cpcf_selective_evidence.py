@@ -24,6 +24,11 @@ from types import MappingProxyType
 from typing import Any
 
 from .dynamic_circuit_ir import canonical_sha256
+from .dynamic_evidence_catalog_artifact import (
+    DynamicEvidenceCatalogArtifact,
+    DynamicEvidenceCatalogArtifactStore,
+    DynamicEvidenceCatalogBinding,
+)
 from .dynamic_evidence_residency import (
     DynamicEvidenceLayerAuthentication,
     DynamicEvidenceLayerCatalog,
@@ -54,6 +59,15 @@ LFM2_CPCF_SELECTIVE_PHASE_REFERENCE_SCHEMA = (
 )
 LFM2_CPCF_SELECTIVE_CATALOG_SCHEMA = (
     "neural-forge-lfm2-cpcf-selective-catalog-v1"
+)
+LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_CODEC_SCHEMA = (
+    "neural-forge-lfm2-cpcf-selective-catalog-artifact-codec-v1"
+)
+LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_PAYLOAD_SCHEMA = (
+    "neural-forge-lfm2-cpcf-selective-catalog-artifact-payload-v1"
+)
+LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_KIND = (
+    "lfm2-cpcf-selective-evidence"
 )
 
 
@@ -688,11 +702,13 @@ class Lfm2CpcfSelectiveEvidenceProvider:
         catalog: Lfm2CpcfSelectiveEvidenceCatalog | None,
         source_sha256: str,
         provider_sha256: str,
+        catalog_artifact: DynamicEvidenceCatalogArtifact | None = None,
     ) -> None:
         self._session = session
         self._adapter = adapter
         self._phase_plans = tuple(phase_plans)
         self._catalog = catalog
+        self._catalog_artifact = catalog_artifact
         self.source_sha256 = _digest(source_sha256, "source_sha256")
         self.provider_sha256 = _digest(
             provider_sha256,
@@ -715,6 +731,18 @@ class Lfm2CpcfSelectiveEvidenceProvider:
     @property
     def selective_session_evidence(self) -> Mapping[str, Any]:
         return MappingProxyType(self._session.as_dict())
+
+    @property
+    def catalog_artifact(
+        self,
+    ) -> DynamicEvidenceCatalogArtifact | None:
+        return self._catalog_artifact
+
+    @property
+    def catalog_artifact_receipt(self) -> Mapping[str, Any] | None:
+        if self._catalog_artifact is None:
+            return None
+        return self._catalog_artifact.as_dict()
 
     def _assert_open(self) -> None:
         if self._closed:
@@ -1276,8 +1304,25 @@ class Lfm2CpcfSelectiveEvidenceProvider:
     def close(self) -> None:
         if self._closed:
             return
-        self._session.close()
+        failures: list[BaseException] = []
+        if self._catalog_artifact is not None:
+            try:
+                self._catalog_artifact.verify()
+            except BaseException as exc:
+                failures.append(exc)
+        try:
+            self._session.close()
+        except BaseException as exc:
+            failures.append(exc)
         self._closed = True
+        if failures:
+            failure = failures[0]
+            for extra in failures[1:]:
+                failure.add_note(
+                    "Selective provider close also failed: "
+                    f"{type(extra).__qualname__}: {extra}"
+                )
+            raise failure
 
     def __enter__(self) -> Lfm2CpcfSelectiveEvidenceProvider:
         return self
@@ -1337,10 +1382,57 @@ def _phase_plans(
     return tuple(result)
 
 
-def build_lfm2_cpcf_selective_evidence_provider(
+@dataclass(slots=True)
+class Lfm2CpcfAuthenticatedSelectiveSource:
+    """One authenticated trace session prepared for cold or warm catalogs."""
+
+    session: Lfm2CircuitTraceSelectiveAuthenticatedSession
+    adapter: installability.Lfm2CpcfInstallabilityAdapter
+    phase_plans: tuple[_PhasePlan, ...]
+    implementation: Mapping[str, Any]
+    source_sha256: str
+    provider_sha256: str
+    _claimed: bool = False
+    _closed: bool = False
+
+    @property
+    def layer_count(self) -> int:
+        return len(self.adapter.topology)
+
+    @property
+    def phase_count(self) -> int:
+        return len(self.phase_plans)
+
+    def _claim_session(self) -> None:
+        if self._closed or self._claimed:
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "Authenticated selective source session is unavailable."
+            )
+        self._claimed = True
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        if not self._claimed:
+            self.session.close()
+        self._closed = True
+
+    def __enter__(self) -> Lfm2CpcfAuthenticatedSelectiveSource:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: Any,
+    ) -> None:
+        self.close()
+
+
+def authenticate_lfm2_cpcf_selective_source(
     cache: Lfm2CircuitTraceCache,
-) -> Lfm2CpcfSelectiveEvidenceProvider:
-    """Build a tensor-free catalog and reusable selective layer provider."""
+) -> Lfm2CpcfAuthenticatedSelectiveSource:
+    """Hash and pin one local trace cache, without building layer catalogs."""
 
     if not isinstance(cache, Lfm2CircuitTraceCache):
         raise TypeError("cache must be Lfm2CircuitTraceCache.")
@@ -1357,131 +1449,361 @@ def build_lfm2_cpcf_selective_evidence_provider(
         plans = _phase_plans(session, adapter)
         implementation = lfm2_cpcf_selective_provider_implementation()
         provider_sha256 = str(implementation["implementation_sha256"])
+        session_evidence = session.as_dict()
         source_body = {
             "schema": LFM2_CPCF_SELECTIVE_SOURCE_SCHEMA,
             "cache_key": session.cache_key,
-            "manifest_sha256": session.as_dict()["manifest_sha256"],
-            "completion_sha256": session.as_dict()["completion_sha256"],
+            "manifest_sha256": session_evidence["manifest_sha256"],
+            "completion_sha256": session_evidence["completion_sha256"],
             "selective_session_sha256": session.evidence_sha256,
             "layer_topology_sha256": adapter.layer_topology_sha256,
             "capture_selection_sha256": (
                 adapter.capture_selection_sha256
             ),
         }
-        source_sha256 = canonical_sha256(source_body)
-        builder = Lfm2CpcfSelectiveEvidenceProvider(
+        return Lfm2CpcfAuthenticatedSelectiveSource(
             session=session,
             adapter=adapter,
             phase_plans=plans,
-            catalog=None,
-            source_sha256=source_sha256,
+            implementation=implementation,
+            source_sha256=canonical_sha256(source_body),
             provider_sha256=provider_sha256,
         )
-        phase_layer_sha = [
-            ["" for _ in adapter.topology] for _ in plans
-        ]
-        phase_layer_inventory_sha = [
-            ["" for _ in adapter.topology] for _ in plans
-        ]
-        phase_layer_bytes = [
-            [0 for _ in adapter.topology] for _ in plans
-        ]
-        phase_operator_kinds = [
-            ["" for _ in adapter.topology] for _ in plans
-        ]
-        last_layer_shapes: list[Sequence[int] | None] = [
-            None for _ in plans
-        ]
-        for layer_index in range(len(adapter.topology)):
-            payload = builder._build_layer_payload(layer_index)
-            try:
-                rows = builder._layer_rows(payload)
-                for plan, row, phase_payload in zip(
-                    plans,
-                    rows,
-                    payload.phases,
-                    strict=True,
-                ):
-                    phase_layer_sha[plan.phase_index][layer_index] = str(
-                        row["layer_evidence_sha256"]
-                    )
-                    phase_layer_inventory_sha[
-                        plan.phase_index
-                    ][layer_index] = str(
-                        row["field_inventory_sha256"]
-                    )
-                    phase_layer_bytes[
-                        plan.phase_index
-                    ][layer_index] = int(row["logical_bytes"])
-                    phase_operator_kinds[
-                        plan.phase_index
-                    ][layer_index] = payload.operator_kind
-                    if layer_index == len(adapter.topology) - 1:
-                        last_layer_shapes[plan.phase_index] = tuple(
-                            phase_payload.evidence.tensors[
-                                "residual.post_layer"
-                            ].shape
-                        )
-            finally:
-                payload._release()
-        if any(shape is None for shape in last_layer_shapes):
-            raise Lfm2CpcfSelectiveEvidenceError(
-                "Last-layer shapes are incomplete."
-            )
-        final_payload = builder._build_final_norm_payload(
-            expected_last_shapes=[
-                tuple(shape or ()) for shape in last_layer_shapes
-            ]
+    except BaseException:
+        session.close()
+        raise
+
+
+def _validate_catalog_against_source(
+    source: Lfm2CpcfAuthenticatedSelectiveSource,
+    catalog: Lfm2CpcfSelectiveEvidenceCatalog,
+) -> None:
+    if not isinstance(source, Lfm2CpcfAuthenticatedSelectiveSource):
+        raise TypeError(
+            "source must be Lfm2CpcfAuthenticatedSelectiveSource."
         )
+    if not isinstance(catalog, Lfm2CpcfSelectiveEvidenceCatalog):
+        raise TypeError(
+            "catalog must be Lfm2CpcfSelectiveEvidenceCatalog."
+        )
+    adapter = source.adapter
+    session = source.session
+    plans = source.phase_plans
+    expected_operator_kinds = tuple(
+        str(layer["contract"]["kind"]) for layer in adapter.topology
+    )
+    if (
+        catalog.cache_key != session.cache_key
+        or catalog.source_sha256 != source.source_sha256
+        or catalog.provider_sha256 != source.provider_sha256
+        or catalog.selective_session_sha256 != session.evidence_sha256
+        or catalog.layer_topology_sha256
+        != adapter.layer_topology_sha256
+        or catalog.capture_selection_sha256
+        != adapter.capture_selection_sha256
+        or catalog.source_width != adapter.source_width
+        or catalog.layer_count != len(adapter.topology)
+        or catalog.phase_count != len(plans)
+    ):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Selective catalog identity differs from its authenticated source."
+        )
+    for plan, reference in zip(
+        plans,
+        catalog.phase_references,
+        strict=True,
+    ):
+        if (
+            reference.phase_index != plan.phase_index
+            or reference.cache_key != adapter.cache_key
+            or reference.batch_index != plan.batch_index
+            or reference.input_sha256 != plan.input_sha256
+            or reference.phase != plan.phase
+            or reference.layer_operator_kinds
+            != expected_operator_kinds
+        ):
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "Selective catalog phase order differs from its source."
+            )
+    for layer_index, dynamic_reference in enumerate(
+        catalog.dynamic_catalog.references
+    ):
+        phase_rows = [
+            {
+                "phase_index": plan.phase_index,
+                "batch_index": plan.batch_index,
+                "input_sha256": plan.input_sha256,
+                "phase": plan.phase,
+                "phase_reference_sha256": catalog.phase_references[
+                    plan.phase_index
+                ].reference_sha256,
+                "layer_evidence_sha256": catalog.phase_references[
+                    plan.phase_index
+                ].layer_evidence_sha256[layer_index],
+                "field_inventory_sha256": catalog.phase_references[
+                    plan.phase_index
+                ].layer_field_inventory_sha256[layer_index],
+                "logical_bytes": catalog.phase_references[
+                    plan.phase_index
+                ].layer_logical_bytes[layer_index],
+            }
+            for plan in plans
+        ]
+        logical_bytes = sum(
+            int(row["logical_bytes"]) for row in phase_rows
+        )
+        aggregate = _layer_aggregate_body(
+            source_sha256=source.source_sha256,
+            provider_sha256=source.provider_sha256,
+            layer_index=layer_index,
+            operator_kind=expected_operator_kinds[layer_index],
+            phase_rows=phase_rows,
+            logical_bytes=logical_bytes,
+        )
+        if (
+            dynamic_reference.evidence_sha256
+            != canonical_sha256(aggregate)
+            or dynamic_reference.logical_bytes != logical_bytes
+        ):
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "Dynamic layer catalog does not reconstruct from phase seals."
+            )
+    final_rows = [
+        {
+            "phase_index": plan.phase_index,
+            "batch_index": plan.batch_index,
+            "input_sha256": plan.input_sha256,
+            "phase": plan.phase,
+            "phase_reference_sha256": catalog.phase_references[
+                plan.phase_index
+            ].reference_sha256,
+            "evidence_sha256": catalog.phase_references[
+                plan.phase_index
+            ].final_norm_evidence_sha256,
+            "field_inventory_sha256": catalog.phase_references[
+                plan.phase_index
+            ].final_norm_field_inventory_sha256,
+            "logical_bytes": catalog.phase_references[
+                plan.phase_index
+            ].final_norm_logical_bytes,
+        }
+        for plan in plans
+    ]
+    final_bytes = sum(int(row["logical_bytes"]) for row in final_rows)
+    final_aggregate = _final_norm_aggregate_body(
+        source_sha256=source.source_sha256,
+        provider_sha256=source.provider_sha256,
+        phase_rows=final_rows,
+        logical_bytes=final_bytes,
+    )
+    if (
+        catalog.final_norm_evidence_sha256
+        != canonical_sha256(final_aggregate)
+        or catalog.final_norm_logical_bytes != final_bytes
+    ):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Final-norm catalog does not reconstruct from phase seals."
+        )
+    session.verify()
+
+
+def build_lfm2_cpcf_selective_provider_from_authenticated_catalog(
+    source: Lfm2CpcfAuthenticatedSelectiveSource,
+    catalog: Lfm2CpcfSelectiveEvidenceCatalog,
+    *,
+    catalog_artifact: DynamicEvidenceCatalogArtifact | None = None,
+) -> Lfm2CpcfSelectiveEvidenceProvider:
+    """Construct the live provider from a typed, source-bound catalog."""
+
+    _validate_catalog_against_source(source, catalog)
+    if catalog_artifact is not None:
+        if not isinstance(
+            catalog_artifact,
+            DynamicEvidenceCatalogArtifact,
+        ):
+            raise TypeError(
+                "catalog_artifact must be DynamicEvidenceCatalogArtifact."
+            )
+        expected_binding = lfm2_cpcf_selective_catalog_artifact_binding(
+            source
+        )
+        if catalog_artifact.binding != expected_binding:
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "Catalog artifact binding differs from the source."
+            )
+        catalog_artifact.verify()
+        if dict(catalog_artifact.payload) != (
+            lfm2_cpcf_selective_catalog_to_artifact_payload(catalog)
+        ):
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "Catalog artifact payload differs from the typed catalog."
+            )
+    source._claim_session()
+    return Lfm2CpcfSelectiveEvidenceProvider(
+        session=source.session,
+        adapter=source.adapter,
+        phase_plans=source.phase_plans,
+        catalog=catalog,
+        source_sha256=source.source_sha256,
+        provider_sha256=source.provider_sha256,
+        catalog_artifact=catalog_artifact,
+    )
+
+
+def _build_catalog_from_authenticated_source(
+    source: Lfm2CpcfAuthenticatedSelectiveSource,
+) -> Lfm2CpcfSelectiveEvidenceProvider:
+    """Run the original cold tensor sweep using an existing auth session."""
+
+    session = source.session
+    adapter = source.adapter
+    plans = source.phase_plans
+    source_sha256 = source.source_sha256
+    provider_sha256 = source.provider_sha256
+    builder = Lfm2CpcfSelectiveEvidenceProvider(
+        session=session,
+        adapter=adapter,
+        phase_plans=plans,
+        catalog=None,
+        source_sha256=source_sha256,
+        provider_sha256=provider_sha256,
+    )
+    phase_layer_sha = [
+        ["" for _ in adapter.topology] for _ in plans
+    ]
+    phase_layer_inventory_sha = [
+        ["" for _ in adapter.topology] for _ in plans
+    ]
+    phase_layer_bytes = [
+        [0 for _ in adapter.topology] for _ in plans
+    ]
+    phase_operator_kinds = [
+        ["" for _ in adapter.topology] for _ in plans
+    ]
+    last_layer_shapes: list[Sequence[int] | None] = [
+        None for _ in plans
+    ]
+    for layer_index in range(len(adapter.topology)):
+        payload = builder._build_layer_payload(layer_index)
         try:
-            final_rows = builder._final_norm_rows(final_payload)
-            final_aggregate_sha = final_payload.evidence_sha256
-            final_aggregate_bytes = final_payload.logical_bytes
-            phase_references = []
-            for plan, final_row, final_phase_payload in zip(
+            rows = builder._layer_rows(payload)
+            for plan, row, phase_payload in zip(
                 plans,
-                final_rows,
-                final_payload.phases,
+                rows,
+                payload.phases,
                 strict=True,
             ):
-                final_inventory = installability._field_inventory(
-                    final_phase_payload.tensors
+                phase_layer_sha[plan.phase_index][layer_index] = str(
+                    row["layer_evidence_sha256"]
                 )
-                existing_phase_body = {
-                    "schema": (
-                        installability.LFM2_CPCF_INSTALLABLE_PHASE_SCHEMA
-                    ),
-                    "cache_key": adapter.cache_key,
-                    "batch_index": plan.batch_index,
-                    "input_sha256": plan.input_sha256,
-                    "phase": plan.phase,
-                    "layer_evidence_sha256": list(
-                        phase_layer_sha[plan.phase_index]
-                    ),
-                    "final_norm_field_inventory": final_inventory,
-                    "parent_side_compiler_inputs_ready": True,
-                }
-                existing_phase_sha256 = installability._sha(
-                    existing_phase_body
+                phase_layer_inventory_sha[
+                    plan.phase_index
+                ][layer_index] = str(
+                    row["field_inventory_sha256"]
                 )
-                body = _phase_reference_body(
+                phase_layer_bytes[
+                    plan.phase_index
+                ][layer_index] = int(row["logical_bytes"])
+                phase_operator_kinds[
+                    plan.phase_index
+                ][layer_index] = payload.operator_kind
+                if layer_index == len(adapter.topology) - 1:
+                    last_layer_shapes[plan.phase_index] = tuple(
+                        phase_payload.evidence.tensors[
+                            "residual.post_layer"
+                        ].shape
+                    )
+        finally:
+            payload._release()
+    if any(shape is None for shape in last_layer_shapes):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Last-layer shapes are incomplete."
+        )
+    final_payload = builder._build_final_norm_payload(
+        expected_last_shapes=[
+            tuple(shape or ()) for shape in last_layer_shapes
+        ]
+    )
+    try:
+        final_rows = builder._final_norm_rows(final_payload)
+        final_aggregate_bytes = final_payload.logical_bytes
+        phase_references = []
+        for plan, final_row, final_phase_payload in zip(
+            plans,
+            final_rows,
+            final_payload.phases,
+            strict=True,
+        ):
+            final_inventory = installability._field_inventory(
+                final_phase_payload.tensors
+            )
+            existing_phase_body = {
+                "schema": (
+                    installability.LFM2_CPCF_INSTALLABLE_PHASE_SCHEMA
+                ),
+                "cache_key": adapter.cache_key,
+                "batch_index": plan.batch_index,
+                "input_sha256": plan.input_sha256,
+                "phase": plan.phase,
+                "layer_evidence_sha256": list(
+                    phase_layer_sha[plan.phase_index]
+                ),
+                "final_norm_field_inventory": final_inventory,
+                "parent_side_compiler_inputs_ready": True,
+            }
+            existing_phase_sha256 = installability._sha(
+                existing_phase_body
+            )
+            body = _phase_reference_body(
+                phase_index=plan.phase_index,
+                cache_key=adapter.cache_key,
+                batch_index=plan.batch_index,
+                input_sha256=plan.input_sha256,
+                phase=plan.phase,
+                layer_operator_kinds=phase_operator_kinds[
+                    plan.phase_index
+                ],
+                layer_evidence_sha256=phase_layer_sha[
+                    plan.phase_index
+                ],
+                layer_field_inventory_sha256=(
+                    phase_layer_inventory_sha[plan.phase_index]
+                ),
+                layer_logical_bytes=phase_layer_bytes[
+                    plan.phase_index
+                ],
+                final_norm_evidence_sha256=str(
+                    final_row["evidence_sha256"]
+                ),
+                final_norm_field_inventory_sha256=str(
+                    final_row["field_inventory_sha256"]
+                ),
+                final_norm_logical_bytes=int(
+                    final_row["logical_bytes"]
+                ),
+                existing_phase_evidence_sha256=(
+                    existing_phase_sha256
+                ),
+            )
+            phase_references.append(
+                Lfm2CpcfSelectivePhaseReference(
                     phase_index=plan.phase_index,
                     cache_key=adapter.cache_key,
                     batch_index=plan.batch_index,
                     input_sha256=plan.input_sha256,
                     phase=plan.phase,
-                    layer_operator_kinds=phase_operator_kinds[
-                        plan.phase_index
-                    ],
-                    layer_evidence_sha256=phase_layer_sha[
-                        plan.phase_index
-                    ],
-                    layer_field_inventory_sha256=(
+                    layer_operator_kinds=tuple(
+                        phase_operator_kinds[plan.phase_index]
+                    ),
+                    layer_evidence_sha256=tuple(
+                        phase_layer_sha[plan.phase_index]
+                    ),
+                    layer_field_inventory_sha256=tuple(
                         phase_layer_inventory_sha[plan.phase_index]
                     ),
-                    layer_logical_bytes=phase_layer_bytes[
-                        plan.phase_index
-                    ],
+                    layer_logical_bytes=tuple(
+                        phase_layer_bytes[plan.phase_index]
+                    ),
                     final_norm_evidence_sha256=str(
                         final_row["evidence_sha256"]
                     ),
@@ -1494,139 +1816,580 @@ def build_lfm2_cpcf_selective_evidence_provider(
                     existing_phase_evidence_sha256=(
                         existing_phase_sha256
                     ),
+                    reference_sha256=canonical_sha256(body),
                 )
-                phase_references.append(
-                    Lfm2CpcfSelectivePhaseReference(
-                        phase_index=plan.phase_index,
-                        cache_key=adapter.cache_key,
-                        batch_index=plan.batch_index,
-                        input_sha256=plan.input_sha256,
-                        phase=plan.phase,
-                        layer_operator_kinds=tuple(
-                            phase_operator_kinds[plan.phase_index]
-                        ),
-                        layer_evidence_sha256=tuple(
-                            phase_layer_sha[plan.phase_index]
-                        ),
-                        layer_field_inventory_sha256=tuple(
-                            phase_layer_inventory_sha[plan.phase_index]
-                        ),
-                        layer_logical_bytes=tuple(
-                            phase_layer_bytes[plan.phase_index]
-                        ),
-                        final_norm_evidence_sha256=str(
-                            final_row["evidence_sha256"]
-                        ),
-                        final_norm_field_inventory_sha256=str(
-                            final_row["field_inventory_sha256"]
-                        ),
-                        final_norm_logical_bytes=int(
-                            final_row["logical_bytes"]
-                        ),
-                        existing_phase_evidence_sha256=(
-                            existing_phase_sha256
-                        ),
-                        reference_sha256=canonical_sha256(body),
-                    )
-                )
-        finally:
-            final_payload._release()
-        rebuilt_layer_sha: list[str] = []
-        rebuilt_layer_bytes: list[int] = []
-        for layer_index in range(len(adapter.topology)):
-            rows = [
-                {
-                    "phase_index": plan.phase_index,
-                    "batch_index": plan.batch_index,
-                    "input_sha256": plan.input_sha256,
-                    "phase": plan.phase,
-                    "phase_reference_sha256": phase_references[
-                        plan.phase_index
-                    ].reference_sha256,
-                    "layer_evidence_sha256": phase_layer_sha[
-                        plan.phase_index
-                    ][layer_index],
-                    "field_inventory_sha256": (
-                        phase_layer_inventory_sha[plan.phase_index][
-                            layer_index
-                        ]
-                    ),
-                    "logical_bytes": phase_layer_bytes[
-                        plan.phase_index
-                    ][layer_index],
-                }
-                for plan in plans
-            ]
-            logical_bytes = sum(
-                phase_layer_bytes[plan.phase_index][layer_index]
-                for plan in plans
             )
-            body = _layer_aggregate_body(
-                source_sha256=source_sha256,
-                provider_sha256=provider_sha256,
-                layer_index=layer_index,
-                operator_kind=phase_operator_kinds[0][layer_index],
-                phase_rows=rows,
-                logical_bytes=logical_bytes,
-            )
-            rebuilt_layer_sha.append(canonical_sha256(body))
-            rebuilt_layer_bytes.append(logical_bytes)
-        dynamic_catalog = DynamicEvidenceLayerCatalog.create(
-            source_sha256=source_sha256,
-            provider_sha256=provider_sha256,
-            evidence_sha256=rebuilt_layer_sha,
-            logical_bytes=rebuilt_layer_bytes,
-        )
-        final_rows = [
+    finally:
+        final_payload._release()
+    rebuilt_layer_sha: list[str] = []
+    rebuilt_layer_bytes: list[int] = []
+    for layer_index in range(len(adapter.topology)):
+        rows = [
             {
-                **dict(row),
+                "phase_index": plan.phase_index,
+                "batch_index": plan.batch_index,
+                "input_sha256": plan.input_sha256,
+                "phase": plan.phase,
                 "phase_reference_sha256": phase_references[
-                    int(row["phase_index"])
+                    plan.phase_index
                 ].reference_sha256,
+                "layer_evidence_sha256": phase_layer_sha[
+                    plan.phase_index
+                ][layer_index],
+                "field_inventory_sha256": (
+                    phase_layer_inventory_sha[plan.phase_index][
+                        layer_index
+                    ]
+                ),
+                "logical_bytes": phase_layer_bytes[
+                    plan.phase_index
+                ][layer_index],
             }
-            for row in final_rows
+            for plan in plans
         ]
-        final_body = _final_norm_aggregate_body(
+        logical_bytes = sum(
+            phase_layer_bytes[plan.phase_index][layer_index]
+            for plan in plans
+        )
+        body = _layer_aggregate_body(
             source_sha256=source_sha256,
             provider_sha256=provider_sha256,
-            phase_rows=final_rows,
-            logical_bytes=final_aggregate_bytes,
+            layer_index=layer_index,
+            operator_kind=phase_operator_kinds[0][layer_index],
+            phase_rows=rows,
+            logical_bytes=logical_bytes,
         )
-        final_aggregate_sha = canonical_sha256(final_body)
-        catalog = Lfm2CpcfSelectiveEvidenceCatalog.create(
-            cache_key=adapter.cache_key,
-            source_sha256=source_sha256,
-            provider_sha256=provider_sha256,
-            selective_session_sha256=session.evidence_sha256,
-            layer_topology_sha256=adapter.layer_topology_sha256,
-            capture_selection_sha256=adapter.capture_selection_sha256,
-            source_width=adapter.source_width,
-            phase_references=tuple(phase_references),
-            dynamic_catalog=dynamic_catalog,
-            final_norm_evidence_sha256=final_aggregate_sha,
-            final_norm_logical_bytes=final_aggregate_bytes,
+        rebuilt_layer_sha.append(canonical_sha256(body))
+        rebuilt_layer_bytes.append(logical_bytes)
+    dynamic_catalog = DynamicEvidenceLayerCatalog.create(
+        source_sha256=source_sha256,
+        provider_sha256=provider_sha256,
+        evidence_sha256=rebuilt_layer_sha,
+        logical_bytes=rebuilt_layer_bytes,
+    )
+    final_rows = [
+        {
+            **dict(row),
+            "phase_reference_sha256": phase_references[
+                int(row["phase_index"])
+            ].reference_sha256,
+        }
+        for row in final_rows
+    ]
+    final_body = _final_norm_aggregate_body(
+        source_sha256=source_sha256,
+        provider_sha256=provider_sha256,
+        phase_rows=final_rows,
+        logical_bytes=final_aggregate_bytes,
+    )
+    catalog = Lfm2CpcfSelectiveEvidenceCatalog.create(
+        cache_key=adapter.cache_key,
+        source_sha256=source_sha256,
+        provider_sha256=provider_sha256,
+        selective_session_sha256=session.evidence_sha256,
+        layer_topology_sha256=adapter.layer_topology_sha256,
+        capture_selection_sha256=adapter.capture_selection_sha256,
+        source_width=adapter.source_width,
+        phase_references=tuple(phase_references),
+        dynamic_catalog=dynamic_catalog,
+        final_norm_evidence_sha256=canonical_sha256(final_body),
+        final_norm_logical_bytes=final_aggregate_bytes,
+    )
+    _validate_catalog_against_source(source, catalog)
+    builder._catalog = catalog
+    source._claim_session()
+    return builder
+
+
+def lfm2_cpcf_selective_catalog_artifact_binding(
+    source: Lfm2CpcfAuthenticatedSelectiveSource,
+) -> DynamicEvidenceCatalogBinding:
+    """Bind reusable metadata to exact authenticated inputs and codec."""
+
+    if not isinstance(source, Lfm2CpcfAuthenticatedSelectiveSource):
+        raise TypeError(
+            "source must be Lfm2CpcfAuthenticatedSelectiveSource."
         )
-        builder._catalog = catalog
-        session.verify()
-        return builder
+    codec_body = {
+        "schema": LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_CODEC_SCHEMA,
+        "provider_sha256": source.provider_sha256,
+        "catalog_schema": LFM2_CPCF_SELECTIVE_CATALOG_SCHEMA,
+        "phase_reference_schema": (
+            LFM2_CPCF_SELECTIVE_PHASE_REFERENCE_SCHEMA
+        ),
+        "payload_schema": (
+            LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_PAYLOAD_SCHEMA
+        ),
+        "typed_reconstruction_required": True,
+    }
+    bindings = {
+        "schema": LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_CODEC_SCHEMA,
+        "cache_key": source.session.cache_key,
+        "selective_session": source.session.as_dict(),
+        "layer_topology_sha256": source.adapter.layer_topology_sha256,
+        "capture_selection_sha256": (
+            source.adapter.capture_selection_sha256
+        ),
+        "source_width": source.adapter.source_width,
+        "layer_count": source.layer_count,
+        "phase_count": source.phase_count,
+        "ordered_phases": [
+            {
+                "phase_index": plan.phase_index,
+                "batch_index": plan.batch_index,
+                "input_sha256": plan.input_sha256,
+                "phase": plan.phase,
+            }
+            for plan in source.phase_plans
+        ],
+        "ordered_layer_operator_kinds": [
+            str(layer["contract"]["kind"])
+            for layer in source.adapter.topology
+        ],
+    }
+    return DynamicEvidenceCatalogBinding(
+        catalog_kind=LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_KIND,
+        source_sha256=source.source_sha256,
+        provider_sha256=source.provider_sha256,
+        authenticated_input_sha256=source.session.evidence_sha256,
+        codec_sha256=canonical_sha256(codec_body),
+        bindings=bindings,
+    )
+
+
+def lfm2_cpcf_selective_catalog_to_artifact_payload(
+    catalog: Lfm2CpcfSelectiveEvidenceCatalog,
+) -> dict[str, Any]:
+    """Encode all typed references needed for lossless reconstruction."""
+
+    if not isinstance(catalog, Lfm2CpcfSelectiveEvidenceCatalog):
+        raise TypeError(
+            "catalog must be Lfm2CpcfSelectiveEvidenceCatalog."
+        )
+    return {
+        "schema": LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_PAYLOAD_SCHEMA,
+        "catalog": catalog.as_dict(),
+        "dynamic_references": [
+            reference.as_dict()
+            for reference in catalog.dynamic_catalog.references
+        ],
+        "tensor_payloads_resident": False,
+        "parent_forward_calls": 0,
+        "training_steps": 0,
+    }
+
+
+def _phase_reference_from_artifact(
+    value: Mapping[str, Any],
+) -> Lfm2CpcfSelectivePhaseReference:
+    expected = {
+        "schema",
+        "phase_index",
+        "cache_key",
+        "batch_index",
+        "input_sha256",
+        "phase",
+        "layer_operator_kinds",
+        "layer_evidence_sha256",
+        "layer_field_inventory_sha256",
+        "layer_logical_bytes",
+        "final_norm_evidence_sha256",
+        "final_norm_field_inventory_sha256",
+        "final_norm_logical_bytes",
+        "existing_phase_evidence_sha256",
+        "parent_side_compiler_inputs_ready",
+        "tensor_payloads_resident",
+        "reference_sha256",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected:
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Artifact phase reference fields are not exact."
+        )
+    if (
+        value["schema"] != LFM2_CPCF_SELECTIVE_PHASE_REFERENCE_SCHEMA
+        or value["parent_side_compiler_inputs_ready"] is not True
+        or value["tensor_payloads_resident"] is not False
+    ):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Artifact phase reference invariants are invalid."
+        )
+    for name in (
+        "layer_operator_kinds",
+        "layer_evidence_sha256",
+        "layer_field_inventory_sha256",
+        "layer_logical_bytes",
+    ):
+        if not isinstance(value[name], list):
+            raise Lfm2CpcfSelectiveEvidenceError(
+                f"Artifact phase reference {name} must be a list."
+            )
+    result = Lfm2CpcfSelectivePhaseReference(
+        phase_index=value["phase_index"],
+        cache_key=value["cache_key"],
+        batch_index=value["batch_index"],
+        input_sha256=value["input_sha256"],
+        phase=value["phase"],
+        layer_operator_kinds=tuple(value["layer_operator_kinds"]),
+        layer_evidence_sha256=tuple(value["layer_evidence_sha256"]),
+        layer_field_inventory_sha256=tuple(
+            value["layer_field_inventory_sha256"]
+        ),
+        layer_logical_bytes=tuple(value["layer_logical_bytes"]),
+        final_norm_evidence_sha256=value[
+            "final_norm_evidence_sha256"
+        ],
+        final_norm_field_inventory_sha256=value[
+            "final_norm_field_inventory_sha256"
+        ],
+        final_norm_logical_bytes=value["final_norm_logical_bytes"],
+        existing_phase_evidence_sha256=value[
+            "existing_phase_evidence_sha256"
+        ],
+        reference_sha256=value["reference_sha256"],
+    )
+    if result.as_dict() != dict(value):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Artifact phase reference changed during reconstruction."
+        )
+    return result
+
+
+def _dynamic_catalog_from_artifact(
+    values: Any,
+    *,
+    source_sha256: str,
+    provider_sha256: str,
+    claimed_catalog_sha256: str,
+) -> DynamicEvidenceLayerCatalog:
+    if not isinstance(values, list) or not values:
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Artifact dynamic references must be a nonempty list."
+        )
+    references = []
+    expected = {
+        "schema",
+        "source_sha256",
+        "provider_sha256",
+        "layer_index",
+        "evidence_sha256",
+        "logical_bytes",
+        "reference_sha256",
+    }
+    for value in values:
+        if not isinstance(value, Mapping) or set(value) != expected:
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "Artifact dynamic reference fields are not exact."
+            )
+        reference = DynamicEvidenceLayerReference(
+            source_sha256=value["source_sha256"],
+            provider_sha256=value["provider_sha256"],
+            layer_index=value["layer_index"],
+            evidence_sha256=value["evidence_sha256"],
+            logical_bytes=value["logical_bytes"],
+            reference_sha256=value["reference_sha256"],
+        )
+        if reference.as_dict() != dict(value):
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "Artifact dynamic reference changed during reconstruction."
+            )
+        references.append(reference)
+    rebuilt = DynamicEvidenceLayerCatalog.create(
+        source_sha256=source_sha256,
+        provider_sha256=provider_sha256,
+        evidence_sha256=[
+            reference.evidence_sha256 for reference in references
+        ],
+        logical_bytes=[
+            reference.logical_bytes for reference in references
+        ],
+    )
+    if (
+        rebuilt.references != tuple(references)
+        or rebuilt.catalog_sha256 != claimed_catalog_sha256
+    ):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Artifact dynamic catalog seal is invalid."
+        )
+    return rebuilt
+
+
+def lfm2_cpcf_selective_catalog_from_artifact_payload(
+    payload: Mapping[str, Any],
+) -> Lfm2CpcfSelectiveEvidenceCatalog:
+    """Decode canonical JSON into fully validated typed catalog objects."""
+
+    expected = {
+        "schema",
+        "catalog",
+        "dynamic_references",
+        "tensor_payloads_resident",
+        "parent_forward_calls",
+        "training_steps",
+    }
+    if not isinstance(payload, Mapping) or set(payload) != expected:
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Selective artifact payload fields are not exact."
+        )
+    if (
+        payload["schema"]
+        != LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_PAYLOAD_SCHEMA
+        or payload["tensor_payloads_resident"] is not False
+        or payload["parent_forward_calls"] != 0
+        or payload["training_steps"] != 0
+    ):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Selective artifact payload invariants are invalid."
+        )
+    catalog_value = payload["catalog"]
+    if not isinstance(catalog_value, Mapping):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Selective artifact catalog must be a JSON object."
+        )
+    expected_catalog_fields = {
+        "schema",
+        "cache_key",
+        "source_sha256",
+        "provider_sha256",
+        "selective_session_sha256",
+        "layer_topology_sha256",
+        "capture_selection_sha256",
+        "source_width",
+        "layer_count",
+        "phase_count",
+        "ordered_phase_reference_sha256",
+        "dynamic_catalog_sha256",
+        "final_norm_evidence_sha256",
+        "final_norm_logical_bytes",
+        "tensor_payloads_resident",
+        "parent_forward_calls",
+        "training_steps",
+        "phase_references",
+        "catalog_sha256",
+    }
+    if set(catalog_value) != expected_catalog_fields:
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Selective artifact catalog fields are not exact."
+        )
+    if (
+        catalog_value["schema"] != LFM2_CPCF_SELECTIVE_CATALOG_SCHEMA
+        or catalog_value["tensor_payloads_resident"] is not False
+        or catalog_value["parent_forward_calls"] != 0
+        or catalog_value["training_steps"] != 0
+        or not isinstance(
+            catalog_value["ordered_phase_reference_sha256"],
+            list,
+        )
+    ):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Selective artifact catalog invariants are invalid."
+        )
+    phase_values = catalog_value.get("phase_references")
+    if not isinstance(phase_values, list) or not phase_values:
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Selective artifact phase references are invalid."
+        )
+    phase_references = tuple(
+        _phase_reference_from_artifact(value)
+        for value in phase_values
+    )
+    dynamic_catalog = _dynamic_catalog_from_artifact(
+        payload["dynamic_references"],
+        source_sha256=catalog_value["source_sha256"],
+        provider_sha256=catalog_value["provider_sha256"],
+        claimed_catalog_sha256=catalog_value[
+            "dynamic_catalog_sha256"
+        ],
+    )
+    result = Lfm2CpcfSelectiveEvidenceCatalog.create(
+        cache_key=catalog_value["cache_key"],
+        source_sha256=catalog_value["source_sha256"],
+        provider_sha256=catalog_value["provider_sha256"],
+        selective_session_sha256=catalog_value[
+            "selective_session_sha256"
+        ],
+        layer_topology_sha256=catalog_value[
+            "layer_topology_sha256"
+        ],
+        capture_selection_sha256=catalog_value[
+            "capture_selection_sha256"
+        ],
+        source_width=catalog_value["source_width"],
+        phase_references=phase_references,
+        dynamic_catalog=dynamic_catalog,
+        final_norm_evidence_sha256=catalog_value[
+            "final_norm_evidence_sha256"
+        ],
+        final_norm_logical_bytes=catalog_value[
+            "final_norm_logical_bytes"
+        ],
+    )
+    if result.as_dict() != dict(catalog_value):
+        raise Lfm2CpcfSelectiveEvidenceError(
+            "Selective catalog changed during typed reconstruction."
+        )
+    return result
+
+
+def open_or_build_lfm2_cpcf_selective_evidence_provider(
+    cache: Lfm2CircuitTraceCache,
+    *,
+    artifact_store: (
+        DynamicEvidenceCatalogArtifactStore | str | Path
+    ),
+) -> Lfm2CpcfSelectiveEvidenceProvider:
+    """Use a verified catalog hit or run and publish the original cold pass."""
+
+    store = (
+        artifact_store
+        if isinstance(
+            artifact_store,
+            DynamicEvidenceCatalogArtifactStore,
+        )
+        else DynamicEvidenceCatalogArtifactStore(artifact_store)
+    )
+    source = authenticate_lfm2_cpcf_selective_source(cache)
+    try:
+        binding = lfm2_cpcf_selective_catalog_artifact_binding(source)
+        artifact = store.load(binding)
+        if artifact is not None:
+            catalog = lfm2_cpcf_selective_catalog_from_artifact_payload(
+                artifact.payload
+            )
+            return (
+                build_lfm2_cpcf_selective_provider_from_authenticated_catalog(
+                    source,
+                    catalog,
+                    catalog_artifact=artifact,
+                )
+            )
+        provider = _build_catalog_from_authenticated_source(source)
+        try:
+            artifact = store.publish(
+                binding,
+                lfm2_cpcf_selective_catalog_to_artifact_payload(
+                    provider.catalog
+                ),
+            )
+            reloaded_catalog = (
+                lfm2_cpcf_selective_catalog_from_artifact_payload(
+                    artifact.payload
+                )
+            )
+            _validate_catalog_against_source(source, reloaded_catalog)
+            if reloaded_catalog.as_dict() != provider.catalog.as_dict():
+                raise Lfm2CpcfSelectiveEvidenceError(
+                    "Published catalog differs from the cold catalog."
+                )
+            provider._catalog = reloaded_catalog
+            provider._catalog_artifact = artifact
+            return provider
+        except BaseException:
+            provider.close()
+            raise
     except BaseException:
-        session.close()
+        source.close()
+        raise
+
+
+def open_lfm2_cpcf_selective_evidence_provider_from_catalog(
+    cache: Lfm2CircuitTraceCache,
+    *,
+    artifact_store: (
+        DynamicEvidenceCatalogArtifactStore | str | Path
+    ),
+    expected_binding_sha256: str,
+    expected_manifest_sha256: str,
+    expected_catalog_sha256: str,
+) -> Lfm2CpcfSelectiveEvidenceProvider:
+    """Require one exact warm artifact hit; never run the cold catalog pass."""
+
+    for value, name in (
+        (expected_binding_sha256, "expected_binding_sha256"),
+        (expected_manifest_sha256, "expected_manifest_sha256"),
+        (expected_catalog_sha256, "expected_catalog_sha256"),
+    ):
+        _digest(value, name)
+    store = (
+        artifact_store
+        if isinstance(
+            artifact_store,
+            DynamicEvidenceCatalogArtifactStore,
+        )
+        else DynamicEvidenceCatalogArtifactStore(artifact_store)
+    )
+    source = authenticate_lfm2_cpcf_selective_source(cache)
+    try:
+        binding = lfm2_cpcf_selective_catalog_artifact_binding(source)
+        if binding.binding_sha256 != expected_binding_sha256:
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "Authenticated source differs from the required catalog "
+                "binding."
+            )
+        artifact = store.load(binding)
+        if artifact is None:
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "The required authenticated catalog is not prepared; "
+                "production folding cannot run the cold catalog builder."
+            )
+        if (
+            artifact.disposition != "loaded"
+            or artifact.manifest_sha256 != expected_manifest_sha256
+            or artifact.catalog_sha256 != expected_catalog_sha256
+        ):
+            raise Lfm2CpcfSelectiveEvidenceError(
+                "Warm catalog hit differs from its required manifest or "
+                "catalog identity."
+            )
+        catalog = lfm2_cpcf_selective_catalog_from_artifact_payload(
+            artifact.payload
+        )
+        return build_lfm2_cpcf_selective_provider_from_authenticated_catalog(
+            source,
+            catalog,
+            catalog_artifact=artifact,
+        )
+    except BaseException:
+        source.close()
+        raise
+
+
+def build_lfm2_cpcf_selective_evidence_provider(
+    cache: Lfm2CircuitTraceCache,
+) -> Lfm2CpcfSelectiveEvidenceProvider:
+    """Build a tensor-free catalog and reusable selective layer provider."""
+
+    source = authenticate_lfm2_cpcf_selective_source(cache)
+    try:
+        return _build_catalog_from_authenticated_source(source)
+    except BaseException:
+        source.close()
         raise
 
 
 __all__ = [
+    "LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_CODEC_SCHEMA",
+    "LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_KIND",
+    "LFM2_CPCF_SELECTIVE_CATALOG_ARTIFACT_PAYLOAD_SCHEMA",
     "LFM2_CPCF_SELECTIVE_CATALOG_SCHEMA",
     "LFM2_CPCF_SELECTIVE_FINAL_NORM_SCHEMA",
     "LFM2_CPCF_SELECTIVE_LAYER_PAYLOAD_SCHEMA",
     "LFM2_CPCF_SELECTIVE_PHASE_REFERENCE_SCHEMA",
     "LFM2_CPCF_SELECTIVE_PROVIDER_IMPLEMENTATION_SCHEMA",
     "LFM2_CPCF_SELECTIVE_SOURCE_SCHEMA",
+    "Lfm2CpcfAuthenticatedSelectiveSource",
     "Lfm2CpcfSelectiveEvidenceCatalog",
     "Lfm2CpcfSelectiveEvidenceError",
     "Lfm2CpcfSelectiveEvidenceProvider",
     "Lfm2CpcfSelectiveFinalNormPayload",
     "Lfm2CpcfSelectiveLayerPayload",
     "Lfm2CpcfSelectivePhaseReference",
+    "authenticate_lfm2_cpcf_selective_source",
     "build_lfm2_cpcf_selective_evidence_provider",
+    "build_lfm2_cpcf_selective_provider_from_authenticated_catalog",
+    "lfm2_cpcf_selective_catalog_artifact_binding",
+    "lfm2_cpcf_selective_catalog_from_artifact_payload",
+    "lfm2_cpcf_selective_catalog_to_artifact_payload",
     "lfm2_cpcf_selective_provider_implementation",
+    "open_lfm2_cpcf_selective_evidence_provider_from_catalog",
+    "open_or_build_lfm2_cpcf_selective_evidence_provider",
 ]

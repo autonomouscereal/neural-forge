@@ -108,6 +108,19 @@ _COMPILED_AUDIT_ZERO_FIELDS = frozenset(
         "fallback_paths",
     }
 )
+_SELECTIVE_CATALOG_AUTHENTICATION_FIELDS = (
+    "preparation_receipt_sha256",
+    "binding_sha256",
+    "artifact_manifest_sha256",
+    "artifact_catalog_sha256",
+    "selective_catalog_sha256",
+    "selective_source_sha256",
+    "selective_provider_sha256",
+    "codec_sha256",
+    "provider_implementation_sha256",
+    "artifact_store_source_sha256",
+    "selective_provider_source_sha256",
+)
 _CONTEXT_FIELDS = (
     "target_model",
     "target_tokenizer",
@@ -1382,6 +1395,37 @@ def _authenticated_prior_audit(context: Any) -> QuarantineZeroOperationAudit:
         guard_implementation.get("identity_sha256"),
         "fold-only runtime guard identity SHA-256",
     )
+    diagnostic = _sealed_mapping(
+        context.compile_diagnostic,
+        name="compiled v5 diagnostic",
+        seal_field="receipt_sha256",
+    )
+    catalog_preparation = _mapping(
+        diagnostic.get("selective_catalog_artifact"),
+        "compiled v5 selective catalog preparation",
+    )
+    catalog_authentication = {
+        name: _digest(
+            catalog_preparation.get(name),
+            f"compiled v5 selective catalog {name}",
+        )
+        for name in _SELECTIVE_CATALOG_AUTHENTICATION_FIELDS
+    }
+    if (
+        catalog_preparation.get("status")
+        != "prepared_authenticated_tensor_free_catalog"
+        or catalog_preparation.get(
+            "warm_hit_required_for_production_fold"
+        )
+        is not True
+        or catalog_preparation.get(
+            "cold_rebuild_permitted_in_production_fold"
+        )
+        is not False
+    ):
+        raise Lfm2CpcfV5QuarantineError(
+            "Compiled v5 selective catalog preparation lifecycle is invalid."
+        )
     source_binding = canonical_sha256(
         {
             "selective_source_sha256": _digest(
@@ -1399,6 +1443,7 @@ def _authenticated_prior_audit(context: Any) -> QuarantineZeroOperationAudit:
             "fold_only_runtime_guard_identity_sha256": (
                 guard_identity_sha256
             ),
+            "selective_catalog_artifact": catalog_authentication,
         }
     )
     if (

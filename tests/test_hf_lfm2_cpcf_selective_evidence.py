@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import json
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,12 +16,19 @@ transformers = pytest.importorskip("transformers")
 
 import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
 import neural_forge.hf_lfm2_cpcf_model_compiler as model_compiler  # noqa: E402
+import neural_forge.hf_lfm2_cpcf_selective_evidence as selective  # noqa: E402
 import neural_forge.hf_lfm2_cpcf_v5_model_compiler as v5  # noqa: E402
+from neural_forge.dynamic_circuit_ir import canonical_json_bytes  # noqa: E402
+from neural_forge.dynamic_evidence_catalog_artifact import (  # noqa: E402
+    CATALOG_FILENAME,
+    DynamicEvidenceCatalogArtifactIntegrityError,
+)
 from neural_forge.dynamic_evidence_residency import (  # noqa: E402
     DynamicEvidenceLayerReference,
     DynamicEvidenceResidencyError,
     DynamicEvidenceResidencyWindow,
 )
+from neural_forge.dynamic_fold_executor import _FoldOnlyTorchGuard  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     BATCH_RECORD_FILENAME,
     TRACE_FILENAME,
@@ -35,6 +44,9 @@ from neural_forge.hf_lfm2_cpcf_installability import (  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_selective_evidence import (  # noqa: E402
     Lfm2CpcfSelectiveEvidenceError,
     build_lfm2_cpcf_selective_evidence_provider,
+    lfm2_cpcf_selective_catalog_from_artifact_payload,
+    open_lfm2_cpcf_selective_evidence_provider_from_catalog,
+    open_or_build_lfm2_cpcf_selective_evidence_provider,
 )
 
 
@@ -250,6 +262,343 @@ def test_selective_session_hashes_each_trace_once_and_never_rehashes_per_layer(
         ]["toctou_boundary"]
     finally:
         provider.close()
+
+
+def test_catalog_artifact_cold_then_warm_skips_only_catalog_tensor_sweep(
+    sealed_cache_path,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store_root = tmp_path / "selective-catalogs"
+    trace_hashes: list[Path] = []
+    original_file_sha256 = trace_cache._file_sha256
+    original_layer_builder = (
+        selective.Lfm2CpcfSelectiveEvidenceProvider._build_layer_payload
+    )
+    original_final_builder = (
+        selective.Lfm2CpcfSelectiveEvidenceProvider._build_final_norm_payload
+    )
+    layer_builds: list[int] = []
+    final_builds = 0
+
+    def counted_file_sha256(path: Path) -> str:
+        if Path(path).name == TRACE_FILENAME:
+            trace_hashes.append(Path(path))
+        return original_file_sha256(path)
+
+    def counted_layer_builder(self, layer_index):
+        layer_builds.append(layer_index)
+        return original_layer_builder(self, layer_index)
+
+    def counted_final_builder(self, *, expected_last_shapes):
+        nonlocal final_builds
+        final_builds += 1
+        return original_final_builder(
+            self,
+            expected_last_shapes=expected_last_shapes,
+        )
+
+    monkeypatch.setattr(trace_cache, "_file_sha256", counted_file_sha256)
+    monkeypatch.setattr(
+        selective.Lfm2CpcfSelectiveEvidenceProvider,
+        "_build_layer_payload",
+        counted_layer_builder,
+    )
+    monkeypatch.setattr(
+        selective.Lfm2CpcfSelectiveEvidenceProvider,
+        "_build_final_norm_payload",
+        counted_final_builder,
+    )
+    with _FoldOnlyTorchGuard() as cold_guard:
+        cold = open_or_build_lfm2_cpcf_selective_evidence_provider(
+            open_lfm2_circuit_trace_cache(
+                sealed_cache_path,
+                verify=False,
+            ),
+            artifact_store=store_root,
+        )
+        cold_catalog = cold.catalog.as_dict()
+        assert cold.catalog_artifact_receipt is not None
+        assert cold.catalog_artifact_receipt["disposition"] == "published"
+        cold.close()
+    assert layer_builds == [0, 1]
+    assert final_builds == 1
+    assert len(trace_hashes) == 2
+    assert cold_guard.optimizer_constructions == 0
+    assert cold_guard.optimizer_steps == 0
+    assert cold_guard.backward_calls == 0
+    assert cold_guard.autograd_grad_calls == 0
+    assert cold_guard.pruning_operations == 0
+    assert cold_guard.quantization_operations == 0
+
+    def forbidden_catalog_sweep(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("warm catalog hit performed a tensor sweep")
+
+    trace_hashes.clear()
+    monkeypatch.setattr(
+        selective.Lfm2CpcfSelectiveEvidenceProvider,
+        "_build_layer_payload",
+        forbidden_catalog_sweep,
+    )
+    monkeypatch.setattr(
+        selective.Lfm2CpcfSelectiveEvidenceProvider,
+        "_build_final_norm_payload",
+        forbidden_catalog_sweep,
+    )
+    with _FoldOnlyTorchGuard() as warm_guard:
+        warm = open_or_build_lfm2_cpcf_selective_evidence_provider(
+            open_lfm2_circuit_trace_cache(
+                sealed_cache_path,
+                verify=False,
+            ),
+            artifact_store=store_root,
+        )
+        assert warm.catalog.as_dict() == cold_catalog
+        assert warm.catalog_artifact_receipt is not None
+        assert warm.catalog_artifact_receipt["disposition"] == "loaded"
+        assert len(trace_hashes) == 2
+
+        monkeypatch.setattr(
+            selective.Lfm2CpcfSelectiveEvidenceProvider,
+            "_build_layer_payload",
+            original_layer_builder,
+        )
+        monkeypatch.setattr(
+            selective.Lfm2CpcfSelectiveEvidenceProvider,
+            "_build_final_norm_payload",
+            original_final_builder,
+        )
+        reference = warm.dynamic_catalog.references[0]
+        payload = warm.load_layer_payload(reference)
+        try:
+            receipt = warm.authenticate_layer_payload(reference, payload)
+            assert receipt.evidence_sha256 == reference.evidence_sha256
+        finally:
+            warm.release_layer_payload(reference, payload)
+        warm.close()
+    assert len(trace_hashes) == 2
+    assert warm_guard.optimizer_constructions == 0
+    assert warm_guard.optimizer_steps == 0
+    assert warm_guard.backward_calls == 0
+    assert warm_guard.autograd_grad_calls == 0
+    assert warm_guard.pruning_operations == 0
+    assert warm_guard.quantization_operations == 0
+
+
+def test_production_warm_open_requires_exact_existing_catalog(
+    sealed_cache_path,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store_root = tmp_path / "selective-catalogs"
+    cold = open_or_build_lfm2_cpcf_selective_evidence_provider(
+        open_lfm2_circuit_trace_cache(
+            sealed_cache_path,
+            verify=False,
+        ),
+        artifact_store=store_root,
+    )
+    assert cold.catalog_artifact is not None
+    binding_sha256 = cold.catalog_artifact.binding.binding_sha256
+    manifest_sha256 = cold.catalog_artifact.manifest_sha256
+    catalog_sha256 = cold.catalog_artifact.catalog_sha256
+    expected_catalog = cold.catalog.as_dict()
+    cold.close()
+
+    def forbidden_catalog_sweep(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("production warm open ran the cold builder")
+
+    monkeypatch.setattr(
+        selective,
+        "_build_catalog_from_authenticated_source",
+        forbidden_catalog_sweep,
+    )
+    warm = open_lfm2_cpcf_selective_evidence_provider_from_catalog(
+        open_lfm2_circuit_trace_cache(
+            sealed_cache_path,
+            verify=False,
+        ),
+        artifact_store=store_root,
+        expected_binding_sha256=binding_sha256,
+        expected_manifest_sha256=manifest_sha256,
+        expected_catalog_sha256=catalog_sha256,
+    )
+    try:
+        assert warm.catalog.as_dict() == expected_catalog
+        assert warm.catalog_artifact_receipt is not None
+        assert warm.catalog_artifact_receipt["disposition"] == "loaded"
+    finally:
+        warm.close()
+
+    with pytest.raises(
+        Lfm2CpcfSelectiveEvidenceError,
+        match="required catalog binding",
+    ):
+        open_lfm2_cpcf_selective_evidence_provider_from_catalog(
+            open_lfm2_circuit_trace_cache(
+                sealed_cache_path,
+                verify=False,
+            ),
+            artifact_store=store_root,
+            expected_binding_sha256="0" * 64,
+            expected_manifest_sha256=manifest_sha256,
+            expected_catalog_sha256=catalog_sha256,
+        )
+
+    with pytest.raises(
+        Lfm2CpcfSelectiveEvidenceError,
+        match="not prepared",
+    ):
+        open_lfm2_cpcf_selective_evidence_provider_from_catalog(
+            open_lfm2_circuit_trace_cache(
+                sealed_cache_path,
+                verify=False,
+            ),
+            artifact_store=tmp_path / "empty-store",
+            expected_binding_sha256=binding_sha256,
+            expected_manifest_sha256=manifest_sha256,
+            expected_catalog_sha256=catalog_sha256,
+        )
+
+
+def test_runner_prepare_only_creates_one_authenticated_pre_cuda_catalog(
+    sealed_cache_path: Path,
+    tmp_path: Path,
+) -> None:
+    from experiments import (
+        run_lfm2_cpcf_v5_selective_blank_fold as runner,
+    )
+
+    for name in (
+        "parent",
+        "donor-tokenizer",
+        "target-tokenizer",
+        "bridge",
+    ):
+        (tmp_path / name).mkdir()
+    trajectory_root = tmp_path / "trajectory-input"
+    trajectory_root.mkdir()
+    trajectory = trajectory_root / "trajectories.json"
+    trajectory.write_text('{"fixture":"unused-by-preparation"}\n', "ascii")
+    store = tmp_path / "catalog-store"
+    receipt_path = tmp_path / "catalog-preparation.json"
+    diagnostic = tmp_path / "work" / "failure-diagnostic.json"
+    args = runner.build_parser().parse_args(
+        [
+            "--parent-model-directory",
+            str(tmp_path / "parent"),
+            "--donor-tokenizer-directory",
+            str(tmp_path / "donor-tokenizer"),
+            "--target-tokenizer-directory",
+            str(tmp_path / "target-tokenizer"),
+            "--bridge-directory",
+            str(tmp_path / "bridge"),
+            "--trace-cache-directory",
+            str(sealed_cache_path),
+            "--trajectory-corpus",
+            str(trajectory),
+            "--diagnostic-json",
+            str(diagnostic),
+            "--compression-ratio",
+            "4",
+            "--maximum-process-rss-gib",
+            "24",
+            "--selective-catalog-store-directory",
+            str(store),
+            "--selective-catalog-receipt-json",
+            str(receipt_path),
+            "--prepare-selective-catalog-only",
+        ]
+    )
+    config = runner.config_from_args(args)
+
+    preparation = dict(runner.prepare_selective_catalog(config))
+
+    assert preparation["parent_model_loaded"] is False
+    assert preparation["blank_target_allocated"] is False
+    assert preparation["cuda_initialized"] is False
+    assert preparation["tensor_payloads_resident"] is False
+    assert preparation["warm_hit_required_for_production_fold"] is True
+    assert (
+        preparation["cold_rebuild_permitted_in_production_fold"] is False
+    )
+    assert all(
+        count == 0
+        for count in preparation["operation_audit"].values()
+    )
+    assert receipt_path.is_file()
+    assert not diagnostic.exists()
+    reopened = runner.authenticate_prepared_selective_catalog(
+        trace_cache_directory=sealed_cache_path,
+        selective_catalog_store_directory=store,
+        selective_catalog_receipt_json=receipt_path,
+        expected_selective_catalog_receipt_sha256=preparation[
+            "preparation_receipt_sha256"
+        ],
+    )
+    assert dict(reopened) == preparation
+
+    with pytest.raises(
+        runner.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="already exists",
+    ):
+        runner.prepare_selective_catalog(config)
+
+
+def test_catalog_artifact_typed_and_persisted_tamper_fail_without_rebuild(
+    sealed_cache_path,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store_root = tmp_path / "selective-catalogs"
+    provider = open_or_build_lfm2_cpcf_selective_evidence_provider(
+        open_lfm2_circuit_trace_cache(
+            sealed_cache_path,
+            verify=False,
+        ),
+        artifact_store=store_root,
+    )
+    assert provider.catalog_artifact is not None
+    artifact_path = provider.catalog_artifact.path
+    artifact_payload = copy.deepcopy(dict(provider.catalog_artifact.payload))
+    provider.close()
+
+    artifact_payload["dynamic_references"].reverse()
+    with pytest.raises(
+        (Lfm2CpcfSelectiveEvidenceError, DynamicEvidenceResidencyError),
+        match="canonical|contiguous|seal|changed",
+    ):
+        lfm2_cpcf_selective_catalog_from_artifact_payload(
+            artifact_payload
+        )
+
+    document_path = artifact_path / CATALOG_FILENAME
+    document = json.loads(document_path.read_text(encoding="ascii"))
+    document["payload"]["catalog"]["source_width"] += 1
+    document_path.write_bytes(canonical_json_bytes(document) + b"\n")
+
+    def forbidden_rebuild(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("corrupt immutable path was rebuilt")
+
+    monkeypatch.setattr(
+        selective,
+        "_build_catalog_from_authenticated_source",
+        forbidden_rebuild,
+    )
+    with pytest.raises(
+        DynamicEvidenceCatalogArtifactIntegrityError,
+        match="seal|binding",
+    ):
+        open_or_build_lfm2_cpcf_selective_evidence_provider(
+            open_lfm2_circuit_trace_cache(
+                sealed_cache_path,
+                verify=False,
+            ),
+            artifact_store=store_root,
+        )
 
 
 def test_toy_cache_v5_phase_shells_and_active_layers_are_v4_exact(
