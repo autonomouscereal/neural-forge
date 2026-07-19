@@ -53,6 +53,10 @@ def _inputs(tmp_path: Path) -> dict[str, Path]:
         path = tmp_path / name
         path.mkdir()
         paths[name] = path
+    (paths["donor_tokenizer"] / "tokenizer.json").write_text(
+        '{"fixture":"donor-tokenizer"}\n',
+        encoding="ascii",
+    )
     corpus = tmp_path / "trajectories.json"
     corpus.write_text('{"fixture":"cached-only"}\n', encoding="ascii")
     envelope = tmp_path / "parent-envelope.json"
@@ -70,6 +74,9 @@ def _evidence(
 ) -> supervisor.FrontierEvidenceBindings:
     return supervisor.FrontierEvidenceBindings(
         parent_model_identity_sha256=_digest("parent-identity"),
+        donor_tokenizer_package_sha256=_digest(
+            "donor-tokenizer-package"
+        ),
         cache_sha256=cache_sha256,
         corpus_sha256=_file_sha(corpus),
         parent_envelope_file_sha256=_file_sha(envelope),
@@ -464,6 +471,16 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
         250,
     )
     assert report["maximum_parallel_ratio_processes"] == 1
+    assert report["input_bindings"][
+        "donor_tokenizer_package_sha256"
+    ] == evidence.donor_tokenizer_package_sha256
+    assert report["catalog_schedule"][
+        "donor_tokenizer_semantics_sha256"
+    ] == schedule.donor_tokenizer_semantics_sha256
+    assert (
+        evidence.donor_tokenizer_package_sha256
+        != schedule.donor_tokenizer_semantics_sha256
+    )
     assert report["parent_trace_generation_calls"] == 0
     assert report["training_steps"] == 0
     assert report["parameters_pruned"] == 0
@@ -971,12 +988,19 @@ def test_parent_envelope_may_use_a_distinct_cache_key_when_parent_matches(
 ) -> None:
     import neural_forge.hf_lfm2_intelligence_gate as gate_module
     import neural_forge.hf_lfm2_intelligence_holdout as holdout_module
+    from experiments.evaluate_lfm2_intelligence_retention import (
+        fingerprint_bound_local_tokenizer,
+    )
 
     inputs = _inputs(tmp_path)
     bridge = tmp_path / "bridge"
     bridge.mkdir()
     parent_identity = _digest("shared-parent-model-identity")
-    tokenizer_identity = _digest("shared-tokenizer-identity")
+    tokenizer_identity = fingerprint_bound_local_tokenizer(
+        inputs["donor_tokenizer"]
+    )[0]
+    semantic_identity = _digest("distinct-live-tokenizer-semantics")
+    assert tokenizer_identity != semantic_identity
     envelope_document = {
         "envelope_sha256": _digest("envelope-seal"),
         "parent_state_fingerprint": _digest("parent-state"),
@@ -1030,7 +1054,6 @@ def test_parent_envelope_may_use_a_distinct_cache_key_when_parent_matches(
     loaded_manifest, loaded_envelope = supervisor._read_parent_envelope(
         config,
         parent_model_identity_sha256=parent_identity,
-        tokenizer_fingerprint=tokenizer_identity,
     )
 
     assert loaded_manifest is manifest
@@ -1043,5 +1066,17 @@ def test_parent_envelope_may_use_a_distinct_cache_key_when_parent_matches(
         supervisor._read_parent_envelope(
             config,
             parent_model_identity_sha256=_digest("wrong-parent"),
-            tokenizer_fingerprint=tokenizer_identity,
+        )
+
+    (inputs["donor_tokenizer"] / "tokenizer.json").write_text(
+        '{"fixture":"changed-donor-tokenizer"}\n',
+        encoding="ascii",
+    )
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="package identity",
+    ):
+        supervisor._read_parent_envelope(
+            config,
+            parent_model_identity_sha256=parent_identity,
         )

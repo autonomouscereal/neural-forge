@@ -72,6 +72,11 @@ _HOLDOUT_CAPTURE = (
     / "experiments"
     / "capture_lfm2_cpcf_holdout_candidate.py"
 )
+_POSTHOC_EVALUATOR = (
+    _REPOSITORY_ROOT
+    / "experiments"
+    / "evaluate_lfm2_intelligence_retention.py"
+)
 _RESIDUAL_RUNNER = (
     _REPOSITORY_ROOT
     / "experiments"
@@ -547,6 +552,7 @@ class FrontierEvidenceBindings:
     """Authenticated local identities discovered before target planning."""
 
     parent_model_identity_sha256: str
+    donor_tokenizer_package_sha256: str
     cache_sha256: str
     corpus_sha256: str
     parent_envelope_file_sha256: str
@@ -559,6 +565,7 @@ class FrontierEvidenceBindings:
     def __post_init__(self) -> None:
         for name in (
             "parent_model_identity_sha256",
+            "donor_tokenizer_package_sha256",
             "cache_sha256",
             "corpus_sha256",
             "parent_envelope_file_sha256",
@@ -586,6 +593,9 @@ class FrontierEvidenceBindings:
         return {
             "parent_model_identity_sha256": (
                 self.parent_model_identity_sha256
+            ),
+            "donor_tokenizer_package_sha256": (
+                self.donor_tokenizer_package_sha256
             ),
             "cache_sha256": self.cache_sha256,
             "corpus_sha256": self.corpus_sha256,
@@ -833,6 +843,7 @@ def _source_identities() -> dict[str, str]:
         "v5_diagnostic_runner": _DIAGNOSTIC_RUNNER,
         "blank_save_reload_runner": _BLANK_RUNNER,
         "holdout_capture": _HOLDOUT_CAPTURE,
+        "tokenizer_package_fingerprint": _POSTHOC_EVALUATOR,
         "local_lfm2_loader": _RESIDUAL_RUNNER,
         "intelligence_gate": _INTELLIGENCE_GATE_SOURCE,
         "intelligence_holdout": _INTELLIGENCE_HOLDOUT_SOURCE,
@@ -854,8 +865,11 @@ def _read_parent_envelope(
     config: FrontierSupervisorConfig,
     *,
     parent_model_identity_sha256: str,
-    tokenizer_fingerprint: str,
 ) -> tuple[Any, Any]:
+    from experiments.evaluate_lfm2_intelligence_retention import (
+        Lfm2PosthocEvaluationError,
+        fingerprint_bound_local_tokenizer,
+    )
     from neural_forge.hf_lfm2_intelligence_gate import (
         load_lfm2_intelligence_holdout_manifest,
     )
@@ -878,6 +892,16 @@ def _read_parent_envelope(
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Parent envelope must be a JSON object."
         )
+    try:
+        donor_tokenizer_package_sha256, _donor_tokenizer_files = (
+            fingerprint_bound_local_tokenizer(
+                config.donor_tokenizer_directory
+            )
+        )
+    except (Lfm2PosthocEvaluationError, OSError) as exc:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "The bound donor tokenizer package is not safe or readable."
+        ) from exc
     manifest = load_lfm2_intelligence_holdout_manifest()
     required = (
         "envelope_sha256",
@@ -904,11 +928,13 @@ def _read_parent_envelope(
     if (
         envelope.parent_model_fingerprint
         != parent_model_identity_sha256
-        or envelope.tokenizer_fingerprint != tokenizer_fingerprint
+        or envelope.tokenizer_fingerprint
+        != donor_tokenizer_package_sha256
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Parent holdout envelope and folding trace cache do not share "
-            "the same parent model and tokenizer identities."
+            "the same parent model identity, or the envelope and live donor "
+            "tokenizer package do not share the same package identity."
         )
     return manifest, envelope
 
@@ -1022,13 +1048,13 @@ def discover_frontier_schedule(
     manifest, envelope = _read_parent_envelope(
         config,
         parent_model_identity_sha256=cache.parent_fingerprint,
-        tokenizer_fingerprint=(
-            bridge.donor_tokenizer_semantics_sha256
-        ),
     )
     corpus_sha = _file_sha256(config.trajectory_corpus)
     evidence = FrontierEvidenceBindings(
         parent_model_identity_sha256=cache.parent_fingerprint,
+        donor_tokenizer_package_sha256=(
+            envelope.tokenizer_fingerprint
+        ),
         cache_sha256=cache.cache_key,
         corpus_sha256=corpus_sha,
         parent_envelope_file_sha256=(
@@ -1842,10 +1868,15 @@ def _run_internal_worker(manifest_path: Path) -> int:
             parent_model_identity_sha256=evidence[
                 "parent_model_identity_sha256"
             ],
-            tokenizer_fingerprint=schedule[
-                "donor_tokenizer_semantics_sha256"
-            ],
         )
+        if (
+            parent_envelope.tokenizer_fingerprint
+            != evidence.get("donor_tokenizer_package_sha256")
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Worker donor tokenizer package differs from the planned "
+                "evidence binding."
+            )
         from neural_forge.hf_lfm2_cpcf_v5_quarantine import (
             Lfm2CpcfV5QuarantineConfig,
             Lfm2CpcfV5QuarantineConsumer,
