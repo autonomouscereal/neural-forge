@@ -580,7 +580,7 @@ def test_cold_resume_store_constructs_and_passes_typed_coordinator(
     )
 
     assert result == ("source", "target")
-    assert isinstance(runtime.coordinator, Lfm2CpcfV5ResumeCoordinator)
+    assert type(runtime.coordinator) is Lfm2CpcfV5ResumeCoordinator
     assert runtime.state is None
     assert observed["resume_coordinator"] is runtime.coordinator
     assert observed["resume_state"] is None
@@ -591,7 +591,7 @@ def test_cold_resume_store_constructs_and_passes_typed_coordinator(
     assert report["parent_or_cache_tensor_sidecars"] == 0
 
 
-def test_tracking_coordinator_accepts_real_publish_pending_contract(
+def test_exact_coordinator_accepts_real_publish_pending_contract(
     tmp_path: Path,
 ) -> None:
     pytest.importorskip("torch")
@@ -618,90 +618,91 @@ def test_tracking_coordinator_accepts_real_publish_pending_contract(
     assert report["outstanding_pending_prefix_count"] == 0
 
 
-def test_tracking_coordinator_forwards_exact_rss_expectation_before_recording(
+def test_real_runtime_exact_coordinator_completes_prefix_zero_admission_proof(
     tmp_path: Path,
 ) -> None:
-    event = object()
-    expectation = {"authenticated": object()}
-    pending = SimpleNamespace(
-        next_layer_index=0,
-        frontier_reference=SimpleNamespace(
-            as_dict=lambda: {
-                "artifact_kind": "boundary",
-                "artifact_key": hashlib.sha256(b"boundary-key").hexdigest(),
-                "manifest_sha256": hashlib.sha256(
-                    b"boundary-manifest"
-                ).hexdigest(),
-            }
-        ),
-        checkpoint=SimpleNamespace(
-            reference=SimpleNamespace(
-                as_dict=lambda: {
-                    "artifact_kind": "checkpoint",
-                    "artifact_key": hashlib.sha256(
-                        b"checkpoint-key"
-                    ).hexdigest(),
-                    "manifest_sha256": hashlib.sha256(
-                        b"checkpoint-manifest"
-                    ).hexdigest(),
-                }
-            )
-        ),
-        frontier_sha256=hashlib.sha256(b"frontier").hexdigest(),
-        event_report_sha256=hashlib.sha256(b"event").hexdigest(),
+    pytest.importorskip("torch")
+    from neural_forge import hf_lfm2_cpcf_v5_admission_proof as admission_proof
+    from neural_forge import hf_lfm2_cpcf_v5_model_compiler as v5_compiler
+    from neural_forge import hf_lfm2_cpcf_v5_resume as v5_resume
+    from tests.test_hf_lfm2_cpcf_resume_bridge import (
+        _v5_progress,
+        _v5_rss_expectation,
+        _v5_rss_receipt,
     )
 
-    class StrictCoordinator:
-        def __init__(self, store):
-            self.store = store
-
-        def publish_pending(
-            self,
-            received_event,
-            *,
-            rss_checkpoint_expectation,
-        ):
-            assert received_event is event
-            assert rss_checkpoint_expectation is expectation
-            if self.store == "reject":
-                raise RuntimeError("authenticated publication rejected")
-            return pending
-
-    progress = MODULE._ResumeProgressTracker(
-        store_directory=tmp_path,
-        requested_admission_sha256=None,
+    args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(tmp_path / "resume"),
+        ]
     )
-    coordinator = MODULE._tracking_resume_coordinator(
-        StrictCoordinator,
-        "accept",
-        progress,
-    )
+    runtime = MODULE._build_resume_runtime(MODULE.config_from_args(args))
+    coordinator = runtime.coordinator
 
+    assert type(coordinator) is v5_resume.Lfm2CpcfV5ResumeCoordinator
     assert (
-        coordinator.publish_pending(
-            event,
+        v5_compiler.Lfm2CpcfV5ResumeCoordinator
+        is v5_resume.Lfm2CpcfV5ResumeCoordinator
+    )
+    assert (
+        admission_proof.resume.Lfm2CpcfV5ResumeCoordinator
+        is v5_resume.Lfm2CpcfV5ResumeCoordinator
+    )
+
+    prefix_zero = _v5_progress(0)
+    expectation = _v5_rss_expectation(0)
+
+    def compile_prefix_zero(_source, _target, **kwargs):
+        received = kwargs["resume_coordinator"]
+        assert received is coordinator
+        pending = received.publish_pending(
+            prefix_zero["event"],
             rss_checkpoint_expectation=expectation,
         )
-        is pending
-    )
-    assert progress.as_dict()["published_pending_prefix_count"] == 1
-
-    rejected_progress = MODULE._ResumeProgressTracker(
-        store_directory=tmp_path,
-        requested_admission_sha256=None,
-    )
-    rejecting = MODULE._tracking_resume_coordinator(
-        StrictCoordinator,
-        "reject",
-        rejected_progress,
-    )
-    with pytest.raises(RuntimeError, match="authenticated publication rejected"):
-        rejecting.publish_pending(
-            event,
-            rss_checkpoint_expectation=expectation,
+        admission = received.admit(
+            pending,
+            rss_checkpoint_receipt=_v5_rss_receipt(
+                expectation,
+                passed=True,
+            ),
         )
-    assert (
-        rejected_progress.as_dict()["published_pending_prefix_count"] == 0
+        proof = admission_proof.build_lfm2_cpcf_v5_admission_chain_proof(
+            received,
+            admission["admission_sha256"],
+        )
+        record = {
+            "next_layer_index": 0,
+            "frontier_reference": pending.frontier_reference.as_dict(),
+            "checkpoint_reference": pending.checkpoint.reference.as_dict(),
+            "frontier_sha256": pending.frontier_sha256,
+            "admission_sha256": admission["admission_sha256"],
+            "admission_chain_proof": dict(proof),
+            "admission_chain_proof_sha256": proof["proof_sha256"],
+        }
+        return SimpleNamespace(
+            report={"resume_admitted_prefixes": [record]}
+        )
+
+    compiled = MODULE._compile_with_authenticated_resume(
+        compile_prefix_zero,
+        object(),
+        object(),
+        resume_runtime=runtime,
+        compile_kwargs={},
+    )
+
+    assert compiled.report["resume_admitted_prefixes"][0][
+        "next_layer_index"
+    ] == 0
+    report = runtime.progress.as_dict()
+    assert report["published_pending_prefix_count"] == 1
+    assert report["admitted_prefix_count"] == 1
+    assert report["outstanding_pending_prefix_count"] == 0
+    assert report["rejected_prefix_count"] == 0
+    assert report["admitted_prefixes"] == (
+        compiled.report["resume_admitted_prefixes"]
     )
 
 

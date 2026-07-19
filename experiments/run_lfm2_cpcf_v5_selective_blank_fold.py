@@ -157,6 +157,10 @@ def _sha(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value)).hexdigest()
 
 
+def _plain_json(value: Any) -> Any:
+    return json.loads(_canonical_json(value))
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -1647,54 +1651,89 @@ class _ResumeRuntime:
     progress: _ResumeProgressTracker
 
 
-def _tracking_resume_coordinator(
+def _exact_resume_coordinator(
     coordinator_type: type,
     store: Any,
-    progress: _ResumeProgressTracker,
 ) -> Any:
-    """Construct the typed coordinator with diagnostic-only observation."""
+    """Construct the production coordinator without altering its class identity."""
 
-    class _RunnerTrackedResumeCoordinator(coordinator_type):
-        def publish_pending(
-            self,
-            event: Any,
-            *,
-            rss_checkpoint_expectation: Mapping[str, Any],
-        ) -> Any:
-            pending = super().publish_pending(
-                event,
-                rss_checkpoint_expectation=rss_checkpoint_expectation,
+    coordinator = coordinator_type(store)
+    if type(coordinator) is not coordinator_type:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "The resume runtime did not construct the exact production "
+            "coordinator type."
+        )
+    return coordinator
+
+
+def _observe_compiled_resume_receipt(
+    compiled: Any,
+    progress: _ResumeProgressTracker,
+) -> None:
+    """Copy diagnostic progress from the compiler's authenticated proof chain."""
+
+    report = getattr(compiled, "report", None)
+    if not isinstance(report, Mapping):
+        return
+    records = report.get("resume_admitted_prefixes")
+    if records is None:
+        return
+    if not isinstance(records, Sequence) or isinstance(
+        records,
+        (str, bytes, bytearray),
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "The compiler resume-admission receipt is not an ordered sequence."
+        )
+    published: list[dict[str, Any]] = []
+    admitted: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "A compiler resume-admission record is not a mapping."
             )
-            progress.record_pending(pending)
-            return pending
-
-        def admit(
-            self,
-            pending: Any,
-            *,
-            rss_checkpoint_receipt: Mapping[str, Any],
-        ) -> Mapping[str, Any]:
-            admission = super().admit(
-                pending,
-                rss_checkpoint_receipt=rss_checkpoint_receipt,
+        proof = record.get("admission_chain_proof")
+        if not isinstance(proof, Mapping):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "A compiler resume-admission record lacks its authenticated "
+                "admission-chain proof."
             )
-            progress.record_admitted(pending, admission)
-            return admission
-
-        def record_rss_rejection(
-            self,
-            pending: Any,
-            *,
-            rss_violation_report: Mapping[str, Any],
-        ) -> Mapping[str, Any]:
-            rejection = super().record_rss_rejection(
-                pending,
-                rss_violation_report=rss_violation_report,
+        pending = proof.get("pending_document")
+        if not isinstance(pending, Mapping):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "A compiler admission-chain proof lacks its pending document."
             )
-            progress.record_rejected(pending, rejection)
-            return rejection
-
-    return _RunnerTrackedResumeCoordinator(store)
+        publication = {
+            "next_layer_index": int(pending["next_layer_index"]),
+            "frontier_reference": _plain_json(
+                pending["frontier_reference"]
+            ),
+            "checkpoint_reference": _plain_json(
+                pending["checkpoint_reference"]
+            ),
+            "frontier_sha256": str(pending["frontier_sha256"]),
+            "event_report_sha256": str(pending["event_report_sha256"]),
+        }
+        if (
+            publication["next_layer_index"] != record.get("next_layer_index")
+            or publication["frontier_reference"]
+            != record.get("frontier_reference")
+            or publication["checkpoint_reference"]
+            != record.get("checkpoint_reference")
+            or publication["frontier_sha256"]
+            != record.get("frontier_sha256")
+            or proof.get("proof_sha256")
+            != record.get("admission_chain_proof_sha256")
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "The compiler resume-admission summary differs from its "
+                "authenticated admission-chain proof."
+            )
+        published.append(publication)
+        admitted.append(_plain_json(record))
+    progress.published_pending_prefixes = published
+    progress.admitted_prefixes = admitted
+    progress.rejected_prefixes = []
 
 
 def _attach_resume_progress(
@@ -1744,10 +1783,9 @@ def _build_resume_runtime(
             config.resume_store_directory
         )
         progress.store_directory = store.root
-        coordinator = _tracking_resume_coordinator(
+        coordinator = _exact_resume_coordinator(
             Lfm2CpcfV5ResumeCoordinator,
             store,
-            progress,
         )
         state = None
         if config.resume_admission_sha256 is not None:
@@ -1810,13 +1848,18 @@ def _compile_with_authenticated_resume(
             "Resume inputs must come only from the authenticated runner seam."
         )
     try:
-        return compile_function(
+        compiled = compile_function(
             source_model,
             target_model,
             **dict(compile_kwargs),
             resume_state=resume_runtime.state,
             resume_coordinator=resume_runtime.coordinator,
         )
+        _observe_compiled_resume_receipt(
+            compiled,
+            resume_runtime.progress,
+        )
+        return compiled
     except Exception as error:
         _attach_resume_progress(error, resume_runtime.progress)
         raise
