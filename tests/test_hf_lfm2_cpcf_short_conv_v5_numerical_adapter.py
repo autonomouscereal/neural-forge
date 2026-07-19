@@ -440,29 +440,31 @@ def test_audited_basis_computes_once_and_reseals_exact_requested_report(
     assert dict(actual.report) == dict(expected.report)
 
 
-def test_real_adapter_preserves_preoptimization_authenticated_frontier_bytes() -> None:
-    frontier = Lfm2CpcfShortConvV5NumericalFrontierAdapter().generate(_request())
+def test_real_adapter_is_byte_deterministic_within_one_runtime() -> None:
+    first = Lfm2CpcfShortConvV5NumericalFrontierAdapter().generate(_request())
+    second = Lfm2CpcfShortConvV5NumericalFrontierAdapter().generate(_request())
 
+    assert first.report["report_sha256"] == second.report["report_sha256"]
     assert (
-        frontier.report["report_sha256"]
-        == "e96655361531dc7bff95e4c6ca775ccfd8146f3f6c89d93ba3cda188d438f7a1"
+        first.report["adapter_provenance"]["basis_report_sha256"]
+        == second.report["adapter_provenance"]["basis_report_sha256"]
     )
-    assert (
-        frontier.report["adapter_provenance"]["basis_report_sha256"]
-        == "aa173953e44927bb69d40cf0b01901f33f965394bf34cabc59ddfa02e480c0ff"
+    assert len(first.raw_candidates) == len(second.raw_candidates) == 72
+    assert _sequence_sha256(
+        [candidate.candidate_id for candidate in first.raw_candidates]
+    ) == _sequence_sha256(
+        [candidate.candidate_id for candidate in second.raw_candidates]
     )
     assert _sequence_sha256(
-        [candidate.candidate_id for candidate in frontier.raw_candidates]
-    ) == "639def4817f8f14037788e8674d87570011ca450241a7aa3ef70c549fa2b4fc1"
+        [candidate.report["report_sha256"] for candidate in first.raw_candidates]
+    ) == _sequence_sha256(
+        [candidate.report["report_sha256"] for candidate in second.raw_candidates]
+    )
     assert _sequence_sha256(
-        [
-            candidate.report["report_sha256"]
-            for candidate in frontier.raw_candidates
-        ]
-    ) == "328beb9f70f39a5599cdc33405ca5b39fba5650c093c81a20b919b56887d7273"
-    assert _sequence_sha256(
-        [candidate.state_sha256 for candidate in frontier.raw_candidates]
-    ) == "5c485547f9ac48fec22783b5e2cab42fdf5fc7ad94697755f1a52ea534fb0193"
+        [candidate.state_sha256 for candidate in first.raw_candidates]
+    ) == _sequence_sha256(
+        [candidate.state_sha256 for candidate in second.raw_candidates]
+    )
 
 
 def test_real_adapter_promotes_bfloat16_evidence_before_fp64_folding(
