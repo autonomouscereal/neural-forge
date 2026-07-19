@@ -145,6 +145,14 @@ def _reference_layer_replay(
         return observed
 
     operator = layer.self_attn if layer.is_attention_layer else layer.conv
+    handles.append(
+        operator.out_proj.register_forward_pre_hook(
+            lambda _module, inputs: captured.__setitem__(
+                "operator_output_input",
+                inputs[0].detach().clone(),
+            )
+        )
+    )
     for name, module in (
         ("operator_input", layer.operator_norm),
         ("operator_delta", operator),
@@ -298,6 +306,7 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
 
     for name in (
         "operator_input",
+        "operator_output_input",
         "operator_delta",
         "post_operator_residual",
         "mlp_input",
@@ -334,6 +343,18 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
     report = replay.report
     assert report["schema"] == LFM2_CPCF_MACROCELL_REPLAY_SCHEMA
     assert report["operator_kind"] == operator_kind
+    assert report["operator_output_input_source"] == (
+        "attention.concatenated_context"
+        if operator_kind == "full_attention"
+        else "short_conv.output_input"
+    )
+    source_detail_name = (
+        "concatenated_context" if operator_kind == "full_attention" else "output_input"
+    )
+    assert (
+        report["endpoint_sha256"]["operator_output_input"]
+        == report["operator_detail_sha256"][source_detail_name]
+    )
     assert report["runtime_dtype"] == str(dtype).removeprefix("torch.")
     assert report["target_state_sha256_before"] == report["target_state_sha256_after"]
     assert report["input_sha256_before"] == report["input_sha256_after"]
@@ -368,7 +389,13 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
     assert replay.replay_sha256 == report["report_sha256"]
 
 
-def test_replay_archive_rejects_endpoint_bytes_outside_its_seal() -> None:
+@pytest.mark.parametrize(
+    "changed_endpoint",
+    ("operator_output_input", "post_layer_residual"),
+)
+def test_replay_archive_rejects_endpoint_bytes_outside_its_seal(
+    changed_endpoint: str,
+) -> None:
     model = _tiny_installed_target(
         "short_conv",
         torch.float32,
@@ -379,20 +406,25 @@ def test_replay_archive_rejects_endpoint_bytes_outside_its_seal() -> None:
         _actual_prefill_residual(model),
         padding_mask=torch.ones(2, 5),
     )
-    changed = replay.post_layer_residual.clone()
+    changed = getattr(replay, changed_endpoint).clone()
     changed[0, 0, 0] += 1.0
+    endpoints = {
+        "operator_input": replay.operator_input,
+        "operator_output_input": replay.operator_output_input,
+        "operator_delta": replay.operator_delta,
+        "post_operator_residual": replay.post_operator_residual,
+        "mlp_input": replay.mlp_input,
+        "mlp_delta": replay.mlp_delta,
+        "post_layer_residual": replay.post_layer_residual,
+    }
+    endpoints[changed_endpoint] = changed
 
     with pytest.raises(
         Lfm2CpcfMacrocellReplayError,
         match="authenticated report",
     ):
         Lfm2CpcfMacrocellReplay(
-            operator_input=replay.operator_input,
-            operator_delta=replay.operator_delta,
-            post_operator_residual=replay.post_operator_residual,
-            mlp_input=replay.mlp_input,
-            mlp_delta=replay.mlp_delta,
-            post_layer_residual=changed,
+            **endpoints,
             report=replay.report,
         )
 
@@ -421,6 +453,7 @@ def test_cuda_replay_returns_no_cuda_endpoint_storage() -> None:
         getattr(replay, name).device.type == "cpu"
         for name in (
             "operator_input",
+            "operator_output_input",
             "operator_delta",
             "post_operator_residual",
             "mlp_input",

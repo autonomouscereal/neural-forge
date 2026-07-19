@@ -871,6 +871,7 @@ class Lfm2CpcfMacrocellReplay:
     """Detached target-native endpoints from one installed LFM2 layer."""
 
     operator_input: Any
+    operator_output_input: Any
     operator_delta: Any
     post_operator_residual: Any
     mlp_input: Any
@@ -881,6 +882,7 @@ class Lfm2CpcfMacrocellReplay:
     def __post_init__(self) -> None:
         tensors = (
             self.operator_input,
+            self.operator_output_input,
             self.operator_delta,
             self.post_operator_residual,
             self.mlp_input,
@@ -923,6 +925,7 @@ class Lfm2CpcfMacrocellReplay:
                 for name, value in sorted(
                     {
                         "operator_input": self.operator_input,
+                        "operator_output_input": self.operator_output_input,
                         "operator_delta": self.operator_delta,
                         "post_operator_residual": self.post_operator_residual,
                         "mlp_input": self.mlp_input,
@@ -1034,6 +1037,9 @@ def replay_lfm2_cpcf_macrocell(
                 operator_input,
                 padding_mask=padding_mask,
             )
+        operator_output_input = operator_details[
+            "concatenated_context" if is_attention else "output_input"
+        ]
         post_operator = residual + operator_delta
         mlp_input = _rms_norm(
             target_layer.ffn_norm,
@@ -1052,6 +1058,7 @@ def replay_lfm2_cpcf_macrocell(
         mlp_exact = bool(torch.equal(post_layer, mlp_equation))
         endpoint_values = {
             "operator_input": operator_input,
+            "operator_output_input": operator_output_input,
             "operator_delta": operator_delta,
             "post_operator_residual": post_operator,
             "mlp_input": mlp_input,
@@ -1119,6 +1126,11 @@ def replay_lfm2_cpcf_macrocell(
         "runtime_dtype": _dtype_name(residual),
         "runtime_device": str(residual.device),
         "operator_topology": operator_topology,
+        "operator_output_input_source": (
+            "attention.concatenated_context"
+            if is_attention
+            else "short_conv.output_input"
+        ),
         "mlp_topology": mlp_topology,
         "residual_equations": {
             "post_operator_equals_prefill_plus_operator_delta": operator_exact,
@@ -1163,11 +1175,10 @@ def replay_lfm2_cpcf_macrocell(
         },
         "scope": "installed_blank_target_macrocell_actual_child_prefill",
     }
-    report = _FactoryAuthenticatedReplayReport(
-        {**body, "report_sha256": _sha(body)}
-    )
+    report = _FactoryAuthenticatedReplayReport({**body, "report_sha256": _sha(body)})
     return Lfm2CpcfMacrocellReplay(
         operator_input=detached_endpoints["operator_input"],
+        operator_output_input=detached_endpoints["operator_output_input"],
         operator_delta=detached_endpoints["operator_delta"],
         post_operator_residual=detached_endpoints["post_operator_residual"],
         mlp_input=detached_endpoints["mlp_input"],

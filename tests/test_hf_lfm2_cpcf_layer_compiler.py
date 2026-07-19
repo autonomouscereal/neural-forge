@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from dataclasses import replace
 from types import MappingProxyType, SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 
 import neural_forge.hf_lfm2_cpcf_layer_compiler as layer_compiler  # noqa: E402
+import neural_forge.hf_lfm2_structural_residual_attention_fold as structural_fold  # noqa: E402
 from neural_forge.hf_closed_form_causal_circuit_fold import (  # noqa: E402
     PredictiveBoundaryMap,
 )
@@ -33,8 +35,6 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
     Lfm2CpcfShortConvV4SolverPolicy,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (  # noqa: E402
-    LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA,
-    LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
     Lfm2CompiledCpcfShortConvV4Fold,
     Lfm2CpcfShortConvV4FoldCase,
 )
@@ -770,11 +770,7 @@ def test_attention_phases_coalesce_exact_k_linear_chronology(
     assert runtime_receipt["prepared_composition_count"] == 1
     assert runtime_receipt["avoided_composition_count"] == 2
     assert runtime_receipt["report_sha256"] == _sha(
-        {
-            key: value
-            for key, value in runtime_receipt.items()
-            if key != "report_sha256"
-        }
+        {key: value for key, value in runtime_receipt.items() if key != "report_sha256"}
     )
     case = cases[0]
     expected_key_linear = torch.cat(
@@ -811,9 +807,7 @@ def test_attention_phases_coalesce_exact_k_linear_chronology(
         dim=2,
     ).to(torch.float64)
     output_weight = (
-        source.model.layers[0]
-        .self_attn.out_proj.weight.detach()
-        .to(torch.float64)
+        source.model.layers[0].self_attn.out_proj.weight.detach().to(torch.float64)
     )
     output_blocks = output_weight.reshape(8, 4, 2)
     target_blocks = torch.einsum(
@@ -858,9 +852,9 @@ def test_attention_phases_coalesce_exact_k_linear_chronology(
         case.query_row_sqrt_weights,
         case.key_value_row_sqrt_weights,
     )
-    assert float(
-        case.query_row_sqrt_weights.square().sum().item()
-    ) == pytest.approx(4.0)
+    assert float(case.query_row_sqrt_weights.square().sum().item()) == pytest.approx(
+        4.0
+    )
 
 
 def test_attention_o_contribution_accepts_bf16_rounding_but_rejects_mismatch() -> None:
@@ -931,9 +925,7 @@ def test_attention_o_contribution_accepts_bf16_rounding_but_rejects_mismatch() -
     mismatched_source_output = (source_output.to(torch.float32) * 1.25).to(
         torch.bfloat16
     )
-    mismatched_target_output = (
-        mismatched_source_output.to(torch.float64) @ encoder
-    )
+    mismatched_target_output = mismatched_source_output.to(torch.float64) @ encoder
     with pytest.raises(
         layer_compiler.Lfm2CpcfLayerCompilerError,
         match="accumulation-aware rounding bound",
@@ -1048,11 +1040,7 @@ def test_prepared_attention_o_transport_is_exact_sealed_and_reused() -> None:
     assert receipt["avoided_phase_fp64_weight_materialization_bytes"] == 465_696
     assert receipt["transport_seal_sha256"] == prepared.seal_sha256
     assert receipt["report_sha256"] == _sha(
-        {
-            key: value
-            for key, value in receipt.items()
-            if key != "report_sha256"
-        }
+        {key: value for key, value in receipt.items() if key != "report_sha256"}
     )
 
     with pytest.raises(
@@ -1185,12 +1173,8 @@ def test_endpoint_metrics_are_separated_by_exact_causal_phase() -> None:
         assert set(phase_metrics) == {"prefill", "decode.000"}
         assert phase_metrics["prefill"]["post_operator"]["rows"] == 3
         assert phase_metrics["decode.000"]["post_operator"]["rows"] == 1
-        assert phase_metrics["prefill"]["post_operator"]["rmse"] == pytest.approx(
-            1.0
-        )
-        assert phase_metrics["decode.000"]["post_layer"]["rmse"] == pytest.approx(
-            2.0
-        )
+        assert phase_metrics["prefill"]["post_operator"]["rmse"] == pytest.approx(1.0)
+        assert phase_metrics["decode.000"]["post_layer"]["rmse"] == pytest.approx(2.0)
         assert phase_metrics["prefill"]["phase_count"] == 1
         assert len(phase_metrics["decode.000"]["report_sha256"]) == 64
 
@@ -1370,9 +1354,7 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
             "head_local_O_write_composed_through_post_operator_chart"
         )
         assert policy["attention_residual_contribution_direction_preserved"] is True
-        runtime_receipt = policy[
-            "attention_runtime_complexity_receipt"
-        ]
+        runtime_receipt = policy["attention_runtime_complexity_receipt"]
         assert runtime_receipt["report_sha256"] == _sha(
             {
                 key: value
@@ -1387,17 +1369,12 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
         assert output_receipt["head_dim"] == 2
         assert output_receipt["target_width"] == 4
         assert len(output_receipt["transport_seal_sha256"]) == 64
-        offset_receipt = runtime_receipt[
-            "equal_offset_identity_short_circuit"
-        ]
+        offset_receipt = runtime_receipt["equal_offset_identity_short_circuit"]
         assert offset_receipt["identity_short_circuit_executed"] is True
         assert offset_receipt["fit_case_count"] == 1
         assert offset_receipt["fit_observation_rows"] == 12
         assert offset_receipt["avoided_offset_feature_bytes"] == 3_072
-        assert (
-            offset_receipt["avoided_minimum_live_bytes_at_legacy_cat"]
-            == 9_216
-        )
+        assert offset_receipt["avoided_minimum_live_bytes_at_legacy_cat"] == 9_216
         assert result.result_sha256 == _sha(
             {
                 key: value
@@ -1422,7 +1399,365 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
     assert result.report["execution"]["target_model_forward_calls"] == 0
 
 
-def test_short_conv_v4_dispatches_authenticated_residual_endpoint_fold(
+def test_attention_phase_weighting_is_explicitly_split_scoped() -> None:
+    phases = (
+        SimpleNamespace(
+            identity=(0, "prefill"),
+            split="fit",
+            batch_size=2,
+            sampled_suffix_tokens=3,
+        ),
+        SimpleNamespace(
+            identity=(1, "prefill"),
+            split="selection",
+            batch_size=1,
+            sampled_suffix_tokens=2,
+        ),
+        SimpleNamespace(
+            identity=(2, "prefill"),
+            split="selection",
+            batch_size=2,
+            sampled_suffix_tokens=1,
+        ),
+    )
+
+    weights = layer_compiler._equal_causal_phase_sqrt_weights(
+        phases,
+        required_split="selection",
+    )
+
+    assert set(weights) == {(1, "prefill"), (2, "prefill")}
+    assert (0, "prefill") not in weights
+    observed_mass = sum(
+        float(value.square().sum().item()) for value in weights.values()
+    )
+    assert observed_mass == pytest.approx(4.0)
+    assert float(weights[(1, "prefill")][0, 0].square().item()) == pytest.approx(1.0)
+    assert float(weights[(2, "prefill")][0, 0].square().item()) == pytest.approx(1.0)
+
+
+def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("full_attention")
+    replay_events = []
+    attention_case_calls = []
+    case_identity = {}
+    score_case_identity = {}
+    mlp_preparation_count = 0
+    mlp_compile_count = 0
+    mlp_prepared_basis_identities = []
+    mlp_prepared_basis_sha256 = []
+    mlp_candidate_child_case_sha256 = []
+    mlp_artifacts = []
+
+    original_replay = layer_compiler.replay_lfm2_cpcf_phase_bank
+    original_attention_cases = layer_compiler._attention_cases
+    original_producer = layer_compiler.compile_lfm2_structural_attention_producer_fold
+    original_score = (
+        layer_compiler.evaluate_lfm2_compiled_attention_producer_score_preservation
+    )
+    original_prepare_mlp = (
+        layer_compiler.prepare_lfm2_structural_residual_mlp_fold_basis
+    )
+    original_mlp = layer_compiler.compile_lfm2_structural_residual_mlp_fold
+    original_freeze = layer_compiler._freeze_attention_candidate_winner
+
+    def replay_spy(*args, **kwargs):
+        splits = tuple(sorted({phase.split for phase in kwargs["input_bank"].phases}))
+        replay_events.append(("replay", splits))
+        return original_replay(*args, **kwargs)
+
+    def attention_cases_spy(**kwargs):
+        required_split = kwargs["required_split"]
+        observed_splits = {phase.split for phase in kwargs["input_bank"].phases}
+        assert observed_splits == {required_split}
+        result = original_attention_cases(**kwargs)
+        attention_case_calls.append((required_split, observed_splits))
+        case_identity[required_split] = result[0]
+        return result
+
+    def producer_spy(**kwargs):
+        assert kwargs["cases"] is case_identity["fit"]
+        return original_producer(**kwargs)
+
+    def score_spy(producer, cases, **kwargs):
+        assert cases is case_identity["selection"]
+        score_case_identity["cases"] = cases
+        return original_score(producer, cases, **kwargs)
+
+    def prepare_mlp_spy(**kwargs):
+        nonlocal mlp_preparation_count
+        mlp_preparation_count += 1
+        return original_prepare_mlp(**kwargs)
+
+    def mlp_spy(**kwargs):
+        nonlocal mlp_compile_count
+        mlp_compile_count += 1
+        prepared_basis = kwargs["prepared_basis"]
+        assert prepared_basis is not None
+        mlp_prepared_basis_identities.append(id(prepared_basis))
+        mlp_prepared_basis_sha256.append(prepared_basis.preparation_sha256)
+        mlp_candidate_child_case_sha256.append(
+            tuple(
+                (
+                    structural_fold._tensor_sha256(case.target_input),
+                    structural_fold._tensor_sha256(
+                        case.target_pre_mlp_residual,
+                    ),
+                )
+                for case in kwargs["cases"]
+            )
+        )
+        artifact = original_mlp(**kwargs)
+        mlp_artifacts.append(artifact)
+        return artifact
+
+    def freeze_spy(candidates):
+        assert not any(
+            "validation" in splits
+            for event, splits in replay_events
+            if event == "replay"
+        )
+        result = original_freeze(candidates)
+        replay_events.append(("freeze", (result[0].candidate_id,)))
+        return result
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "replay_lfm2_cpcf_phase_bank",
+        replay_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "_attention_cases",
+        attention_cases_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "compile_lfm2_structural_attention_producer_fold",
+        producer_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "evaluate_lfm2_compiled_attention_producer_score_preservation",
+        score_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "prepare_lfm2_structural_residual_mlp_fold_basis",
+        prepare_mlp_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "compile_lfm2_structural_residual_mlp_fold",
+        mlp_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "_freeze_attention_candidate_winner",
+        freeze_spy,
+    )
+
+    result = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        source,
+        target,
+        layer_index=0,
+        input_bank=bank,
+        boundary_charts=charts,
+    )
+
+    assert attention_case_calls == [
+        ("fit", {"fit"}),
+        ("selection", {"selection"}),
+    ]
+    assert score_case_identity["cases"] is case_identity["selection"]
+    assert mlp_preparation_count == 1
+    assert mlp_compile_count == 2
+    assert len(set(mlp_prepared_basis_identities)) == 1
+    assert len(set(mlp_prepared_basis_sha256)) == 1
+    assert len(set(mlp_candidate_child_case_sha256)) == 2
+    assert all(artifact.prepared_basis_reused is True for artifact in mlp_artifacts)
+    assert all(
+        artifact.prepared_basis_sha256 == mlp_prepared_basis_sha256[0]
+        for artifact in mlp_artifacts
+    )
+    freeze_index = next(
+        index for index, event in enumerate(replay_events) if event[0] == "freeze"
+    )
+    validation_replay_indices = [
+        index
+        for index, (event, splits) in enumerate(replay_events)
+        if event == "replay" and "validation" in splits
+    ]
+    assert validation_replay_indices
+    assert all(index > freeze_index for index in validation_replay_indices)
+
+    policy = result.report["solver_evidence_policy"]
+    selection = policy["attention_candidate_selection"]
+    evaluations = policy["attention_candidate_evaluations"]
+    assert selection["winner_frozen_before_validation"] is True
+    assert selection["validation_phase_count_consumed_before_freeze"] == 0
+    assert selection["report_sha256"] == _sha(
+        {name: value for name, value in selection.items() if name != "report_sha256"}
+    )
+    assert set(evaluations) == {
+        "direct_monolithic",
+        "residual_attention_split",
+    }
+    expected_winner = min(
+        evaluations,
+        key=lambda name: tuple(evaluations[name]["selection_key"]),
+    )
+    assert selection["selected_candidate_id"] == expected_winner
+    for candidate in evaluations.values():
+        assert candidate["operator_compiled_from_splits"] == ["fit"]
+        assert candidate["mlp_compiled_from_splits"] == ["fit"]
+        assert candidate["candidate_evaluated_on_splits"] == ["selection"]
+        assert candidate["validation_phase_count_consumed"] == 0
+        assert candidate["rollback_proof"]["exact_layer_rollback_proven"] is True
+        assert set(candidate["selection_metrics"]) == {"selection"}
+        assert candidate["live_operator_state_authenticated_before_fit_replay"] is True
+        assert candidate["live_mlp_state_authenticated_before_selection_replay"] is True
+        assert candidate["selection_context_ranked_before_post_layer_endpoint"] is True
+        assert candidate["selection_context_metrics"]["selection_split_only"] is True
+        assert candidate["query_key_score_report"]["case_count"] == len(
+            case_identity["selection"]
+        )
+        assert candidate["query_key_score_producer_view_exact_state_proven"] is True
+        assert candidate["report_sha256"] == _sha(
+            {
+                name: value
+                for name, value in candidate.items()
+                if name != "report_sha256"
+            }
+        )
+
+    split = evaluations["residual_attention_split"]["operator_artifact"]
+    assert split["schema"] == (layer_compiler.LFM2_CPCF_RESIDUAL_ATTENTION_SPLIT_SCHEMA)
+    assert split["fit_only_producer_compile"] is True
+    assert split["fit_only_value_output_compile"] is True
+    assert split["selection_only_query_key_score_evaluation"] is True
+    assert split["validation_used_for_compilation_or_selection"] is False
+    assert split["actual_context_source"] == (
+        "temporary_installed_qkv_fit_bank_operator_output_input"
+    )
+    assert split["live_value_source"] == "compiled_producer_v"
+    assert split["value_prior_source"] == "compiled_producer_v"
+    assert split["output_prior_source"] == "original_blank_target_o"
+    assert split["temporary_rollback_proof"]["exact_layer_rollback_proven"] is True
+    assert split["score_selection_report"]["case_count"] == len(
+        case_identity["selection"]
+    )
+    assert split["report_sha256"] == _sha(
+        {name: value for name, value in split.items() if name != "report_sha256"}
+    )
+    assert isinstance(
+        result.operator_artifact,
+        (
+            layer_compiler.Lfm2CompiledStructuralAttentionFold,
+            layer_compiler.Lfm2CompiledCpcfResidualAttentionSplitFold,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "forced_candidate",
+    ("direct_monolithic", "residual_attention_split"),
+)
+def test_attention_forced_winner_is_final_live_state_and_split_rejects_tamper(
+    forced_candidate,
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("full_attention")
+    original_key = layer_compiler._attention_candidate_selection_key
+
+    def forced_key(candidate_id, selection_metrics, context_metrics, score_report):
+        observed = original_key(
+            candidate_id,
+            selection_metrics,
+            context_metrics,
+            score_report,
+        )
+        return (
+            0.0 if candidate_id == forced_candidate else 1e6,
+            *observed[1:],
+        )
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "_attention_candidate_selection_key",
+        forced_key,
+    )
+    result = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        source,
+        target,
+        layer_index=0,
+        input_bank=bank,
+        boundary_charts=charts,
+    )
+
+    selection = result.report["solver_evidence_policy"]["attention_candidate_selection"]
+    assert selection["selected_candidate_id"] == forced_candidate
+    attention = target.model.layers[0].self_attn
+    live_operator_sha = layer_compiler._tensor_bundle_sha256(
+        {
+            "q_proj.weight": attention.q_proj.weight,
+            "k_proj.weight": attention.k_proj.weight,
+            "v_proj.weight": attention.v_proj.weight,
+            "out_proj.weight": attention.out_proj.weight,
+        }
+    )
+    assert live_operator_sha == layer_compiler._tensor_bundle_sha256(
+        result.operator_artifact.state_dict()
+    )
+    mlp = target.model.layers[0].feed_forward
+    live_mlp_sha = layer_compiler._tensor_bundle_sha256(
+        {
+            "w1.weight": mlp.w1.weight,
+            "w3.weight": mlp.w3.weight,
+            "w2.weight": mlp.w2.weight,
+        }
+    )
+    assert live_mlp_sha == layer_compiler._tensor_bundle_sha256(
+        result.mlp_artifact.state_dict()
+    )
+
+    if forced_candidate == "direct_monolithic":
+        assert isinstance(
+            result.operator_artifact,
+            layer_compiler.Lfm2CompiledStructuralAttentionFold,
+        )
+        return
+
+    artifact = result.operator_artifact
+    assert isinstance(
+        artifact,
+        layer_compiler.Lfm2CompiledCpcfResidualAttentionSplitFold,
+    )
+    tampered_report = dict(artifact.report)
+    tampered_producer = dict(tampered_report["producer_artifact"])
+    tampered_producer["consumer_compiled"] = True
+    tampered_report["producer_artifact"] = tampered_producer
+    tampered_report["producer_artifact_sha256"] = _sha(tampered_producer)
+    tampered_report["report_sha256"] = _sha(
+        {
+            name: value
+            for name, value in tampered_report.items()
+            if name != "report_sha256"
+        }
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="artifact seal is invalid",
+    ):
+        replace(
+            artifact,
+            report=tampered_report,
+        )
+
+
+def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source, target, bank, charts = _fixture("short_conv")
@@ -1432,7 +1767,24 @@ def test_short_conv_v4_dispatches_authenticated_residual_endpoint_fold(
         target_dtype="float32",
     )
     original = layer_compiler.compile_lfm2_cpcf_short_conv_v4_fold
+    original_cluster_builder = structural_fold.build_gated_mlp_activation_cluster_plan
     observed = {}
+    cluster_builder_calls = 0
+
+    def cluster_builder_spy(*args, **kwargs):
+        nonlocal cluster_builder_calls
+        cluster_builder_calls += 1
+        return original_cluster_builder(*args, **kwargs)
+
+    class EndpointControl:
+        def __init__(self):
+            self.requests = []
+
+        def select(self, request):
+            self.requests.append(copy.deepcopy(request))
+            raise RuntimeError("endpoint selector found no feasible candidate")
+
+    endpoint_control = EndpointControl()
 
     def v4_spy(**kwargs):
         observed["source_in_proj_weight"] = kwargs["source_in_proj_weight"]
@@ -1441,12 +1793,25 @@ def test_short_conv_v4_dispatches_authenticated_residual_endpoint_fold(
         observed["output_encoder"] = kwargs["output_encoder"]
         observed["cases"] = tuple(kwargs["cases"])
         observed["solver_policy"] = kwargs["solver_policy"]
+        observed["candidate_selector"] = kwargs["candidate_selector"]
+        observed["macrocell_candidate_selector"] = kwargs[
+            "macrocell_candidate_selector"
+        ]
+        observed["macrocell_fit_bank_sha256"] = kwargs["macrocell_fit_bank_sha256"]
+        observed["macrocell_selection_bank_sha256"] = kwargs[
+            "macrocell_selection_bank_sha256"
+        ]
         return original(**kwargs)
 
     monkeypatch.setattr(
         layer_compiler,
         "compile_lfm2_cpcf_short_conv_v4_fold",
         v4_spy,
+    )
+    monkeypatch.setattr(
+        structural_fold,
+        "build_gated_mlp_activation_cluster_plan",
+        cluster_builder_spy,
     )
     result = layer_compiler.compile_and_install_lfm2_cpcf_layer(
         source,
@@ -1455,6 +1820,7 @@ def test_short_conv_v4_dispatches_authenticated_residual_endpoint_fold(
         input_bank=bank,
         boundary_charts=charts,
         short_conv_v4_solver_policy=solver_policy,
+        candidate_selector=endpoint_control,
     )
 
     source_conv = source.model.layers[0].conv
@@ -1463,6 +1829,26 @@ def test_short_conv_v4_dispatches_authenticated_residual_endpoint_fold(
     assert observed["source_out_proj_weight"] is source_conv.out_proj.weight
     assert observed["output_encoder"] is charts.post_operator.mapping.encoder
     assert observed["solver_policy"] is solver_policy
+    assert observed["candidate_selector"] is None
+    assert len(endpoint_control.requests) == 1
+    assert isinstance(
+        observed["macrocell_candidate_selector"],
+        layer_compiler._Lfm2CpcfShortConvMacrocellSelector,
+    )
+    assert {
+        phase.split
+        for phase in observed["macrocell_candidate_selector"].audit_bank.phases
+    } == {"fit", "selection"}
+    assert not hasattr(
+        observed["macrocell_candidate_selector"],
+        "input_bank",
+    )
+    assert len(observed["macrocell_fit_bank_sha256"]) == 64
+    assert len(observed["macrocell_selection_bank_sha256"]) == 64
+    assert (
+        observed["macrocell_fit_bank_sha256"]
+        != observed["macrocell_selection_bank_sha256"]
+    )
     assert tuple(case.split for case in observed["cases"]) == (
         "selection",
         "fit",
@@ -1480,12 +1866,226 @@ def test_short_conv_v4_dispatches_authenticated_residual_endpoint_fold(
         result.operator_artifact.report["solver_policy_sha256"]
         == solver_policy.authentication_sha256
     )
+    artifact_report = result.operator_artifact.report
+    assert artifact_report["macrocell_candidate_selector_active"] is True
+    assert artifact_report["validation_used_for_macrocell_selection"] is False
+    assert artifact_report["validation_frozen_until_after_macrocell_winner"] is True
+    decision = result.report["solver_evidence_policy"]["short_conv_macrocell_selection"]
+    assert decision["candidate_budget"] == 8
+    assert len(decision["evaluated_candidate_ids"]) == 8
+    assert decision["candidate_specific_fit_mlp_folds"] == 8
+    assert decision["candidate_specific_selection_replays"] == 8
+    assert decision["exact_candidate_rollbacks"] == 8
+    assert decision["validation_accessible"] is False
+    assert decision["validation_replays"] == 0
+    assert cluster_builder_calls == 1
+    evidence_policy = result.report["solver_evidence_policy"]
+    assert evidence_policy["short_conv_mlp_preparation_count"] == 1
+    assert evidence_policy["short_conv_mlp_candidate_compiles_from_prepared_basis"] == 8
+    assert len(evidence_policy["short_conv_mlp_prepared_basis_sha256"]) == 64
+    assert (
+        evidence_policy["short_conv_mlp_prepared_basis_validation_evidence_consumed"]
+        == 0
+    )
+    assert (
+        len(
+            {
+                value["fit_mlp_compiled_state_sha256"]
+                for value in decision["candidate_evaluations"].values()
+            }
+        )
+        > 1
+    )
+    assert (
+        decision["selected_candidate_id"]
+        != artifact_report["default_v4_selected_candidate_id"]
+    )
+    endpoint_top4 = {
+        value["candidate_id"]
+        for value in artifact_report["selection_ranking"]["ranking"][:4]
+    }
+    assert decision["selected_candidate_id"] not in endpoint_top4
+    assert decision["selected_candidate_id"] in decision["evaluated_candidate_ids"]
+    assert "--anchor-" in decision["selected_candidate_id"]
+    for evaluation in decision["candidate_evaluations"].values():
+        assert evaluation["fit_only_mlp_fold"] is True
+        assert evaluation["selection_only_candidate_evaluation"] is True
+        assert evaluation["validation_accessible"] is False
+        assert evaluation["rollback_proof"]["exact_layer_snapshot_restored"] is True
+        assert (
+            len(evaluation["operator_install_report"]["installed_state_sha256"]) == 64
+        )
+    binding = result.report["solver_evidence_policy"][
+        "short_conv_final_macrocell_binding"
+    ]
+    assert binding["selected_candidate_id"] == decision["selected_candidate_id"]
+    assert binding["output_artifact_equals_selected_candidate"] is True
+    assert binding["exact_selected_fit_only_mlp_reused"] is True
+    assert binding["whole_macrocell_overturned_endpoint_control"] is True
+    assert binding["endpoint_selector_report_sha256"] is None
+    assert (
+        binding["endpoint_control_candidate_id"]
+        == (artifact_report["default_v4_selected_candidate_id"])
+    )
+    assert binding["endpoint_selector_diagnostic"]["status"] == (
+        "raised_fallback_to_default"
+    )
+    live_mlp = target.model.layers[0].feed_forward
+    assert result.mlp_artifact.prepared_basis_reused is True
+    assert (
+        result.mlp_artifact.prepared_basis_sha256
+        == evidence_policy["short_conv_mlp_prepared_basis_sha256"]
+    )
+    assert binding["final_live_mlp_bundle_sha256"] == (
+        layer_compiler._tensor_bundle_sha256(
+            {
+                "w1.weight": live_mlp.w1.weight,
+                "w3.weight": live_mlp.w3.weight,
+                "w2.weight": live_mlp.w2.weight,
+            }
+        )
+    )
     assert result.operator_install_report["scope"] == (
         "authenticated_residual_endpoint_cpcf_short_conv_v4_install"
     )
     assert result.report["execution"]["training_steps"] == 0
     assert result.report["execution"]["parameters_pruned"] == 0
     assert result.report["execution"]["parameters_quantized"] == 0
+
+
+def test_short_conv_macrocell_candidate_failure_restores_exact_blank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, target, bank, charts = _fixture("short_conv")
+    layer = target.model.layers[0]
+    before = copy.deepcopy(layer.state_dict())
+    identities = {name: id(value) for name, value in layer.named_parameters()}
+    solver_policy = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-6,),
+        variable_projection_passes=2,
+        target_dtype="float32",
+    )
+    original_compile = layer_compiler._compile_cpcf_mlp_from_fit_replay
+    original_prepare = layer_compiler._prepare_cpcf_mlp_basis_from_fit_replay
+    prepared_bases = []
+
+    def prepare_spy(**kwargs):
+        basis = original_prepare(**kwargs)
+        prepared_bases.append(basis)
+        return basis
+
+    def fail_candidate_mlp(**kwargs):
+        basis = kwargs["prepared_basis"]
+        assert basis is prepared_bases[-1]
+        assert basis.verify_authentication() is True
+        raise RuntimeError("forced candidate-owned MLP failure")
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "_prepare_cpcf_mlp_basis_from_fit_replay",
+        prepare_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "_compile_cpcf_mlp_from_fit_replay",
+        fail_candidate_mlp,
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilationFailure,
+        match="forced candidate-owned MLP failure",
+    ) as caught:
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+            short_conv_v4_solver_policy=solver_policy,
+        )
+
+    assert caught.value.rollback_proof["exact_layer_rollback_proven"] is True
+    assert {name: id(value) for name, value in layer.named_parameters()} == identities
+    for name, value in layer.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
+    assert len(prepared_bases) == 1
+    assert prepared_bases[0].verify_authentication() is True
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "_compile_cpcf_mlp_from_fit_replay",
+        original_compile,
+    )
+    recovered = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        source,
+        target,
+        layer_index=0,
+        input_bank=bank,
+        boundary_charts=charts,
+        short_conv_v4_solver_policy=solver_policy,
+    )
+    assert len(prepared_bases) == 2
+    assert prepared_bases[1] is not prepared_bases[0]
+    assert prepared_bases[1].verify_authentication() is True
+    assert recovered.mlp_artifact.prepared_basis_reused is True
+    assert (
+        recovered.mlp_artifact.prepared_basis_sha256
+        == prepared_bases[1].preparation_sha256
+    )
+
+
+def test_short_conv_macrocell_rejects_resealed_mlp_binding_tamper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, target, bank, charts = _fixture("short_conv")
+    layer = target.model.layers[0]
+    before = copy.deepcopy(layer.state_dict())
+    solver_policy = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-6,),
+        variable_projection_passes=2,
+        target_dtype="float32",
+    )
+    original = layer_compiler._seal_macrocell_evidence
+
+    def tamper(kind, candidate_id, actual_report, **bindings):
+        report = original(
+            kind,
+            candidate_id,
+            actual_report,
+            **bindings,
+        )
+        if kind != "actual_fit_mlp_artifact":
+            return report
+        forged = copy.deepcopy(report)
+        actual = forged["actual_report"]
+        actual["compiled_state_sha256"] = "f" * 64
+        actual.pop("report_sha256")
+        actual["report_sha256"] = layer_compiler._sha(actual)
+        forged["actual_report_sha256"] = actual["report_sha256"]
+        forged.pop("report_sha256")
+        forged["report_sha256"] = layer_compiler._sha(forged)
+        return forged
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "_seal_macrocell_evidence",
+        tamper,
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilationFailure,
+        match="state-bound|candidate evidence",
+    ) as caught:
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+            short_conv_v4_solver_policy=solver_policy,
+        )
+
+    assert caught.value.rollback_proof["exact_layer_rollback_proven"] is True
+    for name, value in layer.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
 
 
 def test_short_conv_v4_gate_failure_is_strictly_nested_and_rolls_back() -> None:
@@ -1523,7 +2123,9 @@ def test_short_conv_v4_gate_failure_is_strictly_nested_and_rolls_back() -> None:
     failure = caught.value
     nested = failure.short_conv_validation_report
     assert nested is not None
-    assert nested["schema"] == LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
+    assert nested["schema"] == (
+        layer_compiler.LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FAILURE_SCHEMA
+    )
     assert nested["compiled_short_conv_fold_issued"] is False
     assert nested["promotion_claimed"] is False
     assert nested["promotable_candidate"] is False
@@ -1552,8 +2154,7 @@ def test_short_conv_v4_gate_failure_is_strictly_nested_and_rolls_back() -> None:
     reseal(forged_provenance)
     assert layer_compiler._recursive_report_seals_valid(forged_provenance) is True
     assert (
-        layer_compiler._valid_short_conv_validation_report(forged_provenance)
-        is False
+        layer_compiler._valid_short_conv_validation_report(forged_provenance) is False
     )
 
     forged_pool = copy.deepcopy(nested)
@@ -1567,27 +2168,19 @@ def test_short_conv_v4_gate_failure_is_strictly_nested_and_rolls_back() -> None:
     forged_frontier = copy.deepcopy(nested)
     omitted_id = next(
         candidate_id
-        for candidate_id, provenance in forged_frontier[
-            "candidate_fit_reports"
-        ].items()
+        for candidate_id, provenance in forged_frontier["candidate_fit_reports"].items()
         if candidate_id != forged_frontier["selected_candidate_id"]
         and any(
             source["candidate_kind"] == "accepted_fit_path_anchor"
             for source in provenance["sources"]
         )
     )
-    omitted_provenance = forged_frontier["candidate_fit_reports"].pop(
-        omitted_id
-    )
+    omitted_provenance = forged_frontier["candidate_fit_reports"].pop(omitted_id)
     forged_frontier["candidate_selection_reports"].pop(omitted_id)
     frontier_pool = forged_frontier["candidate_pool_report"]
-    frontier_pool["candidate_ids"] = sorted(
-        forged_frontier["candidate_fit_reports"]
-    )
+    frontier_pool["candidate_ids"] = sorted(forged_frontier["candidate_fit_reports"])
     frontier_pool["candidate_state_sha256"].pop(omitted_id)
-    frontier_pool["raw_candidate_count"] -= omitted_provenance[
-        "source_alias_count"
-    ]
+    frontier_pool["raw_candidate_count"] -= omitted_provenance["source_alias_count"]
     frontier_pool["unique_target_dtype_candidate_count"] -= 1
     frontier_pool["target_dtype_duplicate_count"] = (
         frontier_pool["raw_candidate_count"]
@@ -1598,22 +2191,17 @@ def test_short_conv_v4_gate_failure_is_strictly_nested_and_rolls_back() -> None:
         layer_compiler.rank_short_conv_v4_selection_candidates(
             forged_frontier["candidate_selection_reports"],
             policy_sha256=forged_frontier["solver_policy_sha256"],
-            feasibility_policy=frontier_pool[
-                "selection_feasibility_policy"
-            ],
+            feasibility_policy=frontier_pool["selection_feasibility_policy"],
         )
     )
     assert (
         forged_frontier["selection_ranking"]["selected_candidate_id"]
-        == forged_frontier["selected_candidate_id"]
+        in forged_frontier["candidate_fit_reports"]
     )
     assert frontier_pool["accepted_phase_anchors_included"] is True
     reseal(forged_frontier)
     assert layer_compiler._recursive_report_seals_valid(forged_frontier) is True
-    assert (
-        layer_compiler._valid_short_conv_validation_report(forged_frontier)
-        is False
-    )
+    assert layer_compiler._valid_short_conv_validation_report(forged_frontier) is False
 
     forged_ranking = copy.deepcopy(nested)
     ranking = forged_ranking["selection_ranking"]
@@ -1624,19 +2212,9 @@ def test_short_conv_v4_gate_failure_is_strictly_nested_and_rolls_back() -> None:
     reseal(ranking)
     reseal(forged_ranking)
     assert layer_compiler._recursive_report_seals_valid(forged_ranking) is True
-    assert (
-        layer_compiler._valid_short_conv_validation_report(forged_ranking)
-        is False
-    )
+    assert layer_compiler._valid_short_conv_validation_report(forged_ranking) is False
 
-    legacy = copy.deepcopy(nested)
-    legacy.pop("ridge_fit_reports")
-    legacy.pop("candidate_pool_report")
-    legacy["schema"] = LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA
-    reseal(legacy)
-    assert layer_compiler._valid_short_conv_validation_report(legacy) is True
-    assert nested["schema"] == LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
-    assert nested["schema"].endswith("failure-v2")
+    assert nested["schema"].endswith("macrocell-selector-failure-v1")
     assert failure.stage == "operator_compile"
     assert failure.rollback_proof["exact_layer_rollback_proven"] is True
     for name, value in layer.state_dict().items():

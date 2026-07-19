@@ -82,10 +82,7 @@ def _sha(value: Any) -> str:
 def _freeze_json(value: Any) -> Any:
     if isinstance(value, Mapping):
         return MappingProxyType(
-            {
-                key: _freeze_json(child)
-                for key, child in value.items()
-            }
+            {key: _freeze_json(child) for key, child in value.items()}
         )
     if isinstance(value, (list, tuple)):
         return tuple(_freeze_json(child) for child in value)
@@ -94,10 +91,7 @@ def _freeze_json(value: Any) -> Any:
 
 def _thaw_json(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return {
-            key: _thaw_json(child)
-            for key, child in value.items()
-        }
+        return {key: _thaw_json(child) for key, child in value.items()}
     if isinstance(value, tuple):
         return [_thaw_json(child) for child in value]
     return value
@@ -192,11 +186,7 @@ def _floating_states(
     # size and layer count.  The copy is synchronous and preserves the exact
     # dtype/shape/bytes authenticated by the bank seal.
     detached = value.detach()
-    if (
-        not copy
-        and detached.device.type == "cpu"
-        and detached.is_contiguous()
-    ):
+    if not copy and detached.device.type == "cpu" and detached.is_contiguous():
         return detached
     return detached.to(
         device="cpu",
@@ -629,6 +619,161 @@ def _phase_state_bank(
     )
 
 
+def select_lfm2_cpcf_phase_state_bank(
+    bank: Lfm2CpcfPhaseStateBank,
+    *,
+    splits: Sequence[str],
+) -> Lfm2CpcfPhaseStateBank:
+    """Rebuild a phase-state bank from complete trajectories in chosen splits.
+
+    Split selection is intentionally performed over trajectories keyed by
+    ``(batch_index, record_id)``.  A trajectory is admitted only when it has
+    one complete prefill followed by every contiguous decode phase present in
+    the authenticated source bank, with unchanged causal prefixes.  The
+    returned bank owns fresh state tensors and is resealed solely from the
+    selected phases and states; excluded splits cannot affect its content or
+    digest.
+    """
+
+    torch = _torch()
+    if not isinstance(bank, Lfm2CpcfPhaseStateBank):
+        raise TypeError("bank must be Lfm2CpcfPhaseStateBank.")
+    if not isinstance(splits, Sequence) or isinstance(splits, (str, bytes)):
+        raise TypeError("splits must be a sequence of split names.")
+    requested = []
+    seen_splits: set[str] = set()
+    for index, value in enumerate(splits):
+        split = _text(value, f"splits[{index}]")
+        if split in seen_splits:
+            raise Lfm2CpcfModelCompilerError(
+                f"Requested split {split!r} is duplicated."
+            )
+        seen_splits.add(split)
+        requested.append(split)
+    if not requested:
+        raise Lfm2CpcfModelCompilerError(
+            "At least one phase-state split must be requested."
+        )
+
+    available = {phase.split for phase in bank.phases}
+    missing = [split for split in requested if split not in available]
+    if missing:
+        raise Lfm2CpcfModelCompilerError(
+            "Requested phase-state splits are absent from the bank: "
+            + ", ".join(repr(split) for split in missing)
+            + "."
+        )
+
+    grouped: dict[
+        tuple[int, str],
+        list[Lfm2CpcfTargetPhase],
+    ] = {}
+    for phase in bank.phases:
+        grouped.setdefault(
+            (phase.batch_index, phase.record_id),
+            [],
+        ).append(phase)
+
+    selected_trajectories: set[tuple[int, str]] = set()
+    for trajectory_id, trajectory_values in grouped.items():
+        trajectory = tuple(trajectory_values)
+        trajectory_splits = {phase.split for phase in trajectory}
+        if not trajectory_splits.intersection(seen_splits):
+            continue
+        if len(trajectory_splits) != 1:
+            raise Lfm2CpcfModelCompilerError(
+                f"Trajectory {trajectory_id!r} crosses phase-state splits."
+            )
+        trajectory_split = next(iter(trajectory_splits))
+        if trajectory_split not in seen_splits:  # pragma: no cover - guarded above
+            continue
+
+        first = trajectory[0]
+        if (
+            first.phase not in {"prefill", "cached_prefill"}
+            or first.sampled_suffix_tokens != first.full_prefix_tokens
+        ):
+            raise Lfm2CpcfModelCompilerError(
+                f"Trajectory {trajectory_id!r} has no complete causal prefill."
+            )
+        previous = first
+        for phase_index, phase in enumerate(trajectory[1:], start=1):
+            expected_phase = f"decode.{phase_index - 1:03d}"
+            if phase.phase != expected_phase:
+                raise Lfm2CpcfModelCompilerError(
+                    f"Trajectory {trajectory_id!r} skips or reorders "
+                    f"causal phase {expected_phase!r}."
+                )
+            if (
+                phase.batch_size != previous.batch_size
+                or phase.donor_input_sha256 != previous.donor_input_sha256
+                or phase.target_alignment_sha256 != previous.target_alignment_sha256
+                or phase.full_prefix_tokens
+                != previous.full_prefix_tokens + phase.sampled_suffix_tokens
+            ):
+                raise Lfm2CpcfModelCompilerError(
+                    f"Trajectory {trajectory_id!r} changed identity or "
+                    "target prefix geometry."
+                )
+            previous_tokens = previous.full_prefix_tokens
+            if any(
+                not torch.equal(
+                    getattr(phase, field)[:, :previous_tokens],
+                    getattr(previous, field),
+                )
+                for field in (
+                    "input_ids",
+                    "attention_mask",
+                    "position_ids",
+                )
+            ):
+                raise Lfm2CpcfModelCompilerError(
+                    f"Trajectory {trajectory_id!r} changed an authenticated "
+                    "target-token causal prefix."
+                )
+            previous_state = bank.states[previous.identity]
+            current_state = bank.states[phase.identity]
+            if (
+                previous_state.dtype != current_state.dtype
+                or tuple(previous_state.shape)
+                != (
+                    phase.batch_size,
+                    previous_tokens,
+                    bank.hidden_size,
+                )
+                or not torch.equal(
+                    current_state[:, :previous_tokens, :],
+                    previous_state,
+                )
+            ):
+                raise Lfm2CpcfModelCompilerError(
+                    f"Trajectory {trajectory_id!r} changed an authenticated "
+                    "actual-child causal state prefix."
+                )
+            previous = phase
+        selected_trajectories.add(trajectory_id)
+
+    selected_phases = tuple(
+        phase
+        for phase in bank.phases
+        if (phase.batch_index, phase.record_id) in selected_trajectories
+    )
+    if not selected_phases:
+        raise Lfm2CpcfModelCompilerError(
+            "Requested phase-state splits contain no complete trajectories."
+        )
+    # ``state()`` returns a clone.  Reconstructing from those clones prevents
+    # the selected archive from sharing mutable tensor storage with the source
+    # bank while preserving exact authenticated bytes.
+    selected_states = {phase.identity: bank.state(phase) for phase in selected_phases}
+    return _phase_state_bank(
+        bank.boundary,
+        bank.layer_index,
+        selected_phases,
+        selected_states,
+    )
+
+
 def rebind_lfm2_cpcf_phase_state_bank(
     bank: Lfm2CpcfPhaseStateBank,
     phases: Sequence[Lfm2CpcfTargetPhase],
@@ -649,9 +794,7 @@ def rebind_lfm2_cpcf_phase_state_bank(
     if not ordered or any(
         not isinstance(phase, Lfm2CpcfTargetPhase) for phase in ordered
     ):
-        raise TypeError(
-            "phases must contain Lfm2CpcfTargetPhase objects."
-        )
+        raise TypeError("phases must contain Lfm2CpcfTargetPhase objects.")
     current_lineage = tuple(
         (phase.identity, phase.phase_sha256) for phase in bank.phases
     )
@@ -1027,9 +1170,7 @@ class Lfm2CpcfLayerReplayBank:
         report_body = dict(report)
         report_sha256 = report_body.pop("report_sha256", None)
         if report_sha256 != _sha(report_body):
-            raise Lfm2CpcfModelCompilerError(
-                "Layer replay report seal is invalid."
-            )
+            raise Lfm2CpcfModelCompilerError("Layer replay report seal is invalid.")
 
         def finite_nonnegative(value: Any, name: str) -> float:
             if (
@@ -1051,9 +1192,8 @@ class Lfm2CpcfLayerReplayBank:
             for phase in self.post_layer_bank.phases
         ]
         stitch_records = report.get("causal_stitch_records")
-        if (
-            not isinstance(stitch_records, list)
-            or len(stitch_records) != len(self.post_layer_bank.phases)
+        if not isinstance(stitch_records, list) or len(stitch_records) != len(
+            self.post_layer_bank.phases
         ):
             raise Lfm2CpcfModelCompilerError(
                 "Layer replay report does not contain one ordered causal "
@@ -1112,8 +1252,7 @@ class Lfm2CpcfLayerReplayBank:
             if (
                 record.get("identity") != identity
                 or record.get("raw_replay_sha256") != replay.replay_sha256
-                or tuple(canonical_state.shape)
-                != tuple(raw_post_layer.shape)
+                or tuple(canonical_state.shape) != tuple(raw_post_layer.shape)
                 or canonical_state.dtype != raw_post_layer.dtype
             ):
                 raise Lfm2CpcfModelCompilerError(
@@ -1155,27 +1294,19 @@ class Lfm2CpcfLayerReplayBank:
                         "ordered predecessor."
                     )
                 previous_phase, previous_state = previous
-                previous_match = _DECODE_PHASE.fullmatch(
-                    previous_phase.phase
-                )
+                previous_match = _DECODE_PHASE.fullmatch(previous_phase.phase)
                 expected_step = (
                     0
-                    if previous_phase.phase
-                    in {"prefill", "cached_prefill"}
+                    if previous_phase.phase in {"prefill", "cached_prefill"}
                     else (
                         -1
                         if previous_match is None
                         else int(previous_match.group(1)) + 1
                     )
                 )
-                expected_prefix = (
-                    phase.full_prefix_tokens
-                    - phase.sampled_suffix_tokens
-                )
+                expected_prefix = phase.full_prefix_tokens - phase.sampled_suffix_tokens
                 raw_prefix = raw_post_layer[:, :expected_prefix, :]
-                delta = raw_prefix.to(torch.float64) - previous_state.to(
-                    torch.float64
-                )
+                delta = raw_prefix.to(torch.float64) - previous_state.to(torch.float64)
                 reference_rms = (
                     previous_state.to(torch.float64)
                     .square()
@@ -1186,9 +1317,7 @@ class Lfm2CpcfLayerReplayBank:
                 measured_relative_rmse = float(
                     (delta.square().mean().sqrt() / reference_rms).item()
                 )
-                measured_maximum_absolute_error = float(
-                    delta.abs().max().item()
-                )
+                measured_maximum_absolute_error = float(delta.abs().max().item())
                 if raw_post_layer.dtype in {
                     torch.float16,
                     torch.bfloat16,
@@ -1238,28 +1367,16 @@ class Lfm2CpcfLayerReplayBank:
                         phase.position_ids[:, :expected_prefix],
                         previous_phase.position_ids,
                     )
-                    or record.get("source")
-                    != "ordered_decode_terminal_suffix"
+                    or record.get("source") != "ordered_decode_terminal_suffix"
                     or prefix_tokens != expected_prefix
                     or suffix_tokens != phase.sampled_suffix_tokens
-                    or numeric_values[
-                        "raw_prefix_permitted_relative_error"
-                    ]
-                    <= 0.0
-                    or numeric_values[
-                        "raw_prefix_permitted_maximum_absolute_error"
-                    ]
+                    or numeric_values["raw_prefix_permitted_relative_error"] <= 0.0
+                    or numeric_values["raw_prefix_permitted_maximum_absolute_error"]
                     <= 0.0
                     or numeric_values["raw_prefix_relative_rmse"]
-                    > numeric_values[
-                        "raw_prefix_permitted_relative_error"
-                    ]
-                    or numeric_values[
-                        "raw_prefix_maximum_absolute_error"
-                    ]
-                    > numeric_values[
-                        "raw_prefix_permitted_maximum_absolute_error"
-                    ]
+                    > numeric_values["raw_prefix_permitted_relative_error"]
+                    or numeric_values["raw_prefix_maximum_absolute_error"]
+                    > numeric_values["raw_prefix_permitted_maximum_absolute_error"]
                     or not torch.equal(
                         canonical_state[:, :expected_prefix, :],
                         previous_state,
@@ -1274,9 +1391,7 @@ class Lfm2CpcfLayerReplayBank:
                     )
                 decode_count += 1
             trajectories[trajectory_key] = (phase, canonical_state)
-            relative_errors.append(
-                numeric_values["raw_prefix_relative_rmse"]
-            )
+            relative_errors.append(numeric_values["raw_prefix_relative_rmse"])
             maximum_absolute_errors.append(
                 numeric_values["raw_prefix_maximum_absolute_error"]
             )
@@ -1289,9 +1404,7 @@ class Lfm2CpcfLayerReplayBank:
             1,
             len(decoded_relative_errors),
         )
-        stitch_bundle_sha256 = report.get(
-            "causal_stitch_bundle_sha256"
-        )
+        stitch_bundle_sha256 = report.get("causal_stitch_bundle_sha256")
         _digest(
             stitch_bundle_sha256,
             "causal_stitch_bundle_sha256",
@@ -1321,16 +1434,13 @@ class Lfm2CpcfLayerReplayBank:
             and reported_trajectory_count == len(trajectories)
             and reported_decode_count == decode_count
             and reported_relative_mean == relative_mean
-            and reported_relative_worst
-            == max(relative_errors, default=0.0)
-            and reported_absolute_worst
-            == max(maximum_absolute_errors, default=0.0)
+            and reported_relative_worst == max(relative_errors, default=0.0)
+            and reported_absolute_worst == max(maximum_absolute_errors, default=0.0)
             and stitch_bundle_sha256 == _sha(stitch_records)
         )
         if (
             report.get("schema") != LFM2_CPCF_TARGET_RUNTIME_SCHEMA
-            or report.get("scope")
-            != "sequential_installed_macrocell_replay"
+            or report.get("scope") != "sequential_installed_macrocell_replay"
             or report.get("layer_index") != self.layer_index
             or report.get("input_bank_sha256") != self.input_bank_sha256
             or report.get("post_layer_bank_sha256")
@@ -1344,10 +1454,8 @@ class Lfm2CpcfLayerReplayBank:
             or report.get("full_prefix_replay") is not True
             or report.get("raw_full_prefix_replay_archived") is not True
             or report.get("persistent_replay_storage_device") != "cpu"
-            or report.get("completed_phase_accelerator_storage_retained")
-            is not False
-            or report.get("canonical_causal_post_layer_state_stitching")
-            is not True
+            or report.get("completed_phase_accelerator_storage_retained") is not False
+            or report.get("canonical_causal_post_layer_state_stitching") is not True
             or report.get("post_layer_state_assembly")
             != "complete_prefill_plus_ordered_decode_suffixes"
             or report.get("raw_recomputed_historical_prefix_used") is not False
@@ -1487,11 +1595,7 @@ def replay_lfm2_cpcf_phase_bank(
             expected_step = (
                 0
                 if previous_phase.phase in {"prefill", "cached_prefill"}
-                else (
-                    -1
-                    if previous_step is None
-                    else int(previous_step.group(1)) + 1
-                )
+                else (-1 if previous_step is None else int(previous_step.group(1)) + 1)
             )
             step = int(match.group(1))
             previous_tokens = phase.full_prefix_tokens - phase.sampled_suffix_tokens
@@ -1528,9 +1632,7 @@ def replay_lfm2_cpcf_phase_bank(
                     "its authenticated causal prefix."
                 )
             raw_prefix = raw_post_layer[:, :previous_tokens, :]
-            delta = raw_prefix.to(torch.float64) - previous_post_layer.to(
-                torch.float64
-            )
+            delta = raw_prefix.to(torch.float64) - previous_post_layer.to(torch.float64)
             reference_rms = (
                 previous_post_layer.to(torch.float64)
                 .square()
@@ -1541,9 +1643,7 @@ def replay_lfm2_cpcf_phase_bank(
             prefix_relative_rmse = float(
                 (delta.square().mean().sqrt() / reference_rms).item()
             )
-            prefix_maximum_absolute_error = float(
-                delta.abs().max().item()
-            )
+            prefix_maximum_absolute_error = float(delta.abs().max().item())
             if raw_post_layer.dtype in {torch.float16, torch.bfloat16}:
                 permitted_relative_error = float(
                     8.0 * torch.finfo(raw_post_layer.dtype).eps
@@ -1555,15 +1655,12 @@ def replay_lfm2_cpcf_phase_bank(
                 float(previous_post_layer.abs().max().item()),
                 float(raw_prefix.abs().max().item()),
             )
-            permitted_maximum_absolute_error = (
-                permitted_relative_error * amplitude
-            )
+            permitted_maximum_absolute_error = permitted_relative_error * amplitude
             if (
                 not math.isfinite(prefix_relative_rmse)
                 or not math.isfinite(prefix_maximum_absolute_error)
                 or prefix_relative_rmse > permitted_relative_error
-                or prefix_maximum_absolute_error
-                > permitted_maximum_absolute_error
+                or prefix_maximum_absolute_error > permitted_maximum_absolute_error
             ):
                 raise Lfm2CpcfModelCompilerError(
                     f"Target phase {phase.identity!r} raw full-prefix replay "
@@ -1579,9 +1676,7 @@ def replay_lfm2_cpcf_phase_bank(
             canonical_post_layer = torch.cat(
                 (
                     previous_post_layer,
-                    raw_post_layer[
-                        :, -phase.sampled_suffix_tokens :, :
-                    ],
+                    raw_post_layer[:, -phase.sampled_suffix_tokens :, :],
                 ),
                 dim=1,
             ).contiguous()
@@ -1595,9 +1690,7 @@ def replay_lfm2_cpcf_phase_bank(
                     "raw_prefix_maximum_absolute_error": (
                         prefix_maximum_absolute_error
                     ),
-                    "raw_prefix_permitted_relative_error": (
-                        permitted_relative_error
-                    ),
+                    "raw_prefix_permitted_relative_error": (permitted_relative_error),
                     "raw_prefix_permitted_maximum_absolute_error": (
                         permitted_maximum_absolute_error
                     ),
@@ -1641,9 +1734,7 @@ def replay_lfm2_cpcf_phase_bank(
         "full_prefix_replay": True,
         "raw_full_prefix_replay_archived": True,
         "canonical_causal_post_layer_state_stitching": True,
-        "post_layer_state_assembly": (
-            "complete_prefill_plus_ordered_decode_suffixes"
-        ),
+        "post_layer_state_assembly": ("complete_prefill_plus_ordered_decode_suffixes"),
         "raw_recomputed_historical_prefix_used": False,
         "causal_trajectory_count": len(causal_trajectories),
         "decode_suffix_stitch_count": sum(
@@ -1658,24 +1749,15 @@ def replay_lfm2_cpcf_phase_bank(
             )
             / max(
                 1,
-                sum(
-                    record["prefix_tokens"] > 0
-                    for record in stitch_records
-                ),
+                sum(record["prefix_tokens"] > 0 for record in stitch_records),
             )
         ),
         "raw_prefix_relative_rmse_worst": max(
-            (
-                record["raw_prefix_relative_rmse"]
-                for record in stitch_records
-            ),
+            (record["raw_prefix_relative_rmse"] for record in stitch_records),
             default=0.0,
         ),
         "raw_prefix_maximum_absolute_error_worst": max(
-            (
-                record["raw_prefix_maximum_absolute_error"]
-                for record in stitch_records
-            ),
+            (record["raw_prefix_maximum_absolute_error"] for record in stitch_records),
             default=0.0,
         ),
         "causal_stitch_records": stitch_records,
@@ -1713,5 +1795,6 @@ __all__ = [
     "install_lfm2_cpcf_tied_interface",
     "rebind_lfm2_cpcf_phase_state_bank",
     "replay_lfm2_cpcf_phase_bank",
+    "select_lfm2_cpcf_phase_state_bank",
     "seed_lfm2_cpcf_phase_states",
 ]

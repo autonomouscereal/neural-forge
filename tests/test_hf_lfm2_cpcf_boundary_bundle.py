@@ -151,10 +151,7 @@ def _parent_phase(
         ],
         dim=0,
     )
-    values = [
-        (batch_coordinates @ mapping).contiguous()
-        for mapping in _STATE_MAPS
-    ]
+    values = [(batch_coordinates @ mapping).contiguous() for mapping in _STATE_MAPS]
     layers = (
         Lfm2CpcfInstallableLayerEvidence(
             layer_index=0,
@@ -192,9 +189,7 @@ def _parent_phase(
         final_norm_tensors={
             "output.final_norm_output": values[4],
         },
-        evidence_sha256=_sha(
-            f"phase-{ordinal}-{phase}-{batch_size}-{selection_scale}"
-        ),
+        evidence_sha256=_sha(f"phase-{ordinal}-{phase}-{batch_size}-{selection_scale}"),
     )
 
 
@@ -238,17 +233,27 @@ def _phases(
                 target_forced_decode_ids=torch.tensor(
                     [
                         [
-                            (ordinal + batch_row + 1 + (
-                                validation_forced_shift
-                                if split == "validation"
-                                else 0
-                            ))
+                            (
+                                ordinal
+                                + batch_row
+                                + 1
+                                + (
+                                    validation_forced_shift
+                                    if split == "validation"
+                                    else 0
+                                )
+                            )
                             % 8,
-                            (ordinal + batch_row + 2 + (
-                                validation_forced_shift
-                                if split == "validation"
-                                else 0
-                            ))
+                            (
+                                ordinal
+                                + batch_row
+                                + 2
+                                + (
+                                    validation_forced_shift
+                                    if split == "validation"
+                                    else 0
+                                )
+                            )
                             % 8,
                         ]
                         for batch_row in range(batch_size)
@@ -345,8 +350,7 @@ def test_causal_anchor_extraction_uses_one_endpoint_per_labeled_phase():
         "output.final_norm_output"
     ][0, -1]
     assert not any(
-        torch.equal(row, final_endpoint)
-        for row in selection.source_producer_rows
+        torch.equal(row, final_endpoint) for row in selection.source_producer_rows
     )
 
 
@@ -416,9 +420,7 @@ def test_bundle_charts_absorb_the_post_operator_to_post_layer_transition():
     parent_post_layer = validation.parent_evidence.layers[0].tensors[
         "residual.post_layer"
     ]
-    actual_child_pre = layer.post_operator.encode_shaped(
-        parent_post_operator
-    )
+    actual_child_pre = layer.post_operator.encode_shaped(parent_post_operator)
     encoded_endpoint, write = layer.post_layer.residual_write_target(
         actual_child_pre_state=actual_child_pre,
         parent_endpoint=parent_post_layer,
@@ -432,12 +434,13 @@ def test_bundle_charts_absorb_the_post_operator_to_post_layer_transition():
         encoded_endpoint,
         layer.post_layer.encode_shaped(parent_post_layer),
     )
-    assert bundle.report["coordinate_contract"][
-        "one_global_residual_basis_used"
-    ] is False
-    assert bundle.report["coordinate_contract"][
-        "residual_write_formula"
-    ] == "encoded_parent_endpoint_minus_actual_child_pre_state"
+    assert (
+        bundle.report["coordinate_contract"]["one_global_residual_basis_used"] is False
+    )
+    assert (
+        bundle.report["coordinate_contract"]["residual_write_formula"]
+        == "encoded_parent_endpoint_minus_actual_child_pre_state"
+    )
     assert bundle.report["source_coverage"]["full_source_coverage"] is True
     assert bundle.report["operation_audit"]["parent_forward_count"] == 0
     assert bundle.report["operation_audit"]["training_step_count"] == 0
@@ -467,8 +470,7 @@ def test_v5_selective_boundary_compiler_is_byte_exact_to_v4():
         source_width=4,
         layer_count=len(layer_kinds),
         phase_references=tuple(
-            SimpleNamespace(layer_operator_kinds=layer_kinds)
-            for _phase in phases
+            SimpleNamespace(layer_operator_kinds=layer_kinds) for _phase in phases
         ),
     )
     compiler = _SelectiveBoundaryCompiler(
@@ -495,42 +497,33 @@ def test_fit_validation_are_disjoint_and_selection_cannot_affect_fits():
     changed_selection = _bundle(selection_scale=10_000.0)
 
     assert (
-        baseline.split_phase_sha256["fit"]
-        != baseline.split_phase_sha256["validation"]
+        baseline.split_phase_sha256["fit"] != baseline.split_phase_sha256["validation"]
     )
-    assert (
-        baseline.split_row_sha256["fit"]
-        != baseline.split_row_sha256["validation"]
-    )
+    assert baseline.split_row_sha256["fit"] != baseline.split_row_sha256["validation"]
     assert baseline.report["split_row_counts"] == {
         "selection": 5,
         "fit": 11,
         "validation": 11,
     }
-    assert baseline.report["selection"][
-        "used_to_fit_boundary_charts"
-    ] is False
-    assert baseline.report["selection"][
-        "used_to_fit_causal_anchor_values"
-    ] is False
-    assert baseline.report["selection"][
-        "used_to_select_causal_anchor_ridge_margin"
-    ] is True
+    assert baseline.report["selection"]["used_to_fit_boundary_charts"] is False
+    assert baseline.report["selection"]["used_to_fit_causal_anchor_values"] is False
+    assert (
+        baseline.report["selection"]["used_to_select_causal_anchor_ridge_margin"]
+        is True
+    )
     assert baseline.report["selection"]["used_for_validation_gates"] is False
     phase_weights = baseline.report["phase_weighting"]
     assert phase_weights["balanced_phase_weights"] is True
     assert [
-        value["total_phase_weight"]
-        for value in phase_weights["fit_phases"]
+        value["total_phase_weight"] for value in phase_weights["fit_phases"]
     ] == pytest.approx([1.0 / 6.0] * 6)
     assert baseline.report["interface_top1"]["diagnostic_only"] is True
     assert baseline.report["interface_top1"]["capacity_gate_used"] is False
 
-    assert baseline.report["interface_lineage"][
-        "base_interface_report"
-    ] == changed_selection.report["interface_lineage"][
-        "base_interface_report"
-    ]
+    assert (
+        baseline.report["interface_lineage"]["base_interface_report"]
+        == changed_selection.report["interface_lineage"]["base_interface_report"]
+    )
     torch.testing.assert_close(
         baseline.interface.producer_encoder,
         changed_selection.interface.producer_encoder,
@@ -550,9 +543,7 @@ def test_fit_validation_are_disjoint_and_selection_cannot_affect_fits():
         )
     assert (
         baseline.report["source_coverage"]["source_observation_sha256"]
-        != changed_selection.report["source_coverage"][
-            "source_observation_sha256"
-        ]
+        != changed_selection.report["source_coverage"]["source_observation_sha256"]
     )
 
 
@@ -570,26 +561,45 @@ def test_anchor_integration_is_deterministic_and_preserves_both_seals():
     )
     assert first.report == second.report
     lineage = first.report["interface_lineage"]
-    assert lineage["base_interface_report_sha256"] == (
-        first.report["base_interface_report_sha256"]
+    assert (
+        lineage["base_interface_report_sha256"]
+        == (first.report["base_interface_report_sha256"])
     )
-    assert lineage["causal_anchor_report_sha256"] == first.report[
-        "causal_anchor_report_sha256"
-    ]
-    assert lineage["causal_anchor_report_sha256"] == first.report[
-        "interface_report_sha256"
-    ]
-    assert lineage["active_interface_is_anchor_repaired"] is True
+    assert (
+        lineage["causal_anchor_report_sha256"]
+        == first.report["causal_anchor_report_sha256"]
+    )
+    assert (
+        lineage["causal_anchor_report_sha256"]
+        == first.report["interface_report_sha256"]
+    )
+    assert lineage["active_interface_is_anchor_repaired"] is False
+    assert lineage["active_interface_is_base_control"] is True
+    assert lineage["causal_anchor_report"]["selected_candidate_is_base_control"] is True
+    assert (
+        lineage["causal_anchor_report"][
+            "target_anchor_metrics_used_for_candidate_selection"
+        ]
+        is False
+    )
     assert lineage["additional_runtime_parameter_count"] == 0
-    assert first.report["causal_anchor_extraction"][
-        "no_sampled_prefix_row_duplication"
-    ] is True
-    assert first.report["causal_anchor_extraction"][
-        "row_id_binds_batch_index_batch_row_and_prefix_position"
-    ] is True
-    assert first.report["coordinate_contract"][
-        "active_interface_is_anchor_repaired"
-    ] is True
+    assert (
+        first.report["causal_anchor_extraction"]["no_sampled_prefix_row_duplication"]
+        is True
+    )
+    assert (
+        first.report["causal_anchor_extraction"][
+            "row_id_binds_batch_index_batch_row_and_prefix_position"
+        ]
+        is True
+    )
+    assert (
+        first.report["coordinate_contract"]["active_interface_is_anchor_repaired"]
+        is False
+    )
+    assert (
+        first.report["coordinate_contract"]["active_interface_is_base_control"] is True
+    )
 
 
 def test_bundle_rejects_a_resealed_substitute_base_interface_report():
@@ -637,24 +647,21 @@ def test_validation_labels_cannot_change_anchor_or_fitted_coordinates():
         baseline.interface.producer_encoder,
         changed.interface.producer_encoder,
     )
-    baseline_anchor = baseline.report["interface_lineage"][
-        "causal_anchor_report"
-    ]
-    changed_anchor = changed.report["interface_lineage"][
-        "causal_anchor_report"
-    ]
-    assert baseline_anchor["selected_candidate_index"] == (
-        changed_anchor["selected_candidate_index"]
+    baseline_anchor = baseline.report["interface_lineage"]["causal_anchor_report"]
+    changed_anchor = changed.report["interface_lineage"]["causal_anchor_report"]
+    assert (
+        baseline_anchor["selected_candidate_index"]
+        == (changed_anchor["selected_candidate_index"])
     )
-    assert baseline_anchor["candidate_reports"] == changed_anchor[
-        "candidate_reports"
-    ]
-    assert baseline_anchor["residual_weight_sha256"] == changed_anchor[
-        "residual_weight_sha256"
-    ]
-    assert baseline_anchor["split_metrics"]["validation"] != changed_anchor[
-        "split_metrics"
-    ]["validation"]
+    assert baseline_anchor["candidate_reports"] == changed_anchor["candidate_reports"]
+    assert (
+        baseline_anchor["residual_weight_sha256"]
+        == changed_anchor["residual_weight_sha256"]
+    )
+    assert (
+        baseline_anchor["split_metrics"]["validation"]
+        != changed_anchor["split_metrics"]["validation"]
+    )
     for left, right in zip(baseline.layers, changed.layers, strict=True):
         torch.testing.assert_close(
             left.post_operator.mapping.encoder,

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -71,6 +72,27 @@ LFM2_CPCF_SHORT_CONV_V5_SELECTOR_REQUEST_SCHEMA = (
 LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-v5-selector-receipt-v1"
 )
+LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FOLD_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-macrocell-selector-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_MACROCELL_FRONTIER_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-macrocell-frontier-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_MACROCELL_CANDIDATE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-macrocell-candidate-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVALUATION_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-macrocell-evaluation-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-macrocell-evidence-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_RECEIPT_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-macrocell-selector-receipt-v1"
+)
+LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FAILURE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-macrocell-selector-failure-v1"
+)
 LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v5-numerical-frontier-v1"
 )
@@ -99,12 +121,10 @@ LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-fold-v5-scheduled-replay-failure-v1"
 )
 LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA = (
-    "neural-forge-lfm2-cpcf-short-conv-fold-v5-preinstall-selector-"
-    "failure-v1"
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-preinstall-selector-failure-v1"
 )
 LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA = (
-    "neural-forge-lfm2-cpcf-short-conv-fold-v5-numerical-frontier-"
-    "failure-v1"
+    "neural-forge-lfm2-cpcf-short-conv-fold-v5-numerical-frontier-failure-v1"
 )
 
 
@@ -120,6 +140,16 @@ class Lfm2CpcfShortConvV5CandidateSelector(Protocol):
         request: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         """Return a sealed v5 report naming one candidate ID and state SHA."""
+
+
+class Lfm2CpcfShortConvV5MacrocellCandidateSelector(Protocol):
+    """Select one tensor-bearing candidate by replaying its whole macrocell."""
+
+    def select(
+        self,
+        frontier: "Lfm2CpcfShortConvV5CandidateFrontier",
+    ) -> Mapping[str, Any]:
+        """Return a sealed fit/selection-only whole-macrocell decision."""
 
 
 def _torch() -> Any:
@@ -646,11 +676,7 @@ def _optional_tensor_inventory(
     prefix: str,
 ) -> dict[str, str | None]:
     return {
-        name: (
-            None
-            if value is None
-            else _tensor_sha256(value, f"{prefix}.{name}")
-        )
+        name: (None if value is None else _tensor_sha256(value, f"{prefix}.{name}"))
         for name, value in sorted(values.items())
     }
 
@@ -671,9 +697,7 @@ def _snapshot_numerical_tensor_mapping(
         value = values[role]
         if value is None:
             if not role.endswith("_bias"):
-                raise Lfm2CpcfShortConvV4FoldError(
-                    f"{name}.{role} cannot be absent."
-                )
+                raise Lfm2CpcfShortConvV4FoldError(f"{name}.{role} cannot be absent.")
             snapshots[role] = None
         else:
             snapshots[role] = _snapshot_float(
@@ -752,9 +776,7 @@ class Lfm2CpcfShortConvNumericalFrontierRequest:
                 actual_child_operator_input_history=(
                     case.actual_child_operator_input_history
                 ),
-                parent_operator_input_history=(
-                    case.parent_operator_input_history
-                ),
+                parent_operator_input_history=(case.parent_operator_input_history),
                 parent_b_history=case.parent_b_history,
                 parent_c_history=case.parent_c_history,
                 parent_x_history=case.parent_x_history,
@@ -769,10 +791,9 @@ class Lfm2CpcfShortConvNumericalFrontierRequest:
             )
             for case in sorted(values, key=lambda item: item.case_id)
         )
-        if (
-            not isinstance(self.parent_contexts, Mapping)
-            or set(self.parent_contexts) != {case.case_id for case in cases}
-        ):
+        if not isinstance(self.parent_contexts, Mapping) or set(
+            self.parent_contexts
+        ) != {case.case_id for case in cases}:
             raise Lfm2CpcfShortConvV4FoldError(
                 "Numerical-frontier parent contexts do not match fit cases."
             )
@@ -793,12 +814,10 @@ class Lfm2CpcfShortConvNumericalFrontierRequest:
             != (3 * source_hidden, source_hidden)
             or tuple(source["source_out_proj_weight"].shape)
             != (source_hidden, source_hidden)
-            or tuple(source["output_encoder"].shape)
-            != (source_hidden, target_hidden)
+            or tuple(source["output_encoder"].shape) != (source_hidden, target_hidden)
             or tuple(templates["in_proj_weight"].shape)
             != (3 * target_hidden, target_hidden)
-            or tuple(templates["writer_weight"].shape)
-            != (target_hidden, target_hidden)
+            or tuple(templates["writer_weight"].shape) != (target_hidden, target_hidden)
             or int(templates["fir_kernel"].shape[0]) != target_hidden
         ):
             raise Lfm2CpcfShortConvV4FoldError(
@@ -815,12 +834,10 @@ class Lfm2CpcfShortConvNumericalFrontierRequest:
             "writer_bias": (target_hidden,),
         }
         if any(
-            source[role] is not None
-            and tuple(source[role].shape) != shape
+            source[role] is not None and tuple(source[role].shape) != shape
             for role, shape in optional_shapes.items()
         ) or any(
-            templates[role] is not None
-            and tuple(templates[role].shape) != shape
+            templates[role] is not None and tuple(templates[role].shape) != shape
             for role, shape in target_optional_shapes.items()
         ):
             raise Lfm2CpcfShortConvV4FoldError(
@@ -829,12 +846,9 @@ class Lfm2CpcfShortConvNumericalFrontierRequest:
         for case in cases:
             context = contexts[case.case_id]
             if (
-                tuple(context.shape[:2])
-                != tuple(case.parent_b_history.shape[:2])
+                tuple(context.shape[:2]) != tuple(case.parent_b_history.shape[:2])
                 or int(context.shape[-1]) != source_hidden
-                or int(
-                    case.actual_child_operator_input_history.shape[-1]
-                )
+                or int(case.actual_child_operator_input_history.shape[-1])
                 != target_hidden
             ):
                 raise Lfm2CpcfShortConvV4FoldError(
@@ -867,9 +881,7 @@ class Lfm2CpcfShortConvNumericalFrontierRequest:
             for case in self.cases
         }
         return {
-            "schema": (
-                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA
-            ),
+            "schema": (LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA),
             "kind": "detached_fit_only_numerical_frontier_request",
             "policy_sha256": self.policy.authentication_sha256,
             "target_dtype": self.policy.target_dtype,
@@ -885,15 +897,9 @@ class Lfm2CpcfShortConvNumericalFrontierRequest:
             "source_hidden_size": int(
                 self.source_tensors["source_fir_kernel"].shape[0]
             ),
-            "target_hidden_size": int(
-                self.target_templates["in_proj_weight"].shape[1]
-            ),
-            "source_fir_length": int(
-                self.source_tensors["source_fir_kernel"].shape[1]
-            ),
-            "target_fir_length": int(
-                self.target_templates["fir_kernel"].shape[1]
-            ),
+            "target_hidden_size": int(self.target_templates["in_proj_weight"].shape[1]),
+            "source_fir_length": int(self.source_tensors["source_fir_kernel"].shape[1]),
+            "target_fir_length": int(self.target_templates["fir_kernel"].shape[1]),
             "selection_cases_exposed": False,
             "validation_cases_exposed": False,
             "fit_only": True,
@@ -909,8 +915,7 @@ class Lfm2CpcfShortConvNumericalFrontierRequest:
             return bool(
                 self.policy.verify_authentication()
                 and all(case.verify_authentication() for case in self.cases)
-                and _deep_thaw(self.report)
-                == _seal_report(self._report_body())
+                and _deep_thaw(self.report) == _seal_report(self._report_body())
             )
         except (
             AttributeError,
@@ -986,9 +991,10 @@ class Lfm2CpcfShortConvNumericalRawCandidate:
             self.method_provenance,
             "raw candidate method_provenance",
         )
-        if not isinstance(provenance.get("method"), str) or not provenance[
-            "method"
-        ].strip():
+        if (
+            not isinstance(provenance.get("method"), str)
+            or not provenance["method"].strip()
+        ):
             raise Lfm2CpcfShortConvV4FoldError(
                 "Raw candidate provenance must name its method."
             )
@@ -1006,17 +1012,12 @@ class Lfm2CpcfShortConvNumericalRawCandidate:
         )
 
     def _live_state(self) -> dict[str, Any | None]:
-        return {
-            role: getattr(self, role)
-            for role in _NUMERICAL_CANDIDATE_ROLES
-        }
+        return {role: getattr(self, role) for role in _NUMERICAL_CANDIDATE_ROLES}
 
     def _report_body(self) -> dict[str, Any]:
         provenance = _deep_thaw(self.method_provenance)
         return {
-            "schema": (
-                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_SCHEMA
-            ),
+            "schema": (LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_SCHEMA),
             "kind": "authenticated_fit_only_numerical_raw_candidate",
             "request_sha256": self.request_sha256,
             "candidate_id": self.candidate_id,
@@ -1038,9 +1039,7 @@ class Lfm2CpcfShortConvNumericalRawCandidate:
         return MappingProxyType(
             {
                 role: (
-                    None
-                    if getattr(self, role) is None
-                    else getattr(self, role).clone()
+                    None if getattr(self, role) is None else getattr(self, role).clone()
                 )
                 for role in _NUMERICAL_CANDIDATE_ROLES
             }
@@ -1048,9 +1047,7 @@ class Lfm2CpcfShortConvNumericalRawCandidate:
 
     def verify_authentication(self) -> bool:
         try:
-            return _deep_thaw(self.report) == _seal_report(
-                self._report_body()
-            )
+            return _deep_thaw(self.report) == _seal_report(self._report_body())
         except (
             AttributeError,
             KeyError,
@@ -1166,9 +1163,7 @@ class Lfm2CpcfShortConvNumericalFrontier:
         source_channels = int(self.context_encoder.shape[0])
         provenance = _deep_thaw(self.adapter_provenance)
         return {
-            "schema": (
-                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_SCHEMA
-            ),
+            "schema": (LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_SCHEMA),
             "kind": "authenticated_fit_only_numerical_frontier",
             "adapter_id": self.adapter_id,
             "request_sha256": self.request_sha256,
@@ -1176,13 +1171,10 @@ class Lfm2CpcfShortConvNumericalFrontier:
                 self.context_encoder,
                 "numerical_frontier.context_encoder",
             ),
-            "fit_case_authentication_sha256": list(
-                self.fit_case_authentication_sha256
-            ),
+            "fit_case_authentication_sha256": list(self.fit_case_authentication_sha256),
             "raw_candidate_count": len(self.raw_candidates),
             "raw_candidate_ids": [
-                candidate.candidate_id
-                for candidate in self.raw_candidates
+                candidate.candidate_id for candidate in self.raw_candidates
             ],
             "raw_candidate_state_sha256": {
                 candidate.candidate_id: candidate.state_sha256
@@ -1197,9 +1189,7 @@ class Lfm2CpcfShortConvNumericalFrontier:
             "source_numeric_participant_indices": participants,
             "source_channels_selected": len(participants),
             "source_channels_dropped": source_channels - len(participants),
-            "full_source_numeric_participation": (
-                len(participants) == source_channels
-            ),
+            "full_source_numeric_participation": (len(participants) == source_channels),
             "adapter_provenance": provenance,
             "adapter_provenance_sha256": _sha(provenance),
             "fit_only": True,
@@ -1227,8 +1217,7 @@ class Lfm2CpcfShortConvNumericalFrontier:
                     candidate.verify_authentication()
                     for candidate in self.raw_candidates
                 )
-                and _deep_thaw(self.report)
-                == _seal_report(self._report_body())
+                and _deep_thaw(self.report) == _seal_report(self._report_body())
             )
         except (
             AttributeError,
@@ -1288,12 +1277,10 @@ def _validate_numerical_frontier(
             template_value = request.target_templates[role]
             if (candidate_value is None) != (template_value is None) or (
                 candidate_value is not None
-                and tuple(candidate_value.shape)
-                != tuple(template_value.shape)
+                and tuple(candidate_value.shape) != tuple(template_value.shape)
             ):
                 raise Lfm2CpcfShortConvV4FoldError(
-                    "Numerical raw candidate differs from target topology "
-                    f"for {role}."
+                    f"Numerical raw candidate differs from target topology for {role}."
                 )
 
 
@@ -1304,6 +1291,1288 @@ def _candidate_state_sha256(
         candidate_id: _state_sha256(candidate_states[candidate_id])
         for candidate_id in sorted(candidate_states)
     }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfShortConvV5MacrocellCandidate:
+    """One detached target-dtype operator state exposed for macrocell replay."""
+
+    candidate_id: str
+    in_proj_weight: Any
+    in_proj_bias: Any | None
+    fir_kernel: Any
+    fir_bias: Any | None
+    writer_weight: Any
+    writer_bias: Any | None
+    fit_provenance: Mapping[str, Any]
+    operator_selection_report: Mapping[str, Any]
+    report: Mapping[str, Any] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        candidate_id = str(self.candidate_id).strip()
+        if not candidate_id:
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell candidate_id must be nonempty text."
+            )
+        for name, dimensions in (
+            ("in_proj_weight", 2),
+            ("fir_kernel", 2),
+            ("writer_weight", 2),
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _snapshot_float(
+                    getattr(self, name),
+                    f"macrocell candidate {candidate_id}.{name}",
+                    dimensions=dimensions,
+                ),
+            )
+        for name in ("in_proj_bias", "fir_bias", "writer_bias"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(
+                    self,
+                    name,
+                    _snapshot_float(
+                        value,
+                        f"macrocell candidate {candidate_id}.{name}",
+                        dimensions=1,
+                    ),
+                )
+        state = self.state_dict()
+        hidden = int(self.in_proj_weight.shape[1])
+        dtype = self.in_proj_weight.dtype
+        if (
+            tuple(self.in_proj_weight.shape) != (3 * hidden, hidden)
+            or int(self.fir_kernel.shape[0]) != hidden
+            or int(self.fir_kernel.shape[1]) <= 0
+            or tuple(self.writer_weight.shape) != (hidden, hidden)
+            or (
+                self.in_proj_bias is not None
+                and tuple(self.in_proj_bias.shape) != (3 * hidden,)
+            )
+            or (self.fir_bias is not None and tuple(self.fir_bias.shape) != (hidden,))
+            or (
+                self.writer_bias is not None
+                and tuple(self.writer_bias.shape) != (hidden,)
+            )
+            or any(
+                value is not None and value.dtype != dtype for value in state.values()
+            )
+            or dtype
+            not in {
+                torch.float16,
+                torch.bfloat16,
+                torch.float32,
+                torch.float64,
+            }
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell candidate differs from a native target short-conv "
+                "topology or dtype."
+            )
+        fit = _canonical_copy(
+            _deep_thaw(self.fit_provenance),
+            f"macrocell candidate {candidate_id} fit provenance",
+        )
+        selection = _canonical_copy(
+            _deep_thaw(self.operator_selection_report),
+            f"macrocell candidate {candidate_id} operator selection report",
+        )
+        for name, value in (("fit provenance", fit), ("selection report", selection)):
+            sealed = dict(value)
+            supplied = sealed.pop("report_sha256", None)
+            if supplied != _sha(sealed):
+                raise Lfm2CpcfShortConvV4FoldError(
+                    f"Macrocell candidate {name} is not canonically sealed."
+                )
+        state_sha256 = _state_sha256(state)
+        install_state_sha256 = _state_sha256(self.install_state_dict())
+        if (
+            fit.get("candidate_id") != candidate_id
+            or fit.get("target_dtype_candidate_state_sha256") != state_sha256
+            or selection.get("candidate_state_sha256") != state_sha256
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell candidate state is not bound to its fit and "
+                "selection evidence."
+            )
+        body = {
+            "schema": LFM2_CPCF_SHORT_CONV_V5_MACROCELL_CANDIDATE_SCHEMA,
+            "candidate_id": candidate_id,
+            "target_dtype": _dtype_name(self.in_proj_weight),
+            "target_hidden_size": hidden,
+            "target_fir_length": int(self.fir_kernel.shape[1]),
+            "bias_topology": {
+                "in_proj": self.in_proj_bias is not None,
+                "conv": self.fir_bias is not None,
+                "out_proj": self.writer_bias is not None,
+            },
+            "candidate_state_sha256": state_sha256,
+            "candidate_install_state_sha256": install_state_sha256,
+            "candidate_tensor_sha256": _optional_tensor_inventory(
+                state,
+                prefix=f"macrocell_candidate.{candidate_id}",
+            ),
+            "fit_provenance_report_sha256": fit["report_sha256"],
+            "operator_selection_report_sha256": selection["report_sha256"],
+            "fit_evidence_exposed": True,
+            "operator_selection_evidence_exposed": True,
+            "validation_evidence_exposed": False,
+            "validation_tensors_exposed": False,
+            "execution": dict(_ZERO_EXECUTION),
+        }
+        object.__setattr__(self, "candidate_id", candidate_id)
+        object.__setattr__(self, "fit_provenance", _deep_freeze(fit))
+        object.__setattr__(
+            self,
+            "operator_selection_report",
+            _deep_freeze(selection),
+        )
+        object.__setattr__(
+            self,
+            "report",
+            _deep_freeze(_seal_report(body)),
+        )
+
+    @property
+    def state_sha256(self) -> str:
+        return str(self.report["candidate_state_sha256"])
+
+    def state_dict(self) -> Mapping[str, Any | None]:
+        return MappingProxyType(
+            {
+                "in_proj_weight": self.in_proj_weight.clone(),
+                "in_proj_bias": (
+                    None if self.in_proj_bias is None else self.in_proj_bias.clone()
+                ),
+                "fir_kernel": self.fir_kernel.clone(),
+                "fir_bias": (None if self.fir_bias is None else self.fir_bias.clone()),
+                "writer_weight": self.writer_weight.clone(),
+                "writer_bias": (
+                    None if self.writer_bias is None else self.writer_bias.clone()
+                ),
+            }
+        )
+
+    def install_state_dict(self) -> Mapping[str, Any]:
+        """Return the exact native short-conv parameter names and shapes."""
+
+        state = self.state_dict()
+        result = {
+            "in_proj.weight": state["in_proj_weight"],
+            "conv.weight": state["fir_kernel"].unsqueeze(1).contiguous(),
+            "out_proj.weight": state["writer_weight"],
+        }
+        for role, name in (
+            ("in_proj_bias", "in_proj.bias"),
+            ("fir_bias", "conv.bias"),
+            ("writer_bias", "out_proj.bias"),
+        ):
+            if state[role] is not None:
+                result[name] = state[role]
+        return MappingProxyType(result)
+
+    def verify_authentication(self) -> bool:
+        try:
+            report = _deep_thaw(self.report)
+            body = dict(report)
+            supplied = body.pop("report_sha256", None)
+            state = self.state_dict()
+            return bool(
+                supplied == _sha(body)
+                and report.get("candidate_id") == self.candidate_id
+                and report.get("candidate_state_sha256") == _state_sha256(state)
+                and report.get("candidate_install_state_sha256")
+                == _state_sha256(self.install_state_dict())
+                and report.get("candidate_tensor_sha256")
+                == _optional_tensor_inventory(
+                    state,
+                    prefix=f"macrocell_candidate.{self.candidate_id}",
+                )
+                and report.get("bias_topology")
+                == {
+                    "in_proj": self.in_proj_bias is not None,
+                    "conv": self.fir_bias is not None,
+                    "out_proj": self.writer_bias is not None,
+                }
+                and report.get("fit_provenance_report_sha256")
+                == self.fit_provenance["report_sha256"]
+                and report.get("operator_selection_report_sha256")
+                == self.operator_selection_report["report_sha256"]
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    def as_dict(self) -> dict[str, Any]:
+        if not self.verify_authentication():
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell candidate changed after authentication."
+            )
+        return _deep_thaw(self.report)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfShortConvV5CandidateFrontier:
+    """Tensor-bearing fit/selection frontier with no validation exposure."""
+
+    candidates: tuple[Lfm2CpcfShortConvV5MacrocellCandidate, ...]
+    solver_policy_sha256: str
+    target_dtype: str
+    fit_bank_sha256: str
+    selection_bank_sha256: str
+    default_ranking: Mapping[str, Any]
+    report: Mapping[str, Any] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        candidates = tuple(self.candidates)
+        if not candidates or any(
+            not isinstance(
+                candidate,
+                Lfm2CpcfShortConvV5MacrocellCandidate,
+            )
+            or not candidate.verify_authentication()
+            for candidate in candidates
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell frontier requires authenticated candidates."
+            )
+        candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
+        if candidate_ids != tuple(sorted(candidate_ids)) or len(
+            set(candidate_ids)
+        ) != len(candidate_ids):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell frontier candidate IDs must be unique and sorted."
+            )
+        policy_sha256 = str(self.solver_policy_sha256).strip().lower()
+        if not _valid_sha256_text(policy_sha256):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell frontier solver policy digest is invalid."
+            )
+        target_dtype = str(self.target_dtype).strip()
+        if target_dtype not in {"float16", "bfloat16", "float32", "float64"}:
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell frontier target dtype is unsupported."
+            )
+        fit_bank_sha256 = str(self.fit_bank_sha256).strip().lower()
+        selection_bank_sha256 = str(self.selection_bank_sha256).strip().lower()
+        if (
+            not _valid_sha256_text(fit_bank_sha256)
+            or not _valid_sha256_text(selection_bank_sha256)
+            or fit_bank_sha256 == selection_bank_sha256
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell frontier requires distinct authenticated fit and "
+                "selection state banks."
+            )
+        ranking = _canonical_copy(
+            _deep_thaw(self.default_ranking),
+            "macrocell frontier default ranking",
+        )
+        ranking_body = dict(ranking)
+        ranking_seal = ranking_body.pop("report_sha256", None)
+        if (
+            ranking_seal != _sha(ranking_body)
+            or not isinstance(ranking.get("ranking"), list)
+            or not ranking["ranking"]
+            or set(candidate_ids)
+            != {
+                str(value["candidate_id"])
+                for value in ranking["ranking"]
+                if isinstance(value, Mapping)
+            }
+            or ranking.get("selected_candidate_id") not in candidate_ids
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell frontier default ranking is not complete and sealed."
+            )
+        if any(
+            candidate.report["target_dtype"] != target_dtype for candidate in candidates
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell frontier candidates differ in target dtype."
+            )
+        bias_topology = dict(candidates[0].report["bias_topology"])
+        if any(
+            dict(candidate.report["bias_topology"]) != bias_topology
+            for candidate in candidates
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell frontier candidates differ in native target bias topology."
+            )
+        body = {
+            "schema": LFM2_CPCF_SHORT_CONV_V5_MACROCELL_FRONTIER_SCHEMA,
+            "solver_policy_sha256": policy_sha256,
+            "target_dtype": target_dtype,
+            "target_bias_topology": bias_topology,
+            "fit_bank_sha256": fit_bank_sha256,
+            "selection_bank_sha256": selection_bank_sha256,
+            "candidate_count": len(candidates),
+            "candidate_ids": list(candidate_ids),
+            "candidate_state_sha256": {
+                candidate.candidate_id: candidate.state_sha256
+                for candidate in candidates
+            },
+            "candidate_report_sha256": {
+                candidate.candidate_id: candidate.report["report_sha256"]
+                for candidate in candidates
+            },
+            "default_ranking_report_sha256": ranking["report_sha256"],
+            "default_selected_candidate_id": ranking["selected_candidate_id"],
+            "candidate_state_tensors_exposed": True,
+            "fit_provenance_exposed": True,
+            "operator_selection_reports_exposed": True,
+            "validation_evidence_exposed": False,
+            "validation_tensors_exposed": False,
+            "validation_reports_exposed": False,
+            "selection_scope": (
+                "candidate_specific_operator_plus_fit_only_mlp_then_"
+                "selection_causal_replay"
+            ),
+            "execution": dict(_ZERO_EXECUTION),
+        }
+        object.__setattr__(self, "candidates", candidates)
+        object.__setattr__(self, "solver_policy_sha256", policy_sha256)
+        object.__setattr__(self, "target_dtype", target_dtype)
+        object.__setattr__(self, "fit_bank_sha256", fit_bank_sha256)
+        object.__setattr__(
+            self,
+            "selection_bank_sha256",
+            selection_bank_sha256,
+        )
+        object.__setattr__(self, "default_ranking", _deep_freeze(ranking))
+        object.__setattr__(
+            self,
+            "report",
+            _deep_freeze(_seal_report(body)),
+        )
+
+    @property
+    def frontier_sha256(self) -> str:
+        return str(self.report["report_sha256"])
+
+    def candidate(
+        self,
+        candidate_id: str,
+    ) -> Lfm2CpcfShortConvV5MacrocellCandidate:
+        for candidate in self.candidates:
+            if candidate.candidate_id == candidate_id:
+                return candidate
+        raise KeyError(candidate_id)
+
+    def verify_authentication(self) -> bool:
+        try:
+            report = _deep_thaw(self.report)
+            body = dict(report)
+            supplied = body.pop("report_sha256", None)
+            return bool(
+                supplied == _sha(body)
+                and all(
+                    candidate.verify_authentication() for candidate in self.candidates
+                )
+                and report.get("candidate_ids")
+                == [candidate.candidate_id for candidate in self.candidates]
+                and report.get("candidate_state_sha256")
+                == {
+                    candidate.candidate_id: candidate.state_sha256
+                    for candidate in self.candidates
+                }
+                and report.get("candidate_report_sha256")
+                == {
+                    candidate.candidate_id: candidate.report["report_sha256"]
+                    for candidate in self.candidates
+                }
+                and report.get("default_ranking_report_sha256")
+                == self.default_ranking["report_sha256"]
+                and report.get("fit_bank_sha256") == self.fit_bank_sha256
+                and report.get("selection_bank_sha256") == self.selection_bank_sha256
+                and report.get("target_bias_topology")
+                == dict(self.candidates[0].report["bias_topology"])
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    def as_dict(self) -> dict[str, Any]:
+        if not self.verify_authentication():
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell candidate frontier changed after authentication."
+            )
+        return _deep_thaw(self.report)
+
+
+def select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
+    frontier: Lfm2CpcfShortConvV5CandidateFrontier,
+    candidate_budget: int,
+) -> tuple[str, ...]:
+    """Choose a deterministic, structurally diverse macrocell inventory."""
+
+    if (
+        not isinstance(frontier, Lfm2CpcfShortConvV5CandidateFrontier)
+        or not frontier.verify_authentication()
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell inventory selection requires an authenticated frontier."
+        )
+    candidate_ids = tuple(candidate.candidate_id for candidate in frontier.candidates)
+    if type(candidate_budget) is not int or not 1 <= candidate_budget <= len(
+        candidate_ids
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell candidate budget is outside its authenticated frontier."
+        )
+    endpoint_control = str(frontier.default_ranking["selected_candidate_id"])
+    if endpoint_control not in candidate_ids:
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell endpoint control is absent from its frontier."
+        )
+
+    selected = {endpoint_control}
+    anchor_pool = tuple(
+        candidate_id
+        for candidate_id in candidate_ids
+        if "--anchor-" in candidate_id and candidate_id != endpoint_control
+    )
+    anchor_slots = candidate_budget - len(selected)
+    if anchor_pool:
+        if anchor_slots >= len(anchor_pool):
+            selected.update(anchor_pool)
+        elif anchor_slots == 1:
+            selected.add(anchor_pool[(len(anchor_pool) - 1) // 2])
+        elif anchor_slots > 1:
+            selected.update(
+                anchor_pool[(ordinal * (len(anchor_pool) - 1)) // (anchor_slots - 1)]
+                for ordinal in range(anchor_slots)
+            )
+
+    for entry in frontier.default_ranking["ranking"]:
+        candidate_id = str(entry["candidate_id"])
+        if len(selected) == candidate_budget:
+            break
+        selected.add(candidate_id)
+    if len(selected) != candidate_budget or not selected.issubset(candidate_ids):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell deterministic inventory did not fill its candidate budget."
+        )
+    return tuple(sorted(selected))
+
+
+def _recursive_canonical_report_seals_valid(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        document = dict(value)
+        if "report_sha256" in document:
+            supplied = document.pop("report_sha256")
+            if not _valid_sha256_text(supplied) or supplied != _sha(document):
+                return False
+        return all(
+            _recursive_canonical_report_seals_valid(child) for child in value.values()
+        )
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        (str, bytes, bytearray),
+    ):
+        return all(_recursive_canonical_report_seals_valid(child) for child in value)
+    return True
+
+
+_MACROCELL_EVIDENCE_COMMON_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "candidate_id",
+        "actual_report",
+        "actual_report_sha256",
+        "execution",
+        "report_sha256",
+    }
+)
+_MACROCELL_EVIDENCE_FIELDS = {
+    "actual_operator_install": _MACROCELL_EVIDENCE_COMMON_FIELDS
+    | {
+        "candidate_state_sha256",
+        "installed_state_sha256",
+    },
+    "actual_fit_operator_replay": _MACROCELL_EVIDENCE_COMMON_FIELDS
+    | {
+        "candidate_state_sha256",
+        "input_bank_sha256",
+    },
+    "actual_fit_mlp_artifact": _MACROCELL_EVIDENCE_COMMON_FIELDS
+    | {
+        "fit_bank_sha256",
+        "compiled_state_sha256",
+    },
+    "actual_fit_mlp_install": _MACROCELL_EVIDENCE_COMMON_FIELDS
+    | {
+        "compiled_state_sha256",
+        "installed_state_sha256",
+    },
+    "actual_selection_final_replay": _MACROCELL_EVIDENCE_COMMON_FIELDS
+    | {
+        "candidate_state_sha256",
+        "input_bank_sha256",
+        "mlp_compiled_state_sha256",
+    },
+}
+_MACROCELL_METRICS_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "candidate_id",
+        "selection_bank_sha256",
+        "split",
+        "phase_count",
+        "phase_sha256",
+        "post_operator",
+        "post_layer",
+        "phase_metrics",
+        "actual_report",
+        "actual_report_sha256",
+        "execution",
+        "report_sha256",
+    }
+)
+_MACROCELL_PHASE_METRICS_FIELDS = frozenset(
+    {
+        "phase",
+        "phase_count",
+        "phase_sha256",
+        "post_operator",
+        "post_layer",
+        "report_sha256",
+    }
+)
+_MACROCELL_ENDPOINT_METRIC_FIELDS = frozenset(
+    {
+        "relative_rmse",
+        "cosine_similarity",
+    }
+)
+_MACROCELL_ROLLBACK_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "candidate_id",
+        "target_state_sha256_before",
+        "target_state_sha256_after",
+        "target_tensor_bytes_restored",
+        "target_tensor_identities_preserved",
+        "target_gradient_state_preserved",
+        "target_module_modes_restored",
+        "exact_layer_snapshot_restored",
+        "actual_report",
+        "actual_report_sha256",
+        "execution",
+        "report_sha256",
+    }
+)
+_MACROCELL_EVALUATION_FIELDS = frozenset(
+    {
+        "schema",
+        "candidate_id",
+        "candidate_state_sha256",
+        "operator_selection_report_sha256",
+        "fit_provenance_report_sha256",
+        "fit_bank_sha256",
+        "selection_bank_sha256",
+        "operator_install_report",
+        "operator_install_report_sha256",
+        "fit_operator_replay_report",
+        "fit_operator_replay_sha256",
+        "fit_mlp_artifact_report",
+        "fit_mlp_artifact_report_sha256",
+        "fit_mlp_compiled_state_sha256",
+        "fit_mlp_install_report",
+        "fit_mlp_install_report_sha256",
+        "selection_final_replay_report",
+        "selection_final_replay_sha256",
+        "selection_metrics",
+        "selection_metrics_report_sha256",
+        "fit_only_mlp_fold",
+        "selection_only_candidate_evaluation",
+        "validation_accessible",
+        "validation_replays",
+        "rollback_proof",
+        "rollback_proof_sha256",
+        "execution",
+        "report_sha256",
+    }
+)
+_MACROCELL_DECISION_FIELDS = frozenset(
+    {
+        "schema",
+        "kind",
+        "frontier_sha256",
+        "candidate_count",
+        "candidate_budget",
+        "evaluated_candidate_ids",
+        "candidate_evaluations",
+        "fit_bank_sha256",
+        "selection_bank_sha256",
+        "macrocell_ranking",
+        "ranking_policy",
+        "operator_endpoint_first_control_included",
+        "selected_candidate_id",
+        "selected_candidate_state_sha256",
+        "selection_split_only_for_ranking",
+        "validation_accessible",
+        "validation_reports_consumed",
+        "validation_replays",
+        "candidate_specific_fit_mlp_folds",
+        "candidate_specific_selection_replays",
+        "exact_candidate_rollbacks",
+        "execution",
+        "report_sha256",
+    }
+)
+_ZERO_EXECUTION_COUNTER_FIELDS = frozenset(_ZERO_EXECUTION) | {
+    "parent_forward_count",
+    "child_model_forward_count",
+    "target_layer_forward_count",
+    "cache_generation_count",
+    "cache_update_count",
+    "training_step_count",
+    "backward_call_count",
+    "optimizer_step_count",
+    "model_forward_calls",
+}
+
+
+def _exact_zero_execution(value: Any) -> bool:
+    return bool(
+        isinstance(value, Mapping)
+        and set(value) == set(_ZERO_EXECUTION)
+        and all(type(value[name]) is int and value[name] == 0 for name in value)
+    )
+
+
+def _recursive_zero_execution_claims(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        for name, child in value.items():
+            if name in _ZERO_EXECUTION_COUNTER_FIELDS and (
+                type(child) is not int or child != 0
+            ):
+                return False
+            if not _recursive_zero_execution_claims(child):
+                return False
+        return True
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        (str, bytes, bytearray),
+    ):
+        return all(_recursive_zero_execution_claims(child) for child in value)
+    return True
+
+
+def _verified_macrocell_evidence_document(
+    value: Any,
+    *,
+    kind: str,
+    name: str,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfShortConvV4FoldError(
+            f"Macrocell {name} must be an embedded evidence document."
+        )
+    report = _canonical_copy(_deep_thaw(value), f"macrocell {name}")
+    body = dict(report)
+    supplied = body.pop("report_sha256", None)
+    actual_value = report.get("actual_report")
+    actual_report = actual_value if isinstance(actual_value, Mapping) else {}
+    actual_body = dict(actual_report)
+    actual_seal = actual_body.pop("report_sha256", None)
+    if (
+        set(report) != _MACROCELL_EVIDENCE_FIELDS[kind]
+        or report.get("schema") != LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA
+        or report.get("kind") != kind
+        or not _valid_sha256_text(supplied)
+        or supplied != _sha(body)
+        or not _valid_sha256_text(actual_seal)
+        or actual_seal != _sha(actual_body)
+        or report.get("actual_report_sha256") != actual_seal
+        or not _recursive_canonical_report_seals_valid(report)
+        or not _recursive_zero_execution_claims(report)
+        or not _exact_zero_execution(report.get("execution"))
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            f"Macrocell {name} is not an exact, recursively sealed, "
+            "zero-execution evidence document."
+        )
+    return report
+
+
+def _verified_macrocell_rollback_document(
+    value: Any,
+    *,
+    candidate_id: str,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell rollback proof must be an embedded evidence document."
+        )
+    report = _canonical_copy(_deep_thaw(value), "macrocell rollback proof")
+    body = dict(report)
+    supplied = body.pop("report_sha256", None)
+    actual_value = report.get("actual_report")
+    actual_report = actual_value if isinstance(actual_value, Mapping) else {}
+    actual_body = dict(actual_report)
+    actual_seal = actual_body.pop("report_sha256", None)
+    gradient_restored = actual_report.get(
+        "target_gradient_state_preserved",
+        actual_report.get(
+            "target_parameter_gradient_identity_and_bytes_restored",
+        ),
+    )
+    exact_restored = actual_report.get(
+        "exact_layer_snapshot_restored",
+        actual_report.get("exact_layer_rollback_proven"),
+    )
+    if (
+        set(report) != _MACROCELL_ROLLBACK_FIELDS
+        or report.get("schema") != LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA
+        or report.get("kind") != "actual_candidate_rollback"
+        or report.get("candidate_id") != candidate_id
+        or not _valid_sha256_text(supplied)
+        or supplied != _sha(body)
+        or not _valid_sha256_text(actual_seal)
+        or actual_seal != _sha(actual_body)
+        or report.get("actual_report_sha256") != actual_seal
+        or not _recursive_canonical_report_seals_valid(report)
+        or not _recursive_zero_execution_claims(report)
+        or not _exact_zero_execution(report.get("execution"))
+        or report.get("exact_layer_snapshot_restored") is not True
+        or report.get("target_tensor_bytes_restored") is not True
+        or report.get("target_tensor_identities_preserved") is not True
+        or report.get("target_gradient_state_preserved") is not True
+        or report.get("target_module_modes_restored") is not True
+        or report.get("target_state_sha256_before")
+        != report.get("target_state_sha256_after")
+        or not _valid_sha256_text(report.get("target_state_sha256_before"))
+        or actual_report.get("target_state_sha256_before")
+        != report["target_state_sha256_before"]
+        or actual_report.get("target_state_sha256_after")
+        != report["target_state_sha256_after"]
+        or actual_report.get("target_tensor_bytes_restored") is not True
+        or actual_report.get("target_tensor_identities_preserved") is not True
+        or gradient_restored is not True
+        or actual_report.get("target_module_modes_restored") is not True
+        or exact_restored is not True
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell rollback proof is not exact, recursively sealed, "
+            "and state-preserving."
+        )
+    return report
+
+
+def _macrocell_metric_summary(value: Any) -> dict[str, Any] | None:
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != _MACROCELL_ENDPOINT_METRIC_FIELDS
+    ):
+        return None
+    return dict(value)
+
+
+def _finite_macrocell_metric(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise Lfm2CpcfShortConvV4FoldError(f"Macrocell {name} must be a finite number.")
+    result = float(value)
+    if not math.isfinite(result):
+        raise Lfm2CpcfShortConvV4FoldError(f"Macrocell {name} must be a finite number.")
+    return result
+
+
+def _macrocell_selection_score(
+    metrics: Mapping[str, Any],
+    *,
+    candidate_id: str,
+    selection_bank_sha256: str,
+) -> tuple[float | str, ...]:
+    """Recompute the causal post-layer score from a sealed selection report."""
+
+    report = (
+        _canonical_copy(_deep_thaw(metrics), "macrocell selection metrics")
+        if isinstance(metrics, Mapping)
+        else {}
+    )
+    body = dict(report)
+    supplied = body.pop("report_sha256", None)
+    actual_value = report.get("actual_report")
+    actual_report = actual_value if isinstance(actual_value, Mapping) else {}
+    actual_body = dict(actual_report)
+    actual_seal = actual_body.pop("report_sha256", None)
+    if (
+        set(report) != _MACROCELL_METRICS_FIELDS
+        or report.get("schema") != LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA
+        or report.get("kind") != "actual_selection_metrics"
+        or report.get("candidate_id") != candidate_id
+        or report.get("selection_bank_sha256") != selection_bank_sha256
+        or report.get("split") != "selection"
+        or not _valid_sha256_text(supplied)
+        or supplied != _sha(body)
+        or not _valid_sha256_text(actual_seal)
+        or actual_seal != _sha(actual_body)
+        or report.get("actual_report_sha256") != actual_seal
+        or not _recursive_canonical_report_seals_valid(report)
+        or not _recursive_zero_execution_claims(report)
+        or not _exact_zero_execution(report.get("execution"))
+        or not isinstance(report.get("phase_metrics"), Mapping)
+        or not report["phase_metrics"]
+        or type(report.get("phase_count")) is not int
+        or report["phase_count"] <= 0
+        or not isinstance(report.get("phase_sha256"), list)
+        or len(report["phase_sha256"]) != report["phase_count"]
+        or not all(_valid_sha256_text(value) for value in report["phase_sha256"])
+        or _macrocell_metric_summary(report.get("post_operator")) is None
+        or _macrocell_metric_summary(report.get("post_layer")) is None
+        or actual_report.get("split") != report["split"]
+        or actual_report.get("phase_count") != report["phase_count"]
+        or actual_report.get("phase_sha256") != report["phase_sha256"]
+        or not isinstance(actual_report.get("phase_metrics"), Mapping)
+        or set(actual_report["phase_metrics"]) != set(report["phase_metrics"])
+        or any(
+            not isinstance(actual_report.get(endpoint), Mapping)
+            or any(
+                actual_report[endpoint].get(name) != metric
+                for name, metric in report[endpoint].items()
+            )
+            for endpoint in ("post_operator", "post_layer")
+        )
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell selection metrics are not a sealed selection-only "
+            "causal endpoint report."
+        )
+    phase_relative_rmse = []
+    phase_cosine = []
+    for phase_name, phase_report in report["phase_metrics"].items():
+        actual_phase = actual_report["phase_metrics"].get(phase_name)
+        if (
+            not isinstance(phase_name, str)
+            or not phase_name
+            or not isinstance(phase_report, Mapping)
+            or set(phase_report) != _MACROCELL_PHASE_METRICS_FIELDS
+            or phase_report.get("phase") != phase_name
+            or type(phase_report.get("phase_count")) is not int
+            or phase_report["phase_count"] <= 0
+            or not isinstance(phase_report.get("phase_sha256"), list)
+            or len(phase_report["phase_sha256"]) != phase_report["phase_count"]
+            or not all(
+                _valid_sha256_text(value) for value in phase_report["phase_sha256"]
+            )
+            or _macrocell_metric_summary(phase_report.get("post_operator")) is None
+            or _macrocell_metric_summary(phase_report.get("post_layer")) is None
+            or not _recursive_canonical_report_seals_valid(phase_report)
+            or not isinstance(actual_phase, Mapping)
+            or actual_phase.get("phase") != phase_report["phase"]
+            or actual_phase.get("phase_count") != phase_report["phase_count"]
+            or actual_phase.get("phase_sha256") != phase_report["phase_sha256"]
+            or any(
+                not isinstance(actual_phase.get(endpoint), Mapping)
+                or any(
+                    actual_phase[endpoint].get(name) != metric
+                    for name, metric in phase_report[endpoint].items()
+                )
+                for endpoint in ("post_operator", "post_layer")
+            )
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell causal phase metrics are incomplete."
+            )
+        post_layer = phase_report["post_layer"]
+        relative_rmse = _finite_macrocell_metric(
+            post_layer.get("relative_rmse"),
+            f"{phase_name} post-layer relative RMSE",
+        )
+        cosine = _finite_macrocell_metric(
+            post_layer.get("cosine_similarity"),
+            f"{phase_name} post-layer cosine",
+        )
+        if relative_rmse < 0.0 or not -1.0 <= cosine <= 1.0:
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell causal phase metrics are outside their valid range."
+            )
+        phase_relative_rmse.append(relative_rmse)
+        phase_cosine.append(cosine)
+    aggregate = report["post_layer"]
+    aggregate_relative_rmse = _finite_macrocell_metric(
+        aggregate.get("relative_rmse"),
+        "aggregate post-layer relative RMSE",
+    )
+    aggregate_cosine = _finite_macrocell_metric(
+        aggregate.get("cosine_similarity"),
+        "aggregate post-layer cosine",
+    )
+    if aggregate_relative_rmse < 0.0 or not -1.0 <= aggregate_cosine <= 1.0:
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell aggregate metrics are outside their valid range."
+        )
+    return (
+        max(phase_relative_rmse),
+        -min(phase_cosine),
+        aggregate_relative_rmse,
+        -aggregate_cosine,
+        candidate_id,
+    )
+
+
+def _verified_macrocell_selector_decision(
+    frontier: Lfm2CpcfShortConvV5CandidateFrontier,
+    decision_value: Any,
+) -> tuple[str, dict[str, Any]]:
+    """Authenticate candidate-specific MLP/replay evidence and ranking."""
+
+    decision = _canonical_copy(
+        _deep_thaw(decision_value),
+        "macrocell selector decision",
+    )
+    candidate_by_id = {
+        candidate.candidate_id: candidate for candidate in frontier.candidates
+    }
+    candidate_count = len(candidate_by_id)
+    evaluations = decision.get("candidate_evaluations")
+    evaluated_ids = decision.get("evaluated_candidate_ids")
+    budget = decision.get("candidate_budget")
+    execution = decision.get("execution")
+    if (
+        set(decision) != _MACROCELL_DECISION_FIELDS
+        or not verify_lfm2_cpcf_short_conv_v5_report(decision)
+        or not _recursive_canonical_report_seals_valid(decision)
+        or not _recursive_zero_execution_claims(decision)
+        or decision.get("schema") != LFM2_CPCF_SHORT_CONV_V5_SCHEMA
+        or decision.get("kind") != "authenticated_fit_selection_whole_macrocell_ranking"
+        or decision.get("frontier_sha256") != frontier.frontier_sha256
+        or type(decision.get("candidate_count")) is not int
+        or decision.get("candidate_count") != candidate_count
+        or type(budget) is not int
+        or not 1 <= budget <= candidate_count
+        or not isinstance(evaluated_ids, list)
+        or not evaluated_ids
+        or not all(isinstance(value, str) and value for value in evaluated_ids)
+        or len(evaluated_ids) != len(set(evaluated_ids))
+        or evaluated_ids != sorted(evaluated_ids)
+        or not isinstance(evaluations, Mapping)
+        or sorted(evaluations) != evaluated_ids
+        or decision.get("selection_split_only_for_ranking") is not True
+        or decision.get("validation_accessible") is not False
+        or type(decision.get("validation_reports_consumed")) is not int
+        or decision["validation_reports_consumed"] != 0
+        or type(decision.get("validation_replays")) is not int
+        or decision["validation_replays"] != 0
+        or decision.get("ranking_policy")
+        != (
+            "minimum_worst_causal_phase_post_layer_relative_rmse_then_"
+            "maximum_minimum_causal_phase_post_layer_cosine_then_minimum_"
+            "aggregate_post_layer_relative_rmse_then_maximum_aggregate_"
+            "post_layer_cosine_then_candidate_id"
+        )
+        or decision.get("operator_endpoint_first_control_included") is not True
+        or not _exact_zero_execution(execution)
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell selector decision lacks authenticated fit/selection "
+            "candidate evidence."
+        )
+    expected_evaluated = list(
+        select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
+            frontier,
+            budget,
+        )
+    )
+    if (
+        evaluated_ids != expected_evaluated
+        or frontier.default_ranking["selected_candidate_id"] not in evaluated_ids
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell selector did not evaluate the deterministic structural "
+            "frontier inventory and its endpoint control."
+        )
+    fit_bank_sha256 = decision.get("fit_bank_sha256")
+    selection_bank_sha256 = decision.get("selection_bank_sha256")
+    if (
+        fit_bank_sha256 != frontier.fit_bank_sha256
+        or selection_bank_sha256 != frontier.selection_bank_sha256
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell selector fit and selection bank identities differ "
+            "from its authenticated frontier."
+        )
+
+    recomputed = []
+    for candidate_id in evaluated_ids:
+        evaluation_value = evaluations[candidate_id]
+        candidate = candidate_by_id.get(candidate_id)
+        if not isinstance(evaluation_value, Mapping) or candidate is None:
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell selector evaluation inventory is incomplete."
+            )
+        evaluation = _canonical_copy(
+            _deep_thaw(evaluation_value),
+            f"macrocell selector evaluation {candidate_id}",
+        )
+        body = dict(evaluation)
+        seal = body.pop("report_sha256", None)
+        operator_install = _verified_macrocell_evidence_document(
+            evaluation.get("operator_install_report"),
+            kind="actual_operator_install",
+            name=f"{candidate_id} operator install",
+        )
+        fit_replay = _verified_macrocell_evidence_document(
+            evaluation.get("fit_operator_replay_report"),
+            kind="actual_fit_operator_replay",
+            name=f"{candidate_id} fit operator replay",
+        )
+        mlp_artifact = _verified_macrocell_evidence_document(
+            evaluation.get("fit_mlp_artifact_report"),
+            kind="actual_fit_mlp_artifact",
+            name=f"{candidate_id} fit MLP artifact",
+        )
+        mlp_install = _verified_macrocell_evidence_document(
+            evaluation.get("fit_mlp_install_report"),
+            kind="actual_fit_mlp_install",
+            name=f"{candidate_id} fit MLP install",
+        )
+        selection_replay = _verified_macrocell_evidence_document(
+            evaluation.get("selection_final_replay_report"),
+            kind="actual_selection_final_replay",
+            name=f"{candidate_id} selection final replay",
+        )
+        rollback = _verified_macrocell_rollback_document(
+            evaluation.get("rollback_proof"),
+            candidate_id=candidate_id,
+        )
+        mlp_state_sha256 = evaluation.get("fit_mlp_compiled_state_sha256")
+        operator_actual = operator_install["actual_report"]
+        fit_replay_actual = fit_replay["actual_report"]
+        mlp_artifact_actual = mlp_artifact["actual_report"]
+        mlp_install_actual = mlp_install["actual_report"]
+        selection_replay_actual = selection_replay["actual_report"]
+        candidate_install_state_sha256 = candidate.report[
+            "candidate_install_state_sha256"
+        ]
+        selection_metrics = evaluation.get("selection_metrics")
+        selection_metrics_sha256 = (
+            selection_metrics.get("report_sha256")
+            if isinstance(selection_metrics, Mapping)
+            else None
+        )
+        if (
+            set(evaluation) != _MACROCELL_EVALUATION_FIELDS
+            or not _valid_sha256_text(seal)
+            or seal != _sha(body)
+            or not _recursive_canonical_report_seals_valid(evaluation)
+            or not _recursive_zero_execution_claims(evaluation)
+            or evaluation.get("schema")
+            != LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVALUATION_SCHEMA
+            or evaluation.get("candidate_id") != candidate_id
+            or evaluation.get("candidate_state_sha256") != candidate.state_sha256
+            or evaluation.get("operator_selection_report_sha256")
+            != candidate.operator_selection_report["report_sha256"]
+            or evaluation.get("fit_provenance_report_sha256")
+            != candidate.fit_provenance["report_sha256"]
+            or evaluation.get("fit_bank_sha256") != fit_bank_sha256
+            or evaluation.get("selection_bank_sha256") != selection_bank_sha256
+            or evaluation.get("operator_install_report_sha256")
+            != operator_install["report_sha256"]
+            or evaluation.get("fit_operator_replay_sha256")
+            != fit_replay["report_sha256"]
+            or evaluation.get("fit_mlp_artifact_report_sha256")
+            != mlp_artifact["report_sha256"]
+            or not _valid_sha256_text(mlp_state_sha256)
+            or evaluation.get("fit_mlp_install_report_sha256")
+            != mlp_install["report_sha256"]
+            or evaluation.get("selection_final_replay_sha256")
+            != selection_replay["report_sha256"]
+            or evaluation.get("selection_metrics_report_sha256")
+            != selection_metrics_sha256
+            or evaluation.get("rollback_proof_sha256") != rollback["report_sha256"]
+            or operator_install.get("candidate_id") != candidate_id
+            or operator_install.get("candidate_state_sha256") != candidate.state_sha256
+            or operator_install.get("installed_state_sha256")
+            != candidate_install_state_sha256
+            or operator_actual.get("compiled_state_sha256")
+            != candidate_install_state_sha256
+            or operator_actual.get("installed_state_sha256")
+            != candidate_install_state_sha256
+            or fit_replay.get("candidate_id") != candidate_id
+            or fit_replay.get("candidate_state_sha256") != candidate.state_sha256
+            or fit_replay.get("input_bank_sha256") != fit_bank_sha256
+            or fit_replay_actual.get("input_bank_sha256") != fit_bank_sha256
+            or mlp_artifact.get("candidate_id") != candidate_id
+            or mlp_artifact.get("fit_bank_sha256") != fit_bank_sha256
+            or mlp_artifact.get("compiled_state_sha256") != mlp_state_sha256
+            or mlp_artifact_actual.get("compiled_state_sha256") != mlp_state_sha256
+            or mlp_install.get("candidate_id") != candidate_id
+            or mlp_install.get("compiled_state_sha256") != mlp_state_sha256
+            or mlp_install.get("installed_state_sha256") != mlp_state_sha256
+            or mlp_install_actual.get("compiled_state_sha256") != mlp_state_sha256
+            or mlp_install_actual.get("installed_state_sha256") != mlp_state_sha256
+            or selection_replay.get("candidate_id") != candidate_id
+            or selection_replay.get("candidate_state_sha256") != candidate.state_sha256
+            or selection_replay.get("input_bank_sha256") != selection_bank_sha256
+            or selection_replay.get("mlp_compiled_state_sha256") != mlp_state_sha256
+            or selection_replay_actual.get("input_bank_sha256") != selection_bank_sha256
+            or evaluation.get("fit_only_mlp_fold") is not True
+            or evaluation.get("selection_only_candidate_evaluation") is not True
+            or evaluation.get("validation_accessible") is not False
+            or type(evaluation.get("validation_replays")) is not int
+            or evaluation["validation_replays"] != 0
+            or not _exact_zero_execution(evaluation.get("execution"))
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell selector candidate evaluation is not state-bound, "
+                "fit/selection-only, and exactly rolled back."
+            )
+        score = _macrocell_selection_score(
+            selection_metrics,
+            candidate_id=candidate_id,
+            selection_bank_sha256=selection_bank_sha256,
+        )
+        recomputed.append(
+            {
+                "candidate_id": candidate_id,
+                "score": list(score),
+                "evaluation_report_sha256": seal,
+            }
+        )
+    recomputed.sort(
+        key=lambda value: tuple(value["score"]),
+    )
+    expected_ranking = [
+        {
+            "rank": index + 1,
+            **value,
+        }
+        for index, value in enumerate(recomputed)
+    ]
+    selected_id = expected_ranking[0]["candidate_id"]
+    selected_state_sha256 = decision.get("selected_candidate_state_sha256")
+    if (
+        decision.get("macrocell_ranking") != expected_ranking
+        or decision.get("selected_candidate_id") != selected_id
+        or selected_state_sha256 != candidate_by_id[selected_id].state_sha256
+        or type(decision.get("candidate_specific_fit_mlp_folds")) is not int
+        or decision.get("candidate_specific_fit_mlp_folds") != len(evaluated_ids)
+        or type(decision.get("candidate_specific_selection_replays")) is not int
+        or decision.get("candidate_specific_selection_replays") != len(evaluated_ids)
+        or type(decision.get("exact_candidate_rollbacks")) is not int
+        or decision.get("exact_candidate_rollbacks") != len(evaluated_ids)
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell selector ranking does not recompute from every "
+            "candidate-specific MLP and causal replay."
+        )
+    return selected_id, decision
+
+
+def _run_preinstall_macrocell_candidate_selector(
+    selector: Lfm2CpcfShortConvV5MacrocellCandidateSelector,
+    *,
+    candidate_states: Mapping[str, Mapping[str, Any]],
+    candidate_fit_reports: Mapping[str, Mapping[str, Any]],
+    selection_reports: Mapping[str, Mapping[str, Any]],
+    ranking: Mapping[str, Any],
+    solver_policy: Lfm2CpcfShortConvV4SolverPolicy,
+    fit_bank_sha256: str,
+    selection_bank_sha256: str,
+) -> tuple[str, Mapping[str, Any]]:
+    """Expose detached states for fit/selection-only whole-macrocell replay."""
+
+    state_sha256_before = _candidate_state_sha256(candidate_states)
+    candidate_ids = sorted(candidate_states)
+    if (
+        candidate_ids != sorted(candidate_fit_reports)
+        or candidate_ids != sorted(selection_reports)
+        or any(
+            selection_reports[candidate_id].get("candidate_state_sha256")
+            != state_sha256_before[candidate_id]
+            or candidate_fit_reports[candidate_id].get(
+                "target_dtype_candidate_state_sha256"
+            )
+            != state_sha256_before[candidate_id]
+            for candidate_id in candidate_ids
+        )
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell selector frontier is not bound to live candidates."
+        )
+    candidates = tuple(
+        Lfm2CpcfShortConvV5MacrocellCandidate(
+            candidate_id=candidate_id,
+            in_proj_weight=candidate_states[candidate_id]["in_proj_weight"],
+            in_proj_bias=candidate_states[candidate_id]["in_proj_bias"],
+            fir_kernel=candidate_states[candidate_id]["fir_kernel"],
+            fir_bias=candidate_states[candidate_id]["fir_bias"],
+            writer_weight=candidate_states[candidate_id]["writer_weight"],
+            writer_bias=candidate_states[candidate_id]["writer_bias"],
+            fit_provenance=candidate_fit_reports[candidate_id],
+            operator_selection_report=selection_reports[candidate_id],
+        )
+        for candidate_id in candidate_ids
+    )
+    frontier = Lfm2CpcfShortConvV5CandidateFrontier(
+        candidates=candidates,
+        solver_policy_sha256=solver_policy.authentication_sha256,
+        target_dtype=solver_policy.target_dtype,
+        fit_bank_sha256=fit_bank_sha256,
+        selection_bank_sha256=selection_bank_sha256,
+        default_ranking=ranking,
+    )
+    frontier_sha256 = frontier.frontier_sha256
+    try:
+        decision_value = selector.select(frontier)
+    except BaseException as error:
+        if _candidate_state_sha256(candidate_states) != state_sha256_before:
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell selector changed a live retained candidate before failing."
+            ) from error
+        if not frontier.verify_authentication():
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell selector changed its detached frontier before failing."
+            ) from error
+        raise
+    if _candidate_state_sha256(candidate_states) != state_sha256_before:
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell selector changed a live retained candidate."
+        )
+    if not frontier.verify_authentication() or (
+        frontier.frontier_sha256 != frontier_sha256
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell selector changed its detached frontier."
+        )
+    selected_id, decision = _verified_macrocell_selector_decision(
+        frontier,
+        decision_value,
+    )
+    selected_state_sha256 = decision.get("selected_candidate_state_sha256")
+    default_selected_id = str(ranking["selected_candidate_id"])
+    receipt_body = {
+        "schema": LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_RECEIPT_SCHEMA,
+        "frontier": frontier.as_dict(),
+        "frontier_sha256": frontier_sha256,
+        "selector_decision": decision,
+        "selector_decision_sha256": decision["report_sha256"],
+        "candidate_state_inventory_sha256": _sha(state_sha256_before),
+        "candidate_count": len(candidate_ids),
+        "default_v4_selected_candidate_id": default_selected_id,
+        "selected_candidate_id": selected_id,
+        "selected_candidate_state_sha256": selected_state_sha256,
+        "selection_changed_from_v4": selected_id != default_selected_id,
+        "all_live_candidate_states_verified_before_callback": True,
+        "all_live_candidate_states_verified_after_callback": True,
+        "detached_frontier_verified_after_callback": True,
+        "candidate_state_tensors_exposed_to_macrocell_selector": True,
+        "fit_provenance_exposed_to_macrocell_selector": True,
+        "operator_selection_reports_exposed_to_macrocell_selector": True,
+        "validation_evidence_exposed_to_macrocell_selector": False,
+        "validation_reports_consumed": 0,
+        "post_install_rescoring": False,
+        "execution": dict(_ZERO_EXECUTION),
+    }
+    return str(selected_id), MappingProxyType(_seal_report(receipt_body))
 
 
 def _run_preinstall_candidate_selector(
@@ -1318,13 +2587,10 @@ def _run_preinstall_candidate_selector(
 
     state_sha256_before = _candidate_state_sha256(candidate_states)
     candidate_ids = sorted(candidate_states)
-    if (
-        candidate_ids != sorted(selection_reports)
-        or any(
-            selection_reports[candidate_id].get("candidate_state_sha256")
-            != state_sha256_before[candidate_id]
-            for candidate_id in candidate_ids
-        )
+    if candidate_ids != sorted(selection_reports) or any(
+        selection_reports[candidate_id].get("candidate_state_sha256")
+        != state_sha256_before[candidate_id]
+        for candidate_id in candidate_ids
     ):
         raise Lfm2CpcfShortConvV4FoldError(
             "Pre-install selector frontier is not bound to live candidates."
@@ -1345,9 +2611,7 @@ def _run_preinstall_candidate_selector(
         "candidate_state_sha256": state_sha256_before,
         "candidate_state_inventory_sha256": _sha(state_sha256_before),
         "candidate_selection_report_sha256": {
-            candidate_id: selection_report_copies[candidate_id][
-                "report_sha256"
-            ]
+            candidate_id: selection_report_copies[candidate_id]["report_sha256"]
             for candidate_id in candidate_ids
         },
         "candidate_selection_reports": selection_report_copies,
@@ -1377,8 +2641,7 @@ def _run_preinstall_candidate_selector(
             ) from error
         if _canonical_json(request) != request_bytes:
             raise Lfm2CpcfShortConvV4FoldError(
-                "Pre-install selector changed its authenticated request "
-                "before failing."
+                "Pre-install selector changed its authenticated request before failing."
             ) from error
         raise
     state_sha256_after = _candidate_state_sha256(candidate_states)
@@ -1395,22 +2658,18 @@ def _run_preinstall_candidate_selector(
         "pre-install selector report",
     )
     selected_id = selector_report.get("selected_candidate_id")
-    selected_state_sha256 = selector_report.get(
-        "selected_candidate_state_sha256"
-    )
+    selected_state_sha256 = selector_report.get("selected_candidate_state_sha256")
     execution = selector_report.get("execution")
     if (
         not verify_lfm2_cpcf_short_conv_v5_report(selector_report)
-        or selector_report.get("schema")
-        != LFM2_CPCF_SHORT_CONV_V5_SCHEMA
+        or selector_report.get("schema") != LFM2_CPCF_SHORT_CONV_V5_SCHEMA
         or not isinstance(selector_report.get("kind"), str)
         or not selector_report["kind"]
         or not isinstance(selected_id, str)
         or selected_id not in state_sha256_before
         or selected_state_sha256 != state_sha256_before[selected_id]
         or selector_report.get("candidate_count") != len(candidate_ids)
-        or selector_report.get("selection_reports_consumed")
-        != len(candidate_ids)
+        or selector_report.get("selection_reports_consumed") != len(candidate_ids)
         or selector_report.get("fit_reports_consumed") != 0
         or selector_report.get("validation_reports_consumed") != 0
         or selector_report.get("validation_accessible") is not False
@@ -1593,6 +2852,7 @@ class Lfm2CompiledCpcfShortConvV4Fold:
                 LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
                 LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA,
                 LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA,
+                LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FOLD_SCHEMA,
                 LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA,
             }
             or report.get("compiled_state_sha256") != _state_sha256(self.state_dict())
@@ -1699,9 +2959,7 @@ def _generate_legacy_v4_raw_candidates(
                 child_inputs=case.actual_child_operator_input_history[
                     :, case.suffix_start :
                 ],
-                parent_contexts=parent_contexts[case.case_id][
-                    :, case.suffix_start :
-                ],
+                parent_contexts=parent_contexts[case.case_id][:, case.suffix_start :],
                 endpoint_writes=(
                     case.parent_post_operator_residual_target_space_suffix
                     - case.actual_child_pre_operator_residual_suffix
@@ -1795,8 +3053,7 @@ def _generate_legacy_v4_raw_candidates(
             raw_candidates.append(
                 {
                     "candidate_id": (
-                        f"{ridge_id}--anchor-{path_index:02d}-"
-                        f"{path_state.stage_id}"
+                        f"{ridge_id}--anchor-{path_index:02d}-{path_state.stage_id}"
                     ),
                     "ridge_id": ridge_id,
                     "candidate": path_state,
@@ -1820,15 +3077,12 @@ def _generate_legacy_v4_raw_candidates(
                 left=prior_state,
                 right=final_state,
                 fraction=fraction,
-                stage_id=(
-                    f"prior-to-final-{fraction_index:02d}-{fraction:.17g}"
-                ),
+                stage_id=(f"prior-to-final-{fraction_index:02d}-{fraction:.17g}"),
             )
             raw_candidates.append(
                 {
                     "candidate_id": (
-                        f"{ridge_id}--trust-{fraction_index:02d}-"
-                        f"{fraction:.17g}"
+                        f"{ridge_id}--trust-{fraction_index:02d}-{fraction:.17g}"
                     ),
                     "ridge_id": ridge_id,
                     "candidate": interpolated,
@@ -1836,16 +3090,13 @@ def _generate_legacy_v4_raw_candidates(
                 }
             )
             if first_writer_state is not None:
-                writer_interpolated = (
-                    interpolate_short_conv_v4_candidate_state(
-                        left=prior_state,
-                        right=first_writer_state,
-                        fraction=fraction,
-                        stage_id=(
-                            f"prior-to-first-writer-{fraction_index:02d}-"
-                            f"{fraction:.17g}"
-                        ),
-                    )
+                writer_interpolated = interpolate_short_conv_v4_candidate_state(
+                    left=prior_state,
+                    right=first_writer_state,
+                    fraction=fraction,
+                    stage_id=(
+                        f"prior-to-first-writer-{fraction_index:02d}-{fraction:.17g}"
+                    ),
                 )
                 raw_candidates.append(
                     {
@@ -1855,9 +3106,7 @@ def _generate_legacy_v4_raw_candidates(
                         ),
                         "ridge_id": ridge_id,
                         "candidate": writer_interpolated,
-                        "candidate_kind": (
-                            "prior_to_first_writer_trust_path"
-                        ),
+                        "candidate_kind": ("prior_to_first_writer_trust_path"),
                     }
                 )
     return (
@@ -1890,6 +3139,11 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     gate_policy: Lfm2CpcfShortConvGatePolicy,
     candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None = None,
     candidate_selector: Lfm2CpcfShortConvV5CandidateSelector | None = None,
+    macrocell_candidate_selector: (
+        Lfm2CpcfShortConvV5MacrocellCandidateSelector | None
+    ) = None,
+    macrocell_fit_bank_sha256: str | None = None,
+    macrocell_selection_bank_sha256: str | None = None,
     numerical_frontier_adapter: (
         Lfm2CpcfShortConvNumericalFrontierAdapter | None
     ) = None,
@@ -1906,15 +3160,37 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     if candidate_selector is not None and not callable(
         getattr(candidate_selector, "select", None)
     ):
-        raise TypeError(
-            "candidate_selector must implement select(request)."
+        raise TypeError("candidate_selector must implement select(request).")
+    if macrocell_candidate_selector is not None and not callable(
+        getattr(macrocell_candidate_selector, "select", None)
+    ):
+        raise TypeError("macrocell_candidate_selector must implement select(frontier).")
+    if candidate_selector is not None and macrocell_candidate_selector is not None:
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Tensor-blind and whole-macrocell candidate selectors are "
+            "mutually exclusive."
+        )
+    if macrocell_candidate_selector is None:
+        if (
+            macrocell_fit_bank_sha256 is not None
+            or macrocell_selection_bank_sha256 is not None
+        ):
+            raise Lfm2CpcfShortConvV4FoldError(
+                "Macrocell bank identities require a macrocell selector."
+            )
+    elif (
+        not _valid_sha256_text(macrocell_fit_bank_sha256)
+        or not _valid_sha256_text(macrocell_selection_bank_sha256)
+        or macrocell_fit_bank_sha256 == macrocell_selection_bank_sha256
+    ):
+        raise Lfm2CpcfShortConvV4FoldError(
+            "Macrocell selection requires distinct authenticated fit and "
+            "selection state-bank digests."
         )
     if numerical_frontier_adapter is not None and not callable(
         getattr(numerical_frontier_adapter, "generate", None)
     ):
-        raise TypeError(
-            "numerical_frontier_adapter must implement generate(request)."
-        )
+        raise TypeError("numerical_frontier_adapter must implement generate(request).")
     ordered = _ordered_cases(cases)
     target_dtype, in_shape = _template(
         target_in_proj_weight_template,
@@ -2001,37 +3277,31 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             solver_policy=solver_policy,
         )
     else:
-        numerical_frontier_request = (
-            Lfm2CpcfShortConvNumericalFrontierRequest(
-                source_tensors={
-                    "source_in_proj_weight": source_in_proj_weight,
-                    "source_in_proj_bias": source_in_proj_bias,
-                    "source_fir_kernel": source_kernel,
-                    "source_fir_bias": source_fir_bias,
-                    "source_out_proj_weight": source_out_proj_weight,
-                    "source_out_proj_bias": source_out_proj_bias,
-                    "output_encoder": output_encoder,
-                },
-                cases=tuple(
-                    case for case in ordered if case.split == "fit"
-                ),
-                parent_contexts={
-                    case.case_id: parent_contexts[case.case_id]
-                    for case in ordered
-                    if case.split == "fit"
-                },
-                target_templates={
-                    "in_proj_weight": target_in_proj_weight_template,
-                    "in_proj_bias": in_bias_template,
-                    "fir_kernel": (
-                        target_conv_weight_template[:, 0, :]
-                    ),
-                    "fir_bias": conv_bias_template,
-                    "writer_weight": target_out_proj_weight_template,
-                    "writer_bias": out_bias_template,
-                },
-                policy=solver_policy,
-            )
+        numerical_frontier_request = Lfm2CpcfShortConvNumericalFrontierRequest(
+            source_tensors={
+                "source_in_proj_weight": source_in_proj_weight,
+                "source_in_proj_bias": source_in_proj_bias,
+                "source_fir_kernel": source_kernel,
+                "source_fir_bias": source_fir_bias,
+                "source_out_proj_weight": source_out_proj_weight,
+                "source_out_proj_bias": source_out_proj_bias,
+                "output_encoder": output_encoder,
+            },
+            cases=tuple(case for case in ordered if case.split == "fit"),
+            parent_contexts={
+                case.case_id: parent_contexts[case.case_id]
+                for case in ordered
+                if case.split == "fit"
+            },
+            target_templates={
+                "in_proj_weight": target_in_proj_weight_template,
+                "in_proj_bias": in_bias_template,
+                "fir_kernel": (target_conv_weight_template[:, 0, :]),
+                "fir_bias": conv_bias_template,
+                "writer_weight": target_out_proj_weight_template,
+                "writer_bias": out_bias_template,
+            },
+            policy=solver_policy,
         )
         try:
             generated_frontier = numerical_frontier_adapter.generate(
@@ -2067,9 +3337,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         )
         split_cases = MappingProxyType(
             {
-                split: tuple(
-                    case for case in projections if case.split == split
-                )
+                split: tuple(case for case in projections if case.split == split)
                 for split in ("fit", "selection", "validation")
             }
         )
@@ -2118,9 +3386,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 "candidate_kind": raw.candidate_kind,
                 "numerical_raw_state_sha256": raw.state_sha256,
                 "numerical_raw_candidate_report": raw.as_dict(),
-                "numerical_raw_candidate_report_sha256": (
-                    raw.report["report_sha256"]
-                ),
+                "numerical_raw_candidate_report_sha256": (raw.report["report_sha256"]),
             }
             raw_candidate_id = raw.candidate_id
         target_state_sha = _state_sha256(materialized)
@@ -2155,9 +3421,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 "fit_only": True,
                 "selection_cases_consumed": 0,
                 "validation_cases_consumed": 0,
-                "actual_target_dtype_materialization_before_deduplication": (
-                    True
-                ),
+                "actual_target_dtype_materialization_before_deduplication": (True),
                 "execution": {
                     "parent_model_forward_calls": 0,
                     "target_model_forward_calls": 0,
@@ -2171,19 +3435,14 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             }
         else:
             provenance_body = {
-                "schema": (
-                    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA
-                ),
+                "schema": (LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA),
                 "kind": (
-                    "authenticated_fit_only_numerical_frontier_candidate_"
-                    "provenance"
+                    "authenticated_fit_only_numerical_frontier_candidate_provenance"
                 ),
                 "candidate_id": candidate_id,
                 "policy_sha256": solver_policy.authentication_sha256,
                 "target_dtype": solver_policy.target_dtype,
-                "request_sha256": (
-                    numerical_frontier_request.request_sha256
-                ),
+                "request_sha256": (numerical_frontier_request.request_sha256),
                 "numerical_frontier_report_sha256": (
                     numerical_frontier.report["report_sha256"]
                 ),
@@ -2199,9 +3458,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 "fit_only": True,
                 "selection_cases_consumed": 0,
                 "validation_cases_consumed": 0,
-                "actual_target_dtype_materialization_before_deduplication": (
-                    True
-                ),
+                "actual_target_dtype_materialization_before_deduplication": (True),
                 "legacy_v4_candidate_provenance_claimed": False,
                 "execution": dict(_ZERO_EXECUTION),
             }
@@ -2259,7 +3516,21 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     )
     default_selected_id = str(ranking["selected_candidate_id"])
     selector_receipt = None
-    if candidate_selector is None:
+    macrocell_selector_receipt = None
+    if macrocell_candidate_selector is not None:
+        selected_id, macrocell_selector_receipt = (
+            _run_preinstall_macrocell_candidate_selector(
+                macrocell_candidate_selector,
+                candidate_states=candidate_states,
+                candidate_fit_reports=candidate_fit_reports,
+                selection_reports=selection_reports,
+                ranking=ranking,
+                solver_policy=solver_policy,
+                fit_bank_sha256=macrocell_fit_bank_sha256,
+                selection_bank_sha256=(macrocell_selection_bank_sha256),
+            )
+        )
+    elif candidate_selector is None:
         selected_id = default_selected_id
     else:
         selected_id, selector_receipt = _run_preinstall_candidate_selector(
@@ -2319,9 +3590,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             and priors.report["source_channels_dropped"] == 0
         )
     else:
-        full_source_coverage = (
-            numerical_frontier.full_source_numeric_participation
-        )
+        full_source_coverage = numerical_frontier.full_source_numeric_participation
     gate = _gate_report(
         policy=gate_policy,
         fit=evaluations["fit"],
@@ -2337,10 +3606,10 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         "out_proj.bias": out_bias,
     }
     compiled_state_sha = _state_sha256(state)
-    if numerical_frontier is not None:
-        report_schema = (
-            LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA
-        )
+    if macrocell_candidate_selector is not None:
+        report_schema = LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FOLD_SCHEMA
+    elif numerical_frontier is not None:
+        report_schema = LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA
     elif candidate_selector is not None:
         report_schema = LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FOLD_SCHEMA
     elif candidate_replay_evaluator is not None:
@@ -2380,17 +3649,12 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 for split in ("fit", "selection", "validation")
             },
             "projection_case_authentication_sha256": {
-                split: [
-                    case.authentication_sha256
-                    for case in split_cases[split]
-                ]
+                split: [case.authentication_sha256 for case in split_cases[split]]
                 for split in ("fit", "selection", "validation")
             },
             "candidate_ids": sorted(candidate_states),
             "candidate_state_sha256": {
-                candidate_id: selection_reports[candidate_id][
-                    "candidate_state_sha256"
-                ]
+                candidate_id: selection_reports[candidate_id]["candidate_state_sha256"]
                 for candidate_id in sorted(candidate_states)
             },
             "fit_only_candidate_generation": True,
@@ -2400,9 +3664,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     else:
         candidate_pool_body = {
             "schema": LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_POOL_SCHEMA,
-            "kind": (
-                "authenticated_v5_numerical_target_dtype_candidate_pool"
-            ),
+            "kind": ("authenticated_v5_numerical_target_dtype_candidate_pool"),
             "policy_sha256": solver_policy.authentication_sha256,
             "target_dtype": solver_policy.target_dtype,
             "request_sha256": numerical_frontier_request.request_sha256,
@@ -2427,25 +3689,16 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 for split in ("fit", "selection", "validation")
             },
             "projection_case_authentication_sha256": {
-                split: [
-                    case.authentication_sha256
-                    for case in split_cases[split]
-                ]
+                split: [case.authentication_sha256 for case in split_cases[split]]
                 for split in ("fit", "selection", "validation")
             },
             "candidate_ids": sorted(candidate_states),
             "candidate_state_sha256": {
-                candidate_id: selection_reports[candidate_id][
-                    "candidate_state_sha256"
-                ]
+                candidate_id: selection_reports[candidate_id]["candidate_state_sha256"]
                 for candidate_id in sorted(candidate_states)
             },
-            "source_channels_selected": (
-                numerical_frontier.source_channels_selected
-            ),
-            "source_channels_dropped": (
-                numerical_frontier.source_channels_dropped
-            ),
+            "source_channels_selected": (numerical_frontier.source_channels_selected),
+            "source_channels_dropped": (numerical_frontier.source_channels_dropped),
             "full_source_numeric_participation": (
                 numerical_frontier.full_source_numeric_participation
             ),
@@ -2463,12 +3716,9 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 "candidate_replay_work_items": [
                     item.as_dict() for item in candidate_replay_work_items
                 ],
-                "candidate_replay_work_item_count": len(
-                    candidate_replay_work_items
-                ),
+                "candidate_replay_work_item_count": len(candidate_replay_work_items),
                 "canonical_candidate_replay_order": [
-                    item.payload["candidate_id"]
-                    for item in candidate_replay_work_items
+                    item.payload["candidate_id"] for item in candidate_replay_work_items
                 ],
                 "scheduled_replay_changes_closed_form_solve_math": False,
             }
@@ -2483,9 +3733,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             "target_hidden_size": target_hidden,
             "source_fir_length": int(source_kernel.shape[1]),
             "target_fir_length": int(fir_kernel.shape[1]),
-            "hidden_width_compression_ratio": (
-                source_hidden / target_hidden
-            ),
+            "hidden_width_compression_ratio": (source_hidden / target_hidden),
             "case_authentication_sha256": {
                 split: [
                     case.authentication_sha256
@@ -2517,12 +3765,8 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             "validation_evaluation": dict(evaluations["validation"]),
             "behavior_gate": gate,
             "compiled_state_sha256": compiled_state_sha,
-            "source_channels_selected": basis.report[
-                "source_channels_selected"
-            ],
-            "source_channels_dropped": basis.report[
-                "source_channels_dropped"
-            ],
+            "source_channels_selected": basis.report["source_channels_selected"],
+            "source_channels_dropped": basis.report["source_channels_dropped"],
             "source_channels_pruned": 0,
             "source_channels_quantized": 0,
             "fit_only_parameter_solves": True,
@@ -2550,9 +3794,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             "target_hidden_size": target_hidden,
             "source_fir_length": int(source_kernel.shape[1]),
             "target_fir_length": int(fir_kernel.shape[1]),
-            "hidden_width_compression_ratio": (
-                source_hidden / target_hidden
-            ),
+            "hidden_width_compression_ratio": (source_hidden / target_hidden),
             "case_authentication_sha256": {
                 split: [
                     case.authentication_sha256
@@ -2561,9 +3803,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
                 ]
                 for split in ("fit", "selection", "validation")
             },
-            "numerical_frontier_request": (
-                numerical_frontier_request.as_dict()
-            ),
+            "numerical_frontier_request": (numerical_frontier_request.as_dict()),
             "numerical_frontier_request_sha256": (
                 numerical_frontier_request.request_sha256
             ),
@@ -2587,12 +3827,8 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             "validation_evaluation": dict(evaluations["validation"]),
             "behavior_gate": gate,
             "compiled_state_sha256": compiled_state_sha,
-            "source_channels_selected": (
-                numerical_frontier.source_channels_selected
-            ),
-            "source_channels_dropped": (
-                numerical_frontier.source_channels_dropped
-            ),
+            "source_channels_selected": (numerical_frontier.source_channels_selected),
+            "source_channels_dropped": (numerical_frontier.source_channels_dropped),
             "source_channels_pruned": 0,
             "source_channels_quantized": 0,
             "fit_only_numerical_generation": True,
@@ -2616,17 +3852,35 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     if selector_receipt is not None:
         common.update(
             {
-                "preinstall_candidate_selector_receipt": dict(
-                    selector_receipt
-                ),
+                "preinstall_candidate_selector_receipt": dict(selector_receipt),
                 "preinstall_candidate_selector_receipt_sha256": (
                     selector_receipt["report_sha256"]
                 ),
                 "default_v4_selected_candidate_id": default_selected_id,
-                "selection_changed_from_v4": (
-                    selected_id != default_selected_id
-                ),
+                "selection_changed_from_v4": (selected_id != default_selected_id),
                 "preinstall_candidate_selector_active": True,
+                "post_install_rescoring_performed": False,
+                "legacy_v4_report_claimed": False,
+            }
+        )
+    if macrocell_selector_receipt is not None:
+        common.update(
+            {
+                "macrocell_candidate_selector_receipt": dict(
+                    macrocell_selector_receipt
+                ),
+                "macrocell_candidate_selector_receipt_sha256": (
+                    macrocell_selector_receipt["report_sha256"]
+                ),
+                "default_v4_selected_candidate_id": default_selected_id,
+                "selection_changed_from_v4": (selected_id != default_selected_id),
+                "macrocell_candidate_selector_active": True,
+                "candidate_state_tensors_exposed_to_macrocell_selector": True,
+                "fit_provenance_exposed_to_macrocell_selector": True,
+                "operator_selection_reports_exposed_to_macrocell_selector": (True),
+                "validation_evidence_exposed_to_macrocell_selector": False,
+                "validation_used_for_macrocell_selection": False,
+                "validation_frozen_until_after_macrocell_winner": True,
                 "post_install_rescoring_performed": False,
                 "legacy_v4_report_claimed": False,
             }
@@ -2634,9 +3888,7 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     if candidate_replay_backend is not None:
         common.update(
             {
-                "candidate_replay_backend": dict(
-                    candidate_replay_backend
-                ),
+                "candidate_replay_backend": dict(candidate_replay_backend),
                 "candidate_replay_backend_report_sha256": (
                     candidate_replay_backend["report_sha256"]
                 ),
@@ -2650,15 +3902,19 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
     if gate_policy.enforce and not gate["passed"]:
         failure_body = {
             "schema": (
-                LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA
-                if numerical_frontier is not None
+                LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FAILURE_SCHEMA
+                if macrocell_candidate_selector is not None
                 else (
-                    LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA
-                    if candidate_selector is not None
+                    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA
+                    if numerical_frontier is not None
                     else (
-                        LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
-                        if candidate_replay_evaluator is None
-                        else LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA
+                        LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA
+                        if candidate_selector is not None
+                        else (
+                            LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA
+                            if candidate_replay_evaluator is None
+                            else LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA
+                        )
                     )
                 )
             ),
@@ -2702,6 +3958,13 @@ __all__ = [
     "LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_FAILURE_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_FOLD_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_MACROCELL_CANDIDATE_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVALUATION_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_MACROCELL_FRONTIER_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FAILURE_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FOLD_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_RECEIPT_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA",
@@ -2718,8 +3981,12 @@ __all__ = [
     "Lfm2CpcfShortConvNumericalFrontierAdapter",
     "Lfm2CpcfShortConvNumericalFrontierRequest",
     "Lfm2CpcfShortConvNumericalRawCandidate",
+    "Lfm2CpcfShortConvV5CandidateFrontier",
+    "Lfm2CpcfShortConvV5MacrocellCandidate",
+    "Lfm2CpcfShortConvV5MacrocellCandidateSelector",
     "Lfm2CpcfShortConvV4FoldCase",
     "Lfm2CpcfShortConvV4FoldError",
     "Lfm2CpcfShortConvV5CandidateSelector",
     "compile_lfm2_cpcf_short_conv_v4_fold",
+    "select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids",
 ]

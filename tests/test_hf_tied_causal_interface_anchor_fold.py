@@ -74,9 +74,7 @@ def _interface() -> TiedCausalInterfaceFold:
             "target_width": 2,
             "vocabulary_size": 4,
             "target_weight_sha256": _interface_tensor_sha256(target_weight),
-            "producer_encoder_sha256": _interface_tensor_sha256(
-                producer_encoder
-            ),
+            "producer_encoder_sha256": _interface_tensor_sha256(producer_encoder),
             "source_table_sha256": _interface_tensor_sha256(_source_table()),
         }
     )
@@ -129,9 +127,7 @@ def _split(
         targets = torch.tensor([1, 0])
     return TiedCausalAnchorSplit(
         name=name,
-        row_ids=tuple(
-            f"{prefix}:{index}" for index in range(int(rows.shape[0]))
-        ),
+        row_ids=tuple(f"{prefix}:{index}" for index in range(int(rows.shape[0]))),
         prefix_positions=torch.arange(7, 7 + int(rows.shape[0])),
         source_producer_rows=rows,
         target_next_token_ids=targets,
@@ -161,22 +157,42 @@ def _fold(
     )
 
 
-def test_anchor_residual_repairs_fit_decisions_without_extra_parameters() -> None:
+def test_base_control_rejects_anchor_flip_that_destroys_parent_behavior() -> None:
     result = _fold()
     report = result.as_dict()
 
-    assert report["split_metrics"]["fit"]["target_anchor_top1_fraction"] == 1.0
+    assert report["selected_candidate_index"] == 0
+    assert report["selected_candidate_is_base_control"] is True
+    assert report["active_anchor_residual_selected"] is False
+    assert report["base_control_candidate_included"] is True
+    assert report["eligible_candidate_indices"] == [0]
+    assert report["target_anchor_metrics_diagnostic_only"] is True
+    assert report["target_anchor_metrics_used_for_candidate_selection"] is False
+    assert torch.count_nonzero(result.residual_weight).item() == 0
+    assert torch.equal(result.interface.target_weight, _interface().target_weight)
+    base_candidate = report["candidate_reports"][0]
+    assert base_candidate["candidate_kind"] == "unmodified_base_interface"
+    assert base_candidate["mapped_parent_behavior_eligible"] is True
+    assert base_candidate["selection_metrics"]["mapped_parent_top1_agreement"] == 1.0
     assert (
-        report["split_metrics"]["selection"]["target_anchor_top1_fraction"]
+        base_candidate["selection_metrics"][
+            "mapped_parent_raw_centered_logit_retained_energy_fraction"
+        ]
         == 1.0
+    )
+    assert all(
+        candidate["mapped_parent_behavior_eligible"] is False
+        for candidate in report["candidate_reports"][1:]
+    )
+    assert any(
+        candidate["selection_metrics"]["target_anchor_top1_fraction"] == 1.0
+        for candidate in report["candidate_reports"][1:]
     )
     assert report["producer_encoder_fixed"] is True
     assert report["additional_runtime_parameter_count"] == 0
     assert report["dense_same_shape_tied_table"] is True
     base = _interface()
-    assert report["base_interface_report_sha256"] == base.report[
-        "report_sha256"
-    ]
+    assert report["base_interface_report_sha256"] == base.report["report_sha256"]
     assert report["base_interface_lineage"]["report"] == dict(base.report)
     assert report["base_interface_lineage"]["tensor_identity_verified"] is True
     assert (
@@ -203,38 +219,39 @@ def test_anchor_residual_repairs_fit_decisions_without_extra_parameters() -> Non
     }
 
 
+def test_raw_parent_energy_is_not_confused_with_rmsnorm_scale_error() -> None:
+    metrics = _fold().report["candidate_reports"][0]["selection_metrics"]
+
+    assert metrics["mapped_parent_raw_centered_logit_retained_energy_fraction"] == 1.0
+    assert metrics["mapped_parent_centered_logit_retained_energy_fraction"] < 1.0
+    assert metrics["mapped_parent_top1_agreement"] == 1.0
+    assert metrics["raw_and_runtime_coordinates_have_same_target_top1"] is True
+    assert metrics["raw_target_coordinates_used_for_parent_behavior_selection"] is True
+
+
 def test_validation_cannot_select_or_change_the_residual() -> None:
     first = _fold(validation_variant=False)
     second = _fold(validation_variant=True)
 
-    assert first.report["selected_candidate_index"] == (
-        second.report["selected_candidate_index"]
+    assert (
+        first.report["selected_candidate_index"]
+        == (second.report["selected_candidate_index"])
     )
     assert torch.equal(first.residual_weight, second.residual_weight)
     assert torch.equal(
         first.interface.target_weight,
         second.interface.target_weight,
     )
-    assert first.report["candidate_reports"] == second.report[
-        "candidate_reports"
-    ]
-    assert first.report["split_metrics"]["validation"] != second.report[
-        "split_metrics"
-    ]["validation"]
+    assert first.report["candidate_reports"] == second.report["candidate_reports"]
     assert (
-        first.report["validation_split_used_for_ridge_margin_selection"]
-        is False
+        first.report["split_metrics"]["validation"]
+        != second.report["split_metrics"]["validation"]
     )
+    assert first.report["validation_split_used_for_ridge_margin_selection"] is False
     assert (
-        first.report[
-            "validation_metrics_first_computed_after_candidate_frozen"
-        ]
-        is True
+        first.report["validation_metrics_first_computed_after_candidate_frozen"] is True
     )
-    assert (
-        first.report["validation_values_used_for_parameters_or_selection"]
-        is False
-    )
+    assert first.report["validation_values_used_for_parameters_or_selection"] is False
 
 
 def test_drift_is_bounded_and_fold_is_deterministic_and_sealed() -> None:
@@ -244,8 +261,7 @@ def test_drift_is_bounded_and_fold_is_deterministic_and_sealed() -> None:
     assert first.report["relative_table_drift"] <= 0.05 + 1e-12
     assert first.report["drift_bound_satisfied"] is True
     assert any(
-        candidate["drift_clipped"]
-        for candidate in first.report["candidate_reports"]
+        candidate["drift_clipped"] for candidate in first.report["candidate_reports"]
     )
     assert torch.equal(first.residual_weight, second.residual_weight)
     assert first.report == second.report
@@ -255,6 +271,8 @@ def test_drift_is_bounded_and_fold_is_deterministic_and_sealed() -> None:
     for name in ("fit", "selection", "validation"):
         metrics = first.report["split_metrics"][name]
         assert "mapped_parent_centered_logit_retained_energy_fraction" in metrics
+        assert "mapped_parent_raw_centered_logit_retained_energy_fraction" in metrics
+        assert "base_interface_raw_centered_logit_retained_energy_fraction" in metrics
         assert "mapped_parent_top1_agreement" in metrics
         assert "mean_target_anchor_margin" in metrics
 
@@ -336,9 +354,7 @@ def test_base_interface_ancestry_tampering_fails_closed() -> None:
     lineage["report"] = nested_report
     lineage["report_sha256"] = nested_report["report_sha256"]
     lineage["producer_encoder_sha256"] = "1" * 64
-    tampered["base_interface_report_sha256"] = nested_report[
-        "report_sha256"
-    ]
+    tampered["base_interface_report_sha256"] = nested_report["report_sha256"]
     tampered_body = dict(tampered)
     tampered_body.pop("report_sha256")
     tampered["report_sha256"] = _canonical_sha256(tampered_body)

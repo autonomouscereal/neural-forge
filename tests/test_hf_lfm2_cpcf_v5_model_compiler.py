@@ -90,6 +90,71 @@ def test_layer_compiler_exposes_opt_in_candidate_replay_without_new_default():
     assert signature.parameters["short_conv_v4_solver_policy"].default is None
 
 
+def test_whole_macrocell_selector_requirement_is_opt_in_and_serialized() -> None:
+    policy = v5.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=(v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()),
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=1,
+    )
+    assert policy.require_short_conv_v5_authenticated_whole_macrocell_selector is False
+    assert (
+        policy.as_dict()["require_short_conv_v5_authenticated_whole_macrocell_selector"]
+        is False
+    )
+
+    required = v5.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=(v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()),
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=1,
+        require_short_conv_v5_authenticated_whole_macrocell_selector=True,
+    )
+    assert (
+        required.as_dict()[
+            "require_short_conv_v5_authenticated_whole_macrocell_selector"
+        ]
+        is True
+    )
+
+    with pytest.raises(
+        v5.Lfm2CpcfV5ModelCompilerError,
+        match=(
+            "require_short_conv_v5_authenticated_whole_macrocell_selector "
+            "must be boolean"
+        ),
+    ):
+        v5.Lfm2CpcfV5RuntimePolicy(
+            model_fold_policy=(v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()),
+            maximum_resident_evidence_bytes=1,
+            full_phase_tree_logical_bytes=1,
+            require_short_conv_v5_authenticated_whole_macrocell_selector=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("short_conv_indices", "receipt_indices", "expected"),
+    (
+        ([], [], False),
+        ([0], [0], True),
+        ([0, 2], [0, 2], True),
+        ([0, 2], [0], False),
+        ([0], [0, 2], False),
+        ([0, 2], [2, 0], False),
+    ),
+)
+def test_whole_macrocell_selector_requires_exact_short_conv_layer_coverage(
+    short_conv_indices: list[int],
+    receipt_indices: list[int],
+    expected: bool,
+) -> None:
+    assert (
+        v5._has_exact_short_conv_layer_coverage(
+            short_conv_indices,
+            receipt_indices,
+        )
+        is expected
+    )
+
+
 def test_v5_endpoint_selector_request_fails_before_touching_models() -> None:
     policy = v5.Lfm2CpcfV5RuntimePolicy(
         model_fold_policy=(v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()),
@@ -950,7 +1015,7 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         Lfm2CpcfShortConvV4SolverPolicy,
     )
     from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
-        LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA,
+        LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FOLD_SCHEMA,
         Lfm2CpcfShortConvNumericalFrontier,
         Lfm2CpcfShortConvNumericalRawCandidate,
     )
@@ -1177,7 +1242,7 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
                 },
             )
 
-    class _LastCandidateSelector:
+    class _LastCandidateSelector(v5.Lfm2CpcfV5EndpointFirstCandidateSelector):
         def select(self, request):
             selected_id = next(
                 candidate_id
@@ -1216,6 +1281,8 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         full_phase_tree_logical_bytes=full_tree_bytes,
         minimum_physical_rss_reduction_fraction=0.10,
         rss_sample_interval_seconds=1.0,
+        require_short_conv_v5_endpoint_first_selector=True,
+        require_short_conv_v5_authenticated_whole_macrocell_selector=True,
     )
     resume_coordinator = Lfm2CpcfV5ResumeCoordinator(
         Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
@@ -1265,15 +1332,16 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
     )
     short_conv = result.layer_results[0].report["operator_artifact"]
     assert short_conv["schema"] == (
-        LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FOLD_SCHEMA
+        LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FOLD_SCHEMA
     )
     assert short_conv["legacy_v4_report_claimed"] is False
-    assert short_conv["selection_changed_from_v4"] is True
+    assert isinstance(short_conv["selection_changed_from_v4"], bool)
+    assert "macrocell_candidate_selector_receipt" in short_conv
     assert short_conv["candidate_replay_backend"]["kind"] == ("injected_cpu_reference")
     assert result.report["candidate_replay_backend_injected"] is True
     assert result.report["preinstall_candidate_selector_provided"] is True
-    assert result.report["preinstall_candidate_selector_active"] is True
-    assert result.report["preinstall_candidate_selector_layer_indices"] == [0]
+    assert result.report["preinstall_candidate_selector_active"] is False
+    assert result.report["preinstall_candidate_selector_layer_indices"] == []
     assert result.report["short_conv_v5_numerical_policy_integrated"] is False
     assert (
         result.report["short_conv_v5_numerical_candidate_generation_integrated"]
@@ -1290,24 +1358,39 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
     assert result.report["short_conv_v5_real_numerical_provenance_layer_indices"] == []
     assert result.report["short_conv_v5_real_numerical_layer_proofs"] == []
     assert result.report["short_conv_v5_endpoint_first_selector_integrated"] is False
+    assert result.report["macrocell_candidate_selector_provided"] is True
+    assert result.report["macrocell_candidate_selector_active"] is True
+    assert result.report["macrocell_candidate_selector_layer_indices"] == [0]
+    assert (
+        result.report["short_conv_v5_authenticated_whole_macrocell_selector_required"]
+        is True
+    )
+    assert (
+        result.report[
+            "short_conv_v5_authenticated_whole_macrocell_selection_integrated"
+        ]
+        is True
+    )
+    assert result.report["short_conv_v5_macrocell_selector_final_authority"] is True
+    assert (
+        result.report["short_conv_v5_endpoint_first_selector_final_authority"] is False
+    )
+    assert result.report["short_conv_v5_endpoint_prefilter_control_integrated"] is True
     assert result.report["short_conv_v5_post_install_rescoring_performed"] is False
-    selected_amount = {
-        "e2e-alternate-a": 0.03125,
-        "e2e-alternate-z": -0.0625,
-    }[short_conv["selected_candidate_id"]]
-    installed_conv = target.model.layers[0].conv
-    assert torch.equal(
-        installed_conv.in_proj.weight,
-        torch.full_like(installed_conv.in_proj.weight, selected_amount),
+    macrocell_binding = result.layer_results[0].report["solver_evidence_policy"][
+        "short_conv_final_macrocell_binding"
+    ]
+    assert (
+        macrocell_binding["selected_candidate_id"]
+        == (short_conv["selected_candidate_id"])
     )
-    assert torch.equal(
-        installed_conv.conv.weight,
-        torch.full_like(installed_conv.conv.weight, selected_amount),
+    assert (
+        macrocell_binding["selected_candidate_install_state_sha256"]
+        == (short_conv["compiled_state_sha256"])
     )
-    assert torch.equal(
-        installed_conv.out_proj.weight,
-        torch.full_like(installed_conv.out_proj.weight, selected_amount),
-    )
+    assert macrocell_binding["output_artifact_equals_selected_candidate"] is True
+    assert macrocell_binding["exact_selected_fit_only_mlp_reused"] is True
+    assert macrocell_binding["validation_used_for_macrocell_selection"] is False
     assert result.report["physical_rss_receipt"]["physical_rss_gate_passed"] is True
     assert result.report["operation_audit"] == {
         "parent_model_forward_calls": 0,
@@ -1333,11 +1416,10 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         proof = authenticate_lfm2_cpcf_v5_admission_chain_proof(
             record["admission_chain_proof"]
         )
-        assert proof["proof_sha256"] == (
-            record["admission_chain_proof_sha256"]
-        )
-        assert proof["admission_document"]["admission_sha256"] == (
-            record["admission_sha256"]
+        assert proof["proof_sha256"] == (record["admission_chain_proof_sha256"])
+        assert (
+            proof["admission_document"]["admission_sha256"]
+            == (record["admission_sha256"])
         )
     intermediate_admission = result.report["resume_admitted_prefixes"][1][
         "admission_sha256"
@@ -1377,11 +1459,13 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
     input_proof = authenticate_lfm2_cpcf_v5_admission_chain_proof(
         resumed.report["resume_input_admission_chain_proof"]
     )
-    assert input_proof["proof_sha256"] == (
-        resumed.report["resume_input_admission_chain_proof_sha256"]
+    assert (
+        input_proof["proof_sha256"]
+        == (resumed.report["resume_input_admission_chain_proof_sha256"])
     )
-    assert input_proof["admission_document"]["admission_sha256"] == (
-        resumed.report["resume_admission_sha256"]
+    assert (
+        input_proof["admission_document"]["admission_sha256"]
+        == (resumed.report["resume_admission_sha256"])
     )
     assert (
         v5.legacy_model_fold.fingerprint_model_state(resumed_target)
@@ -1407,14 +1491,13 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
         == (result.final_norm_report["report_sha256"])
     )
 
-    class _MutatingSelector:
+    class _MutatingSelector(_LastCandidateSelector):
         def __init__(self):
-            self.calls = 0
-            self.delegate = _LastCandidateSelector()
+            object.__setattr__(self, "calls", 0)
 
         def select(self, request):
-            self.calls += 1
-            return self.delegate.select(request)
+            object.__setattr__(self, "calls", self.calls + 1)
+            return super().select(request)
 
     mutating_target = _model(
         hidden_size=4,

@@ -16,6 +16,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
     Lfm2CachedAttentionFoldCase,
     Lfm2CachedMlpFoldCase,
     Lfm2CachedShortConvFoldCase,
+    Lfm2PreparedStructuralMlpFoldBasis,
     Lfm2SparseResidualAssignment,
     Lfm2StructuralResidualAttentionFoldError,
     cached_attention_case_from_lfm2_trace,
@@ -32,6 +33,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
     install_lfm2_structural_attention_fold,
     install_lfm2_structural_layer_fold,
     install_lfm2_structural_short_conv_fold,
+    prepare_lfm2_structural_residual_mlp_fold_basis,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     open_lfm2_circuit_trace_cache,
@@ -52,7 +54,13 @@ def test_attention_score_preservation_is_masked_shift_invariant_and_canonical():
     candidate[0, 0, 1, 3] = 1000.0
     candidate[0, 0, 2] -= 11.0
     key_mask = torch.tensor(
-        [[[True, False, False, False], [True, True, True, False], [True, True, True, True]]]
+        [
+            [
+                [True, False, False, False],
+                [True, True, True, False],
+                [True, True, True, True],
+            ]
+        ]
     )
     empty_reference = torch.tensor(
         [[[[1.0, 0.0]]]],
@@ -156,9 +164,7 @@ def test_attention_score_preservation_rejects_top_k_pair_order_flip():
     assert report.top1_key_agreement_fraction == 1.0
     assert report.top_k_pair_order_agreement_fraction == pytest.approx(2.0 / 3.0)
     assert not report.accepted
-    assert dict(report.checks)[
-        "minimum_top_k_pair_order_agreement_fraction"
-    ] is False
+    assert dict(report.checks)["minimum_top_k_pair_order_agreement_fraction"] is False
 
 
 def test_attention_score_preservation_rejects_relative_margin_collapse():
@@ -194,9 +200,7 @@ def test_attention_score_preservation_rejects_relative_margin_collapse():
 def test_attention_score_preservation_requires_two_valid_keys():
     reference = torch.zeros((1, 1, 2, 3), dtype=torch.float64)
     candidate = torch.ones_like(reference)
-    key_mask = torch.tensor(
-        [[[True, False, False], [False, False, False]]]
-    )
+    key_mask = torch.tensor([[[True, False, False], [False, False, False]]])
 
     with pytest.raises(
         Lfm2StructuralResidualAttentionFoldError,
@@ -244,15 +248,9 @@ class _ToyMlp(nn.Module):
         dtype: torch.dtype,
     ) -> None:
         super().__init__()
-        self.w1 = nn.Linear(
-            hidden_size, intermediate_size, bias=False, dtype=dtype
-        )
-        self.w3 = nn.Linear(
-            hidden_size, intermediate_size, bias=False, dtype=dtype
-        )
-        self.w2 = nn.Linear(
-            intermediate_size, hidden_size, bias=False, dtype=dtype
-        )
+        self.w1 = nn.Linear(hidden_size, intermediate_size, bias=False, dtype=dtype)
+        self.w3 = nn.Linear(hidden_size, intermediate_size, bias=False, dtype=dtype)
+        self.w2 = nn.Linear(intermediate_size, hidden_size, bias=False, dtype=dtype)
 
 
 class _ToyShortConv(nn.Module):
@@ -265,9 +263,7 @@ class _ToyShortConv(nn.Module):
         dtype: torch.dtype,
     ) -> None:
         super().__init__()
-        self.in_proj = nn.Linear(
-            hidden_size, 3 * hidden_size, bias=bias, dtype=dtype
-        )
+        self.in_proj = nn.Linear(hidden_size, 3 * hidden_size, bias=bias, dtype=dtype)
         self.conv = nn.Conv1d(
             hidden_size,
             hidden_size,
@@ -277,9 +273,7 @@ class _ToyShortConv(nn.Module):
             padding=fir_length - 1,
             dtype=dtype,
         )
-        self.out_proj = nn.Linear(
-            hidden_size, hidden_size, bias=bias, dtype=dtype
-        )
+        self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, dtype=dtype)
 
 
 def _source_weights() -> dict[str, torch.Tensor]:
@@ -350,9 +344,7 @@ def _duplicate_head_oracle() -> tuple[
     parent_key = key_linear_target.repeat(1, 2, 1, 1)
     parent_value = value_target.repeat(1, 2, 1, 1)
     repeated_parent_key = parent_key.repeat_interleave(2, dim=1)
-    parent_scores = (
-        parent_query @ repeated_parent_key.transpose(-2, -1)
-    ) / (2.0**0.5)
+    parent_scores = (parent_query @ repeated_parent_key.transpose(-2, -1)) / (2.0**0.5)
     parent_probability = torch.softmax(parent_scores, dim=-1)
     parent_context = parent_probability @ parent_value.repeat_interleave(2, dim=1)
 
@@ -364,9 +356,9 @@ def _duplicate_head_oracle() -> tuple[
     target_context = target_probability @ value_target.repeat_interleave(2, dim=1)
     flat_context = target_context.permute(0, 2, 1, 3).reshape(1, 4, 4)
     branch_delta = flat_context @ target_o_weight.T
-    residual = torch.tensor(
-        [[[0.25, -0.5, 0.75, -1.0]]], dtype=torch.float64
-    ).repeat(1, 4, 1)
+    residual = torch.tensor([[[0.25, -0.5, 0.75, -1.0]]], dtype=torch.float64).repeat(
+        1, 4, 1
+    )
     endpoint = residual + branch_delta
     case = Lfm2CachedAttentionFoldCase(
         target_query_input=target_input,
@@ -423,27 +415,18 @@ def test_exact_duplicate_attention_oracle_is_full_coverage_and_structural() -> N
     assert compiled.audit.all_hold is True
     assert compiled.cluster_plan.report.full_source_coverage is True
     assert sorted(
-        source_head
-        for group in compiled.query_groups
-        for source_head in group
+        source_head for group in compiled.query_groups for source_head in group
     ) == [0, 1, 2, 3]
     assert sorted(
-        source_head
-        for group in compiled.key_value_groups
-        for source_head in group
+        source_head for group in compiled.key_value_groups for source_head in group
     ) == [0, 1]
     assert compiled.as_dict()["full_source_assignment_fraction"] == 1.0
     assert compiled.as_dict()["source_groups_dropped"] == 0
     assert compiled.as_dict()["query_row_weighting_mode"] == "uniform_default"
-    assert (
-        compiled.as_dict()["key_value_row_weighting_mode"]
-        == "uniform_default"
-    )
+    assert compiled.as_dict()["key_value_row_weighting_mode"] == "uniform_default"
     assert compiled.as_dict()["equal_causal_phase_mass_proven"] is False
     assert "equal_causal_phase_mass" not in compiled.as_dict()["score_objective"]
-    assert len(
-        compiled.as_dict()["query_row_sqrt_weight_bundle_sha256"]
-    ) == 64
+    assert len(compiled.as_dict()["query_row_sqrt_weight_bundle_sha256"]) == 64
     assert compiled.centered_score_relative_rmse < 1e-10
     assert compiled.residual_endpoint_relative_rmse < 1e-10
 
@@ -454,7 +437,9 @@ def test_exact_duplicate_attention_oracle_is_full_coverage_and_structural() -> N
         "out_proj.weight": (4, 4),
     }
     state = compiled.state_dict()
-    assert {name: tuple(value.shape) for name, value in state.items()} == expected_shapes
+    assert {
+        name: tuple(value.shape) for name, value in state.items()
+    } == expected_shapes
     source_numels = {
         "q_proj.weight": source["query"].numel(),
         "k_proj.weight": source["key"].numel(),
@@ -534,8 +519,10 @@ def test_attention_fold_uses_directional_contributions_and_weighted_qkvo_rows(
     compiled = _compile(source, weighted_case, target)
 
     expected_contribution_signature = (
-        contribution * query_sqrt_weights[:, None, :, None]
-    ).permute(1, 0, 2, 3).reshape(4, -1)
+        (contribution * query_sqrt_weights[:, None, :, None])
+        .permute(1, 0, 2, 3)
+        .reshape(4, -1)
+    )
     actual_contribution_signature = observed["contribution_signatures"]
     assert torch.equal(
         actual_contribution_signature,
@@ -552,21 +539,16 @@ def test_attention_fold_uses_directional_contributions_and_weighted_qkvo_rows(
     )
 
     fits = observed["fits"]
-    expected_query_input = (
-        case.target_query_input.reshape(-1, 4)
-        * query_sqrt_weights.reshape(-1, 1)
-    )
-    expected_key_value_input = (
-        case.target_key_value_input.reshape(-1, 4)
-        * key_value_sqrt_weights.reshape(-1, 1)
-    )
+    expected_query_input = case.target_query_input.reshape(
+        -1, 4
+    ) * query_sqrt_weights.reshape(-1, 1)
+    expected_key_value_input = case.target_key_value_input.reshape(
+        -1, 4
+    ) * key_value_sqrt_weights.reshape(-1, 1)
     expected_output_target = (
-        (
-            case.parent_post_attention_residual_target_space
-            - case.target_pre_attention_residual
-        ).reshape(-1, 4)
-        * query_sqrt_weights.reshape(-1, 1)
-    )
+        case.parent_post_attention_residual_target_space
+        - case.target_pre_attention_residual
+    ).reshape(-1, 4) * query_sqrt_weights.reshape(-1, 1)
     assert torch.equal(fits["query"][0], expected_query_input)
     assert torch.equal(fits["key"][0], expected_key_value_input)
     assert torch.equal(fits["value"][0], expected_key_value_input)
@@ -593,7 +575,9 @@ def test_attention_fold_uses_directional_contributions_and_weighted_qkvo_rows(
     )
 
 
-def test_structural_attention_allows_preserved_heads_when_hidden_width_shrinks() -> None:
+def test_structural_attention_allows_preserved_heads_when_hidden_width_shrinks() -> (
+    None
+):
     source, case = _duplicate_head_oracle()
     target = _ToyAttention(
         hidden_size=4,
@@ -633,8 +617,7 @@ def test_structural_attention_allows_preserved_heads_when_hidden_width_shrinks()
     assert compiled.audit.source_key_value_heads_dropped == 0
 
 
-def test_compiled_attention_producer_heldout_score_oracle_passes_and_rejects(
-) -> None:
+def test_compiled_attention_producer_heldout_score_oracle_passes_and_rejects() -> None:
     source, case = _duplicate_head_oracle()
     target = _ToyAttention(
         hidden_size=4,
@@ -793,21 +776,16 @@ def _runtime_bfloat16_rope(
     cosine: torch.Tensor,
     sine: torch.Tensor,
 ) -> torch.Tensor:
-    return (
-        value * cosine.unsqueeze(1)
-        + fold_module._rotate_half(value) * sine.unsqueeze(1)
-    )
+    return value * cosine.unsqueeze(1) + fold_module._rotate_half(
+        value
+    ) * sine.unsqueeze(1)
 
 
 def test_bfloat16_rope_recovery_is_quantization_aware_and_qk_cross_checked() -> None:
     generator = torch.Generator().manual_seed(2026071701)
     epsilon = 1e-5
-    query_linear = torch.randn(
-        1, 4, 5, 4, generator=generator, dtype=torch.bfloat16
-    )
-    key_linear = torch.randn(
-        1, 2, 5, 4, generator=generator, dtype=torch.bfloat16
-    )
+    query_linear = torch.randn(1, 4, 5, 4, generator=generator, dtype=torch.bfloat16)
+    key_linear = torch.randn(1, 2, 5, 4, generator=generator, dtype=torch.bfloat16)
     query_weight = torch.tensor(
         [0.75, 1.125, 0.875, 1.25],
         dtype=torch.bfloat16,
@@ -906,13 +884,9 @@ def test_bfloat16_rope_recovery_is_quantization_aware_and_qk_cross_checked() -> 
 def test_bfloat16_rope_reconstruction_separates_replay_and_geometry_bounds() -> None:
     epsilon = float(torch.finfo(torch.bfloat16).eps)
     unit_roundoff = epsilon / 2.0
-    gamma_six = (6.0 * unit_roundoff) / (
-        1.0 - 6.0 * unit_roundoff
-    )
+    gamma_six = (6.0 * unit_roundoff) / (1.0 - 6.0 * unit_roundoff)
     assert (
-        fold_module._rope_low_precision_reconstruction_error_bound(
-            torch.bfloat16
-        )
+        fold_module._rope_low_precision_reconstruction_error_bound(torch.bfloat16)
         == gamma_six
     )
     assert fold_module._rope_low_precision_reconstruction_error_bound(
@@ -922,15 +896,11 @@ def test_bfloat16_rope_reconstruction_separates_replay_and_geometry_bounds() -> 
         / (1.0 - 3.0 * float(torch.finfo(torch.float16).eps))
     )
     assert (
-        fold_module._rope_low_precision_reconstruction_error_bound(
-            torch.float32
-        )
+        fold_module._rope_low_precision_reconstruction_error_bound(torch.float32)
         is None
     )
     assert (
-        fold_module._rope_low_precision_geometry_error_bound(
-            torch.bfloat16
-        )
+        fold_module._rope_low_precision_geometry_error_bound(torch.bfloat16)
         == 2.0 * epsilon
     )
     normalized = torch.tensor(
@@ -1001,12 +971,8 @@ def test_full_prefix_phase_assembler_never_concatenates_overlapping_phases() -> 
     tensors: dict[str, torch.Tensor] = {}
     for phase, length in (("prefill", 3), ("decode.000", 2)):
         prefix = f"{phase}.layer.002."
-        query = torch.randn(
-            1, 2, length, 2, generator=generator, dtype=torch.float64
-        )
-        key = torch.randn(
-            1, 1, length, 2, generator=generator, dtype=torch.float64
-        )
+        query = torch.randn(1, 2, length, 2, generator=generator, dtype=torch.float64)
+        key = torch.randn(1, 1, length, 2, generator=generator, dtype=torch.float64)
         tensors.update(
             {
                 prefix + "operator.input": torch.randn(
@@ -1036,9 +1002,7 @@ def test_full_prefix_phase_assembler_never_concatenates_overlapping_phases() -> 
 
     assert [case.parent_key.shape[2] for case in cases] == [3, 2]
     assert [case.target_key_value_input.shape[1] for case in cases] == [3, 2]
-    assert cases[1].key_mask.tolist() == [
-        [[True, False], [True, True]]
-    ]
+    assert cases[1].key_mask.tolist() == [[[True, False], [True, True]]]
     with pytest.raises(
         Lfm2StructuralResidualAttentionFoldError,
         match="missing.*key/value cache",
@@ -1054,12 +1018,8 @@ def test_full_prefix_phase_assembler_never_concatenates_overlapping_phases() -> 
 def test_direct_full_prefix_decode_adapter_uses_a_causal_mask() -> None:
     generator = torch.Generator().manual_seed(2026071703)
     prefix = "decode.000.layer.002."
-    query = torch.randn(
-        1, 2, 3, 2, generator=generator, dtype=torch.float64
-    )
-    key = torch.randn(
-        1, 1, 3, 2, generator=generator, dtype=torch.float64
-    )
+    query = torch.randn(1, 2, 3, 2, generator=generator, dtype=torch.float64)
+    key = torch.randn(1, 1, 3, 2, generator=generator, dtype=torch.float64)
     tensors = {
         prefix + "operator.input": torch.randn(
             1, 3, 4, generator=generator, dtype=torch.float64
@@ -1176,12 +1136,8 @@ def test_trace_adapter_uses_residual_endpoint_not_isolated_attention_delta() -> 
         prefix + "attention.q": query_linear.clone(),
         prefix + "attention.k": key_linear.clone(),
         prefix + "attention.context": query_linear.clone(),
-        prefix + "attention.o": torch.full(
-            (1, 2, 4), 7.0, dtype=torch.float64
-        ),
-        prefix + "residual.pre": torch.full(
-            (1, 2, 4), 11.0, dtype=torch.float64
-        ),
+        prefix + "attention.o": torch.full((1, 2, 4), 7.0, dtype=torch.float64),
+        prefix + "residual.pre": torch.full((1, 2, 4), 11.0, dtype=torch.float64),
         prefix + "residual.post_operator": torch.full(
             (1, 2, 4), 18.0, dtype=torch.float64
         ),
@@ -1217,15 +1173,9 @@ def test_sealed_phase_assembler_reuses_prefill_and_decode_kv_history() -> None:
     value_history = []
     for phase, length in (("prefill", 2), ("decode.000", 1)):
         prefix = f"{phase}.layer.001."
-        query = torch.randn(
-            1, 2, length, 2, generator=generator, dtype=torch.float64
-        )
-        key = torch.randn(
-            1, 1, length, 2, generator=generator, dtype=torch.float64
-        )
-        value = torch.randn(
-            1, 1, length, 2, generator=generator, dtype=torch.float64
-        )
+        query = torch.randn(1, 2, length, 2, generator=generator, dtype=torch.float64)
+        key = torch.randn(1, 1, length, 2, generator=generator, dtype=torch.float64)
+        value = torch.randn(1, 1, length, 2, generator=generator, dtype=torch.float64)
         key_history.append(key)
         value_history.append(value)
         tensors[prefix + "operator.input"] = torch.randn(
@@ -1246,12 +1196,8 @@ def test_sealed_phase_assembler_reuses_prefill_and_decode_kv_history() -> None:
             1, length, 4, generator=generator, dtype=torch.float64
         )
         if phase.startswith("decode"):
-            tensors[prefix + "attention.key_cache"] = torch.cat(
-                key_history, dim=2
-            )
-            tensors[prefix + "attention.value_cache"] = torch.cat(
-                value_history, dim=2
-            )
+            tensors[prefix + "attention.key_cache"] = torch.cat(key_history, dim=2)
+            tensors[prefix + "attention.value_cache"] = torch.cat(value_history, dim=2)
 
     cases = cached_attention_cases_from_lfm2_trace_phases(
         tensors,
@@ -1285,18 +1231,10 @@ def test_sealed_phase_assembler_keeps_real_rolling_cache_alignment() -> None:
     prefill_v = torch.randn(
         1, 1, prefill_length, head_dim, generator=generator, dtype=torch.float64
     )
-    decode_input = torch.randn(
-        1, 1, 8, generator=generator, dtype=torch.float64
-    )
-    decode_q = torch.randn(
-        1, 2, 1, head_dim, generator=generator, dtype=torch.float64
-    )
-    decode_k = torch.randn(
-        1, 1, 1, head_dim, generator=generator, dtype=torch.float64
-    )
-    decode_v = torch.randn(
-        1, 1, 1, head_dim, generator=generator, dtype=torch.float64
-    )
+    decode_input = torch.randn(1, 1, 8, generator=generator, dtype=torch.float64)
+    decode_q = torch.randn(1, 2, 1, head_dim, generator=generator, dtype=torch.float64)
+    decode_k = torch.randn(1, 1, 1, head_dim, generator=generator, dtype=torch.float64)
+    decode_v = torch.randn(1, 1, 1, head_dim, generator=generator, dtype=torch.float64)
     for phase, operator_input, query, key, value in (
         ("prefill", prefill_input, prefill_q, prefill_k, prefill_v),
         ("decode.000", decode_input, decode_q, decode_k, decode_v),
@@ -1337,9 +1275,7 @@ def test_sealed_phase_assembler_keeps_real_rolling_cache_alignment() -> None:
     rolling_key = torch.cat((prefill_k, decode_k), dim=2)[:, :, -8:, :]
     rolling_value = torch.cat((prefill_v, decode_v), dim=2)[:, :, -8:, :]
     tensors["decode.000.layer.003.attention.key_cache"] = rolling_key.clone()
-    tensors["decode.000.layer.003.attention.value_cache"] = (
-        rolling_value.clone()
-    )
+    tensors["decode.000.layer.003.attention.value_cache"] = rolling_value.clone()
 
     cases = cached_attention_cases_from_lfm2_trace_phases(
         tensors,
@@ -1366,20 +1302,14 @@ def test_mlp_trace_adapter_flattens_cached_batch_sequence_rows() -> None:
         prefix + "mlp.input": torch.zeros(1, 3, 4, dtype=torch.float64),
         prefix + "mlp.gate": torch.ones(1, 3, 6, dtype=torch.float64),
         prefix + "mlp.up": torch.full((1, 3, 6), 2.0, dtype=torch.float64),
-        prefix + "mlp.post_swiglu": torch.full(
-            (1, 3, 6), 3.0, dtype=torch.float64
-        ),
+        prefix + "mlp.post_swiglu": torch.full((1, 3, 6), 3.0, dtype=torch.float64),
         prefix + "residual.post_operator": torch.full(
             (1, 3, 4), 5.0, dtype=torch.float64
         ),
-        prefix + "residual.post_layer": torch.full(
-            (1, 3, 4), 8.0, dtype=torch.float64
-        ),
+        prefix + "residual.post_layer": torch.full((1, 3, 4), 8.0, dtype=torch.float64),
     }
 
-    case = cached_mlp_case_from_lfm2_trace(
-        tensors, phase="prefill", layer_index=2
-    )
+    case = cached_mlp_case_from_lfm2_trace(tensors, phase="prefill", layer_index=2)
 
     assert case.target_input.shape == (3, 4)
     assert case.parent_gate.shape == (3, 6)
@@ -1421,7 +1351,9 @@ def test_rejects_source_output_projection_with_non_residual_output_width() -> No
         )
 
 
-def test_underdetermined_cached_fit_requires_and_preserves_source_prior_nullspace() -> None:
+def test_underdetermined_cached_fit_requires_and_preserves_source_prior_nullspace() -> (
+    None
+):
     source, case = _duplicate_head_oracle()
     padded_input = torch.nn.functional.pad(case.target_query_input, (0, 2))
     case = replace(
@@ -1485,15 +1417,13 @@ def test_underdetermined_cached_fit_requires_and_preserves_source_prior_nullspac
     assert compiled.source_derived_prior_sha256 is not None
 
 
-def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically() -> None:
+def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically() -> (
+    None
+):
     generator = torch.Generator().manual_seed(880)
-    source_gate_weight = torch.randn(
-        4, 8, generator=generator, dtype=torch.float64
-    )
+    source_gate_weight = torch.randn(4, 8, generator=generator, dtype=torch.float64)
     source_up_weight = torch.randn(4, 8, generator=generator, dtype=torch.float64)
-    source_down_weight = torch.randn(
-        8, 4, generator=generator, dtype=torch.float64
-    )
+    source_down_weight = torch.randn(8, 4, generator=generator, dtype=torch.float64)
     target_input = torch.eye(4, dtype=torch.float64)
     desired_gate = torch.tensor(
         [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
@@ -1519,9 +1449,9 @@ def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically
         dtype=torch.float64,
     )
     target_post = torch.nn.functional.silu(gate_two) * up_two
-    residual = torch.tensor(
-        [[0.25, -0.5, 0.75, -1.0]], dtype=torch.float64
-    ).repeat(4, 1)
+    residual = torch.tensor([[0.25, -0.5, 0.75, -1.0]], dtype=torch.float64).repeat(
+        4, 1
+    )
     endpoint = residual + target_post @ desired_down.T
     case = Lfm2CachedMlpFoldCase(
         target_input=target_input,
@@ -1531,9 +1461,7 @@ def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically
         parent_post_mlp_residual_target_space=endpoint,
         target_pre_mlp_residual=residual,
     )
-    target = _ToyMlp(
-        hidden_size=4, intermediate_size=2, dtype=torch.float64
-    )
+    target = _ToyMlp(hidden_size=4, intermediate_size=2, dtype=torch.float64)
     parameter_ids = tuple(id(value) for value in target.parameters())
     parameter_shapes = tuple(tuple(value.shape) for value in target.parameters())
 
@@ -1552,17 +1480,19 @@ def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically
 
     assert compiled.full_source_coverage is True
     assert compiled.as_dict()["source_neurons_dropped"] == 0
-    assert sorted(
-        neuron for group in compiled.neuron_groups for neuron in group
-    ) == [0, 1, 2, 3]
+    assert sorted(neuron for group in compiled.neuron_groups for neuron in group) == [
+        0,
+        1,
+        2,
+        3,
+    ]
     assert compiled.residual_endpoint_relative_rmse < 1e-10
     assert compiled.source_logical_parameters == 96
     assert compiled.target_logical_parameters == 24
     assert compiled.removed_logical_parameters == 72
     assert compiled.parameter_reduction_fraction == pytest.approx(0.75)
     assert {
-        name: tuple(value.shape)
-        for name, value in compiled.state_dict().items()
+        name: tuple(value.shape) for name, value in compiled.state_dict().items()
     } == {
         "w1.weight": (2, 4),
         "w3.weight": (2, 4),
@@ -1578,9 +1508,7 @@ def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically
         head_dim=2,
         dtype=torch.float64,
     )
-    attention_compiled = _compile(
-        attention_source, attention_case, attention_target
-    )
+    attention_compiled = _compile(attention_source, attention_case, attention_target)
     target_layer = nn.Module()
     target_layer.self_attn = attention_target
     target_layer.feed_forward = target
@@ -1588,9 +1516,7 @@ def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically
     all_parameter_shapes = tuple(
         tuple(value.shape) for value in target_layer.parameters()
     )
-    layer_compiled = compose_lfm2_structural_layer_fold(
-        attention_compiled, compiled
-    )
+    layer_compiled = compose_lfm2_structural_layer_fold(attention_compiled, compiled)
     report = install_lfm2_structural_layer_fold(target_layer, layer_compiled)
     assert report.accepted is True
     assert report.target_logical_parameters == 72
@@ -1607,7 +1533,231 @@ def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically
     assert torch.equal(target.w2.weight, compiled.down_weight)
 
 
-def test_structural_swiglu_allows_preserved_neuron_count_when_hidden_width_shrinks() -> None:
+def _prepared_mlp_fixture():
+    generator = torch.Generator().manual_seed(9917)
+    source_hidden = 8
+    target_hidden = 4
+    source_intermediate = 4
+    target_intermediate = 2
+    rows = 8
+    source_gate = torch.randn(
+        source_intermediate,
+        source_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    source_up = torch.randn(
+        source_intermediate,
+        source_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    source_down = torch.randn(
+        source_hidden,
+        source_intermediate,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    target_input = torch.randn(
+        rows,
+        target_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    parent_gate = torch.randn(
+        rows,
+        source_intermediate,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    parent_up = torch.randn(
+        rows,
+        source_intermediate,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    parent_post = torch.nn.functional.silu(parent_gate) * parent_up
+    target_residual = torch.randn(
+        rows,
+        target_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    parent_endpoint = torch.randn(
+        rows,
+        target_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    case = Lfm2CachedMlpFoldCase(
+        target_input=target_input,
+        parent_gate=parent_gate,
+        parent_up=parent_up,
+        parent_post_swiglu=parent_post,
+        parent_post_mlp_residual_target_space=parent_endpoint,
+        target_pre_mlp_residual=target_residual,
+    )
+    target = _ToyMlp(
+        hidden_size=target_hidden,
+        intermediate_size=target_intermediate,
+        dtype=torch.bfloat16,
+    )
+    common = {
+        "source_gate_weight": source_gate,
+        "source_up_weight": source_up,
+        "source_down_weight": source_down,
+        "target_gate_weight_template": target.w1.weight,
+        "target_up_weight_template": target.w3.weight,
+        "target_down_weight_template": target.w2.weight,
+        "residual_assignment_sha256": "9" * 64,
+        "cluster_ridge": 1e-8,
+        "cluster_max_iterations": 16,
+        "cluster_distance_chunk_size": 512,
+    }
+    return common, case
+
+
+def test_prepared_mlp_basis_matches_uncached_bf16_state_and_remains_candidate_specific() -> (
+    None
+):
+    common, case = _prepared_mlp_fixture()
+    prepared = prepare_lfm2_structural_residual_mlp_fold_basis(
+        **common,
+        cases=(case,),
+    )
+    assert isinstance(prepared, Lfm2PreparedStructuralMlpFoldBasis)
+    assert prepared.verify_authentication() is True
+    assert prepared.report["preparation_calls"] == 1
+    assert prepared.report["candidate_compiles_performed_during_preparation"] == 0
+    assert prepared.report["combined_cluster_feature_matrix_retained"] is False
+
+    uncached = compile_lfm2_structural_residual_mlp_fold(
+        **common,
+        cases=(case,),
+        ridge=1e-4,
+        max_prior_delta_ratio=None,
+    )
+    cached = compile_lfm2_structural_residual_mlp_fold(
+        **common,
+        cases=(case,),
+        ridge=1e-4,
+        max_prior_delta_ratio=None,
+        prepared_basis=prepared,
+    )
+    assert uncached.compiled_state_sha256 == cached.compiled_state_sha256
+    assert uncached.neuron_groups == cached.neuron_groups
+    assert uncached.neuron_barycentric_weights == cached.neuron_barycentric_weights
+    assert (
+        uncached.residual_endpoint_relative_rmse
+        == cached.residual_endpoint_relative_rmse
+    )
+    assert uncached.prepared_basis_sha256 == prepared.preparation_sha256
+    assert cached.prepared_basis_sha256 == prepared.preparation_sha256
+    assert uncached.prepared_basis_reused is False
+    assert cached.prepared_basis_reused is True
+    for name in uncached.state_dict():
+        assert uncached.state_dict()[name].dtype == torch.bfloat16
+        assert torch.equal(
+            uncached.state_dict()[name],
+            cached.state_dict()[name],
+        )
+
+    candidate_case = replace(
+        case,
+        target_input=case.target_input.roll(1, dims=0),
+        target_pre_mlp_residual=case.target_pre_mlp_residual + 0.5,
+    )
+    candidate = compile_lfm2_structural_residual_mlp_fold(
+        **common,
+        cases=(candidate_case,),
+        ridge=1e-4,
+        max_prior_delta_ratio=None,
+        prepared_basis=prepared,
+    )
+    assert candidate.prepared_basis_sha256 == prepared.preparation_sha256
+    assert candidate.compiled_state_sha256 != cached.compiled_state_sha256
+
+
+def test_prepared_mlp_basis_fails_closed_on_parent_source_or_template_mismatch() -> (
+    None
+):
+    common, case = _prepared_mlp_fixture()
+    prepared = prepare_lfm2_structural_residual_mlp_fold_basis(
+        **common,
+        cases=(case,),
+    )
+    tampered_parent = replace(
+        case,
+        parent_gate=case.parent_gate.clone(),
+    )
+    tampered_parent.parent_gate[0, 0] += 1.0
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match="parent evidence changed",
+    ):
+        compile_lfm2_structural_residual_mlp_fold(
+            **common,
+            cases=(tampered_parent,),
+            ridge=1e-4,
+            prepared_basis=prepared,
+        )
+    tampered_source = dict(common)
+    tampered_source["source_gate_weight"] = common["source_gate_weight"].clone()
+    tampered_source["source_gate_weight"][0, 0] += 1.0
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match="source state changed",
+    ):
+        compile_lfm2_structural_residual_mlp_fold(
+            **tampered_source,
+            cases=(case,),
+            ridge=1e-4,
+            prepared_basis=prepared,
+        )
+    tampered_template = dict(common)
+    tampered_template["target_gate_weight_template"] = common[
+        "target_gate_weight_template"
+    ].to(torch.float32)
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match="target template changed",
+    ):
+        compile_lfm2_structural_residual_mlp_fold(
+            **tampered_template,
+            cases=(case,),
+            ridge=1e-4,
+            prepared_basis=prepared,
+        )
+
+
+def test_no_prior_linear_fit_bypasses_zero_prior_without_changing_bytes() -> None:
+    generator = torch.Generator().manual_seed(812)
+    inputs = torch.randn(12, 4, generator=generator, dtype=torch.float64)
+    targets = torch.randn(12, 3, generator=generator, dtype=torch.float64)
+    without_prior, no_prior_report = fold_module._fit_linear(
+        inputs,
+        targets,
+        role="without_prior",
+        ridge=1e-4,
+        prior=None,
+        max_prior_delta_ratio=None,
+    )
+    with_zero_prior, zero_prior_report = fold_module._fit_linear(
+        inputs,
+        targets,
+        role="with_zero_prior",
+        ridge=1e-4,
+        prior=torch.zeros(3, 4, dtype=torch.float64),
+        max_prior_delta_ratio=None,
+    )
+    assert torch.equal(without_prior, with_zero_prior)
+    assert no_prior_report.prior_provided is False
+    assert zero_prior_report.prior_provided is True
+
+
+def test_structural_swiglu_allows_preserved_neuron_count_when_hidden_width_shrinks() -> (
+    None
+):
     generator = torch.Generator().manual_seed(1880)
     source_hidden = 8
     target_hidden = 4
@@ -1698,9 +1848,7 @@ def test_structural_swiglu_allows_preserved_neuron_count_when_hidden_width_shrin
 
 def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> None:
     generator = torch.Generator().manual_seed(1441)
-    target_input = torch.randn(
-        1, 7, 2, generator=generator, dtype=torch.float64
-    )
+    target_input = torch.randn(1, 7, 2, generator=generator, dtype=torch.float64)
     desired_in_weight = torch.tensor(
         [
             [1.0, 0.2],
@@ -1716,18 +1864,10 @@ def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> No
         [0.1, -0.2, 0.05, 0.15, -0.1, 0.2],
         dtype=torch.float64,
     )
-    desired_kernel = torch.tensor(
-        [[[0.25, 0.75]], [[-0.5, 0.4]]], dtype=torch.float64
-    )
-    desired_conv_bias = torch.tensor(
-        [0.125, -0.075], dtype=torch.float64
-    )
-    desired_out_weight = torch.tensor(
-        [[1.2, -0.4], [0.3, 0.9]], dtype=torch.float64
-    )
-    desired_out_bias = torch.tensor(
-        [0.05, -0.1], dtype=torch.float64
-    )
+    desired_kernel = torch.tensor([[[0.25, 0.75]], [[-0.5, 0.4]]], dtype=torch.float64)
+    desired_conv_bias = torch.tensor([0.125, -0.075], dtype=torch.float64)
+    desired_out_weight = torch.tensor([[1.2, -0.4], [0.3, 0.9]], dtype=torch.float64)
+    desired_out_bias = torch.tensor([0.05, -0.1], dtype=torch.float64)
 
     projected = target_input @ desired_in_weight.T + desired_in_bias
     target_b, target_c, target_x = projected.chunk(3, dim=-1)
@@ -1739,12 +1879,8 @@ def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> No
         groups=2,
     )
     target_context = target_c * filtered.transpose(1, 2)
-    desired_delta = (
-        target_context @ desired_out_weight.T + desired_out_bias
-    )
-    residual = torch.randn(
-        1, 7, 2, generator=generator, dtype=torch.float64
-    )
+    desired_delta = target_context @ desired_out_weight.T + desired_out_bias
+    residual = torch.randn(1, 7, 2, generator=generator, dtype=torch.float64)
     endpoint = residual + desired_delta
 
     def duplicate_channels(value: torch.Tensor) -> torch.Tensor:
@@ -1786,12 +1922,8 @@ def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> No
         ),
     )
     source_values = {
-        "in_proj.weight": torch.randn(
-            12, 4, generator=generator, dtype=torch.float64
-        ),
-        "in_proj.bias": torch.randn(
-            12, generator=generator, dtype=torch.float64
-        ),
+        "in_proj.weight": torch.randn(12, 4, generator=generator, dtype=torch.float64),
+        "in_proj.bias": torch.randn(12, generator=generator, dtype=torch.float64),
         "conv.weight": torch.stack(
             (
                 desired_kernel[0],
@@ -1809,19 +1941,11 @@ def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> No
             ],
             dtype=torch.float64,
         ),
-        "out_proj.weight": torch.randn(
-            4, 4, generator=generator, dtype=torch.float64
-        ),
-        "out_proj.bias": torch.randn(
-            4, generator=generator, dtype=torch.float64
-        ),
+        "out_proj.weight": torch.randn(4, 4, generator=generator, dtype=torch.float64),
+        "out_proj.bias": torch.randn(4, generator=generator, dtype=torch.float64),
     }
-    source_before = {
-        name: value.clone() for name, value in source_values.items()
-    }
-    target = _ToyShortConv(
-        hidden_size=2, fir_length=2, bias=True, dtype=torch.float64
-    )
+    source_before = {name: value.clone() for name, value in source_values.items()}
+    target = _ToyShortConv(hidden_size=2, fir_length=2, bias=True, dtype=torch.float64)
     assignment = Lfm2SparseResidualAssignment(
         target_width=2,
         source_to_target=(0, 0, 1, 1),
@@ -1850,19 +1974,19 @@ def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> No
     assert compiled.full_source_coverage is True
     assert compiled.residual_assignment_sha256 == assignment.assignment_sha256
     assert compiled.as_dict()["source_channels_dropped"] == 0
-    assert sorted(
-        source
-        for group in compiled.channel_groups
-        for source in group
-    ) == [0, 1, 2, 3]
+    assert sorted(source for group in compiled.channel_groups for source in group) == [
+        0,
+        1,
+        2,
+        3,
+    ]
     assert compiled.residual_endpoint_relative_rmse < 1e-10
     assert compiled.source_logical_parameters == 92
     assert compiled.target_logical_parameters == 30
     assert compiled.removed_logical_parameters == 62
     assert compiled.parameter_reduction_fraction == pytest.approx(62 / 92)
     assert {
-        name: tuple(value.shape)
-        for name, value in compiled.state_dict().items()
+        name: tuple(value.shape) for name, value in compiled.state_dict().items()
     } == {
         "in_proj.weight": (6, 2),
         "conv.weight": (2, 1, 2),
@@ -1875,9 +1999,7 @@ def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> No
         assert torch.equal(value, source_before[name])
 
     parameter_ids = tuple(id(value) for value in target.parameters())
-    parameter_shapes = tuple(
-        tuple(value.shape) for value in target.parameters()
-    )
+    parameter_shapes = tuple(tuple(value.shape) for value in target.parameters())
     for parameter in target.parameters():
         parameter.grad = torch.zeros_like(parameter)
     gradient_ids = tuple(id(value.grad) for value in target.parameters())
@@ -1890,20 +2012,14 @@ def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> No
     assert tuple(id(value.grad) for value in target.parameters()) == gradient_ids
 
     installed_projection = target.in_proj(target_input)
-    installed_b, installed_c, installed_x = installed_projection.chunk(
-        3, dim=-1
-    )
+    installed_b, installed_c, installed_x = installed_projection.chunk(3, dim=-1)
     installed_filtered = torch.nn.functional.conv1d(
-        torch.nn.functional.pad(
-            (installed_b * installed_x).transpose(1, 2), (1, 0)
-        ),
+        torch.nn.functional.pad((installed_b * installed_x).transpose(1, 2), (1, 0)),
         target.conv.weight,
         bias=target.conv.bias,
         groups=2,
     )
-    installed_delta = target.out_proj(
-        installed_c * installed_filtered.transpose(1, 2)
-    )
+    installed_delta = target.out_proj(installed_c * installed_filtered.transpose(1, 2))
     torch.testing.assert_close(
         residual + installed_delta,
         endpoint,

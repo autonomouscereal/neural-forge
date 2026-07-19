@@ -46,12 +46,8 @@ from neural_forge.hf_tied_causal_interface_fold import (
 )
 
 
-LFM2_CPCF_BOUNDARY_BUNDLE_SCHEMA = (
-    "neural-forge-lfm2-cpcf-boundary-bundle-v2"
-)
-LFM2_CPCF_LAYER_CHARTS_SCHEMA = (
-    "neural-forge-lfm2-cpcf-layer-boundary-charts-v1"
-)
+LFM2_CPCF_BOUNDARY_BUNDLE_SCHEMA = "neural-forge-lfm2-cpcf-boundary-bundle-v2"
+LFM2_CPCF_LAYER_CHARTS_SCHEMA = "neural-forge-lfm2-cpcf-layer-boundary-charts-v1"
 _SPLITS = ("selection", "fit", "validation")
 _BOUNDARIES = ("residual.post_operator", "residual.post_layer")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -93,25 +89,19 @@ def _sha256(value: Any) -> str:
 
 def _digest(value: Any, name: str) -> str:
     if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
-        raise Lfm2CpcfBoundaryBundleError(
-            f"{name} must be a lowercase SHA-256 digest."
-        )
+        raise Lfm2CpcfBoundaryBundleError(f"{name} must be a lowercase SHA-256 digest.")
     return value
 
 
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise Lfm2CpcfBoundaryBundleError(
-            f"{name} must be a positive integer."
-        )
+        raise Lfm2CpcfBoundaryBundleError(f"{name} must be a positive integer.")
     return value
 
 
 def _nonnegative_float(value: Any, name: str) -> float:
     if isinstance(value, bool):
-        raise Lfm2CpcfBoundaryBundleError(
-            f"{name} must be finite and nonnegative."
-        )
+        raise Lfm2CpcfBoundaryBundleError(f"{name} must be finite and nonnegative.")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -119,18 +109,14 @@ def _nonnegative_float(value: Any, name: str) -> float:
             f"{name} must be finite and nonnegative."
         ) from exc
     if not math.isfinite(result) or result < 0.0:
-        raise Lfm2CpcfBoundaryBundleError(
-            f"{name} must be finite and nonnegative."
-        )
+        raise Lfm2CpcfBoundaryBundleError(f"{name} must be finite and nonnegative.")
     return result
 
 
 def _fraction(value: Any, name: str) -> float:
     result = _nonnegative_float(value, name)
     if result > 1.0:
-        raise Lfm2CpcfBoundaryBundleError(
-            f"{name} must be within [0, 1]."
-        )
+        raise Lfm2CpcfBoundaryBundleError(f"{name} must be within [0, 1].")
     return result
 
 
@@ -149,14 +135,10 @@ def _matrix(value: Any, name: str, *, width: int | None = None) -> Any:
             f"{name} must be a nonempty dense real floating matrix."
         )
     if width is not None and int(value.shape[1]) != width:
-        raise Lfm2CpcfBoundaryBundleError(
-            f"{name} width must equal {width}."
-        )
+        raise Lfm2CpcfBoundaryBundleError(f"{name} width must equal {width}.")
     result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
     if not bool(torch.isfinite(result).all().item()):
-        raise Lfm2CpcfBoundaryBundleError(
-            f"{name} contains NaN or infinity."
-        )
+        raise Lfm2CpcfBoundaryBundleError(f"{name} contains NaN or infinity.")
     return result
 
 
@@ -193,9 +175,7 @@ def _phase_tensor(
         )
     result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
     if not bool(torch.isfinite(result).all().item()):
-        raise Lfm2CpcfBoundaryBundleError(
-            f"{name} contains NaN or infinity."
-        )
+        raise Lfm2CpcfBoundaryBundleError(f"{name} contains NaN or infinity.")
     return result
 
 
@@ -205,9 +185,7 @@ def _tensor_sha256(value: Any) -> str:
     digest = hashlib.sha256()
     digest.update(str(tensor.dtype).encode("ascii"))
     digest.update(b"\0")
-    digest.update(
-        _canonical_json([int(size) for size in tensor.shape])
-    )
+    digest.update(_canonical_json([int(size) for size in tensor.shape]))
     digest.update(b"\0")
     digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
     return digest.hexdigest()
@@ -248,20 +226,14 @@ class Lfm2CpcfLayerBoundaryCharts:
                 "layer_index must be a nonnegative integer."
             )
         if self.operator_kind not in {"full_attention", "short_conv"}:
-            raise Lfm2CpcfBoundaryBundleError(
-                "operator_kind is not canonical LFM2."
-            )
-        if (
-            not isinstance(self.post_operator, CpcfBoundaryChart)
-            or not isinstance(self.post_layer, CpcfBoundaryChart)
+            raise Lfm2CpcfBoundaryBundleError("operator_kind is not canonical LFM2.")
+        if not isinstance(self.post_operator, CpcfBoundaryChart) or not isinstance(
+            self.post_layer, CpcfBoundaryChart
         ):
-            raise TypeError(
-                "post_operator and post_layer must be CpcfBoundaryChart."
-            )
+            raise TypeError("post_operator and post_layer must be CpcfBoundaryChart.")
         prefix = f"layer.{self.layer_index:03d}."
         if (
-            self.post_operator.name
-            != prefix + "residual.post_operator"
+            self.post_operator.name != prefix + "residual.post_operator"
             or self.post_layer.name != prefix + "residual.post_layer"
         ):
             raise Lfm2CpcfBoundaryBundleError(
@@ -291,9 +263,7 @@ class Lfm2CpcfLayerBoundaryCharts:
             "independent_boundary_coordinates": True,
         }
         if self.layer_charts_sha256 != _sha256(body):
-            raise Lfm2CpcfBoundaryBundleError(
-                "Layer boundary-chart seal is invalid."
-            )
+            raise Lfm2CpcfBoundaryBundleError("Layer boundary-chart seal is invalid.")
 
     @property
     def source_width(self) -> int:
@@ -339,15 +309,12 @@ class Lfm2CpcfBoundaryBundle:
             raise TypeError("interface must be TiedCausalInterfaceFold.")
         layers = tuple(self.layers)
         if not layers or not all(
-            isinstance(value, Lfm2CpcfLayerBoundaryCharts)
-            for value in layers
+            isinstance(value, Lfm2CpcfLayerBoundaryCharts) for value in layers
         ):
             raise Lfm2CpcfBoundaryBundleError(
                 "layers must contain ordered layer boundary charts."
             )
-        if tuple(layer.layer_index for layer in layers) != tuple(
-            range(len(layers))
-        ):
+        if tuple(layer.layer_index for layer in layers) != tuple(range(len(layers))):
             raise Lfm2CpcfBoundaryBundleError(
                 "Layer boundary charts are incomplete or unordered."
             )
@@ -382,13 +349,9 @@ class Lfm2CpcfBoundaryBundle:
         bundle_sha = _digest(self.bundle_sha256, "bundle_sha256")
         report = dict(self.report)
         if report.pop("bundle_sha256", None) != bundle_sha:
-            raise Lfm2CpcfBoundaryBundleError(
-                "Boundary-bundle report seal is missing."
-            )
+            raise Lfm2CpcfBoundaryBundleError("Boundary-bundle report seal is missing.")
         if _sha256(report) != bundle_sha:
-            raise Lfm2CpcfBoundaryBundleError(
-                "Boundary-bundle report seal is invalid."
-            )
+            raise Lfm2CpcfBoundaryBundleError("Boundary-bundle report seal is invalid.")
         if (
             report.get("split_phase_sha256") != phase_hashes
             or report.get("split_row_sha256") != row_hashes
@@ -413,9 +376,7 @@ class Lfm2CpcfBoundaryBundle:
             lineage.get("causal_anchor_report"),
             "causal_anchor",
         )
-        anchor_base_lineage = anchor_report.get(
-            "base_interface_lineage"
-        )
+        anchor_base_lineage = anchor_report.get("base_interface_lineage")
         if not isinstance(anchor_base_lineage, Mapping):
             raise Lfm2CpcfBoundaryBundleError(
                 "Causal-anchor base-interface ancestry is missing."
@@ -491,9 +452,7 @@ class _PhaseInventory:
 
 
 def _row_keys(phase: Lfm2CpcfTargetPhase) -> list[dict[str, Any]]:
-    first_suffix_position = (
-        phase.full_prefix_tokens - phase.sampled_suffix_tokens
-    )
+    first_suffix_position = phase.full_prefix_tokens - phase.sampled_suffix_tokens
     return [
         {
             "batch_index": phase.batch_index,
@@ -501,9 +460,7 @@ def _row_keys(phase: Lfm2CpcfTargetPhase) -> list[dict[str, Any]]:
             "split": phase.split,
             "phase": phase.phase,
             "phase_sha256": phase.phase_sha256,
-            "parent_evidence_sha256": (
-                phase.parent_evidence.evidence_sha256
-            ),
+            "parent_evidence_sha256": (phase.parent_evidence.evidence_sha256),
             "batch_row_index": batch_row,
             "sampled_suffix_index": sample_index,
             "full_prefix_position": first_suffix_position + sample_index,
@@ -527,9 +484,7 @@ def _inventory(
         )
     identities = tuple(phase.identity for phase in ordered)
     if len(set(identities)) != len(identities):
-        raise Lfm2CpcfBoundaryBundleError(
-            "Target phase identities are duplicated."
-        )
+        raise Lfm2CpcfBoundaryBundleError("Target phase identities are duplicated.")
     unknown = sorted({phase.split for phase in ordered} - set(_SPLITS))
     if unknown:
         raise Lfm2CpcfBoundaryBundleError(
@@ -549,9 +504,7 @@ def _inventory(
         layer.operator_kind for layer in ordered[0].parent_evidence.layers
     )
     if layer_count == 0:
-        raise Lfm2CpcfBoundaryBundleError(
-            "Installable evidence contains no layers."
-        )
+        raise Lfm2CpcfBoundaryBundleError("Installable evidence contains no layers.")
 
     tensors: dict[tuple[tuple[int, str], str], Any] = {}
     observation_inventory = []
@@ -559,11 +512,9 @@ def _inventory(
         evidence = phase.parent_evidence
         if (
             len(evidence.layers) != layer_count
-            or tuple(layer.operator_kind for layer in evidence.layers)
-            != layer_kinds
+            or tuple(layer.operator_kind for layer in evidence.layers) != layer_kinds
             or any(
-                layer.layer_index != index
-                or layer.source_width != source_width
+                layer.layer_index != index or layer.source_width != source_width
                 for index, layer in enumerate(evidence.layers)
             )
         ):
@@ -628,18 +579,12 @@ def _inventory(
                     "record_id": phase.record_id,
                     "phase": phase.phase,
                     "phase_sha256": phase.phase_sha256,
-                    "parent_evidence_sha256": (
-                        phase.parent_evidence.evidence_sha256
-                    ),
+                    "parent_evidence_sha256": (phase.parent_evidence.evidence_sha256),
                 }
                 for ordinal, phase in enumerate(values)
             ]
         )
-        keys = [
-            row
-            for phase in values
-            for row in _row_keys(phase)
-        ]
+        keys = [row for phase in values for row in _row_keys(phase)]
         split_row_hashes[split] = _sha256(keys)
         split_rows[split] = len(keys)
     if (
@@ -652,9 +597,7 @@ def _inventory(
 
     expected_observations = len(ordered) * (1 + 2 * layer_count)
     if len(observation_inventory) != expected_observations:
-        raise Lfm2CpcfBoundaryBundleError(
-            "Not every source boundary was inventoried."
-        )
+        raise Lfm2CpcfBoundaryBundleError("Not every source boundary was inventoried.")
     return _PhaseInventory(
         phases=ordered,
         layer_kinds=layer_kinds,
@@ -710,9 +653,8 @@ def _causal_anchor_splits(
             previous = key
         grouped.setdefault(key, []).append(phase)
     batch_indices = [key[0] for key in record_order]
-    if (
-        batch_indices != sorted(batch_indices)
-        or len(set(batch_indices)) != len(batch_indices)
+    if batch_indices != sorted(batch_indices) or len(set(batch_indices)) != len(
+        batch_indices
     ):
         raise Lfm2CpcfBoundaryBundleError(
             "Target records must be unique and ordered by cache batch."
@@ -726,18 +668,14 @@ def _causal_anchor_splits(
     for key in record_order:
         phases = grouped[key]
         first = phases[0]
-        if (
-            first.phase not in {"prefill", "cached_prefill"}
-            or any(
-                phase.batch_index != first.batch_index
-                or phase.record_id != first.record_id
-                or phase.split != first.split
-                or phase.batch_size != first.batch_size
-                or phase.donor_input_sha256 != first.donor_input_sha256
-                or phase.target_alignment_sha256
-                != first.target_alignment_sha256
-                for phase in phases
-            )
+        if first.phase not in {"prefill", "cached_prefill"} or any(
+            phase.batch_index != first.batch_index
+            or phase.record_id != first.record_id
+            or phase.split != first.split
+            or phase.batch_size != first.batch_size
+            or phase.donor_input_sha256 != first.donor_input_sha256
+            or phase.target_alignment_sha256 != first.target_alignment_sha256
+            for phase in phases
         ):
             raise Lfm2CpcfBoundaryBundleError(
                 "Causal-anchor records require one canonical prefill and "
@@ -769,9 +707,7 @@ def _causal_anchor_splits(
                     next_phase.position_ids[:, :-1],
                     phase.position_ids,
                 )
-                or not bool(
-                    (next_phase.attention_mask[:, -1] == 1).all().item()
-                )
+                or not bool((next_phase.attention_mask[:, -1] == 1).all().item())
                 or not torch.equal(
                     next_phase.position_ids[:, -1],
                     phase.position_ids[:, -1] + 1,
@@ -794,13 +730,9 @@ def _causal_anchor_splits(
                 raise Lfm2CpcfBoundaryBundleError(
                     "Causal phase-to-target labels are not canonical."
                 )
-            endpoints = inventory.tensors[
-                (phase.identity, final_field)
-            ][:, -1, :]
+            endpoints = inventory.tensors[(phase.identity, final_field)][:, -1, :]
             for batch_row in range(phase.batch_size):
-                prefix_position = int(
-                    phase.position_ids[batch_row, -1].item()
-                )
+                prefix_position = int(phase.position_ids[batch_row, -1].item())
                 row_id = (
                     f"{phase.split}/batch.{phase.batch_index:06d}/"
                     f"record.{phase.record_id}/batch_row.{batch_row:04d}/"
@@ -869,9 +801,7 @@ def build_lfm2_cpcf_causal_anchor_splits(
         )
     layers = ordered[0].parent_evidence.layers
     if not layers:
-        raise Lfm2CpcfBoundaryBundleError(
-            "Installable evidence contains no layers."
-        )
+        raise Lfm2CpcfBoundaryBundleError("Installable evidence contains no layers.")
     inventory = _inventory(
         ordered,
         source_width=layers[0].source_width,
@@ -982,13 +912,8 @@ def fit_lfm2_cpcf_boundary_bundle(
             "target_hidden_width must contract the parent hidden width."
         )
     if not isinstance(preserve_vocabulary_mean, bool):
-        raise Lfm2CpcfBoundaryBundleError(
-            "preserve_vocabulary_mean must be boolean."
-        )
-    if (
-        not math.isfinite(target_norm_epsilon)
-        or target_norm_epsilon <= 0.0
-    ):
+        raise Lfm2CpcfBoundaryBundleError("preserve_vocabulary_mean must be boolean.")
+    if not math.isfinite(target_norm_epsilon) or target_norm_epsilon <= 0.0:
         raise Lfm2CpcfBoundaryBundleError(
             "target_norm_epsilon must be positive and finite."
         )
@@ -1016,8 +941,8 @@ def fit_lfm2_cpcf_boundary_bundle(
         inventory,
         "fit",
     )
-    validation_weights, validation_weight_summary = (
-        _balanced_phase_weights(inventory, "validation")
+    validation_weights, validation_weight_summary = _balanced_phase_weights(
+        inventory, "validation"
     )
     final_field = "output.final_norm_output"
     fit_final = _rows(inventory, "fit", final_field)
@@ -1046,6 +971,9 @@ def fit_lfm2_cpcf_boundary_bundle(
         metric_chunk_rows=chunk_rows,
     )
     interface = anchor_fold.interface
+    anchor_residual_selected = bool(
+        anchor_fold.report["active_anchor_residual_selected"]
+    )
     fit_future = interface.encode_producer_rows(fit_final)
     validation_future = interface.encode_producer_rows(validation_final)
 
@@ -1071,9 +999,7 @@ def fit_lfm2_cpcf_boundary_bundle(
                 ridge=ridge_value,
                 minimum_predictive_energy_fraction=predictive_floor,
                 minimum_validation_block_retention=validation_floor,
-                enforce_validation_block_floor=(
-                    enforce_validation_block_floor
-                ),
+                enforce_validation_block_floor=(enforce_validation_block_floor),
             )
         layer_results.append(
             _layer_charts(
@@ -1085,21 +1011,15 @@ def fit_lfm2_cpcf_boundary_bundle(
         )
     layers = tuple(layer_results)
 
-    phase_counts = {
-        split: len(inventory.split_phases[split]) for split in _SPLITS
-    }
-    row_counts = {
-        split: inventory.split_rows[split] for split in _SPLITS
-    }
+    phase_counts = {split: len(inventory.split_phases[split]) for split in _SPLITS}
+    row_counts = {split: inventory.split_rows[split] for split in _SPLITS}
     split_phase_hashes = dict(inventory.split_phase_sha256)
     split_row_hashes = dict(inventory.split_row_sha256)
-    expected_observations = len(inventory.phases) * (
-        1 + 2 * len(inventory.layer_kinds)
-    )
+    expected_observations = len(inventory.phases) * (1 + 2 * len(inventory.layer_kinds))
     body = {
         "schema": LFM2_CPCF_BOUNDARY_BUNDLE_SCHEMA,
         "method": (
-            "tied_causal_interface_then_causal_anchor_residual_then_"
+            "tied_causal_interface_then_behavior_preserving_anchor_selection_then_"
             "independent_predictive_boundary_charts"
         ),
         "source_width": source_width,
@@ -1134,14 +1054,14 @@ def fit_lfm2_cpcf_boundary_bundle(
                 interface.report,
                 "interface",
             ),
-            "active_interface_is_anchor_repaired": True,
-            "producer_encoder_fixed_by_anchor_repair": True,
+            "active_interface_is_anchor_repaired": anchor_residual_selected,
+            "active_interface_is_base_control": not anchor_residual_selected,
+            "producer_encoder_fixed_by_anchor_selection": True,
+            "producer_encoder_fixed_by_anchor_repair": (anchor_residual_selected),
             "additional_runtime_parameter_count": 0,
         },
         "causal_anchor_extraction": {
-            "method": (
-                "one_last_sampled_final_norm_endpoint_per_record_causal_step"
-            ),
+            "method": ("one_last_sampled_final_norm_endpoint_per_record_causal_step"),
             "label_source": "next_phase_newly_appended_target_token",
             "phase_label_contract": {
                 "prefill": "forced_decode[0]",
@@ -1154,8 +1074,7 @@ def fit_lfm2_cpcf_boundary_bundle(
             "row_id_binds_batch_index_batch_row_and_prefix_position": True,
             "no_sampled_prefix_row_duplication": True,
             "split_inventory": {
-                split: anchor_splits[split].as_dict()
-                for split in _SPLITS
+                split: anchor_splits[split].as_dict() for split in _SPLITS
             },
         },
         "layer_charts": [layer.as_dict() for layer in layers],
@@ -1181,13 +1100,9 @@ def fit_lfm2_cpcf_boundary_bundle(
             "method": "equal_phase_mass_then_uniform_rows_within_phase",
             "balanced_phase_weights": True,
             "fit_total_weight": float(fit_weights.sum().item()),
-            "validation_total_weight": float(
-                validation_weights.sum().item()
-            ),
+            "validation_total_weight": float(validation_weights.sum().item()),
             "fit_weights_sha256": _tensor_sha256(fit_weights),
-            "validation_weights_sha256": _tensor_sha256(
-                validation_weights
-            ),
+            "validation_weights_sha256": _tensor_sha256(validation_weights),
             "fit_phases": fit_weight_summary,
             "validation_phases": validation_weight_summary,
         },
@@ -1206,9 +1121,7 @@ def fit_lfm2_cpcf_boundary_bundle(
             "principal_boundary_objective": True,
             "minimum_predictive_energy_fraction": predictive_floor,
             "minimum_validation_block_retention": validation_floor,
-            "validation_block_floor_enforced": (
-                enforce_validation_block_floor
-            ),
+            "validation_block_floor_enforced": (enforce_validation_block_floor),
             "fit_rows_used_for_parameters": True,
             "validation_rows_used_for_parameters": False,
         },
@@ -1219,9 +1132,7 @@ def fit_lfm2_cpcf_boundary_bundle(
             "final_output_field": final_field,
             "expected_tensor_observations": expected_observations,
             "observed_tensor_observations": expected_observations,
-            "source_observation_sha256": (
-                inventory.source_observation_sha256
-            ),
+            "source_observation_sha256": (inventory.source_observation_sha256),
             "all_phase_final_outputs_covered": True,
             "all_layer_post_operator_boundaries_covered": True,
             "all_layer_post_layer_boundaries_covered": True,
@@ -1229,10 +1140,10 @@ def fit_lfm2_cpcf_boundary_bundle(
         },
         "coordinate_contract": {
             "future_coordinates": (
-                "anchor_repaired_tied_interface_encoded_parent_final_norm_"
-                "output"
+                "behavior_selected_tied_interface_encoded_parent_final_norm_output"
             ),
-            "active_interface_is_anchor_repaired": True,
+            "active_interface_is_anchor_repaired": anchor_residual_selected,
+            "active_interface_is_base_control": not anchor_residual_selected,
             "one_global_residual_basis_used": False,
             "independent_post_operator_and_post_layer_charts": True,
             "residual_write_formula": (

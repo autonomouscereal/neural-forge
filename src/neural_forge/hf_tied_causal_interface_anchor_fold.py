@@ -10,9 +10,11 @@ cache.
 The producer encoder is fixed.  For every fit observation, the residual is
 asked to place the target next token above the strongest mapped-parent
 competitor by a candidate margin.  The sparse linear constraints are solved in
-observation space with deterministic FP64 ridge regression.  Ridge and margin
-are selected only on the selection split; validation is evaluated only after
-the winning residual has been frozen.
+observation space with deterministic FP64 ridge regression.  The unmodified
+base interface is an explicit same-row control.  Residual candidates must
+preserve mapped-parent behavior relative to that control, and candidates are
+ranked only by mapped-parent logit behavior and drift.  Target-anchor metrics
+remain diagnostics.  Validation is evaluated only after the winner is frozen.
 
 No optimizer, backward pass, parent execution, pruning, quantization, or
 additional runtime parameter is used.  The result replaces a ``V x H`` tied
@@ -35,12 +37,8 @@ from neural_forge.hf_tied_causal_interface_fold import (
 )
 
 
-TIED_CAUSAL_ANCHOR_SPLIT_SCHEMA = (
-    "neural-forge-tied-causal-anchor-split-v1"
-)
-TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA = (
-    "neural-forge-tied-causal-anchor-residual-v1"
-)
+TIED_CAUSAL_ANCHOR_SPLIT_SCHEMA = "neural-forge-tied-causal-anchor-split-v1"
+TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA = "neural-forge-tied-causal-anchor-residual-v1"
 _BASE_INTERFACE_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
 _SPLITS = ("selection", "fit", "validation")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -81,9 +79,7 @@ def _sha(value: Any) -> str:
 
 def _digest(value: Any, name: str) -> str:
     if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
-        raise TiedCausalAnchorFoldError(
-            f"{name} must be a lowercase SHA-256 digest."
-        )
+        raise TiedCausalAnchorFoldError(f"{name} must be a lowercase SHA-256 digest.")
     return value
 
 
@@ -143,12 +139,12 @@ def _verified_base_interface_report(
         "target_width": int(producer_encoder.shape[1]),
         "vocabulary_size": int(base_weight.shape[0]),
         "target_weight_sha256": _interface_tensor_sha256(base_weight),
-        "producer_encoder_sha256": _interface_tensor_sha256(
-            producer_encoder
-        ),
+        "producer_encoder_sha256": _interface_tensor_sha256(producer_encoder),
         "source_table_sha256": _interface_tensor_sha256(source_table),
     }
-    if any(report.get(name) != expected_value for name, expected_value in expected.items()):
+    if any(
+        report.get(name) != expected_value for name, expected_value in expected.items()
+    ):
         raise TiedCausalAnchorFoldError(
             "Base interface report does not authenticate its source table, "
             "target table, producer encoder, or dimensions."
@@ -164,15 +160,11 @@ def _positive_int(value: Any, name: str) -> int:
 
 def _fraction(value: Any, name: str, *, positive: bool = False) -> float:
     if isinstance(value, bool):
-        raise TiedCausalAnchorFoldError(
-            f"{name} must be a finite fraction."
-        )
+        raise TiedCausalAnchorFoldError(f"{name} must be a finite fraction.")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise TiedCausalAnchorFoldError(
-            f"{name} must be a finite fraction."
-        ) from exc
+        raise TiedCausalAnchorFoldError(f"{name} must be a finite fraction.") from exc
     lower_ok = result > 0.0 if positive else result >= 0.0
     if not math.isfinite(result) or not lower_ok or result > 1.0:
         qualifier = "within (0, 1]" if positive else "within [0, 1]"
@@ -182,19 +174,13 @@ def _fraction(value: Any, name: str, *, positive: bool = False) -> float:
 
 def _positive_float(value: Any, name: str) -> float:
     if isinstance(value, bool):
-        raise TiedCausalAnchorFoldError(
-            f"{name} must be positive and finite."
-        )
+        raise TiedCausalAnchorFoldError(f"{name} must be positive and finite.")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise TiedCausalAnchorFoldError(
-            f"{name} must be positive and finite."
-        ) from exc
+        raise TiedCausalAnchorFoldError(f"{name} must be positive and finite.") from exc
     if not math.isfinite(result) or result <= 0.0:
-        raise TiedCausalAnchorFoldError(
-            f"{name} must be positive and finite."
-        )
+        raise TiedCausalAnchorFoldError(f"{name} must be positive and finite.")
     return result
 
 
@@ -218,9 +204,7 @@ def _float_matrix(
             f"{name} must be a nonempty dense real floating matrix."
         )
     if width is not None and int(value.shape[1]) != width:
-        raise TiedCausalAnchorFoldError(
-            f"{name} width must equal {width}."
-        )
+        raise TiedCausalAnchorFoldError(f"{name} width must equal {width}.")
     result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
     if not bool(torch.isfinite(result).all().item()):
         raise TiedCausalAnchorFoldError(f"{name} contains NaN or infinity.")
@@ -254,9 +238,7 @@ def _integer_vector(value: Any, name: str) -> Any:
 
 
 def _rms_normalize(value: Any, epsilon: float) -> Any:
-    return value * (
-        value.square().mean(dim=-1, keepdim=True) + epsilon
-    ).rsqrt()
+    return value * (value.square().mean(dim=-1, keepdim=True) + epsilon).rsqrt()
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,9 +301,7 @@ class TiedCausalAnchorSplit:
         }
         expected = _sha(body)
         if self.split_sha256 and self.split_sha256 != expected:
-            raise TiedCausalAnchorFoldError(
-                f"{self.name} split seal is invalid."
-            )
+            raise TiedCausalAnchorFoldError(f"{self.name} split seal is invalid.")
         object.__setattr__(self, "row_ids", row_ids)
         object.__setattr__(self, "prefix_positions", positions)
         object.__setattr__(self, "source_producer_rows", producers)
@@ -362,8 +342,7 @@ def _split_inventory(
         "validation": validation,
     }
     if any(
-        not isinstance(split, TiedCausalAnchorSplit)
-        or split.name != name
+        not isinstance(split, TiedCausalAnchorSplit) or split.name != name
         for name, split in supplied.items()
     ):
         raise TiedCausalAnchorFoldError(
@@ -383,8 +362,7 @@ def _split_inventory(
         overlap = all_ids.intersection(split.row_ids)
         if overlap:
             raise TiedCausalAnchorFoldError(
-                "Anchor split row IDs are not disjoint: "
-                f"{sorted(overlap)!r}."
+                f"Anchor split row IDs are not disjoint: {sorted(overlap)!r}."
             )
         all_ids.update(split.row_ids)
     return MappingProxyType(supplied)
@@ -395,14 +373,10 @@ def _candidate_values(
     name: str,
 ) -> tuple[float, ...]:
     if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
-        raise TiedCausalAnchorFoldError(
-            f"{name} must be a nonempty sequence."
-        )
+        raise TiedCausalAnchorFoldError(f"{name} must be a nonempty sequence.")
     result = tuple(sorted({_positive_float(value, name) for value in values}))
     if not result:
-        raise TiedCausalAnchorFoldError(
-            f"{name} must be a nonempty sequence."
-        )
+        raise TiedCausalAnchorFoldError(f"{name} must be a nonempty sequence.")
     return result
 
 
@@ -451,9 +425,7 @@ def _fit_residual(
     torch = _torch()
     base_target = base_weight.index_select(0, target_ids)
     base_competitor = base_weight.index_select(0, competitor_ids)
-    base_margins = (
-        fit_coordinates * (base_target - base_competitor)
-    ).sum(dim=1)
+    base_margins = (fit_coordinates * (base_target - base_competitor)).sum(dim=1)
     requested = torch.full_like(base_margins, margin) - base_margins
 
     coordinate_gram = fit_coordinates @ fit_coordinates.T
@@ -473,10 +445,14 @@ def _fit_residual(
         torch.finfo(torch.float64).eps,
     )
     regularization = ridge * diagonal_scale
-    system = gram + torch.eye(
-        int(gram.shape[0]),
-        dtype=torch.float64,
-    ) * regularization
+    system = (
+        gram
+        + torch.eye(
+            int(gram.shape[0]),
+            dtype=torch.float64,
+        )
+        * regularization
+    )
     try:
         coefficients = torch.linalg.solve(system, requested)
     except RuntimeError as exc:
@@ -534,12 +510,8 @@ def _fit_residual(
         "fit_requested_margin_rmse": float(
             torch.sqrt((realized - margin).square().mean()).item()
         ),
-        "fit_realized_mean_anchor_competitor_margin": float(
-            realized.mean().item()
-        ),
-        "fit_realized_minimum_anchor_competitor_margin": float(
-            realized.min().item()
-        ),
+        "fit_realized_mean_anchor_competitor_margin": float(realized.mean().item()),
+        "fit_realized_minimum_anchor_competitor_margin": float(realized.min().item()),
         "fit_positive_anchor_competitor_margin_fraction": float(
             (realized > 0.0).to(dtype=torch.float64).mean().item()
         ),
@@ -558,6 +530,7 @@ def _split_metrics(
     source_table: Any,
     encoder: Any,
     target_weight: Any,
+    base_target_weight: Any,
     *,
     norm_epsilon: float,
     chunk_rows: int,
@@ -571,19 +544,27 @@ def _split_metrics(
     minimum_anchor_margin = math.inf
     centered_parent_energy = 0.0
     centered_error_energy = 0.0
+    raw_centered_error_energy = 0.0
+    base_raw_centered_energy = 0.0
+    base_raw_centered_error_energy = 0.0
     for start in range(0, split.row_count, chunk_rows):
         stop = min(split.row_count, start + chunk_rows)
         source = split.source_producer_rows[start:stop]
         target_ids = split.target_next_token_ids[start:stop]
+        raw_coordinates = source @ encoder
         coordinates = _rms_normalize(
-            source @ encoder,
+            raw_coordinates,
             norm_epsilon,
         )
         parent_logits = source @ source_table.T
         target_logits = coordinates @ target_weight.T
+        raw_target_logits = raw_coordinates @ target_weight.T
+        base_raw_logits = raw_coordinates @ base_target_weight.T
         if not bool(
             torch.isfinite(parent_logits).all().item()
             and torch.isfinite(target_logits).all().item()
+            and torch.isfinite(raw_target_logits).all().item()
+            and torch.isfinite(base_raw_logits).all().item()
         ):
             raise TiedCausalAnchorFoldError(
                 f"{split.name} metrics contain NaN or infinity."
@@ -600,9 +581,7 @@ def _split_metrics(
         mapped_parent_top1_agreement += int(
             (target_winner == parent_winner).sum().item()
         )
-        mapped_parent_anchor_top1 += int(
-            (parent_winner == target_ids).sum().item()
-        )
+        mapped_parent_anchor_top1 += int((parent_winner == target_ids).sum().item())
         anchor_margin_sum += float(margins.sum().item())
         minimum_anchor_margin = min(
             minimum_anchor_margin,
@@ -616,12 +595,31 @@ def _split_metrics(
             dim=1,
             keepdim=True,
         )
+        raw_target_centered = raw_target_logits - raw_target_logits.mean(
+            dim=1,
+            keepdim=True,
+        )
+        base_raw_centered = base_raw_logits - base_raw_logits.mean(
+            dim=1,
+            keepdim=True,
+        )
         centered_parent_energy += float(parent_centered.square().sum().item())
         centered_error_energy += float(
             (target_centered - parent_centered).square().sum().item()
         )
+        raw_centered_error_energy += float(
+            (raw_target_centered - parent_centered).square().sum().item()
+        )
+        base_raw_centered_energy += float(base_raw_centered.square().sum().item())
+        base_raw_centered_error_energy += float(
+            (raw_target_centered - base_raw_centered).square().sum().item()
+        )
     denominator = max(
         centered_parent_energy,
+        torch.finfo(torch.float64).tiny,
+    )
+    base_denominator = max(
+        base_raw_centered_energy,
         torch.finfo(torch.float64).tiny,
     )
     rows = split.row_count
@@ -633,19 +631,29 @@ def _split_metrics(
         "positive_target_anchor_margin_fraction": positive_margin / rows,
         "mean_target_anchor_margin": anchor_margin_sum / rows,
         "minimum_target_anchor_margin": minimum_anchor_margin,
-        "mapped_parent_anchor_top1_fraction": (
-            mapped_parent_anchor_top1 / rows
-        ),
-        "mapped_parent_top1_agreement": (
-            mapped_parent_top1_agreement / rows
-        ),
+        "mapped_parent_anchor_top1_fraction": (mapped_parent_anchor_top1 / rows),
+        "mapped_parent_top1_agreement": (mapped_parent_top1_agreement / rows),
         "mapped_parent_centered_logit_relative_rmse": math.sqrt(
             centered_error_energy / denominator
         ),
         "mapped_parent_centered_logit_retained_energy_fraction": (
             1.0 - centered_error_energy / denominator
         ),
+        "mapped_parent_raw_centered_logit_relative_rmse": math.sqrt(
+            raw_centered_error_energy / denominator
+        ),
+        "mapped_parent_raw_centered_logit_retained_energy_fraction": (
+            1.0 - raw_centered_error_energy / denominator
+        ),
+        "base_interface_raw_centered_logit_relative_rmse": math.sqrt(
+            base_raw_centered_error_energy / base_denominator
+        ),
+        "base_interface_raw_centered_logit_retained_energy_fraction": (
+            1.0 - base_raw_centered_error_energy / base_denominator
+        ),
+        "raw_and_runtime_coordinates_have_same_target_top1": True,
         "runtime_target_coordinates_rms_normalized": True,
+        "raw_target_coordinates_used_for_parent_behavior_selection": True,
         "exact_output_text_or_token_sequence_matching_used": False,
     }
 
@@ -698,31 +706,25 @@ class TiedCausalAnchorResidualFold:
             base_report.get("source_table_sha256"),
             "base_interface_lineage.report.source_table_sha256",
         )
-        producer_sha256 = _interface_tensor_sha256(
-            self.interface.producer_encoder
-        )
+        producer_sha256 = _interface_tensor_sha256(self.interface.producer_encoder)
         if (
             _digest(seal, "report_sha256") != _sha(body)
             or dict(self.interface.report) != report
             or report.get("target_weight_sha256")
             != _tensor_sha256(self.interface.target_weight)
-            or report.get("residual_weight_sha256")
-            != _tensor_sha256(residual)
+            or report.get("residual_weight_sha256") != _tensor_sha256(residual)
             or report.get("producer_encoder_sha256")
             != _tensor_sha256(self.interface.producer_encoder)
-            or report.get("base_interface_report_sha256")
-            != base_report_sha256
+            or report.get("base_interface_report_sha256") != base_report_sha256
             or lineage.get("report_sha256") != base_report_sha256
             or lineage.get("target_weight_sha256") != base_target_sha256
-            or lineage.get("producer_encoder_sha256")
-            != base_producer_sha256
+            or lineage.get("producer_encoder_sha256") != base_producer_sha256
             or lineage.get("source_table_sha256") != base_source_sha256
             or lineage.get("producer_encoder_sha256") != producer_sha256
             or base_report.get("schema") != _BASE_INTERFACE_SCHEMA
             or base_report.get("source_width") != self.interface.source_width
             or base_report.get("target_width") != self.interface.target_width
-            or base_report.get("vocabulary_size")
-            != self.interface.vocabulary_size
+            or base_report.get("vocabulary_size") != self.interface.vocabulary_size
             or lineage.get("tensor_identity_verified") is not True
         ):
             raise TiedCausalAnchorFoldError(
@@ -749,9 +751,11 @@ def fit_tied_causal_interface_anchor_residual(
     target_norm_epsilon: float = 1e-5,
     metric_chunk_rows: int = 256,
     maximum_fit_anchor_rows: int = 4096,
+    minimum_mapped_parent_behavior_retention: float = 0.90,
 ) -> TiedCausalAnchorResidualFold:
     """Fit and select one bounded same-shape tied-table anchor residual."""
 
+    torch = _torch()
     if not isinstance(base_interface, TiedCausalInterfaceFold):
         raise TypeError("base_interface must be TiedCausalInterfaceFold.")
     source_table = _float_matrix(
@@ -811,6 +815,10 @@ def fit_tied_causal_interface_anchor_residual(
         maximum_fit_anchor_rows,
         "maximum_fit_anchor_rows",
     )
+    behavior_retention = _fraction(
+        minimum_mapped_parent_behavior_retention,
+        "minimum_mapped_parent_behavior_retention",
+    )
     if splits["fit"].row_count > maximum_fit_rows:
         raise TiedCausalAnchorFoldError(
             "Fit anchor count exceeds the dense observation-space safety "
@@ -827,8 +835,89 @@ def fit_tied_causal_interface_anchor_residual(
         source_table,
         chunk_rows=chunk_rows,
     )
-    candidate_reports = []
-    candidates = []
+    zero_residual = torch.zeros_like(base_weight)
+    base_selection_metrics = _split_metrics(
+        splits["selection"],
+        source_table,
+        encoder,
+        base_weight,
+        base_weight,
+        norm_epsilon=norm_epsilon,
+        chunk_rows=chunk_rows,
+    )
+    base_parent_top1 = float(base_selection_metrics["mapped_parent_top1_agreement"])
+    base_parent_energy = float(
+        base_selection_metrics[
+            "mapped_parent_raw_centered_logit_retained_energy_fraction"
+        ]
+    )
+    required_parent_top1 = base_parent_top1 * behavior_retention
+    required_parent_energy = (
+        base_parent_energy * behavior_retention
+        if base_parent_energy > 0.0
+        else base_parent_energy
+    )
+
+    def behavior_score(
+        metrics: Mapping[str, Any],
+        *,
+        relative_table_drift: float,
+    ) -> tuple[float, ...]:
+        return (
+            float(metrics["mapped_parent_raw_centered_logit_retained_energy_fraction"]),
+            float(metrics["mapped_parent_top1_agreement"]),
+            float(
+                metrics["base_interface_raw_centered_logit_retained_energy_fraction"]
+            ),
+            -relative_table_drift,
+        )
+
+    base_candidate_report = {
+        "candidate_index": 0,
+        "candidate_kind": "unmodified_base_interface",
+        "is_base_control": True,
+        "ridge_fraction": 0.0,
+        "ridge_absolute": 0.0,
+        "requested_margin": 0.0,
+        "fit_constraint_count": 0,
+        "raw_relative_table_drift": 0.0,
+        "relative_table_drift": 0.0,
+        "maximum_relative_table_drift": drift_limit,
+        "drift_scale": 1.0,
+        "drift_clipped": False,
+        "residual_weight_sha256": _tensor_sha256(zero_residual),
+        "target_weight_sha256": _tensor_sha256(base_weight),
+        "selection_metrics": base_selection_metrics,
+        "minimum_required_mapped_parent_top1_agreement": required_parent_top1,
+        "minimum_required_mapped_parent_raw_centered_logit_retained_energy_fraction": (
+            required_parent_energy
+        ),
+        "minimum_required_base_interface_raw_centered_logit_retained_energy_fraction": (
+            behavior_retention
+        ),
+        "mapped_parent_behavior_eligible": True,
+        "selection_behavior_score": list(
+            behavior_score(
+                base_selection_metrics,
+                relative_table_drift=0.0,
+            )
+        ),
+        "target_anchor_metrics_used_for_candidate_selection": False,
+        "selection_split_used_for_candidate_parameters": False,
+        "validation_split_read": False,
+    }
+    candidate_reports = [base_candidate_report]
+    candidates = [
+        (
+            behavior_score(
+                base_selection_metrics,
+                relative_table_drift=0.0,
+            ),
+            0,
+            zero_residual,
+            base_weight,
+        )
+    ]
     for ridge in ridges:
         for margin in margins:
             residual, fit_report = _fit_residual(
@@ -846,38 +935,53 @@ def fit_tied_causal_interface_anchor_residual(
                 source_table,
                 encoder,
                 repaired,
+                base_weight,
                 norm_epsilon=norm_epsilon,
                 chunk_rows=chunk_rows,
             )
-            candidate_index = len(candidates)
+            candidate_index = len(candidate_reports)
+            parent_top1 = float(selection_metrics["mapped_parent_top1_agreement"])
+            parent_energy = float(
+                selection_metrics[
+                    "mapped_parent_raw_centered_logit_retained_energy_fraction"
+                ]
+            )
+            base_energy = float(
+                selection_metrics[
+                    "base_interface_raw_centered_logit_retained_energy_fraction"
+                ]
+            )
+            eligible = (
+                parent_top1 + 1e-12 >= required_parent_top1
+                and parent_energy + 1e-12 >= required_parent_energy
+                and base_energy + 1e-12 >= behavior_retention
+            )
+            score = behavior_score(
+                selection_metrics,
+                relative_table_drift=float(fit_report["relative_table_drift"]),
+            )
             candidate_report = {
                 "candidate_index": candidate_index,
+                "candidate_kind": "anchor_residual",
+                "is_base_control": False,
                 **fit_report,
                 "selection_metrics": selection_metrics,
+                "minimum_required_mapped_parent_top1_agreement": (required_parent_top1),
+                "minimum_required_mapped_parent_raw_centered_logit_retained_energy_fraction": (
+                    required_parent_energy
+                ),
+                "minimum_required_base_interface_raw_centered_logit_retained_energy_fraction": (
+                    behavior_retention
+                ),
+                "mapped_parent_behavior_eligible": eligible,
+                "selection_behavior_score": list(score),
+                "target_anchor_metrics_used_for_candidate_selection": False,
                 "selection_split_used_for_candidate_parameters": False,
                 "validation_split_read": False,
             }
             candidate_reports.append(candidate_report)
-            score = (
-                float(selection_metrics["target_anchor_top1_fraction"]),
-                float(
-                    selection_metrics[
-                        "positive_target_anchor_margin_fraction"
-                    ]
-                ),
-                float(
-                    selection_metrics[
-                        "mapped_parent_centered_logit_retained_energy_fraction"
-                    ]
-                ),
-                float(selection_metrics["mean_target_anchor_margin"]),
-                -float(fit_report["relative_table_drift"]),
-                -margin,
-                -ridge,
-            )
-            candidates.append((score, candidate_index, residual, repaired))
-    if not candidates:  # pragma: no cover - candidate validation is exhaustive
-        raise TiedCausalAnchorFoldError("No causal-anchor candidate was fitted.")
+            if eligible:
+                candidates.append((score, candidate_index, residual, repaired))
     _score, selected_index, selected_residual, selected_weight = max(
         candidates,
         key=lambda value: (value[0], -value[1]),
@@ -890,15 +994,14 @@ def fit_tied_causal_interface_anchor_residual(
             source_table,
             encoder,
             selected_weight,
+            base_weight,
             norm_epsilon=norm_epsilon,
             chunk_rows=chunk_rows,
         )
         for name in _SPLITS
     }
     selected_report = candidate_reports[selected_index]
-    selected_relative_drift = float(
-        selected_report["relative_table_drift"]
-    )
+    selected_relative_drift = float(selected_report["relative_table_drift"])
     base_parameters = int(base_weight.numel())
     body = {
         "schema": TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
@@ -918,9 +1021,7 @@ def fit_tied_causal_interface_anchor_residual(
             "report": base_report,
             "report_sha256": base_report_sha256,
             "target_weight_sha256": base_report["target_weight_sha256"],
-            "producer_encoder_sha256": base_report[
-                "producer_encoder_sha256"
-            ],
+            "producer_encoder_sha256": base_report["producer_encoder_sha256"],
             "source_table_sha256": base_report["source_table_sha256"],
             "tensor_identity_verified": True,
         },
@@ -930,9 +1031,7 @@ def fit_tied_causal_interface_anchor_residual(
         "base_target_weight_sha256": _tensor_sha256(base_weight),
         "residual_weight_sha256": _tensor_sha256(selected_residual),
         "target_weight_sha256": _tensor_sha256(selected_weight),
-        "split_inventory": {
-            name: splits[name].as_dict() for name in _SPLITS
-        },
+        "split_inventory": {name: splits[name].as_dict() for name in _SPLITS},
         "split_row_ids_disjoint": True,
         "fit_split_used_for_residual_parameters": True,
         "selection_split_used_for_residual_parameters": False,
@@ -943,15 +1042,30 @@ def fit_tied_causal_interface_anchor_residual(
         "validation_metrics_first_computed_after_candidate_frozen": True,
         "ridge_candidates": list(ridges),
         "margin_candidates": list(margins),
+        "base_control_candidate_included": True,
+        "base_control_candidate_index": 0,
+        "minimum_mapped_parent_behavior_retention": behavior_retention,
+        "candidate_selection_policy": (
+            "eligible_if_same_row_parent_top1_parent_raw_centered_energy_and_"
+            "base_raw_centered_energy_preserve_configured_fraction_then_rank_"
+            "by_parent_raw_centered_energy_parent_top1_base_energy_and_drift"
+        ),
+        "target_anchor_metrics_diagnostic_only": True,
+        "target_anchor_metrics_used_for_candidate_selection": False,
+        "eligible_candidate_indices": [
+            int(candidate["candidate_index"])
+            for candidate in candidate_reports
+            if candidate["mapped_parent_behavior_eligible"]
+        ],
         "candidate_reports": candidate_reports,
         "selected_candidate_index": selected_index,
+        "selected_candidate_is_base_control": bool(selected_report["is_base_control"]),
+        "active_anchor_residual_selected": not bool(selected_report["is_base_control"]),
         "selected_ridge_fraction": selected_report["ridge_fraction"],
         "selected_requested_margin": selected_report["requested_margin"],
         "relative_table_drift": selected_relative_drift,
         "maximum_relative_table_drift": drift_limit,
-        "drift_bound_satisfied": (
-            selected_relative_drift <= drift_limit + 1e-12
-        ),
+        "drift_bound_satisfied": (selected_relative_drift <= drift_limit + 1e-12),
         "split_metrics": split_metrics,
         "target_norm_epsilon": norm_epsilon,
         "metric_chunk_rows": chunk_rows,

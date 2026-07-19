@@ -161,9 +161,7 @@ def test_catalog_receipt_accepts_exact_safe_sibling_layout(
         )
     )
 
-    config = MODULE.config_from_args(
-        MODULE.build_parser().parse_args(args)
-    )
+    config = MODULE.config_from_args(MODULE.build_parser().parse_args(args))
 
     assert config.selective_catalog_receipt_json == (
         tmp_path / "catalog-control" / "preparation.json"
@@ -192,9 +190,7 @@ def test_catalog_receipt_rejects_nested_ancestor_and_equal_paths(
             str(tmp_path / "catalog-control" / "preparation.json"),
         )
     )
-    config = MODULE.config_from_args(
-        MODULE.build_parser().parse_args(args)
-    )
+    config = MODULE.config_from_args(MODULE.build_parser().parse_args(args))
     invalid_receipts = (
         config.parent_model_directory / "nested-receipt.json",
         tmp_path,
@@ -249,9 +245,7 @@ def test_production_fold_authenticates_catalog_before_torch_or_model_load(
             "0" * 64,
         )
     )
-    config = MODULE.config_from_args(
-        MODULE.build_parser().parse_args(args)
-    )
+    config = MODULE.config_from_args(MODULE.build_parser().parse_args(args))
 
     def forbidden_torch_configuration():
         raise AssertionError("torch configured before catalog authentication")
@@ -275,14 +269,8 @@ def test_catalog_prepare_and_fold_source_order_is_fail_closed() -> None:
     assert run_source.index(
         "_read_selective_catalog_preparation(config)"
     ) < run_source.index("_configure_torch()")
-    assert (
-        "open_lfm2_cpcf_selective_evidence_provider_from_catalog"
-        in run_source
-    )
-    assert (
-        "open_or_build_lfm2_cpcf_selective_evidence_provider"
-        not in run_source
-    )
+    assert "open_lfm2_cpcf_selective_evidence_provider_from_catalog" in run_source
+    assert "open_or_build_lfm2_cpcf_selective_evidence_provider" not in run_source
     assert "load_local_lfm2_model" not in prepare_source
     assert "plan_and_synthesize_lfm2_cpcf_blank" not in prepare_source
     assert "torch.cuda.is_initialized()" in prepare_source
@@ -290,18 +278,17 @@ def test_catalog_prepare_and_fold_source_order_is_fail_closed() -> None:
 
 def test_catalog_post_run_reverification_record_is_exact() -> None:
     preparation = _catalog_preparation()
-    record = dict(
-        MODULE.selective_catalog_post_run_reverification_record(
-            preparation
-        )
-    )
+    record = dict(MODULE.selective_catalog_post_run_reverification_record(preparation))
 
-    assert dict(
-        MODULE.authenticate_selective_catalog_post_run_reverification(
-            record,
-            catalog_preparation=preparation,
+    assert (
+        dict(
+            MODULE.authenticate_selective_catalog_post_run_reverification(
+                record,
+                catalog_preparation=preparation,
+            )
         )
-    ) == record
+        == record
+    )
     tampered = dict(record)
     tampered["artifact_catalog_sha256"] = "0" * 64
     with pytest.raises(
@@ -368,8 +355,8 @@ def test_cuda_allocator_cap_fails_when_runtime_cannot_enforce_it() -> None:
             total_memory=24 * 1024**3,
             name=MODULE.EXPECTED_GPU_NAME,
         ),
-        set_per_process_memory_fraction=lambda *_args, **_kwargs: (
-            (_ for _ in ()).throw(RuntimeError("allocator refused"))
+        set_per_process_memory_fraction=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("allocator refused")
         ),
     )
 
@@ -436,14 +423,15 @@ def test_catalog_plan_pin_and_request_derived_ratio_are_preserved(
     assert config.expected_target_plan_fingerprint == plan_sha256
     assert config.as_dict()["expected_target_plan_fingerprint"] == plan_sha256
     assert (
-        MODULE._request_derived_structural_compression_floor(config.compression)
-        == 4.0
+        MODULE._request_derived_structural_compression_floor(config.compression) == 4.0
     )
 
     exact = MODULE.config_from_args(
         MODULE.build_parser().parse_args(_required_args(tmp_path))
     )
-    assert MODULE._request_derived_structural_compression_floor(exact.compression) == 1.0
+    assert (
+        MODULE._request_derived_structural_compression_floor(exact.compression) == 1.0
+    )
 
 
 def test_catalog_plan_pin_requires_an_exact_digest(tmp_path: Path) -> None:
@@ -500,14 +488,12 @@ def test_real_v5_adapter_uses_explicit_preregistered_measurement_gates() -> None
     adapter = MODULE._build_preregistered_real_v5_numerical_adapter()
 
     assert (
-        adapter.basis_policy
-        .maximum_projected_fir_offdiagonal_relative_frobenius
+        adapter.basis_policy.maximum_projected_fir_offdiagonal_relative_frobenius
         == MODULE.PREREGISTERED_PROJECTED_FIR_OFFDIAGONAL_GATE
         == 0.0
     )
     assert (
-        adapter.basis_policy
-        .maximum_per_lag_commutator_relative_frobenius
+        adapter.basis_policy.maximum_per_lag_commutator_relative_frobenius
         == MODULE.PREREGISTERED_PER_LAG_COMMUTATOR_GATE
         == 1.0
     )
@@ -643,8 +629,7 @@ def test_real_runtime_exact_coordinator_completes_prefix_zero_admission_proof(
 
     assert type(coordinator) is v5_resume.Lfm2CpcfV5ResumeCoordinator
     assert (
-        v5_compiler.Lfm2CpcfV5ResumeCoordinator
-        is v5_resume.Lfm2CpcfV5ResumeCoordinator
+        v5_compiler.Lfm2CpcfV5ResumeCoordinator is v5_resume.Lfm2CpcfV5ResumeCoordinator
     )
     assert (
         admission_proof.resume.Lfm2CpcfV5ResumeCoordinator
@@ -681,9 +666,7 @@ def test_real_runtime_exact_coordinator_completes_prefix_zero_admission_proof(
             "admission_chain_proof": dict(proof),
             "admission_chain_proof_sha256": proof["proof_sha256"],
         }
-        return SimpleNamespace(
-            report={"resume_admitted_prefixes": [record]}
-        )
+        return SimpleNamespace(report={"resume_admitted_prefixes": [record]})
 
     compiled = MODULE._compile_with_authenticated_resume(
         compile_prefix_zero,
@@ -693,17 +676,13 @@ def test_real_runtime_exact_coordinator_completes_prefix_zero_admission_proof(
         compile_kwargs={},
     )
 
-    assert compiled.report["resume_admitted_prefixes"][0][
-        "next_layer_index"
-    ] == 0
+    assert compiled.report["resume_admitted_prefixes"][0]["next_layer_index"] == 0
     report = runtime.progress.as_dict()
     assert report["published_pending_prefix_count"] == 1
     assert report["admitted_prefix_count"] == 1
     assert report["outstanding_pending_prefix_count"] == 0
     assert report["rejected_prefix_count"] == 0
-    assert report["admitted_prefixes"] == (
-        compiled.report["resume_admitted_prefixes"]
-    )
+    assert report["admitted_prefixes"] == (compiled.report["resume_admitted_prefixes"])
 
 
 def test_exact_admission_opens_only_typed_v5_state(
@@ -804,9 +783,7 @@ def test_pending_or_rejected_digest_cannot_open_as_admitted_resume(
     )
 
     with pytest.raises(Lfm2CpcfV5ResumeError) as caught:
-        MODULE._build_resume_runtime(
-            MODULE.config_from_args(resume_args)
-        )
+        MODULE._build_resume_runtime(MODULE.config_from_args(resume_args))
 
     assert "admission" in str(caught.value).lower()
     progress = caught.value.resume_progress_report
@@ -829,9 +806,7 @@ def test_wrong_live_resume_context_refusal_is_preserved(
 
     def reject_context(_source, _target, **kwargs):
         assert kwargs["resume_coordinator"] is runtime.coordinator
-        raise RuntimeError(
-            "Live resume context differs from the admitted frontier."
-        )
+        raise RuntimeError("Live resume context differs from the admitted frontier.")
 
     with pytest.raises(RuntimeError, match="context differs") as caught:
         MODULE._compile_with_authenticated_resume(
@@ -871,15 +846,11 @@ def test_failed_rss_preserves_pending_and_rejected_prefix_references(
     pending = SimpleNamespace(
         next_layer_index=1,
         frontier_reference=Reference("boundary", "frontier"),
-        checkpoint=SimpleNamespace(
-            reference=Reference("checkpoint", "checkpoint")
-        ),
+        checkpoint=SimpleNamespace(reference=Reference("checkpoint", "checkpoint")),
         frontier_sha256=hashlib.sha256(b"frontier").hexdigest(),
         event_report_sha256=hashlib.sha256(b"event").hexdigest(),
     )
-    rejection = {
-        "rejection_sha256": hashlib.sha256(b"rejection").hexdigest()
-    }
+    rejection = {"rejection_sha256": hashlib.sha256(b"rejection").hexdigest()}
     args = MODULE.build_parser().parse_args(
         [
             *_required_args(tmp_path),
@@ -1081,10 +1052,7 @@ def _compiled_consumer_context():
     }
     zero_audit = {
         "schema": MODULE.COMPILED_CANDIDATE_ZERO_AUDIT_SCHEMA,
-        **{
-            name: 0
-            for name in MODULE._CONSUMER_ZERO_COUNTER_FIELDS
-        },
+        **{name: 0 for name in MODULE._CONSUMER_ZERO_COUNTER_FIELDS},
         "clean": True,
     }
     from neural_forge import dynamic_fold_executor
@@ -1093,9 +1061,7 @@ def _compiled_consumer_context():
         dynamic_fold_executor
     )
     static_audit_body = {
-        "schema": (
-            "neural-forge-lfm2-cpcf-v5-static-fold-mutation-source-audit-v1"
-        ),
+        "schema": ("neural-forge-lfm2-cpcf-v5-static-fold-mutation-source-audit-v1"),
         "compiler_implementation_sha256": compiler_sha,
         "authenticated_compiler_source_files": compiler_source_files,
         "runner_source_sha256": runner_sha,
@@ -1150,9 +1116,7 @@ def _compiled_consumer_context():
         selective_source_sha256=source_sha,
         compiler_implementation_sha256=compiler_sha,
         runner_source_sha256=runner_sha,
-        fold_only_runtime_guard_identity_sha256=guard_identity[
-            "identity_sha256"
-        ],
+        fold_only_runtime_guard_identity_sha256=guard_identity["identity_sha256"],
         catalog_preparation=catalog_preparation,
     )
     seam = {
@@ -1171,24 +1135,18 @@ def _compiled_consumer_context():
         "selective_catalog_preparation_receipt_sha256": (
             catalog_preparation["preparation_receipt_sha256"]
         ),
-        "selective_catalog_binding_sha256": catalog_preparation[
-            "binding_sha256"
-        ],
+        "selective_catalog_binding_sha256": catalog_preparation["binding_sha256"],
         "selective_catalog_artifact_manifest_sha256": (
             catalog_preparation["artifact_manifest_sha256"]
         ),
         "selective_catalog_artifact_sha256": catalog_preparation[
             "artifact_catalog_sha256"
         ],
-        "selective_catalog_codec_sha256": catalog_preparation[
-            "codec_sha256"
-        ],
+        "selective_catalog_codec_sha256": catalog_preparation["codec_sha256"],
         "selective_catalog_provider_implementation_sha256": (
             catalog_preparation["provider_implementation_sha256"]
         ),
-        "fold_only_runtime_guard_identity_sha256": guard_identity[
-            "identity_sha256"
-        ],
+        "fold_only_runtime_guard_identity_sha256": guard_identity["identity_sha256"],
         "parent_tokenizer_semantics_sha256": parent_tokenizer_sha,
         "target_tokenizer_semantics_sha256": tokenizer_sha,
         "target_tokenizer_package_sha256": None,
@@ -1217,9 +1175,7 @@ def _compiled_consumer_context():
         "compiled_candidate_consumer_seam": seam,
         "selective_catalog_artifact": catalog_preparation,
         "selective_catalog_post_run_reverification": dict(
-            MODULE.selective_catalog_post_run_reverification_record(
-                catalog_preparation
-            )
+            MODULE.selective_catalog_post_run_reverification_record(catalog_preparation)
         ),
         "claims": {
             "child_checkpoint_saved": False,
@@ -1286,12 +1242,8 @@ def _compiled_consumer_result(
         compiler_sha256=context.compiler_sha256,
         runner_source_sha256=context.runner_source_sha256,
         source_binding_sha256=context.source_binding_sha256,
-        parent_tokenizer_semantics_sha256=(
-            context.parent_tokenizer_semantics_sha256
-        ),
-        target_tokenizer_semantics_sha256=(
-            context.target_tokenizer_semantics_sha256
-        ),
+        parent_tokenizer_semantics_sha256=(context.parent_tokenizer_semantics_sha256),
+        target_tokenizer_semantics_sha256=(context.target_tokenizer_semantics_sha256),
         compile_diagnostic=context.compile_diagnostic,
         verification_receipt=(
             candidate.verification_receipt
@@ -1406,14 +1358,10 @@ def test_compiled_candidate_consumer_accepts_ordinary_quarantine_capture(
     assert result.quarantine_candidate_saved is True
     assert result.quarantine_publication_nonpromotable is True
     assert dict(result.compile_diagnostic) == dict(context.compile_diagnostic)
-    assert dict(result.verification_receipt) == dict(
-        candidate.verification_receipt
-    )
+    assert dict(result.verification_receipt) == dict(candidate.verification_receipt)
     assert result.consumer_runtime_guard_receipt["clean"] is True
     assert (
-        result.consumer_runtime_guard_receipt[
-            "capture_verification_sha256"
-        ]
+        result.consumer_runtime_guard_receipt["capture_verification_sha256"]
         == result.verification_receipt["verification_sha256"]
     )
 
@@ -1682,11 +1630,7 @@ def test_current_two_gpu_policy_receipt_matches_live_replay_sources() -> None:
 
 
 def test_historical_two_gpu_policy_receipt_rejects_changed_sources() -> None:
-    historical = (
-        MODULE._REPOSITORY_ROOT
-        / "reports"
-        / "12061b4-two-rtx3090-bf16.json"
-    )
+    historical = MODULE._REPOSITORY_ROOT / "reports" / "12061b4-two-rtx3090-bf16.json"
 
     with pytest.raises(
         MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
@@ -1791,18 +1735,20 @@ def test_runner_source_has_no_disallowed_execution_or_loader_lane() -> None:
     )
 
     assert all(token not in source for token in forbidden)
-    assert (
-        "v5_compiler.compile_lfm2_cpcf_v5_selective_model_fold,"
-        in source
-    )
+    assert "v5_compiler.compile_lfm2_cpcf_v5_selective_model_fold," in source
     assert "Lfm2CpcfV5EndpointFirstCandidateSelector()" in source
     assert "_build_preregistered_real_v5_numerical_adapter()" in source
     assert '"numerical_frontier_adapter": numerical_adapter' in source
     assert "require_short_conv_v5_real_numerical_frontier_adapter=True" in source
+    assert "require_short_conv_v5_authenticated_whole_macrocell_selector=True" in source
     assert (
-        "open_lfm2_cpcf_selective_evidence_provider_from_catalog("
-        in source
+        '"short_conv_v5_authenticated_whole_macrocell_selection_integrated"' in source
     )
+    assert '"short_conv_v5_macrocell_selector_final_authority"' in source
+    assert '"short_conv_v5_endpoint_first_selector_final_authority"' in source
+    assert '"short_conv_v5_endpoint_prefilter_control_integrated"' in source
+    assert '"macrocell_candidate_selector_layer_indices"' in source
+    assert "open_lfm2_cpcf_selective_evidence_provider_from_catalog(" in source
     assert "prepare_selective_catalog(" in source
     assert "expected_selective_catalog_receipt_sha256" in source
     assert "selective_catalog_post_run_reverification" in source

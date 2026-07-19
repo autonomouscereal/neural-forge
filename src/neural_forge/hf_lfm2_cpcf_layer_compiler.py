@@ -41,6 +41,7 @@ from neural_forge.hf_lfm2_cpcf_model_compiler import (
     Lfm2CpcfPhaseStateBank,
     Lfm2CpcfTargetPhase,
     replay_lfm2_cpcf_phase_bank,
+    select_lfm2_cpcf_phase_state_bank,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_fold import (
     LFM2_CPCF_SHORT_CONV_FOLD_SCHEMA,
@@ -60,6 +61,10 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_V1_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVALUATION_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FAILURE_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_RECEIPT_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_SCHEMA,
@@ -68,29 +73,50 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
     LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA,
     LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA,
+    LFM2_CPCF_SHORT_CONV_V5_SELECTOR_REQUEST_SCHEMA,
     Lfm2CompiledCpcfShortConvV4Fold,
     Lfm2CpcfShortConvNumericalFrontierAdapter,
     Lfm2CpcfShortConvV4FoldCase,
+    Lfm2CpcfShortConvV5CandidateFrontier,
     Lfm2CpcfShortConvV5CandidateSelector,
+    Lfm2CpcfShortConvV5MacrocellCandidate,
     compile_lfm2_cpcf_short_conv_v4_fold,
+    select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
+    LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4_policy import (
     parse_lfm2_cpcf_short_conv_v4_solver_policy,
 )
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (
+    Lfm2AttentionScorePreservationReport,
     Lfm2CachedAttentionFoldCase,
     Lfm2CachedMlpFoldCase,
     Lfm2CompiledStructuralAttentionFold,
+    Lfm2CompiledStructuralAttentionProducerFold,
+    Lfm2CompiledStructuralAttentionValueOutputFold,
     Lfm2CompiledStructuralMlpFold,
+    Lfm2PreparedStructuralMlpFoldBasis,
+    compile_lfm2_structural_attention_producer_fold,
+    compile_lfm2_structural_attention_value_output_fold,
     compile_lfm2_structural_residual_attention_fold,
     compile_lfm2_structural_residual_mlp_fold,
+    evaluate_lfm2_compiled_attention_producer_score_preservation,
     install_lfm2_structural_attention_fold,
+    install_lfm2_structural_attention_producer_fold,
+    install_lfm2_structural_attention_score_producer_fold,
+    install_lfm2_structural_attention_value_output_fold,
     install_lfm2_structural_mlp_fold,
+    prepare_lfm2_structural_residual_mlp_fold_basis,
 )
 
 
 LFM2_CPCF_LAYER_COMPILER_SCHEMA = "neural-forge-lfm2-cpcf-layer-compiler-v1"
 LFM2_CPCF_LAYER_FAILURE_SCHEMA = "neural-forge-lfm2-cpcf-layer-failure-v3"
+LFM2_CPCF_RESIDUAL_ATTENTION_SPLIT_SCHEMA = (
+    "neural-forge-lfm2-cpcf-residual-attention-split-v1"
+)
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _EVALUATION_SPLITS = ("fit", "validation")
 _SHORT_CONV_CASE_SPLITS = ("selection", "fit", "validation")
@@ -283,10 +309,10 @@ _SHORT_CONV_V4_FAILURE_REPORT_FIELDS = frozenset(
         "report_sha256",
     }
 )
-_SHORT_CONV_V4_FAILURE_V1_REPORT_FIELDS = (
-    _SHORT_CONV_V4_FAILURE_REPORT_FIELDS
-    - {"ridge_fit_reports", "candidate_pool_report"}
-)
+_SHORT_CONV_V4_FAILURE_V1_REPORT_FIELDS = _SHORT_CONV_V4_FAILURE_REPORT_FIELDS - {
+    "ridge_fit_reports",
+    "candidate_pool_report",
+}
 _SHORT_CONV_V4_GATE_CHECK_FIELDS = frozenset(
     {
         "fit_endpoint_relative_rmse",
@@ -315,9 +341,9 @@ _SHORT_CONV_V4_EXECUTION_FIELDS = frozenset(
         "fallback_paths",
     }
 )
-_SHORT_CONV_V5_NUMERICAL_EXECUTION_FIELDS = (
-    _SHORT_CONV_V4_EXECUTION_FIELDS - {"fallback_paths"}
-)
+_SHORT_CONV_V5_NUMERICAL_EXECUTION_FIELDS = _SHORT_CONV_V4_EXECUTION_FIELDS - {
+    "fallback_paths"
+}
 _SHORT_CONV_V5_SELECTOR_EXECUTION_FIELDS = frozenset(
     {
         "training_steps",
@@ -1989,26 +2015,31 @@ def _attention_key_mask(additive_mask: Any) -> Any:
 
 def _equal_causal_phase_sqrt_weights(
     phases: Sequence[Lfm2CpcfTargetPhase],
+    *,
+    required_split: str = "fit",
 ) -> Mapping[tuple[int, str], Any]:
-    """Give every fit phase equal total least-squares mass.
+    """Give every phase in one required split equal least-squares mass.
 
     The weights retain a global mean square of one, so changing from uniform
     rows does not silently rescale the ridge term.
     """
 
     torch = _torch()
-    fit_phases = tuple(phase for phase in phases if phase.split == "fit")
-    if not fit_phases:
+    if not isinstance(required_split, str) or not required_split:
         raise Lfm2CpcfLayerCompilerError(
-            "Attention phase weighting requires at least one fit phase."
+            "Attention phase weighting requires one nonempty split name."
+        )
+    selected_phases = tuple(phase for phase in phases if phase.split == required_split)
+    if not selected_phases:
+        raise Lfm2CpcfLayerCompilerError(
+            f"Attention phase weighting requires at least one {required_split!r} phase."
         )
     total_rows = sum(
-        phase.batch_size * phase.sampled_suffix_tokens
-        for phase in fit_phases
+        phase.batch_size * phase.sampled_suffix_tokens for phase in selected_phases
     )
-    phase_count = len(fit_phases)
+    phase_count = len(selected_phases)
     result = {}
-    for phase in fit_phases:
+    for phase in selected_phases:
         rows = phase.batch_size * phase.sampled_suffix_tokens
         row_weight = total_rows / (phase_count * rows)
         result[phase.identity] = torch.full(
@@ -2016,9 +2047,7 @@ def _equal_causal_phase_sqrt_weights(
             math.sqrt(row_weight),
             dtype=torch.float64,
         )
-    observed_mass = sum(
-        float(value.square().sum().item()) for value in result.values()
-    )
+    observed_mass = sum(float(value.square().sum().item()) for value in result.values())
     if not math.isclose(
         observed_mass,
         float(total_rows),
@@ -2062,17 +2091,13 @@ def _attention_output_transport_seal_payload(
     return {
         "head_dim": head_dim,
         "query_heads": query_heads,
-        "source_output_blocks_sha256": _tensor_sha256(
-            source_output_blocks
+        "source_output_blocks_sha256": _tensor_sha256(source_output_blocks),
+        "source_output_weight_dtype": str(source_output_weight_dtype).removeprefix(
+            "torch."
         ),
-        "source_output_weight_dtype": str(
-            source_output_weight_dtype
-        ).removeprefix("torch."),
         "source_width": source_width,
         "target_encoder_sha256": _tensor_sha256(target_encoder),
-        "target_output_blocks_sha256": _tensor_sha256(
-            target_output_blocks
-        ),
+        "target_output_blocks_sha256": _tensor_sha256(target_output_blocks),
         "target_width": target_width,
     }
 
@@ -2152,8 +2177,7 @@ def _verify_attention_output_transport(
             or not bool(torch.isfinite(value).all().item())
         ):
             raise Lfm2CpcfLayerCompilerError(
-                f"{name}.{field_name} violates its sealed dense FP64 "
-                "tensor contract."
+                f"{name}.{field_name} violates its sealed dense FP64 tensor contract."
             )
         storage_pointers.append(value.untyped_storage().data_ptr())
     if len(set(storage_pointers)) != len(storage_pointers):
@@ -2167,18 +2191,13 @@ def _verify_attention_output_transport(
             query_heads=query_heads,
             head_dim=head_dim,
             target_width=target_width,
-            source_output_weight_dtype=(
-                transport.source_output_weight_dtype
-            ),
+            source_output_weight_dtype=(transport.source_output_weight_dtype),
             source_output_blocks=transport.source_output_blocks,
             target_encoder=transport.target_encoder,
             target_output_blocks=transport.target_output_blocks,
         )
     )
-    if (
-        _digest(transport.seal_sha256, f"{name}.seal_sha256")
-        != expected_seal
-    ):
+    if _digest(transport.seal_sha256, f"{name}.seal_sha256") != expected_seal:
         raise Lfm2CpcfLayerCompilerError(
             f"{name} content differs from its prepared O transport seal."
         )
@@ -2245,11 +2264,7 @@ def _prepare_attention_output_transport_from_tensors(
         )
     query_heads = _nonnegative_int(query_heads, f"{name}.query_heads")
     head_dim = _nonnegative_int(head_dim, f"{name}.head_dim")
-    if (
-        query_heads == 0
-        or head_dim == 0
-        or context_width != query_heads * head_dim
-    ):
+    if query_heads == 0 or head_dim == 0 or context_width != query_heads * head_dim:
         raise Lfm2CpcfLayerCompilerError(
             f"{name} source O weight does not match its attention topology."
         )
@@ -2280,18 +2295,14 @@ def _prepare_attention_output_transport_from_tensors(
             float(expected_blocks.abs().max().item()),
             torch.finfo(torch.float64).tiny,
         )
-        block_error = float(
-            (blocks - expected_blocks).abs().max().item()
-        )
+        block_error = float((blocks - expected_blocks).abs().max().item())
         if (
             not math.isfinite(block_scale)
             or not math.isfinite(block_error)
-            or block_error
-            > (32.0 * torch.finfo(torch.float64).eps * block_scale)
+            or block_error > (32.0 * torch.finfo(torch.float64).eps * block_scale)
         ):
             raise Lfm2CpcfLayerCompilerError(
-                f"{name} target O blocks do not match the source O/chart "
-                "composition."
+                f"{name} target O blocks do not match the source O/chart composition."
             )
 
     seal_sha256 = _sha(
@@ -2308,15 +2319,15 @@ def _prepare_attention_output_transport_from_tensors(
     )
     return _verify_attention_output_transport(
         _PreparedAttentionOutputTransport(
-        source_width=source_width,
-        query_heads=query_heads,
-        head_dim=head_dim,
-        target_width=target_width,
-        source_output_weight_dtype=output_weight_native.dtype,
-        source_output_blocks=source_blocks,
-        target_encoder=encoder,
-        target_output_blocks=blocks,
-        seal_sha256=seal_sha256,
+            source_width=source_width,
+            query_heads=query_heads,
+            head_dim=head_dim,
+            target_width=target_width,
+            source_output_weight_dtype=output_weight_native.dtype,
+            source_output_blocks=source_blocks,
+            target_encoder=encoder,
+            target_output_blocks=blocks,
+            seal_sha256=seal_sha256,
         ),
         name=name,
     )
@@ -2334,9 +2345,7 @@ def _prepare_attention_output_transport(
         "source_attention.head_dim",
     )
     if head_dim == 0:
-        raise Lfm2CpcfLayerCompilerError(
-            "source_attention.head_dim must be positive."
-        )
+        raise Lfm2CpcfLayerCompilerError("source_attention.head_dim must be positive.")
     output_weight = _weight(
         source_attention.out_proj,
         "source_attention.out_proj",
@@ -2394,9 +2403,7 @@ def _attention_output_transport_complexity_receipt(
         "legacy_composition_count": phase_count + 1,
         "prepared_composition_count": 1,
         "avoided_composition_count": phase_count,
-        "avoided_composition_flops": (
-            2 * composition_terms * phase_count
-        ),
+        "avoided_composition_flops": (2 * composition_terms * phase_count),
         "avoided_phase_fp64_weight_materialization_bytes": (
             phase_count
             * transport.source_width
@@ -2425,30 +2432,23 @@ def _attention_runtime_complexity_receipt(
     torch = _torch()
     transport_receipt = dict(output_transport_receipt)
     transport_digest = transport_receipt.pop("report_sha256", None)
-    if (
-        _digest(
-            transport_digest,
-            "attention output transport receipt report_sha256",
-        )
-        != _sha(transport_receipt)
-    ):
+    if _digest(
+        transport_digest,
+        "attention output transport receipt report_sha256",
+    ) != _sha(transport_receipt):
         raise Lfm2CpcfLayerCompilerError(
             "Attention output transport receipt authentication failed."
         )
     topology = operator_artifact.topology
     cluster_report = operator_artifact.cluster_plan.report
     if (
-        transport_receipt.get("source_width")
-        != topology.source_hidden_size
-        or transport_receipt.get("query_heads")
-        != topology.source_query_heads
+        transport_receipt.get("source_width") != topology.source_hidden_size
+        or transport_receipt.get("query_heads") != topology.source_query_heads
         or transport_receipt.get("head_dim") != topology.head_dim
-        or transport_receipt.get("target_width")
-        != topology.target_output_size
+        or transport_receipt.get("target_width") != topology.target_output_size
     ):
         raise Lfm2CpcfLayerCompilerError(
-            "Prepared O transport receipt differs from compiled attention "
-            "topology."
+            "Prepared O transport receipt differs from compiled attention topology."
         )
 
     fit_observation_rows = 0
@@ -2466,8 +2466,7 @@ def _attention_runtime_complexity_receipt(
             or tuple(contribution.shape[:3]) != tuple(query.shape[:3])
         ):
             raise Lfm2CpcfLayerCompilerError(
-                f"Attention case {index} does not match its runtime receipt "
-                "topology."
+                f"Attention case {index} does not match its runtime receipt topology."
             )
         current_width = int(contribution.shape[3])
         if contribution_width is None:
@@ -2488,12 +2487,9 @@ def _attention_runtime_complexity_receipt(
     identity_strategy = "deterministic-identity-real-medoid"
     short_circuit_executed = (
         equal_offsets
-        and cluster_report.query_offset_cluster_strategy
-        == identity_strategy
-        and cluster_report.query_offset_medoids
-        == tuple(range(source_offsets))
-        and cluster_report.query_offset_assignment
-        == tuple(range(source_offsets))
+        and cluster_report.query_offset_cluster_strategy == identity_strategy
+        and cluster_report.query_offset_medoids == tuple(range(source_offsets))
+        and cluster_report.query_offset_assignment == tuple(range(source_offsets))
     )
     if equal_offsets != short_circuit_executed:
         raise Lfm2CpcfLayerCompilerError(
@@ -2502,21 +2498,15 @@ def _attention_runtime_complexity_receipt(
         )
 
     query_signature_elements = (
-        topology.source_query_heads
-        * fit_observation_rows
-        * topology.head_dim
+        topology.source_query_heads * fit_observation_rows * topology.head_dim
     )
     contribution_signature_elements = (
-        topology.source_query_heads
-        * fit_observation_rows
-        * contribution_width
+        topology.source_query_heads * fit_observation_rows * contribution_width
     )
     offset_feature_elements = (
         2 * query_signature_elements + contribution_signature_elements
     )
-    avoided_feature_elements = (
-        offset_feature_elements if short_circuit_executed else 0
-    )
+    avoided_feature_elements = offset_feature_elements if short_circuit_executed else 0
     offset_body = {
         "source_query_heads": topology.source_query_heads,
         "source_key_value_heads": topology.source_key_value_heads,
@@ -2529,19 +2519,13 @@ def _attention_runtime_complexity_receipt(
         "fit_case_count": len(cases),
         "fit_observation_rows": fit_observation_rows,
         "query_signature_elements": query_signature_elements,
-        "contribution_signature_elements": (
-            contribution_signature_elements
-        ),
+        "contribution_signature_elements": (contribution_signature_elements),
         "legacy_offset_feature_elements": offset_feature_elements,
         "identity_short_circuit_executed": short_circuit_executed,
-        "query_offset_cluster_strategy": (
-            cluster_report.query_offset_cluster_strategy
-        ),
+        "query_offset_cluster_strategy": (cluster_report.query_offset_cluster_strategy),
         "avoided_offset_feature_elements": avoided_feature_elements,
         "avoided_offset_feature_bytes": avoided_feature_elements * 8,
-        "avoided_minimum_live_bytes_at_legacy_cat": (
-            avoided_feature_elements * 8 * 3
-        ),
+        "avoided_minimum_live_bytes_at_legacy_cat": (avoided_feature_elements * 8 * 3),
         "identity_result_bytes": (
             3 * source_offsets * 8 if short_circuit_executed else 0
         ),
@@ -2621,9 +2605,8 @@ def _encoded_parent_attention_contribution(
             target_output_blocks=target_output_blocks,
             name=name,
         )
-    elif (
-        type(prepared_transport) is not _PreparedAttentionOutputTransport
-        or any(value is not None for value in raw_transport_values)
+    elif type(prepared_transport) is not _PreparedAttentionOutputTransport or any(
+        value is not None for value in raw_transport_values
     ):
         raise Lfm2CpcfLayerCompilerError(
             f"{name} prepared O transport must be supplied alone."
@@ -2645,14 +2628,12 @@ def _encoded_parent_attention_contribution(
         context_width != query_heads * head_dim
         or query_heads != prepared_transport.query_heads
         or head_dim != prepared_transport.head_dim
-        or tuple(source_output_native.shape)
-        != (batch, query_rows, source_width)
-        or tuple(target_output.shape)
-        != (batch, query_rows, target_width)
+        or tuple(source_output_native.shape) != (batch, query_rows, source_width)
+        or tuple(target_output.shape) != (batch, query_rows, target_width)
     ):
         raise Lfm2CpcfLayerCompilerError(
             f"{name} parent context, O output, and target O blocks are misaligned."
-    )
+        )
     context = context_native.to(torch.float64)
     contribution = torch.einsum(
         "bhqd,hdt->bhqt",
@@ -2715,9 +2696,7 @@ def _encoded_parent_attention_contribution(
     operation_count = 2 * dot_terms
     accumulated = operation_count * accumulator_unit
     accumulation_gamma = (
-        accumulated / (1.0 - accumulated)
-        if accumulated < 1.0
-        else float("inf")
+        accumulated / (1.0 - accumulated) if accumulated < 1.0 else float("inf")
     )
     if not math.isfinite(accumulation_gamma):
         raise Lfm2CpcfLayerCompilerError(
@@ -2732,9 +2711,7 @@ def _encoded_parent_attention_contribution(
         else 0.0
     )
     output_unit = torch.finfo(source_output_native.dtype).eps / 2.0
-    absolute_source_output_blocks = (
-        prepared_transport.source_output_blocks.abs()
-    )
+    absolute_source_output_blocks = prepared_transport.source_output_blocks.abs()
     absolute_target_encoder = prepared_transport.target_encoder.abs()
     absolute_term_sum = torch.einsum(
         "bhqd,ohd->bqo",
@@ -2761,13 +2738,8 @@ def _encoded_parent_attention_contribution(
     source_error_rmse = float(
         (source_prediction - source_reference).square().mean().sqrt().item()
     )
-    source_bound_rmse = float(
-        source_roundoff_bound.square().mean().sqrt().item()
-    )
-    if (
-        not math.isfinite(source_error_rmse)
-        or not math.isfinite(source_bound_rmse)
-    ):
+    source_bound_rmse = float(source_roundoff_bound.square().mean().sqrt().item())
+    if not math.isfinite(source_error_rmse) or not math.isfinite(source_bound_rmse):
         raise Lfm2CpcfLayerCompilerError(
             f"{name} O projection produced a non-finite error comparison."
         )
@@ -2789,9 +2761,7 @@ def _encoded_parent_attention_contribution(
         absolute_target_encoder,
     )
     target_roundoff_bound = target_roundoff_bound + (
-        64.0
-        * torch.finfo(torch.float64).eps
-        * target_association_scale
+        64.0 * torch.finfo(torch.float64).eps * target_association_scale
     )
     if not (
         bool(torch.isfinite(reconstructed).all().item())
@@ -2799,15 +2769,12 @@ def _encoded_parent_attention_contribution(
         and bool(torch.isfinite(target_association_scale).all().item())
     ):
         raise Lfm2CpcfLayerCompilerError(
-            f"{name} target-space O write produced a non-finite "
-            "error bound."
+            f"{name} target-space O write produced a non-finite error bound."
         )
     target_error_rmse = float(
         (reconstructed - target_reference).square().mean().sqrt().item()
     )
-    target_bound_rmse = float(
-        target_roundoff_bound.square().mean().sqrt().item()
-    )
+    target_bound_rmse = float(target_roundoff_bound.square().mean().sqrt().item())
     if (
         int(contribution.shape[-1]) <= 0
         or not math.isfinite(target_error_rmse)
@@ -2831,6 +2798,7 @@ def _attention_cases(
     input_bank: Lfm2CpcfPhaseStateBank,
     preinstall_replay: Lfm2CpcfLayerReplayBank,
     chart: Lfm2CpcfLayerBoundaryCharts,
+    required_split: str = "fit",
 ) -> tuple[
     tuple[Lfm2CachedAttentionFoldCase, ...],
     Mapping[str, Any],
@@ -2865,13 +2833,14 @@ def _attention_cases(
     )
     phase_sqrt_weights = _equal_causal_phase_sqrt_weights(
         input_bank.phases,
+        required_split=required_split,
     )
     grouped: dict[
         tuple[int, str],
         list[Lfm2CpcfTargetPhase],
     ] = {}
     for phase in input_bank.phases:
-        if phase.split == "fit":
+        if phase.split == required_split:
             grouped.setdefault(
                 (phase.batch_index, phase.record_id),
                 [],
@@ -3158,9 +3127,7 @@ def _attention_cases(
             endpoint = chart.post_operator.encode_shaped(
                 tensors["residual.post_operator"]
             )
-            encoded_output = chart.post_operator.encode_shaped(
-                tensors["attention.o"]
-            )
+            encoded_output = chart.post_operator.encode_shaped(tensors["attention.o"])
             parent_contribution = _encoded_parent_attention_contribution(
                 parent_context=parent_context,
                 cached_source_output=tensors["attention.o"],
@@ -3178,8 +3145,7 @@ def _attention_cases(
                     int(parent_query.shape[1]),
                     current,
                 )
-                or tuple(row_sqrt_weights.shape)
-                != (phase.batch_size, current)
+                or tuple(row_sqrt_weights.shape) != (phase.batch_size, current)
                 or int(key_linear_history.shape[2]) != phase.full_prefix_tokens
                 or tuple(key_mask_history.shape)
                 != (
@@ -3276,7 +3242,8 @@ def _attention_cases(
         )
     if not result:
         raise Lfm2CpcfLayerCompilerError(
-            "Attention compilation requires at least one fit trajectory."
+            "Attention case assembly requires at least one "
+            f"{required_split!r} trajectory."
         )
     return (
         tuple(result),
@@ -3285,6 +3252,278 @@ def _attention_cases(
             phase_count=prepared_transport_use_count,
         ),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CompiledCpcfResidualAttentionSplitFold:
+    """Authenticated Q/K producer plus coupled V/O residual-attention state."""
+
+    producer_artifact: Lfm2CompiledStructuralAttentionProducerFold
+    value_output_artifact: Lfm2CompiledStructuralAttentionValueOutputFold
+    score_selection_report: Lfm2AttentionScorePreservationReport
+    fit_context_replay_sha256: str
+    fit_context_bundle_sha256: str
+    temporary_producer_install_report: Mapping[str, Any]
+    temporary_rollback_proof: Mapping[str, Any]
+    compiled_state_sha256: str
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.producer_artifact,
+            Lfm2CompiledStructuralAttentionProducerFold,
+        ):
+            raise TypeError(
+                "producer_artifact must be an LFM2 structural attention producer fold."
+            )
+        if not isinstance(
+            self.value_output_artifact,
+            Lfm2CompiledStructuralAttentionValueOutputFold,
+        ):
+            raise TypeError("value_output_artifact must be an LFM2 coupled V/O fold.")
+        if not isinstance(
+            self.score_selection_report,
+            Lfm2AttentionScorePreservationReport,
+        ):
+            raise TypeError(
+                "score_selection_report must be an authenticated attention "
+                "score-preservation report."
+            )
+        if (
+            self.value_output_artifact.topology != self.producer_artifact.topology
+            or self.value_output_artifact.fixed_query_key_sha256
+            != self.producer_artifact.score_state_sha256
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Coupled V/O state does not belong to the compiled Q/K producer."
+            )
+        fit_replay = _digest(
+            self.fit_context_replay_sha256,
+            "fit_context_replay_sha256",
+        )
+        fit_context = _digest(
+            self.fit_context_bundle_sha256,
+            "fit_context_bundle_sha256",
+        )
+        compiled_sha = _digest(
+            self.compiled_state_sha256,
+            "compiled_state_sha256",
+        )
+        if _tensor_bundle_sha256(self.state_dict()) != compiled_sha:
+            raise Lfm2CpcfLayerCompilerError(
+                "Residual-attention split state authentication failed."
+            )
+        report = dict(self.report)
+        claimed_report_sha = report.pop("report_sha256", None)
+        if (
+            _digest(
+                claimed_report_sha,
+                "residual attention split report_sha256",
+            )
+            != _sha(report)
+            or report.get("schema") != LFM2_CPCF_RESIDUAL_ATTENTION_SPLIT_SCHEMA
+            or report.get("compiled_state_sha256") != compiled_sha
+            or report.get("fit_context_replay_sha256") != fit_replay
+            or report.get("fit_context_bundle_sha256") != fit_context
+            or report.get("score_selection_report_sha256")
+            != self.score_selection_report.report_sha256
+            or report.get("producer_artifact") != self.producer_artifact.as_dict()
+            or report.get("producer_artifact_sha256")
+            != _sha(self.producer_artifact.as_dict())
+            or report.get("value_output_artifact")
+            != self.value_output_artifact.as_dict()
+            or report.get("value_output_artifact_sha256")
+            != _sha(self.value_output_artifact.as_dict())
+            or report.get("score_selection_report")
+            != self.score_selection_report.as_dict()
+            or report.get("temporary_producer_install_report")
+            != dict(self.temporary_producer_install_report)
+            or report.get("temporary_rollback_proof")
+            != dict(self.temporary_rollback_proof)
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Residual-attention split artifact seal is invalid."
+            )
+        rollback = dict(self.temporary_rollback_proof)
+        rollback_sha = rollback.pop("proof_sha256", None)
+        if (
+            _digest(
+                rollback_sha,
+                "temporary_rollback_proof.proof_sha256",
+            )
+            != _sha(rollback)
+            or rollback.get("exact_layer_rollback_proven") is not True
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Residual-attention temporary rollback proof is invalid."
+            )
+        object.__setattr__(
+            self,
+            "temporary_producer_install_report",
+            MappingProxyType(dict(self.temporary_producer_install_report)),
+        )
+        object.__setattr__(
+            self,
+            "temporary_rollback_proof",
+            MappingProxyType(dict(self.temporary_rollback_proof)),
+        )
+        object.__setattr__(
+            self,
+            "report",
+            MappingProxyType({**report, "report_sha256": claimed_report_sha}),
+        )
+
+    @property
+    def topology(self) -> Any:
+        return self.producer_artifact.topology
+
+    @property
+    def cluster_plan(self) -> Any:
+        return self.producer_artifact.cluster_plan
+
+    def state_dict(self) -> Mapping[str, Any]:
+        return MappingProxyType(
+            {
+                "q_proj.weight": (
+                    self.producer_artifact.query_weight.detach().cpu().clone()
+                ),
+                "k_proj.weight": (
+                    self.producer_artifact.key_weight.detach().cpu().clone()
+                ),
+                "v_proj.weight": (
+                    self.value_output_artifact.value_weight.detach().cpu().clone()
+                ),
+                "out_proj.weight": (
+                    self.value_output_artifact.output_weight.detach().cpu().clone()
+                ),
+            }
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.report)
+
+
+def _compose_residual_attention_split_artifact(
+    *,
+    producer_artifact: Lfm2CompiledStructuralAttentionProducerFold,
+    value_output_artifact: Lfm2CompiledStructuralAttentionValueOutputFold,
+    score_selection_report: Lfm2AttentionScorePreservationReport,
+    fit_context_replay: Lfm2CpcfLayerReplayBank,
+    actual_contexts: Sequence[Any],
+    temporary_producer_install_report: Mapping[str, Any],
+    temporary_rollback_proof: Mapping[str, Any],
+) -> Lfm2CompiledCpcfResidualAttentionSplitFold:
+    if not actual_contexts:
+        raise Lfm2CpcfLayerCompilerError(
+            "Residual-attention split requires actual fit contexts."
+        )
+    state = {
+        "q_proj.weight": producer_artifact.query_weight,
+        "k_proj.weight": producer_artifact.key_weight,
+        "v_proj.weight": value_output_artifact.value_weight,
+        "out_proj.weight": value_output_artifact.output_weight,
+    }
+    compiled_sha = _tensor_bundle_sha256(state)
+    context_sha = _tensor_bundle_sha256(
+        {f"context.{index:04d}": value for index, value in enumerate(actual_contexts)}
+    )
+    body = {
+        "schema": LFM2_CPCF_RESIDUAL_ATTENTION_SPLIT_SCHEMA,
+        "producer_artifact": producer_artifact.as_dict(),
+        "producer_artifact_sha256": _sha(producer_artifact.as_dict()),
+        "value_output_artifact": value_output_artifact.as_dict(),
+        "value_output_artifact_sha256": _sha(value_output_artifact.as_dict()),
+        "score_selection_report": score_selection_report.as_dict(),
+        "score_selection_report_sha256": (score_selection_report.report_sha256),
+        "fit_context_replay_sha256": (fit_context_replay.report["report_sha256"]),
+        "fit_context_bundle_sha256": context_sha,
+        "temporary_producer_install_report": dict(temporary_producer_install_report),
+        "temporary_rollback_proof": dict(temporary_rollback_proof),
+        "compiled_state_sha256": compiled_sha,
+        "fit_only_producer_compile": True,
+        "fit_only_value_output_compile": True,
+        "selection_only_query_key_score_evaluation": True,
+        "validation_used_for_compilation_or_selection": False,
+        "actual_context_source": (
+            "temporary_installed_qkv_fit_bank_operator_output_input"
+        ),
+        "live_value_source": "compiled_producer_v",
+        "value_prior_source": "compiled_producer_v",
+        "output_prior_source": "original_blank_target_o",
+        "fixed_query_key_then_coupled_value_output_install": True,
+        "dense_target_native_state": True,
+        "execution": {
+            "parent_model_forward_calls": 0,
+            "target_model_forward_calls": 0,
+            "target_layer_forward_calls": 0,
+            "generation_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        },
+    }
+    return Lfm2CompiledCpcfResidualAttentionSplitFold(
+        producer_artifact=producer_artifact,
+        value_output_artifact=value_output_artifact,
+        score_selection_report=score_selection_report,
+        fit_context_replay_sha256=(fit_context_replay.report["report_sha256"]),
+        fit_context_bundle_sha256=context_sha,
+        temporary_producer_install_report=temporary_producer_install_report,
+        temporary_rollback_proof=temporary_rollback_proof,
+        compiled_state_sha256=compiled_sha,
+        report={**body, "report_sha256": _sha(body)},
+    )
+
+
+def _attention_actual_contexts(
+    *,
+    input_bank: Lfm2CpcfPhaseStateBank,
+    replay_bank: Lfm2CpcfLayerReplayBank,
+    required_split: str,
+) -> tuple[Any, ...]:
+    """Return final full-prefix live contexts in attention-case order."""
+
+    grouped: dict[
+        tuple[int, str],
+        list[Lfm2CpcfTargetPhase],
+    ] = {}
+    for phase in input_bank.phases:
+        if phase.split == required_split:
+            grouped.setdefault(
+                (phase.batch_index, phase.record_id),
+                [],
+            ).append(phase)
+    if not grouped:
+        raise Lfm2CpcfLayerCompilerError(
+            "Actual attention context extraction requires at least one "
+            f"{required_split!r} trajectory."
+        )
+    contexts = []
+    for trajectory_id, trajectory in grouped.items():
+        final_phase = trajectory[-1]
+        try:
+            replay = replay_bank.replays[final_phase.identity]
+        except KeyError as exc:
+            raise Lfm2CpcfLayerCompilerError(
+                f"Actual attention context replay lacks trajectory {trajectory_id!r}."
+            ) from exc
+        context = _finite_tensor(
+            replay.operator_output_input,
+            f"trajectory {trajectory_id!r} actual attention context",
+            dimensions=3,
+        )
+        if tuple(context.shape[:2]) != (
+            final_phase.batch_size,
+            final_phase.full_prefix_tokens,
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                f"Actual attention context for trajectory {trajectory_id!r} "
+                "does not cover its complete prefix."
+            )
+        contexts.append(context)
+    return tuple(contexts)
 
 
 _SHORT_CONV_HISTORY_FIELDS = (
@@ -3871,6 +4110,159 @@ def _metrics(prediction: Any, target: Any) -> Mapping[str, Any]:
     )
 
 
+def _attention_context_preservation_metrics(
+    *,
+    operator_artifact: (
+        Lfm2CompiledStructuralAttentionFold | Lfm2CompiledCpcfResidualAttentionSplitFold
+    ),
+    cases: Sequence[Lfm2CachedAttentionFoldCase],
+    actual_child_contexts: Sequence[Any],
+) -> Mapping[str, Any]:
+    """Compare live child contexts to cached parent target-head barycenters."""
+
+    torch = _torch()
+    if isinstance(
+        operator_artifact,
+        Lfm2CompiledCpcfResidualAttentionSplitFold,
+    ):
+        producer = operator_artifact.producer_artifact
+        query_groups = producer.query_groups
+        barycentric_weights = producer.query_barycentric_weights
+        topology = producer.topology
+    elif isinstance(
+        operator_artifact,
+        Lfm2CompiledStructuralAttentionFold,
+    ):
+        query_groups = operator_artifact.query_groups
+        barycentric_weights = operator_artifact.query_barycentric_weights
+        topology = operator_artifact.topology
+    else:
+        raise TypeError("Unknown attention artifact for context preservation.")
+    selected_cases = tuple(cases)
+    selected_contexts = tuple(actual_child_contexts)
+    if (
+        not selected_cases
+        or len(selected_cases) != len(selected_contexts)
+        or len(query_groups) != topology.target_query_heads
+        or len(barycentric_weights) != topology.target_query_heads
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Selection contexts, cases, and target-head groups are misaligned."
+        )
+
+    predictions = []
+    targets = []
+    case_reports = []
+    for case_index, (case, raw_context) in enumerate(
+        zip(selected_cases, selected_contexts, strict=True)
+    ):
+        parent_context = _finite_tensor(
+            case.parent_context,
+            f"selection cases[{case_index}].parent_context",
+            dimensions=4,
+        ).to(dtype=torch.float64)
+        actual_context = _finite_tensor(
+            raw_context,
+            f"selection cases[{case_index}].actual_child_context",
+            dimensions=3,
+        ).to(dtype=torch.float64)
+        batch = int(parent_context.shape[0])
+        query_length = int(parent_context.shape[2])
+        if tuple(parent_context.shape) != (
+            batch,
+            topology.source_query_heads,
+            query_length,
+            topology.head_dim,
+        ) or tuple(actual_context.shape) != (
+            batch,
+            query_length,
+            topology.target_query_heads * topology.head_dim,
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Selection parent/child attention contexts differ from the "
+                "compiled topology."
+            )
+        target_heads = []
+        for target_head, (members, weights) in enumerate(
+            zip(query_groups, barycentric_weights, strict=True)
+        ):
+            if (
+                not members
+                or len(members) != len(weights)
+                or any(
+                    isinstance(member, bool)
+                    or not isinstance(member, int)
+                    or member < 0
+                    or member >= topology.source_query_heads
+                    for member in members
+                )
+                or any(
+                    not math.isfinite(float(weight)) or float(weight) < 0.0
+                    for weight in weights
+                )
+                or not math.isclose(
+                    math.fsum(float(weight) for weight in weights),
+                    1.0,
+                    rel_tol=1e-8,
+                    abs_tol=1e-10,
+                )
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Target attention head {target_head} has an invalid "
+                    "parent-context barycenter."
+                )
+            selected = parent_context.index_select(
+                1,
+                torch.tensor(members, dtype=torch.long),
+            )
+            coefficients = torch.tensor(
+                weights,
+                dtype=torch.float64,
+            ).reshape(1, len(members), 1, 1)
+            target_heads.append((selected * coefficients).sum(dim=1))
+        target_context = torch.stack(
+            target_heads,
+            dim=2,
+        ).reshape(
+            batch,
+            query_length,
+            topology.target_query_heads * topology.head_dim,
+        )
+        case_metric = _metrics(actual_context, target_context)
+        predictions.append(actual_context.reshape(-1, int(actual_context.shape[-1])))
+        targets.append(target_context.reshape(-1, int(target_context.shape[-1])))
+        case_body = {
+            "case_index": case_index,
+            "metrics": dict(case_metric),
+        }
+        case_reports.append({**case_body, "report_sha256": _sha(case_body)})
+    aggregate = _metrics(
+        torch.cat(predictions, dim=0),
+        torch.cat(targets, dim=0),
+    )
+    body = {
+        "schema": ("neural-forge-lfm2-cpcf-attention-context-preservation-v1"),
+        "case_count": len(selected_cases),
+        "aggregate": dict(aggregate),
+        "cases": case_reports,
+        "reference": ("cached_parent_attention_context_target_head_barycenter"),
+        "candidate": "live_selection_replay_operator_output_input",
+        "query_groups_sha256": _sha(
+            {
+                "groups": [list(value) for value in query_groups],
+                "weights": [list(value) for value in barycentric_weights],
+            }
+        ),
+        "selection_split_only": True,
+        "validation_cases_consumed": 0,
+        "model_forward_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    return MappingProxyType({**body, "report_sha256": _sha(body)})
+
+
 def _split_endpoint_metrics(
     *,
     layer_index: int,
@@ -3878,10 +4270,20 @@ def _split_endpoint_metrics(
     operator_replay: Lfm2CpcfLayerReplayBank,
     final_replay: Lfm2CpcfLayerReplayBank,
     chart: Lfm2CpcfLayerBoundaryCharts,
+    splits: Sequence[str] = _EVALUATION_SPLITS,
 ) -> Mapping[str, Any]:
     torch = _torch()
+    requested_splits = tuple(splits)
+    if (
+        not requested_splits
+        or any(not isinstance(split, str) or not split for split in requested_splits)
+        or len(set(requested_splits)) != len(requested_splits)
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Endpoint metrics require unique nonempty split names."
+        )
     result = {}
-    for split in _EVALUATION_SPLITS:
+    for split in requested_splits:
         operator_predictions = []
         operator_targets = []
         layer_predictions = []
@@ -3918,9 +4320,7 @@ def _split_endpoint_metrics(
                     "phase_sha256": [],
                 },
             )
-            phase_group["operator_predictions"].append(
-                operator_prediction
-            )
+            phase_group["operator_predictions"].append(operator_prediction)
             phase_group["operator_targets"].append(operator_target)
             phase_group["layer_predictions"].append(layer_prediction)
             phase_group["layer_targets"].append(layer_target)
@@ -4009,6 +4409,1343 @@ def _split_endpoint_metrics(
     return MappingProxyType(result)
 
 
+def _install_cpcf_attention_artifact(
+    *,
+    source_attention: Any,
+    target_attention: Any,
+    artifact: (
+        Lfm2CompiledStructuralAttentionFold | Lfm2CompiledCpcfResidualAttentionSplitFold
+    ),
+) -> Mapping[str, Any]:
+    """Install one complete attention candidate into the existing blank shell."""
+
+    norm_report = _copy_attention_norms(
+        source_attention,
+        target_attention,
+    )
+    if isinstance(artifact, Lfm2CompiledStructuralAttentionFold):
+        raw_operator_install = install_lfm2_structural_attention_fold(
+            target_attention,
+            artifact,
+        ).as_dict()
+    elif isinstance(
+        artifact,
+        Lfm2CompiledCpcfResidualAttentionSplitFold,
+    ):
+        transaction = install_lfm2_structural_attention_score_producer_fold(
+            target_attention,
+            artifact.producer_artifact,
+        )
+        query_key_report = transaction.producer_report
+        if query_key_report is None:
+            raise Lfm2CpcfLayerInstallError(
+                "Residual-attention Q/K transaction issued no install report."
+            )
+        value_output_report = install_lfm2_structural_attention_value_output_fold(
+            target_attention,
+            artifact.value_output_artifact,
+            transaction,
+        )
+        installed_state = {
+            "q_proj.weight": target_attention.q_proj.weight,
+            "k_proj.weight": target_attention.k_proj.weight,
+            "v_proj.weight": target_attention.v_proj.weight,
+            "out_proj.weight": target_attention.out_proj.weight,
+        }
+        installed_sha = _tensor_bundle_sha256(installed_state)
+        split_body = {
+            "scope": (
+                "fit_compiled_selection_chosen_coupled_residual_attention_install"
+            ),
+            "query_key_install": query_key_report.as_dict(),
+            "value_output_install": value_output_report.as_dict(),
+            "compiled_state_sha256": artifact.compiled_state_sha256,
+            "installed_state_sha256": installed_sha,
+            "parameter_identities_preserved": (
+                query_key_report.parameter_identities_preserved
+                and value_output_report.parameter_identities_preserved
+            ),
+            "parameter_shapes_preserved": (
+                query_key_report.parameter_shapes_preserved
+                and value_output_report.parameter_shapes_preserved
+            ),
+            "parameter_dtypes_preserved": (
+                query_key_report.parameter_dtypes_preserved
+                and value_output_report.parameter_dtypes_preserved
+            ),
+            "gradient_state_preserved": (
+                query_key_report.gradient_objects_preserved
+                and value_output_report.gradient_objects_preserved
+            ),
+            "fixed_query_key_verified_during_value_output_commit": True,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        if (
+            not split_body["parameter_identities_preserved"]
+            or not split_body["parameter_shapes_preserved"]
+            or not split_body["parameter_dtypes_preserved"]
+            or not split_body["gradient_state_preserved"]
+            or installed_sha != artifact.compiled_state_sha256
+        ):
+            raise Lfm2CpcfLayerInstallError(
+                "Residual-attention split installation failed its exact "
+                "identity or content audit."
+            )
+        raw_operator_install = {
+            **split_body,
+            "report_sha256": _sha(split_body),
+        }
+    else:  # pragma: no cover - guarded by all callers
+        raise TypeError("Unknown CPCF attention artifact type.")
+    return MappingProxyType(
+        {
+            "operator": raw_operator_install,
+            "attention_norms": dict(norm_report),
+        }
+    )
+
+
+def _prepare_cpcf_mlp_basis_from_fit_replay(
+    *,
+    source_layer: Any,
+    target_layer: Any,
+    layer_index: int,
+    fit_bank: Lfm2CpcfPhaseStateBank,
+    operator_fit_replay: Lfm2CpcfLayerReplayBank,
+    chart: Lfm2CpcfLayerBoundaryCharts,
+) -> Lfm2PreparedStructuralMlpFoldBasis:
+    mlp_cases = _mlp_cases(
+        layer_index=layer_index,
+        input_bank=fit_bank,
+        operator_replay=operator_fit_replay,
+        chart=chart,
+    )
+    return prepare_lfm2_structural_residual_mlp_fold_basis(
+        source_gate_weight=source_layer.feed_forward.w1.weight,
+        source_up_weight=source_layer.feed_forward.w3.weight,
+        source_down_weight=source_layer.feed_forward.w2.weight,
+        target_gate_weight_template=target_layer.feed_forward.w1.weight,
+        target_up_weight_template=target_layer.feed_forward.w3.weight,
+        target_down_weight_template=target_layer.feed_forward.w2.weight,
+        cases=mlp_cases,
+        residual_assignment_sha256=(chart.post_layer.report["report_sha256"]),
+    )
+
+
+def _compile_cpcf_mlp_from_fit_replay(
+    *,
+    source_layer: Any,
+    target_layer: Any,
+    layer_index: int,
+    fit_bank: Lfm2CpcfPhaseStateBank,
+    operator_fit_replay: Lfm2CpcfLayerReplayBank,
+    chart: Lfm2CpcfLayerBoundaryCharts,
+    ridge: float,
+    prepared_basis: Lfm2PreparedStructuralMlpFoldBasis | None = None,
+) -> Lfm2CompiledStructuralMlpFold:
+    mlp_cases = _mlp_cases(
+        layer_index=layer_index,
+        input_bank=fit_bank,
+        operator_replay=operator_fit_replay,
+        chart=chart,
+    )
+    return compile_lfm2_structural_residual_mlp_fold(
+        source_gate_weight=source_layer.feed_forward.w1.weight,
+        source_up_weight=source_layer.feed_forward.w3.weight,
+        source_down_weight=source_layer.feed_forward.w2.weight,
+        target_gate_weight_template=target_layer.feed_forward.w1.weight,
+        target_up_weight_template=target_layer.feed_forward.w3.weight,
+        target_down_weight_template=target_layer.feed_forward.w2.weight,
+        cases=mlp_cases,
+        residual_assignment_sha256=(chart.post_layer.report["report_sha256"]),
+        ridge=ridge,
+        max_prior_delta_ratio=None,
+        prepared_basis=prepared_basis,
+    )
+
+
+def _attention_candidate_selection_key(
+    candidate_id: str,
+    selection_metrics: Mapping[str, Any],
+    selection_context_metrics: Mapping[str, Any],
+    query_key_score_report: Lfm2AttentionScorePreservationReport,
+) -> tuple[float, float, float, float, float, float, float, str]:
+    """Rank attention behavior first, then the complete macrocell endpoint."""
+
+    if set(selection_metrics) != {"selection"}:
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention candidate ranking requires selection metrics only."
+        )
+    context = selection_context_metrics.get("aggregate")
+    if not isinstance(context, Mapping):
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention candidate lacks selection-context preservation."
+        )
+    context_relative_error = context.get("relative_rmse")
+    context_cosine = context.get("cosine_similarity")
+    if (
+        isinstance(context_relative_error, bool)
+        or not isinstance(context_relative_error, (int, float))
+        or not math.isfinite(float(context_relative_error))
+        or float(context_relative_error) < 0.0
+        or isinstance(context_cosine, bool)
+        or not isinstance(context_cosine, (int, float))
+        or not math.isfinite(float(context_cosine))
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention selection-context metrics are non-finite."
+        )
+    if not isinstance(
+        query_key_score_report,
+        Lfm2AttentionScorePreservationReport,
+    ):
+        raise TypeError("query_key_score_report must be an attention score report.")
+    split = selection_metrics["selection"]
+    phase_metrics = split.get("phase_metrics")
+    if not isinstance(phase_metrics, Mapping) or not phase_metrics:
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention candidate lacks causal-phase selection metrics."
+        )
+    relative_errors = []
+    cosines = []
+    for phase_name in sorted(phase_metrics):
+        post_layer = phase_metrics[phase_name].get("post_layer")
+        if not isinstance(post_layer, Mapping):
+            raise Lfm2CpcfLayerCompilerError(
+                f"Attention candidate phase {phase_name!r} lacks post-layer metrics."
+            )
+        relative_error = post_layer.get("relative_rmse")
+        cosine = post_layer.get("cosine_similarity")
+        if (
+            isinstance(relative_error, bool)
+            or not isinstance(relative_error, (int, float))
+            or not math.isfinite(float(relative_error))
+            or float(relative_error) < 0.0
+            or isinstance(cosine, bool)
+            or not isinstance(cosine, (int, float))
+            or not math.isfinite(float(cosine))
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Attention candidate selection metrics are non-finite."
+            )
+        relative_errors.append(float(relative_error))
+        cosines.append(float(cosine))
+    aggregate = split["post_layer"]["relative_rmse"]
+    if (
+        isinstance(aggregate, bool)
+        or not isinstance(aggregate, (int, float))
+        or not math.isfinite(float(aggregate))
+        or float(aggregate) < 0.0
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention aggregate selection metric is invalid."
+        )
+    return (
+        float(context_relative_error),
+        -float(context_cosine),
+        float(query_key_score_report.js_divergence_worst),
+        -float(query_key_score_report.top1_key_agreement_fraction),
+        max(relative_errors),
+        -min(cosines),
+        float(aggregate),
+        candidate_id,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Lfm2CpcfAttentionCandidateEvaluation:
+    candidate_id: str
+    operator_artifact: Any
+    mlp_artifact: Lfm2CompiledStructuralMlpFold
+    operator_install_report: Mapping[str, Any]
+    mlp_install_report: Mapping[str, Any]
+    fit_operator_replay: Lfm2CpcfLayerReplayBank
+    selection_replay: Lfm2CpcfLayerReplayBank
+    selection_metrics: Mapping[str, Any]
+    selection_context_metrics: Mapping[str, Any]
+    query_key_score_report: Lfm2AttentionScorePreservationReport
+    installed_operator_state_sha256: str
+    installed_mlp_state_sha256: str
+    rollback_proof: Mapping[str, Any]
+    selection_key: tuple[
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        str,
+    ]
+    report: Mapping[str, Any]
+
+
+def _evaluate_installed_attention_candidate(
+    *,
+    candidate_id: str,
+    operator_artifact: Any,
+    operator_install_report: Mapping[str, Any],
+    source_layer: Any,
+    target_model: Any,
+    target_layer: Any,
+    layer_index: int,
+    fit_bank: Lfm2CpcfPhaseStateBank,
+    selection_bank: Lfm2CpcfPhaseStateBank,
+    selection_cases: Sequence[Lfm2CachedAttentionFoldCase],
+    chart: Lfm2CpcfLayerBoundaryCharts,
+    ridge: float,
+    prepared_mlp_basis: Lfm2PreparedStructuralMlpFoldBasis | None,
+) -> tuple[
+    Lfm2CompiledStructuralMlpFold,
+    Mapping[str, Any],
+    Lfm2CpcfLayerReplayBank,
+    Lfm2CpcfLayerReplayBank,
+    Mapping[str, Any],
+    Mapping[str, Any],
+    str,
+    str,
+    Lfm2PreparedStructuralMlpFoldBasis,
+]:
+    """Fit one candidate's MLP on fit and evaluate its macrocell on selection."""
+
+    target_attention = target_layer.self_attn
+    expected_operator_state_sha = _tensor_bundle_sha256(operator_artifact.state_dict())
+    installed_operator_state_sha = _tensor_bundle_sha256(
+        {
+            "q_proj.weight": target_attention.q_proj.weight,
+            "k_proj.weight": target_attention.k_proj.weight,
+            "v_proj.weight": target_attention.v_proj.weight,
+            "out_proj.weight": target_attention.out_proj.weight,
+        }
+    )
+    if expected_operator_state_sha != installed_operator_state_sha:
+        raise Lfm2CpcfLayerInstallError(
+            f"Attention candidate {candidate_id!r} live Q/K/V/O state does "
+            "not match its artifact before fit replay."
+        )
+    _sha(dict(operator_install_report))
+    fit_operator_replay = replay_lfm2_cpcf_phase_bank(
+        target_model,
+        layer_index=layer_index,
+        input_bank=fit_bank,
+    )
+    if prepared_mlp_basis is None:
+        prepared_mlp_basis = _prepare_cpcf_mlp_basis_from_fit_replay(
+            source_layer=source_layer,
+            target_layer=target_layer,
+            layer_index=layer_index,
+            fit_bank=fit_bank,
+            operator_fit_replay=fit_operator_replay,
+            chart=chart,
+        )
+    mlp_artifact = _compile_cpcf_mlp_from_fit_replay(
+        source_layer=source_layer,
+        target_layer=target_layer,
+        layer_index=layer_index,
+        fit_bank=fit_bank,
+        operator_fit_replay=fit_operator_replay,
+        chart=chart,
+        ridge=ridge,
+        prepared_basis=prepared_mlp_basis,
+    )
+    if (
+        mlp_artifact.prepared_basis_reused is not True
+        or mlp_artifact.prepared_basis_sha256 != prepared_mlp_basis.preparation_sha256
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"Attention candidate {candidate_id!r} did not consume the "
+            "authenticated invocation-local MLP basis."
+        )
+    mlp_install_report = install_lfm2_structural_mlp_fold(
+        target_layer.feed_forward,
+        mlp_artifact,
+    ).as_dict()
+    expected_mlp_state_sha = _tensor_bundle_sha256(mlp_artifact.state_dict())
+    installed_mlp_state_sha = _tensor_bundle_sha256(
+        {
+            "w1.weight": target_layer.feed_forward.w1.weight,
+            "w3.weight": target_layer.feed_forward.w3.weight,
+            "w2.weight": target_layer.feed_forward.w2.weight,
+        }
+    )
+    if expected_mlp_state_sha != installed_mlp_state_sha:
+        raise Lfm2CpcfLayerInstallError(
+            f"Attention candidate {candidate_id!r} live MLP state does not "
+            "match its artifact before selection replay."
+        )
+    _sha(dict(mlp_install_report))
+    selection_replay = replay_lfm2_cpcf_phase_bank(
+        target_model,
+        layer_index=layer_index,
+        input_bank=selection_bank,
+    )
+    selection_metrics = _split_endpoint_metrics(
+        layer_index=layer_index,
+        input_bank=selection_bank,
+        operator_replay=selection_replay,
+        final_replay=selection_replay,
+        chart=chart,
+        splits=("selection",),
+    )
+    selection_contexts = _attention_actual_contexts(
+        input_bank=selection_bank,
+        replay_bank=selection_replay,
+        required_split="selection",
+    )
+    selection_context_metrics = _attention_context_preservation_metrics(
+        operator_artifact=operator_artifact,
+        cases=selection_cases,
+        actual_child_contexts=selection_contexts,
+    )
+    return (
+        mlp_artifact,
+        mlp_install_report,
+        fit_operator_replay,
+        selection_replay,
+        selection_metrics,
+        selection_context_metrics,
+        installed_operator_state_sha,
+        installed_mlp_state_sha,
+        prepared_mlp_basis,
+    )
+
+
+def _seal_attention_candidate_evaluation(
+    *,
+    candidate_id: str,
+    operator_artifact: Any,
+    mlp_artifact: Lfm2CompiledStructuralMlpFold,
+    operator_install_report: Mapping[str, Any],
+    mlp_install_report: Mapping[str, Any],
+    fit_operator_replay: Lfm2CpcfLayerReplayBank,
+    selection_replay: Lfm2CpcfLayerReplayBank,
+    selection_metrics: Mapping[str, Any],
+    selection_context_metrics: Mapping[str, Any],
+    query_key_score_report: Lfm2AttentionScorePreservationReport,
+    query_key_score_state_sha256: str,
+    installed_operator_state_sha256: str,
+    installed_mlp_state_sha256: str,
+    rollback_proof: Mapping[str, Any],
+) -> _Lfm2CpcfAttentionCandidateEvaluation:
+    selection_key = _attention_candidate_selection_key(
+        candidate_id,
+        selection_metrics,
+        selection_context_metrics,
+        query_key_score_report,
+    )
+    operator_state_sha = _digest(
+        installed_operator_state_sha256,
+        "installed_operator_state_sha256",
+    )
+    mlp_state_sha = _digest(
+        installed_mlp_state_sha256,
+        "installed_mlp_state_sha256",
+    )
+    score_state_sha = _digest(
+        query_key_score_state_sha256,
+        "query_key_score_state_sha256",
+    )
+    artifact_state = operator_artifact.state_dict()
+    artifact_query_key_sha = _tensor_bundle_sha256(
+        {
+            "q_proj.weight": artifact_state["q_proj.weight"],
+            "k_proj.weight": artifact_state["k_proj.weight"],
+        }
+    )
+    if artifact_query_key_sha != score_state_sha:
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention score report producer view differs from the "
+            "candidate's exact Q/K state."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-cpcf-attention-candidate-evaluation-v1",
+        "candidate_id": candidate_id,
+        "operator_artifact_schema": operator_artifact.as_dict().get("schema"),
+        "operator_artifact": operator_artifact.as_dict(),
+        "operator_artifact_sha256": _sha(operator_artifact.as_dict()),
+        "mlp_artifact_sha256": _sha(mlp_artifact.as_dict()),
+        "operator_install_report": dict(operator_install_report),
+        "operator_install_report_sha256": _sha(dict(operator_install_report)),
+        "mlp_install_report": dict(mlp_install_report),
+        "mlp_install_report_sha256": _sha(dict(mlp_install_report)),
+        "installed_operator_state_sha256": operator_state_sha,
+        "installed_mlp_state_sha256": mlp_state_sha,
+        "fit_operator_replay_sha256": (fit_operator_replay.report["report_sha256"]),
+        "selection_replay_sha256": (selection_replay.report["report_sha256"]),
+        "selection_metrics": {"selection": dict(selection_metrics["selection"])},
+        "selection_context_metrics": dict(selection_context_metrics),
+        "query_key_score_report": query_key_score_report.as_dict(),
+        "query_key_score_report_sha256": (query_key_score_report.report_sha256),
+        "query_key_score_state_sha256": score_state_sha,
+        "query_key_score_producer_view_exact_state_proven": True,
+        "selection_key": list(selection_key),
+        "rollback_proof": dict(rollback_proof),
+        "operator_compiled_from_splits": ["fit"],
+        "mlp_compiled_from_splits": ["fit"],
+        "candidate_evaluated_on_splits": ["selection"],
+        "validation_phase_count_consumed": 0,
+        "live_operator_state_authenticated_before_fit_replay": True,
+        "live_mlp_state_authenticated_before_selection_replay": True,
+        "selection_context_ranked_before_post_layer_endpoint": True,
+        "whole_macrocell_post_layer_causal_phase_ranking": True,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    report = MappingProxyType({**body, "report_sha256": _sha(body)})
+    return _Lfm2CpcfAttentionCandidateEvaluation(
+        candidate_id=candidate_id,
+        operator_artifact=operator_artifact,
+        mlp_artifact=mlp_artifact,
+        operator_install_report=MappingProxyType(dict(operator_install_report)),
+        mlp_install_report=MappingProxyType(dict(mlp_install_report)),
+        fit_operator_replay=fit_operator_replay,
+        selection_replay=selection_replay,
+        selection_metrics=MappingProxyType(dict(selection_metrics)),
+        selection_context_metrics=MappingProxyType(dict(selection_context_metrics)),
+        query_key_score_report=query_key_score_report,
+        installed_operator_state_sha256=operator_state_sha,
+        installed_mlp_state_sha256=mlp_state_sha,
+        rollback_proof=MappingProxyType(dict(rollback_proof)),
+        selection_key=selection_key,
+        report=report,
+    )
+
+
+def _freeze_attention_candidate_winner(
+    candidates: Sequence[_Lfm2CpcfAttentionCandidateEvaluation],
+) -> tuple[
+    _Lfm2CpcfAttentionCandidateEvaluation,
+    Mapping[str, Any],
+]:
+    values = tuple(candidates)
+    if {value.candidate_id for value in values} != {
+        "direct_monolithic",
+        "residual_attention_split",
+    } or len(values) != 2:
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention selection requires exactly the direct and split "
+            "macrocell candidates."
+        )
+    winner = min(values, key=lambda value: value.selection_key)
+    ordered = sorted(values, key=lambda value: value.candidate_id)
+    body = {
+        "schema": "neural-forge-lfm2-cpcf-attention-candidate-selection-v1",
+        "ranking_rule": [
+            "minimum_selection_context_relative_rmse",
+            "maximum_selection_context_cosine_similarity",
+            "minimum_selection_query_key_js_divergence",
+            "maximum_selection_query_key_top1_agreement",
+            "minimum_worst_causal_phase_post_layer_relative_rmse",
+            "maximum_worst_causal_phase_post_layer_cosine_similarity",
+            "minimum_aggregate_post_layer_relative_rmse",
+            "lexical_candidate_id_tie_break",
+        ],
+        "candidate_ids": [value.candidate_id for value in ordered],
+        "candidate_report_sha256": {
+            value.candidate_id: value.report["report_sha256"] for value in ordered
+        },
+        "selected_candidate_id": winner.candidate_id,
+        "selected_candidate_report_sha256": (winner.report["report_sha256"]),
+        "selection_split_only": True,
+        "winner_frozen_before_validation": True,
+        "validation_phase_count_consumed_before_freeze": 0,
+        "operator_and_own_fit_mlp_ranked_together": True,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    return (
+        winner,
+        MappingProxyType({**body, "report_sha256": _sha(body)}),
+    )
+
+
+def _macrocell_zero_execution() -> dict[str, int]:
+    return {
+        "parent_model_forward_calls": 0,
+        "target_model_forward_calls": 0,
+        "generation_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+
+
+def _plain_json_metadata(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(name): _plain_json_metadata(child) for name, child in value.items()}
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        (str, bytes, bytearray),
+    ):
+        return [_plain_json_metadata(child) for child in value]
+    return value
+
+
+def _select_short_conv_phase_state_bank(
+    bank: Lfm2CpcfPhaseStateBank,
+    *,
+    splits: Sequence[str],
+) -> Lfm2CpcfPhaseStateBank:
+    """Reseal one short-conv split whose prefill evidence may be suffix sampled."""
+
+    requested = tuple(str(value) for value in splits)
+    if not requested or len(set(requested)) != len(requested):
+        raise Lfm2CpcfLayerCompilerError(
+            "Short-conv split selection must be nonempty and unique."
+        )
+    phases = tuple(phase for phase in bank.phases if phase.split in set(requested))
+    if not phases:
+        raise Lfm2CpcfLayerCompilerError(
+            "Short-conv phase bank has no requested phases."
+        )
+    states = {phase.identity: bank.state(phase) for phase in phases}
+    body = {
+        "schema": "neural-forge-lfm2-cpcf-target-runtime-v1",
+        "scope": "phase_state_bank",
+        "boundary": bank.boundary,
+        "layer_index": bank.layer_index,
+        "hidden_size": bank.hidden_size,
+        "ordered_states": [
+            {
+                "identity": [phase.batch_index, phase.phase],
+                "phase_sha256": phase.phase_sha256,
+                "state_sha256": _tensor_sha256(states[phase.identity]),
+            }
+            for phase in phases
+        ],
+        "actual_folded_upstream_states": True,
+    }
+    return Lfm2CpcfPhaseStateBank(
+        boundary=bank.boundary,
+        layer_index=bank.layer_index,
+        phases=phases,
+        states=states,
+        state_bank_sha256=_sha(body),
+    )
+
+
+def _seal_macrocell_actual(
+    kind: str,
+    candidate_id: str,
+    *,
+    source_report_sha256: str,
+    **bindings: Any,
+) -> dict[str, Any]:
+    body = {
+        "schema": "neural-forge-lfm2-cpcf-layer-macrocell-actual-v1",
+        "kind": kind,
+        "candidate_id": candidate_id,
+        "source_report_sha256": _digest(
+            source_report_sha256,
+            f"{kind}.source_report_sha256",
+        ),
+        **bindings,
+        "execution": _macrocell_zero_execution(),
+    }
+    return {**body, "report_sha256": _sha(body)}
+
+
+def _seal_macrocell_evidence(
+    kind: str,
+    candidate_id: str,
+    actual_report: Mapping[str, Any],
+    **bindings: Any,
+) -> dict[str, Any]:
+    actual = dict(actual_report)
+    actual_body = dict(actual)
+    actual_sha = _digest(
+        actual_body.pop("report_sha256", None),
+        f"{kind}.actual_report.report_sha256",
+    )
+    if _sha(actual_body) != actual_sha:
+        raise Lfm2CpcfLayerCompilerError(
+            f"{kind} actual macrocell evidence is not sealed."
+        )
+    body = {
+        "schema": LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA,
+        "kind": kind,
+        "candidate_id": candidate_id,
+        **bindings,
+        "actual_report": actual,
+        "actual_report_sha256": actual_sha,
+        "execution": _macrocell_zero_execution(),
+    }
+    return {**body, "report_sha256": _sha(body)}
+
+
+def _install_short_conv_macrocell_candidate(
+    target_short_conv: Any,
+    candidate: Lfm2CpcfShortConvV5MacrocellCandidate,
+) -> Mapping[str, Any]:
+    """Install one detached native candidate without replacing Parameters."""
+
+    torch = _torch()
+    if (
+        not isinstance(candidate, Lfm2CpcfShortConvV5MacrocellCandidate)
+        or not candidate.verify_authentication()
+    ):
+        raise Lfm2CpcfLayerInstallError(
+            "Short-conv macrocell candidate authentication failed."
+        )
+    available = {
+        "in_proj.weight": getattr(target_short_conv.in_proj, "weight", None),
+        "in_proj.bias": getattr(target_short_conv.in_proj, "bias", None),
+        "conv.weight": getattr(target_short_conv.conv, "weight", None),
+        "conv.bias": getattr(target_short_conv.conv, "bias", None),
+        "out_proj.weight": getattr(target_short_conv.out_proj, "weight", None),
+        "out_proj.bias": getattr(target_short_conv.out_proj, "bias", None),
+    }
+    expected = candidate.install_state_dict()
+    if set(expected) != {
+        name for name, value in available.items() if isinstance(value, torch.Tensor)
+    }:
+        raise Lfm2CpcfLayerInstallError(
+            "Macrocell candidate and target short-conv bias topology differ."
+        )
+    for name, expected_value in expected.items():
+        observed = available[name]
+        if (
+            not isinstance(observed, torch.Tensor)
+            or tuple(observed.shape) != tuple(expected_value.shape)
+            or observed.dtype != expected_value.dtype
+        ):
+            raise Lfm2CpcfLayerInstallError(
+                f"Macrocell candidate {name} differs in shape or dtype."
+            )
+    identities = {name: id(available[name]) for name in expected}
+    gradients = {
+        name: (
+            bool(available[name].requires_grad),
+            None if available[name].grad is None else id(available[name].grad),
+            None
+            if available[name].grad is None
+            else _tensor_sha256(available[name].grad),
+        )
+        for name in expected
+    }
+    with torch.no_grad():
+        for name, expected_value in expected.items():
+            available[name].copy_(
+                expected_value.to(
+                    device=available[name].device,
+                    dtype=available[name].dtype,
+                )
+            )
+    installed_sha = _short_conv_state_sha256(
+        {name: available[name] for name in expected}
+    )
+    body = {
+        "scope": "exact_native_short_conv_macrocell_candidate_install",
+        "candidate_id": candidate.candidate_id,
+        "candidate_state_sha256": candidate.state_sha256,
+        "compiled_state_sha256": candidate.report["candidate_install_state_sha256"],
+        "installed_state_sha256": installed_sha,
+        "parameter_identities_preserved": all(
+            id(available[name]) == identities[name] for name in expected
+        ),
+        "parameter_shapes_preserved": True,
+        "gradient_state_preserved": all(
+            (
+                bool(available[name].requires_grad),
+                None if available[name].grad is None else id(available[name].grad),
+                None
+                if available[name].grad is None
+                else _tensor_sha256(available[name].grad),
+            )
+            == gradients[name]
+            for name in expected
+        ),
+        "training_steps": 0,
+    }
+    if (
+        body["compiled_state_sha256"] != installed_sha
+        or not body["parameter_identities_preserved"]
+        or not body["gradient_state_preserved"]
+    ):
+        raise Lfm2CpcfLayerInstallError(
+            "Live macrocell candidate state failed exact authentication."
+        )
+    return MappingProxyType({**body, "report_sha256": _sha(body)})
+
+
+def _normalized_macrocell_selection_metrics(
+    candidate_id: str,
+    selection_bank_sha256: str,
+    split_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    if set(split_metrics) != {"selection"}:
+        raise Lfm2CpcfLayerCompilerError(
+            "Short-conv macrocell ranking requires selection metrics only."
+        )
+    source = split_metrics["selection"]
+
+    def endpoint(value: Mapping[str, Any]) -> dict[str, float]:
+        return {
+            "relative_rmse": float(value["relative_rmse"]),
+            "cosine_similarity": float(value["cosine_similarity"]),
+        }
+
+    phase_metrics = {}
+    for phase_name, value in source["phase_metrics"].items():
+        phase_body = {
+            "phase": phase_name,
+            "phase_count": int(value["phase_count"]),
+            "phase_sha256": list(value["phase_sha256"]),
+            "post_operator": endpoint(value["post_operator"]),
+            "post_layer": endpoint(value["post_layer"]),
+        }
+        phase_metrics[phase_name] = {
+            **phase_body,
+            "report_sha256": _sha(phase_body),
+        }
+    actual_body = {
+        "split": "selection",
+        "phase_count": int(source["phase_count"]),
+        "phase_sha256": list(source["phase_sha256"]),
+        "post_operator": endpoint(source["post_operator"]),
+        "post_layer": endpoint(source["post_layer"]),
+        "phase_metrics": phase_metrics,
+        "source_report_sha256": source["report_sha256"],
+        "execution": _macrocell_zero_execution(),
+    }
+    actual = {**actual_body, "report_sha256": _sha(actual_body)}
+    body = {
+        "schema": LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA,
+        "kind": "actual_selection_metrics",
+        "candidate_id": candidate_id,
+        "selection_bank_sha256": selection_bank_sha256,
+        "split": "selection",
+        "phase_count": actual["phase_count"],
+        "phase_sha256": actual["phase_sha256"],
+        "post_operator": actual["post_operator"],
+        "post_layer": actual["post_layer"],
+        "phase_metrics": actual["phase_metrics"],
+        "actual_report": actual,
+        "actual_report_sha256": actual["report_sha256"],
+        "execution": _macrocell_zero_execution(),
+    }
+    return {**body, "report_sha256": _sha(body)}
+
+
+def _short_conv_macrocell_score(
+    candidate_id: str,
+    metrics: Mapping[str, Any],
+) -> tuple[float | str, ...]:
+    phases = tuple(metrics["phase_metrics"].values())
+    return (
+        max(float(value["post_layer"]["relative_rmse"]) for value in phases),
+        -min(float(value["post_layer"]["cosine_similarity"]) for value in phases),
+        float(metrics["post_layer"]["relative_rmse"]),
+        -float(metrics["post_layer"]["cosine_similarity"]),
+        candidate_id,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Lfm2CpcfShortConvMacrocellEvaluation:
+    candidate: Lfm2CpcfShortConvV5MacrocellCandidate
+    mlp_artifact: Lfm2CompiledStructuralMlpFold
+    fit_operator_replay: Lfm2CpcfLayerReplayBank
+    selection_replay: Lfm2CpcfLayerReplayBank
+    selection_key: tuple[float | str, ...]
+    report: Mapping[str, Any]
+
+
+class _Lfm2CpcfShortConvMacrocellSelector:
+    """Invocation-local real fit/selection whole-macrocell selector."""
+
+    def __init__(
+        self,
+        *,
+        source_layer: Any,
+        target_model: Any,
+        target_layer: Any,
+        layer_index: int,
+        audit_bank: Lfm2CpcfPhaseStateBank,
+        fit_bank: Lfm2CpcfPhaseStateBank,
+        selection_bank: Lfm2CpcfPhaseStateBank,
+        boundary_charts: Lfm2CpcfLayerBoundaryCharts,
+        ridge: float,
+        source_snapshot: _LayerSnapshot,
+        target_snapshot: _LayerSnapshot,
+        audit_evidence_sha256_before: str,
+        audit_input_sha256_before: str,
+        boundary_charts_sha256_before: str,
+        boundary_charts_payload_sha256_before: str,
+        endpoint_selector: Lfm2CpcfShortConvV5CandidateSelector | None,
+    ) -> None:
+        self.source_layer = source_layer
+        self.target_model = target_model
+        self.target_layer = target_layer
+        self.layer_index = layer_index
+        self.audit_bank = audit_bank
+        self.fit_bank = fit_bank
+        self.selection_bank = selection_bank
+        self.boundary_charts = boundary_charts
+        self.ridge = ridge
+        self.source_snapshot = source_snapshot
+        self.target_snapshot = target_snapshot
+        self.audit_evidence_sha256_before = audit_evidence_sha256_before
+        self.audit_input_sha256_before = audit_input_sha256_before
+        self.boundary_charts_sha256_before = boundary_charts_sha256_before
+        self.boundary_charts_payload_sha256_before = (
+            boundary_charts_payload_sha256_before
+        )
+        self.endpoint_selector = endpoint_selector
+        self.endpoint_control_id: str | None = None
+        self.endpoint_selector_report: Mapping[str, Any] | None = None
+        self.endpoint_selector_diagnostic: Mapping[str, Any] | None = None
+        self.evaluations: dict[
+            str,
+            _Lfm2CpcfShortConvMacrocellEvaluation,
+        ] = {}
+        self.selected: _Lfm2CpcfShortConvMacrocellEvaluation | None = None
+        self.decision: Mapping[str, Any] | None = None
+        self.mlp_prepared_basis: Lfm2PreparedStructuralMlpFoldBasis | None = None
+        self.mlp_preparation_count = 0
+        self.mlp_candidate_compile_count = 0
+
+    def select(
+        self,
+        frontier: Lfm2CpcfShortConvV5CandidateFrontier,
+    ) -> Mapping[str, Any]:
+        if (
+            not isinstance(frontier, Lfm2CpcfShortConvV5CandidateFrontier)
+            or not frontier.verify_authentication()
+            or frontier.fit_bank_sha256 != self.fit_bank.state_bank_sha256
+            or frontier.selection_bank_sha256 != self.selection_bank.state_bank_sha256
+            or {phase.split for phase in self.audit_bank.phases} != {"fit", "selection"}
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Short-conv macrocell frontier is not bound to real phase banks."
+            )
+        budget = min(8, len(frontier.candidates))
+        evaluated_ids = list(
+            select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
+                frontier,
+                budget,
+            )
+        )
+        self.endpoint_control_id = str(
+            frontier.default_ranking["selected_candidate_id"]
+        )
+        if self.endpoint_selector is not None:
+            candidate_ids = [
+                candidate.candidate_id for candidate in frontier.candidates
+            ]
+            state_sha = {
+                candidate.candidate_id: candidate.state_sha256
+                for candidate in frontier.candidates
+            }
+            selection_reports = {
+                candidate.candidate_id: _plain_json_metadata(
+                    candidate.operator_selection_report
+                )
+                for candidate in frontier.candidates
+            }
+            request_body = {
+                "schema": LFM2_CPCF_SHORT_CONV_V5_SELECTOR_REQUEST_SCHEMA,
+                "solver_policy_sha256": frontier.solver_policy_sha256,
+                "target_dtype": frontier.target_dtype,
+                "candidate_ids": candidate_ids,
+                "candidate_state_sha256": state_sha,
+                "candidate_state_inventory_sha256": _sha(state_sha),
+                "candidate_selection_report_sha256": {
+                    candidate_id: selection_reports[candidate_id]["report_sha256"]
+                    for candidate_id in candidate_ids
+                },
+                "candidate_selection_reports": selection_reports,
+                "default_v4_ranking_report_sha256": (
+                    frontier.default_ranking["report_sha256"]
+                ),
+                "default_v4_selected_candidate_id": (
+                    frontier.default_ranking["selected_candidate_id"]
+                ),
+                "candidate_state_tensors_exposed_to_selector": False,
+                "fit_reports_exposed_to_selector": False,
+                "validation_reports_exposed_to_selector": False,
+                "post_install_rescoring": False,
+                "execution": {
+                    "training_steps": 0,
+                    "backward_calls": 0,
+                    "optimizer_steps": 0,
+                    "parameters_pruned": 0,
+                    "parameters_quantized": 0,
+                },
+            }
+            request = {**request_body, "report_sha256": _sha(request_body)}
+            request_before = _canonical_json(request)
+            diagnostic_status = "accepted"
+            diagnostic_reason = None
+            endpoint_report = None
+            try:
+                endpoint_value = self.endpoint_selector.select(request)
+                endpoint_report = _plain_json_metadata(endpoint_value)
+                endpoint_body = dict(endpoint_report)
+                endpoint_sha = _digest(
+                    endpoint_body.pop("report_sha256", None),
+                    "endpoint_selector_report.report_sha256",
+                )
+                selected_control = endpoint_report.get("selected_candidate_id")
+                endpoint_execution = endpoint_report.get("execution")
+                if (
+                    _sha(endpoint_body) != endpoint_sha
+                    or endpoint_report.get("schema") != LFM2_CPCF_SHORT_CONV_V5_SCHEMA
+                    or selected_control not in state_sha
+                    or endpoint_report.get("selected_candidate_state_sha256")
+                    != state_sha[selected_control]
+                    or endpoint_report.get("candidate_count") != len(candidate_ids)
+                    or endpoint_report.get("selection_reports_consumed")
+                    != len(candidate_ids)
+                    or endpoint_report.get("fit_reports_consumed") != 0
+                    or endpoint_report.get("validation_reports_consumed") != 0
+                    or endpoint_report.get("validation_accessible") is not False
+                    or not isinstance(endpoint_execution, Mapping)
+                    or set(endpoint_execution)
+                    != {
+                        "training_steps",
+                        "backward_calls",
+                        "optimizer_steps",
+                        "parameters_pruned",
+                        "parameters_quantized",
+                    }
+                    or any(
+                        type(value) is not int or value != 0
+                        for value in endpoint_execution.values()
+                    )
+                    or selected_control not in evaluated_ids
+                ):
+                    diagnostic_status = "rejected_fallback_to_default"
+                    diagnostic_reason = "invalid_or_outside_bounded_frontier"
+                else:
+                    self.endpoint_control_id = str(selected_control)
+                    self.endpoint_selector_report = MappingProxyType(endpoint_report)
+            except Exception as error:
+                diagnostic_status = "raised_fallback_to_default"
+                diagnostic_reason = type(error).__name__
+            if _canonical_json(request) != request_before:
+                diagnostic_status = "mutated_request_fallback_to_default"
+                diagnostic_reason = "sealed_request_changed"
+                self.endpoint_control_id = str(
+                    frontier.default_ranking["selected_candidate_id"]
+                )
+                self.endpoint_selector_report = None
+            diagnostic_body = {
+                "schema": ("neural-forge-lfm2-cpcf-endpoint-control-diagnostic-v1"),
+                "status": diagnostic_status,
+                "reason": diagnostic_reason,
+                "fallback_candidate_id": frontier.default_ranking[
+                    "selected_candidate_id"
+                ],
+                "effective_control_candidate_id": self.endpoint_control_id,
+                "bounded_candidate_budget": budget,
+                "non_authoritative_for_final_macrocell_selection": True,
+                "validation_accessible": False,
+                "training_steps": 0,
+            }
+            self.endpoint_selector_diagnostic = MappingProxyType(
+                {
+                    **diagnostic_body,
+                    "report_sha256": _sha(diagnostic_body),
+                }
+            )
+        evaluations: dict[str, dict[str, Any]] = {}
+        scored = []
+        for candidate_id in evaluated_ids:
+            candidate = frontier.candidate(candidate_id)
+            _restore_layer(self.target_layer, self.target_snapshot)
+            try:
+                install = _install_short_conv_macrocell_candidate(
+                    self.target_layer.conv,
+                    candidate,
+                )
+                fit_replay = replay_lfm2_cpcf_phase_bank(
+                    self.target_model,
+                    layer_index=self.layer_index,
+                    input_bank=self.fit_bank,
+                )
+                if self.mlp_prepared_basis is None:
+                    self.mlp_prepared_basis = _prepare_cpcf_mlp_basis_from_fit_replay(
+                        source_layer=self.source_layer,
+                        target_layer=self.target_layer,
+                        layer_index=self.layer_index,
+                        fit_bank=self.fit_bank,
+                        operator_fit_replay=fit_replay,
+                        chart=self.boundary_charts,
+                    )
+                    self.mlp_preparation_count += 1
+                if self.mlp_preparation_count != 1:
+                    raise Lfm2CpcfLayerCompilerError(
+                        "Short-conv candidate MLP preparation is not one "
+                        "authenticated layer-local basis."
+                    )
+                mlp_artifact = _compile_cpcf_mlp_from_fit_replay(
+                    source_layer=self.source_layer,
+                    target_layer=self.target_layer,
+                    layer_index=self.layer_index,
+                    fit_bank=self.fit_bank,
+                    operator_fit_replay=fit_replay,
+                    chart=self.boundary_charts,
+                    ridge=self.ridge,
+                    prepared_basis=self.mlp_prepared_basis,
+                )
+                self.mlp_candidate_compile_count += 1
+                if (
+                    mlp_artifact.prepared_basis_reused is not True
+                    or mlp_artifact.prepared_basis_sha256
+                    != self.mlp_prepared_basis.preparation_sha256
+                ):
+                    raise Lfm2CpcfLayerCompilerError(
+                        "Short-conv candidate MLP does not bind the shared "
+                        "prepared parent basis."
+                    )
+                mlp_install = install_lfm2_structural_mlp_fold(
+                    self.target_layer.feed_forward,
+                    mlp_artifact,
+                ).as_dict()
+                selection_replay = replay_lfm2_cpcf_phase_bank(
+                    self.target_model,
+                    layer_index=self.layer_index,
+                    input_bank=self.selection_bank,
+                )
+                raw_metrics = _split_endpoint_metrics(
+                    layer_index=self.layer_index,
+                    input_bank=self.selection_bank,
+                    operator_replay=selection_replay,
+                    final_replay=selection_replay,
+                    chart=self.boundary_charts,
+                    splits=("selection",),
+                )
+                metrics = _normalized_macrocell_selection_metrics(
+                    candidate_id,
+                    self.selection_bank.state_bank_sha256,
+                    raw_metrics,
+                )
+            finally:
+                _restore_layer(self.target_layer, self.target_snapshot)
+            rollback = _prove_exact_layer_rollback(
+                self.target_layer,
+                self.target_snapshot,
+                source_layer=self.source_layer,
+                source_snapshot=self.source_snapshot,
+                input_bank=self.audit_bank,
+                layer_index=self.layer_index,
+                evidence_sha256_before=self.audit_evidence_sha256_before,
+                input_sha256_before=self.audit_input_sha256_before,
+                boundary_charts=self.boundary_charts,
+                boundary_charts_sha256_before=(self.boundary_charts_sha256_before),
+                boundary_charts_payload_sha256_before=(
+                    self.boundary_charts_payload_sha256_before
+                ),
+            )
+            install_actual = _seal_macrocell_actual(
+                "operator_install",
+                candidate_id,
+                source_report_sha256=install["report_sha256"],
+                compiled_state_sha256=install["compiled_state_sha256"],
+                installed_state_sha256=install["installed_state_sha256"],
+            )
+            install_evidence = _seal_macrocell_evidence(
+                "actual_operator_install",
+                candidate_id,
+                install_actual,
+                candidate_state_sha256=candidate.state_sha256,
+                installed_state_sha256=install["installed_state_sha256"],
+            )
+            fit_actual = _seal_macrocell_actual(
+                "fit_operator_replay",
+                candidate_id,
+                source_report_sha256=fit_replay.report["report_sha256"],
+                input_bank_sha256=self.fit_bank.state_bank_sha256,
+            )
+            fit_evidence = _seal_macrocell_evidence(
+                "actual_fit_operator_replay",
+                candidate_id,
+                fit_actual,
+                candidate_state_sha256=candidate.state_sha256,
+                input_bank_sha256=self.fit_bank.state_bank_sha256,
+            )
+            mlp_actual = _seal_macrocell_actual(
+                "fit_mlp_artifact",
+                candidate_id,
+                source_report_sha256=_sha(mlp_artifact.as_dict()),
+                compiled_state_sha256=mlp_artifact.compiled_state_sha256,
+            )
+            mlp_evidence = _seal_macrocell_evidence(
+                "actual_fit_mlp_artifact",
+                candidate_id,
+                mlp_actual,
+                fit_bank_sha256=self.fit_bank.state_bank_sha256,
+                compiled_state_sha256=mlp_artifact.compiled_state_sha256,
+            )
+            mlp_install_actual = _seal_macrocell_actual(
+                "fit_mlp_install",
+                candidate_id,
+                source_report_sha256=_sha(mlp_install),
+                compiled_state_sha256=mlp_install["compiled_state_sha256"],
+                installed_state_sha256=mlp_install["installed_state_sha256"],
+            )
+            mlp_install_evidence = _seal_macrocell_evidence(
+                "actual_fit_mlp_install",
+                candidate_id,
+                mlp_install_actual,
+                compiled_state_sha256=mlp_artifact.compiled_state_sha256,
+                installed_state_sha256=mlp_install["installed_state_sha256"],
+            )
+            selection_actual = _seal_macrocell_actual(
+                "selection_final_replay",
+                candidate_id,
+                source_report_sha256=selection_replay.report["report_sha256"],
+                input_bank_sha256=self.selection_bank.state_bank_sha256,
+            )
+            selection_evidence = _seal_macrocell_evidence(
+                "actual_selection_final_replay",
+                candidate_id,
+                selection_actual,
+                candidate_state_sha256=candidate.state_sha256,
+                input_bank_sha256=self.selection_bank.state_bank_sha256,
+                mlp_compiled_state_sha256=mlp_artifact.compiled_state_sha256,
+            )
+            rollback_actual = _seal_macrocell_actual(
+                "candidate_rollback",
+                candidate_id,
+                source_report_sha256=rollback["proof_sha256"],
+                target_state_sha256_before=rollback["target_state_sha256_before"],
+                target_state_sha256_after=rollback["target_state_sha256_after"],
+                target_tensor_bytes_restored=True,
+                target_tensor_identities_preserved=True,
+                target_gradient_state_preserved=True,
+                target_module_modes_restored=True,
+                exact_layer_snapshot_restored=True,
+            )
+            rollback_body = {
+                "schema": LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA,
+                "kind": "actual_candidate_rollback",
+                "candidate_id": candidate_id,
+                "target_state_sha256_before": rollback["target_state_sha256_before"],
+                "target_state_sha256_after": rollback["target_state_sha256_after"],
+                "target_tensor_bytes_restored": True,
+                "target_tensor_identities_preserved": True,
+                "target_gradient_state_preserved": True,
+                "target_module_modes_restored": True,
+                "exact_layer_snapshot_restored": True,
+                "actual_report": rollback_actual,
+                "actual_report_sha256": rollback_actual["report_sha256"],
+                "execution": _macrocell_zero_execution(),
+            }
+            rollback_evidence = {
+                **rollback_body,
+                "report_sha256": _sha(rollback_body),
+            }
+            evaluation_body = {
+                "schema": LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVALUATION_SCHEMA,
+                "candidate_id": candidate_id,
+                "candidate_state_sha256": candidate.state_sha256,
+                "operator_selection_report_sha256": (
+                    candidate.operator_selection_report["report_sha256"]
+                ),
+                "fit_provenance_report_sha256": (
+                    candidate.fit_provenance["report_sha256"]
+                ),
+                "fit_bank_sha256": self.fit_bank.state_bank_sha256,
+                "selection_bank_sha256": self.selection_bank.state_bank_sha256,
+                "operator_install_report": install_evidence,
+                "operator_install_report_sha256": install_evidence["report_sha256"],
+                "fit_operator_replay_report": fit_evidence,
+                "fit_operator_replay_sha256": fit_evidence["report_sha256"],
+                "fit_mlp_artifact_report": mlp_evidence,
+                "fit_mlp_artifact_report_sha256": mlp_evidence["report_sha256"],
+                "fit_mlp_compiled_state_sha256": (mlp_artifact.compiled_state_sha256),
+                "fit_mlp_install_report": mlp_install_evidence,
+                "fit_mlp_install_report_sha256": (
+                    mlp_install_evidence["report_sha256"]
+                ),
+                "selection_final_replay_report": selection_evidence,
+                "selection_final_replay_sha256": (selection_evidence["report_sha256"]),
+                "selection_metrics": metrics,
+                "selection_metrics_report_sha256": metrics["report_sha256"],
+                "fit_only_mlp_fold": True,
+                "selection_only_candidate_evaluation": True,
+                "validation_accessible": False,
+                "validation_replays": 0,
+                "rollback_proof": rollback_evidence,
+                "rollback_proof_sha256": rollback_evidence["report_sha256"],
+                "execution": _macrocell_zero_execution(),
+            }
+            evaluation_report = {
+                **evaluation_body,
+                "report_sha256": _sha(evaluation_body),
+            }
+            key = _short_conv_macrocell_score(candidate_id, metrics)
+            evaluation = _Lfm2CpcfShortConvMacrocellEvaluation(
+                candidate=candidate,
+                mlp_artifact=mlp_artifact,
+                fit_operator_replay=fit_replay,
+                selection_replay=selection_replay,
+                selection_key=key,
+                report=MappingProxyType(evaluation_report),
+            )
+            self.evaluations[candidate_id] = evaluation
+            evaluations[candidate_id] = evaluation_report
+            scored.append(
+                {
+                    "candidate_id": candidate_id,
+                    "score": list(key),
+                    "evaluation_report_sha256": evaluation_report["report_sha256"],
+                }
+            )
+        if (
+            self.mlp_prepared_basis is None
+            or self.mlp_preparation_count != 1
+            or self.mlp_candidate_compile_count != len(evaluated_ids)
+            or not self.mlp_prepared_basis.verify_authentication()
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Short-conv macrocell MLP preparation/compile counts are incomplete."
+            )
+        scored.sort(key=lambda value: tuple(value["score"]))
+        ranking = [{"rank": rank + 1, **value} for rank, value in enumerate(scored)]
+        selected_id = ranking[0]["candidate_id"]
+        self.selected = self.evaluations[selected_id]
+        body = {
+            "schema": LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
+            "kind": "authenticated_fit_selection_whole_macrocell_ranking",
+            "frontier_sha256": frontier.frontier_sha256,
+            "candidate_count": len(frontier.candidates),
+            "candidate_budget": budget,
+            "evaluated_candidate_ids": evaluated_ids,
+            "candidate_evaluations": evaluations,
+            "fit_bank_sha256": self.fit_bank.state_bank_sha256,
+            "selection_bank_sha256": self.selection_bank.state_bank_sha256,
+            "macrocell_ranking": ranking,
+            "ranking_policy": (
+                "minimum_worst_causal_phase_post_layer_relative_rmse_then_"
+                "maximum_minimum_causal_phase_post_layer_cosine_then_minimum_"
+                "aggregate_post_layer_relative_rmse_then_maximum_aggregate_"
+                "post_layer_cosine_then_candidate_id"
+            ),
+            "operator_endpoint_first_control_included": True,
+            "selected_candidate_id": selected_id,
+            "selected_candidate_state_sha256": (self.selected.candidate.state_sha256),
+            "selection_split_only_for_ranking": True,
+            "validation_accessible": False,
+            "validation_reports_consumed": 0,
+            "validation_replays": 0,
+            "candidate_specific_fit_mlp_folds": len(evaluated_ids),
+            "candidate_specific_selection_replays": len(evaluated_ids),
+            "exact_candidate_rollbacks": len(evaluated_ids),
+            "execution": _macrocell_zero_execution(),
+        }
+        self.decision = MappingProxyType({**body, "report_sha256": _sha(body)})
+        return self.decision
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2CpcfCompiledLayerResult:
     """One installed layer and its actual-child next-boundary state bank."""
@@ -4035,7 +5772,10 @@ class Lfm2CpcfCompiledLayerResult:
         if self.operator_kind == "full_attention":
             if not isinstance(
                 self.operator_artifact,
-                Lfm2CompiledStructuralAttentionFold,
+                (
+                    Lfm2CompiledStructuralAttentionFold,
+                    Lfm2CompiledCpcfResidualAttentionSplitFold,
+                ),
             ):
                 raise TypeError("Attention result has the wrong operator artifact.")
         elif not isinstance(
@@ -4255,16 +5995,12 @@ def _valid_short_conv_v4_candidate_provenance(
         sources = provenance.get("sources")
         aliases = provenance.get("source_alias_candidate_ids")
         alias_count = provenance.get("source_alias_count")
-        target_state_sha = provenance.get(
-            "target_dtype_candidate_state_sha256"
-        )
+        target_state_sha = provenance.get("target_dtype_candidate_state_sha256")
         if not (
             provenance.get("schema") == LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
-            and provenance.get("kind")
-            == "authenticated_fit_only_candidate_provenance"
+            and provenance.get("kind") == "authenticated_fit_only_candidate_provenance"
             and provenance.get("candidate_id") == candidate_id
-            and provenance.get("policy_sha256")
-            == solver_policy.authentication_sha256
+            and provenance.get("policy_sha256") == solver_policy.authentication_sha256
             and provenance.get("target_dtype") == solver_policy.target_dtype
             and isinstance(target_state_sha, str)
             and _SHA256.fullmatch(target_state_sha) is not None
@@ -4331,8 +6067,7 @@ def _valid_short_conv_v4_candidate_provenance(
                 == candidate_report.get("state_sha256")
                 and candidate_report.get("policy_sha256")
                 == solver_policy.authentication_sha256
-                and candidate_report.get("alpha")
-                == ridge_fit[ridge_id].get("alpha")
+                and candidate_report.get("alpha") == ridge_fit[ridge_id].get("alpha")
                 and candidate_report.get("fit_case_authentication_sha256")
                 == ridge_fit[ridge_id].get("fit_case_authentication_sha256")
                 and candidate_report.get("fit_only") is True
@@ -4450,9 +6185,7 @@ def _valid_short_conv_v4_raw_frontier_coverage(
                 stage_id = record.get("stage_id")
                 if not isinstance(stage_id, str) or not stage_id:
                     return False
-                candidate_id = (
-                    f"{ridge_id}--anchor-{path_index:02d}-{stage_id}"
-                )
+                candidate_id = f"{ridge_id}--anchor-{path_index:02d}-{stage_id}"
                 expected_sources[candidate_id] = (
                     ridge_id,
                     "accepted_fit_path_anchor",
@@ -4460,13 +6193,8 @@ def _valid_short_conv_v4_raw_frontier_coverage(
                 )
 
             for fraction_index, fraction in enumerate(fractions):
-                stage_id = (
-                    f"prior-to-final-{fraction_index:02d}-{fraction:.17g}"
-                )
-                candidate_id = (
-                    f"{ridge_id}--trust-{fraction_index:02d}-"
-                    f"{fraction:.17g}"
-                )
+                stage_id = f"prior-to-final-{fraction_index:02d}-{fraction:.17g}"
+                candidate_id = f"{ridge_id}--trust-{fraction_index:02d}-{fraction:.17g}"
                 expected_sources[candidate_id] = (
                     ridge_id,
                     "prior_to_final_trust_path",
@@ -4484,12 +6212,10 @@ def _valid_short_conv_v4_raw_frontier_coverage(
             if first_writer_record is not None:
                 for fraction_index, fraction in enumerate(fractions):
                     stage_id = (
-                        f"prior-to-first-writer-{fraction_index:02d}-"
-                        f"{fraction:.17g}"
+                        f"prior-to-first-writer-{fraction_index:02d}-{fraction:.17g}"
                     )
                     candidate_id = (
-                        f"{ridge_id}--writer-trust-{fraction_index:02d}-"
-                        f"{fraction:.17g}"
+                        f"{ridge_id}--writer-trust-{fraction_index:02d}-{fraction:.17g}"
                     )
                     expected_sources[candidate_id] = (
                         ridge_id,
@@ -4509,9 +6235,7 @@ def _valid_short_conv_v4_raw_frontier_coverage(
                 and isinstance(aliases, list)
                 and aliases
                 == [
-                    source.get("candidate_id")
-                    if isinstance(source, Mapping)
-                    else None
+                    source.get("candidate_id") if isinstance(source, Mapping) else None
                     for source in sources
                 ]
                 and aliases[0] == candidate_id
@@ -4586,9 +6310,7 @@ def _valid_short_conv_v4_candidate_pool(
             return False
         candidate_ids = pool.get("candidate_ids")
         state_map = pool.get("candidate_state_sha256")
-        projection_case_seals = pool.get(
-            "projection_case_authentication_sha256"
-        )
+        projection_case_seals = pool.get("projection_case_authentication_sha256")
         expected_feasibility = {
             "maximum_endpoint_relative_rmse": min(
                 float(gate_policy["maximum_fit_endpoint_relative_rmse"]),
@@ -4623,16 +6345,14 @@ def _valid_short_conv_v4_candidate_pool(
         if not (
             isinstance(fold_case_seals, Mapping)
             and set(fold_case_seals) == split_names
-            and pool.get("fold_case_authentication_sha256")
-            == dict(fold_case_seals)
+            and pool.get("fold_case_authentication_sha256") == dict(fold_case_seals)
             and isinstance(projection_case_seals, Mapping)
             and set(projection_case_seals) == split_names
             and all(
                 isinstance(projection_case_seals[split], list)
                 and projection_case_seals[split]
                 and all(
-                    isinstance(value, str)
-                    and _SHA256.fullmatch(value) is not None
+                    isinstance(value, str) and _SHA256.fullmatch(value) is not None
                     for value in projection_case_seals[split]
                 )
                 for split in split_names
@@ -4658,8 +6378,7 @@ def _valid_short_conv_v4_candidate_pool(
         return bool(
             pool.get("schema") == LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA
             and pool.get("kind") == "authenticated_target_dtype_candidate_pool"
-            and pool.get("policy_sha256")
-            == solver_policy.authentication_sha256
+            and pool.get("policy_sha256") == solver_policy.authentication_sha256
             and pool.get("target_dtype") == solver_policy.target_dtype
             and counts["ridge_candidate_count"] == len(ridge_fit)
             and counts["unique_target_dtype_candidate_count"] == len(candidate_fit)
@@ -4740,10 +6459,8 @@ def _valid_short_conv_v4_ridge_fit_reports(
             fit_case_seals = value.get("fit_case_authentication_sha256")
             if not (
                 value.get("schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
-                and value.get("kind")
-                == "fixed_bounded_sampled_cp_variable_projection"
-                and value.get("policy_sha256")
-                == solver_policy.authentication_sha256
+                and value.get("kind") == "fixed_bounded_sampled_cp_variable_projection"
+                and value.get("policy_sha256") == solver_policy.authentication_sha256
                 and value.get("alpha") == alpha
                 and value.get("fit_only") is True
                 and value.get("selection_cases_consumed") == 0
@@ -4762,21 +6479,18 @@ def _valid_short_conv_v4_ridge_fit_reports(
                     and isinstance(item.get("state_sha256"), str)
                     and _SHA256.fullmatch(item["state_sha256"]) is not None
                     and isinstance(item.get("candidate_report_sha256"), str)
-                    and _SHA256.fullmatch(item["candidate_report_sha256"])
-                    is not None
+                    and _SHA256.fullmatch(item["candidate_report_sha256"]) is not None
                     for item in inventory
                 )
                 and value.get("path_state_count") == len(inventory)
                 and value.get("path_state_inventory_sha256") == _sha(inventory)
                 and value.get("rejected_phases_excluded_from_path") is True
                 and value.get("final_state_is_last_path_state") is True
-                and inventory[-1].get("state_sha256")
-                == value.get("state_sha256")
+                and inventory[-1].get("state_sha256") == value.get("state_sha256")
                 and isinstance(fit_case_seals, list)
                 and fit_case_seals
                 and all(
-                    isinstance(item, str)
-                    and _SHA256.fullmatch(item) is not None
+                    isinstance(item, str) and _SHA256.fullmatch(item) is not None
                     for item in fit_case_seals
                 )
             ):
@@ -4830,9 +6544,7 @@ def _valid_short_conv_v4_behavior_gate(
             ),
             "validation_endpoint_cosine_similarity": (
                 float(validation_evaluation["minimum_case_cosine_similarity"])
-                >= float(
-                    gate_policy["minimum_validation_endpoint_cosine_similarity"]
-                )
+                >= float(gate_policy["minimum_validation_endpoint_cosine_similarity"])
             ),
             "fit_context_relative_rmse": (
                 fit_evaluation.get("context_evidence_present") is True
@@ -4841,9 +6553,7 @@ def _valid_short_conv_v4_behavior_gate(
             ),
             "validation_context_relative_rmse": (
                 validation_evaluation.get("context_evidence_present") is True
-                and float(
-                    validation_evaluation["maximum_case_context_relative_rmse"]
-                )
+                and float(validation_evaluation["maximum_case_context_relative_rmse"])
                 <= float(gate_policy["maximum_validation_endpoint_relative_rmse"])
             ),
             "fit_context_cosine_similarity": (
@@ -4856,9 +6566,7 @@ def _valid_short_conv_v4_behavior_gate(
                 and float(
                     validation_evaluation["minimum_case_context_cosine_similarity"]
                 )
-                >= float(
-                    gate_policy["minimum_validation_endpoint_cosine_similarity"]
-                )
+                >= float(gate_policy["minimum_validation_endpoint_cosine_similarity"])
             ),
             "full_source_numeric_participation": full_source_coverage,
             "actual_fit_target_dtype_replay": (
@@ -4879,8 +6587,7 @@ def _valid_short_conv_v4_behavior_gate(
         ]
         return bool(
             isinstance(gate, Mapping)
-            and set(gate)
-            == {"policy", "checks", "failed_checks", "passed", "enforced"}
+            and set(gate) == {"policy", "checks", "failed_checks", "passed", "enforced"}
             and gate.get("policy") == dict(gate_policy)
             and gate.get("checks") == expected_checks
             and gate.get("failed_checks") == expected_failed
@@ -4903,9 +6610,7 @@ def _valid_short_conv_v4_legacy_validation_report(
         gate_policy = report.get("gate_policy")
         gate = report.get("behavior_gate")
         checks = gate.get("checks") if isinstance(gate, Mapping) else None
-        failed_checks = (
-            gate.get("failed_checks") if isinstance(gate, Mapping) else None
-        )
+        failed_checks = gate.get("failed_checks") if isinstance(gate, Mapping) else None
         case_seals = report.get("case_authentication_sha256")
         execution = report.get("execution")
         candidate_fit = report.get("candidate_fit_reports")
@@ -4948,8 +6653,7 @@ def _valid_short_conv_v4_legacy_validation_report(
                 for name in _SHORT_CONV_GATE_POLICY_FIELDS - {"enforce"}
             )
             and isinstance(gate, Mapping)
-            and set(gate)
-            == {"policy", "checks", "failed_checks", "passed", "enforced"}
+            and set(gate) == {"policy", "checks", "failed_checks", "passed", "enforced"}
             and gate.get("policy") == dict(gate_policy)
             and gate.get("passed") is False
             and gate.get("enforced") is True
@@ -4967,8 +6671,7 @@ def _valid_short_conv_v4_legacy_validation_report(
                 isinstance(values, list)
                 and values
                 and all(
-                    isinstance(value, str)
-                    and _SHA256.fullmatch(value) is not None
+                    isinstance(value, str) and _SHA256.fullmatch(value) is not None
                     for value in values
                 )
                 for values in case_seals.values()
@@ -5016,8 +6719,7 @@ def _valid_short_conv_v4_legacy_validation_report(
                 and evaluation.get("split") == split
                 and evaluation.get("policy_sha256")
                 == solver_policy.authentication_sha256
-                and evaluation.get("candidate_state_sha256")
-                == selected_state_sha
+                and evaluation.get("candidate_state_sha256") == selected_state_sha
                 and evaluation.get(
                     "actual_parameter_and_intermediate_target_dtype_replay"
                 )
@@ -5272,9 +6974,7 @@ def _valid_short_conv_v5_selector_validation_report(
     try:
         receipt = report.get("preinstall_candidate_selector_receipt")
         selector_report = (
-            receipt.get("selector_report")
-            if isinstance(receipt, Mapping)
-            else None
+            receipt.get("selector_report") if isinstance(receipt, Mapping) else None
         )
         selection = report.get("selection_evaluation")
         candidate_reports = report.get("candidate_selection_reports")
@@ -5289,17 +6989,13 @@ def _valid_short_conv_v5_selector_validation_report(
         receipt_body = dict(receipt) if isinstance(receipt, Mapping) else {}
         receipt_seal = receipt_body.pop("report_sha256", None)
         selector_body = (
-            dict(selector_report)
-            if isinstance(selector_report, Mapping)
-            else {}
+            dict(selector_report) if isinstance(selector_report, Mapping) else {}
         )
         selector_seal = selector_body.pop("report_sha256", None)
         return bool(
-            report.get("schema")
-            == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA
+            report.get("schema") == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA
             and isinstance(receipt, Mapping)
-            and receipt.get("schema")
-            == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA
+            and receipt.get("schema") == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA
             and isinstance(receipt_seal, str)
             and _SHA256.fullmatch(receipt_seal) is not None
             and _sha(receipt_body) == receipt_seal
@@ -5310,17 +7006,11 @@ def _valid_short_conv_v5_selector_validation_report(
             and _SHA256.fullmatch(selector_seal) is not None
             and _sha(selector_body) == selector_seal
             and receipt.get("selector_report_sha256") == selector_seal
-            and receipt.get(
-                "all_live_candidate_states_verified_before_callback"
-            )
+            and receipt.get("all_live_candidate_states_verified_before_callback")
             is True
-            and receipt.get(
-                "all_live_candidate_states_verified_after_callback"
-            )
-            is True
+            and receipt.get("all_live_candidate_states_verified_after_callback") is True
             and receipt.get("live_candidate_state_bytes_unchanged") is True
-            and receipt.get("candidate_state_tensors_exposed_to_selector")
-            is False
+            and receipt.get("candidate_state_tensors_exposed_to_selector") is False
             and receipt.get("fit_reports_exposed_to_selector") is False
             and receipt.get("validation_reports_exposed_to_selector") is False
             and receipt.get("post_install_rescoring") is False
@@ -5333,16 +7023,173 @@ def _valid_short_conv_v5_selector_validation_report(
             and selector_report.get("selected_candidate_id") == selected_id
             and isinstance(selected_sha, str)
             and _SHA256.fullmatch(selected_sha) is not None
-            and receipt.get("selected_candidate_state_sha256")
-            == selected_sha
-            and selector_report.get("selected_candidate_state_sha256")
-            == selected_sha
+            and receipt.get("selected_candidate_state_sha256") == selected_sha
+            and selector_report.get("selected_candidate_state_sha256") == selected_sha
             and isinstance(candidate_reports, Mapping)
             and isinstance(candidate_reports.get(selected_id), Mapping)
-            and candidate_reports[selected_id].get(
-                "candidate_state_sha256"
-            )
+            and candidate_reports[selected_id].get("candidate_state_sha256")
             == selected_sha
+            and isinstance(gate, Mapping)
+            and gate.get("passed") is False
+            and gate.get("enforced") is True
+            and report.get("compiled_short_conv_fold_issued") is False
+            and report.get("promotion_claimed") is False
+            and report.get("promotable_candidate") is False
+            and report.get("failure_evidence_only") is True
+            and isinstance(execution, Mapping)
+            and all(type(value) is int and value == 0 for value in execution.values())
+            and _recursive_report_seals_valid(report)
+            and _no_recursive_success_claims(report)
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OverflowError,
+        TypeError,
+        ValueError,
+    ):
+        return False
+
+
+def _valid_short_conv_v5_macrocell_validation_report(
+    report: Mapping[str, Any],
+) -> bool:
+    """Validate a whole-macrocell gate failure and its embedded evidence."""
+
+    try:
+        receipt = report.get("macrocell_candidate_selector_receipt")
+        decision = (
+            receipt.get("selector_decision") if isinstance(receipt, Mapping) else None
+        )
+        frontier = receipt.get("frontier") if isinstance(receipt, Mapping) else None
+        selection = report.get("selection_evaluation")
+        candidate_reports = report.get("candidate_selection_reports")
+        selected_id = report.get("selected_candidate_id")
+        selected_sha = (
+            selection.get("candidate_state_sha256")
+            if isinstance(selection, Mapping)
+            else None
+        )
+        receipt_body = dict(receipt) if isinstance(receipt, Mapping) else {}
+        receipt_sha = receipt_body.pop("report_sha256", None)
+        decision_body = dict(decision) if isinstance(decision, Mapping) else {}
+        decision_sha = decision_body.pop("report_sha256", None)
+        frontier_body = dict(frontier) if isinstance(frontier, Mapping) else {}
+        frontier_sha = frontier_body.pop("report_sha256", None)
+        gate = report.get("behavior_gate")
+        execution = report.get("execution")
+        solver_policy = parse_lfm2_cpcf_short_conv_v4_solver_policy(
+            report.get("solver_policy")
+        )
+        candidate_fit = report.get("candidate_fit_reports")
+        candidate_selection = report.get("candidate_selection_reports")
+        ridge_fit = report.get("ridge_fit_reports")
+        candidate_pool = report.get("candidate_pool_report")
+        ranking = report.get("selection_ranking")
+        gate_policy = report.get("gate_policy")
+        case_seals = report.get("case_authentication_sha256")
+        split_evaluations = {
+            "fit": report.get("fit_evaluation"),
+            "selection": report.get("selection_evaluation"),
+            "validation": report.get("validation_evaluation"),
+        }
+        legacy_candidate_pool = (
+            {
+                **dict(candidate_pool),
+                "schema": LFM2_CPCF_SHORT_CONV_V4_FOLD_SCHEMA,
+            }
+            if isinstance(candidate_pool, Mapping)
+            else candidate_pool
+        )
+        if isinstance(legacy_candidate_pool, dict):
+            legacy_candidate_pool.pop("report_sha256", None)
+            legacy_candidate_pool["report_sha256"] = _sha(legacy_candidate_pool)
+        legacy_candidate_evidence_valid = bool(
+            "numerical_frontier" in report
+            or (
+                isinstance(candidate_fit, Mapping)
+                and candidate_fit
+                and isinstance(candidate_selection, Mapping)
+                and set(candidate_fit) == set(candidate_selection)
+                and _valid_short_conv_v4_ridge_fit_reports(
+                    ridge_fit,
+                    solver_policy=solver_policy,
+                )
+                and all(
+                    _valid_short_conv_v4_candidate_provenance(
+                        candidate_id=candidate_id,
+                        provenance=candidate_fit[candidate_id],
+                        selection=candidate_selection[candidate_id],
+                        ridge_fit=ridge_fit,
+                        solver_policy=solver_policy,
+                    )
+                    for candidate_id in candidate_fit
+                )
+                and isinstance(gate_policy, Mapping)
+                and isinstance(case_seals, Mapping)
+                and _valid_short_conv_v4_candidate_pool(
+                    pool=legacy_candidate_pool,
+                    candidate_fit=candidate_fit,
+                    candidate_selection=candidate_selection,
+                    ridge_fit=ridge_fit,
+                    solver_policy=solver_policy,
+                    gate_policy=gate_policy,
+                    fold_case_seals=case_seals,
+                    split_evaluations=split_evaluations,
+                )
+                and _valid_short_conv_v4_selection_ranking(
+                    ranking,
+                    candidate_selection=candidate_selection,
+                    solver_policy=solver_policy,
+                    feasibility_policy=candidate_pool["selection_feasibility_policy"],
+                )
+            )
+        )
+        return bool(
+            report.get("schema")
+            == LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FAILURE_SCHEMA
+            and isinstance(receipt, Mapping)
+            and receipt.get("schema")
+            == LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_RECEIPT_SCHEMA
+            and _SHA256.fullmatch(str(receipt_sha)) is not None
+            and _sha(receipt_body) == receipt_sha
+            and report.get("macrocell_candidate_selector_receipt_sha256") == receipt_sha
+            and isinstance(decision, Mapping)
+            and _SHA256.fullmatch(str(decision_sha)) is not None
+            and _sha(decision_body) == decision_sha
+            and receipt.get("selector_decision_sha256") == decision_sha
+            and isinstance(frontier, Mapping)
+            and _SHA256.fullmatch(str(frontier_sha)) is not None
+            and _sha(frontier_body) == frontier_sha
+            and receipt.get("frontier_sha256") == frontier_sha
+            and decision.get("frontier_sha256") == frontier_sha
+            and decision.get("selected_candidate_id") == selected_id
+            and decision.get("selected_candidate_state_sha256") == selected_sha
+            and receipt.get("selected_candidate_id") == selected_id
+            and receipt.get("selected_candidate_state_sha256") == selected_sha
+            and isinstance(candidate_reports, Mapping)
+            and isinstance(candidate_reports.get(selected_id), Mapping)
+            and candidate_reports[selected_id].get("candidate_state_sha256")
+            == selected_sha
+            and solver_policy.verify_authentication()
+            and report.get("solver_policy_sha256")
+            == solver_policy.authentication_sha256
+            and legacy_candidate_evidence_valid
+            and receipt.get("candidate_state_tensors_exposed_to_macrocell_selector")
+            is True
+            and receipt.get("fit_provenance_exposed_to_macrocell_selector") is True
+            and receipt.get("operator_selection_reports_exposed_to_macrocell_selector")
+            is True
+            and receipt.get("validation_evidence_exposed_to_macrocell_selector")
+            is False
+            and receipt.get("validation_reports_consumed") == 0
+            and decision.get("validation_accessible") is False
+            and decision.get("validation_reports_consumed") == 0
+            and decision.get("validation_replays") == 0
+            and report.get("validation_used_for_macrocell_selection") is False
+            and report.get("validation_frozen_until_after_macrocell_winner") is True
+            and report.get("post_install_rescoring_performed") is False
+            and report.get("macrocell_candidate_selector_active") is True
             and isinstance(gate, Mapping)
             and gate.get("passed") is False
             and gate.get("enforced") is True
@@ -5395,9 +7242,7 @@ def _valid_short_conv_v5_selector_receipt_only(
     receipt_body = dict(receipt)
     receipt_seal = receipt_body.pop("report_sha256", None)
     selector_body = (
-        dict(selector_report)
-        if isinstance(selector_report, Mapping)
-        else {}
+        dict(selector_report) if isinstance(selector_report, Mapping) else {}
     )
     selector_seal = selector_body.pop("report_sha256", None)
     receipt_execution = receipt.get("execution")
@@ -5407,29 +7252,20 @@ def _valid_short_conv_v5_selector_receipt_only(
         else None
     )
     return bool(
-        receipt.get("schema")
-        == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA
+        receipt.get("schema") == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_RECEIPT_SCHEMA
         and isinstance(receipt_seal, str)
         and _SHA256.fullmatch(receipt_seal) is not None
         and _sha(receipt_body) == receipt_seal
-        and report.get("preinstall_candidate_selector_receipt_sha256")
-        == receipt_seal
+        and report.get("preinstall_candidate_selector_receipt_sha256") == receipt_seal
         and isinstance(selector_report, Mapping)
         and isinstance(selector_seal, str)
         and _SHA256.fullmatch(selector_seal) is not None
         and _sha(selector_body) == selector_seal
         and receipt.get("selector_report_sha256") == selector_seal
-        and receipt.get(
-            "all_live_candidate_states_verified_before_callback"
-        )
-        is True
-        and receipt.get(
-            "all_live_candidate_states_verified_after_callback"
-        )
-        is True
+        and receipt.get("all_live_candidate_states_verified_before_callback") is True
+        and receipt.get("all_live_candidate_states_verified_after_callback") is True
         and receipt.get("live_candidate_state_bytes_unchanged") is True
-        and receipt.get("candidate_state_tensors_exposed_to_selector")
-        is False
+        and receipt.get("candidate_state_tensors_exposed_to_selector") is False
         and receipt.get("fit_reports_exposed_to_selector") is False
         and receipt.get("validation_reports_exposed_to_selector") is False
         and receipt.get("post_install_rescoring") is False
@@ -5445,16 +7281,11 @@ def _valid_short_conv_v5_selector_receipt_only(
         and report.get("preinstall_candidate_selector_active") is True
         and receipt.get("selected_candidate_id") == selected_id
         and selector_report.get("selected_candidate_id") == selected_id
-        and receipt.get("selected_candidate_state_sha256")
-        == selected_sha
-        and selector_report.get("selected_candidate_state_sha256")
-        == selected_sha
+        and receipt.get("selected_candidate_state_sha256") == selected_sha
+        and selector_report.get("selected_candidate_state_sha256") == selected_sha
         and isinstance(candidate_reports, Mapping)
         and isinstance(candidate_reports.get(selected_id), Mapping)
-        and candidate_reports[selected_id].get(
-            "candidate_state_sha256"
-        )
-        == selected_sha
+        and candidate_reports[selected_id].get("candidate_state_sha256") == selected_sha
     )
 
 
@@ -5509,8 +7340,7 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             cases = value.get("cases")
             if not (
                 value.get("kind") == "target_dtype_evaluation"
-                and value.get("policy_sha256")
-                == solver_policy.authentication_sha256
+                and value.get("policy_sha256") == solver_policy.authentication_sha256
                 and value.get("target_dtype") == solver_policy.target_dtype
                 and value.get("split") == split
                 and value.get("case_balanced") is True
@@ -5520,12 +7350,9 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 and value.get("case_count") == len(cases)
                 and isinstance(value.get("evidence_sha256"), str)
                 and _SHA256.fullmatch(value["evidence_sha256"]) is not None
-                and value.get("candidate_state_sha256")
-                == candidate_state_sha256
+                and value.get("candidate_state_sha256") == candidate_state_sha256
                 and value.get("context_evidence_present") is True
-                and value.get(
-                    "actual_parameter_and_intermediate_target_dtype_replay"
-                )
+                and value.get("actual_parameter_and_intermediate_target_dtype_replay")
                 is True
                 and value.get("final_output_materialization_only") is False
                 and value.get("selection_used_for_parameter_fitting") is False
@@ -5551,20 +7378,15 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                         case.get("projection_case_authentication_sha256"),
                         str,
                     )
-                    and _SHA256.fullmatch(
-                        case["projection_case_authentication_sha256"]
-                    )
+                    and _SHA256.fullmatch(case["projection_case_authentication_sha256"])
                     is not None
                     and isinstance(
                         case.get("case_authentication_sha256"),
                         str,
                     )
-                    and _SHA256.fullmatch(
-                        case["case_authentication_sha256"]
-                    )
+                    and _SHA256.fullmatch(case["case_authentication_sha256"])
                     is not None
-                    and case.get("candidate_state_sha256")
-                    == candidate_state_sha256
+                    and case.get("candidate_state_sha256") == candidate_state_sha256
                     and case.get(
                         "actual_parameter_and_intermediate_target_dtype_replay"
                     )
@@ -5580,8 +7402,7 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             and solver_policy.verify_authentication()
             and report.get("solver_policy_sha256")
             == solver_policy.authentication_sha256
-            and report.get("solver_schema")
-            == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
+            and report.get("solver_schema") == LFM2_CPCF_SHORT_CONV_V4_SCHEMA
             and sealed(
                 request,
                 LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_REQUEST_SCHEMA,
@@ -5620,39 +7441,32 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
         )
         if not (
             report.get("numerical_frontier_request_sha256") == request_sha
-            and report.get("numerical_frontier_report_sha256")
-            == frontier_sha
+            and report.get("numerical_frontier_report_sha256") == frontier_sha
             and frontier.get("request_sha256") == request_sha
             and pool.get("request_sha256") == request_sha
-            and pool.get("numerical_frontier_report_sha256")
-            == frontier_sha
+            and pool.get("numerical_frontier_report_sha256") == frontier_sha
             and pool.get("kind")
             == "authenticated_v5_numerical_target_dtype_candidate_pool"
-            and pool.get("policy_sha256")
-            == solver_policy.authentication_sha256
+            and pool.get("policy_sha256") == solver_policy.authentication_sha256
             and pool.get("target_dtype") == solver_policy.target_dtype
-            and request.get("kind")
-            == "detached_fit_only_numerical_frontier_request"
+            and request.get("kind") == "detached_fit_only_numerical_frontier_request"
             and request.get("fit_only") is True
             and request.get("selection_cases_exposed") is False
             and request.get("validation_cases_exposed") is False
-            and request.get("policy_sha256")
-            == solver_policy.authentication_sha256
+            and request.get("policy_sha256") == solver_policy.authentication_sha256
             and request.get("target_dtype") == solver_policy.target_dtype
             and _valid_exact_zero_execution(
                 request.get("execution"),
                 fields=_SHORT_CONV_V5_NUMERICAL_EXECUTION_FIELDS,
             )
             and isinstance(source_inventory, Mapping)
-            and set(source_inventory)
-            == _SHORT_CONV_V5_NUMERICAL_SOURCE_TENSOR_ROLES
+            and set(source_inventory) == _SHORT_CONV_V5_NUMERICAL_SOURCE_TENSOR_ROLES
             and isinstance(context_inventory, Mapping)
             and context_inventory
             and isinstance(template_inventory, Mapping)
             and set(template_inventory)
             == _SHORT_CONV_V5_NUMERICAL_TARGET_TEMPLATE_ROLES
-            and request.get("source_tensor_inventory_sha256")
-            == _sha(source_inventory)
+            and request.get("source_tensor_inventory_sha256") == _sha(source_inventory)
             and request.get("parent_context_inventory_sha256")
             == _sha(context_inventory)
             and request.get("target_template_inventory_sha256")
@@ -5671,23 +7485,18 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 report.get("hidden_width_compression_ratio"),
                 bool,
             )
-            and math.isfinite(
-                float(report["hidden_width_compression_ratio"])
-            )
+            and math.isfinite(float(report["hidden_width_compression_ratio"]))
             and float(report["hidden_width_compression_ratio"])
             == dimensions[0] / dimensions[1]
-            and frontier.get("kind")
-            == "authenticated_fit_only_numerical_frontier"
+            and frontier.get("kind") == "authenticated_fit_only_numerical_frontier"
             and isinstance(frontier.get("adapter_id"), str)
             and bool(frontier["adapter_id"].strip())
             and isinstance(frontier.get("context_encoder_sha256"), str)
-            and _SHA256.fullmatch(frontier["context_encoder_sha256"])
-            is not None
+            and _SHA256.fullmatch(frontier["context_encoder_sha256"]) is not None
             and isinstance(adapter_provenance, Mapping)
             and isinstance(adapter_provenance.get("implementation"), str)
             and bool(adapter_provenance["implementation"].strip())
-            and frontier.get("adapter_provenance_sha256")
-            == _sha(adapter_provenance)
+            and frontier.get("adapter_provenance_sha256") == _sha(adapter_provenance)
             and frontier.get("fit_only") is True
             and frontier.get("selection_cases_consumed") == 0
             and frontier.get("validation_cases_consumed") == 0
@@ -5703,17 +7512,14 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 isinstance(values, list)
                 and values
                 and all(
-                    isinstance(value, str)
-                    and _SHA256.fullmatch(value) is not None
+                    isinstance(value, str) and _SHA256.fullmatch(value) is not None
                     for value in values
                 )
                 for values in case_seals.values()
             )
-            and case_seals.get("fit")
-            == request.get("fit_case_authentication_sha256")
+            and case_seals.get("fit") == request.get("fit_case_authentication_sha256")
             and len(context_inventory) == len(case_seals["fit"])
-            and pool.get("fold_case_authentication_sha256")
-            == dict(case_seals)
+            and pool.get("fold_case_authentication_sha256") == dict(case_seals)
         ):
             return False
         raw_reports = frontier.get("raw_candidate_reports")
@@ -5740,22 +7546,17 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 == _SHORT_CONV_V5_NUMERICAL_RAW_CANDIDATE_FIELDS
                 and raw_reports[candidate_id].get("kind")
                 == "authenticated_fit_only_numerical_raw_candidate"
-                and raw_reports[candidate_id].get("candidate_id")
-                == candidate_id
+                and raw_reports[candidate_id].get("candidate_id") == candidate_id
                 and isinstance(
                     raw_reports[candidate_id].get("candidate_kind"),
                     str,
                 )
-                and bool(
-                    raw_reports[candidate_id]["candidate_kind"].strip()
-                )
-                and raw_reports[candidate_id].get("request_sha256")
-                == request_sha
+                and bool(raw_reports[candidate_id]["candidate_kind"].strip())
+                and raw_reports[candidate_id].get("request_sha256") == request_sha
                 and raw_reports[candidate_id].get("state_sha256")
                 == raw_state_sha[candidate_id]
                 and isinstance(raw_state_sha[candidate_id], str)
-                and _SHA256.fullmatch(raw_state_sha[candidate_id])
-                is not None
+                and _SHA256.fullmatch(raw_state_sha[candidate_id]) is not None
                 and raw_reports[candidate_id].get("report_sha256")
                 == raw_report_sha[candidate_id]
                 and isinstance(
@@ -5763,29 +7564,17 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                     Mapping,
                 )
                 and isinstance(
-                    raw_reports[candidate_id]["method_provenance"].get(
-                        "method"
-                    ),
+                    raw_reports[candidate_id]["method_provenance"].get("method"),
                     str,
                 )
                 and bool(
-                    raw_reports[candidate_id]["method_provenance"][
-                        "method"
-                    ].strip()
+                    raw_reports[candidate_id]["method_provenance"]["method"].strip()
                 )
-                and raw_reports[candidate_id].get(
-                    "method_provenance_sha256"
-                )
+                and raw_reports[candidate_id].get("method_provenance_sha256")
                 == _sha(raw_reports[candidate_id]["method_provenance"])
                 and raw_reports[candidate_id].get("fit_only") is True
-                and raw_reports[candidate_id].get(
-                    "selection_cases_consumed"
-                )
-                == 0
-                and raw_reports[candidate_id].get(
-                    "validation_cases_consumed"
-                )
-                == 0
+                and raw_reports[candidate_id].get("selection_cases_consumed") == 0
+                and raw_reports[candidate_id].get("validation_cases_consumed") == 0
                 and _valid_exact_zero_execution(
                     raw_reports[candidate_id].get("execution"),
                     fields=_SHORT_CONV_V5_NUMERICAL_EXECUTION_FIELDS,
@@ -5814,15 +7603,12 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             and full_coverage is (len(participants) == source_count)
             and pool.get("source_channels_selected") == selected_count
             and pool.get("source_channels_dropped") == dropped_count
-            and pool.get("full_source_numeric_participation")
-            is full_coverage
+            and pool.get("full_source_numeric_participation") is full_coverage
             and report.get("source_channels_selected") == selected_count
             and report.get("source_channels_dropped") == dropped_count
         ):
             return False
-        projection_case_seals = pool.get(
-            "projection_case_authentication_sha256"
-        )
+        projection_case_seals = pool.get("projection_case_authentication_sha256")
         pool_state_sha = pool.get("candidate_state_sha256")
         if not (
             isinstance(candidate_fit, Mapping)
@@ -5834,8 +7620,7 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             and pool.get("candidate_ids") == sorted(candidate_fit)
             and len(pool["candidate_ids"]) == len(set(pool["candidate_ids"]))
             and type(pool.get("unique_target_dtype_candidate_count")) is int
-            and pool.get("unique_target_dtype_candidate_count")
-            == len(candidate_fit)
+            and pool.get("unique_target_dtype_candidate_count") == len(candidate_fit)
             and type(pool.get("raw_candidate_count")) is int
             and pool.get("raw_candidate_count") == len(raw_ids)
             and type(pool.get("target_dtype_duplicate_count")) is int
@@ -5843,14 +7628,12 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             == len(raw_ids) - len(candidate_fit)
             and pool["target_dtype_duplicate_count"] >= 0
             and isinstance(projection_case_seals, Mapping)
-            and set(projection_case_seals)
-            == {"fit", "selection", "validation"}
+            and set(projection_case_seals) == {"fit", "selection", "validation"}
             and all(
                 isinstance(projection_case_seals[split], list)
                 and projection_case_seals[split]
                 and all(
-                    isinstance(value, str)
-                    and _SHA256.fullmatch(value) is not None
+                    isinstance(value, str) and _SHA256.fullmatch(value) is not None
                     for value in projection_case_seals[split]
                 )
                 for split in ("fit", "selection", "validation")
@@ -5865,9 +7648,7 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             return False
         for candidate_id, provenance in candidate_fit.items():
             selection = candidate_selection[candidate_id]
-            candidate_state_sha = provenance.get(
-                "target_dtype_candidate_state_sha256"
-            )
+            candidate_state_sha = provenance.get("target_dtype_candidate_state_sha256")
             sources = provenance.get("sources")
             aliases = provenance.get("source_alias_candidate_ids")
             if not (
@@ -5875,30 +7656,23 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                     provenance,
                     LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_PROVENANCE_SCHEMA,
                 )
-                and set(provenance)
-                == _SHORT_CONV_V5_NUMERICAL_PROVENANCE_FIELDS
+                and set(provenance) == _SHORT_CONV_V5_NUMERICAL_PROVENANCE_FIELDS
                 and provenance.get("kind")
-                == (
-                    "authenticated_fit_only_numerical_frontier_candidate_"
-                    "provenance"
-                )
+                == ("authenticated_fit_only_numerical_frontier_candidate_provenance")
                 and provenance.get("candidate_id") == candidate_id
                 and provenance.get("policy_sha256")
                 == solver_policy.authentication_sha256
-                and provenance.get("target_dtype")
-                == solver_policy.target_dtype
+                and provenance.get("target_dtype") == solver_policy.target_dtype
                 and isinstance(candidate_state_sha, str)
                 and _SHA256.fullmatch(candidate_state_sha) is not None
                 and provenance.get("request_sha256") == request_sha
-                and provenance.get("numerical_frontier_report_sha256")
-                == frontier_sha
+                and provenance.get("numerical_frontier_report_sha256") == frontier_sha
                 and provenance.get("fit_case_authentication_sha256")
                 == case_seals["fit"]
                 and provenance.get("fit_only") is True
                 and provenance.get("selection_cases_consumed") == 0
                 and provenance.get("validation_cases_consumed") == 0
-                and provenance.get("legacy_v4_candidate_provenance_claimed")
-                is False
+                and provenance.get("legacy_v4_candidate_provenance_claimed") is False
                 and isinstance(sources, list)
                 and sources
                 and type(provenance.get("source_alias_count")) is int
@@ -5907,35 +7681,26 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 and aliases
                 and aliases
                 == [
-                    source.get("candidate_id")
-                    if isinstance(source, Mapping)
-                    else None
+                    source.get("candidate_id") if isinstance(source, Mapping) else None
                     for source in sources
                 ]
                 and len(aliases) == len(set(aliases))
                 and candidate_id == aliases[0]
                 and all(
                     isinstance(source, Mapping)
-                    and set(source)
-                    == _SHORT_CONV_V5_NUMERICAL_SOURCE_FIELDS
+                    and set(source) == _SHORT_CONV_V5_NUMERICAL_SOURCE_FIELDS
                     and source.get("candidate_id") in raw_reports
                     and source.get("candidate_kind")
-                    == raw_reports[source["candidate_id"]].get(
-                        "candidate_kind"
-                    )
+                    == raw_reports[source["candidate_id"]].get("candidate_kind")
                     and source.get("numerical_raw_state_sha256")
                     == raw_state_sha[source["candidate_id"]]
                     and isinstance(
                         source.get("numerical_raw_candidate_report"),
                         Mapping,
                     )
-                    and dict(
-                        source["numerical_raw_candidate_report"]
-                    )
+                    and dict(source["numerical_raw_candidate_report"])
                     == dict(raw_reports[source["candidate_id"]])
-                    and source.get(
-                        "numerical_raw_candidate_report_sha256"
-                    )
+                    and source.get("numerical_raw_candidate_report_sha256")
                     == raw_report_sha[source["candidate_id"]]
                     for source in sources
                 )
@@ -5953,14 +7718,11 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                     split="selection",
                     candidate_state_sha256=candidate_state_sha,
                 )
-                and pool_state_sha.get(candidate_id)
-                == candidate_state_sha
+                and pool_state_sha.get(candidate_id) == candidate_state_sha
             ):
                 return False
         selected_id = report.get("selected_candidate_id")
-        selected_sha = selection_evaluation.get(
-            "candidate_state_sha256"
-        )
+        selected_sha = selection_evaluation.get("candidate_state_sha256")
         evaluations = (
             ("fit", fit_evaluation),
             ("selection", selection_evaluation),
@@ -5978,9 +7740,7 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
         if not (
             isinstance(selected_id, str)
             and selected_id in candidate_fit
-            and candidate_selection[selected_id].get(
-                "candidate_state_sha256"
-            )
+            and candidate_selection[selected_id].get("candidate_state_sha256")
             == selected_sha
             and all(
                 valid_evaluation(
@@ -5990,31 +7750,25 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
                 )
                 for split, evaluation in evaluations
             )
-            and dict(selection_evaluation)
-            == dict(candidate_selection[selected_id])
+            and dict(selection_evaluation) == dict(candidate_selection[selected_id])
             and all(
-                projection_seals(evaluation)
-                == projection_case_seals[split]
+                projection_seals(evaluation) == projection_case_seals[split]
                 for split, evaluation in evaluations
             )
             and all(
-                projection_seals(selection)
-                == projection_case_seals["selection"]
+                projection_seals(selection) == projection_case_seals["selection"]
                 for selection in candidate_selection.values()
             )
             and _valid_short_conv_v4_selection_ranking(
                 ranking,
                 candidate_selection=candidate_selection,
                 solver_policy=solver_policy,
-                feasibility_policy=pool[
-                    "selection_feasibility_policy"
-                ],
+                feasibility_policy=pool["selection_feasibility_policy"],
             )
             and (
                 (
                     "preinstall_candidate_selector_receipt" not in report
-                    and ranking.get("selected_candidate_id")
-                    == selected_id
+                    and ranking.get("selected_candidate_id") == selected_id
                 )
                 or (
                     "preinstall_candidate_selector_receipt" in report
@@ -6037,27 +7791,20 @@ def _valid_short_conv_v5_numerical_frontier_validation_report(
             and gate.get("enforced") is True
         ):
             return False
-        selector_present = (
-            "preinstall_candidate_selector_receipt" in report
-        )
+        selector_present = "preinstall_candidate_selector_receipt" in report
         return bool(
-            (not selector_present)
-            or _valid_short_conv_v5_selector_receipt_only(report)
+            (not selector_present) or _valid_short_conv_v5_selector_receipt_only(report)
         ) and bool(
             report.get("numerical_frontier_adapter_active") is True
-            and report.get("legacy_v4_numerical_generation_claimed")
-            is False
+            and report.get("legacy_v4_numerical_generation_claimed") is False
             and report.get("legacy_v4_report_claimed") is False
             and report.get("fit_only_numerical_generation") is True
-            and report.get("selection_used_only_for_candidate_ranking")
-            is True
-            and report.get("validation_used_only_after_candidate_freeze")
-            is True
+            and report.get("selection_used_only_for_candidate_ranking") is True
+            and report.get("validation_used_only_after_candidate_freeze") is True
             and report.get("source_channels_pruned") == 0
             and report.get("source_channels_quantized") == 0
             and isinstance(report.get("compiled_state_sha256"), str)
-            and _SHA256.fullmatch(report["compiled_state_sha256"])
-            is not None
+            and _SHA256.fullmatch(report["compiled_state_sha256"]) is not None
             and _valid_exact_zero_execution(
                 execution,
                 fields=_SHORT_CONV_V4_EXECUTION_FIELDS,
@@ -6093,13 +7840,10 @@ def _valid_short_conv_validation_report(
             return _valid_short_conv_v4_validation_report(report)
         if schema == LFM2_CPCF_SHORT_CONV_V5_SELECTOR_FAILURE_SCHEMA:
             return _valid_short_conv_v5_selector_validation_report(report)
-        if (
-            schema
-            == LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA
-        ):
-            return _valid_short_conv_v5_numerical_frontier_validation_report(
-                report
-            )
+        if schema == LFM2_CPCF_SHORT_CONV_V5_MACROCELL_SELECTOR_FAILURE_SCHEMA:
+            return _valid_short_conv_v5_macrocell_validation_report(report)
+        if schema == LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_FRONTIER_FAILURE_SCHEMA:
+            return _valid_short_conv_v5_numerical_frontier_validation_report(report)
         return False
     except (
         AttributeError,
@@ -6254,10 +7998,7 @@ def compile_and_install_lfm2_cpcf_layer(
             "candidate_replay_evaluator must implement the authenticated "
             "candidate replay evaluator protocol."
         )
-    if (
-        candidate_replay_evaluator is not None
-        and short_conv_v4_solver_policy is None
-    ):
+    if candidate_replay_evaluator is not None and short_conv_v4_solver_policy is None:
         raise Lfm2CpcfLayerCompilerError(
             "Injected candidate replay is defined only for the authenticated "
             "short-conv v4 solver lane."
@@ -6265,13 +8006,8 @@ def compile_and_install_lfm2_cpcf_layer(
     if candidate_selector is not None and not callable(
         getattr(candidate_selector, "select", None)
     ):
-        raise TypeError(
-            "candidate_selector must implement select(request)."
-        )
-    if (
-        candidate_selector is not None
-        and short_conv_v4_solver_policy is None
-    ):
+        raise TypeError("candidate_selector must implement select(request).")
+    if candidate_selector is not None and short_conv_v4_solver_policy is None:
         raise Lfm2CpcfLayerCompilerError(
             "Pre-install candidate selection is defined only for the "
             "authenticated short-conv v4 solver lane."
@@ -6279,13 +8015,8 @@ def compile_and_install_lfm2_cpcf_layer(
     if numerical_frontier_adapter is not None and not callable(
         getattr(numerical_frontier_adapter, "generate", None)
     ):
-        raise TypeError(
-            "numerical_frontier_adapter must implement generate(request)."
-        )
-    if (
-        numerical_frontier_adapter is not None
-        and short_conv_v4_solver_policy is None
-    ):
+        raise TypeError("numerical_frontier_adapter must implement generate(request).")
+    if numerical_frontier_adapter is not None and short_conv_v4_solver_policy is None:
         raise Lfm2CpcfLayerCompilerError(
             "Numerical-frontier generation is defined only for the "
             "authenticated short-conv v4 solver lane."
@@ -6344,15 +8075,16 @@ def compile_and_install_lfm2_cpcf_layer(
     stage = "preinstall_replay"
 
     try:
-        preinstall_replay = replay_lfm2_cpcf_phase_bank(
-            target_model,
-            layer_index=index,
-            input_bank=input_bank,
-        )
-        stage = "operator_compile"
-        norm_report: Mapping[str, Any] | None = None
         attention_runtime_receipt: Mapping[str, Any] | None = None
+        attention_candidate_selection_report: Mapping[str, Any] | None = None
+        attention_candidate_reports: Mapping[str, Any] | None = None
+        short_conv_macrocell_selector: _Lfm2CpcfShortConvMacrocellSelector | None = None
         if operator_kind == "full_attention":
+            if split_counts["selection"] == 0:
+                raise Lfm2CpcfLayerCompilerError(
+                    "Residual-attention macrocell selection requires nonempty "
+                    "selection phases."
+                )
             source_attention = source_layer.self_attn
             target_attention = target_layer.self_attn
             source_q_norm = _weight(
@@ -6390,58 +8122,330 @@ def compile_and_install_lfm2_cpcf_layer(
                 raise Lfm2CpcfLayerCompilerError(
                     "Source/target Q/K RMSNorm epsilon differs."
                 )
-            cases, output_transport_receipt = _attention_cases(
+
+            # Fit and selection archives are reconstructed before any
+            # candidate execution.  Validation is intentionally absent until
+            # the macrocell winner has been frozen.
+            fit_bank = select_lfm2_cpcf_phase_state_bank(
+                input_bank,
+                splits=("fit",),
+            )
+            selection_bank = select_lfm2_cpcf_phase_state_bank(
+                input_bank,
+                splits=("selection",),
+            )
+            fit_preinstall_replay = replay_lfm2_cpcf_phase_bank(
+                target_model,
+                layer_index=index,
+                input_bank=fit_bank,
+            )
+            selection_preinstall_replay = replay_lfm2_cpcf_phase_bank(
+                target_model,
+                layer_index=index,
+                input_bank=selection_bank,
+            )
+            stage = "operator_compile"
+            fit_cases, output_transport_receipt = _attention_cases(
                 source_model=source_model,
                 target_model=target_model,
                 source_layer=source_layer,
                 layer_index=index,
-                input_bank=input_bank,
-                preinstall_replay=preinstall_replay,
+                input_bank=fit_bank,
+                preinstall_replay=fit_preinstall_replay,
                 chart=boundary_charts,
+                required_split="fit",
             )
-            operator_artifact = compile_lfm2_structural_residual_attention_fold(
-                source_query_weight=source_attention.q_proj.weight,
-                source_key_weight=source_attention.k_proj.weight,
-                source_value_weight=source_attention.v_proj.weight,
-                source_output_weight=source_attention.out_proj.weight,
-                target_query_weight_template=target_attention.q_proj.weight,
-                target_key_weight_template=target_attention.k_proj.weight,
-                target_value_weight_template=target_attention.v_proj.weight,
-                target_output_weight_template=target_attention.out_proj.weight,
-                cases=cases,
-                head_dim=int(source_attention.head_dim),
-                query_norm_weight=source_q_norm,
-                key_norm_weight=source_k_norm,
-                residual_assignment_sha256=(
+            selection_cases, _selection_transport_receipt = _attention_cases(
+                source_model=source_model,
+                target_model=target_model,
+                source_layer=source_layer,
+                layer_index=index,
+                input_bank=selection_bank,
+                preinstall_replay=selection_preinstall_replay,
+                chart=boundary_charts,
+                required_split="selection",
+            )
+            common_attention_inputs = {
+                "source_query_weight": source_attention.q_proj.weight,
+                "source_key_weight": source_attention.k_proj.weight,
+                "source_value_weight": source_attention.v_proj.weight,
+                "source_output_weight": source_attention.out_proj.weight,
+                "target_query_weight_template": target_attention.q_proj.weight,
+                "target_key_weight_template": target_attention.k_proj.weight,
+                "target_value_weight_template": target_attention.v_proj.weight,
+                "target_output_weight_template": target_attention.out_proj.weight,
+                "cases": fit_cases,
+                "head_dim": int(source_attention.head_dim),
+                "query_norm_weight": source_q_norm,
+                "key_norm_weight": source_k_norm,
+                "residual_assignment_sha256": (
                     boundary_charts.post_operator.report["report_sha256"]
                 ),
+                "norm_epsilon": source_q_epsilon,
+                "ridge": ridge_value,
+                "max_prior_delta_ratio": None,
+            }
+            direct_operator_artifact = compile_lfm2_structural_residual_attention_fold(
+                **common_attention_inputs
+            )
+            producer_artifact = compile_lfm2_structural_attention_producer_fold(
+                **common_attention_inputs
+            )
+            producer_query_key_sha = _tensor_bundle_sha256(
+                producer_artifact.score_state_dict()
+            )
+            direct_query_key_sha = _tensor_bundle_sha256(
+                {
+                    "q_proj.weight": direct_operator_artifact.query_weight,
+                    "k_proj.weight": direct_operator_artifact.key_weight,
+                }
+            )
+            if direct_query_key_sha != producer_query_key_sha:
+                raise Lfm2CpcfLayerCompilerError(
+                    "Direct and residual-attention candidates do not share "
+                    "the exact fit-compiled Q/K producer state."
+                )
+            query_key_score_reports = {
+                candidate_id: (
+                    evaluate_lfm2_compiled_attention_producer_score_preservation(
+                        producer_artifact,
+                        selection_cases,
+                        query_norm_weight=source_q_norm,
+                        key_norm_weight=source_k_norm,
+                        norm_epsilon=source_q_epsilon,
+                    )
+                )
+                for candidate_id in (
+                    "direct_monolithic",
+                    "residual_attention_split",
+                )
+            }
+            score_selection_report = query_key_score_reports["residual_attention_split"]
+            attention_runtime_receipt = _attention_runtime_complexity_receipt(
+                output_transport_receipt=output_transport_receipt,
+                cases=fit_cases,
+                operator_artifact=producer_artifact,
+            )
+
+            # The first split pass installs Q/K/V only.  The replay-exposed
+            # concatenated context is actual target-native fit evidence for
+            # coupled V/O.  Both the split transaction and the complete layer
+            # are then restored to the exact original blank snapshot.
+            blank_output_prior = (
+                target_attention.out_proj.weight.detach()
+                .to(device="cpu")
+                .contiguous()
+                .clone()
+            )
+            stage = "operator_install"
+            temporary_norm_report = _copy_attention_norms(
+                source_attention,
+                target_attention,
+            )
+            temporary_transaction = install_lfm2_structural_attention_producer_fold(
+                target_attention,
+                producer_artifact,
+            )
+            if temporary_transaction.producer_report is None:
+                raise Lfm2CpcfLayerInstallError(
+                    "Temporary Q/K/V installation issued no audit report."
+                )
+            temporary_qkv_install = temporary_transaction.producer_report.as_dict()
+            temporary_qkv_rollback = None
+            try:
+                stage = "operator_replay"
+                fit_context_replay = replay_lfm2_cpcf_phase_bank(
+                    target_model,
+                    layer_index=index,
+                    input_bank=fit_bank,
+                )
+                actual_fit_contexts = _attention_actual_contexts(
+                    input_bank=fit_bank,
+                    replay_bank=fit_context_replay,
+                    required_split="fit",
+                )
+                if len(actual_fit_contexts) != len(fit_cases):
+                    raise Lfm2CpcfLayerCompilerError(
+                        "Actual fit contexts do not align one-to-one with "
+                        "compiled attention trajectories."
+                    )
+            finally:
+                if temporary_transaction.active:
+                    temporary_qkv_rollback = temporary_transaction.rollback().as_dict()
+            _restore_layer(target_layer, target_before)
+            temporary_rollback_proof = _prove_exact_layer_rollback(
+                target_layer,
+                target_before,
+                source_layer=source_layer,
+                source_snapshot=source_before,
+                input_bank=input_bank,
+                layer_index=index,
+                evidence_sha256_before=evidence_before,
+                input_sha256_before=input_before,
+                boundary_charts=boundary_charts,
+                boundary_charts_sha256_before=chart_seal_before,
+                boundary_charts_payload_sha256_before=chart_payload_before,
+            )
+            temporary_install_report = {
+                "scope": "temporary_qkv_actual_context_capture",
+                "attention_norms": dict(temporary_norm_report),
+                "qkv_install": temporary_qkv_install,
+                "qkvo_transaction_rollback": temporary_qkv_rollback,
+                "complete_layer_rollback_proof_sha256": (
+                    temporary_rollback_proof["proof_sha256"]
+                ),
+            }
+
+            stage = "operator_compile"
+            value_output_artifact = compile_lfm2_structural_attention_value_output_fold(
+                producer=producer_artifact,
+                target_value_weight_template=(target_attention.v_proj.weight),
+                target_output_weight_template=(target_attention.out_proj.weight),
+                actual_child_contexts=actual_fit_contexts,
+                cases=fit_cases,
+                live_value_weight=producer_artifact.value_weight,
+                value_weight_prior=producer_artifact.value_weight,
+                output_weight_prior=blank_output_prior,
+                query_norm_weight=source_q_norm,
+                key_norm_weight=source_k_norm,
                 norm_epsilon=source_q_epsilon,
                 ridge=ridge_value,
                 max_prior_delta_ratio=None,
             )
-            attention_runtime_receipt = (
-                _attention_runtime_complexity_receipt(
-                    output_transport_receipt=output_transport_receipt,
-                    cases=cases,
-                    operator_artifact=operator_artifact,
+            split_operator_artifact = _compose_residual_attention_split_artifact(
+                producer_artifact=producer_artifact,
+                value_output_artifact=value_output_artifact,
+                score_selection_report=score_selection_report,
+                fit_context_replay=fit_context_replay,
+                actual_contexts=actual_fit_contexts,
+                temporary_producer_install_report=(temporary_install_report),
+                temporary_rollback_proof=temporary_rollback_proof,
+            )
+
+            candidate_evaluations = []
+            attention_mlp_prepared_basis = None
+            for candidate_id, candidate_artifact in (
+                ("direct_monolithic", direct_operator_artifact),
+                ("residual_attention_split", split_operator_artifact),
+            ):
+                stage = "operator_install"
+                candidate_operator_install = _install_cpcf_attention_artifact(
+                    source_attention=source_attention,
+                    target_attention=target_attention,
+                    artifact=candidate_artifact,
                 )
-            )
-            stage = "operator_install"
-            norm_report = _copy_attention_norms(
-                source_attention,
-                target_attention,
-            )
-            raw_operator_install = install_lfm2_structural_attention_fold(
-                target_attention,
-                operator_artifact,
-            ).as_dict()
-            operator_install_report = MappingProxyType(
+                # The helper's first operation is an operator replay followed
+                # by the candidate-owned closed-form MLP compile.  Keep the
+                # transaction stage on the latter so a solver failure is
+                # reported consistently with the canonical layer contract.
+                stage = "mlp_compile"
+                (
+                    candidate_mlp_artifact,
+                    candidate_mlp_install,
+                    candidate_fit_replay,
+                    candidate_selection_replay,
+                    candidate_selection_metrics,
+                    candidate_selection_context_metrics,
+                    candidate_installed_operator_sha,
+                    candidate_installed_mlp_sha,
+                    attention_mlp_prepared_basis,
+                ) = _evaluate_installed_attention_candidate(
+                    candidate_id=candidate_id,
+                    operator_artifact=candidate_artifact,
+                    operator_install_report=candidate_operator_install,
+                    source_layer=source_layer,
+                    target_model=target_model,
+                    target_layer=target_layer,
+                    layer_index=index,
+                    fit_bank=fit_bank,
+                    selection_bank=selection_bank,
+                    selection_cases=selection_cases,
+                    chart=boundary_charts,
+                    ridge=ridge_value,
+                    prepared_mlp_basis=attention_mlp_prepared_basis,
+                )
+                _restore_layer(target_layer, target_before)
+                candidate_rollback_proof = _prove_exact_layer_rollback(
+                    target_layer,
+                    target_before,
+                    source_layer=source_layer,
+                    source_snapshot=source_before,
+                    input_bank=input_bank,
+                    layer_index=index,
+                    evidence_sha256_before=evidence_before,
+                    input_sha256_before=input_before,
+                    boundary_charts=boundary_charts,
+                    boundary_charts_sha256_before=chart_seal_before,
+                    boundary_charts_payload_sha256_before=(chart_payload_before),
+                )
+                candidate_evaluations.append(
+                    _seal_attention_candidate_evaluation(
+                        candidate_id=candidate_id,
+                        operator_artifact=candidate_artifact,
+                        mlp_artifact=candidate_mlp_artifact,
+                        operator_install_report=(candidate_operator_install),
+                        mlp_install_report=candidate_mlp_install,
+                        fit_operator_replay=candidate_fit_replay,
+                        selection_replay=candidate_selection_replay,
+                        selection_metrics=candidate_selection_metrics,
+                        selection_context_metrics=(candidate_selection_context_metrics),
+                        query_key_score_report=(query_key_score_reports[candidate_id]),
+                        query_key_score_state_sha256=(producer_query_key_sha),
+                        installed_operator_state_sha256=(
+                            candidate_installed_operator_sha
+                        ),
+                        installed_mlp_state_sha256=(candidate_installed_mlp_sha),
+                        rollback_proof=candidate_rollback_proof,
+                    )
+                )
+
+            (
+                selected_candidate,
+                attention_candidate_selection_report,
+            ) = _freeze_attention_candidate_winner(candidate_evaluations)
+            attention_candidate_reports = MappingProxyType(
                 {
-                    "operator": raw_operator_install,
-                    "attention_norms": dict(norm_report),
+                    value.candidate_id: dict(value.report)
+                    for value in candidate_evaluations
                 }
             )
+            operator_artifact = selected_candidate.operator_artifact
+            mlp_artifact = selected_candidate.mlp_artifact
+
+            # The winner is immutable now.  This is the first full-bank replay
+            # and therefore the first validation access in the attention
+            # transaction.
+            stage = "preinstall_replay"
+            preinstall_replay = replay_lfm2_cpcf_phase_bank(
+                target_model,
+                layer_index=index,
+                input_bank=input_bank,
+            )
+            stage = "operator_install"
+            operator_install_report = _install_cpcf_attention_artifact(
+                source_attention=source_attention,
+                target_attention=target_attention,
+                artifact=operator_artifact,
+            )
+            stage = "operator_replay"
+            operator_replay = replay_lfm2_cpcf_phase_bank(
+                target_model,
+                layer_index=index,
+                input_bank=input_bank,
+            )
+            stage = "mlp_install"
+            mlp_install_report = install_lfm2_structural_mlp_fold(
+                target_layer.feed_forward,
+                mlp_artifact,
+            ).as_dict()
+            cases = fit_cases
         else:
+            preinstall_replay = replay_lfm2_cpcf_phase_bank(
+                target_model,
+                layer_index=index,
+                input_bank=input_bank,
+            )
+            stage = "operator_compile"
             source_conv = source_layer.conv
             target_conv = target_layer.conv
             cases = _short_conv_cases(
@@ -6471,6 +8475,48 @@ def compile_and_install_lfm2_cpcf_layer(
                     gate_policy=policy,
                 )
             else:
+                if split_counts["selection"] == 0:
+                    raise Lfm2CpcfLayerCompilerError(
+                        "Short-conv whole-macrocell selection requires "
+                        "nonempty selection phases."
+                    )
+                fit_bank = _select_short_conv_phase_state_bank(
+                    input_bank,
+                    splits=("fit",),
+                )
+                selection_bank = _select_short_conv_phase_state_bank(
+                    input_bank,
+                    splits=("selection",),
+                )
+                selector_audit_bank = _select_short_conv_phase_state_bank(
+                    input_bank,
+                    splits=("fit", "selection"),
+                )
+                short_conv_macrocell_selector = _Lfm2CpcfShortConvMacrocellSelector(
+                    source_layer=source_layer,
+                    target_model=target_model,
+                    target_layer=target_layer,
+                    layer_index=index,
+                    audit_bank=selector_audit_bank,
+                    fit_bank=fit_bank,
+                    selection_bank=selection_bank,
+                    boundary_charts=boundary_charts,
+                    ridge=ridge_value,
+                    source_snapshot=source_before,
+                    target_snapshot=target_before,
+                    audit_evidence_sha256_before=(
+                        _live_layer_evidence_sha256(
+                            selector_audit_bank.phases,
+                            index,
+                        )
+                    ),
+                    audit_input_sha256_before=(
+                        _live_input_bank_sha256(selector_audit_bank)
+                    ),
+                    boundary_charts_sha256_before=chart_seal_before,
+                    boundary_charts_payload_sha256_before=(chart_payload_before),
+                    endpoint_selector=candidate_selector,
+                )
                 operator_artifact = compile_lfm2_cpcf_short_conv_v4_fold(
                     source_in_proj_weight=source_conv.in_proj.weight,
                     source_in_proj_bias=source_conv.in_proj.bias,
@@ -6489,51 +8535,73 @@ def compile_and_install_lfm2_cpcf_layer(
                     solver_policy=short_conv_v4_solver_policy,
                     gate_policy=policy,
                     candidate_replay_evaluator=candidate_replay_evaluator,
-                    candidate_selector=candidate_selector,
-                    numerical_frontier_adapter=(
-                        numerical_frontier_adapter
-                    ),
+                    candidate_selector=None,
+                    macrocell_candidate_selector=(short_conv_macrocell_selector),
+                    macrocell_fit_bank_sha256=fit_bank.state_bank_sha256,
+                    macrocell_selection_bank_sha256=(selection_bank.state_bank_sha256),
+                    numerical_frontier_adapter=(numerical_frontier_adapter),
                 )
+                selected_macrocell = short_conv_macrocell_selector.selected
+                decision = short_conv_macrocell_selector.decision
+                if selected_macrocell is None or decision is None:
+                    raise Lfm2CpcfLayerCompilerError(
+                        "Short-conv compiler returned without freezing its "
+                        "whole-macrocell winner."
+                    )
+                selected_install_sha = selected_macrocell.candidate.report[
+                    "candidate_install_state_sha256"
+                ]
+                if (
+                    operator_artifact.report.get("selected_candidate_id")
+                    != selected_macrocell.candidate.candidate_id
+                    or operator_artifact.report.get("compiled_state_sha256")
+                    != selected_install_sha
+                    or _short_conv_state_sha256(operator_artifact.state_dict())
+                    != selected_install_sha
+                    or operator_artifact.report["macrocell_candidate_selector_receipt"][
+                        "selector_decision_sha256"
+                    ]
+                    != decision["report_sha256"]
+                ):
+                    raise Lfm2CpcfLayerCompilerError(
+                        "Compiled short-conv artifact differs from the frozen "
+                        "whole-macrocell candidate."
+                    )
             stage = "operator_install"
             operator_install_report = _install_short_conv(
                 target_conv,
                 operator_artifact,
             )
+            stage = "operator_replay"
+            operator_replay = replay_lfm2_cpcf_phase_bank(
+                target_model,
+                layer_index=index,
+                input_bank=input_bank,
+            )
+            if short_conv_macrocell_selector is None:
+                stage = "mlp_compile"
+                mlp_artifact = _compile_cpcf_mlp_from_fit_replay(
+                    source_layer=source_layer,
+                    target_layer=target_layer,
+                    layer_index=index,
+                    fit_bank=input_bank,
+                    operator_fit_replay=operator_replay,
+                    chart=boundary_charts,
+                    ridge=ridge_value,
+                )
+            else:
+                selected_macrocell = short_conv_macrocell_selector.selected
+                if selected_macrocell is None:
+                    raise Lfm2CpcfLayerCompilerError(
+                        "Frozen short-conv macrocell MLP is unavailable."
+                    )
+                mlp_artifact = selected_macrocell.mlp_artifact
+            stage = "mlp_install"
+            mlp_install_report = install_lfm2_structural_mlp_fold(
+                target_layer.feed_forward,
+                mlp_artifact,
+            ).as_dict()
 
-        stage = "operator_replay"
-        operator_replay = replay_lfm2_cpcf_phase_bank(
-            target_model,
-            layer_index=index,
-            input_bank=input_bank,
-        )
-        stage = "mlp_compile"
-        source_mlp = source_layer.feed_forward
-        target_mlp = target_layer.feed_forward
-        mlp_cases = _mlp_cases(
-            layer_index=index,
-            input_bank=input_bank,
-            operator_replay=operator_replay,
-            chart=boundary_charts,
-        )
-        mlp_artifact = compile_lfm2_structural_residual_mlp_fold(
-            source_gate_weight=source_mlp.w1.weight,
-            source_up_weight=source_mlp.w3.weight,
-            source_down_weight=source_mlp.w2.weight,
-            target_gate_weight_template=target_mlp.w1.weight,
-            target_up_weight_template=target_mlp.w3.weight,
-            target_down_weight_template=target_mlp.w2.weight,
-            cases=mlp_cases,
-            residual_assignment_sha256=(
-                boundary_charts.post_layer.report["report_sha256"]
-            ),
-            ridge=ridge_value,
-            max_prior_delta_ratio=None,
-        )
-        stage = "mlp_install"
-        mlp_install_report = install_lfm2_structural_mlp_fold(
-            target_mlp,
-            mlp_artifact,
-        ).as_dict()
         stage = "final_replay"
         final_replay = replay_lfm2_cpcf_phase_bank(
             target_model,
@@ -6548,6 +8616,86 @@ def compile_and_install_lfm2_cpcf_layer(
             final_replay=final_replay,
             chart=boundary_charts,
         )
+        short_conv_final_binding: Mapping[str, Any] | None = None
+        if short_conv_macrocell_selector is not None:
+            selected_macrocell = short_conv_macrocell_selector.selected
+            decision = short_conv_macrocell_selector.decision
+            if selected_macrocell is None or decision is None:
+                raise Lfm2CpcfLayerCompilerError(
+                    "Short-conv final state lacks its frozen macrocell evidence."
+                )
+            live_mlp_sha = _tensor_bundle_sha256(
+                {
+                    "w1.weight": target_layer.feed_forward.w1.weight,
+                    "w3.weight": target_layer.feed_forward.w3.weight,
+                    "w2.weight": target_layer.feed_forward.w2.weight,
+                }
+            )
+            expected_live_mlp_sha = _tensor_bundle_sha256(mlp_artifact.state_dict())
+            if live_mlp_sha != expected_live_mlp_sha:
+                raise Lfm2CpcfLayerInstallError(
+                    "Final live MLP differs from the selected candidate-owned "
+                    "fit-only MLP."
+                )
+            binding_body = {
+                "schema": (
+                    "neural-forge-lfm2-cpcf-short-conv-final-macrocell-binding-v1"
+                ),
+                "selector_decision_sha256": decision["report_sha256"],
+                "endpoint_control_candidate_id": (
+                    short_conv_macrocell_selector.endpoint_control_id
+                ),
+                "endpoint_selector_report_sha256": (
+                    None
+                    if short_conv_macrocell_selector.endpoint_selector_report is None
+                    else short_conv_macrocell_selector.endpoint_selector_report[
+                        "report_sha256"
+                    ]
+                ),
+                "endpoint_selector_diagnostic": (
+                    None
+                    if short_conv_macrocell_selector.endpoint_selector_diagnostic
+                    is None
+                    else dict(
+                        short_conv_macrocell_selector.endpoint_selector_diagnostic
+                    )
+                ),
+                "selected_candidate_id": (selected_macrocell.candidate.candidate_id),
+                "selected_candidate_state_sha256": (
+                    selected_macrocell.candidate.state_sha256
+                ),
+                "selected_candidate_install_state_sha256": (
+                    selected_macrocell.candidate.report[
+                        "candidate_install_state_sha256"
+                    ]
+                ),
+                "output_artifact_report_sha256": operator_artifact.report[
+                    "report_sha256"
+                ],
+                "operator_install_report_sha256": operator_install_report[
+                    "report_sha256"
+                ],
+                "selected_fit_mlp_state_sha256": (
+                    selected_macrocell.mlp_artifact.compiled_state_sha256
+                ),
+                "selected_fit_mlp_live_bundle_sha256": expected_live_mlp_sha,
+                "final_live_mlp_bundle_sha256": live_mlp_sha,
+                "mlp_install_report_sha256": _sha(dict(mlp_install_report)),
+                "final_replay_sha256": final_replay.report["report_sha256"],
+                "output_artifact_equals_selected_candidate": True,
+                "exact_selected_fit_only_mlp_reused": True,
+                "whole_macrocell_overturned_endpoint_control": (
+                    selected_macrocell.candidate.candidate_id
+                    != short_conv_macrocell_selector.endpoint_control_id
+                ),
+                "validation_used_for_macrocell_selection": False,
+                "training_steps": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+            }
+            short_conv_final_binding = MappingProxyType(
+                {**binding_body, "report_sha256": _sha(binding_body)}
+            )
 
         stage = "immutability_audit"
         source_after = _layer_snapshot(source_layer)
@@ -6633,6 +8781,83 @@ def compile_and_install_lfm2_cpcf_layer(
                     None
                     if attention_runtime_receipt is None
                     else dict(attention_runtime_receipt)
+                ),
+                "attention_candidate_selection": (
+                    "not_applicable"
+                    if attention_candidate_selection_report is None
+                    else dict(attention_candidate_selection_report)
+                ),
+                "attention_candidate_evaluations": (
+                    "not_applicable"
+                    if attention_candidate_reports is None
+                    else {
+                        name: dict(value)
+                        for name, value in attention_candidate_reports.items()
+                    }
+                ),
+                "attention_fit_state_bank_isolated": (
+                    True if operator_kind == "full_attention" else "not_applicable"
+                ),
+                "attention_selection_state_bank_isolated": (
+                    True if operator_kind == "full_attention" else "not_applicable"
+                ),
+                "attention_query_key_score_evaluation_split": (
+                    "selection"
+                    if operator_kind == "full_attention"
+                    else "not_applicable"
+                ),
+                "attention_macrocell_selection_endpoint": (
+                    "post_layer_by_causal_phase"
+                    if operator_kind == "full_attention"
+                    else "not_applicable"
+                ),
+                "attention_each_candidate_has_own_fit_only_mlp": (
+                    True if operator_kind == "full_attention" else "not_applicable"
+                ),
+                "attention_winner_frozen_before_validation": (
+                    True if operator_kind == "full_attention" else "not_applicable"
+                ),
+                "attention_validation_replays_before_winner_freeze": (
+                    0 if operator_kind == "full_attention" else "not_applicable"
+                ),
+                "short_conv_macrocell_selection": (
+                    "not_applicable"
+                    if short_conv_macrocell_selector is None
+                    else dict(short_conv_macrocell_selector.decision)
+                ),
+                "short_conv_final_macrocell_binding": (
+                    "not_applicable"
+                    if short_conv_final_binding is None
+                    else dict(short_conv_final_binding)
+                ),
+                "short_conv_each_candidate_has_own_fit_only_mlp": (
+                    True
+                    if short_conv_macrocell_selector is not None
+                    else "not_applicable"
+                ),
+                "short_conv_macrocell_candidate_budget": (
+                    "not_applicable"
+                    if short_conv_macrocell_selector is None
+                    else short_conv_macrocell_selector.decision["candidate_budget"]
+                ),
+                "short_conv_mlp_prepared_basis_sha256": (
+                    "not_applicable"
+                    if short_conv_macrocell_selector is None
+                    or short_conv_macrocell_selector.mlp_prepared_basis is None
+                    else short_conv_macrocell_selector.mlp_prepared_basis.preparation_sha256
+                ),
+                "short_conv_mlp_preparation_count": (
+                    "not_applicable"
+                    if short_conv_macrocell_selector is None
+                    else short_conv_macrocell_selector.mlp_preparation_count
+                ),
+                "short_conv_mlp_candidate_compiles_from_prepared_basis": (
+                    "not_applicable"
+                    if short_conv_macrocell_selector is None
+                    else short_conv_macrocell_selector.mlp_candidate_compile_count
+                ),
+                "short_conv_mlp_prepared_basis_validation_evidence_consumed": (
+                    "not_applicable" if short_conv_macrocell_selector is None else 0
                 ),
                 "endpoint_metrics_by_causal_phase": True,
                 "short_conv_validation_role": (
@@ -6746,6 +8971,8 @@ def compile_and_install_lfm2_cpcf_layer(
 __all__ = [
     "LFM2_CPCF_LAYER_COMPILER_SCHEMA",
     "LFM2_CPCF_LAYER_FAILURE_SCHEMA",
+    "LFM2_CPCF_RESIDUAL_ATTENTION_SPLIT_SCHEMA",
+    "Lfm2CompiledCpcfResidualAttentionSplitFold",
     "Lfm2CpcfCompiledLayerResult",
     "Lfm2CpcfLayerCompilationFailure",
     "Lfm2CpcfLayerCompilerError",

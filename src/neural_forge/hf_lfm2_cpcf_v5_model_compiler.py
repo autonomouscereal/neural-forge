@@ -329,6 +329,7 @@ class Lfm2CpcfV5RuntimePolicy:
     minimum_physical_rss_reduction_fraction: float = 0.10
     rss_sample_interval_seconds: float = _RSS_SAMPLE_INTERVAL_SECONDS
     require_short_conv_v5_endpoint_first_selector: bool = False
+    require_short_conv_v5_authenticated_whole_macrocell_selector: bool = False
     require_short_conv_v5_real_numerical_frontier_adapter: bool = False
     maximum_physical_rss_increase_cap_bytes: int | None = None
 
@@ -372,6 +373,14 @@ class Lfm2CpcfV5RuntimePolicy:
                 "require_short_conv_v5_endpoint_first_selector must be boolean."
             )
         if not isinstance(
+            self.require_short_conv_v5_authenticated_whole_macrocell_selector,
+            bool,
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "require_short_conv_v5_authenticated_whole_macrocell_selector "
+                "must be boolean."
+            )
+        if not isinstance(
             self.require_short_conv_v5_real_numerical_frontier_adapter,
             bool,
         ):
@@ -412,6 +421,9 @@ class Lfm2CpcfV5RuntimePolicy:
             "rss_sample_interval_seconds": (self.rss_sample_interval_seconds),
             "require_short_conv_v5_endpoint_first_selector": (
                 self.require_short_conv_v5_endpoint_first_selector
+            ),
+            "require_short_conv_v5_authenticated_whole_macrocell_selector": (
+                self.require_short_conv_v5_authenticated_whole_macrocell_selector
             ),
             "require_short_conv_v5_real_numerical_frontier_adapter": (
                 self.require_short_conv_v5_real_numerical_frontier_adapter
@@ -669,9 +681,7 @@ class _PhysicalRssGuard:
     ) -> Lfm2CpcfV5PhysicalRssCheckpointReceipt:
         outstanding = self._outstanding_checkpoint_authorization
         sequence_capability = (
-            object()
-            if outstanding is None
-            else outstanding["sequence_capability"]
+            object() if outstanding is None else outstanding["sequence_capability"]
         )
         body = {
             "schema": LFM2_CPCF_V5_PHYSICAL_RSS_CHECKPOINT_SCHEMA,
@@ -687,9 +697,7 @@ class _PhysicalRssGuard:
             "peak_increase_bytes": self.peak_increase_bytes,
             "full_phase_tree_logical_bytes": (self.full_phase_tree_logical_bytes),
             "minimum_reduction_fraction": (self.minimum_reduction_fraction),
-            "relative_maximum_increase_bytes": (
-                self.relative_maximum_increase_bytes
-            ),
+            "relative_maximum_increase_bytes": (self.relative_maximum_increase_bytes),
             "maximum_process_rss_bytes": self.maximum_process_rss_bytes,
             "absolute_headroom_bytes": self.absolute_headroom_bytes,
             "maximum_increase_bytes": self.maximum_increase_bytes,
@@ -842,9 +850,7 @@ class _PhysicalRssGuard:
             "start_lifetime_peak_bytes": (self.start_lifetime_peak_bytes),
             "full_phase_tree_logical_bytes": (self.full_phase_tree_logical_bytes),
             "minimum_reduction_fraction": (self.minimum_reduction_fraction),
-            "relative_maximum_increase_bytes": (
-                self.relative_maximum_increase_bytes
-            ),
+            "relative_maximum_increase_bytes": (self.relative_maximum_increase_bytes),
             "maximum_process_rss_bytes": self.maximum_process_rss_bytes,
             "absolute_headroom_bytes": self.absolute_headroom_bytes,
             "maximum_increase_bytes": self.maximum_increase_bytes,
@@ -909,9 +915,7 @@ class _PhysicalRssGuard:
             "peak_increase_bytes": self.peak_increase_bytes,
             "full_phase_tree_logical_bytes": (self.full_phase_tree_logical_bytes),
             "minimum_reduction_fraction": (self.minimum_reduction_fraction),
-            "relative_maximum_increase_bytes": (
-                self.relative_maximum_increase_bytes
-            ),
+            "relative_maximum_increase_bytes": (self.relative_maximum_increase_bytes),
             "maximum_process_rss_bytes": self.maximum_process_rss_bytes,
             "absolute_headroom_bytes": self.absolute_headroom_bytes,
             "maximum_increase_bytes": self.maximum_increase_bytes,
@@ -1734,6 +1738,9 @@ class _SelectiveBoundaryCompiler:
                     }
                 )
         layers = tuple(self.layer_results)
+        anchor_residual_selected = bool(
+            self.anchor_fold.report["active_anchor_residual_selected"]
+        )
         phase_counts = {split: len(self.split_phases[split]) for split in _SPLITS}
         row_counts = dict(self.split_rows)
         split_phase_hashes = dict(self.split_phase_sha256)
@@ -1744,7 +1751,7 @@ class _SelectiveBoundaryCompiler:
         body = {
             "schema": boundary.LFM2_CPCF_BOUNDARY_BUNDLE_SCHEMA,
             "method": (
-                "tied_causal_interface_then_causal_anchor_residual_then_"
+                "tied_causal_interface_then_behavior_preserving_anchor_selection_then_"
                 "independent_predictive_boundary_charts"
             ),
             "source_width": self.source_width,
@@ -1779,8 +1786,10 @@ class _SelectiveBoundaryCompiler:
                     self.interface.report,
                     "interface",
                 ),
-                "active_interface_is_anchor_repaired": True,
-                "producer_encoder_fixed_by_anchor_repair": True,
+                "active_interface_is_anchor_repaired": anchor_residual_selected,
+                "active_interface_is_base_control": not anchor_residual_selected,
+                "producer_encoder_fixed_by_anchor_selection": True,
+                "producer_encoder_fixed_by_anchor_repair": (anchor_residual_selected),
                 "additional_runtime_parameter_count": 0,
             },
             "causal_anchor_extraction": {
@@ -1869,9 +1878,10 @@ class _SelectiveBoundaryCompiler:
             },
             "coordinate_contract": {
                 "future_coordinates": (
-                    "anchor_repaired_tied_interface_encoded_parent_final_norm_output"
+                    "behavior_selected_tied_interface_encoded_parent_final_norm_output"
                 ),
-                "active_interface_is_anchor_repaired": True,
+                "active_interface_is_anchor_repaired": anchor_residual_selected,
+                "active_interface_is_base_control": not anchor_residual_selected,
                 "one_global_residual_basis_used": False,
                 "independent_post_operator_and_post_layer_charts": True,
                 "residual_write_formula": (
@@ -2231,10 +2241,7 @@ def _optional_runtime_contract_sha256(
         if not isinstance(raw_path, str):
             return False
         resolved = Path(raw_path).resolve()
-        return any(
-            resolved.is_relative_to(root)
-            for root in first_party_source_roots
-        )
+        return any(resolved.is_relative_to(root) for root in first_party_source_roots)
 
     manifest_first_seen: dict[int, tuple[Any, str]] = {}
 
@@ -2260,14 +2267,9 @@ def _optional_runtime_contract_sha256(
             )
         return {
             "kind": "runtime_state_reference",
-            "relation": (
-                "cyclic_back_edge"
-                if identity in active
-                else "shared_alias"
-            ),
+            "relation": ("cyclic_back_edge" if identity in active else "shared_alias"),
             "type": (
-                f"{type(state_value).__module__}."
-                f"{type(state_value).__qualname__}"
+                f"{type(state_value).__module__}.{type(state_value).__qualname__}"
             ),
             "target_path": target_path,
         }
@@ -2342,8 +2344,7 @@ def _optional_runtime_contract_sha256(
         if forbidden_alias is not None:
             category, symbol = forbidden_alias
             raise Lfm2CpcfV5ModelCompilerError(
-                f"{name} contains forbidden pre-bound {category} alias "
-                f"{symbol}."
+                f"{name} contains forbidden pre-bound {category} alias {symbol}."
             )
         if state_value is None or isinstance(
             state_value,
@@ -2430,9 +2431,7 @@ def _optional_runtime_contract_sha256(
                     child,
                     name=f"{name}.__globals__.{global_name}",
                     referenced_names=(
-                        function_names
-                        if isinstance(child, ModuleType)
-                        else frozenset()
+                        function_names if isinstance(child, ModuleType) else frozenset()
                     ),
                 )
             if owner is None or isinstance(owner, type):
@@ -2545,9 +2544,7 @@ def _optional_runtime_contract_sha256(
                     "kind": "native_callable_reference",
                     "module": getattr(member, "__module__", None),
                     "qualname": getattr(member, "__qualname__", None),
-                    "type": (
-                        f"{type(member).__module__}.{type(member).__qualname__}"
-                    ),
+                    "type": (f"{type(member).__module__}.{type(member).__qualname__}"),
                 }
             return {
                 "kind": "python_callable_reference",
@@ -2575,8 +2572,7 @@ def _optional_runtime_contract_sha256(
         if forbidden_alias is not None:
             category, symbol = forbidden_alias
             raise Lfm2CpcfV5ModelCompilerError(
-                f"{name} contains forbidden pre-bound {category} alias "
-                f"{symbol}."
+                f"{name} contains forbidden pre-bound {category} alias {symbol}."
             )
         if state_value is None or isinstance(
             state_value,
@@ -2767,8 +2763,7 @@ def _optional_runtime_contract_sha256(
         if forbidden_alias is not None:
             category, symbol = forbidden_alias
             raise Lfm2CpcfV5ModelCompilerError(
-                f"{name} contains forbidden pre-bound {category} alias "
-                f"{symbol}."
+                f"{name} contains forbidden pre-bound {category} alias {symbol}."
             )
         module_name = getattr(class_value, "__module__", None)
         qualname = getattr(class_value, "__qualname__", None)
@@ -2830,8 +2825,7 @@ def _optional_runtime_contract_sha256(
         if forbidden_alias is not None:
             category, symbol = forbidden_alias
             raise Lfm2CpcfV5ModelCompilerError(
-                f"{name} contains forbidden pre-bound {category} alias "
-                f"{symbol}."
+                f"{name} contains forbidden pre-bound {category} alias {symbol}."
             )
         module_name = getattr(module_value, "__name__", None)
         raw_path = getattr(module_value, "__file__", None)
@@ -2885,8 +2879,7 @@ def _optional_runtime_contract_sha256(
         if forbidden_alias is not None:
             category, symbol = forbidden_alias
             raise Lfm2CpcfV5ModelCompilerError(
-                f"{name} contains forbidden pre-bound {category} alias "
-                f"{symbol}."
+                f"{name} contains forbidden pre-bound {category} alias {symbol}."
             )
         if isinstance(global_value, ModuleType):
             raw_path = getattr(global_value, "__file__", None)
@@ -2905,9 +2898,7 @@ def _optional_runtime_contract_sha256(
                 if not isinstance(module_name, str)
                 else sys.modules.get(module_name)
             )
-            external_source = not first_party_source(
-                getattr(module, "__file__", None)
-            )
+            external_source = not first_party_source(getattr(module, "__file__", None))
             return runtime_class_manifest(
                 global_value,
                 name=name,
@@ -2962,8 +2953,7 @@ def _optional_runtime_contract_sha256(
         if forbidden_alias is not None:
             category, symbol = forbidden_alias
             raise Lfm2CpcfV5ModelCompilerError(
-                f"{name} contains forbidden pre-bound {category} alias "
-                f"{symbol}."
+                f"{name} contains forbidden pre-bound {category} alias {symbol}."
             )
         function = getattr(callable_value, "__func__", callable_value)
         callable_object_owner = None
@@ -3228,9 +3218,7 @@ def _build_live_resume_context(
                 maximum_increase_bytes=(
                     runtime_policy.maximum_physical_rss_increase_bytes
                 ),
-                maximum_process_rss_bytes=(
-                    runtime_policy.maximum_process_rss_bytes
-                ),
+                maximum_process_rss_bytes=(runtime_policy.maximum_process_rss_bytes),
             )
         ),
         compiler_implementation_sha256=compiler_implementation["implementation_sha256"],
@@ -3280,6 +3268,17 @@ def _completed_resume_residency_receipt(
         "standalone_orchestration_only": True,
     }
     return MappingProxyType({**body, "snapshot_sha256": canonical_sha256(body)})
+
+
+def _has_exact_short_conv_layer_coverage(
+    short_conv_layer_indices: Sequence[int],
+    receipt_layer_indices: Sequence[int],
+) -> bool:
+    """Require one ordered receipt for every short-conv layer and no others."""
+
+    return bool(short_conv_layer_indices) and tuple(receipt_layer_indices) == tuple(
+        short_conv_layer_indices
+    )
 
 
 def compile_lfm2_cpcf_v5_selective_model_fold(
@@ -3707,11 +3706,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                 pending,
                 rss_checkpoint_receipt=rss_receipt,
             )
-            admission_chain_proof = (
-                build_lfm2_cpcf_v5_admission_chain_proof(
-                    resume_coordinator,
-                    admission["admission_sha256"],
-                )
+            admission_chain_proof = build_lfm2_cpcf_v5_admission_chain_proof(
+                resume_coordinator,
+                admission["admission_sha256"],
             )
             admitted_prefixes.append(
                 {
@@ -3842,6 +3839,12 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             if "preinstall_candidate_selector_receipt"
             in receipt.report["operator_artifact"]
         ]
+        macrocell_selector_applied_layer_indices = [
+            receipt.layer_index
+            for receipt in completed_receipts
+            if "macrocell_candidate_selector_receipt"
+            in receipt.report["operator_artifact"]
+        ]
         numerical_frontier_layer_indices = [
             receipt.layer_index
             for receipt in completed_receipts
@@ -3869,17 +3872,31 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
         real_v5_layer_indices = [
             int(proof["layer_index"]) for proof in real_v5_layer_proofs
         ]
-        real_v5_numerical_policy_integrated = bool(
-            short_conv_layer_indices
-            and real_v5_layer_indices == short_conv_layer_indices
+        real_v5_numerical_policy_integrated = _has_exact_short_conv_layer_coverage(
+            short_conv_layer_indices,
+            real_v5_layer_indices,
+        )
+        authenticated_whole_macrocell_selection_integrated = (
+            _has_exact_short_conv_layer_coverage(
+                short_conv_layer_indices,
+                macrocell_selector_applied_layer_indices,
+            )
+        )
+        endpoint_prefilter_control_integrated = bool(
+            authenticated_whole_macrocell_selection_integrated
+            and isinstance(
+                candidate_selector,
+                Lfm2CpcfV5EndpointFirstCandidateSelector,
+            )
         )
         if (
-            runtime_policy.require_short_conv_v5_endpoint_first_selector
-            and not selector_applied_layer_indices
+            runtime_policy.require_short_conv_v5_authenticated_whole_macrocell_selector
+            and not authenticated_whole_macrocell_selection_integrated
         ):
             raise Lfm2CpcfV5ModelCompilerError(
-                "The required short-conv v5 endpoint-first selector was not "
-                "applied to any compiled layer."
+                "The required authenticated whole-macrocell selector did not "
+                "produce a macrocell candidate-selector receipt for every "
+                "short-conv layer."
             )
         if (
             runtime_policy.require_short_conv_v5_real_numerical_frontier_adapter
@@ -4033,6 +4050,31 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                     candidate_selector,
                     Lfm2CpcfV5EndpointFirstCandidateSelector,
                 )
+            ),
+            "macrocell_candidate_selector_provided": (
+                isinstance(
+                    candidate_selector,
+                    Lfm2CpcfV5EndpointFirstCandidateSelector,
+                )
+            ),
+            "macrocell_candidate_selector_active": bool(
+                macrocell_selector_applied_layer_indices
+            ),
+            "macrocell_candidate_selector_layer_indices": (
+                macrocell_selector_applied_layer_indices
+            ),
+            "short_conv_v5_authenticated_whole_macrocell_selector_required": (
+                runtime_policy.require_short_conv_v5_authenticated_whole_macrocell_selector
+            ),
+            "short_conv_v5_authenticated_whole_macrocell_selection_integrated": (
+                authenticated_whole_macrocell_selection_integrated
+            ),
+            "short_conv_v5_macrocell_selector_final_authority": (
+                authenticated_whole_macrocell_selection_integrated
+            ),
+            "short_conv_v5_endpoint_first_selector_final_authority": False,
+            "short_conv_v5_endpoint_prefilter_control_integrated": (
+                endpoint_prefilter_control_integrated
             ),
             "short_conv_numerical_frontier_adapter_provided": (
                 numerical_frontier_adapter is not None

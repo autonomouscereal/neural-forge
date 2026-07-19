@@ -37,6 +37,9 @@ _SCHEMA = "neural-forge-lfm2-structural-residual-attention-fold-v1"
 _ATTENTION_SCORE_PRESERVATION_SCHEMA = (
     "neural-forge-lfm2-attention-score-preservation-v1"
 )
+_PREPARED_MLP_BASIS_SCHEMA = (
+    "neural-forge-lfm2-structural-residual-mlp-prepared-basis-v1"
+)
 _CACHED_VERIFIED_TRACE_MODE = "cached_verified"
 _FULL_PREFIX_CANONICAL_TRACE_MODE = "full_prefix_canonical"
 _SUPPORTED_ATTENTION_TRACE_MODES = frozenset(
@@ -172,7 +175,9 @@ def _row_weighting_mode(
     return "mixed_uniform_default_and_caller_supplied_positive_sqrt_row_weights"
 
 
-def _dense_template(value: Any, name: str, *, ndim: int = 2) -> tuple[Any, tuple[int, ...]]:
+def _dense_template(
+    value: Any, name: str, *, ndim: int = 2
+) -> tuple[Any, tuple[int, ...]]:
     torch = _torch()
     if (
         not isinstance(value, torch.Tensor)
@@ -220,6 +225,25 @@ def _template_sha256(spec: Mapping[str, tuple[tuple[int, ...], str]]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _metadata_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _valid_sha256_text(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _relative_rmse(prediction: Any, target: Any) -> float:
     torch = _torch()
     error = float(torch.sqrt(torch.mean((prediction - target).square())).item())
@@ -255,18 +279,10 @@ def _rope_evidence_dtype(*values: Any, name: str) -> Any:
         torch.float32,
         torch.float64,
     }
-    dtypes = {
-        value.dtype
+    dtypes = {value.dtype for value in values if isinstance(value, torch.Tensor)}
+    if len(dtypes) != 1 or any(
+        not isinstance(value, torch.Tensor) or value.dtype not in supported
         for value in values
-        if isinstance(value, torch.Tensor)
-    }
-    if (
-        len(dtypes) != 1
-        or any(
-            not isinstance(value, torch.Tensor)
-            or value.dtype not in supported
-            for value in values
-        )
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
             f"{name} linear/rotary rows must share one FP16/BF16/FP32/FP64 "
@@ -357,13 +373,9 @@ def _validate_rope_reconstruction(
         rotated,
         reconstruction,
     )
-    permitted_error = _rope_low_precision_reconstruction_error_bound(
-        evidence_dtype
-    )
+    permitted_error = _rope_low_precision_reconstruction_error_bound(evidence_dtype)
     if permitted_error is None:
-        legal = bool(
-            torch.allclose(reconstruction, rotated, rtol=1e-5, atol=1e-7)
-        )
+        legal = bool(torch.allclose(reconstruction, rotated, rtol=1e-5, atol=1e-7))
     else:
         legal = (
             math.isfinite(maximum_pair_relative_error)
@@ -411,22 +423,18 @@ def _infer_rope_from_cached_rows(
         raise Lfm2StructuralResidualAttentionFoldError(
             f"{name} cannot infer RoPE at a zero-energy cached coordinate."
         )
-    cosine_half = (
-        (first * rotated_first + second * rotated_second).sum(dim=1)
-        / denominator
-    )
-    sine_half = (
-        (first * rotated_second - second * rotated_first).sum(dim=1)
-        / denominator
-    )
+    cosine_half = (first * rotated_first + second * rotated_second).sum(
+        dim=1
+    ) / denominator
+    sine_half = (first * rotated_second - second * rotated_first).sum(
+        dim=1
+    ) / denominator
     magnitude = torch.sqrt(cosine_half.square() + sine_half.square())
     if bool((magnitude <= floor).any().item()):
         raise Lfm2StructuralResidualAttentionFoldError(
             f"{name} cannot infer RoPE at a degenerate cached coordinate pair."
         )
-    raw_radius_maximum_deviation = float(
-        (magnitude - 1.0).abs().max().item()
-    )
+    raw_radius_maximum_deviation = float((magnitude - 1.0).abs().max().item())
     cosine_half = cosine_half / magnitude
     sine_half = sine_half / magnitude
     cosine = torch.cat((cosine_half, cosine_half), dim=-1).contiguous()
@@ -465,8 +473,7 @@ def _validate_shared_qk_rope(
     head_dim = int(query_cosine.shape[-1])
     half = head_dim // 2
     pair_structure_exact = all(
-        torch.equal(value[..., :half], value[..., half:])
-        for value in values
+        torch.equal(value[..., :half], value[..., half:]) for value in values
     )
     query_length = int(query_cosine.shape[1])
     key_length = int(key_cosine.shape[1])
@@ -476,14 +483,10 @@ def _validate_shared_qk_rope(
             "structure."
         )
     query_radius_error = (
-        query_cosine[..., :half].square()
-        + query_sine[..., :half].square()
-        - 1.0
+        query_cosine[..., :half].square() + query_sine[..., :half].square() - 1.0
     ).abs()
     key_radius_error = (
-        key_cosine[..., :half].square()
-        + key_sine[..., :half].square()
-        - 1.0
+        key_cosine[..., :half].square() + key_sine[..., :half].square() - 1.0
     ).abs()
     maximum_radius_error = float(
         max(query_radius_error.max().item(), key_radius_error.max().item())
@@ -500,9 +503,7 @@ def _validate_shared_qk_rope(
         .max()
         .item()
     )
-    permitted_error = _rope_low_precision_geometry_error_bound(
-        evidence_dtype
-    )
+    permitted_error = _rope_low_precision_geometry_error_bound(evidence_dtype)
     if permitted_error is None:
         legal = bool(
             torch.allclose(
@@ -674,7 +675,11 @@ def _fit_linear(
                 f"{role}_weight_prior must have shape "
                 f"{(int(y.shape[1]), int(x.shape[1]))}."
             )
-    residual = y - x @ prior_rows.T
+    # With no prior the old expression ``y - x @ zeros.T`` is exactly
+    # ``y``.  Avoiding that zero GEMM preserves the closed-form objective and
+    # the resulting bytes while removing one output-sized matrix multiply
+    # from every unregularized-prior projection.
+    residual = y if prior is None else y - x @ prior_rows.T
     if ridge == 0.0:
         solution = torch.linalg.lstsq(x, residual, driver="gelsd").solution
     elif int(x.shape[1]) > int(x.shape[0]):
@@ -699,7 +704,11 @@ def _fit_linear(
     prior_norm = float(torch.linalg.vector_norm(prior_rows).item())
     correction_norm = float(torch.linalg.vector_norm(correction).item())
     update_scale = 1.0
-    if prior is not None and max_prior_delta_ratio is not None and correction_norm > 0.0:
+    if (
+        prior is not None
+        and max_prior_delta_ratio is not None
+        and correction_norm > 0.0
+    ):
         allowed = max_prior_delta_ratio * max(
             prior_norm, torch.finfo(torch.float64).tiny
         )
@@ -760,12 +769,8 @@ def _fit_affine(
     )
     joint_prior = None
     if weight_prior is not None:
-        normalized_weight = _float_tensor(
-            weight_prior, f"{role}_weight_prior", ndim=2
-        )
-        normalized_bias = _float_tensor(
-            bias_prior, f"{role}_bias_prior", ndim=1
-        )
+        normalized_weight = _float_tensor(weight_prior, f"{role}_weight_prior", ndim=2)
+        normalized_bias = _float_tensor(bias_prior, f"{role}_bias_prior", ndim=1)
         if int(normalized_weight.shape[0]) != int(normalized_bias.shape[0]):
             raise Lfm2StructuralResidualAttentionFoldError(
                 f"{role} weight and bias priors have different output widths."
@@ -806,7 +811,9 @@ def _weighted_group_rows(
     weights: list[tuple[float, ...]] = []
     for target in range(target_count):
         members = tuple(
-            source for source, destination in enumerate(assignment) if destination == target
+            source
+            for source, destination in enumerate(assignment)
+            if destination == target
         )
         if not members:
             raise Lfm2StructuralResidualAttentionFoldError(
@@ -856,14 +863,10 @@ def _factor_score_barycenter(
         for group in range(target_key_value_heads):
             start = group * offsets
             stop = start + offsets
-            matrix = (
-                centered_scores[batch_index, start:stop]
-                .reshape(offsets * query_length, key_length)
-                * math.sqrt(head_dim)
-            )
-            row_sqrt_weights = query_sqrt_weights[batch_index].repeat(
-                offsets
-            )
+            matrix = centered_scores[batch_index, start:stop].reshape(
+                offsets * query_length, key_length
+            ) * math.sqrt(head_dim)
+            row_sqrt_weights = query_sqrt_weights[batch_index].repeat(offsets)
             weighted_matrix = matrix * row_sqrt_weights.unsqueeze(1)
             left, singular, right_h = torch.linalg.svd(
                 weighted_matrix,
@@ -962,10 +965,7 @@ class Lfm2AttentionScorePreservationThresholds:
             )
 
     def as_dict(self) -> dict[str, float | None]:
-        return {
-            name: getattr(self, name)
-            for name in self.__dataclass_fields__
-        }
+        return {name: getattr(self, name) for name in self.__dataclass_fields__}
 
 
 @dataclass(frozen=True, slots=True)
@@ -1009,9 +1009,7 @@ class Lfm2AttentionScorePreservationReport:
             "softmax_fisher_error_worst": self.softmax_fisher_error_worst,
             "js_divergence_mean": self.js_divergence_mean,
             "js_divergence_worst": self.js_divergence_worst,
-            "top1_key_agreement_fraction": (
-                self.top1_key_agreement_fraction
-            ),
+            "top1_key_agreement_fraction": (self.top1_key_agreement_fraction),
             "top_k_pair_order_agreement_fraction": (
                 self.top_k_pair_order_agreement_fraction
             ),
@@ -1030,18 +1028,12 @@ class Lfm2AttentionScorePreservationReport:
             "total_row_count": self.total_row_count,
             "eligible_row_count": self.eligible_row_count,
             "excluded_empty_row_count": self.excluded_empty_row_count,
-            "excluded_singleton_row_count": (
-                self.excluded_singleton_row_count
-            ),
-            "top_k_pair_comparison_count": (
-                self.top_k_pair_comparison_count
-            ),
+            "excluded_singleton_row_count": (self.excluded_singleton_row_count),
+            "top_k_pair_comparison_count": (self.top_k_pair_comparison_count),
             "excluded_reference_tie_pair_count": (
                 self.excluded_reference_tie_pair_count
             ),
-            "winner_margin_comparison_count": (
-                self.winner_margin_comparison_count
-            ),
+            "winner_margin_comparison_count": (self.winner_margin_comparison_count),
             "excluded_reference_tie_margin_count": (
                 self.excluded_reference_tie_margin_count
             ),
@@ -1051,12 +1043,8 @@ class Lfm2AttentionScorePreservationReport:
             "thresholds": self.thresholds.as_dict(),
             "checks": dict(self.checks),
             "accepted": self.accepted,
-            "reference_score_bundle_sha256": (
-                self.reference_score_bundle_sha256
-            ),
-            "candidate_score_bundle_sha256": (
-                self.candidate_score_bundle_sha256
-            ),
+            "reference_score_bundle_sha256": (self.reference_score_bundle_sha256),
+            "candidate_score_bundle_sha256": (self.candidate_score_bundle_sha256),
             "key_mask_bundle_sha256": self.key_mask_bundle_sha256,
             "cases": [dict(value) for value in self.case_reports],
             "score_tensors_only": True,
@@ -1094,11 +1082,7 @@ def _score_case_sequence(value: Any, name: str) -> tuple[Any, ...]:
     torch = _torch()
     if isinstance(value, torch.Tensor):
         return (value,)
-    if (
-        not isinstance(value, Sequence)
-        or isinstance(value, (str, bytes))
-        or not value
-    ):
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or not value:
         raise Lfm2StructuralResidualAttentionFoldError(
             f"{name} must be a score tensor or a non-empty score-tensor sequence."
         )
@@ -1147,9 +1131,7 @@ def _attention_score_case_tensor(value: Any, name: str) -> Any:
         )
     result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
     if bool(torch.isnan(result).any().item()):
-        raise Lfm2StructuralResidualAttentionFoldError(
-            f"{name} contains NaN."
-        )
+        raise Lfm2StructuralResidualAttentionFoldError(f"{name} contains NaN.")
     return result
 
 
@@ -1188,10 +1170,7 @@ def _attention_score_case_mask(
 
 def _score_bundle_sha256(values: Sequence[Any], prefix: str) -> str:
     return _state_sha256(
-        {
-            f"{prefix}.{index:04d}": value
-            for index, value in enumerate(values)
-        }
+        {f"{prefix}.{index:04d}": value for index, value in enumerate(values)}
     )
 
 
@@ -1203,10 +1182,7 @@ def _score_row_tolerance(reference: Any, candidate: Any) -> float:
         float(candidate.abs().max().item()),
     )
     return (
-        torch.finfo(torch.float64).eps
-        * max(2, int(reference.numel()))
-        * 16.0
-        * scale
+        torch.finfo(torch.float64).eps * max(2, int(reference.numel())) * 16.0 * scale
     )
 
 
@@ -1252,9 +1228,7 @@ def evaluate_lfm2_structural_attention_score_preservation(
         )
     policy = thresholds or Lfm2AttentionScorePreservationThresholds()
     if not isinstance(policy, Lfm2AttentionScorePreservationThresholds):
-        raise TypeError(
-            "thresholds must be Lfm2AttentionScorePreservationThresholds."
-        )
+        raise TypeError("thresholds must be Lfm2AttentionScorePreservationThresholds.")
     references_raw = _score_case_sequence(
         reference_scores,
         "reference_scores",
@@ -1311,9 +1285,8 @@ def evaluate_lfm2_structural_attention_score_preservation(
             score_shape=tuple(int(value) for value in reference.shape),
             name=f"key_masks[{case_index}]",
         )
-        if (
-            not bool(torch.isfinite(reference[mask]).all().item())
-            or not bool(torch.isfinite(candidate[mask]).all().item())
+        if not bool(torch.isfinite(reference[mask]).all().item()) or not bool(
+            torch.isfinite(candidate[mask]).all().item()
         ):
             raise Lfm2StructuralResidualAttentionFoldError(
                 f"Score case {case_index} has non-finite values at valid keys."
@@ -1364,14 +1337,11 @@ def evaluate_lfm2_structural_attention_score_preservation(
             delta = candidate_row - reference_row
             mean_delta = (reference_probability * delta).sum()
             fisher = (
-                (reference_probability * delta.square()).sum()
-                - mean_delta.square()
+                (reference_probability * delta.square()).sum() - mean_delta.square()
             ).clamp_min(0.0)
             fisher_rows.append(float(fisher.item()))
 
-            midpoint = 0.5 * (
-                reference_probability + candidate_probability
-            )
+            midpoint = 0.5 * (reference_probability + candidate_probability)
             tiny = torch.finfo(torch.float64).tiny
             reference_term = torch.where(
                 reference_probability > 0.0,
@@ -1391,9 +1361,7 @@ def evaluate_lfm2_structural_attention_score_preservation(
                 ),
                 torch.zeros_like(candidate_probability),
             )
-            js = 0.5 * (
-                reference_term.sum() + candidate_term.sum()
-            ) / math.log(2.0)
+            js = 0.5 * (reference_term.sum() + candidate_term.sum()) / math.log(2.0)
             js_rows.append(float(js.clamp_min(0.0).item()))
 
             order = _deterministic_descending_indices(reference_row)
@@ -1402,10 +1370,7 @@ def evaluate_lfm2_structural_attention_score_preservation(
             reference_winners = {
                 index
                 for index in order
-                if abs(
-                    float(reference_row[index].item())
-                    - reference_winner_score
-                )
+                if abs(float(reference_row[index].item()) - reference_winner_score)
                 <= tolerance
             }
             top1_matches += int(candidate_order[0] in reference_winners)
@@ -1435,25 +1400,18 @@ def evaluate_lfm2_structural_attention_score_preservation(
             winner = selected[0]
             for competitor in selected[1:]:
                 reference_margin = float(
-                    (
-                        reference_row[winner]
-                        - reference_row[competitor]
-                    ).item()
+                    (reference_row[winner] - reference_row[competitor]).item()
                 )
                 if reference_margin <= tolerance:
                     tied_winner_margins += 1
                     continue
                 candidate_margin = float(
-                    (
-                        candidate_row[winner]
-                        - candidate_row[competitor]
-                    ).item()
+                    (candidate_row[winner] - candidate_row[competitor]).item()
                 )
                 winner_count += 1
                 winner_sign_matches += int(candidate_margin > tolerance)
                 winner_floor_matches += int(
-                    candidate_margin + tolerance
-                    >= margin_floor * reference_margin
+                    candidate_margin + tolerance >= margin_floor * reference_margin
                 )
 
         case_reports.append(
@@ -1461,16 +1419,12 @@ def evaluate_lfm2_structural_attention_score_preservation(
                 sorted(
                     {
                         "case_index": case_index,
-                        "score_shape": [
-                            int(value) for value in reference.shape
-                        ],
+                        "score_shape": [int(value) for value in reference.shape],
                         "total_row_count": int(flat_reference.shape[0]),
                         "eligible_row_count": case_eligible,
                         "excluded_empty_row_count": case_empty,
                         "excluded_singleton_row_count": case_singleton,
-                        "top_k_pair_comparison_count": (
-                            pair_count - case_pairs_before
-                        ),
+                        "top_k_pair_comparison_count": (pair_count - case_pairs_before),
                         "winner_margin_comparison_count": (
                             winner_count - case_winner_before
                         ),
@@ -1491,18 +1445,13 @@ def evaluate_lfm2_structural_attention_score_preservation(
     top1_fraction = top1_matches / eligible_rows
     pair_fraction = 1.0 if pair_count == 0 else pair_matches / pair_count
     winner_sign_fraction = (
-        1.0
-        if winner_count == 0
-        else winner_sign_matches / winner_count
+        1.0 if winner_count == 0 else winner_sign_matches / winner_count
     )
     winner_floor_fraction = (
-        1.0
-        if winner_count == 0
-        else winner_floor_matches / winner_count
+        1.0 if winner_count == 0 else winner_floor_matches / winner_count
     )
     metrics = {
-        "softmax_fisher_error_mean": math.fsum(fisher_rows)
-        / len(fisher_rows),
+        "softmax_fisher_error_mean": math.fsum(fisher_rows) / len(fisher_rows),
         "softmax_fisher_error_worst": max(fisher_rows),
         "js_divergence_mean": math.fsum(js_rows) / len(js_rows),
         "js_divergence_worst": max(js_rows),
@@ -1521,20 +1470,17 @@ def evaluate_lfm2_structural_attention_score_preservation(
         "maximum_js_divergence": (
             None
             if policy.maximum_js_divergence is None
-            else metrics["js_divergence_worst"]
-            <= policy.maximum_js_divergence
+            else metrics["js_divergence_worst"] <= policy.maximum_js_divergence
         ),
         "minimum_top1_key_agreement_fraction": (
             None
             if policy.minimum_top1_key_agreement_fraction is None
-            else top1_fraction
-            >= policy.minimum_top1_key_agreement_fraction
+            else top1_fraction >= policy.minimum_top1_key_agreement_fraction
         ),
         "minimum_top_k_pair_order_agreement_fraction": (
             None
             if policy.minimum_top_k_pair_order_agreement_fraction is None
-            else pair_fraction
-            >= policy.minimum_top_k_pair_order_agreement_fraction
+            else pair_fraction >= policy.minimum_top_k_pair_order_agreement_fraction
         ),
         "minimum_winner_margin_sign_agreement_fraction": (
             None
@@ -1811,10 +1757,7 @@ class Lfm2CompiledStructuralShortConvFold:
                 }
             )
         return MappingProxyType(
-            {
-                name: value.detach().cpu().clone()
-                for name, value in values.items()
-            }
+            {name: value.detach().cpu().clone() for name, value in values.items()}
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -1836,9 +1779,7 @@ class Lfm2CompiledStructuralShortConvFold:
             "target_logical_parameters": self.target_logical_parameters,
             "removed_logical_parameters": self.removed_logical_parameters,
             "parameter_reduction_fraction": self.parameter_reduction_fraction,
-            "residual_endpoint_relative_rmse": (
-                self.residual_endpoint_relative_rmse
-            ),
+            "residual_endpoint_relative_rmse": (self.residual_endpoint_relative_rmse),
             "source_state_sha256_before": self.source_state_sha256_before,
             "source_state_sha256_after": self.source_state_sha256_after,
             "target_template_sha256": self.target_template_sha256,
@@ -1896,9 +1837,7 @@ class Lfm2StructuralAttentionFoldAudit:
             "source_unchanged": self.source_unchanged,
             "blank_target_values_read": self.blank_target_values_read,
             "full_source_query_coverage": self.full_source_query_coverage,
-            "full_source_key_value_coverage": (
-                self.full_source_key_value_coverage
-            ),
+            "full_source_key_value_coverage": (self.full_source_key_value_coverage),
             "source_query_heads_dropped": self.source_query_heads_dropped,
             "source_key_value_heads_dropped": self.source_key_value_heads_dropped,
             "target_shapes_exact": self.target_shapes_exact,
@@ -1979,9 +1918,7 @@ class Lfm2CompiledStructuralAttentionFold:
             "removed_logical_parameters": self.removed_logical_parameters,
             "parameter_reduction_fraction": self.parameter_reduction_fraction,
             "centered_score_relative_rmse": self.centered_score_relative_rmse,
-            "residual_endpoint_relative_rmse": (
-                self.residual_endpoint_relative_rmse
-            ),
+            "residual_endpoint_relative_rmse": (self.residual_endpoint_relative_rmse),
             "source_state_sha256_before": self.source_state_sha256_before,
             "source_state_sha256_after": self.source_state_sha256_after,
             "target_template_sha256": self.target_template_sha256,
@@ -2055,20 +1992,11 @@ class Lfm2CompiledStructuralAttentionProducerFold:
 
     @property
     def full_source_coverage(self) -> bool:
-        return (
-            sorted(
-                source
-                for group in self.query_groups
-                for source in group
-            )
-            == list(range(self.topology.source_query_heads))
-            and sorted(
-                source
-                for group in self.key_value_groups
-                for source in group
-            )
-            == list(range(self.topology.source_key_value_heads))
-        )
+        return sorted(
+            source for group in self.query_groups for source in group
+        ) == list(range(self.topology.source_query_heads)) and sorted(
+            source for group in self.key_value_groups for source in group
+        ) == list(range(self.topology.source_key_value_heads))
 
     def state_dict(self) -> Mapping[str, Any]:
         return MappingProxyType(
@@ -2095,40 +2023,27 @@ class Lfm2CompiledStructuralAttentionProducerFold:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "schema": (
-                "neural-forge-lfm2-structural-attention-producer-fold-v1"
-            ),
+            "schema": ("neural-forge-lfm2-structural-attention-producer-fold-v1"),
             "topology": self.topology.as_dict(),
             "query_groups": [list(value) for value in self.query_groups],
             "query_barycentric_weights": [
                 list(value) for value in self.query_barycentric_weights
             ],
-            "key_value_groups": [
-                list(value) for value in self.key_value_groups
-            ],
+            "key_value_groups": [list(value) for value in self.key_value_groups],
             "key_value_barycentric_weights": [
-                list(value)
-                for value in self.key_value_barycentric_weights
+                list(value) for value in self.key_value_barycentric_weights
             ],
             "source_logical_parameters": self.source_logical_parameters,
             "target_logical_parameters": self.target_logical_parameters,
             "removed_logical_parameters": self.removed_logical_parameters,
-            "parameter_reduction_fraction": (
-                self.parameter_reduction_fraction
-            ),
+            "parameter_reduction_fraction": (self.parameter_reduction_fraction),
             "source_state_sha256_before": self.source_state_sha256_before,
             "source_state_sha256_after": self.source_state_sha256_after,
             "target_template_sha256": self.target_template_sha256,
-            "residual_assignment_sha256": (
-                self.residual_assignment_sha256
-            ),
-            "source_derived_prior_sha256": (
-                self.source_derived_prior_sha256
-            ),
+            "residual_assignment_sha256": (self.residual_assignment_sha256),
+            "source_derived_prior_sha256": (self.source_derived_prior_sha256),
             "compiled_state_sha256": self.compiled_state_sha256,
-            "centered_score_relative_rmse": (
-                self.centered_score_relative_rmse
-            ),
+            "centered_score_relative_rmse": (self.centered_score_relative_rmse),
             "query_row_weighting_mode": self.query_row_weighting_mode,
             "key_value_row_weighting_mode": self.key_value_row_weighting_mode,
             "query_row_sqrt_weight_bundle_sha256": (
@@ -2171,36 +2086,22 @@ class Lfm2CompiledStructuralAttentionConsumerFold:
 
     def state_dict(self) -> Mapping[str, Any]:
         return MappingProxyType(
-            {
-                "out_proj.weight": (
-                    self.output_weight.detach().cpu().clone()
-                )
-            }
+            {"out_proj.weight": (self.output_weight.detach().cpu().clone())}
         )
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "schema": (
-                "neural-forge-lfm2-structural-attention-consumer-fold-v1"
-            ),
+            "schema": ("neural-forge-lfm2-structural-attention-consumer-fold-v1"),
             "context_width": self.context_width,
             "target_output_size": self.target_output_size,
             "case_count": self.case_count,
             "target_template_sha256": self.target_template_sha256,
-            "source_derived_prior_sha256": (
-                self.source_derived_prior_sha256
-            ),
-            "actual_child_context_sha256": (
-                self.actual_child_context_sha256
-            ),
+            "source_derived_prior_sha256": (self.source_derived_prior_sha256),
+            "actual_child_context_sha256": (self.actual_child_context_sha256),
             "endpoint_target_sha256": self.endpoint_target_sha256,
             "compiled_state_sha256": self.compiled_state_sha256,
-            "residual_endpoint_relative_rmse": (
-                self.residual_endpoint_relative_rmse
-            ),
-            "prior_correction_report": (
-                self.prior_correction_report.as_dict()
-            ),
+            "residual_endpoint_relative_rmse": (self.residual_endpoint_relative_rmse),
+            "prior_correction_report": (self.prior_correction_report.as_dict()),
             "context_source": "caller-supplied-actual-child-context",
             "model_forward_calls": 0,
             "backward_calls": 0,
@@ -2254,26 +2155,18 @@ class Lfm2CompiledStructuralAttentionValueOutputFold:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "schema": (
-                "neural-forge-lfm2-structural-attention-value-output-fold-v1"
-            ),
+            "schema": ("neural-forge-lfm2-structural-attention-value-output-fold-v1"),
             "topology": self.topology.as_dict(),
             "case_count": self.case_count,
             "iterations_requested": self.iterations_requested,
             "iterations_accepted": self.iterations_accepted,
-            "fit_relative_rmse_history": list(
-                self.fit_relative_rmse_history
-            ),
+            "fit_relative_rmse_history": list(self.fit_relative_rmse_history),
             "fit_nonincreasing": self.fit_nonincreasing,
             "target_template_sha256": self.target_template_sha256,
-            "source_derived_prior_sha256": (
-                self.source_derived_prior_sha256
-            ),
+            "source_derived_prior_sha256": (self.source_derived_prior_sha256),
             "fixed_query_key_sha256": self.fixed_query_key_sha256,
             "live_value_sha256": self.live_value_sha256,
-            "actual_child_context_sha256": (
-                self.actual_child_context_sha256
-            ),
+            "actual_child_context_sha256": (self.actual_child_context_sha256),
             "reconstructed_live_context_sha256": (
                 self.reconstructed_live_context_sha256
             ),
@@ -2282,9 +2175,7 @@ class Lfm2CompiledStructuralAttentionValueOutputFold:
             "context_reconstruction_relative_rmse": (
                 self.context_reconstruction_relative_rmse
             ),
-            "residual_endpoint_relative_rmse": (
-                self.residual_endpoint_relative_rmse
-            ),
+            "residual_endpoint_relative_rmse": (self.residual_endpoint_relative_rmse),
             "value_context_solver": self.value_context_solver,
             "prior_correction_reports": [
                 value.as_dict() for value in self.prior_correction_reports
@@ -2299,8 +2190,7 @@ class Lfm2CompiledStructuralAttentionValueOutputFold:
                 "out_proj.weight",
             ],
             "solver": (
-                "actual-context-o-control-plus-fixed-score-alternating-"
-                "closed-form-v-o"
+                "actual-context-o-control-plus-fixed-score-alternating-closed-form-v-o"
             ),
             "model_forward_calls": 0,
             "model_generate_calls": 0,
@@ -2364,47 +2254,33 @@ class Lfm2CompiledStructuralShortConvProducerFold:
                 }
             )
         return MappingProxyType(
-            {
-                name: value.detach().cpu().clone()
-                for name, value in values.items()
-            }
+            {name: value.detach().cpu().clone() for name, value in values.items()}
         )
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "schema": (
-                "neural-forge-lfm2-structural-short-conv-producer-fold-v1"
-            ),
+            "schema": ("neural-forge-lfm2-structural-short-conv-producer-fold-v1"),
             "source_hidden_size": self.source_hidden_size,
             "target_hidden_size": self.target_hidden_size,
             "fir_length": self.fir_length,
             "bias": self.bias,
             "residual_assignment": self.residual_assignment.as_dict(),
-            "channel_groups": [
-                list(value) for value in self.channel_groups
-            ],
+            "channel_groups": [list(value) for value in self.channel_groups],
             "channel_barycentric_weights": [
-                list(value)
-                for value in self.channel_barycentric_weights
+                list(value) for value in self.channel_barycentric_weights
             ],
             "full_source_coverage": self.full_source_coverage,
             "source_channels_dropped": 0,
             "source_logical_parameters": self.source_logical_parameters,
             "target_logical_parameters": self.target_logical_parameters,
             "removed_logical_parameters": self.removed_logical_parameters,
-            "parameter_reduction_fraction": (
-                self.parameter_reduction_fraction
-            ),
+            "parameter_reduction_fraction": (self.parameter_reduction_fraction),
             "source_state_sha256_before": self.source_state_sha256_before,
             "source_state_sha256_after": self.source_state_sha256_after,
             "target_template_sha256": self.target_template_sha256,
-            "source_derived_prior_sha256": (
-                self.source_derived_prior_sha256
-            ),
+            "source_derived_prior_sha256": (self.source_derived_prior_sha256),
             "compiled_state_sha256": self.compiled_state_sha256,
-            "prior_correction_report": (
-                self.prior_correction_report.as_dict()
-            ),
+            "prior_correction_report": (self.prior_correction_report.as_dict()),
             "consumer_compiled": False,
             "model_forward_calls": 0,
             "backward_calls": 0,
@@ -2438,35 +2314,22 @@ class Lfm2CompiledStructuralShortConvConsumerFold:
         if self.bias:
             values["out_proj.bias"] = self.out_proj_bias
         return MappingProxyType(
-            {
-                name: value.detach().cpu().clone()
-                for name, value in values.items()
-            }
+            {name: value.detach().cpu().clone() for name, value in values.items()}
         )
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "schema": (
-                "neural-forge-lfm2-structural-short-conv-consumer-fold-v1"
-            ),
+            "schema": ("neural-forge-lfm2-structural-short-conv-consumer-fold-v1"),
             "target_hidden_size": self.target_hidden_size,
             "case_count": self.case_count,
             "bias": self.bias,
             "target_template_sha256": self.target_template_sha256,
-            "source_derived_prior_sha256": (
-                self.source_derived_prior_sha256
-            ),
-            "actual_child_context_sha256": (
-                self.actual_child_context_sha256
-            ),
+            "source_derived_prior_sha256": (self.source_derived_prior_sha256),
+            "actual_child_context_sha256": (self.actual_child_context_sha256),
             "endpoint_target_sha256": self.endpoint_target_sha256,
             "compiled_state_sha256": self.compiled_state_sha256,
-            "residual_endpoint_relative_rmse": (
-                self.residual_endpoint_relative_rmse
-            ),
-            "prior_correction_report": (
-                self.prior_correction_report.as_dict()
-            ),
+            "residual_endpoint_relative_rmse": (self.residual_endpoint_relative_rmse),
+            "prior_correction_report": (self.prior_correction_report.as_dict()),
             "context_source": "caller-supplied-actual-child-context",
             "model_forward_calls": 0,
             "backward_calls": 0,
@@ -2520,6 +2383,288 @@ class Lfm2CachedMlpFoldCase:
     parent_contribution: Any | None = None
 
 
+def _raw_mlp_parent_case_sha256(
+    case: Lfm2CachedMlpFoldCase,
+    *,
+    case_index: int,
+) -> str:
+    tensors = {
+        "parent_gate": case.parent_gate,
+        "parent_up": case.parent_up,
+        "parent_post_swiglu": case.parent_post_swiglu,
+        "parent_post_mlp_residual_target_space": (
+            case.parent_post_mlp_residual_target_space
+        ),
+    }
+    body = {
+        "case_index": case_index,
+        "tensor_sha256": {
+            name: _tensor_sha256(value) for name, value in sorted(tensors.items())
+        },
+        "parent_contribution_mode": (
+            "source_down_column_norm"
+            if case.parent_contribution is None
+            else "caller_supplied"
+        ),
+        "parent_contribution_sha256": (
+            None
+            if case.parent_contribution is None
+            else _tensor_sha256(case.parent_contribution)
+        ),
+    }
+    return _metadata_sha256(body)
+
+
+def _prepared_mlp_tensor_sha256(
+    gate_targets: Sequence[Any],
+    up_targets: Sequence[Any],
+    parent_endpoints: Sequence[Any],
+) -> str:
+    values = {}
+    for case_index, (gate, up, endpoint) in enumerate(
+        zip(gate_targets, up_targets, parent_endpoints, strict=True)
+    ):
+        prefix = f"case.{case_index:04d}"
+        values[f"{prefix}.gate_target"] = gate
+        values[f"{prefix}.up_target"] = up
+        values[f"{prefix}.parent_endpoint"] = endpoint
+    return _state_sha256(values)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2PreparedStructuralMlpFoldBasis:
+    """Authenticated parent-side SwiGLU basis reusable within one layer."""
+
+    cluster_plan: GatedMLPActivationClusterPlan
+    gate_targets: tuple[Any, ...]
+    up_targets: tuple[Any, ...]
+    parent_endpoints: tuple[Any, ...]
+    parent_case_sha256: tuple[str, ...]
+    case_rows: tuple[int, ...]
+    neuron_groups: tuple[tuple[int, ...], ...]
+    neuron_barycentric_weights: tuple[tuple[float, ...], ...]
+    source_hidden_size: int
+    target_hidden_size: int
+    source_intermediate_size: int
+    target_intermediate_size: int
+    source_logical_parameters: int
+    target_logical_parameters: int
+    source_state_sha256: str
+    target_template_sha256: str
+    residual_assignment_sha256: str | None
+    cluster_ridge: float
+    cluster_max_iterations: int
+    cluster_distance_chunk_size: int
+    prepared_tensor_sha256: str
+    report: Mapping[str, Any] | None = None
+
+    def _report_body(self) -> dict[str, Any]:
+        cluster_report = self.cluster_plan.report.as_dict()
+        retained_tensor_bytes = sum(
+            int(value.numel()) * int(value.element_size())
+            for value in (
+                *self.gate_targets,
+                *self.up_targets,
+                *self.parent_endpoints,
+            )
+        )
+        return {
+            "schema": _PREPARED_MLP_BASIS_SCHEMA,
+            "source_hidden_size": self.source_hidden_size,
+            "target_hidden_size": self.target_hidden_size,
+            "source_intermediate_size": self.source_intermediate_size,
+            "target_intermediate_size": self.target_intermediate_size,
+            "source_logical_parameters": self.source_logical_parameters,
+            "target_logical_parameters": self.target_logical_parameters,
+            "source_state_sha256": self.source_state_sha256,
+            "target_template_sha256": self.target_template_sha256,
+            "residual_assignment_sha256": self.residual_assignment_sha256,
+            "parent_case_sha256": list(self.parent_case_sha256),
+            "parent_evidence_bundle_sha256": _metadata_sha256(
+                list(self.parent_case_sha256)
+            ),
+            "case_rows": list(self.case_rows),
+            "observation_rows": sum(self.case_rows),
+            "cluster_plan": cluster_report,
+            "cluster_plan_sha256": _metadata_sha256(cluster_report),
+            "neuron_groups": [list(value) for value in self.neuron_groups],
+            "neuron_barycentric_weights": [
+                list(value) for value in self.neuron_barycentric_weights
+            ],
+            "cluster_ridge": self.cluster_ridge,
+            "cluster_max_iterations": self.cluster_max_iterations,
+            "cluster_distance_chunk_size": self.cluster_distance_chunk_size,
+            "prepared_tensor_sha256": self.prepared_tensor_sha256,
+            "retained_tensor_bytes": retained_tensor_bytes,
+            "retained_parent_gate_up_targets": True,
+            "retained_parent_residual_endpoints": True,
+            "combined_cluster_feature_matrix_retained": False,
+            "preparation_calls": 1,
+            "candidate_compiles_performed_during_preparation": 0,
+            "validation_evidence_consumed": 0,
+            "model_forward_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+        }
+
+    def _validate(self) -> None:
+        torch = _torch()
+        case_count = len(self.case_rows)
+        if (
+            not isinstance(self.cluster_plan, GatedMLPActivationClusterPlan)
+            or case_count <= 0
+            or len(self.gate_targets) != case_count
+            or len(self.up_targets) != case_count
+            or len(self.parent_endpoints) != case_count
+            or len(self.parent_case_sha256) != case_count
+            or any(
+                isinstance(rows, bool) or not isinstance(rows, int) or rows <= 0
+                for rows in self.case_rows
+            )
+            or not all(_valid_sha256_text(value) for value in self.parent_case_sha256)
+            or not _valid_sha256_text(self.source_state_sha256)
+            or not _valid_sha256_text(self.target_template_sha256)
+            or (
+                self.residual_assignment_sha256 is not None
+                and not _valid_sha256_text(self.residual_assignment_sha256)
+            )
+            or not _valid_sha256_text(self.prepared_tensor_sha256)
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Prepared MLP basis metadata is incomplete."
+            )
+        source_hidden = _positive_int(
+            self.source_hidden_size,
+            "prepared source_hidden_size",
+        )
+        target_hidden = _positive_int(
+            self.target_hidden_size,
+            "prepared target_hidden_size",
+        )
+        source_intermediate = _positive_int(
+            self.source_intermediate_size,
+            "prepared source_intermediate_size",
+        )
+        target_intermediate = _positive_int(
+            self.target_intermediate_size,
+            "prepared target_intermediate_size",
+        )
+        if (
+            target_hidden > source_hidden
+            or target_intermediate > source_intermediate
+            or self.cluster_plan.source_neurons != source_intermediate
+            or self.cluster_plan.target_neurons != target_intermediate
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Prepared MLP basis cluster topology differs from its layer."
+            )
+        expected_assignment = [None] * source_intermediate
+        for target, group in enumerate(self.neuron_groups):
+            for source in group:
+                if (
+                    isinstance(source, bool)
+                    or not isinstance(source, int)
+                    or source < 0
+                    or source >= source_intermediate
+                    or expected_assignment[source] is not None
+                ):
+                    raise Lfm2StructuralResidualAttentionFoldError(
+                        "Prepared MLP neuron groups do not cover source neurons "
+                        "exactly once."
+                    )
+                expected_assignment[source] = target
+        if (
+            tuple(expected_assignment) != self.cluster_plan.source_to_target
+            or len(self.neuron_barycentric_weights) != target_intermediate
+            or len(self.neuron_groups) != target_intermediate
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Prepared MLP neuron assignment differs from its cluster plan."
+            )
+        for group, weights in zip(
+            self.neuron_groups,
+            self.neuron_barycentric_weights,
+            strict=True,
+        ):
+            if (
+                not group
+                or len(group) != len(weights)
+                or any(not math.isfinite(value) or value < 0.0 for value in weights)
+                or not math.isclose(
+                    math.fsum(weights),
+                    1.0,
+                    rel_tol=1e-12,
+                    abs_tol=1e-12,
+                )
+            ):
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    "Prepared MLP barycentric weights are invalid."
+                )
+        for case_index, rows in enumerate(self.case_rows):
+            expected_shapes = (
+                (self.gate_targets[case_index], (rows, target_intermediate)),
+                (self.up_targets[case_index], (rows, target_intermediate)),
+                (self.parent_endpoints[case_index], (rows, target_hidden)),
+            )
+            if any(
+                not isinstance(value, torch.Tensor)
+                or value.layout != torch.strided
+                or value.device.type != "cpu"
+                or value.dtype != torch.float64
+                or tuple(value.shape) != shape
+                or value.requires_grad
+                or value.grad_fn is not None
+                or not bool(torch.isfinite(value).all().item())
+                for value, shape in expected_shapes
+            ):
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    "Prepared MLP tensors are not finite detached FP64 CPU rows."
+                )
+        if (
+            _prepared_mlp_tensor_sha256(
+                self.gate_targets,
+                self.up_targets,
+                self.parent_endpoints,
+            )
+            != self.prepared_tensor_sha256
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Prepared MLP tensor authentication failed."
+            )
+        body = self._report_body()
+        expected_report = {**body, "report_sha256": _metadata_sha256(body)}
+        if self.report is None or dict(self.report) != expected_report:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Prepared MLP basis report authentication failed."
+            )
+
+    def __post_init__(self) -> None:
+        if self.report is None:
+            body = self._report_body()
+            object.__setattr__(
+                self,
+                "report",
+                MappingProxyType({**body, "report_sha256": _metadata_sha256(body)}),
+            )
+        self._validate()
+        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+
+    @property
+    def preparation_sha256(self) -> str:
+        return str(self.report["report_sha256"])
+
+    def verify_authentication(self) -> bool:
+        try:
+            self._validate()
+        except (TypeError, ValueError, RuntimeError):
+            return False
+        return True
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.report)
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2CompiledStructuralMlpFold:
     cluster_plan: GatedMLPActivationClusterPlan
@@ -2539,6 +2684,8 @@ class Lfm2CompiledStructuralMlpFold:
     target_template_sha256: str
     residual_assignment_sha256: str | None
     source_derived_prior_sha256: str | None
+    prepared_basis_sha256: str
+    prepared_basis_reused: bool
     compiled_state_sha256: str
     residual_endpoint_relative_rmse: float
     prior_correction_reports: tuple[Lfm2PriorCorrectionReport, ...]
@@ -2584,14 +2731,17 @@ class Lfm2CompiledStructuralMlpFold:
             "target_logical_parameters": self.target_logical_parameters,
             "removed_logical_parameters": self.removed_logical_parameters,
             "parameter_reduction_fraction": self.parameter_reduction_fraction,
-            "residual_endpoint_relative_rmse": (
-                self.residual_endpoint_relative_rmse
-            ),
+            "residual_endpoint_relative_rmse": (self.residual_endpoint_relative_rmse),
             "source_state_sha256_before": self.source_state_sha256_before,
             "source_state_sha256_after": self.source_state_sha256_after,
             "target_template_sha256": self.target_template_sha256,
             "residual_assignment_sha256": self.residual_assignment_sha256,
             "source_derived_prior_sha256": self.source_derived_prior_sha256,
+            "prepared_basis_sha256": self.prepared_basis_sha256,
+            "prepared_basis_reused": self.prepared_basis_reused,
+            "preparation_calls_for_this_compile": (
+                0 if self.prepared_basis_reused else 1
+            ),
             "compiled_state_sha256": self.compiled_state_sha256,
             "prior_correction_reports": [
                 value.as_dict() for value in self.prior_correction_reports
@@ -2609,6 +2759,555 @@ class Lfm2CompiledStructuralMlpFold:
             "optimizer_steps": 0,
             "training_steps": 0,
         }
+
+
+def prepare_lfm2_structural_residual_mlp_fold_basis(
+    *,
+    source_gate_weight: Any,
+    source_up_weight: Any,
+    source_down_weight: Any,
+    target_gate_weight_template: Any,
+    target_up_weight_template: Any,
+    target_down_weight_template: Any,
+    cases: Sequence[Lfm2CachedMlpFoldCase],
+    residual_assignment_sha256: str | None = None,
+    cluster_ridge: float = 1e-8,
+    cluster_max_iterations: int = 16,
+    cluster_distance_chunk_size: int = 512,
+) -> Lfm2PreparedStructuralMlpFoldBasis:
+    """Prepare immutable parent-side SwiGLU evidence once for one target layer."""
+
+    torch = _torch()
+    if not cases or not all(
+        isinstance(value, Lfm2CachedMlpFoldCase) for value in cases
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "cases must contain at least one Lfm2CachedMlpFoldCase."
+        )
+    cluster_ridge = _nonnegative_float(cluster_ridge, "cluster_ridge")
+    cluster_max_iterations = _positive_int(
+        cluster_max_iterations,
+        "cluster_max_iterations",
+    )
+    cluster_distance_chunk_size = _positive_int(
+        cluster_distance_chunk_size,
+        "cluster_distance_chunk_size",
+    )
+    source_values = {
+        "w1.weight": source_gate_weight,
+        "w3.weight": source_up_weight,
+        "w2.weight": source_down_weight,
+    }
+    source_before = _state_sha256(source_values)
+    source_gate = _float_tensor(
+        source_gate_weight,
+        "source_gate_weight",
+        ndim=2,
+    )
+    source_up = _float_tensor(source_up_weight, "source_up_weight", ndim=2)
+    source_down = _float_tensor(
+        source_down_weight,
+        "source_down_weight",
+        ndim=2,
+    )
+    source_intermediate, source_hidden = map(int, source_gate.shape)
+    if tuple(source_up.shape) != tuple(source_gate.shape) or tuple(
+        source_down.shape
+    ) != (source_hidden, source_intermediate):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Source gate/up/down tensors do not form one standard LFM2 SwiGLU."
+        )
+
+    target_templates = {
+        "w1.weight": target_gate_weight_template,
+        "w3.weight": target_up_weight_template,
+        "w2.weight": target_down_weight_template,
+    }
+    template_shapes: dict[str, tuple[int, ...]] = {}
+    template_spec: dict[str, tuple[tuple[int, ...], str]] = {}
+    for name, value in target_templates.items():
+        dtype, shape = _dense_template(value, f"target_{name}")
+        template_shapes[name] = shape
+        template_spec[name] = (shape, str(dtype))
+    target_intermediate, target_hidden = template_shapes["w1.weight"]
+    expected_shapes = {
+        "w1.weight": (target_intermediate, target_hidden),
+        "w3.weight": (target_intermediate, target_hidden),
+        "w2.weight": (target_hidden, target_intermediate),
+    }
+    if template_shapes != expected_shapes:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Target templates are not one standard atomic LFM2 SwiGLU set."
+        )
+    if target_hidden > source_hidden or target_intermediate > source_intermediate:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The structural target cannot expand the SwiGLU hidden or "
+            "intermediate width."
+        )
+    if target_hidden == source_hidden and target_intermediate == source_intermediate:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The structural target must reduce the SwiGLU hidden or intermediate width."
+        )
+    if residual_assignment_sha256 is not None and not _valid_sha256_text(
+        residual_assignment_sha256
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "residual_assignment_sha256 must be a lowercase SHA-256 digest."
+        )
+    if source_hidden != target_hidden and residual_assignment_sha256 is None:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Cross-hidden SwiGLU compilation must be bound to the one global "
+            "full-source sparse residual assignment."
+        )
+
+    parent_case_sha256 = tuple(
+        _raw_mlp_parent_case_sha256(case, case_index=case_index)
+        for case_index, case in enumerate(cases)
+    )
+    normalized = []
+    for case_index, case in enumerate(cases):
+        prefix = f"cases[{case_index}]"
+        target_input = _float_tensor(
+            case.target_input,
+            f"{prefix}.target_input",
+            ndim=2,
+        )
+        gate = _float_tensor(
+            case.parent_gate,
+            f"{prefix}.parent_gate",
+            ndim=2,
+        )
+        up = _float_tensor(case.parent_up, f"{prefix}.parent_up", ndim=2)
+        post = _float_tensor(
+            case.parent_post_swiglu,
+            f"{prefix}.parent_post_swiglu",
+            ndim=2,
+        )
+        parent_endpoint = _float_tensor(
+            case.parent_post_mlp_residual_target_space,
+            f"{prefix}.parent_post_mlp_residual_target_space",
+            ndim=2,
+        )
+        target_residual = _float_tensor(
+            case.target_pre_mlp_residual,
+            f"{prefix}.target_pre_mlp_residual",
+            ndim=2,
+        )
+        rows = int(target_input.shape[0])
+        if (
+            tuple(target_input.shape) != (rows, target_hidden)
+            or tuple(gate.shape) != (rows, source_intermediate)
+            or tuple(up.shape) != tuple(gate.shape)
+            or tuple(post.shape) != tuple(gate.shape)
+            or tuple(parent_endpoint.shape) != (rows, target_hidden)
+            or tuple(target_residual.shape) != tuple(parent_endpoint.shape)
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                f"{prefix} tensor shapes do not match source/target SwiGLU topology."
+            )
+        if case.parent_contribution is None:
+            contribution = post * torch.linalg.vector_norm(
+                source_down,
+                dim=0,
+            ).unsqueeze(0)
+        else:
+            raw = case.parent_contribution
+            ndim = getattr(raw, "ndim", None)
+            if ndim not in {2, 3}:
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    f"{prefix}.parent_contribution must have rank 2 or 3."
+                )
+            contribution = _float_tensor(
+                raw,
+                f"{prefix}.parent_contribution",
+                ndim=int(ndim),
+            )
+            if tuple(contribution.shape[:2]) != (rows, source_intermediate):
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    f"{prefix}.parent_contribution has incompatible leading axes."
+                )
+            if contribution.ndim == 3:
+                contribution = torch.linalg.vector_norm(
+                    contribution,
+                    dim=-1,
+                )
+        normalized.append(
+            {
+                "gate": gate,
+                "up": up,
+                "post": post,
+                "contribution": contribution,
+                "parent_endpoint": parent_endpoint,
+                "rows": rows,
+            }
+        )
+
+    with torch.no_grad():
+        all_gate = torch.cat([value["gate"] for value in normalized], dim=0)
+        all_up = torch.cat([value["up"] for value in normalized], dim=0)
+        all_post = torch.cat([value["post"] for value in normalized], dim=0)
+        all_contribution = torch.cat(
+            [value["contribution"] for value in normalized],
+            dim=0,
+        )
+        cluster = build_gated_mlp_activation_cluster_plan(
+            all_gate,
+            all_up,
+            all_post,
+            all_contribution,
+            target_neurons=target_intermediate,
+            source_neurons=source_intermediate,
+            ridge=cluster_ridge,
+            max_iterations=cluster_max_iterations,
+            distance_chunk_size=cluster_distance_chunk_size,
+        )
+        if not cluster.report.full_source_coverage:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "SwiGLU clustering did not prove full source coverage."
+            )
+        importance = all_post.square().mean(dim=0) + all_contribution.square().mean(
+            dim=0
+        )
+        gate_targets = []
+        up_targets = []
+        neuron_groups: tuple[tuple[int, ...], ...] | None = None
+        neuron_weights: tuple[tuple[float, ...], ...] | None = None
+        for value in normalized:
+            gate_target, groups, weights = _weighted_group_rows(
+                value["gate"],
+                cluster.source_to_target,
+                target_intermediate,
+                importance,
+            )
+            up_target, groups_2, weights_2 = _weighted_group_rows(
+                value["up"],
+                cluster.source_to_target,
+                target_intermediate,
+                importance,
+            )
+            if groups != groups_2 or weights != weights_2:
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    "Gate and up barycentric assignments differ."
+                )
+            if neuron_groups is None:
+                neuron_groups, neuron_weights = groups, weights
+            elif neuron_groups != groups or neuron_weights != weights:
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    "SwiGLU barycentric assignments changed between cases."
+                )
+            gate_targets.append(
+                gate_target.detach().to(device="cpu").contiguous().clone()
+            )
+            up_targets.append(up_target.detach().to(device="cpu").contiguous().clone())
+        parent_endpoints = tuple(
+            value["parent_endpoint"].detach().to(device="cpu").contiguous().clone()
+            for value in normalized
+        )
+
+    source_after = _state_sha256(source_values)
+    source_logical = sum(int(value.numel()) for value in source_values.values())
+    target_logical = sum(math.prod(shape) for shape in template_shapes.values())
+    if (
+        source_before != source_after
+        or neuron_groups is None
+        or neuron_weights is None
+        or sorted(source for group in neuron_groups for source in group)
+        != list(range(source_intermediate))
+        or target_logical >= source_logical
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The prepared SwiGLU basis failed its structural invariants."
+        )
+    gate_target_tuple = tuple(gate_targets)
+    up_target_tuple = tuple(up_targets)
+    prepared_tensor_sha256 = _prepared_mlp_tensor_sha256(
+        gate_target_tuple,
+        up_target_tuple,
+        parent_endpoints,
+    )
+    return Lfm2PreparedStructuralMlpFoldBasis(
+        cluster_plan=cluster,
+        gate_targets=gate_target_tuple,
+        up_targets=up_target_tuple,
+        parent_endpoints=parent_endpoints,
+        parent_case_sha256=parent_case_sha256,
+        case_rows=tuple(int(value["rows"]) for value in normalized),
+        neuron_groups=neuron_groups,
+        neuron_barycentric_weights=neuron_weights,
+        source_hidden_size=source_hidden,
+        target_hidden_size=target_hidden,
+        source_intermediate_size=source_intermediate,
+        target_intermediate_size=target_intermediate,
+        source_logical_parameters=source_logical,
+        target_logical_parameters=target_logical,
+        source_state_sha256=source_before,
+        target_template_sha256=_template_sha256(template_spec),
+        residual_assignment_sha256=residual_assignment_sha256,
+        cluster_ridge=cluster_ridge,
+        cluster_max_iterations=cluster_max_iterations,
+        cluster_distance_chunk_size=cluster_distance_chunk_size,
+        prepared_tensor_sha256=prepared_tensor_sha256,
+    )
+
+
+def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
+    *,
+    source_gate_weight: Any,
+    source_up_weight: Any,
+    source_down_weight: Any,
+    target_gate_weight_template: Any,
+    target_up_weight_template: Any,
+    target_down_weight_template: Any,
+    cases: Sequence[Lfm2CachedMlpFoldCase],
+    gate_weight_prior: Any | None,
+    up_weight_prior: Any | None,
+    down_weight_prior: Any | None,
+    residual_assignment_sha256: str | None,
+    ridge: float,
+    max_prior_delta_ratio: float | None,
+    cluster_ridge: float,
+    cluster_max_iterations: int,
+    cluster_distance_chunk_size: int,
+    prepared_basis: Lfm2PreparedStructuralMlpFoldBasis,
+) -> Lfm2CompiledStructuralMlpFold:
+    torch = _torch()
+    if (
+        not isinstance(prepared_basis, Lfm2PreparedStructuralMlpFoldBasis)
+        or not prepared_basis.verify_authentication()
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "prepared_basis is not an authenticated structural MLP basis."
+        )
+    if (
+        cluster_ridge != prepared_basis.cluster_ridge
+        or cluster_max_iterations != prepared_basis.cluster_max_iterations
+        or cluster_distance_chunk_size != prepared_basis.cluster_distance_chunk_size
+        or residual_assignment_sha256 != prepared_basis.residual_assignment_sha256
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Prepared MLP basis policy or residual-chart lineage changed."
+        )
+
+    source_values = {
+        "w1.weight": source_gate_weight,
+        "w3.weight": source_up_weight,
+        "w2.weight": source_down_weight,
+    }
+    source_before = _state_sha256(source_values)
+    if source_before != prepared_basis.source_state_sha256:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Prepared MLP basis source state changed."
+        )
+    target_templates = {
+        "w1.weight": target_gate_weight_template,
+        "w3.weight": target_up_weight_template,
+        "w2.weight": target_down_weight_template,
+    }
+    template_dtypes = {}
+    template_shapes = {}
+    template_spec = {}
+    for name, value in target_templates.items():
+        dtype, shape = _dense_template(value, f"target_{name}")
+        template_dtypes[name] = dtype
+        template_shapes[name] = shape
+        template_spec[name] = (shape, str(dtype))
+    if _template_sha256(template_spec) != prepared_basis.target_template_sha256:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Prepared MLP basis target template changed."
+        )
+    expected_shapes = {
+        "w1.weight": (
+            prepared_basis.target_intermediate_size,
+            prepared_basis.target_hidden_size,
+        ),
+        "w3.weight": (
+            prepared_basis.target_intermediate_size,
+            prepared_basis.target_hidden_size,
+        ),
+        "w2.weight": (
+            prepared_basis.target_hidden_size,
+            prepared_basis.target_intermediate_size,
+        ),
+    }
+    if template_shapes != expected_shapes:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Prepared MLP basis target topology changed."
+        )
+    parent_case_sha256 = tuple(
+        _raw_mlp_parent_case_sha256(case, case_index=case_index)
+        for case_index, case in enumerate(cases)
+    )
+    if parent_case_sha256 != prepared_basis.parent_case_sha256:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Prepared MLP parent evidence changed between candidate compiles."
+        )
+
+    candidate_rows = []
+    for case_index, case in enumerate(cases):
+        prefix = f"cases[{case_index}]"
+        target_input = _float_tensor(
+            case.target_input,
+            f"{prefix}.target_input",
+            ndim=2,
+        )
+        target_residual = _float_tensor(
+            case.target_pre_mlp_residual,
+            f"{prefix}.target_pre_mlp_residual",
+            ndim=2,
+        )
+        rows = prepared_basis.case_rows[case_index]
+        if tuple(target_input.shape) != (
+            rows,
+            prepared_basis.target_hidden_size,
+        ) or tuple(target_residual.shape) != (rows, prepared_basis.target_hidden_size):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                f"{prefix} actual child tensors changed prepared MLP row topology."
+            )
+        candidate_rows.append(
+            {
+                "target_input": target_input,
+                "target_residual": target_residual,
+            }
+        )
+
+    supplied_priors = {
+        "w1.weight": gate_weight_prior,
+        "w3.weight": up_weight_prior,
+        "w2.weight": down_weight_prior,
+    }
+    normalized_priors = {}
+    for name, prior in supplied_priors.items():
+        if prior is None:
+            normalized_priors[name] = None
+            continue
+        normalized_prior = _float_tensor(
+            prior,
+            f"source_derived_{name}_prior",
+            ndim=2,
+        )
+        if tuple(normalized_prior.shape) != template_shapes[name]:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                f"source-derived {name} prior must have target shape "
+                f"{template_shapes[name]}."
+            )
+        normalized_priors[name] = normalized_prior
+    prior_sha = (
+        None
+        if all(value is None for value in normalized_priors.values())
+        else _state_sha256(
+            {
+                name: value
+                for name, value in normalized_priors.items()
+                if value is not None
+            }
+        )
+    )
+
+    with torch.no_grad():
+        target_input_rows = torch.cat(
+            [value["target_input"] for value in candidate_rows],
+            dim=0,
+        )
+        gate_weight, gate_fit = _fit_linear(
+            target_input_rows,
+            torch.cat(prepared_basis.gate_targets, dim=0),
+            role="mlp_gate",
+            ridge=ridge,
+            prior=normalized_priors["w1.weight"],
+            max_prior_delta_ratio=max_prior_delta_ratio,
+        )
+        up_weight, up_fit = _fit_linear(
+            target_input_rows,
+            torch.cat(prepared_basis.up_targets, dim=0),
+            role="mlp_up",
+            ridge=ridge,
+            prior=normalized_priors["w3.weight"],
+            max_prior_delta_ratio=max_prior_delta_ratio,
+        )
+        child_post = torch.nn.functional.silu(target_input_rows @ gate_weight.T) * (
+            target_input_rows @ up_weight.T
+        )
+        endpoint_target = torch.cat(
+            [
+                parent_endpoint - value["target_residual"]
+                for parent_endpoint, value in zip(
+                    prepared_basis.parent_endpoints,
+                    candidate_rows,
+                    strict=True,
+                )
+            ],
+            dim=0,
+        )
+        down_weight, down_fit = _fit_linear(
+            child_post,
+            endpoint_target,
+            role="mlp_down",
+            ridge=ridge,
+            prior=normalized_priors["w2.weight"],
+            max_prior_delta_ratio=max_prior_delta_ratio,
+        )
+        fp64_state = {
+            "w1.weight": gate_weight,
+            "w3.weight": up_weight,
+            "w2.weight": down_weight,
+        }
+        compiled = {
+            name: fp64_state[name]
+            .to(device="cpu", dtype=template_dtypes[name])
+            .contiguous()
+            .clone()
+            for name in ("w1.weight", "w3.weight", "w2.weight")
+        }
+        materialized_gate = compiled["w1.weight"].to(torch.float64)
+        materialized_up = compiled["w3.weight"].to(torch.float64)
+        materialized_down = compiled["w2.weight"].to(torch.float64)
+        materialized_post = torch.nn.functional.silu(
+            target_input_rows @ materialized_gate.T
+        ) * (target_input_rows @ materialized_up.T)
+        endpoint_prediction = materialized_post @ materialized_down.T
+        endpoint_error = _relative_rmse(endpoint_prediction, endpoint_target)
+
+    source_after = _state_sha256(source_values)
+    if (
+        source_after != source_before
+        or _prepared_mlp_tensor_sha256(
+            prepared_basis.gate_targets,
+            prepared_basis.up_targets,
+            prepared_basis.parent_endpoints,
+        )
+        != prepared_basis.prepared_tensor_sha256
+        or any(
+            tuple(compiled[name].shape) != template_shapes[name]
+            for name in ("w1.weight", "w3.weight", "w2.weight")
+        )
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The prepared-basis SwiGLU compile failed its structural invariants."
+        )
+    return Lfm2CompiledStructuralMlpFold(
+        cluster_plan=prepared_basis.cluster_plan,
+        gate_weight=compiled["w1.weight"],
+        up_weight=compiled["w3.weight"],
+        down_weight=compiled["w2.weight"],
+        neuron_groups=prepared_basis.neuron_groups,
+        neuron_barycentric_weights=(prepared_basis.neuron_barycentric_weights),
+        source_hidden_size=prepared_basis.source_hidden_size,
+        target_hidden_size=prepared_basis.target_hidden_size,
+        source_intermediate_size=prepared_basis.source_intermediate_size,
+        target_intermediate_size=prepared_basis.target_intermediate_size,
+        source_logical_parameters=prepared_basis.source_logical_parameters,
+        target_logical_parameters=prepared_basis.target_logical_parameters,
+        source_state_sha256_before=source_before,
+        source_state_sha256_after=source_after,
+        target_template_sha256=prepared_basis.target_template_sha256,
+        residual_assignment_sha256=residual_assignment_sha256,
+        source_derived_prior_sha256=prior_sha,
+        prepared_basis_sha256=prepared_basis.preparation_sha256,
+        prepared_basis_reused=True,
+        compiled_state_sha256=_state_sha256(compiled),
+        residual_endpoint_relative_rmse=endpoint_error,
+        prior_correction_reports=(gate_fit, up_fit, down_fit),
+    )
 
 
 def compile_lfm2_structural_residual_mlp_fold(
@@ -2629,19 +3328,56 @@ def compile_lfm2_structural_residual_mlp_fold(
     cluster_ridge: float = 1e-8,
     cluster_max_iterations: int = 16,
     cluster_distance_chunk_size: int = 512,
+    prepared_basis: Lfm2PreparedStructuralMlpFoldBasis | None = None,
 ) -> Lfm2CompiledStructuralMlpFold:
     """Compile a smaller dense SwiGLU from every assigned source neuron."""
 
     torch = _torch()
-    if not cases or not all(isinstance(value, Lfm2CachedMlpFoldCase) for value in cases):
+    if not cases or not all(
+        isinstance(value, Lfm2CachedMlpFoldCase) for value in cases
+    ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "cases must contain at least one Lfm2CachedMlpFoldCase."
         )
     ridge = _nonnegative_float(ridge, "ridge")
     cluster_ridge = _nonnegative_float(cluster_ridge, "cluster_ridge")
+    cluster_max_iterations = _positive_int(
+        cluster_max_iterations,
+        "cluster_max_iterations",
+    )
+    cluster_distance_chunk_size = _positive_int(
+        cluster_distance_chunk_size,
+        "cluster_distance_chunk_size",
+    )
     if max_prior_delta_ratio is not None:
         max_prior_delta_ratio = _nonnegative_float(
             max_prior_delta_ratio, "max_prior_delta_ratio"
+        )
+    if residual_assignment_sha256 is not None and not _valid_sha256_text(
+        residual_assignment_sha256
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "residual_assignment_sha256 must be a lowercase SHA-256 digest."
+        )
+    if prepared_basis is not None:
+        return _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
+            source_gate_weight=source_gate_weight,
+            source_up_weight=source_up_weight,
+            source_down_weight=source_down_weight,
+            target_gate_weight_template=target_gate_weight_template,
+            target_up_weight_template=target_up_weight_template,
+            target_down_weight_template=target_down_weight_template,
+            cases=cases,
+            gate_weight_prior=gate_weight_prior,
+            up_weight_prior=up_weight_prior,
+            down_weight_prior=down_weight_prior,
+            residual_assignment_sha256=residual_assignment_sha256,
+            ridge=ridge,
+            max_prior_delta_ratio=max_prior_delta_ratio,
+            cluster_ridge=cluster_ridge,
+            cluster_max_iterations=cluster_max_iterations,
+            cluster_distance_chunk_size=cluster_distance_chunk_size,
+            prepared_basis=prepared_basis,
         )
     source_values = {
         "w1.weight": source_gate_weight,
@@ -2653,10 +3389,9 @@ def compile_lfm2_structural_residual_mlp_fold(
     source_up = _float_tensor(source_up_weight, "source_up_weight", ndim=2)
     source_down = _float_tensor(source_down_weight, "source_down_weight", ndim=2)
     source_intermediate, source_hidden = map(int, source_gate.shape)
-    if (
-        tuple(source_up.shape) != tuple(source_gate.shape)
-        or tuple(source_down.shape) != (source_hidden, source_intermediate)
-    ):
+    if tuple(source_up.shape) != tuple(source_gate.shape) or tuple(
+        source_down.shape
+    ) != (source_hidden, source_intermediate):
         raise Lfm2StructuralResidualAttentionFoldError(
             "Source gate/up/down tensors do not form one standard LFM2 SwiGLU."
         )
@@ -2689,13 +3424,9 @@ def compile_lfm2_structural_residual_mlp_fold(
             "The structural target cannot expand the SwiGLU hidden or "
             "intermediate width."
         )
-    if (
-        target_hidden == source_hidden
-        and target_intermediate == source_intermediate
-    ):
+    if target_hidden == source_hidden and target_intermediate == source_intermediate:
         raise Lfm2StructuralResidualAttentionFoldError(
-            "The structural target must reduce the SwiGLU hidden or "
-            "intermediate width."
+            "The structural target must reduce the SwiGLU hidden or intermediate width."
         )
     if residual_assignment_sha256 is not None and (
         not isinstance(residual_assignment_sha256, str)
@@ -2724,9 +3455,7 @@ def compile_lfm2_structural_residual_mlp_fold(
         if prior is None:
             normalized_priors[name] = None
             continue
-        normalized_prior = _float_tensor(
-            prior, f"source_derived_{name}_prior", ndim=2
-        )
+        normalized_prior = _float_tensor(prior, f"source_derived_{name}_prior", ndim=2)
         if tuple(normalized_prior.shape) != template_shapes[name]:
             raise Lfm2StructuralResidualAttentionFoldError(
                 f"source-derived {name} prior must have target shape "
@@ -2836,9 +3565,8 @@ def compile_lfm2_structural_residual_mlp_fold(
             raise Lfm2StructuralResidualAttentionFoldError(
                 "SwiGLU clustering did not prove full source coverage."
             )
-        importance = (
-            all_post.square().mean(dim=0)
-            + all_contribution.square().mean(dim=0)
+        importance = all_post.square().mean(dim=0) + all_contribution.square().mean(
+            dim=0
         )
         gate_targets = []
         up_targets = []
@@ -2889,9 +3617,9 @@ def compile_lfm2_structural_residual_mlp_fold(
             prior=normalized_priors["w3.weight"],
             max_prior_delta_ratio=max_prior_delta_ratio,
         )
-        child_post = torch.nn.functional.silu(
-            target_input_rows @ gate_weight.T
-        ) * (target_input_rows @ up_weight.T)
+        child_post = torch.nn.functional.silu(target_input_rows @ gate_weight.T) * (
+            target_input_rows @ up_weight.T
+        )
         endpoint_target = torch.cat(
             [
                 value["parent_endpoint"] - value["target_residual"]
@@ -2950,6 +3678,46 @@ def compile_lfm2_structural_residual_mlp_fold(
         raise Lfm2StructuralResidualAttentionFoldError(
             "The compiled SwiGLU failed its structural invariants."
         )
+    prepared_gate_targets = tuple(
+        value.detach().to(device="cpu").contiguous().clone() for value in gate_targets
+    )
+    prepared_up_targets = tuple(
+        value.detach().to(device="cpu").contiguous().clone() for value in up_targets
+    )
+    prepared_parent_endpoints = tuple(
+        value["parent_endpoint"].detach().to(device="cpu").contiguous().clone()
+        for value in normalized
+    )
+    prepared_basis_for_report = Lfm2PreparedStructuralMlpFoldBasis(
+        cluster_plan=cluster,
+        gate_targets=prepared_gate_targets,
+        up_targets=prepared_up_targets,
+        parent_endpoints=prepared_parent_endpoints,
+        parent_case_sha256=tuple(
+            _raw_mlp_parent_case_sha256(case, case_index=case_index)
+            for case_index, case in enumerate(cases)
+        ),
+        case_rows=tuple(int(value["target_input"].shape[0]) for value in normalized),
+        neuron_groups=neuron_groups,
+        neuron_barycentric_weights=neuron_weights,
+        source_hidden_size=source_hidden,
+        target_hidden_size=target_hidden,
+        source_intermediate_size=source_intermediate,
+        target_intermediate_size=target_intermediate,
+        source_logical_parameters=source_logical,
+        target_logical_parameters=target_logical,
+        source_state_sha256=source_before,
+        target_template_sha256=_template_sha256(template_spec),
+        residual_assignment_sha256=residual_assignment_sha256,
+        cluster_ridge=cluster_ridge,
+        cluster_max_iterations=cluster_max_iterations,
+        cluster_distance_chunk_size=cluster_distance_chunk_size,
+        prepared_tensor_sha256=_prepared_mlp_tensor_sha256(
+            prepared_gate_targets,
+            prepared_up_targets,
+            prepared_parent_endpoints,
+        ),
+    )
     return Lfm2CompiledStructuralMlpFold(
         cluster_plan=cluster,
         gate_weight=compiled["w1.weight"],
@@ -2968,6 +3736,8 @@ def compile_lfm2_structural_residual_mlp_fold(
         target_template_sha256=_template_sha256(template_spec),
         residual_assignment_sha256=residual_assignment_sha256,
         source_derived_prior_sha256=prior_sha,
+        prepared_basis_sha256=prepared_basis_for_report.preparation_sha256,
+        prepared_basis_reused=False,
         compiled_state_sha256=_state_sha256(compiled),
         residual_endpoint_relative_rmse=endpoint_error,
         prior_correction_reports=(gate_fit, up_fit, down_fit),
@@ -3049,10 +3819,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
     ridge: float = 0.0,
     max_prior_delta_ratio: float | None = 1.0,
     _producer_only: bool = False,
-) -> (
-    Lfm2CompiledStructuralShortConvFold
-    | Lfm2CompiledStructuralShortConvProducerFold
-):
+) -> Lfm2CompiledStructuralShortConvFold | Lfm2CompiledStructuralShortConvProducerFold:
     """Compile a smaller dense LFM2 short-conv from every source channel.
 
     One sparse operator-local assignment is shared by B/C/x activation
@@ -3069,9 +3836,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
             "_producer_only must be boolean."
         )
     if not isinstance(residual_assignment, Lfm2SparseResidualAssignment):
-        raise TypeError(
-            "residual_assignment must be Lfm2SparseResidualAssignment."
-        )
+        raise TypeError("residual_assignment must be Lfm2SparseResidualAssignment.")
     if not cases or not all(
         isinstance(value, Lfm2CachedShortConvFoldCase) for value in cases
     ):
@@ -3128,15 +3893,9 @@ def compile_lfm2_structural_residual_short_conv_fold(
             }
         )
     source_before = _state_sha256(source_values)
-    source_in = _float_tensor(
-        source_in_proj_weight, "source_in_proj_weight", ndim=2
-    )
-    source_conv = _float_tensor(
-        source_conv_weight, "source_conv_weight", ndim=3
-    )
-    source_out = _float_tensor(
-        source_out_proj_weight, "source_out_proj_weight", ndim=2
-    )
+    source_in = _float_tensor(source_in_proj_weight, "source_in_proj_weight", ndim=2)
+    source_conv = _float_tensor(source_conv_weight, "source_conv_weight", ndim=3)
+    source_out = _float_tensor(source_out_proj_weight, "source_out_proj_weight", ndim=2)
     source_hidden = int(source_out.shape[0])
     fir_length = int(source_conv.shape[2])
     if (
@@ -3231,15 +3990,9 @@ def compile_lfm2_structural_residual_short_conv_fold(
         target_input = _float_tensor(
             case.target_input, f"{prefix}.target_input", ndim=3
         )
-        parent_b = _float_tensor(
-            case.parent_b, f"{prefix}.parent_b", ndim=3
-        )
-        parent_c = _float_tensor(
-            case.parent_c, f"{prefix}.parent_c", ndim=3
-        )
-        parent_x = _float_tensor(
-            case.parent_x, f"{prefix}.parent_x", ndim=3
-        )
+        parent_b = _float_tensor(case.parent_b, f"{prefix}.parent_b", ndim=3)
+        parent_c = _float_tensor(case.parent_c, f"{prefix}.parent_c", ndim=3)
+        parent_x = _float_tensor(case.parent_x, f"{prefix}.parent_x", ndim=3)
         parent_endpoint = _float_tensor(
             case.parent_post_operator_residual_target_space,
             f"{prefix}.parent_post_operator_residual_target_space",
@@ -3250,16 +4003,13 @@ def compile_lfm2_structural_residual_short_conv_fold(
             f"{prefix}.target_pre_operator_residual",
             ndim=3,
         )
-        batch, sequence, observed_target_hidden = map(
-            int, target_input.shape
-        )
+        batch, sequence, observed_target_hidden = map(int, target_input.shape)
         if (
             observed_target_hidden != target_hidden
             or tuple(parent_b.shape) != (batch, sequence, source_hidden)
             or tuple(parent_c.shape) != tuple(parent_b.shape)
             or tuple(parent_x.shape) != tuple(parent_b.shape)
-            or tuple(parent_endpoint.shape)
-            != (batch, sequence, target_hidden)
+            or tuple(parent_endpoint.shape) != (batch, sequence, target_hidden)
             or tuple(target_residual.shape) != tuple(parent_endpoint.shape)
         ):
             raise Lfm2StructuralResidualAttentionFoldError(
@@ -3292,9 +4042,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
                     f"{prefix}.parent_contribution has incompatible leading axes."
                 )
             if contribution.ndim == 4:
-                contribution = torch.linalg.vector_norm(
-                    contribution, dim=-1
-                )
+                contribution = torch.linalg.vector_norm(contribution, dim=-1)
         normalized.append(
             {
                 "target_input": target_input,
@@ -3310,31 +4058,19 @@ def compile_lfm2_structural_residual_short_conv_fold(
 
     with torch.no_grad():
         all_b = torch.cat(
-            [
-                value["parent_b"].reshape(-1, source_hidden)
-                for value in normalized
-            ],
+            [value["parent_b"].reshape(-1, source_hidden) for value in normalized],
             dim=0,
         )
         all_c = torch.cat(
-            [
-                value["parent_c"].reshape(-1, source_hidden)
-                for value in normalized
-            ],
+            [value["parent_c"].reshape(-1, source_hidden) for value in normalized],
             dim=0,
         )
         all_x = torch.cat(
-            [
-                value["parent_x"].reshape(-1, source_hidden)
-                for value in normalized
-            ],
+            [value["parent_x"].reshape(-1, source_hidden) for value in normalized],
             dim=0,
         )
         all_contribution = torch.cat(
-            [
-                value["contribution"].reshape(-1, source_hidden)
-                for value in normalized
-            ],
+            [value["contribution"].reshape(-1, source_hidden) for value in normalized],
             dim=0,
         )
         importance = (
@@ -3355,9 +4091,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
         channel_groups: tuple[tuple[int, ...], ...] | None = None
         channel_weights: tuple[tuple[float, ...], ...] | None = None
         for value in normalized:
-            batch, sequence, _width = map(
-                int, value["target_input"].shape
-            )
+            batch, sequence, _width = map(int, value["target_input"].shape)
             case_targets = []
             observed_groups = None
             observed_weights = None
@@ -3368,15 +4102,10 @@ def compile_lfm2_structural_residual_short_conv_fold(
                     target_hidden,
                     weighted_importance,
                 )
-                case_targets.append(
-                    folded.reshape(batch, sequence, target_hidden)
-                )
+                case_targets.append(folded.reshape(batch, sequence, target_hidden))
                 if observed_groups is None:
                     observed_groups, observed_weights = groups, weights
-                elif (
-                    observed_groups != groups
-                    or observed_weights != weights
-                ):
+                elif observed_groups != groups or observed_weights != weights:
                     raise Lfm2StructuralResidualAttentionFoldError(
                         "B/C/x sparse channel barycenters disagree."
                     )
@@ -3384,8 +4113,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
                 channel_groups = observed_groups
                 channel_weights = observed_weights
             elif (
-                channel_groups != observed_groups
-                or channel_weights != observed_weights
+                channel_groups != observed_groups or channel_weights != observed_weights
             ):
                 raise Lfm2StructuralResidualAttentionFoldError(
                     "Short-conv channel barycenters changed between cases."
@@ -3407,9 +4135,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
         residual_reduce = torch.zeros(
             (target_hidden, source_hidden), dtype=torch.float64
         )
-        for source, target in enumerate(
-            residual_assignment.source_to_target
-        ):
+        for source, target in enumerate(residual_assignment.source_to_target):
             residual_reduce[target, source] = coefficients[source]
         row_energy = residual_reduce.square().sum(dim=1)
         if bool((row_energy <= torch.finfo(torch.float64).eps).any().item()):
@@ -3429,25 +4155,17 @@ def compile_lfm2_structural_residual_short_conv_fold(
 
         source_in_blocks = source_in.chunk(3, dim=0)
         derived_in_prior = torch.cat(
-            [
-                producer_reduce @ block @ residual_lift
-                for block in source_in_blocks
-            ],
+            [producer_reduce @ block @ residual_lift for block in source_in_blocks],
             dim=0,
         )
-        derived_out_prior = (
-            residual_reduce @ source_out @ residual_lift
-        ).contiguous()
+        derived_out_prior = (residual_reduce @ source_out @ residual_lift).contiguous()
         kernel_rows, kernel_groups, kernel_weights = _weighted_group_rows(
             source_conv.unsqueeze(0),
             residual_assignment.source_to_target,
             target_hidden,
             weighted_importance,
         )
-        if (
-            kernel_groups != channel_groups
-            or kernel_weights != channel_weights
-        ):
+        if kernel_groups != channel_groups or kernel_weights != channel_weights:
             raise Lfm2StructuralResidualAttentionFoldError(
                 "Grouped FIR rows do not use the B/C/x channel assignment."
             )
@@ -3461,31 +4179,21 @@ def compile_lfm2_structural_residual_short_conv_fold(
             source_conv_bias = normalized_source_biases["conv.bias"]
             source_out_bias = normalized_source_biases["out_proj.bias"]
             derived_in_bias = torch.cat(
-                [
-                    producer_reduce @ block
-                    for block in source_in_bias.chunk(3, dim=0)
-                ],
+                [producer_reduce @ block for block in source_in_bias.chunk(3, dim=0)],
                 dim=0,
             )
-            folded_conv_bias, bias_groups, bias_weights = (
-                _weighted_group_rows(
-                    source_conv_bias.reshape(1, source_hidden),
-                    residual_assignment.source_to_target,
-                    target_hidden,
-                    weighted_importance,
-                )
+            folded_conv_bias, bias_groups, bias_weights = _weighted_group_rows(
+                source_conv_bias.reshape(1, source_hidden),
+                residual_assignment.source_to_target,
+                target_hidden,
+                weighted_importance,
             )
-            if (
-                bias_groups != channel_groups
-                or bias_weights != channel_weights
-            ):
+            if bias_groups != channel_groups or bias_weights != channel_weights:
                 raise Lfm2StructuralResidualAttentionFoldError(
                     "FIR bias does not use the B/C/x channel assignment."
                 )
             conv_bias = folded_conv_bias.squeeze(0).contiguous()
-            derived_out_bias = (
-                residual_reduce @ source_out_bias
-            ).contiguous()
+            derived_out_bias = (residual_reduce @ source_out_bias).contiguous()
 
         def normalized_prior(
             supplied: Any | None,
@@ -3550,10 +4258,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
         prior_sha = _state_sha256(prior_values)
 
         target_input_rows = torch.cat(
-            [
-                value["target_input"].reshape(-1, target_hidden)
-                for value in normalized
-            ],
+            [value["target_input"].reshape(-1, target_hidden) for value in normalized],
             dim=0,
         )
         bcx_targets = torch.cat(
@@ -3561,9 +4266,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
                 torch.cat((b_value, c_value, x_value), dim=-1).reshape(
                     -1, 3 * target_hidden
                 )
-                for b_value, c_value, x_value in zip(
-                    b_targets, c_targets, x_targets
-                )
+                for b_value, c_value, x_value in zip(b_targets, c_targets, x_targets)
             ],
             dim=0,
         )
@@ -3600,9 +4303,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
                     }
                 )
             producer_compiled = {
-                name: value.to(
-                    device="cpu", dtype=template_dtypes[name]
-                )
+                name: value.to(device="cpu", dtype=template_dtypes[name])
                 .contiguous()
                 .clone()
                 for name, value in producer_fp64.items()
@@ -3619,32 +4320,24 @@ def compile_lfm2_structural_residual_short_conv_fold(
                     }
                 )
             producer_template_spec = {
-                name: template_spec[name]
-                for name in producer_compiled
+                name: template_spec[name] for name in producer_compiled
             }
             source_after = _state_sha256(source_values)
             source_logical = sum(
-                int(value.numel())
-                for value in producer_source_values.values()
+                int(value.numel()) for value in producer_source_values.values()
             )
             target_logical = sum(
-                int(value.numel())
-                for value in producer_compiled.values()
+                int(value.numel()) for value in producer_compiled.values()
             )
             if (
                 source_before != source_after
                 or channel_groups is None
                 or channel_weights is None
-                or sorted(
-                    source
-                    for group in channel_groups
-                    for source in group
-                )
+                or sorted(source for group in channel_groups for source in group)
                 != list(range(source_hidden))
                 or target_logical >= source_logical
                 or any(
-                    tuple(producer_compiled[name].shape)
-                    != template_shapes[name]
+                    tuple(producer_compiled[name].shape) != template_shapes[name]
                     for name in producer_compiled
                 )
             ):
@@ -3655,16 +4348,10 @@ def compile_lfm2_structural_residual_short_conv_fold(
                 residual_assignment=residual_assignment,
                 in_proj_weight=producer_compiled["in_proj.weight"],
                 in_proj_bias=(
-                    None
-                    if not target_bias
-                    else producer_compiled["in_proj.bias"]
+                    None if not target_bias else producer_compiled["in_proj.bias"]
                 ),
                 conv_weight=producer_compiled["conv.weight"],
-                conv_bias=(
-                    None
-                    if not target_bias
-                    else producer_compiled["conv.bias"]
-                ),
+                conv_bias=(None if not target_bias else producer_compiled["conv.bias"]),
                 channel_groups=channel_groups,
                 channel_barycentric_weights=channel_weights,
                 source_hidden_size=source_hidden,
@@ -3674,15 +4361,9 @@ def compile_lfm2_structural_residual_short_conv_fold(
                 target_logical_parameters=target_logical,
                 source_state_sha256_before=source_before,
                 source_state_sha256_after=source_after,
-                target_template_sha256=_template_sha256(
-                    producer_template_spec
-                ),
-                source_derived_prior_sha256=_state_sha256(
-                    producer_prior_values
-                ),
-                compiled_state_sha256=_state_sha256(
-                    producer_compiled
-                ),
+                target_template_sha256=_template_sha256(producer_template_spec),
+                source_derived_prior_sha256=_state_sha256(producer_prior_values),
+                compiled_state_sha256=_state_sha256(producer_compiled),
                 prior_correction_report=in_fit,
             )
         child_contexts = _run_compiled_short_conv_contexts(
@@ -3693,17 +4374,14 @@ def compile_lfm2_structural_residual_short_conv_fold(
             conv_bias=conv_bias,
         )
         child_context_rows = torch.cat(
-            [
-                value.reshape(-1, target_hidden)
-                for value in child_contexts
-            ],
+            [value.reshape(-1, target_hidden) for value in child_contexts],
             dim=0,
         )
         endpoint_target = torch.cat(
             [
-                (
-                    value["parent_endpoint"] - value["target_residual"]
-                ).reshape(-1, target_hidden)
+                (value["parent_endpoint"] - value["target_residual"]).reshape(
+                    -1, target_hidden
+                )
                 for value in normalized
             ],
             dim=0,
@@ -3743,53 +4421,34 @@ def compile_lfm2_structural_residual_short_conv_fold(
             normalized,
             in_proj_weight=compiled["in_proj.weight"].to(torch.float64),
             in_proj_bias=(
-                None
-                if not target_bias
-                else compiled["in_proj.bias"].to(torch.float64)
+                None if not target_bias else compiled["in_proj.bias"].to(torch.float64)
             ),
             conv_weight=compiled["conv.weight"].to(torch.float64),
             conv_bias=(
-                None
-                if not target_bias
-                else compiled["conv.bias"].to(torch.float64)
+                None if not target_bias else compiled["conv.bias"].to(torch.float64)
             ),
         )
         materialized_context_rows = torch.cat(
-            [
-                value.reshape(-1, target_hidden)
-                for value in materialized_contexts
-            ],
+            [value.reshape(-1, target_hidden) for value in materialized_contexts],
             dim=0,
         )
         endpoint_prediction = (
-            materialized_context_rows
-            @ compiled["out_proj.weight"].to(torch.float64).T
+            materialized_context_rows @ compiled["out_proj.weight"].to(torch.float64).T
         )
         if target_bias:
-            endpoint_prediction = (
-                endpoint_prediction
-                + compiled["out_proj.bias"].to(torch.float64)
+            endpoint_prediction = endpoint_prediction + compiled["out_proj.bias"].to(
+                torch.float64
             )
-        endpoint_error = _relative_rmse(
-            endpoint_prediction, endpoint_target
-        )
+        endpoint_error = _relative_rmse(endpoint_prediction, endpoint_target)
 
     source_after = _state_sha256(source_values)
-    source_logical = sum(
-        int(value.numel()) for value in source_values.values()
-    )
-    target_logical = sum(
-        math.prod(shape) for shape in template_shapes.values()
-    )
+    source_logical = sum(int(value.numel()) for value in source_values.values())
+    target_logical = sum(math.prod(shape) for shape in template_shapes.values())
     if (
         source_before != source_after
         or not residual_assignment.full_source_coverage
         or not (
-            sorted(
-                source
-                for group in channel_groups
-                for source in group
-            )
+            sorted(source for group in channel_groups for source in group)
             == list(range(source_hidden))
         )
         or target_logical >= source_logical
@@ -3798,8 +4457,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
             for name in target_templates
         )
         or any(
-            int(target_templates[name].numel())
-            >= int(source_values[name].numel())
+            int(target_templates[name].numel()) >= int(source_values[name].numel())
             for name in target_templates
         )
     ):
@@ -3809,15 +4467,11 @@ def compile_lfm2_structural_residual_short_conv_fold(
     return Lfm2CompiledStructuralShortConvFold(
         residual_assignment=residual_assignment,
         in_proj_weight=compiled["in_proj.weight"],
-        in_proj_bias=(
-            None if not target_bias else compiled["in_proj.bias"]
-        ),
+        in_proj_bias=(None if not target_bias else compiled["in_proj.bias"]),
         conv_weight=compiled["conv.weight"],
         conv_bias=None if not target_bias else compiled["conv.bias"],
         out_proj_weight=compiled["out_proj.weight"],
-        out_proj_bias=(
-            None if not target_bias else compiled["out_proj.bias"]
-        ),
+        out_proj_bias=(None if not target_bias else compiled["out_proj.bias"]),
         channel_groups=channel_groups,
         channel_barycentric_weights=channel_weights,
         source_hidden_size=source_hidden,
@@ -3861,10 +4515,7 @@ def compile_lfm2_structural_residual_attention_fold(
     cluster_max_iterations: int = 16,
     cluster_distance_chunk_size: int = 512,
     _producer_only: bool = False,
-) -> (
-    Lfm2CompiledStructuralAttentionFold
-    | Lfm2CompiledStructuralAttentionProducerFold
-):
+) -> Lfm2CompiledStructuralAttentionFold | Lfm2CompiledStructuralAttentionProducerFold:
     """Compile dense target-shaped Q/K/V/O tensors from sealed cached evidence."""
 
     torch = _torch()
@@ -3885,10 +4536,10 @@ def compile_lfm2_structural_residual_attention_fold(
             max_prior_delta_ratio, "max_prior_delta_ratio"
         )
     if norm_epsilon == 0.0:
-        raise Lfm2StructuralResidualAttentionFoldError(
-            "norm_epsilon must be positive."
-        )
-    if not cases or not all(isinstance(value, Lfm2CachedAttentionFoldCase) for value in cases):
+        raise Lfm2StructuralResidualAttentionFoldError("norm_epsilon must be positive.")
+    if not cases or not all(
+        isinstance(value, Lfm2CachedAttentionFoldCase) for value in cases
+    ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "cases must contain at least one Lfm2CachedAttentionFoldCase."
         )
@@ -3925,8 +4576,7 @@ def compile_lfm2_structural_residual_attention_fold(
     source_key_value_heads = int(sk.shape[0]) // head_dim
     if (
         tuple(sv.shape) != tuple(sk.shape)
-        or tuple(so.shape)
-        != (source_hidden, source_query_heads * head_dim)
+        or tuple(so.shape) != (source_hidden, source_query_heads * head_dim)
         or source_query_heads % source_key_value_heads
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
@@ -3992,7 +4642,10 @@ def compile_lfm2_structural_residual_attention_fold(
     if residual_assignment_sha256 is not None and (
         not isinstance(residual_assignment_sha256, str)
         or len(residual_assignment_sha256) != 64
-        or any(character not in "0123456789abcdef" for character in residual_assignment_sha256)
+        or any(
+            character not in "0123456789abcdef"
+            for character in residual_assignment_sha256
+        )
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "residual_assignment_sha256 must be a lowercase SHA-256 digest."
@@ -4015,9 +4668,7 @@ def compile_lfm2_structural_residual_attention_fold(
         if prior is None:
             normalized_priors[name] = None
             continue
-        normalized_prior = _float_tensor(
-            prior, f"source_derived_{name}_prior", ndim=2
-        )
+        normalized_prior = _float_tensor(prior, f"source_derived_{name}_prior", ndim=2)
         if tuple(normalized_prior.shape) != template_shapes[name]:
             raise Lfm2StructuralResidualAttentionFoldError(
                 f"source-derived {name} prior must have target shape "
@@ -4089,15 +4740,9 @@ def compile_lfm2_structural_residual_attention_fold(
         parent_k_linear = _float_tensor(
             case.parent_key_linear, f"{prefix}.parent_key_linear", ndim=4
         )
-        parent_v = _float_tensor(
-            case.parent_value, f"{prefix}.parent_value", ndim=4
-        )
-        parent_q = _float_tensor(
-            case.parent_query, f"{prefix}.parent_query", ndim=4
-        )
-        parent_k = _float_tensor(
-            case.parent_key, f"{prefix}.parent_key", ndim=4
-        )
+        parent_v = _float_tensor(case.parent_value, f"{prefix}.parent_value", ndim=4)
+        parent_q = _float_tensor(case.parent_query, f"{prefix}.parent_query", ndim=4)
+        parent_k = _float_tensor(case.parent_key, f"{prefix}.parent_key", ndim=4)
         parent_context = _float_tensor(
             case.parent_context, f"{prefix}.parent_context", ndim=4
         )
@@ -4111,9 +4756,7 @@ def compile_lfm2_structural_residual_attention_fold(
             f"{prefix}.target_pre_attention_residual",
             ndim=3,
         )
-        batch, query_length, observed_target_hidden = map(
-            int, target_q_input.shape
-        )
+        batch, query_length, observed_target_hidden = map(int, target_q_input.shape)
         key_length = int(target_kv_input.shape[1])
         if (
             int(target_kv_input.shape[0]) != batch
@@ -4298,10 +4941,7 @@ def compile_lfm2_structural_residual_attention_fold(
     with torch.no_grad():
         query_signatures = torch.cat(
             [
-                (
-                    value["query"]
-                    * value["query_sqrt_weights"][:, None, :, None]
-                )
+                (value["query"] * value["query_sqrt_weights"][:, None, :, None])
                 .permute(1, 0, 2, 3)
                 .reshape(source_query_heads, -1)
                 for value in normalized
@@ -4310,10 +4950,7 @@ def compile_lfm2_structural_residual_attention_fold(
         )
         key_signatures = torch.cat(
             [
-                (
-                    value["key"]
-                    * value["key_value_sqrt_weights"][:, None, :, None]
-                )
+                (value["key"] * value["key_value_sqrt_weights"][:, None, :, None])
                 .permute(1, 0, 2, 3)
                 .reshape(source_key_value_heads, -1)
                 for value in normalized
@@ -4322,10 +4959,7 @@ def compile_lfm2_structural_residual_attention_fold(
         )
         value_signatures = torch.cat(
             [
-                (
-                    value["value"]
-                    * value["key_value_sqrt_weights"][:, None, :, None]
-                )
+                (value["value"] * value["key_value_sqrt_weights"][:, None, :, None])
                 .permute(1, 0, 2, 3)
                 .reshape(source_key_value_heads, -1)
                 for value in normalized
@@ -4334,10 +4968,7 @@ def compile_lfm2_structural_residual_attention_fold(
         )
         context_signatures = torch.cat(
             [
-                (
-                    value["context"]
-                    * value["query_sqrt_weights"][:, None, :, None]
-                )
+                (value["context"] * value["query_sqrt_weights"][:, None, :, None])
                 .permute(1, 0, 2, 3)
                 .reshape(source_query_heads, -1)
                 for value in normalized
@@ -4395,10 +5026,9 @@ def compile_lfm2_structural_residual_attention_fold(
             + context_signatures.square().mean(dim=1)
             + contribution_signatures.square().mean(dim=1)
         )
-        source_kv_importance = (
-            key_signatures.square().mean(dim=1)
-            + value_signatures.square().mean(dim=1)
-        )
+        source_kv_importance = key_signatures.square().mean(
+            dim=1
+        ) + value_signatures.square().mean(dim=1)
 
         case_targets: list[dict[str, Any]] = []
         query_groups: tuple[tuple[int, ...], ...] | None = None
@@ -4491,17 +5121,11 @@ def compile_lfm2_structural_residual_attention_fold(
             )
 
         query_fit_sqrt = torch.cat(
-            [
-                value["query_sqrt_weights"].reshape(-1, 1)
-                for value in normalized
-            ],
+            [value["query_sqrt_weights"].reshape(-1, 1) for value in normalized],
             dim=0,
         )
         key_value_fit_sqrt = torch.cat(
-            [
-                value["key_value_sqrt_weights"].reshape(-1, 1)
-                for value in normalized
-            ],
+            [value["key_value_sqrt_weights"].reshape(-1, 1) for value in normalized],
             dim=0,
         )
         query_input_rows = torch.cat(
@@ -4520,27 +5144,27 @@ def compile_lfm2_structural_residual_attention_fold(
         )
         query_target_rows = torch.cat(
             [
-                value["q_linear"].permute(0, 2, 1, 3).reshape(
-                    -1, target_query_heads * head_dim
-                )
+                value["q_linear"]
+                .permute(0, 2, 1, 3)
+                .reshape(-1, target_query_heads * head_dim)
                 for value in case_targets
             ],
             dim=0,
         )
         key_target_rows = torch.cat(
             [
-                value["k_linear"].permute(0, 2, 1, 3).reshape(
-                    -1, target_key_value_heads * head_dim
-                )
+                value["k_linear"]
+                .permute(0, 2, 1, 3)
+                .reshape(-1, target_key_value_heads * head_dim)
                 for value in case_targets
             ],
             dim=0,
         )
         value_target_rows = torch.cat(
             [
-                value["value"].permute(0, 2, 1, 3).reshape(
-                    -1, target_key_value_heads * head_dim
-                )
+                value["value"]
+                .permute(0, 2, 1, 3)
+                .reshape(-1, target_key_value_heads * head_dim)
                 for value in case_targets
             ],
             dim=0,
@@ -4576,42 +5200,38 @@ def compile_lfm2_structural_residual_attention_fold(
                 "v_proj.weight": value_weight,
             }
             producer_compiled = {
-                name: value.to(
-                    device="cpu", dtype=template_dtypes[name]
-                )
+                name: value.to(device="cpu", dtype=template_dtypes[name])
                 .contiguous()
                 .clone()
                 for name, value in producer_fp64.items()
             }
             score_predictions = []
             score_targets = []
-            materialized_q = producer_compiled[
-                "q_proj.weight"
-            ].to(torch.float64)
-            materialized_k = producer_compiled[
-                "k_proj.weight"
-            ].to(torch.float64)
+            materialized_q = producer_compiled["q_proj.weight"].to(torch.float64)
+            materialized_k = producer_compiled["k_proj.weight"].to(torch.float64)
             for value, targets in zip(normalized, case_targets):
-                batch, query_length, _hidden = map(
-                    int, value["target_q_input"].shape
-                )
+                batch, query_length, _hidden = map(int, value["target_q_input"].shape)
                 key_length = int(value["target_kv_input"].shape[1])
                 q_linear_child = (
-                    value["target_q_input"] @ materialized_q.T
-                ).reshape(
-                    batch,
-                    query_length,
-                    target_query_heads,
-                    head_dim,
-                ).permute(0, 2, 1, 3)
+                    (value["target_q_input"] @ materialized_q.T)
+                    .reshape(
+                        batch,
+                        query_length,
+                        target_query_heads,
+                        head_dim,
+                    )
+                    .permute(0, 2, 1, 3)
+                )
                 k_linear_child = (
-                    value["target_kv_input"] @ materialized_k.T
-                ).reshape(
-                    batch,
-                    key_length,
-                    target_key_value_heads,
-                    head_dim,
-                ).permute(0, 2, 1, 3)
+                    (value["target_kv_input"] @ materialized_k.T)
+                    .reshape(
+                        batch,
+                        key_length,
+                        target_key_value_heads,
+                        head_dim,
+                    )
+                    .permute(0, 2, 1, 3)
+                )
                 q_child = _apply_rope(
                     _rms_norm(q_linear_child, q_norm, norm_epsilon),
                     value["query_cosine"],
@@ -4643,12 +5263,10 @@ def compile_lfm2_structural_residual_attention_fold(
                 "v_proj.weight": source_value_weight,
             }
             source_logical = sum(
-                int(value.numel())
-                for value in producer_source_values.values()
+                int(value.numel()) for value in producer_source_values.values()
             )
             target_logical = sum(
-                int(value.numel())
-                for value in producer_compiled.values()
+                int(value.numel()) for value in producer_compiled.values()
             )
             assert query_groups is not None
             assert query_weights is not None
@@ -4656,17 +5274,9 @@ def compile_lfm2_structural_residual_attention_fold(
             assert kv_weights is not None
             if (
                 source_before != source_after
-                or sorted(
-                    source
-                    for group in query_groups
-                    for source in group
-                )
+                or sorted(source for group in query_groups for source in group)
                 != list(range(source_query_heads))
-                or sorted(
-                    source
-                    for group in kv_groups
-                    for source in group
-                )
+                or sorted(source for group in kv_groups for source in group)
                 != list(range(source_key_value_heads))
                 or target_logical >= source_logical
                 or any(
@@ -4684,8 +5294,7 @@ def compile_lfm2_structural_residual_attention_fold(
                 if normalized_priors[name] is not None
             }
             producer_template_spec = {
-                name: template_spec[name]
-                for name in producer_compiled
+                name: template_spec[name] for name in producer_compiled
             }
             return Lfm2CompiledStructuralAttentionProducerFold(
                 topology=topology,
@@ -4701,33 +5310,15 @@ def compile_lfm2_structural_residual_attention_fold(
                 target_logical_parameters=target_logical,
                 source_state_sha256_before=source_before,
                 source_state_sha256_after=source_after,
-                target_template_sha256=_template_sha256(
-                    producer_template_spec
-                ),
-                residual_assignment_sha256=(
-                    residual_assignment_sha256
-                ),
+                target_template_sha256=_template_sha256(producer_template_spec),
+                residual_assignment_sha256=(residual_assignment_sha256),
                 source_derived_prior_sha256=(
-                    None
-                    if not producer_priors
-                    else _state_sha256(producer_priors)
+                    None if not producer_priors else _state_sha256(producer_priors)
                 ),
-                compiled_state_sha256=_state_sha256(
-                    producer_compiled
-                ),
+                compiled_state_sha256=_state_sha256(producer_compiled),
                 centered_score_relative_rmse=_relative_rmse(
-                    torch.cat(
-                        [
-                            value.reshape(-1)
-                            for value in score_predictions
-                        ]
-                    ),
-                    torch.cat(
-                        [
-                            value.reshape(-1)
-                            for value in score_targets
-                        ]
-                    ),
+                    torch.cat([value.reshape(-1) for value in score_predictions]),
+                    torch.cat([value.reshape(-1) for value in score_targets]),
                 ),
                 query_row_weighting_mode=query_row_weighting_mode,
                 key_value_row_weighting_mode=key_value_row_weighting_mode,
@@ -4752,23 +5343,20 @@ def compile_lfm2_structural_residual_attention_fold(
             batch, query_length, _hidden = map(int, value["target_q_input"].shape)
             key_length = int(value["target_kv_input"].shape[1])
             q_linear_child = (
-                value["target_q_input"]
-                @ query_weight.T
-            ).reshape(batch, query_length, target_query_heads, head_dim).permute(
-                0, 2, 1, 3
+                (value["target_q_input"] @ query_weight.T)
+                .reshape(batch, query_length, target_query_heads, head_dim)
+                .permute(0, 2, 1, 3)
             )
             k_linear_child = (
-                value["target_kv_input"]
-                @ key_weight.T
-            ).reshape(
-                batch, key_length, target_key_value_heads, head_dim
-            ).permute(0, 2, 1, 3)
+                (value["target_kv_input"] @ key_weight.T)
+                .reshape(batch, key_length, target_key_value_heads, head_dim)
+                .permute(0, 2, 1, 3)
+            )
             value_child = (
-                value["target_kv_input"]
-                @ value_weight.T
-            ).reshape(
-                batch, key_length, target_key_value_heads, head_dim
-            ).permute(0, 2, 1, 3)
+                (value["target_kv_input"] @ value_weight.T)
+                .reshape(batch, key_length, target_key_value_heads, head_dim)
+                .permute(0, 2, 1, 3)
+            )
             q_child = _apply_rope(
                 _rms_norm(q_linear_child, q_norm, norm_epsilon),
                 value["query_cosine"],
@@ -4790,8 +5378,7 @@ def compile_lfm2_structural_residual_attention_fold(
                 * value["query_sqrt_weights"][:, None, :, None]
             )
             score_targets.append(
-                targets["target_scores"]
-                * value["query_sqrt_weights"][:, None, :, None]
+                targets["target_scores"] * value["query_sqrt_weights"][:, None, :, None]
             )
             if value["mask"] is not None:
                 scores = scores.masked_fill(~value["mask"].unsqueeze(1), -1e30)
@@ -4807,9 +5394,9 @@ def compile_lfm2_structural_residual_attention_fold(
                 * value["query_sqrt_weights"].reshape(-1, 1)
             )
             endpoint_rows.append(
-                (
-                    value["parent_output"] - value["target_residual"]
-                ).reshape(batch * query_length, target_output)
+                (value["parent_output"] - value["target_residual"]).reshape(
+                    batch * query_length, target_output
+                )
                 * value["query_sqrt_weights"].reshape(-1, 1)
             )
         child_context_design = torch.cat(child_context_rows, dim=0)
@@ -4856,11 +5443,7 @@ def compile_lfm2_structural_residual_attention_fold(
         source_unchanged=source_before == source_after,
         blank_target_values_read=False,
         full_source_query_coverage=(
-            sorted(
-                source
-                for members in (query_groups or ())
-                for source in members
-            )
+            sorted(source for members in (query_groups or ()) for source in members)
             == list(range(source_query_heads))
         ),
         full_source_key_value_coverage=(
@@ -4905,9 +5488,7 @@ def compile_lfm2_structural_residual_attention_fold(
         residual_endpoint_relative_rmse=endpoint_error,
         query_row_weighting_mode=query_row_weighting_mode,
         key_value_row_weighting_mode=key_value_row_weighting_mode,
-        query_row_sqrt_weight_bundle_sha256=(
-            query_row_sqrt_weight_bundle_sha256
-        ),
+        query_row_sqrt_weight_bundle_sha256=(query_row_sqrt_weight_bundle_sha256),
         key_value_row_sqrt_weight_bundle_sha256=(
             key_value_row_sqrt_weight_bundle_sha256
         ),
@@ -4939,9 +5520,7 @@ def compile_lfm2_structural_attention_producer_fold(
         **compiler_inputs,
         _producer_only=True,
     )
-    if not isinstance(
-        result, Lfm2CompiledStructuralAttentionProducerFold
-    ):
+    if not isinstance(result, Lfm2CompiledStructuralAttentionProducerFold):
         raise Lfm2StructuralResidualAttentionFoldError(
             "Attention producer compiler returned the wrong artifact."
         )
@@ -4961,9 +5540,7 @@ def compile_lfm2_structural_short_conv_producer_fold(
         **compiler_inputs,
         _producer_only=True,
     )
-    if not isinstance(
-        result, Lfm2CompiledStructuralShortConvProducerFold
-    ):
+    if not isinstance(result, Lfm2CompiledStructuralShortConvProducerFold):
         raise Lfm2StructuralResidualAttentionFoldError(
             "Short-conv producer compiler returned the wrong artifact."
         )
@@ -4995,15 +5572,12 @@ def _actual_attention_context_rows(
         if (
             int(context.shape[0]) != batch
             or int(context.shape[2]) != query_length
-            or int(context.shape[1]) * int(context.shape[3])
-            != context_width
+            or int(context.shape[1]) * int(context.shape[3]) != context_width
         ):
             raise Lfm2StructuralResidualAttentionFoldError(
                 f"{name} rank-4 context must be [batch, heads, query, dim]."
             )
-        return context.permute(0, 2, 1, 3).reshape(
-            batch * query_length, context_width
-        )
+        return context.permute(0, 2, 1, 3).reshape(batch * query_length, context_width)
     if context.ndim == 3:
         if tuple(context.shape) != (
             batch,
@@ -5039,10 +5613,7 @@ def compile_lfm2_structural_attention_consumer_fold(
     if (
         not cases
         or len(actual_child_contexts) != len(cases)
-        or not all(
-            isinstance(value, Lfm2CachedAttentionFoldCase)
-            for value in cases
-        )
+        or not all(isinstance(value, Lfm2CachedAttentionFoldCase) for value in cases)
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "Actual attention contexts must align one-to-one with cases."
@@ -5059,9 +5630,7 @@ def compile_lfm2_structural_attention_consumer_fold(
     target_output, context_width = template_shape
     prior = None
     if output_weight_prior is not None:
-        prior = _float_tensor(
-            output_weight_prior, "output_weight_prior", ndim=2
-        )
+        prior = _float_tensor(output_weight_prior, "output_weight_prior", ndim=2)
         if tuple(prior.shape) != template_shape:
             raise Lfm2StructuralResidualAttentionFoldError(
                 "output_weight_prior does not match the target O template."
@@ -5097,9 +5666,7 @@ def compile_lfm2_structural_attention_consumer_fold(
                 f"cases[{case_index}] endpoint topology is incompatible."
             )
         endpoint_rows.append(
-            (parent_endpoint - target_residual).reshape(
-                -1, target_output
-            )
+            (parent_endpoint - target_residual).reshape(-1, target_output)
         )
     design = torch.cat(context_rows, dim=0)
     endpoint = torch.cat(endpoint_rows, dim=0)
@@ -5111,15 +5678,9 @@ def compile_lfm2_structural_attention_consumer_fold(
         prior=prior,
         max_prior_delta_ratio=max_prior_delta_ratio,
     )
-    compiled_weight = (
-        weight.to(device="cpu", dtype=template_dtype)
-        .contiguous()
-        .clone()
-    )
+    compiled_weight = weight.to(device="cpu", dtype=template_dtype).contiguous().clone()
     compiled_state = {"out_proj.weight": compiled_weight}
-    materialized_prediction = (
-        design @ compiled_weight.to(torch.float64).T
-    )
+    materialized_prediction = design @ compiled_weight.to(torch.float64).T
     return Lfm2CompiledStructuralAttentionConsumerFold(
         output_weight=compiled_weight,
         context_width=context_width,
@@ -5129,15 +5690,10 @@ def compile_lfm2_structural_attention_consumer_fold(
             {"out_proj.weight": (template_shape, str(template_dtype))}
         ),
         source_derived_prior_sha256=(
-            None
-            if prior is None
-            else _state_sha256({"out_proj.weight": prior})
+            None if prior is None else _state_sha256({"out_proj.weight": prior})
         ),
         actual_child_context_sha256=_state_sha256(
-            {
-                f"context.{index:04d}": value
-                for index, value in enumerate(context_rows)
-            }
+            {f"context.{index:04d}": value for index, value in enumerate(context_rows)}
         ),
         endpoint_target_sha256=_tensor_sha256(endpoint),
         compiled_state_sha256=_state_sha256(compiled_state),
@@ -5211,9 +5767,7 @@ def _normalize_attention_value_output_case(
         f"{prefix}.target_pre_attention_residual",
         ndim=3,
     )
-    batch, query_length, target_hidden = map(
-        int, target_q_input.shape
-    )
+    batch, query_length, target_hidden = map(int, target_q_input.shape)
     key_length = int(target_kv_input.shape[1])
     if (
         target_hidden != topology.target_hidden_size
@@ -5271,9 +5825,7 @@ def _normalize_attention_value_output_case(
         ("key_sine", case.key_sine, key_length),
     ):
         normalized = (
-            None
-            if value is None
-            else _float_tensor(value, f"{prefix}.{name}", ndim=3)
+            None if value is None else _float_tensor(value, f"{prefix}.{name}", ndim=3)
         )
         if normalized is not None and tuple(normalized.shape) != (
             batch,
@@ -5295,14 +5847,11 @@ def _normalize_attention_value_output_case(
         norm_epsilon,
     )
     if all(value is None for value in supplied_rope):
-        if (
-            normalized_query_norm_weight is None
-            and torch.allclose(
-                normalized_parent_q,
-                parent_q,
-                rtol=1e-7,
-                atol=1e-9,
-            )
+        if normalized_query_norm_weight is None and torch.allclose(
+            normalized_parent_q,
+            parent_q,
+            rtol=1e-7,
+            atol=1e-9,
         ):
             query_cosine = query_sine = None
         else:
@@ -5312,14 +5861,11 @@ def _normalize_attention_value_output_case(
                 f"{prefix}.query",
                 evidence_dtype=rope_evidence_dtype,
             )
-        if (
-            normalized_key_norm_weight is None
-            and torch.allclose(
-                normalized_parent_k,
-                parent_k,
-                rtol=1e-7,
-                atol=1e-9,
-            )
+        if normalized_key_norm_weight is None and torch.allclose(
+            normalized_parent_k,
+            parent_k,
+            rtol=1e-7,
+            atol=1e-9,
         ):
             key_cosine = key_sine = None
         else:
@@ -5363,18 +5909,26 @@ def _normalize_attention_value_output_case(
 
     query_weight = producer.query_weight.to(torch.float64)
     key_weight = producer.key_weight.to(torch.float64)
-    q_linear = (target_q_input @ query_weight.T).reshape(
-        batch,
-        query_length,
-        topology.target_query_heads,
-        topology.head_dim,
-    ).permute(0, 2, 1, 3)
-    k_linear = (target_kv_input @ key_weight.T).reshape(
-        batch,
-        key_length,
-        topology.target_key_value_heads,
-        topology.head_dim,
-    ).permute(0, 2, 1, 3)
+    q_linear = (
+        (target_q_input @ query_weight.T)
+        .reshape(
+            batch,
+            query_length,
+            topology.target_query_heads,
+            topology.head_dim,
+        )
+        .permute(0, 2, 1, 3)
+    )
+    k_linear = (
+        (target_kv_input @ key_weight.T)
+        .reshape(
+            batch,
+            key_length,
+            topology.target_key_value_heads,
+            topology.head_dim,
+        )
+        .permute(0, 2, 1, 3)
+    )
     query = _apply_rope(
         _rms_norm(
             q_linear,
@@ -5416,9 +5970,9 @@ def _normalize_attention_value_output_case(
         "key_mask": mask,
         "probabilities": probabilities,
         "weighted_inputs": weighted_inputs,
-        "endpoint": (
-            parent_endpoint - target_residual
-        ).reshape(batch * query_length, topology.target_output_size),
+        "endpoint": (parent_endpoint - target_residual).reshape(
+            batch * query_length, topology.target_output_size
+        ),
     }
 
 
@@ -5447,16 +6001,10 @@ def evaluate_lfm2_compiled_attention_producer_score_preservation(
         producer,
         Lfm2CompiledStructuralAttentionProducerFold,
     ):
-        raise TypeError(
-            "producer must be Lfm2CompiledStructuralAttentionProducerFold."
-        )
+        raise TypeError("producer must be Lfm2CompiledStructuralAttentionProducerFold.")
     selected_cases = tuple(cases)
-    if (
-        not selected_cases
-        or any(
-            not isinstance(case, Lfm2CachedAttentionFoldCase)
-            for case in selected_cases
-        )
+    if not selected_cases or any(
+        not isinstance(case, Lfm2CachedAttentionFoldCase) for case in selected_cases
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "cases must contain held-out Lfm2CachedAttentionFoldCase values."
@@ -5480,22 +6028,17 @@ def evaluate_lfm2_compiled_attention_producer_score_preservation(
             ndim=1,
         )
     )
-    if q_norm is not None and tuple(q_norm.shape) != (
-        topology.head_dim,
-    ):
+    if q_norm is not None and tuple(q_norm.shape) != (topology.head_dim,):
         raise Lfm2StructuralResidualAttentionFoldError(
             "query_norm_weight must have shape [head_dim]."
         )
-    if k_norm is not None and tuple(k_norm.shape) != (
-        topology.head_dim,
-    ):
+    if k_norm is not None and tuple(k_norm.shape) != (topology.head_dim,):
         raise Lfm2StructuralResidualAttentionFoldError(
             "key_norm_weight must have shape [head_dim]."
         )
     if (
         len(producer.query_groups) != topology.target_query_heads
-        or len(producer.query_barycentric_weights)
-        != topology.target_query_heads
+        or len(producer.query_barycentric_weights) != topology.target_query_heads
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "Compiled Q/K query-head barycentric evidence is incomplete."
@@ -5553,8 +6096,7 @@ def evaluate_lfm2_compiled_attention_producer_score_preservation(
                         for member in members
                     )
                     or not all(
-                        math.isfinite(float(weight))
-                        and float(weight) >= 0.0
+                        math.isfinite(float(weight)) and float(weight) >= 0.0
                         for weight in weights
                     )
                 ):
@@ -5569,8 +6111,7 @@ def evaluate_lfm2_compiled_attention_producer_score_preservation(
                     abs_tol=1e-10,
                 ):
                     raise Lfm2StructuralResidualAttentionFoldError(
-                        "Compiled Q/K barycentric query weights do not sum "
-                        "to one."
+                        "Compiled Q/K barycentric query weights do not sum to one."
                     )
                 index = torch.tensor(members, dtype=torch.long)
                 selected = source_scores.index_select(1, index)
@@ -5588,14 +6129,15 @@ def evaluate_lfm2_compiled_attention_producer_score_preservation(
                         "held-out reference scores."
                     )
                 grouped_scores.append(grouped)
-            reference_scores.append(
-                torch.stack(grouped_scores, dim=1).contiguous()
-            )
+            reference_scores.append(torch.stack(grouped_scores, dim=1).contiguous())
             candidate_scores.append(
-                normalized["scores"].detach().to(
+                normalized["scores"]
+                .detach()
+                .to(
                     device="cpu",
                     dtype=torch.float64,
-                ).contiguous()
+                )
+                .contiguous()
             )
             key_masks.append(normalized["key_mask"])
 
@@ -5626,12 +6168,8 @@ def _attention_context_rows_from_value(
         weighted_inputs = case["weighted_inputs"]
         head_contexts = []
         for query_head in range(topology.target_query_heads):
-            group = (
-                query_head // topology.target_query_heads_per_group
-            )
-            head_contexts.append(
-                weighted_inputs[:, query_head] @ value_heads[group].T
-            )
+            group = query_head // topology.target_query_heads_per_group
+            head_contexts.append(weighted_inputs[:, query_head] @ value_heads[group].T)
         context = _torch().stack(head_contexts, dim=1)
         rows.append(
             context.permute(0, 2, 1, 3).reshape(
@@ -5659,9 +6197,7 @@ def _fit_attention_value_from_context_target(
     for case in normalized_cases:
         row_count = int(case["batch"]) * int(case["query_length"])
         context_heads.append(
-            context_target[
-                context_offset : context_offset + row_count
-            ]
+            context_target[context_offset : context_offset + row_count]
             .reshape(
                 int(case["batch"]),
                 int(case["query_length"]),
@@ -5760,9 +6296,7 @@ def _fit_attention_value_context_transport(
     for case in normalized_cases:
         row_count = int(case["batch"]) * int(case["query_length"])
         target_heads.append(
-            context_target[
-                context_offset : context_offset + row_count
-            ]
+            context_target[context_offset : context_offset + row_count]
             .reshape(
                 int(case["batch"]),
                 int(case["query_length"]),
@@ -5823,8 +6357,7 @@ def _fit_attention_value_context_transport(
             design,
             target,
             role=(
-                f"attention_value_context_transport_iteration_{iteration}_"
-                f"group_{group}"
+                f"attention_value_context_transport_iteration_{iteration}_group_{group}"
             ),
             ridge=ridge,
             prior=transform_prior,
@@ -5838,12 +6371,8 @@ def _fit_attention_value_context_transport(
     for heads in actual_context_heads:
         case_heads = []
         for query_head in range(topology.target_query_heads):
-            group = (
-                query_head // topology.target_query_heads_per_group
-            )
-            case_heads.append(
-                heads[:, query_head] @ transforms[group].T
-            )
+            group = query_head // topology.target_query_heads_per_group
+            case_heads.append(heads[:, query_head] @ transforms[group].T)
         transported_heads.append(torch.stack(case_heads, dim=1))
     transported_rows = tuple(
         heads.permute(0, 2, 1, 3).reshape(
@@ -5888,16 +6417,11 @@ def compile_lfm2_structural_attention_value_output_fold(
         producer,
         Lfm2CompiledStructuralAttentionProducerFold,
     ):
-        raise TypeError(
-            "producer must be Lfm2CompiledStructuralAttentionProducerFold."
-        )
+        raise TypeError("producer must be Lfm2CompiledStructuralAttentionProducerFold.")
     if (
         not cases
         or len(actual_child_contexts) != len(cases)
-        or not all(
-            isinstance(value, Lfm2CachedAttentionFoldCase)
-            for value in cases
-        )
+        or not all(isinstance(value, Lfm2CachedAttentionFoldCase) for value in cases)
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "Actual attention contexts must align one-to-one with cases."
@@ -5921,9 +6445,7 @@ def compile_lfm2_structural_attention_value_output_fold(
         "norm_epsilon",
     )
     if norm_epsilon == 0.0:
-        raise Lfm2StructuralResidualAttentionFoldError(
-            "norm_epsilon must be positive."
-        )
+        raise Lfm2StructuralResidualAttentionFoldError("norm_epsilon must be positive.")
     if max_prior_delta_ratio is not None:
         max_prior_delta_ratio = _nonnegative_float(
             max_prior_delta_ratio,
@@ -5947,10 +6469,7 @@ def compile_lfm2_structural_attention_value_output_fold(
         topology.target_output_size,
         topology.target_query_heads * topology.head_dim,
     )
-    if (
-        value_shape != expected_value_shape
-        or output_shape != expected_output_shape
-    ):
+    if value_shape != expected_value_shape or output_shape != expected_output_shape:
         raise Lfm2StructuralResidualAttentionFoldError(
             "Coupled V/O target templates do not match producer topology."
         )
@@ -5995,15 +6514,11 @@ def compile_lfm2_structural_attention_value_output_fold(
             ndim=1,
         )
     )
-    if q_norm is not None and tuple(q_norm.shape) != (
-        topology.head_dim,
-    ):
+    if q_norm is not None and tuple(q_norm.shape) != (topology.head_dim,):
         raise Lfm2StructuralResidualAttentionFoldError(
             "query_norm_weight must have shape [head_dim]."
         )
-    if k_norm is not None and tuple(k_norm.shape) != (
-        topology.head_dim,
-    ):
+    if k_norm is not None and tuple(k_norm.shape) != (topology.head_dim,):
         raise Lfm2StructuralResidualAttentionFoldError(
             "key_norm_weight must have shape [head_dim]."
         )
@@ -6026,9 +6541,7 @@ def compile_lfm2_structural_attention_value_output_fold(
             _actual_attention_context_rows(
                 actual_context,
                 case=case,
-                context_width=(
-                    topology.target_query_heads * topology.head_dim
-                ),
+                context_width=(topology.target_query_heads * topology.head_dim),
                 name=f"actual_child_contexts[{case_index}]",
             )
             for case_index, (actual_context, case) in enumerate(
@@ -6046,9 +6559,7 @@ def compile_lfm2_structural_attention_value_output_fold(
             reconstructed_context,
             actual_context,
         )
-        use_analytical_value_design = (
-            context_error <= context_equivalence_tolerance
-        )
+        use_analytical_value_design = context_error <= context_equivalence_tolerance
         value_context_solver = (
             "complete-fixed-score-weighted-input"
             if use_analytical_value_design
@@ -6072,12 +6583,8 @@ def compile_lfm2_structural_attention_value_output_fold(
             prior=output_prior,
             max_prior_delta_ratio=max_prior_delta_ratio,
         )
-        accepted_value = (
-            live_value.to(dtype=value_dtype).to(torch.float64)
-        )
-        accepted_output = (
-            baseline_output.to(dtype=output_dtype).to(torch.float64)
-        )
+        accepted_value = live_value.to(dtype=value_dtype).to(torch.float64)
+        accepted_output = baseline_output.to(dtype=output_dtype).to(torch.float64)
         accepted_context_rows = (
             _attention_context_rows_from_value(
                 normalized_cases,
@@ -6098,13 +6605,9 @@ def compile_lfm2_structural_attention_value_output_fold(
         accepted_iterations = 0
 
         for iteration in range(1, iterations + 1):
-            gram = (
-                accepted_output.T @ accepted_output
-                + context_ridge
-                * torch.eye(
-                    int(accepted_output.shape[1]),
-                    dtype=torch.float64,
-                )
+            gram = accepted_output.T @ accepted_output + context_ridge * torch.eye(
+                int(accepted_output.shape[1]),
+                dtype=torch.float64,
             )
             right = endpoint_target @ accepted_output
             try:
@@ -6152,18 +6655,14 @@ def compile_lfm2_structural_attention_value_output_fold(
                     max_prior_delta_ratio=max_prior_delta_ratio,
                     iteration=iteration,
                 )
-            candidate_value = (
-                candidate_value_fp64.to(dtype=value_dtype).to(
-                    torch.float64
-                )
+            candidate_value = candidate_value_fp64.to(dtype=value_dtype).to(
+                torch.float64
             )
             if use_analytical_value_design:
-                candidate_context_rows = (
-                    _attention_context_rows_from_value(
-                        normalized_cases,
-                        candidate_value,
-                        topology,
-                    )
+                candidate_context_rows = _attention_context_rows_from_value(
+                    normalized_cases,
+                    candidate_value,
+                    topology,
                 )
             else:
                 # Refit the materialized V transform so endpoint scoring tracks
@@ -6192,26 +6691,16 @@ def compile_lfm2_structural_attention_value_output_fold(
                 materialized_head_cases = []
                 for heads in actual_context_head_cases:
                     case_heads = []
-                    for query_head in range(
-                        topology.target_query_heads
-                    ):
-                        group = (
-                            query_head
-                            // topology.target_query_heads_per_group
-                        )
+                    for query_head in range(topology.target_query_heads):
+                        group = query_head // topology.target_query_heads_per_group
                         case_heads.append(
-                            heads[:, query_head]
-                            @ materialized_transforms[group].T
+                            heads[:, query_head] @ materialized_transforms[group].T
                         )
-                    materialized_head_cases.append(
-                        torch.stack(case_heads, dim=1)
-                    )
+                    materialized_head_cases.append(torch.stack(case_heads, dim=1))
                 candidate_context_rows = tuple(
                     heads.permute(0, 2, 1, 3).reshape(
-                        int(case["batch"])
-                        * int(case["query_length"]),
-                        topology.target_query_heads
-                        * topology.head_dim,
+                        int(case["batch"]) * int(case["query_length"]),
+                        topology.target_query_heads * topology.head_dim,
                     )
                     for heads, case in zip(
                         materialized_head_cases,
@@ -6225,17 +6714,13 @@ def compile_lfm2_structural_attention_value_output_fold(
             candidate_output_fp64, output_report = _fit_linear(
                 candidate_context,
                 endpoint_target,
-                role=(
-                    f"attention_value_output_iteration_{iteration}_output"
-                ),
+                role=(f"attention_value_output_iteration_{iteration}_output"),
                 ridge=ridge,
                 prior=output_prior,
                 max_prior_delta_ratio=max_prior_delta_ratio,
             )
-            candidate_output = (
-                candidate_output_fp64.to(dtype=output_dtype).to(
-                    torch.float64
-                )
+            candidate_output = candidate_output_fp64.to(dtype=output_dtype).to(
+                torch.float64
             )
             candidate_error = _relative_rmse(
                 candidate_context @ candidate_output.T,
@@ -6252,14 +6737,10 @@ def compile_lfm2_structural_attention_value_output_fold(
             accepted_iterations += 1
 
     compiled_value = (
-        accepted_value.to(device="cpu", dtype=value_dtype)
-        .contiguous()
-        .clone()
+        accepted_value.to(device="cpu", dtype=value_dtype).contiguous().clone()
     )
     compiled_output = (
-        accepted_output.to(device="cpu", dtype=output_dtype)
-        .contiguous()
-        .clone()
+        accepted_output.to(device="cpu", dtype=output_dtype).contiguous().clone()
     )
     compiled_state = {
         "v_proj.weight": compiled_value,
@@ -6317,9 +6798,7 @@ def _actual_short_conv_context_rows(
 ) -> Any:
     raw_ndim = getattr(value, "ndim", None)
     if raw_ndim not in {2, 3}:
-        raise Lfm2StructuralResidualAttentionFoldError(
-            f"{name} must have rank 2 or 3."
-        )
+        raise Lfm2StructuralResidualAttentionFoldError(f"{name} must have rank 2 or 3.")
     context = _float_tensor(value, name, ndim=int(raw_ndim))
     endpoint = _float_tensor(
         case.parent_post_operator_residual_target_space,
@@ -6366,10 +6845,7 @@ def compile_lfm2_structural_short_conv_consumer_fold(
     if (
         not cases
         or len(actual_child_contexts) != len(cases)
-        or not all(
-            isinstance(value, Lfm2CachedShortConvFoldCase)
-            for value in cases
-        )
+        or not all(isinstance(value, Lfm2CachedShortConvFoldCase) for value in cases)
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "Actual short-conv contexts must align one-to-one with cases."
@@ -6416,9 +6892,7 @@ def compile_lfm2_structural_short_conv_consumer_fold(
             )
     bias_prior = None
     if fit_bias:
-        bias_prior = _float_tensor(
-            out_proj_bias_prior, "out_proj_bias_prior", ndim=1
-        )
+        bias_prior = _float_tensor(out_proj_bias_prior, "out_proj_bias_prior", ndim=1)
         if tuple(bias_prior.shape) != bias_shape:
             raise Lfm2StructuralResidualAttentionFoldError(
                 "Short-conv output bias prior has the wrong shape."
@@ -6451,9 +6925,7 @@ def compile_lfm2_structural_short_conv_consumer_fold(
                 f"cases[{case_index}] endpoint topology is incompatible."
             )
         endpoint_rows.append(
-            (parent_endpoint - target_residual).reshape(
-                -1, target_hidden
-            )
+            (parent_endpoint - target_residual).reshape(-1, target_hidden)
         )
     design = torch.cat(context_rows, dim=0)
     endpoint = torch.cat(endpoint_rows, dim=0)
@@ -6467,17 +6939,11 @@ def compile_lfm2_structural_short_conv_consumer_fold(
         max_prior_delta_ratio=max_prior_delta_ratio,
         fit_bias=fit_bias,
     )
-    compiled_weight = (
-        weight.to(device="cpu", dtype=weight_dtype)
-        .contiguous()
-        .clone()
-    )
+    compiled_weight = weight.to(device="cpu", dtype=weight_dtype).contiguous().clone()
     compiled_bias = (
         None
         if not fit_bias
-        else bias.to(device="cpu", dtype=bias_dtype)
-        .contiguous()
-        .clone()
+        else bias.to(device="cpu", dtype=bias_dtype).contiguous().clone()
     )
     compiled_state = {"out_proj.weight": compiled_weight}
     if fit_bias:
@@ -6485,11 +6951,7 @@ def compile_lfm2_structural_short_conv_consumer_fold(
     prediction = design @ compiled_weight.to(torch.float64).T
     if fit_bias:
         prediction = prediction + compiled_bias.to(torch.float64)
-    prior_values = (
-        {}
-        if weight_prior is None
-        else {"out_proj.weight": weight_prior}
-    )
+    prior_values = {} if weight_prior is None else {"out_proj.weight": weight_prior}
     if fit_bias:
         prior_values["out_proj.bias"] = bias_prior
     return Lfm2CompiledStructuralShortConvConsumerFold(
@@ -6508,31 +6970,20 @@ def compile_lfm2_structural_short_conv_consumer_fold(
                     **(
                         {}
                         if not fit_bias
-                        else {
-                            "out_proj.bias": (
-                                target_out_proj_bias_template
-                            )
-                        }
+                        else {"out_proj.bias": (target_out_proj_bias_template)}
                     ),
                 }.items()
             }
         ),
         source_derived_prior_sha256=(
-            None
-            if not prior_values
-            else _state_sha256(prior_values)
+            None if not prior_values else _state_sha256(prior_values)
         ),
         actual_child_context_sha256=_state_sha256(
-            {
-                f"context.{index:04d}": value
-                for index, value in enumerate(context_rows)
-            }
+            {f"context.{index:04d}": value for index, value in enumerate(context_rows)}
         ),
         endpoint_target_sha256=_tensor_sha256(endpoint),
         compiled_state_sha256=_state_sha256(compiled_state),
-        residual_endpoint_relative_rmse=_relative_rmse(
-            prediction, endpoint
-        ),
+        residual_endpoint_relative_rmse=_relative_rmse(prediction, endpoint),
         prior_correction_report=fit,
     )
 
@@ -6547,9 +6998,15 @@ def install_lfm2_structural_attention_fold(
     if not isinstance(compiled, Lfm2CompiledStructuralAttentionFold):
         raise TypeError("compiled must be Lfm2CompiledStructuralAttentionFold.")
     modules = {
-        "q_proj.weight": getattr(getattr(target_attention, "q_proj", None), "weight", None),
-        "k_proj.weight": getattr(getattr(target_attention, "k_proj", None), "weight", None),
-        "v_proj.weight": getattr(getattr(target_attention, "v_proj", None), "weight", None),
+        "q_proj.weight": getattr(
+            getattr(target_attention, "q_proj", None), "weight", None
+        ),
+        "k_proj.weight": getattr(
+            getattr(target_attention, "k_proj", None), "weight", None
+        ),
+        "v_proj.weight": getattr(
+            getattr(target_attention, "v_proj", None), "weight", None
+        ),
         "out_proj.weight": getattr(
             getattr(target_attention, "out_proj", None), "weight", None
         ),
@@ -6640,9 +7097,7 @@ def install_lfm2_structural_short_conv_fold(
 
     torch = _torch()
     if not isinstance(compiled, Lfm2CompiledStructuralShortConvFold):
-        raise TypeError(
-            "compiled must be Lfm2CompiledStructuralShortConvFold."
-        )
+        raise TypeError("compiled must be Lfm2CompiledStructuralShortConvFold.")
     in_proj = getattr(target_short_conv, "in_proj", None)
     depthwise_conv = getattr(target_short_conv, "conv", None)
     out_proj = getattr(target_short_conv, "out_proj", None)
@@ -6692,10 +7147,7 @@ def install_lfm2_structural_short_conv_fold(
         )
         for name, value in modules.items()
     }
-    backup = {
-        name: value.detach().cpu().clone()
-        for name, value in modules.items()
-    }
+    backup = {name: value.detach().cpu().clone() for name, value in modules.items()}
     try:
         with torch.no_grad():
             for name in modules:
@@ -6714,15 +7166,12 @@ def install_lfm2_structural_short_conv_fold(
                 id(modules[name]) == identities[name] for name in modules
             ),
             parameter_shapes_preserved=all(
-                tuple(modules[name].shape) == shapes[name]
-                for name in modules
+                tuple(modules[name].shape) == shapes[name] for name in modules
             ),
             gradient_state_preserved=all(
                 (
                     bool(modules[name].requires_grad),
-                    None
-                    if modules[name].grad is None
-                    else id(modules[name].grad),
+                    None if modules[name].grad is None else id(modules[name].grad),
                     None
                     if modules[name].grad is None
                     else _tensor_sha256(modules[name].grad),
@@ -6832,14 +7281,10 @@ def compose_lfm2_structural_layer_fold(
             "global sparse residual-assignment digest."
         )
     values = {
-        f"self_attn.{name}": value
-        for name, value in attention.state_dict().items()
+        f"self_attn.{name}": value for name, value in attention.state_dict().items()
     }
     values.update(
-        {
-            f"feed_forward.{name}": value
-            for name, value in mlp.state_dict().items()
-        }
+        {f"feed_forward.{name}": value for name, value in mlp.state_dict().items()}
     )
     return Lfm2CompiledStructuralLayerFold(
         attention=attention,
@@ -6964,15 +7409,9 @@ def install_lfm2_structural_layer_fold(
         "self_attn.out_proj.weight": getattr(
             getattr(attention, "out_proj", None), "weight", None
         ),
-        "feed_forward.w1.weight": getattr(
-            getattr(mlp, "w1", None), "weight", None
-        ),
-        "feed_forward.w3.weight": getattr(
-            getattr(mlp, "w3", None), "weight", None
-        ),
-        "feed_forward.w2.weight": getattr(
-            getattr(mlp, "w2", None), "weight", None
-        ),
+        "feed_forward.w1.weight": getattr(getattr(mlp, "w1", None), "weight", None),
+        "feed_forward.w3.weight": getattr(getattr(mlp, "w3", None), "weight", None),
+        "feed_forward.w2.weight": getattr(getattr(mlp, "w2", None), "weight", None),
     }
     expected = compiled.state_dict()
     if any(not isinstance(value, torch.Tensor) for value in modules.values()):
@@ -7076,29 +7515,18 @@ class Lfm2StructuralSplitInstallReport:
             and self.parameter_dtypes_preserved
             and self.gradient_objects_preserved
             and self.parameter_values_verified
-            and self.expected_state_sha256
-            == self.observed_state_sha256
+            and self.expected_state_sha256 == self.observed_state_sha256
         )
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "phase": self.phase,
             "accepted": self.accepted,
-            "parameter_identities_preserved": (
-                self.parameter_identities_preserved
-            ),
-            "parameter_shapes_preserved": (
-                self.parameter_shapes_preserved
-            ),
-            "parameter_dtypes_preserved": (
-                self.parameter_dtypes_preserved
-            ),
-            "gradient_objects_preserved": (
-                self.gradient_objects_preserved
-            ),
-            "parameter_values_verified": (
-                self.parameter_values_verified
-            ),
+            "parameter_identities_preserved": (self.parameter_identities_preserved),
+            "parameter_shapes_preserved": (self.parameter_shapes_preserved),
+            "parameter_dtypes_preserved": (self.parameter_dtypes_preserved),
+            "gradient_objects_preserved": (self.gradient_objects_preserved),
+            "parameter_values_verified": (self.parameter_values_verified),
             "target_logical_parameters": self.target_logical_parameters,
             "expected_state_sha256": self.expected_state_sha256,
             "observed_state_sha256": self.observed_state_sha256,
@@ -7127,8 +7555,7 @@ def _split_parameter_state(
     names: Sequence[str],
 ) -> dict[str, Any]:
     return {
-        name: parameters[name].detach().cpu().contiguous().clone()
-        for name in names
+        name: parameters[name].detach().cpu().contiguous().clone() for name in names
     }
 
 
@@ -7184,28 +7611,22 @@ class Lfm2StructuralSplitInstallTransaction:
                 "Split transaction parameter roles are invalid."
             )
         self._parameters = {
-            name: _resolve_split_parameter(target, name)
-            for name in all_names
+            name: _resolve_split_parameter(target, name) for name in all_names
         }
         self._parameter_ids = {
-            name: id(value)
-            for name, value in self._parameters.items()
+            name: id(value) for name, value in self._parameters.items()
         }
         self._parameter_shapes = {
-            name: tuple(value.shape)
-            for name, value in self._parameters.items()
+            name: tuple(value.shape) for name, value in self._parameters.items()
         }
         self._parameter_dtypes = {
-            name: value.dtype
-            for name, value in self._parameters.items()
+            name: value.dtype for name, value in self._parameters.items()
         }
         self._original_requires_grad = {
-            name: bool(value.requires_grad)
-            for name, value in self._parameters.items()
+            name: bool(value.requires_grad) for name, value in self._parameters.items()
         }
         self._gradient_objects = {
-            name: value.grad
-            for name, value in self._parameters.items()
+            name: value.grad for name, value in self._parameters.items()
         }
         self._gradient_snapshots = {
             name: (
@@ -7215,12 +7636,8 @@ class Lfm2StructuralSplitInstallTransaction:
             )
             for name, value in self._parameters.items()
         }
-        self._original_state = _split_parameter_state(
-            self._parameters, all_names
-        )
-        self._original_state_sha256 = _state_sha256(
-            self._original_state
-        )
+        self._original_state = _split_parameter_state(self._parameters, all_names)
+        self._original_state_sha256 = _state_sha256(self._original_state)
         self._producer_expected = {
             name: value.detach().cpu().contiguous().clone()
             for name, value in producer_expected.items()
@@ -7274,48 +7691,33 @@ class Lfm2StructuralSplitInstallTransaction:
                 identities = shapes = dtypes = gradients = False
                 continue
             identities = identities and (
-                current is original
-                and id(current) == self._parameter_ids[name]
+                current is original and id(current) == self._parameter_ids[name]
             )
-            shapes = shapes and (
-                tuple(current.shape) == self._parameter_shapes[name]
-            )
-            dtypes = dtypes and (
-                current.dtype == self._parameter_dtypes[name]
-            )
+            shapes = shapes and (tuple(current.shape) == self._parameter_shapes[name])
+            dtypes = dtypes and (current.dtype == self._parameter_dtypes[name])
             expected_gradient = self._gradient_objects[name]
             gradients = gradients and (
-                bool(current.requires_grad)
-                == self._original_requires_grad[name]
+                bool(current.requires_grad) == self._original_requires_grad[name]
                 and current.grad is expected_gradient
             )
             if expected_gradient is not None:
                 gradients = gradients and (
                     tuple(expected_gradient.shape)
                     == tuple(self._gradient_snapshots[name].shape)
-                    and expected_gradient.dtype
-                    == self._gradient_snapshots[name].dtype
+                    and expected_gradient.dtype == self._gradient_snapshots[name].dtype
                     and _tensor_sha256(expected_gradient)
-                    == _tensor_sha256(
-                        self._gradient_snapshots[name]
-                    )
+                    == _tensor_sha256(self._gradient_snapshots[name])
                 )
         return identities, shapes, dtypes, gradients
 
     def _producer_state_holds(self) -> bool:
-        observed = _split_parameter_state(
-            self._parameters, self._producer_names
-        )
-        return _state_sha256(observed) == _state_sha256(
-            self._producer_expected
-        )
+        observed = _split_parameter_state(self._parameters, self._producer_names)
+        return _state_sha256(observed) == _state_sha256(self._producer_expected)
 
     def rollback(self) -> Lfm2StructuralSplitInstallReport:
         if not self._active:
             if self._rolled_back:
-                observed = _split_parameter_state(
-                    self._parameters, self._all_names()
-                )
+                observed = _split_parameter_state(self._parameters, self._all_names())
                 static = self._static_state_holds()
                 return Lfm2StructuralSplitInstallReport(
                     phase="rolled-back",
@@ -7324,12 +7726,10 @@ class Lfm2StructuralSplitInstallTransaction:
                     parameter_dtypes_preserved=static[2],
                     gradient_objects_preserved=static[3],
                     parameter_values_verified=(
-                        _state_sha256(observed)
-                        == self._original_state_sha256
+                        _state_sha256(observed) == self._original_state_sha256
                     ),
                     target_logical_parameters=sum(
-                        int(value.numel())
-                        for value in self._parameters.values()
+                        int(value.numel()) for value in self._parameters.values()
                     ),
                     expected_state_sha256=self._original_state_sha256,
                     observed_state_sha256=_state_sha256(observed),
@@ -7351,9 +7751,7 @@ class Lfm2StructuralSplitInstallTransaction:
                         dtype=parameter.dtype,
                     )
                 )
-                parameter.requires_grad_(
-                    self._original_requires_grad[name]
-                )
+                parameter.requires_grad_(self._original_requires_grad[name])
                 original_gradient = self._gradient_objects[name]
                 if original_gradient is None:
                     parameter.grad = None
@@ -7365,9 +7763,7 @@ class Lfm2StructuralSplitInstallTransaction:
                         )
                     )
                     parameter.grad = original_gradient
-        observed = _split_parameter_state(
-            self._parameters, self._all_names()
-        )
+        observed = _split_parameter_state(self._parameters, self._all_names())
         observed_sha = _state_sha256(observed)
         static = self._static_state_holds()
         report = Lfm2StructuralSplitInstallReport(
@@ -7376,12 +7772,9 @@ class Lfm2StructuralSplitInstallTransaction:
             parameter_shapes_preserved=static[1],
             parameter_dtypes_preserved=static[2],
             gradient_objects_preserved=static[3],
-            parameter_values_verified=(
-                observed_sha == self._original_state_sha256
-            ),
+            parameter_values_verified=(observed_sha == self._original_state_sha256),
             target_logical_parameters=sum(
-                int(value.numel())
-                for value in self._parameters.values()
+                int(value.numel()) for value in self._parameters.values()
             ),
             expected_state_sha256=self._original_state_sha256,
             observed_state_sha256=observed_sha,
@@ -7416,9 +7809,7 @@ class Lfm2StructuralSplitInstallTransaction:
             "consumer_parameter_names": list(self._consumer_names),
             "original_state_sha256": self._original_state_sha256,
             "producer_report": (
-                None
-                if self.producer_report is None
-                else self.producer_report.as_dict()
+                None if self.producer_report is None else self.producer_report.as_dict()
             ),
             "model_forward_calls": 0,
             "backward_calls": 0,
@@ -7468,8 +7859,7 @@ def _install_split_producer(
                 and transaction._producer_state_holds()
             ),
             target_logical_parameters=sum(
-                int(value.numel())
-                for value in observed.values()
+                int(value.numel()) for value in observed.values()
             ),
             expected_state_sha256=compiled_state_sha256,
             observed_state_sha256=observed_sha,
@@ -7494,19 +7884,14 @@ def _install_split_consumer(
     compiled_state_sha256: str,
     transaction: Lfm2StructuralSplitInstallTransaction,
 ) -> Lfm2StructuralSplitInstallReport:
-    if not isinstance(
-        transaction, Lfm2StructuralSplitInstallTransaction
-    ):
-        raise TypeError(
-            "transaction must be Lfm2StructuralSplitInstallTransaction."
-        )
+    if not isinstance(transaction, Lfm2StructuralSplitInstallTransaction):
+        raise TypeError("transaction must be Lfm2StructuralSplitInstallTransaction.")
     try:
         if (
             not transaction.active
             or transaction.kind != kind
             or transaction._target is not target
-            or set(transaction._consumer_names)
-            != set(consumer_expected)
+            or set(transaction._consumer_names) != set(consumer_expected)
             or not transaction._producer_state_holds()
         ):
             raise Lfm2StructuralResidualAttentionInstallError(
@@ -7552,8 +7937,7 @@ def _install_split_consumer(
                 and transaction._producer_state_holds()
             ),
             target_logical_parameters=sum(
-                int(value.numel())
-                for value in observed.values()
+                int(value.numel()) for value in observed.values()
             ),
             expected_state_sha256=compiled_state_sha256,
             observed_state_sha256=observed_sha,
@@ -7577,12 +7961,8 @@ def install_lfm2_structural_attention_producer_fold(
 ) -> Lfm2StructuralSplitInstallTransaction:
     """Install Q/K/V and retain an exact Q/K/V/O rollback snapshot."""
 
-    if not isinstance(
-        compiled, Lfm2CompiledStructuralAttentionProducerFold
-    ):
-        raise TypeError(
-            "compiled must be Lfm2CompiledStructuralAttentionProducerFold."
-        )
+    if not isinstance(compiled, Lfm2CompiledStructuralAttentionProducerFold):
+        raise TypeError("compiled must be Lfm2CompiledStructuralAttentionProducerFold.")
     return _install_split_producer(
         kind="attention-qkv-o",
         target=target_attention,
@@ -7602,9 +7982,7 @@ def install_lfm2_structural_attention_score_producer_fold(
         compiled,
         Lfm2CompiledStructuralAttentionProducerFold,
     ):
-        raise TypeError(
-            "compiled must be Lfm2CompiledStructuralAttentionProducerFold."
-        )
+        raise TypeError("compiled must be Lfm2CompiledStructuralAttentionProducerFold.")
     return _install_split_producer(
         kind="attention-qk-vo",
         target=target_attention,
@@ -7621,12 +7999,8 @@ def install_lfm2_structural_attention_consumer_fold(
 ) -> Lfm2StructuralSplitInstallReport:
     """Commit O against an active Q/K/V producer transaction."""
 
-    if not isinstance(
-        compiled, Lfm2CompiledStructuralAttentionConsumerFold
-    ):
-        raise TypeError(
-            "compiled must be Lfm2CompiledStructuralAttentionConsumerFold."
-        )
+    if not isinstance(compiled, Lfm2CompiledStructuralAttentionConsumerFold):
+        raise TypeError("compiled must be Lfm2CompiledStructuralAttentionConsumerFold.")
     return _install_split_consumer(
         kind="attention-qkv-o",
         target=target_attention,
@@ -7648,8 +8022,7 @@ def install_lfm2_structural_attention_value_output_fold(
         Lfm2CompiledStructuralAttentionValueOutputFold,
     ):
         raise TypeError(
-            "compiled must be "
-            "Lfm2CompiledStructuralAttentionValueOutputFold."
+            "compiled must be Lfm2CompiledStructuralAttentionValueOutputFold."
         )
     if (
         not isinstance(
@@ -7692,12 +8065,8 @@ def install_lfm2_structural_short_conv_producer_fold(
 ) -> Lfm2StructuralSplitInstallTransaction:
     """Install B/C/x plus FIR and retain an exact full-operator snapshot."""
 
-    if not isinstance(
-        compiled, Lfm2CompiledStructuralShortConvProducerFold
-    ):
-        raise TypeError(
-            "compiled must be Lfm2CompiledStructuralShortConvProducerFold."
-        )
+    if not isinstance(compiled, Lfm2CompiledStructuralShortConvProducerFold):
+        raise TypeError("compiled must be Lfm2CompiledStructuralShortConvProducerFold.")
     consumer_names = ["out_proj.weight"]
     if compiled.bias:
         consumer_names.append("out_proj.bias")
@@ -7717,12 +8086,8 @@ def install_lfm2_structural_short_conv_consumer_fold(
 ) -> Lfm2StructuralSplitInstallReport:
     """Commit output projection against an active short-conv producer."""
 
-    if not isinstance(
-        compiled, Lfm2CompiledStructuralShortConvConsumerFold
-    ):
-        raise TypeError(
-            "compiled must be Lfm2CompiledStructuralShortConvConsumerFold."
-        )
+    if not isinstance(compiled, Lfm2CompiledStructuralShortConvConsumerFold):
+        raise TypeError("compiled must be Lfm2CompiledStructuralShortConvConsumerFold.")
     return _install_split_consumer(
         kind="short-conv-producer-consumer",
         target=target_short_conv,
@@ -7737,12 +8102,8 @@ def rollback_lfm2_structural_split_install(
 ) -> Lfm2StructuralSplitInstallReport:
     """Explicitly restore the exact pre-producer branch snapshot."""
 
-    if not isinstance(
-        transaction, Lfm2StructuralSplitInstallTransaction
-    ):
-        raise TypeError(
-            "transaction must be Lfm2StructuralSplitInstallTransaction."
-        )
+    if not isinstance(transaction, Lfm2StructuralSplitInstallTransaction):
+        raise TypeError("transaction must be Lfm2StructuralSplitInstallTransaction.")
     return transaction.rollback()
 
 
@@ -7787,9 +8148,7 @@ def cached_short_conv_case_from_lfm2_trace(
         contribution = tensors.get(base + "short_conv.context")
     return Lfm2CachedShortConvFoldCase(
         target_input=(
-            required("operator.input")
-            if target_input is None
-            else target_input
+            required("operator.input") if target_input is None else target_input
         ),
         parent_b=required("short_conv.b"),
         parent_c=required("short_conv.c"),
@@ -7805,9 +8164,7 @@ def cached_short_conv_case_from_lfm2_trace(
             else target_pre_operator_residual
         ),
         reset_state=(
-            not phase.startswith("decode")
-            if reset_state is None
-            else reset_state
+            not phase.startswith("decode") if reset_state is None else reset_state
         ),
         parent_contribution=contribution,
     )
@@ -7837,8 +8194,7 @@ def cached_attention_case_from_lfm2_trace(
         )
     if decode_trace_mode not in _SUPPORTED_ATTENTION_TRACE_MODES:
         raise Lfm2StructuralResidualAttentionFoldError(
-            "decode_trace_mode must be 'cached_verified' or "
-            "'full_prefix_canonical'."
+            "decode_trace_mode must be 'cached_verified' or 'full_prefix_canonical'."
         )
     _positive_int(layer_index + 1, "layer_index + 1")
     base = f"{phase}.layer.{layer_index:03d}."
@@ -7871,17 +8227,13 @@ def cached_attention_case_from_lfm2_trace(
     # decode span has length one, while a full-prefix span may have many rows;
     # the same triangular mask is correct for both and prevents full-prefix
     # decode rows from accidentally attending to future sampled positions.
-    key_mask = torch.ones(
-        (batch, q_length, k_length), dtype=torch.bool
-    ).tril()
+    key_mask = torch.ones((batch, q_length, k_length), dtype=torch.bool).tril()
     return Lfm2CachedAttentionFoldCase(
         target_query_input=(
             operator_input if target_query_input is None else target_query_input
         ),
         target_key_value_input=(
-            operator_input
-            if target_key_value_input is None
-            else target_key_value_input
+            operator_input if target_key_value_input is None else target_key_value_input
         ),
         parent_query_linear=query_linear,
         parent_key_linear=key_linear,
@@ -7910,9 +8262,8 @@ def cached_attention_cases_from_lfm2_trace_phases(
     layer_index: int,
     decode_trace_mode: str = _CACHED_VERIFIED_TRACE_MODE,
     target_tensors: Mapping[str, Any] | None = None,
-    parent_post_attention_residual_target_space_by_phase: Mapping[
-        str, Any
-    ] | None = None,
+    parent_post_attention_residual_target_space_by_phase: Mapping[str, Any]
+    | None = None,
 ) -> tuple[Lfm2CachedAttentionFoldCase, ...]:
     """Assemble prefill/decode histories entirely from sealed cache tensors.
 
@@ -7928,15 +8279,17 @@ def cached_attention_cases_from_lfm2_trace_phases(
         )
     if decode_trace_mode not in _SUPPORTED_ATTENTION_TRACE_MODES:
         raise Lfm2StructuralResidualAttentionFoldError(
-            "decode_trace_mode must be 'cached_verified' or "
-            "'full_prefix_canonical'."
+            "decode_trace_mode must be 'cached_verified' or 'full_prefix_canonical'."
         )
     if target_tensors is not None and not isinstance(target_tensors, Mapping):
         raise Lfm2StructuralResidualAttentionFoldError(
             "target_tensors must be a mapping when supplied."
         )
-    if parent_post_attention_residual_target_space_by_phase is not None and not isinstance(
-        parent_post_attention_residual_target_space_by_phase, Mapping
+    if (
+        parent_post_attention_residual_target_space_by_phase is not None
+        and not isinstance(
+            parent_post_attention_residual_target_space_by_phase, Mapping
+        )
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "parent target-space endpoints must be a phase mapping."
@@ -8019,16 +8372,13 @@ def cached_attention_cases_from_lfm2_trace_phases(
             if parent_post_attention_residual_target_space_by_phase is None:
                 parent_endpoint = required(tensors, "residual.post_operator")
             else:
-                if (
-                    phase
-                    not in parent_post_attention_residual_target_space_by_phase
-                ):
+                if phase not in parent_post_attention_residual_target_space_by_phase:
                     raise Lfm2StructuralResidualAttentionFoldError(
                         f"Target-space parent endpoint is missing phase {phase!r}."
                     )
-                parent_endpoint = (
-                    parent_post_attention_residual_target_space_by_phase[phase]
-                )
+                parent_endpoint = parent_post_attention_residual_target_space_by_phase[
+                    phase
+                ]
             result.append(
                 Lfm2CachedAttentionFoldCase(
                     target_query_input=target_input,
@@ -8161,9 +8511,7 @@ def cached_attention_cases_from_lfm2_trace_phases(
                 :, -cache_length:, :
             ].contiguous()
         if key_cache_name in tensors:
-            if not torch.allclose(
-                source_key_history, cached_key, rtol=1e-5, atol=1e-7
-            ):
+            if not torch.allclose(source_key_history, cached_key, rtol=1e-5, atol=1e-7):
                 raise Lfm2StructuralResidualAttentionFoldError(
                     f"{phase} accumulated K rows do not reproduce the sealed key cache."
                 )
@@ -8197,9 +8545,9 @@ def cached_attention_cases_from_lfm2_trace_phases(
                 raise Lfm2StructuralResidualAttentionFoldError(
                     f"Target-space parent endpoint is missing phase {phase!r}."
                 )
-            parent_endpoint = (
-                parent_post_attention_residual_target_space_by_phase[phase]
-            )
+            parent_endpoint = parent_post_attention_residual_target_space_by_phase[
+                phase
+            ]
         result.append(
             Lfm2CachedAttentionFoldCase(
                 target_query_input=target_input_current,
@@ -8211,9 +8559,7 @@ def cached_attention_cases_from_lfm2_trace_phases(
                 parent_key=source_key_history,
                 parent_context=required(tensors, "attention.context"),
                 parent_post_attention_residual_target_space=parent_endpoint,
-                target_pre_attention_residual=required(
-                    target_mapping, "residual.pre"
-                ),
+                target_pre_attention_residual=required(target_mapping, "residual.pre"),
                 key_mask=key_mask,
             )
         )
@@ -8250,8 +8596,7 @@ def cached_mlp_case_from_lfm2_trace(
         torch = _torch()
         if not isinstance(value, torch.Tensor) or value.ndim not in {2, 3}:
             raise Lfm2StructuralResidualAttentionFoldError(
-                f"Verified trace {name} must have rank 2 or "
-                "[batch, sequence, width]."
+                f"Verified trace {name} must have rank 2 or [batch, sequence, width]."
             )
         return value.reshape(-1, int(value.shape[-1]))
 
@@ -8262,9 +8607,7 @@ def cached_mlp_case_from_lfm2_trace(
         ),
         parent_gate=rows(required("mlp.gate"), "mlp.gate"),
         parent_up=rows(required("mlp.up"), "mlp.up"),
-        parent_post_swiglu=rows(
-            required("mlp.post_swiglu"), "mlp.post_swiglu"
-        ),
+        parent_post_swiglu=rows(required("mlp.post_swiglu"), "mlp.post_swiglu"),
         parent_post_mlp_residual_target_space=(
             rows(required("residual.post_layer"), "residual.post_layer")
             if parent_post_mlp_residual_target_space is None
@@ -8292,6 +8635,7 @@ __all__ = [
     "Lfm2CompiledStructuralAttentionProducerFold",
     "Lfm2CompiledStructuralLayerFold",
     "Lfm2CompiledStructuralMlpFold",
+    "Lfm2PreparedStructuralMlpFoldBasis",
     "Lfm2CompiledStructuralShortConvConsumerFold",
     "Lfm2CompiledStructuralShortConvFold",
     "Lfm2CompiledStructuralShortConvProducerFold",
@@ -8328,5 +8672,6 @@ __all__ = [
     "install_lfm2_structural_short_conv_consumer_fold",
     "install_lfm2_structural_short_conv_fold",
     "install_lfm2_structural_short_conv_producer_fold",
+    "prepare_lfm2_structural_residual_mlp_fold_basis",
     "rollback_lfm2_structural_split_install",
 ]

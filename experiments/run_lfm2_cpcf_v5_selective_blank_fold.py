@@ -48,12 +48,8 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 RUN_SCHEMA = "neural-forge-lfm2-cpcf-v5-selective-blank-fold-run-v1"
 FAILURE_SCHEMA = "neural-forge-lfm2-cpcf-v5-selective-blank-fold-failure-v1"
-RESUME_PROGRESS_SCHEMA = (
-    "neural-forge-lfm2-cpcf-v5-selective-runner-resume-progress-v1"
-)
-CUDA_ALLOCATOR_POLICY_SCHEMA = (
-    "neural-forge-lfm2-cpcf-v5-cuda-allocator-policy-v1"
-)
+RESUME_PROGRESS_SCHEMA = "neural-forge-lfm2-cpcf-v5-selective-runner-resume-progress-v1"
+CUDA_ALLOCATOR_POLICY_SCHEMA = "neural-forge-lfm2-cpcf-v5-cuda-allocator-policy-v1"
 COMPILED_CANDIDATE_CONTEXT_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-compiled-candidate-consumer-context-v1"
 )
@@ -123,14 +119,10 @@ _FORBIDDEN_FOLD_MUTATION_SYMBOLS = frozenset(
     }
 )
 _SELECTIVE_EVIDENCE_SOURCE = (
-    _SOURCE_ROOT
-    / "neural_forge"
-    / "hf_lfm2_cpcf_selective_evidence.py"
+    _SOURCE_ROOT / "neural_forge" / "hf_lfm2_cpcf_selective_evidence.py"
 )
 _CATALOG_ARTIFACT_SOURCE = (
-    _SOURCE_ROOT
-    / "neural_forge"
-    / "dynamic_evidence_catalog_artifact.py"
+    _SOURCE_ROOT / "neural_forge" / "dynamic_evidence_catalog_artifact.py"
 )
 
 
@@ -231,12 +223,7 @@ def _digest(value: Any, name: str) -> str:
 
 def _local_lexical_path(value: Path, name: str) -> Path:
     raw = os.fspath(value.expanduser())
-    if (
-        not raw
-        or "://" in raw
-        or raw.startswith("\\\\")
-        or raw.startswith("//")
-    ):
+    if not raw or "://" in raw or raw.startswith("\\\\") or raw.startswith("//"):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             f"{name} must be an explicit local path."
         )
@@ -244,11 +231,7 @@ def _local_lexical_path(value: Path, name: str) -> Path:
 
 
 def _paths_overlap(left: Path, right: Path) -> bool:
-    return (
-        left == right
-        or left in right.parents
-        or right in left.parents
-    )
+    return left == right or left in right.parents or right in left.parents
 
 
 def _assert_catalog_store_disjoint(
@@ -268,9 +251,7 @@ def _assert_catalog_store_disjoint(
     if overlaps:
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "selective_catalog_store_directory cannot equal, contain, or "
-            "be contained by protected roots: "
-            + ", ".join(sorted(overlaps))
-            + "."
+            "be contained by protected roots: " + ", ".join(sorted(overlaps)) + "."
         )
 
 
@@ -292,9 +273,7 @@ def _assert_catalog_receipt_disjoint(
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "selective_catalog_receipt_json cannot equal, contain, or be "
             "contained by protected inputs, outputs, work, resume, or catalog "
-            "store paths: "
-            + ", ".join(sorted(overlaps))
-            + "."
+            "store paths: " + ", ".join(sorted(overlaps)) + "."
         )
 
 
@@ -305,23 +284,17 @@ def _sealed_mapping(
     label: str,
 ) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            f"{label} must be a mapping."
-        )
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(f"{label} must be a mapping.")
     report = dict(value)
     claimed = _digest(report.pop(seal_field, None), f"{label}.{seal_field}")
     if _sha(report) != claimed:
-        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            f"{label} is not self-sealed."
-        )
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(f"{label} is not self-sealed.")
     return MappingProxyType({**report, seal_field: claimed})
 
 
 def _immutable_mapping(value: Mapping[str, Any], name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            f"{name} must be a mapping."
-        )
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(f"{name} must be a mapping.")
     # Canonicalization rejects non-finite or non-JSON evidence before the
     # mapping is exposed across the consumer boundary.
     normalized = dict(value)
@@ -418,10 +391,8 @@ class V5CompiledCandidateConsumerContext:
             label="compile_diagnostic",
         )
         if (
-            blank.get("target_plan_fingerprint")
-            != self.target_plan_fingerprint
-            or compiled.get("blank_target_report_sha256")
-            != blank["report_sha256"]
+            blank.get("target_plan_fingerprint") != self.target_plan_fingerprint
+            or compiled.get("blank_target_report_sha256") != blank["report_sha256"]
             or compiled["result_sha256"] != self.compiler_receipt_sha256
             or diagnostic.get("compiled_model_fold") != dict(compiled)
             or diagnostic.get("blank_target") != dict(blank)
@@ -433,15 +404,18 @@ class V5CompiledCandidateConsumerContext:
         inputs = diagnostic.get("inputs")
         compiler_implementation = compiled.get("compiler_implementation")
         seam = diagnostic.get("compiled_candidate_consumer_seam")
-        catalog_preparation = diagnostic.get(
-            "selective_catalog_artifact"
-        )
-        if not isinstance(inputs, Mapping) or not isinstance(
-            compiler_implementation,
-            Mapping,
-        ) or not isinstance(seam, Mapping) or not isinstance(
-            catalog_preparation,
-            Mapping,
+        catalog_preparation = diagnostic.get("selective_catalog_artifact")
+        if (
+            not isinstance(inputs, Mapping)
+            or not isinstance(
+                compiler_implementation,
+                Mapping,
+            )
+            or not isinstance(seam, Mapping)
+            or not isinstance(
+                catalog_preparation,
+                Mapping,
+            )
         ):
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
                 "Compiled candidate diagnostic lacks authenticated identities."
@@ -473,16 +447,13 @@ class V5CompiledCandidateConsumerContext:
                 ),
                 catalog_preparation=catalog_preparation,
             )
-            or self.runner_source_sha256
-            != _file_sha256(Path(__file__).resolve())
+            or self.runner_source_sha256 != _file_sha256(Path(__file__).resolve())
             or any(
                 seam.get(name) != value
                 for name, value in {
                     "target_plan_fingerprint": self.target_plan_fingerprint,
                     "blank_target_report_sha256": blank["report_sha256"],
-                    "compiler_receipt_sha256": (
-                        self.compiler_receipt_sha256
-                    ),
+                    "compiler_receipt_sha256": (self.compiler_receipt_sha256),
                     "parent_sha256": self.parent_sha256,
                     "cache_sha256": self.cache_sha256,
                     "bridge_sha256": self.bridge_sha256,
@@ -492,33 +463,23 @@ class V5CompiledCandidateConsumerContext:
                     "runner_source_sha256": self.runner_source_sha256,
                     "source_binding_sha256": self.source_binding_sha256,
                     **{
-                        "selective_catalog_"
-                        "preparation_receipt_sha256": (
-                            catalog_preparation[
-                                "preparation_receipt_sha256"
-                            ]
+                        "selective_catalog_preparation_receipt_sha256": (
+                            catalog_preparation["preparation_receipt_sha256"]
                         ),
                         "selective_catalog_binding_sha256": (
                             catalog_preparation["binding_sha256"]
                         ),
                         "selective_catalog_artifact_manifest_sha256": (
-                            catalog_preparation[
-                                "artifact_manifest_sha256"
-                            ]
+                            catalog_preparation["artifact_manifest_sha256"]
                         ),
                         "selective_catalog_artifact_sha256": (
-                            catalog_preparation[
-                                "artifact_catalog_sha256"
-                            ]
+                            catalog_preparation["artifact_catalog_sha256"]
                         ),
                         "selective_catalog_codec_sha256": (
                             catalog_preparation["codec_sha256"]
                         ),
-                        "selective_catalog_provider_"
-                        "implementation_sha256": (
-                            catalog_preparation[
-                                "provider_implementation_sha256"
-                            ]
+                        "selective_catalog_provider_implementation_sha256": (
+                            catalog_preparation["provider_implementation_sha256"]
                         ),
                     },
                     "fold_only_runtime_guard_identity_sha256": (
@@ -566,8 +527,7 @@ class V5CompiledCandidateConsumerContext:
             audit.get("schema") != COMPILED_CANDIDATE_ZERO_AUDIT_SCHEMA
             or audit.get("clean") is not True
             or any(
-                isinstance(audit.get(name), bool)
-                or audit.get(name) != 0
+                isinstance(audit.get(name), bool) or audit.get(name) != 0
                 for name in _CONSUMER_ZERO_COUNTER_FIELDS
             )
         ):
@@ -589,15 +549,12 @@ class V5CompiledCandidateConsumerContext:
             label="static_pruning_quantization_source_audit",
         )
         if (
-            diagnostic.get("compiler_runtime_fold_only_guard")
-            != dict(runtime_guard)
+            diagnostic.get("compiler_runtime_fold_only_guard") != dict(runtime_guard)
             or runtime_guard.get("guard_implementation")
             != dict(expected_guard_identity)
             or static_source_audit.get("compiler_implementation_sha256")
             != self.compiler_sha256
-            or static_source_audit.get(
-                "authenticated_compiler_source_files"
-            )
+            or static_source_audit.get("authenticated_compiler_source_files")
             != compiler_implementation.get("ordered_source_files")
             or static_source_audit.get("runner_source_sha256")
             != self.runner_source_sha256
@@ -606,8 +563,7 @@ class V5CompiledCandidateConsumerContext:
             or static_source_audit.get("forbidden_findings") != []
             or runtime_guard.get("clean") is not True
             or any(
-                type(runtime_guard.get(name)) is not int
-                or runtime_guard.get(name) != 0
+                type(runtime_guard.get(name)) is not int or runtime_guard.get(name) != 0
                 for name in (
                     "optimizer_constructions",
                     "optimizer_steps",
@@ -702,8 +658,7 @@ class V5CompiledCandidateConsumerResult:
 
         if type(self.candidate) is not QuarantinedDynamicFoldCandidate:
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-                "Consumer result requires the exact generic quarantined "
-                "candidate type."
+                "Consumer result requires the exact generic quarantined candidate type."
             )
         for name in (
             "capture_receipt_sha256",
@@ -732,9 +687,7 @@ class V5CompiledCandidateConsumerResult:
             label="compile_diagnostic",
         )
         runtime_guard = diagnostic.get("compiler_runtime_fold_only_guard")
-        catalog_preparation = diagnostic.get(
-            "selective_catalog_artifact"
-        )
+        catalog_preparation = diagnostic.get("selective_catalog_artifact")
         guard_implementation = (
             runtime_guard.get("guard_implementation")
             if isinstance(runtime_guard, Mapping)
@@ -779,15 +732,13 @@ class V5CompiledCandidateConsumerResult:
         candidate_artifact_path = self.candidate.artifact_path
         if (
             type(candidate_receipt) is not QuarantineCaptureReceipt
-            or candidate_receipt.receipt_sha256
-            != self.capture_receipt_sha256
+            or candidate_receipt.receipt_sha256 != self.capture_receipt_sha256
             or candidate_receipt.as_dict() != dict(capture)
             or not isinstance(candidate_path, Path)
             or not isinstance(candidate_artifact_path, Path)
             or candidate_path != candidate_path.resolve()
             or candidate_artifact_path != candidate_artifact_path.resolve()
-            or candidate_artifact_path
-            != candidate_path / CANDIDATE_DIRECTORY_NAME
+            or candidate_artifact_path != candidate_path / CANDIDATE_DIRECTORY_NAME
             or not candidate_path.is_dir()
             or not candidate_artifact_path.is_dir()
             or not (candidate_path / QUARANTINE_RECEIPT_FILENAME).is_file()
@@ -802,9 +753,9 @@ class V5CompiledCandidateConsumerResult:
             )
         try:
             persisted_receipt = json.loads(
-                (
-                    candidate_path / QUARANTINE_RECEIPT_FILENAME
-                ).read_text(encoding="utf-8")
+                (candidate_path / QUARANTINE_RECEIPT_FILENAME).read_text(
+                    encoding="utf-8"
+                )
             )
             actual_inventory = _candidate_inventory(candidate_artifact_path)
         except Exception as exc:
@@ -856,16 +807,11 @@ class V5CompiledCandidateConsumerResult:
         evaluations = capture.get("evaluations")
         capture_request = capture.get("capture_request")
         filesystem_identity = capture.get("filesystem_identity")
-        fresh_execution = supplied_verification.get(
-            "fresh_reload_execution"
-        )
-        observed_audit = supplied_verification.get(
-            "capture_observed_audit"
-        )
+        fresh_execution = supplied_verification.get("fresh_reload_execution")
+        observed_audit = supplied_verification.get("capture_observed_audit")
         if (
             supplied_verification != candidate_verification
-            or supplied_verification.get("schema")
-            != QUARANTINE_VERIFICATION_SCHEMA
+            or supplied_verification.get("schema") != QUARANTINE_VERIFICATION_SCHEMA
             or _digest(
                 verification_sha256,
                 "verification_receipt.verification_sha256",
@@ -892,9 +838,7 @@ class V5CompiledCandidateConsumerResult:
             != capture_request.get("loader_sha256")
             or supplied_verification.get("evaluator_sha256")
             != capture_request.get("evaluator_sha256")
-            or supplied_verification.get(
-                "fresh_final_destination_reload_performed"
-            )
+            or supplied_verification.get("fresh_final_destination_reload_performed")
             is not True
             or supplied_verification.get("promotable") is not False
             or supplied_verification.get("publication_authorized") is not False
@@ -931,13 +875,8 @@ class V5CompiledCandidateConsumerResult:
             or observed_audit.get("pruning_used") is not False
             or observed_audit.get("quantization_used") is not False
             or observed_audit.get("live_parent_calls_used") is not False
-            or observed_audit.get(
-                "pruning_operations_runtime_observed"
-            )
-            is not True
-            or observed_audit.get(
-                "quantization_operations_runtime_observed"
-            )
+            or observed_audit.get("pruning_operations_runtime_observed") is not True
+            or observed_audit.get("quantization_operations_runtime_observed")
             is not True
             or observed_audit.get(
                 "dense_unpruned_unquantized_retained_state_checked_separately"
@@ -960,8 +899,7 @@ class V5CompiledCandidateConsumerResult:
             "model_state_sha256": self.target_state_sha256,
         }
         if not isinstance(bindings, Mapping) or any(
-            bindings.get(name) != value
-            for name, value in expected_bindings.items()
+            bindings.get(name) != value for name, value in expected_bindings.items()
         ):
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
                 "Capture receipt bindings differ from the compiled candidate."
@@ -1093,9 +1031,7 @@ class V5SelectiveBlankFoldConfig:
         if self.resume_store_directory is not None:
             if not isinstance(self.resume_store_directory, Path):
                 raise TypeError("resume_store_directory must be pathlib.Path.")
-            raw_resume_path = os.fspath(
-                self.resume_store_directory.expanduser()
-            )
+            raw_resume_path = os.fspath(self.resume_store_directory.expanduser())
             if (
                 "://" in raw_resume_path
                 or raw_resume_path.startswith("\\\\")
@@ -1112,8 +1048,7 @@ class V5SelectiveBlankFoldConfig:
             value is not None for value in catalog_paths
         ):
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-                "selective catalog store and receipt paths must be supplied "
-                "together."
+                "selective catalog store and receipt paths must be supplied together."
             )
         if self.selective_catalog_store_directory is not None:
             if not isinstance(
@@ -1127,12 +1062,8 @@ class V5SelectiveBlankFoldConfig:
                 self.selective_catalog_store_directory,
                 roots={
                     "parent_model_directory": self.parent_model_directory,
-                    "donor_tokenizer_directory": (
-                        self.donor_tokenizer_directory
-                    ),
-                    "target_tokenizer_directory": (
-                        self.target_tokenizer_directory
-                    ),
+                    "donor_tokenizer_directory": (self.donor_tokenizer_directory),
+                    "target_tokenizer_directory": (self.target_tokenizer_directory),
                     "bridge_directory": self.bridge_directory,
                     "trace_cache_directory": self.trace_cache_directory,
                     "resume_store_directory": (
@@ -1141,19 +1072,13 @@ class V5SelectiveBlankFoldConfig:
                         else self.diagnostic_json.parent / ".no-resume"
                     ),
                     "diagnostic_work_root": self.diagnostic_json.parent,
-                    "catalog_receipt_json": (
-                        self.selective_catalog_receipt_json
-                    ),
+                    "catalog_receipt_json": (self.selective_catalog_receipt_json),
                 },
             )
             receipt_protected_paths = {
                 "parent_model_directory": self.parent_model_directory,
-                "donor_tokenizer_directory": (
-                    self.donor_tokenizer_directory
-                ),
-                "target_tokenizer_directory": (
-                    self.target_tokenizer_directory
-                ),
+                "donor_tokenizer_directory": (self.donor_tokenizer_directory),
+                "target_tokenizer_directory": (self.target_tokenizer_directory),
                 "bridge_directory": self.bridge_directory,
                 "trace_cache_directory": self.trace_cache_directory,
                 "trajectory_corpus": self.trajectory_corpus,
@@ -1414,9 +1339,7 @@ class V5SelectiveBlankFoldConfig:
                 self.minimum_physical_rss_reduction_fraction
             ),
             "maximum_cuda_gib_per_device": self.maximum_cuda_gib_per_device,
-            "maximum_cuda_bytes_per_device": (
-                self.maximum_cuda_bytes_per_device
-            ),
+            "maximum_cuda_bytes_per_device": (self.maximum_cuda_bytes_per_device),
             "model_device": self.model_device,
             "dtype": self.dtype,
             "parent_name": self.parent_name,
@@ -1448,18 +1371,14 @@ class V5SelectiveBlankFoldConfig:
             "short_conv_v4_context_objective_weight": (
                 self.short_conv_v4_context_objective_weight
             ),
-            "expected_target_plan_fingerprint": (
-                self.expected_target_plan_fingerprint
-            ),
+            "expected_target_plan_fingerprint": (self.expected_target_plan_fingerprint),
             "resume_store_directory": (
                 None
                 if self.resume_store_directory is None
                 else str(self.resume_store_directory)
             ),
             "resume_admission_sha256": self.resume_admission_sha256,
-            "resume_checkpointing_requested": (
-                self.resume_store_directory is not None
-            ),
+            "resume_checkpointing_requested": (self.resume_store_directory is not None),
             "resume_requested": self.resume_admission_sha256 is not None,
             "selective_catalog_store_directory": (
                 None
@@ -1474,9 +1393,7 @@ class V5SelectiveBlankFoldConfig:
             "expected_selective_catalog_receipt_sha256": (
                 self.expected_selective_catalog_receipt_sha256
             ),
-            "prepare_selective_catalog_only": (
-                self.prepare_selective_catalog_only
-            ),
+            "prepare_selective_catalog_only": (self.prepare_selective_catalog_only),
             "production_catalog_warm_hit_required": (
                 not self.prepare_selective_catalog_only
             ),
@@ -1505,9 +1422,7 @@ class _ResumeProgressTracker:
     requested_admission_sha256: str | None
     catalog_preparation: Mapping[str, Any] | None = None
     invocation_head: dict[str, Any] | None = None
-    published_pending_prefixes: list[dict[str, Any]] = field(
-        default_factory=list
-    )
+    published_pending_prefixes: list[dict[str, Any]] = field(default_factory=list)
     admitted_prefixes: list[dict[str, Any]] = field(default_factory=list)
     rejected_prefixes: list[dict[str, Any]] = field(default_factory=list)
 
@@ -1523,9 +1438,7 @@ class _ResumeProgressTracker:
 
     def record_invocation_head(self, state: Any) -> None:
         self.invocation_head = {
-            "admission_sha256": str(
-                state.admission["admission_sha256"]
-            ),
+            "admission_sha256": str(state.admission["admission_sha256"]),
             "next_layer_index": int(state.next_layer_index),
             "frontier_reference": state.frontier_reference.as_dict(),
             "checkpoint_reference": state.checkpoint_reference.as_dict(),
@@ -1535,9 +1448,7 @@ class _ResumeProgressTracker:
         }
 
     def record_pending(self, pending: Any) -> None:
-        self.published_pending_prefixes.append(
-            self._pending_record(pending)
-        )
+        self.published_pending_prefixes.append(self._pending_record(pending))
 
     def record_admitted(
         self,
@@ -1546,9 +1457,7 @@ class _ResumeProgressTracker:
     ) -> None:
         record = self._pending_record(pending)
         record.pop("event_report_sha256")
-        record["admission_sha256"] = str(
-            admission["admission_sha256"]
-        )
+        record["admission_sha256"] = str(admission["admission_sha256"])
         self.admitted_prefixes.append(record)
 
     def record_rejected(
@@ -1557,9 +1466,7 @@ class _ResumeProgressTracker:
         rejection: Mapping[str, Any],
     ) -> None:
         record = self._pending_record(pending)
-        record["rejection_sha256"] = str(
-            rejection["rejection_sha256"]
-        )
+        record["rejection_sha256"] = str(rejection["rejection_sha256"])
         record["promotable"] = False
         self.rejected_prefixes.append(record)
 
@@ -1587,35 +1494,22 @@ class _ResumeProgressTracker:
         outstanding = [
             dict(record)
             for record in published
-            if str(record["checkpoint_reference"]["artifact_key"])
-            not in terminal_keys
+            if str(record["checkpoint_reference"]["artifact_key"]) not in terminal_keys
         ]
         catalog_authentication = (
             None
             if self.catalog_preparation is None
-            else dict(
-                _catalog_authentication_summary(
-                    self.catalog_preparation
-                )
-            )
+            else dict(_catalog_authentication_summary(self.catalog_preparation))
         )
         body = {
             "schema": RESUME_PROGRESS_SCHEMA,
             "resume_store_directory": (
-                None
-                if self.store_directory is None
-                else str(self.store_directory)
+                None if self.store_directory is None else str(self.store_directory)
             ),
             "checkpointing_enabled": self.store_directory is not None,
-            "requested_admission_sha256": (
-                self.requested_admission_sha256
-            ),
-            "resume_requested": (
-                self.requested_admission_sha256 is not None
-            ),
-            "selective_catalog_artifact_bound": (
-                catalog_authentication is not None
-            ),
+            "requested_admission_sha256": (self.requested_admission_sha256),
+            "resume_requested": (self.requested_admission_sha256 is not None),
+            "selective_catalog_artifact_bound": (catalog_authentication is not None),
             "selective_catalog_artifact": catalog_authentication,
             "invocation_head": self.invocation_head,
             "published_pending_prefixes": published,
@@ -1705,25 +1599,17 @@ def _observe_compiled_resume_receipt(
             )
         publication = {
             "next_layer_index": int(pending["next_layer_index"]),
-            "frontier_reference": _plain_json(
-                pending["frontier_reference"]
-            ),
-            "checkpoint_reference": _plain_json(
-                pending["checkpoint_reference"]
-            ),
+            "frontier_reference": _plain_json(pending["frontier_reference"]),
+            "checkpoint_reference": _plain_json(pending["checkpoint_reference"]),
             "frontier_sha256": str(pending["frontier_sha256"]),
             "event_report_sha256": str(pending["event_report_sha256"]),
         }
         if (
             publication["next_layer_index"] != record.get("next_layer_index")
-            or publication["frontier_reference"]
-            != record.get("frontier_reference")
-            or publication["checkpoint_reference"]
-            != record.get("checkpoint_reference")
-            or publication["frontier_sha256"]
-            != record.get("frontier_sha256")
-            or proof.get("proof_sha256")
-            != record.get("admission_chain_proof_sha256")
+            or publication["frontier_reference"] != record.get("frontier_reference")
+            or publication["checkpoint_reference"] != record.get("checkpoint_reference")
+            or publication["frontier_sha256"] != record.get("frontier_sha256")
+            or proof.get("proof_sha256") != record.get("admission_chain_proof_sha256")
         ):
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
                 "The compiler resume-admission summary differs from its "
@@ -1779,9 +1665,7 @@ def _build_resume_runtime(
     )
 
     try:
-        store = Lfm2CpcfResumeArtifactStore(
-            config.resume_store_directory
-        )
+        store = Lfm2CpcfResumeArtifactStore(config.resume_store_directory)
         progress.store_directory = store.root
         coordinator = _exact_resume_coordinator(
             Lfm2CpcfV5ResumeCoordinator,
@@ -1789,34 +1673,23 @@ def _build_resume_runtime(
         )
         state = None
         if config.resume_admission_sha256 is not None:
-            state = coordinator.open_admitted(
-                config.resume_admission_sha256
-            )
+            state = coordinator.open_admitted(config.resume_admission_sha256)
             if type(state) is not Lfm2CpcfV5ResumeState:
                 raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-                    "The resume admission did not open an exact typed v5 "
-                    "resume state."
+                    "The resume admission did not open an exact typed v5 resume state."
                 )
             if catalog_preparation is not None:
-                catalog_authentication = (
-                    _catalog_authentication_summary(
-                        catalog_preparation
-                    )
+                catalog_authentication = _catalog_authentication_summary(
+                    catalog_preparation
                 )
                 context = state.frontier.context
                 if (
                     context.get("selective_catalog_sha256")
-                    != catalog_authentication[
-                        "selective_catalog_sha256"
-                    ]
+                    != catalog_authentication["selective_catalog_sha256"]
                     or context.get("selective_source_sha256")
-                    != catalog_authentication[
-                        "selective_source_sha256"
-                    ]
+                    != catalog_authentication["selective_source_sha256"]
                     or context.get("selective_provider_sha256")
-                    != catalog_authentication[
-                        "selective_provider_sha256"
-                    ]
+                    != catalog_authentication["selective_provider_sha256"]
                 ):
                     raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
                         "Resume state selective identities differ from the "
@@ -1939,8 +1812,7 @@ def _enforce_cuda_allocator_caps(
             raise
         except Exception as exc:
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-                f"Could not enforce the CUDA allocator cap on logical "
-                f"device {index}."
+                f"Could not enforce the CUDA allocator cap on logical device {index}."
             ) from exc
         effective = int(math.floor(float(total) * fraction))
         if effective <= 0 or effective > requested or effective > total:
@@ -2191,9 +2063,7 @@ def _build_authenticated_gpu_replay_evaluator(torch: Any) -> _GpuReplayBundle:
         "cpu_installed_state": cpu_fingerprint.as_dict(),
         "scheduler_policy": scheduler_policy.as_dict(),
         "runtime_authentication": runtime_authentication,
-        "runtime_authentication_sha256": (
-            runtime_authentication["report_sha256"]
-        ),
+        "runtime_authentication_sha256": (runtime_authentication["report_sha256"]),
         "proven_parity_receipt": parity_proof,
         "contract_tensor_names": sorted(contract_cpu),
         "contract_cpu_tensors_retained_for_runtime_reauthentication": True,
@@ -2390,9 +2260,7 @@ def _live_model_authentication(model: Any) -> Mapping[str, Any]:
             {
                 "state_sha256": fingerprint_model_state(model),
                 "runtime_sha256": fingerprint_model_runtime_state(model),
-                "parameter_inventory": dict(
-                    independent_parameter_inventory(model)
-                ),
+                "parameter_inventory": dict(independent_parameter_inventory(model)),
             }
         )
     except Exception as exc:
@@ -2428,9 +2296,7 @@ def _dense_retained_state_facts(
             "dense_materialized_retained_state": True,
             "pruning_reparameterizations_absent": True,
             "quantized_parameters_or_module_wrappers_absent": True,
-            "evidence_scope": (
-                "retained-state-fact-not-complete-operation-history"
-            ),
+            "evidence_scope": ("retained-state-fact-not-complete-operation-history"),
         }
     )
 
@@ -2504,9 +2370,7 @@ def _fold_only_static_source_findings(
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
             for alias in node.names:
-                qualified = (
-                    f"{module}.{alias.name}" if module else alias.name
-                )
+                qualified = f"{module}.{alias.name}" if module else alias.name
                 bindings[alias.asname or alias.name] = qualified
                 if _is_forbidden_fold_mutation_symbol(qualified):
                     findings.add(
@@ -2526,9 +2390,7 @@ def _fold_only_static_source_findings(
     for node in assignment_nodes:
         value = getattr(node, "value", None)
         qualified = (
-            _resolved_ast_symbol(value, bindings)
-            if isinstance(value, ast.AST)
-            else ""
+            _resolved_ast_symbol(value, bindings) if isinstance(value, ast.AST) else ""
         )
         if not _is_forbidden_fold_mutation_symbol(qualified):
             continue
@@ -2724,13 +2586,9 @@ def _audit_authenticated_compiler_sources(
             }
         )
     body = {
-        "schema": (
-            "neural-forge-lfm2-cpcf-v5-static-fold-mutation-source-audit-v1"
-        ),
+        "schema": ("neural-forge-lfm2-cpcf-v5-static-fold-mutation-source-audit-v1"),
         "compiler_implementation_sha256": implementation_sha256,
-        "authenticated_compiler_source_files": [
-            dict(row) for row in ordered_sources
-        ],
+        "authenticated_compiler_source_files": [dict(row) for row in ordered_sources],
         "runner_source_sha256": source_specs[-1]["sha256"],
         "audited_source_count": len(audits),
         "source_audits": audits,
@@ -2763,10 +2621,7 @@ def _catalog_preparation_source_identities() -> Mapping[str, str]:
             "Selective catalog preparation source files are missing."
         )
     return MappingProxyType(
-        {
-            name: _file_sha256(path)
-            for name, path in sorted(sources.items())
-        }
+        {name: _file_sha256(path) for name, path in sorted(sources.items())}
     )
 
 
@@ -2816,11 +2671,7 @@ def _catalog_preparation_static_audit() -> Mapping[str, Any]:
             called = (
                 node.func.attr
                 if isinstance(node.func, ast.Attribute)
-                else (
-                    node.func.id
-                    if isinstance(node.func, ast.Name)
-                    else ""
-                )
+                else (node.func.id if isinstance(node.func, ast.Name) else "")
             )
             if called in forbidden_calls:
                 operation_findings.append(
@@ -2832,10 +2683,7 @@ def _catalog_preparation_static_audit() -> Mapping[str, Any]:
                     }
                 )
         module_findings = mutation_findings + operation_findings
-        findings.extend(
-            {"module": module_name, **value}
-            for value in module_findings
-        )
+        findings.extend({"module": module_name, **value} for value in module_findings)
         source_audits.append(
             {
                 "module": module_name,
@@ -2846,9 +2694,7 @@ def _catalog_preparation_static_audit() -> Mapping[str, Any]:
             }
         )
     body = {
-        "schema": (
-            "neural-forge-lfm2-cpcf-v5-catalog-preparation-static-audit-v1"
-        ),
+        "schema": ("neural-forge-lfm2-cpcf-v5-catalog-preparation-static-audit-v1"),
         "source_audits": source_audits,
         "forbidden_findings": findings,
         "forbidden_finding_count": len(findings),
@@ -2882,8 +2728,7 @@ def _catalog_authentication_summary(
         "selective_provider_source_sha256",
     )
     result = {
-        name: _digest(preparation.get(name), f"catalog {name}")
-        for name in fields
+        name: _digest(preparation.get(name), f"catalog {name}") for name in fields
     }
     return MappingProxyType(result)
 
@@ -2893,21 +2738,13 @@ def selective_catalog_post_run_reverification_record(
 ) -> Mapping[str, Any]:
     """Build the one exact post-provider-close catalog verification record."""
 
-    authentication = _catalog_authentication_summary(
-        catalog_preparation
-    )
+    authentication = _catalog_authentication_summary(catalog_preparation)
     return MappingProxyType(
         {
-            "preparation_receipt_sha256": authentication[
-                "preparation_receipt_sha256"
-            ],
+            "preparation_receipt_sha256": authentication["preparation_receipt_sha256"],
             "binding_sha256": authentication["binding_sha256"],
-            "artifact_manifest_sha256": authentication[
-                "artifact_manifest_sha256"
-            ],
-            "artifact_catalog_sha256": authentication[
-                "artifact_catalog_sha256"
-            ],
+            "artifact_manifest_sha256": authentication["artifact_manifest_sha256"],
+            "artifact_catalog_sha256": authentication["artifact_catalog_sha256"],
             "reverified_after_provider_close": True,
             "unchanged_across_fold": True,
         }
@@ -2926,9 +2763,7 @@ def authenticate_selective_catalog_post_run_reverification(
             "Selective catalog post-run reverification is not a mapping."
         )
     expected = dict(
-        selective_catalog_post_run_reverification_record(
-            catalog_preparation
-        )
+        selective_catalog_post_run_reverification_record(catalog_preparation)
     )
     observed = dict(value)
     if observed != expected:
@@ -3002,10 +2837,7 @@ def _read_selective_catalog_preparation(
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Selective catalog preparation receipt is unreadable."
         ) from exc
-    if (
-        not isinstance(value, Mapping)
-        or raw != _canonical_json(value) + b"\n"
-    ):
+    if not isinstance(value, Mapping) or raw != _canonical_json(value) + b"\n":
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Selective catalog preparation receipt is not canonical JSON."
         )
@@ -3025,8 +2857,7 @@ def _read_selective_catalog_preparation(
         or (required is not None and claimed != required)
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            "Selective catalog preparation receipt schema, seal, or pin "
-            "is invalid."
+            "Selective catalog preparation receipt schema, seal, or pin is invalid."
         )
     complete = {
         **receipt,
@@ -3034,8 +2865,7 @@ def _read_selective_catalog_preparation(
     }
     summary = _catalog_authentication_summary(complete)
     if (
-        receipt.get("status")
-        != "prepared_authenticated_tensor_free_catalog"
+        receipt.get("status") != "prepared_authenticated_tensor_free_catalog"
         or receipt.get("catalog_store_directory")
         != str(
             _local_lexical_path(
@@ -3087,22 +2917,17 @@ def _read_selective_catalog_preparation(
             "Selective catalog preparation has no typed binding."
         )
     binding = DynamicEvidenceCatalogBinding.from_dict(binding_value)
-    provider_implementation = dict(
-        lfm2_cpcf_selective_provider_implementation()
-    )
+    provider_implementation = dict(lfm2_cpcf_selective_provider_implementation())
     if (
         binding.binding_sha256 != summary["binding_sha256"]
         or binding.codec_sha256 != summary["codec_sha256"]
-        or binding.provider_sha256
-        != summary["provider_implementation_sha256"]
+        or binding.provider_sha256 != summary["provider_implementation_sha256"]
         or provider_implementation.get("implementation_sha256")
         != summary["provider_implementation_sha256"]
-        or receipt.get("provider_implementation")
-        != provider_implementation
+        or receipt.get("provider_implementation") != provider_implementation
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            "Selective catalog binding, codec, or provider implementation "
-            "changed."
+            "Selective catalog binding, codec, or provider implementation changed."
         )
     store = DynamicEvidenceCatalogArtifactStore(
         config.selective_catalog_store_directory
@@ -3111,25 +2936,18 @@ def _read_selective_catalog_preparation(
     if (
         artifact is None
         or artifact.disposition != "loaded"
-        or artifact.manifest_sha256
-        != summary["artifact_manifest_sha256"]
-        or artifact.catalog_sha256
-        != summary["artifact_catalog_sha256"]
+        or artifact.manifest_sha256 != summary["artifact_manifest_sha256"]
+        or artifact.catalog_sha256 != summary["artifact_catalog_sha256"]
         or str(artifact.path) != receipt.get("artifact_path")
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Prepared selective catalog artifact is absent or changed."
         )
-    catalog = lfm2_cpcf_selective_catalog_from_artifact_payload(
-        artifact.payload
-    )
+    catalog = lfm2_cpcf_selective_catalog_from_artifact_payload(artifact.payload)
     if (
-        catalog.catalog_sha256
-        != summary["selective_catalog_sha256"]
-        or catalog.source_sha256
-        != summary["selective_source_sha256"]
-        or catalog.provider_sha256
-        != summary["selective_provider_sha256"]
+        catalog.catalog_sha256 != summary["selective_catalog_sha256"]
+        or catalog.source_sha256 != summary["selective_source_sha256"]
+        or catalog.provider_sha256 != summary["selective_provider_sha256"]
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Prepared typed selective catalog identity changed."
@@ -3156,9 +2974,7 @@ def authenticate_prepared_selective_catalog(
 
     request = _PreparationRequest(
         trace_cache_directory=trace_cache_directory,
-        selective_catalog_store_directory=(
-            selective_catalog_store_directory
-        ),
+        selective_catalog_store_directory=(selective_catalog_store_directory),
         selective_catalog_receipt_json=selective_catalog_receipt_json,
         expected_selective_catalog_receipt_sha256=(
             expected_selective_catalog_receipt_sha256
@@ -3223,13 +3039,9 @@ def prepare_selective_catalog(
     provider = None
     with guard:
         try:
-            provider = (
-                open_or_build_lfm2_cpcf_selective_evidence_provider(
-                    cache,
-                    artifact_store=(
-                        config.selective_catalog_store_directory
-                    ),
-                )
+            provider = open_or_build_lfm2_cpcf_selective_evidence_provider(
+                cache,
+                artifact_store=(config.selective_catalog_store_directory),
             )
             artifact = provider.catalog_artifact
             if artifact is None:
@@ -3246,9 +3058,7 @@ def prepare_selective_catalog(
             "Catalog preparation initialized CUDA."
         )
     artifact.verify()
-    provider_implementation = dict(
-        lfm2_cpcf_selective_provider_implementation()
-    )
+    provider_implementation = dict(lfm2_cpcf_selective_provider_implementation())
     source_identities = _catalog_preparation_source_identities()
     operation_audit = {
         "optimizer_constructions": int(guard.optimizer_constructions),
@@ -3266,8 +3076,7 @@ def prepare_selective_catalog(
     }
     if any(value != 0 for value in operation_audit.values()):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            "Catalog preparation attempted a forbidden model or training "
-            "operation."
+            "Catalog preparation attempted a forbidden model or training operation."
         )
     body = {
         "schema": SELECTIVE_CATALOG_PREPARATION_SCHEMA,
@@ -3321,9 +3130,7 @@ def prepare_selective_catalog(
     _write_diagnostic(receipt_path, receipt)
     return _read_selective_catalog_preparation(
         config,
-        expected_receipt_sha256=receipt[
-            "preparation_receipt_sha256"
-        ],
+        expected_receipt_sha256=receipt["preparation_receipt_sha256"],
     )
 
 
@@ -3359,12 +3166,10 @@ def _authenticate_live_consumer_context(
     if (
         target["state_sha256"] != context.target_state_sha256
         or target["runtime_sha256"] != context.target_runtime_sha256
-        or target["parameter_inventory"]
-        != dict(context.compiled_parameter_inventory)
+        or target["parameter_inventory"] != dict(context.compiled_parameter_inventory)
         or parent["state_sha256"] != context.parent_state_sha256
         or parent["runtime_sha256"] != context.parent_runtime_sha256
-        or parent["parameter_inventory"]
-        != dict(context.parent_parameter_inventory)
+        or parent["parameter_inventory"] != dict(context.parent_parameter_inventory)
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Live parent or target state/topology differs from the sealed "
@@ -3408,13 +3213,10 @@ def _invoke_compiled_candidate_consumer(
         )
     parent_attributes = getattr(parent, "__dict__", {})
     forward_had_instance_value = (
-        isinstance(parent_attributes, Mapping)
-        and "forward" in parent_attributes
+        isinstance(parent_attributes, Mapping) and "forward" in parent_attributes
     )
     forward_instance_value = (
-        parent_attributes.get("forward")
-        if forward_had_instance_value
-        else None
+        parent_attributes.get("forward") if forward_had_instance_value else None
     )
 
     def observed_direct_parent_forward(*args: Any, **kwargs: Any) -> Any:
@@ -3440,42 +3242,35 @@ def _invoke_compiled_candidate_consumer(
         _authenticate_live_consumer_context(context)
     except BaseException as exc:
         authentication_error = exc
-    parent_calls = sum(
-        int(observed_parent.get(name, 0))
-        for name in (
-            "module_forward_calls",
-            "root_forward_calls",
-            "inference_entrypoint_calls",
-        )
-    ) + direct_parent_forward_calls
-    consumer_guard_body = {
-        "schema": (
-            "neural-forge-lfm2-cpcf-v5-consumer-runtime-fold-only-guard-v1"
-        ),
-        "guard_implementation": dict(
-            _fold_only_guard_implementation_identity(
-                dynamic_fold_executor
+    parent_calls = (
+        sum(
+            int(observed_parent.get(name, 0))
+            for name in (
+                "module_forward_calls",
+                "root_forward_calls",
+                "inference_entrypoint_calls",
             )
+        )
+        + direct_parent_forward_calls
+    )
+    consumer_guard_body = {
+        "schema": ("neural-forge-lfm2-cpcf-v5-consumer-runtime-fold-only-guard-v1"),
+        "guard_implementation": dict(
+            _fold_only_guard_implementation_identity(dynamic_fold_executor)
         ),
         "compiler_runtime_guard_sha256": context.zero_operation_audit[
             "compiler_runtime_guard"
         ]["report_sha256"],
-        "optimizer_constructions": int(
-            consumer_guard.optimizer_constructions
-        ),
+        "optimizer_constructions": int(consumer_guard.optimizer_constructions),
         "optimizer_steps": int(consumer_guard.optimizer_steps),
         "backward_calls": int(consumer_guard.backward_calls),
         "autograd_grad_calls": int(consumer_guard.autograd_grad_calls),
         "pruning_operations": int(consumer_guard.pruning_operations),
-        "quantization_operations": int(
-            consumer_guard.quantization_operations
-        ),
+        "quantization_operations": int(consumer_guard.quantization_operations),
         "parent_module_forward_calls": int(
             observed_parent.get("module_forward_calls", 0)
         ),
-        "parent_root_forward_calls": int(
-            observed_parent.get("root_forward_calls", 0)
-        ),
+        "parent_root_forward_calls": int(observed_parent.get("root_forward_calls", 0)),
         "parent_inference_entrypoint_calls": int(
             observed_parent.get("inference_entrypoint_calls", 0)
         ),
@@ -3573,9 +3368,9 @@ def _invoke_compiled_candidate_consumer(
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Candidate consumer cannot predeclare its outer runtime guard."
         )
-    consumer_guard_body["capture_verification_sha256"] = (
-        result.verification_receipt["verification_sha256"]
-    )
+    consumer_guard_body["capture_verification_sha256"] = result.verification_receipt[
+        "verification_sha256"
+    ]
     consumer_guard_report = {
         **consumer_guard_body,
         "report_sha256": _sha(consumer_guard_body),
@@ -3626,15 +3421,11 @@ def _run(
             "preparation receipt digest."
         )
     catalog_preparation = _read_selective_catalog_preparation(config)
-    catalog_authentication = _catalog_authentication_summary(
-        catalog_preparation
-    )
+    catalog_authentication = _catalog_authentication_summary(catalog_preparation)
     torch = _configure_torch()
     cuda_allocator_policy = _enforce_cuda_allocator_caps(
         torch,
-        maximum_cuda_bytes_per_device=(
-            config.maximum_cuda_bytes_per_device
-        ),
+        maximum_cuda_bytes_per_device=(config.maximum_cuda_bytes_per_device),
     )
 
     from experiments.run_lfm2_residual_attention_fold import (
@@ -3777,8 +3568,8 @@ def _run(
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "The synthesized dense blank misses the exact parameter target."
         )
-    structural_compression_floor = (
-        _request_derived_structural_compression_floor(config.compression)
+    structural_compression_floor = _request_derived_structural_compression_floor(
+        config.compression
     )
     structural_compression = audit_lfm2_cpcf_parameter_compaction(
         parent,
@@ -3804,15 +3595,11 @@ def _run(
         provider = open_lfm2_cpcf_selective_evidence_provider_from_catalog(
             cache,
             artifact_store=config.selective_catalog_store_directory,
-            expected_binding_sha256=(
-                catalog_authentication["binding_sha256"]
-            ),
+            expected_binding_sha256=(catalog_authentication["binding_sha256"]),
             expected_manifest_sha256=(
                 catalog_authentication["artifact_manifest_sha256"]
             ),
-            expected_catalog_sha256=(
-                catalog_authentication["artifact_catalog_sha256"]
-            ),
+            expected_catalog_sha256=(catalog_authentication["artifact_catalog_sha256"]),
         )
         catalog = provider.catalog
         references = catalog.dynamic_catalog.references
@@ -3878,6 +3665,7 @@ def _run(
             ),
             rss_sample_interval_seconds=0.05,
             require_short_conv_v5_endpoint_first_selector=True,
+            require_short_conv_v5_authenticated_whole_macrocell_selector=True,
             require_short_conv_v5_real_numerical_frontier_adapter=True,
         )
         source_tied_table = base._mapped_source_tied_table(parent, bridge)
@@ -3908,9 +3696,7 @@ def _run(
                         "evidence_provider": provider,
                         "source_tied_table": source_tied_table,
                         "blank_target_report": blank.as_dict(),
-                        "planned_target_unique_parameters": (
-                            blank.unique_parameters
-                        ),
+                        "planned_target_unique_parameters": (blank.unique_parameters),
                         "runtime_policy": runtime_policy,
                         "candidate_replay_evaluator": gpu.evaluator,
                         "candidate_selector": selector,
@@ -3920,32 +3706,22 @@ def _run(
     finally:
         if provider is not None:
             provider.close()
-    post_run_catalog_preparation = _read_selective_catalog_preparation(
-        config
-    )
+    post_run_catalog_preparation = _read_selective_catalog_preparation(config)
     if dict(post_run_catalog_preparation) != dict(catalog_preparation):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Selective catalog preparation changed across the fold."
         )
-    guard_identity = _fold_only_guard_implementation_identity(
-        dynamic_fold_executor
-    )
+    guard_identity = _fold_only_guard_implementation_identity(dynamic_fold_executor)
     compiler_runtime_guard = {
         "schema": "neural-forge-lfm2-cpcf-v5-compiler-runtime-guard-v1",
         "guard_implementation": dict(guard_identity),
-        "static_pruning_quantization_source_audit": dict(
-            compiler_static_source_audit
-        ),
-        "optimizer_constructions": int(
-            compiler_guard.optimizer_constructions
-        ),
+        "static_pruning_quantization_source_audit": dict(compiler_static_source_audit),
+        "optimizer_constructions": int(compiler_guard.optimizer_constructions),
         "optimizer_steps": int(compiler_guard.optimizer_steps),
         "backward_calls": int(compiler_guard.backward_calls),
         "autograd_grad_calls": int(compiler_guard.autograd_grad_calls),
         "pruning_operations": int(compiler_guard.pruning_operations),
-        "quantization_operations": int(
-            compiler_guard.quantization_operations
-        ),
+        "quantization_operations": int(compiler_guard.quantization_operations),
         "parent_module_forward_calls": int(
             compiler_parent_execution.get("module_forward_calls", 0)
         ),
@@ -4048,17 +3824,24 @@ def _run(
     checkpointing_enabled = resume_runtime.coordinator is not None
     resume_used = resume_runtime.state is not None
     if (
-        compiled_report.get("short_conv_v5_endpoint_first_selector_integrated")
+        compiled_report.get(
+            "short_conv_v5_authenticated_whole_macrocell_selection_integrated"
+        )
         is not True
+        or compiled_report.get("short_conv_v5_macrocell_selector_final_authority")
+        is not True
+        or compiled_report.get("short_conv_v5_endpoint_first_selector_final_authority")
+        is not False
+        or compiled_report.get("short_conv_v5_endpoint_prefilter_control_integrated")
+        is not True
+        or compiled_report.get("macrocell_candidate_selector_layer_indices")
+        != compiled_report.get("short_conv_layer_indices")
         or compiled_report.get(
             "short_conv_v5_numerical_candidate_generation_integrated"
         )
         is not True
-        or compiled_report.get("short_conv_v5_numerical_policy_integrated")
-        is not True
-        or compiled_report.get(
-            "short_conv_v5_real_numerical_adapter_required"
-        )
+        or compiled_report.get("short_conv_v5_numerical_policy_integrated") is not True
+        or compiled_report.get("short_conv_v5_real_numerical_adapter_required")
         is not True
         or compiled_report.get("candidate_replay_backend_injected") is not True
         or compiled_report.get("resume_supported") is not True
@@ -4074,8 +3857,9 @@ def _run(
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "The completed fold lacks the required real v5 numerical "
-            "provenance, selector, replay injection, or authenticated typed "
-            "resume receipt."
+            "provenance, authenticated whole-macrocell selection authority, "
+            "endpoint-prefilter control, replay injection, or authenticated "
+            "typed resume receipt."
         )
     compiler_operation_audit = compiled_report.get("operation_audit")
     if not isinstance(compiler_operation_audit, Mapping) or any(
@@ -4104,32 +3888,24 @@ def _run(
         "target_model_forward_calls": compiler_runtime_guard[
             "target_root_forward_calls"
         ],
-        "generation_calls": compiler_runtime_guard[
-            "parent_inference_entrypoint_calls"
-        ],
+        "generation_calls": compiler_runtime_guard["parent_inference_entrypoint_calls"],
         "training_steps": compiler_runtime_guard["training_steps"],
         "backward_calls": compiler_runtime_guard["backward_calls"],
         "optimizer_steps": compiler_runtime_guard["optimizer_steps"],
-        "parameters_pruned": compiler_runtime_guard[
-            "pruning_operations"
-        ],
-        "parameters_quantized": compiler_runtime_guard[
-            "quantization_operations"
-        ],
+        "parameters_pruned": compiler_runtime_guard["pruning_operations"],
+        "parameters_quantized": compiler_runtime_guard["quantization_operations"],
     }
     if any(
         compiler_operation_audit.get(name) != value
         for name, value in observed_compiler_crosscheck.items()
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            "Compiler-emitted operation claims differ from runtime guard "
-            "observations."
+            "Compiler-emitted operation claims differ from runtime guard observations."
         )
     compiler_implementation = compiled_report.get("compiler_implementation")
     if (
         not isinstance(compiler_implementation, Mapping)
-        or dict(compiler_implementation)
-        != authenticated_compiler_implementation
+        or dict(compiler_implementation) != authenticated_compiler_implementation
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "The compiler receipt lacks or changed its preauthenticated "
@@ -4150,8 +3926,7 @@ def _run(
     if (
         compiled_report.get("selective_catalog_sha256")
         != catalog_authentication["selective_catalog_sha256"]
-        or source_sha256
-        != catalog_authentication["selective_source_sha256"]
+        or source_sha256 != catalog_authentication["selective_source_sha256"]
         or compiled_report.get("selective_provider_sha256")
         != catalog_authentication["selective_provider_sha256"]
     ):
@@ -4163,49 +3938,32 @@ def _run(
         selective_source_sha256=source_sha256,
         compiler_implementation_sha256=compiler_sha256,
         runner_source_sha256=runner_source_sha256,
-        fold_only_runtime_guard_identity_sha256=guard_identity[
-            "identity_sha256"
-        ],
+        fold_only_runtime_guard_identity_sha256=guard_identity["identity_sha256"],
         catalog_preparation=catalog_preparation,
     )
     corpus_sha256 = _file_sha256(trajectory_path)
     target_consumer_auth = _live_model_authentication(target)
     parent_consumer_auth = _live_model_authentication(parent)
-    if (
-        target_consumer_auth["parameter_inventory"]
-        != dict(compiled_inventory)
-        or parent_consumer_auth["parameter_inventory"]
-        != dict(parent_inventory)
-    ):
+    if target_consumer_auth["parameter_inventory"] != dict(
+        compiled_inventory
+    ) or parent_consumer_auth["parameter_inventory"] != dict(parent_inventory):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Post-compile consumer authentication changed parameter inventory."
         )
     zero_operation_audit = {
         "schema": COMPILED_CANDIDATE_ZERO_AUDIT_SCHEMA,
-        "optimizer_constructions": compiler_runtime_guard[
-            "optimizer_constructions"
-        ],
+        "optimizer_constructions": compiler_runtime_guard["optimizer_constructions"],
         "optimizer_steps": compiler_runtime_guard["optimizer_steps"],
         "backward_calls": compiler_runtime_guard["backward_calls"],
-        "autograd_grad_calls": compiler_runtime_guard[
-            "autograd_grad_calls"
-        ],
+        "autograd_grad_calls": compiler_runtime_guard["autograd_grad_calls"],
         "training_steps": compiler_runtime_guard["training_steps"],
-        "pruning_operations": compiler_runtime_guard[
-            "pruning_operations"
-        ],
-        "quantization_operations": compiler_runtime_guard[
-            "quantization_operations"
-        ],
-        "parent_forward_calls": compiler_runtime_guard[
-            "parent_module_forward_calls"
-        ],
+        "pruning_operations": compiler_runtime_guard["pruning_operations"],
+        "quantization_operations": compiler_runtime_guard["quantization_operations"],
+        "parent_forward_calls": compiler_runtime_guard["parent_module_forward_calls"],
         "parent_inference_calls": compiler_runtime_guard[
             "parent_inference_entrypoint_calls"
         ],
-        "target_forward_calls": compiler_runtime_guard[
-            "target_root_forward_calls"
-        ],
+        "target_forward_calls": compiler_runtime_guard["target_root_forward_calls"],
         "cache_generation_calls": compiler_operation_audit[
             "parent_cache_generation_calls"
         ],
@@ -4264,13 +4022,9 @@ def _run(
             "selective_catalog_artifact_sha256": (
                 catalog_authentication["artifact_catalog_sha256"]
             ),
-            "selective_catalog_codec_sha256": (
-                catalog_authentication["codec_sha256"]
-            ),
+            "selective_catalog_codec_sha256": (catalog_authentication["codec_sha256"]),
             "selective_catalog_provider_implementation_sha256": (
-                catalog_authentication[
-                    "provider_implementation_sha256"
-                ]
+                catalog_authentication["provider_implementation_sha256"]
             ),
         },
         "request": config.as_dict(),
@@ -4280,13 +4034,9 @@ def _run(
         "blank_parameter_inventory": dict(blank_inventory),
         "compiled_parameter_inventory": dict(compiled_inventory),
         "structural_compression": dict(structural_compression),
-        "request_derived_structural_compression_floor": (
-            structural_compression_floor
-        ),
+        "request_derived_structural_compression_floor": (structural_compression_floor),
         "compiled_model_fold": compiled_report,
-        "compiler_runtime_fold_only_guard": dict(
-            compiler_runtime_guard
-        ),
+        "compiler_runtime_fold_only_guard": dict(compiler_runtime_guard),
         "retained_dense_state_facts": {
             "before_compile": dict(precompile_dense_state),
             "after_compile": dict(postcompile_dense_state),
@@ -4300,9 +4050,7 @@ def _run(
         "selective_catalog": catalog.as_dict(),
         "selective_catalog_artifact": dict(catalog_preparation),
         "selective_catalog_post_run_reverification": dict(
-            selective_catalog_post_run_reverification_record(
-                catalog_preparation
-            )
+            selective_catalog_post_run_reverification_record(catalog_preparation)
         ),
         "selective_residency_policy": {
             "full_phase_tree_logical_bytes": full_phase_tree_bytes,
@@ -4325,12 +4073,12 @@ def _run(
             "guard_start_rss_bytes": compiled_report["physical_rss_receipt"][
                 "start_rss_bytes"
             ],
-            "guard_start_lifetime_peak_bytes": compiled_report[
-                "physical_rss_receipt"
-            ]["start_lifetime_peak_bytes"],
-            "guard_absolute_headroom_bytes": compiled_report[
-                "physical_rss_receipt"
-            ]["absolute_headroom_bytes"],
+            "guard_start_lifetime_peak_bytes": compiled_report["physical_rss_receipt"][
+                "start_lifetime_peak_bytes"
+            ],
+            "guard_absolute_headroom_bytes": compiled_report["physical_rss_receipt"][
+                "absolute_headroom_bytes"
+            ],
             "guard_relative_maximum_increase_bytes": compiled_report[
                 "physical_rss_receipt"
             ]["relative_maximum_increase_bytes"],
@@ -4347,18 +4095,12 @@ def _run(
             "projected_fir_offdiagonal_gate": (
                 PREREGISTERED_PROJECTED_FIR_OFFDIAGONAL_GATE
             ),
-            "per_lag_commutator_gate": (
-                PREREGISTERED_PER_LAG_COMMUTATOR_GATE
-            ),
-            "basis_policy": (
-                numerical_adapter.basis_policy.authentication_body()
-            ),
+            "per_lag_commutator_gate": (PREREGISTERED_PER_LAG_COMMUTATOR_GATE),
+            "basis_policy": (numerical_adapter.basis_policy.authentication_body()),
             "basis_policy_sha256": (
                 numerical_adapter.basis_policy.authentication_sha256
             ),
-            "ridge_policy": (
-                numerical_adapter.ridge_policy.authentication_body()
-            ),
+            "ridge_policy": (numerical_adapter.ridge_policy.authentication_body()),
             "ridge_policy_sha256": (
                 numerical_adapter.ridge_policy.authentication_sha256
             ),
@@ -4403,13 +4145,9 @@ def _run(
             "selective_catalog_artifact_sha256": (
                 catalog_authentication["artifact_catalog_sha256"]
             ),
-            "selective_catalog_codec_sha256": (
-                catalog_authentication["codec_sha256"]
-            ),
+            "selective_catalog_codec_sha256": (catalog_authentication["codec_sha256"]),
             "selective_catalog_provider_implementation_sha256": (
-                catalog_authentication[
-                    "provider_implementation_sha256"
-                ]
+                catalog_authentication["provider_implementation_sha256"]
             ),
             "fold_only_runtime_guard_identity_sha256": guard_identity[
                 "identity_sha256"
@@ -4443,9 +4181,7 @@ def _run(
             "selective_catalog_cold_build_count": 0,
             "selective_catalog_authenticated_warm_hit_count": 1,
             "selective_catalog_post_run_reverification_count": 1,
-            "local_resume_store_open_count": int(
-                checkpointing_enabled
-            ),
+            "local_resume_store_open_count": int(checkpointing_enabled),
             "authenticated_resume_state_open_count": int(resume_used),
             "training_steps": compiler_runtime_guard["training_steps"],
             "training_steps_runtime_observed_directly": False,
@@ -4453,16 +4189,12 @@ def _run(
                 compiler_runtime_guard["training_steps_zero_derivation"]
             ),
             "backward_calls": compiler_runtime_guard["backward_calls"],
-            "autograd_grad_calls": compiler_runtime_guard[
-                "autograd_grad_calls"
-            ],
+            "autograd_grad_calls": compiler_runtime_guard["autograd_grad_calls"],
             "optimizer_constructions": compiler_runtime_guard[
                 "optimizer_constructions"
             ],
             "optimizer_steps": compiler_runtime_guard["optimizer_steps"],
-            "pruning_operations": compiler_runtime_guard[
-                "pruning_operations"
-            ],
+            "pruning_operations": compiler_runtime_guard["pruning_operations"],
             "quantization_operations": compiler_runtime_guard[
                 "quantization_operations"
             ],
@@ -4490,9 +4222,7 @@ def _run(
             "resume_used": resume_used,
             "resume_state_was_exact_typed_v5": (
                 not resume_used
-                or resume_progress["invocation_head"][
-                    "typed_v5_state_opened"
-                ]
+                or resume_progress["invocation_head"]["typed_v5_state_opened"]
             ),
             "resume_parent_or_cache_tensor_sidecars": 0,
             "child_checkpoint_saved": False,
@@ -4557,9 +4287,7 @@ def run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             "stage": "run",
             "publication_claimed": False,
             "resume_claimed": False,
-            "resume_requested": (
-                config.resume_admission_sha256 is not None
-            ),
+            "resume_requested": (config.resume_admission_sha256 is not None),
             "resume_checkpointing_requested": (
                 config.resume_store_directory is not None
             ),
@@ -4595,9 +4323,7 @@ def run_with_compiled_candidate_consumer(
             "publication_claimed": False,
             "compiler_child_checkpoint_saved": False,
             "quarantine_capture_requested": True,
-            "resume_requested": (
-                config.resume_admission_sha256 is not None
-            ),
+            "resume_requested": (config.resume_admission_sha256 is not None),
             "resume_checkpointing_requested": (
                 config.resume_store_directory is not None
             ),
@@ -4688,30 +4414,20 @@ def build_failure_diagnostic(
         for name, report in record["structured_reports"].items()
     ]
     resume_progress_reports = [
-        item["report"]
-        for item in preserved
-        if item["name"] == "resume_progress_report"
+        item["report"] for item in preserved if item["name"] == "resume_progress_report"
     ]
     resume_requested = bool(
-        (
-            config is not None
-            and config.resume_admission_sha256 is not None
-        )
+        (config is not None and config.resume_admission_sha256 is not None)
         or (
             parsed_args is not None
-            and getattr(parsed_args, "resume_admission_sha256", None)
-            is not None
+            and getattr(parsed_args, "resume_admission_sha256", None) is not None
         )
     )
     resume_checkpointing_requested = bool(
-        (
-            config is not None
-            and config.resume_store_directory is not None
-        )
+        (config is not None and config.resume_store_directory is not None)
         or (
             parsed_args is not None
-            and getattr(parsed_args, "resume_store_directory", None)
-            is not None
+            and getattr(parsed_args, "resume_store_directory", None) is not None
         )
     )
     body = {
@@ -4731,9 +4447,7 @@ def build_failure_diagnostic(
         "publication_attempted": False,
         "publication_claimed": False,
         "resume_attempted": resume_requested,
-        "resume_checkpointing_requested": (
-            resume_checkpointing_requested
-        ),
+        "resume_checkpointing_requested": (resume_checkpointing_requested),
         "resume_progress_reports": resume_progress_reports,
         "resume_progress_report_count": len(resume_progress_reports),
         "resume_artifacts_preserved_for_diagnosis": any(
@@ -4910,10 +4624,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--expected-selective-catalog-receipt-sha256",
-        help=(
-            "Exact preparation receipt digest required by a production fold "
-            "worker."
-        ),
+        help=("Exact preparation receipt digest required by a production fold worker."),
     )
     parser.add_argument(
         "--prepare-selective-catalog-only",
@@ -4996,9 +4707,7 @@ def config_from_args(args: argparse.Namespace) -> V5SelectiveBlankFoldConfig:
         minimum_hidden_size=args.minimum_hidden_size,
         maximum_candidates=args.maximum_candidates,
         selected_candidate_rank=args.selected_candidate_rank,
-        expected_target_plan_fingerprint=(
-            args.expected_target_plan_fingerprint
-        ),
+        expected_target_plan_fingerprint=(args.expected_target_plan_fingerprint),
         ridge=args.ridge,
         boundary_state_reconstruction_weight=(
             args.boundary_state_reconstruction_weight
@@ -5022,18 +4731,12 @@ def config_from_args(args: argparse.Namespace) -> V5SelectiveBlankFoldConfig:
         ),
         resume_store_directory=args.resume_store_directory,
         resume_admission_sha256=args.resume_admission_sha256,
-        selective_catalog_store_directory=(
-            args.selective_catalog_store_directory
-        ),
-        selective_catalog_receipt_json=(
-            args.selective_catalog_receipt_json
-        ),
+        selective_catalog_store_directory=(args.selective_catalog_store_directory),
+        selective_catalog_receipt_json=(args.selective_catalog_receipt_json),
         expected_selective_catalog_receipt_sha256=(
             args.expected_selective_catalog_receipt_sha256
         ),
-        prepare_selective_catalog_only=(
-            args.prepare_selective_catalog_only
-        ),
+        prepare_selective_catalog_only=(args.prepare_selective_catalog_only),
         forbidden_requests=forbidden,
     )
 
@@ -5090,17 +4793,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "diagnostic_json": (
                     None
                     if config.prepare_selective_catalog_only
-                    else str(
-                        config.diagnostic_json.expanduser().absolute()
-                    )
+                    else str(config.diagnostic_json.expanduser().absolute())
                 ),
                 "selective_catalog_receipt_json": (
                     None
                     if config.selective_catalog_receipt_json is None
                     else str(
-                        config.selective_catalog_receipt_json
-                        .expanduser()
-                        .absolute()
+                        config.selective_catalog_receipt_json.expanduser().absolute()
                     )
                 ),
                 "child_checkpoint_saved": False,
