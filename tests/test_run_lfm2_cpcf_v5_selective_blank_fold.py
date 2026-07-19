@@ -1673,12 +1673,26 @@ def test_current_two_gpu_policy_receipt_matches_live_replay_sources() -> None:
     receipt = MODULE._load_proven_gpu_parity_receipt()
 
     assert receipt["receipt_sha256"] == (
-        "12061b4861e3f0a41b7e182fb774e74167f1d6b37442036ac5d4321091060a95"
+        "2a80198832f265a5f1621d57c03081c1f612fc13848de99e3786727b8e2b26a3"
     )
     assert receipt["file_sha256"] == (
-        "9df71b45f00a3bc34872266e0c863bfc0560b79345ade64a89bc675b96be062f"
+        "1431076192c4596244f92f4b46b52a0447e328cd3752ba6ff97a24ec5298f55b"
     )
     assert receipt["real_two_gpu_parity_passed"] is True
+
+
+def test_historical_two_gpu_policy_receipt_rejects_changed_sources() -> None:
+    historical = (
+        MODULE._REPOSITORY_ROOT
+        / "reports"
+        / "12061b4-two-rtx3090-bf16.json"
+    )
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="GPU replay source changed",
+    ):
+        MODULE._load_proven_gpu_parity_receipt(historical)
 
 
 def test_failure_diagnostic_preserves_structured_reports_from_causes() -> None:

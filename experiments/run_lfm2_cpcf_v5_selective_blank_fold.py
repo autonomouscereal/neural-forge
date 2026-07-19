@@ -68,7 +68,7 @@ SELECTIVE_CATALOG_PREPARATION_SCHEMA = (
 )
 GPU_REPLAY_SCHEMA = "neural-forge-lfm2-cpcf-v5-authenticated-two-gpu-replay-v1"
 PROVEN_GPU_PARITY_RECEIPT = (
-    _REPOSITORY_ROOT / "reports" / "12061b4-two-rtx3090-bf16.json"
+    _REPOSITORY_ROOT / "reports" / "2a80198-two-rtx3090-bf16.json"
 )
 EXPECTED_GPU_NAME = "NVIDIA GeForce RTX 3090"
 GPU_LOGICAL_DEVICES = (0, 1)

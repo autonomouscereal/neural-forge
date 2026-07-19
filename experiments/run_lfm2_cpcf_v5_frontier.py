@@ -78,7 +78,7 @@ _POSTHOC_EVALUATOR = (
     / "evaluate_lfm2_intelligence_retention.py"
 )
 _GPU_PARITY_RECEIPT = (
-    _REPOSITORY_ROOT / "reports" / "12061b4-two-rtx3090-bf16.json"
+    _REPOSITORY_ROOT / "reports" / "2a80198-two-rtx3090-bf16.json"
 )
 _RESIDUAL_RUNNER = (
     _REPOSITORY_ROOT
