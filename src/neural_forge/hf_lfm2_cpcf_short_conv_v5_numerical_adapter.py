@@ -54,6 +54,10 @@ from .hf_lfm2_cpcf_short_conv_v5 import (
     condition_capped_equilibrated_prior_residual_ridge_frontier,
     interpolate_every_lfm2_cpcf_v5_accepted_edge,
 )
+from .hf_lfm2_cpcf_short_conv_v5_residual_subspace_bcx import (
+    causal_horizon_balanced_row_weights,
+    solve_lfm2_cpcf_v5_residual_subspace_bcx,
+)
 
 
 LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_ADAPTER_SCHEMA = (
@@ -61,7 +65,7 @@ LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_ADAPTER_SCHEMA = (
 )
 _ADAPTER_IMPLEMENTATION = (
     "neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter."
-    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v1"
+    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v2"
 )
 _STATE_ROLES = (
     "in_proj_weight",
@@ -71,6 +75,7 @@ _STATE_ROLES = (
     "writer_weight",
     "writer_bias",
 )
+_SCALABLE_BCX_MINIMUM_HIDDEN_SIZE = 64
 _ZERO_EXECUTION = {
     "parent_model_forward_calls": 0,
     "target_model_forward_calls": 0,
@@ -570,11 +575,114 @@ def _fit_objective(
     context_objective_weight: float,
     replays: Sequence[Any] | None = None,
 ) -> Mapping[str, Any]:
-    return sampled_cp_volterra_objective(
+    torch = _torch()
+    current_replays = (
+        _replays(cases, state) if replays is None else tuple(replays)
+    )
+    uniform_objective = sampled_cp_volterra_objective(
         cases,
-        _replays(cases, state) if replays is None else tuple(replays),
+        current_replays,
         required_split="fit",
         context_objective_weight=context_objective_weight,
+    )
+    reports = []
+    for case, replay in sorted(
+        zip(cases, current_replays),
+        key=lambda value: value[0].case_id,
+    ):
+        suffix_prediction = replay.write_history[:, case.suffix_start :, :]
+        suffix_target = case.desired_write_suffix
+        suffix_mask = case.valid_suffix_mask
+        prefix_prediction = replay.context_history
+        prefix_target = case.desired_context_history
+        prefix_mask = case.valid_prefix_mask
+        suffix_weights = causal_horizon_balanced_row_weights(
+            suffix_mask,
+            dtype=torch.float64,
+        )
+        prefix_weights = causal_horizon_balanced_row_weights(
+            prefix_mask,
+            dtype=torch.float64,
+        )
+
+        def weighted_relative_rmse(
+            prediction: Any,
+            target: Any,
+            weights: Any,
+        ) -> float:
+            difference_energy = (
+                weights
+                * (prediction - target).square().mean(dim=-1)
+            ).sum()
+            target_energy = (
+                weights * target.square().mean(dim=-1)
+            ).sum()
+            floor = torch.finfo(torch.float64).eps
+            return float(
+                (
+                    difference_energy
+                    / target_energy.clamp(min=floor)
+                )
+                .clamp(min=0.0)
+                .sqrt()
+                .item()
+            )
+
+        reports.append(
+            {
+                "case_id": case.case_id,
+                "causal_horizon_endpoint_relative_rmse": (
+                    weighted_relative_rmse(
+                        suffix_prediction,
+                        suffix_target,
+                        suffix_weights,
+                    )
+                ),
+                "causal_horizon_context_relative_rmse": (
+                    weighted_relative_rmse(
+                        prefix_prediction,
+                        prefix_target,
+                        prefix_weights,
+                    )
+                ),
+            }
+        )
+    endpoint = sum(
+        value["causal_horizon_endpoint_relative_rmse"]
+        for value in reports
+    ) / len(reports)
+    context = sum(
+        value["causal_horizon_context_relative_rmse"]
+        for value in reports
+    ) / len(reports)
+    return _seal_report(
+        {
+            "schema": LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_ADAPTER_SCHEMA,
+            "kind": "causal_horizon_residual_fit_objective",
+            "fit_only": True,
+            "case_balanced": True,
+            "case_count": len(reports),
+            "cases": reports,
+            "row_mass": {
+                "uniform_fraction": 0.5,
+                "exponential_tail_fraction": 0.5,
+                "tail_tau": "max(4,sqrt(valid_rows))",
+                "exact_phase_boundaries_available": False,
+            },
+            "mean_case_endpoint_relative_rmse": endpoint,
+            "mean_case_context_relative_rmse": context,
+            "context_objective_weight": context_objective_weight,
+            "combined_fit_objective": (
+                endpoint + context_objective_weight * context
+            ),
+            "uniform_reference_objective_report_sha256": (
+                uniform_objective["report_sha256"]
+            ),
+            "uniform_reference_combined_fit_objective": (
+                uniform_objective["combined_fit_objective"]
+            ),
+            "execution": dict(_ZERO_EXECUTION),
+        }
     )
 
 
@@ -681,7 +789,7 @@ def _solve_fir(
     return candidate, receipts
 
 
-def _solve_bcx(
+def _solve_bcx_legacy(
     cases: Sequence[Lfm2CpcfV4ProjectionCase],
     state: Mapping[str, Any | None],
     *,
@@ -752,6 +860,44 @@ def _solve_bcx(
     candidate["in_proj_weight"] = in_weight.contiguous()
     candidate["in_proj_bias"] = None if in_bias is None else in_bias.contiguous()
     return candidate, receipts
+
+
+def _solve_bcx(
+    cases: Sequence[Lfm2CpcfV4ProjectionCase],
+    state: Mapping[str, Any | None],
+    *,
+    cap_id: str,
+    ridge_policy: Lfm2CpcfV5RidgePolicy,
+    replays: Sequence[Any] | None = None,
+    context_objective_weight: float = 0.05,
+) -> tuple[dict[str, Any | None], list[str]]:
+    target_hidden = int(state["in_proj_weight"].shape[1])
+    if target_hidden < _SCALABLE_BCX_MINIMUM_HIDDEN_SIZE:
+        return _solve_bcx_legacy(
+            cases,
+            state,
+            cap_id=cap_id,
+            ridge_policy=ridge_policy,
+            replays=replays,
+        )
+    result = solve_lfm2_cpcf_v5_residual_subspace_bcx(
+        cases=cases,
+        replays=(
+            _replays(cases, state) if replays is None else tuple(replays)
+        ),
+        state=state,
+        cap_id=cap_id,
+        ridge_policy=ridge_policy,
+        context_objective_weight=context_objective_weight,
+    )
+    if not result.verify_authentication():
+        raise Lfm2CpcfShortConvV5NumericalAdapterError(
+            "Scalable residual-subspace BCX result failed authentication."
+        )
+    candidate = _clone_state(state)
+    candidate["in_proj_weight"] = result.in_proj_weight
+    candidate["in_proj_bias"] = result.in_proj_bias
+    return candidate, list(result.receipt_sha256)
 
 
 def _accepted_phase_report(
@@ -856,12 +1002,19 @@ def _projection_path(
                 context_objective_weight=(request.policy.context_objective_weight),
                 replays=current_replays,
             )
+            solver_arguments = {
+                "cap_id": cap_id,
+                "ridge_policy": factor_ridge_policies[phase],
+                "replays": current_replays,
+            }
+            if phase == "bcx":
+                solver_arguments["context_objective_weight"] = (
+                    request.policy.context_objective_weight
+                )
             candidate, solver_receipts = solver(
                 projection_cases,
                 state,
-                cap_id=cap_id,
-                ridge_policy=factor_ridge_policies[phase],
-                replays=current_replays,
+                **solver_arguments,
             )
             candidate_replays = _replays(projection_cases, candidate)
             after = _fit_objective(
@@ -1231,7 +1384,7 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                     "condition_capped_input_lift",
                     "transported_parent_priors",
                     "fit_only_projection_cases",
-                    "condition_capped_writer_fir_bcx_solves",
+                    "condition_capped_writer_fir_coupled_residual_bcx_solves",
                     "accepted_path_chaining",
                     "every_accepted_edge_interpolation",
                     "typed_raw_frontier",
@@ -1250,6 +1403,29 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                 "factor_parameter_trust_radius": {
                     phase: policy.parameter_trust_radius
                     for phase, policy in factor_ridge_policies.items()
+                },
+                "bcx_solver_backend": (
+                    "coupled_endpoint_residual_subspace_coordinate"
+                    if target_hidden >= _SCALABLE_BCX_MINIMUM_HIDDEN_SIZE
+                    else "legacy_full_width_context_only_oracle"
+                ),
+                "bcx_scalable_hidden_threshold": (
+                    _SCALABLE_BCX_MINIMUM_HIDDEN_SIZE
+                ),
+                "bcx_dense_transported_prior_preserved": True,
+                "bcx_endpoint_residual_aware": (
+                    target_hidden >= _SCALABLE_BCX_MINIMUM_HIDDEN_SIZE
+                ),
+                "bcx_writer_cross_channel_coupling": (
+                    "deterministic_coordinate_residual_refresh"
+                    if target_hidden >= _SCALABLE_BCX_MINIMUM_HIDDEN_SIZE
+                    else "not_applicable_to_legacy_small_width_oracle"
+                ),
+                "causal_horizon_phase_acceptance": {
+                    "uniform_mass": 0.5,
+                    "exponential_tail_mass": 0.5,
+                    "tail_tau": "max(4,sqrt(valid_rows))",
+                    "uniform_reference_metric_retained": True,
                 },
                 "basis_report_sha256": basis.report["report_sha256"],
                 "basis_actual_commutator_gate": (

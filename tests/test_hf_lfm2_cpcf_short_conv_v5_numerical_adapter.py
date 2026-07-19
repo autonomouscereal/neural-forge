@@ -576,6 +576,35 @@ def test_real_adapter_accepts_fir_and_bcx_context_folding_when_supported() -> No
         assert cap["accepted_edge_count"] == cap["accepted_path_state_count"] - 1
 
 
+def test_adapter_dispatches_scalable_endpoint_residual_bcx(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        numerical_adapter_module,
+        "_SCALABLE_BCX_MINIMUM_HIDDEN_SIZE",
+        1,
+    )
+
+    frontier = Lfm2CpcfShortConvV5NumericalFrontierAdapter().generate(
+        _request(zero_writer=True)
+    )
+
+    assert frontier.verify_authentication()
+    provenance = frontier.report["adapter_provenance"]
+    assert (
+        provenance["bcx_solver_backend"]
+        == "coupled_endpoint_residual_subspace_coordinate"
+    )
+    assert provenance["bcx_endpoint_residual_aware"] is True
+    assert provenance["bcx_dense_transported_prior_preserved"] is True
+    assert provenance["causal_horizon_phase_acceptance"] == {
+        "uniform_mass": 0.5,
+        "exponential_tail_mass": 0.5,
+        "tail_tau": "max(4,sqrt(valid_rows))",
+        "uniform_reference_metric_retained": True,
+    }
+
+
 def test_real_adapter_derives_alternate_unbiased_topology_from_request() -> None:
     request = _request(
         source_hidden=6,
