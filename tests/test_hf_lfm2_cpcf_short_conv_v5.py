@@ -419,9 +419,7 @@ def test_equilibrated_ridge_frontier_shares_one_system_with_exact_parity(
         actual_result = actual[candidate_id]
         assert torch.equal(actual_result.weight, expected_result.weight)
         assert torch.equal(actual_result.bias, expected_result.bias)
-        assert dict(actual_result.diagnostics) == dict(
-            expected_result.diagnostics
-        )
+        assert dict(actual_result.diagnostics) == dict(expected_result.diagnostics)
         assert actual_result.diagnostics["condition_cap_passed"] is True
         assert actual_result.diagnostics["nullspace_preserves_prior"] is True
         assert actual_result.verify_authentication()
@@ -631,6 +629,202 @@ def _basis_cases() -> tuple[Lfm2CpcfV5FirBasisCase, ...]:
     )
 
 
+def _legacy_balanced_farthest_first(
+    descriptors: torch.Tensor,
+    *,
+    target_channels: int,
+) -> tuple[list[int], list[list[int]], list[int]]:
+    source_channels = int(descriptors.shape[0])
+    centroid = descriptors.mean(dim=0)
+    first_seed = min(
+        range(source_channels),
+        key=lambda index: (
+            -float((descriptors[index] - centroid).square().sum().item()),
+            index,
+        ),
+    )
+    seeds = [first_seed]
+    while len(seeds) < target_channels:
+        remaining = [index for index in range(source_channels) if index not in seeds]
+        seeds.append(
+            min(
+                remaining,
+                key=lambda index: (
+                    -min(
+                        float(
+                            (descriptors[index] - descriptors[seed])
+                            .square()
+                            .sum()
+                            .item()
+                        )
+                        for seed in seeds
+                    ),
+                    index,
+                ),
+            )
+        )
+    minimum_group_size, larger_groups = divmod(
+        source_channels,
+        target_channels,
+    )
+    capacities = [
+        minimum_group_size + int(group < larger_groups)
+        for group in range(target_channels)
+    ]
+    groups = [[seed] for seed in seeds]
+    assignment = [-1] * source_channels
+    for group, seed in enumerate(seeds):
+        assignment[seed] = group
+    remaining = [index for index in range(source_channels) if assignment[index] < 0]
+    remaining.sort(
+        key=lambda index: (
+            -min(
+                float((descriptors[index] - descriptors[seed]).square().sum().item())
+                for seed in seeds
+            ),
+            index,
+        )
+    )
+    for source in remaining:
+        available = [
+            group
+            for group in range(target_channels)
+            if len(groups[group]) < capacities[group]
+        ]
+        group = min(
+            available,
+            key=lambda index: (
+                float(
+                    (descriptors[source] - descriptors[seeds[index]])
+                    .square()
+                    .sum()
+                    .item()
+                ),
+                index,
+            ),
+        )
+        groups[group].append(source)
+        assignment[source] = group
+    return seeds, groups, assignment
+
+
+def test_seed_distance_table_matches_legacy_partition_and_columns() -> None:
+    generator = torch.Generator().manual_seed(20260719)
+    blocks = (
+        torch.randn((17, 3), generator=generator, dtype=torch.float64),
+        torch.randn((17, 11), generator=generator, dtype=torch.float64),
+        torch.randn((17, 29), generator=generator, dtype=torch.float64),
+    )
+    descriptors = torch.cat(blocks, dim=1).contiguous()
+    expected = _legacy_balanced_farthest_first(
+        descriptors,
+        target_channels=9,
+    )
+    actual = v5_module._balanced_farthest_first_with_seed_distance_table(
+        descriptors,
+        target_channels=9,
+    )
+    assert actual[:3] == expected
+    seed_distance_table = actual[4]
+    for group, seed in enumerate(actual[0]):
+        direct = torch.stack(
+            tuple(
+                (descriptors[source] - descriptors[seed]).square().sum()
+                for source in range(17)
+            )
+        )
+        assert torch.equal(seed_distance_table[:, group], direct)
+
+
+def test_seed_distance_table_preserves_lowest_index_ties() -> None:
+    descriptors = torch.zeros((8, 6), dtype=torch.float64)
+    seeds, groups, assignment, capacity_lookup_count, seed_distance_table = (
+        v5_module._balanced_farthest_first_with_seed_distance_table(
+            descriptors,
+            target_channels=3,
+        )
+    )
+    assert seeds == [0, 1, 2]
+    assert groups == [[0, 3, 4], [1, 5, 6], [2, 7]]
+    assert assignment == [0, 1, 2, 0, 0, 1, 1, 2]
+    assert capacity_lookup_count == 11
+    assert torch.count_nonzero(seed_distance_table).item() == 0
+
+
+def test_seed_distance_table_preserves_equilibrated_near_duplicate_partition() -> None:
+    generator = torch.Generator().manual_seed(17)
+    raw = torch.randn(
+        (8, 16_384),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    raw[1].copy_(raw[0])
+    raw[1, 0] += 1e-12
+    descriptors = v5_module._equilibrate_descriptor_block(raw)
+
+    expected = _legacy_balanced_farthest_first(
+        descriptors,
+        target_channels=2,
+    )
+    actual = v5_module._balanced_farthest_first_with_seed_distance_table(
+        descriptors,
+        target_channels=2,
+    )
+
+    assert actual[:3] == expected
+    assert actual[0] == [7, 2]
+    assert actual[2] == [0, 1, 1, 1, 0, 0, 1, 0]
+
+
+def test_direct_seed_distances_preserve_exact_nonzero_duplicates() -> None:
+    generator = torch.Generator().manual_seed(19)
+    raw = torch.randn(
+        (8, 4_096),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    raw[1].copy_(raw[0])
+    descriptors = v5_module._equilibrate_descriptor_block(raw)
+
+    distances = v5_module._direct_seed_squared_distances(
+        descriptors,
+        seed_index=0,
+    )
+
+    assert distances[0].item() == 0.0
+    assert distances[1].item() == 0.0
+    assert torch.all(distances >= 0.0)
+
+
+def test_production_basis_distance_complexity_receipt() -> None:
+    source_channels = 1024
+    target_channels = 776
+    fit_case_count = 154
+    descriptor_width = 4 + fit_case_count * (10 + 2 * target_channels)
+    remaining = source_channels - target_channels
+    receipt = v5_module._seed_distance_table_complexity_receipt(
+        source_channels=source_channels,
+        target_channels=target_channels,
+        descriptor_width=descriptor_width,
+        descriptor_block_count=1 + 2 * fit_case_count,
+        capacity_assignment_distance_lookups=(remaining * (remaining + 1) // 2),
+    )
+    assert receipt["legacy_seed_vector_reduction_count"] == 152_454_900
+    assert receipt["legacy_total_vector_reduction_count"] == 152_678_224
+    assert receipt["seed_distance_table_entries"] == 794_624
+    assert receipt["seed_distance_table_bytes"] == 6_356_992
+    assert receipt["maximum_direct_seed_temporary_bytes"] == 1_970_601_984
+    assert receipt["direct_seed_vector_reduction_count"] == 776
+    assert receipt["descriptor_width"] == 240_552
+    assert (
+        receipt["legacy_descriptor_coordinate_reductions"]
+        > 190 * receipt["direct_seed_descriptor_coordinate_reductions"]
+    )
+    assert receipt["gram_identity_used"] is False
+    assert receipt["negative_distance_clamping_used"] is False
+    assert receipt["folding_objective_changed"] is False
+
+
 def test_fir_commuting_basis_balances_and_uses_every_channel() -> None:
     fir = torch.tensor(
         [
@@ -680,6 +874,11 @@ def test_fir_commuting_basis_balances_and_uses_every_channel() -> None:
     assert first.report["source_channels_dropped"] == 0
     assert first.report["source_channels_pruned"] == 0
     assert first.report["full_source_numeric_participation"] is True
+    distance_receipt = first.report["seed_distance_table"]
+    assert distance_receipt["seed_distance_table_entries"] == 24
+    assert distance_receipt["seed_distance_table_bytes"] == 192
+    assert distance_receipt["direct_seed_vector_reduction_count"] == 3
+    assert distance_receipt["gram_identity_used"] is False
     assert first.report["projected_fir_offdiagonal_relative_frobenius"] == 0.0
     assert first.report["projected_fir_offdiagonal_gate_passed"] is True
     assert (

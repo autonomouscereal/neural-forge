@@ -1668,6 +1668,226 @@ def _squared_distance(left: Any, right: Any) -> float:
     return float((left - right).square().sum().item())
 
 
+def _direct_seed_squared_distances(
+    descriptors: Any,
+    *,
+    seed_index: int,
+) -> Any:
+    """Compute one stable FP64 direct-distance column.
+
+    This intentionally uses the legacy ``(candidate - seed).square().sum()``
+    metric instead of the cancellation-prone Gram identity.  Vectorizing over
+    source rows turns one selected seed into one Torch reduction while retaining
+    the direct finite-precision distance arithmetic and its exact zero for an
+    identical row.
+    """
+
+    differences = descriptors - descriptors[seed_index].unsqueeze(0)
+    differences.square_()
+    distances = differences.sum(dim=1)
+    distances[seed_index] = 0.0
+    return distances.contiguous()
+
+
+def _seed_distance_table_complexity_receipt(
+    *,
+    source_channels: int,
+    target_channels: int,
+    descriptor_width: int,
+    descriptor_block_count: int,
+    capacity_assignment_distance_lookups: int,
+) -> dict[str, Any]:
+    """Describe the removed scalar-reduction work without timing claims."""
+
+    seed_distance_evaluations = sum(
+        (source_channels - seed_count) * seed_count
+        for seed_count in range(1, target_channels)
+    )
+    remaining_count = source_channels - target_channels
+    assignment_sort_distance_evaluations = remaining_count * target_channels
+    legacy_evaluations = (
+        seed_distance_evaluations
+        + assignment_sort_distance_evaluations
+        + capacity_assignment_distance_lookups
+    )
+    seed_table_entries = source_channels * target_channels
+    return {
+        "kind": "cached_direct_selected_seed_squared_euclidean_table",
+        "source_channels": source_channels,
+        "target_channels": target_channels,
+        "descriptor_width": descriptor_width,
+        "descriptor_block_count": descriptor_block_count,
+        "seed_distance_table_entries": seed_table_entries,
+        "seed_distance_table_bytes": seed_table_entries * 8,
+        "maximum_direct_seed_temporary_bytes": (
+            source_channels * descriptor_width * 8
+        ),
+        "direct_seed_vector_reduction_count": target_channels,
+        "direct_seed_row_distance_count": seed_table_entries,
+        "legacy_seed_vector_reduction_count": (seed_distance_evaluations),
+        "legacy_assignment_sort_vector_reduction_count": (
+            assignment_sort_distance_evaluations
+        ),
+        "legacy_capacity_assignment_vector_reduction_count": (
+            capacity_assignment_distance_lookups
+        ),
+        "legacy_total_vector_reduction_count": legacy_evaluations,
+        "legacy_descriptor_coordinate_reductions": (
+            legacy_evaluations * descriptor_width
+        ),
+        "direct_seed_descriptor_coordinate_reductions": (
+            seed_table_entries * descriptor_width
+        ),
+        "distance_metric": "direct_difference_squared_euclidean",
+        "distance_kernel": (
+            "differences=(descriptors-descriptors[seed]);"
+            "differences.square_();differences.sum(dim=1)"
+        ),
+        "gram_identity_used": False,
+        "negative_distance_clamping_used": False,
+        "seed_tie_break": "lowest_source_index",
+        "assignment_tie_break": "lowest_group_index",
+        "folding_objective_changed": False,
+    }
+
+
+def _balanced_farthest_first_with_seed_distance_table(
+    descriptors: Any,
+    *,
+    target_channels: int,
+) -> tuple[list[int], list[list[int]], list[int], int, Any]:
+    """Run legacy decisions while caching one direct column per selected seed."""
+
+    torch = _torch()
+    if (
+        not isinstance(descriptors, torch.Tensor)
+        or descriptors.device.type != "cpu"
+        or descriptors.dtype != torch.float64
+        or descriptors.ndim != 2
+        or int(descriptors.shape[0]) <= 0
+        or int(descriptors.shape[1]) <= 0
+        or not bool(torch.isfinite(descriptors).all().item())
+    ):
+        raise Lfm2CpcfShortConvV5Error(
+            "Farthest-first descriptors must be one finite nonempty CPU FP64 matrix."
+        )
+    source_channels = int(descriptors.shape[0])
+    if (
+        isinstance(target_channels, bool)
+        or not isinstance(target_channels, int)
+        or target_channels <= 0
+        or target_channels > source_channels
+    ):
+        raise Lfm2CpcfShortConvV5Error(
+            "target_channels must be in [1, source_channels]."
+        )
+    centroid = descriptors.mean(dim=0)
+    first_seed = min(
+        range(source_channels),
+        key=lambda index: (
+            -_squared_distance(descriptors[index], centroid),
+            index,
+        ),
+    )
+    seeds = [first_seed]
+    eligible = torch.ones(source_channels, dtype=torch.bool)
+    eligible[first_seed] = False
+    seed_squared_distances = torch.empty(
+        (source_channels, target_channels),
+        dtype=torch.float64,
+    )
+    first_distances = _direct_seed_squared_distances(
+        descriptors,
+        seed_index=first_seed,
+    )
+    if not bool(torch.isfinite(first_distances).all().item()):
+        raise Lfm2CpcfShortConvV5Error(
+            "Direct seed distances became nonfinite."
+        )
+    seed_squared_distances[:, 0].copy_(first_distances)
+    minimum_seed_distance = first_distances.clone()
+    while len(seeds) < target_channels:
+        # torch.argmax returns the first maximum, preserving the legacy
+        # lowest-source-index tie break without hundreds of thousands of
+        # Python scalar extractions.
+        seed_scores = torch.where(
+            eligible,
+            minimum_seed_distance,
+            torch.full_like(minimum_seed_distance, -torch.inf),
+        )
+        next_seed = int(torch.argmax(seed_scores).item())
+        seeds.append(next_seed)
+        eligible[next_seed] = False
+        next_distances = _direct_seed_squared_distances(
+            descriptors,
+            seed_index=next_seed,
+        )
+        if not bool(torch.isfinite(next_distances).all().item()):
+            raise Lfm2CpcfShortConvV5Error(
+                "Direct seed distances became nonfinite."
+            )
+        seed_squared_distances[:, len(seeds) - 1].copy_(next_distances)
+        minimum_seed_distance.copy_(
+            torch.minimum(
+                minimum_seed_distance,
+                next_distances,
+            )
+        )
+
+    minimum_group_size, larger_groups = divmod(
+        source_channels,
+        target_channels,
+    )
+    capacities = [
+        minimum_group_size + int(group < larger_groups)
+        for group in range(target_channels)
+    ]
+    groups = [[seed] for seed in seeds]
+    assignment = [-1] * source_channels
+    for group, seed in enumerate(seeds):
+        assignment[seed] = group
+    remaining = [index for index in range(source_channels) if assignment[index] < 0]
+    remaining.sort(
+        key=lambda index: (
+            -float(minimum_seed_distance[index].item()),
+            index,
+        )
+    )
+    capacity_assignment_distance_lookups = 0
+    for source in remaining:
+        available = [
+            group
+            for group in range(target_channels)
+            if len(groups[group]) < capacities[group]
+        ]
+        if not available:
+            raise Lfm2CpcfShortConvV5Error(
+                "Balanced FIR assignment exhausted all group capacities."
+            )
+        capacity_assignment_distance_lookups += len(available)
+        group = min(
+            available,
+            key=lambda index: (
+                float(
+                    seed_squared_distances[
+                        source,
+                        index,
+                    ].item()
+                ),
+                index,
+            ),
+        )
+        groups[group].append(source)
+        assignment[source] = group
+    return (
+        seeds,
+        groups,
+        assignment,
+        capacity_assignment_distance_lookups,
+        seed_squared_distances,
+    )
+
+
 def build_fir_commuting_balanced_all_channel_basis(
     cases: Sequence[Lfm2CpcfV5FirBasisCase],
     *,
@@ -1737,68 +1957,26 @@ def build_fir_commuting_balanced_all_channel_basis(
             )
         )
     descriptors = torch.cat(descriptor_blocks, dim=1).contiguous()
-
-    centroid = descriptors.mean(dim=0)
-    first_seed = min(
-        range(source_channels),
-        key=lambda index: (
-            -_squared_distance(descriptors[index], centroid),
-            index,
-        ),
-    )
-    seeds = [first_seed]
-    while len(seeds) < target_channels:
-        remaining = [index for index in range(source_channels) if index not in seeds]
-        next_seed = min(
-            remaining,
-            key=lambda index: (
-                -min(
-                    _squared_distance(descriptors[index], descriptors[seed])
-                    for seed in seeds
-                ),
-                index,
-            ),
+    (
+        seeds,
+        groups,
+        assignment,
+        capacity_assignment_distance_lookups,
+        _seed_squared_distances,
+    ) = (
+        _balanced_farthest_first_with_seed_distance_table(
+            descriptors,
+            target_channels=target_channels,
         )
-        seeds.append(next_seed)
-
-    minimum_group_size, larger_groups = divmod(source_channels, target_channels)
+    )
+    minimum_group_size, larger_groups = divmod(
+        source_channels,
+        target_channels,
+    )
     capacities = [
         minimum_group_size + int(group < larger_groups)
         for group in range(target_channels)
     ]
-    groups = [[seed] for seed in seeds]
-    assignment = [-1] * source_channels
-    for group, seed in enumerate(seeds):
-        assignment[seed] = group
-    remaining = [index for index in range(source_channels) if assignment[index] < 0]
-    remaining.sort(
-        key=lambda index: (
-            -min(
-                _squared_distance(descriptors[index], descriptors[seed])
-                for seed in seeds
-            ),
-            index,
-        )
-    )
-    for source in remaining:
-        available = [
-            group
-            for group in range(target_channels)
-            if len(groups[group]) < capacities[group]
-        ]
-        if not available:
-            raise Lfm2CpcfShortConvV5Error(
-                "Balanced FIR assignment exhausted all group capacities."
-            )
-        group = min(
-            available,
-            key=lambda index: (
-                _squared_distance(descriptors[source], descriptors[seeds[index]]),
-                index,
-            ),
-        )
-        groups[group].append(source)
-        assignment[source] = group
     groups = [sorted(group) for group in groups]
     if sorted(source for group in groups for source in group) != list(
         range(source_channels)
@@ -1918,6 +2096,13 @@ def build_fir_commuting_balanced_all_channel_basis(
         "combined_descriptor_sha256": _tensor_sha256(
             descriptors,
             "fir_basis.combined_descriptors",
+        ),
+        "seed_distance_table": _seed_distance_table_complexity_receipt(
+            source_channels=source_channels,
+            target_channels=target_channels,
+            descriptor_width=int(descriptors.shape[1]),
+            descriptor_block_count=len(descriptor_blocks),
+            capacity_assignment_distance_lookups=(capacity_assignment_distance_lookups),
         ),
         "seed_source_indices": seeds,
         "deterministic_farthest_first": True,
