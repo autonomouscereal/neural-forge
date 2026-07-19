@@ -533,17 +533,25 @@ class _PhysicalRssGuard:
         )
         self.sample_interval_seconds = float(sample_interval_seconds)
         self.start_rss_bytes = _process_rss_bytes()
-        self.start_lifetime_peak_bytes = _process_peak_rss_bytes()
+        raw_start_lifetime_peak_bytes = _process_peak_rss_bytes()
         if (
             self.start_rss_bytes < 0
-            or self.start_lifetime_peak_bytes < self.start_rss_bytes
+            or raw_start_lifetime_peak_bytes < 0
             or self.start_rss_bytes > self.maximum_process_rss_bytes
-            or self.start_lifetime_peak_bytes > self.maximum_process_rss_bytes
+            or raw_start_lifetime_peak_bytes > self.maximum_process_rss_bytes
         ):
             raise Lfm2CpcfV5ModelCompilerError(
                 "Physical RSS probes returned an invalid or over-cap "
                 "current/HWM baseline."
             )
+        # Current RSS and lifetime HWM are independent process snapshots.  On
+        # Linux their accounting can momentarily disagree under allocation
+        # pressure even though a true lifetime HWM cannot be below current
+        # RSS.  Promoting HWM to current is conservative for both limits.
+        self.start_lifetime_peak_bytes = max(
+            self.start_rss_bytes,
+            raw_start_lifetime_peak_bytes,
+        )
         self.absolute_headroom_bytes = (
             self.maximum_process_rss_bytes - self.start_rss_bytes
         )
@@ -609,11 +617,15 @@ class _PhysicalRssGuard:
 
     def _sample(self) -> None:
         current = _process_rss_bytes()
-        lifetime_peak = _process_peak_rss_bytes()
-        if current < 0 or lifetime_peak < current:
+        raw_lifetime_peak = _process_peak_rss_bytes()
+        if current < 0 or raw_lifetime_peak < 0:
             raise Lfm2CpcfV5ModelCompilerError(
                 "Physical RSS probes returned an invalid current/HWM sample."
             )
+        # Reconcile only the impossible ordering caused by non-atomic probes.
+        # This never lowers either measurement, so hard delta and absolute RSS
+        # enforcement remain fail-closed.
+        lifetime_peak = max(current, raw_lifetime_peak)
         with self._lock:
             self.current_rss_bytes = current
             self.peak_rss_bytes = max(self.peak_rss_bytes, current)

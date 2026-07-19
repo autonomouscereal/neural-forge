@@ -353,6 +353,124 @@ def test_physical_rss_lifetime_delta_uses_lifetime_hwm_baseline(
     assert report["peak_increase_bytes"] == 1_000
 
 
+def test_physical_rss_guard_reconciles_non_atomic_current_hwm_samples(
+    monkeypatch,
+) -> None:
+    current = [10_000]
+    lifetime_hwm = [9_000]
+    monkeypatch.setattr(v5, "_process_rss_bytes", lambda: current[0])
+    monkeypatch.setattr(
+        v5,
+        "_process_peak_rss_bytes",
+        lambda: lifetime_hwm[0],
+    )
+    guard = v5._PhysicalRssGuard(
+        maximum_increase_bytes=8_000,
+        maximum_process_rss_bytes=18_000,
+        full_phase_tree_logical_bytes=10_000,
+        minimum_reduction_fraction=0.20,
+        sample_interval_seconds=1.0,
+    )
+    assert guard.start_lifetime_peak_bytes == 10_000
+
+    current[0] = 12_000
+    lifetime_hwm[0] = 11_000
+    checkpoint = guard.checkpoint("non-atomic-linux-accounting-sample")
+    report = guard.close()
+
+    assert checkpoint["current_rss_bytes"] == 12_000
+    assert checkpoint["current_lifetime_peak_bytes"] == 12_000
+    assert checkpoint["current_lifetime_peak_bytes"] >= checkpoint["peak_rss_bytes"]
+    assert checkpoint["peak_increase_bytes"] == 2_000
+    assert checkpoint["physical_rss_gate_passed"] is True
+    assert report["current_lifetime_peak_bytes"] == 12_000
+    assert report["current_lifetime_peak_bytes"] >= report["peak_rss_bytes"]
+    assert report["physical_rss_gate_passed"] is True
+
+
+def test_physical_rss_background_hwm_lag_does_not_poison_later_checkpoint(
+    monkeypatch,
+) -> None:
+    current = [10_000]
+    lifetime_hwm = [10_000]
+    monkeypatch.setattr(v5, "_process_rss_bytes", lambda: current[0])
+    monkeypatch.setattr(
+        v5,
+        "_process_peak_rss_bytes",
+        lambda: lifetime_hwm[0],
+    )
+    guard = v5._PhysicalRssGuard(
+        maximum_increase_bytes=8_000,
+        maximum_process_rss_bytes=18_000,
+        full_phase_tree_logical_bytes=10_000,
+        minimum_reduction_fraction=0.20,
+        sample_interval_seconds=1.0,
+    )
+
+    # Stop the live sampler and deterministically drive exactly one iteration
+    # through its real error-retention path.
+    live_stop = guard._stop
+    live_stop.set()
+    guard._thread.join(timeout=2.0)
+    assert guard._thread.is_alive() is False
+
+    class OneSampleStop:
+        calls = 0
+
+        def wait(self, _interval: float) -> bool:
+            self.calls += 1
+            return self.calls > 1
+
+    guard._stop = OneSampleStop()
+    current[0] = 12_000
+    lifetime_hwm[0] = 11_000
+    guard._sample_loop()
+    guard._stop = live_stop
+
+    assert guard._error is None
+    lifetime_hwm[0] = 12_500
+    checkpoint = guard.checkpoint("valid-checkpoint-after-background-hwm-lag")
+    report = guard.close()
+
+    assert checkpoint["current_lifetime_peak_bytes"] == 12_500
+    assert checkpoint["physical_rss_gate_passed"] is True
+    assert report["physical_rss_gate_passed"] is True
+
+
+def test_physical_rss_guard_reconciled_hwm_still_enforces_hard_cap(
+    monkeypatch,
+) -> None:
+    current = [1_000]
+    lifetime_hwm = [1_000]
+    monkeypatch.setattr(v5, "_process_rss_bytes", lambda: current[0])
+    monkeypatch.setattr(
+        v5,
+        "_process_peak_rss_bytes",
+        lambda: lifetime_hwm[0],
+    )
+    guard = v5._PhysicalRssGuard(
+        maximum_increase_bytes=800,
+        maximum_process_rss_bytes=1_800,
+        full_phase_tree_logical_bytes=1_000,
+        minimum_reduction_fraction=0.20,
+        sample_interval_seconds=1.0,
+    )
+    current[0] = 1_801
+    lifetime_hwm[0] = 1_100
+    try:
+        with pytest.raises(
+            v5.Lfm2CpcfV5PhysicalRssError,
+            match="process cap 1800",
+        ) as captured:
+            guard.checkpoint("reconciled-sample-over-hard-cap")
+    finally:
+        guard.abort()
+
+    assert captured.value.report["current_rss_bytes"] == 1_801
+    assert captured.value.report["current_lifetime_peak_bytes"] == 1_801
+    assert captured.value.report["physical_rss_gate_passed"] is False
+
+
 def test_physical_rss_guard_rederives_absolute_headroom_at_actual_start(
     monkeypatch,
 ) -> None:
