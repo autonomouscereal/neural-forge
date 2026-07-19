@@ -603,6 +603,182 @@ def test_runtime_contract_binds_instance_and_callable_object_state() -> None:
     )
 
 
+def test_runtime_contract_cycles_are_stable_and_bind_mutable_state() -> None:
+    class RuntimeNode:
+        def __init__(self, items):
+            self.items = items
+            self.peer = self
+            self.tensor = torch.tensor([1.0, 2.0])
+
+    class StatefulSelector:
+        def __init__(self, node):
+            self.node = node
+
+        def select(self, request):
+            return request
+
+    first = StatefulSelector(RuntimeNode({"fit": 1, "selection": 2}))
+    second = StatefulSelector(RuntimeNode({"selection": 2, "fit": 1}))
+    first_sha = v5._optional_runtime_contract_sha256(
+        first,
+        kind="candidate_selector",
+    )
+
+    assert (
+        v5._optional_runtime_contract_sha256(
+            second,
+            kind="candidate_selector",
+        )
+        == first_sha
+    )
+    first.node.items["fit"] = 3
+    assert (
+        v5._optional_runtime_contract_sha256(
+            first,
+            kind="candidate_selector",
+        )
+        != first_sha
+    )
+    first.node.items["fit"] = 1
+    first.node.tensor.add_(1.0)
+    assert (
+        v5._optional_runtime_contract_sha256(
+            first,
+            kind="candidate_selector",
+        )
+        != first_sha
+    )
+
+
+def test_runtime_contract_binds_alias_topology_not_process_addresses() -> None:
+    class RuntimeNode:
+        def __init__(self):
+            self.values = ["fit", "selection"]
+
+    class StatefulSelector:
+        def __init__(self, left, right):
+            self.left = left
+            self.right = right
+
+        def select(self, request):
+            return request
+
+    first_node = RuntimeNode()
+    second_node = RuntimeNode()
+    first_alias_sha = v5._optional_runtime_contract_sha256(
+        StatefulSelector(first_node, first_node),
+        kind="candidate_selector",
+    )
+    second_alias_sha = v5._optional_runtime_contract_sha256(
+        StatefulSelector(second_node, second_node),
+        kind="candidate_selector",
+    )
+    equal_copy_sha = v5._optional_runtime_contract_sha256(
+        StatefulSelector(RuntimeNode(), RuntimeNode()),
+        kind="candidate_selector",
+    )
+
+    assert second_alias_sha == first_alias_sha
+    assert equal_copy_sha != first_alias_sha
+
+
+def test_runtime_contract_cycle_cannot_hide_forbidden_alias() -> None:
+    class RuntimeNode:
+        def __init__(self):
+            self.peer = self
+            self.worker = torch.autograd.grad
+
+    class StatefulSelector:
+        def __init__(self):
+            self.node = RuntimeNode()
+
+        def select(self, request):
+            return request
+
+    with pytest.raises(
+        v5.Lfm2CpcfV5ModelCompilerError,
+        match="forbidden pre-bound training alias",
+    ):
+        v5._optional_runtime_contract_sha256(
+            StatefulSelector(),
+            kind="candidate_selector",
+        )
+
+
+def test_real_scheduler_contract_ignores_volatile_thread_registry() -> None:
+    import threading
+
+    from tests.test_dynamic_lfm2_cpcf_v5_production import (
+        _gpu_evaluator_and_report,
+    )
+
+    evaluator, _report = _gpu_evaluator_and_report()
+    before = v5._optional_runtime_contract_sha256(
+        evaluator,
+        kind="candidate_replay",
+    )
+    stop = threading.Event()
+
+    class ThreadOwner:
+        thread = None
+
+        def run(self):
+            stop.wait()
+
+    owner = ThreadOwner()
+    worker = threading.Thread(target=owner.run)
+    owner.thread = worker
+    worker.start()
+    try:
+        during = v5._optional_runtime_contract_sha256(
+            evaluator,
+            kind="candidate_replay",
+        )
+    finally:
+        stop.set()
+        worker.join(timeout=5.0)
+
+    assert worker.is_alive() is False
+    assert during == before
+
+
+def test_runtime_contract_external_module_excludes_live_registry_state() -> None:
+    import threading
+
+    class ModuleSelector:
+        def select(self, request):
+            return request if threading._active else request
+
+    selector = ModuleSelector()
+    before = v5._optional_runtime_contract_sha256(
+        selector,
+        kind="candidate_selector",
+    )
+    stop = threading.Event()
+
+    class ThreadOwner:
+        thread = None
+
+        def run(self):
+            stop.wait()
+
+    owner = ThreadOwner()
+    worker = threading.Thread(target=owner.run)
+    owner.thread = worker
+    worker.start()
+    try:
+        during = v5._optional_runtime_contract_sha256(
+            selector,
+            kind="candidate_selector",
+        )
+    finally:
+        stop.set()
+        worker.join(timeout=5.0)
+
+    assert worker.is_alive() is False
+    assert during == before
+
+
 def test_runtime_contract_binds_reachable_global_callable(
     monkeypatch,
 ) -> None:

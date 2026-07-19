@@ -2132,6 +2132,57 @@ def _optional_runtime_contract_sha256(
     if value is None:
         return _sha({"kind": kind, "provided": False})
 
+    repository_root = Path(__file__).resolve().parents[2]
+    first_party_source_roots = (
+        repository_root / "src",
+        repository_root / "experiments",
+    )
+
+    def first_party_source(raw_path: Any) -> bool:
+        if not isinstance(raw_path, str):
+            return False
+        resolved = Path(raw_path).resolve()
+        return any(
+            resolved.is_relative_to(root)
+            for root in first_party_source_roots
+        )
+
+    manifest_first_seen: dict[int, tuple[Any, str]] = {}
+
+    def state_graph_reference(
+        state_value: Any,
+        *,
+        name: str,
+        active: frozenset[int],
+    ) -> dict[str, Any] | None:
+        """Bind shared/cyclic topology to a canonical, address-free path."""
+
+        identity = id(state_value)
+        existing = manifest_first_seen.get(identity)
+        if existing is None:
+            # Retaining the object prevents process-local id reuse during this
+            # contract invocation.  The object itself is never serialized.
+            manifest_first_seen[identity] = (state_value, name)
+            return None
+        existing_value, target_path = existing
+        if existing_value is not state_value:
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} runtime graph identity changed during authentication."
+            )
+        return {
+            "kind": "runtime_state_reference",
+            "relation": (
+                "cyclic_back_edge"
+                if identity in active
+                else "shared_alias"
+            ),
+            "type": (
+                f"{type(state_value).__module__}."
+                f"{type(state_value).__qualname__}"
+            ),
+            "target_path": target_path,
+        }
+
     def forbidden_prebound_alias(state_value: Any) -> tuple[str, str] | None:
         """Identify callable aliases which the process-local guard cannot patch."""
 
@@ -2332,10 +2383,14 @@ def _optional_runtime_contract_sha256(
         active: frozenset[int] = frozenset(),
     ) -> dict[str, Any]:
         identity = id(instance)
-        if identity in active:
-            raise Lfm2CpcfV5ModelCompilerError(
-                f"{name} contains a cyclic runtime state graph."
-            )
+        type_name = f"{type(instance).__module__}.{type(instance).__qualname__}"
+        reference = state_graph_reference(
+            instance,
+            name=name,
+            active=active,
+        )
+        if reference is not None:
+            return reference
         fields: dict[str, Any] = {}
         raw_dict = getattr(instance, "__dict__", None)
         if isinstance(raw_dict, dict):
@@ -2362,7 +2417,7 @@ def _optional_runtime_contract_sha256(
             if field not in excluded
         }
         return {
-            "type": (f"{type(instance).__module__}.{type(instance).__qualname__}"),
+            "type": type_name,
             "fields": normalized,
         }
 
@@ -2487,12 +2542,13 @@ def _optional_runtime_contract_sha256(
             mapping_type = (
                 f"{type(state_value).__module__}.{type(state_value).__qualname__}"
             )
-            if mapping_identity in active:
-                return {
-                    "kind": "mapping",
-                    "type": mapping_type,
-                    "recursive_reference": True,
-                }
+            reference = state_graph_reference(
+                state_value,
+                name=name,
+                active=active,
+            )
+            if reference is not None:
+                return reference
             mapping_active = active | {mapping_identity}
             if all(isinstance(key, str) for key in state_value):
                 return {
@@ -2524,20 +2580,38 @@ def _optional_runtime_contract_sha256(
                 "entries": sorted(entries, key=_canonical_json),
             }
         if isinstance(state_value, (list, tuple)):
+            sequence_identity = id(state_value)
+            reference = state_graph_reference(
+                state_value,
+                name=name,
+                active=active,
+            )
+            if reference is not None:
+                return reference
+            sequence_active = active | {sequence_identity}
             return [
                 state_value_manifest(
                     child,
                     name=f"{name}[{index}]",
-                    active=active,
+                    active=sequence_active,
                 )
                 for index, child in enumerate(state_value)
             ]
         if isinstance(state_value, (set, frozenset)):
+            set_identity = id(state_value)
+            reference = state_graph_reference(
+                state_value,
+                name=name,
+                active=active,
+            )
+            if reference is not None:
+                return reference
+            set_active = active | {set_identity}
             children = [
                 state_value_manifest(
                     child,
                     name=f"{name}[]",
-                    active=active,
+                    active=set_active,
                 )
                 for child in state_value
             ]
@@ -2597,6 +2671,7 @@ def _optional_runtime_contract_sha256(
         *,
         name: str,
         bind_python_methods: bool = True,
+        bind_python_method_globals: bool = True,
         active: frozenset[int] = frozenset(),
     ) -> dict[str, Any]:
         forbidden_alias = forbidden_prebound_alias(class_value)
@@ -2643,18 +2718,23 @@ def _optional_runtime_contract_sha256(
                 members[member_name] = callable_manifest(
                     member,
                     name=f"{name}.{member_name}",
+                    bind_referenced_globals=bind_python_method_globals,
                     active=class_active,
                 )
-        return {
+        manifest = {
             **base,
             "python_methods": members,
         }
+        if not bind_python_method_globals:
+            manifest["external_globals_bound_by_source"] = True
+        return manifest
 
     def runtime_module_manifest(
         module_value: ModuleType,
         *,
         name: str,
         referenced_names: frozenset[str],
+        bind_referenced_attributes: bool = True,
         active: frozenset[int],
     ) -> dict[str, Any]:
         forbidden_alias = forbidden_prebound_alias(module_value)
@@ -2683,20 +2763,27 @@ def _optional_runtime_contract_sha256(
         if module_identity in active:
             return {**base, "recursive_reference": True}
         module_active = active | {module_identity}
-        attributes = {
-            attribute: runtime_global_manifest(
-                getattr(module_value, attribute),
-                name=f"{name}.{attribute}",
-                referenced_names=referenced_names,
-                active=module_active,
-            )
-            for attribute in sorted(referenced_names)
-            if hasattr(module_value, attribute)
-        }
-        return {
+        attributes = (
+            {
+                attribute: runtime_global_manifest(
+                    getattr(module_value, attribute),
+                    name=f"{name}.{attribute}",
+                    referenced_names=referenced_names,
+                    active=module_active,
+                )
+                for attribute in sorted(referenced_names)
+                if hasattr(module_value, attribute)
+            }
+            if bind_referenced_attributes
+            else {}
+        )
+        manifest = {
             **base,
             "referenced_attributes": attributes,
         }
+        if not bind_referenced_attributes:
+            manifest["external_attributes_bound_by_source"] = True
+        return manifest
 
     def runtime_global_manifest(
         global_value: Any,
@@ -2713,27 +2800,50 @@ def _optional_runtime_contract_sha256(
                 f"{symbol}."
             )
         if isinstance(global_value, ModuleType):
+            raw_path = getattr(global_value, "__file__", None)
+            external_source = not first_party_source(raw_path)
             return runtime_module_manifest(
                 global_value,
                 name=name,
                 referenced_names=referenced_names,
+                bind_referenced_attributes=not external_source,
                 active=active,
             )
         if isinstance(global_value, type):
+            module_name = getattr(global_value, "__module__", None)
+            module = (
+                None
+                if not isinstance(module_name, str)
+                else sys.modules.get(module_name)
+            )
+            external_source = not first_party_source(
+                getattr(module, "__file__", None)
+            )
             return runtime_class_manifest(
                 global_value,
                 name=name,
+                bind_python_method_globals=not external_source,
                 active=active,
             )
         if callable(global_value):
             function = getattr(global_value, "__func__", global_value)
             if getattr(function, "__code__", None) is not None:
+                module_name = getattr(function, "__module__", None)
+                module = (
+                    None
+                    if not isinstance(module_name, str)
+                    else sys.modules.get(module_name)
+                )
+                external_source = not first_party_source(
+                    getattr(module, "__file__", None)
+                )
                 return {
                     "kind": "python_callable",
                     "manifest": callable_manifest(
                         global_value,
                         name=name,
                         bind_owner=True,
+                        bind_referenced_globals=not external_source,
                         active=active,
                     ),
                 }
@@ -2852,6 +2962,8 @@ def _optional_runtime_contract_sha256(
                 else {}
             ),
         }
+        if not bind_referenced_globals:
+            manifest["external_globals_bound_by_source"] = True
         owner = getattr(callable_value, "__self__", None)
         if owner is None:
             owner = callable_object_owner
