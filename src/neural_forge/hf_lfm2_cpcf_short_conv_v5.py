@@ -38,6 +38,7 @@ V5_ACCEPTED_EDGE_INTERPOLATION_FRACTIONS = (
     1.0 / 4.0,
     1.0 / 2.0,
 )
+V5_DIRECT_SEED_DISTANCE_ROW_CHUNK_SIZE = 128
 
 _SELECTION_METRICS = (
     "maximum_case_relative_rmse",
@@ -1673,24 +1674,38 @@ def _direct_seed_squared_distances(
     *,
     seed_index: int,
 ) -> Any:
-    """Compute one stable FP64 direct-distance column.
+    """Compute one bounded FP64 direct-distance column.
 
-    This intentionally uses the legacy ``(candidate - seed).square().sum()``
-    metric instead of the cancellation-prone Gram identity.  Reducing one
-    source row at a time preserves the scalar legacy reduction semantics while
-    bounding the temporary to one descriptor row instead of materializing a
-    source-by-descriptor matrix for every selected seed.
+    The kernel keeps the direct ``(candidate - seed).square().sum()`` objective
+    instead of the cancellation-prone Gram identity.  A fixed row chunk exposes
+    enough independent work to Torch without materializing the complete
+    source-by-descriptor temporary.  Batched row reductions may differ from the
+    historical scalar-row reduction only by FP64 association.
     """
 
     torch = _torch()
     source_channels = int(descriptors.shape[0])
     seed = descriptors[seed_index]
     distances = torch.empty(source_channels, dtype=torch.float64)
-    differences = torch.empty_like(seed)
-    for source_index in range(source_channels):
-        torch.sub(descriptors[source_index], seed, out=differences)
-        differences.square_()
-        distances[source_index] = differences.sum()
+    row_chunk_size = min(
+        source_channels,
+        V5_DIRECT_SEED_DISTANCE_ROW_CHUNK_SIZE,
+    )
+    differences = torch.empty(
+        (row_chunk_size, int(descriptors.shape[1])),
+        dtype=torch.float64,
+    )
+    for row_start in range(0, source_channels, row_chunk_size):
+        row_stop = min(source_channels, row_start + row_chunk_size)
+        row_count = row_stop - row_start
+        chunk = differences[:row_count]
+        torch.sub(
+            descriptors[row_start:row_stop],
+            seed.unsqueeze(0),
+            out=chunk,
+        )
+        chunk.square_()
+        distances[row_start:row_stop] = chunk.sum(dim=1)
     distances[seed_index] = 0.0
     return distances.contiguous()
 
@@ -1717,6 +1732,11 @@ def _seed_distance_table_complexity_receipt(
         + capacity_assignment_distance_lookups
     )
     seed_table_entries = source_channels * target_channels
+    row_chunk_size = min(
+        source_channels,
+        V5_DIRECT_SEED_DISTANCE_ROW_CHUNK_SIZE,
+    )
+    chunks_per_seed = math.ceil(source_channels / row_chunk_size)
     return {
         "kind": "cached_direct_selected_seed_squared_euclidean_table",
         "source_channels": source_channels,
@@ -1725,8 +1745,9 @@ def _seed_distance_table_complexity_receipt(
         "descriptor_block_count": descriptor_block_count,
         "seed_distance_table_entries": seed_table_entries,
         "seed_distance_table_bytes": seed_table_entries * 8,
-        "maximum_direct_seed_temporary_bytes": descriptor_width * 8,
+        "maximum_direct_seed_temporary_bytes": (row_chunk_size * descriptor_width * 8),
         "direct_seed_column_count": target_channels,
+        "direct_seed_chunk_reduction_count": (target_channels * chunks_per_seed),
         "direct_seed_vector_reduction_count": seed_table_entries,
         "direct_seed_row_distance_count": seed_table_entries,
         "legacy_seed_vector_reduction_count": (seed_distance_evaluations),
@@ -1745,13 +1766,18 @@ def _seed_distance_table_complexity_receipt(
         ),
         "distance_metric": "direct_difference_squared_euclidean",
         "distance_kernel": (
-            "differences=empty_like(descriptors[seed]);"
-            "for source: sub(descriptors[source],descriptors[seed],out=differences);"
-            "differences.square_();distances[source]=differences.sum()"
+            "differences=empty([min(source_rows,128),descriptor_width]);"
+            "for row_chunk: sub(descriptors[row_chunk],descriptors[seed],"
+            "out=differences[:row_count]);differences[:row_count].square_();"
+            "distances[row_chunk]=differences[:row_count].sum(dim=1)"
         ),
-        "distance_row_chunk_size": 1,
+        "distance_row_chunk_size": V5_DIRECT_SEED_DISTANCE_ROW_CHUNK_SIZE,
+        "maximum_rows_per_distance_chunk": row_chunk_size,
+        "distance_chunks_per_seed": chunks_per_seed,
         "direct_seed_temporary_reused_across_rows": True,
-        "scalar_legacy_reduction_semantics_preserved": True,
+        "rowwise_direct_squared_euclidean_objective_preserved": True,
+        "scalar_legacy_reduction_semantics_preserved": False,
+        "finite_precision_reduction_association": ("fixed_128_row_batched_reduction"),
         "full_source_by_descriptor_temporary_materialized": False,
         "gram_identity_used": False,
         "negative_distance_clamping_used": False,

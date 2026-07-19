@@ -23,7 +23,6 @@ from __future__ import annotations
 import gc
 import hashlib
 import json
-import marshal
 import math
 import os
 import re
@@ -33,7 +32,7 @@ import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType, ModuleType
+from types import CodeType, MappingProxyType, ModuleType
 from typing import Any
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
@@ -2124,6 +2123,96 @@ def _prove_real_v5_numerical_layer(
     return MappingProxyType({**body, "proof_sha256": _sha(body)})
 
 
+def _stable_python_code_sha256(code: CodeType) -> str:
+    """Fingerprint Python semantics without CPython's adaptive cache state.
+
+    ``marshal.dumps(code)`` is not a stable runtime identity on adaptive
+    CPython builds: executing a function can specialize interpreter caches
+    embedded in the marshalled code object.  The public ``co_code`` view is
+    de-specialized, so bind it together with every execution-relevant constant,
+    name, signature, flag, and exception-table field.
+    """
+
+    if not isinstance(code, CodeType):
+        raise TypeError("code must be a Python code object.")
+
+    def constant_manifest(value: Any) -> Any:
+        if isinstance(value, CodeType):
+            return {
+                "kind": "nested_code",
+                "manifest": code_manifest(value),
+            }
+        if value is None:
+            return {"kind": "none"}
+        if value is Ellipsis:
+            return {"kind": "ellipsis"}
+        if value is NotImplemented:
+            return {"kind": "not_implemented"}
+        if isinstance(value, bool):
+            return {"kind": "bool", "value": value}
+        if isinstance(value, int):
+            return {"kind": "int", "value": str(value)}
+        if isinstance(value, float):
+            return {"kind": "float", "value": value.hex()}
+        if isinstance(value, complex):
+            return {
+                "kind": "complex",
+                "real": value.real.hex(),
+                "imag": value.imag.hex(),
+            }
+        if isinstance(value, str):
+            return {"kind": "str", "value": value}
+        if isinstance(value, bytes):
+            return {
+                "kind": "bytes",
+                "length": len(value),
+                "sha256": hashlib.sha256(value).hexdigest(),
+            }
+        if isinstance(value, tuple):
+            return {
+                "kind": "tuple",
+                "values": [constant_manifest(child) for child in value],
+            }
+        if isinstance(value, frozenset):
+            children = [constant_manifest(child) for child in value]
+            return {
+                "kind": "frozenset",
+                "values": sorted(children, key=_canonical_json),
+            }
+        raise Lfm2CpcfV5ModelCompilerError(
+            "Python code contains an unsupported constant type "
+            f"{type(value).__module__}.{type(value).__qualname__}."
+        )
+
+    def code_manifest(value: CodeType) -> dict[str, Any]:
+        return {
+            "name": value.co_name,
+            "qualname": getattr(value, "co_qualname", value.co_name),
+            "argcount": value.co_argcount,
+            "posonlyargcount": value.co_posonlyargcount,
+            "kwonlyargcount": value.co_kwonlyargcount,
+            "nlocals": value.co_nlocals,
+            "stacksize": value.co_stacksize,
+            "flags": value.co_flags,
+            "bytecode_sha256": hashlib.sha256(value.co_code).hexdigest(),
+            "exception_table_sha256": hashlib.sha256(
+                getattr(value, "co_exceptiontable", b"")
+            ).hexdigest(),
+            "constants": [constant_manifest(child) for child in value.co_consts],
+            "names": list(value.co_names),
+            "varnames": list(value.co_varnames),
+            "freevars": list(value.co_freevars),
+            "cellvars": list(value.co_cellvars),
+        }
+
+    return _sha(
+        {
+            "schema": "neural-forge-stable-python-code-fingerprint-v1",
+            "code": code_manifest(code),
+        }
+    )
+
+
 def _optional_runtime_contract_sha256(
     value: Any,
     *,
@@ -2902,7 +2991,7 @@ def _optional_runtime_contract_sha256(
         base_manifest = {
             "module": module_name,
             "qualname": qualname,
-            "code_sha256": hashlib.sha256(marshal.dumps(code)).hexdigest(),
+            "code_sha256": _stable_python_code_sha256(code),
             "source_filename": path.name,
             "source_sha256": _file_sha256(path),
         }

@@ -805,6 +805,48 @@ def test_runtime_contract_binds_reachable_global_callable(
     assert selector.select({"candidate_selection_reports": {}}) == {"changed": True}
 
 
+def test_endpoint_selector_execution_does_not_change_runtime_contract() -> None:
+    from tests.test_hf_lfm2_cpcf_short_conv_v5 import (
+        _layer0_like_selection_frontier,
+    )
+
+    selector = v5.Lfm2CpcfV5EndpointFirstCandidateSelector()
+    before = v5._optional_runtime_contract_sha256(
+        selector,
+        kind="candidate_selector",
+    )
+
+    selection = selector.select(
+        {
+            "candidate_selection_reports": _layer0_like_selection_frontier(),
+        }
+    )
+    after = v5._optional_runtime_contract_sha256(
+        selector,
+        kind="candidate_selector",
+    )
+
+    assert selection["selected_candidate_id"] == (
+        "ridge-alpha-01-0.0001--anchor-04-pass-01-writer"
+    )
+    assert after == before
+
+
+def test_stable_python_code_fingerprint_binds_semantic_bytecode() -> None:
+    def first():
+        return 1
+
+    def second():
+        return 2
+
+    before = v5._stable_python_code_sha256(first.__code__)
+    for _ in range(64):
+        assert first() == 1
+
+    assert v5._stable_python_code_sha256(first.__code__) == before
+    assert v5._stable_python_code_sha256(second.__code__) != before
+
+
 def test_runtime_contract_binds_transitive_global_from_real_replay_class(
     monkeypatch,
 ) -> None:

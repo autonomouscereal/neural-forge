@@ -105,6 +105,7 @@ def main() -> int:
         for index in range(32)
     )
     direct_errors = []
+    direct_relative_errors = []
     direct_bitwise_matches = []
     for source, group in validation_locations:
         seed = seeds[group]
@@ -115,6 +116,10 @@ def main() -> int:
         )
         direct_errors.append(
             abs(float(seed_distance_table[source, group].item()) - direct)
+        )
+        direct_relative_errors.append(
+            abs(float(seed_distance_table[source, group].item()) - direct)
+            / max(abs(direct), torch.finfo(torch.float64).tiny)
         )
     executed_complexity = v5._seed_distance_table_complexity_receipt(
         source_channels=source_channels,
@@ -166,6 +171,10 @@ def main() -> int:
                 direct_errors,
                 default=0.0,
             ),
+            "sampled_direct_distance_maximum_relative_error": max(
+                direct_relative_errors,
+                default=0.0,
+            ),
             "sampled_direct_distances_bitwise_equal_to_scalar_legacy": all(
                 direct_bitwise_matches
             ),
@@ -192,9 +201,15 @@ def main() -> int:
         ),
         "execution": {
             "cached_direct_seed_distance_columns": True,
-            "direct_distance_row_chunk_size": 1,
+            "direct_distance_row_chunk_size": (
+                v5.V5_DIRECT_SEED_DISTANCE_ROW_CHUNK_SIZE
+            ),
             "direct_seed_temporary_reused_across_rows": True,
-            "scalar_legacy_reduction_semantics_preserved": True,
+            "rowwise_direct_squared_euclidean_objective_preserved": True,
+            "scalar_legacy_reduction_semantics_preserved": False,
+            "finite_precision_reduction_association": (
+                "fixed_128_row_batched_reduction"
+            ),
             "full_source_by_descriptor_temporary_materialized": False,
             "pairwise_gram_identity_used": False,
             "negative_distance_clamping_used": False,

@@ -803,6 +803,41 @@ def test_direct_seed_distances_preserve_exact_nonzero_duplicates() -> None:
     assert torch.all(distances >= 0.0)
 
 
+def test_direct_seed_distance_chunks_preserve_partition_with_fp64_tolerance() -> None:
+    generator = torch.Generator().manual_seed(20_260_719)
+    descriptors = torch.randn(
+        (129, 4_096),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    target_channels = 8
+
+    expected = _legacy_balanced_farthest_first(
+        descriptors,
+        target_channels=target_channels,
+    )
+    actual = v5_module._balanced_farthest_first_with_seed_distance_table(
+        descriptors,
+        target_channels=target_channels,
+    )
+
+    assert actual[:3] == expected
+    seed_distances = actual[4]
+    for group, seed in enumerate(actual[0]):
+        scalar = torch.stack(
+            tuple(
+                (descriptors[source] - descriptors[seed]).square().sum()
+                for source in range(len(descriptors))
+            )
+        )
+        torch.testing.assert_close(
+            seed_distances[:, group],
+            scalar,
+            rtol=8.0 * torch.finfo(torch.float64).eps,
+            atol=0.0,
+        )
+
+
 def test_direct_seed_distances_preserve_permuted_equal_norm_lowest_tie() -> None:
     width = 16_384
     generator = torch.Generator().manual_seed(20_260_719)
@@ -854,12 +889,20 @@ def test_production_basis_distance_complexity_receipt() -> None:
     assert receipt["legacy_total_vector_reduction_count"] == 152_678_224
     assert receipt["seed_distance_table_entries"] == 794_624
     assert receipt["seed_distance_table_bytes"] == 6_356_992
-    assert receipt["maximum_direct_seed_temporary_bytes"] == 1_924_416
+    assert receipt["maximum_direct_seed_temporary_bytes"] == 246_325_248
     assert receipt["direct_seed_column_count"] == 776
+    assert receipt["direct_seed_chunk_reduction_count"] == 6_208
     assert receipt["direct_seed_vector_reduction_count"] == 794_624
-    assert receipt["distance_row_chunk_size"] == 1
+    assert receipt["distance_row_chunk_size"] == 128
+    assert receipt["maximum_rows_per_distance_chunk"] == 128
+    assert receipt["distance_chunks_per_seed"] == 8
     assert receipt["direct_seed_temporary_reused_across_rows"] is True
-    assert receipt["scalar_legacy_reduction_semantics_preserved"] is True
+    assert receipt["rowwise_direct_squared_euclidean_objective_preserved"] is True
+    assert receipt["scalar_legacy_reduction_semantics_preserved"] is False
+    assert (
+        receipt["finite_precision_reduction_association"]
+        == "fixed_128_row_batched_reduction"
+    )
     assert receipt["full_source_by_descriptor_temporary_materialized"] is False
     assert receipt["descriptor_width"] == 240_552
     assert (
