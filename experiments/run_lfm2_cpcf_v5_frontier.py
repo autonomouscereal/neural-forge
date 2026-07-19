@@ -77,6 +77,9 @@ _POSTHOC_EVALUATOR = (
     / "experiments"
     / "evaluate_lfm2_intelligence_retention.py"
 )
+_GPU_PARITY_RECEIPT = (
+    _REPOSITORY_ROOT / "reports" / "12061b4-two-rtx3090-bf16.json"
+)
 _RESIDUAL_RUNNER = (
     _REPOSITORY_ROOT
     / "experiments"
@@ -836,6 +839,7 @@ def _source_identities() -> dict[str, str]:
     sources = {
         "frontier_supervisor": Path(__file__).resolve(),
         "frontier_catalog": _FRONTIER_SOURCE,
+        "gpu_replay_parity_receipt": _GPU_PARITY_RECEIPT,
         "candidate_capture": _CAPTURE_SOURCE,
         "fold_only_runtime_guard": _FOLD_ONLY_RUNTIME_GUARD_SOURCE,
         "lfm2_v5_quarantine_backend": _LFM2_QUARANTINE_SOURCE,

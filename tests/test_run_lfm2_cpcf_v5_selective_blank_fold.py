@@ -1306,14 +1306,16 @@ def test_absolute_rss_policy_rejects_an_over_limit_baseline() -> None:
         )
 
 
-def test_current_stale_two_gpu_policy_receipt_fails_closed() -> None:
-    # Temporary until the exact current replay sources are deployed and the
-    # real two-RTX-3090 verifier produces a replacement receipt.
-    with pytest.raises(
-        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
-        match="GPU replay source changed",
-    ):
-        MODULE._load_proven_gpu_parity_receipt()
+def test_current_two_gpu_policy_receipt_matches_live_replay_sources() -> None:
+    receipt = MODULE._load_proven_gpu_parity_receipt()
+
+    assert receipt["receipt_sha256"] == (
+        "12061b4861e3f0a41b7e182fb774e74167f1d6b37442036ac5d4321091060a95"
+    )
+    assert receipt["file_sha256"] == (
+        "9df71b45f00a3bc34872266e0c863bfc0560b79345ade64a89bc675b96be062f"
+    )
+    assert receipt["real_two_gpu_parity_passed"] is True
 
 
 def test_failure_diagnostic_preserves_structured_reports_from_causes() -> None:
