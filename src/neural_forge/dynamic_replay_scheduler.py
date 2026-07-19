@@ -2008,6 +2008,18 @@ class DeterministicReplayScheduler:
     ) -> list[tuple[int, Any, dict[str, Any]]]:
         if not items:
             return []
+        torch = _torch_or_none()
+        if torch is not None:
+            # Torch grad mode is thread-local.  Fold execution disables it on
+            # the caller, but ThreadPoolExecutor workers otherwise begin with
+            # the process default (enabled).  Establish a fail-closed baseline
+            # for this dedicated replay thread so nested no_grad scopes never
+            # restore autograd while the fold-only guard is active.
+            torch.set_grad_enabled(False)
+            if torch.is_grad_enabled():
+                raise DynamicReplaySchedulingError(
+                    "Replay shard worker failed to disable autograd."
+                )
         prepared: dict[int, StagedReplayPayload] = {}
         first_count = min(2, len(items))
         for index in range(first_count):

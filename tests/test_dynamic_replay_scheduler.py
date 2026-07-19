@@ -25,6 +25,7 @@ from neural_forge.dynamic_replay_scheduler import (  # noqa: E402
     fingerprint_installed_replay_state,
     fingerprint_replay_value,
 )
+from neural_forge.dynamic_fold_executor import _FoldOnlyTorchGuard  # noqa: E402
 
 
 def _device(index: int, *, name: str = "NVIDIA GeForce RTX 3090"):
@@ -404,6 +405,123 @@ def test_scheduler_runs_parity_then_restores_canonical_output_order() -> None:
         for buffer in buffers.values()
     )
     assert set(gpu_calls[:2]) == {("parity", 0), ("parity", 4)}
+
+
+def test_scheduler_disables_autograd_in_fold_guard_shard_threads() -> None:
+    replicas = _replicas()
+    policy = _policy()
+    observed_grad_modes: list[tuple[str, int, bool]] = []
+    device_by_index = {
+        replica.device.device_index: replica.device for replica in replicas
+    }
+
+    def gpu_worker(
+        item: ReplayWorkItem,
+        replica: ReplayReplicaReceipt,
+        payload: Any,
+    ) -> Any:
+        observed_grad_modes.append(
+            (
+                item.work_id,
+                replica.device.device_index,
+                torch.is_grad_enabled(),
+            )
+        )
+        return {
+            "endpoint": payload["input"] * 2.0,
+            "kind": "replay",
+        }
+
+    scheduler = DeterministicReplayScheduler(
+        replicas=replicas,
+        policy=policy,
+        gpu_worker=gpu_worker,
+        cpu_parity_worker=lambda _item, payload: {
+            "endpoint": payload["input"] * 2.0,
+            "kind": "replay",
+        },
+        device_receipt_probe=lambda index: device_by_index[index],
+        installed_state_probe=lambda replica: replica.installed_state,
+        cpu_installed_state_probe=lambda: replicas[0].installed_state,
+        host_buffer_factory=lambda replica: _FakePinnedDoubleBuffer(
+            replica,
+            maximum_bytes_per_slot=policy.maximum_pinned_bytes_per_slot,
+        ),
+    )
+    guard = _FoldOnlyTorchGuard()
+    with guard:
+        assert torch.is_grad_enabled() is False
+        result = scheduler.execute(
+            (_item(0), _item(1)),
+            parity_item=_item(
+                0,
+                value=7.0,
+                work_id="parity",
+                shard_key="parity",
+            ),
+        )
+        assert torch.is_grad_enabled() is False
+
+    scheduled_modes = [
+        mode
+        for work_id, _device_index, mode in observed_grad_modes
+        if work_id != "parity"
+    ]
+    assert scheduled_modes == [False, False]
+    assert len(result.outputs) == 2
+    assert guard.autograd_grad_calls == 0
+
+
+def test_scheduler_shard_nested_autograd_enable_still_fails_closed() -> None:
+    replicas = _replicas()
+    policy = _policy()
+    scheduled_calls: list[str] = []
+    device_by_index = {
+        replica.device.device_index: replica.device for replica in replicas
+    }
+
+    def gpu_worker(
+        item: ReplayWorkItem,
+        _replica: ReplayReplicaReceipt,
+        payload: Any,
+    ) -> Any:
+        if item.work_id != "parity":
+            scheduled_calls.append(item.work_id)
+            with torch.enable_grad():
+                return payload["input"]
+        return payload["input"]
+
+    scheduler = DeterministicReplayScheduler(
+        replicas=replicas,
+        policy=policy,
+        gpu_worker=gpu_worker,
+        cpu_parity_worker=lambda _item, payload: payload["input"],
+        device_receipt_probe=lambda index: device_by_index[index],
+        installed_state_probe=lambda replica: replica.installed_state,
+        cpu_installed_state_probe=lambda: replicas[0].installed_state,
+        host_buffer_factory=lambda replica: _FakePinnedDoubleBuffer(
+            replica,
+            maximum_bytes_per_slot=policy.maximum_pinned_bytes_per_slot,
+        ),
+    )
+    guard = _FoldOnlyTorchGuard()
+    with pytest.raises(
+        DynamicReplaySchedulingError,
+        match="A replay shard failed; no scheduled outputs were published",
+    ):
+        with guard:
+            scheduler.execute(
+                (_item(0),),
+                parity_item=_item(
+                    0,
+                    value=7.0,
+                    work_id="parity",
+                    shard_key="parity",
+                ),
+            )
+
+    assert scheduled_calls == ["work-0"]
+    assert guard.autograd_grad_calls == 1
 
 
 def test_scheduler_fails_closed_on_parity_before_scheduled_work() -> None:
