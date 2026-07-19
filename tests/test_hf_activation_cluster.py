@@ -9,12 +9,82 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+import neural_forge.hf_activation_cluster as activation_cluster  # noqa: E402
 from neural_forge.hf_activation_cluster import (  # noqa: E402
     ActivationClusterFiniteError,
     ActivationClusterShapeError,
     build_gated_mlp_activation_cluster_plan,
     build_gqa_activation_cluster_plan,
 )
+
+
+def test_gqa_equal_offsets_skip_feature_materialization_without_semantic_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = torch.Generator().manual_seed(20260719)
+    query = torch.randn(8, 9, 4, generator=generator, dtype=torch.float64)
+    key = torch.randn(4, 9, 4, generator=generator, dtype=torch.float64)
+    value = torch.randn(4, 9, 4, generator=generator, dtype=torch.float64)
+    context = torch.randn(8, 9, 4, generator=generator, dtype=torch.float64)
+    contribution = torch.randn(8, 9, 5, generator=generator, dtype=torch.float64)
+    combine_calls = []
+    original_combine = activation_cluster._combine_modalities
+
+    def counted_combine(torch_module, matrices):
+        materialized = tuple(matrices)
+        combine_calls.append(tuple(tuple(matrix.shape) for matrix in materialized))
+        return original_combine(torch_module, materialized)
+
+    monkeypatch.setattr(
+        activation_cluster,
+        "_combine_modalities",
+        counted_combine,
+    )
+    plan = activation_cluster.build_gqa_activation_cluster_plan(
+        query,
+        key,
+        value,
+        context,
+        contribution,
+        source_query_heads=8,
+        source_key_value_heads=4,
+        target_query_heads=4,
+        target_key_value_heads=2,
+        head_dim=4,
+    )
+
+    # Group features are still consumed once.  Equal source/target Q-per-KV
+    # offsets have the exact pre-existing identity result without building the
+    # three transposed, normalized trajectory matrices.
+    assert len(combine_calls) == 1
+    assert len(combine_calls[0]) == 5
+    assert plan.query_offset_medoids == (0, 1)
+    assert plan.query_offset_assignment == (0, 1)
+    assert plan.report.query_offset_cluster_strategy == (
+        "deterministic-identity-real-medoid"
+    )
+    assert plan.report.query_offset_group_sizes == (1, 1)
+    assert plan.report.invariants.all_hold is True
+
+    combine_calls.clear()
+    reduced_offset_plan = activation_cluster.build_gqa_activation_cluster_plan(
+        query,
+        key,
+        value,
+        context,
+        contribution,
+        source_query_heads=8,
+        source_key_value_heads=4,
+        target_query_heads=2,
+        target_key_value_heads=2,
+        head_dim=4,
+    )
+    assert len(combine_calls) == 2
+    assert len(combine_calls[1]) == 3
+    assert reduced_offset_plan.report.query_offset_cluster_strategy != (
+        "deterministic-identity-real-medoid"
+    )
+    assert reduced_offset_plan.report.invariants.all_hold is True
 
 
 def _head_signatures(rows: torch.Tensor, head_axis: int) -> torch.Tensor:

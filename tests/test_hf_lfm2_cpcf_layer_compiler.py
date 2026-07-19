@@ -755,7 +755,7 @@ def test_attention_phases_coalesce_exact_k_linear_chronology(
         forbidden_recovery,
     )
     charts = _chart("full_attention")
-    cases = layer_compiler._attention_cases(
+    cases, runtime_receipt = layer_compiler._attention_cases(
         source_model=source,
         target_model=target,
         source_layer=source.model.layers[0],
@@ -766,6 +766,16 @@ def test_attention_phases_coalesce_exact_k_linear_chronology(
     )
 
     assert len(cases) == 1
+    assert runtime_receipt["phase_count"] == 2
+    assert runtime_receipt["prepared_composition_count"] == 1
+    assert runtime_receipt["avoided_composition_count"] == 2
+    assert runtime_receipt["report_sha256"] == _sha(
+        {
+            key: value
+            for key, value in runtime_receipt.items()
+            if key != "report_sha256"
+        }
+    )
     case = cases[0]
     expected_key_linear = torch.cat(
         (
@@ -936,6 +946,169 @@ def test_attention_o_contribution_accepts_bf16_rounding_but_rejects_mismatch() -
             target_encoder=encoder,
             target_output_blocks=output_blocks,
             name="bf16-mismatch",
+        )
+
+
+def test_prepared_attention_o_transport_is_exact_sealed_and_reused() -> None:
+    generator = torch.Generator().manual_seed(20260720)
+    batch = 2
+    query_heads = 3
+    query_rows = 4
+    head_dim = 2
+    source_width = 7
+    target_width = 5
+    context = torch.randn(
+        (batch, query_heads, query_rows, head_dim),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    output_weight = torch.randn(
+        (source_width, query_heads * head_dim),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    encoder = torch.randn(
+        (source_width, target_width),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    source_output = torch.einsum(
+        "bhqd,ohd->bqo",
+        context,
+        output_weight.reshape(source_width, query_heads, head_dim),
+    )
+    target_output = source_output @ encoder
+    prepared = layer_compiler._prepare_attention_output_transport_from_tensors(
+        source_output_weight=output_weight,
+        target_encoder=encoder,
+        query_heads=query_heads,
+        head_dim=head_dim,
+        name="sealed-test",
+    )
+    expected = torch.einsum(
+        "bhqd,hdt->bhqt",
+        context,
+        prepared.target_output_blocks,
+    )
+
+    first = layer_compiler._encoded_parent_attention_contribution(
+        parent_context=context,
+        cached_source_output=source_output,
+        cached_target_output=target_output,
+        name="sealed-first",
+        prepared_transport=prepared,
+    )
+    raw = layer_compiler._encoded_parent_attention_contribution(
+        parent_context=context,
+        cached_source_output=source_output,
+        cached_target_output=target_output,
+        source_output_weight=output_weight,
+        target_encoder=encoder,
+        target_output_blocks=prepared.target_output_blocks,
+        name="raw-equivalent",
+    )
+    mismatched_blocks = prepared.target_output_blocks.clone()
+    mismatched_blocks[0, 0, 0] += 1.0
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="do not match the source O/chart composition",
+    ):
+        layer_compiler._encoded_parent_attention_contribution(
+            parent_context=context,
+            cached_source_output=source_output,
+            cached_target_output=target_output,
+            source_output_weight=output_weight,
+            target_encoder=encoder,
+            target_output_blocks=mismatched_blocks,
+            name="mismatched-static-composition",
+        )
+    # The prepared object owns copies.  Mutating the source tensors after the
+    # one-time seal cannot alter any later phase contribution.
+    output_weight.add_(1000.0)
+    encoder.mul_(-3.0)
+    second = layer_compiler._encoded_parent_attention_contribution(
+        parent_context=context,
+        cached_source_output=source_output,
+        cached_target_output=target_output,
+        name="sealed-second",
+        prepared_transport=prepared,
+    )
+
+    torch.testing.assert_close(first, expected, atol=0.0, rtol=0.0)
+    assert torch.equal(raw, first)
+    torch.testing.assert_close(second, first, atol=0.0, rtol=0.0)
+    assert len(prepared.seal_sha256) == 64
+    receipt = layer_compiler._attention_output_transport_complexity_receipt(
+        transport=prepared,
+        phase_count=1_386,
+    )
+    assert receipt["legacy_composition_count"] == 1_387
+    assert receipt["prepared_composition_count"] == 1
+    assert receipt["avoided_composition_flops"] == 582_120
+    assert receipt["avoided_phase_fp64_weight_materialization_bytes"] == 465_696
+    assert receipt["transport_seal_sha256"] == prepared.seal_sha256
+    assert receipt["report_sha256"] == _sha(
+        {
+            key: value
+            for key, value in receipt.items()
+            if key != "report_sha256"
+        }
+    )
+
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="must be supplied alone",
+    ):
+        layer_compiler._encoded_parent_attention_contribution(
+            parent_context=context,
+            cached_source_output=source_output,
+            cached_target_output=target_output,
+            source_output_weight=output_weight,
+            name="ambiguous-transport",
+            prepared_transport=prepared,
+        )
+
+    prepared.target_output_blocks[0, 0, 0] += 1.0
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="differs from its prepared O transport seal",
+    ):
+        layer_compiler._encoded_parent_attention_contribution(
+            parent_context=context,
+            cached_source_output=source_output,
+            cached_target_output=target_output,
+            name="mutated-prepared-transport",
+            prepared_transport=prepared,
+        )
+
+
+def test_attention_o_contribution_rejects_nonfinite_roundoff_bound() -> None:
+    context = torch.ones((1, 1, 1, 2), dtype=torch.float64)
+    output_weight = torch.tensor(
+        [[1.0e308, -1.0e308]],
+        dtype=torch.float64,
+    )
+    encoder = torch.tensor([[1.0e-308]], dtype=torch.float64)
+    source_output = torch.zeros((1, 1, 1), dtype=torch.float64)
+    target_output = torch.zeros((1, 1, 1), dtype=torch.float64)
+    prepared = layer_compiler._prepare_attention_output_transport_from_tensors(
+        source_output_weight=output_weight,
+        target_encoder=encoder,
+        query_heads=1,
+        head_dim=2,
+        name="nonfinite-bound",
+    )
+
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="non-finite roundoff bound",
+    ):
+        layer_compiler._encoded_parent_attention_contribution(
+            parent_context=context,
+            cached_source_output=source_output,
+            cached_target_output=target_output,
+            name="nonfinite-bound",
+            prepared_transport=prepared,
         )
 
 
@@ -1197,6 +1370,43 @@ def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
             "head_local_O_write_composed_through_post_operator_chart"
         )
         assert policy["attention_residual_contribution_direction_preserved"] is True
+        runtime_receipt = policy[
+            "attention_runtime_complexity_receipt"
+        ]
+        assert runtime_receipt["report_sha256"] == _sha(
+            {
+                key: value
+                for key, value in runtime_receipt.items()
+                if key != "report_sha256"
+            }
+        )
+        output_receipt = runtime_receipt["output_transport"]
+        assert output_receipt["phase_count"] == 1
+        assert output_receipt["source_width"] == 8
+        assert output_receipt["query_heads"] == 4
+        assert output_receipt["head_dim"] == 2
+        assert output_receipt["target_width"] == 4
+        assert len(output_receipt["transport_seal_sha256"]) == 64
+        offset_receipt = runtime_receipt[
+            "equal_offset_identity_short_circuit"
+        ]
+        assert offset_receipt["identity_short_circuit_executed"] is True
+        assert offset_receipt["fit_case_count"] == 1
+        assert offset_receipt["fit_observation_rows"] == 12
+        assert offset_receipt["avoided_offset_feature_bytes"] == 3_072
+        assert (
+            offset_receipt["avoided_minimum_live_bytes_at_legacy_cat"]
+            == 9_216
+        )
+        assert result.result_sha256 == _sha(
+            {
+                key: value
+                for key, value in result.report.items()
+                if key != "result_sha256"
+            }
+        )
+    else:
+        assert policy["attention_runtime_complexity_receipt"] is None
     assert policy["endpoint_metrics_by_causal_phase"] is True
     state_policy = result.report["actual_child_state_policy"]
     assert state_policy["next_layer_input"] == (

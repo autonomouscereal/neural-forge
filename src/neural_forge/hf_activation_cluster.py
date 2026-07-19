@@ -820,6 +820,23 @@ class _ClusterResult:
     squared_error: float
 
 
+def _identity_cluster_result(torch: Any, source_count: int) -> _ClusterResult:
+    """Return the exact identity partition without consulting feature values."""
+
+    identity = torch.arange(source_count, dtype=torch.long)
+    return _ClusterResult(
+        medoids=identity,
+        assignment=identity.clone(),
+        group_sizes=torch.ones(source_count, dtype=torch.long),
+        strategy=_IDENTITY_CLUSTER_STRATEGY,
+        balanced_partition=True,
+        locality_dimensions=0,
+        iterations=0,
+        converged=True,
+        squared_error=0.0,
+    )
+
+
 def _squared_distances(torch: Any, left: Any, right: Any) -> Any:
     distances = (
         left.square().sum(dim=1, keepdim=True)
@@ -1059,18 +1076,7 @@ def _deterministic_medoid_cluster(
             "target_count cannot exceed the source unit count."
         )
     if target_count == source_count:
-        identity = torch.arange(source_count, dtype=torch.long)
-        return _ClusterResult(
-            medoids=identity,
-            assignment=identity.clone(),
-            group_sizes=torch.ones(source_count, dtype=torch.long),
-            strategy=_IDENTITY_CLUSTER_STRATEGY,
-            balanced_partition=True,
-            locality_dimensions=0,
-            iterations=0,
-            converged=True,
-            squared_error=0.0,
-        )
+        return _identity_cluster_result(torch, source_count)
 
     use_global_refinement = (
         source_count <= _GLOBAL_CLUSTER_MAX_SOURCES
@@ -1406,14 +1412,6 @@ def build_gqa_activation_cluster_plan(
                 grouped_contribution.reshape(source_key_value_heads, -1),
             ),
         )
-        offset_features = _combine_modalities(
-            torch,
-            (
-                grouped_query.permute(1, 0, 2).reshape(source_offsets, -1),
-                grouped_context.permute(1, 0, 2).reshape(source_offsets, -1),
-                grouped_contribution.permute(1, 0, 2).reshape(source_offsets, -1),
-            ),
-        )
         if group_medoid_candidates is None:
             group_candidate_indices = torch.arange(
                 source_key_value_heads,
@@ -1444,13 +1442,29 @@ def build_gqa_activation_cluster_plan(
                 max_iterations=max_iterations,
                 chunk_size=distance_chunk_size,
             )
-        offset_clusters = _deterministic_medoid_cluster(
-            torch,
-            offset_features,
-            target_offsets,
-            max_iterations=max_iterations,
-            chunk_size=distance_chunk_size,
-        )
+        if target_offsets == source_offsets:
+            # The deterministic clusterer has always returned the identity in
+            # this topology.  Avoid transposing and normalizing the enormous
+            # trajectory signatures only to discard every feature value.
+            offset_clusters = _identity_cluster_result(torch, source_offsets)
+        else:
+            offset_features = _combine_modalities(
+                torch,
+                (
+                    grouped_query.permute(1, 0, 2).reshape(source_offsets, -1),
+                    grouped_context.permute(1, 0, 2).reshape(source_offsets, -1),
+                    grouped_contribution.permute(1, 0, 2).reshape(
+                        source_offsets, -1
+                    ),
+                ),
+            )
+            offset_clusters = _deterministic_medoid_cluster(
+                torch,
+                offset_features,
+                target_offsets,
+                max_iterations=max_iterations,
+                chunk_size=distance_chunk_size,
+            )
         query_assignment = (
             group_clusters.assignment[:, None] * target_offsets
             + offset_clusters.assignment[None, :]

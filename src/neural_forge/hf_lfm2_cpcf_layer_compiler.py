@@ -2031,24 +2031,304 @@ def _equal_causal_phase_sqrt_weights(
     return MappingProxyType(result)
 
 
-def _attention_output_blocks_in_target_space(
+@dataclass(frozen=True, slots=True)
+class _PreparedAttentionOutputTransport:
+    """One content-authenticated parent-O/boundary-chart composition."""
+
+    source_width: int
+    query_heads: int
+    head_dim: int
+    target_width: int
+    source_output_weight_dtype: Any
+    source_output_blocks: Any
+    target_encoder: Any
+    target_output_blocks: Any
+    seal_sha256: str
+
+
+def _attention_output_transport_seal_payload(
+    *,
+    source_width: int,
+    query_heads: int,
+    head_dim: int,
+    target_width: int,
+    source_output_weight_dtype: Any,
+    source_output_blocks: Any,
+    target_encoder: Any,
+    target_output_blocks: Any,
+) -> dict[str, Any]:
+    """Return the complete canonical identity of one prepared transport."""
+
+    return {
+        "head_dim": head_dim,
+        "query_heads": query_heads,
+        "source_output_blocks_sha256": _tensor_sha256(
+            source_output_blocks
+        ),
+        "source_output_weight_dtype": str(
+            source_output_weight_dtype
+        ).removeprefix("torch."),
+        "source_width": source_width,
+        "target_encoder_sha256": _tensor_sha256(target_encoder),
+        "target_output_blocks_sha256": _tensor_sha256(
+            target_output_blocks
+        ),
+        "target_width": target_width,
+    }
+
+
+def _verify_attention_output_transport(
+    transport: Any,
+    *,
+    name: str,
+) -> _PreparedAttentionOutputTransport:
+    """Fail closed unless every prepared tensor still matches its seal."""
+
+    torch = _torch()
+    if type(transport) is not _PreparedAttentionOutputTransport:
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} must be an exact prepared O transport."
+        )
+    source_width = _nonnegative_int(
+        transport.source_width,
+        f"{name}.source_width",
+    )
+    query_heads = _nonnegative_int(
+        transport.query_heads,
+        f"{name}.query_heads",
+    )
+    head_dim = _nonnegative_int(
+        transport.head_dim,
+        f"{name}.head_dim",
+    )
+    target_width = _nonnegative_int(
+        transport.target_width,
+        f"{name}.target_width",
+    )
+    if min(source_width, query_heads, head_dim, target_width) == 0:
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} topology dimensions must be positive."
+        )
+    try:
+        dtype_probe = torch.empty(
+            (),
+            dtype=transport.source_output_weight_dtype,
+        )
+    except (TypeError, RuntimeError) as exc:
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name}.source_output_weight_dtype is invalid."
+        ) from exc
+    if not torch.is_floating_point(dtype_probe) or torch.is_complex(dtype_probe):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name}.source_output_weight_dtype must be real floating."
+        )
+
+    tensor_contract = (
+        (
+            "source_output_blocks",
+            transport.source_output_blocks,
+            (source_width, query_heads, head_dim),
+        ),
+        (
+            "target_encoder",
+            transport.target_encoder,
+            (source_width, target_width),
+        ),
+        (
+            "target_output_blocks",
+            transport.target_output_blocks,
+            (query_heads, head_dim, target_width),
+        ),
+    )
+    storage_pointers = []
+    for field_name, value, expected_shape in tensor_contract:
+        if (
+            not isinstance(value, torch.Tensor)
+            or value.layout != torch.strided
+            or value.device.type != "cpu"
+            or value.dtype != torch.float64
+            or not value.is_contiguous()
+            or tuple(value.shape) != expected_shape
+            or not bool(torch.isfinite(value).all().item())
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                f"{name}.{field_name} violates its sealed dense FP64 "
+                "tensor contract."
+            )
+        storage_pointers.append(value.untyped_storage().data_ptr())
+    if len(set(storage_pointers)) != len(storage_pointers):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} prepared tensors must own disjoint storage."
+        )
+
+    expected_seal = _sha(
+        _attention_output_transport_seal_payload(
+            source_width=source_width,
+            query_heads=query_heads,
+            head_dim=head_dim,
+            target_width=target_width,
+            source_output_weight_dtype=(
+                transport.source_output_weight_dtype
+            ),
+            source_output_blocks=transport.source_output_blocks,
+            target_encoder=transport.target_encoder,
+            target_output_blocks=transport.target_output_blocks,
+        )
+    )
+    if (
+        _digest(transport.seal_sha256, f"{name}.seal_sha256")
+        != expected_seal
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} content differs from its prepared O transport seal."
+        )
+    return transport
+
+
+def _prepare_attention_output_transport_from_tensors(
+    *,
+    source_output_weight: Any,
+    target_encoder: Any,
+    target_output_blocks: Any | None = None,
+    query_heads: int | None = None,
+    head_dim: int | None = None,
+    name: str,
+) -> _PreparedAttentionOutputTransport:
+    """Copy, compose, validate, and seal invariant O/chart tensors once."""
+
+    torch = _torch()
+    output_weight_native = _finite_tensor(
+        source_output_weight,
+        f"{name}.source_output_weight",
+        dimensions=2,
+    )
+    encoder_native = _finite_tensor(
+        target_encoder,
+        f"{name}.target_encoder",
+        dimensions=2,
+    )
+    supplied_blocks = (
+        None
+        if target_output_blocks is None
+        else _finite_tensor(
+            target_output_blocks,
+            f"{name}.target_output_blocks",
+            dimensions=3,
+        )
+    )
+    source_width, context_width = map(int, output_weight_native.shape)
+    if int(encoder_native.shape[0]) != source_width:
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} source O weight and target encoder are misaligned."
+        )
+    target_width = int(encoder_native.shape[1])
+
+    if supplied_blocks is not None:
+        supplied_query_heads, supplied_head_dim, supplied_target_width = map(
+            int, supplied_blocks.shape
+        )
+        if query_heads is None:
+            query_heads = supplied_query_heads
+        if head_dim is None:
+            head_dim = supplied_head_dim
+        if (
+            supplied_query_heads != query_heads
+            or supplied_head_dim != head_dim
+            or supplied_target_width != target_width
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                f"{name} target O blocks do not match the declared topology."
+            )
+    if query_heads is None or head_dim is None:
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} requires query-head and head-dimension topology."
+        )
+    query_heads = _nonnegative_int(query_heads, f"{name}.query_heads")
+    head_dim = _nonnegative_int(head_dim, f"{name}.head_dim")
+    if (
+        query_heads == 0
+        or head_dim == 0
+        or context_width != query_heads * head_dim
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} source O weight does not match its attention topology."
+        )
+
+    # Clone the two static inputs before sealing so subsequent mutation of the
+    # caller's module/chart cannot change the prepared transport.
+    output_weight = output_weight_native.to(torch.float64).clone().contiguous()
+    encoder = encoder_native.to(torch.float64).clone().contiguous()
+    source_blocks = output_weight.reshape(
+        source_width,
+        query_heads,
+        head_dim,
+    ).contiguous()
+    expected_blocks = torch.einsum(
+        "ohd,ot->hdt",
+        source_blocks,
+        encoder,
+    ).contiguous()
+    if not bool(torch.isfinite(expected_blocks).all().item()):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} source O/chart composition produced NaN or infinity."
+        )
+    if supplied_blocks is None:
+        blocks = expected_blocks
+    else:
+        blocks = supplied_blocks.to(torch.float64).clone().contiguous()
+        block_scale = max(
+            float(expected_blocks.abs().max().item()),
+            torch.finfo(torch.float64).tiny,
+        )
+        block_error = float(
+            (blocks - expected_blocks).abs().max().item()
+        )
+        if (
+            not math.isfinite(block_scale)
+            or not math.isfinite(block_error)
+            or block_error
+            > (32.0 * torch.finfo(torch.float64).eps * block_scale)
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                f"{name} target O blocks do not match the source O/chart "
+                "composition."
+            )
+
+    seal_sha256 = _sha(
+        _attention_output_transport_seal_payload(
+            source_width=source_width,
+            query_heads=query_heads,
+            head_dim=head_dim,
+            target_width=target_width,
+            source_output_weight_dtype=output_weight_native.dtype,
+            source_output_blocks=source_blocks,
+            target_encoder=encoder,
+            target_output_blocks=blocks,
+        )
+    )
+    return _verify_attention_output_transport(
+        _PreparedAttentionOutputTransport(
+        source_width=source_width,
+        query_heads=query_heads,
+        head_dim=head_dim,
+        target_width=target_width,
+        source_output_weight_dtype=output_weight_native.dtype,
+        source_output_blocks=source_blocks,
+        target_encoder=encoder,
+        target_output_blocks=blocks,
+        seal_sha256=seal_sha256,
+        ),
+        name=name,
+    )
+
+
+def _prepare_attention_output_transport(
     *,
     source_attention: Any,
     chart: Lfm2CpcfLayerBoundaryCharts,
-) -> Any:
-    """Compose every parent O head block with the predictive boundary chart."""
+) -> _PreparedAttentionOutputTransport:
+    """Prepare the production parent-O/chart transport outside phase loops."""
 
-    torch = _torch()
-    output_weight = _weight(
-        source_attention.out_proj,
-        "source_attention.out_proj",
-        dimensions=2,
-    ).detach().to(device="cpu", dtype=torch.float64)
-    encoder = _finite_tensor(
-        chart.post_operator.mapping.encoder,
-        "post_operator boundary encoder",
-        dimensions=2,
-    ).to(device="cpu", dtype=torch.float64)
     head_dim = _nonnegative_int(
         int(source_attention.head_dim),
         "source_attention.head_dim",
@@ -2057,26 +2337,242 @@ def _attention_output_blocks_in_target_space(
         raise Lfm2CpcfLayerCompilerError(
             "source_attention.head_dim must be positive."
         )
-    source_width, context_width = map(int, output_weight.shape)
-    if (
-        source_width != chart.source_width
-        or int(encoder.shape[0]) != source_width
-        or context_width % head_dim
-    ):
+    output_weight = _weight(
+        source_attention.out_proj,
+        "source_attention.out_proj",
+        dimensions=2,
+    )
+    context_width = int(output_weight.shape[1])
+    if context_width % head_dim:
+        raise Lfm2CpcfLayerCompilerError(
+            "Parent O topology does not divide into complete attention heads."
+        )
+    prepared = _prepare_attention_output_transport_from_tensors(
+        source_output_weight=output_weight,
+        target_encoder=chart.post_operator.mapping.encoder,
+        query_heads=context_width // head_dim,
+        head_dim=head_dim,
+        name="parent attention O transport",
+    )
+    if prepared.source_width != chart.source_width:
         raise Lfm2CpcfLayerCompilerError(
             "Parent O topology does not compose with the post-operator chart."
         )
-    query_heads = context_width // head_dim
-    output_blocks = output_weight.reshape(
-        source_width,
-        query_heads,
-        head_dim,
+    return prepared
+
+
+def _attention_output_transport_complexity_receipt(
+    *,
+    transport: _PreparedAttentionOutputTransport,
+    phase_count: int,
+) -> Mapping[str, Any]:
+    """Report exact static-composition work removed by prepared transport."""
+
+    phase_count = _nonnegative_int(phase_count, "phase_count")
+    transport = _verify_attention_output_transport(
+        transport,
+        name="attention output transport complexity receipt",
     )
-    return torch.einsum(
-        "ohd,ot->hdt",
-        output_blocks,
-        encoder,
-    ).contiguous()
+    composition_terms = (
+        transport.source_width
+        * transport.query_heads
+        * transport.head_dim
+        * transport.target_width
+    )
+    body = {
+        "schema": "neural-forge-lfm2-attention-o-transport-runtime-v1",
+        "phase_count": phase_count,
+        "source_width": transport.source_width,
+        "query_heads": transport.query_heads,
+        "head_dim": transport.head_dim,
+        "target_width": transport.target_width,
+        "source_output_weight_dtype": str(
+            transport.source_output_weight_dtype
+        ).removeprefix("torch."),
+        "composition_scalar_terms": composition_terms,
+        "composition_flops": 2 * composition_terms,
+        "legacy_composition_count": phase_count + 1,
+        "prepared_composition_count": 1,
+        "avoided_composition_count": phase_count,
+        "avoided_composition_flops": (
+            2 * composition_terms * phase_count
+        ),
+        "avoided_phase_fp64_weight_materialization_bytes": (
+            phase_count
+            * transport.source_width
+            * transport.query_heads
+            * transport.head_dim
+            * 8
+        ),
+        "transport_seal_sha256": transport.seal_sha256,
+    }
+    return MappingProxyType(
+        {
+            **body,
+            "report_sha256": _sha(body),
+        }
+    )
+
+
+def _attention_runtime_complexity_receipt(
+    *,
+    output_transport_receipt: Mapping[str, Any],
+    cases: Sequence[Lfm2CachedAttentionFoldCase],
+    operator_artifact: Lfm2CompiledStructuralAttentionFold,
+) -> Mapping[str, Any]:
+    """Bind both structural-attention runtime shortcuts to actual inputs."""
+
+    torch = _torch()
+    transport_receipt = dict(output_transport_receipt)
+    transport_digest = transport_receipt.pop("report_sha256", None)
+    if (
+        _digest(
+            transport_digest,
+            "attention output transport receipt report_sha256",
+        )
+        != _sha(transport_receipt)
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention output transport receipt authentication failed."
+        )
+    topology = operator_artifact.topology
+    cluster_report = operator_artifact.cluster_plan.report
+    if (
+        transport_receipt.get("source_width")
+        != topology.source_hidden_size
+        or transport_receipt.get("query_heads")
+        != topology.source_query_heads
+        or transport_receipt.get("head_dim") != topology.head_dim
+        or transport_receipt.get("target_width")
+        != topology.target_output_size
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Prepared O transport receipt differs from compiled attention "
+            "topology."
+        )
+
+    fit_observation_rows = 0
+    contribution_width = None
+    for index, case in enumerate(cases):
+        query = case.parent_query
+        contribution = case.parent_contribution
+        if (
+            not isinstance(query, torch.Tensor)
+            or query.ndim != 4
+            or int(query.shape[1]) != topology.source_query_heads
+            or int(query.shape[3]) != topology.head_dim
+            or not isinstance(contribution, torch.Tensor)
+            or contribution.ndim != 4
+            or tuple(contribution.shape[:3]) != tuple(query.shape[:3])
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                f"Attention case {index} does not match its runtime receipt "
+                "topology."
+            )
+        current_width = int(contribution.shape[3])
+        if contribution_width is None:
+            contribution_width = current_width
+        elif current_width != contribution_width:
+            raise Lfm2CpcfLayerCompilerError(
+                "Attention contribution width changed across fit cases."
+            )
+        fit_observation_rows += int(query.shape[0]) * int(query.shape[2])
+    if not cases or contribution_width != topology.target_output_size:
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention runtime receipt requires nonempty aligned fit cases."
+        )
+
+    source_offsets = topology.source_query_heads_per_group
+    target_offsets = topology.target_query_heads_per_group
+    equal_offsets = source_offsets == target_offsets
+    identity_strategy = "deterministic-identity-real-medoid"
+    short_circuit_executed = (
+        equal_offsets
+        and cluster_report.query_offset_cluster_strategy
+        == identity_strategy
+        and cluster_report.query_offset_medoids
+        == tuple(range(source_offsets))
+        and cluster_report.query_offset_assignment
+        == tuple(range(source_offsets))
+    )
+    if equal_offsets != short_circuit_executed:
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention offset runtime receipt differs from the authenticated "
+            "activation-cluster result."
+        )
+
+    query_signature_elements = (
+        topology.source_query_heads
+        * fit_observation_rows
+        * topology.head_dim
+    )
+    contribution_signature_elements = (
+        topology.source_query_heads
+        * fit_observation_rows
+        * contribution_width
+    )
+    offset_feature_elements = (
+        2 * query_signature_elements + contribution_signature_elements
+    )
+    avoided_feature_elements = (
+        offset_feature_elements if short_circuit_executed else 0
+    )
+    offset_body = {
+        "source_query_heads": topology.source_query_heads,
+        "source_key_value_heads": topology.source_key_value_heads,
+        "target_query_heads": topology.target_query_heads,
+        "target_key_value_heads": topology.target_key_value_heads,
+        "source_query_offsets_per_kv": source_offsets,
+        "target_query_offsets_per_kv": target_offsets,
+        "head_dim": topology.head_dim,
+        "target_output_width": contribution_width,
+        "fit_case_count": len(cases),
+        "fit_observation_rows": fit_observation_rows,
+        "query_signature_elements": query_signature_elements,
+        "contribution_signature_elements": (
+            contribution_signature_elements
+        ),
+        "legacy_offset_feature_elements": offset_feature_elements,
+        "identity_short_circuit_executed": short_circuit_executed,
+        "query_offset_cluster_strategy": (
+            cluster_report.query_offset_cluster_strategy
+        ),
+        "avoided_offset_feature_elements": avoided_feature_elements,
+        "avoided_offset_feature_bytes": avoided_feature_elements * 8,
+        "avoided_minimum_live_bytes_at_legacy_cat": (
+            avoided_feature_elements * 8 * 3
+        ),
+        "identity_result_bytes": (
+            3 * source_offsets * 8 if short_circuit_executed else 0
+        ),
+    }
+    body = {
+        "schema": "neural-forge-lfm2-attention-runtime-complexity-v1",
+        "output_transport": dict(output_transport_receipt),
+        "equal_offset_identity_short_circuit": {
+            **offset_body,
+            "report_sha256": _sha(offset_body),
+        },
+    }
+    return MappingProxyType(
+        {
+            **body,
+            "report_sha256": _sha(body),
+        }
+    )
+
+
+def _attention_output_blocks_in_target_space(
+    *,
+    source_attention: Any,
+    chart: Lfm2CpcfLayerBoundaryCharts,
+) -> Any:
+    """Compose every parent O head block with the predictive boundary chart."""
+
+    return _prepare_attention_output_transport(
+        source_attention=source_attention,
+        chart=chart,
+    ).target_output_blocks
 
 
 def _encoded_parent_attention_contribution(
@@ -2084,10 +2580,11 @@ def _encoded_parent_attention_contribution(
     parent_context: Any,
     cached_source_output: Any,
     cached_target_output: Any,
-    source_output_weight: Any,
-    target_encoder: Any,
-    target_output_blocks: Any,
     name: str,
+    source_output_weight: Any | None = None,
+    target_encoder: Any | None = None,
+    target_output_blocks: Any | None = None,
+    prepared_transport: _PreparedAttentionOutputTransport | None = None,
 ) -> Any:
     """Return the directional target-space residual write of every parent head."""
 
@@ -2107,61 +2604,56 @@ def _encoded_parent_attention_contribution(
         f"{name}.target_output",
         dimensions=3,
     )
-    output_weight_native = _finite_tensor(
+    raw_transport_values = (
         source_output_weight,
-        f"{name}.source_output_weight",
-        dimensions=2,
-    )
-    encoder = _finite_tensor(
         target_encoder,
-        f"{name}.target_encoder",
-        dimensions=2,
-    ).to(torch.float64)
-    blocks = _finite_tensor(
         target_output_blocks,
-        f"{name}.target_output_blocks",
-        dimensions=3,
-    ).to(torch.float64)
+    )
+    if prepared_transport is None:
+        if any(value is None for value in raw_transport_values):
+            raise Lfm2CpcfLayerCompilerError(
+                f"{name} requires either one prepared O transport or all raw "
+                "O/chart tensors."
+            )
+        prepared_transport = _prepare_attention_output_transport_from_tensors(
+            source_output_weight=source_output_weight,
+            target_encoder=target_encoder,
+            target_output_blocks=target_output_blocks,
+            name=name,
+        )
+    elif (
+        type(prepared_transport) is not _PreparedAttentionOutputTransport
+        or any(value is not None for value in raw_transport_values)
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} prepared O transport must be supplied alone."
+        )
+    prepared_transport = _verify_attention_output_transport(
+        prepared_transport,
+        name=f"{name}.prepared_transport",
+    )
+    encoder = prepared_transport.target_encoder
+    blocks = prepared_transport.target_output_blocks
     batch, query_heads, query_rows, head_dim = map(
         int,
         context_native.shape,
     )
-    source_width, context_width = map(int, output_weight_native.shape)
-    target_width = int(encoder.shape[1])
+    source_width = prepared_transport.source_width
+    context_width = prepared_transport.query_heads * prepared_transport.head_dim
+    target_width = prepared_transport.target_width
     if (
         context_width != query_heads * head_dim
+        or query_heads != prepared_transport.query_heads
+        or head_dim != prepared_transport.head_dim
         or tuple(source_output_native.shape)
         != (batch, query_rows, source_width)
         or tuple(target_output.shape)
         != (batch, query_rows, target_width)
-        or tuple(encoder.shape) != (source_width, target_width)
-        or tuple(blocks.shape[:2]) != (query_heads, head_dim)
-        or int(blocks.shape[2]) != target_width
     ):
         raise Lfm2CpcfLayerCompilerError(
             f"{name} parent context, O output, and target O blocks are misaligned."
-        )
-    context = context_native.to(torch.float64)
-    output_weight = output_weight_native.to(torch.float64)
-    expected_blocks = torch.einsum(
-        "ohd,ot->hdt",
-        output_weight.reshape(
-            source_width,
-            query_heads,
-            head_dim,
-        ),
-        encoder,
-    ).contiguous()
-    block_scale = max(
-        float(expected_blocks.abs().max().item()),
-        torch.finfo(torch.float64).tiny,
     )
-    if float((blocks - expected_blocks).abs().max().item()) > (
-        32.0 * torch.finfo(torch.float64).eps * block_scale
-    ):
-        raise Lfm2CpcfLayerCompilerError(
-            f"{name} target O blocks do not match the source O/chart composition."
-        )
+    context = context_native.to(torch.float64)
     contribution = torch.einsum(
         "bhqd,hdt->bhqt",
         context,
@@ -2170,11 +2662,7 @@ def _encoded_parent_attention_contribution(
     source_prediction = torch.einsum(
         "bhqd,ohd->bqo",
         context,
-        output_weight.reshape(
-            source_width,
-            query_heads,
-            head_dim,
-        ),
+        prepared_transport.source_output_blocks,
     ).contiguous()
     source_reference = source_output_native.to(torch.float64)
     encoded_source_reference = torch.matmul(
@@ -2182,13 +2670,27 @@ def _encoded_parent_attention_contribution(
         encoder,
     ).contiguous()
     target_reference = target_output.to(torch.float64)
+    if not (
+        bool(torch.isfinite(contribution).all().item())
+        and bool(torch.isfinite(source_prediction).all().item())
+        and bool(torch.isfinite(encoded_source_reference).all().item())
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} O authentication produced a non-finite prediction."
+        )
     target_reference_scale = max(
         float(encoded_source_reference.abs().max().item()),
         torch.finfo(torch.float64).tiny,
     )
-    if float(
+    target_reference_error = float(
         (target_reference - encoded_source_reference).abs().max().item()
-    ) > (32.0 * torch.finfo(torch.float64).eps * target_reference_scale):
+    )
+    if (
+        not math.isfinite(target_reference_scale)
+        or not math.isfinite(target_reference_error)
+        or target_reference_error
+        > (32.0 * torch.finfo(torch.float64).eps * target_reference_scale)
+    ):
         raise Lfm2CpcfLayerCompilerError(
             f"{name} cached target O output is not the FP64 chart encoding "
             "of the cached source O output."
@@ -2205,7 +2707,7 @@ def _encoded_parent_attention_contribution(
         torch.float64
         if (
             context_native.dtype == torch.float64
-            and output_weight_native.dtype == torch.float64
+            and prepared_transport.source_output_weight_dtype == torch.float64
         )
         else torch.float32
     )
@@ -2225,20 +2727,24 @@ def _encoded_parent_attention_contribution(
         2.0**-10
         if (
             context_native.dtype == torch.float32
-            or output_weight_native.dtype == torch.float32
+            or prepared_transport.source_output_weight_dtype == torch.float32
         )
         else 0.0
     )
     output_unit = torch.finfo(source_output_native.dtype).eps / 2.0
+    absolute_source_output_blocks = (
+        prepared_transport.source_output_blocks.abs()
+    )
+    absolute_target_encoder = prepared_transport.target_encoder.abs()
     absolute_term_sum = torch.einsum(
         "bhqd,ohd->bqo",
         context.abs(),
-        output_weight.abs().reshape(
-            source_width,
-            query_heads,
-            head_dim,
-        ),
+        absolute_source_output_blocks,
     )
+    if not bool(torch.isfinite(absolute_term_sum).all().item()):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} O projection produced a non-finite roundoff bound."
+        )
     source_roundoff_bound = 2.0 * (
         (accumulation_gamma + tf32_product_unit) * absolute_term_sum
         + output_unit * source_prediction.abs()
@@ -2248,12 +2754,23 @@ def _encoded_parent_attention_contribution(
         * torch.finfo(source_output_native.dtype).eps
     )
     source_roundoff_bound = source_roundoff_bound + source_floor
+    if not bool(torch.isfinite(source_roundoff_bound).all().item()):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} O projection produced a non-finite roundoff bound."
+        )
     source_error_rmse = float(
         (source_prediction - source_reference).square().mean().sqrt().item()
     )
     source_bound_rmse = float(
         source_roundoff_bound.square().mean().sqrt().item()
     )
+    if (
+        not math.isfinite(source_error_rmse)
+        or not math.isfinite(source_bound_rmse)
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} O projection produced a non-finite error comparison."
+        )
     if source_error_rmse > source_bound_rmse:
         raise Lfm2CpcfLayerCompilerError(
             f"{name} cached source O output exceeds its accumulation-aware "
@@ -2265,17 +2782,26 @@ def _encoded_parent_attention_contribution(
     reconstructed = contribution.sum(dim=1)
     target_roundoff_bound = torch.matmul(
         source_roundoff_bound,
-        encoder.abs(),
+        absolute_target_encoder,
     )
     target_association_scale = torch.matmul(
         absolute_term_sum,
-        encoder.abs(),
+        absolute_target_encoder,
     )
     target_roundoff_bound = target_roundoff_bound + (
         64.0
         * torch.finfo(torch.float64).eps
         * target_association_scale
     )
+    if not (
+        bool(torch.isfinite(reconstructed).all().item())
+        and bool(torch.isfinite(target_roundoff_bound).all().item())
+        and bool(torch.isfinite(target_association_scale).all().item())
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} target-space O write produced a non-finite "
+            "error bound."
+        )
     target_error_rmse = float(
         (reconstructed - target_reference).square().mean().sqrt().item()
     )
@@ -2284,7 +2810,8 @@ def _encoded_parent_attention_contribution(
     )
     if (
         int(contribution.shape[-1]) <= 0
-        or not bool(torch.isfinite(contribution).all().item())
+        or not math.isfinite(target_error_rmse)
+        or not math.isfinite(target_bound_rmse)
         or target_error_rmse > target_bound_rmse
     ):
         raise Lfm2CpcfLayerCompilerError(
@@ -2304,7 +2831,10 @@ def _attention_cases(
     input_bank: Lfm2CpcfPhaseStateBank,
     preinstall_replay: Lfm2CpcfLayerReplayBank,
     chart: Lfm2CpcfLayerBoundaryCharts,
-) -> tuple[Lfm2CachedAttentionFoldCase, ...]:
+) -> tuple[
+    tuple[Lfm2CachedAttentionFoldCase, ...],
+    Mapping[str, Any],
+]:
     """Assemble one complete causal attention trajectory per fit record.
 
     The sealed prefill contains every raw K-linear row.  Each decode phase
@@ -2329,7 +2859,7 @@ def _attention_cases(
     )
     if not math.isclose(q_epsilon, k_epsilon, rel_tol=0.0, abs_tol=0.0):
         raise Lfm2CpcfLayerCompilerError("Source Q/K normalization epsilon differs.")
-    target_output_blocks = _attention_output_blocks_in_target_space(
+    prepared_output_transport = _prepare_attention_output_transport(
         source_attention=source_attention,
         chart=chart,
     )
@@ -2348,6 +2878,7 @@ def _attention_cases(
             ).append(phase)
 
     result = []
+    prepared_transport_use_count = 0
     for (batch_index, record_id), trajectory in grouped.items():
         query_linear_parts = []
         query_parts = []
@@ -2634,11 +3165,10 @@ def _attention_cases(
                 parent_context=parent_context,
                 cached_source_output=tensors["attention.o"],
                 cached_target_output=encoded_output,
-                source_output_weight=source_attention.out_proj.weight,
-                target_encoder=chart.post_operator.mapping.encoder,
-                target_output_blocks=target_output_blocks,
                 name=f"phase {phase.identity!r} attention",
+                prepared_transport=prepared_output_transport,
             )
+            prepared_transport_use_count += 1
             row_sqrt_weights = phase_sqrt_weights[phase.identity]
             if (
                 int(endpoint.shape[1]) != current
@@ -2748,7 +3278,13 @@ def _attention_cases(
         raise Lfm2CpcfLayerCompilerError(
             "Attention compilation requires at least one fit trajectory."
         )
-    return tuple(result)
+    return (
+        tuple(result),
+        _attention_output_transport_complexity_receipt(
+            transport=prepared_output_transport,
+            phase_count=prepared_transport_use_count,
+        ),
+    )
 
 
 _SHORT_CONV_HISTORY_FIELDS = (
@@ -5815,6 +6351,7 @@ def compile_and_install_lfm2_cpcf_layer(
         )
         stage = "operator_compile"
         norm_report: Mapping[str, Any] | None = None
+        attention_runtime_receipt: Mapping[str, Any] | None = None
         if operator_kind == "full_attention":
             source_attention = source_layer.self_attn
             target_attention = target_layer.self_attn
@@ -5853,7 +6390,7 @@ def compile_and_install_lfm2_cpcf_layer(
                 raise Lfm2CpcfLayerCompilerError(
                     "Source/target Q/K RMSNorm epsilon differs."
                 )
-            cases = _attention_cases(
+            cases, output_transport_receipt = _attention_cases(
                 source_model=source_model,
                 target_model=target_model,
                 source_layer=source_layer,
@@ -5881,6 +6418,13 @@ def compile_and_install_lfm2_cpcf_layer(
                 norm_epsilon=source_q_epsilon,
                 ridge=ridge_value,
                 max_prior_delta_ratio=None,
+            )
+            attention_runtime_receipt = (
+                _attention_runtime_complexity_receipt(
+                    output_transport_receipt=output_transport_receipt,
+                    cases=cases,
+                    operator_artifact=operator_artifact,
+                )
             )
             stage = "operator_install"
             norm_report = _copy_attention_norms(
@@ -6084,6 +6628,11 @@ def compile_and_install_lfm2_cpcf_layer(
                 ),
                 "attention_residual_contribution_direction_preserved": (
                     True if operator_kind == "full_attention" else "not_applicable"
+                ),
+                "attention_runtime_complexity_receipt": (
+                    None
+                    if attention_runtime_receipt is None
+                    else dict(attention_runtime_receipt)
                 ),
                 "endpoint_metrics_by_causal_phase": True,
                 "short_conv_validation_role": (
