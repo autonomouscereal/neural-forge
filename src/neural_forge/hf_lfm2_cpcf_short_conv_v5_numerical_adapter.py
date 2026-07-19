@@ -568,10 +568,11 @@ def _fit_objective(
     state: Mapping[str, Any | None],
     *,
     context_objective_weight: float,
+    replays: Sequence[Any] | None = None,
 ) -> Mapping[str, Any]:
     return sampled_cp_volterra_objective(
         cases,
-        _replays(cases, state),
+        _replays(cases, state) if replays is None else tuple(replays),
         required_split="fit",
         context_objective_weight=context_objective_weight,
     )
@@ -583,10 +584,12 @@ def _solve_writer(
     *,
     cap_id: str,
     ridge_policy: Lfm2CpcfV5RidgePolicy,
+    replays: Sequence[Any] | None = None,
 ) -> tuple[dict[str, Any | None], list[str]]:
     fit_intercept = state["writer_bias"] is not None
     ridge_cases = []
-    for case, replay in zip(cases, _replays(cases, state)):
+    current_replays = _replays(cases, state) if replays is None else tuple(replays)
+    for case, replay in zip(cases, current_replays):
         suffix_context = replay.context_history[:, case.suffix_start :, :]
         ridge_cases.append(
             Lfm2CpcfV5RidgeCase(
@@ -622,16 +625,17 @@ def _solve_fir(
     *,
     cap_id: str,
     ridge_policy: Lfm2CpcfV5RidgePolicy,
+    replays: Sequence[Any] | None = None,
 ) -> tuple[dict[str, Any | None], list[str]]:
     torch = _torch()
-    replays = _replays(cases, state)
+    current_replays = _replays(cases, state) if replays is None else tuple(replays)
     kernel = state["fir_kernel"].clone()
     fir_bias = None if state["fir_bias"] is None else state["fir_bias"].clone()
     target_hidden, fir_length = map(int, kernel.shape)
     receipts = []
     for channel in range(target_hidden):
         ridge_cases = []
-        for case, replay in zip(cases, replays):
+        for case, replay in zip(cases, current_replays):
             base_design = _lag_windows(
                 replay.b_history[..., channel] * replay.x_history[..., channel],
                 fir_length,
@@ -683,9 +687,10 @@ def _solve_bcx(
     *,
     cap_id: str,
     ridge_policy: Lfm2CpcfV5RidgePolicy,
+    replays: Sequence[Any] | None = None,
 ) -> tuple[dict[str, Any | None], list[str]]:
     torch = _torch()
-    replays = _replays(cases, state)
+    current_replays = _replays(cases, state) if replays is None else tuple(replays)
     in_weight = state["in_proj_weight"].clone()
     in_bias = None if state["in_proj_bias"] is None else state["in_proj_bias"].clone()
     target_hidden = int(in_weight.shape[1])
@@ -704,7 +709,7 @@ def _solve_bcx(
                 prior_parts.append(in_bias[row].reshape(1))
         prior = torch.cat(prior_parts).reshape(-1, 1)
         ridge_cases = []
-        for case, replay in zip(cases, replays):
+        for case, replay in zip(cases, current_replays):
             design = linearized_bcx_affine_design(
                 case.child_input_history,
                 replay.b_history,
@@ -837,6 +842,7 @@ def _projection_path(
         )
     ]
     phase_reports = [prior_report]
+    current_replays = _replays(projection_cases, state)
     solvers = (
         ("writer", _solve_writer),
         ("fir", _solve_fir),
@@ -848,17 +854,21 @@ def _projection_path(
                 projection_cases,
                 state,
                 context_objective_weight=(request.policy.context_objective_weight),
+                replays=current_replays,
             )
             candidate, solver_receipts = solver(
                 projection_cases,
                 state,
                 cap_id=cap_id,
                 ridge_policy=factor_ridge_policies[phase],
+                replays=current_replays,
             )
+            candidate_replays = _replays(projection_cases, candidate)
             after = _fit_objective(
                 projection_cases,
                 candidate,
                 context_objective_weight=(request.policy.context_objective_weight),
+                replays=candidate_replays,
             )
             accepted = _objective_not_worse(before, after)
             solver_intercept_contract = {
@@ -891,6 +901,7 @@ def _projection_path(
             if not accepted:
                 continue
             state = candidate
+            current_replays = candidate_replays
             stage_id = (
                 f"v5-{cap_id}--anchor-{len(path):02d}-pass-{pass_index:02d}-{phase}"
             )

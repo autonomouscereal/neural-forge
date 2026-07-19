@@ -467,6 +467,33 @@ def test_real_adapter_is_byte_deterministic_within_one_runtime() -> None:
     )
 
 
+def test_projection_path_reuses_one_authenticated_replay_bank_per_state(
+    monkeypatch,
+) -> None:
+    request = _request()
+    calls = []
+    original = numerical_adapter_module.replay_sampled_cp_volterra
+
+    def counted_replay(*args, **kwargs):
+        calls.append(None)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        numerical_adapter_module,
+        "replay_sampled_cp_volterra",
+        counted_replay,
+    )
+
+    frontier = Lfm2CpcfShortConvV5NumericalFrontierAdapter().generate(request)
+
+    assert frontier.verify_authentication()
+    # Per condition-cap path: one replay bank for the transported prior and
+    # one for each of the six attempted phase candidates.  The same bank is
+    # consumed by the solver and its before/after objective instead of
+    # replaying the identical state three times.
+    assert len(calls) == 2 * (1 + 6) * len(request.cases)
+
+
 def test_real_adapter_promotes_bfloat16_evidence_before_fp64_folding(
     monkeypatch,
 ) -> None:
