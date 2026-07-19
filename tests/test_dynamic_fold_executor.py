@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 
 import pytest
@@ -13,6 +14,7 @@ from neural_forge.dynamic_fold_executor import (
     FoldExecutionContext,
     FoldOperatorRegistry,
     StaticEvidenceProvider,
+    _FoldOnlyTorchGuard,
     fingerprint_fold_evidence_payload,
     fingerprint_model_state,
     fingerprint_model_state_entries,
@@ -964,3 +966,101 @@ def test_fold_guard_restores_inherited_optimizer_methods_exactly() -> None:
     assert torch.optim.AdamW.__init__ is adamw_init
     assert ("step" in vars(torch.optim.AdamW)) is step_was_direct
     assert ("__init__" in vars(torch.optim.AdamW)) is init_was_direct
+
+
+def test_fold_guard_runtime_blocks_and_counts_common_pruning_api() -> None:
+    from torch.nn.utils import prune
+
+    original = prune.l1_unstructured
+    model = torch.nn.Linear(4, 4)
+    guard = _FoldOnlyTorchGuard()
+
+    with pytest.raises(Exception, match="Pruning API"):
+        with guard:
+            prune.l1_unstructured(model, "weight", amount=0.5)
+
+    assert guard.pruning_operations == 1
+    assert guard.quantization_operations == 0
+    assert prune.l1_unstructured is original
+    assert "weight_orig" not in dict(model.named_parameters())
+
+
+def test_fold_guard_blocks_direct_pruning_class_apply_and_restores_descriptor() -> None:
+    from torch.nn.utils import prune
+
+    original = inspect.getattr_static(prune.L1Unstructured, "apply")
+    model = torch.nn.Linear(4, 4)
+    guard = _FoldOnlyTorchGuard()
+
+    with pytest.raises(Exception, match="Pruning API"):
+        with guard:
+            prune.L1Unstructured.apply(
+                model,
+                "weight",
+                amount=0.5,
+            )
+
+    assert guard.pruning_operations == 1
+    assert inspect.getattr_static(prune.L1Unstructured, "apply") is original
+    assert "weight_orig" not in dict(model.named_parameters())
+
+
+def test_nested_fold_guards_restore_pruning_class_descriptors_exactly() -> None:
+    from torch.nn.utils import prune
+
+    original = inspect.getattr_static(prune.L1Unstructured, "apply")
+    outer = _FoldOnlyTorchGuard()
+    inner = _FoldOnlyTorchGuard()
+    model = torch.nn.Linear(4, 4)
+
+    with outer:
+        outer_replacement = inspect.getattr_static(
+            prune.L1Unstructured,
+            "apply",
+        )
+        with pytest.raises(Exception, match="Pruning API"):
+            with inner:
+                prune.L1Unstructured.apply(
+                    model,
+                    "weight",
+                    amount=0.5,
+                )
+        assert (
+            inspect.getattr_static(prune.L1Unstructured, "apply")
+            is outer_replacement
+        )
+
+    assert inspect.getattr_static(prune.L1Unstructured, "apply") is original
+    assert inner.pruning_operations == 1
+    assert outer.pruning_operations == 0
+
+
+def test_fold_guard_runtime_blocks_and_counts_common_quantization_api() -> None:
+    original = torch.quantize_per_tensor
+    guard = _FoldOnlyTorchGuard()
+
+    with pytest.raises(Exception, match="Quantization API"):
+        with guard:
+            torch.quantize_per_tensor(
+                torch.ones(4),
+                scale=0.1,
+                zero_point=0,
+                dtype=torch.qint8,
+            )
+
+    assert guard.quantization_operations == 1
+    assert guard.pruning_operations == 0
+    assert torch.quantize_per_tensor is original
+
+
+def test_fold_guard_does_not_block_bfloat16_or_float32_casts() -> None:
+    guard = _FoldOnlyTorchGuard()
+
+    with guard:
+        value = torch.ones(4).to(dtype=torch.bfloat16)
+        restored = value.to(dtype=torch.float32)
+
+    assert value.dtype == torch.bfloat16
+    assert restored.dtype == torch.float32
+    assert guard.pruning_operations == 0
+    assert guard.quantization_operations == 0

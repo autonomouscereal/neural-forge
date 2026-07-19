@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
 import json
@@ -77,11 +78,197 @@ def test_parser_reuses_shared_compression_request_and_bounds_memory(
     assert config.compression.target_unique_parameters == 2_291_840
     assert config.compression.compression_ratio is None
     assert config.maximum_process_rss_bytes == 24 * 1024**3
+    assert config.maximum_cuda_gib_per_device == 20.0
+    assert config.maximum_cuda_bytes_per_device == 20 * 1024**3
     assert config.maximum_logical_resident_gib == 0.0
+    assert config.minimum_physical_rss_reduction_fraction == 0.10
     assert config.model_device == "cuda:0"
     assert config.dtype == "bfloat16"
     assert config.short_conv_v4_ridge_alphas == (1e-8, 1e-4)
+    assert config.resume_store_directory is None
+    assert config.resume_admission_sha256 is None
     assert config.forbidden_requests == ()
+
+
+def test_cuda_allocator_cap_is_enforced_on_both_logical_devices() -> None:
+    class Properties:
+        total_memory = 24 * 1024**3
+        name = MODULE.EXPECTED_GPU_NAME
+
+    class Cuda:
+        def __init__(self) -> None:
+            self.calls = []
+
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 2
+
+        @staticmethod
+        def get_device_properties(_index):
+            return Properties()
+
+        def set_per_process_memory_fraction(self, fraction, *, device):
+            self.calls.append((device, fraction))
+
+    cuda = Cuda()
+    receipt = MODULE._enforce_cuda_allocator_caps(
+        SimpleNamespace(cuda=cuda),
+        maximum_cuda_bytes_per_device=20 * 1024**3,
+    )
+
+    assert [device for device, _fraction in cuda.calls] == [0, 1]
+    assert all(0.0 < fraction < 1.0 for _device, fraction in cuda.calls)
+    assert receipt["all_devices_enforced"] is True
+    assert receipt["requested_maximum_cuda_bytes_per_device"] == 20 * 1024**3
+    assert all(
+        row["effective_allocator_maximum_bytes"] <= 20 * 1024**3
+        and row["allowed_bytes"] == 20 * 1024**3
+        and row["observed_total_memory_bytes"] == 24 * 1024**3
+        and row["enforced_before_substantive_cuda_allocations"] is True
+        for row in receipt["device_receipts"]
+    )
+    body = dict(receipt)
+    claimed = body.pop("receipt_sha256")
+    assert claimed == MODULE._sha(body)
+
+
+def test_cuda_allocator_cap_fails_when_runtime_cannot_enforce_it() -> None:
+    cuda = SimpleNamespace(
+        is_available=lambda: True,
+        device_count=lambda: 2,
+        get_device_properties=lambda _index: SimpleNamespace(
+            total_memory=24 * 1024**3,
+            name=MODULE.EXPECTED_GPU_NAME,
+        ),
+        set_per_process_memory_fraction=lambda *_args, **_kwargs: (
+            (_ for _ in ()).throw(RuntimeError("allocator refused"))
+        ),
+    )
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="Could not enforce",
+    ):
+        MODULE._enforce_cuda_allocator_caps(
+            SimpleNamespace(cuda=cuda),
+            maximum_cuda_bytes_per_device=20 * 1024**3,
+        )
+
+
+def test_parser_enables_cold_checkpointing_or_exact_admitted_resume(
+    tmp_path: Path,
+) -> None:
+    store = tmp_path / "resume"
+    digest = hashlib.sha256(b"admitted-v5-prefix").hexdigest()
+
+    cold_args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(store),
+        ]
+    )
+    cold = MODULE.config_from_args(cold_args)
+    assert cold.resume_store_directory == store
+    assert cold.resume_admission_sha256 is None
+    assert cold.as_dict()["resume_checkpointing_requested"] is True
+    assert cold.as_dict()["resume_requested"] is False
+
+    resume_args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(store),
+            "--resume-admission-sha256",
+            digest,
+        ]
+    )
+    resumed = MODULE.config_from_args(resume_args)
+    assert resumed.resume_store_directory == store
+    assert resumed.resume_admission_sha256 == digest
+    assert resumed.as_dict()["resume_requested"] is True
+
+
+def test_catalog_plan_pin_and_request_derived_ratio_are_preserved(
+    tmp_path: Path,
+) -> None:
+    plan_sha256 = hashlib.sha256(b"catalog-plan").hexdigest()
+    argv = _required_args(tmp_path)
+    target_flag = argv.index("--target-unique-parameters")
+    argv[target_flag : target_flag + 2] = ["--compression-ratio", "4"]
+    args = MODULE.build_parser().parse_args(
+        [
+            *argv,
+            "--expected-target-plan-fingerprint",
+            plan_sha256,
+        ]
+    )
+    config = MODULE.config_from_args(args)
+
+    assert config.expected_target_plan_fingerprint == plan_sha256
+    assert config.as_dict()["expected_target_plan_fingerprint"] == plan_sha256
+    assert (
+        MODULE._request_derived_structural_compression_floor(config.compression)
+        == 4.0
+    )
+
+    exact = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(_required_args(tmp_path))
+    )
+    assert MODULE._request_derived_structural_compression_floor(exact.compression) == 1.0
+
+
+def test_catalog_plan_pin_requires_an_exact_digest(tmp_path: Path) -> None:
+    args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--expected-target-plan-fingerprint",
+            "not-a-plan",
+        ]
+    )
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="exact lowercase SHA-256",
+    ):
+        MODULE.config_from_args(args)
+
+
+def test_resume_admission_requires_exact_digest_and_local_store(
+    tmp_path: Path,
+) -> None:
+    parser = MODULE.build_parser()
+
+    missing_store = parser.parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-admission-sha256",
+            hashlib.sha256(b"head").hexdigest(),
+        ]
+    )
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="requires an explicit local",
+    ):
+        MODULE.config_from_args(missing_store)
+
+    invalid_digest = parser.parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(tmp_path / "resume"),
+            "--resume-admission-sha256",
+            "not-a-v5-admission",
+        ]
+    )
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="exact lowercase SHA-256",
+    ):
+        MODULE.config_from_args(invalid_digest)
 
 
 def test_real_v5_adapter_uses_explicit_preregistered_measurement_gates() -> None:
@@ -109,7 +296,6 @@ def test_real_v5_adapter_uses_explicit_preregistered_measurement_gates() -> None
     (
         ("--resume", None),
         ("--resume-state", "resume.json"),
-        ("--resume-store-directory", "resume"),
         ("--resume-checkpoint-reference", "checkpoint.json"),
         ("--publish", None),
         ("--output-directory", "output"),
@@ -137,6 +323,943 @@ def test_forbidden_actions_fail_closed_with_an_explicit_reason(
         match="forbids requested",
     ):
         MODULE.config_from_args(args)
+
+
+def test_cold_resume_store_constructs_and_passes_typed_coordinator(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_v5_resume import (
+        Lfm2CpcfV5ResumeCoordinator,
+    )
+
+    args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(tmp_path / "resume"),
+        ]
+    )
+    runtime = MODULE._build_resume_runtime(MODULE.config_from_args(args))
+    observed = {}
+
+    def compile_stub(source, target, **kwargs):
+        observed.update(kwargs)
+        return (source, target)
+
+    result = MODULE._compile_with_authenticated_resume(
+        compile_stub,
+        "source",
+        "target",
+        resume_runtime=runtime,
+        compile_kwargs={"sealed_input": True},
+    )
+
+    assert result == ("source", "target")
+    assert isinstance(runtime.coordinator, Lfm2CpcfV5ResumeCoordinator)
+    assert runtime.state is None
+    assert observed["resume_coordinator"] is runtime.coordinator
+    assert observed["resume_state"] is None
+    report = runtime.progress.as_dict()
+    assert report["checkpointing_enabled"] is True
+    assert report["resume_requested"] is False
+    assert report["child_publication_attempted"] is False
+    assert report["parent_or_cache_tensor_sidecars"] == 0
+
+
+def test_exact_admission_opens_only_typed_v5_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_resume_artifact import (
+        Lfm2CpcfArtifactReference,
+    )
+    from neural_forge.hf_lfm2_cpcf_v5_resume import (
+        Lfm2CpcfV5ResumeCoordinator,
+        Lfm2CpcfV5ResumeState,
+    )
+
+    admission_sha = hashlib.sha256(b"admitted-v5-prefix").hexdigest()
+    frontier_sha = hashlib.sha256(b"frontier").hexdigest()
+    frontier_reference = Lfm2CpcfArtifactReference(
+        artifact_kind="boundary",
+        artifact_key=hashlib.sha256(b"boundary-key").hexdigest(),
+        manifest_sha256=hashlib.sha256(b"boundary-manifest").hexdigest(),
+    )
+    checkpoint_reference = Lfm2CpcfArtifactReference(
+        artifact_kind="checkpoint",
+        artifact_key=hashlib.sha256(b"checkpoint-key").hexdigest(),
+        manifest_sha256=hashlib.sha256(b"checkpoint-manifest").hexdigest(),
+    )
+
+    def open_admitted(self, exact_digest):
+        assert exact_digest == admission_sha
+        return Lfm2CpcfV5ResumeState(
+            coordinator=self,
+            frontier=SimpleNamespace(
+                next_layer_index=3,
+                frontier_sha256=frontier_sha,
+            ),
+            frontier_reference=frontier_reference,
+            checkpoint_reference=checkpoint_reference,
+            admission={"admission_sha256": admission_sha},
+        )
+
+    monkeypatch.setattr(
+        Lfm2CpcfV5ResumeCoordinator,
+        "open_admitted",
+        open_admitted,
+    )
+    args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(tmp_path / "resume"),
+            "--resume-admission-sha256",
+            admission_sha,
+        ]
+    )
+
+    runtime = MODULE._build_resume_runtime(MODULE.config_from_args(args))
+
+    assert type(runtime.state) is Lfm2CpcfV5ResumeState
+    assert runtime.state.coordinator is runtime.coordinator
+    head = runtime.progress.as_dict()["invocation_head"]
+    assert head["admission_sha256"] == admission_sha
+    assert head["next_layer_index"] == 3
+    assert head["typed_v5_state_opened"] is True
+    assert head["checkpoint_reference"] == checkpoint_reference.as_dict()
+
+
+@pytest.mark.parametrize("kind", ("pending", "rejected"))
+def test_pending_or_rejected_digest_cannot_open_as_admitted_resume(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_v5_resume import (
+        Lfm2CpcfV5ResumeError,
+    )
+
+    digest = hashlib.sha256(kind.encode("ascii")).hexdigest()
+    store = tmp_path / f"{kind}-store"
+    cold_args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(store),
+        ]
+    )
+    MODULE._build_resume_runtime(MODULE.config_from_args(cold_args))
+    if kind == "rejected":
+        (store / "v5-rejections").mkdir(exist_ok=True)
+    resume_args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(store),
+            "--resume-admission-sha256",
+            digest,
+        ]
+    )
+
+    with pytest.raises(Lfm2CpcfV5ResumeError) as caught:
+        MODULE._build_resume_runtime(
+            MODULE.config_from_args(resume_args)
+        )
+
+    assert "admission" in str(caught.value).lower()
+    progress = caught.value.resume_progress_report
+    assert progress["requested_admission_sha256"] == digest
+    assert progress["invocation_head"] is None
+
+
+def test_wrong_live_resume_context_refusal_is_preserved(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(tmp_path / "resume"),
+        ]
+    )
+    runtime = MODULE._build_resume_runtime(MODULE.config_from_args(args))
+
+    def reject_context(_source, _target, **kwargs):
+        assert kwargs["resume_coordinator"] is runtime.coordinator
+        raise RuntimeError(
+            "Live resume context differs from the admitted frontier."
+        )
+
+    with pytest.raises(RuntimeError, match="context differs") as caught:
+        MODULE._compile_with_authenticated_resume(
+            reject_context,
+            object(),
+            object(),
+            resume_runtime=runtime,
+            compile_kwargs={"runtime_policy": "different"},
+        )
+
+    progress = caught.value.resume_progress_report
+    assert progress["checkpointing_enabled"] is True
+    assert progress["admitted_prefix_count"] == 0
+    assert progress["child_publication_attempted"] is False
+
+
+def test_failed_rss_preserves_pending_and_rejected_prefix_references(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+
+    class Reference:
+        def __init__(self, kind: str, label: str) -> None:
+            self.value = {
+                "artifact_kind": kind,
+                "artifact_key": hashlib.sha256(
+                    f"{label}-key".encode("ascii")
+                ).hexdigest(),
+                "manifest_sha256": hashlib.sha256(
+                    f"{label}-manifest".encode("ascii")
+                ).hexdigest(),
+            }
+
+        def as_dict(self):
+            return dict(self.value)
+
+    pending = SimpleNamespace(
+        next_layer_index=1,
+        frontier_reference=Reference("boundary", "frontier"),
+        checkpoint=SimpleNamespace(
+            reference=Reference("checkpoint", "checkpoint")
+        ),
+        frontier_sha256=hashlib.sha256(b"frontier").hexdigest(),
+        event_report_sha256=hashlib.sha256(b"event").hexdigest(),
+    )
+    rejection = {
+        "rejection_sha256": hashlib.sha256(b"rejection").hexdigest()
+    }
+    args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--resume-store-directory",
+            str(tmp_path / "resume"),
+        ]
+    )
+    runtime = MODULE._build_resume_runtime(MODULE.config_from_args(args))
+
+    def fail_rss(_source, _target, **_kwargs):
+        runtime.progress.record_pending(pending)
+        runtime.progress.record_rejected(pending, rejection)
+        raise RuntimeError("physical RSS gate failed")
+
+    with pytest.raises(RuntimeError, match="RSS gate failed") as caught:
+        MODULE._compile_with_authenticated_resume(
+            fail_rss,
+            object(),
+            object(),
+            resume_runtime=runtime,
+            compile_kwargs={},
+        )
+
+    diagnostic = MODULE.build_failure_diagnostic(caught.value)
+    progress = diagnostic["resume_progress_reports"][0]
+    assert progress["published_pending_prefix_count"] == 1
+    assert progress["rejected_prefix_count"] == 1
+    assert progress["outstanding_pending_prefix_count"] == 0
+    assert progress["rejected_prefixes"][0]["promotable"] is False
+    assert diagnostic["resume_artifacts_preserved_for_diagnosis"] is True
+    assert diagnostic["publication_attempted"] is False
+    assert diagnostic["resume_parent_or_cache_tensor_sidecars"] == 0
+
+
+def test_untyped_or_v4_resume_cannot_enter_compiler_kwargs(
+    tmp_path: Path,
+) -> None:
+    args = MODULE.build_parser().parse_args(_required_args(tmp_path))
+    runtime = MODULE._build_resume_runtime(MODULE.config_from_args(args))
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="authenticated runner seam",
+    ):
+        MODULE._compile_with_authenticated_resume(
+            lambda *_args, **_kwargs: None,
+            object(),
+            object(),
+            resume_runtime=runtime,
+            compile_kwargs={"resume_state": {"schema": "v4-resume"}},
+        )
+
+
+def _consumer_digest(label: str) -> str:
+    return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+def _consumer_candidate_saver(model, destination: Path) -> None:
+    torch = pytest.importorskip("torch")
+    torch.save(model.state_dict(), destination / "weights.pt")
+    (destination / "config.json").write_text(
+        json.dumps({"input_width": 3, "output_width": 2}, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _consumer_candidate_loader(source: Path):
+    torch = pytest.importorskip("torch")
+    if not source.is_dir():
+        raise FileNotFoundError(source)
+    model = torch.nn.Linear(3, 2).requires_grad_(False).eval()
+    state = torch.load(
+        source / "weights.pt",
+        map_location="cpu",
+        weights_only=True,
+    )
+    model.load_state_dict(state, strict=True)
+    return model
+
+
+def _consumer_candidate_evaluator(model):
+    torch = pytest.importorskip("torch")
+    from neural_forge.dynamic_candidate_capture import (
+        QuarantineEvaluation,
+    )
+
+    value = model(torch.tensor([[1.0, -2.0, 0.5]]))
+    return QuarantineEvaluation(
+        output={"rows": value.detach().cpu().tolist()},
+        evaluation={
+            "finite": bool(torch.isfinite(value).all()),
+            "shape": list(value.shape),
+        },
+    )
+
+
+def _capture_consumer_candidate(
+    context,
+    destination: Path,
+    *,
+    parent_sha256: str | None = None,
+):
+    from neural_forge.dynamic_candidate_capture import (
+        QuarantineCaptureRequest,
+        QuarantineZeroOperationAudit,
+        capture_quarantined_candidate,
+        fingerprint_quarantine_callable,
+    )
+
+    parent_sha = context.parent_sha256 if parent_sha256 is None else parent_sha256
+    counters = context.zero_operation_audit
+    request = QuarantineCaptureRequest(
+        plan_sha256=context.target_plan_fingerprint,
+        parent_sha256=parent_sha,
+        cache_sha256=context.cache_sha256,
+        bridge_sha256=context.bridge_sha256,
+        corpus_sha256=context.corpus_sha256,
+        compiler_sha256=context.compiler_receipt_sha256,
+        source_sha256=context.source_binding_sha256,
+        saver_sha256=fingerprint_quarantine_callable(
+            _consumer_candidate_saver,
+            role="saver",
+        ),
+        loader_sha256=fingerprint_quarantine_callable(
+            _consumer_candidate_loader,
+            role="loader",
+        ),
+        evaluator_sha256=fingerprint_quarantine_callable(
+            _consumer_candidate_evaluator,
+            role="evaluator",
+        ),
+        expected_model_state_sha256=context.target_state_sha256,
+        prior_audit=QuarantineZeroOperationAudit(
+            optimizer_constructions=counters["optimizer_constructions"],
+            optimizer_steps=counters["optimizer_steps"],
+            backward_calls=counters["backward_calls"],
+            autograd_grad_calls=counters["autograd_grad_calls"],
+            training_steps=counters["training_steps"],
+            pruning_operations=counters["pruning_operations"],
+            quantization_operations=counters["quantization_operations"],
+            parent_forward_calls=counters["parent_forward_calls"],
+            parent_inference_calls=counters["parent_inference_calls"],
+        ),
+    )
+    return capture_quarantined_candidate(
+        destination,
+        candidate=context.target_model,
+        request=request,
+        saver=_consumer_candidate_saver,
+        loader=_consumer_candidate_loader,
+        evaluator=_consumer_candidate_evaluator,
+        forbidden_parent_models=(context.forbidden_parent_model,),
+    )
+
+
+def _compiled_consumer_context():
+    torch = pytest.importorskip("torch")
+    parent = torch.nn.Linear(3, 3).requires_grad_(False).eval()
+    target = torch.nn.Linear(3, 2).requires_grad_(False).eval()
+    parent_auth = MODULE._live_model_authentication(parent)
+    target_auth = MODULE._live_model_authentication(target)
+    plan_sha = _consumer_digest("plan")
+    parent_sha = _consumer_digest("parent")
+    cache_sha = _consumer_digest("cache")
+    bridge_sha = _consumer_digest("bridge")
+    corpus_sha = _consumer_digest("corpus")
+    source_sha = _consumer_digest("selective-source")
+    compiler_sha = _consumer_digest("compiler-implementation")
+    runner_sha = MODULE._file_sha256(SCRIPT)
+    compiler_source_files = [
+        {
+            "module": "tests.fake_v5_compiler",
+            "filename": "fake_v5_compiler.py",
+            "sha256": _consumer_digest("fake-v5-compiler-source"),
+        }
+    ]
+    parent_tokenizer_sha = _consumer_digest("parent-tokenizer")
+    tokenizer_sha = _consumer_digest("target-tokenizer")
+    blank_body = {
+        "schema": "test-blank-v1",
+        "target_plan_fingerprint": plan_sha,
+        "target_unique_parameters": target_auth["parameter_inventory"][
+            "unique_parameters"
+        ],
+    }
+    blank = {**blank_body, "report_sha256": MODULE._sha(blank_body)}
+    compiled_body = {
+        "schema": "test-compiled-v1",
+        "blank_target_report_sha256": blank["report_sha256"],
+        "selective_source_sha256": source_sha,
+        "compiler_implementation": {
+            "implementation_sha256": compiler_sha,
+            "ordered_source_files": compiler_source_files,
+        },
+    }
+    compiled = {
+        **compiled_body,
+        "result_sha256": MODULE._sha(compiled_body),
+    }
+    zero_audit = {
+        "schema": MODULE.COMPILED_CANDIDATE_ZERO_AUDIT_SCHEMA,
+        **{
+            name: 0
+            for name in MODULE._CONSUMER_ZERO_COUNTER_FIELDS
+        },
+        "clean": True,
+    }
+    from neural_forge import dynamic_fold_executor
+
+    guard_identity = MODULE._fold_only_guard_implementation_identity(
+        dynamic_fold_executor
+    )
+    static_audit_body = {
+        "schema": (
+            "neural-forge-lfm2-cpcf-v5-static-fold-mutation-source-audit-v1"
+        ),
+        "compiler_implementation_sha256": compiler_sha,
+        "authenticated_compiler_source_files": compiler_source_files,
+        "runner_source_sha256": runner_sha,
+        "audited_source_count": 2,
+        "source_audits": [],
+        "forbidden_findings": [],
+        "forbidden_finding_count": 0,
+        "audit_scope": "test authenticated sources",
+        "clean": True,
+    }
+    static_audit = {
+        **static_audit_body,
+        "report_sha256": MODULE._sha(static_audit_body),
+    }
+    guard_body = {
+        "schema": "neural-forge-lfm2-cpcf-v5-compiler-runtime-guard-v1",
+        "guard_implementation": dict(guard_identity),
+        "static_pruning_quantization_source_audit": static_audit,
+        "optimizer_constructions": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+        "autograd_grad_calls": 0,
+        "pruning_operations": 0,
+        "quantization_operations": 0,
+        "parent_module_forward_calls": 0,
+        "parent_root_forward_calls": 0,
+        "parent_inference_entrypoint_calls": 0,
+        "target_module_forward_calls": 2,
+        "target_root_forward_calls": 0,
+        "target_inference_entrypoint_calls": 0,
+        "training_steps": 0,
+        "training_steps_runtime_observed_directly": False,
+        "training_steps_zero_derivation": (
+            "zero optimizer/backward/autograd API attempts under no-grad"
+        ),
+        "pruning_observation_scope": (
+            "common-public-pytorch-pruning-mutation-entrypoints"
+        ),
+        "quantization_observation_scope": (
+            "common-public-pytorch-quantization-mutation-entrypoints"
+        ),
+        "ordinary_bfloat16_and_float32_casts_blocked": False,
+        "clean": True,
+    }
+    guard_report = {
+        **guard_body,
+        "report_sha256": MODULE._sha(guard_body),
+    }
+    zero_audit["compiler_runtime_guard"] = guard_report
+    source_binding_sha = MODULE._sha(
+        {
+            "selective_source_sha256": source_sha,
+            "compiler_implementation_sha256": compiler_sha,
+            "runner_source_sha256": runner_sha,
+            "fold_only_runtime_guard_identity_sha256": guard_identity[
+                "identity_sha256"
+            ],
+        }
+    )
+    seam = {
+        "schema": MODULE.COMPILED_CANDIDATE_CONTEXT_SCHEMA,
+        "target_plan_fingerprint": plan_sha,
+        "blank_target_report_sha256": blank["report_sha256"],
+        "compiler_receipt_sha256": compiled["result_sha256"],
+        "parent_sha256": parent_sha,
+        "cache_sha256": cache_sha,
+        "bridge_sha256": bridge_sha,
+        "corpus_sha256": corpus_sha,
+        "source_sha256": source_sha,
+        "compiler_sha256": compiler_sha,
+        "runner_source_sha256": runner_sha,
+        "source_binding_sha256": source_binding_sha,
+        "fold_only_runtime_guard_identity_sha256": guard_identity[
+            "identity_sha256"
+        ],
+        "parent_tokenizer_semantics_sha256": parent_tokenizer_sha,
+        "target_tokenizer_semantics_sha256": tokenizer_sha,
+        "target_tokenizer_package_sha256": None,
+        "target_state_sha256": target_auth["state_sha256"],
+        "target_runtime_sha256": target_auth["runtime_sha256"],
+        "parent_state_sha256": parent_auth["state_sha256"],
+        "parent_runtime_sha256": parent_auth["runtime_sha256"],
+        "zero_operation_audit": zero_audit,
+    }
+    diagnostic_body = {
+        "schema": MODULE.RUN_SCHEMA,
+        "inputs": {
+            "parent_fingerprint": parent_sha,
+            "cache_key": cache_sha,
+            "bridge_artifact_sha256": bridge_sha,
+            "trajectory_corpus_sha256": corpus_sha,
+            "donor_tokenizer_semantics_sha256": parent_tokenizer_sha,
+            "target_tokenizer_semantics_sha256": tokenizer_sha,
+        },
+        "blank_target": blank,
+        "compiled_model_fold": compiled,
+        "compiler_runtime_fold_only_guard": guard_report,
+        "parent_parameter_inventory": parent_auth["parameter_inventory"],
+        "blank_parameter_inventory": target_auth["parameter_inventory"],
+        "compiled_parameter_inventory": target_auth["parameter_inventory"],
+        "compiled_candidate_consumer_seam": seam,
+        "claims": {
+            "child_checkpoint_saved": False,
+            "publication_attempted": False,
+        },
+    }
+    diagnostic = {
+        **diagnostic_body,
+        "receipt_sha256": MODULE._sha(diagnostic_body),
+    }
+    context = MODULE.V5CompiledCandidateConsumerContext(
+        target_model=target,
+        target_tokenizer=SimpleNamespace(name="target-tokenizer"),
+        forbidden_parent_model=parent,
+        target_plan_fingerprint=plan_sha,
+        blank_target_report=blank,
+        compiled_model_fold_report=compiled,
+        compiler_receipt_sha256=compiled["result_sha256"],
+        compile_diagnostic=diagnostic,
+        parent_sha256=parent_sha,
+        cache_sha256=cache_sha,
+        bridge_sha256=bridge_sha,
+        corpus_sha256=corpus_sha,
+        source_sha256=source_sha,
+        compiler_sha256=compiler_sha,
+        runner_source_sha256=runner_sha,
+        source_binding_sha256=source_binding_sha,
+        parent_tokenizer_semantics_sha256=parent_tokenizer_sha,
+        target_tokenizer_semantics_sha256=tokenizer_sha,
+        target_tokenizer_package_sha256=None,
+        parent_parameter_inventory=parent_auth["parameter_inventory"],
+        blank_parameter_inventory=target_auth["parameter_inventory"],
+        compiled_parameter_inventory=target_auth["parameter_inventory"],
+        zero_operation_audit=zero_audit,
+        target_state_sha256=target_auth["state_sha256"],
+        target_runtime_sha256=target_auth["runtime_sha256"],
+        parent_state_sha256=parent_auth["state_sha256"],
+        parent_runtime_sha256=parent_auth["runtime_sha256"],
+    )
+    return context, target, parent
+
+
+def _compiled_consumer_result(
+    context,
+    *,
+    candidate,
+    parent_sha256: str | None = None,
+    verification_receipt=None,
+):
+    parent_sha = context.parent_sha256 if parent_sha256 is None else parent_sha256
+    capture = candidate.receipt.as_dict()
+    return MODULE.V5CompiledCandidateConsumerResult(
+        candidate=candidate,
+        capture_receipt=capture,
+        capture_receipt_sha256=capture["receipt_sha256"],
+        compiler_receipt_sha256=context.compiler_receipt_sha256,
+        target_plan_fingerprint=context.target_plan_fingerprint,
+        target_state_sha256=context.target_state_sha256,
+        parent_sha256=parent_sha,
+        cache_sha256=context.cache_sha256,
+        bridge_sha256=context.bridge_sha256,
+        corpus_sha256=context.corpus_sha256,
+        source_sha256=context.source_sha256,
+        compiler_sha256=context.compiler_sha256,
+        runner_source_sha256=context.runner_source_sha256,
+        source_binding_sha256=context.source_binding_sha256,
+        parent_tokenizer_semantics_sha256=(
+            context.parent_tokenizer_semantics_sha256
+        ),
+        target_tokenizer_semantics_sha256=(
+            context.target_tokenizer_semantics_sha256
+        ),
+        compile_diagnostic=context.compile_diagnostic,
+        verification_receipt=(
+            candidate.verification_receipt
+            if verification_receipt is None
+            else verification_receipt
+        ),
+    )
+
+
+def test_static_fold_audit_finds_prebound_prune_and_quantization_aliases() -> None:
+    findings = MODULE._fold_only_static_source_findings(
+        "\n".join(
+            (
+                "import torch",
+                "from torch.nn.utils.prune import L1Unstructured as Plant",
+                "plant = Plant.apply",
+                "quant = torch.quantize_per_tensor",
+                "plant(model, 'weight', amount=0.5)",
+                "quant(value, 0.1, 0, torch.qint8)",
+            )
+        ),
+        source_label="prebound_aliases.py",
+    )
+
+    kinds = {finding["kind"] for finding in findings}
+    symbols = {finding["symbol"] for finding in findings}
+    assert "forbidden-import-alias" in kinds
+    assert "forbidden-prebound-alias" in kinds
+    assert "forbidden-call" in kinds
+    assert "torch.nn.utils.prune.L1Unstructured.apply" in symbols
+    assert "torch.quantize_per_tensor" in symbols
+
+
+def test_authenticated_compiler_source_audit_rejects_prebound_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "prebound_compiler.py"
+    source_path.write_text(
+        "from torch import quantize_per_tensor as hidden_quantize\n",
+        encoding="utf-8",
+    )
+    module_name = "tests.prebound_compiler"
+    monkeypatch.setitem(
+        sys.modules,
+        module_name,
+        SimpleNamespace(__file__=str(source_path)),
+    )
+    implementation_body = {
+        "schema": "test-compiler-implementation-v1",
+        "ordered_source_files": [
+            {
+                "module": module_name,
+                "filename": source_path.name,
+                "sha256": MODULE._file_sha256(source_path),
+            }
+        ],
+    }
+    implementation = {
+        **implementation_body,
+        "implementation_sha256": MODULE._sha(implementation_body),
+    }
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="alias that could evade",
+    ):
+        MODULE._audit_authenticated_compiler_sources(implementation)
+
+
+def test_compiled_candidate_context_exposes_exact_authenticated_bindings() -> None:
+    context, target, parent = _compiled_consumer_context()
+
+    assert context.target_model is target
+    assert context.forbidden_parent_model is parent
+    assert (
+        context.blank_target_report["target_plan_fingerprint"]
+        == context.target_plan_fingerprint
+    )
+    assert (
+        context.compiled_model_fold_report["result_sha256"]
+        == context.compiler_receipt_sha256
+    )
+    assert context.zero_operation_audit["clean"] is True
+    assert all(
+        context.zero_operation_audit[name] == 0
+        for name in MODULE._CONSUMER_ZERO_COUNTER_FIELDS
+    )
+
+
+def test_compiled_candidate_consumer_accepts_ordinary_quarantine_capture(
+    tmp_path: Path,
+) -> None:
+    context, _target, _parent = _compiled_consumer_context()
+    candidate = _capture_consumer_candidate(
+        context,
+        tmp_path / "ordinary-quarantine",
+    )
+
+    result = MODULE._invoke_compiled_candidate_consumer(
+        context,
+        lambda inner: _compiled_consumer_result(
+            inner,
+            candidate=candidate,
+        ),
+    )
+
+    assert type(result) is MODULE.V5CompiledCandidateConsumerResult
+    assert result.compiler_receipt_sha256 == context.compiler_receipt_sha256
+    assert result.capture_receipt_sha256 != result.compiler_receipt_sha256
+    assert result.compiler_child_checkpoint_saved is False
+    assert result.quarantine_candidate_saved is True
+    assert result.quarantine_publication_nonpromotable is True
+    assert dict(result.compile_diagnostic) == dict(context.compile_diagnostic)
+    assert dict(result.verification_receipt) == dict(
+        candidate.verification_receipt
+    )
+    assert result.consumer_runtime_guard_receipt["clean"] is True
+    assert (
+        result.consumer_runtime_guard_receipt[
+            "capture_verification_sha256"
+        ]
+        == result.verification_receipt["verification_sha256"]
+    )
+
+
+def test_compiled_candidate_result_rejects_duck_typed_candidate(
+    tmp_path: Path,
+) -> None:
+    context, _target, _parent = _compiled_consumer_context()
+    candidate = _capture_consumer_candidate(
+        context,
+        tmp_path / "exact-type-quarantine",
+    )
+    fake = SimpleNamespace(
+        path=candidate.path,
+        artifact_path=candidate.artifact_path,
+        model=candidate.model,
+        receipt=candidate.receipt,
+        verification_receipt=candidate.verification_receipt,
+        promotable=False,
+        publication_authorized=False,
+        requires_reviewed_rerun=True,
+    )
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="exact generic quarantined candidate type",
+    ):
+        _compiled_consumer_result(context, candidate=fake)
+
+
+def test_compiled_candidate_result_rejects_resealed_verification_tamper(
+    tmp_path: Path,
+) -> None:
+    context, _target, _parent = _compiled_consumer_context()
+    candidate = _capture_consumer_candidate(
+        context,
+        tmp_path / "verification-tamper-quarantine",
+    )
+    tampered = copy.deepcopy(dict(candidate.verification_receipt))
+    tampered["output_sha256"] = _consumer_digest("unrelated-output")
+    tampered_body = dict(tampered)
+    tampered_body.pop("verification_sha256")
+    tampered["verification_sha256"] = MODULE._sha(tampered_body)
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="Final retained-destination reload verification",
+    ):
+        _compiled_consumer_result(
+            context,
+            candidate=candidate,
+            verification_receipt=tampered,
+        )
+
+
+def test_outer_consumer_guard_rejects_swallowed_pruning_attempt(
+    tmp_path: Path,
+) -> None:
+    from torch.nn.utils import prune
+
+    context, target, _parent = _compiled_consumer_context()
+    candidate = _capture_consumer_candidate(
+        context,
+        tmp_path / "consumer-pruning-quarantine",
+    )
+
+    def attempt_pruning(inner):
+        try:
+            prune.l1_unstructured(target, "weight", amount=0.5)
+        except Exception:
+            pass
+        return _compiled_consumer_result(inner, candidate=candidate)
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="Consumer runtime fold-only guard receipt",
+    ):
+        MODULE._invoke_compiled_candidate_consumer(
+            context,
+            attempt_pruning,
+        )
+
+
+def test_compiled_candidate_consumer_rejects_target_mutation(
+    tmp_path: Path,
+) -> None:
+    context, target, _parent = _compiled_consumer_context()
+    candidate = _capture_consumer_candidate(
+        context,
+        tmp_path / "mutation-quarantine",
+    )
+
+    def mutate(inner):
+        with pytest.importorskip("torch").no_grad():
+            next(target.parameters()).add_(1.0)
+        return _compiled_consumer_result(inner, candidate=candidate)
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="mutated",
+    ):
+        MODULE._invoke_compiled_candidate_consumer(context, mutate)
+
+
+def test_compiled_candidate_consumer_rejects_target_gradients(
+    tmp_path: Path,
+) -> None:
+    context, target, _parent = _compiled_consumer_context()
+    torch = pytest.importorskip("torch")
+    candidate = _capture_consumer_candidate(
+        context,
+        tmp_path / "gradient-quarantine",
+    )
+
+    def attach_gradient(inner):
+        parameter = next(target.parameters())
+        parameter.grad = torch.ones_like(parameter)
+        return _compiled_consumer_result(inner, candidate=candidate)
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="mutated",
+    ):
+        MODULE._invoke_compiled_candidate_consumer(context, attach_gradient)
+
+
+@pytest.mark.parametrize("direct_forward", (False, True))
+def test_compiled_candidate_consumer_rejects_parent_inference(
+    direct_forward: bool,
+    tmp_path: Path,
+) -> None:
+    context, _target, parent = _compiled_consumer_context()
+    torch = pytest.importorskip("torch")
+    candidate = _capture_consumer_candidate(
+        context,
+        tmp_path / f"parent-call-{direct_forward}",
+    )
+
+    def call_parent(inner):
+        if direct_forward:
+            parent.forward(torch.zeros(1, 3))
+        else:
+            parent(torch.zeros(1, 3))
+        return _compiled_consumer_result(inner, candidate=candidate)
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="forbidden live parent inference",
+    ):
+        MODULE._invoke_compiled_candidate_consumer(context, call_parent)
+
+
+def test_compiled_candidate_consumer_rejects_wrong_result_type() -> None:
+    context, _target, _parent = _compiled_consumer_context()
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="wrong exact result type",
+    ):
+        MODULE._invoke_compiled_candidate_consumer(
+            context,
+            lambda _inner: SimpleNamespace(capture="untyped"),
+        )
+
+
+def test_compiled_candidate_consumer_rejects_unrelated_typed_receipt(
+    tmp_path: Path,
+) -> None:
+    context, _target, _parent = _compiled_consumer_context()
+    wrong_parent = _consumer_digest("wrong-parent")
+    candidate = _capture_consumer_candidate(
+        context,
+        tmp_path / "wrong-parent-quarantine",
+        parent_sha256=wrong_parent,
+    )
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="differs from the exact",
+    ):
+        MODULE._invoke_compiled_candidate_consumer(
+            context,
+            lambda inner: _compiled_consumer_result(
+                inner,
+                candidate=candidate,
+                parent_sha256=wrong_parent,
+            ),
+        )
+
+
+def test_compiled_candidate_result_rejects_unrelated_candidate_model(
+    tmp_path: Path,
+) -> None:
+    context, _target, _parent = _compiled_consumer_context()
+    candidate = _capture_consumer_candidate(
+        context,
+        tmp_path / "unrelated-model-quarantine",
+    )
+    with pytest.importorskip("torch").no_grad():
+        next(candidate.model.parameters()).add_(1.0)
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="candidate model state differs",
+    ):
+        _compiled_consumer_result(
+            context,
+            candidate=candidate,
+        )
 
 
 def test_current_plus_next_budget_includes_final_norm() -> None:
@@ -183,14 +1306,14 @@ def test_absolute_rss_policy_rejects_an_over_limit_baseline() -> None:
         )
 
 
-def test_proven_two_gpu_policy_receipt_is_source_bound() -> None:
-    receipt = MODULE._load_proven_gpu_parity_receipt()
-
-    assert receipt["real_two_gpu_parity_passed"] is True
-    assert receipt["target_dtype"] == "bfloat16"
-    assert receipt["scheduler_policy"] == (MODULE._expected_gpu_scheduler_policy())
-    assert len(receipt["receipt_sha256"]) == 64
-    assert len(receipt["file_sha256"]) == 64
+def test_current_stale_two_gpu_policy_receipt_fails_closed() -> None:
+    # Temporary until the exact current replay sources are deployed and the
+    # real two-RTX-3090 verifier produces a replacement receipt.
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="GPU replay source changed",
+    ):
+        MODULE._load_proven_gpu_parity_receipt()
 
 
 def test_failure_diagnostic_preserves_structured_reports_from_causes() -> None:
@@ -289,12 +1412,24 @@ def test_runner_source_has_no_disallowed_execution_or_loader_lane() -> None:
     )
 
     assert all(token not in source for token in forbidden)
-    assert "compile_lfm2_cpcf_v5_selective_model_fold(" in source
+    assert (
+        "v5_compiler.compile_lfm2_cpcf_v5_selective_model_fold,"
+        in source
+    )
     assert "Lfm2CpcfV5EndpointFirstCandidateSelector()" in source
     assert "_build_preregistered_real_v5_numerical_adapter()" in source
-    assert "numerical_frontier_adapter=numerical_adapter" in source
+    assert '"numerical_frontier_adapter": numerical_adapter' in source
     assert "require_short_conv_v5_real_numerical_frontier_adapter=True" in source
     assert "build_lfm2_cpcf_selective_evidence_provider(cache)" in source
     assert "plan_and_synthesize_lfm2_cpcf_blank(" in source
+    assert "Lfm2CpcfV5ResumeCoordinator" in source
+    assert "coordinator.open_admitted(" in source
+    assert "resume_state=resume_runtime.state" in source
+    assert "resume_coordinator=resume_runtime.coordinator" in source
+    assert '"resume_supported") is not True' in source
+    assert '"resume_fail_closed") is not True' in source
+    assert '"resume_parent_or_cache_tensor_sidecars": 0' in source
+    assert '"child_checkpoint_saved": False' in source
+    assert '"publication_attempted": False' in source
     assert "GPU_LOGICAL_DEVICES = (0, 1)" in source
     assert hashlib.sha256(source.encode("utf-8")).hexdigest()

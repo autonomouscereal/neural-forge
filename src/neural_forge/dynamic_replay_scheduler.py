@@ -30,11 +30,9 @@ from typing import Any, Protocol
 
 
 DYNAMIC_REPLAY_DEVICE_SCHEMA = "neural-forge-dynamic-replay-device-v1"
-DYNAMIC_REPLAY_INSTALLED_STATE_SCHEMA = (
-    "neural-forge-dynamic-replay-installed-state-v1"
-)
+DYNAMIC_REPLAY_INSTALLED_STATE_SCHEMA = "neural-forge-dynamic-replay-installed-state-v1"
 DYNAMIC_REPLAY_PLAN_SCHEMA = "neural-forge-dynamic-replay-plan-v1"
-DYNAMIC_REPLAY_PARITY_SCHEMA = "neural-forge-dynamic-replay-parity-v1"
+DYNAMIC_REPLAY_PARITY_SCHEMA = "neural-forge-dynamic-replay-parity-v2"
 DYNAMIC_REPLAY_BUFFER_SCHEMA = "neural-forge-dynamic-replay-buffer-v1"
 DYNAMIC_REPLAY_EXECUTION_SCHEMA = "neural-forge-dynamic-replay-execution-v1"
 _SHA256_LENGTH = 64
@@ -84,9 +82,7 @@ def _text(value: Any, name: str) -> str:
 
 def _nonnegative_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise DynamicReplaySchedulingError(
-            f"{name} must be a nonnegative integer."
-        )
+        raise DynamicReplaySchedulingError(f"{name} must be a nonnegative integer.")
     return value
 
 
@@ -104,9 +100,7 @@ def _finite_nonnegative(value: Any, name: str) -> float:
         or not math.isfinite(float(value))
         or float(value) < 0.0
     ):
-        raise DynamicReplaySchedulingError(
-            f"{name} must be finite and nonnegative."
-        )
+        raise DynamicReplaySchedulingError(f"{name} must be finite and nonnegative.")
     return float(value)
 
 
@@ -127,12 +121,12 @@ def _dtype_name(value: Any) -> str:
     return str(value.dtype).removeprefix("torch.")
 
 
-def _tensor_bytes(value: Any, *, require_cpu: bool = False) -> tuple[dict[str, Any], bytes]:
+def _tensor_bytes(
+    value: Any, *, require_cpu: bool = False
+) -> tuple[dict[str, Any], bytes]:
     torch = _torch_or_none()
     if torch is None or not isinstance(value, torch.Tensor):
-        raise DynamicReplaySchedulingError(
-            "Tensor authentication requires PyTorch."
-        )
+        raise DynamicReplaySchedulingError("Tensor authentication requires PyTorch.")
     if (
         value.layout != torch.strided
         or value.device.type == "meta"
@@ -144,13 +138,10 @@ def _tensor_bytes(value: Any, *, require_cpu: bool = False) -> tuple[dict[str, A
             "Replay tensors must be materialized dense detached real tensors."
         )
     if require_cpu and value.device.type != "cpu":
-        raise DynamicReplaySchedulingError(
-            "Replay input archives must be CPU tensors."
-        )
+        raise DynamicReplaySchedulingError("Replay input archives must be CPU tensors.")
     detached = value.detach().to(device="cpu", non_blocking=False).contiguous()
-    if (
-        torch.is_floating_point(detached)
-        and not bool(torch.isfinite(detached).all().item())
+    if torch.is_floating_point(detached) and not bool(
+        torch.isfinite(detached).all().item()
     ):
         raise DynamicReplaySchedulingError(
             "Replay tensors may not contain NaN or infinity."
@@ -194,9 +185,7 @@ def _update_value_digest(
         return
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise DynamicReplaySchedulingError(
-                f"Replay value {path} is not finite."
-            )
+            raise DynamicReplaySchedulingError(f"Replay value {path} is not finite.")
         digest.update(
             _canonical_json(
                 {
@@ -287,9 +276,7 @@ def _archive_replay_value(value: Any, *, path: str = "$") -> Any:
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise DynamicReplaySchedulingError(
-                f"Replay output {path} is not finite."
-            )
+            raise DynamicReplaySchedulingError(f"Replay output {path} is not finite.")
         return value
     if isinstance(value, Mapping):
         if any(not isinstance(key, str) for key in value):
@@ -349,9 +336,7 @@ class CudaReplayDeviceReceipt:
     def __post_init__(self) -> None:
         body = self._body()
         if self.receipt_sha256 != _sha(body):
-            raise DynamicReplaySchedulingError(
-                "CUDA device receipt seal is invalid."
-            )
+            raise DynamicReplaySchedulingError("CUDA device receipt seal is invalid.")
 
     @classmethod
     def create(
@@ -431,9 +416,7 @@ class CudaReplayDeviceReceipt:
             not isinstance(self.capability, tuple)
             or len(self.capability) != 2
             or any(
-                isinstance(value, bool)
-                or not isinstance(value, int)
-                or value < 0
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
                 for value in self.capability
             )
         ):
@@ -464,9 +447,7 @@ class CudaReplayDeviceReceipt:
         )
         for field in boolean_fields:
             if not isinstance(getattr(self, field), bool):
-                raise DynamicReplaySchedulingError(
-                    f"{field} must be boolean."
-                )
+                raise DynamicReplaySchedulingError(f"{field} must be boolean.")
         body = {
             "schema": DYNAMIC_REPLAY_DEVICE_SCHEMA,
             "backend": "cuda",
@@ -485,9 +466,7 @@ class CudaReplayDeviceReceipt:
                 "cuda_runtime_version",
             ),
             "cudnn_version": cudnn_version,
-            "deterministic_algorithms_enabled": (
-                self.deterministic_algorithms_enabled
-            ),
+            "deterministic_algorithms_enabled": (self.deterministic_algorithms_enabled),
             "deterministic_debug_mode": debug_mode,
             "cudnn_deterministic": self.cudnn_deterministic,
             "cudnn_benchmark": self.cudnn_benchmark,
@@ -565,16 +544,12 @@ def capture_cuda_replay_device_receipt(
         )
     index = _nonnegative_int(device_index, "device_index")
     if not torch.cuda.is_available() or index >= int(torch.cuda.device_count()):
-        raise DynamicReplaySchedulingError(
-            f"CUDA device {index} is unavailable."
-        )
+        raise DynamicReplaySchedulingError(f"CUDA device {index} is unavailable.")
     properties = torch.cuda.get_device_properties(index)
     cudnn_version = torch.backends.cudnn.version()
     cuda_runtime = getattr(torch.version, "cuda", None)
     if cudnn_version is None or cuda_runtime is None:
-        raise DynamicReplaySchedulingError(
-            "CUDA/cuDNN runtime identity is incomplete."
-        )
+        raise DynamicReplaySchedulingError("CUDA/cuDNN runtime identity is incomplete.")
     matmul = torch.backends.cuda.matmul
     return CudaReplayDeviceReceipt.create(
         device_index=index,
@@ -604,9 +579,7 @@ def capture_cuda_replay_device_receipt(
             matmul.allow_fp16_reduced_precision_reduction
         ),
         float32_matmul_precision=str(torch.get_float32_matmul_precision()),
-        cublas_workspace_config=str(
-            os.environ.get("CUBLAS_WORKSPACE_CONFIG", "")
-        ),
+        cublas_workspace_config=str(os.environ.get("CUBLAS_WORKSPACE_CONFIG", "")),
     )
 
 
@@ -758,9 +731,7 @@ class ReplayReplicaReceipt:
             self.installed_state,
             InstalledReplayStateFingerprint,
         ):
-            raise TypeError(
-                "installed_state must be InstalledReplayStateFingerprint."
-            )
+            raise TypeError("installed_state must be InstalledReplayStateFingerprint.")
         if self.receipt_sha256 != _sha(self._body()):
             raise DynamicReplaySchedulingError(
                 "Replay replica receipt seal is invalid."
@@ -775,9 +746,7 @@ class ReplayReplicaReceipt:
     ) -> ReplayReplicaReceipt:
         body = {
             "device_receipt_sha256": device.receipt_sha256,
-            "installed_state_fingerprint_sha256": (
-                installed_state.fingerprint_sha256
-            ),
+            "installed_state_fingerprint_sha256": (installed_state.fingerprint_sha256),
         }
         return cls(
             device=device,
@@ -802,6 +771,136 @@ class ReplayReplicaReceipt:
         }
 
 
+class AuthenticatedReplayStateProbes:
+    """Retain and rehash the exact CPU/CUDA replay contract tensors.
+
+    Production schedulers must not accept arbitrary probe callbacks that can
+    simply echo caller-supplied receipts.  This exact probe owner verifies the
+    physical tensor placements at construction and recomputes every installed
+    state fingerprint on each scheduler authentication boundary.
+    """
+
+    __slots__ = (
+        "_cpu_tensors",
+        "_gpu_tensors",
+        "_device_indices",
+        "_state_fingerprint",
+        "_contract_sha256",
+    )
+
+    def __init__(
+        self,
+        *,
+        cpu_tensors: Mapping[str, Any],
+        gpu_tensors: Mapping[int, Mapping[str, Any]],
+    ) -> None:
+        torch = _torch_or_none()
+        if torch is None:
+            raise DynamicReplaySchedulingError(
+                "Authenticated replay state probes require PyTorch."
+            )
+        cpu = dict(cpu_tensors)
+        gpu = {int(index): dict(values) for index, values in gpu_tensors.items()}
+        indices = tuple(sorted(gpu))
+        if (
+            not cpu
+            or len(indices) != 2
+            or len(set(indices)) != 2
+            or tuple(sorted(cpu)) != tuple(sorted(gpu[indices[0]]))
+            or tuple(sorted(cpu)) != tuple(sorted(gpu[indices[1]]))
+            or any(
+                not isinstance(value, torch.Tensor) or value.device.type != "cpu"
+                for value in cpu.values()
+            )
+            or any(
+                not isinstance(value, torch.Tensor)
+                or value.device.type != "cuda"
+                or value.device.index != index
+                for index in indices
+                for value in gpu[index].values()
+            )
+        ):
+            raise DynamicReplaySchedulingError(
+                "Authenticated replay probes require one CPU contract and "
+                "two matching contracts physically resident on distinct "
+                "CUDA devices."
+            )
+        cpu_fingerprint = fingerprint_installed_replay_state(cpu)
+        gpu_fingerprints = {
+            index: fingerprint_installed_replay_state(gpu[index]) for index in indices
+        }
+        if any(value != cpu_fingerprint for value in gpu_fingerprints.values()):
+            raise DynamicReplaySchedulingError(
+                "CPU and CUDA replay-contract tensor bytes differ."
+            )
+        self._cpu_tensors = MappingProxyType(cpu)
+        self._gpu_tensors = MappingProxyType(
+            {index: MappingProxyType(gpu[index]) for index in indices}
+        )
+        self._device_indices = indices
+        self._state_fingerprint = cpu_fingerprint
+        body = {
+            "schema": ("neural-forge-dynamic-replay-live-state-probes-v1"),
+            "logical_device_indices": list(indices),
+            "contract_tensor_names": sorted(cpu),
+            "installed_state": cpu_fingerprint.as_dict(),
+            "cpu_tensors_retained": True,
+            "cuda_tensors_retained": True,
+        }
+        self._contract_sha256 = _sha(body)
+
+    @property
+    def device_indices(self) -> tuple[int, ...]:
+        return self._device_indices
+
+    @property
+    def state_fingerprint(self) -> InstalledReplayStateFingerprint:
+        return self._state_fingerprint
+
+    @property
+    def contract_sha256(self) -> str:
+        return self._contract_sha256
+
+    def cpu_installed_state_probe(self) -> InstalledReplayStateFingerprint:
+        observed = fingerprint_installed_replay_state(self._cpu_tensors)
+        if observed != self._state_fingerprint:
+            raise DynamicReplaySchedulingError(
+                "Retained CPU replay-contract tensors changed."
+            )
+        return observed
+
+    def installed_state_probe(
+        self,
+        replica: ReplayReplicaReceipt,
+    ) -> InstalledReplayStateFingerprint:
+        if (
+            type(replica) is not ReplayReplicaReceipt
+            or replica.device.device_index not in self._gpu_tensors
+        ):
+            raise DynamicReplaySchedulingError(
+                "Replay replica is not bound to the retained CUDA contract."
+            )
+        observed = fingerprint_installed_replay_state(
+            self._gpu_tensors[replica.device.device_index]
+        )
+        if observed != self._state_fingerprint:
+            raise DynamicReplaySchedulingError(
+                "Retained CUDA replay-contract tensors changed."
+            )
+        return observed
+
+    def as_dict(self) -> dict[str, Any]:
+        body = {
+            "schema": ("neural-forge-dynamic-replay-live-state-probes-v1"),
+            "logical_device_indices": list(self._device_indices),
+            "contract_tensor_names": sorted(self._cpu_tensors),
+            "installed_state": self._state_fingerprint.as_dict(),
+            "cpu_tensors_retained": True,
+            "cuda_tensors_retained": True,
+        }
+        return {**body, "contract_sha256": self._contract_sha256}
+
+
 @dataclass(frozen=True, slots=True)
 class ReplaySchedulerPolicy:
     """Predeclared deterministic scheduler and numeric parity policy."""
@@ -817,10 +916,13 @@ class ReplaySchedulerPolicy:
     require_deterministic_debug_mode: bool = True
 
     def __post_init__(self) -> None:
-        if _positive_int(
-            self.expected_device_count,
-            "expected_device_count",
-        ) != 2:
+        if (
+            _positive_int(
+                self.expected_device_count,
+                "expected_device_count",
+            )
+            != 2
+        ):
             raise DynamicReplaySchedulingError(
                 "The current production scheduler requires exactly two devices."
             )
@@ -860,23 +962,13 @@ class ReplaySchedulerPolicy:
             "expected_device_count": self.expected_device_count,
             "expected_device_name": self.expected_device_name,
             "assignment": "canonical_round_robin_by_first_shard_key",
-            "pinned_buffer_slots_per_device": (
-                self.pinned_buffer_slots_per_device
-            ),
-            "maximum_pinned_bytes_per_slot": (
-                self.maximum_pinned_bytes_per_slot
-            ),
+            "pinned_buffer_slots_per_device": (self.pinned_buffer_slots_per_device),
+            "maximum_pinned_bytes_per_slot": (self.maximum_pinned_bytes_per_slot),
             "parity_absolute_tolerance": self.parity_absolute_tolerance,
             "parity_relative_tolerance": self.parity_relative_tolerance,
-            "parity_maximum_relative_rmse": (
-                self.parity_maximum_relative_rmse
-            ),
-            "parity_minimum_cosine_similarity": (
-                self.parity_minimum_cosine_similarity
-            ),
-            "require_deterministic_debug_mode": (
-                self.require_deterministic_debug_mode
-            ),
+            "parity_maximum_relative_rmse": (self.parity_maximum_relative_rmse),
+            "parity_minimum_cosine_similarity": (self.parity_minimum_cosine_similarity),
+            "require_deterministic_debug_mode": (self.require_deterministic_debug_mode),
             "cpu_cuda_parity_required_before_scheduled_work": True,
             "runtime_reauthenticated_after_parity_and_work": True,
             "installed_state_reauthenticated_after_parity_and_work": True,
@@ -900,9 +992,7 @@ def _validate_device_contract(
         )
     hardware = {replica.device.hardware_profile_sha256 for replica in ordered}
     runtimes = {replica.device.runtime_profile_sha256 for replica in ordered}
-    states = {
-        replica.installed_state.fingerprint_sha256 for replica in ordered
-    }
+    states = {replica.installed_state.fingerprint_sha256 for replica in ordered}
     if len(hardware) != 1 or len(runtimes) != 1:
         raise DynamicReplaySchedulingError(
             "Replay replicas are not hardware/runtime homogeneous."
@@ -924,13 +1014,10 @@ def _validate_device_contract(
             or device.cudnn_benchmark is not False
             or device.cudnn_allow_tf32 is not False
             or device.cuda_matmul_allow_tf32 is not False
-            or device.cuda_matmul_allow_bf16_reduced_precision_reduction
-            is not False
-            or device.cuda_matmul_allow_fp16_reduced_precision_reduction
-            is not False
+            or device.cuda_matmul_allow_bf16_reduced_precision_reduction is not False
+            or device.cuda_matmul_allow_fp16_reduced_precision_reduction is not False
             or device.float32_matmul_precision != "highest"
-            or device.cublas_workspace_config
-            not in _ALLOWED_CUBLAS_WORKSPACE_CONFIGS
+            or device.cublas_workspace_config not in _ALLOWED_CUBLAS_WORKSPACE_CONFIGS
             or (
                 policy.require_deterministic_debug_mode
                 and device.deterministic_debug_mode < 1
@@ -1009,9 +1096,7 @@ class ReplayAssignment:
 
     def __post_init__(self) -> None:
         if self.assignment_sha256 != _sha(self._body()):
-            raise DynamicReplaySchedulingError(
-                "Replay assignment seal is invalid."
-            )
+            raise DynamicReplaySchedulingError("Replay assignment seal is invalid.")
 
     @classmethod
     def create(
@@ -1026,9 +1111,7 @@ class ReplayAssignment:
             "shard_key": item.shard_key,
             "device_index": replica.device.device_index,
             "device_receipt_sha256": replica.device.receipt_sha256,
-            "installed_state_sha256": (
-                replica.installed_state.state_sha256
-            ),
+            "installed_state_sha256": (replica.installed_state.state_sha256),
             "input_payload_sha256": item.payload_sha256,
         }
         return cls(**body, assignment_sha256=_sha(body))
@@ -1079,9 +1162,7 @@ class ReplaySchedulePlan:
             "replica_receipt_sha256": [
                 replica.receipt_sha256 for replica in self.replicas
             ],
-            "assignments": [
-                assignment.as_dict() for assignment in self.assignments
-            ],
+            "assignments": [assignment.as_dict() for assignment in self.assignments],
             "canonical_output_order": [
                 assignment.work_id for assignment in self.assignments
             ],
@@ -1116,21 +1197,15 @@ def build_replay_schedule_plan(
             "Replay ordinals must be contiguous from zero."
         )
     if len({item.work_id for item in ordered_items}) != len(ordered_items):
-        raise DynamicReplaySchedulingError(
-            "Replay work IDs must be unique."
-        )
+        raise DynamicReplaySchedulingError("Replay work IDs must be unique.")
     shard_devices: dict[str, ReplayReplicaReceipt] = {}
     assignments = []
     for item in ordered_items:
         replica = shard_devices.get(item.shard_key)
         if replica is None:
-            replica = ordered_replicas[
-                len(shard_devices) % len(ordered_replicas)
-            ]
+            replica = ordered_replicas[len(shard_devices) % len(ordered_replicas)]
             shard_devices[item.shard_key] = replica
-        assignments.append(
-            ReplayAssignment.create(item=item, replica=replica)
-        )
+        assignments.append(ReplayAssignment.create(item=item, replica=replica))
     temporary = object.__new__(ReplaySchedulePlan)
     object.__setattr__(temporary, "assignments", tuple(assignments))
     object.__setattr__(temporary, "policy", policy)
@@ -1163,9 +1238,7 @@ def _tensor_leaves(
         return leaves
     if value is None or isinstance(value, (bool, int, float, str)):
         return leaves
-    raise DynamicReplaySchedulingError(
-        f"Parity output {path} has an unsupported type."
-    )
+    raise DynamicReplaySchedulingError(f"Parity output {path} has an unsupported type.")
 
 
 def _structure_descriptor(value: Any, *, path: str = "$") -> Any:
@@ -1200,9 +1273,7 @@ def _structure_descriptor(value: Any, *, path: str = "$") -> Any:
             "kind": type(value).__name__,
             "value": value,
         }
-    raise DynamicReplaySchedulingError(
-        f"Parity output {path} has an unsupported type."
-    )
+    raise DynamicReplaySchedulingError(f"Parity output {path} has an unsupported type.")
 
 
 def compare_cpu_cuda_replay(
@@ -1273,16 +1344,14 @@ def compare_cpu_cuda_replay(
                 cosine = 1.0 if bool(torch.equal(left, right)) else 0.0
             else:
                 cosine = float(
-                    torch.dot(flattened_left, flattened_right).item()
-                    / denominator
+                    torch.dot(flattened_left, flattened_right).item() / denominator
                 )
             leaf_passed = bool(
                 math.isfinite(maximum_absolute_error)
                 and math.isfinite(relative_rmse)
                 and math.isfinite(cosine)
                 and maximum_absolute_error <= allowed_absolute_error
-                and relative_rmse
-                <= policy.parity_maximum_relative_rmse
+                and relative_rmse <= policy.parity_maximum_relative_rmse
                 and cosine >= policy.parity_minimum_cosine_similarity
             )
             tensor_reports.append(
@@ -1293,9 +1362,7 @@ def compare_cpu_cuda_replay(
                     "maximum_absolute_error": maximum_absolute_error,
                     "allowed_absolute_error": allowed_absolute_error,
                     "relative_rmse": relative_rmse,
-                    "maximum_relative_rmse": (
-                        policy.parity_maximum_relative_rmse
-                    ),
+                    "maximum_relative_rmse": (policy.parity_maximum_relative_rmse),
                     "cosine_similarity": cosine,
                     "minimum_cosine_similarity": (
                         policy.parity_minimum_cosine_similarity
@@ -1326,6 +1393,7 @@ def compare_cpu_cuda_replay(
         "cuda_output_sha256": cuda_scalar_sha,
         "tensor_reports": tensor_reports,
         "tensor_leaf_count": len(tensor_reports),
+        "structure_descriptor": cpu_structure,
         "structure_sha256": _sha(cpu_structure),
         "non_tensor_output_exact_match": (
             cpu_scalar_sha == cuda_scalar_sha if not tensor_reports else True
@@ -1570,9 +1638,7 @@ class PinnedHostDoubleBuffer:
             if path not in expected_paths:
                 del slot.host_tensors[path]
         active_paths: set[str] = set()
-        with torch.cuda.device(self._device), torch.cuda.stream(
-            self._transfer_stream
-        ):
+        with torch.cuda.device(self._device), torch.cuda.stream(self._transfer_stream):
             gpu_value, tensor_bytes = self._stage_tree(
                 item.payload,
                 path="$",
@@ -1673,23 +1739,17 @@ class PinnedHostDoubleBuffer:
 
     def wait_ready(self, slot_index: int) -> None:
         if self._closed or slot_index not in {0, 1}:
-            raise DynamicReplaySchedulingError(
-                "Pinned buffer slot is unavailable."
-            )
+            raise DynamicReplaySchedulingError("Pinned buffer slot is unavailable.")
         event = self._slots[slot_index].transfer_event
         if event is None:
-            raise DynamicReplaySchedulingError(
-                "Pinned buffer slot was not staged."
-            )
+            raise DynamicReplaySchedulingError("Pinned buffer slot was not staged.")
         torch = self._torch
         with torch.cuda.device(self._device):
             torch.cuda.current_stream(self._device).wait_event(event)
 
     def mark_consumed(self, slot_index: int) -> None:
         if self._closed or slot_index not in {0, 1}:
-            raise DynamicReplaySchedulingError(
-                "Pinned buffer slot is unavailable."
-            )
+            raise DynamicReplaySchedulingError("Pinned buffer slot is unavailable.")
         slot = self._slots[slot_index]
         if slot.transfer_event is None:
             raise DynamicReplaySchedulingError(
@@ -1732,6 +1792,28 @@ class PinnedHostDoubleBuffer:
         self._closed = True
 
 
+@dataclass(frozen=True, slots=True)
+class AuthenticatedPinnedHostBufferFactory:
+    """Exact bounded pinned-host staging factory for production replay."""
+
+    maximum_bytes_per_slot: int
+
+    def __post_init__(self) -> None:
+        _positive_int(
+            self.maximum_bytes_per_slot,
+            "maximum_bytes_per_slot",
+        )
+
+    def __call__(
+        self,
+        replica: ReplayReplicaReceipt,
+    ) -> PinnedHostDoubleBuffer:
+        return PinnedHostDoubleBuffer(
+            replica,
+            maximum_bytes_per_slot=self.maximum_bytes_per_slot,
+        )
+
+
 ReplayWorker = Callable[[ReplayWorkItem, ReplayReplicaReceipt, Any], Any]
 CpuParityWorker = Callable[[ReplayWorkItem, Any], Any]
 DeviceReceiptProbe = Callable[[int], CudaReplayDeviceReceipt]
@@ -1756,9 +1838,7 @@ class ReplayExecutionResult:
             raise DynamicReplaySchedulingError(
                 "Replay execution report seal is invalid."
             )
-        output_hashes = [
-            fingerprint_replay_value(value) for value in self.outputs
-        ]
+        output_hashes = [fingerprint_replay_value(value) for value in self.outputs]
         if report.get("canonical_output_sha256") != output_hashes:
             raise DynamicReplaySchedulingError(
                 "Replay execution outputs differ from their receipt."
@@ -1792,14 +1872,52 @@ class DeterministicReplayScheduler:
         self.installed_state_probe = installed_state_probe
         self.cpu_installed_state_probe = cpu_installed_state_probe
         if host_buffer_factory is None:
-            self.host_buffer_factory = lambda replica: PinnedHostDoubleBuffer(
-                replica,
-                maximum_bytes_per_slot=(
-                    self.policy.maximum_pinned_bytes_per_slot
-                ),
+            self.host_buffer_factory = AuthenticatedPinnedHostBufferFactory(
+                self.policy.maximum_pinned_bytes_per_slot
             )
         else:
             self.host_buffer_factory = host_buffer_factory
+
+    def authenticate_runtime(self) -> Mapping[str, Any]:
+        """Freshly probe devices/state and seal the exact runtime callables."""
+
+        self._reauthenticate("explicit_runtime_authentication")
+        state_owner = getattr(self.installed_state_probe, "__self__", None)
+        cpu_state_owner = getattr(
+            self.cpu_installed_state_probe,
+            "__self__",
+            None,
+        )
+        if (
+            type(state_owner) is not AuthenticatedReplayStateProbes
+            or cpu_state_owner is not state_owner
+            or getattr(self.installed_state_probe, "__func__", None)
+            is not AuthenticatedReplayStateProbes.installed_state_probe
+            or getattr(
+                self.cpu_installed_state_probe,
+                "__func__",
+                None,
+            )
+            is not AuthenticatedReplayStateProbes.cpu_installed_state_probe
+            or type(self.host_buffer_factory)
+            is not AuthenticatedPinnedHostBufferFactory
+            or self.host_buffer_factory.maximum_bytes_per_slot
+            != self.policy.maximum_pinned_bytes_per_slot
+        ):
+            raise DynamicReplaySchedulingError(
+                "Production replay requires exact live state probes and the "
+                "bounded pinned-host buffer factory."
+            )
+        body = {
+            "schema": ("neural-forge-dynamic-replay-live-runtime-authentication-v1"),
+            "replicas": [replica.as_dict() for replica in self.replicas],
+            "policy": self.policy.as_dict(),
+            "state_probe_contract": state_owner.as_dict(),
+            "device_receipts_freshly_probed": True,
+            "installed_states_freshly_rehashed": True,
+            "bounded_pinned_host_factory_authenticated": True,
+        }
+        return MappingProxyType({**body, "report_sha256": _sha(body)})
 
     def _reauthenticate(self, stage: str) -> None:
         expected_state = self.replicas[0].installed_state
@@ -1809,9 +1927,7 @@ class DeterministicReplayScheduler:
                 f"CPU installed state differs at {stage}."
             )
         for replica in self.replicas:
-            current_device = self.device_receipt_probe(
-                replica.device.device_index
-            )
+            current_device = self.device_receipt_probe(replica.device.device_index)
             if current_device != replica.device:
                 raise DynamicReplaySchedulingError(
                     f"CUDA runtime/device receipt changed at {stage} on "
@@ -1850,17 +1966,12 @@ class DeterministicReplayScheduler:
         slot_index: int,
         staged: StagedReplayPayload | None = None,
     ) -> Any:
-        staged_value = (
-            buffer.stage(item, slot_index)
-            if staged is None
-            else staged
-        )
+        staged_value = buffer.stage(item, slot_index) if staged is None else staged
         if (
             staged_value.slot_index != slot_index
             or staged_value.source_payload_sha256 != item.payload_sha256
             or staged_value.pinned_payload_sha256 != item.payload_sha256
-            or staged_value.tensor_bytes
-            > self.policy.maximum_pinned_bytes_per_slot
+            or staged_value.tensor_bytes > self.policy.maximum_pinned_bytes_per_slot
         ):
             raise DynamicReplaySchedulingError(
                 f"Staging receipt changed for {item.work_id!r}."
@@ -1876,10 +1987,13 @@ class DeterministicReplayScheduler:
             )
         output = _archive_replay_value(raw_output)
         buffer.mark_consumed(slot_index)
-        if fingerprint_replay_value(
-            item.payload,
-            require_cpu_tensors=True,
-        ) != item.payload_sha256:
+        if (
+            fingerprint_replay_value(
+                item.payload,
+                require_cpu_tensors=True,
+            )
+            != item.payload_sha256
+        ):
             raise DynamicReplaySchedulingError(
                 f"Replay input {item.work_id!r} changed during GPU replay."
             )
@@ -1922,9 +2036,7 @@ class DeterministicReplayScheduler:
                 "shard_key": item.shard_key,
                 "device_index": replica.device.device_index,
                 "device_receipt_sha256": replica.device.receipt_sha256,
-                "installed_state_sha256": (
-                    replica.installed_state.state_sha256
-                ),
+                "installed_state_sha256": (replica.installed_state.state_sha256),
                 "input_payload_sha256": item.payload_sha256,
                 "output_sha256": output_sha,
                 "slot_index": slot_index,
@@ -1959,14 +2071,16 @@ class DeterministicReplayScheduler:
         )
         item_by_id = {item.work_id: item for item in items}
         canonical_items = tuple(
-            item_by_id[assignment.work_id]
-            for assignment in plan.assignments
+            item_by_id[assignment.work_id] for assignment in plan.assignments
         )
         for item in (*canonical_items, parity_item):
-            if fingerprint_replay_value(
-                item.payload,
-                require_cpu_tensors=True,
-            ) != item.payload_sha256:
+            if (
+                fingerprint_replay_value(
+                    item.payload,
+                    require_cpu_tensors=True,
+                )
+                != item.payload_sha256
+            ):
                 raise DynamicReplaySchedulingError(
                     f"Replay input {item.work_id!r} changed before execution."
                 )
@@ -1988,10 +2102,13 @@ class DeterministicReplayScheduler:
                         parity_item.payload,
                     )
                 )
-            if fingerprint_replay_value(
-                parity_item.payload,
-                require_cpu_tensors=True,
-            ) != parity_item.payload_sha256:
+            if (
+                fingerprint_replay_value(
+                    parity_item.payload,
+                    require_cpu_tensors=True,
+                )
+                != parity_item.payload_sha256
+            ):
                 raise DynamicReplaySchedulingError(
                     "CPU parity replay changed its input payload."
                 )
@@ -2016,24 +2133,17 @@ class DeterministicReplayScheduler:
             self._reauthenticate("post_parity")
 
             assignment_by_id = {
-                assignment.work_id: assignment
-                for assignment in plan.assignments
+                assignment.work_id: assignment for assignment in plan.assignments
             }
             shards: dict[int, list[ReplayWorkItem]] = {
-                replica.device.device_index: []
-                for replica in self.replicas
+                replica.device.device_index: [] for replica in self.replicas
             }
             for item in canonical_items:
-                shards[assignment_by_id[item.work_id].device_index].append(
-                    item
-                )
+                shards[assignment_by_id[item.work_id].device_index].append(item)
             replica_by_index = {
-                replica.device.device_index: replica
-                for replica in self.replicas
+                replica.device.device_index: replica for replica in self.replicas
             }
-            scheduled_results: list[
-                tuple[int, Any, dict[str, Any]]
-            ] = []
+            scheduled_results: list[tuple[int, Any, dict[str, Any]]] = []
             with ThreadPoolExecutor(
                 max_workers=len(self.replicas),
                 thread_name_prefix="neural-forge-replay",
@@ -2069,16 +2179,18 @@ class DeterministicReplayScheduler:
             outputs = tuple(row[1] for row in scheduled_results)
             records = [row[2] for row in scheduled_results]
             for item in (*canonical_items, parity_item):
-                if fingerprint_replay_value(
-                    item.payload,
-                    require_cpu_tensors=True,
-                ) != item.payload_sha256:
+                if (
+                    fingerprint_replay_value(
+                        item.payload,
+                        require_cpu_tensors=True,
+                    )
+                    != item.payload_sha256
+                ):
                     raise DynamicReplaySchedulingError(
                         f"Replay input {item.work_id!r} changed during execution."
                     )
             buffer_reports = [
-                dict(buffers[index].as_dict())
-                for index in sorted(buffers)
+                dict(buffers[index].as_dict()) for index in sorted(buffers)
             ]
             body = {
                 "schema": DYNAMIC_REPLAY_EXECUTION_SCHEMA,
@@ -2089,9 +2201,7 @@ class DeterministicReplayScheduler:
                 "parity_reports": parity_reports,
                 "parity_passed_before_scheduled_work": True,
                 "scheduled_records": records,
-                "canonical_output_work_ids": [
-                    item.work_id for item in canonical_items
-                ],
+                "canonical_output_work_ids": [item.work_id for item in canonical_items],
                 "canonical_output_sha256": [
                     fingerprint_replay_value(value) for value in outputs
                 ],
@@ -2116,6 +2226,8 @@ class DeterministicReplayScheduler:
 
 
 __all__ = [
+    "AuthenticatedPinnedHostBufferFactory",
+    "AuthenticatedReplayStateProbes",
     "DYNAMIC_REPLAY_BUFFER_SCHEMA",
     "DYNAMIC_REPLAY_DEVICE_SCHEMA",
     "DYNAMIC_REPLAY_EXECUTION_SCHEMA",

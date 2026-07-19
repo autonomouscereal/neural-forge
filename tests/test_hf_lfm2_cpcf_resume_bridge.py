@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import ast
 import copy
+from dataclasses import replace
 import hashlib
+import inspect
+import os
+import textwrap
+import threading
 from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 
 import neural_forge.hf_lfm2_cpcf_model_compiler as model_compiler
 import neural_forge.hf_lfm2_cpcf_model_fold as model_fold
 import neural_forge.hf_lfm2_cpcf_resume_bridge as bridge
+import neural_forge.hf_lfm2_cpcf_v5_model_compiler as v5_compiler
+import neural_forge.hf_lfm2_cpcf_v5_resume as v5_resume
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
 from neural_forge.hf_closed_form_causal_circuit_fold import (
@@ -28,6 +37,7 @@ from neural_forge.hf_lfm2_cpcf_installability import (
 from neural_forge.hf_lfm2_cpcf_resume_artifact import (
     Lfm2CpcfBoundaryBindings,
     Lfm2CpcfResumeArtifactStore,
+    build_lfm2_cpcf_target_topology_snapshot,
 )
 from neural_forge.hf_tied_causal_interface_fold import (
     TiedCausalInterfaceFold,
@@ -359,6 +369,9 @@ class _Blank(torch.nn.Module):
         with torch.no_grad():
             for parameter in self.parameters():
                 parameter.zero_()
+
+    def get_input_embeddings(self):
+        return self.model.embed_tokens
 
 
 def _snapshot_parts(model):
@@ -1036,3 +1049,770 @@ def test_prefix_install_rejects_topology_drift_without_mutation(tmp_path, varian
             expected_blank_state_sha256=before,
         )
     assert fingerprint_model_state(blank) == before
+
+
+def _v5_context(blank, *, source_label: str = "source"):
+    prefix, metadata = _snapshot_parts(blank)
+    topology = build_lfm2_cpcf_target_topology_snapshot(
+        prefix_model=prefix,
+        layer_count=2,
+        snapshot_metadata=metadata,
+    )
+    context = v5_resume.build_lfm2_cpcf_v5_resume_context(
+        source_model_state_sha256=_digest(f"{source_label}-state"),
+        source_model_inventory_sha256=_digest(f"{source_label}-inventory"),
+        cache_sha256=_digest("v5-cache"),
+        selective_catalog_sha256=_digest("v5-catalog"),
+        selective_source_sha256=_digest("v5-selective-source"),
+        selective_provider_sha256=_digest("v5-provider"),
+        trace_sha256=_digest("v5-trace"),
+        tokenizer_sha256=_digest("v5-tokenizer"),
+        token_bridge_sha256=_digest("v5-token-bridge"),
+        source_tied_table_sha256=_digest("v5-source-table"),
+        blank_target_report_sha256=_digest("v5-blank-report"),
+        blank_target_state_sha256=fingerprint_model_state(blank),
+        target_topology_sha256=topology["topology_sha256"],
+        planned_target_unique_parameters=sum(
+            parameter.numel() for parameter in blank.parameters()
+        ),
+        runtime_policy_sha256=_digest("v5-runtime-policy"),
+        physical_rss_policy_sha256=(
+            v5_resume.build_lfm2_cpcf_v5_physical_rss_policy_sha256(
+                full_phase_tree_logical_bytes=2_000_000,
+                minimum_reduction_fraction=0.10,
+                maximum_increase_bytes=1_000_000,
+                maximum_process_rss_bytes=2_001_000,
+            )
+        ),
+        compiler_implementation_sha256=_digest("v5-compiler"),
+        resume_implementation_sha256=_digest("v5-resume"),
+        selector_contract_sha256=_digest("v5-selector"),
+        numerical_contract_sha256=_digest("v5-numerical"),
+        gpu_contract_sha256=_digest("v5-gpu"),
+        bootstrap_authentication_sha256=_digest("v5-bootstrap"),
+        final_norm_authentication_sha256=_digest("v5-final-norm"),
+    )
+    return context
+
+
+def _v5_boundary_compiler(bundle, phase, *, completed: int):
+    observations = {(0, "output.final_norm_output"): _digest("v5-final-observation")}
+    for layer_index in range(completed):
+        for boundary_name in (
+            "residual.post_operator",
+            "residual.post_layer",
+        ):
+            observations[(0, f"layer.{layer_index:03d}.{boundary_name}")] = _digest(
+                f"v5-observation-{layer_index}-{boundary_name}"
+            )
+    lineage = bundle.report["interface_lineage"]
+    return SimpleNamespace(
+        phases=(phase,),
+        source_width=3,
+        target_width=2,
+        layer_kinds=tuple(layer.operator_kind for layer in bundle.layers),
+        split_phase_sha256=dict(bundle.split_phase_sha256),
+        split_row_sha256=dict(bundle.split_row_sha256),
+        split_rows={"selection": 0, "fit": 2, "validation": 0},
+        interface=bundle.interface,
+        base_interface=SimpleNamespace(report=lineage["base_interface_report"]),
+        anchor_fold=SimpleNamespace(
+            interface=bundle.interface,
+            report=lineage["causal_anchor_report"],
+        ),
+        anchor_split_reports={
+            split: {"schema": "test-v5-anchor-split-v1", "split": split}
+            for split in bridge._SPLITS
+        },
+        fit_future=torch.tensor(
+            [[0.1, 0.2], [0.3, 0.4]],
+            dtype=torch.float64,
+        ),
+        validation_future=torch.tensor(
+            [[0.5, 0.6], [0.7, 0.8]],
+            dtype=torch.float64,
+        ),
+        fit_weights=torch.tensor([0.5, 0.5], dtype=torch.float64),
+        validation_weights=torch.tensor(
+            [0.25, 0.75],
+            dtype=torch.float64,
+        ),
+        fit_weight_summary=[{"phase_index": 0, "weight": 1.0}],
+        validation_weight_summary=[{"phase_index": 0, "weight": 1.0}],
+        layer_results=list(bundle.layers[:completed]),
+        _observation_sha=observations,
+    )
+
+
+def _fresh_v5_boundary_compiler(bundle, phase):
+    return _v5_boundary_compiler(bundle, phase, completed=0)
+
+
+class _MockedV5RssGuard:
+    def __init__(self, next_layer_index: int) -> None:
+        self.current = [1_000]
+        self.lifetime_hwm = [1_000]
+        self.patchers = (
+            mock.patch.object(
+                v5_compiler,
+                "_process_rss_bytes",
+                side_effect=lambda: self.current[0],
+            ),
+            mock.patch.object(
+                v5_compiler,
+                "_process_peak_rss_bytes",
+                side_effect=lambda: self.lifetime_hwm[0],
+            ),
+        )
+        for patcher in self.patchers:
+            patcher.start()
+        self.guard = v5_compiler._PhysicalRssGuard(
+            maximum_increase_bytes=1_000_000,
+            maximum_process_rss_bytes=2_001_000,
+            full_phase_tree_logical_bytes=2_000_000,
+            minimum_reduction_fraction=0.10,
+            sample_interval_seconds=1.0,
+        )
+        self.label = (
+            "prefix_000000_persisted_before_residency"
+            if next_layer_index == 0
+            else (
+                f"layer_{next_layer_index - 1:03d}_compiled_"
+                "checkpoint_persisted_before_release"
+            )
+        )
+        self.expectation = self.guard.next_checkpoint_expectation(self.label)
+
+    def issue(
+        self,
+        *,
+        passed: bool,
+        peak_increase_bytes: int,
+    ):
+        self.current[0] = 1_000 + peak_increase_bytes
+        self.lifetime_hwm[0] = max(
+            self.lifetime_hwm[0],
+            self.current[0],
+        )
+        if passed:
+            return self.guard.checkpoint(self.label)
+        try:
+            self.guard.checkpoint(self.label)
+        except v5_compiler.Lfm2CpcfV5PhysicalRssError as exc:
+            return exc.report
+        raise AssertionError("Mocked RSS failure unexpectedly passed.")
+
+    def close(self) -> None:
+        self.guard.abort()
+        for patcher in reversed(self.patchers):
+            patcher.stop()
+
+
+_V5_TEST_RSS_GUARDS = {}
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_mocked_v5_rss_guards():
+    yield
+    while _V5_TEST_RSS_GUARDS:
+        _unused, harness = _V5_TEST_RSS_GUARDS.popitem()
+        harness.close()
+
+
+def _v5_rss_expectation(next_layer_index: int):
+    harness = _MockedV5RssGuard(next_layer_index)
+    expectation = harness.expectation
+    _V5_TEST_RSS_GUARDS[expectation["expectation_sha256"]] = harness
+    return expectation
+
+
+def _v5_rss_receipt(
+    expectation,
+    *,
+    passed: bool,
+    peak_increase_bytes: int = 0,
+):
+    harness = _V5_TEST_RSS_GUARDS.pop(expectation["expectation_sha256"])
+    try:
+        return harness.issue(
+            passed=passed,
+            peak_increase_bytes=peak_increase_bytes,
+        )
+    finally:
+        harness.close()
+
+
+def _v5_progress(next_layer_index: int):
+    bundle = _bundle_with_depth(2)
+    phase, _unused_bank = _phase_and_bank()
+    blank = _Blank(depth=2)
+    blank.zero_parameters()
+    context = _v5_context(blank)
+    compiler = _v5_boundary_compiler(
+        bundle,
+        phase,
+        completed=next_layer_index,
+    )
+    frontier = v5_resume.Lfm2CpcfV5BoundaryFrontier.capture(
+        compiler,
+        context=context,
+        next_layer_index=next_layer_index,
+        expected_layer_count=2,
+    )
+    target = _Blank(depth=2)
+    target.zero_parameters()
+    with torch.no_grad():
+        target.model.embed_tokens.weight.copy_(bundle.interface.target_weight)
+        for layer_index in range(next_layer_index):
+            target.model.layers[layer_index].weight.fill_(float(layer_index + 1))
+    banks = [model_compiler.seed_lfm2_cpcf_phase_states(target, (phase,))]
+    for layer_index in range(next_layer_index):
+        state = banks[-1].state(phase).clone() + float(layer_index + 1)
+        banks.append(
+            model_compiler._phase_state_bank(
+                f"post_layer_{layer_index}",
+                layer_index + 1,
+                (phase,),
+                {phase.identity: state},
+            )
+        )
+    receipts = tuple(
+        _progress_layer_receipt(
+            layer_index=layer_index,
+            input_bank_sha256=banks[layer_index].state_bank_sha256,
+            next_bank_sha256=banks[layer_index + 1].state_bank_sha256,
+            charts_sha256=bundle.layers[layer_index].layer_charts_sha256,
+        )
+        for layer_index in range(next_layer_index)
+    )
+    event = v5_resume.Lfm2CpcfV5ProgressEvent.capture(
+        frontier=frontier,
+        incoming_state_bank=banks[-1],
+        completed_layer_receipts=receipts,
+        target_model=target,
+    )
+    return {
+        "blank": blank,
+        "bundle": bundle,
+        "phase": phase,
+        "context": context,
+        "frontier": frontier,
+        "target": target,
+        "incoming": banks[-1],
+        "receipts": receipts,
+        "event": event,
+    }
+
+
+@pytest.mark.parametrize("next_layer_index", [0, 1, 2])
+def test_v5_authenticated_frontier_restores_exact_prefix_without_replay(
+    tmp_path,
+    next_layer_index,
+):
+    progress = _v5_progress(next_layer_index)
+    frontier_tensor_names = set(progress["frontier"].tensors)
+    assert "interface.target_weight" in frontier_tensor_names
+    assert all(
+        "fit_future" not in name
+        and "validation_future" not in name
+        and "phase_weight" not in name
+        for name in frontier_tensor_names
+    )
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / f"v5-resume-{next_layer_index}")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    expectation = _v5_rss_expectation(next_layer_index)
+    pending = coordinator.publish_pending(
+        progress["event"],
+        rss_checkpoint_expectation=expectation,
+    )
+    admission = coordinator.admit(
+        pending,
+        rss_checkpoint_receipt=_v5_rss_receipt(
+            expectation,
+            passed=True,
+        ),
+    )
+    state = coordinator.open_admitted(admission["admission_sha256"])
+    resumed_target = _Blank(depth=2)
+    resumed_target.zero_parameters()
+    fresh_compiler = _fresh_v5_boundary_compiler(
+        progress["bundle"],
+        progress["phase"],
+    )
+
+    restored = coordinator.restore(
+        state,
+        target_model=resumed_target,
+        phases=(progress["phase"],),
+        boundary_compiler=fresh_compiler,
+        expected_context=progress["context"],
+        expected_blank_state_sha256=fingerprint_model_state(resumed_target),
+    )
+
+    assert fingerprint_model_state(resumed_target) == fingerprint_model_state(
+        progress["target"]
+    )
+    assert (
+        restored.state_bank.state_bank_sha256 == progress["incoming"].state_bank_sha256
+    )
+    assert len(restored.completed_layer_receipts) == next_layer_index
+    assert [layer.layer_index for layer in fresh_compiler.layer_results] == list(
+        range(next_layer_index)
+    )
+    assert restored.frontier.frontier_sha256 == progress["frontier"].frontier_sha256
+    assert restored.prefix_install_report["training_steps"] == 0
+
+
+def test_v5_resume_rejects_live_context_drift_and_store_tamper(tmp_path):
+    progress = _v5_progress(1)
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    expectation = _v5_rss_expectation(1)
+    pending = coordinator.publish_pending(
+        progress["event"],
+        rss_checkpoint_expectation=expectation,
+    )
+    admission = coordinator.admit(
+        pending,
+        rss_checkpoint_receipt=_v5_rss_receipt(
+            expectation,
+            passed=True,
+        ),
+    )
+    state = coordinator.open_admitted(admission["admission_sha256"])
+    blank = _Blank(depth=2)
+    blank.zero_parameters()
+    before = fingerprint_model_state(blank)
+    with pytest.raises(v5_resume.Lfm2CpcfV5ResumeError, match="context"):
+        coordinator.restore(
+            state,
+            target_model=blank,
+            phases=(progress["phase"],),
+            boundary_compiler=_fresh_v5_boundary_compiler(
+                progress["bundle"],
+                progress["phase"],
+            ),
+            expected_context=_v5_context(
+                progress["blank"],
+                source_label="changed-source",
+            ),
+            expected_blank_state_sha256=before,
+        )
+    assert fingerprint_model_state(blank) == before
+
+    frontier_path = (
+        store.root
+        / "boundaries"
+        / pending.frontier_reference.artifact_key
+        / "reports.json"
+    )
+    frontier_path.write_bytes(frontier_path.read_bytes() + b" ")
+    with pytest.raises(bridge.Lfm2CpcfResumeArtifactIntegrityError):
+        coordinator.open_admitted(admission["admission_sha256"])
+
+
+def test_v5_rss_rejection_retains_pending_but_blocks_normal_admission(
+    tmp_path,
+):
+    progress = _v5_progress(1)
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    expectation = _v5_rss_expectation(1)
+    pending = coordinator.publish_pending(
+        progress["event"],
+        rss_checkpoint_expectation=expectation,
+    )
+    rejection = coordinator.record_rss_rejection(
+        pending,
+        rss_violation_report=(
+            rejection_receipt := _v5_rss_receipt(
+            expectation,
+            passed=False,
+            peak_increase_bytes=1_500_000,
+            )
+        ),
+    )
+
+    store.final_reauthenticate_boundary(store.open_boundary(pending.frontier_reference))
+    store.final_reauthenticate_checkpoint(
+        store.open_checkpoint(pending.checkpoint.reference)
+    )
+    assert rejection["promotable"] is False
+    assert rejection["next_layer_index"] == 1
+    with pytest.raises(v5_resume.Lfm2CpcfV5ResumeError):
+        coordinator.open_admitted(rejection["rejection_sha256"])
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="outcome is invalid",
+    ):
+        coordinator.admit(
+            pending,
+            rss_checkpoint_receipt=rejection_receipt,
+        )
+
+
+def test_v5_coordinator_has_one_definition_per_security_method() -> None:
+    source = textwrap.dedent(inspect.getsource(v5_resume.Lfm2CpcfV5ResumeCoordinator))
+    class_node = ast.parse(source).body[0]
+    names = [
+        node.name
+        for node in class_node.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+    for name in (
+        "_document_path",
+        "_write_once",
+        "_open_document",
+        "publish_pending",
+        "admit",
+        "record_rss_rejection",
+        "open_admitted",
+    ):
+        assert names.count(name) == 1
+
+
+def test_v5_document_publication_crash_never_poisons_final_key(
+    tmp_path,
+    monkeypatch,
+):
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    key = _digest("crash-before-rename")
+    path = coordinator._document_path("v5-progress", key)
+
+    def fail_before_install(_source, _destination):
+        raise OSError("simulated publication crash")
+
+    monkeypatch.setattr(
+        v5_resume.resume_artifact,
+        "_atomic_rename_noreplace",
+        fail_before_install,
+    )
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="before installing",
+    ):
+        coordinator._write_once(path, {"payload": "complete-only"})
+
+    assert not os.path.lexists(path)
+    assert list(path.parent.glob(".v5-document-*.tmp")) == []
+
+
+def test_v5_partial_temporary_write_is_removed_without_final_key(
+    tmp_path,
+    monkeypatch,
+):
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    key = _digest("partial-temporary-write")
+    path = coordinator._document_path("v5-progress", key)
+    real_write = os.write
+    calls = [0]
+
+    def partial_then_crash(descriptor, payload):
+        if calls[0] == 0:
+            calls[0] += 1
+            chunk = payload[: max(1, len(payload) // 2)]
+            return real_write(descriptor, chunk)
+        raise OSError("simulated short-write crash")
+
+    monkeypatch.setattr(v5_resume.os, "write", partial_then_crash)
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="atomically publish",
+    ):
+        coordinator._write_once(
+            path,
+            {"payload": "must-never-appear-truncated"},
+        )
+
+    assert not os.path.lexists(path)
+    assert list(path.parent.glob(".v5-document-*.tmp")) == []
+
+
+def test_v5_document_key_and_symlink_confusion_fail_closed(tmp_path):
+    progress = _v5_progress(0)
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    expectation = _v5_rss_expectation(0)
+    pending = coordinator.publish_pending(
+        progress["event"],
+        rss_checkpoint_expectation=expectation,
+    )
+    real_path = coordinator._document_path(
+        "v5-progress",
+        pending.event_report_sha256,
+    )
+    copied_key = _digest("copied-as-another-key")
+    copied_path = coordinator._document_path("v5-progress", copied_key)
+    copied_path.write_bytes(real_path.read_bytes())
+
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="schema, seal, or requested content key",
+    ):
+        coordinator._open_document(
+            copied_path,
+            kind="progress",
+            expected_key=copied_key,
+        )
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="path stem",
+    ):
+        coordinator._open_document(
+            real_path,
+            kind="progress",
+            expected_key=copied_key,
+        )
+
+    link_key = _digest("symlink-as-another-key")
+    link_path = coordinator._document_path("v5-progress", link_key)
+    try:
+        link_path.symlink_to(real_path)
+    except OSError:
+        pytest.skip("This Windows account cannot create a test symlink.")
+    with pytest.raises(
+        bridge.Lfm2CpcfResumeArtifactIntegrityError,
+        match="regular file",
+    ):
+        coordinator._open_document(
+            link_path,
+            kind="progress",
+            expected_key=link_key,
+        )
+
+
+def test_v5_swapped_collection_symlink_fails_identity_gate(tmp_path):
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    collection = coordinator._collection("v5-terminals")
+    moved = collection.with_name("real-v5-terminals")
+    collection.rename(moved)
+    try:
+        try:
+            collection.symlink_to(moved, target_is_directory=True)
+        except OSError:
+            pytest.skip("This Windows account cannot create a test symlink.")
+        with pytest.raises(
+            bridge.Lfm2CpcfResumeArtifactIntegrityError,
+            match="real directory",
+        ):
+            coordinator._collection("v5-terminals")
+    finally:
+        if collection.is_symlink():
+            collection.unlink()
+        if moved.exists() and not collection.exists():
+            moved.rename(collection)
+
+
+def test_v5_pending_capability_progress_and_typed_rss_fail_closed(
+    tmp_path,
+):
+    progress = _v5_progress(1)
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    expectation = _v5_rss_expectation(1)
+    pending = coordinator.publish_pending(
+        progress["event"],
+        rss_checkpoint_expectation=expectation,
+    )
+    valid_receipt = _v5_rss_receipt(expectation, passed=True)
+
+    with pytest.raises(v5_resume.Lfm2CpcfV5ResumeError):
+        coordinator.open_admitted(pending.pending_sha256)
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="not issued by this coordinator",
+    ):
+        coordinator.admit(
+            replace(pending, capability_token="0" * 64),
+            rss_checkpoint_receipt=valid_receipt,
+        )
+    restarted = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="not issued by this coordinator",
+    ):
+        restarted.admit(
+            pending,
+            rss_checkpoint_receipt=valid_receipt,
+        )
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="exact typed",
+    ):
+        coordinator.admit(
+            pending,
+            rss_checkpoint_receipt=dict(valid_receipt),
+        )
+
+    assert not hasattr(
+        v5_resume,
+        "_issue_lfm2_cpcf_v5_rss_checkpoint_receipt",
+    )
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="exact live",
+    ):
+        v5_resume.Lfm2CpcfV5PhysicalRssCheckpointReceipt(
+            dict(valid_receipt),
+            _guard=object(),
+            _sequence_capability=object(),
+        )
+
+    event_path = coordinator._document_path(
+        "v5-progress",
+        pending.event_report_sha256,
+    )
+    event_path.write_bytes(event_path.read_bytes() + b" ")
+    with pytest.raises(
+        bridge.Lfm2CpcfResumeArtifactIntegrityError,
+    ):
+        coordinator.admit(
+            pending,
+            rss_checkpoint_receipt=valid_receipt,
+        )
+
+
+def test_v5_frontier_rejects_untyped_or_looser_rss_policy(tmp_path):
+    progress = _v5_progress(1)
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    expectation = _v5_rss_expectation(1)
+    looser_body = dict(expectation)
+    looser_body.pop("expectation_sha256")
+    looser_body["maximum_increase_bytes"] = 1_100_000
+    looser = {
+        **looser_body,
+        "expectation_sha256": canonical_sha256(looser_body),
+    }
+
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="exact one-shot expectation",
+    ):
+        coordinator.publish_pending(
+            progress["event"],
+            rss_checkpoint_expectation=looser,
+        )
+
+
+def test_v5_admit_reject_race_has_exactly_one_terminal_outcome(tmp_path):
+    progress = _v5_progress(1)
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    expectation = _v5_rss_expectation(1)
+    pending = coordinator.publish_pending(
+        progress["event"],
+        rss_checkpoint_expectation=expectation,
+    )
+    admission_receipt = _v5_rss_receipt(expectation, passed=True)
+    barrier = threading.Barrier(2)
+    successes = []
+    failures = []
+
+    def run_admission():
+        try:
+            barrier.wait()
+            successes.append(
+                (
+                    "admission",
+                    coordinator.admit(
+                        pending,
+                        rss_checkpoint_receipt=admission_receipt,
+                    ),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - race evidence
+            failures.append(exc)
+
+    def run_rejection():
+        try:
+            barrier.wait()
+            successes.append(
+                (
+                    "rejection",
+                    coordinator.record_rss_rejection(
+                        pending,
+                        rss_violation_report=admission_receipt,
+                    ),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - race evidence
+            failures.append(exc)
+
+    threads = [
+        threading.Thread(target=run_admission),
+        threading.Thread(target=run_rejection),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert isinstance(failures[0], v5_resume.Lfm2CpcfV5ResumeError)
+    terminal_keys = coordinator._terminal_pending_keys()
+    assert terminal_keys == (pending.pending_sha256,)
+    kind, outcome = successes[0]
+    if kind == "admission":
+        state = coordinator.open_admitted(outcome["admission_sha256"])
+        assert state.frontier.frontier_sha256 == pending.frontier_sha256
+    else:
+        with pytest.raises(v5_resume.Lfm2CpcfV5ResumeError):
+            coordinator.open_admitted(outcome["rejection_sha256"])
+
+
+def test_v5_real_rss_guard_failure_publishes_typed_terminal_rejection(
+    tmp_path,
+    monkeypatch,
+):
+    current = [1_000]
+    monkeypatch.setattr(
+        v5_compiler,
+        "_process_rss_bytes",
+        lambda: current[0],
+    )
+    monkeypatch.setattr(
+        v5_compiler,
+        "_process_peak_rss_bytes",
+        lambda: current[0],
+    )
+    guard = v5_compiler._PhysicalRssGuard(
+        maximum_increase_bytes=1_000_000,
+        maximum_process_rss_bytes=2_001_000,
+        full_phase_tree_logical_bytes=2_000_000,
+        minimum_reduction_fraction=0.10,
+        sample_interval_seconds=1.0,
+    )
+    progress = _v5_progress(1)
+    store = Lfm2CpcfResumeArtifactStore(tmp_path / "v5-resume")
+    coordinator = v5_resume.Lfm2CpcfV5ResumeCoordinator(store)
+    label = "layer_000_compiled_checkpoint_persisted_before_release"
+    pending = coordinator.publish_pending(
+        progress["event"],
+        rss_checkpoint_expectation=guard.next_checkpoint_expectation(label),
+    )
+    current[0] = 1_001_001
+    try:
+        with pytest.raises(
+            v5_compiler.Lfm2CpcfV5PhysicalRssError,
+            match="physical RSS increase",
+        ) as captured:
+            guard.checkpoint(label)
+        assert type(captured.value.report) is (
+            v5_resume.Lfm2CpcfV5PhysicalRssCheckpointReceipt
+        )
+        rejection = coordinator.record_rss_rejection(
+            pending,
+            rss_violation_report=captured.value.report,
+        )
+    finally:
+        guard.abort()
+
+    assert rejection["promotable"] is False
+    assert coordinator._terminal_pending_keys() == (pending.pending_sha256,)

@@ -8,8 +8,12 @@ import json
 import math
 import marshal
 import os
+import pickletools
+import re
 import shutil
+import struct
 import tempfile
+import zipfile
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass, fields, is_dataclass
@@ -62,14 +66,65 @@ _PROVENANCE_FILENAMES = {
     "target": "target.json",
 }
 _FORBIDDEN_NAME_PARTS = (
+    "admission",
     "adapter",
+    "cache",
+    "checkpoint",
+    "coordinator",
+    "donor",
     "optimizer",
     "parent",
+    "pending",
+    "resume",
     "scheduler",
     "sidecar",
+    "teacher",
     "trainer",
     "training_args",
 )
+_FORBIDDEN_CONTENT_TOKENS = frozenset(
+    {
+        "admission",
+        "checkpoint",
+        "coordinator",
+        "donor",
+        "pending",
+        "resume",
+        "teacher",
+    }
+)
+_CACHE_REFERENCE_QUALIFIERS = frozenset(
+    {
+        "artifact",
+        "directory",
+        "file",
+        "key",
+        "manifest",
+        "path",
+        "payload",
+        "reference",
+        "sidecar",
+        "state",
+        "store",
+    }
+)
+_ALLOWED_MODEL_CACHE_KEYS = frozenset(
+    {
+        "cache_implementation",
+        "return_legacy_cache",
+        "use_cache",
+    }
+)
+_JSON_LITERAL_CONTAINERS = frozenset(
+    {
+        "added_tokens",
+        "added_tokens_decoder",
+        "merges",
+        "tokens",
+        "vocab",
+    }
+)
+_MAX_STRUCTURED_INVENTORY_BYTES = 64 * 1024**2
 
 
 class DynamicFoldArtifactError(RuntimeError):
@@ -813,6 +868,182 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _reference_tokens(value: str) -> frozenset[str]:
+    return frozenset(
+        token
+        for token in re.split(r"[^a-z0-9]+", value.casefold())
+        if token
+    )
+
+
+def _forbidden_content_label(value: str) -> bool:
+    tokens = _reference_tokens(value)
+    if tokens.intersection(_FORBIDDEN_CONTENT_TOKENS):
+        return True
+    normalized = "_".join(re.findall(r"[a-z0-9]+", value.casefold()))
+    return (
+        "cache" in tokens
+        and normalized not in _ALLOWED_MODEL_CACHE_KEYS
+        and bool(tokens.intersection(_CACHE_REFERENCE_QUALIFIERS))
+    )
+
+
+def _forbidden_path_reference(value: str) -> bool:
+    if not (
+        "/" in value
+        or "\\" in value
+        or value.casefold().endswith(
+            (
+                ".bin",
+                ".ckpt",
+                ".json",
+                ".pt",
+                ".pth",
+                ".safetensors",
+            )
+        )
+    ):
+        return False
+    tokens = _reference_tokens(value)
+    return bool(
+        tokens.intersection(_FORBIDDEN_CONTENT_TOKENS)
+        or "cache" in tokens
+    )
+
+
+def _json_forbidden_reference(
+    value: Any,
+    *,
+    path: str,
+) -> str | None:
+    if isinstance(value, Mapping):
+        for raw_key, child in value.items():
+            key = str(raw_key)
+            child_path = f"{path}.{key}"
+            normalized_key = "_".join(
+                re.findall(r"[a-z0-9]+", key.casefold())
+            )
+            if normalized_key in _JSON_LITERAL_CONTAINERS:
+                continue
+            if _forbidden_content_label(key) and (
+                not isinstance(child, (int, float, bool, type(None)))
+                or len(_reference_tokens(key)) > 1
+            ):
+                return child_path
+            nested = _json_forbidden_reference(child, path=child_path)
+            if nested is not None:
+                return nested
+        return None
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            nested = _json_forbidden_reference(
+                child,
+                path=f"{path}[{index}]",
+            )
+            if nested is not None:
+                return nested
+        return None
+    if isinstance(value, str) and _forbidden_path_reference(value):
+        return path
+    return None
+
+
+def _pickle_forbidden_reference(payload: bytes, *, path: str) -> str | None:
+    try:
+        operations = pickletools.genops(payload)
+        for opcode, argument, position in operations:
+            if opcode.name not in {
+                "BINSTRING",
+                "BINUNICODE",
+                "BINUNICODE8",
+                "SHORT_BINSTRING",
+                "SHORT_BINUNICODE",
+                "STRING",
+                "UNICODE",
+            }:
+                continue
+            if isinstance(argument, bytes):
+                try:
+                    text = argument.decode("utf-8")
+                except UnicodeDecodeError:
+                    continue
+            elif isinstance(argument, str):
+                text = argument
+            else:
+                continue
+            if _forbidden_content_label(text) or _forbidden_path_reference(text):
+                return f"{path}@pickle[{position}]"
+    except (EOFError, ValueError):
+        return None
+    return None
+
+
+def _safetensors_forbidden_reference(path: Path, *, label: str) -> str | None:
+    if path.stat().st_size < 8:
+        return None
+    with path.open("rb") as handle:
+        (header_size,) = struct.unpack("<Q", handle.read(8))
+        if header_size > _MAX_STRUCTURED_INVENTORY_BYTES:
+            raise DynamicFoldArtifactError(
+                f"Safetensors inventory is unreasonably large: {label}."
+            )
+        payload = handle.read(header_size)
+    try:
+        header = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(header, Mapping):
+        return None
+    for tensor_name in header:
+        if tensor_name == "__metadata__":
+            continue
+        if _forbidden_content_label(str(tensor_name)):
+            return f"{label}::{tensor_name}"
+    metadata = header.get("__metadata__")
+    if isinstance(metadata, Mapping):
+        return _json_forbidden_reference(metadata, path=f"{label}::__metadata__")
+    return None
+
+
+def _artifact_forbidden_content_reference(
+    path: Path,
+    *,
+    relative: str,
+) -> str | None:
+    suffix = path.suffix.casefold()
+    if suffix == ".json" and path.stat().st_size <= _MAX_STRUCTURED_INVENTORY_BYTES:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = None
+        if payload is not None:
+            reference = _json_forbidden_reference(payload, path=relative)
+            if reference is not None:
+                return reference
+    if suffix == ".safetensors":
+        reference = _safetensors_forbidden_reference(path, label=relative)
+        if reference is not None:
+            return reference
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as archive:
+            for info in archive.infolist():
+                member = info.filename
+                lowered = member.casefold()
+                if any(part in lowered for part in _FORBIDDEN_NAME_PARTS):
+                    return f"{relative}::{member}"
+                if (
+                    member.casefold().endswith((".pkl", "/data.pkl"))
+                    and info.file_size <= _MAX_STRUCTURED_INVENTORY_BYTES
+                ):
+                    reference = _pickle_forbidden_reference(
+                        archive.read(info),
+                        path=f"{relative}::{member}",
+                    )
+                    if reference is not None:
+                        return reference
+    return None
+
+
 def _artifact_tree(root: Path) -> tuple[dict[str, Any], ...]:
     rows = []
     for path in sorted(root.rglob("*")):
@@ -827,6 +1058,15 @@ def _artifact_tree(root: Path) -> tuple[dict[str, Any], ...]:
         if any(part in lowered for part in _FORBIDDEN_NAME_PARTS):
             raise DynamicFoldArtifactError(
                 f"Forbidden sidecar-like artifact name: {relative}."
+            )
+        forbidden_reference = _artifact_forbidden_content_reference(
+            path,
+            relative=relative,
+        )
+        if forbidden_reference is not None:
+            raise DynamicFoldArtifactError(
+                "Forbidden resume/cache/coordinator/checkpoint/pending/admission "
+                f"reference in folded child artifact: {forbidden_reference}."
             )
         rows.append(
             {

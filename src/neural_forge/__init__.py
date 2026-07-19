@@ -21,6 +21,7 @@ from neural_forge.dynamic_parameter_frontier import (
 from neural_forge.dynamic_lfm2_cpcf_production import (
     Lfm2CpcfProductionBundleError,
     build_lfm2_cpcf_exact_production_bundle,
+    build_lfm2_cpcf_v5_100x_production_bundle,
 )
 from neural_forge.dynamic_lfm2_cpcf_resources import (
     Lfm2CpcfProductionWiring,
@@ -89,6 +90,7 @@ __all__ = [
     "WeightCompleteBasisResult",
     "build_weight_complete_basis",
     "build_lfm2_cpcf_exact_production_bundle",
+    "build_lfm2_cpcf_v5_100x_production_bundle",
     "build_lfm2_cpcf_production_resources",
     "expand_depth_identity",
     "expand_hidden_layer",

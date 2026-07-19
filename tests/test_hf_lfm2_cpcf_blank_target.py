@@ -71,6 +71,7 @@ def test_registry_creates_real_exact_dense_zero_blank(ratio: int) -> None:
         for parameter in {id(value): value for value in parent.parameters()}.values()
     )
     assert result.realized_compression_ratio >= ratio
+    assert result.report["target_plan_fingerprint"] == result.plan.fingerprint
     assert result.report["compiler_created_blank"] is True
     assert result.report["quantization_used"] is False
     assert result.report["pruning_used"] is False
@@ -128,3 +129,5 @@ def test_explicit_parameter_budget_requires_an_exact_catalog_match() -> None:
 
     assert exact.unique_parameters == probe.unique_parameters
     assert exact.report["requested_budget"]["match_policy"] == "exact"
+    assert exact.report["target_plan_fingerprint"] == exact.plan.fingerprint
+    assert exact.plan.fingerprint != probe.plan.fingerprint

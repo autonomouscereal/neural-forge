@@ -14,6 +14,7 @@ from neural_forge.dynamic_behavior_gate import (
 from neural_forge.dynamic_fold_artifact import (
     DynamicFoldArtifactError,
     LEGACY_SCHEMA,
+    _artifact_tree,
     load_dynamic_fold_artifact_certificate,
     publish_dynamic_fold_artifact,
 )
@@ -103,6 +104,52 @@ def _fresh_accept(model):
             use_cache=False,
         )
     return FoldDecision.accept("fresh reload accepted")
+
+
+def test_artifact_tree_rejects_resume_cache_sidecar_filename(tmp_path) -> None:
+    child = tmp_path / "child"
+    child.mkdir()
+    (child / "resume-cache.bin").write_bytes(b"not-a-child-weight")
+
+    with pytest.raises(
+        DynamicFoldArtifactError,
+        match="Forbidden sidecar-like artifact name",
+    ):
+        _artifact_tree(child)
+
+
+@pytest.mark.parametrize(
+    "writer",
+    (
+        lambda root: (root / "config.json").write_text(
+            json.dumps(
+                {
+                    "resume_coordinator_reference": {
+                        "checkpoint_reference": "checkpoint/store.json",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        ),
+        lambda root: torch.save(
+            {"resume_coordinator.payload": torch.zeros(1)},
+            root / "model.pt",
+        ),
+    ),
+)
+def test_artifact_tree_rejects_serialized_resume_resource_inventory(
+    tmp_path,
+    writer,
+) -> None:
+    child = tmp_path / "child"
+    child.mkdir()
+    writer(child)
+
+    with pytest.raises(
+        DynamicFoldArtifactError,
+        match="Forbidden resume/cache/coordinator/checkpoint/pending/admission",
+    ):
+        _artifact_tree(child)
 
 
 def _wrapper_behavior_manifest(

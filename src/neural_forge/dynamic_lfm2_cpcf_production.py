@@ -16,6 +16,7 @@ from .dynamic_lfm2_adapter import Lfm2TargetSynthesisAdapter
 from .dynamic_lfm2_cpcf_adapter import (
     Lfm2CpcfFoldStackAdapter,
     Lfm2CpcfStackResources,
+    Lfm2CpcfV5SelectiveStackResources,
 )
 from .dynamic_lfm2_cpcf_reviewed_gate import (
     Lfm2CpcfReviewedPromotionEvidence,
@@ -36,6 +37,7 @@ from .hf_tokenizer_bridge import (
 
 
 SCHEMA = "neural-forge-lfm2-cpcf-production-bundle-v1"
+V5_100X_SCHEMA = "neural-forge-lfm2-cpcf-v5-100x-production-bundle-v1"
 _BRIDGE_REQUIRED_KEY = "_neural_forge_tokenizer_bridge_required"
 _DENSE_CATALOG_KEY = "_neural_forge_dense_topology_catalog"
 
@@ -348,8 +350,277 @@ def build_lfm2_cpcf_exact_production_bundle(
     )
 
 
+def _verify_v5_100x_target_lane(
+    *,
+    target_plan: BudgetedDynamicTargetPlan,
+    target_adapter: Lfm2TargetSynthesisAdapter,
+    resources: Lfm2CpcfV5SelectiveStackResources,
+) -> tuple[
+    int,
+    int,
+    str,
+    StrictTokenizerBridgeArtifact,
+    Lfm2CpcfReviewedPromotionEvidence,
+]:
+    if type(target_plan) is not BudgetedDynamicTargetPlan:
+        raise Lfm2CpcfProductionBundleError(
+            "target_plan must be an authenticated BudgetedDynamicTargetPlan."
+        )
+    if type(target_adapter) is not Lfm2TargetSynthesisAdapter:
+        raise Lfm2CpcfProductionBundleError(
+            "target_adapter must have the exact LFM2 synthesis-adapter type."
+        )
+    if type(resources) is not Lfm2CpcfV5SelectiveStackResources:
+        raise Lfm2CpcfProductionBundleError(
+            "resources must have the exact selective-v5 stack-resource type."
+        )
+    resources.backend.verify()
+    request = target_plan.target_request
+    exact_size = _positive_int(
+        request.exact_unique_parameters,
+        "exact target parameter count",
+    )
+    source_size = _positive_int(
+        target_plan.frontier.source_unique_parameters,
+        "source parameter count",
+    )
+    if source_size < 100 * exact_size:
+        raise Lfm2CpcfProductionBundleError(
+            "Selective-v5 100x registration requires at least 100 source "
+            "parameters per exact dense child parameter."
+        )
+    if (
+        target_plan.target_certificate.parent_graph_fingerprint
+        != resources.parent_graph_fingerprint
+        or request.target_family != "lfm2"
+        or request.target_modalities != ("text",)
+        or request.adapter_id
+        not in {None, Lfm2TargetSynthesisAdapter.adapter_id}
+        or request.fold_method_id not in {None, DENSE_BUDGET_MODEL_METHOD}
+    ):
+        raise Lfm2CpcfProductionBundleError(
+            "Target plan is not the exact one-parent LFM2 text blank for the "
+            "selective-v5 dense residual-attention lane."
+        )
+    configuration = dict(request.configuration)
+    if (
+        configuration.get(_BRIDGE_REQUIRED_KEY) is not True
+        or not isinstance(configuration.get(_DENSE_CATALOG_KEY), str)
+        or not str(configuration[_DENSE_CATALOG_KEY]).strip()
+    ):
+        raise Lfm2CpcfProductionBundleError(
+            "Target plan is not an exact bridge-required dense topology."
+        )
+    bridge = target_adapter.tokenizer_bridge_artifact
+    if not isinstance(bridge, StrictTokenizerBridgeArtifact):
+        raise Lfm2CpcfProductionBundleError(
+            "Target adapter does not carry a strict tokenizer bridge."
+        )
+    try:
+        bridge.verify_files()
+        trace = resources.trace_adapter.verify()
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2CpcfProductionBundleError(
+            "Target or selective-v5 trace tokenizer bridge failed "
+            "authentication."
+        ) from exc
+    if any(
+        configuration.get(name) != value
+        for name, value in strict_tokenizer_bridge_configuration(
+            bridge
+        ).items()
+    ):
+        raise Lfm2CpcfProductionBundleError(
+            "Planned target configuration differs from its tokenizer bridge."
+        )
+    cache_key = resources.backend.cache.cache_key
+    if (
+        request.tokenizer_fingerprint
+        != bridge.target_tokenizer_semantics_sha256
+        or trace.bridge_artifact_sha256 != bridge.artifact_sha256
+        or trace.transport_profile_fingerprint != bridge.profile_fingerprint
+        or trace.target_row_capacity
+        != bridge.transport_profile.target_row_capacity
+        or target_adapter.evidence_fingerprint != cache_key
+    ):
+        raise Lfm2CpcfProductionBundleError(
+            "Target plan, adapter, selective cache, trace, and tokenizer "
+            "bridge identities differ."
+        )
+    try:
+        reviewed_gate = authenticate_lfm2_cpcf_reviewed_promotion_gate(
+            resources.final_evaluator
+        )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2CpcfProductionBundleError(
+            "Selective-v5 resources lack an authenticated reviewed "
+            "whole-output promotion gate."
+        ) from exc
+    reviewed = reviewed_gate.evidence
+    certificate = target_plan.target_certificate
+    selected = target_plan.frontier.candidates[
+        certificate.selected_candidate_rank
+    ]
+    if (
+        reviewed.blank_target_parent_graph_fingerprint
+        != certificate.parent_graph_fingerprint
+        or reviewed.exact_target_unique_parameters != exact_size
+        or dict(reviewed.target_requested_budget)
+        != target_plan.frontier.request.as_dict()
+        or reviewed.target_frontier_fingerprint
+        != target_plan.frontier.fingerprint
+        or reviewed.target_certificate_sha256 != certificate.fingerprint
+        or reviewed.selected_target_candidate_fingerprint
+        != selected.fingerprint
+        or reviewed.selected_target_candidate_rank
+        != certificate.selected_candidate_rank
+    ):
+        raise Lfm2CpcfProductionBundleError(
+            "Reviewed selective-v5 state/output authority does not describe "
+            "the exact target plan and selected candidate."
+        )
+    planned = certificate.planned_graph
+    depth = _positive_int(planned.layer_count, "planned target depth")
+    try:
+        tied_rows = int(resources.source_tied_table.shape[0])
+    except (AttributeError, IndexError, TypeError, ValueError) as exc:
+        raise Lfm2CpcfProductionBundleError(
+            "Selective-v5 tied source table has no target-row dimension."
+        ) from exc
+    if (
+        depth != resources.backend.expected_layer_count
+        or planned.ordered_source_spans
+        != tuple((index,) for index in range(depth))
+        or configuration.get("vocab_size")
+        != bridge.transport_profile.target_row_capacity
+        or tied_rows != bridge.transport_profile.target_row_capacity
+    ):
+        raise Lfm2CpcfProductionBundleError(
+            "Selective-v5 target depth, source spans, vocabulary, cache "
+            "catalog, and tied interface do not describe one exact lane."
+        )
+    return exact_size, source_size, cache_key, bridge, reviewed
+
+
+def build_lfm2_cpcf_v5_100x_production_bundle(
+    *,
+    target_plan: BudgetedDynamicTargetPlan,
+    target_adapter: Lfm2TargetSynthesisAdapter,
+    resources: Lfm2CpcfV5SelectiveStackResources,
+    capability_id: str | None = None,
+    portfolio_id: str | None = None,
+    candidate_id: str = "bridged-cpcf-v5-100x",
+    priority: int = 400,
+) -> ProductionFoldBundle:
+    """Register one honest >=100x LFM2-text selective-v5 production lane."""
+
+    exact_size, source_size, cache_key, bridge, reviewed = (
+        _verify_v5_100x_target_lane(
+            target_plan=target_plan,
+            target_adapter=target_adapter,
+            resources=resources,
+        )
+    )
+    if isinstance(priority, bool) or not isinstance(priority, int):
+        raise Lfm2CpcfProductionBundleError("priority must be an integer.")
+    request = target_plan.target_request
+    capability = ProductionFoldCapability(
+        capability_id=(
+            capability_id or f"lfm2-text-cpcf-v5-100x-exact-{exact_size}"
+        ),
+        source_families=("lfm2",),
+        target_family="lfm2",
+        target_modalities=("text",),
+        minimum_target_unique_parameters=exact_size,
+        maximum_target_unique_parameters=exact_size,
+    )
+    candidate = ProductionFoldCandidateSpec(
+        candidate_id=candidate_id,
+        method_id=DENSE_BUDGET_MODEL_METHOD,
+        evidence_fingerprint=cache_key,
+        target_adapter_id=Lfm2TargetSynthesisAdapter.adapter_id,
+        priority=priority,
+        blank_seed=request.blank_seed,
+        configuration=request.configuration,
+        metadata=(
+            ("registration_schema", V5_100X_SCHEMA),
+            ("target_plan_fingerprint", target_plan.fingerprint),
+            ("source_unique_parameters", source_size),
+            ("target_unique_parameters", exact_size),
+            ("minimum_parameter_compression_ratio", 100),
+            ("parameter_count_compaction_only", True),
+            ("quantization_used", False),
+            ("pruning_used", False),
+            ("training_used", False),
+            ("compiler_backend", "selective_v5"),
+            (
+                "v5_backend_fingerprint",
+                resources.backend.backend_fingerprint,
+            ),
+            (
+                "cpcf_resource_fingerprint",
+                resources.resource_fingerprint,
+            ),
+            (
+                "selective_catalog_sha256",
+                resources.backend.expected_selective_catalog_sha256,
+            ),
+            (
+                "gpu_backend_report_sha256",
+                resources.backend.gpu_backend_report["report_sha256"],
+            ),
+            (
+                "reviewed_evidence_fingerprint",
+                reviewed.full_reviewed_evidence_fingerprint,
+            ),
+            (
+                "reviewed_candidate_state_fingerprint",
+                reviewed.candidate_state_fingerprint,
+            ),
+            ("tokenizer_bridge_artifact_sha256", bridge.artifact_sha256),
+            ("automatic_target_synthesis", True),
+            ("automatic_selective_layer_iteration", True),
+            ("whole_output_gate_required", True),
+            ("fresh_reload_certification_required", True),
+            ("current_scope_lfm2_text_to_lfm2_text_only", True),
+            ("cross_family_proven", False),
+            ("multiple_parent_folding_proven", False),
+            ("modality_addition_proven", False),
+            (
+                "registration_status",
+                "eligible_for_exact_reviewed_rerun_not_a_success_claim",
+            ),
+        ),
+    )
+    return ProductionFoldBundle(
+        capability=capability,
+        target_adapters=(target_adapter,),
+        stack_adapters=(Lfm2CpcfFoldStackAdapter(resources),),
+        candidate_specs=(candidate,),
+        maximum_attempts=1,
+        portfolio_id=(
+            portfolio_id
+            or f"neural_forge.production.lfm2-cpcf-v5-100x-{exact_size}"
+        ),
+        version=1,
+        priority=priority,
+        score_terms=(
+            CertificateScoreTerm(
+                "candidate_outputs_replayed_exactly",
+                weight=1.0,
+            ),
+            CertificateScoreTerm(
+                "inference_contract_satisfied",
+                weight=1.0,
+            ),
+        ),
+    )
+
+
 __all__ = [
     "Lfm2CpcfProductionBundleError",
     "SCHEMA",
+    "V5_100X_SCHEMA",
     "build_lfm2_cpcf_exact_production_bundle",
+    "build_lfm2_cpcf_v5_100x_production_bundle",
 ]

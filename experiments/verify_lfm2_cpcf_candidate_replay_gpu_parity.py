@@ -226,6 +226,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     sys.path.insert(0, str(root / "src"))
     torch = _configure_torch()
     from neural_forge.dynamic_replay_scheduler import (
+        AuthenticatedPinnedHostBufferFactory,
+        AuthenticatedReplayStateProbes,
         DeterministicReplayScheduler,
         ReplayReplicaReceipt,
         ReplaySchedulerPolicy,
@@ -235,7 +237,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     from neural_forge.hf_lfm2_cpcf_candidate_replay import (
         AuthenticatedTwoGpuLfm2CpcfCandidateReplayEvaluator,
         evaluate_lfm2_cpcf_candidate_states_with_backend,
-        replay_lfm2_cpcf_candidate_work_payload,
+        lfm2_cpcf_cpu_parity_worker,
+        lfm2_cpcf_cuda_replay_worker,
     )
 
     devices = tuple(args.devices)
@@ -308,23 +311,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             args.parity_minimum_cosine_similarity
         ),
     )
+    state_probes = AuthenticatedReplayStateProbes(
+        cpu_tensors=contract_cpu,
+        gpu_tensors=contract_gpu,
+    )
     scheduler = DeterministicReplayScheduler(
         replicas=replicas,
         policy=scheduler_policy,
-        gpu_worker=lambda _item, _replica, payload: (
-            replay_lfm2_cpcf_candidate_work_payload(payload)
-        ),
-        cpu_parity_worker=lambda _item, payload: (
-            replay_lfm2_cpcf_candidate_work_payload(payload)
-        ),
+        gpu_worker=lfm2_cpcf_cuda_replay_worker,
+        cpu_parity_worker=lfm2_cpcf_cpu_parity_worker,
         device_receipt_probe=capture_cuda_replay_device_receipt,
-        installed_state_probe=lambda replica: (
-            fingerprint_installed_replay_state(
-                contract_gpu[replica.device.device_index]
-            )
-        ),
-        cpu_installed_state_probe=lambda: (
-            fingerprint_installed_replay_state(contract_cpu)
+        installed_state_probe=state_probes.installed_state_probe,
+        cpu_installed_state_probe=state_probes.cpu_installed_state_probe,
+        host_buffer_factory=AuthenticatedPinnedHostBufferFactory(
+            scheduler_policy.maximum_pinned_bytes_per_slot
         ),
     )
     scheduled, backend, items = (

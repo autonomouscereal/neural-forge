@@ -472,6 +472,25 @@ def replay_lfm2_cpcf_candidate_work_payload(
     )
 
 
+def lfm2_cpcf_cuda_replay_worker(
+    _item: ReplayWorkItem,
+    _replica: Any,
+    payload: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Exact source-bound CUDA worker accepted by the production v5 seam."""
+
+    return replay_lfm2_cpcf_candidate_work_payload(payload)
+
+
+def lfm2_cpcf_cpu_parity_worker(
+    _item: ReplayWorkItem,
+    payload: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Exact source-bound CPU parity worker accepted by production v5."""
+
+    return replay_lfm2_cpcf_candidate_work_payload(payload)
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2CpcfCandidateReplayBatchResult:
     """Canonical replay outputs plus their authenticated backend receipt."""
@@ -928,5 +947,7 @@ __all__ = [
     "build_lfm2_cpcf_candidate_replay_work_items",
     "evaluate_lfm2_cpcf_candidate_states_with_backend",
     "finalize_lfm2_cpcf_candidate_replay_reports",
+    "lfm2_cpcf_cpu_parity_worker",
+    "lfm2_cpcf_cuda_replay_worker",
     "replay_lfm2_cpcf_candidate_work_payload",
 ]

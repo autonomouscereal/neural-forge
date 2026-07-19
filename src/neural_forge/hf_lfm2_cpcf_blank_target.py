@@ -294,6 +294,7 @@ def plan_and_synthesize_lfm2_cpcf_blank(
     ]
     body = {
         "schema": LFM2_CPCF_BLANK_TARGET_SCHEMA,
+        "target_plan_fingerprint": plan.fingerprint,
         "parent_graph_fingerprint": parent_graph.fingerprint,
         "parent_state_fingerprint": parent_state_before,
         "parent_unique_parameters": source_parameters,

@@ -23,15 +23,17 @@ from __future__ import annotations
 import gc
 import hashlib
 import json
+import marshal
 import math
 import os
 import re
+import secrets
 import sys
 import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, ModuleType
 from typing import Any
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
@@ -78,6 +80,23 @@ from neural_forge.hf_lfm2_cpcf_selective_evidence import (
     Lfm2CpcfSelectiveLayerPayload,
     lfm2_cpcf_selective_provider_implementation,
 )
+from neural_forge.hf_lfm2_cpcf_v5_resume import (
+    Lfm2CpcfV5BoundaryFrontier,
+    Lfm2CpcfV5PhysicalRssCheckpointExpectation,
+    Lfm2CpcfV5PhysicalRssCheckpointReceipt,
+    Lfm2CpcfV5ProgressEvent,
+    Lfm2CpcfV5ResumeCoordinator,
+    Lfm2CpcfV5ResumeState,
+    build_lfm2_cpcf_v5_physical_rss_policy_sha256,
+    build_lfm2_cpcf_v5_resume_context,
+    lfm2_cpcf_v5_resume_implementation,
+)
+from neural_forge.hf_lfm2_cpcf_v5_admission_proof import (
+    build_lfm2_cpcf_v5_admission_chain_proof,
+)
+from neural_forge.hf_lfm2_cpcf_resume_artifact import (
+    build_lfm2_cpcf_target_topology_snapshot,
+)
 from neural_forge.hf_tied_causal_interface_anchor_fold import (
     fit_tied_causal_interface_anchor_residual,
 )
@@ -89,17 +108,15 @@ from neural_forge.hf_tied_causal_interface_fold import (
 LFM2_CPCF_V5_COMPILER_IMPLEMENTATION_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-compiler-implementation-v1"
 )
-LFM2_CPCF_V5_MODEL_FOLD_SCHEMA = (
-    "neural-forge-lfm2-cpcf-v5-selective-model-fold-v1"
+LFM2_CPCF_V5_MODEL_FOLD_SCHEMA = "neural-forge-lfm2-cpcf-v5-selective-model-fold-v1"
+LFM2_CPCF_V5_RESUME_SCHEMA = "neural-forge-lfm2-cpcf-v5-selective-resume-v1"
+LFM2_CPCF_V5_ARTIFACT_SCHEMA = "neural-forge-lfm2-cpcf-v5-selective-artifact-v1"
+LFM2_CPCF_V5_PHYSICAL_RSS_SCHEMA = "neural-forge-lfm2-cpcf-v5-physical-rss-v1"
+LFM2_CPCF_V5_PHYSICAL_RSS_CHECKPOINT_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-physical-rss-checkpoint-v1"
 )
-LFM2_CPCF_V5_RESUME_SCHEMA = (
-    "neural-forge-lfm2-cpcf-v5-selective-resume-v1"
-)
-LFM2_CPCF_V5_ARTIFACT_SCHEMA = (
-    "neural-forge-lfm2-cpcf-v5-selective-artifact-v1"
-)
-LFM2_CPCF_V5_PHYSICAL_RSS_SCHEMA = (
-    "neural-forge-lfm2-cpcf-v5-physical-rss-v1"
+LFM2_CPCF_V5_PHYSICAL_RSS_EXPECTATION_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-physical-rss-expectation-v1"
 )
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _DECODE_PHASE = re.compile(r"decode\.(\d{3,})\Z")
@@ -110,6 +127,20 @@ _RSS_SAMPLE_INTERVAL_SECONDS = 0.05
 
 class Lfm2CpcfV5ModelCompilerError(RuntimeError):
     """Selective evidence, physical residency, or v5 compilation failed."""
+
+
+class Lfm2CpcfV5PhysicalRssError(Lfm2CpcfV5ModelCompilerError):
+    """A sealed physical-RSS receipt rejected a pending prefix."""
+
+    def __init__(
+        self,
+        message: str,
+        report: Lfm2CpcfV5PhysicalRssCheckpointReceipt,
+    ) -> None:
+        super().__init__(message)
+        if type(report) is not Lfm2CpcfV5PhysicalRssCheckpointReceipt:
+            raise TypeError("report must be the exact typed RSS receipt.")
+        self.report = report
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +186,14 @@ def _canonical_json(value: Any) -> bytes:
         ) from exc
 
 
+def _plain_metadata(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _plain_metadata(child) for key, child in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_metadata(child) for child in value]
+    return value
+
+
 def _sha(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value)).hexdigest()
 
@@ -169,27 +208,19 @@ def _digest(value: Any, name: str) -> str:
 
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise Lfm2CpcfV5ModelCompilerError(
-            f"{name} must be a positive integer."
-        )
+        raise Lfm2CpcfV5ModelCompilerError(f"{name} must be a positive integer.")
     return value
 
 
 def _fraction(value: Any, name: str) -> float:
     if isinstance(value, bool):
-        raise Lfm2CpcfV5ModelCompilerError(
-            f"{name} must be within [0, 1]."
-        )
+        raise Lfm2CpcfV5ModelCompilerError(f"{name} must be within [0, 1].")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise Lfm2CpcfV5ModelCompilerError(
-            f"{name} must be within [0, 1]."
-        ) from exc
+        raise Lfm2CpcfV5ModelCompilerError(f"{name} must be within [0, 1].") from exc
     if not math.isfinite(result) or result < 0.0 or result > 1.0:
-        raise Lfm2CpcfV5ModelCompilerError(
-            f"{name} must be within [0, 1]."
-        )
+        raise Lfm2CpcfV5ModelCompilerError(f"{name} must be within [0, 1].")
     return result
 
 
@@ -210,6 +241,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
     """Return the source-bound v5 compiler and resume/artifact contract."""
 
     from neural_forge import dynamic_evidence_residency
+    from neural_forge import dynamic_replay_scheduler
     from neural_forge import hf_lfm2_cpcf_candidate_replay
     from neural_forge import hf_lfm2_cpcf_layer_compiler
     from neural_forge import hf_lfm2_cpcf_model_compiler
@@ -222,6 +254,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         sys.modules[__name__],
         boundary,
         dynamic_evidence_residency,
+        dynamic_replay_scheduler,
         hf_lfm2_cpcf_candidate_replay,
         hf_lfm2_cpcf_layer_compiler,
         hf_lfm2_cpcf_model_compiler,
@@ -230,6 +263,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         hf_lfm2_cpcf_short_conv_v5_numerical_adapter,
         hf_lfm2_cpcf_short_conv_v4_fold,
         hf_lfm2_cpcf_selective_evidence,
+        sys.modules["neural_forge.hf_lfm2_cpcf_v5_resume"],
     )
     files = []
     for module in modules:
@@ -250,8 +284,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
     short_conv_v5_source = next(
         row
         for row in files
-        if row["module"]
-        == "neural_forge.hf_lfm2_cpcf_short_conv_v5"
+        if row["module"] == "neural_forge.hf_lfm2_cpcf_short_conv_v5"
     )
     provider = dict(lfm2_cpcf_selective_provider_implementation())
     body = {
@@ -260,9 +293,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         "resume_schema": LFM2_CPCF_V5_RESUME_SCHEMA,
         "artifact_schema": LFM2_CPCF_V5_ARTIFACT_SCHEMA,
         "ordered_source_files": files,
-        "selective_provider_implementation_sha256": (
-            provider["implementation_sha256"]
-        ),
+        "selective_provider_implementation_sha256": (provider["implementation_sha256"]),
         "short_conv_v5_numerical_policy_schema": (
             hf_lfm2_cpcf_short_conv_v5.LFM2_CPCF_SHORT_CONV_V5_SCHEMA
         ),
@@ -274,19 +305,18 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         "current_plus_next_residency_required": True,
         "physical_rss_gate_required": True,
         "short_conv_v5_numerical_policy_integration_status": (
-            "real_v5_numerical_frontier_integrated_with_per_layer_"
-            "provenance_gate"
+            "real_v5_numerical_frontier_integrated_with_per_layer_provenance_gate"
         ),
-        "resume_implementation_status": "fail_closed_not_yet_integrated",
+        "resume_implementation_status": (
+            "authenticated_partial_boundary_frontier_integrated"
+        ),
         "training_steps": 0,
         "backward_calls": 0,
         "optimizer_steps": 0,
         "parameters_pruned": 0,
         "parameters_quantized": 0,
     }
-    return MappingProxyType(
-        {**body, "implementation_sha256": canonical_sha256(body)}
-    )
+    return MappingProxyType({**body, "implementation_sha256": canonical_sha256(body)})
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,19 +326,19 @@ class Lfm2CpcfV5RuntimePolicy:
     model_fold_policy: legacy_model_fold.Lfm2CpcfModelFoldPolicy
     maximum_resident_evidence_bytes: int
     full_phase_tree_logical_bytes: int
+    maximum_process_rss_bytes: int = (1 << 63) - 1
     minimum_physical_rss_reduction_fraction: float = 0.10
     rss_sample_interval_seconds: float = _RSS_SAMPLE_INTERVAL_SECONDS
     require_short_conv_v5_endpoint_first_selector: bool = False
     require_short_conv_v5_real_numerical_frontier_adapter: bool = False
+    maximum_physical_rss_increase_cap_bytes: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(
             self.model_fold_policy,
             legacy_model_fold.Lfm2CpcfModelFoldPolicy,
         ):
-            raise TypeError(
-                "model_fold_policy must be Lfm2CpcfModelFoldPolicy."
-            )
+            raise TypeError("model_fold_policy must be Lfm2CpcfModelFoldPolicy.")
         _positive_int(
             self.maximum_resident_evidence_bytes,
             "maximum_resident_evidence_bytes",
@@ -316,6 +346,10 @@ class Lfm2CpcfV5RuntimePolicy:
         _positive_int(
             self.full_phase_tree_logical_bytes,
             "full_phase_tree_logical_bytes",
+        )
+        _positive_int(
+            self.maximum_process_rss_bytes,
+            "maximum_process_rss_bytes",
         )
         object.__setattr__(
             self,
@@ -336,41 +370,47 @@ class Lfm2CpcfV5RuntimePolicy:
             bool,
         ):
             raise Lfm2CpcfV5ModelCompilerError(
-                "require_short_conv_v5_endpoint_first_selector must be "
-                "boolean."
+                "require_short_conv_v5_endpoint_first_selector must be boolean."
             )
         if not isinstance(
             self.require_short_conv_v5_real_numerical_frontier_adapter,
             bool,
         ):
             raise Lfm2CpcfV5ModelCompilerError(
-                "require_short_conv_v5_real_numerical_frontier_adapter must "
-                "be boolean."
+                "require_short_conv_v5_real_numerical_frontier_adapter must be boolean."
+            )
+        cap = self.maximum_physical_rss_increase_cap_bytes
+        if cap is not None and (
+            isinstance(cap, bool) or not isinstance(cap, int) or cap < 0
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "maximum_physical_rss_increase_cap_bytes must be a "
+                "nonnegative integer or None."
             )
 
     @property
     def maximum_physical_rss_increase_bytes(self) -> int:
         retained = 1.0 - self.minimum_physical_rss_reduction_fraction
-        return int(math.floor(self.full_phase_tree_logical_bytes * retained))
+        logical_limit = int(math.floor(self.full_phase_tree_logical_bytes * retained))
+        cap = self.maximum_physical_rss_increase_cap_bytes
+        return logical_limit if cap is None else min(logical_limit, cap)
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "model_fold_policy": self.model_fold_policy.as_dict(),
-            "maximum_resident_evidence_bytes": (
-                self.maximum_resident_evidence_bytes
-            ),
-            "full_phase_tree_logical_bytes": (
-                self.full_phase_tree_logical_bytes
-            ),
+            "maximum_resident_evidence_bytes": (self.maximum_resident_evidence_bytes),
+            "full_phase_tree_logical_bytes": (self.full_phase_tree_logical_bytes),
+            "maximum_process_rss_bytes": self.maximum_process_rss_bytes,
             "minimum_physical_rss_reduction_fraction": (
                 self.minimum_physical_rss_reduction_fraction
             ),
             "maximum_physical_rss_increase_bytes": (
                 self.maximum_physical_rss_increase_bytes
             ),
-            "rss_sample_interval_seconds": (
-                self.rss_sample_interval_seconds
+            "maximum_physical_rss_increase_cap_bytes": (
+                self.maximum_physical_rss_increase_cap_bytes
             ),
+            "rss_sample_interval_seconds": (self.rss_sample_interval_seconds),
             "require_short_conv_v5_endpoint_first_selector": (
                 self.require_short_conv_v5_endpoint_first_selector
             ),
@@ -414,9 +454,7 @@ def _windows_process_memory() -> tuple[int, int]:
         ctypes.byref(counters),
         counters.cb,
     ):
-        raise Lfm2CpcfV5ModelCompilerError(
-            "GetProcessMemoryInfo failed."
-        )
+        raise Lfm2CpcfV5ModelCompilerError("GetProcessMemoryInfo failed.")
     return int(counters.WorkingSetSize), int(counters.PeakWorkingSetSize)
 
 
@@ -431,9 +469,7 @@ def _process_rss_bytes() -> int:
         with open("/proc/self/statm", encoding="ascii") as handle:
             fields = handle.read().split()
         if len(fields) < 2:
-            raise Lfm2CpcfV5ModelCompilerError(
-                "/proc/self/statm lacks an RSS field."
-            )
+            raise Lfm2CpcfV5ModelCompilerError("/proc/self/statm lacks an RSS field.")
         return int(fields[1]) * int(os.sysconf("SC_PAGE_SIZE"))
     if os.name == "nt":
         return _windows_process_memory()[0]
@@ -469,6 +505,7 @@ class _PhysicalRssGuard:
         self,
         *,
         maximum_increase_bytes: int,
+        maximum_process_rss_bytes: int,
         full_phase_tree_logical_bytes: int,
         minimum_reduction_fraction: float,
         sample_interval_seconds: float,
@@ -481,7 +518,11 @@ class _PhysicalRssGuard:
             raise Lfm2CpcfV5ModelCompilerError(
                 "maximum_increase_bytes must be a nonnegative integer."
             )
-        self.maximum_increase_bytes = maximum_increase_bytes
+        self.relative_maximum_increase_bytes = maximum_increase_bytes
+        self.maximum_process_rss_bytes = _positive_int(
+            maximum_process_rss_bytes,
+            "maximum_process_rss_bytes",
+        )
         self.full_phase_tree_logical_bytes = _positive_int(
             full_phase_tree_logical_bytes,
             "full_phase_tree_logical_bytes",
@@ -493,14 +534,60 @@ class _PhysicalRssGuard:
         self.sample_interval_seconds = float(sample_interval_seconds)
         self.start_rss_bytes = _process_rss_bytes()
         self.start_lifetime_peak_bytes = _process_peak_rss_bytes()
+        if (
+            self.start_rss_bytes < 0
+            or self.start_lifetime_peak_bytes < self.start_rss_bytes
+            or self.start_rss_bytes > self.maximum_process_rss_bytes
+            or self.start_lifetime_peak_bytes > self.maximum_process_rss_bytes
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Physical RSS probes returned an invalid or over-cap "
+                "current/HWM baseline."
+            )
+        self.absolute_headroom_bytes = (
+            self.maximum_process_rss_bytes - self.start_rss_bytes
+        )
+        self.maximum_increase_bytes = min(
+            self.relative_maximum_increase_bytes,
+            self.absolute_headroom_bytes,
+        )
         self.current_rss_bytes = self.start_rss_bytes
         self.peak_rss_bytes = self.start_rss_bytes
+        self.current_lifetime_peak_bytes = self.start_lifetime_peak_bytes
+        self.peak_current_rss_increase_bytes = 0
+        self.lifetime_peak_increase_bytes = 0
         self.checkpoints: list[dict[str, Any]] = []
+        self._last_checkpoint_report_sha256: str | None = None
+        self.rss_guard_id_sha256 = _sha(
+            {
+                "schema": LFM2_CPCF_V5_PHYSICAL_RSS_EXPECTATION_SCHEMA,
+                "process_id": os.getpid(),
+                "guard_nonce_sha256": hashlib.sha256(
+                    secrets.token_bytes(32)
+                ).hexdigest(),
+                "start_rss_bytes": self.start_rss_bytes,
+                "start_lifetime_peak_bytes": (self.start_lifetime_peak_bytes),
+                "full_phase_tree_logical_bytes": (self.full_phase_tree_logical_bytes),
+                "minimum_reduction_fraction": (self.minimum_reduction_fraction),
+                "relative_maximum_increase_bytes": (
+                    self.relative_maximum_increase_bytes
+                ),
+                "maximum_process_rss_bytes": self.maximum_process_rss_bytes,
+                "absolute_headroom_bytes": self.absolute_headroom_bytes,
+                "maximum_increase_bytes": self.maximum_increase_bytes,
+                "sample_interval_seconds": self.sample_interval_seconds,
+            }
+        )
+        self._guard_authority = object()
+        self._outstanding_checkpoint_authorization: dict[str, Any] | None = None
+        self._receipt_construction_authorization: dict[str, Any] | None = None
+        self._authorized_next_layer_index: int | None = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._error: BaseException | None = None
         self._violation: str | None = None
         self._stopped = False
+        self.last_report: Mapping[str, Any] | None = None
         self._thread = threading.Thread(
             target=self._sample_loop,
             name="lfm2-cpcf-v5-rss-sampler",
@@ -511,7 +598,10 @@ class _PhysicalRssGuard:
 
     @property
     def peak_increase_bytes(self) -> int:
-        return max(0, self.peak_rss_bytes - self.start_rss_bytes)
+        return max(
+            self.peak_current_rss_increase_bytes,
+            self.lifetime_peak_increase_bytes,
+        )
 
     @property
     def current_increase_bytes(self) -> int:
@@ -520,29 +610,36 @@ class _PhysicalRssGuard:
     def _sample(self) -> None:
         current = _process_rss_bytes()
         lifetime_peak = _process_peak_rss_bytes()
-        new_lifetime_peak = (
-            lifetime_peak
-            if lifetime_peak > self.start_lifetime_peak_bytes
-            else 0
-        )
+        if current < 0 or lifetime_peak < current:
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Physical RSS probes returned an invalid current/HWM sample."
+            )
         with self._lock:
             self.current_rss_bytes = current
-            self.peak_rss_bytes = max(
-                self.peak_rss_bytes,
-                current,
-                new_lifetime_peak,
+            self.peak_rss_bytes = max(self.peak_rss_bytes, current)
+            self.current_lifetime_peak_bytes = max(
+                self.current_lifetime_peak_bytes,
+                lifetime_peak,
             )
-            increase = max(
+            self.peak_current_rss_increase_bytes = max(
+                self.peak_current_rss_increase_bytes,
+                max(0, current - self.start_rss_bytes),
+            )
+            self.lifetime_peak_increase_bytes = max(
                 0,
-                self.peak_rss_bytes - self.start_rss_bytes,
+                self.current_lifetime_peak_bytes - self.start_lifetime_peak_bytes,
             )
+            increase = self.peak_increase_bytes
             if (
                 increase > self.maximum_increase_bytes
-                and self._violation is None
-            ):
+                or current > self.maximum_process_rss_bytes
+                or lifetime_peak > self.maximum_process_rss_bytes
+            ) and self._violation is None:
                 self._violation = (
-                    f"physical RSS increase {increase} exceeded "
-                    f"{self.maximum_increase_bytes}"
+                    f"physical RSS increase {increase} or absolute RSS/HWM "
+                    f"{max(current, lifetime_peak)} exceeded delta "
+                    f"{self.maximum_increase_bytes} or process cap "
+                    f"{self.maximum_process_rss_bytes}"
                 )
 
     def _sample_loop(self) -> None:
@@ -553,53 +650,240 @@ class _PhysicalRssGuard:
             with self._lock:
                 self._error = exc
 
+    def _checkpoint_receipt(
+        self,
+        label: str,
+        *,
+        passed: bool,
+    ) -> Lfm2CpcfV5PhysicalRssCheckpointReceipt:
+        outstanding = self._outstanding_checkpoint_authorization
+        sequence_capability = (
+            object()
+            if outstanding is None
+            else outstanding["sequence_capability"]
+        )
+        body = {
+            "schema": LFM2_CPCF_V5_PHYSICAL_RSS_CHECKPOINT_SCHEMA,
+            "label": str(label),
+            "start_rss_bytes": self.start_rss_bytes,
+            "current_rss_bytes": self.current_rss_bytes,
+            "peak_rss_bytes": self.peak_rss_bytes,
+            "start_lifetime_peak_bytes": (self.start_lifetime_peak_bytes),
+            "current_lifetime_peak_bytes": (self.current_lifetime_peak_bytes),
+            "current_increase_bytes": self.current_increase_bytes,
+            "peak_current_rss_increase_bytes": (self.peak_current_rss_increase_bytes),
+            "lifetime_peak_increase_bytes": (self.lifetime_peak_increase_bytes),
+            "peak_increase_bytes": self.peak_increase_bytes,
+            "full_phase_tree_logical_bytes": (self.full_phase_tree_logical_bytes),
+            "minimum_reduction_fraction": (self.minimum_reduction_fraction),
+            "relative_maximum_increase_bytes": (
+                self.relative_maximum_increase_bytes
+            ),
+            "maximum_process_rss_bytes": self.maximum_process_rss_bytes,
+            "absolute_headroom_bytes": self.absolute_headroom_bytes,
+            "maximum_increase_bytes": self.maximum_increase_bytes,
+            "rss_guard_id_sha256": self.rss_guard_id_sha256,
+            "checkpoint_ordinal": len(self.checkpoints) - 1,
+            "previous_checkpoint_report_sha256": (self._last_checkpoint_report_sha256),
+            "physical_rss_gate_passed": passed,
+        }
+        sealed = {
+            **body,
+            "report_sha256": canonical_sha256(body),
+        }
+        self._receipt_construction_authorization = {
+            "body": sealed,
+            "sequence_capability": sequence_capability,
+        }
+        try:
+            receipt = Lfm2CpcfV5PhysicalRssCheckpointReceipt(
+                sealed,
+                _guard=self,
+                _sequence_capability=sequence_capability,
+            )
+        finally:
+            self._receipt_construction_authorization = None
+        if (
+            outstanding is not None
+            and outstanding["sequence_capability"] is sequence_capability
+        ):
+            self._outstanding_checkpoint_authorization = None
+        return receipt
+
+    def _authorize_rss_expectation_construction(
+        self,
+        expectation: Mapping[str, Any],
+        *,
+        sequence_capability: object,
+    ) -> object:
+        authorization = self._outstanding_checkpoint_authorization
+        if (
+            authorization is None
+            or authorization["sequence_capability"] is not sequence_capability
+            or dict(expectation) != authorization["expectation"]
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "RSS expectation construction lacks this live guard's exact "
+                "next-checkpoint authority."
+            )
+        return self._guard_authority
+
+    def _authorize_rss_receipt_construction(
+        self,
+        receipt: Mapping[str, Any],
+        *,
+        sequence_capability: object,
+    ) -> object:
+        authorization = self._receipt_construction_authorization
+        if (
+            authorization is None
+            or authorization["sequence_capability"] is not sequence_capability
+            or dict(receipt) != authorization["body"]
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "RSS receipt construction lacks this live guard's exact "
+                "sampled checkpoint authority."
+            )
+        return self._guard_authority
+
     def _raise_failure(self, label: str) -> None:
         with self._lock:
             error = self._error
             violation = self._violation
         if error is not None:
-            raise Lfm2CpcfV5ModelCompilerError(
-                f"Physical RSS sampler failed at {label!r}."
+            report = self._checkpoint_receipt(label, passed=False)
+            self.last_report = report
+            raise Lfm2CpcfV5PhysicalRssError(
+                f"Physical RSS sampler failed at {label!r}.",
+                report,
             ) from error
         if violation is not None:
-            raise Lfm2CpcfV5ModelCompilerError(
-                f"{violation} at checkpoint {label!r}."
+            report = self._checkpoint_receipt(label, passed=False)
+            self.last_report = report
+            raise Lfm2CpcfV5PhysicalRssError(
+                f"{violation} at checkpoint {label!r}.",
+                report,
             )
 
-    def checkpoint(self, label: str) -> None:
+    def checkpoint(self, label: str) -> Mapping[str, Any]:
         if self._stopped:
             raise Lfm2CpcfV5ModelCompilerError(
                 "Cannot checkpoint a stopped physical RSS guard."
             )
+        outstanding = self._outstanding_checkpoint_authorization
+        if outstanding is not None and outstanding["label"] != str(label):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "RSS checkpoint label differs from its outstanding one-shot "
+                "authorization."
+            )
         self._sample()
+        record = {
+            "label": str(label),
+            "current_rss_bytes": self.current_rss_bytes,
+            "peak_rss_bytes": self.peak_rss_bytes,
+            "current_increase_bytes": self.current_increase_bytes,
+            "peak_increase_bytes": self.peak_increase_bytes,
+        }
+        self.checkpoints.append(record)
         self._raise_failure(label)
-        self.checkpoints.append(
-            {
-                "label": str(label),
-                "current_rss_bytes": self.current_rss_bytes,
-                "peak_rss_bytes": self.peak_rss_bytes,
-                "current_increase_bytes": self.current_increase_bytes,
-                "peak_increase_bytes": self.peak_increase_bytes,
-            }
-        )
+        receipt = self._checkpoint_receipt(label, passed=True)
+        self._last_checkpoint_report_sha256 = receipt["report_sha256"]
+        self.last_report = receipt
+        return receipt
+
+    def next_checkpoint_expectation(
+        self,
+        label: str,
+    ) -> Lfm2CpcfV5PhysicalRssCheckpointExpectation:
+        """Seal the exact next RSS receipt lineage before persistence."""
+
+        if self._stopped:
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Cannot authorize a checkpoint on a stopped RSS guard."
+            )
+        if self._outstanding_checkpoint_authorization is not None:
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Physical RSS guard already has one outstanding checkpoint "
+                "authorization."
+            )
+        label_value = str(label)
+        if label_value == "prefix_000000_persisted_before_residency":
+            next_layer_index = 0
+        else:
+            match = re.fullmatch(
+                r"layer_([0-9]{3,})_compiled_checkpoint_"
+                r"persisted_before_release",
+                label_value,
+            )
+            if match is None:
+                raise Lfm2CpcfV5ModelCompilerError(
+                    "Resumable RSS expectation label is not a canonical "
+                    "prefix boundary."
+                )
+            next_layer_index = int(match.group(1)) + 1
+        body = {
+            "schema": LFM2_CPCF_V5_PHYSICAL_RSS_EXPECTATION_SCHEMA,
+            "label": label_value,
+            "rss_guard_id_sha256": self.rss_guard_id_sha256,
+            "checkpoint_ordinal": len(self.checkpoints),
+            "previous_checkpoint_report_sha256": (self._last_checkpoint_report_sha256),
+            "start_rss_bytes": self.start_rss_bytes,
+            "start_lifetime_peak_bytes": (self.start_lifetime_peak_bytes),
+            "full_phase_tree_logical_bytes": (self.full_phase_tree_logical_bytes),
+            "minimum_reduction_fraction": (self.minimum_reduction_fraction),
+            "relative_maximum_increase_bytes": (
+                self.relative_maximum_increase_bytes
+            ),
+            "maximum_process_rss_bytes": self.maximum_process_rss_bytes,
+            "absolute_headroom_bytes": self.absolute_headroom_bytes,
+            "maximum_increase_bytes": self.maximum_increase_bytes,
+        }
+        expectation = {
+            **body,
+            "expectation_sha256": canonical_sha256(body),
+        }
+        sequence_capability = object()
+        self._outstanding_checkpoint_authorization = {
+            "label": label_value,
+            "next_layer_index": next_layer_index,
+            "expectation": expectation,
+            "sequence_capability": sequence_capability,
+        }
+        self._authorized_next_layer_index = next_layer_index
+        try:
+            return Lfm2CpcfV5PhysicalRssCheckpointExpectation(
+                expectation,
+                _guard=self,
+                _sequence_capability=sequence_capability,
+            )
+        except BaseException:
+            self._outstanding_checkpoint_authorization = None
+            raise
+        finally:
+            self._authorized_next_layer_index = None
 
     def close(self) -> Mapping[str, Any]:
         if self._stopped:
             raise Lfm2CpcfV5ModelCompilerError(
                 "Physical RSS guard can be closed exactly once."
             )
+        if self._outstanding_checkpoint_authorization is not None:
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Physical RSS guard cannot close with an outstanding "
+                "checkpoint authorization."
+            )
         self._stop.set()
         self._thread.join(timeout=max(2.0, self.sample_interval_seconds * 4))
         if self._thread.is_alive():
-            raise Lfm2CpcfV5ModelCompilerError(
-                "Physical RSS sampler did not stop."
-            )
+            raise Lfm2CpcfV5ModelCompilerError("Physical RSS sampler did not stop.")
         self._sample()
         self._stopped = True
         self._raise_failure("rss_guard_close")
         passed = (
             self.peak_increase_bytes <= self.maximum_increase_bytes
             and self.current_increase_bytes <= self.maximum_increase_bytes
+            and self.current_rss_bytes <= self.maximum_process_rss_bytes
+            and self.current_lifetime_peak_bytes <= self.maximum_process_rss_bytes
         )
         body = {
             "schema": LFM2_CPCF_V5_PHYSICAL_RSS_SCHEMA,
@@ -607,14 +891,18 @@ class _PhysicalRssGuard:
             "current_rss_bytes": self.current_rss_bytes,
             "peak_rss_bytes": self.peak_rss_bytes,
             "start_lifetime_peak_bytes": self.start_lifetime_peak_bytes,
+            "current_lifetime_peak_bytes": (self.current_lifetime_peak_bytes),
             "current_increase_bytes": self.current_increase_bytes,
+            "peak_current_rss_increase_bytes": (self.peak_current_rss_increase_bytes),
+            "lifetime_peak_increase_bytes": (self.lifetime_peak_increase_bytes),
             "peak_increase_bytes": self.peak_increase_bytes,
-            "full_phase_tree_logical_bytes": (
-                self.full_phase_tree_logical_bytes
+            "full_phase_tree_logical_bytes": (self.full_phase_tree_logical_bytes),
+            "minimum_reduction_fraction": (self.minimum_reduction_fraction),
+            "relative_maximum_increase_bytes": (
+                self.relative_maximum_increase_bytes
             ),
-            "minimum_reduction_fraction": (
-                self.minimum_reduction_fraction
-            ),
+            "maximum_process_rss_bytes": self.maximum_process_rss_bytes,
+            "absolute_headroom_bytes": self.absolute_headroom_bytes,
             "maximum_increase_bytes": self.maximum_increase_bytes,
             "sample_interval_seconds": self.sample_interval_seconds,
             "checkpoint_count": len(self.checkpoints),
@@ -622,25 +910,40 @@ class _PhysicalRssGuard:
             "sampler_stopped": True,
             "physical_rss_gate_passed": passed,
             "comparison_basis": (
-                "peak_process_rss_increase_from_precompiler_baseline_"
-                "versus_full_phase_tree_logical_bytes"
+                "maximum_of_current_rss_growth_from_start_current_and_"
+                "lifetime_hwm_growth_from_start_hwm_versus_authenticated_"
+                "full_phase_tree_logical_bytes_and_absolute_process_cap"
             ),
         }
         if not passed:
-            raise Lfm2CpcfV5ModelCompilerError(
-                "Physical RSS did not prove material reduction from the full "
-                "phase-tree baseline."
+            report = self._checkpoint_receipt(
+                "rss_guard_close",
+                passed=False,
             )
-        return MappingProxyType(
-            {**body, "report_sha256": canonical_sha256(body)}
-        )
+            self.last_report = report
+            raise Lfm2CpcfV5PhysicalRssError(
+                "Physical RSS did not prove material reduction from the full "
+                "phase-tree baseline.",
+                report,
+            )
+        report = MappingProxyType({**body, "report_sha256": canonical_sha256(body)})
+        self.last_report = report
+        return report
 
-    def abort(self) -> None:
+    def abort(self) -> Mapping[str, Any] | None:
         if self._stopped:
-            return
+            return self.last_report
         self._stop.set()
         self._thread.join(timeout=max(2.0, self.sample_interval_seconds * 4))
         self._stopped = True
+        self._outstanding_checkpoint_authorization = None
+        self._receipt_construction_authorization = None
+        if self.last_report is None and self._violation is not None:
+            self.last_report = self._checkpoint_receipt(
+                "rss_guard_abort",
+                passed=False,
+            )
+        return self.last_report
 
 
 def _stub_layers(
@@ -652,9 +955,7 @@ def _stub_layers(
 ) -> tuple[Lfm2CpcfInstallableLayerEvidence, ...]:
     reference = catalog.phase_references[phase_index]
     result = []
-    for layer_index, operator_kind in enumerate(
-        reference.layer_operator_kinds
-    ):
+    for layer_index, operator_kind in enumerate(reference.layer_operator_kinds):
         if layer_index == active_layer_index:
             if (
                 not isinstance(
@@ -678,9 +979,7 @@ def _stub_layers(
                     operator_kind=operator_kind,
                     source_width=catalog.source_width,
                     tensors=MappingProxyType({}),
-                    evidence_sha256=reference.layer_evidence_sha256[
-                        layer_index
-                    ],
+                    evidence_sha256=reference.layer_evidence_sha256[layer_index],
                 )
             )
     return tuple(result)
@@ -721,15 +1020,27 @@ def _target_prefix(
     phase_name: str,
 ) -> tuple[Any, Any, Any]:
     torch = _torch()
-    prompt_ids = legacy_model_fold._torch().as_tensor(
-        record.target_input_ids
-    ).detach().to(device="cpu", dtype=torch.long).contiguous()
-    prompt_mask = legacy_model_fold._torch().as_tensor(
-        record.attention_mask
-    ).detach().to(device="cpu", dtype=torch.long).contiguous()
-    forced = legacy_model_fold._torch().as_tensor(
-        record.target_forced_decode_ids
-    ).detach().to(device="cpu", dtype=torch.long).contiguous()
+    prompt_ids = (
+        legacy_model_fold._torch()
+        .as_tensor(record.target_input_ids)
+        .detach()
+        .to(device="cpu", dtype=torch.long)
+        .contiguous()
+    )
+    prompt_mask = (
+        legacy_model_fold._torch()
+        .as_tensor(record.attention_mask)
+        .detach()
+        .to(device="cpu", dtype=torch.long)
+        .contiguous()
+    )
+    forced = (
+        legacy_model_fold._torch()
+        .as_tensor(record.target_forced_decode_ids)
+        .detach()
+        .to(device="cpu", dtype=torch.long)
+        .contiguous()
+    )
     if prompt_ids.ndim != 2 or prompt_mask.shape != prompt_ids.shape:
         raise Lfm2CpcfV5ModelCompilerError(
             "Target tokenizer record IDs and attention mask are invalid."
@@ -743,10 +1054,15 @@ def _target_prefix(
             .contiguous()
         )
     else:
-        prompt_positions = torch.as_tensor(raw_positions).detach().to(
-            device="cpu",
-            dtype=torch.long,
-        ).contiguous()
+        prompt_positions = (
+            torch.as_tensor(raw_positions)
+            .detach()
+            .to(
+                device="cpu",
+                dtype=torch.long,
+            )
+            .contiguous()
+        )
     if phase_name in {"prefill", "cached_prefill"}:
         return prompt_ids, prompt_mask, prompt_positions
     match = _DECODE_PHASE.fullmatch(phase_name)
@@ -780,7 +1096,9 @@ def _target_prefix(
 def build_lfm2_cpcf_v5_target_phase_shells(
     trace_adapter: Any,
     catalog: Lfm2CpcfSelectiveEvidenceCatalog,
-    bootstrap_payload: Lfm2CpcfSelectiveLayerPayload,
+    bootstrap_payload: Lfm2CpcfSelectiveLayerPayload | None,
+    *,
+    final_norm_payload: Lfm2CpcfSelectiveFinalNormPayload | None = None,
 ) -> tuple[Lfm2CpcfTargetPhase, ...]:
     """Build canonical target phases with no resident parent tensor tree."""
 
@@ -792,22 +1110,29 @@ def build_lfm2_cpcf_v5_target_phase_shells(
         )
     verify()
     if not isinstance(catalog, Lfm2CpcfSelectiveEvidenceCatalog):
-        raise TypeError(
-            "catalog must be Lfm2CpcfSelectiveEvidenceCatalog."
-        )
-    if not isinstance(
+        raise TypeError("catalog must be Lfm2CpcfSelectiveEvidenceCatalog.")
+    layer_bootstrap = isinstance(
         bootstrap_payload,
         Lfm2CpcfSelectiveLayerPayload,
-    ):
+    )
+    final_bootstrap = isinstance(
+        final_norm_payload,
+        Lfm2CpcfSelectiveFinalNormPayload,
+    )
+    if layer_bootstrap == final_bootstrap:
         raise TypeError(
-            "bootstrap_payload must be Lfm2CpcfSelectiveLayerPayload."
+            "Exactly one layer or final-normalization bootstrap payload is required."
         )
-    if (
+    if layer_bootstrap and (
         len(bootstrap_payload.phases) != catalog.phase_count
         or bootstrap_payload.layer_index >= catalog.layer_count
     ):
         raise Lfm2CpcfV5ModelCompilerError(
             "Bootstrap layer payload differs from the selective catalog."
+        )
+    if final_bootstrap and len(final_norm_payload.phases) != catalog.phase_count:
+        raise Lfm2CpcfV5ModelCompilerError(
+            "Bootstrap final-normalization payload differs from the selective catalog."
         )
     by_ordinal = {int(record.ordinal): record for record in records}
     if len(by_ordinal) != len(records):
@@ -815,35 +1140,37 @@ def build_lfm2_cpcf_v5_target_phase_shells(
             "Tokenizer trace record ordinals are not unique."
         )
     result = []
+    payload_phases = (
+        bootstrap_payload.phases if layer_bootstrap else final_norm_payload.phases
+    )
     for phase_index, (reference, phase_payload) in enumerate(
-        zip(
-            catalog.phase_references,
-            bootstrap_payload.phases,
-            strict=True,
-        )
+        zip(catalog.phase_references, payload_phases, strict=True)
     ):
-        evidence = phase_payload.evidence
-        if (
-            phase_payload.phase_reference_sha256
-            != reference.reference_sha256
-            or evidence.layer_index != bootstrap_payload.layer_index
-        ):
+        if phase_payload.phase_reference_sha256 != reference.reference_sha256:
             raise Lfm2CpcfV5ModelCompilerError(
-                "Bootstrap layer phase order or evidence binding changed."
+                "Bootstrap phase order or evidence binding changed."
             )
+        if layer_bootstrap:
+            evidence = phase_payload.evidence
+            if evidence.layer_index != bootstrap_payload.layer_index:
+                raise Lfm2CpcfV5ModelCompilerError(
+                    "Bootstrap layer evidence index changed."
+                )
         record = by_ordinal.get(reference.batch_index)
-        if (
-            record is None
-            or record.donor_cache_input_sha256 != reference.input_sha256
-        ):
+        if record is None or record.donor_cache_input_sha256 != reference.input_sha256:
             raise Lfm2CpcfV5ModelCompilerError(
                 "Target tokenizer record is not bound to the parent cache."
             )
         try:
-            sampled = int(evidence.tensors["residual.pre"].shape[1])
+            sampled_tensor = (
+                phase_payload.evidence.tensors["residual.pre"]
+                if layer_bootstrap
+                else phase_payload.tensors["output.final_norm_output"]
+            )
+            sampled = int(sampled_tensor.shape[1])
         except (AttributeError, KeyError, TypeError) as exc:
             raise Lfm2CpcfV5ModelCompilerError(
-                "Bootstrap evidence lacks residual.pre sampling geometry."
+                "Bootstrap evidence lacks sampled-suffix geometry."
             ) from exc
         _positive_int(sampled, "sampled_suffix_tokens")
         ids, mask, positions = _target_prefix(
@@ -886,17 +1213,13 @@ def build_lfm2_cpcf_v5_target_phase_shells(
             )
         )
     phases = tuple(result)
-    if (
-        tuple(phase.identity for phase in phases)
-        != tuple(
-            (reference.batch_index, reference.phase)
-            for reference in catalog.phase_references
-        )
-        or any(
-            any(layer.tensors for layer in phase.parent_evidence.layers)
-            or bool(phase.parent_evidence.final_norm_tensors)
-            for phase in phases
-        )
+    if tuple(phase.identity for phase in phases) != tuple(
+        (reference.batch_index, reference.phase)
+        for reference in catalog.phase_references
+    ) or any(
+        any(layer.tensors for layer in phase.parent_evidence.layers)
+        or bool(phase.parent_evidence.final_norm_tensors)
+        for phase in phases
     ):
         raise Lfm2CpcfV5ModelCompilerError(
             "Tensor-free target phase shells are incomplete or retain tensors."
@@ -958,8 +1281,7 @@ def materialize_lfm2_cpcf_v5_layer_phases(
     ):
         if (
             phase.identity != (reference.batch_index, reference.phase)
-            or phase_payload.phase_reference_sha256
-            != reference.reference_sha256
+            or phase_payload.phase_reference_sha256 != reference.reference_sha256
         ):
             raise Lfm2CpcfV5ModelCompilerError(
                 "Layer payload phase order differs from target phases."
@@ -1013,10 +1335,8 @@ def materialize_lfm2_cpcf_v5_final_norm_phases(
     ):
         if (
             phase.identity != (reference.batch_index, reference.phase)
-            or phase_payload.phase_reference_sha256
-            != reference.reference_sha256
-            or phase_payload.evidence_sha256
-            != reference.final_norm_evidence_sha256
+            or phase_payload.phase_reference_sha256 != reference.reference_sha256
+            or phase_payload.evidence_sha256 != reference.final_norm_evidence_sha256
         ):
             raise Lfm2CpcfV5ModelCompilerError(
                 "Final-normalization payload phase binding changed."
@@ -1079,24 +1399,17 @@ class _SelectiveBoundaryCompiler:
             "metric_chunk_rows",
         )
         self.model_policy = model_policy
-        self.layer_kinds = tuple(
-            catalog.phase_references[0].layer_operator_kinds
-        )
-        if (
-            len(self.layer_kinds) != catalog.layer_count
-            or any(
-                tuple(reference.layer_operator_kinds) != self.layer_kinds
-                for reference in catalog.phase_references
-            )
+        self.layer_kinds = tuple(catalog.phase_references[0].layer_operator_kinds)
+        if len(self.layer_kinds) != catalog.layer_count or any(
+            tuple(reference.layer_operator_kinds) != self.layer_kinds
+            for reference in catalog.phase_references
         ):
             raise Lfm2CpcfV5ModelCompilerError(
                 "Selective catalog layer topology changes across phases."
             )
         self.split_phases = MappingProxyType(
             {
-                split: tuple(
-                    phase for phase in self.phases if phase.split == split
-                )
+                split: tuple(phase for phase in self.phases if phase.split == split)
                 for split in _SPLITS
             }
         )
@@ -1118,9 +1431,7 @@ class _SelectiveBoundaryCompiler:
                                 phase.parent_evidence.evidence_sha256
                             ),
                         }
-                        for ordinal, phase in enumerate(
-                            self.split_phases[split]
-                        )
+                        for ordinal, phase in enumerate(self.split_phases[split])
                     ]
                 )
                 for split in _SPLITS
@@ -1148,10 +1459,8 @@ class _SelectiveBoundaryCompiler:
             }
         )
         if (
-            self.split_phase_sha256["fit"]
-            == self.split_phase_sha256["validation"]
-            or self.split_row_sha256["fit"]
-            == self.split_row_sha256["validation"]
+            self.split_phase_sha256["fit"] == self.split_phase_sha256["validation"]
+            or self.split_row_sha256["fit"] == self.split_row_sha256["validation"]
         ):
             raise Lfm2CpcfV5ModelCompilerError(
                 "Fit and validation phase/row identities are not disjoint."
@@ -1206,9 +1515,7 @@ class _SelectiveBoundaryCompiler:
         tensors = {}
         for phase_index, phase in enumerate(ordered):
             try:
-                value = phase.parent_evidence.final_norm_tensors[
-                    final_field
-                ]
+                value = phase.parent_evidence.final_norm_tensors[final_field]
             except KeyError as exc:
                 raise Lfm2CpcfV5ModelCompilerError(
                     f"Phase {phase.identity!r} lacks final norm evidence."
@@ -1220,8 +1527,8 @@ class _SelectiveBoundaryCompiler:
                 source_width=self.source_width,
             )
             tensors[(phase.identity, final_field)] = tensor
-            self._observation_sha[(phase_index, final_field)] = (
-                boundary._tensor_sha256(tensor)
+            self._observation_sha[(phase_index, final_field)] = boundary._tensor_sha256(
+                tensor
             )
         inventory = self._minimal_inventory(tensors)
         (
@@ -1262,9 +1569,7 @@ class _SelectiveBoundaryCompiler:
         )
         self.interface = self.anchor_fold.interface
         self.fit_future = self.interface.encode_producer_rows(fit_final)
-        self.validation_future = self.interface.encode_producer_rows(
-            validation_final
-        )
+        self.validation_future = self.interface.encode_producer_rows(validation_final)
         self.anchor_split_reports = {
             split: anchor_splits[split].as_dict() for split in _SPLITS
         }
@@ -1294,9 +1599,7 @@ class _SelectiveBoundaryCompiler:
         if tuple(phase.phase_sha256 for phase in ordered) != tuple(
             phase.phase_sha256 for phase in self.phases
         ):
-            raise Lfm2CpcfV5ModelCompilerError(
-                "Layer chart phase lineage changed."
-            )
+            raise Lfm2CpcfV5ModelCompilerError("Layer chart phase lineage changed.")
         values: dict[str, dict[tuple[int, str], Any]] = {
             name: {} for name in _BOUNDARIES
         }
@@ -1315,8 +1618,7 @@ class _SelectiveBoundaryCompiler:
                     raw = evidence.tensors[name]
                 except KeyError as exc:
                     raise Lfm2CpcfV5ModelCompilerError(
-                        f"Phase {phase.identity!r} layer {index} lacks "
-                        f"{name!r}."
+                        f"Phase {phase.identity!r} layer {index} lacks {name!r}."
                     ) from exc
                 tensor = boundary._phase_tensor(
                     raw,
@@ -1326,8 +1628,8 @@ class _SelectiveBoundaryCompiler:
                 )
                 values[name][phase.identity] = tensor
                 field = f"layer.{index:03d}.{name}"
-                self._observation_sha[(phase_index, field)] = (
-                    boundary._tensor_sha256(tensor)
+                self._observation_sha[(phase_index, field)] = boundary._tensor_sha256(
+                    tensor
                 )
 
         def rows(
@@ -1405,15 +1707,10 @@ class _SelectiveBoundaryCompiler:
         for phase_index, phase in enumerate(self.phases):
             fields = [final_field]
             for layer_index in range(len(self.layer_kinds)):
-                fields.extend(
-                    f"layer.{layer_index:03d}.{name}"
-                    for name in _BOUNDARIES
-                )
+                fields.extend(f"layer.{layer_index:03d}.{name}" for name in _BOUNDARIES)
             for field in fields:
                 try:
-                    tensor_sha = self._observation_sha[
-                        (phase_index, field)
-                    ]
+                    tensor_sha = self._observation_sha[(phase_index, field)]
                 except KeyError as exc:
                     raise Lfm2CpcfV5ModelCompilerError(
                         "Selective source observation inventory is incomplete."
@@ -1426,21 +1723,13 @@ class _SelectiveBoundaryCompiler:
                     }
                 )
         layers = tuple(self.layer_results)
-        phase_counts = {
-            split: len(self.split_phases[split]) for split in _SPLITS
-        }
+        phase_counts = {split: len(self.split_phases[split]) for split in _SPLITS}
         row_counts = dict(self.split_rows)
         split_phase_hashes = dict(self.split_phase_sha256)
         split_row_hashes = dict(self.split_row_sha256)
-        expected_observations = len(self.phases) * (
-            1 + 2 * len(self.layer_kinds)
-        )
-        predictive_floor = (
-            self.model_policy.minimum_predictive_energy_fraction
-        )
-        validation_floor = (
-            self.model_policy.minimum_validation_block_retention
-        )
+        expected_observations = len(self.phases) * (1 + 2 * len(self.layer_kinds))
+        predictive_floor = self.model_policy.minimum_predictive_energy_fraction
+        validation_floor = self.model_policy.minimum_validation_block_retention
         body = {
             "schema": boundary.LFM2_CPCF_BOUNDARY_BUNDLE_SCHEMA,
             "method": (
@@ -1465,8 +1754,8 @@ class _SelectiveBoundaryCompiler:
                 "causal_anchor",
             ),
             "interface_lineage": {
-                "base_interface_report": dict(self.base_interface.report),
-                "causal_anchor_report": dict(self.anchor_fold.report),
+                "base_interface_report": _plain_metadata(self.base_interface.report),
+                "causal_anchor_report": _plain_metadata(self.anchor_fold.report),
                 "base_interface_report_sha256": boundary._report_digest(
                     self.base_interface.report,
                     "base_interface",
@@ -1498,9 +1787,9 @@ class _SelectiveBoundaryCompiler:
                 "one_unique_row_id_per_record_batch_row_causal_step": True,
                 "row_id_binds_batch_index_batch_row_and_prefix_position": True,
                 "no_sampled_prefix_row_duplication": True,
-                "split_inventory": dict(self.anchor_split_reports),
+                "split_inventory": _plain_metadata(self.anchor_split_reports),
             },
-            "layer_charts": [layer.as_dict() for layer in layers],
+            "layer_charts": [_plain_metadata(layer.as_dict()) for layer in layers],
             "split_phase_counts": phase_counts,
             "split_row_counts": row_counts,
             "split_phase_sha256": split_phase_hashes,
@@ -1523,25 +1812,19 @@ class _SelectiveBoundaryCompiler:
                 "method": "equal_phase_mass_then_uniform_rows_within_phase",
                 "balanced_phase_weights": True,
                 "fit_total_weight": float(self.fit_weights.sum().item()),
-                "validation_total_weight": float(
-                    self.validation_weights.sum().item()
-                ),
-                "fit_weights_sha256": boundary._tensor_sha256(
-                    self.fit_weights
-                ),
+                "validation_total_weight": float(self.validation_weights.sum().item()),
+                "fit_weights_sha256": boundary._tensor_sha256(self.fit_weights),
                 "validation_weights_sha256": boundary._tensor_sha256(
                     self.validation_weights
                 ),
-                "fit_phases": self.fit_weight_summary,
-                "validation_phases": self.validation_weight_summary,
+                "fit_phases": _plain_metadata(self.fit_weight_summary),
+                "validation_phases": _plain_metadata(self.validation_weight_summary),
             },
             "interface_top1": {
                 "principal_objective": False,
                 "capacity_gate_used": False,
                 "fit_rmsnorm_parent_top1_agreement": (
-                    self.base_interface.report["fit"][
-                        "rmsnorm_parent_top1_agreement"
-                    ]
+                    self.base_interface.report["fit"]["rmsnorm_parent_top1_agreement"]
                 ),
                 "validation_rmsnorm_parent_top1_agreement": (
                     self.base_interface.report["validation"][
@@ -1567,9 +1850,7 @@ class _SelectiveBoundaryCompiler:
                 "final_output_field": final_field,
                 "expected_tensor_observations": expected_observations,
                 "observed_tensor_observations": len(observations),
-                "source_observation_sha256": boundary._sha256(
-                    observations
-                ),
+                "source_observation_sha256": boundary._sha256(observations),
                 "all_phase_final_outputs_covered": True,
                 "all_layer_post_operator_boundaries_covered": True,
                 "all_layer_post_layer_boundaries_covered": True,
@@ -1577,8 +1858,7 @@ class _SelectiveBoundaryCompiler:
             },
             "coordinate_contract": {
                 "future_coordinates": (
-                    "anchor_repaired_tied_interface_encoded_parent_final_norm_"
-                    "output"
+                    "anchor_repaired_tied_interface_encoded_parent_final_norm_output"
                 ),
                 "active_interface_is_anchor_repaired": True,
                 "one_global_residual_basis_used": False,
@@ -1695,9 +1975,7 @@ def _real_v5_numerical_adapter_contract(
     ):
         return None
     body = {
-        "adapter_type": (
-            f"{type(adapter).__module__}.{type(adapter).__qualname__}"
-        ),
+        "adapter_type": (f"{type(adapter).__module__}.{type(adapter).__qualname__}"),
         "adapter_id": adapter.adapter_id,
         "implementation": _REAL_V5_NUMERICAL_ADAPTER_IMPLEMENTATION,
         "basis_policy": basis_policy.authentication_body(),
@@ -1733,8 +2011,7 @@ def _prove_real_v5_numerical_layer(
         isinstance(frontier_execution, Mapping)
         and set(frontier_execution) == _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS
         and all(
-            type(frontier_execution[name]) is int
-            and frontier_execution[name] == 0
+            type(frontier_execution[name]) is int and frontier_execution[name] == 0
             for name in _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS
         )
     )
@@ -1744,17 +2021,14 @@ def _prove_real_v5_numerical_layer(
     ) and (
         set(provenance_execution) == _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS
         and all(
-            type(provenance_execution[name]) is int
-            and provenance_execution[name] == 0
+            type(provenance_execution[name]) is int and provenance_execution[name] == 0
             for name in _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS
         )
     )
     requested_commutator_gate = adapter_contract["basis_policy"][
         "maximum_per_lag_commutator_relative_frobenius"
     ]
-    observed_commutator = provenance.get(
-        "basis_actual_commutator_residual"
-    )
+    observed_commutator = provenance.get("basis_actual_commutator_residual")
     if (
         not _mapping_seal_is_valid(report, seal_field="result_sha256")
         or not _mapping_seal_is_valid(
@@ -1777,24 +2051,21 @@ def _prove_real_v5_numerical_layer(
         or artifact.get("numerical_frontier_adapter_active") is not True
         or artifact.get("fit_only_numerical_generation") is not True
         or artifact.get("legacy_v4_numerical_generation_claimed") is not False
-        or frontier.get("kind")
-        != "authenticated_fit_only_numerical_frontier"
+        or frontier.get("kind") != "authenticated_fit_only_numerical_frontier"
         or frontier.get("adapter_id") != adapter_contract["adapter_id"]
         or frontier.get("full_source_numeric_participation") is not True
         or frontier.get("source_channels_dropped") != 0
         or frontier.get("fit_only") is not True
         or frontier.get("selection_cases_consumed") != 0
         or frontier.get("validation_cases_consumed") != 0
-        or provenance.get("implementation")
-        != adapter_contract["implementation"]
+        or provenance.get("implementation") != adapter_contract["implementation"]
         or provenance.get("real_v5_numerical_algorithm") is not True
         or provenance.get("dynamic_source_target_topology") is not True
         or provenance.get("basis_policy_sha256")
         != adapter_contract["basis_policy_sha256"]
         or provenance.get("ridge_policy_sha256")
         != adapter_contract["ridge_policy_sha256"]
-        or provenance.get("basis_actual_commutator_gate")
-        != requested_commutator_gate
+        or provenance.get("basis_actual_commutator_gate") != requested_commutator_gate
         or not isinstance(observed_commutator, (int, float))
         or isinstance(observed_commutator, bool)
         or not math.isfinite(float(observed_commutator))
@@ -1841,6 +2112,645 @@ def _prove_real_v5_numerical_layer(
     return MappingProxyType({**body, "proof_sha256": _sha(body)})
 
 
+def _optional_runtime_contract_sha256(
+    value: Any,
+    *,
+    kind: str,
+) -> str:
+    if value is None:
+        return _sha({"kind": kind, "provided": False})
+
+    def instance_state_manifest(
+        instance: Any,
+        *,
+        name: str,
+        excluded: frozenset[str] = frozenset(),
+        active: frozenset[int] = frozenset(),
+    ) -> dict[str, Any]:
+        identity = id(instance)
+        if identity in active:
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} contains a cyclic runtime state graph."
+            )
+        fields: dict[str, Any] = {}
+        raw_dict = getattr(instance, "__dict__", None)
+        if isinstance(raw_dict, dict):
+            fields.update(raw_dict)
+        for owner in type(instance).__mro__:
+            slots = getattr(owner, "__slots__", ())
+            if isinstance(slots, str):
+                slots = (slots,)
+            for field in slots:
+                if (
+                    field in {"__dict__", "__weakref__"}
+                    or field in fields
+                    or not hasattr(instance, field)
+                ):
+                    continue
+                fields[field] = getattr(instance, field)
+        normalized = {
+            field: state_value_manifest(
+                fields[field],
+                name=f"{name}.{field}",
+                active=active | {identity},
+            )
+            for field in sorted(fields)
+            if field not in excluded
+        }
+        return {
+            "type": (f"{type(instance).__module__}.{type(instance).__qualname__}"),
+            "fields": normalized,
+        }
+
+    def state_value_manifest(
+        state_value: Any,
+        *,
+        name: str,
+        active: frozenset[int],
+    ) -> Any:
+        if state_value is None or isinstance(
+            state_value,
+            (bool, int, str),
+        ):
+            return state_value
+        if isinstance(state_value, float):
+            if math.isfinite(state_value):
+                return state_value
+            return {
+                "kind": "nonfinite_float",
+                "value": (
+                    "nan"
+                    if math.isnan(state_value)
+                    else (
+                        "positive_infinity" if state_value > 0 else "negative_infinity"
+                    )
+                ),
+            }
+        if isinstance(state_value, bytes):
+            return {
+                "kind": "bytes",
+                "length": len(state_value),
+                "sha256": hashlib.sha256(state_value).hexdigest(),
+            }
+        if isinstance(state_value, os.PathLike):
+            return {
+                "kind": "path",
+                "value": os.fspath(state_value),
+            }
+        if isinstance(state_value, ModuleType):
+            return runtime_module_manifest(
+                state_value,
+                name=name,
+                referenced_names=frozenset(),
+                active=active,
+            )
+        if isinstance(state_value, type):
+            return runtime_class_manifest(
+                state_value,
+                name=name,
+                active=active,
+            )
+        torch = _torch()
+        if isinstance(state_value, torch.Tensor):
+            return {
+                "kind": "tensor",
+                "sha256": legacy_model_fold._tensor_sha256(state_value),
+            }
+        if isinstance(state_value, Mapping):
+            if any(not isinstance(key, str) for key in state_value):
+                raise Lfm2CpcfV5ModelCompilerError(
+                    f"{name} runtime mapping must use string keys."
+                )
+            return {
+                key: state_value_manifest(
+                    state_value[key],
+                    name=f"{name}.{key}",
+                    active=active,
+                )
+                for key in sorted(state_value)
+            }
+        if isinstance(state_value, (list, tuple)):
+            return [
+                state_value_manifest(
+                    child,
+                    name=f"{name}[{index}]",
+                    active=active,
+                )
+                for index, child in enumerate(state_value)
+            ]
+        if isinstance(state_value, (set, frozenset)):
+            children = [
+                state_value_manifest(
+                    child,
+                    name=f"{name}[]",
+                    active=active,
+                )
+                for child in state_value
+            ]
+            return {
+                "kind": type(state_value).__name__,
+                "values": sorted(children, key=_canonical_json),
+            }
+        if callable(state_value):
+            function = getattr(state_value, "__func__", state_value)
+            callable_impl = getattr(type(state_value), "__call__", None)
+            if (
+                getattr(function, "__code__", None) is None
+                and getattr(callable_impl, "__code__", None) is None
+            ):
+                return {
+                    "kind": "native_callable",
+                    "module": getattr(state_value, "__module__", None),
+                    "qualname": getattr(state_value, "__qualname__", None),
+                    "type": (
+                        f"{type(state_value).__module__}."
+                        f"{type(state_value).__qualname__}"
+                    ),
+                }
+            return {
+                "kind": "callable",
+                "manifest": callable_manifest(
+                    state_value,
+                    name=name,
+                    bind_owner=True,
+                    active=active,
+                ),
+            }
+        as_dict = getattr(state_value, "as_dict", None)
+        if callable(as_dict):
+            return {
+                "kind": "authenticated_object",
+                "type": (
+                    f"{type(state_value).__module__}.{type(state_value).__qualname__}"
+                ),
+                "value": state_value_manifest(
+                    as_dict(),
+                    name=f"{name}.as_dict",
+                    active=active,
+                ),
+            }
+        return {
+            "kind": "instance",
+            "state": instance_state_manifest(
+                state_value,
+                name=name,
+                active=active,
+            ),
+        }
+
+    def runtime_class_manifest(
+        class_value: type,
+        *,
+        name: str,
+        active: frozenset[int] = frozenset(),
+    ) -> dict[str, Any]:
+        module_name = getattr(class_value, "__module__", None)
+        qualname = getattr(class_value, "__qualname__", None)
+        module = (
+            None if not isinstance(module_name, str) else sys.modules.get(module_name)
+        )
+        raw_path = getattr(module, "__file__", None)
+        if not isinstance(module_name, str) or not isinstance(qualname, str):
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} class has no exact runtime identity."
+            )
+        class_identity = id(class_value)
+        base = {
+            "kind": "class",
+            "module": module_name,
+            "qualname": qualname,
+            "source_sha256": (
+                None
+                if not isinstance(raw_path, str)
+                else _file_sha256(Path(raw_path).resolve())
+            ),
+        }
+        if class_identity in active:
+            return {**base, "recursive_reference": True}
+        class_active = active | {class_identity}
+        members = {}
+        for member_name, raw_member in sorted(vars(class_value).items()):
+            member = (
+                raw_member.__func__
+                if isinstance(raw_member, (staticmethod, classmethod))
+                else raw_member
+            )
+            if getattr(member, "__code__", None) is not None:
+                members[member_name] = callable_manifest(
+                    member,
+                    name=f"{name}.{member_name}",
+                    active=class_active,
+                )
+        return {
+            **base,
+            "python_methods": members,
+        }
+
+    def runtime_module_manifest(
+        module_value: ModuleType,
+        *,
+        name: str,
+        referenced_names: frozenset[str],
+        active: frozenset[int],
+    ) -> dict[str, Any]:
+        module_name = getattr(module_value, "__name__", None)
+        raw_path = getattr(module_value, "__file__", None)
+        if not isinstance(module_name, str):
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} module has no exact runtime identity."
+            )
+        module_identity = id(module_value)
+        base = {
+            "kind": "module",
+            "module": module_name,
+            "source_sha256": (
+                None
+                if not isinstance(raw_path, str)
+                else _file_sha256(Path(raw_path).resolve())
+            ),
+        }
+        if module_identity in active:
+            return {**base, "recursive_reference": True}
+        module_active = active | {module_identity}
+        attributes = {
+            attribute: runtime_global_manifest(
+                getattr(module_value, attribute),
+                name=f"{name}.{attribute}",
+                referenced_names=referenced_names,
+                active=module_active,
+            )
+            for attribute in sorted(referenced_names)
+            if hasattr(module_value, attribute)
+        }
+        return {
+            **base,
+            "referenced_attributes": attributes,
+        }
+
+    def runtime_global_manifest(
+        global_value: Any,
+        *,
+        name: str,
+        referenced_names: frozenset[str],
+        active: frozenset[int],
+    ) -> Any:
+        if isinstance(global_value, ModuleType):
+            return runtime_module_manifest(
+                global_value,
+                name=name,
+                referenced_names=referenced_names,
+                active=active,
+            )
+        if isinstance(global_value, type):
+            return runtime_class_manifest(
+                global_value,
+                name=name,
+                active=active,
+            )
+        if callable(global_value):
+            function = getattr(global_value, "__func__", global_value)
+            if getattr(function, "__code__", None) is not None:
+                return {
+                    "kind": "python_callable",
+                    "manifest": callable_manifest(
+                        global_value,
+                        name=name,
+                        bind_owner=True,
+                        active=active,
+                    ),
+                }
+            return {
+                "kind": "native_callable",
+                "module": getattr(global_value, "__module__", None),
+                "qualname": getattr(global_value, "__qualname__", None),
+                "type": (
+                    f"{type(global_value).__module__}.{type(global_value).__qualname__}"
+                ),
+            }
+        return state_value_manifest(
+            global_value,
+            name=name,
+            active=active,
+        )
+
+    def callable_manifest(
+        callable_value: Any,
+        *,
+        name: str,
+        bind_owner: bool = False,
+        active: frozenset[int] = frozenset(),
+    ) -> dict[str, Any]:
+        function = getattr(callable_value, "__func__", callable_value)
+        callable_object_owner = None
+        if not callable(function) or getattr(function, "__code__", None) is None:
+            callable_object_owner = callable_value
+            function = getattr(type(callable_value), "__call__", None)
+        code = getattr(function, "__code__", None)
+        module_name = getattr(function, "__module__", None)
+        qualname = getattr(function, "__qualname__", None)
+        module = (
+            None if not isinstance(module_name, str) else sys.modules.get(module_name)
+        )
+        raw_path = getattr(module, "__file__", None)
+        if (
+            code is None
+            or not isinstance(module_name, str)
+            or not isinstance(qualname, str)
+            or not isinstance(raw_path, str)
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} has no exact Python callable/source identity."
+            )
+        path = Path(raw_path).resolve()
+        function_identity = id(function)
+        base_manifest = {
+            "module": module_name,
+            "qualname": qualname,
+            "code_sha256": hashlib.sha256(marshal.dumps(code)).hexdigest(),
+            "source_filename": path.name,
+            "source_sha256": _file_sha256(path),
+        }
+        if function_identity in active:
+            return {**base_manifest, "recursive_reference": True}
+        callable_active = active | {function_identity}
+        defaults = getattr(function, "__defaults__", None)
+        kwdefaults = getattr(function, "__kwdefaults__", None)
+        closure = getattr(function, "__closure__", None)
+        freevars = tuple(getattr(code, "co_freevars", ()))
+        if closure is not None and len(closure) != len(freevars):
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"{name} closure cannot be authenticated."
+            )
+        global_namespace = getattr(function, "__globals__", {})
+        referenced_names = frozenset(str(value) for value in code.co_names)
+        manifest = {
+            **base_manifest,
+            "defaults": state_value_manifest(
+                defaults,
+                name=f"{name}.__defaults__",
+                active=callable_active,
+            ),
+            "kwdefaults": state_value_manifest(
+                kwdefaults,
+                name=f"{name}.__kwdefaults__",
+                active=callable_active,
+            ),
+            "closure": (
+                {}
+                if closure is None
+                else {
+                    freevar: state_value_manifest(
+                        cell.cell_contents,
+                        name=f"{name}.__closure__.{freevar}",
+                        active=callable_active,
+                    )
+                    for freevar, cell in zip(
+                        freevars,
+                        closure,
+                        strict=True,
+                    )
+                }
+            ),
+            "referenced_globals": {
+                global_name: runtime_global_manifest(
+                    global_namespace[global_name],
+                    name=f"{name}.__globals__.{global_name}",
+                    referenced_names=referenced_names,
+                    active=callable_active,
+                )
+                for global_name in sorted(referenced_names)
+                if global_name in global_namespace
+            },
+        }
+        owner = getattr(callable_value, "__self__", None)
+        if owner is None:
+            owner = callable_object_owner
+        if bind_owner and owner is not None and not isinstance(owner, type):
+            manifest["bound_owner_state"] = instance_state_manifest(
+                owner,
+                name=f"{name}.__self__",
+                active=callable_active,
+            )
+        return manifest
+
+    type_name = f"{type(value).__module__}.{type(value).__qualname__}"
+    body: dict[str, Any] = {
+        "kind": kind,
+        "provided": True,
+        "type": type_name,
+    }
+    method_name = {
+        "candidate_selector": "select",
+        "candidate_replay": "evaluate",
+        "numerical_frontier": "generate",
+    }.get(kind)
+    if method_name is None:
+        raise Lfm2CpcfV5ModelCompilerError(
+            f"Unknown optional runtime contract kind {kind!r}."
+        )
+    method = getattr(value, method_name, None)
+    if not callable(method):
+        raise Lfm2CpcfV5ModelCompilerError(
+            f"{kind} has no exact {method_name} callable."
+        )
+    body[f"{method_name}_callable"] = callable_manifest(
+        method,
+        name=f"{kind}.{method_name}",
+    )
+    scheduler = getattr(value, "scheduler", None)
+    body["instance_state"] = instance_state_manifest(
+        value,
+        name=kind,
+        excluded=frozenset({"scheduler"}),
+    )
+    if scheduler is not None:
+        policy = getattr(scheduler, "policy", None)
+        replicas = getattr(scheduler, "replicas", None)
+        if not callable(getattr(policy, "as_dict", None)) or not isinstance(
+            replicas,
+            tuple,
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Candidate replay scheduler has no canonical live contract."
+            )
+        body["scheduler_policy"] = policy.as_dict()
+        body["scheduler_replicas"] = [replica.as_dict() for replica in replicas]
+        body["scheduler_type"] = (
+            f"{type(scheduler).__module__}.{type(scheduler).__qualname__}"
+        )
+        body["scheduler_execute_callable"] = callable_manifest(
+            getattr(scheduler, "execute", None),
+            name="candidate replay scheduler.execute",
+        )
+        body["scheduler_instance_state"] = instance_state_manifest(
+            scheduler,
+            name="candidate replay scheduler",
+            excluded=frozenset(
+                {
+                    "policy",
+                    "replicas",
+                    "gpu_worker",
+                    "cpu_parity_worker",
+                    "device_receipt_probe",
+                    "installed_state_probe",
+                    "cpu_installed_state_probe",
+                    "host_buffer_factory",
+                }
+            ),
+        )
+        scheduler_callables = {}
+        for field in (
+            "gpu_worker",
+            "cpu_parity_worker",
+            "device_receipt_probe",
+            "installed_state_probe",
+            "cpu_installed_state_probe",
+            "host_buffer_factory",
+        ):
+            scheduler_callables[field] = callable_manifest(
+                getattr(scheduler, field, None),
+                name=f"candidate replay scheduler.{field}",
+                bind_owner=True,
+            )
+        body["scheduler_runtime_callables"] = scheduler_callables
+    return _sha(body)
+
+
+def _trace_resume_bindings(trace_adapter: Any) -> tuple[str, str, str]:
+    verify = getattr(trace_adapter, "verify", None)
+    if not callable(verify):
+        raise Lfm2CpcfV5ModelCompilerError(
+            "Resume context requires a verified tokenizer trace adapter."
+        )
+    verify()
+    trace_sha = _digest(
+        getattr(trace_adapter, "evidence_sha256", None),
+        "trace_adapter.evidence_sha256",
+    )
+    tokenizer_sha = _digest(
+        getattr(
+            trace_adapter,
+            "target_tokenizer_package_fingerprint",
+            None,
+        ),
+        "trace_adapter.target_tokenizer_package_fingerprint",
+    )
+    bridge_sha = _digest(
+        getattr(trace_adapter, "bridge_artifact_sha256", None),
+        "trace_adapter.bridge_artifact_sha256",
+    )
+    verify()
+    return trace_sha, tokenizer_sha, bridge_sha
+
+
+def _build_live_resume_context(
+    *,
+    source_before: Any,
+    target_before: Any,
+    target_topology_sha256: str,
+    catalog: Lfm2CpcfSelectiveEvidenceCatalog,
+    trace_adapter: Any,
+    source_tied_table: Any,
+    blank_report_sha256: str,
+    planned_target_unique_parameters: int,
+    runtime_policy: Lfm2CpcfV5RuntimePolicy,
+    compiler_implementation: Mapping[str, Any],
+    candidate_replay_evaluator: Any,
+    candidate_selector: Any,
+    numerical_frontier_adapter: Any,
+    bootstrap_authentication_sha256: str,
+    final_norm_authentication_sha256: str,
+) -> Mapping[str, Any]:
+    trace_sha, tokenizer_sha, token_bridge_sha = _trace_resume_bindings(trace_adapter)
+    selector_sha = _optional_runtime_contract_sha256(
+        candidate_selector,
+        kind="candidate_selector",
+    )
+    numerical_sha = _optional_runtime_contract_sha256(
+        numerical_frontier_adapter,
+        kind="numerical_frontier",
+    )
+    return build_lfm2_cpcf_v5_resume_context(
+        source_model_state_sha256=source_before.state_fingerprint,
+        source_model_inventory_sha256=source_before.full_inventory_sha256,
+        cache_sha256=catalog.cache_key,
+        selective_catalog_sha256=catalog.catalog_sha256,
+        selective_source_sha256=catalog.source_sha256,
+        selective_provider_sha256=catalog.provider_sha256,
+        trace_sha256=trace_sha,
+        tokenizer_sha256=tokenizer_sha,
+        token_bridge_sha256=token_bridge_sha,
+        source_tied_table_sha256=legacy_model_fold._tensor_sha256(source_tied_table),
+        blank_target_report_sha256=blank_report_sha256,
+        blank_target_state_sha256=target_before.state_fingerprint,
+        target_topology_sha256=target_topology_sha256,
+        planned_target_unique_parameters=planned_target_unique_parameters,
+        runtime_policy_sha256=_sha(runtime_policy.as_dict()),
+        physical_rss_policy_sha256=(
+            build_lfm2_cpcf_v5_physical_rss_policy_sha256(
+                full_phase_tree_logical_bytes=(
+                    runtime_policy.full_phase_tree_logical_bytes
+                ),
+                minimum_reduction_fraction=(
+                    runtime_policy.minimum_physical_rss_reduction_fraction
+                ),
+                maximum_increase_bytes=(
+                    runtime_policy.maximum_physical_rss_increase_bytes
+                ),
+                maximum_process_rss_bytes=(
+                    runtime_policy.maximum_process_rss_bytes
+                ),
+            )
+        ),
+        compiler_implementation_sha256=compiler_implementation["implementation_sha256"],
+        resume_implementation_sha256=lfm2_cpcf_v5_resume_implementation()[
+            "implementation_sha256"
+        ],
+        selector_contract_sha256=selector_sha,
+        numerical_contract_sha256=numerical_sha,
+        gpu_contract_sha256=_optional_runtime_contract_sha256(
+            candidate_replay_evaluator,
+            kind="candidate_replay",
+        ),
+        bootstrap_authentication_sha256=(bootstrap_authentication_sha256),
+        final_norm_authentication_sha256=(final_norm_authentication_sha256),
+    )
+
+
+def _completed_resume_residency_receipt(
+    catalog: Lfm2CpcfSelectiveEvidenceCatalog,
+    runtime_policy: Lfm2CpcfV5RuntimePolicy,
+) -> Mapping[str, Any]:
+    body = {
+        "schema": ("neural-forge-dynamic-evidence-residency-window-v1"),
+        "catalog_sha256": catalog.dynamic_catalog.catalog_sha256,
+        "source_sha256": catalog.source_sha256,
+        "provider_sha256": catalog.provider_sha256,
+        "state": "complete",
+        "start_layer_index": catalog.layer_count,
+        "current_layer_index": None,
+        "occupied_layer_indices": [],
+        "max_resident_layers": 2,
+        "maximum_resident_bytes": (runtime_policy.maximum_resident_evidence_bytes),
+        "resident_bytes": 0,
+        "prefetch_distance_layers": 1,
+        "peak_occupied_layers": 0,
+        "peak_resident_bytes": 0,
+        "requested_layer_indices": [],
+        "promoted_layer_indices": [],
+        "released_layer_indices": [],
+        "canonical_layer_order_required": True,
+        "parent_forward_calls": 0,
+        "training_steps": 0,
+        "compiler_fingerprint_binding": (
+            "authenticated_by_lfm2_cpcf_v5_resume_context"
+        ),
+        "resume_schema_binding": LFM2_CPCF_V5_RESUME_SCHEMA,
+        "standalone_orchestration_only": True,
+    }
+    return MappingProxyType({**body, "snapshot_sha256": canonical_sha256(body)})
+
+
 def compile_lfm2_cpcf_v5_selective_model_fold(
     source_model: Any,
     target_model: Any,
@@ -1856,35 +2766,47 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
     numerical_frontier_adapter: (
         Lfm2CpcfShortConvNumericalFrontierAdapter | None
     ) = None,
-    resume_state: Any | None = None,
+    resume_state: Lfm2CpcfV5ResumeState | None = None,
+    resume_coordinator: Lfm2CpcfV5ResumeCoordinator | None = None,
 ) -> legacy_model_fold.Lfm2CpcfCompiledModelFold:
     """Compile one dense blank using bounded selective evidence.
 
-    V5 resume artifacts are intentionally rejected until the disk publication
-    bridge can serialize partial chart state under
-    ``LFM2_CPCF_V5_RESUME_SCHEMA``.  Accepting a v4 resume here would silently
-    mix compiler fingerprints, so it fails closed.
+    An optional v5 coordinator persists k=0 and every accepted layer boundary.
+    Resume accepts only an admitted v5 partial frontier restored into the
+    caller-created exact fresh blank; v4 or untyped continuation objects fail
+    closed.
     """
 
-    if resume_state is not None:
+    if resume_state is not None and not isinstance(
+        resume_state,
+        Lfm2CpcfV5ResumeState,
+    ):
         raise Lfm2CpcfV5ModelCompilerError(
-            "V5 selective resume is not yet integrated; refusing a v4 or "
-            "untyped resume artifact."
+            "V5 selective resume requires an admitted typed v5 resume state; "
+            "refusing a v4 or untyped resume artifact."
         )
+    if resume_coordinator is not None and not isinstance(
+        resume_coordinator,
+        Lfm2CpcfV5ResumeCoordinator,
+    ):
+        raise TypeError("resume_coordinator must be Lfm2CpcfV5ResumeCoordinator.")
+    if resume_state is not None:
+        if resume_coordinator is None:
+            resume_coordinator = resume_state.coordinator
+        elif resume_coordinator.store.root != resume_state.coordinator.store.root:
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Resume state and coordinator use different stores."
+            )
     if not isinstance(runtime_policy, Lfm2CpcfV5RuntimePolicy):
         raise TypeError("runtime_policy must be Lfm2CpcfV5RuntimePolicy.")
     if candidate_selector is not None and not callable(
         getattr(candidate_selector, "select", None)
     ):
-        raise TypeError(
-            "candidate_selector must implement select(request)."
-        )
+        raise TypeError("candidate_selector must implement select(request).")
     if numerical_frontier_adapter is not None and not callable(
         getattr(numerical_frontier_adapter, "generate", None)
     ):
-        raise TypeError(
-            "numerical_frontier_adapter must implement generate(request)."
-        )
+        raise TypeError("numerical_frontier_adapter must implement generate(request).")
     real_v5_adapter_contract = _real_v5_numerical_adapter_contract(
         numerical_frontier_adapter
     )
@@ -1897,12 +2819,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             "Lfm2CpcfShortConvV5NumericalFrontierAdapter; a missing, generic, "
             "toy, subclassed, or unauthenticated adapter is not admissible."
         )
-    if (
-        runtime_policy.require_short_conv_v5_endpoint_first_selector
-        and not isinstance(
-            candidate_selector,
-            Lfm2CpcfV5EndpointFirstCandidateSelector,
-        )
+    if runtime_policy.require_short_conv_v5_endpoint_first_selector and not isinstance(
+        candidate_selector,
+        Lfm2CpcfV5EndpointFirstCandidateSelector,
     ):
         raise Lfm2CpcfV5ModelCompilerError(
             "The required source-bound short-conv v5 endpoint-first selector "
@@ -1913,29 +2832,19 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
         evidence_provider,
         Lfm2CpcfSelectiveEvidenceProvider,
     ):
-        raise TypeError(
-            "evidence_provider must be Lfm2CpcfSelectiveEvidenceProvider."
-        )
+        raise TypeError("evidence_provider must be Lfm2CpcfSelectiveEvidenceProvider.")
     if candidate_replay_evaluator is not None and not callable(
         getattr(candidate_replay_evaluator, "evaluate", None)
     ):
-        raise TypeError(
-            "candidate_replay_evaluator must implement evaluate()."
-        )
-    compiler_implementation = dict(
-        lfm2_cpcf_v5_compiler_implementation()
-    )
+        raise TypeError("candidate_replay_evaluator must implement evaluate().")
+    compiler_implementation = dict(lfm2_cpcf_v5_compiler_implementation())
     catalog = evidence_provider.catalog
     if not isinstance(catalog, Lfm2CpcfSelectiveEvidenceCatalog):
         raise Lfm2CpcfV5ModelCompilerError(
             "Selective provider has no authenticated LFM2 catalog."
         )
-    authenticated_full_phase_tree_bytes = (
-        catalog.final_norm_logical_bytes
-        + sum(
-            reference.logical_bytes
-            for reference in catalog.dynamic_catalog.references
-        )
+    authenticated_full_phase_tree_bytes = catalog.final_norm_logical_bytes + sum(
+        reference.logical_bytes for reference in catalog.dynamic_catalog.references
     )
     if (
         runtime_policy.full_phase_tree_logical_bytes
@@ -1954,12 +2863,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             "evidence budget."
         )
     rss_guard = _PhysicalRssGuard(
-        maximum_increase_bytes=(
-            runtime_policy.maximum_physical_rss_increase_bytes
-        ),
-        full_phase_tree_logical_bytes=(
-            runtime_policy.full_phase_tree_logical_bytes
-        ),
+        maximum_increase_bytes=(runtime_policy.maximum_physical_rss_increase_bytes),
+        maximum_process_rss_bytes=runtime_policy.maximum_process_rss_bytes,
+        full_phase_tree_logical_bytes=(runtime_policy.full_phase_tree_logical_bytes),
         minimum_reduction_fraction=(
             runtime_policy.minimum_physical_rss_reduction_fraction
         ),
@@ -1970,14 +2876,16 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
     provider_closed = False
     bootstrap_payload: Lfm2CpcfSelectiveLayerPayload | None = None
     final_payload: Lfm2CpcfSelectiveFinalNormPayload | None = None
+    resume_final_phases: tuple[Lfm2CpcfTargetPhase, ...] | None = None
+    admitted_prefixes: list[dict[str, Any]] = []
+    resume_input_admission_chain_proof: Mapping[str, Any] | None = None
+    executed_layer_indices: list[int] = []
     try:
         rss_guard.checkpoint("request_authenticated")
-        target_inventory_before = (
-            legacy_model_fold.independent_parameter_inventory(target_model)
+        target_inventory_before = legacy_model_fold.independent_parameter_inventory(
+            target_model
         )
-        target_count = int(
-            target_inventory_before["unique_parameters"]
-        )
+        target_count = int(target_inventory_before["unique_parameters"])
         planned = _positive_int(
             planned_target_unique_parameters,
             "planned_target_unique_parameters",
@@ -2011,15 +2919,13 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             raise Lfm2CpcfV5ModelCompilerError(
                 "Source, target, and selective catalog depth differ."
             )
-        parameter_receipt = (
-            legacy_model_fold.audit_lfm2_cpcf_parameter_compaction(
-                source_model,
-                target_model,
-                planned_target_unique_parameters=planned,
-                promotion_compression_ratio=(
-                    runtime_policy.model_fold_policy.promotion_compression_ratio
-                ),
-            )
+        parameter_receipt = legacy_model_fold.audit_lfm2_cpcf_parameter_compaction(
+            source_model,
+            target_model,
+            planned_target_unique_parameters=planned,
+            promotion_compression_ratio=(
+                runtime_policy.model_fold_policy.promotion_compression_ratio
+            ),
         )
         if (
             runtime_policy.model_fold_policy.require_promotion_ratio
@@ -2028,22 +2934,56 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             raise Lfm2CpcfV5ModelCompilerError(
                 "Target does not meet the required promotion ratio."
             )
-        bootstrap_payload, bootstrap_authentication = (
-            _authenticated_bootstrap_payload(
-                evidence_provider,
-                layer_index=0,
+        target_topology = build_lfm2_cpcf_target_topology_snapshot(
+            prefix_model=target_before.tensor_values,
+            layer_count=catalog.layer_count,
+            snapshot_metadata=(
+                legacy_model_fold._snapshot_metadata_plain(target_before)
+            ),
+        )
+        resume_used = resume_state is not None
+        if resume_used:
+            final_payload = evidence_provider.load_final_norm_payload()
+            final_norm_authentication_sha256 = (
+                evidence_provider.authenticate_final_norm_payload(final_payload)
             )
-        )
-        phases = build_lfm2_cpcf_v5_target_phase_shells(
-            trace_adapter,
-            catalog,
-            bootstrap_payload,
-        )
-        evidence_provider.release_layer_payload(
-            catalog.dynamic_catalog.references[0],
-            bootstrap_payload,
-        )
-        bootstrap_payload = None
+            phases = build_lfm2_cpcf_v5_target_phase_shells(
+                trace_adapter,
+                catalog,
+                None,
+                final_norm_payload=final_payload,
+            )
+            resume_final_phases = materialize_lfm2_cpcf_v5_final_norm_phases(
+                phases,
+                catalog,
+                final_payload,
+            )
+            evidence_provider.release_final_norm_payload(final_payload)
+            final_payload = None
+            bootstrap_authentication_sha256 = _digest(
+                resume_state.frontier.context["bootstrap_authentication_sha256"],
+                "resume bootstrap authentication SHA-256",
+            )
+        else:
+            bootstrap_payload, bootstrap_authentication = (
+                _authenticated_bootstrap_payload(
+                    evidence_provider,
+                    layer_index=0,
+                )
+            )
+            bootstrap_authentication_sha256 = (
+                bootstrap_authentication.authentication_sha256
+            )
+            phases = build_lfm2_cpcf_v5_target_phase_shells(
+                trace_adapter,
+                catalog,
+                bootstrap_payload,
+            )
+            evidence_provider.release_layer_payload(
+                catalog.dynamic_catalog.references[0],
+                bootstrap_payload,
+            )
+            bootstrap_payload = None
         gc.collect()
         rss_guard.checkpoint("tensor_free_phase_shells_built")
         boundary_compiler = _SelectiveBoundaryCompiler(
@@ -2053,148 +2993,314 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             target_hidden_width=int(target_model.config.hidden_size),
             model_policy=runtime_policy.model_fold_policy,
         )
-        final_payload = evidence_provider.load_final_norm_payload()
-        final_norm_authentication_sha256 = (
-            evidence_provider.authenticate_final_norm_payload(final_payload)
-        )
-        final_phases = materialize_lfm2_cpcf_v5_final_norm_phases(
-            phases,
-            catalog,
-            final_payload,
-        )
-        interface = boundary_compiler.fit_interface(
-            final_phases,
-            target_norm_epsilon=(
-                legacy_model_fold._final_norm_epsilon(target_model)
-            ),
-        )
-        del final_phases
-        evidence_provider.release_final_norm_payload(final_payload)
-        final_payload = None
-        gc.collect()
-        rss_guard.checkpoint("interface_fitted_final_norm_released")
-        interface_install = install_lfm2_cpcf_tied_interface(
-            target_model,
-            interface,
-        )
-        neutral_norm_install = install_lfm2_cpcf_neutral_norms(
-            target_model,
-            attention_qk_norm_weights=(
-                legacy_model_fold._preserved_qk_norm_weights(
-                    source_model,
-                    target_model,
+        if resume_used:
+            if resume_final_phases is None:
+                raise Lfm2CpcfV5ModelCompilerError(
+                    "Resume lost its authenticated final-normalization "
+                    "rehydration phases."
                 )
-            ),
+            interface = boundary_compiler.fit_interface(
+                resume_final_phases,
+                target_norm_epsilon=(
+                    legacy_model_fold._final_norm_epsilon(target_model)
+                ),
+            )
+            del resume_final_phases
+            resume_final_phases = None
+            gc.collect()
+            rss_guard.checkpoint("resume_interface_recomputed_from_final_norm")
+        else:
+            final_payload = evidence_provider.load_final_norm_payload()
+            final_norm_authentication_sha256 = (
+                evidence_provider.authenticate_final_norm_payload(final_payload)
+            )
+            final_phases = materialize_lfm2_cpcf_v5_final_norm_phases(
+                phases,
+                catalog,
+                final_payload,
+            )
+            interface = boundary_compiler.fit_interface(
+                final_phases,
+                target_norm_epsilon=(
+                    legacy_model_fold._final_norm_epsilon(target_model)
+                ),
+            )
+            del final_phases
+            evidence_provider.release_final_norm_payload(final_payload)
+            final_payload = None
+            gc.collect()
+            rss_guard.checkpoint("interface_fitted_final_norm_released")
+        resume_context = _build_live_resume_context(
+            source_before=source_before,
+            target_before=target_before,
+            target_topology_sha256=target_topology["topology_sha256"],
+            catalog=catalog,
+            trace_adapter=trace_adapter,
+            source_tied_table=source_tied_table,
+            blank_report_sha256=blank["report_sha256"],
+            planned_target_unique_parameters=planned,
+            runtime_policy=runtime_policy,
+            compiler_implementation=compiler_implementation,
+            candidate_replay_evaluator=candidate_replay_evaluator,
+            candidate_selector=candidate_selector,
+            numerical_frontier_adapter=numerical_frontier_adapter,
+            bootstrap_authentication_sha256=(bootstrap_authentication_sha256),
+            final_norm_authentication_sha256=(final_norm_authentication_sha256),
         )
-        state_bank = seed_lfm2_cpcf_phase_states(
-            target_model,
-            phases,
-        )
-        completed_receipts = []
+
+        if resume_used:
+            restored = resume_coordinator.restore(
+                resume_state,
+                target_model=target_model,
+                phases=phases,
+                boundary_compiler=boundary_compiler,
+                expected_context=resume_context,
+                expected_blank_state_sha256=target_before.state_fingerprint,
+            )
+            state_bank = restored.state_bank
+            completed_receipts = list(restored.completed_layer_receipts)
+            start_layer_index = restored.frontier.next_layer_index
+            interface = boundary_compiler.interface
+            installed_state_sha256 = restored.prefix_install_report[
+                "installed_state_sha256_after"
+            ]
+            resume_input_admission_chain_proof = (
+                build_lfm2_cpcf_v5_admission_chain_proof(
+                    resume_coordinator,
+                    restored.admission["admission_sha256"],
+                )
+            )
+        else:
+            interface_install = install_lfm2_cpcf_tied_interface(
+                target_model,
+                interface,
+            )
+            neutral_norm_install = install_lfm2_cpcf_neutral_norms(
+                target_model,
+                attention_qk_norm_weights=(
+                    legacy_model_fold._preserved_qk_norm_weights(
+                        source_model,
+                        target_model,
+                    )
+                ),
+            )
+            state_bank = seed_lfm2_cpcf_phase_states(
+                target_model,
+                phases,
+            )
+            completed_receipts = []
+            start_layer_index = 0
+            installed_state_sha256 = None
+        if resume_used:
+            interface_install = install_lfm2_cpcf_tied_interface(
+                target_model,
+                interface,
+            )
+            neutral_norm_install = install_lfm2_cpcf_neutral_norms(
+                target_model,
+                attention_qk_norm_weights=(
+                    legacy_model_fold._preserved_qk_norm_weights(
+                        source_model,
+                        target_model,
+                    )
+                ),
+            )
+            if (
+                legacy_model_fold.fingerprint_model_state(target_model)
+                != installed_state_sha256
+            ):
+                raise Lfm2CpcfV5ModelCompilerError(
+                    "Reauthenticating the restored interface and neutral "
+                    "norms changed the installed prefix."
+                )
+
+        def persist_prefix_before_rss(
+            next_layer_index: int,
+            *,
+            label: str,
+        ) -> None:
+            if resume_coordinator is None:
+                rss_guard.checkpoint(label)
+                return
+            if (
+                _optional_runtime_contract_sha256(
+                    candidate_selector,
+                    kind="candidate_selector",
+                )
+                != resume_context["selector_contract_sha256"]
+                or _optional_runtime_contract_sha256(
+                    candidate_replay_evaluator,
+                    kind="candidate_replay",
+                )
+                != resume_context["gpu_contract_sha256"]
+                or _optional_runtime_contract_sha256(
+                    numerical_frontier_adapter,
+                    kind="numerical_frontier",
+                )
+                != resume_context["numerical_contract_sha256"]
+            ):
+                raise Lfm2CpcfV5ModelCompilerError(
+                    "Selector, replay-evaluator, or numerical-frontier "
+                    "runtime state changed before resumable prefix "
+                    "publication."
+                )
+            frontier = Lfm2CpcfV5BoundaryFrontier.capture(
+                boundary_compiler,
+                context=resume_context,
+                next_layer_index=next_layer_index,
+                expected_layer_count=catalog.layer_count,
+            )
+            event = Lfm2CpcfV5ProgressEvent.capture(
+                frontier=frontier,
+                incoming_state_bank=state_bank,
+                completed_layer_receipts=completed_receipts,
+                target_model=target_model,
+            )
+            pending = resume_coordinator.publish_pending(
+                event,
+                rss_checkpoint_expectation=(
+                    rss_guard.next_checkpoint_expectation(label)
+                ),
+            )
+            del event, frontier
+            gc.collect()
+            try:
+                rss_receipt = rss_guard.checkpoint(label)
+            except Lfm2CpcfV5PhysicalRssError as rss_error:
+                resume_coordinator.record_rss_rejection(
+                    pending,
+                    rss_violation_report=rss_error.report,
+                )
+                raise
+            admission = resume_coordinator.admit(
+                pending,
+                rss_checkpoint_receipt=rss_receipt,
+            )
+            admission_chain_proof = (
+                build_lfm2_cpcf_v5_admission_chain_proof(
+                    resume_coordinator,
+                    admission["admission_sha256"],
+                )
+            )
+            admitted_prefixes.append(
+                {
+                    "next_layer_index": next_layer_index,
+                    "frontier_reference": (pending.frontier_reference.as_dict()),
+                    "checkpoint_reference": (pending.checkpoint.reference.as_dict()),
+                    "frontier_sha256": pending.frontier_sha256,
+                    "admission_sha256": admission["admission_sha256"],
+                    "admission_chain_proof": dict(admission_chain_proof),
+                    "admission_chain_proof_sha256": (
+                        admission_chain_proof["proof_sha256"]
+                    ),
+                }
+            )
+
+        if not resume_used:
+            persist_prefix_before_rss(
+                0,
+                label="prefix_000000_persisted_before_residency",
+            )
         residency_snapshot: Mapping[str, Any] | None = None
-        with DynamicEvidenceResidencyWindow(
-            catalog.dynamic_catalog,
-            evidence_provider,
-            maximum_resident_bytes=(
-                runtime_policy.maximum_resident_evidence_bytes
-            ),
-        ) as residency:
-            resident = residency.start(start_layer_index=0)
-            rss_guard.checkpoint("residency_started")
-            for layer_index in range(catalog.layer_count):
-                if (
-                    resident.layer_index != layer_index
-                    or not isinstance(
+        if start_layer_index == catalog.layer_count:
+            residency_snapshot = _completed_resume_residency_receipt(
+                catalog,
+                runtime_policy,
+            )
+        else:
+            with DynamicEvidenceResidencyWindow(
+                catalog.dynamic_catalog,
+                evidence_provider,
+                maximum_resident_bytes=(runtime_policy.maximum_resident_evidence_bytes),
+            ) as residency:
+                resident = residency.start(start_layer_index=start_layer_index)
+                rss_guard.checkpoint("residency_started")
+                for layer_index in range(
+                    start_layer_index,
+                    catalog.layer_count,
+                ):
+                    executed_layer_indices.append(layer_index)
+                    if resident.layer_index != layer_index or not isinstance(
                         resident.payload,
                         Lfm2CpcfSelectiveLayerPayload,
-                    )
-                ):
-                    raise Lfm2CpcfV5ModelCompilerError(
-                        "Residency window promoted the wrong LFM2 layer."
-                    )
-                materialized_phases = (
-                    materialize_lfm2_cpcf_v5_layer_phases(
+                    ):
+                        raise Lfm2CpcfV5ModelCompilerError(
+                            "Residency window promoted the wrong LFM2 layer."
+                        )
+                    materialized_phases = materialize_lfm2_cpcf_v5_layer_phases(
                         phases,
                         catalog,
                         resident.payload,
                     )
-                )
-                layer_bank = rebind_lfm2_cpcf_phase_state_bank(
-                    state_bank,
-                    materialized_phases,
-                )
-                charts = boundary_compiler.fit_layer(
-                    materialized_phases,
-                    layer_index=layer_index,
-                )
-                result = compile_and_install_lfm2_cpcf_layer(
-                    source_model,
-                    target_model,
-                    layer_index=layer_index,
-                    input_bank=layer_bank,
-                    boundary_charts=charts,
-                    ridge=runtime_policy.model_fold_policy.ridge,
-                    short_conv_gate_policy=(
-                        runtime_policy.model_fold_policy.resolved_short_conv_policy()
-                    ),
-                    short_conv_v4_solver_policy=(
-                        runtime_policy.model_fold_policy.short_conv_v4_solver_policy
-                    ),
-                    candidate_replay_evaluator=(
-                        candidate_replay_evaluator
-                    ),
-                    candidate_selector=candidate_selector,
-                    numerical_frontier_adapter=(
-                        numerical_frontier_adapter
-                    ),
-                )
-                receipt = legacy_model_fold.Lfm2CpcfCompletedLayerReceipt(
-                    result.report
-                )
-                next_bank = rebind_lfm2_cpcf_phase_state_bank(
-                    result.next_bank,
-                    phases,
-                )
-                if (
-                    receipt.input_bank_sha256
-                    != state_bank.state_bank_sha256
-                    or receipt.next_bank_sha256
-                    != next_bank.state_bank_sha256
-                ):
-                    raise Lfm2CpcfV5ModelCompilerError(
-                        "Layer receipt differs from tensor-free state-bank "
-                        "lineage."
+                    layer_bank = rebind_lfm2_cpcf_phase_state_bank(
+                        state_bank,
+                        materialized_phases,
                     )
-                completed_receipts.append(receipt)
-                state_bank = next_bank
-                del (
-                    result,
-                    receipt,
-                    layer_bank,
-                    materialized_phases,
-                    charts,
-                )
-                gc.collect()
-                rss_guard.checkpoint(
-                    f"layer_{layer_index:03d}_compiled_before_release"
-                )
-                following = residency.advance(
-                    completed_layer_index=layer_index
-                )
-                rss_guard.checkpoint(
-                    f"layer_{layer_index:03d}_released"
-                )
-                if layer_index + 1 < catalog.layer_count:
-                    if following is None:
+                    charts = boundary_compiler.fit_layer(
+                        materialized_phases,
+                        layer_index=layer_index,
+                    )
+                    result = compile_and_install_lfm2_cpcf_layer(
+                        source_model,
+                        target_model,
+                        layer_index=layer_index,
+                        input_bank=layer_bank,
+                        boundary_charts=charts,
+                        ridge=runtime_policy.model_fold_policy.ridge,
+                        short_conv_gate_policy=(
+                            runtime_policy.model_fold_policy.resolved_short_conv_policy()
+                        ),
+                        short_conv_v4_solver_policy=(
+                            runtime_policy.model_fold_policy.short_conv_v4_solver_policy
+                        ),
+                        candidate_replay_evaluator=(candidate_replay_evaluator),
+                        candidate_selector=candidate_selector,
+                        numerical_frontier_adapter=(numerical_frontier_adapter),
+                    )
+                    receipt = legacy_model_fold.Lfm2CpcfCompletedLayerReceipt(
+                        result.report
+                    )
+                    next_bank = rebind_lfm2_cpcf_phase_state_bank(
+                        result.next_bank,
+                        phases,
+                    )
+                    if (
+                        receipt.input_bank_sha256 != state_bank.state_bank_sha256
+                        or receipt.next_bank_sha256 != next_bank.state_bank_sha256
+                    ):
                         raise Lfm2CpcfV5ModelCompilerError(
-                            "Residency ended before the final layer."
+                            "Layer receipt differs from tensor-free state-bank lineage."
                         )
-                    resident = following
-                elif following is not None:
-                    raise Lfm2CpcfV5ModelCompilerError(
-                        "Residency retained evidence after the final layer."
+                    completed_receipts.append(receipt)
+                    state_bank = next_bank
+                    persist_prefix_before_rss(
+                        layer_index + 1,
+                        label=(
+                            f"layer_{layer_index:03d}_compiled_"
+                            "checkpoint_persisted_before_release"
+                        ),
                     )
-            residency_snapshot = residency.snapshot()
+                    del (
+                        result,
+                        receipt,
+                        layer_bank,
+                        materialized_phases,
+                        charts,
+                    )
+                    gc.collect()
+                    following = residency.advance(completed_layer_index=layer_index)
+                    rss_guard.checkpoint(f"layer_{layer_index:03d}_released")
+                    if layer_index + 1 < catalog.layer_count:
+                        if following is None:
+                            raise Lfm2CpcfV5ModelCompilerError(
+                                "Residency ended before the final layer."
+                            )
+                        resident = following
+                    elif following is not None:
+                        raise Lfm2CpcfV5ModelCompilerError(
+                            "Residency retained evidence after the final layer."
+                        )
+                residency_snapshot = residency.snapshot()
         if residency_snapshot is None:
             raise Lfm2CpcfV5ModelCompilerError(
                 "Residency window emitted no completion receipt."
@@ -2256,9 +3362,7 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
         bundle = boundary_compiler.finalize()
         final_payload = evidence_provider.load_final_norm_payload()
         if (
-            evidence_provider.authenticate_final_norm_payload(
-                final_payload
-            )
+            evidence_provider.authenticate_final_norm_payload(final_payload)
             != final_norm_authentication_sha256
         ):
             raise Lfm2CpcfV5ModelCompilerError(
@@ -2285,8 +3389,8 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
         final_payload = None
         gc.collect()
         rss_guard.checkpoint("final_norm_fitted_evidence_released")
-        target_inventory_after = (
-            legacy_model_fold.independent_parameter_inventory(target_model)
+        target_inventory_after = legacy_model_fold.independent_parameter_inventory(
+            target_model
         )
         legacy_model_fold._authenticate_model(source_model, source_before)
         if (
@@ -2311,8 +3415,39 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             "schema": LFM2_CPCF_V5_MODEL_FOLD_SCHEMA,
             "artifact_schema": LFM2_CPCF_V5_ARTIFACT_SCHEMA,
             "resume_schema": LFM2_CPCF_V5_RESUME_SCHEMA,
-            "resume_supported": False,
+            "resume_supported": True,
             "resume_fail_closed": True,
+            "resume_used": resume_used,
+            "resume_start_layer_index": start_layer_index,
+            "resume_completed_prefix_layer_indices": list(range(start_layer_index)),
+            "resume_executed_layer_indices": executed_layer_indices,
+            "resume_completed_layers_replayed": False,
+            "resume_actual_upstream_child_state_restored": resume_used,
+            "resume_prefix_install_report_sha256": (
+                None
+                if not resume_used
+                else restored.prefix_install_report["report_sha256"]
+            ),
+            "resume_frontier_sha256": (
+                None if not resume_used else restored.frontier.frontier_sha256
+            ),
+            "resume_admission_sha256": (
+                None if not resume_used else restored.admission["admission_sha256"]
+            ),
+            "resume_input_admission_chain_proof": (
+                None
+                if resume_input_admission_chain_proof is None
+                else dict(resume_input_admission_chain_proof)
+            ),
+            "resume_input_admission_chain_proof_sha256": (
+                None
+                if resume_input_admission_chain_proof is None
+                else resume_input_admission_chain_proof["proof_sha256"]
+            ),
+            "resume_publication_enabled": resume_coordinator is not None,
+            "resume_admitted_prefixes": admitted_prefixes,
+            "resume_parent_or_cache_tensor_sidecars": 0,
+            "resume_checkpoint_receipt_chain_authenticated": True,
             "compiler_implementation": compiler_implementation,
             "blank_target_report_sha256": blank["report_sha256"],
             "policy": runtime_policy.as_dict(),
@@ -2325,19 +3460,13 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                 authenticated_full_phase_tree_bytes
             ),
             "physical_rss_baseline_bound_to_authenticated_catalog": True,
-            "bootstrap_authentication_sha256": (
-                bootstrap_authentication.authentication_sha256
-            ),
-            "final_norm_authentication_sha256": (
-                final_norm_authentication_sha256
-            ),
+            "bootstrap_authentication_sha256": (bootstrap_authentication_sha256),
+            "final_norm_authentication_sha256": (final_norm_authentication_sha256),
             "residency_receipt": dict(residency_snapshot),
             "physical_rss_receipt": dict(physical_rss_report),
             "boundary_bundle_sha256": bundle.bundle_sha256,
             "legacy_boundary_bundle_schema_preserved": True,
-            "interface_install_report_sha256": (
-                interface_install["report_sha256"]
-            ),
+            "interface_install_report_sha256": (interface_install["report_sha256"]),
             "neutral_norm_install_report_sha256": (
                 neutral_norm_install["report_sha256"]
             ),
@@ -2345,16 +3474,10 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                 receipt.result_sha256 for receipt in completed_receipts
             ],
             "final_state_bank_sha256": state_bank.state_bank_sha256,
-            "final_norm_report_sha256": (
-                final_norm_report["report_sha256"]
-            ),
+            "final_norm_report_sha256": (final_norm_report["report_sha256"]),
             "parameter_receipt": dict(parameter_receipt),
-            "target_parameter_inventory_before": dict(
-                target_inventory_before
-            ),
-            "target_parameter_inventory_after": dict(
-                target_inventory_after
-            ),
+            "target_parameter_inventory_before": dict(target_inventory_before),
+            "target_parameter_inventory_after": dict(target_inventory_after),
             "source_state_preserved": True,
             "target_parameter_count_preserved": True,
             "all_layers_compiled_in_order": True,
@@ -2366,9 +3489,7 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             "candidate_replay_backend_injected": (
                 candidate_replay_evaluator is not None
             ),
-            "preinstall_candidate_selector_provided": (
-                candidate_selector is not None
-            ),
+            "preinstall_candidate_selector_provided": (candidate_selector is not None),
             "preinstall_candidate_selector_active": bool(
                 selector_applied_layer_indices
             ),
@@ -2393,8 +3514,7 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             ),
             "short_conv_layer_indices": short_conv_layer_indices,
             "short_conv_v5_real_numerical_adapter_required": (
-                runtime_policy
-                .require_short_conv_v5_real_numerical_frontier_adapter
+                runtime_policy.require_short_conv_v5_real_numerical_frontier_adapter
             ),
             "short_conv_v5_real_numerical_adapter_concrete_instance_provided": (
                 real_v5_adapter_contract is not None
@@ -2447,31 +3567,25 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
         if bootstrap_payload is not None:
             try:
                 evidence_provider.release_layer_payload(
-                    catalog.dynamic_catalog.references[
-                        bootstrap_payload.layer_index
-                    ],
+                    catalog.dynamic_catalog.references[bootstrap_payload.layer_index],
                     bootstrap_payload,
                 )
             except BaseException as cleanup_error:
                 error.add_note(
-                    "Bootstrap evidence release also failed: "
-                    f"{cleanup_error}"
+                    f"Bootstrap evidence release also failed: {cleanup_error}"
                 )
         if final_payload is not None:
             try:
                 evidence_provider.release_final_norm_payload(final_payload)
             except BaseException as cleanup_error:
                 error.add_note(
-                    "Final-normalization evidence release also failed: "
-                    f"{cleanup_error}"
+                    f"Final-normalization evidence release also failed: {cleanup_error}"
                 )
         if not provider_closed:
             try:
                 evidence_provider.close()
             except BaseException as cleanup_error:
-                error.add_note(
-                    f"Selective provider close also failed: {cleanup_error}"
-                )
+                error.add_note(f"Selective provider close also failed: {cleanup_error}")
         rss_guard.abort()
         try:
             legacy_model_fold._restore_model(target_model, target_before)
@@ -2493,8 +3607,7 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
         if not isinstance(error, Exception):
             raise
         raise Lfm2CpcfV5ModelCompilerError(
-            "V5 selective compilation failed after exact whole-model "
-            f"rollback: {error}"
+            f"V5 selective compilation failed after exact whole-model rollback: {error}"
         ) from error
 
 
@@ -2502,10 +3615,13 @@ __all__ = [
     "LFM2_CPCF_V5_ARTIFACT_SCHEMA",
     "LFM2_CPCF_V5_COMPILER_IMPLEMENTATION_SCHEMA",
     "LFM2_CPCF_V5_MODEL_FOLD_SCHEMA",
+    "LFM2_CPCF_V5_PHYSICAL_RSS_CHECKPOINT_SCHEMA",
+    "LFM2_CPCF_V5_PHYSICAL_RSS_EXPECTATION_SCHEMA",
     "LFM2_CPCF_V5_PHYSICAL_RSS_SCHEMA",
     "LFM2_CPCF_V5_RESUME_SCHEMA",
     "Lfm2CpcfV5EndpointFirstCandidateSelector",
     "Lfm2CpcfV5ModelCompilerError",
+    "Lfm2CpcfV5PhysicalRssError",
     "Lfm2CpcfV5RuntimePolicy",
     "build_lfm2_cpcf_v5_target_phase_shells",
     "compile_lfm2_cpcf_v5_selective_model_fold",

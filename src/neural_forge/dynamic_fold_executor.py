@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import importlib
 import inspect
 import math
 import textwrap
@@ -1084,6 +1085,8 @@ class DynamicFoldRun:
     optimizer_steps: int = 0
     backward_calls: int = 0
     autograd_grad_calls: int = 0
+    pruning_operations: int = 0
+    quantization_operations: int = 0
     whole_model_snapshot_backend: str = "memory"
     observed_parent_module_forward_calls: int = 0
     observed_parent_root_forward_calls: int = 0
@@ -1159,6 +1162,8 @@ class DynamicFoldRun:
                 and self.optimizer_steps == 0
                 and self.backward_calls == 0
                 and self.autograd_grad_calls == 0
+                and self.pruning_operations == 0
+                and self.quantization_operations == 0
             ),
             "historical_zero_training_proven_for_arbitrary_plugins": False,
             "operator_implementations_require_external_audit": True,
@@ -1167,6 +1172,14 @@ class DynamicFoldRun:
             "optimizer_steps": self.optimizer_steps,
             "backward_calls": self.backward_calls,
             "autograd_grad_calls": self.autograd_grad_calls,
+            "pruning_operations": self.pruning_operations,
+            "quantization_operations": self.quantization_operations,
+            "pruning_quantization_api_observation_scope": (
+                "process-local public pruning and common public/low-level "
+                "quantization bindings installed during the fold guard; "
+                "aliases captured before guard entry are excluded"
+            ),
+            "prebound_pruning_quantization_aliases_runtime_observed": False,
             "whole_model_snapshot_backend": (self.whole_model_snapshot_backend),
             "whole_model_snapshot_cleanup_completed": True,
             "observed_parent_module_forward_calls": (
@@ -1630,17 +1643,113 @@ class _FoldOnlyTorchGuard:
         self.optimizer_steps = 0
         self.backward_calls = 0
         self.autograd_grad_calls = 0
+        self.pruning_operations = 0
+        self.quantization_operations = 0
         self._patches: list[tuple[Any, str, Any, bool]] = []
+        self._patched_bindings: set[tuple[int, str]] = set()
         self._no_grad: Any | None = None
 
     def _patch(self, owner: Any, name: str, replacement: Any) -> None:
-        original = getattr(owner, name)
+        key = (id(owner), name)
+        if key in self._patched_bindings:
+            return
         try:
-            directly_owned = name in vars(owner)
+            owner_bindings = vars(owner)
+            directly_owned = name in owner_bindings
         except TypeError:
+            owner_bindings = {}
             directly_owned = True
+        original = inspect.getattr_static(owner, name)
         self._patches.append((owner, name, original, directly_owned))
+        self._patched_bindings.add(key)
         setattr(owner, name, replacement)
+
+    def _patch_forbidden_operations(
+        self,
+        owner: Any,
+        names: Sequence[str],
+        *,
+        counter_name: str,
+        operation_label: str,
+    ) -> None:
+        for name in names:
+            if not callable(getattr(owner, name, None)):
+                continue
+
+            def forbidden(
+                *args: Any,
+                _name: str = name,
+                **kwargs: Any,
+            ) -> None:
+                del args, kwargs
+                setattr(self, counter_name, getattr(self, counter_name) + 1)
+                raise DynamicFoldExecutionError(
+                    f"{operation_label} API {_name} is forbidden during "
+                    "dynamic folding."
+                )
+
+            self._patch(owner, name, forbidden)
+
+    def _patch_forbidden_classmethods(
+        self,
+        owners: Sequence[type[Any]],
+        name: str,
+        *,
+        counter_name: str,
+        operation_label: str,
+    ) -> None:
+        for owner in owners:
+            if not callable(getattr(owner, name, None)):
+                continue
+
+            def forbidden(
+                _class: type[Any],
+                *args: Any,
+                _owner_name: str = owner.__qualname__,
+                _name: str = name,
+                **kwargs: Any,
+            ) -> None:
+                del _class, args, kwargs
+                setattr(self, counter_name, getattr(self, counter_name) + 1)
+                raise DynamicFoldExecutionError(
+                    f"{operation_label} API {_owner_name}.{_name} is "
+                    "forbidden during dynamic folding."
+                )
+
+            self._patch(owner, name, classmethod(forbidden))
+
+    def _patch_forbidden_methods(
+        self,
+        owners: Sequence[type[Any]],
+        names: Sequence[str],
+        *,
+        counter_name: str,
+        operation_label: str,
+    ) -> None:
+        for owner in owners:
+            for name in names:
+                if not callable(getattr(owner, name, None)):
+                    continue
+
+                def forbidden(
+                    _instance: Any,
+                    *args: Any,
+                    _owner_name: str = owner.__qualname__,
+                    _name: str = name,
+                    **kwargs: Any,
+                ) -> None:
+                    del _instance, args, kwargs
+                    setattr(
+                        self,
+                        counter_name,
+                        getattr(self, counter_name) + 1,
+                    )
+                    raise DynamicFoldExecutionError(
+                        f"{operation_label} API {_owner_name}.{_name} is "
+                        "forbidden during dynamic folding."
+                    )
+
+                self._patch(owner, name, forbidden)
 
     def __enter__(self) -> _FoldOnlyTorchGuard:
         self._lock.acquire()
@@ -1733,6 +1842,104 @@ class _FoldOnlyTorchGuard:
 
                 self._patch(value, "__init__", forbidden_init)
                 self._patch(value, "step", forbidden_step)
+
+            # These are deliberately scoped to common public PyTorch mutation
+            # entrypoints. Dense BF16/FP32 casts remain valid folding math and
+            # are not patched. Retained state must be inspected separately.
+            from torch.nn.utils import prune as torch_prune
+
+            self._patch_forbidden_operations(
+                torch_prune,
+                (
+                    "identity",
+                    "random_unstructured",
+                    "l1_unstructured",
+                    "random_structured",
+                    "ln_structured",
+                    "global_unstructured",
+                    "custom_from_mask",
+                    "remove",
+                ),
+                counter_name="pruning_operations",
+                operation_label="Pruning",
+            )
+            pruning_method_types = tuple(
+                value
+                for value in vars(torch_prune).values()
+                if isinstance(value, type)
+                and issubclass(value, torch_prune.BasePruningMethod)
+            )
+            self._patch_forbidden_classmethods(
+                pruning_method_types,
+                "apply",
+                counter_name="pruning_operations",
+                operation_label="Pruning",
+            )
+            self._patch_forbidden_methods(
+                pruning_method_types,
+                ("prune", "apply_mask", "remove"),
+                counter_name="pruning_operations",
+                operation_label="Pruning",
+            )
+            quantization_modules = []
+            for module_name in (
+                "torch.ao.quantization",
+                "torch.ao.quantization.quantize",
+                "torch.quantization",
+                "torch.quantization.quantize",
+                "torch.ao.quantization.quantize_fx",
+                "torch.ao.quantization.quantize_pt2e",
+                "torch.ao.quantization.pt2e",
+                "torchao.quantization",
+                "torchao.quantization.quantize_",
+            ):
+                try:
+                    quantization_modules.append(importlib.import_module(module_name))
+                except ImportError:
+                    continue
+            quantization_names = (
+                "quantize",
+                "quantize_dynamic",
+                "quantize_qat",
+                "prepare",
+                "prepare_qat",
+                "convert",
+                "fuse_modules",
+                "fuse_modules_qat",
+                "propagate_qconfig_",
+                "add_quant_dequant",
+                "prepare_fx",
+                "prepare_qat_fx",
+                "convert_fx",
+                "convert_to_reference_fx",
+                "prepare_pt2e",
+                "prepare_qat_pt2e",
+                "convert_pt2e",
+                "prepare_jit",
+                "prepare_dynamic_jit",
+                "convert_jit",
+                "convert_dynamic_jit",
+                "quantize_jit",
+                "quantize_dynamic_jit",
+            )
+            for module in quantization_modules:
+                self._patch_forbidden_operations(
+                    module,
+                    quantization_names,
+                    counter_name="quantization_operations",
+                    operation_label="Quantization",
+                )
+            self._patch_forbidden_operations(
+                torch,
+                (
+                    "quantize_per_tensor",
+                    "quantize_per_channel",
+                    "fake_quantize_per_tensor_affine",
+                    "fake_quantize_per_channel_affine",
+                ),
+                counter_name="quantization_operations",
+                operation_label="Quantization",
+            )
             return self
         except BaseException:
             self.__exit__(None, None, None)
@@ -1751,6 +1958,7 @@ class _FoldOnlyTorchGuard:
             else:
                 delattr(owner, name)
         self._patches.clear()
+        self._patched_bindings.clear()
         if self._no_grad is not None:
             self._no_grad.__exit__(None, None, None)
             self._no_grad = None
@@ -1766,6 +1974,8 @@ class FoldOnlyGuardReport:
     optimizer_steps: int
     backward_calls: int
     autograd_grad_calls: int
+    pruning_operations: int
+    quantization_operations: int
     protected_model_count: int
 
     @property
@@ -1777,6 +1987,8 @@ class FoldOnlyGuardReport:
                 self.optimizer_steps,
                 self.backward_calls,
                 self.autograd_grad_calls,
+                self.pruning_operations,
+                self.quantization_operations,
             )
         )
 
@@ -1787,6 +1999,21 @@ class FoldOnlyGuardReport:
             "optimizer_steps": self.optimizer_steps,
             "backward_calls": self.backward_calls,
             "autograd_grad_calls": self.autograd_grad_calls,
+            "pruning_operations": self.pruning_operations,
+            "quantization_operations": self.quantization_operations,
+            "pruning_observation_scope": (
+                "process-local public PyTorch pruning module functions and "
+                "exported BasePruningMethod class apply/prune/apply_mask/remove "
+                "bindings installed during the guard"
+            ),
+            "quantization_observation_scope": (
+                "process-local common public PyTorch/torchao quantization and "
+                "low-level torch quantize/fake-quant bindings installed during "
+                "the guard"
+            ),
+            "prebound_aliases_runtime_observed": False,
+            "prebound_aliases_require_authenticated_source_audit": True,
+            "ordinary_bfloat16_and_float32_casts_blocked": False,
             "protected_model_count": self.protected_model_count,
             "clean": self.clean,
         }
@@ -1887,6 +2114,8 @@ def run_fold_only_callback(
         optimizer_steps=guard.optimizer_steps,
         backward_calls=guard.backward_calls,
         autograd_grad_calls=guard.autograd_grad_calls,
+        pruning_operations=guard.pruning_operations,
+        quantization_operations=guard.quantization_operations,
         protected_model_count=len(models),
     )
     if not report.clean:
@@ -2070,6 +2299,8 @@ class DynamicFoldExecutor:
             optimizer_steps=guard.optimizer_steps,
             backward_calls=guard.backward_calls,
             autograd_grad_calls=guard.autograd_grad_calls,
+            pruning_operations=guard.pruning_operations,
+            quantization_operations=guard.quantization_operations,
             whole_model_snapshot_backend=self.snapshot_config.backend,
             observed_parent_module_forward_calls=(
                 parent_forward_observer.module_forward_calls

@@ -11,11 +11,29 @@ import torch
 from torch import nn
 
 import neural_forge.dynamic_lfm2_cpcf_reviewed_gate as reviewed_gate_module
+import neural_forge.hf_lfm2_cpcf_candidate_replay as candidate_replay_module
+import neural_forge.hf_lfm2_cpcf_v5_model_compiler as v5_compiler_module
 from neural_forge.dynamic_behavior_execution import (
     BehaviorInferenceExecutionContract,
 )
 from neural_forge.dynamic_behavior_gate import resolve_behavior_gate_binding
 from neural_forge.dynamic_circuit_ir import canonical_json_bytes, canonical_sha256
+from neural_forge.dynamic_evidence_residency import (
+    EVIDENCE_RESIDENCY_WINDOW_SCHEMA,
+)
+from neural_forge.dynamic_replay_scheduler import (
+    DYNAMIC_REPLAY_BUFFER_SCHEMA,
+    DYNAMIC_REPLAY_EXECUTION_SCHEMA,
+    DYNAMIC_REPLAY_PARITY_SCHEMA,
+    CudaReplayDeviceReceipt,
+    InstalledReplayStateFingerprint,
+    ReplayReplicaReceipt,
+    ReplaySchedulerPolicy,
+    ReplayWorkItem,
+    build_replay_schedule_plan,
+    compare_cpu_cuda_replay,
+    fingerprint_replay_value,
+)
 from neural_forge.dynamic_lfm2_cpcf_reviewed_gate import (
     AUTOMATIC_RUNNER_REPORT_SCHEMA,
     COMPOSITE_PROMOTION_SCHEMA,
@@ -51,10 +69,31 @@ from neural_forge.hf_lfm2_intelligence_holdout import (
 from neural_forge.hf_lfm2_cpcf_model_fold import (
     LFM2_CPCF_MODEL_FOLD_SCHEMA,
     LFM2_CPCF_PARAMETER_RECEIPT_SCHEMA,
+    Lfm2CpcfCompletedLayerReceipt,
     Lfm2CpcfModelFoldPolicy,
+)
+from neural_forge.hf_lfm2_cpcf_candidate_replay import (
+    LFM2_CPCF_CANDIDATE_REPLAY_BACKEND_SCHEMA,
+    LFM2_CPCF_CANDIDATE_REPLAY_WORK_SCHEMA,
+    replay_lfm2_cpcf_candidate_work_payload,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
     Lfm2CpcfShortConvV4SolverPolicy,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
+    Lfm2CpcfV5FirBasisPolicy,
+    rescore_sealed_v4_short_conv_selection_frontier,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter import (
+    Lfm2CpcfShortConvV5NumericalFrontierAdapter,
+)
+from neural_forge.hf_lfm2_cpcf_v5_model_compiler import (
+    LFM2_CPCF_V5_ARTIFACT_SCHEMA,
+    LFM2_CPCF_V5_MODEL_FOLD_SCHEMA,
+    LFM2_CPCF_V5_PHYSICAL_RSS_SCHEMA,
+    LFM2_CPCF_V5_RESUME_SCHEMA,
+    Lfm2CpcfV5RuntimePolicy,
+    lfm2_cpcf_v5_compiler_implementation,
 )
 from neural_forge.hf_lfm2_parent_relative_manual_gate import (
     bind_parent_relative_manual_ratings,
@@ -261,11 +300,516 @@ def _parameter_receipt(
     return _seal(body, "receipt_sha256")
 
 
+def _v5_selection_report(candidate_state_sha256: str) -> dict[str, Any]:
+    body = {
+        "schema": "neural-forge-lfm2-cpcf-short-conv-v4",
+        "kind": "target_dtype_evaluation",
+        "policy_sha256": canonical_sha256({"v5": "solver-policy"}),
+        "split": "selection",
+        "target_dtype": "bfloat16",
+        "case_balanced": True,
+        "case_count": 1,
+        "cases": [
+            {
+                "case_id": "selection-trajectory-000",
+                "rows": 8,
+                "width": 2,
+                "target_sha256": canonical_sha256({"v5": "target"}),
+                "valid_rows_sha256": None,
+                "projection_case_authentication_sha256": canonical_sha256(
+                    {"v5": "projection-case"}
+                ),
+                "context_rows": 12,
+                "context_width": 2,
+                "context_target_sha256": canonical_sha256({"v5": "context-target"}),
+                "valid_context_rows_sha256": None,
+            }
+        ],
+        "evidence_sha256": canonical_sha256({"v5": "selection-evidence"}),
+        "candidate_state_sha256": candidate_state_sha256,
+        "maximum_case_relative_rmse": 0.5,
+        "minimum_case_cosine_similarity": 0.5,
+        "mean_case_relative_rmse": 0.5,
+        "mean_case_cosine_similarity": 0.5,
+        "maximum_case_context_relative_rmse": 0.5,
+        "minimum_case_context_cosine_similarity": 0.5,
+        "mean_case_context_relative_rmse": 0.5,
+        "mean_case_context_cosine_similarity": 0.5,
+        "context_evidence_present": True,
+        "actual_parameter_and_intermediate_target_dtype_replay": True,
+        "selection_used_for_parameter_fitting": False,
+        "validation_used_for_parameter_fitting": False,
+    }
+    return _seal(body, "report_sha256")
+
+
+def _v5_semantic_layer_receipt() -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    str,
+    dict[str, Any],
+]:
+    adapter = Lfm2CpcfShortConvV5NumericalFrontierAdapter(
+        basis_policy=Lfm2CpcfV5FirBasisPolicy(
+            maximum_projected_fir_offdiagonal_relative_frobenius=0.0,
+            maximum_per_lag_commutator_relative_frobenius=1.0,
+        )
+    )
+    contract_value = v5_compiler_module._real_v5_numerical_adapter_contract(adapter)
+    assert contract_value is not None
+    contract = dict(contract_value)
+    zero_numerical_execution = {
+        "parent_model_forward_calls": 0,
+        "target_model_forward_calls": 0,
+        "generation_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    provenance = {
+        "implementation": contract["implementation"],
+        "real_v5_numerical_algorithm": True,
+        "dynamic_source_target_topology": True,
+        "basis_policy_sha256": contract["basis_policy_sha256"],
+        "ridge_policy_sha256": contract["ridge_policy_sha256"],
+        "basis_actual_commutator_gate": 1.0,
+        "basis_actual_commutator_residual": 0.5,
+        "basis_actual_commutator_gate_passed": True,
+        "basis_full_source_numeric_participation": True,
+        "source_channels_dropped": 0,
+        "source_channels_pruned": 0,
+        "source_channels_quantized": 0,
+        "source_fir_resized_before_basis": True,
+        "fit_only": True,
+        "selection_cases_consumed": 0,
+        "validation_cases_consumed": 0,
+        "selection_performed_by_adapter": False,
+        "validation_performed_by_adapter": False,
+        "model_forward_calls": 0,
+        "training": False,
+        "pruning": False,
+        "quantization": False,
+        "execution": zero_numerical_execution,
+    }
+    frontier_body = {
+        "kind": "authenticated_fit_only_numerical_frontier",
+        "adapter_id": adapter.adapter_id,
+        "full_source_numeric_participation": True,
+        "source_channels_dropped": 0,
+        "fit_only": True,
+        "selection_cases_consumed": 0,
+        "validation_cases_consumed": 0,
+        "execution": zero_numerical_execution,
+        "adapter_provenance": provenance,
+        "adapter_provenance_sha256": canonical_sha256(provenance),
+    }
+    frontier = _seal(frontier_body, "report_sha256")
+
+    prior_id = "ridge-alpha-00-1e-08--anchor-00-prior"
+    alternate_id = "ridge-beta-01-1e-07--candidate"
+
+    def candidate_state(offset: float) -> dict[str, torch.Tensor]:
+        return {
+            "in_proj_weight": (
+                torch.arange(12, dtype=torch.bfloat16).reshape(6, 2) / 16 + offset
+            ),
+            "in_proj_bias": torch.linspace(
+                -0.25 + offset,
+                0.25 + offset,
+                6,
+                dtype=torch.bfloat16,
+            ),
+            "fir_kernel": torch.tensor(
+                [[0.75 + offset, 0.25], [0.50, 0.50 + offset]],
+                dtype=torch.bfloat16,
+            ),
+            "fir_bias": torch.tensor(
+                [offset, -offset],
+                dtype=torch.bfloat16,
+            ),
+            "writer_weight": torch.tensor(
+                [[1.0 + offset, 0.25], [-0.25, 1.0 + offset]],
+                dtype=torch.bfloat16,
+            ),
+            "writer_bias": torch.tensor(
+                [0.125 + offset, -0.125],
+                dtype=torch.bfloat16,
+            ),
+        }
+
+    candidate_states = {
+        prior_id: candidate_state(0.0),
+        alternate_id: candidate_state(0.03125),
+    }
+    candidate_state_sha256 = {
+        candidate_id: candidate_replay_module._state_sha256(
+            state,
+            "target_dtype_candidate",
+        )
+        for candidate_id, state in candidate_states.items()
+    }
+    selection_reports = {
+        candidate_id: _v5_selection_report(candidate_state_sha256[candidate_id])
+        for candidate_id in sorted(candidate_states)
+    }
+    selector = dict(rescore_sealed_v4_short_conv_selection_frontier(selection_reports))
+
+    installed_state = InstalledReplayStateFingerprint.create(
+        state_sha256=canonical_sha256({"v5": "installed-state"}),
+        tensor_count=12,
+        logical_bytes=sum(
+            int(tensor.numel()) * int(tensor.element_size())
+            for state in candidate_states.values()
+            for tensor in state.values()
+        ),
+    )
+    devices = tuple(
+        CudaReplayDeviceReceipt.create(
+            device_index=index,
+            device_uuid=f"GPU-v5-reviewed-{index}",
+            device_name="NVIDIA GeForce RTX 3090",
+            pci_domain_id=0,
+            pci_bus_id=index + 1,
+            pci_device_id=index + 10,
+            capability=(8, 6),
+            total_memory_bytes=25_769_803_776,
+            multiprocessor_count=82,
+            torch_version="2.13.0+cu128",
+            cuda_runtime_version="12.8",
+            cudnn_version=91_900,
+            deterministic_algorithms_enabled=True,
+            deterministic_debug_mode=2,
+            cudnn_deterministic=True,
+            cudnn_benchmark=False,
+            cudnn_allow_tf32=False,
+            cuda_matmul_allow_tf32=False,
+            cuda_matmul_allow_bf16_reduced_precision_reduction=False,
+            cuda_matmul_allow_fp16_reduced_precision_reduction=False,
+            float32_matmul_precision="highest",
+            cublas_workspace_config=":4096:8",
+        )
+        for index in (0, 1)
+    )
+    replicas = tuple(
+        ReplayReplicaReceipt.create(
+            device=device,
+            installed_state=installed_state,
+        )
+        for device in devices
+    )
+    scheduler_policy = ReplaySchedulerPolicy(
+        maximum_pinned_bytes_per_slot=256 << 20,
+        parity_absolute_tolerance=0.125,
+        parity_relative_tolerance=0.02,
+        parity_maximum_relative_rmse=0.02,
+        parity_minimum_cosine_similarity=0.999,
+    )
+    case_payload = {
+        "case_id": "selection-trajectory-000",
+        "split": "selection",
+        "suffix_start": 1,
+        "projection_case_authentication_sha256": canonical_sha256(
+            {"v5": "projection-case"}
+        ),
+        "child_input_history": torch.tensor(
+            [
+                [
+                    [0.25, -0.50],
+                    [0.75, 0.125],
+                    [-0.25, 0.50],
+                    [0.375, -0.625],
+                ]
+            ],
+            dtype=torch.bfloat16,
+        ),
+        "valid_prefix_mask": torch.tensor(
+            [[True, True, True, True]],
+            dtype=torch.bool,
+        ),
+    }
+    work_items = []
+    candidate_outputs = []
+    solver_policy_sha256 = canonical_sha256({"v5": "solver-policy"})
+    for ordinal, candidate_id in enumerate(sorted(candidate_states)):
+        payload = {
+            "schema": LFM2_CPCF_CANDIDATE_REPLAY_WORK_SCHEMA,
+            "candidate_id": candidate_id,
+            "candidate_state_sha256": candidate_state_sha256[candidate_id],
+            "policy_sha256": solver_policy_sha256,
+            "target_dtype": "bfloat16",
+            "required_split": "selection",
+            "state": candidate_states[candidate_id],
+            "cases": (case_payload,),
+        }
+        work_items.append(
+            ReplayWorkItem.create(
+                ordinal=ordinal,
+                work_id=f"lfm2-cpcf-candidate::{candidate_id}",
+                shard_key=f"lfm2-cpcf-candidate::{candidate_id}",
+                payload=payload,
+            )
+        )
+        candidate_outputs.append(replay_lfm2_cpcf_candidate_work_payload(payload))
+    work_items = tuple(work_items)
+    candidate_outputs = tuple(candidate_outputs)
+    plan = build_replay_schedule_plan(
+        work_items,
+        replicas=replicas,
+        policy=scheduler_policy,
+    )
+    output_sha256 = [fingerprint_replay_value(output) for output in candidate_outputs]
+    scheduled_records = []
+    device_record_counts = {0: 0, 1: 0}
+    for assignment, candidate_output_sha256 in zip(
+        plan.assignments,
+        output_sha256,
+        strict=True,
+    ):
+        slot_index = device_record_counts[assignment.device_index] % 2
+        device_record_counts[assignment.device_index] += 1
+        scheduled_body = {
+            "ordinal": assignment.ordinal,
+            "work_id": assignment.work_id,
+            "shard_key": assignment.shard_key,
+            "device_index": assignment.device_index,
+            "device_receipt_sha256": assignment.device_receipt_sha256,
+            "installed_state_sha256": assignment.installed_state_sha256,
+            "input_payload_sha256": assignment.input_payload_sha256,
+            "output_sha256": candidate_output_sha256,
+            "slot_index": slot_index,
+            "folding_math_changed": False,
+        }
+        scheduled_records.append(_seal(scheduled_body, "record_sha256"))
+    representative_output = candidate_outputs[0]
+    parity_reports = [
+        dict(
+            compare_cpu_cuda_replay(
+                representative_output,
+                representative_output,
+                policy=scheduler_policy,
+                device_index=device.device_index,
+            )
+        )
+        for device in devices
+    ]
+    assert parity_reports[0]["tensor_leaf_count"] == 5
+    assert (
+        parity_reports[0]["cpu_output_sha256"] == parity_reports[1]["cpu_output_sha256"]
+    )
+    assert (
+        parity_reports[0]["structure_sha256"] == parity_reports[1]["structure_sha256"]
+    )
+    for device in devices:
+        assert parity_reports[device.device_index]["schema"] == (
+            DYNAMIC_REPLAY_PARITY_SCHEMA
+        )
+    buffer_reports = []
+    for device in devices:
+        buffer_body = {
+            "schema": DYNAMIC_REPLAY_BUFFER_SCHEMA,
+            "device_index": device.device_index,
+            "device_receipt_sha256": device.receipt_sha256,
+            "slot_count": 2,
+            "maximum_bytes_per_slot": 256 << 20,
+            "maximum_total_pinned_bytes": 512 << 20,
+            "maximum_observed_slot_bytes": 1024,
+            "stage_count": device_record_counts[device.device_index] + 1,
+            "pinned_host_memory": True,
+            "asynchronous_h2d": True,
+            "canonical_pinned_payload_hash_verified": True,
+        }
+        buffer_reports.append(_seal(buffer_body, "report_sha256"))
+    execution_body = {
+        "schema": DYNAMIC_REPLAY_EXECUTION_SCHEMA,
+        "plan_sha256": plan.plan_sha256,
+        "plan": plan.as_dict(),
+        "parity_work_id": "lfm2-cpcf-candidate::representative-parity",
+        "parity_payload_sha256": work_items[0].payload_sha256,
+        "parity_reports": parity_reports,
+        "parity_passed_before_scheduled_work": True,
+        "scheduled_records": scheduled_records,
+        "canonical_output_work_ids": [item.work_id for item in work_items],
+        "canonical_output_sha256": output_sha256,
+        "buffer_reports": buffer_reports,
+        "backend_receipts_reauthenticated": True,
+        "installed_state_reauthenticated": True,
+        "cpu_reference_state_reauthenticated": True,
+        "dynamic_work_stealing": False,
+        "canonical_result_order_restored": True,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "folding_math_changed": False,
+    }
+    execution = _seal(execution_body, "report_sha256")
+    backend_body = {
+        "schema": LFM2_CPCF_CANDIDATE_REPLAY_BACKEND_SCHEMA,
+        "kind": "authenticated_two_cuda_scheduler",
+        "canonical_output_work_ids": [item.work_id for item in work_items],
+        "canonical_input_payload_sha256": [item.payload_sha256 for item in work_items],
+        "canonical_output_sha256": output_sha256,
+        "compute_device_by_work_id": {
+            assignment.work_id: f"cuda:{assignment.device_index}"
+            for assignment in plan.assignments
+        },
+        "execution_report": execution,
+        "representative_cpu_cuda_parity_passed": True,
+        "canonical_candidate_order_restored": True,
+        "closed_form_solve_math_changed": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    backend = _seal(backend_body, "report_sha256")
+
+    contract_tensor_names = ["candidate_replay_contract"]
+    state_contract_body = {
+        "schema": ("neural-forge-dynamic-replay-live-state-probes-v1"),
+        "logical_device_indices": [0, 1],
+        "contract_tensor_names": contract_tensor_names,
+        "installed_state": installed_state.as_dict(),
+        "cpu_tensors_retained": True,
+        "cuda_tensors_retained": True,
+    }
+    state_contract = _seal(state_contract_body, "contract_sha256")
+    runtime_body = {
+        "schema": ("neural-forge-dynamic-replay-live-runtime-authentication-v1"),
+        "replicas": [replica.as_dict() for replica in replicas],
+        "policy": scheduler_policy.as_dict(),
+        "state_probe_contract": state_contract,
+        "device_receipts_freshly_probed": True,
+        "installed_states_freshly_rehashed": True,
+        "bounded_pinned_host_factory_authenticated": True,
+    }
+    runtime = _seal(runtime_body, "report_sha256")
+    parity_authority = {
+        "path": str(Path("reports/approved-v5-parity.json").resolve()),
+        "file_sha256": canonical_sha256({"v5": "parity-file"}),
+        "receipt_sha256": canonical_sha256({"v5": "parity-receipt"}),
+        "source_sha256": {
+            "dynamic_replay_scheduler.py": canonical_sha256({"v5": "scheduler-source"}),
+            "hf_lfm2_cpcf_candidate_replay.py": canonical_sha256(
+                {"v5": "candidate-source"}
+            ),
+            "verify_lfm2_cpcf_candidate_replay_gpu_parity.py": (
+                canonical_sha256({"v5": "verifier-source"})
+            ),
+        },
+        "scheduler_policy": scheduler_policy.as_dict(),
+        "target_dtype": "bfloat16",
+        "real_two_gpu_parity_passed": True,
+    }
+    gpu_candidate_body = {
+        "schema": ("neural-forge-lfm2-cpcf-v5-authenticated-two-gpu-replay-v1"),
+        "logical_device_indices": [0, 1],
+        "devices": [device.as_dict() for device in devices],
+        "replicas": [replica.as_dict() for replica in replicas],
+        "cpu_installed_state": installed_state.as_dict(),
+        "scheduler_policy": scheduler_policy.as_dict(),
+        "runtime_authentication": runtime,
+        "runtime_authentication_sha256": runtime["report_sha256"],
+        "proven_parity_receipt": parity_authority,
+        "contract_tensor_names": contract_tensor_names,
+        "contract_cpu_tensors_retained_for_runtime_reauthentication": True,
+        "contract_gpu_tensors_retained_for_runtime_reauthentication": True,
+        "homogeneous_authenticated_receipts": True,
+        "candidate_payload_staging": (
+            "bounded_double_buffered_pinned_system_memory_to_cuda"
+        ),
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    gpu_candidate_replay = _seal(
+        gpu_candidate_body,
+        "report_sha256",
+    )
+
+    artifact_body = {
+        "numerical_frontier_adapter_active": True,
+        "fit_only_numerical_generation": True,
+        "legacy_v4_numerical_generation_claimed": False,
+        "numerical_frontier": frontier,
+        "candidate_selection_reports": selection_reports,
+        "preinstall_candidate_selector_receipt": selector,
+        "preinstall_candidate_selector_receipt_sha256": (selector["report_sha256"]),
+        "preinstall_candidate_selector_active": True,
+        "selected_candidate_id": selector["selected_candidate_id"],
+        "default_v4_selected_candidate_id": prior_id,
+        "selection_changed_from_v4": False,
+        "post_install_rescoring_performed": False,
+        "legacy_v4_report_claimed": False,
+        "candidate_replay_backend": backend,
+        "candidate_replay_backend_report_sha256": backend["report_sha256"],
+        "selection_candidate_replay_backend": ("authenticated_injected_backend"),
+        "fit_and_validation_winner_replay_backend": "cpu_reference",
+    }
+    artifact = _seal(artifact_body, "report_sha256")
+    layer_body = {
+        "schema": "neural-forge-lfm2-cpcf-layer-compiler-v1",
+        "layer_index": 0,
+        "operator_kind": "short_conv",
+        "source_width": 4,
+        "target_width": 2,
+        "input_bank_sha256": canonical_sha256({"v5": "input-bank"}),
+        "next_bank_sha256": canonical_sha256({"v5": "next-bank"}),
+        "boundary_charts_sha256": canonical_sha256({"v5": "boundary-charts"}),
+        "preinstall_replay_sha256": canonical_sha256({"v5": "preinstall-replay"}),
+        "operator_replay_sha256": canonical_sha256({"v5": "operator-replay"}),
+        "final_replay_sha256": canonical_sha256({"v5": "final-replay"}),
+        "operator_artifact": artifact,
+        "mlp_artifact": {"schema": "mlp-v1"},
+        "operator_install_report": {"installed": True},
+        "mlp_install_report": {"installed": True},
+        "split_metrics": {"fit": {}, "validation": {}},
+        "split_phase_counts": {"fit": 1, "validation": 1},
+        "solver_evidence_policy": {"fit_only": True},
+        "actual_child_state_policy": {"actual": True},
+        "audit": {"source_unchanged": True},
+        "execution": {
+            "closed_form_compilers": True,
+            "parent_model_forward_calls": 0,
+            "target_model_forward_calls": 0,
+            "target_layer_forward_calls": 0,
+            "generation_calls": 0,
+            "cache_generation_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+            "fallback_paths": 0,
+        },
+    }
+    layer = _seal(layer_body, "result_sha256")
+    typed = Lfm2CpcfCompletedLayerReceipt(layer)
+    proof_value = v5_compiler_module._prove_real_v5_numerical_layer(
+        typed,
+        adapter_contract=contract,
+    )
+    assert proof_value is not None
+    return (
+        layer,
+        contract,
+        dict(proof_value),
+        execution["report_sha256"],
+        gpu_candidate_replay,
+    )
+
+
 def _rebuild_cpcf_compiler_chain(
     cpcf_body: dict[str, Any],
     *,
     policy: Lfm2CpcfModelFoldPolicy | None = None,
     phase_sha256: tuple[str, ...] | None = None,
+    compiled_schema: str = LFM2_CPCF_MODEL_FOLD_SCHEMA,
 ) -> dict[str, Any]:
     """Rebuild every nested compiler seal after synthetic provenance edits."""
 
@@ -336,20 +880,148 @@ def _rebuild_cpcf_compiler_chain(
         "final_state_bank_sha256": canonical_sha256({"compiled": "final-state-bank"}),
         "final_norm_report_sha256": canonical_sha256({"compiled": "final-norm"}),
     }
+    compiled_policy: dict[str, Any]
+    v5_metadata: dict[str, Any] = {}
+    v5_layer_results: list[dict[str, Any]] | None = None
+    v5_gpu_execution_audit: dict[str, Any] | None = None
+    v5_gpu_candidate_replay: dict[str, Any] | None = None
+    ordered_layer_result_sha256 = prior_compiled.get(
+        "ordered_layer_result_sha256",
+        [canonical_sha256({"compiled": "layer-result-0"})],
+    )
+    if compiled_schema == LFM2_CPCF_V5_MODEL_FOLD_SCHEMA:
+        runtime_policy = Lfm2CpcfV5RuntimePolicy(
+            model_fold_policy=resolved_policy,
+            maximum_resident_evidence_bytes=1024,
+            full_phase_tree_logical_bytes=4096,
+            minimum_physical_rss_reduction_fraction=0.25,
+            rss_sample_interval_seconds=0.1,
+            require_short_conv_v5_endpoint_first_selector=True,
+            require_short_conv_v5_real_numerical_frontier_adapter=True,
+        )
+        compiled_policy = runtime_policy.as_dict()
+        (
+            v5_layer,
+            numerical_contract,
+            numerical_proof,
+            gpu_execution_sha256,
+            v5_gpu_candidate_replay,
+        ) = _v5_semantic_layer_receipt()
+        v5_layer_results = [v5_layer]
+        ordered_layer_result_sha256 = [v5_layer["result_sha256"]]
+        v5_gpu_execution_audit = {
+            "candidate_gpu_replay_invoked": True,
+            "execution_count": 1,
+            "execution_report_sha256": [gpu_execution_sha256],
+            "both_logical_devices_reauthenticated_per_execution": True,
+            "no_gpu_work_claimed_when_no_candidate_batch_was_scheduled": True,
+        }
+        catalog_sha256 = canonical_sha256({"selective": "catalog"})
+        source_sha256 = canonical_sha256({"selective": "source"})
+        provider_sha256 = canonical_sha256({"selective": "provider"})
+        residency = _seal(
+            {
+                "schema": EVIDENCE_RESIDENCY_WINDOW_SCHEMA,
+                "catalog_sha256": catalog_sha256,
+                "source_sha256": source_sha256,
+                "provider_sha256": provider_sha256,
+                "state": "completed",
+                "max_resident_layers": 2,
+                "maximum_resident_bytes": 1024,
+                "resident_bytes": 0,
+                "prefetch_distance_layers": 1,
+                "peak_occupied_layers": 2,
+                "peak_resident_bytes": 512,
+            },
+            "snapshot_sha256",
+        )
+        physical = _seal(
+            {
+                "schema": LFM2_CPCF_V5_PHYSICAL_RSS_SCHEMA,
+                "start_rss_bytes": 1000,
+                "current_rss_bytes": 1100,
+                "peak_rss_bytes": 1100,
+                "start_lifetime_peak_bytes": 1000,
+                "current_increase_bytes": 100,
+                "peak_increase_bytes": 100,
+                "full_phase_tree_logical_bytes": 4096,
+                "minimum_reduction_fraction": 0.25,
+                "maximum_increase_bytes": 3072,
+                "sample_interval_seconds": 0.1,
+                "checkpoint_count": 0,
+                "checkpoints": [],
+                "sampler_stopped": True,
+                "physical_rss_gate_passed": True,
+                "comparison_basis": (
+                    "peak_process_rss_increase_from_precompiler_baseline_"
+                    "versus_full_phase_tree_logical_bytes"
+                ),
+            },
+            "report_sha256",
+        )
+        v5_metadata = {
+            "artifact_schema": LFM2_CPCF_V5_ARTIFACT_SCHEMA,
+            "resume_schema": LFM2_CPCF_V5_RESUME_SCHEMA,
+            "resume_supported": True,
+            "resume_fail_closed": True,
+            "resume_used": False,
+            "resume_start_layer_index": 0,
+            "resume_completed_prefix_layer_indices": [],
+            "resume_executed_layer_indices": [0],
+            "resume_completed_layers_replayed": False,
+            "resume_actual_upstream_child_state_restored": False,
+            "resume_prefix_install_report_sha256": None,
+            "resume_frontier_sha256": None,
+            "resume_admission_sha256": None,
+            "resume_publication_enabled": False,
+            "resume_admitted_prefixes": [],
+            "resume_parent_or_cache_tensor_sidecars": 0,
+            "resume_checkpoint_receipt_chain_authenticated": True,
+            "compiler_implementation": dict(lfm2_cpcf_v5_compiler_implementation()),
+            "selective_catalog_sha256": catalog_sha256,
+            "selective_source_sha256": source_sha256,
+            "selective_provider_sha256": provider_sha256,
+            "authenticated_full_phase_tree_logical_bytes": 4096,
+            "physical_rss_baseline_bound_to_authenticated_catalog": True,
+            "residency_receipt": residency,
+            "physical_rss_receipt": physical,
+            "full_all_layer_phase_tree_materialized": False,
+            "tensor_free_phase_shells_used": True,
+            "active_layer_evidence_released_before_successor_compile": True,
+            "final_norm_evidence_separately_bounded_and_reauthenticated": True,
+            "candidate_replay_backend_injected": True,
+            "preinstall_candidate_selector_provided": True,
+            "preinstall_candidate_selector_active": True,
+            "preinstall_candidate_selector_layer_indices": [0],
+            "short_conv_v5_endpoint_first_selector_integrated": True,
+            "short_conv_numerical_frontier_adapter_provided": True,
+            "short_conv_numerical_frontier_adapter_active": True,
+            "short_conv_numerical_frontier_adapter_layer_indices": [0],
+            "short_conv_layer_indices": [0],
+            "short_conv_v5_real_numerical_adapter_required": True,
+            "short_conv_v5_real_numerical_adapter_concrete_instance_provided": (True),
+            "short_conv_v5_real_numerical_adapter_contract": (numerical_contract),
+            "short_conv_v5_real_numerical_provenance_layer_indices": [0],
+            "short_conv_v5_real_numerical_layer_proofs": [numerical_proof],
+            "short_conv_v5_numerical_candidate_generation_integrated": True,
+            "short_conv_v5_numerical_policy_integrated": True,
+            "short_conv_v5_post_install_rescoring_performed": False,
+            "legacy_v4_default_or_fingerprint_changed": False,
+        }
+    else:
+        compiled_policy = resolved_policy.as_dict()
     compiled_body = {
-        "schema": LFM2_CPCF_MODEL_FOLD_SCHEMA,
+        "schema": compiled_schema,
         "blank_target_report_sha256": blank_report["report_sha256"],
-        "policy": resolved_policy.as_dict(),
+        "policy": compiled_policy,
         "phase_count": len(ordered_phases),
         "phase_sha256": list(ordered_phases),
+        **v5_metadata,
         **{
             name: prior_compiled.get(name, value)
             for name, value in digest_defaults.items()
         },
-        "ordered_layer_result_sha256": prior_compiled.get(
-            "ordered_layer_result_sha256",
-            [canonical_sha256({"compiled": "layer-result-0"})],
-        ),
+        "ordered_layer_result_sha256": ordered_layer_result_sha256,
         "parameter_receipt": parameter_receipt,
         "target_parameter_inventory_before": blank_inventory,
         "target_parameter_inventory_after": compiled_inventory,
@@ -387,6 +1059,14 @@ def _rebuild_cpcf_compiler_chain(
             "compiled_model_fold": compiled,
         }
     )
+    if (
+        v5_layer_results is not None
+        and v5_gpu_execution_audit is not None
+        and v5_gpu_candidate_replay is not None
+    ):
+        cpcf_body["layer_results"] = v5_layer_results
+        cpcf_body["gpu_execution_audit"] = v5_gpu_execution_audit
+        cpcf_body["gpu_candidate_replay"] = v5_gpu_candidate_replay
     ordered_phase_binding = canonical_sha256(
         {
             "schema": ("neural-forge-lfm2-cpcf-ordered-phase-binding-v1"),
@@ -395,11 +1075,10 @@ def _rebuild_cpcf_compiler_chain(
         }
     )
     return {
+        "compiled_model_fold_schema": compiled_schema,
         "compiled_model_fold_result_sha256": compiled["result_sha256"],
-        "compiled_model_fold_policy": resolved_policy.as_dict(),
-        "compiled_model_fold_policy_sha256": canonical_sha256(
-            resolved_policy.as_dict()
-        ),
+        "compiled_model_fold_policy": compiled_policy,
+        "compiled_model_fold_policy_sha256": canonical_sha256(compiled_policy),
         "compiled_model_fold_phase_count": len(ordered_phases),
         "compiled_model_fold_phase_sha256": list(ordered_phases),
         "compiled_model_fold_phase_binding_sha256": ordered_phase_binding,
@@ -446,6 +1125,7 @@ def _fixture(
     bridge_profile_sha256: str | None = None,
     tokenizer: Any | None = None,
     tokenizer_directory: Path | None = None,
+    compiled_schema: str = LFM2_CPCF_MODEL_FOLD_SCHEMA,
 ) -> dict[str, Any]:
     manifest_document = build_lfm2_intelligence_holdout_manifest()
     manifest = load_lfm2_intelligence_holdout_manifest(manifest_document)
@@ -616,7 +1296,10 @@ def _fixture(
             "marginal_compaction_reported_as_success": False,
         },
     }
-    compiled_provenance = _rebuild_cpcf_compiler_chain(cpcf_body)
+    compiled_provenance = _rebuild_cpcf_compiler_chain(
+        cpcf_body,
+        compiled_schema=compiled_schema,
+    )
     parent_inventory = cpcf_body["parent_parameter_inventory"]
     inventory = cpcf_body["reloaded_parameter_inventory"]
     cpcf = _seal(cpcf_body, "receipt_sha256")
@@ -942,6 +1625,8 @@ def test_reviewed_gate_accepts_live_and_fresh_reload_and_binds_all_evidence(
     assert component["parent_cache_key"] == receipt["inputs"]["cache_key"]
     assert component["exact_target_unique_parameters"] == 1
     compiled = receipt["compiled_model_fold"]
+    assert evidence.compiled_model_fold_schema == LFM2_CPCF_MODEL_FOLD_SCHEMA
+    assert component["compiled_model_fold_schema"] == LFM2_CPCF_MODEL_FOLD_SCHEMA
     assert evidence.compiled_model_fold_result_sha256 == compiled["result_sha256"]
     assert dict(evidence.compiled_model_fold_policy) == compiled["policy"]
     assert evidence.compiled_model_fold_policy_sha256 == canonical_sha256(
@@ -983,6 +1668,7 @@ def _evidence_constructor_fields(
             "target_topology_fingerprint",
             "blank_target_state_fingerprint",
             "target_plan_binding_sha256",
+            "compiled_model_fold_schema",
             "compiled_model_fold_result_sha256",
             "compiled_model_fold_policy",
             "compiled_model_fold_policy_sha256",
@@ -1020,6 +1706,435 @@ def test_reviewed_evidence_is_loader_only(tmp_path: Path) -> None:
     ):
         authenticate_lfm2_cpcf_reviewed_promotion_evidence(forged)
     assert authenticate_lfm2_cpcf_reviewed_promotion_evidence(evidence) is evidence
+
+
+def test_reviewed_loader_accepts_and_version_binds_real_v5_schema(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(
+        tmp_path,
+        compiled_schema=LFM2_CPCF_V5_MODEL_FOLD_SCHEMA,
+    )
+
+    evidence = load_lfm2_cpcf_reviewed_promotion_evidence(fixture["artifacts"])
+    gate = Lfm2CpcfReviewedPromotionGate(
+        evidence,
+        tokenizer=fixture["tokenizer"],
+        tokenizer_directory=fixture["tokenizer_directory"],
+    )
+    component = resolve_behavior_gate_binding(gate).manifest["components"][0]
+
+    assert evidence.compiled_model_fold_schema == (LFM2_CPCF_V5_MODEL_FOLD_SCHEMA)
+    assert (
+        dict(evidence.compiled_model_fold_policy)
+        == fixture["documents"]["cpcf"]["compiled_model_fold"]["policy"]
+    )
+    assert evidence.reviewed_evidence["compiled_model_fold_schema"] == (
+        LFM2_CPCF_V5_MODEL_FOLD_SCHEMA
+    )
+    assert component["compiled_model_fold_schema"] == (LFM2_CPCF_V5_MODEL_FOLD_SCHEMA)
+    assert gate(fixture["model"]).accepted is True
+
+
+def _v5_unsealed_run_body(tmp_path: Path) -> dict[str, Any]:
+    fixture = _fixture(
+        tmp_path,
+        compiled_schema=LFM2_CPCF_V5_MODEL_FOLD_SCHEMA,
+    )
+    body = copy.deepcopy(fixture["documents"]["cpcf"])
+    body.pop("receipt_sha256")
+    return body
+
+
+def _reseal_v5_compiled_report(run_body: dict[str, Any]) -> None:
+    compiled = run_body["compiled_model_fold"]
+    compiled.pop("result_sha256", None)
+    run_body["compiled_model_fold"] = _seal(
+        compiled,
+        "result_sha256",
+    )
+
+
+def _reseal_v5_gpu_layer_and_compiled(
+    run_body: dict[str, Any],
+) -> None:
+    layer = run_body["layer_results"][0]
+    layer.pop("result_sha256", None)
+    artifact = layer["operator_artifact"]
+    artifact.pop("report_sha256", None)
+    backend = artifact["candidate_replay_backend"]
+    backend.pop("report_sha256", None)
+    execution = backend["execution_report"]
+    execution.pop("report_sha256", None)
+
+    plan = execution["plan"]
+    plan.pop("plan_sha256", None)
+    execution["plan"] = _seal(plan, "plan_sha256")
+    execution["plan_sha256"] = execution["plan"]["plan_sha256"]
+    execution["parity_reports"] = [
+        _seal(
+            {name: value for name, value in report.items() if name != "report_sha256"},
+            "report_sha256",
+        )
+        for report in execution["parity_reports"]
+    ]
+    execution["buffer_reports"] = [
+        _seal(
+            {name: value for name, value in report.items() if name != "report_sha256"},
+            "report_sha256",
+        )
+        for report in execution["buffer_reports"]
+    ]
+    execution["scheduled_records"] = [
+        _seal(
+            {name: value for name, value in report.items() if name != "record_sha256"},
+            "record_sha256",
+        )
+        for report in execution["scheduled_records"]
+    ]
+    backend["execution_report"] = _seal(execution, "report_sha256")
+    artifact["candidate_replay_backend"] = _seal(
+        backend,
+        "report_sha256",
+    )
+    artifact["candidate_replay_backend_report_sha256"] = artifact[
+        "candidate_replay_backend"
+    ]["report_sha256"]
+    layer["operator_artifact"] = _seal(artifact, "report_sha256")
+    run_body["layer_results"][0] = _seal(layer, "result_sha256")
+
+    compiled = run_body["compiled_model_fold"]
+    compiled["ordered_layer_result_sha256"] = [
+        run_body["layer_results"][0]["result_sha256"]
+    ]
+    contract = compiled["short_conv_v5_real_numerical_adapter_contract"]
+    proof = v5_compiler_module._prove_real_v5_numerical_layer(
+        Lfm2CpcfCompletedLayerReceipt(run_body["layer_results"][0]),
+        adapter_contract=contract,
+    )
+    assert proof is not None
+    compiled["short_conv_v5_real_numerical_layer_proofs"] = [dict(proof)]
+    _reseal_v5_compiled_report(run_body)
+    execution_sha256 = run_body["layer_results"][0]["operator_artifact"][
+        "candidate_replay_backend"
+    ]["execution_report"]["report_sha256"]
+    run_body["gpu_execution_audit"]["execution_report_sha256"] = [execution_sha256]
+
+
+def _extract_test_run_provenance(run_body: dict[str, Any]) -> dict[str, Any]:
+    return reviewed_gate_module._extract_cpcf_run_provenance(
+        run_body,
+        expected_parent_model_fingerprint=(run_body["inputs"]["parent_fingerprint"]),
+    )
+
+
+def test_reviewed_v5_rejects_self_resealed_blank_prefix_references(
+    tmp_path: Path,
+) -> None:
+    body = _v5_unsealed_run_body(tmp_path)
+    compiled = body["compiled_model_fold"]
+    compiled["resume_publication_enabled"] = True
+    compiled["resume_admitted_prefixes"] = [
+        {
+            "next_layer_index": index,
+            "frontier_reference": {},
+            "checkpoint_reference": {},
+            "frontier_sha256": canonical_sha256({"frontier": index}),
+            "admission_sha256": canonical_sha256({"admission": index}),
+            "admission_chain_proof": {},
+            "admission_chain_proof_sha256": canonical_sha256(
+                {"proof": index}
+            ),
+        }
+        for index in range(
+            compiled["resume_start_layer_index"],
+            len(compiled["ordered_layer_result_sha256"]) + 1,
+        )
+    ]
+    _reseal_v5_compiled_report(body)
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="invalid typed artifact references",
+    ):
+        _extract_test_run_provenance(body)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("candidate_replay_backend_injected", False),
+        ("preinstall_candidate_selector_active", False),
+        ("short_conv_v5_endpoint_first_selector_integrated", False),
+        ("short_conv_v5_numerical_policy_integrated", False),
+        ("short_conv_v5_real_numerical_layer_proofs", []),
+        ("short_conv_v5_real_numerical_adapter_contract", None),
+    ),
+)
+def test_reviewed_v5_rejects_missing_or_altered_semantic_fields(
+    tmp_path: Path,
+    field: str,
+    replacement: Any,
+) -> None:
+    body = _v5_unsealed_run_body(tmp_path)
+    if replacement is None:
+        body["compiled_model_fold"].pop(field)
+    else:
+        body["compiled_model_fold"][field] = replacement
+    _reseal_v5_compiled_report(body)
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="v5",
+    ):
+        _extract_test_run_provenance(body)
+
+
+def test_reviewed_v5_recomputes_numerical_contract_and_layer_proof(
+    tmp_path: Path,
+) -> None:
+    body = _v5_unsealed_run_body(tmp_path)
+    contract = body["compiled_model_fold"][
+        "short_conv_v5_real_numerical_adapter_contract"
+    ]
+    contract.pop("contract_sha256")
+    contract["adapter_id"] = "forged-but-self-sealed-adapter-id"
+    contract["contract_sha256"] = canonical_sha256(contract)
+    _reseal_v5_compiled_report(body)
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="numerical",
+    ):
+        _extract_test_run_provenance(body)
+
+
+def test_reviewed_v5_requires_current_run_gpu_execution_audit(
+    tmp_path: Path,
+) -> None:
+    body = _v5_unsealed_run_body(tmp_path)
+    body["gpu_execution_audit"]["execution_report_sha256"] = [
+        canonical_sha256({"forged": "prior-gpu-receipt"})
+    ]
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="GPU execution audit",
+    ):
+        _extract_test_run_provenance(body)
+
+
+@pytest.mark.parametrize(
+    "attack",
+    (
+        "plan-policy",
+        "parity-pass",
+        "buffer-bound",
+        "assignment-work-id",
+        "scheduled-device",
+        "execution-zero-audit",
+    ),
+)
+def test_reviewed_v5_rejects_self_resealed_gpu_execution_attack(
+    tmp_path: Path,
+    attack: str,
+) -> None:
+    body = _v5_unsealed_run_body(tmp_path)
+    execution = body["layer_results"][0]["operator_artifact"][
+        "candidate_replay_backend"
+    ]["execution_report"]
+    if attack == "plan-policy":
+        execution["plan"]["policy"]["parity_absolute_tolerance"] = 1.0
+    elif attack == "parity-pass":
+        execution["parity_reports"][0]["passed"] = False
+    elif attack == "buffer-bound":
+        execution["buffer_reports"][0]["maximum_observed_slot_bytes"] = (256 << 20) + 1
+    elif attack == "assignment-work-id":
+        assignment = execution["plan"]["assignments"][0]
+        assignment["work_id"] = "forged-resealed-work-id"
+        assignment_body = {
+            name: value
+            for name, value in assignment.items()
+            if name != "assignment_sha256"
+        }
+        assignment["assignment_sha256"] = canonical_sha256(assignment_body)
+    elif attack == "scheduled-device":
+        execution["scheduled_records"][0]["device_index"] = 1
+    else:
+        execution["training_steps"] = 1
+    _reseal_v5_gpu_layer_and_compiled(body)
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="GPU|scheduler|parity|buffer|scheduled|zero",
+    ):
+        _extract_test_run_provenance(body)
+
+
+@pytest.mark.parametrize(
+    "attack",
+    (
+        "empty-tensor-metrics",
+        "different-cpu-output",
+        "structure-drift",
+    ),
+)
+def test_reviewed_v5_rejects_impossible_resealed_representative_parity(
+    tmp_path: Path,
+    attack: str,
+) -> None:
+    body = _v5_unsealed_run_body(tmp_path)
+    parity_reports = body["layer_results"][0]["operator_artifact"][
+        "candidate_replay_backend"
+    ]["execution_report"]["parity_reports"]
+    if attack == "empty-tensor-metrics":
+        parity_reports[0]["tensor_reports"] = []
+        parity_reports[0]["tensor_leaf_count"] = 0
+    elif attack == "different-cpu-output":
+        parity_reports[1]["cpu_output_sha256"] = canonical_sha256(
+            {"forged": "second-cpu-reference"}
+        )
+    else:
+        descriptor = parity_reports[1]["structure_descriptor"]
+        target_dtype = next(
+            child
+            for child in descriptor["children"]
+            if child["path"] == "$.target_dtype"
+        )
+        target_dtype["value"] = "float32"
+        parity_reports[1]["structure_sha256"] = canonical_sha256(descriptor)
+    _reseal_v5_gpu_layer_and_compiled(body)
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="parity|tensor|structure|CPU reference",
+    ):
+        _extract_test_run_provenance(body)
+
+
+def test_reviewed_v5_recomputes_round_robin_after_joint_assignment_reseal(
+    tmp_path: Path,
+) -> None:
+    body = _v5_unsealed_run_body(tmp_path)
+    backend = body["layer_results"][0]["operator_artifact"]["candidate_replay_backend"]
+    execution = backend["execution_report"]
+    assignments = execution["plan"]["assignments"]
+    records = execution["scheduled_records"]
+    assert [assignment["device_index"] for assignment in assignments] == [0, 1]
+    device_bindings = [
+        {
+            "device_index": assignment["device_index"],
+            "device_receipt_sha256": assignment["device_receipt_sha256"],
+            "installed_state_sha256": assignment["installed_state_sha256"],
+        }
+        for assignment in assignments
+    ]
+    for index, assignment in enumerate(assignments):
+        forged_binding = device_bindings[1 - index]
+        assignment.update(forged_binding)
+        assignment_body = {
+            name: value
+            for name, value in assignment.items()
+            if name != "assignment_sha256"
+        }
+        assignment["assignment_sha256"] = canonical_sha256(assignment_body)
+        records[index].update(forged_binding)
+        backend["compute_device_by_work_id"][assignment["work_id"]] = (
+            f"cuda:{assignment['device_index']}"
+        )
+    _reseal_v5_gpu_layer_and_compiled(body)
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="round-robin|scheduler assignment",
+    ):
+        _extract_test_run_provenance(body)
+
+
+@pytest.mark.parametrize(
+    "attack",
+    ("device-identity", "runtime-reauthentication", "top-zero-audit"),
+)
+def test_reviewed_v5_rejects_self_resealed_gpu_runtime_attack(
+    tmp_path: Path,
+    attack: str,
+) -> None:
+    body = _v5_unsealed_run_body(tmp_path)
+    gpu = body["gpu_candidate_replay"]
+    gpu.pop("report_sha256")
+    if attack == "device-identity":
+        device = gpu["devices"][0]
+        device.pop("receipt_sha256")
+        device["device_uuid"] = "GPU-forged-reviewed-identity"
+        gpu["devices"][0] = _seal(device, "receipt_sha256")
+    elif attack == "runtime-reauthentication":
+        runtime = gpu["runtime_authentication"]
+        runtime.pop("report_sha256")
+        runtime["installed_states_freshly_rehashed"] = False
+        gpu["runtime_authentication"] = _seal(runtime, "report_sha256")
+        gpu["runtime_authentication_sha256"] = gpu["runtime_authentication"][
+            "report_sha256"
+        ]
+    else:
+        gpu["training_steps"] = 1
+    body["gpu_candidate_replay"] = _seal(gpu, "report_sha256")
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="GPU|runtime|replica|zero-operation",
+    ):
+        _extract_test_run_provenance(body)
+
+
+def test_reviewed_v5_rejects_v4_report_relabelled_as_v5(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    body = copy.deepcopy(fixture["documents"]["cpcf"])
+    body.pop("receipt_sha256")
+    compiled = body["compiled_model_fold"]
+    compiled.pop("result_sha256")
+    compiled["schema"] = LFM2_CPCF_V5_MODEL_FOLD_SCHEMA
+    body["compiled_model_fold"] = _seal(compiled, "result_sha256")
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="typed policy",
+    ):
+        _extract_test_run_provenance(body)
+
+
+def test_reviewed_loader_rejects_unversioned_compiler_schema(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(
+        tmp_path,
+        compiled_schema="neural-forge-lfm2-cpcf-unreviewed-fold-v99",
+    )
+
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="schema is unsupported",
+    ):
+        load_lfm2_cpcf_reviewed_promotion_evidence(fixture["artifacts"])
+
+
+def test_reviewed_evidence_loader_seal_binds_compiler_schema(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    evidence = load_lfm2_cpcf_reviewed_promotion_evidence(fixture["artifacts"])
+
+    object.__setattr__(
+        evidence,
+        "compiled_model_fold_schema",
+        LFM2_CPCF_V5_MODEL_FOLD_SCHEMA,
+    )
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="self-signed, or mutated",
+    ):
+        authenticate_lfm2_cpcf_reviewed_promotion_evidence(evidence)
 
 
 @pytest.mark.parametrize(

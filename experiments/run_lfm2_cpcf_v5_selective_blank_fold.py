@@ -7,23 +7,29 @@ blank-target helpers, but routes the fold through the bounded-residency v5
 compiler and the authenticated deterministic two-RTX-3090 replay backend.
 
 The process opens an already sealed local trace cache.  It never regenerates
-traces, executes the parent, trains, prunes, quantizes, downloads, resumes, or
-publishes a child checkpoint.  Its only output is a new diagnostic JSON file.
-Successful compilation therefore proves an in-memory structural fold, not
-behavioral intelligence retention or a publishable model.
+traces, executes the parent, trains, prunes, quantizes, downloads, or publishes
+a child checkpoint.  An explicit local resume store may retain authenticated
+v5 child-prefix checkpoints, and continuation accepts only one exact admitted
+v5 digest.  Its final output remains a diagnostic JSON file.  Successful
+compilation therefore proves an in-memory structural fold, not behavioral
+intelligence retention or a publishable model.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import math
 import os
+import re
 import sys
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import ExitStack
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 
@@ -42,6 +48,21 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 RUN_SCHEMA = "neural-forge-lfm2-cpcf-v5-selective-blank-fold-run-v1"
 FAILURE_SCHEMA = "neural-forge-lfm2-cpcf-v5-selective-blank-fold-failure-v1"
+RESUME_PROGRESS_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-selective-runner-resume-progress-v1"
+)
+CUDA_ALLOCATOR_POLICY_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-cuda-allocator-policy-v1"
+)
+COMPILED_CANDIDATE_CONTEXT_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-compiled-candidate-consumer-context-v1"
+)
+COMPILED_CANDIDATE_RESULT_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-compiled-candidate-consumer-result-v1"
+)
+COMPILED_CANDIDATE_ZERO_AUDIT_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-compiled-candidate-zero-operation-audit-v1"
+)
 GPU_REPLAY_SCHEMA = "neural-forge-lfm2-cpcf-v5-authenticated-two-gpu-replay-v1"
 PROVEN_GPU_PARITY_RECEIPT = (
     _REPOSITORY_ROOT / "reports" / "3933eef-two-rtx3090-bf16.json"
@@ -53,14 +74,26 @@ GPU_PARITY_ABSOLUTE_TOLERANCE = 0.125
 GPU_PARITY_RELATIVE_TOLERANCE = 0.02
 GPU_PARITY_MAXIMUM_RELATIVE_RMSE = 0.02
 GPU_PARITY_MINIMUM_COSINE_SIMILARITY = 0.999
-MINIMUM_PROMOTION_COMPRESSION_RATIO = 100.0
 PREREGISTERED_PROJECTED_FIR_OFFDIAGONAL_GATE = 0.0
 PREREGISTERED_PER_LAG_COMMUTATOR_GATE = 1.0
 _GIB = 1024**3
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_CONSUMER_ZERO_COUNTER_FIELDS = (
+    "optimizer_constructions",
+    "optimizer_steps",
+    "backward_calls",
+    "autograd_grad_calls",
+    "training_steps",
+    "pruning_operations",
+    "quantization_operations",
+    "parent_forward_calls",
+    "parent_inference_calls",
+    "target_forward_calls",
+    "cache_generation_calls",
+)
 _FORBIDDEN_REQUEST_FIELDS = (
     "resume",
     "resume_state",
-    "resume_store_directory",
     "resume_checkpoint_reference",
     "publish",
     "output_directory",
@@ -71,6 +104,20 @@ _FORBIDDEN_REQUEST_FIELDS = (
     "prune",
     "quantize",
     "download",
+)
+_FORBIDDEN_FOLD_MUTATION_MODULES = (
+    "torch.nn.utils.prune",
+    "torch.ao.quantization",
+    "torch.quantization",
+    "torchao.quantization",
+)
+_FORBIDDEN_FOLD_MUTATION_SYMBOLS = frozenset(
+    {
+        "torch.quantize_per_tensor",
+        "torch.quantize_per_channel",
+        "torch.fake_quantize_per_tensor_affine",
+        "torch.fake_quantize_per_channel_affine",
+    }
 )
 
 
@@ -157,9 +204,713 @@ def _positive_int(value: Any, name: str) -> int:
     return value
 
 
+def _digest(value: Any, name: str) -> str:
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            f"{name} must be one exact lowercase SHA-256 digest."
+        )
+    return value
+
+
+def _sealed_mapping(
+    value: Mapping[str, Any],
+    *,
+    seal_field: str,
+    label: str,
+) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            f"{label} must be a mapping."
+        )
+    report = dict(value)
+    claimed = _digest(report.pop(seal_field, None), f"{label}.{seal_field}")
+    if _sha(report) != claimed:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            f"{label} is not self-sealed."
+        )
+    return MappingProxyType({**report, seal_field: claimed})
+
+
+def _immutable_mapping(value: Mapping[str, Any], name: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            f"{name} must be a mapping."
+        )
+    # Canonicalization rejects non-finite or non-JSON evidence before the
+    # mapping is exposed across the consumer boundary.
+    normalized = dict(value)
+    _canonical_json(normalized)
+    return MappingProxyType(normalized)
+
+
+@dataclass(frozen=True, slots=True)
+class V5CompiledCandidateConsumerContext:
+    """Authenticated live post-compile state exposed to one capture backend."""
+
+    target_model: Any
+    target_tokenizer: Any
+    forbidden_parent_model: Any
+    target_plan_fingerprint: str
+    blank_target_report: Mapping[str, Any]
+    compiled_model_fold_report: Mapping[str, Any]
+    compiler_receipt_sha256: str
+    compile_diagnostic: Mapping[str, Any]
+    parent_sha256: str
+    cache_sha256: str
+    bridge_sha256: str
+    corpus_sha256: str
+    source_sha256: str
+    compiler_sha256: str
+    runner_source_sha256: str
+    source_binding_sha256: str
+    parent_tokenizer_semantics_sha256: str
+    target_tokenizer_semantics_sha256: str
+    target_tokenizer_package_sha256: str | None
+    parent_parameter_inventory: Mapping[str, Any]
+    blank_parameter_inventory: Mapping[str, Any]
+    compiled_parameter_inventory: Mapping[str, Any]
+    zero_operation_audit: Mapping[str, Any]
+    target_state_sha256: str
+    target_runtime_sha256: str
+    parent_state_sha256: str
+    parent_runtime_sha256: str
+
+    def __post_init__(self) -> None:
+        if self.target_model is None or self.target_tokenizer is None:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiled candidate context requires a live target and tokenizer."
+            )
+        if (
+            self.forbidden_parent_model is None
+            or self.forbidden_parent_model is self.target_model
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiled candidate context requires a distinct forbidden parent."
+            )
+        for name in (
+            "target_plan_fingerprint",
+            "compiler_receipt_sha256",
+            "parent_sha256",
+            "cache_sha256",
+            "bridge_sha256",
+            "corpus_sha256",
+            "source_sha256",
+            "compiler_sha256",
+            "runner_source_sha256",
+            "source_binding_sha256",
+            "parent_tokenizer_semantics_sha256",
+            "target_tokenizer_semantics_sha256",
+            "target_state_sha256",
+            "target_runtime_sha256",
+            "parent_state_sha256",
+            "parent_runtime_sha256",
+        ):
+            object.__setattr__(self, name, _digest(getattr(self, name), name))
+        if self.target_tokenizer_package_sha256 is not None:
+            object.__setattr__(
+                self,
+                "target_tokenizer_package_sha256",
+                _digest(
+                    self.target_tokenizer_package_sha256,
+                    "target_tokenizer_package_sha256",
+                ),
+            )
+
+        blank = _sealed_mapping(
+            self.blank_target_report,
+            seal_field="report_sha256",
+            label="blank_target_report",
+        )
+        compiled = _sealed_mapping(
+            self.compiled_model_fold_report,
+            seal_field="result_sha256",
+            label="compiled_model_fold_report",
+        )
+        diagnostic = _sealed_mapping(
+            self.compile_diagnostic,
+            seal_field="receipt_sha256",
+            label="compile_diagnostic",
+        )
+        if (
+            blank.get("target_plan_fingerprint")
+            != self.target_plan_fingerprint
+            or compiled.get("blank_target_report_sha256")
+            != blank["report_sha256"]
+            or compiled["result_sha256"] != self.compiler_receipt_sha256
+            or diagnostic.get("compiled_model_fold") != dict(compiled)
+            or diagnostic.get("blank_target") != dict(blank)
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiled candidate plan, blank, compiler, or diagnostic "
+                "receipts do not share one exact provenance chain."
+            )
+        inputs = diagnostic.get("inputs")
+        compiler_implementation = compiled.get("compiler_implementation")
+        seam = diagnostic.get("compiled_candidate_consumer_seam")
+        if not isinstance(inputs, Mapping) or not isinstance(
+            compiler_implementation,
+            Mapping,
+        ) or not isinstance(seam, Mapping):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiled candidate diagnostic lacks authenticated identities."
+            )
+        from neural_forge import dynamic_fold_executor
+
+        expected_guard_identity = _fold_only_guard_implementation_identity(
+            dynamic_fold_executor
+        )
+        if (
+            inputs.get("parent_fingerprint") != self.parent_sha256
+            or inputs.get("cache_key") != self.cache_sha256
+            or inputs.get("bridge_artifact_sha256") != self.bridge_sha256
+            or inputs.get("trajectory_corpus_sha256") != self.corpus_sha256
+            or inputs.get("donor_tokenizer_semantics_sha256")
+            != self.parent_tokenizer_semantics_sha256
+            or inputs.get("target_tokenizer_semantics_sha256")
+            != self.target_tokenizer_semantics_sha256
+            or compiled.get("selective_source_sha256") != self.source_sha256
+            or compiler_implementation.get("implementation_sha256")
+            != self.compiler_sha256
+            or self.source_binding_sha256
+            != _sha(
+                {
+                    "selective_source_sha256": self.source_sha256,
+                    "compiler_implementation_sha256": self.compiler_sha256,
+                    "runner_source_sha256": self.runner_source_sha256,
+                    "fold_only_runtime_guard_identity_sha256": (
+                        expected_guard_identity["identity_sha256"]
+                    ),
+                }
+            )
+            or self.runner_source_sha256
+            != _file_sha256(Path(__file__).resolve())
+            or any(
+                seam.get(name) != value
+                for name, value in {
+                    "target_plan_fingerprint": self.target_plan_fingerprint,
+                    "blank_target_report_sha256": blank["report_sha256"],
+                    "compiler_receipt_sha256": (
+                        self.compiler_receipt_sha256
+                    ),
+                    "parent_sha256": self.parent_sha256,
+                    "cache_sha256": self.cache_sha256,
+                    "bridge_sha256": self.bridge_sha256,
+                    "corpus_sha256": self.corpus_sha256,
+                    "source_sha256": self.source_sha256,
+                    "compiler_sha256": self.compiler_sha256,
+                    "runner_source_sha256": self.runner_source_sha256,
+                    "source_binding_sha256": self.source_binding_sha256,
+                    "fold_only_runtime_guard_identity_sha256": (
+                        expected_guard_identity["identity_sha256"]
+                    ),
+                    "parent_tokenizer_semantics_sha256": (
+                        self.parent_tokenizer_semantics_sha256
+                    ),
+                    "target_tokenizer_semantics_sha256": (
+                        self.target_tokenizer_semantics_sha256
+                    ),
+                    "target_tokenizer_package_sha256": (
+                        self.target_tokenizer_package_sha256
+                    ),
+                    "target_state_sha256": self.target_state_sha256,
+                    "target_runtime_sha256": self.target_runtime_sha256,
+                    "parent_state_sha256": self.parent_state_sha256,
+                    "parent_runtime_sha256": self.parent_runtime_sha256,
+                }.items()
+            )
+            or diagnostic.get("parent_parameter_inventory")
+            != dict(self.parent_parameter_inventory)
+            or diagnostic.get("blank_parameter_inventory")
+            != dict(self.blank_parameter_inventory)
+            or diagnostic.get("compiled_parameter_inventory")
+            != dict(self.compiled_parameter_inventory)
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiled candidate context identity or inventory binding changed."
+            )
+        claims = diagnostic.get("claims")
+        if (
+            not isinstance(claims, Mapping)
+            or claims.get("child_checkpoint_saved") is not False
+            or claims.get("publication_attempted") is not False
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "The compiler diagnostic must remain non-publishing."
+            )
+        audit = _immutable_mapping(
+            self.zero_operation_audit,
+            "zero_operation_audit",
+        )
+        if (
+            audit.get("schema") != COMPILED_CANDIDATE_ZERO_AUDIT_SCHEMA
+            or audit.get("clean") is not True
+            or any(
+                isinstance(audit.get(name), bool)
+                or audit.get(name) != 0
+                for name in _CONSUMER_ZERO_COUNTER_FIELDS
+            )
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiled candidate context does not prove a zero-operation fold."
+            )
+        if seam.get("zero_operation_audit") != dict(audit):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Zero-operation audit differs from the sealed diagnostic."
+            )
+        runtime_guard = _sealed_mapping(
+            audit.get("compiler_runtime_guard"),
+            seal_field="report_sha256",
+            label="compiler_runtime_guard",
+        )
+        static_source_audit = _sealed_mapping(
+            runtime_guard.get("static_pruning_quantization_source_audit"),
+            seal_field="report_sha256",
+            label="static_pruning_quantization_source_audit",
+        )
+        if (
+            diagnostic.get("compiler_runtime_fold_only_guard")
+            != dict(runtime_guard)
+            or runtime_guard.get("guard_implementation")
+            != dict(expected_guard_identity)
+            or static_source_audit.get("compiler_implementation_sha256")
+            != self.compiler_sha256
+            or static_source_audit.get(
+                "authenticated_compiler_source_files"
+            )
+            != compiler_implementation.get("ordered_source_files")
+            or static_source_audit.get("runner_source_sha256")
+            != self.runner_source_sha256
+            or static_source_audit.get("clean") is not True
+            or static_source_audit.get("forbidden_finding_count") != 0
+            or static_source_audit.get("forbidden_findings") != []
+            or runtime_guard.get("clean") is not True
+            or any(
+                type(runtime_guard.get(name)) is not int
+                or runtime_guard.get(name) != 0
+                for name in (
+                    "optimizer_constructions",
+                    "optimizer_steps",
+                    "backward_calls",
+                    "autograd_grad_calls",
+                    "pruning_operations",
+                    "quantization_operations",
+                    "parent_module_forward_calls",
+                    "parent_root_forward_calls",
+                    "parent_inference_entrypoint_calls",
+                    "target_root_forward_calls",
+                    "target_inference_entrypoint_calls",
+                )
+            )
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Runtime fold-only guard evidence or source identity changed."
+            )
+        object.__setattr__(self, "blank_target_report", blank)
+        object.__setattr__(self, "compiled_model_fold_report", compiled)
+        object.__setattr__(self, "compile_diagnostic", diagnostic)
+        object.__setattr__(
+            self,
+            "parent_parameter_inventory",
+            _immutable_mapping(
+                self.parent_parameter_inventory,
+                "parent_parameter_inventory",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "blank_parameter_inventory",
+            _immutable_mapping(
+                self.blank_parameter_inventory,
+                "blank_parameter_inventory",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "compiled_parameter_inventory",
+            _immutable_mapping(
+                self.compiled_parameter_inventory,
+                "compiled_parameter_inventory",
+            ),
+        )
+        object.__setattr__(self, "zero_operation_audit", audit)
+
+    @property
+    def schema(self) -> str:
+        return COMPILED_CANDIDATE_CONTEXT_SCHEMA
+
+
+@dataclass(frozen=True, slots=True)
+class V5CompiledCandidateConsumerResult:
+    """One separately captured candidate bound to its compiler receipt."""
+
+    candidate: Any
+    capture_receipt: Mapping[str, Any]
+    capture_receipt_sha256: str
+    compiler_receipt_sha256: str
+    target_plan_fingerprint: str
+    target_state_sha256: str
+    parent_sha256: str
+    cache_sha256: str
+    bridge_sha256: str
+    corpus_sha256: str
+    source_sha256: str
+    compiler_sha256: str
+    runner_source_sha256: str
+    source_binding_sha256: str
+    parent_tokenizer_semantics_sha256: str
+    target_tokenizer_semantics_sha256: str
+    compile_diagnostic: Mapping[str, Any]
+    verification_receipt: Mapping[str, Any] | None = None
+    consumer_runtime_guard_receipt: Mapping[str, Any] | None = None
+    compiler_child_checkpoint_saved: bool = False
+    compiler_publication_attempted: bool = False
+    quarantine_candidate_saved: bool = True
+    quarantine_publication_nonpromotable: bool = True
+
+    def __post_init__(self) -> None:
+        from neural_forge.dynamic_candidate_capture import (
+            CANDIDATE_DIRECTORY_NAME,
+            QUARANTINE_AUDIT_SCHEMA,
+            QUARANTINE_RECEIPT_FILENAME,
+            QUARANTINE_VERIFICATION_SCHEMA,
+            QuarantineCaptureReceipt,
+            QuarantinedDynamicFoldCandidate,
+            _candidate_inventory,
+        )
+        from neural_forge.dynamic_circuit_ir import canonical_sha256
+
+        if type(self.candidate) is not QuarantinedDynamicFoldCandidate:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Consumer result requires the exact generic quarantined "
+                "candidate type."
+            )
+        for name in (
+            "capture_receipt_sha256",
+            "compiler_receipt_sha256",
+            "target_plan_fingerprint",
+            "target_state_sha256",
+            "parent_sha256",
+            "cache_sha256",
+            "bridge_sha256",
+            "corpus_sha256",
+            "source_sha256",
+            "compiler_sha256",
+            "runner_source_sha256",
+            "source_binding_sha256",
+            "parent_tokenizer_semantics_sha256",
+            "target_tokenizer_semantics_sha256",
+        ):
+            object.__setattr__(self, name, _digest(getattr(self, name), name))
+        if self.capture_receipt_sha256 == self.compiler_receipt_sha256:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Capture and compiler receipts must remain distinct."
+            )
+        diagnostic = _sealed_mapping(
+            self.compile_diagnostic,
+            seal_field="receipt_sha256",
+            label="compile_diagnostic",
+        )
+        runtime_guard = diagnostic.get("compiler_runtime_fold_only_guard")
+        guard_implementation = (
+            runtime_guard.get("guard_implementation")
+            if isinstance(runtime_guard, Mapping)
+            else None
+        )
+        from neural_forge import dynamic_fold_executor
+
+        expected_guard_identity = _fold_only_guard_implementation_identity(
+            dynamic_fold_executor
+        )
+        if guard_implementation != dict(expected_guard_identity):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Consumer result runtime-guard source identity changed."
+            )
+        if self.source_binding_sha256 != _sha(
+            {
+                "selective_source_sha256": self.source_sha256,
+                "compiler_implementation_sha256": self.compiler_sha256,
+                "runner_source_sha256": self.runner_source_sha256,
+                "fold_only_runtime_guard_identity_sha256": (
+                    expected_guard_identity["identity_sha256"]
+                ),
+            }
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Consumer result source binding is invalid."
+            )
+        capture = _sealed_mapping(
+            self.capture_receipt,
+            seal_field="receipt_sha256",
+            label="capture_receipt",
+        )
+        if capture["receipt_sha256"] != self.capture_receipt_sha256:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Capture receipt digest differs from the consumer result."
+            )
+        candidate_receipt = self.candidate.receipt
+        candidate_model = self.candidate.model
+        candidate_path = self.candidate.path
+        candidate_artifact_path = self.candidate.artifact_path
+        if (
+            type(candidate_receipt) is not QuarantineCaptureReceipt
+            or candidate_receipt.receipt_sha256
+            != self.capture_receipt_sha256
+            or candidate_receipt.as_dict() != dict(capture)
+            or not isinstance(candidate_path, Path)
+            or not isinstance(candidate_artifact_path, Path)
+            or candidate_path != candidate_path.resolve()
+            or candidate_artifact_path != candidate_artifact_path.resolve()
+            or candidate_artifact_path
+            != candidate_path / CANDIDATE_DIRECTORY_NAME
+            or not candidate_path.is_dir()
+            or not candidate_artifact_path.is_dir()
+            or not (candidate_path / QUARANTINE_RECEIPT_FILENAME).is_file()
+            or candidate_model is None
+            or self.candidate.promotable is not False
+            or self.candidate.publication_authorized is not False
+            or self.candidate.requires_reviewed_rerun is not True
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Consumer candidate object differs from its quarantine receipt "
+                "or non-promotable lifecycle."
+            )
+        try:
+            persisted_receipt = json.loads(
+                (
+                    candidate_path / QUARANTINE_RECEIPT_FILENAME
+                ).read_text(encoding="utf-8")
+            )
+            actual_inventory = _candidate_inventory(candidate_artifact_path)
+        except Exception as exc:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Could not reauthenticate retained quarantine bytes."
+            ) from exc
+        candidate_artifact = capture.get("candidate_artifact")
+        if (
+            persisted_receipt != dict(capture)
+            or not isinstance(candidate_artifact, Mapping)
+            or candidate_artifact.get("inventory") != actual_inventory
+            or candidate_artifact.get("inventory_sha256")
+            != actual_inventory.get("inventory_sha256")
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Retained quarantine receipt or artifact inventory changed."
+            )
+        try:
+            from neural_forge.dynamic_fold_executor import (
+                fingerprint_model_state,
+            )
+
+            candidate_state_sha256 = fingerprint_model_state(candidate_model)
+        except Exception as exc:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Could not authenticate the consumer candidate model."
+            ) from exc
+        if candidate_state_sha256 != self.target_state_sha256:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Consumer candidate model state differs from the captured "
+                "compiler target."
+            )
+        candidate_verification = dict(self.candidate.verification_receipt)
+        supplied_verification = (
+            candidate_verification
+            if self.verification_receipt is None
+            else dict(
+                _immutable_mapping(
+                    self.verification_receipt,
+                    "verification_receipt",
+                )
+            )
+        )
+        verification_body = dict(supplied_verification)
+        verification_sha256 = verification_body.pop(
+            "verification_sha256",
+            None,
+        )
+        evaluations = capture.get("evaluations")
+        capture_request = capture.get("capture_request")
+        filesystem_identity = capture.get("filesystem_identity")
+        fresh_execution = supplied_verification.get(
+            "fresh_reload_execution"
+        )
+        observed_audit = supplied_verification.get(
+            "capture_observed_audit"
+        )
+        if (
+            supplied_verification != candidate_verification
+            or supplied_verification.get("schema")
+            != QUARANTINE_VERIFICATION_SCHEMA
+            or _digest(
+                verification_sha256,
+                "verification_receipt.verification_sha256",
+            )
+            != canonical_sha256(verification_body)
+            or supplied_verification.get("capture_receipt_sha256")
+            != self.capture_receipt_sha256
+            or supplied_verification.get("destination_path_sha256")
+            != canonical_sha256(os.fspath(candidate_path))
+            or not isinstance(filesystem_identity, Mapping)
+            or filesystem_identity.get("destination_path_sha256")
+            != supplied_verification.get("destination_path_sha256")
+            or supplied_verification.get("model_state_sha256")
+            != self.target_state_sha256
+            or supplied_verification.get("artifact_inventory_sha256")
+            != actual_inventory.get("inventory_sha256")
+            or not isinstance(evaluations, Mapping)
+            or supplied_verification.get("output_sha256")
+            != evaluations.get("fresh_reload_output_sha256")
+            or supplied_verification.get("evaluation_sha256")
+            != evaluations.get("fresh_reload_evaluation_sha256")
+            or not isinstance(capture_request, Mapping)
+            or supplied_verification.get("loader_sha256")
+            != capture_request.get("loader_sha256")
+            or supplied_verification.get("evaluator_sha256")
+            != capture_request.get("evaluator_sha256")
+            or supplied_verification.get(
+                "fresh_final_destination_reload_performed"
+            )
+            is not True
+            or supplied_verification.get("promotable") is not False
+            or supplied_verification.get("publication_authorized") is not False
+            or supplied_verification.get("requires_reviewed_rerun") is not True
+            or not isinstance(fresh_execution, Mapping)
+            or any(
+                type(fresh_execution.get(name)) is not int
+                or fresh_execution.get(name) <= 0
+                for name in (
+                    "module_forward_calls",
+                    "root_forward_calls",
+                    "inference_entrypoint_calls",
+                )
+            )
+            or not isinstance(observed_audit, Mapping)
+            or observed_audit.get("schema") != QUARANTINE_AUDIT_SCHEMA
+            or observed_audit.get("clean") is not True
+            or any(
+                type(observed_audit.get(name)) is not int
+                or observed_audit.get(name) != 0
+                for name in (
+                    "optimizer_constructions",
+                    "optimizer_steps",
+                    "backward_calls",
+                    "autograd_grad_calls",
+                    "training_steps",
+                    "pruning_operations",
+                    "quantization_operations",
+                    "parent_forward_calls",
+                    "parent_inference_calls",
+                )
+            )
+            or observed_audit.get("training_used") is not False
+            or observed_audit.get("pruning_used") is not False
+            or observed_audit.get("quantization_used") is not False
+            or observed_audit.get("live_parent_calls_used") is not False
+            or observed_audit.get(
+                "pruning_operations_runtime_observed"
+            )
+            is not True
+            or observed_audit.get(
+                "quantization_operations_runtime_observed"
+            )
+            is not True
+            or observed_audit.get(
+                "dense_unpruned_unquantized_retained_state_checked_separately"
+            )
+            is not True
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Final retained-destination reload verification is incomplete "
+                "or differs from the quarantine receipt."
+            )
+        bindings = capture.get("bindings")
+        expected_bindings = {
+            "plan_sha256": self.target_plan_fingerprint,
+            "parent_sha256": self.parent_sha256,
+            "cache_sha256": self.cache_sha256,
+            "bridge_sha256": self.bridge_sha256,
+            "corpus_sha256": self.corpus_sha256,
+            "compiler_sha256": self.compiler_receipt_sha256,
+            "source_sha256": self.source_binding_sha256,
+            "model_state_sha256": self.target_state_sha256,
+        }
+        if not isinstance(bindings, Mapping) or any(
+            bindings.get(name) != value
+            for name, value in expected_bindings.items()
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Capture receipt bindings differ from the compiled candidate."
+            )
+        if (
+            diagnostic.get("compiled_model_fold", {}).get("result_sha256")
+            != self.compiler_receipt_sha256
+            or self.compiler_child_checkpoint_saved is not False
+            or self.compiler_publication_attempted is not False
+            or self.quarantine_candidate_saved is not True
+            or self.quarantine_publication_nonpromotable is not True
+            or capture.get("standalone_candidate") is not True
+            or capture.get("promotable") is not False
+            or capture.get("publication_authorized") is not False
+            or capture.get("requires_reviewed_rerun") is not True
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Consumer result confuses compiler publication with a "
+                "non-promotable standalone quarantine capture."
+            )
+        object.__setattr__(self, "capture_receipt", capture)
+        object.__setattr__(self, "compile_diagnostic", diagnostic)
+        object.__setattr__(
+            self,
+            "verification_receipt",
+            MappingProxyType(supplied_verification),
+        )
+        if self.consumer_runtime_guard_receipt is not None:
+            consumer_guard = _sealed_mapping(
+                self.consumer_runtime_guard_receipt,
+                seal_field="report_sha256",
+                label="consumer_runtime_guard_receipt",
+            )
+            if (
+                consumer_guard.get("guard_implementation")
+                != dict(expected_guard_identity)
+                or consumer_guard.get("compiler_runtime_guard_sha256")
+                != runtime_guard.get("report_sha256")
+                or consumer_guard.get("capture_verification_sha256")
+                != supplied_verification.get("verification_sha256")
+                or consumer_guard.get("clean") is not True
+                or any(
+                    type(consumer_guard.get(name)) is not int
+                    or consumer_guard.get(name) != 0
+                    for name in (
+                        "optimizer_constructions",
+                        "optimizer_steps",
+                        "backward_calls",
+                        "autograd_grad_calls",
+                        "pruning_operations",
+                        "quantization_operations",
+                        "parent_module_forward_calls",
+                        "parent_root_forward_calls",
+                        "parent_inference_entrypoint_calls",
+                        "direct_parent_forward_calls",
+                    )
+                )
+            ):
+                raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                    "Consumer runtime fold-only guard receipt is invalid."
+                )
+            object.__setattr__(
+                self,
+                "consumer_runtime_guard_receipt",
+                consumer_guard,
+            )
+
+    @property
+    def schema(self) -> str:
+        return COMPILED_CANDIDATE_RESULT_SCHEMA
+
+
 @dataclass(frozen=True, slots=True)
 class V5SelectiveBlankFoldConfig:
-    """One local-only, non-resumable, non-publishing v5 fold request."""
+    """One local-only, optionally resumable, non-publishing v5 fold request."""
 
     parent_model_directory: Path
     donor_tokenizer_directory: Path
@@ -191,6 +942,10 @@ class V5SelectiveBlankFoldConfig:
     short_conv_v4_bcx_trust_radius: float
     short_conv_v4_correction_rms_floor: float
     short_conv_v4_context_objective_weight: float
+    maximum_cuda_gib_per_device: float = 20.0
+    expected_target_plan_fingerprint: str | None = None
+    resume_store_directory: Path | None = None
+    resume_admission_sha256: str | None = None
     forbidden_requests: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -205,6 +960,42 @@ class V5SelectiveBlankFoldConfig:
         ):
             if not isinstance(getattr(self, name), Path):
                 raise TypeError(f"{name} must be pathlib.Path.")
+        if self.resume_store_directory is not None:
+            if not isinstance(self.resume_store_directory, Path):
+                raise TypeError("resume_store_directory must be pathlib.Path.")
+            raw_resume_path = os.fspath(
+                self.resume_store_directory.expanduser()
+            )
+            if (
+                "://" in raw_resume_path
+                or raw_resume_path.startswith("\\\\")
+                or raw_resume_path.startswith("//")
+            ):
+                raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                    "resume_store_directory must be an explicit local path."
+                )
+        if self.expected_target_plan_fingerprint is not None and (
+            not isinstance(self.expected_target_plan_fingerprint, str)
+            or _SHA256.fullmatch(self.expected_target_plan_fingerprint) is None
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "expected_target_plan_fingerprint must be one exact lowercase "
+                "SHA-256 digest."
+            )
+        if self.resume_admission_sha256 is not None:
+            if (
+                not isinstance(self.resume_admission_sha256, str)
+                or _SHA256.fullmatch(self.resume_admission_sha256) is None
+            ):
+                raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                    "resume_admission_sha256 must be one exact lowercase "
+                    "SHA-256 digest."
+                )
+            if self.resume_store_directory is None:
+                raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                    "resume_admission_sha256 requires an explicit local "
+                    "resume_store_directory."
+                )
         if not hasattr(self.compression, "as_kwargs") or not callable(
             self.compression.as_kwargs
         ):
@@ -225,6 +1016,14 @@ class V5SelectiveBlankFoldConfig:
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
                 "maximum_logical_resident_gib must be nonnegative."
             )
+        cuda_limit = _finite_float(
+            self.maximum_cuda_gib_per_device,
+            "maximum_cuda_gib_per_device",
+        )
+        if cuda_limit <= 0.0 or int(cuda_limit * _GIB) <= 0:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "maximum_cuda_gib_per_device must set a positive bound."
+            )
         reduction = _finite_float(
             self.minimum_physical_rss_reduction_fraction,
             "minimum_physical_rss_reduction_fraction",
@@ -243,6 +1042,11 @@ class V5SelectiveBlankFoldConfig:
             self,
             "minimum_physical_rss_reduction_fraction",
             reduction,
+        )
+        object.__setattr__(
+            self,
+            "maximum_cuda_gib_per_device",
+            cuda_limit,
         )
         if self.model_device not in {"cpu", "cuda:0"}:
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
@@ -372,6 +1176,10 @@ class V5SelectiveBlankFoldConfig:
     def maximum_process_rss_bytes(self) -> int:
         return int(self.maximum_process_rss_gib * _GIB)
 
+    @property
+    def maximum_cuda_bytes_per_device(self) -> int:
+        return int(self.maximum_cuda_gib_per_device * _GIB)
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "parent_model_directory": str(self.parent_model_directory),
@@ -387,6 +1195,10 @@ class V5SelectiveBlankFoldConfig:
             "maximum_logical_resident_gib": (self.maximum_logical_resident_gib),
             "minimum_physical_rss_reduction_fraction": (
                 self.minimum_physical_rss_reduction_fraction
+            ),
+            "maximum_cuda_gib_per_device": self.maximum_cuda_gib_per_device,
+            "maximum_cuda_bytes_per_device": (
+                self.maximum_cuda_bytes_per_device
             ),
             "model_device": self.model_device,
             "dtype": self.dtype,
@@ -419,15 +1231,313 @@ class V5SelectiveBlankFoldConfig:
             "short_conv_v4_context_objective_weight": (
                 self.short_conv_v4_context_objective_weight
             ),
-            "resume_requested": False,
+            "expected_target_plan_fingerprint": (
+                self.expected_target_plan_fingerprint
+            ),
+            "resume_store_directory": (
+                None
+                if self.resume_store_directory is None
+                else str(self.resume_store_directory)
+            ),
+            "resume_admission_sha256": self.resume_admission_sha256,
+            "resume_checkpointing_requested": (
+                self.resume_store_directory is not None
+            ),
+            "resume_requested": self.resume_admission_sha256 is not None,
             "publication_requested": False,
         }
+
+
+def _request_derived_structural_compression_floor(compression: Any) -> float:
+    """Use the catalog request as a structural check, never as a success claim."""
+
+    ratio = getattr(compression, "compression_ratio", None)
+    return 1.0 if ratio is None else float(ratio)
 
 
 @dataclass(frozen=True, slots=True)
 class _GpuReplayBundle:
     evaluator: Any
     report: Mapping[str, Any]
+
+
+@dataclass(slots=True)
+class _ResumeProgressTracker:
+    """Retain exact typed v5 progress references for run diagnostics."""
+
+    store_directory: Path | None
+    requested_admission_sha256: str | None
+    invocation_head: dict[str, Any] | None = None
+    published_pending_prefixes: list[dict[str, Any]] = field(
+        default_factory=list
+    )
+    admitted_prefixes: list[dict[str, Any]] = field(default_factory=list)
+    rejected_prefixes: list[dict[str, Any]] = field(default_factory=list)
+
+    @staticmethod
+    def _pending_record(pending: Any) -> dict[str, Any]:
+        return {
+            "next_layer_index": int(pending.next_layer_index),
+            "frontier_reference": pending.frontier_reference.as_dict(),
+            "checkpoint_reference": pending.checkpoint.reference.as_dict(),
+            "frontier_sha256": str(pending.frontier_sha256),
+            "event_report_sha256": str(pending.event_report_sha256),
+        }
+
+    def record_invocation_head(self, state: Any) -> None:
+        self.invocation_head = {
+            "admission_sha256": str(
+                state.admission["admission_sha256"]
+            ),
+            "next_layer_index": int(state.next_layer_index),
+            "frontier_reference": state.frontier_reference.as_dict(),
+            "checkpoint_reference": state.checkpoint_reference.as_dict(),
+            "frontier_sha256": str(state.frontier.frontier_sha256),
+            "opened_by_exact_admission_digest": True,
+            "typed_v5_state_opened": True,
+        }
+
+    def record_pending(self, pending: Any) -> None:
+        self.published_pending_prefixes.append(
+            self._pending_record(pending)
+        )
+
+    def record_admitted(
+        self,
+        pending: Any,
+        admission: Mapping[str, Any],
+    ) -> None:
+        record = self._pending_record(pending)
+        record.pop("event_report_sha256")
+        record["admission_sha256"] = str(
+            admission["admission_sha256"]
+        )
+        self.admitted_prefixes.append(record)
+
+    def record_rejected(
+        self,
+        pending: Any,
+        rejection: Mapping[str, Any],
+    ) -> None:
+        record = self._pending_record(pending)
+        record["rejection_sha256"] = str(
+            rejection["rejection_sha256"]
+        )
+        record["promotable"] = False
+        self.rejected_prefixes.append(record)
+
+    @staticmethod
+    def _ordered(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            dict(record)
+            for record in sorted(
+                records,
+                key=lambda item: (
+                    int(item["next_layer_index"]),
+                    str(item["checkpoint_reference"]["artifact_key"]),
+                ),
+            )
+        ]
+
+    def as_dict(self) -> dict[str, Any]:
+        published = self._ordered(self.published_pending_prefixes)
+        admitted = self._ordered(self.admitted_prefixes)
+        rejected = self._ordered(self.rejected_prefixes)
+        terminal_keys = {
+            str(record["checkpoint_reference"]["artifact_key"])
+            for record in (*admitted, *rejected)
+        }
+        outstanding = [
+            dict(record)
+            for record in published
+            if str(record["checkpoint_reference"]["artifact_key"])
+            not in terminal_keys
+        ]
+        body = {
+            "schema": RESUME_PROGRESS_SCHEMA,
+            "resume_store_directory": (
+                None
+                if self.store_directory is None
+                else str(self.store_directory)
+            ),
+            "checkpointing_enabled": self.store_directory is not None,
+            "requested_admission_sha256": (
+                self.requested_admission_sha256
+            ),
+            "resume_requested": (
+                self.requested_admission_sha256 is not None
+            ),
+            "invocation_head": self.invocation_head,
+            "published_pending_prefixes": published,
+            "outstanding_pending_prefixes": outstanding,
+            "admitted_prefixes": admitted,
+            "rejected_prefixes": rejected,
+            "published_pending_prefix_count": len(published),
+            "outstanding_pending_prefix_count": len(outstanding),
+            "admitted_prefix_count": len(admitted),
+            "rejected_prefix_count": len(rejected),
+            "only_child_prefix_tensors_archived": True,
+            "parent_or_cache_tensor_sidecars": 0,
+            "child_publication_attempted": False,
+            "operation_audit": {
+                "parent_model_forward_calls": 0,
+                "target_model_forward_calls": 0,
+                "generation_calls": 0,
+                "parent_cache_generation_calls": 0,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+            },
+        }
+        return {**body, "report_sha256": _sha(body)}
+
+
+@dataclass(frozen=True, slots=True)
+class _ResumeRuntime:
+    coordinator: Any | None
+    state: Any | None
+    progress: _ResumeProgressTracker
+
+
+def _tracking_resume_coordinator(
+    coordinator_type: type,
+    store: Any,
+    progress: _ResumeProgressTracker,
+) -> Any:
+    """Construct the typed coordinator with diagnostic-only observation."""
+
+    class _RunnerTrackedResumeCoordinator(coordinator_type):
+        def publish_pending(self, event: Any) -> Any:
+            pending = super().publish_pending(event)
+            progress.record_pending(pending)
+            return pending
+
+        def admit(
+            self,
+            pending: Any,
+            *,
+            rss_checkpoint_receipt: Mapping[str, Any],
+        ) -> Mapping[str, Any]:
+            admission = super().admit(
+                pending,
+                rss_checkpoint_receipt=rss_checkpoint_receipt,
+            )
+            progress.record_admitted(pending, admission)
+            return admission
+
+        def record_rss_rejection(
+            self,
+            pending: Any,
+            *,
+            rss_violation_report: Mapping[str, Any],
+        ) -> Mapping[str, Any]:
+            rejection = super().record_rss_rejection(
+                pending,
+                rss_violation_report=rss_violation_report,
+            )
+            progress.record_rejected(pending, rejection)
+            return rejection
+
+    return _RunnerTrackedResumeCoordinator(store)
+
+
+def _attach_resume_progress(
+    error: Exception,
+    progress: _ResumeProgressTracker,
+) -> None:
+    try:
+        error.resume_progress_report = progress.as_dict()
+    except Exception as attachment_error:
+        error.add_note(
+            "Authenticated resume progress could not be attached to the "
+            f"exception: {attachment_error}"
+        )
+
+
+def _build_resume_runtime(
+    config: V5SelectiveBlankFoldConfig,
+) -> _ResumeRuntime:
+    progress = _ResumeProgressTracker(
+        store_directory=(
+            None
+            if config.resume_store_directory is None
+            else config.resume_store_directory.expanduser().absolute()
+        ),
+        requested_admission_sha256=config.resume_admission_sha256,
+    )
+    if config.resume_store_directory is None:
+        return _ResumeRuntime(
+            coordinator=None,
+            state=None,
+            progress=progress,
+        )
+
+    from neural_forge.hf_lfm2_cpcf_resume_artifact import (
+        Lfm2CpcfResumeArtifactStore,
+    )
+    from neural_forge.hf_lfm2_cpcf_v5_resume import (
+        Lfm2CpcfV5ResumeCoordinator,
+        Lfm2CpcfV5ResumeState,
+    )
+
+    try:
+        store = Lfm2CpcfResumeArtifactStore(
+            config.resume_store_directory
+        )
+        progress.store_directory = store.root
+        coordinator = _tracking_resume_coordinator(
+            Lfm2CpcfV5ResumeCoordinator,
+            store,
+            progress,
+        )
+        state = None
+        if config.resume_admission_sha256 is not None:
+            state = coordinator.open_admitted(
+                config.resume_admission_sha256
+            )
+            if type(state) is not Lfm2CpcfV5ResumeState:
+                raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                    "The resume admission did not open an exact typed v5 "
+                    "resume state."
+                )
+            progress.record_invocation_head(state)
+    except Exception as error:
+        _attach_resume_progress(error, progress)
+        raise
+    return _ResumeRuntime(
+        coordinator=coordinator,
+        state=state,
+        progress=progress,
+    )
+
+
+def _compile_with_authenticated_resume(
+    compile_function: Any,
+    source_model: Any,
+    target_model: Any,
+    *,
+    resume_runtime: _ResumeRuntime,
+    compile_kwargs: Mapping[str, Any],
+) -> Any:
+    """Invoke v5 with only the typed coordinator/state continuation seam."""
+
+    if "resume_state" in compile_kwargs or "resume_coordinator" in compile_kwargs:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Resume inputs must come only from the authenticated runner seam."
+        )
+    try:
+        return compile_function(
+            source_model,
+            target_model,
+            **dict(compile_kwargs),
+            resume_state=resume_runtime.state,
+            resume_coordinator=resume_runtime.coordinator,
+        )
+    except Exception as error:
+        _attach_resume_progress(error, resume_runtime.progress)
+        raise
 
 
 def _configure_torch() -> Any:
@@ -449,6 +1559,91 @@ def _configure_torch() -> Any:
     torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
     torch.set_float32_matmul_precision("highest")
     return torch
+
+
+def _enforce_cuda_allocator_caps(
+    torch: Any,
+    *,
+    maximum_cuda_bytes_per_device: int,
+) -> Mapping[str, Any]:
+    """Install one hard PyTorch allocator fraction on both replay devices."""
+
+    requested = _positive_int(
+        maximum_cuda_bytes_per_device,
+        "maximum_cuda_bytes_per_device",
+    )
+    cuda = getattr(torch, "cuda", None)
+    set_fraction = getattr(cuda, "set_per_process_memory_fraction", None)
+    get_properties = getattr(cuda, "get_device_properties", None)
+    if (
+        cuda is None
+        or not callable(getattr(cuda, "is_available", None))
+        or not cuda.is_available()
+        or not callable(getattr(cuda, "device_count", None))
+        or int(cuda.device_count()) < len(GPU_LOGICAL_DEVICES)
+        or not callable(set_fraction)
+        or not callable(get_properties)
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "The per-device CUDA allocator cap cannot be enforced."
+        )
+    devices = []
+    for index in GPU_LOGICAL_DEVICES:
+        try:
+            properties = get_properties(index)
+            device_name = str(getattr(properties, "name", ""))
+            if device_name != EXPECTED_GPU_NAME:
+                raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                    f"Logical CUDA device {index} is not the authenticated "
+                    f"{EXPECTED_GPU_NAME}."
+                )
+            total = _positive_int(
+                int(properties.total_memory),
+                f"cuda:{index}.total_memory",
+            )
+            allowed = min(requested, total)
+            fraction = min(1.0, float(allowed) / float(total))
+            while int(math.floor(float(total) * fraction)) > allowed:
+                fraction = math.nextafter(fraction, 0.0)
+            if not math.isfinite(fraction) or not 0.0 < fraction <= 1.0:
+                raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                    f"cuda:{index} allocator fraction is not enforceable."
+                )
+            set_fraction(fraction, device=index)
+        except Lfm2CpcfV5SelectiveBlankFoldRunnerError:
+            raise
+        except Exception as exc:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                f"Could not enforce the CUDA allocator cap on logical "
+                f"device {index}."
+            ) from exc
+        effective = int(math.floor(float(total) * fraction))
+        if effective <= 0 or effective > requested or effective > total:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                f"Logical CUDA device {index} allocator cap is invalid."
+            )
+        devices.append(
+            {
+                "logical_device_index": index,
+                "device_name": device_name,
+                "observed_total_memory_bytes": total,
+                "requested_maximum_bytes": requested,
+                "allowed_bytes": allowed,
+                "allocator_fraction": fraction,
+                "effective_allocator_maximum_bytes": effective,
+                "set_per_process_memory_fraction_called": True,
+                "enforced_before_substantive_cuda_allocations": True,
+            }
+        )
+    body = {
+        "schema": CUDA_ALLOCATOR_POLICY_SCHEMA,
+        "logical_devices": list(GPU_LOGICAL_DEVICES),
+        "requested_maximum_cuda_bytes_per_device": requested,
+        "device_receipts": devices,
+        "all_devices_enforced": len(devices) == len(GPU_LOGICAL_DEVICES),
+        "enforced_before_substantive_cuda_allocations": True,
+    }
+    return MappingProxyType({**body, "receipt_sha256": _sha(body)})
 
 
 def _expected_gpu_scheduler_policy() -> dict[str, Any]:
@@ -550,6 +1745,8 @@ def _build_authenticated_gpu_replay_evaluator(torch: Any) -> _GpuReplayBundle:
     """Build the fixed logical-CUDA-0/1 scheduler used by the proven lane."""
 
     from neural_forge.dynamic_replay_scheduler import (
+        AuthenticatedPinnedHostBufferFactory,
+        AuthenticatedReplayStateProbes,
         DeterministicReplayScheduler,
         ReplayReplicaReceipt,
         ReplaySchedulerPolicy,
@@ -558,7 +1755,8 @@ def _build_authenticated_gpu_replay_evaluator(torch: Any) -> _GpuReplayBundle:
     )
     from neural_forge.hf_lfm2_cpcf_candidate_replay import (
         AuthenticatedTwoGpuLfm2CpcfCandidateReplayEvaluator,
-        replay_lfm2_cpcf_candidate_work_payload,
+        lfm2_cpcf_cpu_parity_worker,
+        lfm2_cpcf_cuda_replay_worker,
     )
 
     parity_proof = dict(_load_proven_gpu_parity_receipt())
@@ -642,23 +1840,23 @@ def _build_authenticated_gpu_replay_evaluator(torch: Any) -> _GpuReplayBundle:
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Live GPU scheduler policy differs from the proven receipt."
         )
+    state_probes = AuthenticatedReplayStateProbes(
+        cpu_tensors=contract_cpu,
+        gpu_tensors=contract_gpu,
+    )
     scheduler = DeterministicReplayScheduler(
         replicas=replicas,
         policy=scheduler_policy,
-        gpu_worker=lambda _item, _replica, payload: (
-            replay_lfm2_cpcf_candidate_work_payload(payload)
-        ),
-        cpu_parity_worker=lambda _item, payload: (
-            replay_lfm2_cpcf_candidate_work_payload(payload)
-        ),
+        gpu_worker=lfm2_cpcf_cuda_replay_worker,
+        cpu_parity_worker=lfm2_cpcf_cpu_parity_worker,
         device_receipt_probe=capture_cuda_replay_device_receipt,
-        installed_state_probe=lambda replica: fingerprint_installed_replay_state(
-            contract_gpu[replica.device.device_index]
-        ),
-        cpu_installed_state_probe=lambda: fingerprint_installed_replay_state(
-            contract_cpu
+        installed_state_probe=state_probes.installed_state_probe,
+        cpu_installed_state_probe=state_probes.cpu_installed_state_probe,
+        host_buffer_factory=AuthenticatedPinnedHostBufferFactory(
+            scheduler_policy.maximum_pinned_bytes_per_slot
         ),
     )
+    runtime_authentication = dict(scheduler.authenticate_runtime())
     evaluator = AuthenticatedTwoGpuLfm2CpcfCandidateReplayEvaluator(scheduler)
     body = {
         "schema": GPU_REPLAY_SCHEMA,
@@ -667,6 +1865,10 @@ def _build_authenticated_gpu_replay_evaluator(torch: Any) -> _GpuReplayBundle:
         "replicas": [replica.as_dict() for replica in replicas],
         "cpu_installed_state": cpu_fingerprint.as_dict(),
         "scheduler_policy": scheduler_policy.as_dict(),
+        "runtime_authentication": runtime_authentication,
+        "runtime_authentication_sha256": (
+            runtime_authentication["report_sha256"]
+        ),
         "proven_parity_receipt": parity_proof,
         "contract_tensor_names": sorted(contract_cpu),
         "contract_cpu_tensors_retained_for_runtime_reauthentication": True,
@@ -847,7 +2049,653 @@ def _gpu_execution_audit(
     }
 
 
-def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
+def _live_model_authentication(model: Any) -> Mapping[str, Any]:
+    """Fingerprint state, topology/runtime bindings, and parameter inventory."""
+
+    from neural_forge.dynamic_fold_executor import (
+        fingerprint_model_runtime_state,
+        fingerprint_model_state,
+    )
+    from neural_forge.hf_lfm2_cpcf_model_fold import (
+        independent_parameter_inventory,
+    )
+
+    try:
+        return MappingProxyType(
+            {
+                "state_sha256": fingerprint_model_state(model),
+                "runtime_sha256": fingerprint_model_runtime_state(model),
+                "parameter_inventory": dict(
+                    independent_parameter_inventory(model)
+                ),
+            }
+        )
+    except Exception as exc:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Could not authenticate live candidate-consumer model state."
+        ) from exc
+
+
+def _dense_retained_state_facts(
+    model: Any,
+    *,
+    label: str,
+) -> Mapping[str, Any]:
+    """Prove retained dense state without claiming complete operation history."""
+
+    from neural_forge.dynamic_candidate_capture import (
+        _assert_dense_unpruned_model,
+    )
+
+    try:
+        _assert_dense_unpruned_model(model)
+        parameters = tuple(model.named_parameters())
+        buffers = tuple(model.named_buffers())
+    except Exception as exc:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            f"{label} is not retained dense, unpruned, unquantized state."
+        ) from exc
+    return MappingProxyType(
+        {
+            "label": label,
+            "parameter_tensor_count": len(parameters),
+            "buffer_tensor_count": len(buffers),
+            "dense_materialized_retained_state": True,
+            "pruning_reparameterizations_absent": True,
+            "quantized_parameters_or_module_wrappers_absent": True,
+            "evidence_scope": (
+                "retained-state-fact-not-complete-operation-history"
+            ),
+        }
+    )
+
+
+def _resolved_ast_symbol(
+    node: ast.AST,
+    bindings: Mapping[str, str],
+) -> str:
+    if isinstance(node, ast.Name):
+        return bindings.get(node.id, node.id)
+    if isinstance(node, ast.Attribute):
+        owner = _resolved_ast_symbol(node.value, bindings)
+        return f"{owner}.{node.attr}" if owner else node.attr
+    return ""
+
+
+def _is_forbidden_fold_mutation_symbol(symbol: str) -> bool:
+    lowered = symbol.lower()
+    return (
+        symbol in _FORBIDDEN_FOLD_MUTATION_SYMBOLS
+        or any(
+            symbol == module or symbol.startswith(f"{module}.")
+            for module in _FORBIDDEN_FOLD_MUTATION_MODULES
+        )
+        or symbol.startswith("torch.ops.quantized.")
+        or (
+            symbol.startswith("torch._C.")
+            and any(
+                marker in lowered
+                for marker in (
+                    ".quantize",
+                    ".quantized",
+                    ".fake_quant",
+                )
+            )
+        )
+    )
+
+
+def _fold_only_static_source_findings(
+    source: str,
+    *,
+    source_label: str,
+) -> tuple[Mapping[str, Any], ...]:
+    """Find source-visible aliases that could evade process-local API patches."""
+
+    try:
+        tree = ast.parse(source, filename=source_label)
+    except SyntaxError as exc:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            f"Authenticated compiler source {source_label} is not parseable."
+        ) from exc
+    bindings: dict[str, str] = {}
+    findings: set[tuple[str, str, int, int]] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local_name = alias.asname or alias.name.split(".", 1)[0]
+                qualified = alias.name if alias.asname else local_name
+                bindings[local_name] = qualified
+                if _is_forbidden_fold_mutation_symbol(alias.name):
+                    findings.add(
+                        (
+                            "forbidden-import-alias",
+                            alias.name,
+                            node.lineno,
+                            node.col_offset,
+                        )
+                    )
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                qualified = (
+                    f"{module}.{alias.name}" if module else alias.name
+                )
+                bindings[alias.asname or alias.name] = qualified
+                if _is_forbidden_fold_mutation_symbol(qualified):
+                    findings.add(
+                        (
+                            "forbidden-import-alias",
+                            qualified,
+                            node.lineno,
+                            node.col_offset,
+                        )
+                    )
+
+    assignment_nodes = (
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr))
+    )
+    for node in assignment_nodes:
+        value = getattr(node, "value", None)
+        qualified = (
+            _resolved_ast_symbol(value, bindings)
+            if isinstance(value, ast.AST)
+            else ""
+        )
+        if not _is_forbidden_fold_mutation_symbol(qualified):
+            continue
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        else:
+            targets = (node.target,)
+        for target in targets:
+            if isinstance(target, ast.Name):
+                bindings[target.id] = qualified
+                findings.add(
+                    (
+                        "forbidden-prebound-alias",
+                        qualified,
+                        node.lineno,
+                        node.col_offset,
+                    )
+                )
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            qualified = _resolved_ast_symbol(node.func, bindings)
+            if _is_forbidden_fold_mutation_symbol(qualified):
+                findings.add(
+                    (
+                        "forbidden-call",
+                        qualified,
+                        node.lineno,
+                        node.col_offset,
+                    )
+                )
+            if (
+                qualified == "importlib.import_module"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+                and _is_forbidden_fold_mutation_symbol(node.args[0].value)
+            ):
+                findings.add(
+                    (
+                        "forbidden-dynamic-import",
+                        node.args[0].value,
+                        node.lineno,
+                        node.col_offset,
+                    )
+                )
+        elif isinstance(node, ast.Attribute) and isinstance(
+            node.ctx,
+            ast.Load,
+        ):
+            qualified = _resolved_ast_symbol(node, bindings)
+            if _is_forbidden_fold_mutation_symbol(qualified):
+                findings.add(
+                    (
+                        "forbidden-reference",
+                        qualified,
+                        node.lineno,
+                        node.col_offset,
+                    )
+                )
+    return tuple(
+        MappingProxyType(
+            {
+                "kind": kind,
+                "symbol": symbol,
+                "line": line,
+                "column": column,
+            }
+        )
+        for kind, symbol, line, column in sorted(findings)
+    )
+
+
+def _audit_authenticated_compiler_sources(
+    compiler_implementation: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    if not isinstance(compiler_implementation, Mapping):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "compiler_implementation must be a mapping."
+        )
+    try:
+        implementation = json.loads(
+            _canonical_json(dict(compiler_implementation)).decode("ascii")
+        )
+    except json.JSONDecodeError as exc:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "compiler_implementation is not canonical JSON."
+        ) from exc
+    if not isinstance(implementation, dict):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "compiler_implementation must be a JSON object."
+        )
+    implementation_sha256 = _digest(
+        implementation.pop("implementation_sha256", None),
+        "compiler_implementation.implementation_sha256",
+    )
+    if _sha(implementation) != implementation_sha256:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Compiler implementation source manifest is not self-sealed."
+        )
+    ordered_sources = implementation.get("ordered_source_files")
+    if not isinstance(ordered_sources, list) or not ordered_sources:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Compiler implementation has no authenticated source manifest."
+        )
+
+    source_specs: list[dict[str, Any]] = []
+    seen_modules: set[str] = set()
+    for raw_row in ordered_sources:
+        if not isinstance(raw_row, Mapping):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiler source manifest row is not a mapping."
+            )
+        row = dict(raw_row)
+        module_name = row.get("module")
+        filename = row.get("filename")
+        expected_sha256 = row.get("sha256")
+        if (
+            not isinstance(module_name, str)
+            or not module_name
+            or module_name in seen_modules
+            or not isinstance(filename, str)
+            or Path(filename).name != filename
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiler source manifest identities are invalid or repeated."
+            )
+        expected_sha256 = _digest(
+            expected_sha256,
+            f"compiler source {module_name}",
+        )
+        module = sys.modules.get(module_name)
+        raw_path = getattr(module, "__file__", None)
+        if not isinstance(raw_path, str):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                f"Authenticated compiler module {module_name} is not loaded."
+            )
+        path = Path(raw_path).resolve()
+        if path.name != filename or _file_sha256(path) != expected_sha256:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                f"Authenticated compiler source {module_name} changed."
+            )
+        seen_modules.add(module_name)
+        source_specs.append(
+            {
+                "role": "compiler-implementation",
+                "module": module_name,
+                "filename": filename,
+                "sha256": expected_sha256,
+                "path": path,
+            }
+        )
+
+    runner_path = Path(__file__).resolve()
+    source_specs.append(
+        {
+            "role": "compiler-runner",
+            "module": __name__,
+            "filename": runner_path.name,
+            "sha256": _file_sha256(runner_path),
+            "path": runner_path,
+        }
+    )
+    audits = []
+    all_findings = []
+    for spec in source_specs:
+        path = spec["path"]
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                f"Could not read authenticated compiler source {path.name}."
+            ) from exc
+        findings = _fold_only_static_source_findings(
+            source,
+            source_label=f"{spec['module']}:{path.name}",
+        )
+        all_findings.extend(
+            {
+                "module": spec["module"],
+                **dict(finding),
+            }
+            for finding in findings
+        )
+        audits.append(
+            {
+                "role": spec["role"],
+                "module": spec["module"],
+                "filename": spec["filename"],
+                "sha256": spec["sha256"],
+                "forbidden_finding_count": len(findings),
+                "clean": not findings,
+            }
+        )
+    body = {
+        "schema": (
+            "neural-forge-lfm2-cpcf-v5-static-fold-mutation-source-audit-v1"
+        ),
+        "compiler_implementation_sha256": implementation_sha256,
+        "authenticated_compiler_source_files": [
+            dict(row) for row in ordered_sources
+        ],
+        "runner_source_sha256": source_specs[-1]["sha256"],
+        "audited_source_count": len(audits),
+        "source_audits": audits,
+        "forbidden_findings": all_findings,
+        "forbidden_finding_count": len(all_findings),
+        "audit_scope": (
+            "authenticated Python compiler and runner sources; imports, "
+            "prebound assignments, calls, references, and constant dynamic "
+            "imports of public PyTorch pruning/quantization and low-level "
+            "quantized entrypoints"
+        ),
+        "clean": not all_findings,
+    }
+    report = {**body, "report_sha256": _sha(body)}
+    if report["clean"] is not True:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Authenticated compiler source contains a pruning or "
+            "quantization alias that could evade the runtime firewall."
+        )
+    return MappingProxyType(report)
+
+
+def _fold_only_guard_implementation_identity(module: Any) -> Mapping[str, Any]:
+    raw_path = getattr(module, "__file__", None)
+    guard = getattr(module, "_FoldOnlyTorchGuard", None)
+    if not isinstance(raw_path, str) or not isinstance(guard, type):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "The runtime fold-only guard has no exact source identity."
+        )
+    path = Path(raw_path).resolve()
+    body = {
+        "schema": "neural-forge-fold-only-runtime-guard-identity-v1",
+        "module": str(getattr(module, "__name__", "")),
+        "class": f"{guard.__module__}.{guard.__qualname__}",
+        "source_filename": path.name,
+        "source_sha256": _file_sha256(path),
+        "training_api_firewall": True,
+        "common_pruning_api_firewall": True,
+        "common_quantization_api_firewall": True,
+        "prebound_aliases_runtime_observed": False,
+        "authenticated_source_alias_audit_required": True,
+        "ordinary_bfloat16_and_float32_casts_blocked": False,
+    }
+    return MappingProxyType({**body, "identity_sha256": _sha(body)})
+
+
+def _authenticate_live_consumer_context(
+    context: V5CompiledCandidateConsumerContext,
+) -> None:
+    target = _live_model_authentication(context.target_model)
+    parent = _live_model_authentication(context.forbidden_parent_model)
+    if (
+        target["state_sha256"] != context.target_state_sha256
+        or target["runtime_sha256"] != context.target_runtime_sha256
+        or target["parameter_inventory"]
+        != dict(context.compiled_parameter_inventory)
+        or parent["state_sha256"] != context.parent_state_sha256
+        or parent["runtime_sha256"] != context.parent_runtime_sha256
+        or parent["parameter_inventory"]
+        != dict(context.parent_parameter_inventory)
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Live parent or target state/topology differs from the sealed "
+            "compiled-candidate context."
+        )
+
+
+def _invoke_compiled_candidate_consumer(
+    context: V5CompiledCandidateConsumerContext,
+    consumer: Callable[
+        [V5CompiledCandidateConsumerContext],
+        V5CompiledCandidateConsumerResult,
+    ],
+) -> V5CompiledCandidateConsumerResult:
+    """Invoke exactly one capture consumer under live parent/target guards."""
+
+    if type(context) is not V5CompiledCandidateConsumerContext:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Candidate consumer requires an exact typed context."
+        )
+    if not callable(consumer):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Candidate consumer must be callable."
+        )
+    from neural_forge.dynamic_behavior_execution import (
+        observe_model_execution,
+    )
+    from neural_forge import dynamic_fold_executor
+
+    _authenticate_live_consumer_context(context)
+    consumer_guard = dynamic_fold_executor._FoldOnlyTorchGuard()
+    observed_parent: Mapping[str, int] = {}
+    direct_parent_forward_calls = 0
+    result: Any = None
+    consumer_error: BaseException | None = None
+    parent = context.forbidden_parent_model
+    parent_forward = getattr(parent, "forward", None)
+    if not callable(parent_forward):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Forbidden parent has no observable forward method."
+        )
+    parent_attributes = getattr(parent, "__dict__", {})
+    forward_had_instance_value = (
+        isinstance(parent_attributes, Mapping)
+        and "forward" in parent_attributes
+    )
+    forward_instance_value = (
+        parent_attributes.get("forward")
+        if forward_had_instance_value
+        else None
+    )
+
+    def observed_direct_parent_forward(*args: Any, **kwargs: Any) -> Any:
+        nonlocal direct_parent_forward_calls
+        direct_parent_forward_calls += 1
+        return parent_forward(*args, **kwargs)
+
+    object.__setattr__(parent, "forward", observed_direct_parent_forward)
+    try:
+        with consumer_guard:
+            with observe_model_execution(parent) as observed_parent:
+                result = consumer(context)
+    except BaseException as exc:
+        consumer_error = exc
+    finally:
+        if forward_had_instance_value:
+            object.__setattr__(parent, "forward", forward_instance_value)
+        else:
+            object.__delattr__(parent, "forward")
+
+    authentication_error: BaseException | None = None
+    try:
+        _authenticate_live_consumer_context(context)
+    except BaseException as exc:
+        authentication_error = exc
+    parent_calls = sum(
+        int(observed_parent.get(name, 0))
+        for name in (
+            "module_forward_calls",
+            "root_forward_calls",
+            "inference_entrypoint_calls",
+        )
+    ) + direct_parent_forward_calls
+    consumer_guard_body = {
+        "schema": (
+            "neural-forge-lfm2-cpcf-v5-consumer-runtime-fold-only-guard-v1"
+        ),
+        "guard_implementation": dict(
+            _fold_only_guard_implementation_identity(
+                dynamic_fold_executor
+            )
+        ),
+        "compiler_runtime_guard_sha256": context.zero_operation_audit[
+            "compiler_runtime_guard"
+        ]["report_sha256"],
+        "optimizer_constructions": int(
+            consumer_guard.optimizer_constructions
+        ),
+        "optimizer_steps": int(consumer_guard.optimizer_steps),
+        "backward_calls": int(consumer_guard.backward_calls),
+        "autograd_grad_calls": int(consumer_guard.autograd_grad_calls),
+        "pruning_operations": int(consumer_guard.pruning_operations),
+        "quantization_operations": int(
+            consumer_guard.quantization_operations
+        ),
+        "parent_module_forward_calls": int(
+            observed_parent.get("module_forward_calls", 0)
+        ),
+        "parent_root_forward_calls": int(
+            observed_parent.get("root_forward_calls", 0)
+        ),
+        "parent_inference_entrypoint_calls": int(
+            observed_parent.get("inference_entrypoint_calls", 0)
+        ),
+        "direct_parent_forward_calls": int(direct_parent_forward_calls),
+        "training_steps": 0,
+        "training_steps_runtime_observed_directly": False,
+        "training_steps_zero_derivation": (
+            "zero optimizer/backward/autograd API attempts under no-grad"
+        ),
+        "pruning_observation_scope": (
+            "process-local public PyTorch pruning module functions and "
+            "exported BasePruningMethod class apply/prune/apply_mask/remove "
+            "bindings installed during the guard"
+        ),
+        "quantization_observation_scope": (
+            "process-local common public PyTorch/torchao quantization and "
+            "low-level torch quantize/fake-quant bindings installed during "
+            "the guard"
+        ),
+        "prebound_alias_scope": (
+            "compiler aliases rejected by sealed authenticated-source AST "
+            "audit; aliases captured before this guard inside independently "
+            "source-bound capture callables are outside runtime interception, "
+            "while retained candidate state is independently reauthenticated"
+        ),
+        "ordinary_bfloat16_and_float32_casts_blocked": False,
+    }
+    consumer_guard_body["clean"] = all(
+        consumer_guard_body[name] == 0
+        for name in (
+            "optimizer_constructions",
+            "optimizer_steps",
+            "backward_calls",
+            "autograd_grad_calls",
+            "pruning_operations",
+            "quantization_operations",
+            "parent_module_forward_calls",
+            "parent_root_forward_calls",
+            "parent_inference_entrypoint_calls",
+            "direct_parent_forward_calls",
+        )
+    )
+    if parent_calls != 0:
+        error = Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Candidate consumer executed forbidden live parent inference."
+        )
+        if consumer_error is not None:
+            error.add_note(f"Consumer also failed: {consumer_error}")
+        raise error from consumer_error
+    if authentication_error is not None:
+        error = Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Candidate consumer mutated parent/target state, topology, "
+            "runtime mode, gradients, or hooks."
+        )
+        if consumer_error is not None:
+            error.add_note(f"Consumer also failed: {consumer_error}")
+        raise error from authentication_error
+    if consumer_error is not None:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Candidate consumer failed before returning a capture receipt."
+        ) from consumer_error
+    if type(result) is not V5CompiledCandidateConsumerResult:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Candidate consumer returned the wrong exact result type."
+        )
+    expected = {
+        "compiler_receipt_sha256": context.compiler_receipt_sha256,
+        "target_plan_fingerprint": context.target_plan_fingerprint,
+        "target_state_sha256": context.target_state_sha256,
+        "parent_sha256": context.parent_sha256,
+        "cache_sha256": context.cache_sha256,
+        "bridge_sha256": context.bridge_sha256,
+        "corpus_sha256": context.corpus_sha256,
+        "source_sha256": context.source_sha256,
+        "compiler_sha256": context.compiler_sha256,
+        "runner_source_sha256": context.runner_source_sha256,
+        "source_binding_sha256": context.source_binding_sha256,
+        "parent_tokenizer_semantics_sha256": (
+            context.parent_tokenizer_semantics_sha256
+        ),
+        "target_tokenizer_semantics_sha256": (
+            context.target_tokenizer_semantics_sha256
+        ),
+    }
+    if any(getattr(result, name) != value for name, value in expected.items()):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Candidate consumer result differs from the exact compiler, "
+            "plan, state, or source bindings."
+        )
+    if dict(result.compile_diagnostic) != dict(context.compile_diagnostic):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Candidate consumer returned a different sealed compile diagnostic."
+        )
+    if result.consumer_runtime_guard_receipt is not None:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Candidate consumer cannot predeclare its outer runtime guard."
+        )
+    consumer_guard_body["capture_verification_sha256"] = (
+        result.verification_receipt["verification_sha256"]
+    )
+    consumer_guard_report = {
+        **consumer_guard_body,
+        "report_sha256": _sha(consumer_guard_body),
+    }
+    return replace(
+        result,
+        consumer_runtime_guard_receipt=consumer_guard_report,
+    )
+
+
+def _run(
+    config: V5SelectiveBlankFoldConfig,
+    *,
+    candidate_consumer: Callable[
+        [V5CompiledCandidateConsumerContext],
+        V5CompiledCandidateConsumerResult,
+    ]
+    | None = None,
+) -> dict[str, Any] | V5CompiledCandidateConsumerResult:
     base = _base_runner()
     parent_directory = base._local_directory(
         config.parent_model_directory,
@@ -874,6 +2722,12 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
         "trajectory_corpus",
     )
     torch = _configure_torch()
+    cuda_allocator_policy = _enforce_cuda_allocator_caps(
+        torch,
+        maximum_cuda_bytes_per_device=(
+            config.maximum_cuda_bytes_per_device
+        ),
+    )
 
     from experiments.run_lfm2_residual_attention_fold import (
         direct_local_io_audit,
@@ -898,12 +2752,22 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
     from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
         Lfm2CpcfShortConvV4SolverPolicy,
     )
+    from neural_forge import dynamic_fold_executor
     from neural_forge import hf_lfm2_cpcf_v5_model_compiler as v5_compiler
+    from neural_forge.dynamic_behavior_execution import (
+        observe_model_execution,
+    )
     from neural_forge.hf_tokenizer_bridge import (
         fingerprint_hf_tokenizer_semantics,
         load_strict_tokenizer_bridge_artifact,
     )
 
+    authenticated_compiler_implementation = dict(
+        v5_compiler.lfm2_cpcf_v5_compiler_implementation()
+    )
+    compiler_static_source_audit = _audit_authenticated_compiler_sources(
+        authenticated_compiler_implementation
+    )
     memory_samples = [
         _memory_sample(
             v5_compiler,
@@ -985,6 +2849,18 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
     target.requires_grad_(False)
     target.eval()
     blank_inventory = independent_parameter_inventory(target)
+    precompile_dense_state = _dense_retained_state_facts(
+        target,
+        label="precompile exact dense blank",
+    )
+    if (
+        config.expected_target_plan_fingerprint is not None
+        and blank.plan.fingerprint != config.expected_target_plan_fingerprint
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "The runtime blank target plan differs from the catalog-planned "
+            "frontier lane."
+        )
     if config.compression.target_unique_parameters is not None and (
         blank.unique_parameters != config.compression.target_unique_parameters
         or int(blank_inventory["unique_parameters"])
@@ -993,15 +2869,18 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "The synthesized dense blank misses the exact parameter target."
         )
+    structural_compression_floor = (
+        _request_derived_structural_compression_floor(config.compression)
+    )
     structural_compression = audit_lfm2_cpcf_parameter_compaction(
         parent,
         target,
         planned_target_unique_parameters=blank.unique_parameters,
-        promotion_compression_ratio=(MINIMUM_PROMOTION_COMPRESSION_RATIO),
+        promotion_compression_ratio=structural_compression_floor,
     )
     if structural_compression.get("promotion_ratio_met") is not True:
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            "The synthesized blank is below the required 100x experiment "
+            "The synthesized blank misses the exact request-derived structural "
             "compression floor."
         )
     memory_samples.append(
@@ -1033,7 +2912,7 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             )
         )
         compiler_baseline = int(v5_compiler._process_rss_bytes())
-        effective_reduction, maximum_compiler_increase = (
+        estimated_effective_reduction, estimated_maximum_compiler_increase = (
             _derive_effective_rss_reduction_fraction(
                 full_phase_tree_logical_bytes=full_phase_tree_bytes,
                 compiler_baseline_rss_bytes=compiler_baseline,
@@ -1066,45 +2945,146 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             ),
             enforce_validation_block_floor=True,
             short_conv_v4_solver_policy=short_conv_policy,
-            promotion_compression_ratio=(MINIMUM_PROMOTION_COMPRESSION_RATIO),
+            promotion_compression_ratio=structural_compression_floor,
             require_promotion_ratio=True,
         )
         runtime_policy = v5_compiler.Lfm2CpcfV5RuntimePolicy(
             model_fold_policy=model_policy,
             maximum_resident_evidence_bytes=logical_budget,
             full_phase_tree_logical_bytes=full_phase_tree_bytes,
-            minimum_physical_rss_reduction_fraction=(effective_reduction),
+            maximum_process_rss_bytes=config.maximum_process_rss_bytes,
+            minimum_physical_rss_reduction_fraction=(
+                config.minimum_physical_rss_reduction_fraction
+            ),
             rss_sample_interval_seconds=0.05,
             require_short_conv_v5_endpoint_first_selector=True,
             require_short_conv_v5_real_numerical_frontier_adapter=True,
         )
-        if (
-            runtime_policy.maximum_physical_rss_increase_bytes
-            > maximum_compiler_increase
-        ):
-            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-                "The effective v5 RSS policy relaxed the absolute process memory bound."
-            )
         source_tied_table = base._mapped_source_tied_table(parent, bridge)
         selector = v5_compiler.Lfm2CpcfV5EndpointFirstCandidateSelector()
         numerical_adapter = _build_preregistered_real_v5_numerical_adapter()
-        compiled = v5_compiler.compile_lfm2_cpcf_v5_selective_model_fold(
-            parent,
-            target,
-            trace_adapter=trace_adapter,
-            evidence_provider=provider,
-            source_tied_table=source_tied_table,
-            blank_target_report=blank.as_dict(),
-            planned_target_unique_parameters=(blank.unique_parameters),
-            runtime_policy=runtime_policy,
-            candidate_replay_evaluator=gpu.evaluator,
-            candidate_selector=selector,
-            numerical_frontier_adapter=numerical_adapter,
-            resume_state=None,
-        )
+        resume_runtime = _build_resume_runtime(config)
+        compiler_guard = dynamic_fold_executor._FoldOnlyTorchGuard()
+        compiler_parent_execution: Mapping[str, int] = {}
+        compiler_target_execution: Mapping[str, int] = {}
+        with compiler_guard:
+            with ExitStack() as compiler_observers:
+                compiler_parent_execution = compiler_observers.enter_context(
+                    observe_model_execution(parent)
+                )
+                compiler_target_execution = compiler_observers.enter_context(
+                    observe_model_execution(target)
+                )
+                compiled = _compile_with_authenticated_resume(
+                    v5_compiler.compile_lfm2_cpcf_v5_selective_model_fold,
+                    parent,
+                    target,
+                    resume_runtime=resume_runtime,
+                    compile_kwargs={
+                        "trace_adapter": trace_adapter,
+                        "evidence_provider": provider,
+                        "source_tied_table": source_tied_table,
+                        "blank_target_report": blank.as_dict(),
+                        "planned_target_unique_parameters": (
+                            blank.unique_parameters
+                        ),
+                        "runtime_policy": runtime_policy,
+                        "candidate_replay_evaluator": gpu.evaluator,
+                        "candidate_selector": selector,
+                        "numerical_frontier_adapter": numerical_adapter,
+                    },
+                )
     finally:
         if provider is not None:
             provider.close()
+    guard_identity = _fold_only_guard_implementation_identity(
+        dynamic_fold_executor
+    )
+    compiler_runtime_guard = {
+        "schema": "neural-forge-lfm2-cpcf-v5-compiler-runtime-guard-v1",
+        "guard_implementation": dict(guard_identity),
+        "static_pruning_quantization_source_audit": dict(
+            compiler_static_source_audit
+        ),
+        "optimizer_constructions": int(
+            compiler_guard.optimizer_constructions
+        ),
+        "optimizer_steps": int(compiler_guard.optimizer_steps),
+        "backward_calls": int(compiler_guard.backward_calls),
+        "autograd_grad_calls": int(compiler_guard.autograd_grad_calls),
+        "pruning_operations": int(compiler_guard.pruning_operations),
+        "quantization_operations": int(
+            compiler_guard.quantization_operations
+        ),
+        "parent_module_forward_calls": int(
+            compiler_parent_execution.get("module_forward_calls", 0)
+        ),
+        "parent_root_forward_calls": int(
+            compiler_parent_execution.get("root_forward_calls", 0)
+        ),
+        "parent_inference_entrypoint_calls": int(
+            compiler_parent_execution.get(
+                "inference_entrypoint_calls",
+                0,
+            )
+        ),
+        "target_module_forward_calls": int(
+            compiler_target_execution.get("module_forward_calls", 0)
+        ),
+        "target_root_forward_calls": int(
+            compiler_target_execution.get("root_forward_calls", 0)
+        ),
+        "target_inference_entrypoint_calls": int(
+            compiler_target_execution.get(
+                "inference_entrypoint_calls",
+                0,
+            )
+        ),
+        "training_steps": 0,
+        "training_steps_runtime_observed_directly": False,
+        "training_steps_zero_derivation": (
+            "zero optimizer/backward/autograd API attempts under no-grad"
+        ),
+        "pruning_observation_scope": (
+            "process-local public PyTorch pruning module functions and "
+            "exported BasePruningMethod class apply/prune/apply_mask/remove "
+            "bindings installed during the guard"
+        ),
+        "quantization_observation_scope": (
+            "process-local common public PyTorch/torchao quantization and "
+            "low-level torch quantize/fake-quant bindings installed during "
+            "the guard"
+        ),
+        "prebound_alias_static_audit_sha256": (
+            compiler_static_source_audit["report_sha256"]
+        ),
+        "ordinary_bfloat16_and_float32_casts_blocked": False,
+    }
+    compiler_runtime_guard["clean"] = all(
+        compiler_runtime_guard[name] == 0
+        for name in (
+            "optimizer_constructions",
+            "optimizer_steps",
+            "backward_calls",
+            "autograd_grad_calls",
+            "pruning_operations",
+            "quantization_operations",
+            "parent_module_forward_calls",
+            "parent_root_forward_calls",
+            "parent_inference_entrypoint_calls",
+            "target_root_forward_calls",
+            "target_inference_entrypoint_calls",
+        )
+    )
+    if compiler_runtime_guard["clean"] is not True:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "The compiler attempted a forbidden training, pruning, "
+            "quantization, parent-execution, or target-root API."
+        )
+    compiler_runtime_guard = {
+        **compiler_runtime_guard,
+        "report_sha256": _sha(compiler_runtime_guard),
+    }
     memory_samples.append(
         _memory_sample(
             v5_compiler,
@@ -1121,6 +3101,10 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             "Parent state changed during the selective fold."
         )
     compiled_inventory = independent_parameter_inventory(target)
+    postcompile_dense_state = _dense_retained_state_facts(
+        target,
+        label="postcompile folded dense target",
+    )
     if int(compiled_inventory["unique_parameters"]) != int(
         blank_inventory["unique_parameters"]
     ):
@@ -1130,6 +3114,9 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
     compiled_report = compiled.as_dict()
     layer_reports = [result.as_dict() for result in compiled.layer_results]
     gpu_execution = _gpu_execution_audit(layer_reports)
+    resume_progress = resume_runtime.progress.as_dict()
+    checkpointing_enabled = resume_runtime.coordinator is not None
+    resume_used = resume_runtime.state is not None
     if (
         compiled_report.get("short_conv_v5_endpoint_first_selector_integrated")
         is not True
@@ -1144,13 +3131,170 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
         )
         is not True
         or compiled_report.get("candidate_replay_backend_injected") is not True
-        or compiled_report.get("resume_supported") is not False
+        or compiled_report.get("resume_supported") is not True
+        or compiled_report.get("resume_fail_closed") is not True
+        or compiled_report.get("resume_used") is not resume_used
+        or compiled_report.get("resume_publication_enabled")
+        is not checkpointing_enabled
+        or compiled_report.get("resume_parent_or_cache_tensor_sidecars") != 0
+        or compiled_report.get("resume_admitted_prefixes")
+        != resume_progress["admitted_prefixes"]
+        or resume_progress["outstanding_pending_prefix_count"] != 0
+        or resume_progress["rejected_prefix_count"] != 0
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "The completed fold lacks the required real v5 numerical "
-            "provenance, selector, replay injection, or resume rejection "
-            "receipt."
+            "provenance, selector, replay injection, or authenticated typed "
+            "resume receipt."
         )
+    compiler_operation_audit = compiled_report.get("operation_audit")
+    if not isinstance(compiler_operation_audit, Mapping) or any(
+        isinstance(compiler_operation_audit.get(name), bool)
+        or compiler_operation_audit.get(name) != 0
+        for name in (
+            "parent_model_forward_calls",
+            "target_model_forward_calls",
+            "generation_calls",
+            "parent_cache_generation_calls",
+            "training_steps",
+            "backward_calls",
+            "optimizer_steps",
+            "parameters_pruned",
+            "parameters_quantized",
+            "fallback_paths",
+        )
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "The compiler receipt does not prove zero-operation folding."
+        )
+    observed_compiler_crosscheck = {
+        "parent_model_forward_calls": compiler_runtime_guard[
+            "parent_root_forward_calls"
+        ],
+        "target_model_forward_calls": compiler_runtime_guard[
+            "target_root_forward_calls"
+        ],
+        "generation_calls": compiler_runtime_guard[
+            "parent_inference_entrypoint_calls"
+        ],
+        "training_steps": compiler_runtime_guard["training_steps"],
+        "backward_calls": compiler_runtime_guard["backward_calls"],
+        "optimizer_steps": compiler_runtime_guard["optimizer_steps"],
+        "parameters_pruned": compiler_runtime_guard[
+            "pruning_operations"
+        ],
+        "parameters_quantized": compiler_runtime_guard[
+            "quantization_operations"
+        ],
+    }
+    if any(
+        compiler_operation_audit.get(name) != value
+        for name, value in observed_compiler_crosscheck.items()
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Compiler-emitted operation claims differ from runtime guard "
+            "observations."
+        )
+    compiler_implementation = compiled_report.get("compiler_implementation")
+    if (
+        not isinstance(compiler_implementation, Mapping)
+        or dict(compiler_implementation)
+        != authenticated_compiler_implementation
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "The compiler receipt lacks or changed its preauthenticated "
+            "implementation identity."
+        )
+    compiler_receipt_sha256 = _digest(
+        compiled_report.get("result_sha256"),
+        "compiled_model_fold.result_sha256",
+    )
+    compiler_sha256 = _digest(
+        compiler_implementation.get("implementation_sha256"),
+        "compiler_implementation.implementation_sha256",
+    )
+    source_sha256 = _digest(
+        compiled_report.get("selective_source_sha256"),
+        "compiled_model_fold.selective_source_sha256",
+    )
+    runner_source_sha256 = _file_sha256(Path(__file__).resolve())
+    source_binding_sha256 = _sha(
+        {
+            "selective_source_sha256": source_sha256,
+            "compiler_implementation_sha256": compiler_sha256,
+            "runner_source_sha256": runner_source_sha256,
+            "fold_only_runtime_guard_identity_sha256": guard_identity[
+                "identity_sha256"
+            ],
+        }
+    )
+    corpus_sha256 = _file_sha256(trajectory_path)
+    target_consumer_auth = _live_model_authentication(target)
+    parent_consumer_auth = _live_model_authentication(parent)
+    if (
+        target_consumer_auth["parameter_inventory"]
+        != dict(compiled_inventory)
+        or parent_consumer_auth["parameter_inventory"]
+        != dict(parent_inventory)
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Post-compile consumer authentication changed parameter inventory."
+        )
+    zero_operation_audit = {
+        "schema": COMPILED_CANDIDATE_ZERO_AUDIT_SCHEMA,
+        "optimizer_constructions": compiler_runtime_guard[
+            "optimizer_constructions"
+        ],
+        "optimizer_steps": compiler_runtime_guard["optimizer_steps"],
+        "backward_calls": compiler_runtime_guard["backward_calls"],
+        "autograd_grad_calls": compiler_runtime_guard[
+            "autograd_grad_calls"
+        ],
+        "training_steps": compiler_runtime_guard["training_steps"],
+        "pruning_operations": compiler_runtime_guard[
+            "pruning_operations"
+        ],
+        "quantization_operations": compiler_runtime_guard[
+            "quantization_operations"
+        ],
+        "parent_forward_calls": compiler_runtime_guard[
+            "parent_module_forward_calls"
+        ],
+        "parent_inference_calls": compiler_runtime_guard[
+            "parent_inference_entrypoint_calls"
+        ],
+        "target_forward_calls": compiler_runtime_guard[
+            "target_root_forward_calls"
+        ],
+        "cache_generation_calls": compiler_operation_audit[
+            "parent_cache_generation_calls"
+        ],
+        "compiler_operation_audit": dict(compiler_operation_audit),
+        "compiler_runtime_guard": dict(compiler_runtime_guard),
+        "training_steps_evidence_scope": (
+            "derived-from-runtime-zero-optimizer-backward-autograd-attempts"
+        ),
+        "cache_generation_calls_evidence_scope": (
+            "compiler-receipt-and-sealed-cache-only-source-contract"
+        ),
+        "pruning_operations_runtime_observed": True,
+        "pruning_observation_scope": compiler_runtime_guard[
+            "pruning_observation_scope"
+        ],
+        "quantization_operations_runtime_observed": True,
+        "quantization_observation_scope": compiler_runtime_guard[
+            "quantization_observation_scope"
+        ],
+        "retained_state_facts": {
+            "before_compile": dict(precompile_dense_state),
+            "after_compile": dict(postcompile_dense_state),
+        },
+        "training_used": False,
+        "pruning_used": False,
+        "quantization_used": False,
+        "live_parent_calls_used": False,
+        "clean": True,
+    }
     body = {
         "schema": RUN_SCHEMA,
         "status": "compiled_in_memory_diagnostic_not_published",
@@ -1161,10 +3305,12 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             "bridge_directory": str(bridge_directory),
             "trace_cache_directory": str(cache_directory),
             "trajectory_corpus": str(trajectory_path),
-            "trajectory_corpus_sha256": _file_sha256(trajectory_path),
+            "trajectory_corpus_sha256": corpus_sha256,
             "cache_key": cache.cache_key,
             "parent_fingerprint": cache.parent_fingerprint,
             "bridge_artifact_sha256": bridge.artifact_sha256,
+            "donor_tokenizer_semantics_sha256": donor_fingerprint,
+            "target_tokenizer_semantics_sha256": target_fingerprint,
             "trace_adapter_sha256": trace_adapter.evidence_sha256,
         },
         "request": config.as_dict(),
@@ -1174,7 +3320,18 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
         "blank_parameter_inventory": dict(blank_inventory),
         "compiled_parameter_inventory": dict(compiled_inventory),
         "structural_compression": dict(structural_compression),
+        "request_derived_structural_compression_floor": (
+            structural_compression_floor
+        ),
         "compiled_model_fold": compiled_report,
+        "compiler_runtime_fold_only_guard": dict(
+            compiler_runtime_guard
+        ),
+        "retained_dense_state_facts": {
+            "before_compile": dict(precompile_dense_state),
+            "after_compile": dict(postcompile_dense_state),
+        },
+        "resume_progress": resume_progress,
         "layer_results": layer_reports,
         "boundary_bundle": compiled.boundary_bundle.as_dict(),
         "interface_install": dict(compiled.interface_install_report),
@@ -1192,16 +3349,32 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
         },
         "absolute_process_rss_policy": {
             "maximum_process_rss_bytes": (config.maximum_process_rss_bytes),
-            "compiler_baseline_rss_bytes": compiler_baseline,
-            "maximum_compiler_rss_increase_bytes": (
-                runtime_policy.maximum_physical_rss_increase_bytes
+            "runner_estimate_baseline_rss_bytes": compiler_baseline,
+            "runner_estimate_maximum_compiler_rss_increase_bytes": (
+                estimated_maximum_compiler_increase
             ),
-            "effective_minimum_reduction_fraction": (
-                runtime_policy.minimum_physical_rss_reduction_fraction
+            "runner_estimate_effective_minimum_reduction_fraction": (
+                estimated_effective_reduction
             ),
+            "guard_start_rss_bytes": compiled_report["physical_rss_receipt"][
+                "start_rss_bytes"
+            ],
+            "guard_start_lifetime_peak_bytes": compiled_report[
+                "physical_rss_receipt"
+            ]["start_lifetime_peak_bytes"],
+            "guard_absolute_headroom_bytes": compiled_report[
+                "physical_rss_receipt"
+            ]["absolute_headroom_bytes"],
+            "guard_relative_maximum_increase_bytes": compiled_report[
+                "physical_rss_receipt"
+            ]["relative_maximum_increase_bytes"],
+            "guard_effective_maximum_increase_bytes": compiled_report[
+                "physical_rss_receipt"
+            ]["maximum_increase_bytes"],
             "samples": memory_samples,
             "absolute_cap_passed": True,
         },
+        "cuda_allocator_policy": dict(cuda_allocator_policy),
         "gpu_candidate_replay": dict(gpu.report),
         "gpu_execution_audit": gpu_execution,
         "preregistered_short_conv_v5_measurement_policy": {
@@ -1236,18 +3409,82 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             "any_family_any_modality_proven_by_this_run": False,
             "architecture_and_modality_adapters_remain_registry_driven": True,
         },
+        "compiled_candidate_consumer_seam": {
+            "schema": COMPILED_CANDIDATE_CONTEXT_SCHEMA,
+            "available": True,
+            "consumer_invoked_before_compile_diagnostic_sealed": False,
+            "consumer_invocation_requires_sealed_compile_diagnostic": True,
+            "target_plan_fingerprint": blank.plan.fingerprint,
+            "blank_target_report_sha256": blank.as_dict()["report_sha256"],
+            "compiler_receipt_sha256": compiler_receipt_sha256,
+            "parent_sha256": cache.parent_fingerprint,
+            "cache_sha256": cache.cache_key,
+            "bridge_sha256": bridge.artifact_sha256,
+            "corpus_sha256": corpus_sha256,
+            "source_sha256": source_sha256,
+            "compiler_sha256": compiler_sha256,
+            "runner_source_sha256": runner_source_sha256,
+            "source_binding_sha256": source_binding_sha256,
+            "fold_only_runtime_guard_identity_sha256": guard_identity[
+                "identity_sha256"
+            ],
+            "parent_tokenizer_semantics_sha256": donor_fingerprint,
+            "target_tokenizer_semantics_sha256": target_fingerprint,
+            "target_tokenizer_package_sha256": None,
+            "target_state_sha256": target_consumer_auth["state_sha256"],
+            "target_runtime_sha256": target_consumer_auth["runtime_sha256"],
+            "parent_state_sha256": parent_consumer_auth["state_sha256"],
+            "parent_runtime_sha256": parent_consumer_auth["runtime_sha256"],
+            "zero_operation_audit": zero_operation_audit,
+            "live_target_exposed_only_to_typed_consumer": True,
+            "live_parent_forbidden_and_observed": True,
+            "target_mutation_or_gradients_rejected": True,
+            "capture_receipt_must_remain_distinct": True,
+        },
         "operation_audit": {
             "local_parent_model_loads": 1,
-            "parent_forward_calls": 0,
-            "parent_generation_calls": 0,
-            "parent_cache_generation_calls": 0,
+            "parent_forward_calls": compiler_runtime_guard[
+                "parent_module_forward_calls"
+            ],
+            "parent_generation_calls": compiler_runtime_guard[
+                "parent_inference_entrypoint_calls"
+            ],
+            "parent_cache_generation_calls": compiler_operation_audit[
+                "parent_cache_generation_calls"
+            ],
             "parent_cache_regeneration_calls": 0,
             "sealed_cache_open_count": 1,
-            "training_steps": 0,
-            "backward_calls": 0,
-            "optimizer_steps": 0,
+            "local_resume_store_open_count": int(
+                checkpointing_enabled
+            ),
+            "authenticated_resume_state_open_count": int(resume_used),
+            "training_steps": compiler_runtime_guard["training_steps"],
+            "training_steps_runtime_observed_directly": False,
+            "training_steps_evidence_scope": (
+                compiler_runtime_guard["training_steps_zero_derivation"]
+            ),
+            "backward_calls": compiler_runtime_guard["backward_calls"],
+            "autograd_grad_calls": compiler_runtime_guard[
+                "autograd_grad_calls"
+            ],
+            "optimizer_constructions": compiler_runtime_guard[
+                "optimizer_constructions"
+            ],
+            "optimizer_steps": compiler_runtime_guard["optimizer_steps"],
+            "pruning_operations": compiler_runtime_guard[
+                "pruning_operations"
+            ],
+            "quantization_operations": compiler_runtime_guard[
+                "quantization_operations"
+            ],
+            "pruning_quantization_api_observation_scope": (
+                "common-public-pytorch-mutation-entrypoints"
+            ),
             "parameters_pruned": 0,
             "parameters_quantized": 0,
+            "parameter_pruning_quantization_evidence_scope": (
+                "retained-dense-state-fact-not-complete-operation-history"
+            ),
             "network_access": False,
             "hub_loader_used": False,
         },
@@ -1260,7 +3497,15 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             "quantization_used": False,
             "trace_regeneration_used": False,
             "download_used": False,
-            "resume_used": False,
+            "resume_checkpointing_used": checkpointing_enabled,
+            "resume_used": resume_used,
+            "resume_state_was_exact_typed_v5": (
+                not resume_used
+                or resume_progress["invocation_head"][
+                    "typed_v5_state_opened"
+                ]
+            ),
+            "resume_parent_or_cache_tensor_sidecars": 0,
             "child_checkpoint_saved": False,
             "publication_attempted": False,
             "publication_claimed": False,
@@ -1268,14 +3513,51 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             "manual_intelligence_review_performed": False,
         },
     }
-    return {**body, "receipt_sha256": _sha(body)}
+    compile_diagnostic = {**body, "receipt_sha256": _sha(body)}
+    if candidate_consumer is None:
+        return compile_diagnostic
+    context = V5CompiledCandidateConsumerContext(
+        target_model=target,
+        target_tokenizer=target_tokenizer,
+        forbidden_parent_model=parent,
+        target_plan_fingerprint=blank.plan.fingerprint,
+        blank_target_report=blank.as_dict(),
+        compiled_model_fold_report=compiled_report,
+        compiler_receipt_sha256=compiler_receipt_sha256,
+        compile_diagnostic=compile_diagnostic,
+        parent_sha256=cache.parent_fingerprint,
+        cache_sha256=cache.cache_key,
+        bridge_sha256=bridge.artifact_sha256,
+        corpus_sha256=corpus_sha256,
+        source_sha256=source_sha256,
+        compiler_sha256=compiler_sha256,
+        runner_source_sha256=runner_source_sha256,
+        source_binding_sha256=source_binding_sha256,
+        parent_tokenizer_semantics_sha256=donor_fingerprint,
+        target_tokenizer_semantics_sha256=target_fingerprint,
+        target_tokenizer_package_sha256=None,
+        parent_parameter_inventory=parent_inventory,
+        blank_parameter_inventory=blank_inventory,
+        compiled_parameter_inventory=compiled_inventory,
+        zero_operation_audit=zero_operation_audit,
+        target_state_sha256=target_consumer_auth["state_sha256"],
+        target_runtime_sha256=target_consumer_auth["runtime_sha256"],
+        parent_state_sha256=parent_consumer_auth["state_sha256"],
+        parent_runtime_sha256=parent_consumer_auth["runtime_sha256"],
+    )
+    return _invoke_compiled_candidate_consumer(context, candidate_consumer)
 
 
 def run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
     """Execute one strict run while retaining pre-compiler failure context."""
 
     try:
-        return _run(config)
+        result = _run(config)
+        if not isinstance(result, dict):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Ordinary run unexpectedly invoked a candidate consumer."
+            )
+        return result
     except Exception as exc:
         wrapped = Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "The v5 selective blank fold failed closed."
@@ -1286,6 +3568,50 @@ def run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             "stage": "run",
             "publication_claimed": False,
             "resume_claimed": False,
+            "resume_requested": (
+                config.resume_admission_sha256 is not None
+            ),
+            "resume_checkpointing_requested": (
+                config.resume_store_directory is not None
+            ),
+            "failure_evidence_only": True,
+        }
+        raise wrapped from exc
+
+
+def run_with_compiled_candidate_consumer(
+    config: V5SelectiveBlankFoldConfig,
+    consumer: Callable[
+        [V5CompiledCandidateConsumerContext],
+        V5CompiledCandidateConsumerResult,
+    ],
+) -> V5CompiledCandidateConsumerResult:
+    """Compile, seal the diagnostic, then capture the still-live target."""
+
+    try:
+        result = _run(config, candidate_consumer=consumer)
+        if type(result) is not V5CompiledCandidateConsumerResult:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Candidate-consumer run returned the wrong exact result type."
+            )
+        return result
+    except Exception as exc:
+        wrapped = Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "The v5 selective blank fold/candidate capture failed closed."
+        )
+        wrapped.diagnostic_report = {
+            "schema": FAILURE_SCHEMA,
+            "request": config.as_dict(),
+            "stage": "run_with_compiled_candidate_consumer",
+            "publication_claimed": False,
+            "compiler_child_checkpoint_saved": False,
+            "quarantine_capture_requested": True,
+            "resume_requested": (
+                config.resume_admission_sha256 is not None
+            ),
+            "resume_checkpointing_requested": (
+                config.resume_store_directory is not None
+            ),
             "failure_evidence_only": True,
         }
         raise wrapped from exc
@@ -1334,6 +3660,7 @@ def _exception_chain(error: BaseException) -> list[dict[str, Any]]:
             "report",
             "layer_failure_report",
             "diagnostics",
+            "resume_progress_report",
         ):
             try:
                 value = getattr(current, name)
@@ -1371,6 +3698,33 @@ def build_failure_diagnostic(
         for index, record in enumerate(chain)
         for name, report in record["structured_reports"].items()
     ]
+    resume_progress_reports = [
+        item["report"]
+        for item in preserved
+        if item["name"] == "resume_progress_report"
+    ]
+    resume_requested = bool(
+        (
+            config is not None
+            and config.resume_admission_sha256 is not None
+        )
+        or (
+            parsed_args is not None
+            and getattr(parsed_args, "resume_admission_sha256", None)
+            is not None
+        )
+    )
+    resume_checkpointing_requested = bool(
+        (
+            config is not None
+            and config.resume_store_directory is not None
+        )
+        or (
+            parsed_args is not None
+            and getattr(parsed_args, "resume_store_directory", None)
+            is not None
+        )
+    )
     body = {
         "schema": FAILURE_SCHEMA,
         "status": "failed",
@@ -1387,7 +3741,18 @@ def build_failure_diagnostic(
         "child_checkpoint_saved": False,
         "publication_attempted": False,
         "publication_claimed": False,
-        "resume_attempted": False,
+        "resume_attempted": resume_requested,
+        "resume_checkpointing_requested": (
+            resume_checkpointing_requested
+        ),
+        "resume_progress_reports": resume_progress_reports,
+        "resume_progress_report_count": len(resume_progress_reports),
+        "resume_artifacts_preserved_for_diagnosis": any(
+            report.get("published_pending_prefix_count", 0) > 0
+            for report in resume_progress_reports
+            if isinstance(report, Mapping)
+        ),
+        "resume_parent_or_cache_tensor_sidecars": 0,
         "training_steps": 0,
         "parameters_pruned": 0,
         "parameters_quantized": 0,
@@ -1446,6 +3811,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.10,
     )
     parser.add_argument(
+        "--maximum-cuda-gib-per-device",
+        type=float,
+        default=20.0,
+        help=(
+            "Hard per-process PyTorch allocator cap enforced independently "
+            "on each authenticated logical replay device."
+        ),
+    )
+    parser.add_argument(
         "--model-device",
         choices=("cpu", "cuda:0"),
         default="cuda:0",
@@ -1460,6 +3834,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--minimum-hidden-size", type=int, default=32)
     parser.add_argument("--maximum-candidates", type=int, default=8)
     parser.add_argument("--selected-candidate-rank", type=int)
+    parser.add_argument("--expected-target-plan-fingerprint")
     parser.add_argument("--ridge", type=float, default=1e-8)
     parser.add_argument(
         "--boundary-state-reconstruction-weight",
@@ -1513,15 +3888,25 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.05,
     )
-    # Explicitly parse disallowed requests so they fail with a safety reason,
-    # rather than being silently ignored or mistaken for supported features.
-    parser.add_argument("--resume", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--resume-state", type=Path, help=argparse.SUPPRESS)
     parser.add_argument(
         "--resume-store-directory",
         type=Path,
-        help=argparse.SUPPRESS,
+        help=(
+            "Explicit local immutable v5 prefix-checkpoint store. Supplying "
+            "only this path enables cold-run checkpointing."
+        ),
     )
+    parser.add_argument(
+        "--resume-admission-sha256",
+        help=(
+            "Exact admitted typed-v5 prefix digest to continue from within "
+            "the explicit local resume store."
+        ),
+    )
+    # Parse legacy/untyped resume and all publication or learning requests so
+    # they fail with an explicit safety reason rather than being ignored.
+    parser.add_argument("--resume", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--resume-state", type=Path, help=argparse.SUPPRESS)
     parser.add_argument(
         "--resume-checkpoint-reference",
         type=Path,
@@ -1582,6 +3967,7 @@ def config_from_args(args: argparse.Namespace) -> V5SelectiveBlankFoldConfig:
         minimum_physical_rss_reduction_fraction=(
             args.minimum_physical_rss_reduction_fraction
         ),
+        maximum_cuda_gib_per_device=args.maximum_cuda_gib_per_device,
         model_device=args.model_device,
         dtype=args.dtype,
         parent_name=args.parent_name,
@@ -1590,6 +3976,9 @@ def config_from_args(args: argparse.Namespace) -> V5SelectiveBlankFoldConfig:
         minimum_hidden_size=args.minimum_hidden_size,
         maximum_candidates=args.maximum_candidates,
         selected_candidate_rank=args.selected_candidate_rank,
+        expected_target_plan_fingerprint=(
+            args.expected_target_plan_fingerprint
+        ),
         ridge=args.ridge,
         boundary_state_reconstruction_weight=(
             args.boundary_state_reconstruction_weight
@@ -1611,6 +4000,8 @@ def config_from_args(args: argparse.Namespace) -> V5SelectiveBlankFoldConfig:
         short_conv_v4_context_objective_weight=(
             args.short_conv_v4_context_objective_weight
         ),
+        resume_store_directory=args.resume_store_directory,
+        resume_admission_sha256=args.resume_admission_sha256,
         forbidden_requests=forbidden,
     )
 
