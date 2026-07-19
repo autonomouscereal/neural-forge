@@ -54,6 +54,10 @@ from .hf_lfm2_cpcf_short_conv_v5 import (
     condition_capped_equilibrated_prior_residual_ridge_frontier,
     interpolate_every_lfm2_cpcf_v5_accepted_edge,
 )
+from .hf_lfm2_cpcf_short_conv_v5_matrix_free_bcx import (
+    Lfm2CpcfV5MatrixFreeBcxPolicy,
+    solve_lfm2_cpcf_v5_matrix_free_bcx,
+)
 from .hf_lfm2_cpcf_short_conv_v5_residual_subspace_bcx import (
     causal_horizon_balanced_row_weights,
     solve_lfm2_cpcf_v5_residual_subspace_bcx,
@@ -65,7 +69,7 @@ LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_ADAPTER_SCHEMA = (
 )
 _ADAPTER_IMPLEMENTATION = (
     "neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter."
-    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v2"
+    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v3"
 )
 _STATE_ROLES = (
     "in_proj_weight",
@@ -880,11 +884,40 @@ def _solve_bcx(
             ridge_policy=ridge_policy,
             replays=replays,
         )
+    current_replays = (
+        _replays(cases, state) if replays is None else tuple(replays)
+    )
+    if cap_id == _cap_id(V5_CONDITION_CAP_CANDIDATES[0]):
+        result = solve_lfm2_cpcf_v5_matrix_free_bcx(
+            cases,
+            current_replays,
+            in_proj_weight=state["in_proj_weight"],
+            in_proj_bias=state["in_proj_bias"],
+            fir_kernel=state["fir_kernel"],
+            fir_bias=state["fir_bias"],
+            writer_weight=state["writer_weight"],
+            policy=Lfm2CpcfV5MatrixFreeBcxPolicy(
+                condition_cap=V5_CONDITION_CAP_CANDIDATES[0],
+                context_objective_weight=context_objective_weight,
+                parameter_trust_radius=ridge_policy.parameter_trust_radius,
+                effect_trust_radius=ridge_policy.effect_trust_radius,
+                parameter_reference_floor=(
+                    ridge_policy.parameter_reference_floor
+                ),
+                effect_reference_floor=ridge_policy.effect_reference_floor,
+            ),
+        )
+        if not result.verify_authentication():
+            raise Lfm2CpcfShortConvV5NumericalAdapterError(
+                "Global matrix-free residual BCX result failed authentication."
+            )
+        candidate = _clone_state(state)
+        candidate["in_proj_weight"] = result.in_proj_weight
+        candidate["in_proj_bias"] = result.in_proj_bias
+        return candidate, [str(result.diagnostics["report_sha256"])]
     result = solve_lfm2_cpcf_v5_residual_subspace_bcx(
         cases=cases,
-        replays=(
-            _replays(cases, state) if replays is None else tuple(replays)
-        ),
+        replays=current_replays,
         state=state,
         cap_id=cap_id,
         ridge_policy=ridge_policy,
@@ -1404,10 +1437,20 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                     phase: policy.parameter_trust_radius
                     for phase, policy in factor_ridge_policies.items()
                 },
-                "bcx_solver_backend": (
-                    "coupled_endpoint_residual_subspace_coordinate"
+                "bcx_solver_backend_inventory": (
+                    {
+                        _cap_id(V5_CONDITION_CAP_CANDIDATES[0]): (
+                            "global_full_coordinate_matrix_free_residual"
+                        ),
+                        _cap_id(V5_CONDITION_CAP_CANDIDATES[1]): (
+                            "coupled_endpoint_residual_subspace_coordinate"
+                        ),
+                    }
                     if target_hidden >= _SCALABLE_BCX_MINIMUM_HIDDEN_SIZE
-                    else "legacy_full_width_context_only_oracle"
+                    else {
+                        _cap_id(cap): "legacy_full_width_context_only_oracle"
+                        for cap in V5_CONDITION_CAP_CANDIDATES
+                    }
                 ),
                 "bcx_scalable_hidden_threshold": (
                     _SCALABLE_BCX_MINIMUM_HIDDEN_SIZE
@@ -1417,9 +1460,12 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                     target_hidden >= _SCALABLE_BCX_MINIMUM_HIDDEN_SIZE
                 ),
                 "bcx_writer_cross_channel_coupling": (
-                    "deterministic_coordinate_residual_refresh"
+                    [
+                        "global_implicit_writer_jacobian",
+                        "deterministic_coordinate_residual_refresh",
+                    ]
                     if target_hidden >= _SCALABLE_BCX_MINIMUM_HIDDEN_SIZE
-                    else "not_applicable_to_legacy_small_width_oracle"
+                    else ["not_applicable_to_legacy_small_width_oracle"]
                 ),
                 "causal_horizon_phase_acceptance": {
                     "uniform_mass": 0.5,

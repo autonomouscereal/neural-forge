@@ -591,10 +591,12 @@ def test_adapter_dispatches_scalable_endpoint_residual_bcx(
 
     assert frontier.verify_authentication()
     provenance = frontier.report["adapter_provenance"]
-    assert (
-        provenance["bcx_solver_backend"]
-        == "coupled_endpoint_residual_subspace_coordinate"
-    )
+    assert provenance["bcx_solver_backend_inventory"] == {
+        "kappa-01000": "global_full_coordinate_matrix_free_residual",
+        "kappa-10000": (
+            "coupled_endpoint_residual_subspace_coordinate"
+        ),
+    }
     assert provenance["bcx_endpoint_residual_aware"] is True
     assert provenance["bcx_dense_transported_prior_preserved"] is True
     assert provenance["causal_horizon_phase_acceptance"] == {

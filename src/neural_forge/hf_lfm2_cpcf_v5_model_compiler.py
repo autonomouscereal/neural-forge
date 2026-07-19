@@ -1944,7 +1944,7 @@ def _authenticated_bootstrap_payload(
 
 _REAL_V5_NUMERICAL_ADAPTER_IMPLEMENTATION = (
     "neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter."
-    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v2"
+    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v3"
 )
 _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS = {
     "parent_model_forward_calls",
