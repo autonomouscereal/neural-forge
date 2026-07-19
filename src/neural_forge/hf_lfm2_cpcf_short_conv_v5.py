@@ -1676,15 +1676,21 @@ def _direct_seed_squared_distances(
     """Compute one stable FP64 direct-distance column.
 
     This intentionally uses the legacy ``(candidate - seed).square().sum()``
-    metric instead of the cancellation-prone Gram identity.  Vectorizing over
-    source rows turns one selected seed into one Torch reduction while retaining
-    the direct finite-precision distance arithmetic and its exact zero for an
-    identical row.
+    metric instead of the cancellation-prone Gram identity.  Reducing one
+    source row at a time preserves the scalar legacy reduction semantics while
+    bounding the temporary to one descriptor row instead of materializing a
+    source-by-descriptor matrix for every selected seed.
     """
 
-    differences = descriptors - descriptors[seed_index].unsqueeze(0)
-    differences.square_()
-    distances = differences.sum(dim=1)
+    torch = _torch()
+    source_channels = int(descriptors.shape[0])
+    seed = descriptors[seed_index]
+    distances = torch.empty(source_channels, dtype=torch.float64)
+    differences = torch.empty_like(seed)
+    for source_index in range(source_channels):
+        torch.sub(descriptors[source_index], seed, out=differences)
+        differences.square_()
+        distances[source_index] = differences.sum()
     distances[seed_index] = 0.0
     return distances.contiguous()
 
@@ -1719,10 +1725,9 @@ def _seed_distance_table_complexity_receipt(
         "descriptor_block_count": descriptor_block_count,
         "seed_distance_table_entries": seed_table_entries,
         "seed_distance_table_bytes": seed_table_entries * 8,
-        "maximum_direct_seed_temporary_bytes": (
-            source_channels * descriptor_width * 8
-        ),
-        "direct_seed_vector_reduction_count": target_channels,
+        "maximum_direct_seed_temporary_bytes": descriptor_width * 8,
+        "direct_seed_column_count": target_channels,
+        "direct_seed_vector_reduction_count": seed_table_entries,
         "direct_seed_row_distance_count": seed_table_entries,
         "legacy_seed_vector_reduction_count": (seed_distance_evaluations),
         "legacy_assignment_sort_vector_reduction_count": (
@@ -1740,9 +1745,14 @@ def _seed_distance_table_complexity_receipt(
         ),
         "distance_metric": "direct_difference_squared_euclidean",
         "distance_kernel": (
-            "differences=(descriptors-descriptors[seed]);"
-            "differences.square_();differences.sum(dim=1)"
+            "differences=empty_like(descriptors[seed]);"
+            "for source: sub(descriptors[source],descriptors[seed],out=differences);"
+            "differences.square_();distances[source]=differences.sum()"
         ),
+        "distance_row_chunk_size": 1,
+        "direct_seed_temporary_reused_across_rows": True,
+        "scalar_legacy_reduction_semantics_preserved": True,
+        "full_source_by_descriptor_temporary_materialized": False,
         "gram_identity_used": False,
         "negative_distance_clamping_used": False,
         "seed_tie_break": "lowest_source_index",
@@ -1801,9 +1811,7 @@ def _balanced_farthest_first_with_seed_distance_table(
         seed_index=first_seed,
     )
     if not bool(torch.isfinite(first_distances).all().item()):
-        raise Lfm2CpcfShortConvV5Error(
-            "Direct seed distances became nonfinite."
-        )
+        raise Lfm2CpcfShortConvV5Error("Direct seed distances became nonfinite.")
     seed_squared_distances[:, 0].copy_(first_distances)
     minimum_seed_distance = first_distances.clone()
     while len(seeds) < target_channels:
@@ -1823,9 +1831,7 @@ def _balanced_farthest_first_with_seed_distance_table(
             seed_index=next_seed,
         )
         if not bool(torch.isfinite(next_distances).all().item()):
-            raise Lfm2CpcfShortConvV5Error(
-                "Direct seed distances became nonfinite."
-            )
+            raise Lfm2CpcfShortConvV5Error("Direct seed distances became nonfinite.")
         seed_squared_distances[:, len(seeds) - 1].copy_(next_distances)
         minimum_seed_distance.copy_(
             torch.minimum(
@@ -1963,11 +1969,9 @@ def build_fir_commuting_balanced_all_channel_basis(
         assignment,
         capacity_assignment_distance_lookups,
         _seed_squared_distances,
-    ) = (
-        _balanced_farthest_first_with_seed_distance_table(
-            descriptors,
-            target_channels=target_channels,
-        )
+    ) = _balanced_farthest_first_with_seed_distance_table(
+        descriptors,
+        target_channels=target_channels,
     )
     minimum_group_size, larger_groups = divmod(
         source_channels,

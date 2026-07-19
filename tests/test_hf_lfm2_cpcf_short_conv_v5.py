@@ -790,10 +790,51 @@ def test_direct_seed_distances_preserve_exact_nonzero_duplicates() -> None:
         descriptors,
         seed_index=0,
     )
+    scalar_legacy = torch.stack(
+        tuple(
+            (descriptors[source] - descriptors[0]).square().sum()
+            for source in range(len(descriptors))
+        )
+    )
 
+    assert torch.equal(distances, scalar_legacy)
     assert distances[0].item() == 0.0
     assert distances[1].item() == 0.0
     assert torch.all(distances >= 0.0)
+
+
+def test_direct_seed_distances_preserve_permuted_equal_norm_lowest_tie() -> None:
+    width = 16_384
+    generator = torch.Generator().manual_seed(20_260_719)
+    signs = torch.where(
+        torch.rand(width, generator=generator) > 0.5,
+        1.0,
+        -1.0,
+    ).to(dtype=torch.float64)
+    first = signs[torch.randperm(width, generator=generator)]
+    second = signs[torch.randperm(width, generator=generator)]
+    descriptors = torch.stack(
+        (
+            torch.zeros(width, dtype=torch.float64),
+            first,
+            second,
+        )
+    )
+
+    distances = v5_module._direct_seed_squared_distances(
+        descriptors,
+        seed_index=0,
+    )
+    scalar_legacy = torch.stack(
+        tuple(
+            (descriptors[source] - descriptors[0]).square().sum()
+            for source in range(len(descriptors))
+        )
+    )
+
+    assert torch.equal(distances, scalar_legacy)
+    assert distances.tolist() == [0.0, float(width), float(width)]
+    assert int(torch.argmax(distances).item()) == 1
 
 
 def test_production_basis_distance_complexity_receipt() -> None:
@@ -813,8 +854,13 @@ def test_production_basis_distance_complexity_receipt() -> None:
     assert receipt["legacy_total_vector_reduction_count"] == 152_678_224
     assert receipt["seed_distance_table_entries"] == 794_624
     assert receipt["seed_distance_table_bytes"] == 6_356_992
-    assert receipt["maximum_direct_seed_temporary_bytes"] == 1_970_601_984
-    assert receipt["direct_seed_vector_reduction_count"] == 776
+    assert receipt["maximum_direct_seed_temporary_bytes"] == 1_924_416
+    assert receipt["direct_seed_column_count"] == 776
+    assert receipt["direct_seed_vector_reduction_count"] == 794_624
+    assert receipt["distance_row_chunk_size"] == 1
+    assert receipt["direct_seed_temporary_reused_across_rows"] is True
+    assert receipt["scalar_legacy_reduction_semantics_preserved"] is True
+    assert receipt["full_source_by_descriptor_temporary_materialized"] is False
     assert receipt["descriptor_width"] == 240_552
     assert (
         receipt["legacy_descriptor_coordinate_reductions"]
@@ -877,7 +923,8 @@ def test_fir_commuting_basis_balances_and_uses_every_channel() -> None:
     distance_receipt = first.report["seed_distance_table"]
     assert distance_receipt["seed_distance_table_entries"] == 24
     assert distance_receipt["seed_distance_table_bytes"] == 192
-    assert distance_receipt["direct_seed_vector_reduction_count"] == 3
+    assert distance_receipt["direct_seed_column_count"] == 3
+    assert distance_receipt["direct_seed_vector_reduction_count"] == 24
     assert distance_receipt["gram_identity_used"] is False
     assert first.report["projected_fir_offdiagonal_relative_frobenius"] == 0.0
     assert first.report["projected_fir_offdiagonal_gate_passed"] is True

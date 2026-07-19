@@ -105,10 +105,13 @@ def main() -> int:
         for index in range(32)
     )
     direct_errors = []
+    direct_bitwise_matches = []
     for source, group in validation_locations:
         seed = seeds[group]
-        direct = float(
-            (descriptors[source] - descriptors[seed]).square().sum().item()
+        direct_tensor = (descriptors[source] - descriptors[seed]).square().sum()
+        direct = float(direct_tensor.item())
+        direct_bitwise_matches.append(
+            bool(seed_distance_table[source, group] == direct_tensor)
         )
         direct_errors.append(
             abs(float(seed_distance_table[source, group].item()) - direct)
@@ -120,9 +123,7 @@ def main() -> int:
         descriptor_block_count=1,
         capacity_assignment_distance_lookups=capacity_lookups,
     )
-    maximum_group_capacity = (
-        source_channels + target_channels - 1
-    ) // target_channels
+    maximum_group_capacity = (source_channels + target_channels - 1) // target_channels
     production_capacity_count_is_exact = (
         arguments.full_production_width or maximum_group_capacity <= 2
     )
@@ -147,9 +148,7 @@ def main() -> int:
         for capacity in sorted({len(group) for group in groups})
     }
     output = {
-        "schema": (
-            "neural-forge-lfm2-cpcf-v5-direct-seed-distance-table-benchmark-v1"
-        ),
+        "schema": ("neural-forge-lfm2-cpcf-v5-direct-seed-distance-table-benchmark-v1"),
         "executed_geometry": {
             "source_channels": source_channels,
             "target_channels": target_channels,
@@ -158,9 +157,7 @@ def main() -> int:
             "full_production_width_executed": (arguments.full_production_width),
         },
         "timing": {
-            "direct_seed_table_and_partition_seconds": (
-                table_and_partition_seconds
-            ),
+            "direct_seed_table_and_partition_seconds": (table_and_partition_seconds),
             "total_seconds": table_and_partition_seconds,
         },
         "validation": {
@@ -168,6 +165,9 @@ def main() -> int:
             "sampled_direct_distance_maximum_absolute_error": max(
                 direct_errors,
                 default=0.0,
+            ),
+            "sampled_direct_distances_bitwise_equal_to_scalar_legacy": all(
+                direct_bitwise_matches
             ),
             "seed_distance_table_shape": list(seed_distance_table.shape),
             "selected_seed_self_distances_exact_zero": bool(
@@ -192,6 +192,10 @@ def main() -> int:
         ),
         "execution": {
             "cached_direct_seed_distance_columns": True,
+            "direct_distance_row_chunk_size": 1,
+            "direct_seed_temporary_reused_across_rows": True,
+            "scalar_legacy_reduction_semantics_preserved": True,
+            "full_source_by_descriptor_temporary_materialized": False,
             "pairwise_gram_identity_used": False,
             "negative_distance_clamping_used": False,
             "folding_objective_changed": False,
