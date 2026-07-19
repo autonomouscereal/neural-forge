@@ -21,6 +21,7 @@ or validation cases in this module.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -42,8 +43,10 @@ from .hf_lfm2_cpcf_short_conv_v4_fold import (
 from .hf_lfm2_cpcf_short_conv_v5 import (
     V5_CONDITION_CAP_CANDIDATES,
     V5_PRIOR_CONTROL_SUFFIX,
+    Lfm2CpcfShortConvV5Error,
     Lfm2CpcfV5AcceptedPathState,
     Lfm2CpcfV5FirBasisCase,
+    Lfm2CpcfV5FirCommutingBasis,
     Lfm2CpcfV5FirBasisPolicy,
     Lfm2CpcfV5RidgeCase,
     Lfm2CpcfV5RidgePolicy,
@@ -155,10 +158,21 @@ def _factor_ridge_policy(
     )
 
 
+def _fp64_compute_tensor(value: Any) -> Any:
+    """Promote detached numerical evidence to the authoritative solve domain."""
+
+    torch = _torch()
+    return value.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    ).contiguous()
+
+
 def _resize_fir_rows(source_fir: Any, target_length: int) -> Any:
     """Resize every source FIR row without selecting or dropping channels."""
 
     torch = _torch()
+    source_fir = _fp64_compute_tensor(source_fir)
     source_length = int(source_fir.shape[1])
     if source_length == target_length:
         return source_fir.clone().contiguous()
@@ -207,11 +221,16 @@ def _basis_cases(
 
     torch = _torch()
     source = request.source_tensors
-    endpoint_operator = source["source_out_proj_weight"].T @ source["output_encoder"]
+    endpoint_operator = (
+        _fp64_compute_tensor(source["source_out_proj_weight"]).T
+        @ _fp64_compute_tensor(source["output_encoder"])
+    )
     result = []
     for case in request.cases:
         mask = case.valid_prefix_mask
-        parent_context = request.parent_contexts[case.case_id]
+        parent_context = _fp64_compute_tensor(
+            request.parent_contexts[case.case_id]
+        )
         activation_columns = []
         for value in (
             case.parent_operator_input_history,
@@ -220,7 +239,10 @@ def _basis_cases(
             case.parent_x_history,
             parent_context,
         ):
-            mean, rms = _masked_channel_statistics(value, mask)
+            mean, rms = _masked_channel_statistics(
+                _fp64_compute_tensor(value),
+                mask,
+            )
             activation_columns.extend((mean, rms))
         activation_descriptors = torch.stack(
             activation_columns,
@@ -233,8 +255,12 @@ def _basis_cases(
             int(parent_context.shape[-1]),
         )[suffix_mask.reshape(-1)]
         desired_write = (
-            case.parent_post_operator_residual_target_space_suffix
-            - case.actual_child_pre_operator_residual_suffix
+            _fp64_compute_tensor(
+                case.parent_post_operator_residual_target_space_suffix
+            )
+            - _fp64_compute_tensor(
+                case.actual_child_pre_operator_residual_suffix
+            )
         )
         write_rows = desired_write.reshape(
             -1,
@@ -322,11 +348,26 @@ def _build_audited_basis(
             f"{requested_gate:.17g}.",
             diagnostics=diagnostic,
         )
-    return build_fir_commuting_balanced_all_channel_basis(
-        descriptors,
-        source_fir_kernel=resized_fir,
-        target_channels=target_hidden,
-        policy=requested_policy,
+    if not requested_policy.verify_authentication():
+        raise Lfm2CpcfShortConvV5Error("FIR basis policy failed authentication.")
+    requested_report = copy.deepcopy(dict(audit_basis.report))
+    requested_report.pop("report_sha256")
+    requested_report.update(
+        {
+            "policy_sha256": requested_policy.authentication_sha256,
+            "maximum_per_lag_commutator_relative_frobenius_gate": (
+                requested_gate
+            ),
+            "maximum_per_lag_commutator_relative_frobenius_gate_passed": True,
+            "depthwise_fir_representable_in_target_basis": True,
+        }
+    )
+    return Lfm2CpcfV5FirCommutingBasis(
+        encoder=audit_basis.encoder,
+        decoder=audit_basis.decoder,
+        target_fir_kernel=audit_basis.target_fir_kernel,
+        source_to_target_group=audit_basis.source_to_target_group,
+        report=_seal_report(requested_report),
     )
 
 
@@ -344,11 +385,15 @@ def _input_lift_frontier(
         Lfm2CpcfV5RidgeCase(
             case_id=case.case_id,
             split="fit",
-            design=case.actual_child_operator_input_history.reshape(
+            design=_fp64_compute_tensor(
+                case.actual_child_operator_input_history
+            ).reshape(
                 -1,
                 int(case.actual_child_operator_input_history.shape[-1]),
             ),
-            target=case.parent_operator_input_history.reshape(
+            target=_fp64_compute_tensor(
+                case.parent_operator_input_history
+            ).reshape(
                 -1,
                 int(case.parent_operator_input_history.shape[-1]),
             ),
@@ -387,7 +432,9 @@ def _transport_prior(
     source = request.source_tensors
     templates = request.target_templates
     source_hidden = int(encoder.shape[0])
-    role_weights = source["source_in_proj_weight"].reshape(
+    role_weights = _fp64_compute_tensor(
+        source["source_in_proj_weight"]
+    ).reshape(
         3,
         source_hidden,
         source_hidden,
@@ -409,7 +456,9 @@ def _transport_prior(
                 dtype=torch.float64,
             )
             if source["source_in_proj_bias"] is None
-            else source["source_in_proj_bias"].reshape(3, source_hidden)
+            else _fp64_compute_tensor(
+                source["source_in_proj_bias"]
+            ).reshape(3, source_hidden)
         )
         in_proj_bias = torch.cat(
             tuple(
@@ -426,22 +475,26 @@ def _transport_prior(
         source_fir_bias = (
             torch.zeros((source_hidden,), dtype=torch.float64)
             if source["source_fir_bias"] is None
-            else source["source_fir_bias"]
+            else _fp64_compute_tensor(source["source_fir_bias"])
         )
         diagonal_transport = decoder.T * encoder
         fir_bias = (diagonal_transport.T @ source_fir_bias).contiguous()
 
+    output_encoder = _fp64_compute_tensor(source["output_encoder"])
+    source_out_proj_weight = _fp64_compute_tensor(
+        source["source_out_proj_weight"]
+    )
     writer_weight = (
-        source["output_encoder"].T @ source["source_out_proj_weight"] @ decoder.T
+        output_encoder.T @ source_out_proj_weight @ decoder.T
     ).contiguous()
     writer_bias = None
     if templates["writer_bias"] is not None:
         source_writer_bias = (
             torch.zeros((source_hidden,), dtype=torch.float64)
             if source["source_out_proj_bias"] is None
-            else source["source_out_proj_bias"]
+            else _fp64_compute_tensor(source["source_out_proj_bias"])
         )
-        writer_bias = (source["output_encoder"].T @ source_writer_bias).contiguous()
+        writer_bias = (output_encoder.T @ source_writer_bias).contiguous()
     return {
         "in_proj_weight": in_proj_weight,
         "in_proj_bias": in_proj_bias,
@@ -459,18 +512,28 @@ def _projection_cases(
 ) -> tuple[Lfm2CpcfV4ProjectionCase, ...]:
     """Project the parent context while retaining the original child endpoint."""
 
+    context_encoder = _fp64_compute_tensor(context_encoder)
     result = []
     for case in request.cases:
-        desired_context = request.parent_contexts[case.case_id] @ context_encoder
+        desired_context = (
+            _fp64_compute_tensor(request.parent_contexts[case.case_id])
+            @ context_encoder
+        )
         desired_write = (
-            case.parent_post_operator_residual_target_space_suffix
-            - case.actual_child_pre_operator_residual_suffix
+            _fp64_compute_tensor(
+                case.parent_post_operator_residual_target_space_suffix
+            )
+            - _fp64_compute_tensor(
+                case.actual_child_pre_operator_residual_suffix
+            )
         )
         result.append(
             Lfm2CpcfV4ProjectionCase(
                 case_id=case.case_id,
                 split="fit",
-                child_input_history=(case.actual_child_operator_input_history),
+                child_input_history=_fp64_compute_tensor(
+                    case.actual_child_operator_input_history
+                ),
                 desired_context_history=desired_context,
                 desired_write_suffix=desired_write,
                 suffix_start=case.suffix_start,

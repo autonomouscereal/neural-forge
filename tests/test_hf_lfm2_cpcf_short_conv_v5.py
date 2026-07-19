@@ -9,6 +9,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from neural_forge import hf_lfm2_cpcf_short_conv_v5 as v5_module  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (  # noqa: E402
     Lfm2CpcfShortConvV5Error,
     Lfm2CpcfV5AcceptedPathState,
@@ -332,6 +333,98 @@ def test_equilibrated_ridge_caps_condition_and_preserves_null_prior() -> None:
         prediction = design @ result.weight + result.bias
         assert torch.sqrt(torch.mean((prediction - target).square())).item() < 0.2
         assert name.endswith(str(int(receipt["condition_cap"])).zfill(5))
+
+
+def test_equilibrated_ridge_frontier_shares_one_system_with_exact_parity(
+    monkeypatch,
+) -> None:
+    generator = torch.Generator().manual_seed(20260718)
+    design_a = torch.randn((31, 4), generator=generator, dtype=torch.float64)
+    design_b = torch.randn((17, 4), generator=generator, dtype=torch.float64)
+    design_a[:, 3] = 0.0
+    design_b[:, 3] = 0.0
+    coefficient = torch.tensor(
+        [
+            [1.25, -0.5],
+            [0.3, 0.75],
+            [-0.8, 0.2],
+            [4.0, -3.0],
+        ],
+        dtype=torch.float64,
+    )
+    bias = torch.tensor([0.5, -1.25], dtype=torch.float64)
+    cases = (
+        Lfm2CpcfV5RidgeCase(
+            "fit-a",
+            "fit",
+            design_a,
+            design_a @ coefficient + bias,
+        ),
+        Lfm2CpcfV5RidgeCase(
+            "fit-b",
+            "fit",
+            design_b,
+            design_b @ coefficient + bias,
+        ),
+    )
+    prior_weight = torch.tensor(
+        [
+            [0.5, -0.25],
+            [0.1, 0.4],
+            [-0.2, 0.05],
+            [7.0, -9.0],
+        ],
+        dtype=torch.float64,
+    )
+    prior_bias = torch.tensor([-0.5, 0.25], dtype=torch.float64)
+    policy = Lfm2CpcfV5RidgePolicy(
+        parameter_trust_radius=0.75,
+        effect_trust_radius=0.5,
+    )
+    rows = v5_module._canonical_ridge_rows(cases)
+    expected = {
+        f"kappa-{int(cap):05d}": v5_module._solve_equilibrated_candidate(
+            rows=rows,
+            prior_weight=prior_weight,
+            prior_bias=prior_bias,
+            fit_intercept=True,
+            condition_cap=cap,
+            policy=policy,
+        )
+        for cap in policy.condition_caps
+    }
+    prepare_calls = []
+    original_prepare = v5_module._prepare_equilibrated_ridge_system
+
+    def counted_prepare(**kwargs):
+        prepare_calls.append(kwargs)
+        return original_prepare(**kwargs)
+
+    monkeypatch.setattr(
+        v5_module,
+        "_prepare_equilibrated_ridge_system",
+        counted_prepare,
+    )
+    actual = condition_capped_equilibrated_prior_residual_ridge_frontier(
+        cases,
+        prior_weight=prior_weight,
+        prior_bias=prior_bias,
+        policy=policy,
+    )
+
+    assert len(prepare_calls) == 1
+    assert tuple(actual) == tuple(expected) == ("kappa-01000", "kappa-10000")
+    for candidate_id in expected:
+        expected_result = expected[candidate_id]
+        actual_result = actual[candidate_id]
+        assert torch.equal(actual_result.weight, expected_result.weight)
+        assert torch.equal(actual_result.bias, expected_result.bias)
+        assert dict(actual_result.diagnostics) == dict(
+            expected_result.diagnostics
+        )
+        assert actual_result.diagnostics["condition_cap_passed"] is True
+        assert actual_result.diagnostics["nullspace_preserves_prior"] is True
+        assert actual_result.verify_authentication()
 
 
 def test_equilibrated_ridge_separates_intercept_and_trust_units() -> None:

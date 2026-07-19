@@ -893,15 +893,43 @@ def _trust_scale(limit: float, observed: float) -> float:
     return min(1.0, limit / observed)
 
 
-def _solve_equilibrated_candidate(
+@dataclass(frozen=True, slots=True)
+class _EquilibratedRidgeSystem:
+    """Condition-cap-independent sufficient statistics for one ridge frontier."""
+
+    rows: tuple[tuple[str, str, Any, Any], ...]
+    case_count: int
+    feature_width: int
+    output_width: int
+    design_mean: Any | None
+    residual_mean: Any | None
+    case_receipts: tuple[dict[str, Any], ...]
+    solve_design: Any
+    solve_residual: Any
+    column_rms: Any
+    active_columns: Any
+    equilibration_scale: Any
+    equilibrated_design: Any
+    gram: Any
+    right: Any
+    eigenvalues: Any
+    eigenvectors: Any
+    maximum_eigenvalue: float
+    minimum_eigenvalue: float
+    identifiable: Any
+    eigen_right: Any
+
+
+def _prepare_equilibrated_ridge_system(
     *,
     rows: tuple[tuple[str, str, Any, Any], ...],
     prior_weight: Any,
     prior_bias: Any | None,
     fit_intercept: bool,
-    condition_cap: float,
     policy: Lfm2CpcfV5RidgePolicy,
-) -> Lfm2CpcfV5RidgeResult:
+) -> _EquilibratedRidgeSystem:
+    """Build the exact shared design, Gram, RHS, and eigensystem once."""
+
     torch = _torch()
     case_count = len(rows)
     feature_width = int(rows[0][2].shape[1])
@@ -984,6 +1012,70 @@ def _solve_equilibrated_candidate(
     eigenvalues = eigenvalues.clamp(min=0.0)
     maximum_eigenvalue = float(eigenvalues.max().item())
     minimum_eigenvalue = float(eigenvalues.min().item())
+    rank_threshold = maximum_eigenvalue * policy.rank_relative_tolerance
+    identifiable = eigenvalues > rank_threshold
+    eigen_right = eigenvectors.T @ right
+    return _EquilibratedRidgeSystem(
+        rows=rows,
+        case_count=case_count,
+        feature_width=feature_width,
+        output_width=output_width,
+        design_mean=design_mean,
+        residual_mean=residual_mean,
+        case_receipts=tuple(case_receipts),
+        solve_design=solve_design,
+        solve_residual=solve_residual,
+        column_rms=column_rms,
+        active_columns=active_columns,
+        equilibration_scale=equilibration_scale,
+        equilibrated_design=equilibrated_design,
+        gram=gram,
+        right=right,
+        eigenvalues=eigenvalues,
+        eigenvectors=eigenvectors,
+        maximum_eigenvalue=maximum_eigenvalue,
+        minimum_eigenvalue=minimum_eigenvalue,
+        identifiable=identifiable,
+        eigen_right=eigen_right,
+    )
+
+
+def _solve_equilibrated_candidate(
+    *,
+    rows: tuple[tuple[str, str, Any, Any], ...],
+    prior_weight: Any,
+    prior_bias: Any | None,
+    fit_intercept: bool,
+    condition_cap: float,
+    policy: Lfm2CpcfV5RidgePolicy,
+    shared_system: _EquilibratedRidgeSystem | None = None,
+) -> Lfm2CpcfV5RidgeResult:
+    torch = _torch()
+    system = shared_system or _prepare_equilibrated_ridge_system(
+        rows=rows,
+        prior_weight=prior_weight,
+        prior_bias=prior_bias,
+        fit_intercept=fit_intercept,
+        policy=policy,
+    )
+    case_count = system.case_count
+    feature_width = system.feature_width
+    output_width = system.output_width
+    design_mean = system.design_mean
+    residual_mean = system.residual_mean
+    case_receipts = [dict(receipt) for receipt in system.case_receipts]
+    solve_design = system.solve_design
+    solve_residual = system.solve_residual
+    column_rms = system.column_rms
+    active_columns = system.active_columns
+    equilibration_scale = system.equilibration_scale
+    equilibrated_design = system.equilibrated_design
+    gram = system.gram
+    right = system.right
+    eigenvalues = system.eigenvalues
+    eigenvectors = system.eigenvectors
+    maximum_eigenvalue = system.maximum_eigenvalue
+    minimum_eigenvalue = system.minimum_eigenvalue
     if maximum_eigenvalue == 0.0:
         ridge = 0.0
     else:
@@ -992,11 +1084,10 @@ def _solve_equilibrated_candidate(
             (maximum_eigenvalue - condition_cap * minimum_eigenvalue)
             / (condition_cap - 1.0),
         )
-    rank_threshold = maximum_eigenvalue * policy.rank_relative_tolerance
-    identifiable = eigenvalues > rank_threshold
+    identifiable = system.identifiable
     inverse = torch.zeros_like(eigenvalues)
     inverse[identifiable] = 1.0 / (eigenvalues[identifiable] + ridge)
-    eigen_right = eigenvectors.T @ right
+    eigen_right = system.eigen_right
     raw_eigen_delta = inverse.unsqueeze(-1) * eigen_right
     raw_equilibrated_delta = eigenvectors @ raw_eigen_delta
     raw_weight_delta = raw_equilibrated_delta / equilibration_scale.unsqueeze(-1)
@@ -1340,6 +1431,13 @@ def condition_capped_equilibrated_prior_residual_ridge_frontier(
             "fit_intercept=False requires prior_bias=None so the separate "
             "intercept is explicitly absent and frozen at zero."
         )
+    shared_system = _prepare_equilibrated_ridge_system(
+        rows=rows,
+        prior_weight=prior_weight_value,
+        prior_bias=prior_bias_value,
+        fit_intercept=fit_intercept,
+        policy=ridge_policy,
+    )
     results = {
         f"kappa-{int(cap):05d}": _solve_equilibrated_candidate(
             rows=rows,
@@ -1348,6 +1446,7 @@ def condition_capped_equilibrated_prior_residual_ridge_frontier(
             fit_intercept=fit_intercept,
             condition_cap=cap,
             policy=ridge_policy,
+            shared_system=shared_system,
         )
         for cap in ridge_policy.condition_caps
     }
