@@ -505,6 +505,7 @@ def test_grouped_routing_metrics_exactly_match_scalar_reference(
         0.9,
         prediction.shape[0] * prediction.shape[2] * 4,
         dtype=torch.float64,
+        device=device,
     ).reshape(prediction.shape[0], prediction.shape[2], 4)
     proposed_endpoint = target_endpoint + 0.03125
     accumulator = endpoint_fold._MetricAccumulator()
