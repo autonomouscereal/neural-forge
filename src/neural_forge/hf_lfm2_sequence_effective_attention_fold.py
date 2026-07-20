@@ -16,6 +16,11 @@ For one fixed production policy, the compiler:
 * applies a fixed producer-value subspace anchor before materializing ordinary
   dense target V/O tensors.
 
+An opt-in residual V/O seam instead starts at an authenticated dense V0/O0
+split, solves at most two zero-centered delta sweeps, and deterministically
+materializes the best finite target-dtype fit proposal.  The default path and
+its v2 artifact remain byte-compatible.
+
 Only ``fit_cases`` are accepted.  Selection and validation have no interface
 to this primitive.  It performs no model forward, backward, optimizer,
 training, pruning, or quantization operation.
@@ -42,6 +47,15 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (
 
 LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA = (
     "neural-forge-lfm2-fixed-qk-sequence-effective-attention-fold-v2"
+)
+LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEEDED_SCHEMA = (
+    "neural-forge-lfm2-fixed-qk-sequence-effective-residual-vo-seeded-fold-v1"
+)
+LFM2_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEED_SCHEMA = (
+    "neural-forge-lfm2-sequence-effective-residual-vo-seed-v1"
+)
+LFM2_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEED_PROVENANCE_SCHEMA = (
+    "neural-forge-lfm2-sequence-effective-residual-vo-seed-provenance-v1"
 )
 LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_INSTALL_SCHEMA = (
     "neural-forge-lfm2-fixed-qk-sequence-effective-attention-install-v1"
@@ -535,6 +549,173 @@ FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_POLICY_SHA256 = (
 )
 
 
+def _residual_delta_policy_report(
+    policy: Lfm2FixedQkSequenceEffectiveVoAlsPolicy,
+) -> dict[str, Any]:
+    body = {
+        "schema": (
+            "neural-forge-lfm2-sequence-effective-residual-vo-delta-policy-v1"
+        ),
+        "kind": "fixed_qk_residual_vo_zero_centered_delta_policy",
+        "ridge_scale": policy.ridge_scale,
+        "absolute_ridge_floor": policy.absolute_ridge_floor,
+        "fit_tolerance": policy.fit_tolerance,
+        "maximum_residual_delta_sweeps": _MAXIMUM_STREAMED_ALS_ITERATIONS,
+        "zero_delta_ridge_anchor": True,
+        "target_dtype_fit_selection": True,
+        "selection_inputs_accessible": False,
+        "validation_inputs_accessible": False,
+    }
+    return {**body, "authentication_sha256": _sha256(body)}
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SequenceEffectiveResidualVoSeedProvenance:
+    """Sealed caller-supplied provenance for one exact fit-only V/O split."""
+
+    source_artifact_schema: str
+    source_artifact_seal_sha256: str
+    source_compiled_state_sha256: str
+    source_value_weight_sha256: str
+    source_output_weight_sha256: str
+    evidence_split: str = "fit"
+    authentication_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        schema = str(self.source_artifact_schema).strip()
+        if not schema:
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                "source_artifact_schema must be non-empty."
+            )
+        seal_sha = _digest(
+            self.source_artifact_seal_sha256,
+            "source_artifact_seal_sha256",
+        )
+        state_sha = _digest(
+            self.source_compiled_state_sha256,
+            "source_compiled_state_sha256",
+        )
+        value_sha = _digest(
+            self.source_value_weight_sha256,
+            "source_value_weight_sha256",
+        )
+        output_sha = _digest(
+            self.source_output_weight_sha256,
+            "source_output_weight_sha256",
+        )
+        if self.evidence_split != "fit":
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                "Residual V/O seed provenance must be exact fit-only evidence."
+            )
+        object.__setattr__(self, "source_artifact_schema", schema)
+        object.__setattr__(self, "source_artifact_seal_sha256", seal_sha)
+        object.__setattr__(self, "source_compiled_state_sha256", state_sha)
+        object.__setattr__(self, "source_value_weight_sha256", value_sha)
+        object.__setattr__(self, "source_output_weight_sha256", output_sha)
+        expected = _sha256(self.authentication_body())
+        supplied = str(self.authentication_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                "Residual V/O seed provenance authentication is invalid."
+            )
+        object.__setattr__(self, "authentication_sha256", expected)
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": (
+                LFM2_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEED_PROVENANCE_SCHEMA
+            ),
+            "source_artifact_schema": self.source_artifact_schema,
+            "source_artifact_seal_sha256": (
+                self.source_artifact_seal_sha256
+            ),
+            "source_compiled_state_sha256": (
+                self.source_compiled_state_sha256
+            ),
+            "source_value_weight_sha256": self.source_value_weight_sha256,
+            "source_output_weight_sha256": self.source_output_weight_sha256,
+            "evidence_split": self.evidence_split,
+            "caller_source_artifact_cross_authentication_required": True,
+        }
+
+    def verify_authentication(self) -> bool:
+        return self.authentication_sha256 == _sha256(
+            self.authentication_body()
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            **self.authentication_body(),
+            "authentication_sha256": self.authentication_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SequenceEffectiveResidualVoSeed:
+    """Authenticated dense residual V/O split used only as a fit seed."""
+
+    value_weight: Any
+    output_weight: Any
+    provenance: Lfm2SequenceEffectiveResidualVoSeedProvenance
+    authentication_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        value = _tensor(self.value_weight, "value_weight", dimensions=2)
+        output = _tensor(self.output_weight, "output_weight", dimensions=2)
+        if (
+            not isinstance(
+                self.provenance,
+                Lfm2SequenceEffectiveResidualVoSeedProvenance,
+            )
+            or not self.provenance.verify_authentication()
+            or self.provenance.source_value_weight_sha256
+            != _tensor_sha256(value)
+            or self.provenance.source_output_weight_sha256
+            != _tensor_sha256(output)
+        ):
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                "Residual V/O seed provenance does not authenticate its "
+                "exact tensor bundle."
+            )
+        object.__setattr__(self, "value_weight", value.clone())
+        object.__setattr__(self, "output_weight", output.clone())
+        expected = _sha256(self.authentication_body())
+        supplied = str(self.authentication_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                "Residual V/O seed authentication_sha256 is invalid."
+            )
+        object.__setattr__(self, "authentication_sha256", expected)
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEED_SCHEMA,
+            "provenance": self.provenance.as_dict(),
+            "provenance_sha256": self.provenance.authentication_sha256,
+            "value_weight_shape": list(self.value_weight.shape),
+            "value_weight_dtype": str(self.value_weight.dtype),
+            "value_weight_sha256": _tensor_sha256(self.value_weight),
+            "output_weight_shape": list(self.output_weight.shape),
+            "output_weight_dtype": str(self.output_weight.dtype),
+            "output_weight_sha256": _tensor_sha256(self.output_weight),
+            "ordinary_dense_target_value_output": True,
+            "fit_seed_only": True,
+            "selection_inputs_accessible": False,
+            "validation_inputs_accessible": False,
+        }
+
+    def verify_authentication(self) -> bool:
+        return self.authentication_sha256 == _sha256(
+            self.authentication_body()
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            **self.authentication_body(),
+            "authentication_sha256": self.authentication_sha256,
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2CompiledFixedQkSequenceEffectiveAttentionFold:
     """Authenticated exact-Q/K plus sequence-effective dense V/O state."""
@@ -551,6 +732,7 @@ class Lfm2CompiledFixedQkSequenceEffectiveAttentionFold:
     compiled_state_sha256: str
     candidate_frontier_sha256: str
     report: Mapping[str, Any]
+    residual_vo_seed: Lfm2SequenceEffectiveResidualVoSeed | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -632,14 +814,35 @@ class Lfm2CompiledFixedQkSequenceEffectiveAttentionFold:
         supplied = report.pop("report_sha256", None)
         inventory = report.get("candidate_frontier")
         execution = report.get("execution")
+        seeded = self.residual_vo_seed is not None
+        if seeded and (
+            not isinstance(
+                self.residual_vo_seed,
+                Lfm2SequenceEffectiveResidualVoSeed,
+            )
+            or not self.residual_vo_seed.verify_authentication()
+        ):
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                "Residual V/O seed authentication failed."
+            )
+        expected_schema = (
+            LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEEDED_SCHEMA
+            if seeded
+            else LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA
+        )
+        expected_policy = (
+            _residual_delta_policy_report(self.policy)
+            if seeded
+            else self.policy.as_dict()
+        )
         if (
             supplied != _sha256(report)
-            or report.get("schema")
-            != LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA
+            or report.get("schema") != expected_schema
             or report.get("candidate_id")
             != FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID
-            or report.get("policy") != self.policy.as_dict()
-            or report.get("policy_sha256") != self.policy.authentication_sha256
+            or report.get("policy") != expected_policy
+            or report.get("policy_sha256")
+            != expected_policy["authentication_sha256"]
             or report.get("producer_artifact")
             != self.producer_artifact.as_dict()
             or report.get("producer_artifact_sha256")
@@ -663,6 +866,25 @@ class Lfm2CompiledFixedQkSequenceEffectiveAttentionFold:
             or report.get("dense_target_native_qkvo") is not True
             or not isinstance(execution, Mapping)
             or any(execution.get(name) != value for name, value in _ZERO_EXECUTION.items())
+            or (
+                seeded
+                and (
+                    report.get("residual_vo_seed")
+                    != self.residual_vo_seed.as_dict()
+                    or report.get("residual_vo_seed_sha256")
+                    != self.residual_vo_seed.authentication_sha256
+                    or report.get("residual_delta_parameterization")
+                    is not True
+                    or report.get(
+                        "source_seed_fit_provenance_cross_authenticated"
+                    )
+                    is not False
+                    or report.get(
+                        "caller_source_artifact_cross_authentication_required"
+                    )
+                    is not True
+                )
+            )
         ):
             raise Lfm2SequenceEffectiveAttentionFoldError(
                 "Sequence-effective artifact seal is invalid."
@@ -704,6 +926,16 @@ class Lfm2CompiledFixedQkSequenceEffectiveAttentionFold:
                 == _sha256(report.get("candidate_frontier"))
                 and report.get("fixed_query_key_sha256")
                 == self.producer_artifact.score_state_sha256
+                and (
+                    self.residual_vo_seed is None
+                    or (
+                        self.residual_vo_seed.verify_authentication()
+                        and report.get("residual_vo_seed")
+                        == self.residual_vo_seed.as_dict()
+                        and report.get("residual_vo_seed_sha256")
+                        == self.residual_vo_seed.authentication_sha256
+                    )
+                )
             )
         except (TypeError, ValueError, RuntimeError):
             return False
@@ -789,17 +1021,42 @@ def _ridge_solve(
     solver = "solve"
     try:
         solved = torch.linalg.solve(regularized, right)
-    except RuntimeError:
+    except RuntimeError as solve_error:
         solver = "lstsq"
-        solved = torch.linalg.lstsq(
-            regularized,
-            right,
-            driver="gelsd",
-        ).solution
+        try:
+            solved = torch.linalg.lstsq(
+                regularized,
+                right,
+                driver="gelsd",
+            ).solution
+        except RuntimeError as lstsq_error:
+            failure = _seal(
+                {
+                    "status": "failed_closed",
+                    "failure_stage": "ridge_factorization",
+                    "failure_reason": "solve_and_lstsq_failed",
+                    "role": role,
+                    "solve_exception_type": type(solve_error).__name__,
+                    "lstsq_exception_type": type(lstsq_error).__name__,
+                }
+            )
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                f"{role} ridge factorization failed numerically.",
+                failure_report=failure,
+            ) from lstsq_error
     solution = design.T @ solved if use_dual else solved
     if not bool(torch.isfinite(solution).all().item()):
+        failure = _seal(
+            {
+                "status": "failed_closed",
+                "failure_stage": "ridge_solution",
+                "failure_reason": "non_finite_solution",
+                "role": role,
+            }
+        )
         raise Lfm2SequenceEffectiveAttentionFoldError(
-            f"{role} ridge solution is non-finite."
+            f"{role} ridge solution is non-finite.",
+            failure_report=failure,
         )
     prediction = design @ solution
     report = {
@@ -954,16 +1211,41 @@ def _ridge_solve_statistics(
     solver = "solve"
     try:
         solution = torch.linalg.solve(regularized, right)
-    except RuntimeError:
+    except RuntimeError as solve_error:
         solver = "lstsq"
-        solution = torch.linalg.lstsq(
-            regularized,
-            right,
-            driver="gelsd",
-        ).solution
+        try:
+            solution = torch.linalg.lstsq(
+                regularized,
+                right,
+                driver="gelsd",
+            ).solution
+        except RuntimeError as lstsq_error:
+            failure = _seal(
+                {
+                    "status": "failed_closed",
+                    "failure_stage": "ridge_factorization",
+                    "failure_reason": "solve_and_lstsq_failed",
+                    "role": role,
+                    "solve_exception_type": type(solve_error).__name__,
+                    "lstsq_exception_type": type(lstsq_error).__name__,
+                }
+            )
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                f"{role} streamed ridge factorization failed numerically.",
+                failure_report=failure,
+            ) from lstsq_error
     if not bool(torch.isfinite(solution).all().item()):
+        failure = _seal(
+            {
+                "status": "failed_closed",
+                "failure_stage": "ridge_solution",
+                "failure_reason": "non_finite_solution",
+                "role": role,
+            }
+        )
         raise Lfm2SequenceEffectiveAttentionFoldError(
-            f"{role} streamed ridge solution is non-finite."
+            f"{role} streamed ridge solution is non-finite.",
+            failure_report=failure,
         )
     prediction_square = float((solution * (gram @ solution)).sum().item())
     cross = float((solution * right).sum().item())
@@ -3229,6 +3511,7 @@ def _fit_output(
     heads_per_group: int,
     policy: Lfm2FixedQkSequenceEffectiveVoAlsPolicy,
     role: str,
+    output_seed: Any | None = None,
 ) -> tuple[Any, Any, dict[str, Any]]:
     contexts = _context_heads(
         attended_inputs,
@@ -3239,12 +3522,43 @@ def _fit_output(
         int(contexts.shape[0]),
         int(contexts.shape[1]) * int(contexts.shape[2]),
     )
-    output_transpose, report = _ridge_solve(
-        features,
-        target,
-        policy=policy,
-        role=role,
-    )
+    if output_seed is None:
+        output_transpose, report = _ridge_solve(
+            features,
+            target,
+            policy=policy,
+            role=role,
+        )
+    else:
+        seed = output_seed.reshape(
+            int(contexts.shape[1]) * int(contexts.shape[2]),
+            int(target.shape[1]),
+        )
+        residual_target = target - features @ seed
+        delta, delta_report = _ridge_solve(
+            features,
+            residual_target,
+            policy=policy,
+            role=f"{role}_zero_centered_delta",
+        )
+        output_transpose = seed + delta
+        report = _seal(
+            {
+                "role": role,
+                "parameterization": (
+                    "output_blocks=output_seed+zero_centered_delta"
+                ),
+                "zero_delta_ridge_anchor": True,
+                "output_seed_sha256": _tensor_sha256(output_seed),
+                "delta_sha256": _tensor_sha256(delta),
+                "delta_solve_report_sha256": delta_report["report_sha256"],
+                "relative_rmse": _relative_rmse(
+                    features @ output_transpose,
+                    target,
+                ),
+                "solution_sha256": _tensor_sha256(output_transpose),
+            }
+        )
     output_blocks = output_transpose.reshape(
         int(contexts.shape[1]),
         int(contexts.shape[2]),
@@ -3334,6 +3648,7 @@ def _block_value_sweep(
     heads_per_group: int,
     policy: Lfm2FixedQkSequenceEffectiveVoAlsPolicy,
     iteration: int,
+    value_seed: Any | None = None,
 ) -> tuple[Any, list[dict[str, Any]]]:
     torch = _torch()
     updated = value_factor.clone()
@@ -3360,7 +3675,24 @@ def _block_value_sweep(
             group_context,
             output_blocks[start:stop],
         )
-        residual = target - (prediction - group_prediction)
+        if value_seed is None:
+            residual = target - (prediction - group_prediction)
+        else:
+            seed_context = torch.stack(
+                [
+                    attended_inputs[:, head] @ value_seed[group]
+                    for head in range(start, stop)
+                ],
+                dim=1,
+            )
+            seed_prediction = torch.einsum(
+                "nhd,hdo->no",
+                seed_context,
+                output_blocks[start:stop],
+            )
+            residual = target - (
+                prediction - group_prediction + seed_prediction
+            )
         coefficients = torch.einsum(
             "nhi,hdo->noid",
             attended_inputs[:, start:stop],
@@ -3375,11 +3707,37 @@ def _block_value_sweep(
             policy=policy,
             role=f"sequence_effective_value_iteration_{iteration}_group_{group}",
         )
-        updated[group] = solution.reshape(
+        solved_group = solution.reshape(
             int(attended_inputs.shape[2]),
             int(updated.shape[2]),
         )
-        reports.append(solve_report)
+        if value_seed is None:
+            updated[group] = solved_group
+            reports.append(solve_report)
+        else:
+            updated[group] = value_seed[group] + solved_group
+            reports.append(
+                _seal(
+                    {
+                        "role": (
+                            f"sequence_effective_value_iteration_{iteration}_"
+                            f"group_{group}"
+                        ),
+                        "parameterization": (
+                            "value_group=value_seed+zero_centered_delta"
+                        ),
+                        "zero_delta_ridge_anchor": True,
+                        "value_seed_group_sha256": _tensor_sha256(
+                            value_seed[group]
+                        ),
+                        "delta_sha256": _tensor_sha256(solved_group),
+                        "delta_solve_report_sha256": (
+                            solve_report["report_sha256"]
+                        ),
+                        "solution_sha256": _tensor_sha256(updated[group]),
+                    }
+                )
+            )
     return updated.contiguous(), reports
 
 
@@ -3947,14 +4305,14 @@ def _fit_output_streamed(
     )
 
 
-def _fit_output_from_sequence_statistics(
+def _output_statistics_from_sequence_statistics(
     *,
     statistics: Mapping[str, Any],
     topology: Any,
     value_factor: Any,
-    policy: Lfm2FixedQkSequenceEffectiveVoAlsPolicy,
-    role: str,
-) -> tuple[Any, dict[str, Any]]:
+) -> tuple[Any, Any]:
+    """Project cached hidden-space Gram/right into the target O domain."""
+
     torch = _torch()
     cross = statistics["cross_head_gram"]
     right = statistics["endpoint_right"]
@@ -3983,14 +4341,121 @@ def _fit_output_from_sequence_statistics(
                 @ cross[head, other]
                 @ value_factor[other_group]
             )
-    output_transpose, report = _ridge_solve_statistics(
-        gram,
-        output_right,
-        target_square_sum=float(statistics["endpoint_square_sum"]),
-        rows=int(statistics["row_count"]),
-        policy=policy,
-        role=role,
+    return gram, output_right
+
+
+def _sequence_statistics_relative_rmse(
+    *,
+    statistics: Mapping[str, Any],
+    topology: Any,
+    value_factor: Any,
+    output_blocks: Any,
+) -> float:
+    """Score one finite V/O proposal from exact fit sufficient statistics."""
+
+    torch = _torch()
+    gram, output_right = _output_statistics_from_sequence_statistics(
+        statistics=statistics,
+        topology=topology,
+        value_factor=value_factor,
     )
+    output_transpose = output_blocks.reshape(
+        topology.target_query_heads * topology.head_dim,
+        topology.target_output_size,
+    )
+    prediction_square = float(
+        (
+            output_transpose
+            * (gram @ output_transpose)
+        ).sum().item()
+    )
+    target_cross = float(
+        (output_transpose * output_right).sum().item()
+    )
+    target_square = float(statistics["endpoint_square_sum"])
+    squared_error = max(
+        prediction_square - 2.0 * target_cross + target_square,
+        0.0,
+    )
+    result = math.sqrt(
+        squared_error / max(target_square, torch.finfo(torch.float64).eps)
+    )
+    if not math.isfinite(result):
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            "Sequence-effective proposal fit is non-finite."
+        )
+    return result
+
+
+def _fit_output_from_sequence_statistics(
+    *,
+    statistics: Mapping[str, Any],
+    topology: Any,
+    value_factor: Any,
+    policy: Lfm2FixedQkSequenceEffectiveVoAlsPolicy,
+    role: str,
+    output_seed: Any | None = None,
+) -> tuple[Any, dict[str, Any]]:
+    feature_count = topology.target_query_heads * topology.head_dim
+    gram, output_right = _output_statistics_from_sequence_statistics(
+        statistics=statistics,
+        topology=topology,
+        value_factor=value_factor,
+    )
+    if output_seed is None:
+        output_transpose, report = _ridge_solve_statistics(
+            gram,
+            output_right,
+            target_square_sum=float(statistics["endpoint_square_sum"]),
+            rows=int(statistics["row_count"]),
+            policy=policy,
+            role=role,
+        )
+    else:
+        seed = output_seed.reshape(
+            feature_count,
+            topology.target_output_size,
+        )
+        seed_prediction_square = float((seed * (gram @ seed)).sum().item())
+        seed_cross = float((seed * output_right).sum().item())
+        residual_square_sum = max(
+            float(statistics["endpoint_square_sum"])
+            - 2.0 * seed_cross
+            + seed_prediction_square,
+            0.0,
+        )
+        delta, delta_report = _ridge_solve_statistics(
+            gram,
+            output_right - gram @ seed,
+            target_square_sum=residual_square_sum,
+            rows=int(statistics["row_count"]),
+            policy=policy,
+            role=f"{role}_zero_centered_delta",
+        )
+        output_transpose = seed + delta
+        report = _seal(
+            {
+                "role": role,
+                "parameterization": (
+                    "output_blocks=output_seed+zero_centered_delta"
+                ),
+                "zero_delta_ridge_anchor": True,
+                "output_seed_sha256": _tensor_sha256(output_seed),
+                "delta_sha256": _tensor_sha256(delta),
+                "delta_solve_report_sha256": delta_report["report_sha256"],
+                "relative_rmse": _sequence_statistics_relative_rmse(
+                    statistics=statistics,
+                    topology=topology,
+                    value_factor=value_factor,
+                    output_blocks=output_transpose.reshape(
+                        topology.target_query_heads,
+                        topology.head_dim,
+                        topology.target_output_size,
+                    ),
+                ),
+                "solution_sha256": _tensor_sha256(output_transpose),
+            }
+        )
     return (
         output_transpose.reshape(
             topology.target_query_heads,
@@ -4009,6 +4474,7 @@ def _structured_value_pcg_sweep(
     output_blocks: Any,
     policy: Lfm2FixedQkSequenceEffectiveVoAlsPolicy,
     iteration: int,
+    value_seed: Any | None = None,
 ) -> tuple[Any, list[dict[str, Any]]]:
     torch = _torch()
     cross = statistics["cross_head_gram"]
@@ -4087,18 +4553,30 @@ def _structured_value_pcg_sweep(
                 role=role,
             )
         )
+        solve_right = right
+        initial = updated[group]
+        if value_seed is not None:
+            unregularized_seed_application = (
+                matvec(value_seed[group]) - ridge * value_seed[group]
+            )
+            solve_right = right - unregularized_seed_application
+            initial = updated[group] - value_seed[group]
         solution, pcg_report = _pcg_single_tensor(
-            right=right,
+            right=solve_right,
             matvec=matvec,
             diagonal=diagonal,
-            initial=updated[group],
+            initial=initial,
             role=role,
             restart_hidden_partial_trace_preconditioner=(
                 hidden_partial_trace_preconditioner
             ),
             restart_hidden_partial_trace_ridge=ridge,
         )
-        updated[group] = solution
+        updated[group] = (
+            solution
+            if value_seed is None
+            else value_seed[group] + solution
+        )
         body = {
             "role": role,
             "group": group,
@@ -4115,10 +4593,24 @@ def _structured_value_pcg_sweep(
             "hidden_partial_trace_pcg_execution_profile_sha256": (
                 LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
             ),
-            "solution_sha256": _tensor_sha256(solution),
+            "solution_sha256": _tensor_sha256(updated[group]),
             "explicit_coefficient_tensor_materialized": False,
             "hidden_head_dim_gram_materialized": False,
         }
+        if value_seed is not None:
+            body.update(
+                {
+                    "parameterization": (
+                        "value_group=value_seed+zero_centered_delta"
+                    ),
+                    "zero_delta_ridge_anchor": True,
+                    "value_seed_group_sha256": _tensor_sha256(
+                        value_seed[group]
+                    ),
+                    "delta_sha256": _tensor_sha256(solution),
+                    "delta_right_sha256": _tensor_sha256(solve_right),
+                }
+            )
         reports.append(_seal(body))
     return updated.contiguous(), reports
 
@@ -4218,6 +4710,77 @@ def _streaming_materialized_metrics(
     )
 
 
+def _materialize_vo_proposal(
+    *,
+    value_factor: Any,
+    output_blocks: Any,
+    topology: Any,
+    value_dtype: Any,
+    output_dtype: Any,
+) -> tuple[Any, Any, Any, Any]:
+    torch = _torch()
+    value_fp64 = value_factor.permute(0, 2, 1).reshape(
+        topology.target_key_value_heads * topology.head_dim,
+        topology.target_hidden_size,
+    )
+    output_fp64 = output_blocks.reshape(
+        topology.target_query_heads * topology.head_dim,
+        topology.target_output_size,
+    ).T
+    value_weight = value_fp64.to(dtype=value_dtype).contiguous().clone()
+    output_weight = output_fp64.to(dtype=output_dtype).contiguous().clone()
+    materialized_factor = value_weight.to(torch.float64).reshape(
+        topology.target_key_value_heads,
+        topology.head_dim,
+        topology.target_hidden_size,
+    ).permute(0, 2, 1)
+    materialized_blocks = output_weight.to(torch.float64).T.reshape(
+        topology.target_query_heads,
+        topology.head_dim,
+        topology.target_output_size,
+    )
+    return (
+        value_weight,
+        output_weight,
+        materialized_factor,
+        materialized_blocks,
+    )
+
+
+def _recoverable_residual_delta_solve_failure(
+    error: Lfm2SequenceEffectiveAttentionFoldError,
+) -> bool:
+    """Accept only sealed numerical/convergence failures as seed fallbacks."""
+
+    if error.failure_report is None:
+        return False
+    report = dict(error.failure_report)
+    supplied = report.pop("report_sha256", None)
+    if (
+        supplied != _sha256(report)
+        or report.get("status") != "failed_closed"
+    ):
+        return False
+    stage = str(report.get("failure_stage", ""))
+    if stage in {"ridge_factorization", "ridge_solution"}:
+        return True
+    if (
+        not stage
+        or stage == "input_validation"
+        or "authentication" in stage
+        or "application" in stage
+        or stage == "restart_preconditioner_selection"
+    ):
+        return False
+    return bool(
+        stage == "initial_exact_residual"
+        or stage == "hard_iteration_cap"
+        or stage.startswith("original_lane_")
+        or stage.startswith("continuous_")
+        or stage.startswith("restart_")
+    )
+
+
 def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
     *,
     producer: Lfm2CompiledStructuralAttentionProducerFold,
@@ -4228,6 +4791,7 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
     key_norm_weight: Any | None = None,
     norm_epsilon: float = 1e-6,
     policy: Lfm2FixedQkSequenceEffectiveVoAlsPolicy | None = None,
+    residual_vo_seed: Lfm2SequenceEffectiveResidualVoSeed | None = None,
 ) -> Lfm2CompiledFixedQkSequenceEffectiveAttentionFold:
     """Compile one authenticated fit-only exact-Q/K sequence-effective arm."""
 
@@ -4250,6 +4814,17 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
     ) or not producer.full_source_coverage:
         raise Lfm2SequenceEffectiveAttentionFoldError(
             "producer must be one full-coverage structural attention producer."
+        )
+    seeded = residual_vo_seed is not None
+    if seeded and (
+        not isinstance(
+            residual_vo_seed,
+            Lfm2SequenceEffectiveResidualVoSeed,
+        )
+        or not residual_vo_seed.verify_authentication()
+    ):
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            "residual_vo_seed must be one authenticated dense residual V/O seed."
         )
     cases = tuple(fit_cases)
     if not cases or any(
@@ -4288,6 +4863,15 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         raise Lfm2SequenceEffectiveAttentionFoldError(
             "Target V/O templates differ from the fixed Q/K topology."
         )
+    if seeded and (
+        tuple(residual_vo_seed.value_weight.shape) != expected_value_shape
+        or tuple(residual_vo_seed.output_weight.shape) != expected_output_shape
+        or residual_vo_seed.value_weight.dtype != value_dtype
+        or residual_vo_seed.output_weight.dtype != output_dtype
+    ):
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            "Residual V/O seed differs from the target V/O shape or dtype."
+        )
     q_norm = (
         None
         if query_norm_weight is None
@@ -4313,6 +4897,9 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
 
     producer_before = _state_sha256(producer.state_dict())
     case_bundle_before = _case_bundle_sha256(cases)
+    residual_seed_before = (
+        residual_vo_seed.authentication_sha256 if seeded else None
+    )
     fit_rows = sum(
         int(case.target_query_input.shape[0])
         * int(case.target_query_input.shape[1])
@@ -4346,21 +4933,34 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
             norm_epsilon=epsilon,
         )
         effective = None
-        effective_solve = _seal(
-            {
-                "role": "sequence_effective_scalable_shared_value_seed",
-                "seed": "fit_compiled_producer_shared_value_subspace",
-                "producer_value_sha256": _tensor_sha256(
-                    producer.value_weight
-                ),
-                "complete_effective_operator_solve_skipped": True,
-                "reason": (
-                    "avoid_qheads_times_hidden_multi_output_factorization"
-                ),
-                "selection_inputs_consumed": 0,
-                "validation_inputs_consumed": 0,
-            }
-        )
+        if seeded:
+            effective_solve = _seal(
+                {
+                    "role": "sequence_effective_residual_vo_seed",
+                    "seed": "authenticated_dense_residual_vo_split",
+                    "residual_vo_seed_sha256": residual_seed_before,
+                    "complete_effective_operator_solve_skipped": True,
+                    "reason": "residual_vo_seed_is_proposal_zero",
+                    "selection_inputs_consumed": 0,
+                    "validation_inputs_consumed": 0,
+                }
+            )
+        else:
+            effective_solve = _seal(
+                {
+                    "role": "sequence_effective_scalable_shared_value_seed",
+                    "seed": "fit_compiled_producer_shared_value_subspace",
+                    "producer_value_sha256": _tensor_sha256(
+                        producer.value_weight
+                    ),
+                    "complete_effective_operator_solve_skipped": True,
+                    "reason": (
+                        "avoid_qheads_times_hidden_multi_output_factorization"
+                    ),
+                    "selection_inputs_consumed": 0,
+                    "validation_inputs_consumed": 0,
+                }
+            )
     else:
         weighted_attended = []
         weighted_targets = []
@@ -4410,22 +5010,58 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         plain_endpoint_target = torch.cat(unweighted_targets, dim=0).to(
             torch.float64
         )
-        flat_design = attended_inputs.reshape(
-            int(attended_inputs.shape[0]),
-            topology.target_query_heads * topology.target_hidden_size,
-        )
-        effective_rows, effective_solve = _ridge_solve(
-            flat_design,
-            endpoint_target,
-            policy=selected_policy,
-            role="sequence_effective_complete_causal_operator",
-        )
-        effective = effective_rows.reshape(
-            topology.target_query_heads,
+        if seeded:
+            effective = None
+            effective_solve = _seal(
+                {
+                    "role": "sequence_effective_residual_vo_seed",
+                    "seed": "authenticated_dense_residual_vo_split",
+                    "residual_vo_seed_sha256": residual_seed_before,
+                    "complete_effective_operator_solve_skipped": True,
+                    "reason": "residual_vo_seed_is_proposal_zero",
+                    "selection_inputs_consumed": 0,
+                    "validation_inputs_consumed": 0,
+                }
+            )
+        else:
+            flat_design = attended_inputs.reshape(
+                int(attended_inputs.shape[0]),
+                topology.target_query_heads * topology.target_hidden_size,
+            )
+            effective_rows, effective_solve = _ridge_solve(
+                flat_design,
+                endpoint_target,
+                policy=selected_policy,
+                role="sequence_effective_complete_causal_operator",
+            )
+            effective = effective_rows.reshape(
+                topology.target_query_heads,
+                topology.target_hidden_size,
+                topology.target_output_size,
+            )
+    if seeded:
+        value_factor = residual_vo_seed.value_weight.to(
+            torch.float64
+        ).reshape(
+            topology.target_key_value_heads,
+            topology.head_dim,
             topology.target_hidden_size,
+        ).permute(0, 2, 1).contiguous()
+        output_blocks = residual_vo_seed.output_weight.to(
+            torch.float64
+        ).T.reshape(
+            topology.target_query_heads,
+            topology.head_dim,
             topology.target_output_size,
-        )
-    if streamed_headwise:
+        ).contiguous()
+        svd_reports = [
+            {
+                "seed": "authenticated_dense_residual_vo_split",
+                "residual_vo_seed_sha256": residual_seed_before,
+                "svd_materialization_avoided": True,
+            }
+        ]
+    elif streamed_headwise:
         value_factor = producer.value_weight.to(torch.float64).reshape(
             topology.target_key_value_heads,
             topology.head_dim,
@@ -4458,7 +5094,21 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
                 head_dim=topology.head_dim,
             )
         )
-    if streamed_headwise:
+    if seeded:
+        output_solve = _seal(
+            {
+                "role": "sequence_effective_residual_vo_seed_identity",
+                "parameterization": (
+                    "value=value_seed+zero;output=output_seed+zero"
+                ),
+                "zero_delta_ridge_anchor": True,
+                "residual_vo_seed_sha256": residual_seed_before,
+                "closed_form_linear_solves": 0,
+                "selection_inputs_consumed": 0,
+                "validation_inputs_consumed": 0,
+            }
+        )
+    elif streamed_headwise:
         output_blocks, output_solve = _fit_output_from_sequence_statistics(
             statistics=sequence_statistics,
             topology=topology,
@@ -4475,12 +5125,20 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
             policy=selected_policy,
             role="sequence_effective_svd_seed_output",
         )
-    value_factor, output_blocks = _canonicalize_value_factor(
-        value_factor,
-        output_blocks,
-    )
+    if not seeded:
+        value_factor, output_blocks = _canonicalize_value_factor(
+            value_factor,
+            output_blocks,
+        )
     accepted_error = (
-        float(output_solve["relative_rmse"])
+        _sequence_statistics_relative_rmse(
+            statistics=sequence_statistics,
+            topology=topology,
+            value_factor=value_factor,
+            output_blocks=output_blocks,
+        )
+        if streamed_headwise and seeded
+        else float(output_solve["relative_rmse"])
         if streamed_headwise
         else _relative_rmse(
             _prediction(
@@ -4496,70 +5154,146 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         {
             "proposal_index": 0,
             "stage": (
-                "scalable_producer_shared_value_sequence_output_seed"
+                "residual_vo_seed_zero_delta_identity_anchor"
+                if seeded
+                else "scalable_producer_shared_value_sequence_output_seed"
                 if streamed_headwise
                 else "effective_operator_shared_value_svd_seed"
             ),
             "accepted": True,
-            "weighted_fit_relative_rmse": accepted_error,
+            (
+                "weighted_fit_relative_rmse_fp64"
+                if seeded
+                else "weighted_fit_relative_rmse"
+            ): accepted_error,
             "value_factor_sha256": _tensor_sha256(value_factor),
             "output_blocks_sha256": _tensor_sha256(output_blocks),
             "solve_report_sha256": output_solve["report_sha256"],
+            **(
+                {
+                    "zero_delta_ridge_anchor": True,
+                    "residual_vo_seed_sha256": residual_seed_before,
+                    "value_delta_sha256": _tensor_sha256(
+                        torch.zeros_like(value_factor)
+                    ),
+                    "output_delta_sha256": _tensor_sha256(
+                        torch.zeros_like(output_blocks)
+                    ),
+                }
+                if seeded
+                else {}
+            ),
         }
     ]
+    proposal_states = [(value_factor.clone(), output_blocks.clone())]
     accepted_iterations = 0
     solve_reports = [effective_solve, output_solve]
+    seeded_early_stop_reason = None
+    delta_solve_fallback_index = None
     als_iteration_limit = (
         min(
             selected_policy.maximum_als_iterations,
             _MAXIMUM_STREAMED_ALS_ITERATIONS,
         )
-        if streamed_headwise
+        if streamed_headwise or seeded
         else selected_policy.maximum_als_iterations
     )
+    if seeded and accepted_error <= selected_policy.fit_tolerance:
+        als_iteration_limit = 0
+        seeded_early_stop_reason = "seed_fit_within_policy_tolerance"
     for iteration in range(1, als_iteration_limit + 1):
-        if streamed_headwise:
-            proposed_value, value_reports = _structured_value_pcg_sweep(
-                statistics=sequence_statistics,
-                topology=topology,
-                value_factor=value_factor,
-                output_blocks=output_blocks,
-                policy=selected_policy,
-                iteration=iteration,
-            )
-            proposed_output, proposed_output_report = (
-                _fit_output_from_sequence_statistics(
+        try:
+            if streamed_headwise:
+                proposed_value, value_reports = _structured_value_pcg_sweep(
                     statistics=sequence_statistics,
                     topology=topology,
-                    value_factor=proposed_value,
+                    value_factor=value_factor,
+                    output_blocks=output_blocks,
                     policy=selected_policy,
-                    role=(
-                        f"sequence_effective_streamed_output_iteration_{iteration}"
+                    iteration=iteration,
+                    value_seed=proposal_states[0][0] if seeded else None,
+                )
+                proposed_output, proposed_output_report = (
+                    _fit_output_from_sequence_statistics(
+                        statistics=sequence_statistics,
+                        topology=topology,
+                        value_factor=proposed_value,
+                        policy=selected_policy,
+                        role=(
+                            "sequence_effective_streamed_output_iteration_"
+                            f"{iteration}"
+                        ),
+                        output_seed=(
+                            proposal_states[0][1] if seeded else None
+                        ),
+                    )
+                )
+            else:
+                proposed_value, value_reports = _block_value_sweep(
+                    attended_inputs,
+                    endpoint_target,
+                    value_factor,
+                    output_blocks,
+                    heads_per_group=(
+                        topology.target_query_heads_per_group
+                    ),
+                    policy=selected_policy,
+                    iteration=iteration,
+                    value_seed=(
+                        proposal_states[0][0] if seeded else None
                     ),
                 )
+                (
+                    proposed_output,
+                    _features,
+                    proposed_output_report,
+                ) = _fit_output(
+                    attended_inputs,
+                    endpoint_target,
+                    proposed_value,
+                    heads_per_group=(
+                        topology.target_query_heads_per_group
+                    ),
+                    policy=selected_policy,
+                    role=f"sequence_effective_output_iteration_{iteration}",
+                    output_seed=(
+                        proposal_states[0][1] if seeded else None
+                    ),
+                )
+        except Lfm2SequenceEffectiveAttentionFoldError as error:
+            if (
+                not seeded
+                or not _recoverable_residual_delta_solve_failure(error)
+            ):
+                raise
+            failure = dict(error.failure_report)
+            frontier.append(
+                _seal(
+                    {
+                        "proposal_index": iteration,
+                        "stage": "residual_seeded_delta_solve_rejected",
+                        "accepted": False,
+                        "eligible_for_target_dtype_selection": False,
+                        "selected_for_materialization": False,
+                        "weighted_fit_relative_rmse_fp64": None,
+                        "weighted_fit_relative_rmse_target_dtype": None,
+                        "failure_report": failure,
+                        "failure_report_sha256": failure["report_sha256"],
+                        "fallback_to_last_prior_finite_proposal": True,
+                        "last_prior_proposal_index": (
+                            len(proposal_states) - 1
+                        ),
+                    }
+                )
             )
-        else:
-            proposed_value, value_reports = _block_value_sweep(
-                attended_inputs,
-                endpoint_target,
-                value_factor,
-                output_blocks,
-                heads_per_group=topology.target_query_heads_per_group,
-                policy=selected_policy,
-                iteration=iteration,
-            )
-            proposed_output, _features, proposed_output_report = _fit_output(
-                attended_inputs,
-                endpoint_target,
+            delta_solve_fallback_index = len(proposal_states) - 1
+            seeded_early_stop_reason = "typed_numerical_delta_solve_failure"
+            break
+        if not seeded:
+            proposed_value, proposed_output = _canonicalize_value_factor(
                 proposed_value,
-                heads_per_group=topology.target_query_heads_per_group,
-                policy=selected_policy,
-                role=f"sequence_effective_output_iteration_{iteration}",
+                proposed_output,
             )
-        proposed_value, proposed_output = _canonicalize_value_factor(
-            proposed_value,
-            proposed_output,
-        )
         proposed_error = (
             float(proposed_output_report["relative_rmse"])
             if streamed_headwise
@@ -4573,19 +5307,63 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
                 endpoint_target,
             )
         )
-        accepted = proposed_error <= accepted_error + selected_policy.fit_tolerance
+        if seeded and not math.isfinite(proposed_error):
+            failure = _seal(
+                {
+                    "status": "failed_closed",
+                    "failure_stage": "residual_delta_fit_scoring",
+                    "failure_reason": "non_finite_fp64_fit_score",
+                    "proposal_index": iteration,
+                }
+            )
+            frontier.append(
+                _seal(
+                    {
+                        "proposal_index": iteration,
+                        "stage": "residual_seeded_delta_solve_rejected",
+                        "accepted": False,
+                        "eligible_for_target_dtype_selection": False,
+                        "selected_for_materialization": False,
+                        "weighted_fit_relative_rmse_fp64": None,
+                        "weighted_fit_relative_rmse_target_dtype": None,
+                        "failure_report": failure,
+                        "failure_report_sha256": failure["report_sha256"],
+                        "fallback_to_last_prior_finite_proposal": True,
+                        "last_prior_proposal_index": (
+                            len(proposal_states) - 1
+                        ),
+                    }
+                )
+            )
+            delta_solve_fallback_index = len(proposal_states) - 1
+            seeded_early_stop_reason = "non_finite_delta_fit_score"
+            break
+        accepted = bool(
+            math.isfinite(proposed_error)
+            and (
+                seeded
+                or proposed_error
+                <= accepted_error + selected_policy.fit_tolerance
+            )
+        )
         solve_reports.extend(value_reports)
         solve_reports.append(proposed_output_report)
         frontier.append(
             {
                 "proposal_index": iteration,
                 "stage": (
-                    "monotone_streamed_effective_space_value_output_als"
+                    "residual_seeded_zero_centered_value_output_delta_sweep"
+                    if seeded
+                    else "monotone_streamed_effective_space_value_output_als"
                     if streamed_headwise
                     else "monotone_closed_form_value_output_als"
                 ),
                 "accepted": accepted,
-                "weighted_fit_relative_rmse": proposed_error,
+                (
+                    "weighted_fit_relative_rmse_fp64"
+                    if seeded
+                    else "weighted_fit_relative_rmse"
+                ): proposed_error,
                 "value_factor_sha256": _tensor_sha256(proposed_value),
                 "output_blocks_sha256": _tensor_sha256(proposed_output),
                 "value_solve_report_sha256": [
@@ -4593,6 +5371,23 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
                 ],
                 "output_solve_report_sha256": (
                     proposed_output_report["report_sha256"]
+                ),
+                **(
+                    {
+                        "parameterization": (
+                            "value=value_seed+delta;"
+                            "output=output_seed+delta"
+                        ),
+                        "zero_delta_ridge_anchor": True,
+                        "value_delta_sha256": _tensor_sha256(
+                            proposed_value - proposal_states[0][0]
+                        ),
+                        "output_delta_sha256": _tensor_sha256(
+                            proposed_output - proposal_states[0][1]
+                        ),
+                    }
+                    if seeded
+                    else {}
                 ),
             }
         )
@@ -4602,84 +5397,258 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         output_blocks = proposed_output
         accepted_error = proposed_error
         accepted_iterations += 1
+        proposal_states.append(
+            (value_factor.clone(), output_blocks.clone())
+        )
 
-    anchored_value, anchor_reports = _producer_value_anchor(
-        value_factor,
-        producer,
-        policy=selected_policy,
-    )
-    if streamed_headwise:
-        anchored_output, anchor_output_report = (
-            _fit_output_from_sequence_statistics(
-                statistics=sequence_statistics,
+    if seeded:
+        target_dtype_proposals = []
+        for proposal_index, (proposal_value, proposal_output) in enumerate(
+            proposal_states
+        ):
+            (
+                candidate_value,
+                candidate_output,
+                candidate_factor,
+                candidate_blocks,
+            ) = _materialize_vo_proposal(
+                value_factor=proposal_value,
+                output_blocks=proposal_output,
                 topology=topology,
-                value_factor=anchored_value,
+                value_dtype=value_dtype,
+                output_dtype=output_dtype,
+            )
+            if not bool(
+                torch.isfinite(candidate_value).all().item()
+                and torch.isfinite(candidate_output).all().item()
+            ):
+                frontier[proposal_index][
+                    "weighted_fit_relative_rmse_target_dtype"
+                ] = None
+                frontier[proposal_index][
+                    "eligible_for_target_dtype_selection"
+                ] = False
+                frontier[proposal_index][
+                    "target_dtype_selection_rejection_reason"
+                ] = "non_finite_materialized_tensor"
+                continue
+            if streamed_headwise:
+                candidate_metrics = (
+                    _sequence_statistics_relative_rmse(
+                        statistics=sequence_statistics,
+                        topology=topology,
+                        value_factor=candidate_factor,
+                        output_blocks=candidate_blocks,
+                    ),
+                    None,
+                    None,
+                )
+            else:
+                candidate_metrics = (
+                    _relative_rmse(
+                        _prediction(
+                            attended_inputs,
+                            candidate_factor,
+                            candidate_blocks,
+                            heads_per_group=(
+                                topology.target_query_heads_per_group
+                            ),
+                        ),
+                        endpoint_target,
+                    ),
+                    _relative_rmse(
+                        _prediction(
+                            plain_attended_inputs,
+                            candidate_factor,
+                            candidate_blocks,
+                            heads_per_group=(
+                                topology.target_query_heads_per_group
+                            ),
+                        ),
+                        plain_endpoint_target,
+                    ),
+                    _fit_context_preservation(
+                        producer=producer,
+                        normalized_cases=normalized_cases,
+                        fit_cases=cases,
+                        materialized_value_factor=candidate_factor,
+                    ),
+                )
+            if not math.isfinite(candidate_metrics[0]) or any(
+                value is not None and not math.isfinite(value)
+                for value in candidate_metrics[1:]
+            ):
+                frontier[proposal_index][
+                    "weighted_fit_relative_rmse_target_dtype"
+                ] = None
+                frontier[proposal_index][
+                    "eligible_for_target_dtype_selection"
+                ] = False
+                frontier[proposal_index][
+                    "target_dtype_selection_rejection_reason"
+                ] = "non_finite_fit_metric"
+                continue
+            frontier[proposal_index][
+                "weighted_fit_relative_rmse_target_dtype"
+            ] = candidate_metrics[0]
+            frontier[proposal_index][
+                "eligible_for_target_dtype_selection"
+            ] = True
+            frontier[proposal_index]["target_dtype_fit_score_source"] = (
+                "projected_cached_cross_head_gram_and_endpoint_right"
+                if streamed_headwise
+                else "materialized_fit_row_operator"
+            )
+            target_dtype_proposals.append(
+                (
+                    candidate_metrics[0],
+                    proposal_index,
+                    candidate_value,
+                    candidate_output,
+                    candidate_factor,
+                    candidate_blocks,
+                    candidate_metrics,
+                )
+            )
+        if not target_dtype_proposals:
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                "Residual V/O seeded frontier has no finite target-dtype "
+                "fit proposal."
+            )
+        if delta_solve_fallback_index is not None:
+            eligible_selection = tuple(
+                proposal
+                for proposal in target_dtype_proposals
+                if proposal[1] <= delta_solve_fallback_index
+            )
+            selection_pool = (
+                max(eligible_selection, key=lambda proposal: proposal[1]),
+            )
+            selection_rule = "last_prior_finite_after_typed_solve_failure"
+        else:
+            best_target_dtype_score = min(
+                proposal[0] for proposal in target_dtype_proposals
+            )
+            selection_pool = tuple(
+                proposal
+                for proposal in target_dtype_proposals
+                if proposal[0]
+                <= best_target_dtype_score + selected_policy.fit_tolerance
+            )
+            selection_rule = (
+                "lowest_proposal_index_within_fit_tolerance_of_best"
+            )
+        (
+            _selected_score,
+            selected_proposal_index,
+            compiled_value,
+            compiled_output,
+            materialized_factor,
+            materialized_blocks,
+            selected_metrics,
+        ) = min(selection_pool, key=lambda proposal: proposal[1])
+        for proposal in frontier:
+            if "report_sha256" not in proposal:
+                proposal["selected_for_materialization"] = (
+                    proposal["proposal_index"] == selected_proposal_index
+                )
+        anchored_value, anchored_output = proposal_states[
+            selected_proposal_index
+        ]
+        anchored_error = float(
+            frontier[selected_proposal_index][
+                "weighted_fit_relative_rmse_fp64"
+            ]
+        )
+        anchor_reports = [
+            {
+                "kind": "zero_delta_ridge_identity_anchor",
+                "residual_vo_seed_sha256": residual_seed_before,
+                "proposal_zero_preserved_in_frontier": True,
+                "producer_value_subspace_anchor_applied": False,
+                "selection_metric": (
+                    "weighted_fit_relative_rmse_target_dtype"
+                ),
+                "selected_proposal_index": selected_proposal_index,
+                "deterministic_selection_rule": selection_rule,
+            }
+        ]
+        weighted_materialized_error = selected_metrics[0]
+        plain_materialized_error = selected_metrics[1]
+        fit_context_error = selected_metrics[2]
+    else:
+        anchored_value, anchor_reports = _producer_value_anchor(
+            value_factor,
+            producer,
+            policy=selected_policy,
+        )
+        if streamed_headwise:
+            anchored_output, anchor_output_report = (
+                _fit_output_from_sequence_statistics(
+                    statistics=sequence_statistics,
+                    topology=topology,
+                    value_factor=anchored_value,
+                    policy=selected_policy,
+                    role="sequence_effective_streamed_anchored_output",
+                )
+            )
+        else:
+            anchored_output, _features, anchor_output_report = _fit_output(
+                attended_inputs,
+                endpoint_target,
+                anchored_value,
+                heads_per_group=topology.target_query_heads_per_group,
                 policy=selected_policy,
-                role="sequence_effective_streamed_anchored_output",
+                role="sequence_effective_anchored_output",
+            )
+        anchored_value, anchored_output = _canonicalize_value_factor(
+            anchored_value,
+            anchored_output,
+        )
+        anchored_error = (
+            float(anchor_output_report["relative_rmse"])
+            if streamed_headwise
+            else _relative_rmse(
+                _prediction(
+                    attended_inputs,
+                    anchored_value,
+                    anchored_output,
+                    heads_per_group=topology.target_query_heads_per_group,
+                ),
+                endpoint_target,
             )
         )
-    else:
-        anchored_output, _features, anchor_output_report = _fit_output(
-            attended_inputs,
-            endpoint_target,
-            anchored_value,
-            heads_per_group=topology.target_query_heads_per_group,
-            policy=selected_policy,
-            role="sequence_effective_anchored_output",
+        solve_reports.append(anchor_output_report)
+        frontier.append(
+            {
+                "proposal_index": len(frontier),
+                "stage": "fixed_producer_value_subspace_anchor",
+                "accepted": True,
+                "selected_for_materialization": True,
+                "weighted_fit_relative_rmse": anchored_error,
+                "value_factor_sha256": _tensor_sha256(anchored_value),
+                "output_blocks_sha256": _tensor_sha256(anchored_output),
+                "anchor_report_sha256": [
+                    _sha256(report) for report in anchor_reports
+                ],
+                "output_solve_report_sha256": (
+                    anchor_output_report["report_sha256"]
+                ),
+            }
         )
-    anchored_value, anchored_output = _canonicalize_value_factor(
-        anchored_value,
-        anchored_output,
-    )
-    anchored_error = (
-        float(anchor_output_report["relative_rmse"])
-        if streamed_headwise
-        else _relative_rmse(
-            _prediction(
-                attended_inputs,
-                anchored_value,
-                anchored_output,
-                heads_per_group=topology.target_query_heads_per_group,
-            ),
-            endpoint_target,
+        (
+            compiled_value,
+            compiled_output,
+            materialized_factor,
+            materialized_blocks,
+        ) = _materialize_vo_proposal(
+            value_factor=anchored_value,
+            output_blocks=anchored_output,
+            topology=topology,
+            value_dtype=value_dtype,
+            output_dtype=output_dtype,
         )
-    )
-    solve_reports.append(anchor_output_report)
-    frontier.append(
-        {
-            "proposal_index": len(frontier),
-            "stage": "fixed_producer_value_subspace_anchor",
-            "accepted": True,
-            "selected_for_materialization": True,
-            "weighted_fit_relative_rmse": anchored_error,
-            "value_factor_sha256": _tensor_sha256(anchored_value),
-            "output_blocks_sha256": _tensor_sha256(anchored_output),
-            "anchor_report_sha256": [_sha256(report) for report in anchor_reports],
-            "output_solve_report_sha256": anchor_output_report["report_sha256"],
-        }
-    )
-
-    value_fp64 = anchored_value.permute(0, 2, 1).reshape(
-        topology.target_key_value_heads * topology.head_dim,
-        topology.target_hidden_size,
-    )
-    output_fp64 = anchored_output.reshape(
-        topology.target_query_heads * topology.head_dim,
-        topology.target_output_size,
-    ).T
-    compiled_value = value_fp64.to(dtype=value_dtype).contiguous().clone()
-    compiled_output = output_fp64.to(dtype=output_dtype).contiguous().clone()
-    materialized_factor = compiled_value.to(torch.float64).reshape(
-        topology.target_key_value_heads,
-        topology.head_dim,
-        topology.target_hidden_size,
-    ).permute(0, 2, 1)
-    materialized_blocks = compiled_output.to(torch.float64).T.reshape(
-        topology.target_query_heads,
-        topology.head_dim,
-        topology.target_output_size,
-    )
-    if streamed_headwise:
+    if not seeded and streamed_headwise:
         (
             weighted_materialized_error,
             plain_materialized_error,
@@ -4693,7 +5662,7 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
             value_factor=materialized_factor,
             output_blocks=materialized_blocks,
         )
-    else:
+    elif not seeded:
         weighted_materialized_prediction = _prediction(
             attended_inputs,
             materialized_factor,
@@ -4723,9 +5692,19 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
 
     producer_after = _state_sha256(producer.state_dict())
     case_bundle_after = _case_bundle_sha256(cases)
-    if producer_before != producer_after or case_bundle_before != case_bundle_after:
+    residual_seed_after = (
+        residual_vo_seed.authentication_sha256
+        if seeded and residual_vo_seed.verify_authentication()
+        else None
+    )
+    if (
+        producer_before != producer_after
+        or case_bundle_before != case_bundle_after
+        or residual_seed_before != residual_seed_after
+    ):
         raise Lfm2SequenceEffectiveAttentionFoldError(
-            "Producer or fit evidence changed during sequence-effective folding."
+            "Producer, residual seed, or fit evidence changed during "
+            "sequence-effective folding."
         )
     template_sha = structural._template_sha256(
         {
@@ -4752,12 +5731,21 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
             "Sequence-effective target attention is not structurally smaller."
         )
     frontier_sha = _sha256(frontier)
+    artifact_policy = (
+        _residual_delta_policy_report(selected_policy)
+        if seeded
+        else selected_policy.as_dict()
+    )
     body = {
-        "schema": LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA,
+        "schema": (
+            LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEEDED_SCHEMA
+            if seeded
+            else LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA
+        ),
         "candidate_id": FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID,
         "implementation": _IMPLEMENTATION,
-        "policy": selected_policy.as_dict(),
-        "policy_sha256": selected_policy.authentication_sha256,
+        "policy": artifact_policy,
+        "policy_sha256": artifact_policy["authentication_sha256"],
         "producer_artifact": producer.as_dict(),
         "producer_artifact_sha256": _sha256(producer.as_dict()),
         "fixed_query_key_sha256": producer.score_state_sha256,
@@ -4807,21 +5795,65 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         "candidate_frontier": frontier,
         "candidate_frontier_sha256": frontier_sha,
         "bounded_proposal_count": len(frontier),
-        "maximum_als_iterations": selected_policy.maximum_als_iterations,
-        "executed_als_iteration_limit": als_iteration_limit,
-        "accepted_als_iterations": accepted_iterations,
-        "selected_proposal_index": len(frontier) - 1,
+        **(
+            {
+                "maximum_als_iterations": (
+                    selected_policy.maximum_als_iterations
+                ),
+                "executed_als_iteration_limit": als_iteration_limit,
+                "accepted_als_iterations": accepted_iterations,
+            }
+            if not seeded
+            else {
+                "residual_delta_sweep_limit": als_iteration_limit,
+                "completed_residual_delta_sweeps": accepted_iterations,
+            }
+        ),
+        "selected_proposal_index": (
+            selected_proposal_index if seeded else len(frontier) - 1
+        ),
         "effective_operator_solve": effective_solve,
         "shared_value_svd": svd_reports,
-        "value_subspace_anchor": anchor_reports,
         "solve_report_sha256": [
             report["report_sha256"] for report in solve_reports
         ],
-        "weighted_fit_relative_rmse_fp64_before_anchor": accepted_error,
-        "weighted_fit_relative_rmse_fp64_after_anchor": anchored_error,
-        "weighted_fit_relative_rmse_target_dtype": weighted_materialized_error,
-        "unweighted_fit_relative_rmse_target_dtype": plain_materialized_error,
-        "fit_context_barycenter_relative_rmse_target_dtype": fit_context_error,
+        **(
+            {
+                "value_subspace_anchor": anchor_reports,
+                "weighted_fit_relative_rmse_fp64_before_anchor": (
+                    accepted_error
+                ),
+                "weighted_fit_relative_rmse_fp64_after_anchor": anchored_error,
+                "weighted_fit_relative_rmse_target_dtype": (
+                    weighted_materialized_error
+                ),
+                "unweighted_fit_relative_rmse_target_dtype": (
+                    plain_materialized_error
+                ),
+                "fit_context_barycenter_relative_rmse_target_dtype": (
+                    fit_context_error
+                ),
+            }
+            if not seeded
+            else {
+                "residual_delta_identity_anchor": anchor_reports,
+                "residual_delta_early_stop_reason": (
+                    seeded_early_stop_reason
+                ),
+                "selected_weighted_fit_relative_rmse_fp64": (
+                    anchored_error
+                ),
+                "selected_weighted_fit_relative_rmse_target_dtype": (
+                    weighted_materialized_error
+                ),
+                "selected_unweighted_fit_relative_rmse_target_dtype": (
+                    plain_materialized_error
+                ),
+                "selected_context_barycenter_relative_rmse_target_dtype": (
+                    fit_context_error
+                ),
+            }
+        ),
         "source_logical_parameters": source_logical,
         "target_logical_parameters": target_logical,
         "removed_logical_parameters": source_logical - target_logical,
@@ -4839,6 +5871,27 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         "dense_target_native_qkvo": True,
         "blank_target_values_read": False,
         "execution": dict(_ZERO_EXECUTION),
+        **(
+            {
+                "residual_vo_seed": residual_vo_seed.as_dict(),
+                "residual_vo_seed_sha256": residual_seed_before,
+                "residual_delta_parameterization": True,
+                "zero_delta_ridge_anchor": True,
+                "producer_value_subspace_anchor_applied": False,
+                "target_dtype_fit_selection": True,
+                "target_dtype_fit_selection_rule": selection_rule,
+                "maximum_residual_delta_als_sweeps": (
+                    _MAXIMUM_STREAMED_ALS_ITERATIONS
+                ),
+                "source_seed_fit_provenance_cross_authenticated": False,
+                "caller_source_artifact_cross_authentication_required": True,
+                "streamed_target_dtype_scoring_replayed_fit_cases": (
+                    False if streamed_headwise else None
+                ),
+            }
+            if seeded
+            else {}
+        ),
     }
     return Lfm2CompiledFixedQkSequenceEffectiveAttentionFold(
         producer_artifact=producer,
@@ -4853,6 +5906,7 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         compiled_state_sha256=compiled_sha,
         candidate_frontier_sha256=frontier_sha,
         report=_seal(body),
+        residual_vo_seed=residual_vo_seed,
     )
 
 
@@ -5023,7 +6077,10 @@ __all__ = [
     "FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID",
     "FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_POLICY_SHA256",
     "LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_INSTALL_SCHEMA",
+    "LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEEDED_SCHEMA",
     "LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA",
+    "LFM2_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEED_SCHEMA",
+    "LFM2_SEQUENCE_EFFECTIVE_RESIDUAL_VO_SEED_PROVENANCE_SCHEMA",
     "LFM2_SEQUENCE_EFFECTIVE_PCG_OBSERVATION_SCHEMA",
     "LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA",
     "LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE",
@@ -5031,6 +6088,8 @@ __all__ = [
     "LFM2_SEQUENCE_EFFECTIVE_ROW_BLOCK_JACOBI_SCHEMA",
     "Lfm2CompiledFixedQkSequenceEffectiveAttentionFold",
     "Lfm2FixedQkSequenceEffectiveVoAlsPolicy",
+    "Lfm2SequenceEffectiveResidualVoSeed",
+    "Lfm2SequenceEffectiveResidualVoSeedProvenance",
     "Lfm2SequenceEffectiveAttentionFoldError",
     "Lfm2SequenceEffectiveAttentionInstallError",
     "Lfm2SequenceEffectiveAttentionInstallReport",
