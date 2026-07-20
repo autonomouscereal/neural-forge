@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import fields
 
 import pytest
@@ -296,6 +298,27 @@ def test_exact_representable_d64_to_d32_recovery_and_pair_selection() -> None:
     )
     assert result.report["operation_audit"]["training_steps"] == 0
     assert result.report["operation_audit"]["source_query_heads_dropped"] == 0
+    # Fixed runtime=None oracle: the production dispatch must never perturb
+    # the historical state bytes or canonical report bytes.
+    assert result.runtime is None
+    assert result.report["query_weight_sha256"] == (
+        "41794d10a14d9259cf5f7ace3c1b038dc2838b2c5cd492ecea38d92a71044871"
+    )
+    assert result.report["key_weight_sha256"] == (
+        "cf2606846422f8a524fd9efd73adec52dc3cc06e97f3a0f0e2cfad25176b6a94"
+    )
+    assert result.report["report_sha256"] == (
+        "dc65776c600448e88ab9c706e1f39ccb5440f76d7e4f071d9a963952f59cc3a0"
+    )
+    serialized_report = json.dumps(
+        dict(result.report),
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    assert hashlib.sha256(serialized_report).hexdigest() == (
+        "08d1bee2670ea4ed67ce79867f8bd1c92cb7ae6fbb58f3db62ec5d7a67c0b174"
+    )
 
 
 def test_gqa_replay_preserves_causal_mask_and_full_head_barycenters() -> None:
