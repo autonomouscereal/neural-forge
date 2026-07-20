@@ -153,6 +153,7 @@ _SELECTIVE_CATALOG_AUTHENTICATION_FIELDS = (
     "artifact_store_source_sha256",
     "selective_provider_source_sha256",
 )
+_ATTENTION_PROFILE_KEY = "attention_sequential_transport_profile"
 
 
 class Lfm2CpcfV5PostSuccessValidationError(RuntimeError):
@@ -420,6 +421,58 @@ def _output_directory(
     return output
 
 
+def _sealed_attention_profile_scope(
+    plan: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    worker_config: Mapping[str, Any],
+) -> str | None:
+    """Return the exact sealed profile path scope, or prove legacy/off."""
+
+    capture = manifest.get("quarantine_capture_template")
+    sources: dict[str, Any] = {
+        "supervisor plan": plan,
+        "worker manifest": manifest,
+        "worker config": worker_config,
+        "quarantine capture template": capture,
+    }
+    present = {
+        name
+        for name, source in sources.items()
+        if isinstance(source, Mapping) and _ATTENTION_PROFILE_KEY in source
+    }
+    if not present:
+        return None
+    if present != set(sources):
+        raise Lfm2CpcfV5PostSuccessValidationError(
+            "Attention transport profile bindings are incomplete or crossed."
+        )
+    plan_profile = plan[_ATTENTION_PROFILE_KEY]
+    try:
+        profile = supervisor._attention_profile_from_document(
+            plan_profile,
+            name="post-success supervisor attention transport profile",
+        )
+        expected = supervisor._attention_profile_document(profile)
+        scope = supervisor._attention_profile_scope_component(profile)
+    except Exception as exc:
+        raise Lfm2CpcfV5PostSuccessValidationError(
+            "Sealed attention transport profile is unknown or invalid."
+        ) from exc
+    if (
+        expected is None
+        or not isinstance(scope, str)
+        or not scope
+        or any(
+            source[_ATTENTION_PROFILE_KEY] != expected
+            for source in sources.values()
+        )
+    ):
+        raise Lfm2CpcfV5PostSuccessValidationError(
+            "Attention transport profile bindings are incomplete or crossed."
+        )
+    return scope
+
+
 def _assert_output_disjoint_from_protected_paths(
     output: Path,
     *,
@@ -545,6 +598,11 @@ def _plan_lane(
         raise Lfm2CpcfV5PostSuccessValidationError(
             "Supervisor lane has no sealed worker configuration."
         )
+    profile_scope = _sealed_attention_profile_scope(
+        plan,
+        planned_manifest,
+        worker_config,
+    )
     work_directory = _ordinary_directory(
         Path(str(worker_config.get("work_directory"))),
         "sealed supervisor work directory",
@@ -560,11 +618,18 @@ def _plan_lane(
         raise Lfm2CpcfV5PostSuccessValidationError(
             "Attempt lies outside its sealed work directory."
         ) from exc
+    expected_relative_parts = (
+        3 if profile_scope is None else 4
+    )
     if (
-        len(relative.parts) != 3
+        len(relative.parts) != expected_relative_parts
         or relative.parts[0] != "capture_quarantine"
         or not relative.parts[1].startswith(f"{ratio:03d}x-")
-        or relative.parts[2] != attempt_id
+        or (
+            profile_scope is not None
+            and relative.parts[2] != profile_scope
+        )
+        or relative.parts[-1] != attempt_id
         or run.name != attempt_id
         or quarantine.parent != run
         or not quarantine.name.startswith("quarantine-")
@@ -705,29 +770,60 @@ def _authenticate_run(
         raise Lfm2CpcfV5PostSuccessValidationError(
             "Worker input/config bindings are missing."
         )
+    diagnostic_command = manifest.get("diagnostic_runner_command")
     try:
-        catalog_preparation = dict(
-            fold_runner.authenticate_prepared_selective_catalog(
-                trace_cache_directory=Path(
-                    str(worker_config["trace_cache_directory"])
-                ),
-                selective_catalog_store_directory=Path(
-                    str(
-                        worker_config[
-                            "selective_catalog_store_directory"
-                        ]
-                    )
-                ),
-                selective_catalog_receipt_json=Path(
-                    str(worker_config["selective_catalog_receipt_json"])
-                ),
-                expected_selective_catalog_receipt_sha256=str(
-                    worker_config[
-                        "expected_selective_catalog_receipt_sha256"
-                    ]
-                ),
+        sealed_supervisor_config = supervisor._config_from_worker_record(
+            worker_config
+        )
+        runner_config = fold_runner.config_from_args(
+            fold_runner.build_parser().parse_args(
+                diagnostic_command[2:]
             )
         )
+        profile_policy_fields = dict(
+            supervisor._authenticate_worker_attention_profile(
+                manifest=manifest,
+                config=sealed_supervisor_config,
+                runner=fold_runner,
+                runner_config=runner_config,
+                paths=paths,
+            )
+        )
+    except Exception as exc:
+        raise Lfm2CpcfV5PostSuccessValidationError(
+            "Worker command, config, paths, or attention profile failed "
+            "fresh authentication."
+        ) from exc
+    try:
+        if profile_policy_fields:
+            catalog_preparation = dict(
+                fold_runner._read_selective_catalog_preparation(
+                    runner_config
+                )
+            )
+        else:
+            catalog_preparation = dict(
+                fold_runner.authenticate_prepared_selective_catalog(
+                    trace_cache_directory=Path(
+                        str(worker_config["trace_cache_directory"])
+                    ),
+                    selective_catalog_store_directory=Path(
+                        str(
+                            worker_config[
+                                "selective_catalog_store_directory"
+                            ]
+                        )
+                    ),
+                    selective_catalog_receipt_json=Path(
+                        str(worker_config["selective_catalog_receipt_json"])
+                    ),
+                    expected_selective_catalog_receipt_sha256=str(
+                        worker_config[
+                            "expected_selective_catalog_receipt_sha256"
+                        ]
+                    ),
+                )
+            )
     except Exception as exc:
         raise Lfm2CpcfV5PostSuccessValidationError(
             "Prepared selective catalog failed fresh metadata-only "
@@ -773,7 +869,6 @@ def _authenticate_run(
         quarantine_directory=quarantine,
         catalog_preparation=catalog_preparation,
     )
-    diagnostic_command = manifest.get("diagnostic_runner_command")
     if (
         plan.get(
             "shared_selective_catalog_preparation_receipt_sha256"
@@ -876,6 +971,13 @@ def _authenticate_run(
     )
     guard_implementation = compiler_guard.get("guard_implementation")
     try:
+        compiled_profile_binding = (
+            supervisor._authenticate_compiled_attention_profile(
+                runner=fold_runner,
+                diagnostic=diagnostic,
+                expected_policy_fields=profile_policy_fields,
+            )
+        )
         source_binding = fold_runner._source_binding_sha256(
             selective_source_sha256=execution.get(
                 "selective_source_sha256"
@@ -907,6 +1009,23 @@ def _authenticate_run(
     diagnostic_inputs = diagnostic.get("inputs")
     capture_bindings = quarantine_receipt.get("bindings")
     capture_request = quarantine_receipt.get("capture_request")
+    if profile_policy_fields:
+        execution_profile_valid = (
+            all(
+                execution.get(name) == value
+                for name, value in profile_policy_fields.items()
+            )
+            and execution.get("resume_policy_binding")
+            == dict(compiled_profile_binding)
+        )
+    else:
+        execution_profile_valid = (
+            all(
+                name not in execution
+                for name in fold_runner._OPT_IN_POLICY_IDENTITY_FIELDS
+            )
+            and "resume_policy_binding" not in execution
+        )
     if (
         execution.get("status")
         != "captured_quarantine_requires_reviewed_rerun"
@@ -986,6 +1105,7 @@ def _authenticate_run(
         or capture_bindings.get("source_sha256") != source_binding
         or not isinstance(capture_request, Mapping)
         or capture_request.get("source_sha256") != source_binding
+        or not execution_profile_valid
     ):
         raise Lfm2CpcfV5PostSuccessValidationError(
             "Execution receipt differs from its sealed lane or diagnostic."
@@ -1661,6 +1781,16 @@ def _publish_validation(
         "requires_reviewed_rerun": True,
         "completion_marker_written_last": True,
     }
+    if _ATTENTION_PROFILE_KEY in run.manifest:
+        body.update(
+            {
+                name: run.manifest[name]
+                for name in fold_runner._OPT_IN_POLICY_IDENTITY_FIELDS
+            }
+        )
+        body["resume_policy_binding"] = run.execution[
+            "resume_policy_binding"
+        ]
     receipt = {**body, "receipt_sha256": canonical_sha256(body)}
     receipt_path = _write_output(
         root,

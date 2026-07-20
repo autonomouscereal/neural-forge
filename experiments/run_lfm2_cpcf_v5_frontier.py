@@ -2498,8 +2498,32 @@ def _authenticate_compiled_attention_profile(
         binding.pop("binding_sha256", None),
         "resume policy binding SHA-256",
     )
+    expected_policy_names = set(runner._OPT_IN_POLICY_IDENTITY_FIELDS)
+    expected_binding_fields = {
+        "schema",
+        *expected_policy_names,
+        "runtime_policy_sha256",
+        "runtime_policy_contains_complete_model_fold_policy",
+        "cross_profile_resume_permitted",
+    }
+    compiled = diagnostic.get("compiled_model_fold")
+    compiled_runtime_policy = (
+        compiled.get("policy")
+        if isinstance(compiled, Mapping)
+        else None
+    )
     if (
-        binding.get("schema") != runner.RESUME_POLICY_BINDING_SCHEMA
+        set(fields) != expected_policy_names
+        or set(binding) != expected_binding_fields
+        or not isinstance(compiled_runtime_policy, Mapping)
+        or _sha(compiled_runtime_policy)
+        != binding.get("runtime_policy_sha256")
+        or binding.get("schema") != runner.RESUME_POLICY_BINDING_SCHEMA
+        or _digest(
+            binding.get("runtime_policy_sha256"),
+            "resume binding runtime policy SHA-256",
+        )
+        != binding["runtime_policy_sha256"]
         or _sha(binding) != claimed
         or any(binding.get(name) != value for name, value in fields.items())
         or binding.get("runtime_policy_contains_complete_model_fold_policy")

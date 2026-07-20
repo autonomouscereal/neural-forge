@@ -263,6 +263,8 @@ def _fake_cached_evaluation(
 
 def _completed_supervisor_attempt(
     tmp_path: Path,
+    *,
+    profile_bound: bool = False,
 ) -> validator.PostSuccessValidationConfig:
     bridge = _sealed_bridge(tmp_path / "bridge")
     graph = _real_geometry_graph(
@@ -278,6 +280,11 @@ def _completed_supervisor_attempt(
         maximum_parallel_lanes=1,
     )
     inputs = _supervisor_inputs(tmp_path)
+    attention_profile = (
+        validator.fold_runner.V5AttentionSequentialTransportRunnerProfile()
+        if profile_bound
+        else None
+    )
     config = _supervisor_config(
         tmp_path,
         graph=graph,
@@ -286,12 +293,35 @@ def _completed_supervisor_attempt(
         ratios=(4,),
         bridge_directory=bridge.root_dir,
         attempt_id="attempt-0002",
+        attention_profile=attention_profile,
     )
     evidence = _supervisor_evidence(
         cache_sha256=config.expected_cache_sha256,
         corpus=inputs["corpus"],
         envelope=inputs["envelope"],
     )
+    profile_policy_fields: dict[str, Any] = {}
+    if profile_bound:
+        catalog_runner_config = (
+            validator.supervisor._frontier_catalog_runner_config(
+                config,
+                ratio=4,
+                prepare_only=False,
+            )
+        )
+        profile_policy_fields = dict(
+            validator.supervisor._runner_policy_identity_fields(
+                validator.fold_runner,
+                catalog_runner_config,
+            )
+        )
+        evidence = replace(
+            evidence,
+            selective_catalog_preparation={
+                **dict(evidence.selective_catalog_preparation),
+                **profile_policy_fields,
+            },
+        )
     plan = validator.supervisor.build_frontier_supervisor_plan(
         schedule,
         config,
@@ -415,6 +445,32 @@ def _completed_supervisor_attempt(
             "invocation_head": None,
         },
     }
+    if profile_policy_fields:
+        runtime_policy_document = {
+            "schema": "fixture-runtime-policy",
+            "model_fold_policy_sha256": profile_policy_fields[
+                "complete_model_fold_policy_sha256"
+            ],
+        }
+        diagnostic_body["compiled_model_fold"][
+            "policy"
+        ] = runtime_policy_document
+        resume_binding_body = {
+            "schema": validator.fold_runner.RESUME_POLICY_BINDING_SCHEMA,
+            **profile_policy_fields,
+            "runtime_policy_sha256": canonical_sha256(
+                runtime_policy_document
+            ),
+            "runtime_policy_contains_complete_model_fold_policy": True,
+            "cross_profile_resume_permitted": False,
+        }
+        resume_binding = {
+            **resume_binding_body,
+            "binding_sha256": canonical_sha256(resume_binding_body),
+        }
+        diagnostic_body.update(profile_policy_fields)
+        diagnostic_body["request"] = dict(profile_policy_fields)
+        diagnostic_body["resume_policy_binding"] = resume_binding
     validator.supervisor._atomic_new_json(
         lane.paths.diagnostic_json,
         {
@@ -472,6 +528,9 @@ def _completed_supervisor_attempt(
         "parameters_pruned": 0,
         "parameters_quantized": 0,
     }
+    if profile_policy_fields:
+        receipt_body.update(profile_policy_fields)
+        receipt_body["resume_policy_binding"] = resume_binding
     validator.supervisor._atomic_new_json(
         lane.paths.execution_receipt_json,
         {
@@ -503,13 +562,39 @@ def _configure_completed_attempt_authentication(
     catalog_preparation = plan["input_bindings"][
         "selective_catalog_preparation"
     ]
-    monkeypatch.setattr(
-        validator.fold_runner,
-        "authenticate_prepared_selective_catalog",
-        lambda **_kwargs: MappingProxyType(
-            dict(catalog_preparation)
-        ),
-    )
+    if "attention_sequential_transport_profile" in plan:
+        def authenticate_profile_catalog(
+            runner_config: Any,
+            *,
+            expected_receipt_sha256: str | None = None,
+        ) -> MappingProxyType:
+            assert expected_receipt_sha256 is None
+            validator.fold_runner._authenticate_preparation_policy_identity(
+                catalog_preparation,
+                config=runner_config,
+            )
+            return MappingProxyType(dict(catalog_preparation))
+
+        monkeypatch.setattr(
+            validator.fold_runner,
+            "_read_selective_catalog_preparation",
+            authenticate_profile_catalog,
+        )
+        monkeypatch.setattr(
+            validator.fold_runner,
+            "authenticate_prepared_selective_catalog",
+            lambda **_kwargs: pytest.fail(
+                "Profile-bound validation used the legacy catalog seam."
+            ),
+        )
+    else:
+        monkeypatch.setattr(
+            validator.fold_runner,
+            "authenticate_prepared_selective_catalog",
+            lambda **_kwargs: MappingProxyType(
+                dict(catalog_preparation)
+            ),
+        )
     return plan
 
 
@@ -524,6 +609,18 @@ def _rewrite_sealed_json(
     mutate(value)
     value[seal_field] = canonical_sha256(value)
     path.write_bytes(validator.supervisor._canonical_json(value) + b"\n")
+
+
+def _reseal_plan_document(value: dict[str, Any]) -> dict[str, Any]:
+    for lane in value["lanes"]:
+        command = lane["command_manifest"]
+        command.pop("command_sha256", None)
+        command["command_sha256"] = canonical_sha256(command)
+        lane.pop("lane_sha256", None)
+        lane["lane_sha256"] = canonical_sha256(lane)
+    value.pop("plan_sha256", None)
+    value["plan_sha256"] = canonical_sha256(value)
+    return value
 
 
 def test_output_directory_must_be_create_new_direct_sibling(
@@ -748,6 +845,101 @@ def test_authenticates_complete_supervisor_receipt_chain(
     assert not run.output_directory.exists()
 
 
+def test_authenticates_profile_bound_supervisor_receipt_chain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _completed_supervisor_attempt(
+        tmp_path,
+        profile_bound=True,
+    )
+    plan = _configure_completed_attempt_authentication(
+        config,
+        monkeypatch,
+    )
+
+    run = validator._authenticate_run(config)
+
+    profile = plan["attention_sequential_transport_profile"]
+    scope = f"attention-profile-{profile['profile_sha256'][:16]}"
+    policy_names = validator.fold_runner._OPT_IN_POLICY_IDENTITY_FIELDS
+    assert run.run_directory.parent.name == scope
+    assert run.manifest["attention_sequential_transport_profile"] == profile
+    assert all(
+        run.execution[name] == run.manifest[name]
+        for name in policy_names
+    )
+    assert run.execution["resume_policy_binding"] == run.diagnostic[
+        "resume_policy_binding"
+    ]
+    assert run.output_directory.parent == run.run_directory.parent
+    assert not run.output_directory.exists()
+
+    for tamper in (
+        "missing-worker-profile",
+        "crossed-capture-profile",
+        "profile-path-with-legacy-documents",
+        "missing-profile-scope",
+        "wrong-profile-scope",
+        "extra-profile-scope",
+    ):
+        changed = json.loads(json.dumps(plan))
+        lane = changed["lanes"][0]
+        command = lane["command_manifest"]
+        worker = command["worker_config"]
+        capture = command["quarantine_capture_template"]
+        work = Path(worker["work_directory"])
+        if tamper == "missing-worker-profile":
+            worker.pop("attention_sequential_transport_profile")
+        elif tamper == "crossed-capture-profile":
+            crossed = dict(
+                capture["attention_sequential_transport_profile"]
+            )
+            crossed["profile_id"] = "crossed-profile"
+            crossed.pop("profile_sha256")
+            crossed["profile_sha256"] = canonical_sha256(crossed)
+            capture["attention_sequential_transport_profile"] = crossed
+        elif tamper == "profile-path-with-legacy-documents":
+            changed.pop("attention_sequential_transport_profile")
+            command.pop("attention_sequential_transport_profile")
+            worker.pop("attention_sequential_transport_profile")
+            capture.pop("attention_sequential_transport_profile")
+        else:
+            relative = [
+                "capture_quarantine",
+                run.run_directory.parents[1].name,
+            ]
+            if tamper == "missing-profile-scope":
+                relative.append(config.attempt_id)
+            elif tamper == "wrong-profile-scope":
+                relative.extend(
+                    ("attention-profile-wrong", config.attempt_id)
+                )
+            else:
+                relative.extend(
+                    (scope, "unexpected-extra", config.attempt_id)
+                )
+            changed_run = work.joinpath(*relative)
+            changed_quarantine = changed_run / "quarantine-tampered"
+            changed_quarantine.mkdir(parents=True)
+            lane["paths"]["run_directory"] = str(changed_run)
+            lane["paths"]["quarantine_directory"] = str(
+                changed_quarantine
+            )
+        _reseal_plan_document(changed)
+        with pytest.raises(
+            validator.Lfm2CpcfV5PostSuccessValidationError,
+            match=(
+                "profile bindings|unknown or invalid|sealed lifecycle"
+            ),
+        ):
+            validator._plan_lane(
+                changed,
+                ratio=4,
+                attempt_id=config.attempt_id,
+            )
+
+
 def test_plan_file_may_be_outside_sealed_work_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -768,6 +960,157 @@ def test_plan_file_may_be_outside_sealed_work_directory(
     assert external_plan.parent != Path(
         run.manifest["worker_config"]["work_directory"]
     )
+
+
+def test_profile_bound_resealed_provenance_tampers_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _completed_supervisor_attempt(
+        tmp_path,
+        profile_bound=True,
+    )
+    plan = _configure_completed_attempt_authentication(
+        config,
+        monkeypatch,
+    )
+    paths = plan["lanes"][0]["paths"]
+    process_manifest_path = Path(paths["process_manifest_json"])
+    diagnostic_path = Path(paths["diagnostic_json"])
+    execution_path = Path(paths["execution_receipt_json"])
+    original_plan = config.plan_path.read_bytes()
+    original_manifest = process_manifest_path.read_bytes()
+    original_diagnostic = diagnostic_path.read_bytes()
+    original_execution = execution_path.read_bytes()
+
+    for tamper in (
+        "diagnostic-profile",
+        "request-profile",
+        "compiled-runtime-policy",
+        "resume-runtime-policy",
+        "resume-extra-key",
+        "execution-profile",
+        "execution-resume-binding",
+    ):
+        diagnostic_path.write_bytes(original_diagnostic)
+        execution_path.write_bytes(original_execution)
+        target = (
+            execution_path
+            if tamper.startswith("execution-")
+            else diagnostic_path
+        )
+
+        def mutate(value: dict[str, Any]) -> None:
+            if tamper == "diagnostic-profile":
+                value["complete_model_fold_policy_sha256"] = _digest(
+                    "crossed-diagnostic-policy"
+                )
+            elif tamper == "request-profile":
+                value["request"][
+                    "complete_model_fold_policy_sha256"
+                ] = _digest("crossed-request-policy")
+            elif tamper == "compiled-runtime-policy":
+                value["compiled_model_fold"]["policy"]["schema"] = (
+                    "crossed-runtime-policy"
+                )
+            elif tamper in {
+                "resume-runtime-policy",
+                "resume-extra-key",
+            }:
+                binding = value["resume_policy_binding"]
+                if tamper == "resume-runtime-policy":
+                    binding["runtime_policy_sha256"] = _digest(
+                        "crossed-runtime-policy"
+                    )
+                else:
+                    binding["unexpected"] = False
+                binding.pop("binding_sha256")
+                binding["binding_sha256"] = canonical_sha256(binding)
+            elif tamper == "execution-profile":
+                value["model_fold_policy_identity_sha256"] = _digest(
+                    "crossed-execution-policy"
+                )
+            else:
+                binding = value["resume_policy_binding"]
+                binding["runtime_policy_sha256"] = _digest(
+                    "crossed-execution-runtime"
+                )
+                binding.pop("binding_sha256")
+                binding["binding_sha256"] = canonical_sha256(binding)
+
+        _rewrite_sealed_json(
+            target,
+            seal_field="receipt_sha256",
+            mutate=mutate,
+        )
+        with pytest.raises(
+            validator.Lfm2CpcfV5PostSuccessValidationError
+        ):
+            validator._authenticate_run(config)
+
+    diagnostic_path.write_bytes(original_diagnostic)
+    execution_path.write_bytes(original_execution)
+    changed_plan = json.loads(json.dumps(plan))
+    changed_command = changed_plan["lanes"][0]["command_manifest"]
+    diagnostic_command = changed_command["diagnostic_runner_command"]
+    flag_index = diagnostic_command.index(
+        "--attention-sequential-transport-profile"
+    )
+    del diagnostic_command[flag_index : flag_index + 2]
+    _reseal_plan_document(changed_plan)
+    config.plan_path.write_bytes(
+        validator.supervisor._canonical_json(changed_plan) + b"\n"
+    )
+    process_manifest_path.write_bytes(
+        validator.supervisor._canonical_json(
+            changed_plan["lanes"][0]["command_manifest"]
+        )
+        + b"\n"
+    )
+    with pytest.raises(
+        validator.Lfm2CpcfV5PostSuccessValidationError,
+        match="command, config, paths, or attention profile",
+    ):
+        validator._authenticate_run(config)
+    config.plan_path.write_bytes(original_plan)
+    process_manifest_path.write_bytes(original_manifest)
+
+    original_catalog = plan["input_bindings"][
+        "selective_catalog_preparation"
+    ]
+    for tamper in ("missing-profile", "crossed-policy"):
+        changed_catalog = dict(original_catalog)
+        if tamper == "missing-profile":
+            changed_catalog.pop(
+                "attention_sequential_transport_profile"
+            )
+        else:
+            changed_catalog[
+                "complete_model_fold_policy_sha256"
+            ] = _digest("crossed-catalog-policy")
+
+        def authenticate_tampered_catalog(
+            runner_config: Any,
+            *,
+            expected_receipt_sha256: str | None = None,
+        ) -> MappingProxyType:
+            assert expected_receipt_sha256 is None
+            validator.fold_runner._authenticate_preparation_policy_identity(
+                changed_catalog,
+                config=runner_config,
+            )
+            return MappingProxyType(changed_catalog)
+
+        monkeypatch.setattr(
+            validator.fold_runner,
+            "_read_selective_catalog_preparation",
+            authenticate_tampered_catalog,
+        )
+        with pytest.raises(
+            validator.Lfm2CpcfV5PostSuccessValidationError,
+            match="Prepared selective catalog",
+        ):
+            validator._authenticate_run(config)
 
 
 def test_rejects_tampered_sealed_worker_root(
@@ -973,10 +1316,12 @@ def test_fresh_replay_verifies_dense_exact_inventory_and_guarded_hashes(
     assert audit["export_guard"]["clean"] is True
 
 
+@pytest.mark.parametrize("profile_bound", (False, True))
 def test_one_shot_validator_publishes_complete_sibling_receipt_last(
     tmp_path: Path,
     parent_envelope: Any,
     monkeypatch: pytest.MonkeyPatch,
+    profile_bound: bool,
 ) -> None:
     plan = tmp_path / "plan.json"
     plan.write_text("{}\n", encoding="ascii")
@@ -988,6 +1333,48 @@ def test_one_shot_validator_publishes_complete_sibling_receipt_last(
     )
     evidence = _evidence(parent_envelope)
     run = _fake_run(tmp_path, parent_envelope, evidence)
+    profile_policy_fields: dict[str, Any] = {}
+    if profile_bound:
+        profile_policy_fields = {
+            "attention_sequential_transport_profile": (
+                validator.fold_runner
+                .V5AttentionSequentialTransportRunnerProfile()
+                .as_dict()
+            ),
+            "complete_model_fold_policy_sha256": _digest(
+                "complete-model-fold-policy"
+            ),
+            "model_fold_policy_identity_sha256": _digest(
+                "model-fold-policy-identity"
+            ),
+        }
+        resume_binding_body = {
+            "schema": validator.fold_runner.RESUME_POLICY_BINDING_SCHEMA,
+            **profile_policy_fields,
+            "runtime_policy_sha256": _digest("runtime-policy"),
+            "runtime_policy_contains_complete_model_fold_policy": True,
+            "cross_profile_resume_permitted": False,
+        }
+        resume_binding = {
+            **resume_binding_body,
+            "binding_sha256": canonical_sha256(resume_binding_body),
+        }
+        run = replace(
+            run,
+            manifest=MappingProxyType(
+                {
+                    **run.manifest,
+                    **profile_policy_fields,
+                }
+            ),
+            execution=MappingProxyType(
+                {
+                    **run.execution,
+                    **profile_policy_fields,
+                    "resume_policy_binding": resume_binding,
+                }
+            ),
+        )
     runtime = _fake_runtime(parent_envelope)
     inventory = {
         "method": "fixture",
@@ -1041,6 +1428,18 @@ def test_one_shot_validator_publishes_complete_sibling_receipt_last(
     assert receipt["parameters_pruned"] == 0
     assert receipt["parameters_quantized"] == 0
     assert receipt["parent_model_loaded"] is False
+    if profile_bound:
+        assert all(
+            receipt[name] == value
+            for name, value in profile_policy_fields.items()
+        )
+        assert receipt["resume_policy_binding"] == resume_binding
+    else:
+        assert all(
+            name not in receipt
+            for name in validator.fold_runner._OPT_IN_POLICY_IDENTITY_FIELDS
+        )
+        assert "resume_policy_binding" not in receipt
     assert set(receipt["files"]) == {
         "automatic_intelligence_report",
         "behavioral_evaluation",

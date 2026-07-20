@@ -859,6 +859,9 @@ def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(
     diagnostic = {
         "request": parsed_runner_config.as_dict(),
         **case["policy_fields"],
+        "compiled_model_fold": {
+            "policy": runtime_policy.as_dict(),
+        },
         "resume_policy_binding": dict(binding),
     }
     authenticated_binding = (
@@ -886,6 +889,51 @@ def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(
         supervisor._authenticate_compiled_attention_profile(
             runner=runner,
             diagnostic=crossed_diagnostic,
+            expected_policy_fields=case["policy_fields"],
+        )
+
+    for tamper in ("missing-runtime", "extra-key", "runtime-mismatch"):
+        tampered_binding = dict(binding)
+        if tamper == "missing-runtime":
+            tampered_binding.pop("runtime_policy_sha256")
+        elif tamper == "extra-key":
+            tampered_binding["unexpected"] = False
+        else:
+            tampered_binding["runtime_policy_sha256"] = _digest(
+                "different-runtime-policy"
+            )
+        tampered_body = dict(tampered_binding)
+        tampered_body.pop("binding_sha256")
+        tampered_binding["binding_sha256"] = supervisor._sha(
+            tampered_body
+        )
+        with pytest.raises(
+            supervisor.Lfm2CpcfV5FrontierSupervisorError,
+            match="differs from the exact complete",
+        ):
+            supervisor._authenticate_compiled_attention_profile(
+                runner=runner,
+                diagnostic={
+                    **diagnostic,
+                    "resume_policy_binding": tampered_binding,
+                },
+                expected_policy_fields=case["policy_fields"],
+            )
+
+    mismatched_policy = json.loads(
+        json.dumps(runtime_policy.as_dict())
+    )
+    mismatched_policy["maximum_resident_evidence_bytes"] = 3
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="differs from the exact complete",
+    ):
+        supervisor._authenticate_compiled_attention_profile(
+            runner=runner,
+            diagnostic={
+                **diagnostic,
+                "compiled_model_fold": {"policy": mismatched_policy},
+            },
             expected_policy_fields=case["policy_fields"],
         )
 
