@@ -435,6 +435,7 @@ def _config(
     attention_profile: Any | None = None,
     composed_profile: Any | None = None,
     endpoint_profile: Any | None = None,
+    terminal_profile: Any | None = None,
 ) -> supervisor.FrontierSupervisorConfig:
     return supervisor.FrontierSupervisorConfig(
         parent_model_directory=inputs["parent"],
@@ -468,6 +469,7 @@ def _config(
         attention_sequential_transport_profile=attention_profile,
         composed_qk_attention_profile=composed_profile,
         endpoint_residual_attention_profile=endpoint_profile,
+        endpoint_terminal_action_profile=terminal_profile,
         attempt_id=attempt_id,
         expected_selective_catalog_receipt_sha256=(
             _catalog_preparation()["preparation_receipt_sha256"]
@@ -948,7 +950,13 @@ def test_endpoint_profile_document_roundtrip_is_exact_and_tuned() -> None:
     assert policy.endpoint_policy.cg_restart_iterations == 64
     assert policy.endpoint_policy.cg_relative_tolerance == 1e-2
     assert policy.endpoint_policy.compute_devices == ("cuda:0", "cuda:1")
-    assert document["expected_candidate_count_per_attention_layer"] == 5
+    assert document["allowed_candidate_count_per_attention_layer"] == [4, 5]
+    assert (
+        document[
+            "candidate_count_depends_on_authenticated_composed_acceptance"
+        ]
+        is True
+    )
     assert document["blank_target_values_read"] is False
     tampered = json.loads(json.dumps(document))
     tampered["endpoint_residual_attention_policy"][
@@ -961,6 +969,41 @@ def test_endpoint_profile_document_roundtrip_is_exact_and_tuned() -> None:
         supervisor._endpoint_residual_profile_from_document(
             tampered,
             name="endpoint profile",
+        )
+
+
+def test_endpoint_terminal_profile_roundtrip_pins_policy_and_sources() -> None:
+    pytest.importorskip("torch")
+    from experiments import (
+        run_lfm2_cpcf_v5_selective_blank_fold as runner,
+    )
+
+    profile = runner.V5EndpointTerminalActionRunnerProfile()
+    document = supervisor._endpoint_terminal_profile_document(profile)
+    restored = supervisor._endpoint_terminal_profile_from_document(
+        document,
+        name="endpoint terminal profile",
+    )
+    sources = supervisor._source_identities()
+
+    assert restored.as_dict() == document
+    assert document["allowed_candidate_count_per_attention_layer"] == [4, 5]
+    assert document["terminal_integration_receipt_required"] is True
+    assert document["terminal_action_policy_source_sha256"] == (
+        sources["terminal_action_policy"]
+    )
+    assert document["terminal_action_integration_source_sha256"] == (
+        sources["terminal_action_v5_integration"]
+    )
+    tampered = json.loads(json.dumps(document))
+    tampered["terminal_action_policy_source_sha256"] = "0" * 64
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="differs from the exact typed",
+    ):
+        supervisor._endpoint_terminal_profile_from_document(
+            tampered,
+            name="endpoint terminal profile",
         )
 
 

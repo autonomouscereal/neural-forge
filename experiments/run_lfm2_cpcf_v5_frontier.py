@@ -37,6 +37,7 @@ if TYPE_CHECKING:
         V5AttentionSequentialTransportRunnerProfile,
         V5ComposedQkAttentionRunnerProfile,
         V5EndpointResidualAttentionRunnerProfile,
+        V5EndpointTerminalActionRunnerProfile,
     )
 
 
@@ -128,6 +129,14 @@ _CATALOG_ARTIFACT_SOURCE = (
     _SOURCE_ROOT
     / "neural_forge"
     / "dynamic_evidence_catalog_artifact.py"
+)
+_TERMINAL_ACTION_POLICY_SOURCE = (
+    _SOURCE_ROOT / "neural_forge" / "hf_lfm2_cpcf_terminal_action_residual.py"
+)
+_TERMINAL_ACTION_INTEGRATION_SOURCE = (
+    _SOURCE_ROOT
+    / "neural_forge"
+    / "hf_lfm2_cpcf_v5_terminal_action_integration.py"
 )
 
 _SHA256 = frozenset("0123456789abcdef")
@@ -579,6 +588,73 @@ def _endpoint_residual_profile_from_document(
     return profile
 
 
+def _endpoint_terminal_profile_document(
+    value: V5EndpointTerminalActionRunnerProfile | None,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID,
+        ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_SCHEMA,
+        V5EndpointTerminalActionRunnerProfile,
+    )
+
+    if type(value) is not V5EndpointTerminalActionRunnerProfile:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "endpoint_terminal_action_profile must be the exact typed V5 "
+            "runner profile."
+        )
+    document = value.as_dict()
+    body = dict(document)
+    claimed = _digest(
+        body.pop("profile_sha256", None),
+        "endpoint terminal-action profile SHA-256",
+    )
+    if (
+        body.get("schema") != ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_SCHEMA
+        or body.get("profile_id") != ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID
+        or _sha(body) != claimed
+        or document != value.as_dict()
+        or body.get("terminal_action_policy_source_sha256")
+        != _file_sha256(_TERMINAL_ACTION_POLICY_SOURCE)
+        or body.get("terminal_action_integration_source_sha256")
+        != _file_sha256(_TERMINAL_ACTION_INTEGRATION_SOURCE)
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Endpoint terminal-action profile schema, sources, or seal are invalid."
+        )
+    return dict(document)
+
+
+def _endpoint_terminal_profile_from_document(
+    value: Any,
+    *,
+    name: str,
+) -> V5EndpointTerminalActionRunnerProfile:
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} must be one sealed endpoint terminal-action profile."
+        )
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        V5EndpointTerminalActionRunnerProfile,
+    )
+
+    try:
+        profile = V5EndpointTerminalActionRunnerProfile(
+            profile_id=value.get("profile_id"),
+        )
+    except Exception as exc:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} names an unknown endpoint terminal-action profile."
+        ) from exc
+    expected = _endpoint_terminal_profile_document(profile)
+    if expected is None or dict(value) != expected:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} differs from the exact typed endpoint terminal-action profile."
+        )
+    return profile
+
+
 def _active_profile_scope_component(
     config: FrontierSupervisorConfig,
 ) -> str | None:
@@ -591,12 +667,17 @@ def _active_profile_scope_component(
     endpoint = _endpoint_residual_profile_document(
         config.endpoint_residual_attention_profile
     )
+    terminal = _endpoint_terminal_profile_document(
+        config.endpoint_terminal_action_profile
+    )
     if attention is not None:
         return attention
     if composed is not None:
         return f"composed-qk-profile-{composed['profile_sha256'][:16]}"
     if endpoint is not None:
         return f"endpoint-residual-profile-{endpoint['profile_sha256'][:16]}"
+    if terminal is not None:
+        return f"endpoint-terminal-profile-{terminal['profile_sha256'][:16]}"
     return None
 
 
@@ -727,6 +808,9 @@ class FrontierSupervisorConfig:
     ) = None
     endpoint_residual_attention_profile: (
         V5EndpointResidualAttentionRunnerProfile | None
+    ) = None
+    endpoint_terminal_action_profile: (
+        V5EndpointTerminalActionRunnerProfile | None
     ) = None
     attempt_id: str = "attempt-0001"
     python_executable: str = sys.executable
@@ -905,6 +989,9 @@ class FrontierSupervisorConfig:
         _endpoint_residual_profile_document(
             self.endpoint_residual_attention_profile
         )
+        _endpoint_terminal_profile_document(
+            self.endpoint_terminal_action_profile
+        )
         if (
             sum(
                 value is not None
@@ -912,14 +999,15 @@ class FrontierSupervisorConfig:
                     self.attention_sequential_transport_profile,
                     self.composed_qk_attention_profile,
                     self.endpoint_residual_attention_profile,
+                    self.endpoint_terminal_action_profile,
                 )
             )
             > 1
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
-                "Attention sequential transport, composed Q/K attention, and "
-                "endpoint-residual attention are mutually exclusive frontier "
-                "profiles."
+                "Attention sequential transport, composed Q/K attention, "
+                "endpoint-residual attention, and endpoint terminal-action "
+                "are mutually exclusive frontier profiles."
             )
         for name in ("parent_name", "child_name_prefix"):
             value = getattr(self, name)
@@ -1341,6 +1429,11 @@ class FrontierSupervisorPlan:
         )
         if endpoint_profile is not None:
             body["endpoint_residual_attention_profile"] = endpoint_profile
+        terminal_profile = _endpoint_terminal_profile_document(
+            self.config.endpoint_terminal_action_profile
+        )
+        if terminal_profile is not None:
+            body["endpoint_terminal_action_profile"] = terminal_profile
         return {**body, "plan_sha256": _sha(body)}
 
 
@@ -1362,6 +1455,8 @@ def _source_identities() -> dict[str, str]:
         "intelligence_gate": _INTELLIGENCE_GATE_SOURCE,
         "intelligence_holdout": _INTELLIGENCE_HOLDOUT_SOURCE,
         "lfm2_selective_evidence_provider": _SELECTIVE_EVIDENCE_SOURCE,
+        "terminal_action_policy": _TERMINAL_ACTION_POLICY_SOURCE,
+        "terminal_action_v5_integration": _TERMINAL_ACTION_INTEGRATION_SOURCE,
     }
     missing = tuple(name for name, path in sources.items() if not path.is_file())
     if missing:
@@ -1451,11 +1546,24 @@ def _frontier_catalog_runner_config(
     endpoint_profile = _endpoint_residual_profile_document(
         config.endpoint_residual_attention_profile
     )
+    terminal_profile = _endpoint_terminal_profile_document(
+        config.endpoint_terminal_action_profile
+    )
     if endpoint_profile is not None:
         arguments.extend(
             (
                 "--endpoint-residual-attention-profile",
                 endpoint_profile["profile_id"],
+            )
+        )
+    terminal_profile = _endpoint_terminal_profile_document(
+        config.endpoint_terminal_action_profile
+    )
+    if terminal_profile is not None:
+        arguments.extend(
+            (
+                "--endpoint-terminal-action-profile",
+                terminal_profile["profile_id"],
             )
         )
     if prepare_only:
@@ -1493,6 +1601,9 @@ def _runner_policy_identity_fields(
     endpoint_profile = _endpoint_residual_profile_document(
         runner_config.endpoint_residual_attention_profile
     )
+    terminal_profile = _endpoint_terminal_profile_document(
+        runner_config.endpoint_terminal_action_profile
+    )
     model_identity = runner._configured_model_fold_policy_identity(runner_config)
     composed_identity = runner._configured_composed_qk_policy_identity(
         runner_config
@@ -1500,11 +1611,22 @@ def _runner_policy_identity_fields(
     endpoint_identity = runner._configured_endpoint_residual_policy_identity(
         runner_config
     )
-    if profile is None and composed_profile is None and endpoint_profile is None:
+    terminal_identity = (
+        runner._configured_endpoint_terminal_action_policy_identity(
+            runner_config
+        )
+    )
+    if (
+        profile is None
+        and composed_profile is None
+        and endpoint_profile is None
+        and terminal_profile is None
+    ):
         if (
             model_identity is not None
             or composed_identity is not None
             or endpoint_identity is not None
+            or terminal_identity is not None
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Legacy runner config unexpectedly constructed an opt-in "
@@ -1516,6 +1638,7 @@ def _runner_policy_identity_fields(
             model_identity is None
             or composed_identity is not None
             or endpoint_identity is not None
+            or terminal_identity is not None
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Attention transport runner config lost or crossed its "
@@ -1528,11 +1651,34 @@ def _runner_policy_identity_fields(
                 "transport profile."
             )
         return fields
+    if terminal_profile is not None:
+        if (
+            terminal_identity is None
+            or model_identity is not None
+            or composed_identity is not None
+            or endpoint_identity is not None
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Endpoint terminal-action runner config lost or crossed its "
+                "exact policy identity."
+            )
+        fields = dict(
+            runner._endpoint_terminal_action_policy_identity_fields(
+                terminal_identity
+            )
+        )
+        if fields.get("endpoint_terminal_action_profile") != terminal_profile:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Runner endpoint terminal-action identity differs from its "
+                "typed profile."
+            )
+        return fields
     if endpoint_profile is not None:
         if (
             endpoint_identity is None
             or model_identity is not None
             or composed_identity is not None
+            or terminal_identity is not None
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Endpoint-residual runner config lost or crossed its exact "
@@ -1551,6 +1697,7 @@ def _runner_policy_identity_fields(
         composed_identity is None
         or model_identity is not None
         or endpoint_identity is not None
+        or terminal_identity is not None
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Composed Q/K runner config lost or crossed its exact policy "
@@ -1586,6 +1733,7 @@ def authenticate_frontier_catalog_preparation(
             config.attention_sequential_transport_profile is None
             and config.composed_qk_attention_profile is None
             and config.endpoint_residual_attention_profile is None
+            and config.endpoint_terminal_action_profile is None
         ):
             preparation = dict(
                 runner.authenticate_prepared_selective_catalog(
@@ -2007,11 +2155,21 @@ def _diagnostic_command(
     endpoint_profile = _endpoint_residual_profile_document(
         config.endpoint_residual_attention_profile
     )
+    terminal_profile = _endpoint_terminal_profile_document(
+        config.endpoint_terminal_action_profile
+    )
     if endpoint_profile is not None:
         command.extend(
             (
                 "--endpoint-residual-attention-profile",
                 endpoint_profile["profile_id"],
+            )
+        )
+    if terminal_profile is not None:
+        command.extend(
+            (
+                "--endpoint-terminal-action-profile",
+                terminal_profile["profile_id"],
             )
         )
     if lane.resume_reference is not None:
@@ -2101,6 +2259,11 @@ def _worker_config_record(
     )
     if endpoint_profile is not None:
         record["endpoint_residual_attention_profile"] = endpoint_profile
+    terminal_profile = _endpoint_terminal_profile_document(
+        config.endpoint_terminal_action_profile
+    )
+    if terminal_profile is not None:
+        record["endpoint_terminal_action_profile"] = terminal_profile
     return record
 
 
@@ -2219,6 +2382,11 @@ def _capture_template(
     )
     if endpoint_profile is not None:
         template["endpoint_residual_attention_profile"] = endpoint_profile
+    terminal_profile = _endpoint_terminal_profile_document(
+        config.endpoint_terminal_action_profile
+    )
+    if terminal_profile is not None:
+        template["endpoint_terminal_action_profile"] = terminal_profile
     return template
 
 
@@ -2319,10 +2487,14 @@ def build_frontier_supervisor_plan(
     endpoint_profile = _endpoint_residual_profile_document(
         config.endpoint_residual_attention_profile
     )
+    terminal_profile = _endpoint_terminal_profile_document(
+        config.endpoint_terminal_action_profile
+    )
     if (
         profile is not None
         or composed_profile is not None
         or endpoint_profile is not None
+        or terminal_profile is not None
     ) and len(ratios) != 1:
         raise Lfm2CpcfV5FrontierSupervisorError(
             "An opt-in attention profile must bind exactly one frontier "
@@ -2382,6 +2554,7 @@ def build_frontier_supervisor_plan(
             profile is not None
             or composed_profile is not None
             or endpoint_profile is not None
+            or terminal_profile is not None
         ):
             from experiments import (
                 run_lfm2_cpcf_v5_selective_blank_fold as runner,
@@ -2618,6 +2791,14 @@ def _config_from_worker_record(
             name="worker endpoint-residual attention profile",
         )
     )
+    terminal_profile = (
+        None
+        if "endpoint_terminal_action_profile" not in record
+        else _endpoint_terminal_profile_from_document(
+            record["endpoint_terminal_action_profile"],
+            name="worker endpoint terminal-action profile",
+        )
+    )
 
     return FrontierSupervisorConfig(
         parent_model_directory=Path(record["parent_model_directory"]),
@@ -2678,6 +2859,7 @@ def _config_from_worker_record(
         attention_sequential_transport_profile=profile,
         composed_qk_attention_profile=composed_profile,
         endpoint_residual_attention_profile=endpoint_profile,
+        endpoint_terminal_action_profile=terminal_profile,
         attempt_id=record["attempt_id"],
         python_executable=record["python_executable"],
         selective_catalog_store_directory=Path(
@@ -2722,6 +2904,7 @@ def _authenticate_worker_attention_profile(
     attention_key = "attention_sequential_transport_profile"
     composed_key = "composed_qk_attention_profile"
     endpoint_key = "endpoint_residual_attention_profile"
+    terminal_key = "endpoint_terminal_action_profile"
     expected_attention = _attention_profile_document(
         config.attention_sequential_transport_profile
     )
@@ -2731,6 +2914,9 @@ def _authenticate_worker_attention_profile(
     expected_endpoint = _endpoint_residual_profile_document(
         config.endpoint_residual_attention_profile
     )
+    expected_terminal = _endpoint_terminal_profile_document(
+        config.endpoint_terminal_action_profile
+    )
     runner_attention = _attention_profile_document(
         runner_config.attention_sequential_transport_profile
     )
@@ -2739,6 +2925,9 @@ def _authenticate_worker_attention_profile(
     )
     runner_endpoint = _endpoint_residual_profile_document(
         runner_config.endpoint_residual_attention_profile
+    )
+    runner_terminal = _endpoint_terminal_profile_document(
+        runner_config.endpoint_terminal_action_profile
     )
     worker_record = manifest.get("worker_config")
     capture = manifest.get("quarantine_capture_template")
@@ -2750,19 +2939,27 @@ def _authenticate_worker_attention_profile(
         *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
         *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
         *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+        *tuple(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
     )
     if (
         expected_attention is None
         and expected_composed is None
         and expected_endpoint is None
+        and expected_terminal is None
     ):
         if (
             runner_attention is not None
             or runner_composed is not None
             or runner_endpoint is not None
+            or runner_terminal is not None
             or any(
                 key in container
-                for key in (attention_key, composed_key, endpoint_key)
+                for key in (
+                    attention_key,
+                    composed_key,
+                    endpoint_key,
+                    terminal_key,
+                )
                 for container in (manifest, worker_record, capture)
             )
             or any(name in manifest for name in all_policy_names)
@@ -2773,33 +2970,63 @@ def _authenticate_worker_attention_profile(
         return MappingProxyType({})
     if expected_attention is not None:
         profile_key = attention_key
-        inactive_keys = (composed_key, endpoint_key)
+        inactive_keys = (composed_key, endpoint_key, terminal_key)
         expected = expected_attention
         runner_profile = runner_attention
-        inactive_runner_profiles = (runner_composed, runner_endpoint)
+        inactive_runner_profiles = (
+            runner_composed,
+            runner_endpoint,
+            runner_terminal,
+        )
         inactive_policy_names = (
             *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
             *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
         )
     elif expected_composed is not None:
         profile_key = composed_key
-        inactive_keys = (attention_key, endpoint_key)
+        inactive_keys = (attention_key, endpoint_key, terminal_key)
         expected = expected_composed
         runner_profile = runner_composed
-        inactive_runner_profiles = (runner_attention, runner_endpoint)
+        inactive_runner_profiles = (
+            runner_attention,
+            runner_endpoint,
+            runner_terminal,
+        )
         inactive_policy_names = (
             *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
             *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
         )
-    else:
+    elif expected_endpoint is not None:
         profile_key = endpoint_key
-        inactive_keys = (attention_key, composed_key)
+        inactive_keys = (attention_key, composed_key, terminal_key)
         expected = expected_endpoint
         runner_profile = runner_endpoint
-        inactive_runner_profiles = (runner_attention, runner_composed)
+        inactive_runner_profiles = (
+            runner_attention,
+            runner_composed,
+            runner_terminal,
+        )
         inactive_policy_names = (
             *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
             *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
+        )
+    else:
+        profile_key = terminal_key
+        inactive_keys = (attention_key, composed_key, endpoint_key)
+        expected = expected_terminal
+        runner_profile = runner_terminal
+        inactive_runner_profiles = (
+            runner_attention,
+            runner_composed,
+            runner_endpoint,
+        )
+        inactive_policy_names = (
+            *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
         )
     manifest_has = profile_key in manifest
     worker_has = profile_key in worker_record
@@ -2868,7 +3095,10 @@ def _authenticate_compiled_attention_profile(
     attention_names = set(runner._OPT_IN_POLICY_IDENTITY_FIELDS)
     composed_names = set(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS)
     endpoint_names = set(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS)
-    all_names = attention_names | composed_names | endpoint_names
+    terminal_names = set(
+        runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+    )
+    all_names = attention_names | composed_names | endpoint_names | terminal_names
     if not fields:
         if (
             any(name in diagnostic for name in all_names)
@@ -2879,6 +3109,10 @@ def _authenticate_compiled_attention_profile(
             or diagnostic.get("resume_policy_binding") is not None
             or diagnostic.get("composed_qk_runtime_policy_binding") is not None
             or diagnostic.get("endpoint_residual_runtime_policy_binding")
+            is not None
+            or diagnostic.get(
+                "endpoint_terminal_action_runtime_policy_binding"
+            )
             is not None
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
@@ -2900,6 +3134,7 @@ def _authenticate_compiled_attention_profile(
         inactive_binding_keys = (
             "composed_qk_runtime_policy_binding",
             "endpoint_residual_runtime_policy_binding",
+            "endpoint_terminal_action_runtime_policy_binding",
         )
     elif set(fields) == composed_names:
         binding_key = "composed_qk_runtime_policy_binding"
@@ -2909,6 +3144,7 @@ def _authenticate_compiled_attention_profile(
         inactive_binding_keys = (
             "resume_policy_binding",
             "endpoint_residual_runtime_policy_binding",
+            "endpoint_terminal_action_runtime_policy_binding",
         )
     elif set(fields) == endpoint_names:
         binding_key = "endpoint_residual_runtime_policy_binding"
@@ -2920,6 +3156,21 @@ def _authenticate_compiled_attention_profile(
         inactive_binding_keys = (
             "resume_policy_binding",
             "composed_qk_runtime_policy_binding",
+            "endpoint_terminal_action_runtime_policy_binding",
+        )
+    elif set(fields) == terminal_names:
+        binding_key = "endpoint_terminal_action_runtime_policy_binding"
+        binding_schema = (
+            runner.ENDPOINT_TERMINAL_ACTION_RUNTIME_POLICY_BINDING_SCHEMA
+        )
+        binding_names = terminal_names
+        exact_policy_flag = (
+            "runtime_policy_contains_exact_composed_endpoint_and_terminal_policies"
+        )
+        inactive_binding_keys = (
+            "resume_policy_binding",
+            "composed_qk_runtime_policy_binding",
+            "endpoint_residual_runtime_policy_binding",
         )
     else:
         raise Lfm2CpcfV5FrontierSupervisorError(
@@ -2957,6 +3208,8 @@ def _authenticate_compiled_attention_profile(
         exact_policy_flag,
         "cross_profile_resume_permitted",
     }
+    if binding_names == terminal_names:
+        expected_binding_fields.add("terminal_integration_receipt_required")
     compiled = diagnostic.get("compiled_model_fold")
     compiled_runtime_policy = (
         compiled.get("policy")
@@ -2977,6 +3230,10 @@ def _authenticate_compiled_attention_profile(
         or _sha(binding) != claimed
         or any(binding.get(name) != value for name, value in fields.items())
         or binding.get(exact_policy_flag) is not True
+        or (
+            binding_names == terminal_names
+            and binding.get("terminal_integration_receipt_required") is not True
+        )
         or binding.get("cross_profile_resume_permitted") is not False
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
@@ -3087,7 +3344,8 @@ def _authenticate_compiled_attention_profile(
             != expected_layers
             or coverage_body.get("covered_attention_layer_indices")
             != expected_layers
-            or coverage_body.get("candidate_count_per_attention_layer") != 5
+            or coverage_body.get("candidate_count_per_attention_layer")
+            not in {4, 5}
             or not isinstance(rows, list)
             or [row.get("layer_index") for row in rows] != expected_layers
             or coverage_body.get(
@@ -3102,7 +3360,85 @@ def _authenticate_compiled_attention_profile(
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Compiled endpoint-residual coverage is not the exact ordered "
-                "six-layer five-arm receipt."
+                "six-layer residual-fold receipt."
+            )
+    elif binding_names == terminal_names:
+        profile = fields["endpoint_terminal_action_profile"]
+        if (
+            compiled_runtime_policy.get("composed_qk_attention_policy")
+            != profile.get("composed_qk_attention_policy")
+            or compiled_runtime_policy.get(
+                "endpoint_residual_attention_policy"
+            )
+            != profile.get("endpoint_residual_attention_policy")
+            or compiled_runtime_policy.get("terminal_action_residual_policy")
+            != profile.get("terminal_action_residual_policy")
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiled runtime policy changed the endpoint terminal-action "
+                "profile policies."
+            )
+        # The runner owns the receipt grammar; authenticate the exact compiled
+        # receipt using an equivalent sealed identity reconstructed below.
+        identity_body = {
+            "schema": runner.ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_SCHEMA,
+            "endpoint_terminal_action_profile": profile,
+            "endpoint_terminal_composed_qk_attention_policy_sha256": fields[
+                "endpoint_terminal_composed_qk_attention_policy_sha256"
+            ],
+            "endpoint_terminal_residual_attention_policy_sha256": fields[
+                "endpoint_terminal_residual_attention_policy_sha256"
+            ],
+            "terminal_action_residual_policy_sha256": fields[
+                "terminal_action_residual_policy_sha256"
+            ],
+            "terminal_action_policy_source_sha256": fields[
+                "terminal_action_policy_source_sha256"
+            ],
+            "terminal_action_integration_source_sha256": fields[
+                "terminal_action_integration_source_sha256"
+            ],
+            "expected_attention_layer_indices": list(
+                runner.COMPOSED_QK_ATTENTION_LAYER_INDICES
+            ),
+            "runtime_policy_must_embed_exact_composed_endpoint_and_terminal_policies": True,
+            "terminal_integration_receipt_required": True,
+            "cross_profile_resume_permitted": False,
+        }
+        reconstructed_identity = {
+            **identity_body,
+            "identity_sha256": _sha(identity_body),
+        }
+        if (
+            reconstructed_identity["identity_sha256"]
+            != fields["endpoint_terminal_action_policy_identity_sha256"]
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Endpoint terminal-action identity could not be reconstructed."
+            )
+        try:
+            runner._authenticate_endpoint_residual_coverage(
+                compiled,
+                policy_identity=reconstructed_identity,
+            )
+            terminal_receipt = runner._authenticate_terminal_action_integration_receipt(
+                compiled,
+                policy_identity=reconstructed_identity,
+            )
+        except Exception as exc:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiled endpoint terminal-action attention coverage or "
+                "terminal integration receipt is invalid."
+            ) from exc
+        if (
+            diagnostic.get("endpoint_residual_attention_coverage")
+            != compiled.get("endpoint_residual_attention_coverage")
+            or diagnostic.get("terminal_action_integration_receipt")
+            != dict(terminal_receipt)
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compile diagnostic lost the terminal profile's attention or "
+                "terminal-action receipt."
             )
     return MappingProxyType({**binding, "binding_sha256": claimed})
 
@@ -3120,6 +3456,8 @@ def _compiled_policy_binding_field(
         return "composed_qk_runtime_policy_binding"
     if names == set(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS):
         return "endpoint_residual_runtime_policy_binding"
+    if names == set(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS):
+        return "endpoint_terminal_action_runtime_policy_binding"
     raise Lfm2CpcfV5FrontierSupervisorError(
         "Policy fields do not select one canonical runtime binding."
     )
@@ -3600,6 +3938,23 @@ def _run_internal_worker(manifest_path: Path) -> int:
                 expected_policy_fields,
             )
             body[binding_field] = dict(compiled_profile_binding)
+            if set(expected_policy_fields) == set(
+                runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+            ):
+                terminal_receipt = result.compile_diagnostic.get(
+                    "terminal_action_integration_receipt"
+                )
+                if not isinstance(terminal_receipt, Mapping):
+                    raise Lfm2CpcfV5FrontierSupervisorError(
+                        "Terminal profile execution lacks its integration receipt."
+                    )
+                body["terminal_action_integration_receipt"] = dict(
+                    terminal_receipt
+                )
+                body["terminal_action_integration_receipt_sha256"] = _digest(
+                    terminal_receipt.get("result_sha256"),
+                    "terminal-action integration receipt SHA-256",
+                )
         receipt = {**body, "receipt_sha256": _sha(body)}
         _atomic_new_json(Path(paths["execution_receipt_json"]), receipt)
         print(json.dumps(receipt, sort_keys=True))
@@ -4066,6 +4421,7 @@ def execute_single_ratio(
             "resume_policy_binding",
             "composed_qk_runtime_policy_binding",
             "endpoint_residual_runtime_policy_binding",
+            "endpoint_terminal_action_runtime_policy_binding",
         } - {binding_field}
         receipt_profile_valid = (
             all(
@@ -4077,6 +4433,26 @@ def execute_single_ratio(
                 inactive not in receipt for inactive in inactive_binding_fields
             )
         )
+        if set(expected_policy_fields) == set(
+            runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+        ):
+            diagnostic_terminal_receipt = diagnostic.get(
+                "terminal_action_integration_receipt"
+            )
+            terminal_execution_receipt_valid = bool(
+                isinstance(diagnostic_terminal_receipt, Mapping)
+                and receipt.get("terminal_action_integration_receipt")
+                == diagnostic_terminal_receipt
+                and receipt.get(
+                    "terminal_action_integration_receipt_sha256"
+                )
+                == diagnostic_terminal_receipt.get("result_sha256")
+            )
+        else:
+            terminal_execution_receipt_valid = (
+                "terminal_action_integration_receipt" not in receipt
+                and "terminal_action_integration_receipt_sha256" not in receipt
+            )
     else:
         receipt_profile_valid = (
             all(
@@ -4085,11 +4461,17 @@ def execute_single_ratio(
                     *runner._OPT_IN_POLICY_IDENTITY_FIELDS,
                     *runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS,
                     *runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS,
+                    *runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS,
                 )
             )
             and "resume_policy_binding" not in receipt
             and "composed_qk_runtime_policy_binding" not in receipt
             and "endpoint_residual_runtime_policy_binding" not in receipt
+            and "endpoint_terminal_action_runtime_policy_binding" not in receipt
+        )
+        terminal_execution_receipt_valid = (
+            "terminal_action_integration_receipt" not in receipt
+            and "terminal_action_integration_receipt_sha256" not in receipt
         )
     _authenticate_quarantine_receipt(plan, lane, receipt)
     inputs = diagnostic.get("inputs")
@@ -4227,6 +4609,7 @@ def execute_single_ratio(
         or receipt.get("parameters_pruned") != 0
         or receipt.get("parameters_quantized") != 0
         or not receipt_profile_valid
+        or not terminal_execution_receipt_valid
         or not resume_binding_valid
         or not isinstance(inputs, Mapping)
         or inputs.get("parent_fingerprint")
@@ -4368,6 +4751,7 @@ def build_parser() -> argparse.ArgumentParser:
         ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
         COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID,
         ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,
+        ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID,
     )
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -4510,9 +4894,21 @@ def build_parser() -> argparse.ArgumentParser:
         const=ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,
         choices=(ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,),
         help=(
-            "Exact versioned five-arm endpoint-residual attention opt-in "
+            "Exact versioned dynamic four/five-arm endpoint-residual attention opt-in "
             "bound into runner, catalog, resume, quarantine, and execution "
             "receipts."
+        ),
+    )
+    parser.add_argument(
+        "--endpoint-terminal-action-profile",
+        dest="endpoint_terminal_action_profile",
+        nargs="?",
+        const=ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID,
+        choices=(ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID,),
+        help=(
+            "Exact source-bound endpoint-residual attention plus closed-form "
+            "terminal-W2 opt-in, sealed through catalog, resume, quarantine, "
+            "and execution receipts."
         ),
     )
     parser.add_argument(
@@ -4536,6 +4932,7 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
         V5AttentionSequentialTransportRunnerProfile,
         V5ComposedQkAttentionRunnerProfile,
         V5EndpointResidualAttentionRunnerProfile,
+        V5EndpointTerminalActionRunnerProfile,
     )
 
     lifecycle = Lfm2CpcfV5FrontierLifecycle(args.lifecycle)
@@ -4627,6 +5024,13 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
             is None
             else V5EndpointResidualAttentionRunnerProfile(
                 profile_id=args.endpoint_residual_attention_profile,
+            )
+        ),
+        endpoint_terminal_action_profile=(
+            None
+            if getattr(args, "endpoint_terminal_action_profile", None) is None
+            else V5EndpointTerminalActionRunnerProfile(
+                profile_id=args.endpoint_terminal_action_profile,
             )
         ),
         attempt_id=args.attempt_id,

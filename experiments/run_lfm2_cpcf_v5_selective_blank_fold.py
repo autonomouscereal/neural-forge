@@ -87,6 +87,12 @@ ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID = (
 ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-endpoint-residual-attention-coverage-v1"
 )
+ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-endpoint-terminal-action-runner-profile-v1"
+)
+ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID = (
+    "endpoint-residual-alternating-qkvo-terminal-w2-v1"
+)
 MODEL_FOLD_POLICY_IDENTITY_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-model-fold-policy-identity-v1"
 )
@@ -104,6 +110,12 @@ ENDPOINT_RESIDUAL_POLICY_IDENTITY_SCHEMA = (
 )
 ENDPOINT_RESIDUAL_RUNTIME_POLICY_BINDING_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-endpoint-residual-runtime-policy-binding-v1"
+)
+ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-endpoint-terminal-action-policy-identity-v1"
+)
+ENDPOINT_TERMINAL_ACTION_RUNTIME_POLICY_BINDING_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-endpoint-terminal-action-runtime-policy-binding-v1"
 )
 GPU_REPLAY_SCHEMA = "neural-forge-lfm2-cpcf-v5-authenticated-two-gpu-replay-v1"
 PROVEN_GPU_PARITY_RECEIPT = (
@@ -167,6 +179,14 @@ _SELECTIVE_EVIDENCE_SOURCE = (
 _CATALOG_ARTIFACT_SOURCE = (
     _SOURCE_ROOT / "neural_forge" / "dynamic_evidence_catalog_artifact.py"
 )
+_TERMINAL_ACTION_POLICY_SOURCE = (
+    _SOURCE_ROOT / "neural_forge" / "hf_lfm2_cpcf_terminal_action_residual.py"
+)
+_TERMINAL_ACTION_INTEGRATION_SOURCE = (
+    _SOURCE_ROOT
+    / "neural_forge"
+    / "hf_lfm2_cpcf_v5_terminal_action_integration.py"
+)
 _OPT_IN_POLICY_IDENTITY_FIELDS = (
     "attention_sequential_transport_profile",
     "complete_model_fold_policy_sha256",
@@ -182,6 +202,15 @@ _ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS = (
     "endpoint_residual_composed_qk_attention_policy_sha256",
     "endpoint_residual_attention_policy_sha256",
     "endpoint_residual_attention_policy_identity_sha256",
+)
+_ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS = (
+    "endpoint_terminal_action_profile",
+    "endpoint_terminal_composed_qk_attention_policy_sha256",
+    "endpoint_terminal_residual_attention_policy_sha256",
+    "terminal_action_residual_policy_sha256",
+    "terminal_action_policy_source_sha256",
+    "terminal_action_integration_source_sha256",
+    "endpoint_terminal_action_policy_identity_sha256",
 )
 
 
@@ -345,7 +374,7 @@ class V5ComposedQkAttentionRunnerProfile:
 
 @dataclass(frozen=True, slots=True)
 class V5EndpointResidualAttentionRunnerProfile:
-    """Exact five-arm, all-full-attention endpoint-residual opt-in."""
+    """Exact dynamic four/five-arm full-attention endpoint-residual opt-in."""
 
     profile_id: str = ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID
 
@@ -397,11 +426,89 @@ class V5EndpointResidualAttentionRunnerProfile:
             "expected_attention_layer_indices": list(
                 COMPOSED_QK_ATTENTION_LAYER_INDICES
             ),
-            "expected_candidate_count_per_attention_layer": 5,
+            "allowed_candidate_count_per_attention_layer": [4, 5],
+            "candidate_count_depends_on_authenticated_composed_acceptance": True,
             "full_attention_only_via_runtime_policy_resolver": True,
             "candidate_local_fit_only_downstream_mlp_required": True,
             "fit_check_final_one_shot_nonregression_only": True,
             "blank_target_values_read": False,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        return {**body, "profile_sha256": _sha(body)}
+
+
+@dataclass(frozen=True, slots=True)
+class V5EndpointTerminalActionRunnerProfile:
+    """Exact endpoint-residual attention plus closed-form terminal W2 fold."""
+
+    profile_id: str = ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID
+
+    def __post_init__(self) -> None:
+        if self.profile_id != ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Unknown endpoint terminal-action runner profile."
+            )
+
+    def build_composed_policy(self) -> Any:
+        return V5EndpointResidualAttentionRunnerProfile().build_composed_policy()
+
+    def build_endpoint_policy(self) -> Any:
+        return V5EndpointResidualAttentionRunnerProfile().build_policy()
+
+    def build_terminal_policy(self) -> Any:
+        from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+            Lfm2CpcfTerminalActionPolicy,
+        )
+
+        policy = Lfm2CpcfTerminalActionPolicy()
+        if (
+            type(policy) is not Lfm2CpcfTerminalActionPolicy
+            or not policy.verify_authentication()
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "The terminal-action profile did not construct its exact "
+                "authenticated typed policy."
+            )
+        return policy
+
+    def as_dict(self) -> dict[str, Any]:
+        if (
+            not _TERMINAL_ACTION_POLICY_SOURCE.is_file()
+            or not _TERMINAL_ACTION_INTEGRATION_SOURCE.is_file()
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Terminal-action policy or V5 integration source is missing."
+            )
+        composed_policy = self.build_composed_policy()
+        endpoint_policy = self.build_endpoint_policy()
+        terminal_policy = self.build_terminal_policy()
+        body = {
+            "schema": ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_SCHEMA,
+            "profile_id": self.profile_id,
+            "composed_qk_attention_policy": composed_policy.as_dict(),
+            "endpoint_residual_attention_policy": endpoint_policy.as_dict(),
+            "terminal_action_residual_policy": terminal_policy.as_dict(),
+            "terminal_action_policy_source_sha256": _file_sha256(
+                _TERMINAL_ACTION_POLICY_SOURCE
+            ),
+            "terminal_action_integration_source_sha256": _file_sha256(
+                _TERMINAL_ACTION_INTEGRATION_SOURCE
+            ),
+            "expected_attention_layer_indices": list(
+                COMPOSED_QK_ATTENTION_LAYER_INDICES
+            ),
+            "allowed_candidate_count_per_attention_layer": [4, 5],
+            "candidate_count_depends_on_authenticated_composed_acceptance": True,
+            "terminal_writer_parameter": "feed_forward.w2.weight",
+            "terminal_writer_only": True,
+            "tied_output_interface_fixed": True,
+            "full_attention_only_via_runtime_policy_resolver": True,
+            "terminal_integration_receipt_required": True,
+            "validation_tuning_permitted": False,
             "training_steps": 0,
             "backward_calls": 0,
             "optimizer_steps": 0,
@@ -1266,6 +1373,9 @@ class V5SelectiveBlankFoldConfig:
     endpoint_residual_attention_profile: (
         V5EndpointResidualAttentionRunnerProfile | None
     ) = None
+    endpoint_terminal_action_profile: (
+        V5EndpointTerminalActionRunnerProfile | None
+    ) = None
     expected_target_plan_fingerprint: str | None = None
     resume_store_directory: Path | None = None
     resume_admission_sha256: str | None = None
@@ -1411,20 +1521,30 @@ class V5SelectiveBlankFoldConfig:
                 "V5 runner profile."
             )
         if (
+            self.endpoint_terminal_action_profile is not None
+            and type(self.endpoint_terminal_action_profile)
+            is not V5EndpointTerminalActionRunnerProfile
+        ):
+            raise TypeError(
+                "endpoint_terminal_action_profile must be the exact typed "
+                "V5 runner profile."
+            )
+        if (
             sum(
                 value is not None
                 for value in (
                     self.attention_sequential_transport_profile,
                     self.composed_qk_attention_profile,
                     self.endpoint_residual_attention_profile,
+                    self.endpoint_terminal_action_profile,
                 )
             )
             > 1
         ):
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-                "Attention sequential transport, composed Q/K attention, and "
-                "endpoint-residual attention are mutually exclusive runner "
-                "profiles."
+                "Attention sequential transport, composed Q/K attention, "
+                "endpoint-residual attention, and endpoint terminal-action "
+                "are mutually exclusive runner profiles."
             )
         if self.resume_admission_sha256 is not None:
             if (
@@ -1712,6 +1832,15 @@ class V5SelectiveBlankFoldConfig:
             result.update(
                 _endpoint_residual_policy_identity_fields(endpoint_identity)
             )
+        terminal_identity = _configured_endpoint_terminal_action_policy_identity(
+            self
+        )
+        if terminal_identity is not None:
+            result.update(
+                _endpoint_terminal_action_policy_identity_fields(
+                    terminal_identity
+                )
+            )
         return result
 
 
@@ -1779,12 +1908,15 @@ def _build_configured_composed_qk_attention_policy(
         raise TypeError("config must be V5SelectiveBlankFoldConfig.")
     profile = config.composed_qk_attention_profile
     endpoint_profile = config.endpoint_residual_attention_profile
+    terminal_profile = config.endpoint_terminal_action_profile
     if profile is not None:
         return profile.build_policy()
+    if endpoint_profile is not None:
+        return endpoint_profile.build_composed_policy()
     return (
         None
-        if endpoint_profile is None
-        else endpoint_profile.build_composed_policy()
+        if terminal_profile is None
+        else terminal_profile.build_composed_policy()
     )
 
 
@@ -1794,7 +1926,23 @@ def _build_configured_endpoint_residual_attention_policy(
     if not isinstance(config, V5SelectiveBlankFoldConfig):
         raise TypeError("config must be V5SelectiveBlankFoldConfig.")
     profile = config.endpoint_residual_attention_profile
-    return None if profile is None else profile.build_policy()
+    terminal_profile = config.endpoint_terminal_action_profile
+    if profile is not None:
+        return profile.build_policy()
+    return (
+        None
+        if terminal_profile is None
+        else terminal_profile.build_endpoint_policy()
+    )
+
+
+def _build_configured_terminal_action_residual_policy(
+    config: V5SelectiveBlankFoldConfig,
+) -> Any | None:
+    if not isinstance(config, V5SelectiveBlankFoldConfig):
+        raise TypeError("config must be V5SelectiveBlankFoldConfig.")
+    profile = config.endpoint_terminal_action_profile
+    return None if profile is None else profile.build_terminal_policy()
 
 
 def _configured_model_fold_policy_identity(
@@ -2064,7 +2212,11 @@ def _endpoint_residual_policy_identity_fields(
         not isinstance(profile, Mapping)
         or profile.get("expected_attention_layer_indices")
         != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
-        or profile.get("expected_candidate_count_per_attention_layer") != 5
+        or profile.get("allowed_candidate_count_per_attention_layer") != [4, 5]
+        or profile.get(
+            "candidate_count_depends_on_authenticated_composed_acceptance"
+        )
+        is not True
         or not isinstance(profile.get("composed_qk_attention_policy"), Mapping)
         or not isinstance(
             profile.get("endpoint_residual_attention_policy"),
@@ -2089,6 +2241,175 @@ def _endpoint_residual_policy_identity_fields(
         ),
         "endpoint_residual_attention_policy_sha256": endpoint_sha,
         "endpoint_residual_attention_policy_identity_sha256": identity_sha256,
+    }
+
+
+def _configured_endpoint_terminal_action_policy_identity(
+    config: V5SelectiveBlankFoldConfig,
+    *,
+    composed_policy: Any | None = None,
+    endpoint_policy: Any | None = None,
+    terminal_policy: Any | None = None,
+) -> Mapping[str, Any] | None:
+    profile = config.endpoint_terminal_action_profile
+    if profile is None:
+        return None
+    composed = (
+        _build_configured_composed_qk_attention_policy(config)
+        if composed_policy is None
+        else composed_policy
+    )
+    endpoint = (
+        _build_configured_endpoint_residual_attention_policy(config)
+        if endpoint_policy is None
+        else endpoint_policy
+    )
+    terminal = (
+        _build_configured_terminal_action_residual_policy(config)
+        if terminal_policy is None
+        else terminal_policy
+    )
+    policies = (composed, endpoint, terminal)
+    if any(
+        policy is None
+        or not callable(getattr(policy, "as_dict", None))
+        or not callable(getattr(policy, "verify_authentication", None))
+        or policy.verify_authentication() is not True
+        for policy in policies
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint terminal-action identity requires exact authenticated "
+            "composed, endpoint, and terminal policies."
+        )
+    profile_document = profile.as_dict()
+    policy_documents = {
+        "composed_qk_attention_policy": composed.as_dict(),
+        "endpoint_residual_attention_policy": endpoint.as_dict(),
+        "terminal_action_residual_policy": terminal.as_dict(),
+    }
+    if any(
+        profile_document.get(name) != value
+        for name, value in policy_documents.items()
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint terminal-action profile and configured policies differ."
+        )
+    body = {
+        "schema": ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_SCHEMA,
+        "endpoint_terminal_action_profile": profile_document,
+        "endpoint_terminal_composed_qk_attention_policy_sha256": (
+            composed.authentication_sha256
+        ),
+        "endpoint_terminal_residual_attention_policy_sha256": (
+            endpoint.authentication_sha256
+        ),
+        "terminal_action_residual_policy_sha256": (
+            terminal.authentication_sha256
+        ),
+        "terminal_action_policy_source_sha256": _file_sha256(
+            _TERMINAL_ACTION_POLICY_SOURCE
+        ),
+        "terminal_action_integration_source_sha256": _file_sha256(
+            _TERMINAL_ACTION_INTEGRATION_SOURCE
+        ),
+        "expected_attention_layer_indices": list(
+            COMPOSED_QK_ATTENTION_LAYER_INDICES
+        ),
+        "runtime_policy_must_embed_exact_composed_endpoint_and_terminal_policies": (
+            True
+        ),
+        "terminal_integration_receipt_required": True,
+        "cross_profile_resume_permitted": False,
+    }
+    return MappingProxyType({**body, "identity_sha256": _sha(body)})
+
+
+def _endpoint_terminal_action_policy_identity_fields(
+    identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    body = dict(identity)
+    identity_sha256 = _digest(
+        body.pop("identity_sha256", None),
+        "endpoint terminal-action policy identity",
+    )
+    expected_keys = {
+        "schema",
+        "endpoint_terminal_action_profile",
+        "endpoint_terminal_composed_qk_attention_policy_sha256",
+        "endpoint_terminal_residual_attention_policy_sha256",
+        "terminal_action_residual_policy_sha256",
+        "terminal_action_policy_source_sha256",
+        "terminal_action_integration_source_sha256",
+        "expected_attention_layer_indices",
+        "runtime_policy_must_embed_exact_composed_endpoint_and_terminal_policies",
+        "terminal_integration_receipt_required",
+        "cross_profile_resume_permitted",
+    }
+    if (
+        set(body) != expected_keys
+        or body.get("schema") != ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_SCHEMA
+        or _sha(body) != identity_sha256
+        or body.get("expected_attention_layer_indices")
+        != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+        or body.get(
+            "runtime_policy_must_embed_exact_composed_endpoint_and_terminal_policies"
+        )
+        is not True
+        or body.get("terminal_integration_receipt_required") is not True
+        or body.get("cross_profile_resume_permitted") is not False
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint terminal-action policy identity schema or seal is invalid."
+        )
+    profile = body.get("endpoint_terminal_action_profile")
+    digest_names = (
+        "endpoint_terminal_composed_qk_attention_policy_sha256",
+        "endpoint_terminal_residual_attention_policy_sha256",
+        "terminal_action_residual_policy_sha256",
+        "terminal_action_policy_source_sha256",
+        "terminal_action_integration_source_sha256",
+    )
+    digests = {
+        name: _digest(body.get(name), name) for name in digest_names
+    }
+    if (
+        not isinstance(profile, Mapping)
+        or profile.get("expected_attention_layer_indices")
+        != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+        or profile.get("terminal_writer_only") is not True
+        or profile.get("terminal_integration_receipt_required") is not True
+        or not isinstance(profile.get("composed_qk_attention_policy"), Mapping)
+        or not isinstance(
+            profile.get("endpoint_residual_attention_policy"), Mapping
+        )
+        or not isinstance(profile.get("terminal_action_residual_policy"), Mapping)
+        or profile["composed_qk_attention_policy"].get("authentication_sha256")
+        != digests["endpoint_terminal_composed_qk_attention_policy_sha256"]
+        or profile["endpoint_residual_attention_policy"].get(
+            "authentication_sha256"
+        )
+        != digests["endpoint_terminal_residual_attention_policy_sha256"]
+        or profile["terminal_action_residual_policy"].get(
+            "authentication_sha256"
+        )
+        != digests["terminal_action_residual_policy_sha256"]
+        or profile.get("terminal_action_policy_source_sha256")
+        != digests["terminal_action_policy_source_sha256"]
+        or profile.get("terminal_action_integration_source_sha256")
+        != digests["terminal_action_integration_source_sha256"]
+        or digests["terminal_action_policy_source_sha256"]
+        != _file_sha256(_TERMINAL_ACTION_POLICY_SOURCE)
+        or digests["terminal_action_integration_source_sha256"]
+        != _file_sha256(_TERMINAL_ACTION_INTEGRATION_SOURCE)
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint terminal-action profile does not authenticate its "
+            "policies or source implementations."
+        )
+    return {
+        "endpoint_terminal_action_profile": _plain_json(profile),
+        **digests,
+        "endpoint_terminal_action_policy_identity_sha256": identity_sha256,
     }
 
 
@@ -2196,6 +2517,54 @@ def _build_endpoint_residual_runtime_policy_binding(
     return MappingProxyType({**body, "binding_sha256": _sha(body)})
 
 
+def _build_endpoint_terminal_action_runtime_policy_binding(
+    policy_identity: Mapping[str, Any] | None,
+    *,
+    runtime_policy: Any,
+) -> Mapping[str, Any] | None:
+    if policy_identity is None:
+        return None
+    if not callable(getattr(runtime_policy, "as_dict", None)):
+        raise TypeError("runtime_policy must expose as_dict().")
+    fields = _endpoint_terminal_action_policy_identity_fields(policy_identity)
+    runtime_document = runtime_policy.as_dict()
+    profile = fields["endpoint_terminal_action_profile"]
+    composed = runtime_document.get("composed_qk_attention_policy")
+    endpoint = runtime_document.get("endpoint_residual_attention_policy")
+    terminal = runtime_document.get("terminal_action_residual_policy")
+    if (
+        composed != profile.get("composed_qk_attention_policy")
+        or endpoint != profile.get("endpoint_residual_attention_policy")
+        or terminal != profile.get("terminal_action_residual_policy")
+        or not isinstance(composed, Mapping)
+        or not isinstance(endpoint, Mapping)
+        or not isinstance(terminal, Mapping)
+        or composed.get("authentication_sha256")
+        != fields[
+            "endpoint_terminal_composed_qk_attention_policy_sha256"
+        ]
+        or endpoint.get("authentication_sha256")
+        != fields["endpoint_terminal_residual_attention_policy_sha256"]
+        or terminal.get("authentication_sha256")
+        != fields["terminal_action_residual_policy_sha256"]
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "V5 runtime policy embeds different endpoint terminal-action "
+            "policies than the selected profile identity."
+        )
+    body = {
+        "schema": ENDPOINT_TERMINAL_ACTION_RUNTIME_POLICY_BINDING_SCHEMA,
+        **fields,
+        "runtime_policy_sha256": _sha(runtime_document),
+        "runtime_policy_contains_exact_composed_endpoint_and_terminal_policies": (
+            True
+        ),
+        "terminal_integration_receipt_required": True,
+        "cross_profile_resume_permitted": False,
+    }
+    return MappingProxyType({**body, "binding_sha256": _sha(body)})
+
+
 def _authenticate_composed_qk_coverage(
     compiled_report: Mapping[str, Any],
     *,
@@ -2266,7 +2635,19 @@ def _authenticate_endpoint_residual_coverage(
     *,
     policy_identity: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    fields = _endpoint_residual_policy_identity_fields(policy_identity)
+    terminal_profile = "endpoint_terminal_action_profile" in policy_identity
+    fields = (
+        _endpoint_terminal_action_policy_identity_fields(policy_identity)
+        if terminal_profile
+        else _endpoint_residual_policy_identity_fields(policy_identity)
+    )
+    expected_policy_sha256 = fields[
+        (
+            "endpoint_terminal_residual_attention_policy_sha256"
+            if terminal_profile
+            else "endpoint_residual_attention_policy_sha256"
+        )
+    ]
     coverage = compiled_report.get("endpoint_residual_attention_coverage")
     if not isinstance(coverage, Mapping):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
@@ -2292,12 +2673,12 @@ def _authenticate_endpoint_residual_coverage(
         _sha(body) != seal
         or body.get("schema") != ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA
         or body.get("policy_authentication_sha256")
-        != fields["endpoint_residual_attention_policy_sha256"]
+        != expected_policy_sha256
         or body.get("expected_attention_layer_indices") != expected
         or body.get("observed_attention_layer_indices") != expected
         or body.get("covered_attention_layer_indices") != expected
         or body.get("attention_layer_count") != len(expected)
-        or body.get("candidate_count_per_attention_layer") != 5
+        or body.get("candidate_count_per_attention_layer") not in {4, 5}
         or not isinstance(rows, list)
         or [row.get("layer_index") for row in rows] != expected
         or any(
@@ -2333,9 +2714,79 @@ def _authenticate_endpoint_residual_coverage(
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Endpoint-residual coverage is not the exact ordered six-layer "
-            "five-arm no-training receipt required by this profile."
+            "dynamic four/five-arm no-training receipt required by this profile."
         )
     return MappingProxyType({**body, "report_sha256": seal})
+
+
+def _authenticate_terminal_action_integration_receipt(
+    compiled_report: Mapping[str, Any],
+    *,
+    policy_identity: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Require the compiler's exact closed-form terminal-W2 receipt."""
+
+    from neural_forge.hf_lfm2_cpcf_v5_terminal_action_integration import (
+        LFM2_CPCF_V5_TERMINAL_INTEGRATION_SCHEMA,
+    )
+
+    fields = _endpoint_terminal_action_policy_identity_fields(policy_identity)
+    report = compiled_report.get("terminal_action_residual_report")
+    if not isinstance(report, Mapping):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Compiler emitted no terminal-action integration receipt."
+        )
+    body = _plain_json(report)
+    seal = _digest(
+        body.pop("result_sha256", None),
+        "terminal-action integration result",
+    )
+    pure = body.get("pure_tarc_report")
+    pure_body = _plain_json(pure) if isinstance(pure, Mapping) else {}
+    pure_seal = pure_body.pop("result_sha256", None)
+    operation_audit = body.get("operation_audit")
+    zero_names = (
+        "parent_model_forward_calls",
+        "target_full_model_forward_calls",
+        "generation_calls",
+        "parent_cache_generation_calls",
+        "training_steps",
+        "backward_calls",
+        "optimizer_steps",
+        "parameters_pruned",
+        "parameters_quantized",
+        "parameters_replaced",
+        "new_parameters_created",
+    )
+    if (
+        _sha(body) != seal
+        or body.get("schema") != LFM2_CPCF_V5_TERMINAL_INTEGRATION_SCHEMA
+        or body.get("policy_sha256")
+        != fields["terminal_action_residual_policy_sha256"]
+        or compiled_report.get("terminal_action_residual_enabled") is not True
+        or compiled_report.get("terminal_action_residual_integrated") is not True
+        or compiled_report.get("terminal_action_residual_report_sha256") != seal
+        or not isinstance(pure, Mapping)
+        or _digest(pure_seal, "pure terminal-action result")
+        != body.get("pure_tarc_result_sha256")
+        or _sha(pure_body) != pure_seal
+        or pure_body.get("policy_sha256")
+        != fields["terminal_action_residual_policy_sha256"]
+        or body.get("writer_parameter_identity_preserved") is not True
+        or body.get("parameter_count_changed") is not False
+        or body.get("final_layer_only_local_replay") is not True
+        or body.get("parent_final_output_payload_live_during_compile") is not True
+        or body.get("rollback_exact") is not True
+        or not isinstance(operation_audit, Mapping)
+        or any(operation_audit.get(name) != 0 for name in zero_names)
+        or type(operation_audit.get("target_final_layer_replay_calls")) is not int
+        or operation_audit.get("target_final_layer_replay_calls") < 0
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Terminal-action integration receipt is not the exact source-bound "
+            "closed-form final-W2 fold required by this profile."
+        )
+    return MappingProxyType({**body, "result_sha256": seal})
 
 
 @dataclass(frozen=True, slots=True)
@@ -2585,13 +3036,20 @@ def _build_resume_runtime(
     endpoint_profile_identity = _configured_endpoint_residual_policy_identity(
         config
     )
+    terminal_profile_identity = (
+        _configured_endpoint_terminal_action_policy_identity(config)
+    )
     profile_identity = (
         model_profile_identity
         if model_profile_identity is not None
         else (
             composed_profile_identity
             if composed_profile_identity is not None
-            else endpoint_profile_identity
+            else (
+                endpoint_profile_identity
+                if endpoint_profile_identity is not None
+                else terminal_profile_identity
+            )
         )
     )
     if (
@@ -2641,7 +3099,7 @@ def _build_resume_runtime(
             }
             expected_schema = COMPOSED_QK_RUNTIME_POLICY_BINDING_SCHEMA
             exact_policy_flag = "runtime_policy_contains_exact_composed_policy"
-        else:
+        elif endpoint_profile_identity is not None:
             expected_fields = _endpoint_residual_policy_identity_fields(
                 endpoint_profile_identity
             )
@@ -2655,6 +3113,22 @@ def _build_resume_runtime(
             expected_schema = ENDPOINT_RESIDUAL_RUNTIME_POLICY_BINDING_SCHEMA
             exact_policy_flag = (
                 "runtime_policy_contains_exact_composed_and_endpoint_policies"
+            )
+        else:
+            expected_fields = _endpoint_terminal_action_policy_identity_fields(
+                terminal_profile_identity
+            )
+            expected_keys = {
+                "schema",
+                *_ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS,
+                "runtime_policy_sha256",
+                "runtime_policy_contains_exact_composed_endpoint_and_terminal_policies",
+                "terminal_integration_receipt_required",
+                "cross_profile_resume_permitted",
+            }
+            expected_schema = ENDPOINT_TERMINAL_ACTION_RUNTIME_POLICY_BINDING_SCHEMA
+            exact_policy_flag = (
+                "runtime_policy_contains_exact_composed_endpoint_and_terminal_policies"
             )
         invalid_binding = (
             set(binding_body) != expected_keys
@@ -2670,6 +3144,11 @@ def _build_resume_runtime(
                 != expected_runtime_policy_sha256
             )
             or binding_body.get(exact_policy_flag) is not True
+            or (
+                terminal_profile_identity is not None
+                and binding_body.get("terminal_integration_receipt_required")
+                is not True
+            )
             or binding_body.get("cross_profile_resume_permitted") is not False
         )
         if invalid_binding:
@@ -3789,6 +4268,7 @@ def _authenticate_preparation_policy_identity(
     profile = getattr(config, "attention_sequential_transport_profile", None)
     composed_profile = getattr(config, "composed_qk_attention_profile", None)
     endpoint_profile = getattr(config, "endpoint_residual_attention_profile", None)
+    terminal_profile = getattr(config, "endpoint_terminal_action_profile", None)
     present = {name for name in _OPT_IN_POLICY_IDENTITY_FIELDS if name in receipt}
     composed_present = {
         name for name in _COMPOSED_QK_POLICY_IDENTITY_FIELDS if name in receipt
@@ -3798,8 +4278,18 @@ def _authenticate_preparation_policy_identity(
         for name in _ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS
         if name in receipt
     }
-    if profile is None and composed_profile is None and endpoint_profile is None:
-        if present or composed_present or endpoint_present:
+    terminal_present = {
+        name
+        for name in _ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+        if name in receipt
+    }
+    if (
+        profile is None
+        and composed_profile is None
+        and endpoint_profile is None
+        and terminal_profile is None
+    ):
+        if present or composed_present or endpoint_present or terminal_present:
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
                 "Selective catalog preparation belongs to an opt-in fold "
                 "policy profile, but this request uses the legacy off profile."
@@ -3823,6 +4313,7 @@ def _authenticate_preparation_policy_identity(
         if (
             composed_present
             or endpoint_present
+            or terminal_present
             or present != set(_OPT_IN_POLICY_IDENTITY_FIELDS)
             or observed != expected
         ):
@@ -3830,6 +4321,30 @@ def _authenticate_preparation_policy_identity(
                 "Selective catalog preparation profile or complete model fold "
                 "policy digest differs from this request."
         )
+        return
+    if terminal_profile is not None:
+        identity = _configured_endpoint_terminal_action_policy_identity(config)
+        if identity is None:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Endpoint terminal-action policy identity was not constructed."
+            )
+        expected = _endpoint_terminal_action_policy_identity_fields(identity)
+        observed = {
+            name: receipt.get(name)
+            for name in _ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+        }
+        if (
+            present
+            or composed_present
+            or endpoint_present
+            or terminal_present
+            != set(_ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS)
+            or observed != expected
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Selective catalog preparation endpoint terminal-action "
+                "profile, policy, or source digest differs from this request."
+            )
         return
     if endpoint_profile is not None:
         identity = _configured_endpoint_residual_policy_identity(config)
@@ -3845,6 +4360,7 @@ def _authenticate_preparation_policy_identity(
         if (
             present
             or composed_present
+            or terminal_present
             or endpoint_present
             != set(_ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS)
             or observed != expected
@@ -3866,6 +4382,7 @@ def _authenticate_preparation_policy_identity(
     if (
         present
         or endpoint_present
+        or terminal_present
         or composed_present != set(_COMPOSED_QK_POLICY_IDENTITY_FIELDS)
         or observed != expected
     ):
@@ -4275,6 +4792,13 @@ def prepare_selective_catalog(
     endpoint_identity = _configured_endpoint_residual_policy_identity(config)
     if endpoint_identity is not None:
         body.update(_endpoint_residual_policy_identity_fields(endpoint_identity))
+    terminal_identity = _configured_endpoint_terminal_action_policy_identity(
+        config
+    )
+    if terminal_identity is not None:
+        body.update(
+            _endpoint_terminal_action_policy_identity_fields(terminal_identity)
+        )
     receipt = {
         **body,
         "preparation_receipt_sha256": _sha(body),
@@ -4799,6 +5323,17 @@ def _run(
                 endpoint_policy=endpoint_residual_attention_policy,
             )
         )
+        terminal_action_residual_policy = (
+            _build_configured_terminal_action_residual_policy(config)
+        )
+        endpoint_terminal_action_policy_identity = (
+            _configured_endpoint_terminal_action_policy_identity(
+                config,
+                composed_policy=composed_qk_attention_policy,
+                endpoint_policy=endpoint_residual_attention_policy,
+                terminal_policy=terminal_action_residual_policy,
+            )
+        )
         runtime_policy = v5_compiler.Lfm2CpcfV5RuntimePolicy(
             model_fold_policy=model_policy,
             maximum_resident_evidence_bytes=logical_budget,
@@ -4815,6 +5350,7 @@ def _run(
             endpoint_residual_attention_policy=(
                 endpoint_residual_attention_policy
             ),
+            terminal_action_residual_policy=terminal_action_residual_policy,
         )
         runtime_policy_sha256 = _sha(runtime_policy.as_dict())
         resume_policy_binding = _build_resume_policy_binding(
@@ -4833,13 +5369,23 @@ def _run(
                 runtime_policy=runtime_policy,
             )
         )
+        endpoint_terminal_action_runtime_policy_binding = (
+            _build_endpoint_terminal_action_runtime_policy_binding(
+                endpoint_terminal_action_policy_identity,
+                runtime_policy=runtime_policy,
+            )
+        )
         active_policy_binding = (
             resume_policy_binding
             if resume_policy_binding is not None
             else (
                 composed_qk_runtime_policy_binding
                 if composed_qk_runtime_policy_binding is not None
-                else endpoint_residual_runtime_policy_binding
+                else (
+                    endpoint_residual_runtime_policy_binding
+                    if endpoint_residual_runtime_policy_binding is not None
+                    else endpoint_terminal_action_runtime_policy_binding
+                )
             )
         )
         source_tied_table = base._mapped_source_tied_table(parent, bridge)
@@ -5032,6 +5578,7 @@ def _run(
         )
     elif (
         endpoint_residual_policy_identity is None
+        and endpoint_terminal_action_policy_identity is None
         and "composed_qk_attention_coverage" in compiled_report
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
@@ -5039,13 +5586,36 @@ def _run(
             "coverage."
         )
     endpoint_residual_coverage = None
-    if endpoint_residual_policy_identity is not None:
-        endpoint_fields = _endpoint_residual_policy_identity_fields(
-            endpoint_residual_policy_identity
+    active_endpoint_identity = (
+        endpoint_residual_policy_identity
+        if endpoint_residual_policy_identity is not None
+        else endpoint_terminal_action_policy_identity
+    )
+    if active_endpoint_identity is not None:
+        terminal_profile_active = (
+            endpoint_terminal_action_policy_identity is not None
+        )
+        endpoint_fields = (
+            _endpoint_terminal_action_policy_identity_fields(
+                active_endpoint_identity
+            )
+            if terminal_profile_active
+            else _endpoint_residual_policy_identity_fields(
+                active_endpoint_identity
+            )
         )
         endpoint_profile_document = endpoint_fields[
-            "endpoint_residual_attention_profile"
+            (
+                "endpoint_terminal_action_profile"
+                if terminal_profile_active
+                else "endpoint_residual_attention_profile"
+            )
         ]
+        composed_policy_sha_name = (
+            "endpoint_terminal_composed_qk_attention_policy_sha256"
+            if terminal_profile_active
+            else "endpoint_residual_composed_qk_attention_policy_sha256"
+        )
         if compiled_runtime_policy.get(
             "composed_qk_attention_policy"
         ) != endpoint_profile_document.get("composed_qk_attention_policy"):
@@ -5069,9 +5639,7 @@ def _run(
         if (
             _sha(prerequisite_body) != prerequisite_seal
             or prerequisite_body.get("policy_authentication_sha256")
-            != endpoint_fields[
-                "endpoint_residual_composed_qk_attention_policy_sha256"
-            ]
+            != endpoint_fields[composed_policy_sha_name]
             or prerequisite_body.get("covered_attention_layer_indices")
             != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
         ):
@@ -5088,12 +5656,29 @@ def _run(
             )
         endpoint_residual_coverage = _authenticate_endpoint_residual_coverage(
             compiled_report,
-            policy_identity=endpoint_residual_policy_identity,
+            policy_identity=active_endpoint_identity,
         )
     elif "endpoint_residual_attention_coverage" in compiled_report:
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Endpoint-off compiler receipt unexpectedly contains endpoint "
             "coverage."
+        )
+    terminal_action_integration_receipt = None
+    if endpoint_terminal_action_policy_identity is not None:
+        terminal_action_integration_receipt = (
+            _authenticate_terminal_action_integration_receipt(
+                compiled_report,
+                policy_identity=endpoint_terminal_action_policy_identity,
+            )
+        )
+    elif (
+        compiled_report.get("terminal_action_residual_enabled") is True
+        or compiled_report.get("terminal_action_residual_integrated") is True
+        or compiled_report.get("terminal_action_residual_report") is not None
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Terminal-action-off compiler receipt unexpectedly contains an "
+            "enabled or integrated terminal fold."
         )
     layer_reports = [result.as_dict() for result in compiled.layer_results]
     gpu_execution = _gpu_execution_audit(layer_reports)
@@ -5188,6 +5773,30 @@ def _run(
             "The compiler receipt lacks or changed its preauthenticated "
             "implementation identity."
         )
+    if endpoint_terminal_action_policy_identity is not None:
+        terminal_fields = _endpoint_terminal_action_policy_identity_fields(
+            endpoint_terminal_action_policy_identity
+        )
+        ordered_sources = compiler_implementation.get("ordered_source_files")
+        source_by_module = {
+            row.get("module"): row.get("sha256")
+            for row in ordered_sources
+            if isinstance(row, Mapping)
+        } if isinstance(ordered_sources, list) else {}
+        if (
+            source_by_module.get(
+                "neural_forge.hf_lfm2_cpcf_terminal_action_residual"
+            )
+            != terminal_fields["terminal_action_policy_source_sha256"]
+            or source_by_module.get(
+                "neural_forge.hf_lfm2_cpcf_v5_terminal_action_integration"
+            )
+            != terminal_fields["terminal_action_integration_source_sha256"]
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiler implementation does not bind the exact terminal "
+                "policy and V5 integration sources selected by this profile."
+            )
     compiler_receipt_sha256 = _digest(
         compiled_report.get("result_sha256"),
         "compiled_model_fold.result_sha256",
@@ -5533,6 +6142,21 @@ def _run(
         )
         body["endpoint_residual_attention_coverage"] = _plain_json(
             endpoint_residual_coverage
+        )
+    if endpoint_terminal_action_policy_identity is not None:
+        body.update(
+            _endpoint_terminal_action_policy_identity_fields(
+                endpoint_terminal_action_policy_identity
+            )
+        )
+        body["endpoint_terminal_action_runtime_policy_binding"] = _plain_json(
+            endpoint_terminal_action_runtime_policy_binding
+        )
+        body["endpoint_residual_attention_coverage"] = _plain_json(
+            endpoint_residual_coverage
+        )
+        body["terminal_action_integration_receipt"] = _plain_json(
+            terminal_action_integration_receipt
         )
     compile_diagnostic = {**body, "receipt_sha256": _sha(body)}
     if candidate_consumer is None:
@@ -5920,9 +6544,20 @@ def build_parser() -> argparse.ArgumentParser:
         const=ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,
         choices=(ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,),
         help=(
-            "Explicit versioned opt-in for the authenticated five-arm "
+            "Explicit versioned opt-in for the authenticated dynamic four/five-arm "
             "endpoint-residual Q/K/V/O tournament on every full-attention "
             "layer."
+        ),
+    )
+    parser.add_argument(
+        "--endpoint-terminal-action-profile",
+        dest="endpoint_terminal_action_profile",
+        nargs="?",
+        const=ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID,
+        choices=(ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID,),
+        help=(
+            "Exact source-bound opt-in for endpoint-residual Q/K/V/O "
+            "folding followed by closed-form final-W2 terminal-action closure."
         ),
     )
     parser.add_argument(
@@ -6053,6 +6688,13 @@ def config_from_args(args: argparse.Namespace) -> V5SelectiveBlankFoldConfig:
             is None
             else V5EndpointResidualAttentionRunnerProfile(
                 profile_id=args.endpoint_residual_attention_profile,
+            )
+        ),
+        endpoint_terminal_action_profile=(
+            None
+            if getattr(args, "endpoint_terminal_action_profile", None) is None
+            else V5EndpointTerminalActionRunnerProfile(
+                profile_id=args.endpoint_terminal_action_profile,
             )
         ),
         model_device=args.model_device,

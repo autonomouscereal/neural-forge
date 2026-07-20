@@ -118,6 +118,7 @@ def test_parser_reuses_shared_compression_request_and_bounds_memory(
     assert config.attention_sequential_transport_profile is None
     assert config.composed_qk_attention_profile is None
     assert config.endpoint_residual_attention_profile is None
+    assert config.endpoint_terminal_action_profile is None
     assert config.forbidden_requests == ()
 
 
@@ -186,6 +187,9 @@ def test_default_attention_transport_profile_is_exact_legacy_noop() -> None:
     assert not set(MODULE._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS) & set(
         config_document
     )
+    assert not set(
+        MODULE._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+    ) & set(config_document)
     assert actual.as_dict() == expected.as_dict()
     assert actual.attention_sequential_transport_policy is None
     assert MODULE._configured_model_fold_policy_identity(config) is None
@@ -385,6 +389,9 @@ def test_endpoint_profile_builds_exact_five_arm_runtime_policy(
     assert endpoint.endpoint_policy.solver_device == "cuda:1"
     assert endpoint.endpoint_policy.compute_devices == ("cuda:0", "cuda:1")
     assert endpoint.allow_legacy_recomputed_parent_probabilities is False
+    assert config.endpoint_residual_attention_profile.as_dict()[
+        "allowed_candidate_count_per_attention_layer"
+    ] == [4, 5]
     assert runtime.resolved_endpoint_residual_attention_policy(
         "full_attention"
     ) is endpoint
@@ -419,6 +426,144 @@ def test_endpoint_profile_is_mutually_exclusive_with_prior_attention_profiles(
             )
         else:
             args.append(prior_flag)
+        with pytest.raises(
+            MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+            match="mutually exclusive",
+        ):
+            MODULE.config_from_args(parser.parse_args(args))
+
+
+def test_endpoint_terminal_profile_pins_policy_sources_runtime_and_receipt(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge import hf_lfm2_cpcf_v5_model_compiler as v5_compiler
+    from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+        Lfm2CpcfTerminalActionPolicy,
+    )
+    from neural_forge.hf_lfm2_cpcf_v5_terminal_action_integration import (
+        LFM2_CPCF_V5_TERMINAL_INTEGRATION_SCHEMA,
+    )
+
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [*_required_args(tmp_path), "--endpoint-terminal-action-profile"]
+        )
+    )
+    model = MODULE._build_configured_model_fold_policy(config)
+    composed = MODULE._build_configured_composed_qk_attention_policy(config)
+    endpoint = MODULE._build_configured_endpoint_residual_attention_policy(config)
+    terminal = MODULE._build_configured_terminal_action_residual_policy(config)
+    identity = MODULE._configured_endpoint_terminal_action_policy_identity(
+        config,
+        composed_policy=composed,
+        endpoint_policy=endpoint,
+        terminal_policy=terminal,
+    )
+    fields = MODULE._endpoint_terminal_action_policy_identity_fields(identity)
+    runtime = v5_compiler.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=model,
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=2,
+        composed_qk_attention_policy=composed,
+        endpoint_residual_attention_policy=endpoint,
+        terminal_action_residual_policy=terminal,
+    )
+    binding = MODULE._build_endpoint_terminal_action_runtime_policy_binding(
+        identity,
+        runtime_policy=runtime,
+    )
+
+    assert type(config.endpoint_terminal_action_profile) is (
+        MODULE.V5EndpointTerminalActionRunnerProfile
+    )
+    assert type(terminal) is Lfm2CpcfTerminalActionPolicy
+    assert terminal.verify_authentication() is True
+    assert fields["terminal_action_residual_policy_sha256"] == (
+        terminal.authentication_sha256
+    )
+    assert fields["terminal_action_policy_source_sha256"] == (
+        MODULE._file_sha256(MODULE._TERMINAL_ACTION_POLICY_SOURCE)
+    )
+    assert fields["terminal_action_integration_source_sha256"] == (
+        MODULE._file_sha256(MODULE._TERMINAL_ACTION_INTEGRATION_SOURCE)
+    )
+    assert binding["runtime_policy_sha256"] == MODULE._sha(runtime.as_dict())
+    assert binding["terminal_integration_receipt_required"] is True
+    assert runtime.as_dict()["terminal_action_residual_policy"] == terminal.as_dict()
+
+    pure_body = {"policy_sha256": terminal.authentication_sha256}
+    pure = {**pure_body, "result_sha256": MODULE._sha(pure_body)}
+    operation_audit = {
+        "parent_model_forward_calls": 0,
+        "target_full_model_forward_calls": 0,
+        "target_final_layer_replay_calls": 1,
+        "generation_calls": 0,
+        "parent_cache_generation_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "parameters_replaced": 0,
+        "new_parameters_created": 0,
+    }
+    receipt_body = {
+        "schema": LFM2_CPCF_V5_TERMINAL_INTEGRATION_SCHEMA,
+        "policy_sha256": terminal.authentication_sha256,
+        "pure_tarc_result_sha256": pure["result_sha256"],
+        "pure_tarc_report": pure,
+        "writer_parameter_identity_preserved": True,
+        "parameter_count_changed": False,
+        "final_layer_only_local_replay": True,
+        "parent_final_output_payload_live_during_compile": True,
+        "rollback_exact": True,
+        "operation_audit": operation_audit,
+    }
+    receipt = {
+        **receipt_body,
+        "result_sha256": MODULE._sha(receipt_body),
+    }
+    compiled = {
+        "terminal_action_residual_enabled": True,
+        "terminal_action_residual_integrated": True,
+        "terminal_action_residual_report": receipt,
+        "terminal_action_residual_report_sha256": receipt["result_sha256"],
+    }
+    authenticated = MODULE._authenticate_terminal_action_integration_receipt(
+        compiled,
+        policy_identity=identity,
+    )
+    assert authenticated["result_sha256"] == receipt["result_sha256"]
+    tampered = copy.deepcopy(compiled)
+    tampered["terminal_action_residual_report"]["operation_audit"][
+        "training_steps"
+    ] = 1
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="Terminal-action integration receipt",
+    ):
+        MODULE._authenticate_terminal_action_integration_receipt(
+            tampered,
+            policy_identity=identity,
+        )
+
+
+def test_endpoint_terminal_profile_is_mutually_exclusive_with_every_prior_profile(
+    tmp_path: Path,
+) -> None:
+    parser = MODULE.build_parser()
+    prior_arguments = (
+        ("--composed-qk-attention-profile",),
+        ("--endpoint-residual-attention-profile",),
+        (
+            "--attention-sequential-transport-profile",
+            MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+        ),
+    )
+    for index, prior in enumerate(prior_arguments):
+        args = [*_required_args(tmp_path / str(index)), *prior]
+        args.append("--endpoint-terminal-action-profile")
         with pytest.raises(
             MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
             match="mutually exclusive",
