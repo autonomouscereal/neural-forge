@@ -729,8 +729,8 @@ def _parser_args(tmp_path: Path) -> list[str]:
         str(corpus),
         "--diagnostic-json",
         str(paths["output"] / "probe.json"),
-        "--target-unique-parameters",
-        "57405368",
+        "--compression-ratio",
+        "4",
         "--maximum-process-rss-gib",
         "64",
         "--expected-target-plan-fingerprint",
@@ -762,13 +762,19 @@ def test_cli_accepts_only_exact_h776_resource_and_parameter_lane(
     parser = runner.build_parser()
     args = parser.parse_args(_parser_args(tmp_path))
     config = runner.config_from_args(args)
-    assert config.fold.compression.target_unique_parameters == 57_405_368
+    assert config.fold.compression.compression_ratio == "4"
+    assert config.fold.compression.target_unique_parameters is None
+    assert config.fold.selected_candidate_rank is None
     assert config.fold.maximum_process_rss_bytes == 64 * 1024**3
     bad = _parser_args(tmp_path / "bad")
-    target_index = bad.index("--target-unique-parameters") + 1
-    bad[target_index] = "57405367"
+    ratio_index = bad.index("--compression-ratio") + 1
+    bad[ratio_index] = "4.01"
     with pytest.raises(runner.Lfm2CpcfV5RealAttentionProbeRunnerError):
         runner.config_from_args(parser.parse_args(bad))
+    ranked = _parser_args(tmp_path / "ranked")
+    ranked.extend(["--selected-candidate-rank", "2"])
+    with pytest.raises(runner.Lfm2CpcfV5RealAttentionProbeRunnerError):
+        runner.config_from_args(parser.parse_args(ranked))
 
 
 def _tree_bytes(root: Path):

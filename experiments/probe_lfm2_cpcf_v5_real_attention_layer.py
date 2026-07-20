@@ -174,19 +174,17 @@ class RealAttentionProbeConfig:
             H776_MAXIMUM_PROCESS_RSS_BYTES,
             H776_ORIGIN_COMPILER_SHA256,
             H776_TARGET_PLAN_FINGERPRINT,
-            H776_TARGET_UNIQUE_PARAMETERS,
         )
 
         fold = self.fold
         compression = fold.compression
         changed = []
-        if compression.compression_ratio is not None:
+        if compression.compression_ratio != "4":
             changed.append("compression_ratio")
-        if (
-            compression.target_unique_parameters
-            != H776_TARGET_UNIQUE_PARAMETERS
-        ):
+        if compression.target_unique_parameters is not None:
             changed.append("target_unique_parameters")
+        if fold.selected_candidate_rank is not None:
+            changed.append("selected_candidate_rank")
         if (
             fold.expected_target_plan_fingerprint
             != H776_TARGET_PLAN_FINGERPRINT
