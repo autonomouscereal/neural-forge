@@ -2030,9 +2030,7 @@ def _build_observed_execution_receipt(
                     "once_per_static_device_shard_serial_requested_device_order"
                 ),
                 "maximum_serial_semantic_probe_tensor_bytes": probe_device_bytes,
-                "conservative_static_shard_workspace_bytes": (
-                    shard_workspace_bytes
-                ),
+                "conservative_static_shard_workspace_bytes": (shard_workspace_bytes),
                 "conservative_solver_workspace_bytes": solver_workspace_bytes,
                 "conservative_peak_accounted_bytes": conservative_peak_bytes,
                 "byte_accounting_scope": (
@@ -2067,8 +2065,7 @@ def _build_observed_execution_receipt(
         int(observation["semantic_probe_tensor_bytes"]) for observation in observations
     )
     total_fixed_cache_bytes = sum(
-        int(summary["shared_fixed_tensor_cache_bytes"])
-        for summary in device_summaries
+        int(summary["shared_fixed_tensor_cache_bytes"]) for summary in device_summaries
     )
     resource_observation = {
         "fit_case_count": len(fit_bank.cases),
@@ -2393,9 +2390,7 @@ def _verify_observed_execution_receipt(
         compute_devices=workers,
     )
     replay_shards = _static_device_shards(replay_cases)
-    replay_shards_by_device = {
-        str(shard.device): shard for shard in replay_shards
-    }
+    replay_shards_by_device = {str(shard.device): shard for shard in replay_shards}
     expected_static_shard_receipt = _static_device_shard_receipt(replay_cases)
     if body.get("static_device_shard_receipt") != expected_static_shard_receipt:
         raise Lfm2EndpointQkResidualAuthenticationError(
@@ -2426,9 +2421,7 @@ def _verify_observed_execution_receipt(
         )
         shard_workspace_bytes = _conservative_static_shard_workspace_bytes(seed)
         replay_shard = replay_shards_by_device[device]
-        fixed_cache_bytes = _fixed_device_tensor_cache_bytes(
-            replay_shard.fixed_cache
-        )
+        fixed_cache_bytes = _fixed_device_tensor_cache_bytes(replay_shard.fixed_cache)
         expected_cache_counters = {
             "replay_qk_shard_broadcasts": expected_counts["exact_replay_calls"],
             "normal_qk_direction_shard_broadcasts": numerical_normal_calls,
@@ -2469,9 +2462,7 @@ def _verify_observed_execution_receipt(
                     "once_per_static_device_shard_serial_requested_device_order"
                 ),
                 "maximum_serial_semantic_probe_tensor_bytes": probe_device_bytes,
-                "conservative_static_shard_workspace_bytes": (
-                    shard_workspace_bytes
-                ),
+                "conservative_static_shard_workspace_bytes": (shard_workspace_bytes),
                 "conservative_solver_workspace_bytes": solver_workspace_bytes,
                 "conservative_peak_accounted_bytes": conservative_peak_bytes,
                 "byte_accounting_scope": (
@@ -2897,24 +2888,12 @@ def _fixed_device_cache_receipt(
     body = {
         "schema": _FIXED_DEVICE_CACHE_SCHEMA,
         "logical_device": str(cache.device),
-        "fixed_value_bfloat16_sha256": _tensor_sha256(
-            cache.value_weight_bfloat16
-        ),
-        "fixed_output_float64_sha256": _tensor_sha256(
-            cache.output_weight_float64
-        ),
-        "query_rms_bfloat16_sha256": _tensor_sha256(
-            cache.query_norm_weight_bfloat16
-        ),
-        "key_rms_bfloat16_sha256": _tensor_sha256(
-            cache.key_norm_weight_bfloat16
-        ),
-        "query_rms_float32_sha256": _tensor_sha256(
-            cache.query_norm_weight_float32
-        ),
-        "key_rms_float32_sha256": _tensor_sha256(
-            cache.key_norm_weight_float32
-        ),
+        "fixed_value_bfloat16_sha256": _tensor_sha256(cache.value_weight_bfloat16),
+        "fixed_output_float64_sha256": _tensor_sha256(cache.output_weight_float64),
+        "query_rms_bfloat16_sha256": _tensor_sha256(cache.query_norm_weight_bfloat16),
+        "key_rms_bfloat16_sha256": _tensor_sha256(cache.key_norm_weight_bfloat16),
+        "query_rms_float32_sha256": _tensor_sha256(cache.query_norm_weight_float32),
+        "key_rms_float32_sha256": _tensor_sha256(cache.key_norm_weight_float32),
         "shared_fixed_tensor_bytes": _fixed_device_tensor_cache_bytes(cache),
         "fixed_cache_builds": 1,
         "fixed_tensor_materialization": "once_per_requested_compute_device",
@@ -2943,9 +2922,7 @@ def _static_device_shard_receipt(
                 "all_cases_share_fixed_cache_by_identity": all(
                     case.fixed_cache is shard.fixed_cache for case in shard.cases
                 ),
-                "fixed_cache_receipt": _fixed_device_cache_receipt(
-                    shard.fixed_cache
-                ),
+                "fixed_cache_receipt": _fixed_device_cache_receipt(shard.fixed_cache),
             }
             for shard in shards
         ],
@@ -3775,9 +3752,7 @@ class Lfm2EndpointQkLinearOperator:
                 query.add_(
                     shard_query_gradient.to(device=self.device, dtype=torch.float32)
                 )
-                key.add_(
-                    shard_key_gradient.to(device=self.device, dtype=torch.float32)
-                )
+                key.add_(shard_key_gradient.to(device=self.device, dtype=torch.float32))
             shard.fixed_cache.normal_gradient_shard_reductions += 1
         query.add_(
             delta_query,
@@ -3977,6 +3952,127 @@ class _MetricAccumulator:
     eligible_rows: int = 0
     leakage: float = 0.0
 
+    @staticmethod
+    def _row_routing_metrics(
+        prediction_probabilities: Any,
+        target_probabilities: Any,
+        mask: Any,
+        query_row_weights: Any,
+    ) -> tuple[tuple[float, ...], tuple[bool, ...], tuple[float, ...]]:
+        """Evaluate informative rows without synchronizing once per scalar.
+
+        Grouping rows by their exact valid-key count preserves the operands and
+        reduction extent of every former scalar FP64 row reduction.  Results
+        are then scattered back into the original ``batch, head, query`` order
+        before one batched host transfer, so the caller retains the original
+        Python accumulation order and weighted metric definitions.
+        """
+
+        torch = _torch()
+        batch, heads, query_length, key_width = map(
+            int,
+            prediction_probabilities.shape,
+        )
+        flat_prediction = prediction_probabilities.reshape(-1, key_width)
+        flat_target = target_probabilities.reshape_as(flat_prediction)
+        flat_mask = mask.reshape_as(flat_prediction)
+        flat_row_weights = (
+            query_row_weights[:, None, :].expand(batch, heads, query_length).reshape(-1)
+        )
+        valid_counts = flat_mask.sum(dim=-1)
+        count_histogram = tuple(
+            int(value)
+            for value in torch.bincount(
+                valid_counts,
+                minlength=key_width + 1,
+            )
+            .detach()
+            .cpu()
+            .tolist()
+        )
+        eligible_rows = sum(count_histogram[2:])
+        if eligible_rows == 0:
+            return (), (), ()
+
+        eligible_indices = torch.nonzero(valid_counts > 1, as_tuple=False).flatten()
+        eligible_counts = valid_counts.index_select(0, eligible_indices)
+        count_order = torch.argsort(eligible_counts, stable=True)
+        grouped_indices = eligible_indices.index_select(0, count_order)
+        grouped_js = torch.empty(
+            (eligible_rows,),
+            device=flat_prediction.device,
+            dtype=torch.float64,
+        )
+        grouped_top1 = torch.empty(
+            (eligible_rows,),
+            device=flat_prediction.device,
+            dtype=torch.bool,
+        )
+        tiny = torch.finfo(torch.float64).tiny
+        cursor = 0
+        for valid_count in range(2, key_width + 1):
+            group_size = count_histogram[valid_count]
+            if group_size == 0:
+                continue
+            row_indices = grouped_indices.narrow(0, cursor, group_size)
+            group_mask = flat_mask.index_select(0, row_indices)
+            prediction = (
+                flat_prediction.index_select(0, row_indices)
+                .masked_select(group_mask)
+                .reshape(group_size, valid_count)
+            )
+            target = (
+                flat_target.index_select(0, row_indices)
+                .masked_select(group_mask)
+                .reshape(group_size, valid_count)
+            )
+            midpoint = 0.5 * (prediction + target)
+            js = (
+                0.5
+                * (
+                    (
+                        target
+                        * (
+                            torch.log(target.clamp_min(tiny))
+                            - torch.log(midpoint.clamp_min(tiny))
+                        )
+                    ).sum(dim=-1)
+                    + (
+                        prediction
+                        * (
+                            torch.log(prediction.clamp_min(tiny))
+                            - torch.log(midpoint.clamp_min(tiny))
+                        )
+                    ).sum(dim=-1)
+                )
+                / math.log(2.0)
+            )
+            grouped_js.narrow(0, cursor, group_size).copy_(js.clamp_min(0.0))
+            target_winners = torch.isclose(
+                target,
+                target.max(dim=-1, keepdim=True).values,
+                rtol=1e-10,
+                atol=1e-12,
+            )
+            grouped_top1.narrow(0, cursor, group_size).copy_(
+                target_winners.gather(
+                    dim=-1,
+                    index=prediction.argmax(dim=-1, keepdim=True),
+                ).squeeze(-1)
+            )
+            cursor += group_size
+
+        js_by_row = torch.empty_like(grouped_js)
+        top1_by_row = torch.empty_like(grouped_top1)
+        js_by_row.scatter_(0, count_order, grouped_js)
+        top1_by_row.scatter_(0, count_order, grouped_top1)
+        weights_by_row = flat_row_weights.index_select(0, eligible_indices)
+        return (
+            tuple(float(value) for value in js_by_row.detach().cpu().tolist()),
+            tuple(bool(value) for value in top1_by_row.detach().cpu().tolist()),
+            tuple(float(value) for value in weights_by_row.detach().cpu().tolist()),
+        )
+
     def add(self, case: _PreparedCase, replay: _Replay) -> None:
         torch = _torch()
         self.case_count += 1
@@ -4001,64 +4097,24 @@ class _MetricAccumulator:
                 self.leakage,
                 float(replay.probabilities[~case.mask].abs().max().item()),
             )
-        batch, heads, query_length, _keys = map(int, replay.probabilities.shape)
-        tiny = torch.finfo(torch.float64).tiny
-        for batch_index in range(batch):
-            for head in range(heads):
-                for query_index in range(query_length):
-                    valid = case.mask[batch_index, head, query_index]
-                    if int(valid.sum().item()) < 2:
-                        continue
-                    prediction = replay.probabilities[
-                        batch_index,
-                        head,
-                        query_index,
-                        valid,
-                    ]
-                    target = case.target_probabilities[
-                        batch_index,
-                        head,
-                        query_index,
-                        valid,
-                    ]
-                    midpoint = 0.5 * (prediction + target)
-                    js = (
-                        0.5
-                        * (
-                            (
-                                target
-                                * (
-                                    torch.log(target.clamp_min(tiny))
-                                    - torch.log(midpoint.clamp_min(tiny))
-                                )
-                            ).sum()
-                            + (
-                                prediction
-                                * (
-                                    torch.log(prediction.clamp_min(tiny))
-                                    - torch.log(midpoint.clamp_min(tiny))
-                                )
-                            ).sum()
-                        )
-                        / math.log(2.0)
-                    )
-                    js_value = float(js.clamp_min(0.0).item())
-                    weight = float(row_weights[batch_index, query_index].item())
-                    target_winners = torch.isclose(
-                        target,
-                        target.max(),
-                        rtol=1e-10,
-                        atol=1e-12,
-                    )
-                    matched = bool(
-                        target_winners[int(prediction.argmax().item())].item()
-                    )
-                    self.js_sum += weight * js_value
-                    self.js_weight += weight
-                    self.js_worst = max(self.js_worst, js_value)
-                    self.top1_matches += weight * float(matched)
-                    self.eligible_weight += weight
-                    self.eligible_rows += 1
+        js_values, top1_matches, routing_weights = self._row_routing_metrics(
+            replay.probabilities,
+            case.target_probabilities,
+            case.mask,
+            row_weights,
+        )
+        for js_value, matched, weight in zip(
+            js_values,
+            top1_matches,
+            routing_weights,
+            strict=True,
+        ):
+            self.js_sum += weight * js_value
+            self.js_weight += weight
+            self.js_worst = max(self.js_worst, js_value)
+            self.top1_matches += weight * float(matched)
+            self.eligible_weight += weight
+            self.eligible_rows += 1
 
     def finish(self) -> Lfm2EndpointQkMetrics:
         torch = _torch()
@@ -4443,8 +4499,7 @@ def _verify_fit_sweep_semantics(
         if (
             not isinstance(sweep, Mapping)
             or sweep.get("sweep") != sweep_index
-            or sweep.get("linear_solver")
-            != "deterministic_matrix_free_ridge_normal_cg"
+            or sweep.get("linear_solver") != "deterministic_matrix_free_ridge_normal_cg"
         ):
             raise Lfm2EndpointQkResidualAuthenticationError(
                 "FIT sweep ordering or solver identity is invalid."
@@ -4491,14 +4546,13 @@ def _verify_fit_sweep_semantics(
         if termination == "relative_normal_residual":
             valid_termination = (
                 converged
-                and policy.minimum_cg_iterations <= iterations
+                and policy.minimum_cg_iterations
+                <= iterations
                 <= policy.maximum_cg_iterations
                 and float(relative) <= policy.cg_relative_tolerance
             )
         elif termination == "zero_endpoint_residual_gradient":
-            valid_termination = (
-                converged and iterations == 0 and float(relative) == 0.0
-            )
+            valid_termination = converged and iterations == 0 and float(relative) == 0.0
         elif termination == "maximum_iterations":
             valid_termination = (
                 not converged and iterations == policy.maximum_cg_iterations
@@ -4517,10 +4571,7 @@ def _verify_fit_sweep_semantics(
             and solve["direction_has_nonzero_entry"]
             and termination in {"relative_normal_residual", "maximum_iterations"}
         )
-        if (
-            not valid_termination
-            or bool(solve["usable_direction"]) != expected_usable
-        ):
+        if not valid_termination or bool(solve["usable_direction"]) != expected_usable:
             raise Lfm2EndpointQkResidualAuthenticationError(
                 "FIT sweep convergence and usable-direction semantics disagree."
             )
@@ -4623,7 +4674,9 @@ def _verify_fit_sweep_semantics(
                 state_sha,
             )
             if expected_eligible:
-                eligible_rows.append((selection_key, expected_alpha, state_sha, metrics))
+                eligible_rows.append(
+                    (selection_key, expected_alpha, state_sha, metrics)
+                )
         if not eligible_rows:
             raise Lfm2EndpointQkResidualAuthenticationError(
                 "FIT sweep frontier has no alpha-zero fallback."
@@ -4776,8 +4829,7 @@ class Lfm2CompiledEndpointQkFitProposal:
             or body.get("analytical_sweep_count") != len(sweeps)
             or body.get("solver_device") != self.policy.solver_device
             or body.get("compute_devices") != list(self.policy.compute_devices)
-            or body.get("case_assignment")
-            != "authenticated_bank_order_round_robin"
+            or body.get("case_assignment") != "authenticated_bank_order_round_robin"
             or body.get("fit_check_cases_consumed") != 0
             or body.get("fit_check_accessible") is not False
             or body.get("exact_bfloat16_frontier") is not True
@@ -4964,9 +5016,7 @@ class Lfm2CompiledEndpointQkResidualFold:
         )
         body = dict(self.report)
         supplied = body.pop("report_sha256", None)
-        proposal_sweeps = [
-            dict(value) for value in self.fit_proposal.report["sweeps"]
-        ]
+        proposal_sweeps = [dict(value) for value in self.fit_proposal.report["sweeps"]]
         expected_fields = {
             "schema",
             "method",
@@ -5077,8 +5127,7 @@ class Lfm2CompiledEndpointQkResidualFold:
             or body.get("analytical_sweep_count") != len(proposal_sweeps)
             or body.get("solver_device") != self.policy.solver_device
             or body.get("compute_devices") != list(self.policy.compute_devices)
-            or body.get("case_assignment")
-            != "authenticated_bank_order_round_robin"
+            or body.get("case_assignment") != "authenticated_bank_order_round_robin"
             or body.get("observed_execution_receipt")
             != self.fit_proposal.report["observed_execution_receipt"]
             or body.get("fixed_value_output_inside_endpoint_jacobian") is not True

@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -310,6 +311,249 @@ def _one_iteration_policy() -> Lfm2EndpointQkResidualFoldPolicy:
     )
 
 
+def _adversarial_routing_metric_tensors(
+    mask_kind: str,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    batch, heads, queries, keys = 2, 3, 5, 7
+    mask = torch.zeros(batch, heads, queries, keys, dtype=torch.bool)
+    if mask_kind == "causal":
+        for batch_index in range(batch):
+            for head in range(heads):
+                for query_index in range(queries):
+                    valid_count = max(
+                        1,
+                        query_index + 1 - ((batch_index + head) % 2),
+                    )
+                    mask[batch_index, head, query_index, :valid_count] = True
+    elif mask_kind == "ragged":
+        patterns = (
+            (),
+            (3,),
+            (0, 6),
+            (1, 3, 5),
+            (0, 2, 4, 6),
+            (0, 1, 3, 4, 6),
+            (0, 1, 2, 3, 4, 5, 6),
+        )
+        for flat_index, row in enumerate(mask.reshape(-1, keys)):
+            row[list(patterns[flat_index % len(patterns)])] = True
+    else:  # pragma: no cover - test helper contract
+        raise AssertionError(f"unknown mask kind: {mask_kind}")
+
+    element_count = batch * heads * queries * keys
+    ordinal = torch.arange(element_count, dtype=torch.float64).reshape(
+        batch,
+        heads,
+        queries,
+        keys,
+    )
+    target_raw = torch.remainder(ordinal * 7.0 + 3.0, 19.0) + 1.0
+    prediction_raw = torch.remainder(ordinal.flip(-1) * 11.0 + 5.0, 23.0) + 1.0
+    target_raw = torch.where(mask, target_raw, torch.zeros_like(target_raw))
+    prediction_raw = torch.where(
+        mask,
+        prediction_raw,
+        torch.zeros_like(prediction_raw),
+    )
+    for flat_index, (target_row, prediction_row, mask_row) in enumerate(
+        zip(
+            target_raw.reshape(-1, keys),
+            prediction_raw.reshape(-1, keys),
+            mask.reshape(-1, keys),
+            strict=True,
+        )
+    ):
+        valid_indices = torch.nonzero(mask_row, as_tuple=False).flatten()
+        if int(valid_indices.numel()) < 2:
+            continue
+        if flat_index % 2 == 0:
+            tied_value = target_row.index_select(0, valid_indices).max() + 7.0
+            target_row[valid_indices[0]] = tied_value
+            target_row[valid_indices[1]] = tied_value
+            prediction_row[valid_indices[1]] = (
+                prediction_row.index_select(0, valid_indices).max() + 9.0
+            )
+        else:
+            target_row[valid_indices[0]] = (
+                target_row.index_select(0, valid_indices).max() + 7.0
+            )
+            prediction_row[valid_indices[-1]] = (
+                prediction_row.index_select(0, valid_indices).max() + 9.0
+            )
+    target = target_raw / target_raw.sum(dim=-1, keepdim=True).clamp_min(1.0)
+    prediction = prediction_raw / prediction_raw.sum(
+        dim=-1,
+        keepdim=True,
+    ).clamp_min(1.0)
+    row_weights = torch.tensor(
+        (
+            (0.125, 0.5, 1.75, 2.0, 3.25),
+            (4.5, 0.375, 2.25, 1.125, 5.0),
+        ),
+        dtype=torch.float64,
+    )
+    return prediction, target, mask, row_weights
+
+
+def _scalar_routing_metric_rows(
+    prediction_probabilities: torch.Tensor,
+    target_probabilities: torch.Tensor,
+    mask: torch.Tensor,
+    query_row_weights: torch.Tensor,
+) -> tuple[tuple[float, ...], tuple[bool, ...], tuple[float, ...]]:
+    js_values = []
+    top1_matches = []
+    weights = []
+    tiny = torch.finfo(torch.float64).tiny
+    batch, heads, query_length, _keys = map(int, prediction_probabilities.shape)
+    for batch_index in range(batch):
+        for head in range(heads):
+            for query_index in range(query_length):
+                valid = mask[batch_index, head, query_index]
+                if int(valid.sum().item()) < 2:
+                    continue
+                prediction = prediction_probabilities[
+                    batch_index,
+                    head,
+                    query_index,
+                    valid,
+                ]
+                target = target_probabilities[
+                    batch_index,
+                    head,
+                    query_index,
+                    valid,
+                ]
+                midpoint = 0.5 * (prediction + target)
+                js = (
+                    0.5
+                    * (
+                        (
+                            target
+                            * (
+                                torch.log(target.clamp_min(tiny))
+                                - torch.log(midpoint.clamp_min(tiny))
+                            )
+                        ).sum()
+                        + (
+                            prediction
+                            * (
+                                torch.log(prediction.clamp_min(tiny))
+                                - torch.log(midpoint.clamp_min(tiny))
+                            )
+                        ).sum()
+                    )
+                    / math.log(2.0)
+                )
+                target_winners = torch.isclose(
+                    target,
+                    target.max(),
+                    rtol=1e-10,
+                    atol=1e-12,
+                )
+                js_values.append(float(js.clamp_min(0.0).item()))
+                top1_matches.append(
+                    bool(target_winners[int(prediction.argmax().item())].item())
+                )
+                weights.append(float(query_row_weights[batch_index, query_index]))
+    return tuple(js_values), tuple(top1_matches), tuple(weights)
+
+
+@pytest.mark.parametrize("mask_kind", ("causal", "ragged"))
+@pytest.mark.parametrize(
+    "device",
+    (
+        "cpu",
+        pytest.param(
+            "cuda:0",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(),
+                reason="CUDA unavailable",
+            ),
+        ),
+    ),
+)
+def test_grouped_routing_metrics_exactly_match_scalar_reference(
+    mask_kind: str,
+    device: str,
+) -> None:
+    prediction, target, mask, row_weights = _adversarial_routing_metric_tensors(
+        mask_kind
+    )
+    prediction = prediction.to(device)
+    target = target.to(device)
+    mask = mask.to(device)
+    row_weights = row_weights.to(device)
+    expected_rows = _scalar_routing_metric_rows(
+        prediction,
+        target,
+        mask,
+        row_weights,
+    )
+    actual_rows = endpoint_fold._MetricAccumulator._row_routing_metrics(
+        prediction,
+        target,
+        mask,
+        row_weights,
+    )
+    assert actual_rows == expected_rows
+    assert any(actual_rows[1])
+    assert not all(actual_rows[1])
+
+    target_endpoint = torch.linspace(
+        -0.75,
+        0.9,
+        prediction.shape[0] * prediction.shape[2] * 4,
+        dtype=torch.float64,
+    ).reshape(prediction.shape[0], prediction.shape[2], 4)
+    proposed_endpoint = target_endpoint + 0.03125
+    accumulator = endpoint_fold._MetricAccumulator()
+    accumulator.add(
+        SimpleNamespace(
+            query_row_weights=row_weights,
+            target_endpoint=target_endpoint,
+            target_probabilities=target,
+            mask=mask,
+        ),
+        SimpleNamespace(
+            endpoint=proposed_endpoint,
+            probabilities=prediction,
+        ),
+    )
+    actual_metrics = accumulator.finish()
+    endpoint_error = float(
+        (row_weights.unsqueeze(-1) * (proposed_endpoint - target_endpoint).square())
+        .sum()
+        .item()
+    )
+    endpoint_energy = float(
+        (row_weights.unsqueeze(-1) * target_endpoint.square()).sum().item()
+    )
+    probability_weights = row_weights[:, None, :, None]
+    probability_error = float(
+        (probability_weights * (prediction - target).square()).sum().item()
+    )
+    probability_energy = float((probability_weights * target.square()).sum().item())
+    expected_js_sum = 0.0
+    expected_js_weight = 0.0
+    expected_top1 = 0.0
+    for js_value, matched, weight in zip(*expected_rows, strict=True):
+        expected_js_sum += weight * js_value
+        expected_js_weight += weight
+        expected_top1 += weight * float(matched)
+    expected_metrics = endpoint_fold.Lfm2EndpointQkMetrics(
+        case_count=1,
+        eligible_route_rows=len(expected_rows[0]),
+        endpoint_relative_rmse=math.sqrt(endpoint_error / endpoint_energy),
+        probability_relative_rmse=math.sqrt(probability_error / probability_energy),
+        js_divergence_mean=expected_js_sum / expected_js_weight,
+        js_divergence_worst=max(expected_rows[0]),
+        top1_route_agreement_fraction=expected_top1 / expected_js_weight,
+        maximum_causal_probability_leakage=0.0,
+    )
+    assert actual_metrics == expected_metrics
+
+
 @pytest.fixture(scope="module")
 def fit_proposal_fixture() -> tuple[dict[str, object], object]:
     fixture = _make_fixture()
@@ -394,7 +638,9 @@ def test_target_is_direct_parent_probability_barycenter_not_logit_average() -> N
     ]
 
 
-def test_finite_one_iteration_cg_direction_enters_exact_nonregressing_frontier() -> None:
+def test_finite_one_iteration_cg_direction_enters_exact_nonregressing_frontier() -> (
+    None
+):
     fixture = _make_fixture()
     proposal = compile_lfm2_cached_endpoint_qk_fit_proposal(
         seed=fixture["seed_a"],
@@ -419,9 +665,7 @@ def test_finite_one_iteration_cg_direction_enters_exact_nonregressing_frontier()
         assert solve["direction_is_finite"] is True
         assert solve["direction_has_nonzero_entry"] is True
         selected = next(
-            row
-            for row in sweep["frontier"]
-            if row["alpha"] == sweep["selected_alpha"]
+            row for row in sweep["frontier"] if row["alpha"] == sweep["selected_alpha"]
         )
         assert selected["eligible"] is True
     assert proposal.verify() == proposal.report_sha256
@@ -638,20 +882,24 @@ def test_execution_receipt_authenticates_real_semantic_work_and_resources(
         range(len(proposal.fit_bank.cases))
     )
     assert summary["fixed_cache_receipt"]["fixed_cache_builds"] == 1
-    assert summary["replay_qk_shard_broadcasts"] == (
-        receipt["compute_observations"][0]["exact_replay_calls"]
+    assert (
+        summary["replay_qk_shard_broadcasts"]
+        == (receipt["compute_observations"][0]["exact_replay_calls"])
     )
-    assert summary["replay_qk_shard_broadcasts"] * summary["case_count"] == (
-        summary["exact_replay_calls"]
+    assert (
+        summary["replay_qk_shard_broadcasts"] * summary["case_count"]
+        == (summary["exact_replay_calls"])
     )
-    assert summary["normal_qk_direction_shard_broadcasts"] == (
-        receipt["numerical_normal_operator_calls"]
+    assert (
+        summary["normal_qk_direction_shard_broadcasts"]
+        == (receipt["numerical_normal_operator_calls"])
     )
-    assert summary["normal_gradient_shard_reductions"] == (
-        receipt["numerical_normal_operator_calls"]
+    assert (
+        summary["normal_gradient_shard_reductions"]
+        == (receipt["numerical_normal_operator_calls"])
     )
-    assert summary["rhs_gradient_shard_reductions"] == (
-        receipt["numerical_sweep_count"]
+    assert (
+        summary["rhs_gradient_shard_reductions"] == (receipt["numerical_sweep_count"])
     )
     assert summary["semantic_direction_shard_builds"] == 1
     assert summary["semantic_gradient_shard_reductions"] == 1
