@@ -96,8 +96,19 @@ H776_MAXIMUM_CUDA_BYTES_PER_DEVICE = 20 * 1024**3
 H776_PCG_MAXIMUM_ITERATIONS = 64
 H776_PCG_RESTART_BLOCK_ITERATIONS = 64
 H776_PCG_HARD_MAXIMUM_ITERATIONS = 512
+H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS = 4096
 H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS = 4096
 H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL = 1e-8
+H776_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA = (
+    "neural-forge-lfm2-sequence-effective-hidden-partial-trace-cholesky-v1"
+)
+H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SCHEMA = (
+    "neural-forge-lfm2-sequence-effective-hidden-partial-trace-"
+    "pcg-execution-profile-v1"
+)
+H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256 = (
+    "7f71ffe700643b6fc017c518dd2f853092917d288f8e70b4cb659e941aa5f13e"
+)
 H776_ROW_BLOCK_JACOBI_SCHEMA = (
     "neural-forge-lfm2-sequence-effective-row-block-jacobi-v1"
 )
@@ -117,9 +128,7 @@ H776_SELECTIVE_SOURCE_SHA256 = (
 H776_SELECTIVE_PROVIDER_SHA256 = (
     "cf690ab6cccbf1c44d3f8e40c576589ba020f53a4ffe2c4e1d93455bcbcf8582"
 )
-H776_CACHE_SHA256 = (
-    "76ff3cbc946ea52b7bc30225877ed344e5b0212307756b8b80ebe78fc2aa7a95"
-)
+H776_CACHE_SHA256 = "76ff3cbc946ea52b7bc30225877ed344e5b0212307756b8b80ebe78fc2aa7a95"
 H776_TOKEN_BRIDGE_SHA256 = (
     "5c1a452cbe6bb78cb0c346bc9ca5d784200aad0b8848847e559cd62fe4852384"
 )
@@ -253,9 +262,7 @@ def _local_directory(value: Path, name: str) -> Path:
     try:
         result = value.expanduser().resolve(strict=True)
     except OSError as exc:
-        raise Lfm2CpcfV5RealAttentionProbeError(
-            f"{name} does not exist."
-        ) from exc
+        raise Lfm2CpcfV5RealAttentionProbeError(f"{name} does not exist.") from exc
     if result.is_symlink() or not result.is_dir():
         raise Lfm2CpcfV5RealAttentionProbeError(
             f"{name} must be a nonsymlink directory."
@@ -345,15 +352,11 @@ class Lfm2CpcfV5RealAttentionProbePins:
             "expected_blank_state_sha256": H776_BLANK_STATE_SHA256,
             "expected_full_policy_sha256": H776_FULL_POLICY_SHA256,
             "expected_origin_compiler_sha256": H776_ORIGIN_COMPILER_SHA256,
-            "expected_sequence_solver_plan_sha256": (
-                H776_SEQUENCE_SOLVER_PLAN_SHA256
-            ),
+            "expected_sequence_solver_plan_sha256": (H776_SEQUENCE_SOLVER_PLAN_SHA256),
             "layer_index": H776_LAYER_INDEX,
             "expected_target_unique_parameters": H776_TARGET_UNIQUE_PARAMETERS,
             "maximum_process_rss_bytes": H776_MAXIMUM_PROCESS_RSS_BYTES,
-            "maximum_cuda_bytes_per_device": (
-                H776_MAXIMUM_CUDA_BYTES_PER_DEVICE
-            ),
+            "maximum_cuda_bytes_per_device": (H776_MAXIMUM_CUDA_BYTES_PER_DEVICE),
             "require_zero_swap": True,
         }
         changed = [
@@ -387,18 +390,12 @@ class Lfm2CpcfV5RealAttentionProbePins:
                 self.expected_runtime_compiler_implementation_sha256
             ),
             "expected_sequence_source_sha256": self.expected_sequence_source_sha256,
-            "expected_target_plan_fingerprint": (
-                self.expected_target_plan_fingerprint
-            ),
-            "expected_target_topology_sha256": (
-                self.expected_target_topology_sha256
-            ),
+            "expected_target_plan_fingerprint": (self.expected_target_plan_fingerprint),
+            "expected_target_topology_sha256": (self.expected_target_topology_sha256),
             "expected_selective_catalog_sha256": (
                 self.expected_selective_catalog_sha256
             ),
-            "expected_selective_source_sha256": (
-                self.expected_selective_source_sha256
-            ),
+            "expected_selective_source_sha256": (self.expected_selective_source_sha256),
             "expected_selective_provider_sha256": (
                 self.expected_selective_provider_sha256
             ),
@@ -409,15 +406,11 @@ class Lfm2CpcfV5RealAttentionProbePins:
                 self.expected_source_tied_table_sha256
             ),
             "expected_source_state_sha256": self.expected_source_state_sha256,
-            "expected_source_inventory_sha256": (
-                self.expected_source_inventory_sha256
-            ),
+            "expected_source_inventory_sha256": (self.expected_source_inventory_sha256),
             "expected_blank_report_sha256": self.expected_blank_report_sha256,
             "expected_blank_state_sha256": self.expected_blank_state_sha256,
             "expected_full_policy_sha256": self.expected_full_policy_sha256,
-            "expected_origin_compiler_sha256": (
-                self.expected_origin_compiler_sha256
-            ),
+            "expected_origin_compiler_sha256": (self.expected_origin_compiler_sha256),
             "expected_sequence_solver_plan_sha256": (
                 self.expected_sequence_solver_plan_sha256
             ),
@@ -426,9 +419,7 @@ class Lfm2CpcfV5RealAttentionProbePins:
                 self.expected_target_unique_parameters
             ),
             "maximum_process_rss_bytes": self.maximum_process_rss_bytes,
-            "maximum_cuda_bytes_per_device": (
-                self.maximum_cuda_bytes_per_device
-            ),
+            "maximum_cuda_bytes_per_device": (self.maximum_cuda_bytes_per_device),
             "require_zero_swap": self.require_zero_swap,
             "expected_attention_sequential_transport_enabled": (
                 self.expected_attention_sequential_transport_enabled
@@ -505,10 +496,8 @@ def authenticate_h776_k2_checkpoint(
         or incoming.get("layer_index") != H776_LAYER_INDEX
         or incoming.get("boundary") != "layer.001.post_layer"
         or incoming.get("actual_folded_upstream_states") is not True
-        or receipts[-1].get("next_bank_sha256")
-        != incoming.get("state_bank_sha256")
-        or receipts[1].get("input_bank_sha256")
-        != receipts[0].get("next_bank_sha256")
+        or receipts[-1].get("next_bank_sha256") != incoming.get("state_bank_sha256")
+        or receipts[1].get("input_bank_sha256") != receipts[0].get("next_bank_sha256")
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Checkpoint is not the exact contiguous short-conv k=2 causal prefix."
@@ -518,7 +507,11 @@ def authenticate_h776_k2_checkpoint(
         if (
             not isinstance(execution, dict)
             or execution.get("closed_form_compilers") is not True
-            or any(execution.get(name) != 0 for name in execution if name != "closed_form_compilers")
+            or any(
+                execution.get(name) != 0
+                for name in execution
+                if name != "closed_form_compilers"
+            )
         ):
             raise Lfm2CpcfV5RealAttentionProbeError(
                 "A completed prefix receipt does not prove fold-only execution."
@@ -528,14 +521,12 @@ def authenticate_h776_k2_checkpoint(
         not isinstance(topology, dict)
         or topology.get("model_type") != "lfm2"
         or topology.get("layer_count") != H776_LAYER_COUNT
-        or topology.get("topology_sha256")
-        != pins.expected_target_topology_sha256
+        or topology.get("topology_sha256") != pins.expected_target_topology_sha256
         or completed.get("target_topology_sha256")
         != pins.expected_target_topology_sha256
         or bindings.get("target_topology_sha256")
         != pins.expected_target_topology_sha256
-        or bindings.get("full_policy_sha256")
-        != pins.expected_full_policy_sha256
+        or bindings.get("full_policy_sha256") != pins.expected_full_policy_sha256
         or bindings.get("compiler_fingerprint_sha256")
         != pins.expected_origin_compiler_sha256
     ):
@@ -689,7 +680,9 @@ def authenticate_h776_phase_inventory(
         or split_counts != dict(H776_SPLIT_PHASE_COUNTS)
         or trajectory_counts != dict(H776_SPLIT_TRAJECTORY_COUNTS)
         or any(tuple(names) != _EXPECTED_PHASE_NAMES for names in trajectories.values())
-        or any(len(names) != H776_PHASES_PER_TRAJECTORY for names in trajectories.values())
+        or any(
+            len(names) != H776_PHASES_PER_TRAJECTORY for names in trajectories.values()
+        )
         or split_rows != frontier_rows
         or split_rows["fit"] != H776_FIT_QUERY_ROWS
         or split_rows["validation"] != H776_VALIDATION_QUERY_ROWS
@@ -720,6 +713,14 @@ def _finite_nonnegative_number(value: Any) -> bool:
     )
 
 
+def _finite_number(value: Any) -> bool:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(float(value))
+    )
+
+
 def _authenticate_legacy_pcg_report(report: Mapping[str, Any]) -> None:
     report_fields = {
         "role",
@@ -739,8 +740,7 @@ def _authenticate_legacy_pcg_report(report: Mapping[str, Any]) -> None:
     history = report.get("relative_normal_residual_history")
     if (
         set(report) != report_fields
-        or report.get("solver")
-        != "deterministic_jacobi_pcg_single_tensor"
+        or report.get("solver") != "deterministic_jacobi_pcg_single_tensor"
         or report.get("maximum_iterations") != H776_PCG_MAXIMUM_ITERATIONS
         or isinstance(iterations, bool)
         or not isinstance(iterations, int)
@@ -794,51 +794,32 @@ def _authenticate_restarted_pcg_report(report: Mapping[str, Any]) -> None:
     original_final = report.get(
         "original_lane_final_recurrence_relative_normal_residual"
     )
-    original_lane_iterations = report.get(
-        "original_lane_iterations_executed"
-    )
-    recurrence_final = report.get(
-        "final_recurrence_relative_normal_residual"
-    )
+    original_lane_iterations = report.get("original_lane_iterations_executed")
+    recurrence_final = report.get("final_recurrence_relative_normal_residual")
     exact_final = report.get("final_relative_normal_residual")
     history = report.get("relative_normal_residual_history")
-    checkpoints = report.get(
-        "exact_relative_normal_residual_checkpoints"
-    )
+    checkpoints = report.get("exact_relative_normal_residual_checkpoints")
     schedule = report.get("restart_schedule")
     total_matvec_calls = report.get("total_matvec_calls")
     if (
         set(report) != report_fields
-        or report.get("solver")
-        != "deterministic_restarted_jacobi_pcg_single_tensor"
-        or report.get("maximum_iterations")
-        != H776_PCG_HARD_MAXIMUM_ITERATIONS
-        or report.get("original_lane_maximum_iterations")
-        != H776_PCG_MAXIMUM_ITERATIONS
+        or report.get("solver") != "deterministic_restarted_jacobi_pcg_single_tensor"
+        or report.get("maximum_iterations") != H776_PCG_HARD_MAXIMUM_ITERATIONS
+        or report.get("original_lane_maximum_iterations") != H776_PCG_MAXIMUM_ITERATIONS
         or isinstance(original_lane_iterations, bool)
         or not isinstance(original_lane_iterations, int)
-        or not (
-            1
-            <= original_lane_iterations
-            <= H776_PCG_MAXIMUM_ITERATIONS
-        )
-        or report.get("restart_block_iterations")
-        != H776_PCG_RESTART_BLOCK_ITERATIONS
+        or not (1 <= original_lane_iterations <= H776_PCG_MAXIMUM_ITERATIONS)
+        or report.get("restart_block_iterations") != H776_PCG_RESTART_BLOCK_ITERATIONS
         or isinstance(iterations, bool)
         or not isinstance(iterations, int)
-        or not (
-            1
-            <= iterations
-            <= H776_PCG_HARD_MAXIMUM_ITERATIONS
-        )
+        or not (1 <= iterations <= H776_PCG_HARD_MAXIMUM_ITERATIONS)
         or report.get("required_relative_normal_residual")
         != H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
         or not _finite_nonnegative_number(initial)
         or not _finite_nonnegative_number(original_final)
         or not _finite_nonnegative_number(recurrence_final)
         or not _finite_nonnegative_number(exact_final)
-        or float(exact_final)
-        > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+        or float(exact_final) > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
         or not isinstance(history, list)
         or len(history) != iterations
         or any(not _finite_nonnegative_number(item) for item in history)
@@ -846,34 +827,29 @@ def _authenticate_restarted_pcg_report(report: Mapping[str, Any]) -> None:
         or report.get("recurrence_history_sha256") != _sha256(history)
         or not isinstance(checkpoints, list)
         or not checkpoints
-        or report.get("exact_residual_checkpoints_sha256")
-        != _sha256(checkpoints)
+        or report.get("exact_residual_checkpoints_sha256") != _sha256(checkpoints)
         or not isinstance(schedule, list)
         or report.get("restart_schedule_sha256") != _sha256(schedule)
         or isinstance(total_matvec_calls, bool)
         or not isinstance(total_matvec_calls, int)
-        or total_matvec_calls
-        != iterations + 2 + len(schedule)
+        or total_matvec_calls != iterations + 2 + len(schedule)
         or report.get("exact_final_residual_authenticated") is not True
-        or report.get(
-            "extended_after_original_lane_exact_authentication_miss"
-        )
+        or report.get("extended_after_original_lane_exact_authentication_miss")
         is not True
         or report.get("solution_finite") is not True
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
-            "A restarted sequence-effective PCG solve lacks exact "
-            "convergence evidence."
+            "A restarted sequence-effective PCG solve lacks exact convergence evidence."
         )
 
     checkpoint_by_iteration: dict[int, float] = {}
     previous_iteration = -1
     for checkpoint in checkpoints:
-        if (
-            not isinstance(checkpoint, dict)
-            or set(checkpoint)
-            != {"iteration", "relative_normal_residual", "finite"}
-        ):
+        if not isinstance(checkpoint, dict) or set(checkpoint) != {
+            "iteration",
+            "relative_normal_residual",
+            "finite",
+        }:
             raise Lfm2CpcfV5RealAttentionProbeError(
                 "Restarted PCG exact residual checkpoints are malformed."
             )
@@ -883,11 +859,7 @@ def _authenticate_restarted_pcg_report(report: Mapping[str, Any]) -> None:
             isinstance(iteration, bool)
             or not isinstance(iteration, int)
             or iteration <= previous_iteration
-            or not (
-                1
-                <= iteration
-                <= iterations
-            )
+            or not (1 <= iteration <= iterations)
             or not _finite_nonnegative_number(residual)
             or checkpoint.get("finite") is not True
         ):
@@ -898,11 +870,9 @@ def _authenticate_restarted_pcg_report(report: Mapping[str, Any]) -> None:
         previous_iteration = iteration
     if (
         checkpoints[0]["iteration"] != original_lane_iterations
-        or float(history[original_lane_iterations - 1])
-        != float(original_final)
+        or float(history[original_lane_iterations - 1]) != float(original_final)
         or checkpoints[-1]["iteration"] != iterations
-        or float(checkpoints[-1]["relative_normal_residual"])
-        != float(exact_final)
+        or float(checkpoints[-1]["relative_normal_residual"]) != float(exact_final)
         or len(checkpoints) != len(schedule) + 1
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
@@ -954,13 +924,9 @@ def _authenticate_restarted_pcg_report(report: Mapping[str, Any]) -> None:
             or ending > planned_stop
             or ending not in checkpoint_by_iteration
             or not _finite_nonnegative_number(
-                block.get(
-                    "ending_recurrence_relative_normal_residual"
-                )
+                block.get("ending_recurrence_relative_normal_residual")
             )
-            or float(
-                block["ending_recurrence_relative_normal_residual"]
-            )
+            or float(block["ending_recurrence_relative_normal_residual"])
             != float(history[ending - 1])
             or not _finite_nonnegative_number(
                 block.get("ending_exact_relative_normal_residual")
@@ -980,30 +946,22 @@ def _authenticate_restarted_pcg_report(report: Mapping[str, Any]) -> None:
         or (schedule and expected_restart != iterations)
         or (
             schedule
-            and float(
-                checkpoints[0]["relative_normal_residual"]
-            )
+            and float(checkpoints[0]["relative_normal_residual"])
             <= H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
         )
         or (
             not schedule
-            and float(
-                checkpoints[0]["relative_normal_residual"]
-            )
+            and float(checkpoints[0]["relative_normal_residual"])
             > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
         )
         or (
             schedule
-            and any(
-                block["termination"] != "block_boundary"
-                for block in schedule[:-1]
-            )
+            and any(block["termination"] != "block_boundary" for block in schedule[:-1])
         )
         or (
             schedule
             and any(
-                block["ending_iteration"]
-                != block["planned_stop_iteration"]
+                block["ending_iteration"] != block["planned_stop_iteration"]
                 for block in schedule[:-1]
             )
         )
@@ -1012,11 +970,7 @@ def _authenticate_restarted_pcg_report(report: Mapping[str, Any]) -> None:
             <= H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
             for checkpoint in checkpoints[:-1]
         )
-        or (
-            schedule
-            and schedule[-1]["termination"]
-            != "exact_tolerance_reached"
-        )
+        or (schedule and schedule[-1]["termination"] != "exact_tolerance_reached")
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Restarted PCG schedule does not reach its reported final iteration."
@@ -1410,6 +1364,537 @@ def _authenticate_continuous_row_block_pcg_report(
     _digest(report.get("solution_sha256"), "PCG solution SHA-256")
 
 
+def _authenticate_h776_hidden_partial_trace_receipt(
+    value: Any,
+    *,
+    role: str,
+) -> None:
+    receipt_fields = {
+        "kind",
+        "construction_report",
+        "construction_report_sha256",
+        "partial_trace_sha256",
+        "factorization",
+        "factorization_info",
+        "factor_sha256",
+        "factor_shape",
+        "factor_dtype",
+        "factor_device",
+        "hidden_size",
+        "head_dim",
+        "partial_trace_spd",
+        "positive_finite_factor_diagonal",
+        "inverse_orientation_probe_relative_residual",
+        "inverse_orientation_probe_tolerance",
+        "factorization_materialized_only_after_original_lane_exact_miss",
+        "full_operator_materialized",
+        "report_sha256",
+    }
+    construction_fields = {
+        "schema",
+        "role",
+        "construction",
+        "formula",
+        "ridge",
+        "hidden_size",
+        "head_dim",
+        "partial_trace_shape",
+        "partial_trace_dtype",
+        "partial_trace_device",
+        "partial_trace_sha256",
+        "partial_trace_tensor_bytes",
+        "source_term_count",
+        "source_terms",
+        "source_terms_sha256",
+        "raw_maximum_absolute_asymmetry",
+        "symmetry_tolerance",
+        "symmetric_within_numerical_tolerance",
+        "symmetrization",
+        "full_operator_materialized",
+        "report_sha256",
+    }
+    receipt = _self_sealed(
+        value,
+        seal_field="report_sha256",
+        name="hidden partial-trace factorization receipt",
+    )
+    construction_value = receipt.get("construction_report")
+    construction = _self_sealed(
+        construction_value,
+        seal_field="report_sha256",
+        name="hidden partial-trace construction report",
+    )
+    asymmetry = construction.get("raw_maximum_absolute_asymmetry")
+    symmetry_tolerance = construction.get("symmetry_tolerance")
+    ridge = construction.get("ridge")
+    inverse_probe_residual = receipt.get(
+        "inverse_orientation_probe_relative_residual"
+    )
+    inverse_probe_tolerance = receipt.get(
+        "inverse_orientation_probe_tolerance"
+    )
+    source_terms = construction.get("source_terms")
+    expected_source_terms = (
+        H776_TARGET_QUERY_HEADS // H776_TARGET_KEY_VALUE_HEADS
+    ) ** 2
+    if (
+        set(receipt) != receipt_fields
+        or set(construction) != construction_fields
+        or construction.get("schema")
+        != H776_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA
+        or construction.get("role") != role
+        or construction.get("construction")
+        != "normalized_hidden_side_partial_trace"
+        or construction.get("formula")
+        != "P_H=ridge*I_H+sum_(h,o)(trace(C_o,h)/head_dim)*A_h,o"
+        or construction.get("hidden_size") != H776_TARGET_HIDDEN_SIZE
+        or construction.get("head_dim") != H776_HEAD_DIM
+        or construction.get("partial_trace_shape")
+        != [H776_TARGET_HIDDEN_SIZE, H776_TARGET_HIDDEN_SIZE]
+        or construction.get("partial_trace_dtype") != "torch.float64"
+        or not isinstance(construction.get("partial_trace_device"), str)
+        or not construction["partial_trace_device"]
+        or construction.get("partial_trace_tensor_bytes")
+        != H776_TARGET_HIDDEN_SIZE * H776_TARGET_HIDDEN_SIZE * 8
+        or construction.get("source_term_count") != expected_source_terms
+        or not isinstance(source_terms, list)
+        or len(source_terms) != expected_source_terms
+        or construction.get("source_terms_sha256") != _sha256(source_terms)
+        or not _finite_nonnegative_number(asymmetry)
+        or not _finite_nonnegative_number(symmetry_tolerance)
+        or float(symmetry_tolerance) <= 0.0
+        or float(asymmetry) > float(symmetry_tolerance)
+        or construction.get("symmetric_within_numerical_tolerance") is not True
+        or construction.get("symmetrization") != "half_sum_with_transpose"
+        or not _finite_nonnegative_number(ridge)
+        or float(ridge) <= 0.0
+        or construction.get("full_operator_materialized") is not False
+        or receipt.get("kind")
+        != "deterministic_hidden_partial_trace_cholesky"
+        or receipt.get("construction_report_sha256") != construction["report_sha256"]
+        or receipt.get("partial_trace_sha256")
+        != construction.get("partial_trace_sha256")
+        or receipt.get("factorization") != "lower_cholesky_ex"
+        or receipt.get("factorization_info") != 0
+        or receipt.get("factor_shape")
+        != [H776_TARGET_HIDDEN_SIZE, H776_TARGET_HIDDEN_SIZE]
+        or receipt.get("factor_dtype") != "torch.float64"
+        or receipt.get("factor_device")
+        != construction.get("partial_trace_device")
+        or receipt.get("hidden_size") != H776_TARGET_HIDDEN_SIZE
+        or receipt.get("head_dim") != H776_HEAD_DIM
+        or receipt.get("partial_trace_spd") is not True
+        or receipt.get("positive_finite_factor_diagonal") is not True
+        or not _finite_nonnegative_number(inverse_probe_residual)
+        or not _finite_nonnegative_number(inverse_probe_tolerance)
+        or float(inverse_probe_tolerance) <= 0.0
+        or float(inverse_probe_residual) > float(inverse_probe_tolerance)
+        or receipt.get("factorization_materialized_only_after_original_lane_exact_miss")
+        is not True
+        or receipt.get("full_operator_materialized") is not False
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The continuous PCG hidden partial-trace receipt is not the exact "
+            "authenticated H776 SPD preconditioner."
+        )
+    seen_pairs: set[tuple[int, int]] = set()
+    for term in source_terms:
+        if (
+            not isinstance(term, dict)
+            or set(term)
+            != {
+                "head",
+                "other_head",
+                "left_sha256",
+                "coupling_sha256",
+                "partial_trace_weight",
+            }
+            or isinstance(term.get("head"), bool)
+            or not isinstance(term.get("head"), int)
+            or isinstance(term.get("other_head"), bool)
+            or not isinstance(term.get("other_head"), int)
+            or not 0 <= term["head"] < H776_TARGET_QUERY_HEADS
+            or not 0 <= term["other_head"] < H776_TARGET_QUERY_HEADS
+            or (term["head"], term["other_head"]) in seen_pairs
+            or not _finite_number(term.get("partial_trace_weight"))
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "The H776 hidden partial-trace source inventory is invalid."
+            )
+        seen_pairs.add((term["head"], term["other_head"]))
+        _digest(term.get("left_sha256"), "partial-trace left tensor SHA-256")
+        _digest(
+            term.get("coupling_sha256"),
+            "partial-trace coupling tensor SHA-256",
+        )
+    role_match = _STRUCTURED_VALUE_PCG_ROLE.fullmatch(role)
+    if role_match is None:
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The hidden partial-trace receipt role is not an H776 group solve."
+        )
+    group = int(role_match.group(2))
+    first_head = group * (
+        H776_TARGET_QUERY_HEADS // H776_TARGET_KEY_VALUE_HEADS
+    )
+    group_heads = (first_head, first_head + 1)
+    expected_pairs = {
+        (head, other_head)
+        for head in group_heads
+        for other_head in group_heads
+    }
+    if seen_pairs != expected_pairs:
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The H776 hidden partial-trace source pairs differ from the "
+            "immutable query-head group."
+        )
+    for field, name in (
+        ("partial_trace_sha256", "hidden partial-trace tensor SHA-256"),
+        ("source_terms_sha256", "hidden partial-trace source terms SHA-256"),
+    ):
+        _digest(construction.get(field), name)
+    _digest(
+        receipt.get("factor_sha256"),
+        "hidden partial-trace Cholesky factor SHA-256",
+    )
+
+
+def _authenticate_h776_hidden_partial_trace_pcg_execution_profile(
+    value: Any,
+) -> None:
+    profile_fields = {
+        "schema",
+        "original_lane_solver",
+        "original_lane_maximum_iterations",
+        "continuation_lane_solver",
+        "continuation_preconditioner_schema",
+        "continuation_preconditioner_formula",
+        "single_restart_after_original_lane_exact_authentication_miss",
+        "periodic_restart_count",
+        "hard_maximum_iterations",
+        "required_relative_normal_residual",
+        "exact_residual_used_to_initialize_continuous_lane_once",
+        "exact_diagnostic_matvecs_modify_recurrence_state_or_direction",
+        "factorization_materialized_only_after_original_lane_exact_miss",
+        "production_row_block_preconditioner_selected",
+        "full_operator_materialized",
+        "report_sha256",
+    }
+    profile = _self_sealed(
+        value,
+        seal_field="report_sha256",
+        name="hidden partial-trace PCG execution profile",
+    )
+    if (
+        set(profile) != profile_fields
+        or profile.get("schema")
+        != H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SCHEMA
+        or profile.get("original_lane_solver")
+        != "deterministic_jacobi_pcg_single_tensor"
+        or profile.get("original_lane_maximum_iterations")
+        != H776_PCG_MAXIMUM_ITERATIONS
+        or profile.get("continuation_lane_solver")
+        != (
+            "deterministic_continuous_hidden_partial_trace_"
+            "cholesky_pcg_single_tensor"
+        )
+        or profile.get("continuation_preconditioner_schema")
+        != H776_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA
+        or profile.get("continuation_preconditioner_formula")
+        != "P_H=ridge*I_H+sum_(h,o)(trace(C_o,h)/head_dim)*A_h,o"
+        or profile.get(
+            "single_restart_after_original_lane_exact_authentication_miss"
+        )
+        is not True
+        or profile.get("periodic_restart_count") != 0
+        or profile.get("hard_maximum_iterations")
+        != H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+        or profile.get("required_relative_normal_residual")
+        != H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+        or profile.get(
+            "exact_residual_used_to_initialize_continuous_lane_once"
+        )
+        is not True
+        or profile.get(
+            "exact_diagnostic_matvecs_modify_recurrence_state_or_direction"
+        )
+        is not False
+        or profile.get(
+            "factorization_materialized_only_after_original_lane_exact_miss"
+        )
+        is not True
+        or profile.get("production_row_block_preconditioner_selected")
+        is not False
+        or profile.get("full_operator_materialized") is not False
+        or profile.get("report_sha256")
+        != H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The hidden partial-trace PCG execution profile differs from "
+            "the immutable H776 continuation pin."
+        )
+
+
+def _authenticate_continuous_hidden_partial_trace_pcg_report(
+    report: Mapping[str, Any],
+) -> None:
+    report_fields = {
+        "role",
+        "solver",
+        "maximum_iterations",
+        "hard_cap_includes_original_lane_iterations",
+        "original_lane_maximum_iterations",
+        "original_lane_iterations_executed",
+        "single_restart_after_original_lane_exact_authentication_miss",
+        "periodic_restart_count",
+        "iterations_executed",
+        "continuous_hidden_partial_trace_lane_iterations_executed",
+        "required_relative_normal_residual",
+        "initial_relative_normal_residual",
+        "original_lane_final_recurrence_relative_normal_residual",
+        "final_recurrence_relative_normal_residual",
+        "final_relative_normal_residual",
+        "relative_normal_residual_history",
+        "recurrence_history_sha256",
+        "exact_relative_normal_residual_checkpoints",
+        "exact_residual_checkpoints_sha256",
+        "total_matvec_calls",
+        "exact_final_residual_authenticated",
+        "extended_after_original_lane_exact_authentication_miss",
+        "exact_residual_used_to_initialize_continuous_lane_once",
+        "exact_diagnostic_matvecs_modify_recurrence_state_or_direction",
+        "execution_profile",
+        "execution_profile_sha256",
+        "continuous_hidden_partial_trace_lane",
+        "restart_preconditioner",
+        "solution_finite",
+        "solution_sha256",
+        "report_sha256",
+    }
+    lane_fields = {
+        "start_iteration",
+        "planned_stop_iteration",
+        "iterations_executed",
+        "attempted_matvec_calls",
+        "exact_diagnostic_matvec_calls",
+        "termination",
+        "ending_iteration",
+        "ending_recurrence_relative_normal_residual",
+        "ending_exact_relative_normal_residual",
+        "ending_exact_residual_authenticated",
+    }
+    preconditioner_fields = {
+        "kind",
+        "supplied",
+        "authentication_attempted",
+        "authenticated",
+        "applied",
+        "application_attempt_count",
+        "application_count",
+        "receipt",
+        "authentication_failure_reason",
+    }
+    role = report.get("role")
+    iterations = report.get("iterations_executed")
+    original_iterations = report.get("original_lane_iterations_executed")
+    partial_trace_iterations = report.get(
+        "continuous_hidden_partial_trace_lane_iterations_executed"
+    )
+    initial = report.get("initial_relative_normal_residual")
+    original_final = report.get(
+        "original_lane_final_recurrence_relative_normal_residual"
+    )
+    recurrence_final = report.get("final_recurrence_relative_normal_residual")
+    exact_final = report.get("final_relative_normal_residual")
+    history = report.get("relative_normal_residual_history")
+    checkpoints = report.get("exact_relative_normal_residual_checkpoints")
+    total_matvec_calls = report.get("total_matvec_calls")
+    lane = report.get("continuous_hidden_partial_trace_lane")
+    preconditioner = report.get("restart_preconditioner")
+    if (
+        set(report) != report_fields
+        or report.get("solver")
+        != (
+            "deterministic_continuous_hidden_partial_trace_"
+            "cholesky_pcg_single_tensor"
+        )
+        or report.get("maximum_iterations")
+        != H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+        or report.get("hard_cap_includes_original_lane_iterations") is not True
+        or report.get("original_lane_maximum_iterations") != H776_PCG_MAXIMUM_ITERATIONS
+        or original_iterations != H776_PCG_MAXIMUM_ITERATIONS
+        or isinstance(original_iterations, bool)
+        or report.get("single_restart_after_original_lane_exact_authentication_miss")
+        is not True
+        or report.get("periodic_restart_count") != 0
+        or isinstance(iterations, bool)
+        or not isinstance(iterations, int)
+        or not (
+            H776_PCG_MAXIMUM_ITERATIONS
+            < iterations
+            <= H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+        )
+        or isinstance(partial_trace_iterations, bool)
+        or not isinstance(partial_trace_iterations, int)
+        or partial_trace_iterations != iterations - original_iterations
+        or partial_trace_iterations <= 0
+        or report.get("required_relative_normal_residual")
+        != H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+        or not _finite_nonnegative_number(initial)
+        or not _finite_nonnegative_number(original_final)
+        or not _finite_nonnegative_number(recurrence_final)
+        or not _finite_nonnegative_number(exact_final)
+        or float(exact_final) > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+        or not isinstance(history, list)
+        or len(history) != iterations
+        or any(not _finite_nonnegative_number(item) for item in history)
+        or float(history[original_iterations - 1]) != float(original_final)
+        or float(history[-1]) != float(recurrence_final)
+        or report.get("recurrence_history_sha256") != _sha256(history)
+        or not isinstance(checkpoints, list)
+        or len(checkpoints) < 2
+        or report.get("exact_residual_checkpoints_sha256") != _sha256(checkpoints)
+        or isinstance(total_matvec_calls, bool)
+        or not isinstance(total_matvec_calls, int)
+        or report.get("exact_final_residual_authenticated") is not True
+        or report.get("extended_after_original_lane_exact_authentication_miss")
+        is not True
+        or report.get("exact_residual_used_to_initialize_continuous_lane_once")
+        is not True
+        or report.get("exact_diagnostic_matvecs_modify_recurrence_state_or_direction")
+        is not False
+        or report.get("execution_profile_sha256")
+        != H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+        or not isinstance(lane, dict)
+        or set(lane) != lane_fields
+        or not isinstance(preconditioner, dict)
+        or set(preconditioner) != preconditioner_fields
+        or report.get("solution_finite") is not True
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "A continuous hidden partial-trace PCG solve lacks its "
+            "exact H776 convergence evidence."
+        )
+    _authenticate_h776_hidden_partial_trace_pcg_execution_profile(
+        report.get("execution_profile")
+    )
+
+    checkpoint_by_iteration: dict[int, float] = {}
+    previous_iteration = -1
+    for checkpoint in checkpoints:
+        if not isinstance(checkpoint, dict) or set(checkpoint) != {
+            "iteration",
+            "relative_normal_residual",
+            "finite",
+        }:
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "Continuous hidden partial-trace PCG checkpoints are malformed."
+            )
+        iteration = checkpoint.get("iteration")
+        residual = checkpoint.get("relative_normal_residual")
+        if (
+            isinstance(iteration, bool)
+            or not isinstance(iteration, int)
+            or iteration <= previous_iteration
+            or not original_iterations <= iteration <= iterations
+            or not _finite_nonnegative_number(residual)
+            or checkpoint.get("finite") is not True
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "Continuous hidden partial-trace PCG checkpoints are inconsistent."
+            )
+        checkpoint_by_iteration[iteration] = float(residual)
+        previous_iteration = iteration
+    if (
+        checkpoints[0]["iteration"] != original_iterations
+        or float(checkpoints[0]["relative_normal_residual"])
+        <= H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+        or checkpoints[-1]["iteration"] != iterations
+        or float(checkpoints[-1]["relative_normal_residual"]) != float(exact_final)
+        or any(
+            float(checkpoint["relative_normal_residual"])
+            <= H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+            for checkpoint in checkpoints[:-1]
+        )
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Continuous hidden partial-trace PCG checkpoints do not prove "
+            "one scalar-lane miss followed by one successful continuous lane."
+        )
+
+    exact_diagnostic_count = len(checkpoints) - 1
+    lane_attempted_matvecs = partial_trace_iterations + exact_diagnostic_count
+    termination = lane.get("termination")
+    if (
+        lane.get("start_iteration") != original_iterations
+        or lane.get("planned_stop_iteration")
+        != H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+        or lane.get("iterations_executed") != partial_trace_iterations
+        or lane.get("attempted_matvec_calls") != lane_attempted_matvecs
+        or lane.get("exact_diagnostic_matvec_calls") != exact_diagnostic_count
+        or lane.get("ending_iteration") != iterations
+        or not _finite_nonnegative_number(
+            lane.get("ending_recurrence_relative_normal_residual")
+        )
+        or float(lane["ending_recurrence_relative_normal_residual"])
+        != float(recurrence_final)
+        or not _finite_nonnegative_number(
+            lane.get("ending_exact_relative_normal_residual")
+        )
+        or float(lane["ending_exact_relative_normal_residual"]) != float(exact_final)
+        or lane.get("ending_exact_residual_authenticated") is not True
+        or termination
+        not in {
+            "exact_tolerance_reached",
+            "exact_tolerance_reached_at_hard_cap",
+        }
+        or (
+            termination == "exact_tolerance_reached"
+            and (
+                iterations
+                >= H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+                or float(history[-1]) > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+            )
+        )
+        or (
+            termination == "exact_tolerance_reached_at_hard_cap"
+            and iterations
+            != H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+        )
+        or any(
+            float(history[checkpoint["iteration"] - 1])
+            > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+            for checkpoint in checkpoints[1:-1]
+        )
+        or total_matvec_calls != iterations + 1 + len(checkpoints)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The continuous hidden partial-trace PCG lane counters or "
+            "exact-residual gates are inconsistent."
+        )
+
+    if (
+        preconditioner.get("kind")
+        != "deterministic_hidden_partial_trace_cholesky"
+        or preconditioner.get("supplied") is not True
+        or preconditioner.get("authentication_attempted") is not True
+        or preconditioner.get("authenticated") is not True
+        or preconditioner.get("applied") is not True
+        or preconditioner.get("application_attempt_count")
+        != partial_trace_iterations
+        or preconditioner.get("application_count") != partial_trace_iterations
+        or preconditioner.get("authentication_failure_reason") is not None
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The continuous hidden partial-trace PCG preconditioner lifecycle "
+            "is inconsistent."
+        )
+    _authenticate_h776_hidden_partial_trace_receipt(
+        preconditioner.get("receipt"),
+        role=str(role),
+    )
+    _digest(report.get("solution_sha256"), "PCG solution SHA-256")
+
+
 class Lfm2SequenceEffectivePcgCollector:
     """Collect and authenticate the scoped observation-only PCG events."""
 
@@ -1462,11 +1947,15 @@ class Lfm2SequenceEffectivePcgCollector:
             _authenticate_legacy_pcg_report(report)
         elif solver == "deterministic_restarted_jacobi_pcg_single_tensor":
             _authenticate_restarted_pcg_report(report)
-        elif (
-            solver
-            == "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
+        elif solver == (
+            "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
         ):
             _authenticate_continuous_row_block_pcg_report(report)
+        elif solver == (
+            "deterministic_continuous_hidden_partial_trace_"
+            "cholesky_pcg_single_tensor"
+        ):
+            _authenticate_continuous_hidden_partial_trace_pcg_report(report)
         else:
             raise Lfm2CpcfV5RealAttentionProbeError(
                 "Sequence-effective PCG telemetry names an unknown solver."
@@ -1496,8 +1985,7 @@ class Lfm2SequenceEffectivePcgCollector:
         solve_hashes = artifact.get("solve_report_sha256")
         effective_solve = artifact.get("effective_operator_solve")
         if (
-            artifact.get("candidate_id")
-            != H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+            artifact.get("candidate_id") != H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID
             or not isinstance(frontier, list)
             or len(frontier) not in {3, 4}
             or artifact.get("candidate_frontier_sha256") != _sha256(frontier)
@@ -1509,8 +1997,7 @@ class Lfm2SequenceEffectivePcgCollector:
             or frontier[0].get("stage")
             != "scalable_producer_shared_value_sequence_output_seed"
             or frontier[-1].get("proposal_index") != len(frontier) - 1
-            or frontier[-1].get("stage")
-            != "fixed_producer_value_subspace_anchor"
+            or frontier[-1].get("stage") != "fixed_producer_value_subspace_anchor"
             or frontier[-1].get("selected_for_materialization") is not True
         ):
             raise Lfm2CpcfV5RealAttentionProbeError(
@@ -1577,8 +2064,7 @@ class Lfm2SequenceEffectivePcgCollector:
             )
         )
         normalized_solve_hashes = [
-            _digest(value, "sequence solve report SHA-256")
-            for value in solve_hashes
+            _digest(value, "sequence solve report SHA-256") for value in solve_hashes
         ]
         if (
             normalized_solve_hashes != reconstructed_solve_hashes
@@ -1591,10 +2077,7 @@ class Lfm2SequenceEffectivePcgCollector:
                 "proposal inventory."
             )
         expected_roles = [
-            (
-                f"sequence_effective_structured_value_iteration_{iteration}_"
-                f"group_{group}"
-            )
+            (f"sequence_effective_structured_value_iteration_{iteration}_group_{group}")
             for iteration in range(1, iteration_count + 1)
             for group in range(H776_TARGET_KEY_VALUE_HEADS)
         ]
@@ -1633,15 +2116,35 @@ class Lfm2SequenceEffectivePcgCollector:
             == "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
             for event in self._events
         )
+        hidden_partial_trace_event_count = sum(
+            event["report"]["solver"]
+            == (
+                "deterministic_continuous_hidden_partial_trace_"
+                "cholesky_pcg_single_tensor"
+            )
+            for event in self._events
+        )
         maximum_authenticated_iterations = (
-            H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
-            if row_block_event_count
+            H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+            if hidden_partial_trace_event_count or row_block_event_count
             else (
                 H776_PCG_HARD_MAXIMUM_ITERATIONS
                 if restarted_event_count
                 else H776_PCG_MAXIMUM_ITERATIONS
             )
         )
+        if hidden_partial_trace_event_count:
+            if (
+                artifact.get("streamed_pcg_execution_profile_sha256")
+                != H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+            ):
+                raise Lfm2CpcfV5RealAttentionProbeError(
+                    "The sequence-effective artifact does not bind the "
+                    "immutable H776 PCG continuation profile."
+                )
+            _authenticate_h776_hidden_partial_trace_pcg_execution_profile(
+                artifact.get("streamed_pcg_execution_profile")
+            )
         body = {
             "schema": LFM2_CPCF_V5_REAL_ATTENTION_PCG_AUDIT_SCHEMA,
             "event_count": len(self._events),
@@ -1657,9 +2160,7 @@ class Lfm2SequenceEffectivePcgCollector:
                 artifact["candidate_frontier_sha256"]
             ),
             "sequence_solve_report_sha256": normalized_solve_hashes,
-            "sequence_solve_report_inventory_sha256": _sha256(
-                normalized_solve_hashes
-            ),
+            "sequence_solve_report_inventory_sha256": _sha256(normalized_solve_hashes),
             "artifact_value_solve_report_sha256": artifact_value_hashes,
             "all_roles_unique": True,
             "all_event_report_hashes_unique": True,
@@ -1677,17 +2178,12 @@ class Lfm2SequenceEffectivePcgCollector:
                     len(self._events)
                     - restarted_event_count
                     - row_block_event_count
+                    - hidden_partial_trace_event_count
                 ),
                 "restarted_solver_event_count": restarted_event_count,
-                "original_lane_maximum_iterations": (
-                    H776_PCG_MAXIMUM_ITERATIONS
-                ),
-                "restart_block_iterations": (
-                    H776_PCG_RESTART_BLOCK_ITERATIONS
-                ),
-                "hard_maximum_iterations": (
-                    H776_PCG_HARD_MAXIMUM_ITERATIONS
-                ),
+                "original_lane_maximum_iterations": (H776_PCG_MAXIMUM_ITERATIONS),
+                "restart_block_iterations": (H776_PCG_RESTART_BLOCK_ITERATIONS),
+                "hard_maximum_iterations": (H776_PCG_HARD_MAXIMUM_ITERATIONS),
                 "exact_final_residual_gate": (
                     H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
                 ),
@@ -1703,6 +2199,7 @@ class Lfm2SequenceEffectivePcgCollector:
                     len(self._events)
                     - restarted_event_count
                     - row_block_event_count
+                    - hidden_partial_trace_event_count
                 ),
                 "restarted_solver_event_count": restarted_event_count,
                 "continuous_row_block_solver_event_count": (
@@ -1722,6 +2219,43 @@ class Lfm2SequenceEffectivePcgCollector:
                 "all_continuous_row_block_lanes_authenticated": True,
                 "all_row_block_preconditioner_receipts_authenticated": True,
                 "continuous_row_block_solver_events_authenticated": True,
+            }
+        if hidden_partial_trace_event_count:
+            body = {
+                **body,
+                "legacy_solver_event_count": (
+                    len(self._events)
+                    - restarted_event_count
+                    - row_block_event_count
+                    - hidden_partial_trace_event_count
+                ),
+                "restarted_solver_event_count": restarted_event_count,
+                "continuous_hidden_partial_trace_solver_event_count": (
+                    hidden_partial_trace_event_count
+                ),
+                "original_lane_maximum_iterations": (H776_PCG_MAXIMUM_ITERATIONS),
+                "hidden_partial_trace_hard_maximum_iterations": (
+                    H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+                ),
+                "exact_final_residual_gate": (
+                    H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+                ),
+                "all_extended_final_residuals_exactly_recomputed": True,
+                "all_matvec_counts_authenticated": True,
+                "all_continuous_hidden_partial_trace_lanes_authenticated": True,
+                "all_hidden_partial_trace_preconditioner_receipts_authenticated": (
+                    True
+                ),
+                "continuous_hidden_partial_trace_solver_events_authenticated": (
+                    True
+                ),
+                "hidden_partial_trace_pcg_execution_profile_sha256": (
+                    H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+                ),
+                "all_hidden_partial_trace_execution_profiles_authenticated": (
+                    True
+                ),
+                "stale_row_block_event_count": row_block_event_count,
             }
         return MappingProxyType({**body, "audit_sha256": _sha256(body)})
 
@@ -1791,8 +2325,7 @@ class Lfm2CpcfV5RealAttentionResourceMonitor:
             or process["VmHWM"] > H776_MAXIMUM_PROCESS_RSS_BYTES
             or process["VmSwap"] != 0
             or any(
-                value > H776_MAXIMUM_CUDA_BYTES_PER_DEVICE
-                for value in cuda.values()
+                value > H776_MAXIMUM_CUDA_BYTES_PER_DEVICE for value in cuda.values()
             )
         ):
             raise Lfm2CpcfV5RealAttentionProbeError(
@@ -1869,15 +2402,9 @@ class Lfm2CpcfV5RealAttentionResourceMonitor:
             "sample_interval_seconds": self._interval,
             "sample_count": len(samples),
             "maximum_process_rss_bytes": H776_MAXIMUM_PROCESS_RSS_BYTES,
-            "maximum_cuda_bytes_per_device": (
-                H776_MAXIMUM_CUDA_BYTES_PER_DEVICE
-            ),
-            "peak_vm_rss_bytes": max(
-                sample["process"]["VmRSS"] for sample in samples
-            ),
-            "peak_vm_hwm_bytes": max(
-                sample["process"]["VmHWM"] for sample in samples
-            ),
+            "maximum_cuda_bytes_per_device": (H776_MAXIMUM_CUDA_BYTES_PER_DEVICE),
+            "peak_vm_rss_bytes": max(sample["process"]["VmRSS"] for sample in samples),
+            "peak_vm_hwm_bytes": max(sample["process"]["VmHWM"] for sample in samples),
             "peak_vm_swap_bytes": max(
                 sample["process"]["VmSwap"] for sample in samples
             ),
@@ -1929,8 +2456,7 @@ def _target_geometry(target_model: Any) -> dict[str, Any]:
         or int(getattr(config, "hidden_size", -1)) != H776_TARGET_HIDDEN_SIZE
         or int(getattr(config, "intermediate_size", -1))
         != H776_TARGET_INTERMEDIATE_SIZE
-        or int(getattr(config, "num_attention_heads", -1))
-        != H776_TARGET_QUERY_HEADS
+        or int(getattr(config, "num_attention_heads", -1)) != H776_TARGET_QUERY_HEADS
         or int(getattr(config, "num_key_value_heads", -1))
         != H776_TARGET_KEY_VALUE_HEADS
         or layer_types != H776_LAYER_TYPES
@@ -1995,15 +2521,11 @@ def _authenticate_attention_sequential_transport(
         name="attention candidate selection",
     )
     selected_chart_sha = _digest(
-        authenticated_selection.get(
-            "selected_effective_boundary_charts_sha256"
-        ),
+        authenticated_selection.get("selected_effective_boundary_charts_sha256"),
         "selected effective boundary charts SHA-256",
     )
     selected_bundle_sha = _digest(
-        authenticated_selection.get(
-            "selected_operator_transport_mlp_bundle_sha256"
-        ),
+        authenticated_selection.get("selected_operator_transport_mlp_bundle_sha256"),
         "selected operator/transport/MLP bundle SHA-256",
     )
     candidate_chart_hashes = authenticated_selection.get(
@@ -2012,9 +2534,7 @@ def _authenticate_attention_sequential_transport(
     candidate_bundle_hashes = authenticated_selection.get(
         "candidate_operator_transport_mlp_bundle_sha256"
     )
-    candidate_report_hashes = authenticated_selection.get(
-        "candidate_report_sha256"
-    )
+    candidate_report_hashes = authenticated_selection.get("candidate_report_sha256")
     source_chart_sha = _digest(
         report.get("boundary_charts_sha256"),
         "source boundary charts SHA-256",
@@ -2023,42 +2543,27 @@ def _authenticate_attention_sequential_transport(
     if (
         transport_policy.get("enabled") is not True
         or transport_policy.get("fit_split_only") is not True
-        or transport_policy.get("selection_refits_or_mutates_transport")
-        is not False
+        or transport_policy.get("selection_refits_or_mutates_transport") is not False
         or transport_policy.get("selection_selects_frozen_bundle") is not True
         or transport_policy.get("validation_argument_supported") is not False
-        or authenticated_selection.get(
-            "candidate_local_post_layer_transport_enabled"
-        )
+        or authenticated_selection.get("candidate_local_post_layer_transport_enabled")
         is not True
-        or authenticated_selection.get(
-            "operator_transport_mlp_bundle_frozen_together"
-        )
+        or authenticated_selection.get("operator_transport_mlp_bundle_frozen_together")
         is not True
         or authenticated_selection.get(
             "selection_metrics_use_candidate_effective_charts"
         )
         is not True
-        or authenticated_selection.get(
-            "selection_refits_or_mutates_transport"
-        )
+        or authenticated_selection.get("selection_refits_or_mutates_transport")
         is not False
-        or authenticated_selection.get("selection_selects_frozen_bundle")
-        is not True
-        or authenticated_selection.get(
-            "candidate_local_mlp_preparation_count"
-        )
+        or authenticated_selection.get("selection_selects_frozen_bundle") is not True
+        or authenticated_selection.get("candidate_local_mlp_preparation_count")
         != len(H776_ATTENTION_CANDIDATE_IDS)
-        or authenticated_selection.get(
-            "cross_candidate_prepared_mlp_basis_reused"
-        )
+        or authenticated_selection.get("cross_candidate_prepared_mlp_basis_reused")
         is not False
-        or set(candidate_chart_hashes or {})
-        != set(H776_ATTENTION_CANDIDATE_IDS)
-        or set(candidate_bundle_hashes or {})
-        != set(H776_ATTENTION_CANDIDATE_IDS)
-        or set(candidate_report_hashes or {})
-        != set(H776_ATTENTION_CANDIDATE_IDS)
+        or set(candidate_chart_hashes or {}) != set(H776_ATTENTION_CANDIDATE_IDS)
+        or set(candidate_bundle_hashes or {}) != set(H776_ATTENTION_CANDIDATE_IDS)
+        or set(candidate_report_hashes or {}) != set(H776_ATTENTION_CANDIDATE_IDS)
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Attention sequential-transport selection policy is incomplete."
@@ -2091,65 +2596,44 @@ def _authenticate_attention_sequential_transport(
         )
         binding_source_payload_sha = _digest(
             binding.get("source_boundary_charts_payload_sha256"),
-            (
-                f"attention candidate {candidate_id!r} source chart payload "
-                "SHA-256"
-            ),
+            (f"attention candidate {candidate_id!r} source chart payload SHA-256"),
         )
         effective_payload_sha = _digest(
             evaluation.get("effective_boundary_charts_payload_sha256"),
-            (
-                f"attention candidate {candidate_id!r} effective chart "
-                "payload SHA-256"
-            ),
+            (f"attention candidate {candidate_id!r} effective chart payload SHA-256"),
         )
         if source_chart_payload_sha is None:
             source_chart_payload_sha = binding_source_payload_sha
         if (
-            candidate_report_hashes[candidate_id]
-            != evaluation["report_sha256"]
+            candidate_report_hashes[candidate_id] != evaluation["report_sha256"]
             or candidate_chart_hashes[candidate_id] != chart_sha
             or candidate_bundle_hashes[candidate_id] != bundle_sha
             or binding.get("candidate_id") != candidate_id
             or binding.get("effective_boundary_charts_sha256") != chart_sha
             or binding.get("effective_boundary_charts_payload_sha256")
             != effective_payload_sha
-            or binding.get("source_boundary_charts_sha256")
-            != source_chart_sha
+            or binding.get("source_boundary_charts_sha256") != source_chart_sha
             or binding_source_payload_sha != source_chart_payload_sha
             or binding.get("sequential_transport_report_sha256")
             != transport["report_sha256"]
-            or binding.get("policy_report_sha256")
-            != transport_policy["report_sha256"]
+            or binding.get("policy_report_sha256") != transport_policy["report_sha256"]
             or binding.get("fit_split_only") is not True
             or binding.get("selection_rows_read_by_transport") != 0
             or binding.get("selection_rows_read_before_transport_freeze") != 0
             or binding.get("validation_rows_read") != 0
             or binding.get("equal_total_mass_per_fit_phase") is not True
             or binding.get("one_closed_form_svd") is not True
-            or binding.get("source_post_operator_chart_same_object")
-            is not True
+            or binding.get("source_post_operator_chart_same_object") is not True
             or binding.get("source_post_layer_chart_unchanged") is not True
-            or binding.get(
-                "transported_post_layer_chart_candidate_local"
-            )
-            is not True
+            or binding.get("transported_post_layer_chart_candidate_local") is not True
             or binding.get("automatic_retry_or_retuning_performed") is not False
-            or evaluation.get(
-                "candidate_local_post_layer_transport_frozen_before_mlp"
-            )
+            or evaluation.get("candidate_local_post_layer_transport_frozen_before_mlp")
             is not True
-            or evaluation.get("candidate_local_mlp_basis_preparation_count")
-            != 1
-            or evaluation.get("cross_candidate_prepared_mlp_basis_reused")
-            is not False
-            or evaluation.get(
-                "selection_metrics_use_effective_boundary_charts"
-            )
+            or evaluation.get("candidate_local_mlp_basis_preparation_count") != 1
+            or evaluation.get("cross_candidate_prepared_mlp_basis_reused") is not False
+            or evaluation.get("selection_metrics_use_effective_boundary_charts")
             is not True
-            or evaluation.get(
-                "operator_transport_and_mlp_ranked_as_one_bundle"
-            )
+            or evaluation.get("operator_transport_and_mlp_ranked_as_one_bundle")
             is not True
         ):
             raise Lfm2CpcfV5RealAttentionProbeError(
@@ -2165,8 +2649,7 @@ def _authenticate_attention_sequential_transport(
     selected = authenticated_evaluations[selected_id]
     if (
         selected["effective_boundary_charts_sha256"] != selected_chart_sha
-        or selected["operator_transport_mlp_bundle_sha256"]
-        != selected_bundle_sha
+        or selected["operator_transport_mlp_bundle_sha256"] != selected_bundle_sha
         or authenticated_selection.get("selected_candidate_report_sha256")
         != selected["report_sha256"]
         or final_binding.get("policy") != transport_policy
@@ -2177,21 +2660,17 @@ def _authenticate_attention_sequential_transport(
         != authenticated_selection["report_sha256"]
         or final_binding.get("operator_transport_mlp_bundle_sha256")
         != selected_bundle_sha
-        or final_binding.get("effective_boundary_charts_sha256")
-        != selected_chart_sha
+        or final_binding.get("effective_boundary_charts_sha256") != selected_chart_sha
         or final_binding.get("effective_boundary_charts_payload_sha256")
         != selected["effective_boundary_charts_payload_sha256"]
-        or final_binding.get("source_boundary_charts_sha256")
-        != source_chart_sha
+        or final_binding.get("source_boundary_charts_sha256") != source_chart_sha
         or final_binding.get("source_boundary_charts_payload_sha256")
         != source_chart_payload_sha
         or final_binding.get("sequential_transport_report_sha256")
         != selected["sequential_boundary_transport"]["report_sha256"]
         or final_binding.get("sequential_transport_binding_report_sha256")
         != selected["sequential_transport_binding"]["report_sha256"]
-        or final_binding.get(
-            "final_endpoint_metrics_use_winning_effective_chart"
-        )
+        or final_binding.get("final_endpoint_metrics_use_winning_effective_chart")
         is not True
         or final_binding.get(
             "validation_first_endpoint_replay_and_metric_after_bundle_freeze"
@@ -2200,26 +2679,18 @@ def _authenticate_attention_sequential_transport(
         or final_binding.get("validation_rows_used_by_transport_solver") != 0
         or final_binding.get("selection_refits_or_mutates_transport") is not False
         or final_binding.get("selection_selects_frozen_bundle") is not True
-        or final_binding.get(
-            "operator_transport_mlp_bundle_installed_exactly"
-        )
+        or final_binding.get("operator_transport_mlp_bundle_installed_exactly")
         is not True
-        or policy.get("attention_each_candidate_prepares_own_mlp_basis")
-        is not True
-        or policy.get("attention_cross_candidate_prepared_mlp_basis_reuse")
-        is not False
-        or policy.get(
-            "attention_final_endpoint_effective_boundary_charts_sha256"
-        )
+        or policy.get("attention_each_candidate_prepares_own_mlp_basis") is not True
+        or policy.get("attention_cross_candidate_prepared_mlp_basis_reuse") is not False
+        or policy.get("attention_final_endpoint_effective_boundary_charts_sha256")
         != selected_chart_sha
         or not isinstance(report.get("audit"), dict)
         or report["audit"].get(
             "source_boundary_charts_unchanged_after_candidate_transports"
         )
         is not True
-        or report["audit"].get(
-            "winning_effective_boundary_chart_used_for_validation"
-        )
+        or report["audit"].get("winning_effective_boundary_chart_used_for_validation")
         is not True
         or not isinstance(report.get("actual_child_state_policy"), dict)
         or report["actual_child_state_policy"].get(
@@ -2234,21 +2705,15 @@ def _authenticate_attention_sequential_transport(
     body = {
         "enabled": True,
         "policy_report_sha256": transport_policy["report_sha256"],
-        "candidate_selection_report_sha256": (
-            authenticated_selection["report_sha256"]
-        ),
+        "candidate_selection_report_sha256": (authenticated_selection["report_sha256"]),
         "selected_candidate_id": selected_id,
         "selected_candidate_report_sha256": selected["report_sha256"],
         "selected_effective_boundary_charts_sha256": selected_chart_sha,
         "selected_operator_transport_mlp_bundle_sha256": selected_bundle_sha,
         "source_boundary_charts_sha256": source_chart_sha,
         "source_boundary_charts_payload_sha256": source_chart_payload_sha,
-        "candidate_effective_boundary_charts_sha256": dict(
-            candidate_chart_hashes
-        ),
-        "candidate_operator_transport_mlp_bundle_sha256": dict(
-            candidate_bundle_hashes
-        ),
+        "candidate_effective_boundary_charts_sha256": dict(candidate_chart_hashes),
+        "candidate_operator_transport_mlp_bundle_sha256": dict(candidate_bundle_hashes),
         "fit_only_candidate_local_transport_authenticated": True,
         "selection_selects_frozen_bundle_without_refit": True,
         "validation_rows_used_by_transport_solver": 0,
@@ -2265,10 +2730,12 @@ def authenticate_h776_attention_result(
     pins: Lfm2CpcfV5RealAttentionProbePins,
     expected_attention_sequential_transport_enabled: bool = False,
 ) -> Mapping[str, Any]:
+    from .hf_lfm2_sequence_effective_attention_fold import (
+        LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA,
+    )
+
     if type(expected_attention_sequential_transport_enabled) is not bool:
-        raise TypeError(
-            "expected_attention_sequential_transport_enabled must be bool."
-        )
+        raise TypeError("expected_attention_sequential_transport_enabled must be bool.")
     if (
         expected_attention_sequential_transport_enabled
         != pins.expected_attention_sequential_transport_enabled
@@ -2283,8 +2750,7 @@ def authenticate_h776_attention_result(
         name="PCG audit",
     )
     if (
-        authenticated_pcg.get("schema")
-        != LFM2_CPCF_V5_REAL_ATTENTION_PCG_AUDIT_SCHEMA
+        authenticated_pcg.get("schema") != LFM2_CPCF_V5_REAL_ATTENTION_PCG_AUDIT_SCHEMA
         or authenticated_pcg.get("multi_rhs_solve_count") != 0
         or authenticated_pcg.get("single_tensor_solve_count") not in {5, 10}
         or authenticated_pcg.get("event_count")
@@ -2296,26 +2762,61 @@ def authenticate_h776_attention_result(
         not in {
             H776_PCG_MAXIMUM_ITERATIONS,
             H776_PCG_HARD_MAXIMUM_ITERATIONS,
-            H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS,
+            H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS,
         }
         or (
             authenticated_pcg.get("all_iterations_at_most")
             == H776_PCG_HARD_MAXIMUM_ITERATIONS
+            and authenticated_pcg.get("restarted_extended_solver_events_authenticated")
+            is not True
+        )
+        or (
+            authenticated_pcg.get("all_iterations_at_most")
+            == H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
             and authenticated_pcg.get(
-                "restarted_extended_solver_events_authenticated"
+                "continuous_hidden_partial_trace_solver_events_authenticated"
             )
             is not True
         )
         or (
             authenticated_pcg.get("all_iterations_at_most")
-            == H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+            == H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
             and authenticated_pcg.get(
-                "continuous_row_block_solver_events_authenticated"
+                "all_continuous_hidden_partial_trace_lanes_authenticated"
             )
             is not True
         )
-        or authenticated_pcg.get("solver_results_or_arguments_modified")
-        is not False
+        or (
+            authenticated_pcg.get("all_iterations_at_most")
+            == H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+            and authenticated_pcg.get(
+                "all_hidden_partial_trace_preconditioner_receipts_authenticated"
+            )
+            is not True
+        )
+        or (
+            authenticated_pcg.get("all_iterations_at_most")
+            == H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+            and authenticated_pcg.get(
+                "all_hidden_partial_trace_execution_profiles_authenticated"
+            )
+            is not True
+        )
+        or (
+            authenticated_pcg.get("all_iterations_at_most")
+            == H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+            and authenticated_pcg.get(
+                "hidden_partial_trace_pcg_execution_profile_sha256"
+            )
+            != H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+        )
+        or (
+            authenticated_pcg.get("all_iterations_at_most")
+            == H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+            and authenticated_pcg.get("stale_row_block_event_count")
+            != 0
+        )
+        or authenticated_pcg.get("solver_results_or_arguments_modified") is not False
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "PCG audit seal or exact H776 solve inventory is invalid."
@@ -2371,14 +2872,12 @@ def authenticate_h776_attention_result(
                 f"Attention candidate {candidate_id!r} crossed a split or mutation gate."
             )
     if expected_attention_sequential_transport_enabled:
-        sequential_transport_audit = (
-            _authenticate_attention_sequential_transport(
-                report=report,
-                policy=policy,
-                selection=selection,
-                evaluations=evaluations,
-                selected_id=selected_id,
-            )
+        sequential_transport_audit = _authenticate_attention_sequential_transport(
+            report=report,
+            policy=policy,
+            selection=selection,
+            evaluations=evaluations,
+            selected_id=selected_id,
         )
     else:
         forbidden_transport_fields = {
@@ -2388,17 +2887,14 @@ def authenticate_h776_attention_result(
             "attention_cross_candidate_prepared_mlp_basis_reuse",
             "attention_final_endpoint_effective_boundary_charts_sha256",
         }
-        if (
-            forbidden_transport_fields.intersection(policy)
-            or any(
-                {
-                    "sequential_boundary_transport",
-                    "sequential_transport_binding",
-                    "effective_boundary_charts_sha256",
-                    "operator_transport_mlp_bundle_sha256",
-                }.intersection(evaluation)
-                for evaluation in evaluations.values()
-            )
+        if forbidden_transport_fields.intersection(policy) or any(
+            {
+                "sequential_boundary_transport",
+                "sequential_transport_binding",
+                "effective_boundary_charts_sha256",
+                "operator_transport_mlp_bundle_sha256",
+            }.intersection(evaluation)
+            for evaluation in evaluations.values()
         ):
             raise Lfm2CpcfV5RealAttentionProbeError(
                 "Attention sequential transport executed while its pinned "
@@ -2416,9 +2912,12 @@ def authenticate_h776_attention_result(
             name="sequence-effective operator artifact",
         )
     )
-    solver_plan = None if not isinstance(artifact, dict) else artifact.get("solver_plan")
+    solver_plan = (
+        None if not isinstance(artifact, dict) else artifact.get("solver_plan")
+    )
     if (
         not isinstance(artifact, dict)
+        or artifact.get("schema") != LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA
         or artifact.get("candidate_id") != H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID
         or artifact.get("fixed_query_key_state_reused_exactly") is not True
         or artifact.get("fit_only_compilation") is not True
@@ -2431,8 +2930,7 @@ def authenticate_h776_attention_result(
         or artifact.get("forbidden_hidden_head_dim_gram_materialized") is not False
         or not isinstance(solver_plan, dict)
         or solver_plan.get("strategy") != "streamed_cross_head_statistics_pcg"
-        or solver_plan.get("report_sha256")
-        != pins.expected_sequence_solver_plan_sha256
+        or solver_plan.get("report_sha256") != pins.expected_sequence_solver_plan_sha256
         or solver_plan.get("fit_rows") != H776_FIT_QUERY_ROWS
         or solver_plan.get("target_query_heads") != H776_TARGET_QUERY_HEADS
         or solver_plan.get("target_hidden_size") != H776_TARGET_HIDDEN_SIZE
@@ -2453,8 +2951,7 @@ def authenticate_h776_attention_result(
     observed_roles = authenticated_pcg.get("observed_roles")
     if (
         not isinstance(artifact_frontier, list)
-        or artifact.get("candidate_frontier_sha256")
-        != _sha256(artifact_frontier)
+        or artifact.get("candidate_frontier_sha256") != _sha256(artifact_frontier)
         or not isinstance(artifact_solve_hashes, list)
         or authenticated_pcg.get("sequence_artifact_report_sha256")
         != artifact["report_sha256"]
@@ -2474,10 +2971,8 @@ def authenticate_h776_attention_result(
         or any(
             binding.get("role") != role
             or event.get("report", {}).get("role") != role
-            or binding.get("observation_sha256")
-            != event.get("observation_sha256")
-            or binding.get("pcg_report_sha256")
-            != event.get("report_sha256")
+            or binding.get("observation_sha256") != event.get("observation_sha256")
+            or binding.get("pcg_report_sha256") != event.get("report_sha256")
             for binding, event, role in zip(
                 bindings,
                 events,
@@ -2533,9 +3028,7 @@ def authenticate_h776_attention_result(
                 "behavioral selection key."
             )
         keys[candidate_id] = tuple(raw_key)
-        behavioral_keys[candidate_id] = tuple(
-            float(value) for value in raw_key[:-1]
-        )
+        behavioral_keys[candidate_id] = tuple(float(value) for value in raw_key[:-1])
     sequence_won = selected_id == H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID
     sequence_strictly_better = all(
         behavioral_keys[H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID]
@@ -2577,6 +3070,7 @@ def authenticate_h776_attention_result(
             else "honest_negative_or_control_selected"
         ),
         "full_validation_metrics": _plain(report["split_metrics"]["validation"]),
+        "sequence_effective_artifact": _plain(artifact),
         "sequence_solver_plan": _plain(solver_plan),
         "pcg_convergence": authenticated_pcg,
         "in_memory_next_bank_created_by_layer_replay": True,
@@ -2587,9 +3081,7 @@ def authenticate_h776_attention_result(
     if sequential_transport_audit is not None:
         body = {
             **body,
-            "attention_sequential_transport": _plain(
-                sequential_transport_audit
-            ),
+            "attention_sequential_transport": _plain(sequential_transport_audit),
         }
     return MappingProxyType({**body, "audit_sha256": _sha256(body)})
 
@@ -2614,13 +3106,9 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             "resource_monitor must be Lfm2CpcfV5RealAttentionResourceMonitor."
         )
     if type(runtime.post_operator_chart_transport_shadow) is not bool:
-        raise TypeError(
-            "post_operator_chart_transport_shadow must be bool."
-        )
+        raise TypeError("post_operator_chart_transport_shadow must be bool.")
     if type(runtime.attention_sequential_transport_enabled) is not bool:
-        raise TypeError(
-            "attention_sequential_transport_enabled must be bool."
-        )
+        raise TypeError("attention_sequential_transport_enabled must be bool.")
     if (
         runtime.attention_sequential_transport_enabled
         != pins.expected_attention_sequential_transport_enabled
@@ -2678,9 +3166,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
     source_parameter_inventory = model_fold.independent_parameter_inventory(
         runtime.source_model
     )
-    target_inventory = model_fold.independent_parameter_inventory(
-        runtime.target_model
-    )
+    target_inventory = model_fold.independent_parameter_inventory(runtime.target_model)
     if (
         runtime.target_plan_fingerprint != pins.expected_target_plan_fingerprint
         or blank_report["report_sha256"] != pins.expected_blank_report_sha256
@@ -2688,8 +3174,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         or source_before.state_fingerprint != pins.expected_source_state_sha256
         or int(source_parameter_inventory["unique_parameters"])
         != H776_PARENT_UNIQUE_PARAMETERS
-        or int(target_inventory["unique_parameters"])
-        != H776_TARGET_UNIQUE_PARAMETERS
+        or int(target_inventory["unique_parameters"]) != H776_TARGET_UNIQUE_PARAMETERS
         or {str(parameter.dtype) for parameter in runtime.source_model.parameters()}
         != {"torch.bfloat16"}
         or {str(parameter.dtype) for parameter in runtime.target_model.parameters()}
@@ -2877,9 +3362,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                 apply_lfm2_cpcf_post_operator_chart_transport_shadow(
                     layer_bank,
                     charts,
-                    enabled=(
-                        runtime.post_operator_chart_transport_shadow
-                    ),
+                    enabled=(runtime.post_operator_chart_transport_shadow),
                 )
             )
             if chart_transport_controller is not None:
@@ -2903,9 +3386,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                     candidate_selector=None,
                     numerical_frontier_adapter=None,
                     attention_sequential_transport_policy=(
-                        Lfm2CpcfAttentionSequentialTransportPolicy(
-                            enabled=True
-                        )
+                        Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
                         if runtime.attention_sequential_transport_enabled
                         else None
                     ),
@@ -2970,13 +3451,9 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             else "off"
         ),
         "source_layer_charts_sha256": source_charts_sha256,
-        "compiler_input_layer_charts_sha256": (
-            result.report["boundary_charts_sha256"]
-        ),
+        "compiler_input_layer_charts_sha256": (result.report["boundary_charts_sha256"]),
         "controller_report_sha256": (
-            None
-            if controller_report is None
-            else controller_report["report_sha256"]
+            None if controller_report is None else controller_report["report_sha256"]
         ),
         "transport_report_sha256": (
             None
@@ -3022,9 +3499,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         "status": (
             "completed_positive_sequence_effective_selection"
             if result_audit["sequence_effective_won"]
-            and result_audit[
-                "sequence_effective_strictly_better_than_both_controls"
-            ]
+            and result_audit["sequence_effective_strictly_better_than_both_controls"]
             else "completed_honest_negative_or_control_selected"
         ),
         "pins": pins.as_dict(),
@@ -3034,9 +3509,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             "checkpoint_origin_inventory_sha256": (
                 pins.expected_source_inventory_sha256
             ),
-            "live_process_inventory_sha256": (
-                source_before.full_inventory_sha256
-            ),
+            "live_process_inventory_sha256": (source_before.full_inventory_sha256),
             "origin_digest_reproduction_required": False,
             "reason": (
                 "full inventory includes process-local object and storage "
@@ -3049,9 +3522,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             "parent_unique_parameters": H776_PARENT_UNIQUE_PARAMETERS,
             "target_unique_parameters": H776_TARGET_UNIQUE_PARAMETERS,
             "compression_ratio": H776_PARAMETER_COMPRESSION_RATIO,
-            "parent_inventory_sha256": (
-                source_parameter_inventory["inventory_sha256"]
-            ),
+            "parent_inventory_sha256": (source_parameter_inventory["inventory_sha256"]),
             "target_inventory_sha256": target_inventory["inventory_sha256"],
             "quantization_used": False,
             "pruning_used": False,
@@ -3061,12 +3532,8 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         "phase_audit": _plain(phase_audit),
         "prefix_install_report": _plain(install_report),
         "layer_2_result": _plain(result_audit),
-        "post_operator_chart_transport_shadow": (
-            _plain(chart_transport_binding)
-        ),
-        "attention_sequential_transport": _plain(
-            sequential_transport_binding
-        ),
+        "post_operator_chart_transport_shadow": (_plain(chart_transport_binding)),
+        "attention_sequential_transport": _plain(sequential_transport_binding),
         "resource_report": _plain(resource_report),
         "stop_conditions": {
             "exactly_one_layer_compiled": True,
@@ -3095,6 +3562,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
 __all__ = [
     "H776_ATTENTION_CANDIDATE_IDS",
     "H776_LAYER_INDEX",
+    "H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256",
     "H776_MAXIMUM_CUDA_BYTES_PER_DEVICE",
     "H776_MAXIMUM_PROCESS_RSS_BYTES",
     "H776_PARAMETER_COMPRESSION_RATIO",

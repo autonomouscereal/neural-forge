@@ -49,6 +49,9 @@ LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_INSTALL_SCHEMA = (
 LFM2_SEQUENCE_EFFECTIVE_PCG_OBSERVATION_SCHEMA = (
     "neural-forge-lfm2-sequence-effective-pcg-observation-v1"
 )
+LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA = (
+    "neural-forge-lfm2-sequence-effective-hidden-partial-trace-cholesky-v1"
+)
 LFM2_SEQUENCE_EFFECTIVE_ROW_BLOCK_JACOBI_SCHEMA = (
     "neural-forge-lfm2-sequence-effective-row-block-jacobi-v1"
 )
@@ -63,6 +66,7 @@ _STATISTICS_ROW_CHUNK_SIZE = 2048
 _PCG_MAXIMUM_ITERATIONS = 64
 _PCG_RESTART_BLOCK_ITERATIONS = 64
 _PCG_HARD_MAXIMUM_ITERATIONS = 512
+_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS = 4096
 _PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS = 4096
 _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE = 1e-8
 _ZERO_EXECUTION = {
@@ -195,6 +199,66 @@ def _seal(body: Mapping[str, Any]) -> dict[str, Any]:
     return value
 
 
+def _hidden_partial_trace_pcg_execution_profile() -> dict[str, Any]:
+    """Seal continuation semantics without changing the v2 solver-plan pin.
+
+    The existing solver plan authenticates the streamed statistics topology
+    and remains byte-compatible with the immutable H776 checkpoint.  This
+    separate profile binds the production PCG continuation selected after an
+    unchanged scalar lane misses its exact residual gate.
+    """
+
+    return _seal(
+        {
+            "schema": (
+                "neural-forge-lfm2-sequence-effective-hidden-partial-trace-"
+                "pcg-execution-profile-v1"
+            ),
+            "original_lane_solver": "deterministic_jacobi_pcg_single_tensor",
+            "original_lane_maximum_iterations": _PCG_MAXIMUM_ITERATIONS,
+            "continuation_lane_solver": (
+                "deterministic_continuous_hidden_partial_trace_"
+                "cholesky_pcg_single_tensor"
+            ),
+            "continuation_preconditioner_schema": (
+                LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA
+            ),
+            "continuation_preconditioner_formula": (
+                "P_H=ridge*I_H+sum_(h,o)(trace(C_o,h)/head_dim)*A_h,o"
+            ),
+            "single_restart_after_original_lane_exact_authentication_miss": (
+                True
+            ),
+            "periodic_restart_count": 0,
+            "hard_maximum_iterations": (
+                _PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+            ),
+            "required_relative_normal_residual": (
+                _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+            ),
+            "exact_residual_used_to_initialize_continuous_lane_once": True,
+            "exact_diagnostic_matvecs_modify_recurrence_state_or_direction": (
+                False
+            ),
+            "factorization_materialized_only_after_original_lane_exact_miss": (
+                True
+            ),
+            "production_row_block_preconditioner_selected": False,
+            "full_operator_materialized": False,
+        }
+    )
+
+
+LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE = (
+    MappingProxyType(_hidden_partial_trace_pcg_execution_profile())
+)
+LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256 = (
+    LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE[
+        "report_sha256"
+    ]
+)
+
+
 def _digest(value: Any, name: str) -> str:
     if (
         not isinstance(value, str)
@@ -287,6 +351,14 @@ class _PcgRestartRowBlockPreconditioner:
     """Caller-built exact operator row blocks, authenticated only on use."""
 
     row_blocks: Any
+    construction_report: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _PcgRestartHiddenPartialTracePreconditioner:
+    """Caller-built hidden partial trace, authenticated/factored only on use."""
+
+    partial_trace: Any
     construction_report: Mapping[str, Any]
 
 
@@ -1090,10 +1162,7 @@ def _build_structured_value_row_block_jacobi_preconditioner(
         or output_blocks.ndim != 3
         or diagonal.ndim != 2
         or not heads
-        or any(
-            head < 0 or head >= int(cross.shape[0])
-            for head in heads
-        )
+        or any(head < 0 or head >= int(cross.shape[0]) for head in heads)
         or int(cross.shape[0]) != int(cross.shape[1])
         or int(cross.shape[2]) != int(cross.shape[3])
         or int(cross.shape[2]) != int(diagonal.shape[0])
@@ -1140,9 +1209,6 @@ def _build_structured_value_row_block_jacobi_preconditioner(
             coupling = (
                 output_blocks[other] @ output_blocks[head].T
             ).contiguous()
-            # For row-major vec(V), the row block maps a columnized row by
-            # coupling.T: (C @ V @ coupling)[i, a] =
-            # sum_b C[i, i] * coupling[b, a] * V[i, b].
             row_blocks.add_(
                 cross_diagonal.reshape(row_count, 1, 1)
                 * coupling.T.unsqueeze(0)
@@ -1163,9 +1229,6 @@ def _build_structured_value_row_block_jacobi_preconditioner(
             device=row_blocks.device,
         ).unsqueeze(0)
     )
-    # The complete least-squares normal operator is mathematically symmetric.
-    # Pairwise averaging only removes floating summation skew between the
-    # mirrored (head, other) terms; it does not invent a new approximation.
     row_blocks = (
         0.5 * (row_blocks + row_blocks.transpose(1, 2))
     ).contiguous()
@@ -1428,6 +1491,441 @@ def _authenticate_restart_row_block_preconditioner(
     return factor.contiguous(), receipt
 
 
+class _PcgHiddenPartialTracePreconditionerAuthenticationError(ValueError):
+    def __init__(
+        self,
+        reason: str,
+        *,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.details = {} if details is None else dict(details)
+
+
+def _hidden_partial_trace_numerical_tolerance(value: Any) -> float:
+    torch = _torch()
+    scale = max(1.0, float(value.abs().max().item()))
+    return 128.0 * float(torch.finfo(value.dtype).eps) * scale
+
+
+_HIDDEN_PARTIAL_TRACE_FORMULA = (
+    "P_H=ridge*I_H+sum_(h,o)(trace(C_o,h)/head_dim)*A_h,o"
+)
+
+
+def _build_structured_value_hidden_partial_trace_preconditioner(
+    *,
+    cross: Any,
+    output_blocks: Any,
+    group_heads: Sequence[int],
+    ridge: float,
+    role: str,
+) -> _PcgRestartHiddenPartialTracePreconditioner:
+    """Build the normalized hidden-side partial trace of the SPD operator."""
+
+    torch = _torch()
+    heads = tuple(int(head) for head in group_heads)
+    ridge_value = _pcg_json_float(ridge)
+    if (
+        cross.ndim != 4
+        or output_blocks.ndim != 3
+        or not heads
+        or any(head < 0 or head >= int(cross.shape[0]) for head in heads)
+        or len(set(heads)) != len(heads)
+        or int(cross.shape[0]) != int(cross.shape[1])
+        or int(cross.shape[2]) != int(cross.shape[3])
+        or int(output_blocks.shape[0]) != int(cross.shape[0])
+        or int(output_blocks.shape[1]) <= 0
+        or cross.dtype != output_blocks.dtype
+        or cross.device != output_blocks.device
+        or ridge_value is None
+        or ridge_value <= 0.0
+        or not role
+    ):
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            f"{role} hidden partial-trace construction inputs are invalid."
+        )
+    if (
+        any(
+            not bool(torch.isfinite(cross[head, other]).all().item())
+            for head in heads
+            for other in heads
+        )
+        or not bool(torch.isfinite(output_blocks).all().item())
+    ):
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            f"{role} hidden partial-trace construction inputs must be finite."
+        )
+
+    hidden_size = int(cross.shape[2])
+    head_dim = int(output_blocks.shape[1])
+    partial_trace = torch.eye(
+        hidden_size,
+        dtype=cross.dtype,
+        device=cross.device,
+    ).mul_(ridge_value)
+    source_terms = []
+    for head in heads:
+        for other in heads:
+            left = cross[head, other].contiguous()
+            coupling = (output_blocks[other] @ output_blocks[head].T).contiguous()
+            trace_weight = float(torch.trace(coupling).item()) / head_dim
+            partial_trace.add_(left, alpha=trace_weight)
+            source_terms.append(
+                {
+                    "head": head,
+                    "other_head": other,
+                    "left_sha256": _tensor_sha256(left),
+                    "coupling_sha256": _tensor_sha256(coupling),
+                    "partial_trace_weight": trace_weight,
+                }
+            )
+    raw_maximum_asymmetry = float(
+        (partial_trace - partial_trace.T).abs().max().item()
+    )
+    raw_symmetry_tolerance = _hidden_partial_trace_numerical_tolerance(
+        partial_trace
+    )
+    if raw_maximum_asymmetry > raw_symmetry_tolerance:
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            f"{role} hidden partial trace exceeds its numerical symmetry "
+            "tolerance."
+        )
+    # The paired normal-equation terms are mathematically symmetric.  This
+    # half-sum removes only floating-point summation skew.
+    partial_trace = (
+        0.5 * (partial_trace + partial_trace.T)
+    ).contiguous()
+    symmetry_tolerance = _hidden_partial_trace_numerical_tolerance(partial_trace)
+    if not bool(torch.isfinite(partial_trace).all().item()):
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            f"{role} hidden partial trace is non-finite."
+        )
+    if raw_maximum_asymmetry > symmetry_tolerance:
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            f"{role} symmetrized hidden partial trace changed its numerical "
+            "symmetry scale."
+        )
+    source_terms_sha256 = _sha256(source_terms)
+    body = {
+        "schema": (
+            LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA
+        ),
+        "role": role,
+        "construction": "normalized_hidden_side_partial_trace",
+        "formula": _HIDDEN_PARTIAL_TRACE_FORMULA,
+        "ridge": ridge_value,
+        "hidden_size": hidden_size,
+        "head_dim": head_dim,
+        "partial_trace_shape": list(partial_trace.shape),
+        "partial_trace_dtype": str(partial_trace.dtype),
+        "partial_trace_device": str(partial_trace.device),
+        "partial_trace_sha256": _tensor_sha256(partial_trace),
+        "partial_trace_tensor_bytes": int(
+            partial_trace.numel() * partial_trace.element_size()
+        ),
+        "source_term_count": len(source_terms),
+        "source_terms": source_terms,
+        "source_terms_sha256": source_terms_sha256,
+        "raw_maximum_absolute_asymmetry": raw_maximum_asymmetry,
+        "symmetry_tolerance": symmetry_tolerance,
+        "symmetric_within_numerical_tolerance": True,
+        "symmetrization": "half_sum_with_transpose",
+        "full_operator_materialized": False,
+    }
+    return _PcgRestartHiddenPartialTracePreconditioner(
+        partial_trace=partial_trace,
+        construction_report=MappingProxyType(_seal(body)),
+    )
+
+
+def _authenticate_restart_hidden_partial_trace_preconditioner(
+    *,
+    supplied: Any,
+    right: Any,
+    diagonal: Any,
+    role: str,
+    expected_ridge: Any,
+) -> tuple[Any, dict[str, Any]]:
+    """Authenticate and factor the hidden partial trace after scalar miss."""
+
+    torch = _torch()
+
+    def reject(
+        reason: str,
+        *,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        raise _PcgHiddenPartialTracePreconditionerAuthenticationError(
+            reason,
+            details=details,
+        )
+
+    if not isinstance(
+        supplied,
+        _PcgRestartHiddenPartialTracePreconditioner,
+    ):
+        reject("hidden_partial_trace_preconditioner_has_wrong_type")
+    partial_trace = supplied.partial_trace
+    if (
+        not isinstance(partial_trace, torch.Tensor)
+        or partial_trace.layout != torch.strided
+        or partial_trace.device.type == "meta"
+        or partial_trace.ndim != 2
+        or right.ndim != 2
+        or diagonal.ndim != 2
+    ):
+        reject("hidden_partial_trace_preconditioner_tensor_is_invalid")
+    expected_shape = (
+        int(right.shape[0]),
+        int(right.shape[0]),
+    )
+    if (
+        tuple(partial_trace.shape) != expected_shape
+        or tuple(diagonal.shape) != tuple(right.shape)
+        or partial_trace.dtype != right.dtype
+        or diagonal.dtype != right.dtype
+        or partial_trace.device != right.device
+        or diagonal.device != right.device
+    ):
+        reject(
+            "hidden_partial_trace_preconditioner_topology_mismatch",
+            details={
+                "expected_shape": list(expected_shape),
+                "observed_shape": list(partial_trace.shape),
+                "right_shape": list(right.shape),
+                "diagonal_shape": list(diagonal.shape),
+                "dtype_matches": partial_trace.dtype == right.dtype,
+                "device_matches": partial_trace.device == right.device,
+            },
+        )
+    if not bool(torch.isfinite(partial_trace).all().item()):
+        reject("hidden_partial_trace_preconditioner_is_non_finite")
+
+    try:
+        report = dict(supplied.construction_report)
+    except (TypeError, ValueError):
+        reject("hidden_partial_trace_preconditioner_report_is_invalid")
+    expected_report_keys = {
+        "schema",
+        "role",
+        "construction",
+        "formula",
+        "ridge",
+        "hidden_size",
+        "head_dim",
+        "partial_trace_shape",
+        "partial_trace_dtype",
+        "partial_trace_device",
+        "partial_trace_sha256",
+        "partial_trace_tensor_bytes",
+        "source_term_count",
+        "source_terms",
+        "source_terms_sha256",
+        "raw_maximum_absolute_asymmetry",
+        "symmetry_tolerance",
+        "symmetric_within_numerical_tolerance",
+        "symmetrization",
+        "full_operator_materialized",
+        "report_sha256",
+    }
+    if set(report) != expected_report_keys:
+        reject(
+            "hidden_partial_trace_preconditioner_report_fields_are_not_exact"
+        )
+    supplied_sha256 = report.pop("report_sha256")
+    try:
+        report_sha256 = _sha256(report)
+    except Lfm2SequenceEffectiveAttentionFoldError:
+        reject("hidden_partial_trace_preconditioner_report_is_not_canonical")
+    if supplied_sha256 != report_sha256:
+        reject("hidden_partial_trace_preconditioner_report_seal_mismatch")
+    source_term_count = report.get("source_term_count")
+    source_terms = report.get("source_terms")
+    source_terms_sha256 = report.get("source_terms_sha256")
+    ridge_value = _pcg_json_float(report.get("ridge"))
+    expected_ridge_value = _pcg_json_float(expected_ridge)
+    if (
+        report.get("schema")
+        != LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA
+        or report.get("role") != role
+        or report.get("construction")
+        != "normalized_hidden_side_partial_trace"
+        or report.get("formula") != _HIDDEN_PARTIAL_TRACE_FORMULA
+        or report.get("hidden_size") != int(right.shape[0])
+        or report.get("head_dim") != int(right.shape[1])
+        or report.get("partial_trace_shape") != list(expected_shape)
+        or report.get("partial_trace_dtype") != str(partial_trace.dtype)
+        or report.get("partial_trace_device") != str(partial_trace.device)
+        or report.get("partial_trace_tensor_bytes")
+        != int(partial_trace.numel() * partial_trace.element_size())
+        or report.get("full_operator_materialized") is not False
+        or not isinstance(source_term_count, int)
+        or isinstance(source_term_count, bool)
+        or source_term_count <= 0
+        or not isinstance(source_terms, list)
+        or len(source_terms) != source_term_count
+        or ridge_value is None
+        or ridge_value <= 0.0
+        or expected_ridge_value is None
+        or ridge_value != expected_ridge_value
+    ):
+        reject("hidden_partial_trace_preconditioner_report_binding_mismatch")
+    source_pairs: set[tuple[int, int]] = set()
+    for term in source_terms:
+        if (
+            not isinstance(term, dict)
+            or set(term)
+            != {
+                "head",
+                "other_head",
+                "left_sha256",
+                "coupling_sha256",
+                "partial_trace_weight",
+            }
+            or isinstance(term.get("head"), bool)
+            or not isinstance(term.get("head"), int)
+            or term["head"] < 0
+            or isinstance(term.get("other_head"), bool)
+            or not isinstance(term.get("other_head"), int)
+            or term["other_head"] < 0
+            or _pcg_json_float(term.get("partial_trace_weight")) is None
+        ):
+            reject("hidden_partial_trace_preconditioner_source_term_is_invalid")
+        pair = (term["head"], term["other_head"])
+        if pair in source_pairs:
+            reject("hidden_partial_trace_preconditioner_source_term_is_duplicate")
+        source_pairs.add(pair)
+        try:
+            _digest(term.get("left_sha256"), "left_sha256")
+            _digest(term.get("coupling_sha256"), "coupling_sha256")
+        except Lfm2SequenceEffectiveAttentionFoldError:
+            reject(
+                "hidden_partial_trace_preconditioner_source_digest_is_invalid"
+            )
+    try:
+        _digest(source_terms_sha256, "source_terms_sha256")
+    except Lfm2SequenceEffectiveAttentionFoldError:
+        reject("hidden_partial_trace_preconditioner_source_digest_is_invalid")
+    if (
+        report.get("source_terms_sha256") != _sha256(source_terms)
+        or report.get("partial_trace_sha256")
+        != _tensor_sha256(partial_trace)
+    ):
+        reject("hidden_partial_trace_preconditioner_tensor_hash_mismatch")
+
+    maximum_asymmetry = float(
+        (partial_trace - partial_trace.T).abs().max().item()
+    )
+    symmetry_tolerance = _hidden_partial_trace_numerical_tolerance(
+        partial_trace
+    )
+    reported_raw_asymmetry = _pcg_json_float(
+        report.get("raw_maximum_absolute_asymmetry")
+    )
+    reported_symmetry_tolerance = _pcg_json_float(
+        report.get("symmetry_tolerance")
+    )
+    if (
+        reported_raw_asymmetry is None
+        or reported_symmetry_tolerance is None
+        or reported_raw_asymmetry > reported_symmetry_tolerance
+        or report.get("symmetric_within_numerical_tolerance") is not True
+        or report.get("symmetrization") != "half_sum_with_transpose"
+        or report.get("symmetry_tolerance") != symmetry_tolerance
+        or maximum_asymmetry > symmetry_tolerance
+    ):
+        reject(
+            "hidden_partial_trace_preconditioner_is_not_symmetric",
+            details={
+                "maximum_asymmetry": maximum_asymmetry,
+                "required_tolerance": symmetry_tolerance,
+            },
+        )
+
+    factor, factorization_info = torch.linalg.cholesky_ex(
+        partial_trace,
+        upper=False,
+        check_errors=False,
+    )
+    if (
+        int(factorization_info.item()) != 0
+        or not bool(torch.isfinite(factor).all().item())
+        or not bool((torch.diagonal(factor) > 0.0).all().item())
+    ):
+        reject(
+            "hidden_partial_trace_preconditioner_cholesky_failed",
+            details={
+                "factorization_info": int(factorization_info.item()),
+                "factor_finite": bool(torch.isfinite(factor).all().item()),
+            },
+        )
+    try:
+        inverse_probe = torch.cholesky_solve(right, factor, upper=False)
+    except RuntimeError as exc:
+        reject(
+            "hidden_partial_trace_preconditioner_orientation_probe_failed",
+            details={"exception_type": type(exc).__name__},
+        )
+    inverse_probe_tolerance = 1e-10
+    inverse_probe_relative_residual = float(
+        (
+            torch.linalg.vector_norm(
+                partial_trace @ inverse_probe - right
+            )
+            / torch.linalg.vector_norm(right).clamp_min(
+                torch.finfo(right.dtype).eps
+            )
+        ).item()
+    )
+    if (
+        not math.isfinite(inverse_probe_relative_residual)
+        or inverse_probe_relative_residual > inverse_probe_tolerance
+    ):
+        reject(
+            "hidden_partial_trace_preconditioner_orientation_probe_failed",
+            details={
+                "relative_residual": _pcg_json_float(
+                    inverse_probe_relative_residual
+                ),
+                "required_tolerance": inverse_probe_tolerance,
+            },
+        )
+    construction_report = dict(supplied.construction_report)
+    receipt = _seal(
+        {
+            "kind": "deterministic_hidden_partial_trace_cholesky",
+            "construction_report": construction_report,
+            "construction_report_sha256": construction_report[
+                "report_sha256"
+            ],
+            "partial_trace_sha256": construction_report[
+                "partial_trace_sha256"
+            ],
+            "factorization": "lower_cholesky_ex",
+            "factorization_info": 0,
+            "factor_sha256": _tensor_sha256(factor),
+            "factor_shape": list(factor.shape),
+            "factor_dtype": str(factor.dtype),
+            "factor_device": str(factor.device),
+            "hidden_size": int(right.shape[0]),
+            "head_dim": int(right.shape[1]),
+            "partial_trace_spd": True,
+            "positive_finite_factor_diagonal": True,
+            "inverse_orientation_probe_relative_residual": (
+                inverse_probe_relative_residual
+            ),
+            "inverse_orientation_probe_tolerance": inverse_probe_tolerance,
+            "factorization_materialized_only_after_original_lane_exact_miss": (
+                True
+            ),
+            "full_operator_materialized": False,
+        }
+    )
+    return factor.contiguous(), receipt
+
+
 def _single_tensor_pcg_extended_body(
     *,
     role: str,
@@ -1572,6 +2070,90 @@ def _single_tensor_pcg_continuous_row_block_body(
     }
 
 
+def _single_tensor_pcg_continuous_hidden_partial_trace_body(
+    *,
+    role: str,
+    solution: Any,
+    initial_relative: float | None,
+    original_lane_iterations: int,
+    original_lane_final_relative: float | None,
+    total_iterations: int,
+    history: Sequence[float],
+    exact_relative: float | None,
+    exact_final_residual_authenticated: bool,
+    exact_checkpoints: Sequence[Mapping[str, Any]],
+    total_matvec_calls: int,
+    lane_state: Mapping[str, Any],
+    preconditioner_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    torch = _torch()
+    solution_finite = bool(torch.isfinite(solution).all().item())
+    recurrence_history = list(history)
+    checkpoints = [dict(value) for value in exact_checkpoints]
+    final_recurrence = (
+        recurrence_history[-1]
+        if recurrence_history
+        else _pcg_json_float(initial_relative)
+    )
+    return {
+        "role": role,
+        "solver": (
+            "deterministic_continuous_hidden_partial_trace_"
+            "cholesky_pcg_single_tensor"
+        ),
+        "maximum_iterations": (
+            _PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+        ),
+        "hard_cap_includes_original_lane_iterations": True,
+        "original_lane_maximum_iterations": _PCG_MAXIMUM_ITERATIONS,
+        "original_lane_iterations_executed": original_lane_iterations,
+        "single_restart_after_original_lane_exact_authentication_miss": True,
+        "periodic_restart_count": 0,
+        "iterations_executed": total_iterations,
+        "continuous_hidden_partial_trace_lane_iterations_executed": (
+            total_iterations - original_lane_iterations
+        ),
+        "required_relative_normal_residual": (
+            _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+        ),
+        "initial_relative_normal_residual": _pcg_json_float(initial_relative),
+        "original_lane_final_recurrence_relative_normal_residual": (
+            _pcg_json_float(original_lane_final_relative)
+        ),
+        "final_recurrence_relative_normal_residual": _pcg_json_float(
+            final_recurrence
+        ),
+        "final_relative_normal_residual": (
+            _pcg_json_float(exact_relative)
+            if exact_final_residual_authenticated
+            else None
+        ),
+        "relative_normal_residual_history": recurrence_history,
+        "recurrence_history_sha256": _sha256(recurrence_history),
+        "exact_relative_normal_residual_checkpoints": checkpoints,
+        "exact_residual_checkpoints_sha256": _sha256(checkpoints),
+        "total_matvec_calls": total_matvec_calls,
+        "exact_final_residual_authenticated": (
+            exact_final_residual_authenticated
+        ),
+        "extended_after_original_lane_exact_authentication_miss": True,
+        "exact_residual_used_to_initialize_continuous_lane_once": True,
+        "exact_diagnostic_matvecs_modify_recurrence_state_or_direction": False,
+        "execution_profile": dict(
+            LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE
+        ),
+        "execution_profile_sha256": (
+            LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+        ),
+        "continuous_hidden_partial_trace_lane": dict(lane_state),
+        "restart_preconditioner": dict(preconditioner_state),
+        "solution_finite": solution_finite,
+        "solution_sha256": (
+            _tensor_sha256(solution) if solution_finite else None
+        ),
+    }
+
+
 def _pcg_single_tensor(
     *,
     right: Any,
@@ -1580,6 +2162,8 @@ def _pcg_single_tensor(
     initial: Any,
     role: str,
     restart_row_block_preconditioner: Any | None = None,
+    restart_hidden_partial_trace_preconditioner: Any | None = None,
+    restart_hidden_partial_trace_ridge: Any | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     torch = _torch()
     solution = initial.clone()
@@ -1608,6 +2192,19 @@ def _pcg_single_tensor(
         "receipt": None,
         "authentication_failure_reason": None,
     }
+    hidden_partial_trace_lane_started = False
+    hidden_partial_trace_lane_state: dict[str, Any] = {}
+    hidden_partial_trace_preconditioner_state: dict[str, Any] = {
+        "kind": "deterministic_hidden_partial_trace_cholesky",
+        "supplied": restart_hidden_partial_trace_preconditioner is not None,
+        "authentication_attempted": False,
+        "authenticated": False,
+        "applied": False,
+        "application_attempt_count": 0,
+        "application_count": 0,
+        "receipt": None,
+        "authentication_failure_reason": None,
+    }
 
     def extended_body() -> dict[str, Any]:
         if row_block_lane_started:
@@ -1628,6 +2225,25 @@ def _pcg_single_tensor(
                 total_matvec_calls=total_matvec_calls,
                 lane_state=row_block_lane_state,
                 preconditioner_state=row_block_preconditioner_state,
+            )
+        if hidden_partial_trace_lane_started:
+            return _single_tensor_pcg_continuous_hidden_partial_trace_body(
+                role=role,
+                solution=solution,
+                initial_relative=initial_relative,
+                original_lane_iterations=original_lane_iterations,
+                original_lane_final_relative=original_lane_final_relative,
+                total_iterations=total_iterations,
+                history=history,
+                exact_relative=exact_relative,
+                exact_final_residual_authenticated=(
+                    exact_iteration == total_iterations
+                    and _pcg_json_float(exact_relative) is not None
+                ),
+                exact_checkpoints=exact_checkpoints,
+                total_matvec_calls=total_matvec_calls,
+                lane_state=hidden_partial_trace_lane_state,
+                preconditioner_state=hidden_partial_trace_preconditioner_state,
             )
         return _single_tensor_pcg_extended_body(
             role=role,
@@ -1947,15 +2563,43 @@ def _pcg_single_tensor(
             extended_body(),
         )
 
-    if restart_row_block_preconditioner is not None:
-        row_block_lane_started = True
+    if (
+        restart_row_block_preconditioner is not None
+        and restart_hidden_partial_trace_preconditioner is not None
+    ):
+        fail_closed(
+            "multiple_restart_preconditioners_supplied",
+            stage="restart_preconditioner_selection",
+        )
+
+    if (
+        restart_row_block_preconditioner is not None
+        or restart_hidden_partial_trace_preconditioner is not None
+    ):
+        use_row_block = restart_row_block_preconditioner is not None
+        if use_row_block:
+            row_block_lane_started = True
+            active_lane_state = row_block_lane_state
+            active_preconditioner_state = row_block_preconditioner_state
+            continuous_hard_cap = _PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+            continuous_lane_name = "continuous_row_block_lane"
+            preconditioner_name = "row_block_preconditioner"
+        else:
+            hidden_partial_trace_lane_started = True
+            active_lane_state = hidden_partial_trace_lane_state
+            active_preconditioner_state = (
+                hidden_partial_trace_preconditioner_state
+            )
+            continuous_hard_cap = (
+                _PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+            )
+            continuous_lane_name = "continuous_hidden_partial_trace_lane"
+            preconditioner_name = "hidden_partial_trace_preconditioner"
         lane_matvec_start = total_matvec_calls
-        row_block_lane_state.update(
+        active_lane_state.update(
             {
                 "start_iteration": total_iterations,
-                "planned_stop_iteration": (
-                    _PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
-                ),
+                "planned_stop_iteration": continuous_hard_cap,
                 "iterations_executed": 0,
                 "attempted_matvec_calls": 0,
                 "exact_diagnostic_matvec_calls": 0,
@@ -1968,99 +2612,118 @@ def _pcg_single_tensor(
                 "ending_exact_residual_authenticated": True,
             }
         )
-        row_block_preconditioner_state[
-            "authentication_attempted"
-        ] = True
+        active_preconditioner_state["authentication_attempted"] = True
         try:
-            row_block_factor, row_block_receipt = (
-                _authenticate_restart_row_block_preconditioner(
-                    supplied=restart_row_block_preconditioner,
-                    right=right,
-                    diagonal=diagonal,
-                    role=role,
+            if use_row_block:
+                restart_factor, restart_receipt = (
+                    _authenticate_restart_row_block_preconditioner(
+                        supplied=restart_row_block_preconditioner,
+                        right=right,
+                        diagonal=diagonal,
+                        role=role,
+                    )
                 )
-            )
-        except _PcgRowBlockPreconditionerAuthenticationError as exc:
-            row_block_preconditioner_state[
+            else:
+                restart_factor, restart_receipt = (
+                    _authenticate_restart_hidden_partial_trace_preconditioner(
+                        supplied=restart_hidden_partial_trace_preconditioner,
+                        right=right,
+                        diagonal=diagonal,
+                        role=role,
+                        expected_ridge=restart_hidden_partial_trace_ridge,
+                    )
+                )
+        except (
+            _PcgRowBlockPreconditionerAuthenticationError,
+            _PcgHiddenPartialTracePreconditionerAuthenticationError,
+        ) as exc:
+            active_preconditioner_state[
                 "authentication_failure_reason"
             ] = exc.reason
-            row_block_lane_state["termination"] = (
+            active_lane_state["termination"] = (
                 "preconditioner_authentication_failure"
             )
             fail_closed(
                 exc.reason,
-                stage="row_block_preconditioner_authentication",
+                stage=f"{preconditioner_name}_authentication",
                 details=exc.details,
             )
-        row_block_preconditioner_state.update(
+        active_preconditioner_state.update(
             {
                 "authenticated": True,
-                "receipt": row_block_receipt,
+                "receipt": restart_receipt,
             }
         )
 
-        def apply_row_block_preconditioner(value: Any) -> Any:
-            row_block_preconditioner_state[
+        def apply_restart_preconditioner(value: Any) -> Any:
+            active_preconditioner_state[
                 "application_attempt_count"
             ] += 1
             try:
-                result = torch.cholesky_solve(
-                    value.unsqueeze(-1),
-                    row_block_factor,
-                    upper=False,
-                ).squeeze(-1)
+                if use_row_block:
+                    result = torch.cholesky_solve(
+                        value.unsqueeze(-1),
+                        restart_factor,
+                        upper=False,
+                    ).squeeze(-1)
+                else:
+                    result = torch.cholesky_solve(
+                        value,
+                        restart_factor,
+                        upper=False,
+                    )
             except RuntimeError as exc:
-                row_block_lane_state["termination"] = (
+                active_lane_state["termination"] = (
                     "preconditioner_application_failure"
                 )
                 fail_closed(
-                    "row_block_preconditioner_application_failed",
-                    stage="row_block_preconditioner_application",
+                    f"{preconditioner_name}_application_failed",
+                    stage=f"{preconditioner_name}_application",
                     details={"exception_type": type(exc).__name__},
                 )
             if not bool(torch.isfinite(result).all().item()):
-                row_block_lane_state["termination"] = (
+                active_lane_state["termination"] = (
                     "preconditioner_application_failure"
                 )
                 fail_closed(
-                    "row_block_preconditioner_application_is_non_finite",
-                    stage="row_block_preconditioner_application",
+                    f"{preconditioner_name}_application_is_non_finite",
+                    stage=f"{preconditioner_name}_application",
                 )
-            row_block_preconditioner_state["applied"] = True
-            row_block_preconditioner_state["application_count"] += 1
+            active_preconditioner_state["applied"] = True
+            active_preconditioner_state["application_count"] += 1
             return result
 
         # This is the sole restart.  The exact residual authenticated after
-        # the historical scalar lane initializes one continuous block-PCG
-        # recurrence; later diagnostic matvecs never replace this state.
+        # the historical scalar lane initializes one continuous
+        # partial-trace-PCG recurrence; diagnostic matvecs never replace it.
         residual = exact_residual
-        preconditioned = apply_row_block_preconditioner(residual)
+        preconditioned = apply_restart_preconditioner(residual)
         direction = preconditioned.clone()
         rz = float((residual * preconditioned).sum().item())
         if not math.isfinite(rz) or rz <= 0.0:
             if not math.isfinite(rz):
                 exact_iteration = None
-            row_block_lane_state["termination"] = (
+            active_lane_state["termination"] = (
                 "preconditioned_residual_failure"
             )
             fail_closed(
                 "non_positive_or_non_finite_preconditioned_residual",
-                stage="continuous_row_block_lane_initialization",
+                stage=f"{continuous_lane_name}_initialization",
                 details={
                     "residual_preconditioner_inner_product": (
                         _pcg_json_float(rz)
                     ),
                 },
             )
-        row_block_lane_state["termination"] = "running"
+        active_lane_state["termination"] = "running"
 
         for attempted_iteration in range(
             total_iterations + 1,
-            _PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS + 1,
+            continuous_hard_cap + 1,
         ):
             applied = matvec(direction)
             total_matvec_calls += 1
-            row_block_lane_state["attempted_matvec_calls"] = (
+            active_lane_state["attempted_matvec_calls"] = (
                 total_matvec_calls - lane_matvec_start
             )
             denominator = float((direction * applied).sum().item())
@@ -2073,10 +2736,12 @@ def _pcg_single_tensor(
             ):
                 if not applied_finite or not curvature_finite:
                     exact_iteration = None
-                row_block_lane_state["termination"] = "curvature_failure"
+                active_lane_state["termination"] = (
+                    "curvature_failure"
+                )
                 fail_closed(
                     "non_positive_or_non_finite_curvature",
-                    stage="continuous_row_block_lane_curvature",
+                    stage=f"{continuous_lane_name}_curvature",
                     details={
                         "attempted_iteration": attempted_iteration,
                         "curvature": _pcg_json_float(denominator),
@@ -2089,14 +2754,16 @@ def _pcg_single_tensor(
             residual = residual - alpha * applied
             total_iterations += 1
             exact_iteration = None
-            row_block_lane_state["iterations_executed"] = (
+            active_lane_state["iterations_executed"] = (
                 total_iterations - original_lane_iterations
             )
-            row_block_lane_state["ending_iteration"] = total_iterations
-            row_block_lane_state[
+            active_lane_state[
+                "ending_iteration"
+            ] = total_iterations
+            active_lane_state[
                 "ending_exact_residual_authenticated"
             ] = False
-            row_block_lane_state[
+            active_lane_state[
                 "ending_exact_relative_normal_residual"
             ] = None
             if (
@@ -2104,36 +2771,38 @@ def _pcg_single_tensor(
                 or not bool(torch.isfinite(residual).all().item())
                 or not math.isfinite(alpha)
             ):
-                row_block_lane_state["termination"] = "non_finite_update"
+                active_lane_state["termination"] = (
+                    "non_finite_update"
+                )
                 fail_closed(
-                    "non_finite_continuous_row_block_lane_update",
-                    stage="continuous_row_block_lane_update",
+                    f"non_finite_{continuous_lane_name}_update",
+                    stage=f"{continuous_lane_name}_update",
                     details={"attempted_iteration": attempted_iteration},
                 )
             relative = float(
                 (torch.linalg.vector_norm(residual) / right_norm).item()
             )
             if not math.isfinite(relative):
-                row_block_lane_state["termination"] = (
+                active_lane_state["termination"] = (
                     "non_finite_recurrence_residual"
                 )
                 fail_closed(
-                    "non_finite_continuous_row_block_lane_recurrence_residual",
-                    stage="continuous_row_block_lane_update",
+                    f"non_finite_{continuous_lane_name}_recurrence_residual",
+                    stage=f"{continuous_lane_name}_update",
                     details={"attempted_iteration": attempted_iteration},
                 )
             history.append(relative)
-            row_block_lane_state[
+            active_lane_state[
                 "ending_recurrence_relative_normal_residual"
             ] = relative
 
             if relative <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE:
                 applied_exact = matvec(solution)
                 total_matvec_calls += 1
-                row_block_lane_state["attempted_matvec_calls"] = (
+                active_lane_state["attempted_matvec_calls"] = (
                     total_matvec_calls - lane_matvec_start
                 )
-                row_block_lane_state[
+                active_lane_state[
                     "exact_diagnostic_matvec_calls"
                 ] += 1
                 exact_residual = right - applied_exact
@@ -2167,10 +2836,10 @@ def _pcg_single_tensor(
                         "finite": exact_finite,
                     }
                 )
-                row_block_lane_state[
+                active_lane_state[
                     "ending_exact_relative_normal_residual"
                 ] = _pcg_json_float(exact_relative)
-                row_block_lane_state[
+                active_lane_state[
                     "ending_exact_residual_authenticated"
                 ] = exact_finite
                 if (
@@ -2179,7 +2848,7 @@ def _pcg_single_tensor(
                     and exact_relative
                     <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
                 ):
-                    row_block_lane_state["termination"] = (
+                    active_lane_state["termination"] = (
                         "exact_tolerance_reached"
                     )
                     return solution.contiguous(), _seal_observe_pcg_report(
@@ -2187,30 +2856,27 @@ def _pcg_single_tensor(
                         extended_body(),
                     )
                 if not exact_finite:
-                    row_block_lane_state["termination"] = (
+                    active_lane_state["termination"] = (
                         "non_finite_exact_diagnostic"
                     )
                     fail_closed(
-                        "non_finite_continuous_row_block_lane_exact_residual",
-                        stage="continuous_row_block_lane_exact_diagnostic",
+                        f"non_finite_{continuous_lane_name}_exact_residual",
+                        stage=f"{continuous_lane_name}_exact_diagnostic",
                     )
 
-            if (
-                total_iterations
-                >= _PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
-            ):
+            if total_iterations >= continuous_hard_cap:
                 break
-            next_preconditioned = apply_row_block_preconditioner(residual)
+            next_preconditioned = apply_restart_preconditioner(residual)
             next_rz = float(
                 (residual * next_preconditioned).sum().item()
             )
             if not math.isfinite(next_rz) or next_rz <= 0.0:
-                row_block_lane_state["termination"] = (
+                active_lane_state["termination"] = (
                     "preconditioned_residual_failure"
                 )
                 fail_closed(
                     "non_positive_or_non_finite_preconditioned_residual",
-                    stage="continuous_row_block_lane_direction_update",
+                    stage=f"{continuous_lane_name}_direction_update",
                     details={
                         "attempted_iteration": attempted_iteration,
                         "residual_preconditioner_inner_product": (
@@ -2227,10 +2893,12 @@ def _pcg_single_tensor(
         if exact_iteration != total_iterations:
             applied_exact = matvec(solution)
             total_matvec_calls += 1
-            row_block_lane_state["attempted_matvec_calls"] = (
+            active_lane_state["attempted_matvec_calls"] = (
                 total_matvec_calls - lane_matvec_start
             )
-            row_block_lane_state["exact_diagnostic_matvec_calls"] += 1
+            active_lane_state[
+                "exact_diagnostic_matvec_calls"
+            ] += 1
             exact_residual = right - applied_exact
             exact_finite = (
                 bool(torch.isfinite(applied_exact).all().item())
@@ -2260,32 +2928,34 @@ def _pcg_single_tensor(
                     "finite": exact_finite,
                 }
             )
-            row_block_lane_state[
+            active_lane_state[
                 "ending_exact_relative_normal_residual"
             ] = _pcg_json_float(exact_relative)
-            row_block_lane_state[
+            active_lane_state[
                 "ending_exact_residual_authenticated"
             ] = exact_finite
         if exact_iteration != total_iterations or exact_relative is None:
-            row_block_lane_state["termination"] = (
+            active_lane_state["termination"] = (
                 "non_finite_final_exact_residual"
             )
             fail_closed(
-                "non_finite_continuous_row_block_lane_exact_residual",
-                stage="continuous_row_block_lane_final_exact_authentication",
+                f"non_finite_{continuous_lane_name}_exact_residual",
+                stage=f"{continuous_lane_name}_final_exact_authentication",
             )
         if exact_relative <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE:
-            row_block_lane_state["termination"] = (
+            active_lane_state["termination"] = (
                 "exact_tolerance_reached_at_hard_cap"
             )
             return solution.contiguous(), _seal_observe_pcg_report(
                 "single_tensor",
                 extended_body(),
             )
-        row_block_lane_state["termination"] = "hard_iteration_cap_reached"
+        active_lane_state["termination"] = (
+            "hard_iteration_cap_reached"
+        )
         fail_closed(
             "hard_iteration_cap_reached",
-            stage="continuous_row_block_lane_hard_iteration_cap",
+            stage=f"{continuous_lane_name}_hard_iteration_cap",
         )
 
     while total_iterations < _PCG_HARD_MAXIMUM_ITERATIONS:
@@ -3408,12 +4078,11 @@ def _structured_value_pcg_sweep(
             f"sequence_effective_structured_value_iteration_{iteration}_"
             f"group_{group}"
         )
-        row_block_preconditioner = (
-            _build_structured_value_row_block_jacobi_preconditioner(
+        hidden_partial_trace_preconditioner = (
+            _build_structured_value_hidden_partial_trace_preconditioner(
                 cross=cross,
                 output_blocks=output_blocks,
                 group_heads=group_heads,
-                diagonal=diagonal,
                 ridge=ridge,
                 role=role,
             )
@@ -3424,7 +4093,10 @@ def _structured_value_pcg_sweep(
             diagonal=diagonal,
             initial=updated[group],
             role=role,
-            restart_row_block_preconditioner=row_block_preconditioner,
+            restart_hidden_partial_trace_preconditioner=(
+                hidden_partial_trace_preconditioner
+            ),
+            restart_hidden_partial_trace_ridge=ridge,
         )
         updated[group] = solution
         body = {
@@ -3436,10 +4108,13 @@ def _structured_value_pcg_sweep(
             "trace_scale": trace_scale,
             "ridge": ridge,
             "pcg_report": pcg_report,
-            "row_block_jacobi_construction_report": dict(
-                row_block_preconditioner.construction_report
+            "hidden_partial_trace_construction_report": dict(
+                hidden_partial_trace_preconditioner.construction_report
             ),
-            "row_block_jacobi_supplied_to_restart_lane": True,
+            "hidden_partial_trace_supplied_to_restart_lane": True,
+            "hidden_partial_trace_pcg_execution_profile_sha256": (
+                LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+            ),
             "solution_sha256": _tensor_sha256(solution),
             "explicit_coefficient_tensor_materialized": False,
             "hidden_head_dim_gram_materialized": False,
@@ -4106,6 +4781,18 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         "compiled_state_sha256": compiled_sha,
         "solver_plan": solver_plan,
         "solver_strategy": solver_plan["strategy"],
+        "streamed_pcg_execution_profile": (
+            dict(
+                LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE
+            )
+            if streamed_headwise
+            else None
+        ),
+        "streamed_pcg_execution_profile_sha256": (
+            LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+            if streamed_headwise
+            else None
+        ),
         "streamed_sufficient_statistics": (
             None if statistics_report is None else dict(statistics_report)
         ),
@@ -4338,6 +5025,9 @@ __all__ = [
     "LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_INSTALL_SCHEMA",
     "LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA",
     "LFM2_SEQUENCE_EFFECTIVE_PCG_OBSERVATION_SCHEMA",
+    "LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA",
+    "LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE",
+    "LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256",
     "LFM2_SEQUENCE_EFFECTIVE_ROW_BLOCK_JACOBI_SCHEMA",
     "Lfm2CompiledFixedQkSequenceEffectiveAttentionFold",
     "Lfm2FixedQkSequenceEffectiveVoAlsPolicy",

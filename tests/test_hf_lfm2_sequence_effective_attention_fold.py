@@ -1028,7 +1028,7 @@ def test_streamed_statistics_and_pcg_match_explicit_small_oracle(
         policy=policy,
         iteration=1,
     )
-    streamed_value, _streamed_value_reports = (
+    streamed_value, streamed_value_reports = (
         sequence_fold._structured_value_pcg_sweep(
             statistics=statistics,
             topology=values.producer.topology,
@@ -1076,6 +1076,13 @@ def test_streamed_statistics_and_pcg_match_explicit_small_oracle(
         + value_ridge * streamed_value.square().sum().item()
     )
     assert abs(streamed_objective - explicit_objective) / explicit_objective < 1e-8
+    assert streamed_value_reports
+    assert all(
+        report["hidden_partial_trace_supplied_to_restart_lane"] is True
+        and report["hidden_partial_trace_pcg_execution_profile_sha256"]
+        == sequence_fold.LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+        for report in streamed_value_reports
+    )
 
 
 def test_h776_q10_production_plan_bounds_all_dense_systems_and_tb_tensor() -> None:
@@ -1109,6 +1116,28 @@ def test_h776_q10_production_plan_bounds_all_dense_systems_and_tb_tensor() -> No
     assert short_trace_plan["strategy"] == (
         "streamed_cross_head_statistics_pcg"
     )
+
+
+def test_hidden_partial_trace_execution_profile_is_separately_immutable() -> None:
+    profile = dict(
+        sequence_fold.LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE
+    )
+    assert (
+        sequence_fold.LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+        == "7f71ffe700643b6fc017c518dd2f853092917d288f8e70b4cb659e941aa5f13e"
+    )
+    assert profile["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in profile.items()
+            if key != "report_sha256"
+        }
+    )
+    assert profile["original_lane_maximum_iterations"] == 64
+    assert profile["hard_maximum_iterations"] == 4096
+    assert profile["required_relative_normal_residual"] == 1e-8
+    assert profile["production_row_block_preconditioner_selected"] is False
+    assert profile["full_operator_materialized"] is False
 
 
 def test_pcg_fails_closed_when_authenticated_residual_cap_is_not_met(
@@ -1254,7 +1283,7 @@ def test_single_tensor_pcg_original_success_path_is_byte_identical() -> None:
         diagonal=diagonal,
         initial=initial,
         role=role,
-        restart_row_block_preconditioner=object(),
+        restart_hidden_partial_trace_preconditioner=object(),
     )
 
     assert torch.equal(observed_solution, expected_solution)
@@ -1544,6 +1573,716 @@ def test_continuous_64_coordinate_row_block_lane_solves_real_like_system() -> No
     assert tampered_failure["restart_preconditioner"][
         "authenticated"
     ] is False
+
+
+def _hidden_partial_trace_problem(
+    *,
+    hidden_size: int = 96,
+    head_dim: int = 8,
+):
+    generator = torch.Generator().manual_seed(7719)
+    left = torch.diag(
+        torch.full((hidden_size,), 2.000001, dtype=DTYPE)
+    )
+    left += torch.diag(
+        torch.full((hidden_size - 1,), -1.0, dtype=DTYPE),
+        diagonal=1,
+    )
+    left += torch.diag(
+        torch.full((hidden_size - 1,), -1.0, dtype=DTYPE),
+        diagonal=-1,
+    )
+    coordinate = torch.diag(
+        torch.linspace(1.0, 4.0, head_dim, dtype=DTYPE)
+    )
+    output_blocks = torch.linalg.cholesky(coordinate).reshape(
+        1,
+        head_dim,
+        head_dim,
+    )
+    cross = left.reshape(1, 1, hidden_size, hidden_size)
+    ridge = 1e-8
+    diagonal = (
+        torch.diagonal(left).unsqueeze(1)
+        * torch.diagonal(coordinate).unsqueeze(0)
+        + ridge
+    )
+    right = torch.randn(
+        hidden_size,
+        head_dim,
+        generator=generator,
+        dtype=DTYPE,
+    )
+
+    def matvec(value):
+        return left @ value @ coordinate + ridge * value
+
+    return cross, output_blocks, diagonal, right, matvec, ridge
+
+
+def test_hidden_partial_trace_matches_formula_and_cholesky_orientation() -> None:
+    generator = torch.Generator().manual_seed(8841)
+    hidden_size = 9
+    head_dim = 4
+    heads = 2
+    samples = 17
+    features = torch.randn(
+        samples,
+        heads,
+        hidden_size,
+        generator=generator,
+        dtype=DTYPE,
+    )
+    cross = torch.einsum("nhi,nkj->hkij", features, features).contiguous()
+    output_blocks = torch.randn(
+        heads,
+        head_dim,
+        7,
+        generator=generator,
+        dtype=DTYPE,
+    )
+    ridge = 0.125
+    role = "hidden_partial_trace_formula_oracle"
+    preconditioner = (
+        sequence_fold._build_structured_value_hidden_partial_trace_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0, 1),
+            ridge=ridge,
+            role=role,
+        )
+    )
+    expected = ridge * torch.eye(hidden_size, dtype=DTYPE)
+    expected_terms = []
+    for head in range(heads):
+        for other in range(heads):
+            coupling = output_blocks[other] @ output_blocks[head].T
+            weight = float(torch.trace(coupling).item()) / head_dim
+            expected.add_(cross[head, other], alpha=weight)
+            expected_terms.append(
+                {
+                    "head": head,
+                    "other_head": other,
+                    "left_sha256": sequence_fold._tensor_sha256(
+                        cross[head, other].contiguous()
+                    ),
+                    "coupling_sha256": sequence_fold._tensor_sha256(
+                        coupling.contiguous()
+                    ),
+                    "partial_trace_weight": weight,
+                }
+            )
+    expected = 0.5 * (expected + expected.T)
+    torch.testing.assert_close(
+        preconditioner.partial_trace,
+        expected,
+        rtol=1e-13,
+        atol=1e-13,
+    )
+    construction = dict(preconditioner.construction_report)
+    assert construction["schema"] == (
+        "neural-forge-lfm2-sequence-effective-"
+        "hidden-partial-trace-cholesky-v1"
+    )
+    assert construction["formula"] == (
+        "P_H=ridge*I_H+sum_(h,o)(trace(C_o,h)/head_dim)*A_h,o"
+    )
+    assert construction["source_terms"] == expected_terms
+    assert construction["source_terms_sha256"] == sequence_fold._sha256(
+        expected_terms
+    )
+    assert construction["partial_trace_shape"] == [hidden_size, hidden_size]
+    assert construction["full_operator_materialized"] is False
+    assert construction["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in construction.items()
+            if key != "report_sha256"
+        }
+    )
+
+    right = torch.randn(
+        hidden_size,
+        head_dim,
+        generator=generator,
+        dtype=DTYPE,
+    )
+    factor, receipt = (
+        sequence_fold._authenticate_restart_hidden_partial_trace_preconditioner(
+            supplied=preconditioner,
+            right=right,
+            diagonal=torch.ones_like(right),
+            role=role,
+            expected_ridge=ridge,
+        )
+    )
+    observed = torch.cholesky_solve(right, factor, upper=False)
+    expected_inverse = torch.linalg.solve(expected, right)
+    torch.testing.assert_close(observed, expected_inverse, rtol=1e-12, atol=1e-12)
+    assert receipt["factorization"] == "lower_cholesky_ex"
+    assert receipt["factorization_info"] == 0
+    assert receipt["partial_trace_spd"] is True
+    assert receipt["positive_finite_factor_diagonal"] is True
+    assert receipt["inverse_orientation_probe_relative_residual"] <= (
+        receipt["inverse_orientation_probe_tolerance"]
+    )
+    assert receipt[
+        "factorization_materialized_only_after_original_lane_exact_miss"
+    ] is True
+    assert receipt["full_operator_materialized"] is False
+
+
+def test_hidden_partial_trace_preserves_exact_h776_group_geometry() -> None:
+    hidden_size = 776
+    head_dim = 64
+    diagonal_values = torch.linspace(1.0, 2.0, hidden_size, dtype=DTYPE)
+    cross = torch.zeros(2, 2, hidden_size, hidden_size, dtype=DTYPE)
+    for head in range(2):
+        for other in range(2):
+            cross[head, other].diagonal().copy_(
+                diagonal_values * (1.0 if head == other else 0.125)
+            )
+    output_blocks = torch.eye(head_dim, dtype=DTYPE).repeat(2, 1, 1)
+    preconditioner = (
+        sequence_fold._build_structured_value_hidden_partial_trace_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0, 1),
+            ridge=1e-6,
+            role="sequence_effective_structured_value_iteration_1_group_4",
+        )
+    )
+    construction = dict(preconditioner.construction_report)
+    assert tuple(preconditioner.partial_trace.shape) == (776, 776)
+    assert construction["hidden_size"] == 776
+    assert construction["head_dim"] == 64
+    assert construction["source_term_count"] == 4
+    assert construction["partial_trace_tensor_bytes"] == 776 * 776 * 8
+    assert construction["full_operator_materialized"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "empty_heads",
+        "head_out_of_range",
+        "nonsquare_cross",
+        "dtype_mismatch",
+        "device_mismatch",
+        "nonpositive_ridge",
+        "nonfinite_source",
+        "asymmetric_source",
+    ),
+)
+def test_hidden_partial_trace_builder_rejects_invalid_inputs(mutation) -> None:
+    cross = torch.eye(4, dtype=DTYPE).reshape(1, 1, 4, 4)
+    output_blocks = torch.eye(2, dtype=DTYPE).reshape(1, 2, 2)
+    group_heads = (0,)
+    ridge = 1e-6
+    if mutation == "empty_heads":
+        group_heads = ()
+    elif mutation == "head_out_of_range":
+        group_heads = (1,)
+    elif mutation == "nonsquare_cross":
+        cross = torch.ones(1, 1, 4, 3, dtype=DTYPE)
+    elif mutation == "dtype_mismatch":
+        output_blocks = output_blocks.to(torch.float32)
+    elif mutation == "device_mismatch":
+        output_blocks = torch.empty(1, 2, 2, dtype=DTYPE, device="meta")
+    elif mutation == "nonpositive_ridge":
+        ridge = 0.0
+    elif mutation == "nonfinite_source":
+        cross = cross.clone()
+        cross[0, 0, 0, 0] = float("nan")
+    elif mutation == "asymmetric_source":
+        cross = cross.clone()
+        cross[0, 0, 0, 1] = 1.0
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ):
+        sequence_fold._build_structured_value_hidden_partial_trace_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=group_heads,
+            ridge=ridge,
+            role="partial_trace_invalid_builder_oracle",
+        )
+
+
+def test_continuous_hidden_partial_trace_lane_solves_after_scalar_miss() -> None:
+    (
+        cross,
+        output_blocks,
+        diagonal,
+        right,
+        matvec,
+        ridge,
+    ) = _hidden_partial_trace_problem()
+    role = "hidden_partial_trace_continuous_oracle"
+    preconditioner = (
+        sequence_fold._build_structured_value_hidden_partial_trace_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0,),
+            ridge=ridge,
+            role=role,
+        )
+    )
+    solution, report = sequence_fold._pcg_single_tensor(
+        right=right,
+        matvec=matvec,
+        diagonal=diagonal,
+        initial=torch.zeros_like(right),
+        role=role,
+        restart_hidden_partial_trace_preconditioner=preconditioner,
+        restart_hidden_partial_trace_ridge=ridge,
+    )
+    exact_relative = float(
+        (
+            torch.linalg.vector_norm(right - matvec(solution))
+            / torch.linalg.vector_norm(right)
+        ).item()
+    )
+    assert report["solver"] == (
+        "deterministic_continuous_hidden_partial_trace_"
+        "cholesky_pcg_single_tensor"
+    )
+    assert report["original_lane_iterations_executed"] == 64
+    assert report["maximum_iterations"] == 4096
+    assert report["periodic_restart_count"] == 0
+    assert report[
+        "single_restart_after_original_lane_exact_authentication_miss"
+    ] is True
+    assert report[
+        "exact_diagnostic_matvecs_modify_recurrence_state_or_direction"
+    ] is False
+    assert report["execution_profile"] == dict(
+        sequence_fold.LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE
+    )
+    assert report["execution_profile_sha256"] == (
+        sequence_fold.LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
+    )
+    partial_iterations = report[
+        "continuous_hidden_partial_trace_lane_iterations_executed"
+    ]
+    assert partial_iterations == report["iterations_executed"] - 64
+    assert 0 < partial_iterations < 4096 - 64
+    assert report["final_relative_normal_residual"] == exact_relative
+    assert exact_relative <= 1e-8
+    lane = report["continuous_hidden_partial_trace_lane"]
+    assert lane["start_iteration"] == 64
+    assert lane["planned_stop_iteration"] == 4096
+    assert lane["iterations_executed"] == partial_iterations
+    assert lane["termination"] == "exact_tolerance_reached"
+    assert lane["exact_diagnostic_matvec_calls"] >= 1
+    restart = report["restart_preconditioner"]
+    assert restart["authentication_attempted"] is True
+    assert restart["authenticated"] is True
+    assert restart["applied"] is True
+    assert restart["application_attempt_count"] == restart["application_count"]
+    assert restart["application_count"] == partial_iterations
+    assert restart["receipt"]["hidden_size"] == right.shape[0]
+    assert restart["receipt"]["head_dim"] == right.shape[1]
+    assert report["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in report.items()
+            if key != "report_sha256"
+        }
+    )
+
+
+def test_hidden_partial_trace_factor_is_not_built_on_scalar_success(
+    monkeypatch,
+) -> None:
+    def forbidden_authentication(**_kwargs):
+        raise AssertionError("partial-trace factor built before scalar miss")
+
+    monkeypatch.setattr(
+        sequence_fold,
+        "_authenticate_restart_hidden_partial_trace_preconditioner",
+        forbidden_authentication,
+    )
+    matrix = torch.tensor([[3.0, 0.25], [0.25, 2.0]], dtype=DTYPE)
+    right = torch.tensor([1.0, -2.0], dtype=DTYPE)
+    solution, report = sequence_fold._pcg_single_tensor(
+        right=right,
+        matvec=lambda value: matrix @ value,
+        diagonal=torch.diagonal(matrix),
+        initial=torch.zeros_like(right),
+        role="partial_trace_lazy_factor_oracle",
+        restart_hidden_partial_trace_preconditioner=object(),
+        restart_hidden_partial_trace_ridge=0.5,
+    )
+    torch.testing.assert_close(matrix @ solution, right, rtol=1e-12, atol=1e-12)
+    assert report["solver"] == "deterministic_jacobi_pcg_single_tensor"
+
+
+def _resealed_hidden_partial_trace_preconditioner(
+    preconditioner,
+    *,
+    tensor=None,
+    **report_updates,
+):
+    report_body = dict(preconditioner.construction_report)
+    report_body.pop("report_sha256")
+    report_body.update(report_updates)
+    return sequence_fold._PcgRestartHiddenPartialTracePreconditioner(
+        partial_trace=(
+            preconditioner.partial_trace if tensor is None else tensor
+        ),
+        construction_report=sequence_fold._seal(report_body),
+    )
+
+
+@pytest.mark.parametrize(
+    ("updates", "reason"),
+    (
+        (
+            {"role": "wrong-role"},
+            "hidden_partial_trace_preconditioner_report_binding_mismatch",
+        ),
+        (
+            {"ridge": 0.25},
+            "hidden_partial_trace_preconditioner_report_binding_mismatch",
+        ),
+        (
+            {"partial_trace_shape": [95, 95]},
+            "hidden_partial_trace_preconditioner_report_binding_mismatch",
+        ),
+        (
+            {"partial_trace_dtype": "torch.float32"},
+            "hidden_partial_trace_preconditioner_report_binding_mismatch",
+        ),
+        (
+            {"partial_trace_device": "cuda:7"},
+            "hidden_partial_trace_preconditioner_report_binding_mismatch",
+        ),
+        (
+            {"raw_maximum_absolute_asymmetry": 1.0},
+            "hidden_partial_trace_preconditioner_is_not_symmetric",
+        ),
+        (
+            {"unauthenticated_extra": True},
+            (
+                "hidden_partial_trace_preconditioner_"
+                "report_fields_are_not_exact"
+            ),
+        ),
+    ),
+)
+def test_hidden_partial_trace_rejects_resealed_report_tampering(
+    updates,
+    reason,
+) -> None:
+    (
+        cross,
+        output_blocks,
+        diagonal,
+        right,
+        matvec,
+        ridge,
+    ) = _hidden_partial_trace_problem()
+    role = "partial_trace_report_tamper_oracle"
+    preconditioner = (
+        sequence_fold._build_structured_value_hidden_partial_trace_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0,),
+            ridge=ridge,
+            role=role,
+        )
+    )
+    tampered = _resealed_hidden_partial_trace_preconditioner(
+        preconditioner,
+        **updates,
+    )
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=diagonal,
+            initial=torch.zeros_like(right),
+            role=role,
+            restart_hidden_partial_trace_preconditioner=tampered,
+            restart_hidden_partial_trace_ridge=ridge,
+        )
+    failure = dict(raised.value.failure_report)
+    assert failure["failure_stage"] == (
+        "hidden_partial_trace_preconditioner_authentication"
+    )
+    assert failure["failure_reason"] == reason
+    assert failure["original_lane_iterations_executed"] == 64
+    assert failure["iterations_executed"] == 64
+
+
+def test_hidden_partial_trace_rejects_stale_seal_and_source_inventory() -> None:
+    (
+        cross,
+        output_blocks,
+        diagonal,
+        right,
+        matvec,
+        ridge,
+    ) = _hidden_partial_trace_problem()
+    role = "partial_trace_nested_seal_oracle"
+    preconditioner = (
+        sequence_fold._build_structured_value_hidden_partial_trace_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0,),
+            ridge=ridge,
+            role=role,
+        )
+    )
+    stale_report = dict(preconditioner.construction_report)
+    stale_report["ridge"] = ridge * 2.0
+    stale = sequence_fold._PcgRestartHiddenPartialTracePreconditioner(
+        partial_trace=preconditioner.partial_trace,
+        construction_report=stale_report,
+    )
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as stale_raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=diagonal,
+            initial=torch.zeros_like(right),
+            role=role,
+            restart_hidden_partial_trace_preconditioner=stale,
+            restart_hidden_partial_trace_ridge=ridge,
+        )
+    assert dict(stale_raised.value.failure_report)["failure_reason"] == (
+        "hidden_partial_trace_preconditioner_report_seal_mismatch"
+    )
+
+    source_terms = [
+        dict(term)
+        for term in preconditioner.construction_report["source_terms"]
+    ]
+    source_terms[0]["left_sha256"] = "x" * 64
+    invalid_source = _resealed_hidden_partial_trace_preconditioner(
+        preconditioner,
+        source_terms=source_terms,
+        source_terms_sha256=sequence_fold._sha256(source_terms),
+    )
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as source_raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=diagonal,
+            initial=torch.zeros_like(right),
+            role=role,
+            restart_hidden_partial_trace_preconditioner=invalid_source,
+            restart_hidden_partial_trace_ridge=ridge,
+        )
+    assert dict(source_raised.value.failure_report)["failure_reason"] == (
+        "hidden_partial_trace_preconditioner_source_digest_is_invalid"
+    )
+
+
+def test_single_tensor_rejects_two_restart_preconditioners_after_scalar_miss() -> None:
+    (
+        cross,
+        output_blocks,
+        diagonal,
+        right,
+        matvec,
+        ridge,
+    ) = _hidden_partial_trace_problem()
+    role = "mutually_exclusive_restart_preconditioner_oracle"
+    partial_trace = (
+        sequence_fold._build_structured_value_hidden_partial_trace_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0,),
+            ridge=ridge,
+            role=role,
+        )
+    )
+    row_block = (
+        sequence_fold._build_structured_value_row_block_jacobi_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0,),
+            diagonal=diagonal,
+            ridge=ridge,
+            role=role,
+        )
+    )
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=diagonal,
+            initial=torch.zeros_like(right),
+            role=role,
+            restart_row_block_preconditioner=row_block,
+            restart_hidden_partial_trace_preconditioner=partial_trace,
+            restart_hidden_partial_trace_ridge=ridge,
+        )
+    failure = dict(raised.value.failure_report)
+    assert failure["failure_reason"] == "multiple_restart_preconditioners_supplied"
+    assert failure["failure_stage"] == "restart_preconditioner_selection"
+    assert failure["iterations_executed"] == 64
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    (
+        (
+            "hash",
+            "hidden_partial_trace_preconditioner_tensor_hash_mismatch",
+        ),
+        (
+            "nonfinite",
+            "hidden_partial_trace_preconditioner_is_non_finite",
+        ),
+        (
+            "asymmetric",
+            "hidden_partial_trace_preconditioner_is_not_symmetric",
+        ),
+        (
+            "nonspd",
+            "hidden_partial_trace_preconditioner_cholesky_failed",
+        ),
+    ),
+)
+def test_hidden_partial_trace_rejects_tensor_tampering(
+    mutation,
+    reason,
+) -> None:
+    (
+        cross,
+        output_blocks,
+        diagonal,
+        right,
+        matvec,
+        ridge,
+    ) = _hidden_partial_trace_problem()
+    role = "partial_trace_tensor_tamper_oracle"
+    preconditioner = (
+        sequence_fold._build_structured_value_hidden_partial_trace_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0,),
+            ridge=ridge,
+            role=role,
+        )
+    )
+    tensor = preconditioner.partial_trace.clone()
+    report_updates = {}
+    if mutation == "hash":
+        tensor[0, 0] += 1.0
+    elif mutation == "nonfinite":
+        tensor[0, 0] = float("nan")
+    elif mutation == "asymmetric":
+        tensor[0, 1] += 1.0
+        report_updates["partial_trace_sha256"] = sequence_fold._tensor_sha256(
+            tensor
+        )
+    else:
+        tensor = -torch.eye(tensor.shape[0], dtype=tensor.dtype)
+        report_updates["partial_trace_sha256"] = sequence_fold._tensor_sha256(
+            tensor
+        )
+        report_updates["symmetry_tolerance"] = (
+            sequence_fold._hidden_partial_trace_numerical_tolerance(tensor)
+        )
+    tampered = _resealed_hidden_partial_trace_preconditioner(
+        preconditioner,
+        tensor=tensor,
+        **report_updates,
+    )
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=diagonal,
+            initial=torch.zeros_like(right),
+            role=role,
+            restart_hidden_partial_trace_preconditioner=tampered,
+            restart_hidden_partial_trace_ridge=ridge,
+        )
+    failure = dict(raised.value.failure_report)
+    assert failure["failure_reason"] == reason
+    assert failure["iterations_executed"] == 64
+
+
+def test_hidden_partial_trace_hard_cap_preserves_counters(
+    monkeypatch,
+) -> None:
+    (
+        cross,
+        output_blocks,
+        diagonal,
+        right,
+        matvec,
+        ridge,
+    ) = _hidden_partial_trace_problem()
+    role = "partial_trace_hard_cap_oracle"
+    preconditioner = (
+        sequence_fold._build_structured_value_hidden_partial_trace_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0,),
+            ridge=ridge,
+            role=role,
+        )
+    )
+    monkeypatch.setattr(
+        sequence_fold,
+        "_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS",
+        65,
+    )
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=diagonal,
+            initial=torch.zeros_like(right),
+            role=role,
+            restart_hidden_partial_trace_preconditioner=preconditioner,
+            restart_hidden_partial_trace_ridge=ridge,
+        )
+    failure = dict(raised.value.failure_report)
+    assert failure["solver"] == (
+        "deterministic_continuous_hidden_partial_trace_"
+        "cholesky_pcg_single_tensor"
+    )
+    assert failure["failure_reason"] == "hard_iteration_cap_reached"
+    assert failure["failure_stage"] == (
+        "continuous_hidden_partial_trace_lane_hard_iteration_cap"
+    )
+    assert failure["maximum_iterations"] == 65
+    assert failure["iterations_executed"] == 65
+    assert failure[
+        "continuous_hidden_partial_trace_lane_iterations_executed"
+    ] == 1
+    assert failure["exact_final_residual_authenticated"] is True
+    assert failure["final_relative_normal_residual"] > 1e-8
+    assert failure["restart_preconditioner"]["application_count"] == 1
+    assert failure["continuous_hidden_partial_trace_lane"][
+        "attempted_matvec_calls"
+    ] == 2
+    assert failure["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in failure.items()
+            if key != "report_sha256"
+        }
+    )
 
 
 def test_single_tensor_pcg_restarts_after_64_and_authenticates_exact_residual() -> None:
