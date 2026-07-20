@@ -49,6 +49,9 @@ LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_INSTALL_SCHEMA = (
 LFM2_SEQUENCE_EFFECTIVE_PCG_OBSERVATION_SCHEMA = (
     "neural-forge-lfm2-sequence-effective-pcg-observation-v1"
 )
+LFM2_SEQUENCE_EFFECTIVE_ROW_BLOCK_JACOBI_SCHEMA = (
+    "neural-forge-lfm2-sequence-effective-row-block-jacobi-v1"
+)
 FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID = (
     "fixed_qk_sequence_effective_vo_als"
 )
@@ -60,6 +63,7 @@ _STATISTICS_ROW_CHUNK_SIZE = 2048
 _PCG_MAXIMUM_ITERATIONS = 64
 _PCG_RESTART_BLOCK_ITERATIONS = 64
 _PCG_HARD_MAXIMUM_ITERATIONS = 512
+_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS = 4096
 _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE = 1e-8
 _ZERO_EXECUTION = {
     "parent_model_forward_calls": 0,
@@ -276,6 +280,14 @@ def _tensor_sha256(value: Any) -> str:
 
 def _state_sha256(values: Mapping[str, Any]) -> str:
     return structural._state_sha256(values)
+
+
+@dataclass(frozen=True, slots=True)
+class _PcgRestartRowBlockPreconditioner:
+    """Caller-built exact operator row blocks, authenticated only on use."""
+
+    row_blocks: Any
+    construction_report: Mapping[str, Any]
 
 
 def _copy_parameter(target: Any, source: Any) -> None:
@@ -1041,6 +1053,381 @@ def _pcg_json_float(value: Any) -> float | None:
     return normalized if math.isfinite(normalized) else None
 
 
+class _PcgRowBlockPreconditionerAuthenticationError(ValueError):
+    def __init__(
+        self,
+        reason: str,
+        *,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.details = {} if details is None else dict(details)
+
+
+def _row_block_numerical_tolerance(value: Any) -> float:
+    torch = _torch()
+    scale = max(1.0, float(value.abs().max().item()))
+    return 128.0 * float(torch.finfo(value.dtype).eps) * scale
+
+
+def _build_structured_value_row_block_jacobi_preconditioner(
+    *,
+    cross: Any,
+    output_blocks: Any,
+    group_heads: Sequence[int],
+    diagonal: Any,
+    ridge: float,
+    role: str,
+) -> _PcgRestartRowBlockPreconditioner:
+    """Materialize only the exact head-dimension block for each hidden row."""
+
+    torch = _torch()
+    heads = tuple(int(head) for head in group_heads)
+    ridge_value = _pcg_json_float(ridge)
+    if (
+        cross.ndim != 4
+        or output_blocks.ndim != 3
+        or diagonal.ndim != 2
+        or not heads
+        or any(
+            head < 0 or head >= int(cross.shape[0])
+            for head in heads
+        )
+        or int(cross.shape[0]) != int(cross.shape[1])
+        or int(cross.shape[2]) != int(cross.shape[3])
+        or int(cross.shape[2]) != int(diagonal.shape[0])
+        or int(output_blocks.shape[0]) != int(cross.shape[0])
+        or int(output_blocks.shape[1]) != int(diagonal.shape[1])
+        or cross.dtype != diagonal.dtype
+        or output_blocks.dtype != diagonal.dtype
+        or cross.device != diagonal.device
+        or output_blocks.device != diagonal.device
+        or ridge_value is None
+        or ridge_value <= 0.0
+        or not role
+    ):
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            f"{role} row-block Jacobi construction inputs are invalid."
+        )
+    if (
+        any(
+            not bool(torch.isfinite(cross[head, other]).all().item())
+            for head in heads
+            for other in heads
+        )
+        or not bool(torch.isfinite(output_blocks).all().item())
+        or not bool(torch.isfinite(diagonal).all().item())
+        or not bool((diagonal > 0.0).all().item())
+    ):
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            f"{role} row-block Jacobi construction inputs must be finite "
+            "with a positive scalar diagonal."
+        )
+
+    row_count, block_size = map(int, diagonal.shape)
+    row_blocks = torch.zeros(
+        row_count,
+        block_size,
+        block_size,
+        dtype=diagonal.dtype,
+        device=diagonal.device,
+    )
+    source_terms = []
+    for head in heads:
+        for other in heads:
+            cross_diagonal = torch.diagonal(cross[head, other]).contiguous()
+            coupling = (
+                output_blocks[other] @ output_blocks[head].T
+            ).contiguous()
+            # For row-major vec(V), the row block maps a columnized row by
+            # coupling.T: (C @ V @ coupling)[i, a] =
+            # sum_b C[i, i] * coupling[b, a] * V[i, b].
+            row_blocks.add_(
+                cross_diagonal.reshape(row_count, 1, 1)
+                * coupling.T.unsqueeze(0)
+            )
+            source_terms.append(
+                {
+                    "head": head,
+                    "other_head": other,
+                    "cross_diagonal_sha256": _tensor_sha256(cross_diagonal),
+                    "coupling_sha256": _tensor_sha256(coupling),
+                }
+            )
+    row_blocks.add_(
+        ridge_value
+        * torch.eye(
+            block_size,
+            dtype=row_blocks.dtype,
+            device=row_blocks.device,
+        ).unsqueeze(0)
+    )
+    # The complete least-squares normal operator is mathematically symmetric.
+    # Pairwise averaging only removes floating summation skew between the
+    # mirrored (head, other) terms; it does not invent a new approximation.
+    row_blocks = (
+        0.5 * (row_blocks + row_blocks.transpose(1, 2))
+    ).contiguous()
+    row_block_diagonal = torch.diagonal(
+        row_blocks,
+        dim1=1,
+        dim2=2,
+    ).contiguous()
+    maximum_asymmetry = float(
+        (row_blocks - row_blocks.transpose(1, 2)).abs().max().item()
+    )
+    symmetry_tolerance = _row_block_numerical_tolerance(row_blocks)
+    scalar_diagonal_error = float(
+        (row_block_diagonal - diagonal).abs().max().item()
+    )
+    diagonal_tolerance = _row_block_numerical_tolerance(row_block_diagonal)
+    body = {
+        "schema": LFM2_SEQUENCE_EFFECTIVE_ROW_BLOCK_JACOBI_SCHEMA,
+        "role": role,
+        "construction": "exact_structured_operator_row_blocks",
+        "row_block_count": row_count,
+        "row_block_size": block_size,
+        "row_blocks_shape": list(row_blocks.shape),
+        "row_blocks_dtype": str(row_blocks.dtype),
+        "row_blocks_sha256": _tensor_sha256(row_blocks),
+        "scalar_diagonal_sha256": _tensor_sha256(diagonal),
+        "scalar_diagonal_maximum_absolute_error": scalar_diagonal_error,
+        "scalar_diagonal_match_tolerance": diagonal_tolerance,
+        "row_blocks_maximum_asymmetry": maximum_asymmetry,
+        "row_blocks_symmetry_tolerance": symmetry_tolerance,
+        "source_term_count": len(source_terms),
+        "source_terms_sha256": _sha256(source_terms),
+        "ridge": ridge_value,
+        "full_operator_materialized": False,
+    }
+    return _PcgRestartRowBlockPreconditioner(
+        row_blocks=row_blocks,
+        construction_report=MappingProxyType(_seal(body)),
+    )
+
+
+def _authenticate_restart_row_block_preconditioner(
+    *,
+    supplied: Any,
+    right: Any,
+    diagonal: Any,
+    role: str,
+) -> tuple[Any, dict[str, Any]]:
+    """Authenticate and factor caller-built row blocks after scalar miss."""
+
+    torch = _torch()
+
+    def reject(
+        reason: str,
+        *,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        raise _PcgRowBlockPreconditionerAuthenticationError(
+            reason,
+            details=details,
+        )
+
+    if not isinstance(supplied, _PcgRestartRowBlockPreconditioner):
+        reject("row_block_preconditioner_has_wrong_type")
+    row_blocks = supplied.row_blocks
+    if (
+        not isinstance(row_blocks, torch.Tensor)
+        or row_blocks.layout != torch.strided
+        or row_blocks.device.type == "meta"
+        or row_blocks.ndim != 3
+        or right.ndim != 2
+        or diagonal.ndim != 2
+    ):
+        reject("row_block_preconditioner_tensor_is_invalid")
+    expected_shape = (
+        int(right.shape[0]),
+        int(right.shape[1]),
+        int(right.shape[1]),
+    )
+    if (
+        tuple(row_blocks.shape) != expected_shape
+        or tuple(diagonal.shape) != tuple(right.shape)
+        or row_blocks.dtype != right.dtype
+        or diagonal.dtype != right.dtype
+        or row_blocks.device != right.device
+        or diagonal.device != right.device
+    ):
+        reject(
+            "row_block_preconditioner_topology_mismatch",
+            details={
+                "expected_shape": list(expected_shape),
+                "observed_shape": list(row_blocks.shape),
+                "right_shape": list(right.shape),
+                "diagonal_shape": list(diagonal.shape),
+                "dtype_matches": row_blocks.dtype == right.dtype,
+                "device_matches": row_blocks.device == right.device,
+            },
+        )
+    if not bool(torch.isfinite(row_blocks).all().item()):
+        reject("row_block_preconditioner_is_non_finite")
+
+    try:
+        report = dict(supplied.construction_report)
+    except (TypeError, ValueError):
+        reject("row_block_preconditioner_report_is_invalid")
+    expected_report_keys = {
+        "schema",
+        "role",
+        "construction",
+        "row_block_count",
+        "row_block_size",
+        "row_blocks_shape",
+        "row_blocks_dtype",
+        "row_blocks_sha256",
+        "scalar_diagonal_sha256",
+        "scalar_diagonal_maximum_absolute_error",
+        "scalar_diagonal_match_tolerance",
+        "row_blocks_maximum_asymmetry",
+        "row_blocks_symmetry_tolerance",
+        "source_term_count",
+        "source_terms_sha256",
+        "ridge",
+        "full_operator_materialized",
+        "report_sha256",
+    }
+    if set(report) != expected_report_keys:
+        reject("row_block_preconditioner_report_fields_are_not_exact")
+    supplied_sha256 = report.pop("report_sha256")
+    try:
+        report_sha256 = _sha256(report)
+    except Lfm2SequenceEffectiveAttentionFoldError:
+        reject("row_block_preconditioner_report_is_not_canonical")
+    if supplied_sha256 != report_sha256:
+        reject("row_block_preconditioner_report_seal_mismatch")
+    source_term_count = report.get("source_term_count")
+    source_terms_sha256 = report.get("source_terms_sha256")
+    ridge_value = _pcg_json_float(report.get("ridge"))
+    if (
+        report.get("schema")
+        != LFM2_SEQUENCE_EFFECTIVE_ROW_BLOCK_JACOBI_SCHEMA
+        or report.get("role") != role
+        or report.get("construction")
+        != "exact_structured_operator_row_blocks"
+        or report.get("row_block_count") != expected_shape[0]
+        or report.get("row_block_size") != expected_shape[1]
+        or report.get("row_blocks_shape") != list(expected_shape)
+        or report.get("row_blocks_dtype") != str(row_blocks.dtype)
+        or report.get("full_operator_materialized") is not False
+        or not isinstance(source_term_count, int)
+        or isinstance(source_term_count, bool)
+        or source_term_count <= 0
+        or ridge_value is None
+        or ridge_value <= 0.0
+    ):
+        reject("row_block_preconditioner_report_binding_mismatch")
+    try:
+        _digest(source_terms_sha256, "source_terms_sha256")
+    except Lfm2SequenceEffectiveAttentionFoldError:
+        reject("row_block_preconditioner_source_digest_is_invalid")
+    if (
+        report.get("row_blocks_sha256") != _tensor_sha256(row_blocks)
+        or report.get("scalar_diagonal_sha256") != _tensor_sha256(diagonal)
+    ):
+        reject("row_block_preconditioner_tensor_hash_mismatch")
+
+    row_block_diagonal = torch.diagonal(
+        row_blocks,
+        dim1=1,
+        dim2=2,
+    ).contiguous()
+    diagonal_error = float(
+        (row_block_diagonal - diagonal).abs().max().item()
+    )
+    diagonal_tolerance = _row_block_numerical_tolerance(row_block_diagonal)
+    maximum_asymmetry = float(
+        (row_blocks - row_blocks.transpose(1, 2)).abs().max().item()
+    )
+    symmetry_tolerance = _row_block_numerical_tolerance(row_blocks)
+    if (
+        report.get("scalar_diagonal_maximum_absolute_error")
+        != diagonal_error
+        or report.get("scalar_diagonal_match_tolerance")
+        != diagonal_tolerance
+        or diagonal_error > diagonal_tolerance
+    ):
+        reject(
+            "row_block_preconditioner_scalar_diagonal_mismatch",
+            details={
+                "maximum_absolute_error": diagonal_error,
+                "required_tolerance": diagonal_tolerance,
+            },
+        )
+    if (
+        report.get("row_blocks_maximum_asymmetry")
+        != maximum_asymmetry
+        or report.get("row_blocks_symmetry_tolerance")
+        != symmetry_tolerance
+        or maximum_asymmetry > symmetry_tolerance
+    ):
+        reject(
+            "row_block_preconditioner_is_not_symmetric",
+            details={
+                "maximum_asymmetry": maximum_asymmetry,
+                "required_tolerance": symmetry_tolerance,
+            },
+        )
+
+    factor, factorization_info = torch.linalg.cholesky_ex(
+        row_blocks,
+        upper=False,
+        check_errors=False,
+    )
+    failing = torch.nonzero(
+        factorization_info != 0,
+        as_tuple=False,
+    ).flatten()
+    if (
+        int(failing.numel()) != 0
+        or not bool(torch.isfinite(factor).all().item())
+        or not bool(
+            (
+                torch.diagonal(factor, dim1=1, dim2=2) > 0.0
+            ).all().item()
+        )
+    ):
+        reject(
+            "row_block_preconditioner_cholesky_failed",
+            details={
+                "failing_row_count": int(failing.numel()),
+                "first_failing_row": (
+                    int(failing[0].item())
+                    if int(failing.numel()) != 0
+                    else None
+                ),
+                "factor_finite": bool(torch.isfinite(factor).all().item()),
+            },
+        )
+    construction_report = dict(supplied.construction_report)
+    receipt = _seal(
+        {
+            "kind": "deterministic_exact_row_block_jacobi_cholesky",
+            "construction_report": construction_report,
+            "construction_report_sha256": construction_report[
+                "report_sha256"
+            ],
+            "row_blocks_sha256": construction_report[
+                "row_blocks_sha256"
+            ],
+            "factorization": "batched_lower_cholesky_ex",
+            "factor_sha256": _tensor_sha256(factor),
+            "row_block_count": expected_shape[0],
+            "row_block_size": expected_shape[1],
+            "all_row_blocks_spd": True,
+            "factorization_materialized_only_after_original_lane_exact_miss": (
+                True
+            ),
+            "full_operator_materialized": False,
+        }
+    )
+    return factor.contiguous(), receipt
+
+
 def _single_tensor_pcg_extended_body(
     *,
     role: str,
@@ -1110,6 +1497,81 @@ def _single_tensor_pcg_extended_body(
     }
 
 
+def _single_tensor_pcg_continuous_row_block_body(
+    *,
+    role: str,
+    solution: Any,
+    initial_relative: float | None,
+    original_lane_iterations: int,
+    original_lane_final_relative: float | None,
+    total_iterations: int,
+    history: Sequence[float],
+    exact_relative: float | None,
+    exact_final_residual_authenticated: bool,
+    exact_checkpoints: Sequence[Mapping[str, Any]],
+    total_matvec_calls: int,
+    lane_state: Mapping[str, Any],
+    preconditioner_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    torch = _torch()
+    solution_finite = bool(torch.isfinite(solution).all().item())
+    recurrence_history = list(history)
+    checkpoints = [dict(value) for value in exact_checkpoints]
+    final_recurrence = (
+        recurrence_history[-1]
+        if recurrence_history
+        else _pcg_json_float(initial_relative)
+    )
+    return {
+        "role": role,
+        "solver": (
+            "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
+        ),
+        "maximum_iterations": _PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS,
+        "hard_cap_includes_original_lane_iterations": True,
+        "original_lane_maximum_iterations": _PCG_MAXIMUM_ITERATIONS,
+        "original_lane_iterations_executed": original_lane_iterations,
+        "single_restart_after_original_lane_exact_authentication_miss": True,
+        "periodic_restart_count": 0,
+        "iterations_executed": total_iterations,
+        "continuous_row_block_lane_iterations_executed": (
+            total_iterations - original_lane_iterations
+        ),
+        "required_relative_normal_residual": (
+            _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+        ),
+        "initial_relative_normal_residual": _pcg_json_float(initial_relative),
+        "original_lane_final_recurrence_relative_normal_residual": (
+            _pcg_json_float(original_lane_final_relative)
+        ),
+        "final_recurrence_relative_normal_residual": _pcg_json_float(
+            final_recurrence
+        ),
+        "final_relative_normal_residual": (
+            _pcg_json_float(exact_relative)
+            if exact_final_residual_authenticated
+            else None
+        ),
+        "relative_normal_residual_history": recurrence_history,
+        "recurrence_history_sha256": _sha256(recurrence_history),
+        "exact_relative_normal_residual_checkpoints": checkpoints,
+        "exact_residual_checkpoints_sha256": _sha256(checkpoints),
+        "total_matvec_calls": total_matvec_calls,
+        "exact_final_residual_authenticated": (
+            exact_final_residual_authenticated
+        ),
+        "extended_after_original_lane_exact_authentication_miss": True,
+        "exact_residual_used_to_initialize_continuous_lane_once": True,
+        "exact_diagnostic_matvecs_modify_recurrence_state_or_direction": False,
+        "continuous_row_block_lane": dict(lane_state),
+        "restart_preconditioner": dict(preconditioner_state),
+        "solution_finite": solution_finite,
+        "solution_sha256": (
+            _tensor_sha256(solution) if solution_finite else None
+        ),
+    }
+
+
 def _pcg_single_tensor(
     *,
     right: Any,
@@ -1117,6 +1579,7 @@ def _pcg_single_tensor(
     diagonal: Any,
     initial: Any,
     role: str,
+    restart_row_block_preconditioner: Any | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     torch = _torch()
     solution = initial.clone()
@@ -1132,8 +1595,40 @@ def _pcg_single_tensor(
     exact_relative: float | None = None
     exact_iteration: int | None = None
     extension_triggered = False
+    row_block_lane_started = False
+    row_block_lane_state: dict[str, Any] = {}
+    row_block_preconditioner_state: dict[str, Any] = {
+        "kind": "deterministic_exact_row_block_jacobi_cholesky",
+        "supplied": restart_row_block_preconditioner is not None,
+        "authentication_attempted": False,
+        "authenticated": False,
+        "applied": False,
+        "application_attempt_count": 0,
+        "application_count": 0,
+        "receipt": None,
+        "authentication_failure_reason": None,
+    }
 
     def extended_body() -> dict[str, Any]:
+        if row_block_lane_started:
+            return _single_tensor_pcg_continuous_row_block_body(
+                role=role,
+                solution=solution,
+                initial_relative=initial_relative,
+                original_lane_iterations=original_lane_iterations,
+                original_lane_final_relative=original_lane_final_relative,
+                total_iterations=total_iterations,
+                history=history,
+                exact_relative=exact_relative,
+                exact_final_residual_authenticated=(
+                    exact_iteration == total_iterations
+                    and _pcg_json_float(exact_relative) is not None
+                ),
+                exact_checkpoints=exact_checkpoints,
+                total_matvec_calls=total_matvec_calls,
+                lane_state=row_block_lane_state,
+                preconditioner_state=row_block_preconditioner_state,
+            )
         return _single_tensor_pcg_extended_body(
             role=role,
             solution=solution,
@@ -1450,6 +1945,347 @@ def _pcg_single_tensor(
         return solution.contiguous(), _seal_observe_pcg_report(
             "single_tensor",
             extended_body(),
+        )
+
+    if restart_row_block_preconditioner is not None:
+        row_block_lane_started = True
+        lane_matvec_start = total_matvec_calls
+        row_block_lane_state.update(
+            {
+                "start_iteration": total_iterations,
+                "planned_stop_iteration": (
+                    _PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+                ),
+                "iterations_executed": 0,
+                "attempted_matvec_calls": 0,
+                "exact_diagnostic_matvec_calls": 0,
+                "termination": "preconditioner_authentication",
+                "ending_iteration": total_iterations,
+                "ending_recurrence_relative_normal_residual": (
+                    original_lane_final_relative
+                ),
+                "ending_exact_relative_normal_residual": exact_relative,
+                "ending_exact_residual_authenticated": True,
+            }
+        )
+        row_block_preconditioner_state[
+            "authentication_attempted"
+        ] = True
+        try:
+            row_block_factor, row_block_receipt = (
+                _authenticate_restart_row_block_preconditioner(
+                    supplied=restart_row_block_preconditioner,
+                    right=right,
+                    diagonal=diagonal,
+                    role=role,
+                )
+            )
+        except _PcgRowBlockPreconditionerAuthenticationError as exc:
+            row_block_preconditioner_state[
+                "authentication_failure_reason"
+            ] = exc.reason
+            row_block_lane_state["termination"] = (
+                "preconditioner_authentication_failure"
+            )
+            fail_closed(
+                exc.reason,
+                stage="row_block_preconditioner_authentication",
+                details=exc.details,
+            )
+        row_block_preconditioner_state.update(
+            {
+                "authenticated": True,
+                "receipt": row_block_receipt,
+            }
+        )
+
+        def apply_row_block_preconditioner(value: Any) -> Any:
+            row_block_preconditioner_state[
+                "application_attempt_count"
+            ] += 1
+            try:
+                result = torch.cholesky_solve(
+                    value.unsqueeze(-1),
+                    row_block_factor,
+                    upper=False,
+                ).squeeze(-1)
+            except RuntimeError as exc:
+                row_block_lane_state["termination"] = (
+                    "preconditioner_application_failure"
+                )
+                fail_closed(
+                    "row_block_preconditioner_application_failed",
+                    stage="row_block_preconditioner_application",
+                    details={"exception_type": type(exc).__name__},
+                )
+            if not bool(torch.isfinite(result).all().item()):
+                row_block_lane_state["termination"] = (
+                    "preconditioner_application_failure"
+                )
+                fail_closed(
+                    "row_block_preconditioner_application_is_non_finite",
+                    stage="row_block_preconditioner_application",
+                )
+            row_block_preconditioner_state["applied"] = True
+            row_block_preconditioner_state["application_count"] += 1
+            return result
+
+        # This is the sole restart.  The exact residual authenticated after
+        # the historical scalar lane initializes one continuous block-PCG
+        # recurrence; later diagnostic matvecs never replace this state.
+        residual = exact_residual
+        preconditioned = apply_row_block_preconditioner(residual)
+        direction = preconditioned.clone()
+        rz = float((residual * preconditioned).sum().item())
+        if not math.isfinite(rz) or rz <= 0.0:
+            if not math.isfinite(rz):
+                exact_iteration = None
+            row_block_lane_state["termination"] = (
+                "preconditioned_residual_failure"
+            )
+            fail_closed(
+                "non_positive_or_non_finite_preconditioned_residual",
+                stage="continuous_row_block_lane_initialization",
+                details={
+                    "residual_preconditioner_inner_product": (
+                        _pcg_json_float(rz)
+                    ),
+                },
+            )
+        row_block_lane_state["termination"] = "running"
+
+        for attempted_iteration in range(
+            total_iterations + 1,
+            _PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS + 1,
+        ):
+            applied = matvec(direction)
+            total_matvec_calls += 1
+            row_block_lane_state["attempted_matvec_calls"] = (
+                total_matvec_calls - lane_matvec_start
+            )
+            denominator = float((direction * applied).sum().item())
+            applied_finite = bool(torch.isfinite(applied).all().item())
+            curvature_finite = math.isfinite(denominator)
+            if (
+                not applied_finite
+                or not curvature_finite
+                or denominator <= 0.0
+            ):
+                if not applied_finite or not curvature_finite:
+                    exact_iteration = None
+                row_block_lane_state["termination"] = "curvature_failure"
+                fail_closed(
+                    "non_positive_or_non_finite_curvature",
+                    stage="continuous_row_block_lane_curvature",
+                    details={
+                        "attempted_iteration": attempted_iteration,
+                        "curvature": _pcg_json_float(denominator),
+                        "curvature_finite_strictly_positive": False,
+                        "curvature_matvec_call": total_matvec_calls,
+                    },
+                )
+            alpha = rz / denominator
+            solution = solution + alpha * direction
+            residual = residual - alpha * applied
+            total_iterations += 1
+            exact_iteration = None
+            row_block_lane_state["iterations_executed"] = (
+                total_iterations - original_lane_iterations
+            )
+            row_block_lane_state["ending_iteration"] = total_iterations
+            row_block_lane_state[
+                "ending_exact_residual_authenticated"
+            ] = False
+            row_block_lane_state[
+                "ending_exact_relative_normal_residual"
+            ] = None
+            if (
+                not bool(torch.isfinite(solution).all().item())
+                or not bool(torch.isfinite(residual).all().item())
+                or not math.isfinite(alpha)
+            ):
+                row_block_lane_state["termination"] = "non_finite_update"
+                fail_closed(
+                    "non_finite_continuous_row_block_lane_update",
+                    stage="continuous_row_block_lane_update",
+                    details={"attempted_iteration": attempted_iteration},
+                )
+            relative = float(
+                (torch.linalg.vector_norm(residual) / right_norm).item()
+            )
+            if not math.isfinite(relative):
+                row_block_lane_state["termination"] = (
+                    "non_finite_recurrence_residual"
+                )
+                fail_closed(
+                    "non_finite_continuous_row_block_lane_recurrence_residual",
+                    stage="continuous_row_block_lane_update",
+                    details={"attempted_iteration": attempted_iteration},
+                )
+            history.append(relative)
+            row_block_lane_state[
+                "ending_recurrence_relative_normal_residual"
+            ] = relative
+
+            if relative <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE:
+                applied_exact = matvec(solution)
+                total_matvec_calls += 1
+                row_block_lane_state["attempted_matvec_calls"] = (
+                    total_matvec_calls - lane_matvec_start
+                )
+                row_block_lane_state[
+                    "exact_diagnostic_matvec_calls"
+                ] += 1
+                exact_residual = right - applied_exact
+                exact_finite = (
+                    bool(torch.isfinite(applied_exact).all().item())
+                    and bool(torch.isfinite(exact_residual).all().item())
+                )
+                exact_relative = (
+                    float(
+                        (
+                            torch.linalg.vector_norm(exact_residual)
+                            / right_norm
+                        ).item()
+                    )
+                    if exact_finite
+                    else None
+                )
+                exact_finite = (
+                    exact_finite
+                    and _pcg_json_float(exact_relative) is not None
+                )
+                exact_iteration = (
+                    total_iterations if exact_finite else None
+                )
+                exact_checkpoints.append(
+                    {
+                        "iteration": total_iterations,
+                        "relative_normal_residual": (
+                            _pcg_json_float(exact_relative)
+                        ),
+                        "finite": exact_finite,
+                    }
+                )
+                row_block_lane_state[
+                    "ending_exact_relative_normal_residual"
+                ] = _pcg_json_float(exact_relative)
+                row_block_lane_state[
+                    "ending_exact_residual_authenticated"
+                ] = exact_finite
+                if (
+                    exact_finite
+                    and exact_relative is not None
+                    and exact_relative
+                    <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+                ):
+                    row_block_lane_state["termination"] = (
+                        "exact_tolerance_reached"
+                    )
+                    return solution.contiguous(), _seal_observe_pcg_report(
+                        "single_tensor",
+                        extended_body(),
+                    )
+                if not exact_finite:
+                    row_block_lane_state["termination"] = (
+                        "non_finite_exact_diagnostic"
+                    )
+                    fail_closed(
+                        "non_finite_continuous_row_block_lane_exact_residual",
+                        stage="continuous_row_block_lane_exact_diagnostic",
+                    )
+
+            if (
+                total_iterations
+                >= _PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+            ):
+                break
+            next_preconditioned = apply_row_block_preconditioner(residual)
+            next_rz = float(
+                (residual * next_preconditioned).sum().item()
+            )
+            if not math.isfinite(next_rz) or next_rz <= 0.0:
+                row_block_lane_state["termination"] = (
+                    "preconditioned_residual_failure"
+                )
+                fail_closed(
+                    "non_positive_or_non_finite_preconditioned_residual",
+                    stage="continuous_row_block_lane_direction_update",
+                    details={
+                        "attempted_iteration": attempted_iteration,
+                        "residual_preconditioner_inner_product": (
+                            _pcg_json_float(next_rz)
+                        ),
+                    },
+                )
+            direction = (
+                next_preconditioned + (next_rz / rz) * direction
+            )
+            preconditioned = next_preconditioned
+            rz = next_rz
+
+        if exact_iteration != total_iterations:
+            applied_exact = matvec(solution)
+            total_matvec_calls += 1
+            row_block_lane_state["attempted_matvec_calls"] = (
+                total_matvec_calls - lane_matvec_start
+            )
+            row_block_lane_state["exact_diagnostic_matvec_calls"] += 1
+            exact_residual = right - applied_exact
+            exact_finite = (
+                bool(torch.isfinite(applied_exact).all().item())
+                and bool(torch.isfinite(exact_residual).all().item())
+            )
+            exact_relative = (
+                float(
+                    (
+                        torch.linalg.vector_norm(exact_residual)
+                        / right_norm
+                    ).item()
+                )
+                if exact_finite
+                else None
+            )
+            exact_finite = (
+                exact_finite
+                and _pcg_json_float(exact_relative) is not None
+            )
+            exact_iteration = total_iterations if exact_finite else None
+            exact_checkpoints.append(
+                {
+                    "iteration": total_iterations,
+                    "relative_normal_residual": (
+                        _pcg_json_float(exact_relative)
+                    ),
+                    "finite": exact_finite,
+                }
+            )
+            row_block_lane_state[
+                "ending_exact_relative_normal_residual"
+            ] = _pcg_json_float(exact_relative)
+            row_block_lane_state[
+                "ending_exact_residual_authenticated"
+            ] = exact_finite
+        if exact_iteration != total_iterations or exact_relative is None:
+            row_block_lane_state["termination"] = (
+                "non_finite_final_exact_residual"
+            )
+            fail_closed(
+                "non_finite_continuous_row_block_lane_exact_residual",
+                stage="continuous_row_block_lane_final_exact_authentication",
+            )
+        if exact_relative <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE:
+            row_block_lane_state["termination"] = (
+                "exact_tolerance_reached_at_hard_cap"
+            )
+            return solution.contiguous(), _seal_observe_pcg_report(
+                "single_tensor",
+                extended_body(),
+            )
+        row_block_lane_state["termination"] = "hard_iteration_cap_reached"
+        fail_closed(
+            "hard_iteration_cap_reached",
+            stage="continuous_row_block_lane_hard_iteration_cap",
         )
 
     while total_iterations < _PCG_HARD_MAXIMUM_ITERATIONS:
@@ -2568,22 +3404,31 @@ def _structured_value_pcg_sweep(
                     )
             return result + ridge * value
 
+        role = (
+            f"sequence_effective_structured_value_iteration_{iteration}_"
+            f"group_{group}"
+        )
+        row_block_preconditioner = (
+            _build_structured_value_row_block_jacobi_preconditioner(
+                cross=cross,
+                output_blocks=output_blocks,
+                group_heads=group_heads,
+                diagonal=diagonal,
+                ridge=ridge,
+                role=role,
+            )
+        )
         solution, pcg_report = _pcg_single_tensor(
             right=right,
             matvec=matvec,
             diagonal=diagonal,
             initial=updated[group],
-            role=(
-                f"sequence_effective_structured_value_iteration_{iteration}_"
-                f"group_{group}"
-            ),
+            role=role,
+            restart_row_block_preconditioner=row_block_preconditioner,
         )
         updated[group] = solution
         body = {
-            "role": (
-                f"sequence_effective_structured_value_iteration_{iteration}_"
-                f"group_{group}"
-            ),
+            "role": role,
             "group": group,
             "heads": list(group_heads),
             "features": topology.target_hidden_size * topology.head_dim,
@@ -2591,6 +3436,10 @@ def _structured_value_pcg_sweep(
             "trace_scale": trace_scale,
             "ridge": ridge,
             "pcg_report": pcg_report,
+            "row_block_jacobi_construction_report": dict(
+                row_block_preconditioner.construction_report
+            ),
+            "row_block_jacobi_supplied_to_restart_lane": True,
             "solution_sha256": _tensor_sha256(solution),
             "explicit_coefficient_tensor_materialized": False,
             "hidden_head_dim_gram_materialized": False,
@@ -3489,6 +4338,7 @@ __all__ = [
     "LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_INSTALL_SCHEMA",
     "LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA",
     "LFM2_SEQUENCE_EFFECTIVE_PCG_OBSERVATION_SCHEMA",
+    "LFM2_SEQUENCE_EFFECTIVE_ROW_BLOCK_JACOBI_SCHEMA",
     "Lfm2CompiledFixedQkSequenceEffectiveAttentionFold",
     "Lfm2FixedQkSequenceEffectiveVoAlsPolicy",
     "Lfm2SequenceEffectiveAttentionFoldError",

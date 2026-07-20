@@ -438,6 +438,143 @@ def _restarted_pcg_event(
     }
 
 
+def _continuous_row_block_pcg_event(
+    role: str = "sequence_effective_structured_value_iteration_1_group_0",
+):
+    history = [2e-8] * 64 + [8e-9, 5e-9]
+    checkpoints = [
+        {
+            "iteration": 64,
+            "relative_normal_residual": 2e-8,
+            "finite": True,
+        },
+        {
+            "iteration": 65,
+            "relative_normal_residual": 1.5e-8,
+            "finite": True,
+        },
+        {
+            "iteration": 66,
+            "relative_normal_residual": 5e-9,
+            "finite": True,
+        },
+    ]
+    construction_body = {
+        "schema": (
+            "neural-forge-lfm2-sequence-effective-row-block-jacobi-v1"
+        ),
+        "role": role,
+        "construction": "exact_structured_operator_row_blocks",
+        "row_block_count": 776,
+        "row_block_size": 64,
+        "row_blocks_shape": [776, 64, 64],
+        "row_blocks_dtype": "torch.float64",
+        "row_blocks_sha256": _sha256({"row_blocks": role}),
+        "scalar_diagonal_sha256": _sha256({"diagonal": role}),
+        "scalar_diagonal_maximum_absolute_error": 0.0,
+        "scalar_diagonal_match_tolerance": 1e-12,
+        "row_blocks_maximum_asymmetry": 0.0,
+        "row_blocks_symmetry_tolerance": 1e-12,
+        "source_term_count": 4,
+        "source_terms_sha256": _sha256({"source_terms": role}),
+        "ridge": 1e-6,
+        "full_operator_materialized": False,
+    }
+    construction = {
+        **construction_body,
+        "report_sha256": _sha256(construction_body),
+    }
+    receipt_body = {
+        "kind": "deterministic_exact_row_block_jacobi_cholesky",
+        "construction_report": construction,
+        "construction_report_sha256": construction["report_sha256"],
+        "row_blocks_sha256": construction["row_blocks_sha256"],
+        "factorization": "batched_lower_cholesky_ex",
+        "factor_sha256": _sha256({"factor": role}),
+        "row_block_count": 776,
+        "row_block_size": 64,
+        "all_row_blocks_spd": True,
+        "factorization_materialized_only_after_original_lane_exact_miss": True,
+        "full_operator_materialized": False,
+    }
+    receipt = {
+        **receipt_body,
+        "report_sha256": _sha256(receipt_body),
+    }
+    lane = {
+        "start_iteration": 64,
+        "planned_stop_iteration": 4096,
+        "iterations_executed": 2,
+        "attempted_matvec_calls": 4,
+        "exact_diagnostic_matvec_calls": 2,
+        "termination": "exact_tolerance_reached",
+        "ending_iteration": 66,
+        "ending_recurrence_relative_normal_residual": 5e-9,
+        "ending_exact_relative_normal_residual": 5e-9,
+        "ending_exact_residual_authenticated": True,
+    }
+    preconditioner = {
+        "kind": "deterministic_exact_row_block_jacobi_cholesky",
+        "supplied": True,
+        "authentication_attempted": True,
+        "authenticated": True,
+        "applied": True,
+        "application_attempt_count": 2,
+        "application_count": 2,
+        "receipt": receipt,
+        "authentication_failure_reason": None,
+    }
+    report_body = {
+        "role": role,
+        "solver": (
+            "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
+        ),
+        "maximum_iterations": 4096,
+        "hard_cap_includes_original_lane_iterations": True,
+        "original_lane_maximum_iterations": 64,
+        "original_lane_iterations_executed": 64,
+        "single_restart_after_original_lane_exact_authentication_miss": True,
+        "periodic_restart_count": 0,
+        "iterations_executed": 66,
+        "continuous_row_block_lane_iterations_executed": 2,
+        "required_relative_normal_residual": 1e-8,
+        "initial_relative_normal_residual": 1.0,
+        "original_lane_final_recurrence_relative_normal_residual": 2e-8,
+        "final_recurrence_relative_normal_residual": 5e-9,
+        "final_relative_normal_residual": 5e-9,
+        "relative_normal_residual_history": history,
+        "recurrence_history_sha256": _sha256(history),
+        "exact_relative_normal_residual_checkpoints": checkpoints,
+        "exact_residual_checkpoints_sha256": _sha256(checkpoints),
+        "total_matvec_calls": 70,
+        "exact_final_residual_authenticated": True,
+        "extended_after_original_lane_exact_authentication_miss": True,
+        "exact_residual_used_to_initialize_continuous_lane_once": True,
+        "exact_diagnostic_matvecs_modify_recurrence_state_or_direction": False,
+        "continuous_row_block_lane": lane,
+        "restart_preconditioner": preconditioner,
+        "solution_finite": True,
+        "solution_sha256": _sha256({"solution": role}),
+    }
+    report = {
+        **report_body,
+        "report_sha256": _sha256(report_body),
+    }
+    observation_body = {
+        "schema": (
+            "neural-forge-lfm2-sequence-effective-pcg-observation-v1"
+        ),
+        "solver_kind": "single_tensor",
+        "report": report,
+        "report_sha256": report["report_sha256"],
+        "solver_result_or_arguments_modified": False,
+    }
+    return {
+        **observation_body,
+        "observation_sha256": _sha256(observation_body),
+    }
+
+
 def _reseal_pcg_event(event):
     report_body = dict(event["report"])
     report_body.pop("report_sha256", None)
@@ -450,6 +587,34 @@ def _reseal_pcg_event(event):
     observation_body.pop("observation_sha256", None)
     event["observation_sha256"] = _sha256(observation_body)
     return event
+
+
+def _reseal_continuous_row_block_pcg_event(event):
+    report = event["report"]
+    preconditioner = report["restart_preconditioner"]
+    receipt = preconditioner["receipt"]
+    construction_body = dict(receipt["construction_report"])
+    construction_body.pop("report_sha256", None)
+    construction = {
+        **construction_body,
+        "report_sha256": _sha256(construction_body),
+    }
+    receipt["construction_report"] = construction
+    receipt["construction_report_sha256"] = construction["report_sha256"]
+    receipt["row_blocks_sha256"] = construction["row_blocks_sha256"]
+    receipt_body = dict(receipt)
+    receipt_body.pop("report_sha256", None)
+    preconditioner["receipt"] = {
+        **receipt_body,
+        "report_sha256": _sha256(receipt_body),
+    }
+    report["recurrence_history_sha256"] = _sha256(
+        report["relative_normal_residual_history"]
+    )
+    report["exact_residual_checkpoints_sha256"] = _sha256(
+        report["exact_relative_normal_residual_checkpoints"]
+    )
+    return _reseal_pcg_event(event)
 
 
 def test_scoped_pcg_observation_does_not_change_solver() -> None:
@@ -556,6 +721,56 @@ def test_pcg_collector_authenticates_restarted_exact_residual_lane() -> None:
     assert mixed_audit["restarted_solver_event_count"] == 4
 
 
+def test_pcg_collector_authenticates_continuous_row_block_lane() -> None:
+    artifact = _sequence_artifact()
+    collector = Lfm2SequenceEffectivePcgCollector()
+    for group in range(5):
+        collector(
+            _continuous_row_block_pcg_event(
+                "sequence_effective_structured_value_iteration_1_"
+                f"group_{group}"
+            )
+        )
+    audit = collector.finalize(sequence_artifact=artifact)
+    assert audit["all_iterations_at_most"] == 4096
+    assert audit["legacy_solver_event_count"] == 0
+    assert audit["restarted_solver_event_count"] == 0
+    assert audit["continuous_row_block_solver_event_count"] == 5
+    assert audit["all_continuous_row_block_lanes_authenticated"] is True
+    assert (
+        audit["all_row_block_preconditioner_receipts_authenticated"] is True
+    )
+    assert (
+        audit["continuous_row_block_solver_events_authenticated"] is True
+    )
+
+
+def test_pcg_collector_accepts_mixed_three_solver_inventory() -> None:
+    artifact = _sequence_artifact()
+    collector = Lfm2SequenceEffectivePcgCollector()
+    for group in range(5):
+        role = (
+            "sequence_effective_structured_value_iteration_1_"
+            f"group_{group}"
+        )
+        if group == 0:
+            event = _pcg_event(role)
+        elif group == 1:
+            event = _restarted_pcg_event(role)
+        else:
+            event = _continuous_row_block_pcg_event(role)
+        collector(event)
+    audit = collector.finalize(sequence_artifact=artifact)
+    assert audit["all_iterations_at_most"] == 4096
+    assert audit["legacy_solver_event_count"] == 1
+    assert audit["restarted_solver_event_count"] == 1
+    assert audit["continuous_row_block_solver_event_count"] == 3
+    assert audit["restarted_extended_solver_events_authenticated"] is True
+    assert (
+        audit["continuous_row_block_solver_events_authenticated"] is True
+    )
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     (
@@ -571,6 +786,130 @@ def test_pcg_collector_rejects_resealed_restarted_semantic_tamper(
     event = _restarted_pcg_event()
     event["report"][field] = value
     _reseal_pcg_event(event)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        Lfm2SequenceEffectivePcgCollector()(event)
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    (
+        (("periodic_restart_count",), 1),
+        (("original_lane_iterations_executed",), 63),
+        (("total_matvec_calls",), 69),
+        (("continuous_row_block_lane", "attempted_matvec_calls"), 3),
+        (
+            ("restart_preconditioner", "application_count"),
+            1,
+        ),
+        (
+            (
+                "restart_preconditioner",
+                "receipt",
+                "construction_report",
+                "row_blocks_shape",
+            ),
+            [775, 64, 64],
+        ),
+        (
+            (
+                "restart_preconditioner",
+                "receipt",
+                "construction_report",
+                "row_blocks_sha256",
+            ),
+            "x" * 64,
+        ),
+        (
+            (
+                "restart_preconditioner",
+                "receipt",
+                "construction_report",
+                "scalar_diagonal_maximum_absolute_error",
+            ),
+            2e-12,
+        ),
+        (
+            (
+                "restart_preconditioner",
+                "receipt",
+                "construction_report",
+                "row_blocks_maximum_asymmetry",
+            ),
+            2e-12,
+        ),
+        (
+            (
+                "restart_preconditioner",
+                "receipt",
+                "all_row_blocks_spd",
+            ),
+            False,
+        ),
+    ),
+)
+def test_pcg_collector_rejects_resealed_row_block_semantic_tamper(
+    path: tuple[str, ...],
+    value,
+) -> None:
+    event = _continuous_row_block_pcg_event()
+    target = event["report"]
+    for field in path[:-1]:
+        target = target[field]
+    target[path[-1]] = value
+    _reseal_continuous_row_block_pcg_event(event)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        Lfm2SequenceEffectivePcgCollector()(event)
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        (),
+        ("continuous_row_block_lane",),
+        ("restart_preconditioner",),
+        ("restart_preconditioner", "receipt"),
+        (
+            "restart_preconditioner",
+            "receipt",
+            "construction_report",
+        ),
+    ),
+)
+def test_pcg_collector_rejects_row_block_extra_receipt_fields(
+    path: tuple[str, ...],
+) -> None:
+    event = _continuous_row_block_pcg_event()
+    target = event["report"]
+    for field in path:
+        target = target[field]
+    target["unauthenticated_extra"] = True
+    _reseal_continuous_row_block_pcg_event(event)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        Lfm2SequenceEffectivePcgCollector()(event)
+
+
+def test_pcg_collector_rejects_stale_nested_row_block_seal() -> None:
+    event = _continuous_row_block_pcg_event()
+    construction = event["report"]["restart_preconditioner"]["receipt"][
+        "construction_report"
+    ]
+    construction["ridge"] = 2e-6
+    _reseal_pcg_event(event)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        Lfm2SequenceEffectivePcgCollector()(event)
+
+
+def test_pcg_collector_rejects_row_block_exact_residual_gate_tamper() -> None:
+    event = _continuous_row_block_pcg_event()
+    checkpoints = event["report"][
+        "exact_relative_normal_residual_checkpoints"
+    ]
+    checkpoints[-1]["relative_normal_residual"] = 2e-8
+    event["report"]["final_relative_normal_residual"] = 2e-8
+    event["report"]["continuous_row_block_lane"][
+        "ending_exact_relative_normal_residual"
+    ] = 2e-8
+    _reseal_continuous_row_block_pcg_event(event)
     with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
         Lfm2SequenceEffectivePcgCollector()(event)
 
@@ -704,6 +1043,20 @@ def _pcg_audit(artifact):
         for group in range(5):
             collector(
                 _pcg_event(
+                    "sequence_effective_structured_value_iteration_"
+                    f"{iteration}_group_{group}"
+                )
+            )
+    return collector.finalize(sequence_artifact=artifact)
+
+
+def _continuous_row_block_pcg_audit(artifact):
+    collector = Lfm2SequenceEffectivePcgCollector()
+    iterations = len(artifact["candidate_frontier"]) - 2
+    for iteration in range(1, iterations + 1):
+        for group in range(5):
+            collector(
+                _continuous_row_block_pcg_event(
                     "sequence_effective_structured_value_iteration_"
                     f"{iteration}_group_{group}"
                 )
@@ -1003,6 +1356,24 @@ def test_attention_result_reports_positive_or_honest_negative(
     assert negative["scientific_outcome"] == (
         "honest_negative_or_control_selected"
     )
+
+
+def test_attention_result_accepts_authenticated_row_block_pcg_audit(
+    tmp_path: Path,
+) -> None:
+    result = _attention_result(
+        selected=H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+    )
+    artifact = result.report["solver_evidence_policy"][
+        "attention_candidate_evaluations"
+    ][H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID]["operator_artifact"]
+    audit = authenticate_h776_attention_result(
+        result,
+        input_bank_sha256="8" * 64,
+        pcg_audit=_continuous_row_block_pcg_audit(artifact),
+        pins=_pins(tmp_path),
+    )
+    assert audit["sequence_effective_won"] is True
 
 
 def test_attention_behavioral_tie_is_not_positive(tmp_path: Path) -> None:

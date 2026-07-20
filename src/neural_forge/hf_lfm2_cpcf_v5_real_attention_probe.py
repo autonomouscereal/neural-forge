@@ -96,7 +96,11 @@ H776_MAXIMUM_CUDA_BYTES_PER_DEVICE = 20 * 1024**3
 H776_PCG_MAXIMUM_ITERATIONS = 64
 H776_PCG_RESTART_BLOCK_ITERATIONS = 64
 H776_PCG_HARD_MAXIMUM_ITERATIONS = 512
+H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS = 4096
 H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL = 1e-8
+H776_ROW_BLOCK_JACOBI_SCHEMA = (
+    "neural-forge-lfm2-sequence-effective-row-block-jacobi-v1"
+)
 
 H776_TARGET_PLAN_FINGERPRINT = (
     "3f27369567214c7f01d3f437e9c4ec50bce05c8345bbee4bf23570c204be6153"
@@ -1020,6 +1024,392 @@ def _authenticate_restarted_pcg_report(report: Mapping[str, Any]) -> None:
     _digest(report.get("solution_sha256"), "PCG solution SHA-256")
 
 
+def _authenticate_h776_row_block_jacobi_receipt(
+    value: Any,
+    *,
+    role: str,
+) -> None:
+    receipt_fields = {
+        "kind",
+        "construction_report",
+        "construction_report_sha256",
+        "row_blocks_sha256",
+        "factorization",
+        "factor_sha256",
+        "row_block_count",
+        "row_block_size",
+        "all_row_blocks_spd",
+        "factorization_materialized_only_after_original_lane_exact_miss",
+        "full_operator_materialized",
+        "report_sha256",
+    }
+    construction_fields = {
+        "schema",
+        "role",
+        "construction",
+        "row_block_count",
+        "row_block_size",
+        "row_blocks_shape",
+        "row_blocks_dtype",
+        "row_blocks_sha256",
+        "scalar_diagonal_sha256",
+        "scalar_diagonal_maximum_absolute_error",
+        "scalar_diagonal_match_tolerance",
+        "row_blocks_maximum_asymmetry",
+        "row_blocks_symmetry_tolerance",
+        "source_term_count",
+        "source_terms_sha256",
+        "ridge",
+        "full_operator_materialized",
+        "report_sha256",
+    }
+    receipt = _self_sealed(
+        value,
+        seal_field="report_sha256",
+        name="row-block Jacobi factorization receipt",
+    )
+    construction_value = receipt.get("construction_report")
+    construction = _self_sealed(
+        construction_value,
+        seal_field="report_sha256",
+        name="row-block Jacobi construction report",
+    )
+    diagonal_error = construction.get(
+        "scalar_diagonal_maximum_absolute_error"
+    )
+    diagonal_tolerance = construction.get(
+        "scalar_diagonal_match_tolerance"
+    )
+    asymmetry = construction.get("row_blocks_maximum_asymmetry")
+    symmetry_tolerance = construction.get(
+        "row_blocks_symmetry_tolerance"
+    )
+    ridge = construction.get("ridge")
+    expected_source_terms = (
+        H776_TARGET_QUERY_HEADS // H776_TARGET_KEY_VALUE_HEADS
+    ) ** 2
+    if (
+        set(receipt) != receipt_fields
+        or set(construction) != construction_fields
+        or construction.get("schema") != H776_ROW_BLOCK_JACOBI_SCHEMA
+        or construction.get("role") != role
+        or construction.get("construction")
+        != "exact_structured_operator_row_blocks"
+        or construction.get("row_block_count") != H776_TARGET_HIDDEN_SIZE
+        or construction.get("row_block_size") != H776_HEAD_DIM
+        or construction.get("row_blocks_shape")
+        != [H776_TARGET_HIDDEN_SIZE, H776_HEAD_DIM, H776_HEAD_DIM]
+        or construction.get("row_blocks_dtype") != "torch.float64"
+        or construction.get("source_term_count") != expected_source_terms
+        or not _finite_nonnegative_number(diagonal_error)
+        or not _finite_nonnegative_number(diagonal_tolerance)
+        or float(diagonal_tolerance) <= 0.0
+        or float(diagonal_error) > float(diagonal_tolerance)
+        or not _finite_nonnegative_number(asymmetry)
+        or not _finite_nonnegative_number(symmetry_tolerance)
+        or float(symmetry_tolerance) <= 0.0
+        or float(asymmetry) > float(symmetry_tolerance)
+        or not _finite_nonnegative_number(ridge)
+        or float(ridge) <= 0.0
+        or construction.get("full_operator_materialized") is not False
+        or receipt.get("kind")
+        != "deterministic_exact_row_block_jacobi_cholesky"
+        or receipt.get("construction_report_sha256")
+        != construction["report_sha256"]
+        or receipt.get("row_blocks_sha256")
+        != construction.get("row_blocks_sha256")
+        or receipt.get("factorization") != "batched_lower_cholesky_ex"
+        or receipt.get("row_block_count") != H776_TARGET_HIDDEN_SIZE
+        or receipt.get("row_block_size") != H776_HEAD_DIM
+        or receipt.get("all_row_blocks_spd") is not True
+        or receipt.get(
+            "factorization_materialized_only_after_original_lane_exact_miss"
+        )
+        is not True
+        or receipt.get("full_operator_materialized") is not False
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The continuous PCG row-block Jacobi receipt is not the exact "
+            "authenticated H776 SPD preconditioner."
+        )
+    for field, name in (
+        ("row_blocks_sha256", "row-block tensor SHA-256"),
+        ("scalar_diagonal_sha256", "scalar diagonal SHA-256"),
+        ("source_terms_sha256", "row-block source terms SHA-256"),
+    ):
+        _digest(construction.get(field), name)
+    _digest(receipt.get("factor_sha256"), "row-block Cholesky factor SHA-256")
+
+
+def _authenticate_continuous_row_block_pcg_report(
+    report: Mapping[str, Any],
+) -> None:
+    report_fields = {
+        "role",
+        "solver",
+        "maximum_iterations",
+        "hard_cap_includes_original_lane_iterations",
+        "original_lane_maximum_iterations",
+        "original_lane_iterations_executed",
+        "single_restart_after_original_lane_exact_authentication_miss",
+        "periodic_restart_count",
+        "iterations_executed",
+        "continuous_row_block_lane_iterations_executed",
+        "required_relative_normal_residual",
+        "initial_relative_normal_residual",
+        "original_lane_final_recurrence_relative_normal_residual",
+        "final_recurrence_relative_normal_residual",
+        "final_relative_normal_residual",
+        "relative_normal_residual_history",
+        "recurrence_history_sha256",
+        "exact_relative_normal_residual_checkpoints",
+        "exact_residual_checkpoints_sha256",
+        "total_matvec_calls",
+        "exact_final_residual_authenticated",
+        "extended_after_original_lane_exact_authentication_miss",
+        "exact_residual_used_to_initialize_continuous_lane_once",
+        "exact_diagnostic_matvecs_modify_recurrence_state_or_direction",
+        "continuous_row_block_lane",
+        "restart_preconditioner",
+        "solution_finite",
+        "solution_sha256",
+        "report_sha256",
+    }
+    lane_fields = {
+        "start_iteration",
+        "planned_stop_iteration",
+        "iterations_executed",
+        "attempted_matvec_calls",
+        "exact_diagnostic_matvec_calls",
+        "termination",
+        "ending_iteration",
+        "ending_recurrence_relative_normal_residual",
+        "ending_exact_relative_normal_residual",
+        "ending_exact_residual_authenticated",
+    }
+    preconditioner_fields = {
+        "kind",
+        "supplied",
+        "authentication_attempted",
+        "authenticated",
+        "applied",
+        "application_attempt_count",
+        "application_count",
+        "receipt",
+        "authentication_failure_reason",
+    }
+    role = report.get("role")
+    iterations = report.get("iterations_executed")
+    original_iterations = report.get("original_lane_iterations_executed")
+    block_iterations = report.get(
+        "continuous_row_block_lane_iterations_executed"
+    )
+    initial = report.get("initial_relative_normal_residual")
+    original_final = report.get(
+        "original_lane_final_recurrence_relative_normal_residual"
+    )
+    recurrence_final = report.get(
+        "final_recurrence_relative_normal_residual"
+    )
+    exact_final = report.get("final_relative_normal_residual")
+    history = report.get("relative_normal_residual_history")
+    checkpoints = report.get(
+        "exact_relative_normal_residual_checkpoints"
+    )
+    total_matvec_calls = report.get("total_matvec_calls")
+    lane = report.get("continuous_row_block_lane")
+    preconditioner = report.get("restart_preconditioner")
+    if (
+        set(report) != report_fields
+        or report.get("solver")
+        != "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
+        or report.get("maximum_iterations")
+        != H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+        or report.get("hard_cap_includes_original_lane_iterations") is not True
+        or report.get("original_lane_maximum_iterations")
+        != H776_PCG_MAXIMUM_ITERATIONS
+        or original_iterations != H776_PCG_MAXIMUM_ITERATIONS
+        or isinstance(original_iterations, bool)
+        or report.get(
+            "single_restart_after_original_lane_exact_authentication_miss"
+        )
+        is not True
+        or report.get("periodic_restart_count") != 0
+        or isinstance(iterations, bool)
+        or not isinstance(iterations, int)
+        or not (
+            H776_PCG_MAXIMUM_ITERATIONS
+            < iterations
+            <= H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+        )
+        or isinstance(block_iterations, bool)
+        or not isinstance(block_iterations, int)
+        or block_iterations != iterations - original_iterations
+        or block_iterations <= 0
+        or report.get("required_relative_normal_residual")
+        != H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+        or not _finite_nonnegative_number(initial)
+        or not _finite_nonnegative_number(original_final)
+        or not _finite_nonnegative_number(recurrence_final)
+        or not _finite_nonnegative_number(exact_final)
+        or float(exact_final)
+        > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+        or not isinstance(history, list)
+        or len(history) != iterations
+        or any(not _finite_nonnegative_number(item) for item in history)
+        or float(history[original_iterations - 1]) != float(original_final)
+        or float(history[-1]) != float(recurrence_final)
+        or report.get("recurrence_history_sha256") != _sha256(history)
+        or not isinstance(checkpoints, list)
+        or len(checkpoints) < 2
+        or report.get("exact_residual_checkpoints_sha256")
+        != _sha256(checkpoints)
+        or isinstance(total_matvec_calls, bool)
+        or not isinstance(total_matvec_calls, int)
+        or report.get("exact_final_residual_authenticated") is not True
+        or report.get(
+            "extended_after_original_lane_exact_authentication_miss"
+        )
+        is not True
+        or report.get(
+            "exact_residual_used_to_initialize_continuous_lane_once"
+        )
+        is not True
+        or report.get(
+            "exact_diagnostic_matvecs_modify_recurrence_state_or_direction"
+        )
+        is not False
+        or not isinstance(lane, dict)
+        or set(lane) != lane_fields
+        or not isinstance(preconditioner, dict)
+        or set(preconditioner) != preconditioner_fields
+        or report.get("solution_finite") is not True
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "A continuous row-block sequence-effective PCG solve lacks its "
+            "exact H776 convergence evidence."
+        )
+
+    checkpoint_by_iteration: dict[int, float] = {}
+    previous_iteration = -1
+    for checkpoint in checkpoints:
+        if (
+            not isinstance(checkpoint, dict)
+            or set(checkpoint)
+            != {"iteration", "relative_normal_residual", "finite"}
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "Continuous row-block PCG exact checkpoints are malformed."
+            )
+        iteration = checkpoint.get("iteration")
+        residual = checkpoint.get("relative_normal_residual")
+        if (
+            isinstance(iteration, bool)
+            or not isinstance(iteration, int)
+            or iteration <= previous_iteration
+            or not original_iterations <= iteration <= iterations
+            or not _finite_nonnegative_number(residual)
+            or checkpoint.get("finite") is not True
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "Continuous row-block PCG exact checkpoints are inconsistent."
+            )
+        checkpoint_by_iteration[iteration] = float(residual)
+        previous_iteration = iteration
+    if (
+        checkpoints[0]["iteration"] != original_iterations
+        or float(checkpoints[0]["relative_normal_residual"])
+        <= H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+        or checkpoints[-1]["iteration"] != iterations
+        or float(checkpoints[-1]["relative_normal_residual"])
+        != float(exact_final)
+        or any(
+            float(checkpoint["relative_normal_residual"])
+            <= H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+            for checkpoint in checkpoints[:-1]
+        )
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Continuous row-block PCG checkpoints do not prove one scalar "
+            "lane miss followed by one successful block lane."
+        )
+
+    exact_diagnostic_count = len(checkpoints) - 1
+    lane_attempted_matvecs = block_iterations + exact_diagnostic_count
+    termination = lane.get("termination")
+    if (
+        lane.get("start_iteration") != original_iterations
+        or lane.get("planned_stop_iteration")
+        != H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+        or lane.get("iterations_executed") != block_iterations
+        or lane.get("attempted_matvec_calls") != lane_attempted_matvecs
+        or lane.get("exact_diagnostic_matvec_calls")
+        != exact_diagnostic_count
+        or lane.get("ending_iteration") != iterations
+        or not _finite_nonnegative_number(
+            lane.get("ending_recurrence_relative_normal_residual")
+        )
+        or float(lane["ending_recurrence_relative_normal_residual"])
+        != float(recurrence_final)
+        or not _finite_nonnegative_number(
+            lane.get("ending_exact_relative_normal_residual")
+        )
+        or float(lane["ending_exact_relative_normal_residual"])
+        != float(exact_final)
+        or lane.get("ending_exact_residual_authenticated") is not True
+        or termination
+        not in {
+            "exact_tolerance_reached",
+            "exact_tolerance_reached_at_hard_cap",
+        }
+        or (
+            termination == "exact_tolerance_reached"
+            and (
+                iterations
+                >= H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+                or float(history[-1])
+                > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+            )
+        )
+        or (
+            termination == "exact_tolerance_reached_at_hard_cap"
+            and iterations != H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+        )
+        or any(
+            float(history[checkpoint["iteration"] - 1])
+            > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+            for checkpoint in checkpoints[1:-1]
+        )
+        or total_matvec_calls
+        != iterations + 1 + len(checkpoints)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The continuous row-block PCG lane counters or exact-residual "
+            "gates are inconsistent."
+        )
+
+    if (
+        preconditioner.get("kind")
+        != "deterministic_exact_row_block_jacobi_cholesky"
+        or preconditioner.get("supplied") is not True
+        or preconditioner.get("authentication_attempted") is not True
+        or preconditioner.get("authenticated") is not True
+        or preconditioner.get("applied") is not True
+        or preconditioner.get("application_attempt_count") != block_iterations
+        or preconditioner.get("application_count") != block_iterations
+        or preconditioner.get("authentication_failure_reason") is not None
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The continuous row-block PCG preconditioner lifecycle is "
+            "inconsistent."
+        )
+    _authenticate_h776_row_block_jacobi_receipt(
+        preconditioner.get("receipt"),
+        role=str(role),
+    )
+    _digest(report.get("solution_sha256"), "PCG solution SHA-256")
+
+
 class Lfm2SequenceEffectivePcgCollector:
     """Collect and authenticate the scoped observation-only PCG events."""
 
@@ -1072,6 +1462,11 @@ class Lfm2SequenceEffectivePcgCollector:
             _authenticate_legacy_pcg_report(report)
         elif solver == "deterministic_restarted_jacobi_pcg_single_tensor":
             _authenticate_restarted_pcg_report(report)
+        elif (
+            solver
+            == "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
+        ):
+            _authenticate_continuous_row_block_pcg_report(report)
         else:
             raise Lfm2CpcfV5RealAttentionProbeError(
                 "Sequence-effective PCG telemetry names an unknown solver."
@@ -1233,6 +1628,20 @@ class Lfm2SequenceEffectivePcgCollector:
             == "deterministic_restarted_jacobi_pcg_single_tensor"
             for event in self._events
         )
+        row_block_event_count = sum(
+            event["report"]["solver"]
+            == "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
+            for event in self._events
+        )
+        maximum_authenticated_iterations = (
+            H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+            if row_block_event_count
+            else (
+                H776_PCG_HARD_MAXIMUM_ITERATIONS
+                if restarted_event_count
+                else H776_PCG_MAXIMUM_ITERATIONS
+            )
+        )
         body = {
             "schema": LFM2_CPCF_V5_REAL_ATTENTION_PCG_AUDIT_SCHEMA,
             "event_count": len(self._events),
@@ -1255,11 +1664,7 @@ class Lfm2SequenceEffectivePcgCollector:
             "all_roles_unique": True,
             "all_event_report_hashes_unique": True,
             "all_observation_hashes_unique": True,
-            "all_iterations_at_most": (
-                H776_PCG_HARD_MAXIMUM_ITERATIONS
-                if restarted_event_count
-                else H776_PCG_MAXIMUM_ITERATIONS
-            ),
+            "all_iterations_at_most": maximum_authenticated_iterations,
             "all_final_relative_normal_residuals_at_most": (
                 H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
             ),
@@ -1269,7 +1674,9 @@ class Lfm2SequenceEffectivePcgCollector:
             body = {
                 **body,
                 "legacy_solver_event_count": (
-                    len(self._events) - restarted_event_count
+                    len(self._events)
+                    - restarted_event_count
+                    - row_block_event_count
                 ),
                 "restarted_solver_event_count": restarted_event_count,
                 "original_lane_maximum_iterations": (
@@ -1288,6 +1695,33 @@ class Lfm2SequenceEffectivePcgCollector:
                 "all_restart_schedules_authenticated": True,
                 "all_matvec_counts_authenticated": True,
                 "restarted_extended_solver_events_authenticated": True,
+            }
+        if row_block_event_count:
+            body = {
+                **body,
+                "legacy_solver_event_count": (
+                    len(self._events)
+                    - restarted_event_count
+                    - row_block_event_count
+                ),
+                "restarted_solver_event_count": restarted_event_count,
+                "continuous_row_block_solver_event_count": (
+                    row_block_event_count
+                ),
+                "original_lane_maximum_iterations": (
+                    H776_PCG_MAXIMUM_ITERATIONS
+                ),
+                "row_block_hard_maximum_iterations": (
+                    H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+                ),
+                "exact_final_residual_gate": (
+                    H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+                ),
+                "all_extended_final_residuals_exactly_recomputed": True,
+                "all_matvec_counts_authenticated": True,
+                "all_continuous_row_block_lanes_authenticated": True,
+                "all_row_block_preconditioner_receipts_authenticated": True,
+                "continuous_row_block_solver_events_authenticated": True,
             }
         return MappingProxyType({**body, "audit_sha256": _sha256(body)})
 
@@ -1862,12 +2296,21 @@ def authenticate_h776_attention_result(
         not in {
             H776_PCG_MAXIMUM_ITERATIONS,
             H776_PCG_HARD_MAXIMUM_ITERATIONS,
+            H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS,
         }
         or (
             authenticated_pcg.get("all_iterations_at_most")
             == H776_PCG_HARD_MAXIMUM_ITERATIONS
             and authenticated_pcg.get(
                 "restarted_extended_solver_events_authenticated"
+            )
+            is not True
+        )
+        or (
+            authenticated_pcg.get("all_iterations_at_most")
+            == H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+            and authenticated_pcg.get(
+                "continuous_row_block_solver_events_authenticated"
             )
             is not True
         )

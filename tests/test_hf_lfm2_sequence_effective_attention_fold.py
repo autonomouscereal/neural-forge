@@ -1254,6 +1254,7 @@ def test_single_tensor_pcg_original_success_path_is_byte_identical() -> None:
         diagonal=diagonal,
         initial=initial,
         role=role,
+        restart_row_block_preconditioner=object(),
     )
 
     assert torch.equal(observed_solution, expected_solution)
@@ -1262,6 +1263,287 @@ def test_single_tensor_pcg_original_success_path_is_byte_identical() -> None:
     )
     assert observed_report["iterations_executed"] <= 64
     assert "restart_schedule" not in observed_report
+
+
+def test_structured_row_blocks_match_explicit_operator_diagonal_blocks() -> None:
+    generator = torch.Generator().manual_seed(6701)
+    rows = 5
+    block_size = 3
+    heads = 2
+    output_size = 4
+    samples = 11
+    features = torch.randn(
+        samples,
+        heads,
+        rows,
+        generator=generator,
+        dtype=DTYPE,
+    )
+    cross = torch.einsum("nhi,nkj->hkij", features, features).contiguous()
+    output_blocks = torch.randn(
+        heads,
+        block_size,
+        output_size,
+        generator=generator,
+        dtype=DTYPE,
+    )
+    ridge = 0.125
+    diagonal = torch.zeros(rows, block_size, dtype=DTYPE)
+    for head in range(heads):
+        for other in range(heads):
+            coupling = output_blocks[other] @ output_blocks[head].T
+            diagonal.add_(
+                torch.diagonal(cross[head, other]).unsqueeze(1)
+                * torch.diagonal(coupling).unsqueeze(0)
+            )
+    diagonal = diagonal + ridge
+    role = "explicit_row_block_oracle"
+    preconditioner = (
+        sequence_fold._build_structured_value_row_block_jacobi_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=tuple(range(heads)),
+            diagonal=diagonal,
+            ridge=ridge,
+            role=role,
+        )
+    )
+
+    def matvec(value):
+        result = torch.zeros_like(value)
+        for head in range(heads):
+            for other in range(heads):
+                coupling = output_blocks[other] @ output_blocks[head].T
+                result.add_(cross[head, other] @ value @ coupling)
+        return result + ridge * value
+
+    features_count = rows * block_size
+    explicit = torch.empty(features_count, features_count, dtype=DTYPE)
+    for coordinate in range(features_count):
+        basis = torch.zeros(features_count, dtype=DTYPE)
+        basis[coordinate] = 1.0
+        explicit[:, coordinate] = matvec(
+            basis.reshape(rows, block_size)
+        ).reshape(-1)
+    for row in range(rows):
+        row_slice = slice(
+            row * block_size,
+            (row + 1) * block_size,
+        )
+        torch.testing.assert_close(
+            preconditioner.row_blocks[row],
+            explicit[row_slice, row_slice],
+            rtol=1e-12,
+            atol=1e-12,
+        )
+    construction = dict(preconditioner.construction_report)
+    assert construction["row_block_count"] == rows
+    assert construction["row_block_size"] == block_size
+    assert construction["scalar_diagonal_maximum_absolute_error"] <= (
+        construction["scalar_diagonal_match_tolerance"]
+    )
+    assert construction["row_blocks_maximum_asymmetry"] <= (
+        construction["row_blocks_symmetry_tolerance"]
+    )
+    assert construction["full_operator_materialized"] is False
+    assert construction["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in construction.items()
+            if key != "report_sha256"
+        }
+    )
+
+
+def _real_like_64_coordinate_row_block_problem():
+    generator = torch.Generator().manual_seed(1907)
+    rows = 72
+    block_size = 64
+    row_operator = torch.diag(
+        torch.full((rows,), 2.000001, dtype=DTYPE)
+    )
+    row_operator += torch.diag(
+        torch.full((rows - 1,), -1.0, dtype=DTYPE),
+        diagonal=1,
+    )
+    row_operator += torch.diag(
+        torch.full((rows - 1,), -1.0, dtype=DTYPE),
+        diagonal=-1,
+    )
+    coordinates = torch.linalg.qr(
+        torch.randn(
+            block_size,
+            block_size,
+            generator=generator,
+            dtype=DTYPE,
+        )
+    ).Q
+    spectrum = torch.logspace(-3, 3, block_size, dtype=DTYPE)
+    coordinate_operator = (
+        coordinates * spectrum.unsqueeze(0)
+    ) @ coordinates.T
+    output_blocks = torch.linalg.cholesky(
+        coordinate_operator
+    ).reshape(1, block_size, block_size)
+    cross = row_operator.reshape(1, 1, rows, rows)
+    ridge = 1e-8
+    diagonal = (
+        torch.diagonal(row_operator).unsqueeze(1)
+        * torch.diagonal(coordinate_operator).unsqueeze(0)
+        + ridge
+    )
+    right = torch.randn(
+        rows,
+        block_size,
+        generator=generator,
+        dtype=DTYPE,
+    )
+
+    def matvec(value):
+        return (
+            row_operator @ value @ coordinate_operator
+            + ridge * value
+        )
+
+    return cross, output_blocks, diagonal, right, matvec, ridge
+
+
+def test_continuous_64_coordinate_row_block_lane_solves_real_like_system() -> None:
+    (
+        cross,
+        output_blocks,
+        diagonal,
+        right,
+        matvec,
+        ridge,
+    ) = _real_like_64_coordinate_row_block_problem()
+    role = "real_like_h776_row_block_oracle"
+    preconditioner = (
+        sequence_fold._build_structured_value_row_block_jacobi_preconditioner(
+            cross=cross,
+            output_blocks=output_blocks,
+            group_heads=(0,),
+            diagonal=diagonal,
+            ridge=ridge,
+            role=role,
+        )
+    )
+
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as scalar_raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=diagonal,
+            initial=torch.zeros_like(right),
+            role="real_like_scalar_control",
+        )
+    scalar_failure = dict(scalar_raised.value.failure_report)
+    assert scalar_failure["failure_stage"] == "hard_iteration_cap"
+    assert scalar_failure["iterations_executed"] == 512
+    assert scalar_failure["final_relative_normal_residual"] > 1e-8
+
+    solution, report = sequence_fold._pcg_single_tensor(
+        right=right,
+        matvec=matvec,
+        diagonal=diagonal,
+        initial=torch.zeros_like(right),
+        role=role,
+        restart_row_block_preconditioner=preconditioner,
+    )
+    exact_relative = float(
+        (
+            torch.linalg.vector_norm(right - matvec(solution))
+            / torch.linalg.vector_norm(right)
+        ).item()
+    )
+
+    assert report["solver"] == (
+        "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
+    )
+    assert report["original_lane_iterations_executed"] == 64
+    assert report["maximum_iterations"] == 4096
+    assert report["periodic_restart_count"] == 0
+    assert report[
+        "single_restart_after_original_lane_exact_authentication_miss"
+    ] is True
+    assert report[
+        "exact_diagnostic_matvecs_modify_recurrence_state_or_direction"
+    ] is False
+    assert 0 < report[
+        "continuous_row_block_lane_iterations_executed"
+    ] < 4096 - 64
+    assert report["final_relative_normal_residual"] == exact_relative
+    assert exact_relative <= 1e-8
+    lane = report["continuous_row_block_lane"]
+    assert lane["start_iteration"] == 64
+    assert lane["planned_stop_iteration"] == 4096
+    assert lane["iterations_executed"] == (
+        report["iterations_executed"] - 64
+    )
+    assert lane["termination"] == "exact_tolerance_reached"
+    assert lane["exact_diagnostic_matvec_calls"] >= 1
+    restart = report["restart_preconditioner"]
+    assert restart["authentication_attempted"] is True
+    assert restart["authenticated"] is True
+    assert restart["applied"] is True
+    assert restart["application_attempt_count"] == restart[
+        "application_count"
+    ]
+    assert restart["application_count"] > 0
+    receipt = restart["receipt"]
+    assert receipt["row_block_count"] == 72
+    assert receipt["row_block_size"] == 64
+    assert receipt["all_row_blocks_spd"] is True
+    assert receipt["full_operator_materialized"] is False
+    assert receipt["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in receipt.items()
+            if key != "report_sha256"
+        }
+    )
+    assert report["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in report.items()
+            if key != "report_sha256"
+        }
+    )
+
+    tampered_blocks = preconditioner.row_blocks.clone()
+    tampered_blocks[0, 0, 0] += 1.0
+    tampered = sequence_fold._PcgRestartRowBlockPreconditioner(
+        row_blocks=tampered_blocks,
+        construction_report=preconditioner.construction_report,
+    )
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as tampered_raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=diagonal,
+            initial=torch.zeros_like(right),
+            role=role,
+            restart_row_block_preconditioner=tampered,
+        )
+    tampered_failure = dict(tampered_raised.value.failure_report)
+    assert tampered_failure["failure_stage"] == (
+        "row_block_preconditioner_authentication"
+    )
+    assert tampered_failure["failure_reason"] == (
+        "row_block_preconditioner_tensor_hash_mismatch"
+    )
+    assert tampered_failure["original_lane_iterations_executed"] == 64
+    assert tampered_failure["iterations_executed"] == 64
+    assert tampered_failure["restart_preconditioner"][
+        "authentication_attempted"
+    ] is True
+    assert tampered_failure["restart_preconditioner"][
+        "authenticated"
+    ] is False
 
 
 def test_single_tensor_pcg_restarts_after_64_and_authenticates_exact_residual() -> None:
