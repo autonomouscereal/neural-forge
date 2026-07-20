@@ -53,6 +53,9 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (  # noqa: E402
     LFM2_CPCF_SHORT_CONV_V5_SCHEMA,
     rescore_sealed_v4_short_conv_selection_frontier,
 )
+from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (  # noqa: E402
+    FHVR_MF_CANDIDATE_KIND,
+)
 
 
 def _fixture(
@@ -580,7 +583,11 @@ def _synthetic_macrocell_frontier(
     *,
     ranking_ids,
     selected_candidate_id,
+    source_candidate_kinds=None,
 ):
+    source_candidate_kinds = (
+        {} if source_candidate_kinds is None else source_candidate_kinds
+    )
     candidates = []
     for ordinal, candidate_id in enumerate(sorted(candidate_ids)):
         offset = float(ordinal + 1)
@@ -595,16 +602,21 @@ def _synthetic_macrocell_frontier(
             "writer_bias": torch.full((2,), offset, dtype=torch.float32),
         }
         state_sha256 = _state_sha256(state)
+        fit_provenance = {
+            "candidate_id": candidate_id,
+            "target_dtype_candidate_state_sha256": state_sha256,
+        }
+        if candidate_id in source_candidate_kinds:
+            fit_provenance["sources"] = [
+                {
+                    "candidate_kind": source_candidate_kinds[candidate_id],
+                }
+            ]
         candidates.append(
             Lfm2CpcfShortConvV5MacrocellCandidate(
                 candidate_id=candidate_id,
                 **state,
-                fit_provenance=_sealed(
-                    {
-                        "candidate_id": candidate_id,
-                        "target_dtype_candidate_state_sha256": state_sha256,
-                    }
-                ),
+                fit_provenance=_sealed(fit_provenance),
                 operator_selection_report=_sealed(
                     {
                         "candidate_id": candidate_id,
@@ -1179,6 +1191,75 @@ def test_macrocell_inventory_without_anchors_falls_back_to_endpoint_ranking() ->
         frontier,
         3,
     ) == tuple(sorted(ranking_ids[:3]))
+
+
+def test_macrocell_inventory_reserves_one_fhvr_source_without_losing_spread() -> None:
+    endpoint_control = "candidate-endpoint-control"
+    fhvr_candidate = "candidate-fhvr-survivor"
+    anchor_ids = tuple(f"candidate--anchor-{ordinal:02d}" for ordinal in range(6))
+    ordinary_ids = ("candidate-ranked-a", "candidate-ranked-b")
+    ranking_ids = (
+        endpoint_control,
+        *ordinary_ids,
+        fhvr_candidate,
+        *anchor_ids,
+    )
+    frontier = _synthetic_macrocell_frontier(
+        (endpoint_control, fhvr_candidate, *anchor_ids, *ordinary_ids),
+        ranking_ids=ranking_ids,
+        selected_candidate_id=endpoint_control,
+        source_candidate_kinds={
+            fhvr_candidate: FHVR_MF_CANDIDATE_KIND,
+        },
+    )
+
+    selected_ids = select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
+        frontier,
+        4,
+    )
+    assert selected_ids == tuple(
+        sorted(
+            (
+                endpoint_control,
+                fhvr_candidate,
+                anchor_ids[0],
+                anchor_ids[-1],
+            )
+        )
+    )
+    assert sum(
+        any(
+            source.get("candidate_kind") == FHVR_MF_CANDIDATE_KIND
+            for source in frontier.candidate(candidate_id).fit_provenance.get(
+                "sources",
+                (),
+            )
+        )
+        for candidate_id in selected_ids
+    ) == 1
+
+
+def test_macrocell_inventory_reuses_fhvr_endpoint_slot_after_deduplication() -> None:
+    endpoint_control = "candidate-endpoint-control"
+    anchor_ids = tuple(f"candidate--anchor-{ordinal:02d}" for ordinal in range(6))
+    ordinary_id = "candidate-ranked-fill"
+    frontier = _synthetic_macrocell_frontier(
+        (endpoint_control, ordinary_id, *anchor_ids),
+        ranking_ids=(endpoint_control, ordinary_id, *anchor_ids),
+        selected_candidate_id=endpoint_control,
+        source_candidate_kinds={
+            endpoint_control: FHVR_MF_CANDIDATE_KIND,
+        },
+    )
+
+    selected_ids = select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
+        frontier,
+        3,
+    )
+    assert selected_ids == tuple(
+        sorted((endpoint_control, anchor_ids[0], anchor_ids[-1]))
+    )
+    assert ordinary_id not in selected_ids
 
 
 def test_macrocell_frontier_rejects_heterogeneous_native_bias_topology() -> None:

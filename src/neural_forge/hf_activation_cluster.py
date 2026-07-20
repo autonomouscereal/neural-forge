@@ -787,19 +787,25 @@ def _combine_modalities(torch: Any, matrices: tuple[Any, ...]) -> Any:
             "At least one activation-signature modality is required."
         )
     unit_count = int(matrices[0].shape[0])
-    parts = []
+    widths = []
     for matrix in matrices:
         if matrix.ndim != 2 or int(matrix.shape[0]) != unit_count:
             raise ActivationClusterShapeError(
                 "Activation-signature modalities must have the same unit count."
             )
-        width = int(matrix.shape[1])
+        widths.append(int(matrix.shape[1]))
+    result = matrices[0].new_empty((unit_count, sum(widths)))
+    start = 0
+    for matrix, width in zip(matrices, widths, strict=True):
         rms = torch.sqrt(matrix.square().mean())
         scale = float(rms.item())
         if scale == 0.0:
             scale = 1.0
-        parts.append(matrix / (scale * math.sqrt(width)))
-    result = torch.cat(parts, dim=1).contiguous()
+        normalized = matrix / (scale * math.sqrt(width))
+        stop = start + width
+        result[:, start:stop].copy_(normalized)
+        del normalized
+        start = stop
     if not bool(torch.isfinite(result).all().item()):
         raise ActivationClusterFiniteError(
             "Activation-signature normalization produced non-finite values."

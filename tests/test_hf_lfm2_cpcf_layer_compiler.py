@@ -1439,6 +1439,9 @@ def test_attention_phase_weighting_is_explicitly_split_scoped() -> None:
 def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
     monkeypatch,
 ) -> None:
+    import gc
+    import weakref
+
     source, target, bank, charts = _fixture("full_attention")
     replay_events = []
     attention_case_calls = []
@@ -1450,6 +1453,8 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
     mlp_prepared_basis_sha256 = []
     mlp_candidate_child_case_sha256 = []
     mlp_artifacts = []
+    frozen_candidates = []
+    candidate_replay_refs = []
 
     original_replay = layer_compiler.replay_lfm2_cpcf_phase_bank
     original_attention_cases = layer_compiler._attention_cases
@@ -1462,11 +1467,37 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
     )
     original_mlp = layer_compiler.compile_lfm2_structural_residual_mlp_fold
     original_freeze = layer_compiler._freeze_attention_candidate_winner
+    original_seal = layer_compiler._seal_attention_candidate_evaluation
 
     def replay_spy(*args, **kwargs):
         splits = tuple(sorted({phase.split for phase in kwargs["input_bank"].phases}))
         replay_events.append(("replay", splits))
         return original_replay(*args, **kwargs)
+
+    def seal_spy(**kwargs):
+        candidate_replay_refs.append(
+            (
+                weakref.ref(
+                    next(
+                        iter(
+                            kwargs[
+                                "fit_operator_replay"
+                            ].post_layer_bank.states.values()
+                        )
+                    )
+                ),
+                weakref.ref(
+                    next(
+                        iter(
+                            kwargs[
+                                "selection_replay"
+                            ].post_layer_bank.states.values()
+                        )
+                    )
+                ),
+            )
+        )
+        return original_seal(**kwargs)
 
     def attention_cases_spy(**kwargs):
         required_split = kwargs["required_split"]
@@ -1519,7 +1550,31 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
             for event, splits in replay_events
             if event == "replay"
         )
-        result = original_freeze(candidates)
+        gc.collect()
+        assert len(candidate_replay_refs) == 2
+        assert all(
+            replay_ref() is None
+            for replay_refs in candidate_replay_refs
+            for replay_ref in replay_refs
+        )
+        materialized = tuple(candidates)
+        frozen_candidates.extend(materialized)
+        assert {
+            *layer_compiler._Lfm2CpcfAttentionCandidateEvaluation.__slots__
+        }.isdisjoint({"fit_operator_replay", "selection_replay"})
+        assert all(
+            not hasattr(candidate, "fit_operator_replay")
+            and not hasattr(candidate, "selection_replay")
+            and not any(
+                isinstance(
+                    getattr(candidate, name),
+                    layer_compiler.Lfm2CpcfLayerReplayBank,
+                )
+                for name in candidate.__slots__
+            )
+            for candidate in materialized
+        )
+        result = original_freeze(materialized)
         replay_events.append(("freeze", (result[0].candidate_id,)))
         return result
 
@@ -1557,6 +1612,11 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
         layer_compiler,
         "_freeze_attention_candidate_winner",
         freeze_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "_seal_attention_candidate_evaluation",
+        seal_spy,
     )
 
     result = layer_compiler.compile_and_install_lfm2_cpcf_layer(
@@ -1610,6 +1670,13 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
         key=lambda name: tuple(evaluations[name]["selection_key"]),
     )
     assert selection["selected_candidate_id"] == expected_winner
+    selected_candidate = next(
+        candidate
+        for candidate in frozen_candidates
+        if candidate.candidate_id == expected_winner
+    )
+    assert selected_candidate.operator_artifact is result.operator_artifact
+    assert selected_candidate.mlp_artifact is result.mlp_artifact
     for candidate in evaluations.values():
         assert candidate["operator_compiled_from_splits"] == ["fit"]
         assert candidate["mlp_compiled_from_splits"] == ["fit"]
@@ -1760,6 +1827,9 @@ def test_attention_forced_winner_is_final_live_state_and_split_rejects_tamper(
 def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import gc
+    import weakref
+
     source, target, bank, charts = _fixture("short_conv")
     solver_policy = Lfm2CpcfShortConvV4SolverPolicy(
         ridge_alphas=(1e-6,),
@@ -1768,13 +1838,41 @@ def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
     )
     original = layer_compiler.compile_lfm2_cpcf_short_conv_v4_fold
     original_cluster_builder = structural_fold.build_gated_mlp_activation_cluster_plan
+    original_replay = layer_compiler.replay_lfm2_cpcf_phase_bank
     observed = {}
     cluster_builder_calls = 0
+    candidate_replay_refs = []
 
     def cluster_builder_spy(*args, **kwargs):
         nonlocal cluster_builder_calls
         cluster_builder_calls += 1
         return original_cluster_builder(*args, **kwargs)
+
+    def replay_spy(*args, **kwargs):
+        selector = observed.get("macrocell_candidate_selector")
+        input_bank = kwargs["input_bank"]
+        if selector is not None and input_bank is selector.fit_bank:
+            if candidate_replay_refs:
+                gc.collect()
+                assert all(
+                    replay_ref() is None
+                    for replay_ref in candidate_replay_refs[-1]
+                )
+            replay = original_replay(*args, **kwargs)
+            candidate_replay_refs.append(
+                [
+                    weakref.ref(
+                        next(iter(replay.post_layer_bank.states.values()))
+                    )
+                ]
+            )
+            return replay
+        replay = original_replay(*args, **kwargs)
+        if selector is not None and input_bank is selector.selection_bank:
+            candidate_replay_refs[-1].append(
+                weakref.ref(next(iter(replay.post_layer_bank.states.values())))
+            )
+        return replay
 
     class EndpointControl:
         def __init__(self):
@@ -1813,6 +1911,11 @@ def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
         "build_gated_mlp_activation_cluster_plan",
         cluster_builder_spy,
     )
+    monkeypatch.setattr(
+        layer_compiler,
+        "replay_lfm2_cpcf_phase_bank",
+        replay_spy,
+    )
     result = layer_compiler.compile_and_install_lfm2_cpcf_layer(
         source,
         target,
@@ -1835,12 +1938,12 @@ def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
         observed["macrocell_candidate_selector"],
         layer_compiler._Lfm2CpcfShortConvMacrocellSelector,
     )
+    macrocell_selector = observed["macrocell_candidate_selector"]
     assert {
-        phase.split
-        for phase in observed["macrocell_candidate_selector"].audit_bank.phases
+        phase.split for phase in macrocell_selector.audit_bank.phases
     } == {"fit", "selection"}
     assert not hasattr(
-        observed["macrocell_candidate_selector"],
+        macrocell_selector,
         "input_bank",
     )
     assert len(observed["macrocell_fit_bank_sha256"]) == 64
@@ -1878,6 +1981,37 @@ def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
     assert decision["exact_candidate_rollbacks"] == 8
     assert decision["validation_accessible"] is False
     assert decision["validation_replays"] == 0
+    gc.collect()
+    assert len(candidate_replay_refs) == 8
+    assert all(len(replay_refs) == 2 for replay_refs in candidate_replay_refs)
+    assert all(
+        replay_ref() is None
+        for replay_refs in candidate_replay_refs
+        for replay_ref in replay_refs
+    )
+    assert dict(macrocell_selector.decision) == decision
+    assert {
+        *layer_compiler._Lfm2CpcfShortConvMacrocellEvaluation.__slots__
+    } == {
+        "candidate",
+        "mlp_artifact",
+        "selection_key",
+        "report",
+    }
+    assert not any(
+        isinstance(value, layer_compiler.Lfm2CpcfLayerReplayBank)
+        for value in vars(macrocell_selector).values()
+    )
+    for candidate_id, evaluation in macrocell_selector.evaluations.items():
+        assert not hasattr(evaluation, "fit_operator_replay")
+        assert not hasattr(evaluation, "selection_replay")
+        assert not any(
+            isinstance(getattr(evaluation, name), layer_compiler.Lfm2CpcfLayerReplayBank)
+            for name in evaluation.__slots__
+        )
+        assert dict(evaluation.report) == decision["candidate_evaluations"][
+            candidate_id
+        ]
     assert cluster_builder_calls == 1
     evidence_policy = result.report["solver_evidence_policy"]
     assert evidence_policy["short_conv_mlp_preparation_count"] == 1
@@ -1907,6 +2041,15 @@ def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
     assert decision["selected_candidate_id"] not in endpoint_top4
     assert decision["selected_candidate_id"] in decision["evaluated_candidate_ids"]
     assert "--anchor-" in decision["selected_candidate_id"]
+    selected_evaluation = macrocell_selector.evaluations[
+        decision["selected_candidate_id"]
+    ]
+    assert macrocell_selector.selected is selected_evaluation
+    assert selected_evaluation.mlp_artifact is result.mlp_artifact
+    assert (
+        selected_evaluation.mlp_artifact.compiled_state_sha256
+        == selected_evaluation.report["fit_mlp_compiled_state_sha256"]
+    )
     for evaluation in decision["candidate_evaluations"].values():
         assert evaluation["fit_only_mlp_fold"] is True
         assert evaluation["selection_only_candidate_evaluation"] is True

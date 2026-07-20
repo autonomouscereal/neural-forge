@@ -10,6 +10,9 @@ torch = pytest.importorskip("torch")
 
 import neural_forge.hf_lfm2_cpcf_layer_compiler as layer_compiler  # noqa: E402
 import neural_forge.hf_lfm2_cpcf_v5_model_compiler as v5  # noqa: E402
+from neural_forge import (  # noqa: E402
+    hf_lfm2_cpcf_short_conv_v5_numerical_adapter as numerical_adapter,
+)
 from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (  # noqa: E402
     Lfm2CpcfV5FirBasisPolicy,
 )
@@ -42,6 +45,17 @@ def test_v5_has_distinct_compiler_resume_and_artifact_fingerprints() -> None:
     assert any(
         record["filename"] == "hf_lfm2_cpcf_short_conv_v5_numerical_adapter.py"
         for record in implementation["ordered_source_files"]
+    )
+    assert any(
+        record["filename"] == "hf_lfm2_cpcf_short_conv_v5_fhvr_mf.py"
+        for record in implementation["ordered_source_files"]
+    )
+    assert numerical_adapter._ADAPTER_IMPLEMENTATION.endswith(
+        "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v4"
+    )
+    assert (
+        v5._REAL_V5_NUMERICAL_ADAPTER_IMPLEMENTATION
+        == numerical_adapter._ADAPTER_IMPLEMENTATION
     )
     short_conv_v5_source = next(
         record

@@ -4661,8 +4661,6 @@ class _Lfm2CpcfAttentionCandidateEvaluation:
     mlp_artifact: Lfm2CompiledStructuralMlpFold
     operator_install_report: Mapping[str, Any]
     mlp_install_report: Mapping[str, Any]
-    fit_operator_replay: Lfm2CpcfLayerReplayBank
-    selection_replay: Lfm2CpcfLayerReplayBank
     selection_metrics: Mapping[str, Any]
     selection_context_metrics: Mapping[str, Any]
     query_key_score_report: Lfm2AttentionScorePreservationReport
@@ -4901,8 +4899,6 @@ def _seal_attention_candidate_evaluation(
         mlp_artifact=mlp_artifact,
         operator_install_report=MappingProxyType(dict(operator_install_report)),
         mlp_install_report=MappingProxyType(dict(mlp_install_report)),
-        fit_operator_replay=fit_operator_replay,
-        selection_replay=selection_replay,
         selection_metrics=MappingProxyType(dict(selection_metrics)),
         selection_context_metrics=MappingProxyType(dict(selection_context_metrics)),
         query_key_score_report=query_key_score_report,
@@ -5251,8 +5247,6 @@ def _short_conv_macrocell_score(
 class _Lfm2CpcfShortConvMacrocellEvaluation:
     candidate: Lfm2CpcfShortConvV5MacrocellCandidate
     mlp_artifact: Lfm2CompiledStructuralMlpFold
-    fit_operator_replay: Lfm2CpcfLayerReplayBank
-    selection_replay: Lfm2CpcfLayerReplayBank
     selection_key: tuple[float | str, ...]
     report: Mapping[str, Any]
 
@@ -5682,12 +5676,11 @@ class _Lfm2CpcfShortConvMacrocellSelector:
                 **evaluation_body,
                 "report_sha256": _sha(evaluation_body),
             }
+            del fit_replay, selection_replay
             key = _short_conv_macrocell_score(candidate_id, metrics)
             evaluation = _Lfm2CpcfShortConvMacrocellEvaluation(
                 candidate=candidate,
                 mlp_artifact=mlp_artifact,
-                fit_operator_replay=fit_replay,
-                selection_replay=selection_replay,
                 selection_key=key,
                 report=MappingProxyType(evaluation_report),
             )
@@ -8398,6 +8391,7 @@ def compile_and_install_lfm2_cpcf_layer(
                         rollback_proof=candidate_rollback_proof,
                     )
                 )
+                del candidate_fit_replay, candidate_selection_replay
 
             (
                 selected_candidate,

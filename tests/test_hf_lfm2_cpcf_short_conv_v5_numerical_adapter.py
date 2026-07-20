@@ -24,6 +24,10 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
     Lfm2CpcfV5FirBasisPolicy,
     build_fir_commuting_balanced_all_channel_basis,
 )
+from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+    FHVR_MF_CANDIDATE_ID,
+    FHVR_MF_CANDIDATE_KIND,
+)
 from neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter import (
     Lfm2CpcfShortConvV5NumericalAdapterError,
     Lfm2CpcfShortConvV5NumericalFrontierAdapter,
@@ -334,7 +338,20 @@ def test_real_adapter_generates_complete_authenticated_dynamic_frontier() -> Non
         and tuple(candidate.writer_weight.shape) == (2, 2)
         for candidate in frontier.raw_candidates
     )
+    fhvr_candidates = [
+        candidate
+        for candidate in frontier.raw_candidates
+        if candidate.candidate_kind == FHVR_MF_CANDIDATE_KIND
+    ]
+    assert len(fhvr_candidates) == 1
+    assert fhvr_candidates[0].candidate_id == FHVR_MF_CANDIDATE_ID
+    assert fhvr_candidates[0].method_provenance["fit_only"] is True
+    assert fhvr_candidates[0].method_provenance["selection_cases_consumed"] == 0
+    assert fhvr_candidates[0].method_provenance["validation_cases_consumed"] == 0
     provenance = frontier.report["adapter_provenance"]
+    assert provenance["implementation"].endswith(
+        "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v4"
+    )
     assert provenance["real_v5_numerical_algorithm"] is True
     assert provenance["dynamic_source_target_topology"] is True
     assert provenance["source_fir_resized_before_basis"] is True
@@ -342,6 +359,13 @@ def test_real_adapter_generates_complete_authenticated_dynamic_frontier() -> Non
     assert provenance["basis_full_source_numeric_participation"] is True
     assert provenance["fit_descriptor_case_count"] == 2
     assert provenance["fit_projection_case_count"] == 2
+    assert provenance["fhvr_mf_candidate_included"] is True
+    assert provenance["fhvr_mf_candidate_id"] == FHVR_MF_CANDIDATE_ID
+    assert provenance["fhvr_mf_candidate_kind"] == FHVR_MF_CANDIDATE_KIND
+    assert (
+        provenance["fhvr_mf_candidate_report_sha256"]
+        == fhvr_candidates[0].report["report_sha256"]
+    )
     assert provenance["selection_cases_consumed"] == 0
     assert provenance["validation_cases_consumed"] == 0
     assert provenance["model_forward_calls"] == 0
@@ -449,7 +473,7 @@ def test_real_adapter_is_byte_deterministic_within_one_runtime() -> None:
         first.report["adapter_provenance"]["basis_report_sha256"]
         == second.report["adapter_provenance"]["basis_report_sha256"]
     )
-    assert len(first.raw_candidates) == len(second.raw_candidates) == 72
+    assert len(first.raw_candidates) == len(second.raw_candidates) == 73
     assert _sequence_sha256(
         [candidate.candidate_id for candidate in first.raw_candidates]
     ) == _sequence_sha256(

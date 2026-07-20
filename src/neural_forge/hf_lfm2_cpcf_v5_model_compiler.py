@@ -245,6 +245,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
     from neural_forge import hf_lfm2_cpcf_layer_compiler
     from neural_forge import hf_lfm2_cpcf_model_compiler
     from neural_forge import hf_lfm2_cpcf_short_conv_v5
+    from neural_forge import hf_lfm2_cpcf_short_conv_v5_fhvr_mf
     from neural_forge import hf_lfm2_cpcf_short_conv_v5_numerical_adapter
     from neural_forge import hf_lfm2_cpcf_short_conv_v4_fold
     from neural_forge import hf_lfm2_cpcf_selective_evidence
@@ -259,6 +260,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         hf_lfm2_cpcf_model_compiler,
         legacy_model_fold,
         hf_lfm2_cpcf_short_conv_v5,
+        hf_lfm2_cpcf_short_conv_v5_fhvr_mf,
         hf_lfm2_cpcf_short_conv_v5_numerical_adapter,
         hf_lfm2_cpcf_short_conv_v4_fold,
         hf_lfm2_cpcf_selective_evidence,
@@ -1953,7 +1955,7 @@ def _authenticated_bootstrap_payload(
 
 _REAL_V5_NUMERICAL_ADAPTER_IMPLEMENTATION = (
     "neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter."
-    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v3"
+    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v4"
 )
 _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS = {
     "parent_model_forward_calls",

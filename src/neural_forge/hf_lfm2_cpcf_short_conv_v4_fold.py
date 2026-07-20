@@ -1702,6 +1702,23 @@ class Lfm2CpcfShortConvV5CandidateFrontier:
         return _deep_thaw(self.report)
 
 
+def _macrocell_candidate_has_fhvr_mf_source(
+    candidate: Lfm2CpcfShortConvV5MacrocellCandidate,
+) -> bool:
+    # Local import avoids a module-initialization cycle: the standalone FHVR
+    # producer consumes the public numerical request/candidate types above.
+    from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+        FHVR_MF_CANDIDATE_KIND,
+    )
+
+    sources = candidate.fit_provenance.get("sources", ())
+    return any(
+        isinstance(source, Mapping)
+        and source.get("candidate_kind") == FHVR_MF_CANDIDATE_KIND
+        for source in sources
+    )
+
+
 def select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
     frontier: Lfm2CpcfShortConvV5CandidateFrontier,
     candidate_budget: int,
@@ -1729,10 +1746,25 @@ def select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
         )
 
     selected = {endpoint_control}
+    fhvr_candidate_ids = frozenset(
+        candidate.candidate_id
+        for candidate in frontier.candidates
+        if _macrocell_candidate_has_fhvr_mf_source(candidate)
+    )
+    if candidate_budget >= 2 and fhvr_candidate_ids:
+        if endpoint_control in fhvr_candidate_ids:
+            reserved_fhvr_id = endpoint_control
+        else:
+            reserved_fhvr_id = next(
+                str(entry["candidate_id"])
+                for entry in frontier.default_ranking["ranking"]
+                if str(entry["candidate_id"]) in fhvr_candidate_ids
+            )
+        selected.add(reserved_fhvr_id)
     anchor_pool = tuple(
         candidate_id
         for candidate_id in candidate_ids
-        if "--anchor-" in candidate_id and candidate_id != endpoint_control
+        if "--anchor-" in candidate_id and candidate_id not in selected
     )
     anchor_slots = candidate_budget - len(selected)
     if anchor_pool:
@@ -1750,6 +1782,8 @@ def select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
         candidate_id = str(entry["candidate_id"])
         if len(selected) == candidate_budget:
             break
+        if candidate_id in fhvr_candidate_ids and candidate_id not in selected:
+            continue
         selected.add(candidate_id)
     if len(selected) != candidate_budget or not selected.issubset(candidate_ids):
         raise Lfm2CpcfShortConvV4FoldError(

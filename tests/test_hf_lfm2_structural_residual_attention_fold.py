@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 torch = pytest.importorskip("torch")
 nn = torch.nn
 
+import neural_forge.hf_activation_cluster as activation_cluster  # noqa: E402
 import neural_forge.hf_lfm2_structural_residual_attention_fold as fold_module  # noqa: E402
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
     Lfm2AttentionScorePreservationThresholds,
@@ -1615,6 +1617,62 @@ def _prepared_mlp_fixture():
         "cluster_distance_chunk_size": 512,
     }
     return common, case
+
+
+def test_preallocated_mlp_features_preserve_reports_and_compiled_state_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    common, case = _prepared_mlp_fixture()
+    preallocated = prepare_lfm2_structural_residual_mlp_fold_basis(
+        **common,
+        cases=(case,),
+    )
+    preallocated_compiled = compile_lfm2_structural_residual_mlp_fold(
+        **common,
+        cases=(case,),
+        ridge=1e-4,
+        max_prior_delta_ratio=None,
+        prepared_basis=preallocated,
+    )
+
+    def legacy_combine_modalities(torch_module, matrices):
+        parts = []
+        for matrix in matrices:
+            width = int(matrix.shape[1])
+            rms = torch_module.sqrt(matrix.square().mean())
+            scale = float(rms.item())
+            if scale == 0.0:
+                scale = 1.0
+            parts.append(matrix / (scale * math.sqrt(width)))
+        return torch_module.cat(parts, dim=1).contiguous()
+
+    monkeypatch.setattr(
+        activation_cluster,
+        "_combine_modalities",
+        legacy_combine_modalities,
+    )
+    legacy = prepare_lfm2_structural_residual_mlp_fold_basis(
+        **common,
+        cases=(case,),
+    )
+    legacy_compiled = compile_lfm2_structural_residual_mlp_fold(
+        **common,
+        cases=(case,),
+        ridge=1e-4,
+        max_prior_delta_ratio=None,
+        prepared_basis=legacy,
+    )
+
+    assert preallocated.as_dict() == legacy.as_dict()
+    assert preallocated.preparation_sha256 == legacy.preparation_sha256
+    assert preallocated.prepared_tensor_sha256 == legacy.prepared_tensor_sha256
+    assert preallocated_compiled.as_dict() == legacy_compiled.as_dict()
+    assert (
+        preallocated_compiled.compiled_state_sha256
+        == legacy_compiled.compiled_state_sha256
+    )
+    for name, value in preallocated_compiled.state_dict().items():
+        assert torch.equal(value, legacy_compiled.state_dict()[name])
 
 
 def test_prepared_mlp_basis_matches_uncached_bf16_state_and_remains_candidate_specific() -> (

@@ -100,6 +100,29 @@ def _combined_modalities(*matrices: torch.Tensor) -> torch.Tensor:
     return torch.cat(parts, dim=1)
 
 
+def test_combined_modalities_preallocation_is_byte_identical_to_legacy_cat() -> (
+    None
+):
+    generator = torch.Generator().manual_seed(20260720)
+    matrices = (
+        torch.randn(13, 5, generator=generator, dtype=torch.float64),
+        torch.zeros(13, 3, dtype=torch.float64),
+        torch.randn(13, 11, generator=generator, dtype=torch.float64),
+        torch.randn(13, 2, generator=generator, dtype=torch.float64),
+    )
+
+    expected = _combined_modalities(*matrices)
+    observed = activation_cluster._combine_modalities(torch, matrices)
+
+    assert observed.is_contiguous()
+    assert observed.shape == (13, 21)
+    assert torch.equal(observed, expected)
+    assert (
+        observed.detach().cpu().numpy().tobytes()
+        == expected.detach().cpu().numpy().tobytes()
+    )
+
+
 def _gqa_context(
     inputs: torch.Tensor,
     query_weight: torch.Tensor,

@@ -7,12 +7,13 @@ closed-form folding in this audited order:
 1. resize the source FIR to the target FIR length;
 2. build case-balanced activation and endpoint descriptors;
 3. build a commutator-gated, balanced, all-source-channel basis;
-4. fit the two frozen condition-cap input lifts and transport parent priors;
-5. construct target projection cases;
-6. alternate affine writer, no-intercept physical FIR, and no-intercept
+4. realize one future-Hankel Volterra matrix-free candidate;
+5. fit the two frozen condition-cap input lifts and transport parent priors;
+6. construct target projection cases;
+7. alternate affine writer, no-intercept physical FIR, and no-intercept
    physical B/C/x projection solves;
-7. chain every FIT-accepted state and interpolate every accepted edge; and
-8. return the complete typed raw frontier to the existing compiler.
+8. chain every FIT-accepted state and interpolate every accepted edge; and
+9. return the complete typed raw frontier to the existing compiler.
 
 There are no model forwards, generation calls, gradients, optimizer steps,
 training steps, pruning decisions, quantization operations, selection cases,
@@ -58,6 +59,11 @@ from .hf_lfm2_cpcf_short_conv_v5_matrix_free_bcx import (
     Lfm2CpcfV5MatrixFreeBcxPolicy,
     solve_lfm2_cpcf_v5_matrix_free_bcx,
 )
+from .hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+    FHVR_MF_CANDIDATE_ID,
+    FHVR_MF_CANDIDATE_KIND,
+    build_lfm2_cpcf_fhvr_mf_candidate,
+)
 from .hf_lfm2_cpcf_short_conv_v5_residual_subspace_bcx import (
     causal_horizon_balanced_row_weights,
     solve_lfm2_cpcf_v5_residual_subspace_bcx,
@@ -69,7 +75,7 @@ LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_ADAPTER_SCHEMA = (
 )
 _ADAPTER_IMPLEMENTATION = (
     "neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter."
-    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v3"
+    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v4"
 )
 _STATE_ROLES = (
     "in_proj_weight",
@@ -1229,6 +1235,18 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                 "The FIR-commuting basis failed authentication or full "
                 "source participation."
             )
+        fhvr_candidate = build_lfm2_cpcf_fhvr_mf_candidate(
+            request,
+            context_encoder=basis.encoder,
+        )
+        if (
+            not fhvr_candidate.verify_authentication()
+            or fhvr_candidate.candidate_id != FHVR_MF_CANDIDATE_ID
+            or fhvr_candidate.candidate_kind != FHVR_MF_CANDIDATE_KIND
+        ):
+            raise Lfm2CpcfShortConvV5NumericalAdapterError(
+                "The FHVR-MF candidate failed authentication or identity binding."
+            )
         lift_frontier = _input_lift_frontier(
             request,
             prior_weight=basis.decoder,
@@ -1388,6 +1406,7 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                     interpolation.report["report_sha256"]
                 ),
             }
+        raw_candidates.append(fhvr_candidate)
         prior_controls = [
             candidate.candidate_id
             for candidate in raw_candidates
@@ -1414,6 +1433,7 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                     "resize_source_fir",
                     "case_balanced_activation_endpoint_descriptors",
                     "commutator_gated_all_channel_basis",
+                    "future_hankel_volterra_matrix_free_realization",
                     "condition_capped_input_lift",
                     "transported_parent_priors",
                     "fit_only_projection_cases",
@@ -1493,6 +1513,12 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                 "source_channels_quantized": 0,
                 "fit_descriptor_case_count": len(descriptors),
                 "fit_projection_case_count": len(projection_cases),
+                "fhvr_mf_candidate_included": True,
+                "fhvr_mf_candidate_id": fhvr_candidate.candidate_id,
+                "fhvr_mf_candidate_kind": fhvr_candidate.candidate_kind,
+                "fhvr_mf_candidate_report_sha256": (
+                    fhvr_candidate.report["report_sha256"]
+                ),
                 "condition_cap_inventory": cap_inventory,
                 "prior_control_candidate_id": prior_controls[0],
                 "prior_control_candidate_count": 1,
