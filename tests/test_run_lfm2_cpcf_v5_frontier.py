@@ -432,6 +432,7 @@ def _config(
     ratios: tuple[int, ...] = supervisor.DECLARATIVE_RATIOS,
     bridge_directory: Path | None = None,
     attempt_id: str = "attempt-0001",
+    attention_profile: Any | None = None,
 ) -> supervisor.FrontierSupervisorConfig:
     return supervisor.FrontierSupervisorConfig(
         parent_model_directory=inputs["parent"],
@@ -462,11 +463,79 @@ def _config(
             cpu_threads=16,
             gpu_selectors=("GPU-test-3090-a", "GPU-test-3090-b"),
         ),
+        attention_sequential_transport_profile=attention_profile,
         attempt_id=attempt_id,
         expected_selective_catalog_receipt_sha256=(
             _catalog_preparation()["preparation_receipt_sha256"]
         ),
     )
+
+
+def _profile_bound_case(tmp_path: Path) -> dict[str, Any]:
+    from experiments import (
+        run_lfm2_cpcf_v5_selective_blank_fold as runner,
+    )
+
+    bridge = _sealed_bridge(tmp_path / "bridge")
+    graph = _real_geometry_graph(
+        tokenizer_fingerprint=bridge.donor_tokenizer_semantics_sha256
+    )
+    schedule = plan_lfm2_cpcf_v5_frontier(
+        parent_graph=graph,
+        expected_parent_graph_fingerprint=graph.fingerprint,
+        tokenizer_bridge=bridge,
+        expected_bridge_artifact_sha256=bridge.artifact_sha256,
+        compression_ratios=(4,),
+        maximum_candidates_per_ratio=8,
+        maximum_parallel_lanes=1,
+    )
+    inputs = _inputs(tmp_path)
+    profile = runner.V5AttentionSequentialTransportRunnerProfile()
+    config = _config(
+        tmp_path,
+        graph=graph,
+        schedule=schedule,
+        inputs=inputs,
+        ratios=(4,),
+        bridge_directory=bridge.root_dir,
+        attention_profile=profile,
+    )
+    catalog_runner_config = supervisor._frontier_catalog_runner_config(
+        config,
+        ratio=4,
+        prepare_only=False,
+    )
+    policy_fields = supervisor._runner_policy_identity_fields(
+        runner,
+        catalog_runner_config,
+    )
+    evidence = replace(
+        _evidence(
+            cache_sha256=config.expected_cache_sha256,
+            corpus=inputs["corpus"],
+            envelope=inputs["envelope"],
+        ),
+        selective_catalog_preparation={
+            **_catalog_preparation(),
+            **policy_fields,
+        },
+    )
+    plan = supervisor.build_frontier_supervisor_plan(
+        schedule,
+        config,
+        evidence,
+    )
+    return {
+        "runner": runner,
+        "graph": graph,
+        "schedule": schedule,
+        "inputs": inputs,
+        "profile": profile,
+        "config": config,
+        "policy_fields": policy_fields,
+        "evidence": evidence,
+        "plan": plan,
+    }
 
 
 def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
@@ -532,6 +601,7 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
     assert report[
         "catalog_cold_rebuilds_permitted_in_ratio_workers"
     ] is False
+    assert "attention_sequential_transport_profile" not in report
 
     all_paths: set[str] = set()
     for lane in plan.lanes:
@@ -553,6 +623,14 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
         ratio_index = command.index("--compression-ratio")
         assert command[ratio_index + 1] == str(lane.ratio)
         assert "--selected-candidate-rank" not in command
+        assert "--attention-sequential-transport-profile" not in command
+        assert (
+            "attention_sequential_transport_profile"
+            not in manifest["worker_config"]
+        )
+        assert "attention_sequential_transport_profile" not in manifest
+        assert "complete_model_fold_policy_sha256" not in manifest
+        assert "model_fold_policy_identity_sha256" not in manifest
         plan_index = command.index("--expected-target-plan-fingerprint")
         assert command[plan_index + 1] == (
             lane.catalog_lane.target_plan_fingerprint
@@ -628,6 +706,316 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
         }
         assert not (path_values & all_paths)
         all_paths.update(path_values)
+
+
+def test_opt_in_attention_profile_is_typed_and_bound_end_to_end(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    case = _profile_bound_case(tmp_path)
+    runner = case["runner"]
+    profile = case["profile"]
+    config = case["config"]
+    policy_fields = case["policy_fields"]
+    plan = case["plan"]
+    lane = plan.lane_for_ratio(4)
+    manifest = dict(lane.command_manifest)
+    profile_document = profile.as_dict()
+    command = manifest["diagnostic_runner_command"]
+
+    assert type(config.attention_sequential_transport_profile) is (
+        runner.V5AttentionSequentialTransportRunnerProfile
+    )
+    assert command.count("--attention-sequential-transport-profile") == 1
+    profile_index = command.index(
+        "--attention-sequential-transport-profile"
+    )
+    assert command[profile_index + 1] == (
+        runner.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID
+    )
+    assert manifest["attention_sequential_transport_profile"] == (
+        profile_document
+    )
+    assert manifest["worker_config"][
+        "attention_sequential_transport_profile"
+    ] == profile_document
+    assert manifest["quarantine_capture_template"][
+        "attention_sequential_transport_profile"
+    ] == profile_document
+    assert all(
+        manifest[name] == value for name, value in policy_fields.items()
+    )
+    assert plan.as_dict()["attention_sequential_transport_profile"] == (
+        profile_document
+    )
+
+    reconstructed = supervisor._config_from_worker_record(
+        manifest["worker_config"]
+    )
+    assert type(reconstructed.attention_sequential_transport_profile) is (
+        runner.V5AttentionSequentialTransportRunnerProfile
+    )
+    assert reconstructed.attention_sequential_transport_profile.as_dict() == (
+        profile_document
+    )
+    parsed_runner_config = runner.config_from_args(
+        runner.build_parser().parse_args(command[2:])
+    )
+    authenticated_fields = (
+        supervisor._authenticate_worker_attention_profile(
+            manifest=manifest,
+            config=reconstructed,
+            runner=runner,
+            runner_config=parsed_runner_config,
+            paths=manifest["paths"],
+        )
+    )
+    assert dict(authenticated_fields) == policy_fields
+
+    scope = supervisor._attention_profile_scope_component(profile)
+    assert lane.paths.run_directory.parent.name == scope
+    assert lane.paths.resume_directory.parent == (
+        lane.paths.run_directory.parent
+    )
+    off_config = replace(
+        config,
+        attention_sequential_transport_profile=None,
+    )
+    off_paths = supervisor._lane_paths(
+        off_config,
+        lane.catalog_lane,
+        4,
+    )
+    retry_paths = supervisor._lane_paths(
+        replace(config, attempt_id="attempt-0002"),
+        lane.catalog_lane,
+        4,
+    )
+    assert off_paths.resume_directory != lane.paths.resume_directory
+    assert off_paths.run_directory != lane.paths.run_directory
+    assert retry_paths.resume_directory == lane.paths.resume_directory
+    assert retry_paths.run_directory != lane.paths.run_directory
+
+
+def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_v5_model_compiler import (
+        Lfm2CpcfV5RuntimePolicy,
+    )
+
+    case = _profile_bound_case(tmp_path)
+    runner = case["runner"]
+    manifest = dict(case["plan"].lane_for_ratio(4).command_manifest)
+    record = json.loads(json.dumps(manifest["worker_config"]))
+    profile = record["attention_sequential_transport_profile"]
+    profile["short_conv_transport_enabled"] = True
+    profile_body = dict(profile)
+    profile_body.pop("profile_sha256")
+    profile["profile_sha256"] = supervisor._sha(profile_body)
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="differs from the exact typed",
+    ):
+        supervisor._config_from_worker_record(record)
+
+    off_record = dict(manifest["worker_config"])
+    off_record.pop("attention_sequential_transport_profile")
+    off_config = supervisor._config_from_worker_record(off_record)
+    parsed_runner_config = runner.config_from_args(
+        runner.build_parser().parse_args(
+            manifest["diagnostic_runner_command"][2:]
+        )
+    )
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="Legacy/off worker profile gained an opt-in",
+    ):
+        supervisor._authenticate_worker_attention_profile(
+            manifest=manifest,
+            config=off_config,
+            runner=runner,
+            runner_config=parsed_runner_config,
+            paths=manifest["paths"],
+        )
+
+    model_policy = runner._build_configured_model_fold_policy(
+        parsed_runner_config
+    )
+    runtime_policy = Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=model_policy,
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=2,
+    )
+    identity = runner._configured_model_fold_policy_identity(
+        parsed_runner_config,
+        model_fold_policy=model_policy,
+    )
+    binding = runner._build_resume_policy_binding(
+        identity,
+        runtime_policy=runtime_policy,
+    )
+    diagnostic = {
+        "request": parsed_runner_config.as_dict(),
+        **case["policy_fields"],
+        "resume_policy_binding": dict(binding),
+    }
+    authenticated_binding = (
+        supervisor._authenticate_compiled_attention_profile(
+            runner=runner,
+            diagnostic=diagnostic,
+            expected_policy_fields=case["policy_fields"],
+        )
+    )
+    assert dict(authenticated_binding) == dict(binding)
+
+    crossed_binding = dict(binding)
+    crossed_binding["cross_profile_resume_permitted"] = True
+    crossed_body = dict(crossed_binding)
+    crossed_body.pop("binding_sha256")
+    crossed_binding["binding_sha256"] = supervisor._sha(crossed_body)
+    crossed_diagnostic = {
+        **diagnostic,
+        "resume_policy_binding": crossed_binding,
+    }
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="differs from the exact complete",
+    ):
+        supervisor._authenticate_compiled_attention_profile(
+            runner=runner,
+            diagnostic=crossed_diagnostic,
+            expected_policy_fields=case["policy_fields"],
+        )
+
+    off_command = list(manifest["diagnostic_runner_command"])
+    profile_index = off_command.index(
+        "--attention-sequential-transport-profile"
+    )
+    del off_command[profile_index : profile_index + 2]
+    off_runner_config = runner.config_from_args(
+        runner.build_parser().parse_args(off_command[2:])
+    )
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="crossed attention transport profiles",
+    ):
+        supervisor._authenticate_worker_attention_profile(
+            manifest=manifest,
+            config=case["config"],
+            runner=runner,
+            runner_config=off_runner_config,
+            paths=manifest["paths"],
+        )
+
+
+def test_profile_flag_reaches_frontier_parser_and_catalog_preparation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("torch")
+    case = _profile_bound_case(tmp_path)
+    runner = case["runner"]
+    config = case["config"]
+    profile_id = (
+        runner.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID
+    )
+    arguments = [
+        "--execute-ratio",
+        "4",
+        "--parent-model-directory",
+        str(config.parent_model_directory),
+        "--donor-tokenizer-directory",
+        str(config.donor_tokenizer_directory),
+        "--target-tokenizer-directory",
+        str(config.target_tokenizer_directory),
+        "--bridge-directory",
+        str(config.bridge_directory),
+        "--trace-cache-directory",
+        str(config.trace_cache_directory),
+        "--trajectory-corpus",
+        str(config.trajectory_corpus),
+        "--parent-envelope",
+        str(config.parent_envelope),
+        "--work-directory",
+        str(config.work_directory),
+        "--selective-catalog-store-directory",
+        str(config.selective_catalog_store_directory),
+        "--selective-catalog-receipt-json",
+        str(config.selective_catalog_receipt_json),
+        "--expected-selective-catalog-receipt-sha256",
+        config.expected_selective_catalog_receipt_sha256,
+        "--expected-parent-graph-fingerprint",
+        config.expected_parent_graph_fingerprint,
+        "--expected-bridge-artifact-sha256",
+        config.expected_bridge_artifact_sha256,
+        "--expected-cache-sha256",
+        config.expected_cache_sha256,
+        "--expected-parent-envelope-file-sha256",
+        config.expected_parent_envelope_file_sha256,
+        "--attention-sequential-transport-profile",
+        profile_id,
+    ]
+    parsed = supervisor.config_from_args(
+        supervisor.build_parser().parse_args(arguments)
+    )
+    assert type(parsed.attention_sequential_transport_profile) is (
+        runner.V5AttentionSequentialTransportRunnerProfile
+    )
+    assert parsed.compression_ratios == (4,)
+
+    observed: dict[str, Any] = {}
+
+    def fake_prepare(runner_config):
+        observed["runner_config"] = runner_config
+        return case["evidence"].selective_catalog_preparation
+
+    monkeypatch.setattr(runner, "prepare_selective_catalog", fake_prepare)
+    preparation = supervisor.prepare_frontier_selective_catalog(config)
+    prepared_config = observed["runner_config"]
+    assert prepared_config.compression.compression_ratio == "4"
+    assert type(prepared_config.attention_sequential_transport_profile) is (
+        runner.V5AttentionSequentialTransportRunnerProfile
+    )
+    assert prepared_config.attention_sequential_transport_profile.as_dict() == (
+        case["profile"].as_dict()
+    )
+    assert dict(preparation) == dict(
+        case["evidence"].selective_catalog_preparation
+    )
+
+    sources = supervisor._source_identities()
+    authenticated_preparation = {
+        **dict(case["evidence"].selective_catalog_preparation),
+        "source_identities": {
+            "dynamic_evidence_catalog_artifact": sources[
+                "dynamic_evidence_catalog_artifact"
+            ],
+            "hf_lfm2_cpcf_selective_evidence": sources[
+                "lfm2_selective_evidence_provider"
+            ],
+        },
+    }
+
+    def fake_read(runner_config):
+        observed["authentication_runner_config"] = runner_config
+        return authenticated_preparation
+
+    monkeypatch.setattr(
+        runner,
+        "_read_selective_catalog_preparation",
+        fake_read,
+    )
+    authenticated = supervisor.authenticate_frontier_catalog_preparation(
+        config
+    )
+    authentication_config = observed["authentication_runner_config"]
+    assert (
+        authentication_config.attention_sequential_transport_profile.as_dict()
+        == case["profile"].as_dict()
+    )
+    assert dict(authenticated) == authenticated_preparation
 
 
 def test_plan_rejects_missing_catalog_and_store_or_receipt_overlap(

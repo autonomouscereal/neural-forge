@@ -30,7 +30,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        V5AttentionSequentialTransportRunnerProfile,
+    )
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -366,6 +371,84 @@ def _freeze_mapping(
     return MappingProxyType(dict(value))
 
 
+def _attention_profile_document(
+    value: V5AttentionSequentialTransportRunnerProfile | None,
+) -> dict[str, Any] | None:
+    """Authenticate and copy the runner-owned opt-in profile document."""
+
+    if value is None:
+        return None
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+        ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_SCHEMA,
+        V5AttentionSequentialTransportRunnerProfile,
+    )
+
+    if type(value) is not V5AttentionSequentialTransportRunnerProfile:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "attention_sequential_transport_profile must be the exact typed "
+            "V5 runner profile."
+        )
+    document = value.as_dict()
+    body = dict(document)
+    claimed = _digest(
+        body.pop("profile_sha256", None),
+        "attention transport profile SHA-256",
+    )
+    if (
+        body.get("schema")
+        != ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_SCHEMA
+        or body.get("profile_id")
+        != ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID
+        or _sha(body) != claimed
+        or document != value.as_dict()
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Attention transport runner profile schema or seal is invalid."
+        )
+    return dict(document)
+
+
+def _attention_profile_from_document(
+    value: Any,
+    *,
+    name: str,
+) -> V5AttentionSequentialTransportRunnerProfile:
+    """Round-trip one sealed worker/plan profile into the exact runner type."""
+
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} must be one sealed attention transport profile object."
+        )
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        V5AttentionSequentialTransportRunnerProfile,
+    )
+
+    try:
+        profile = V5AttentionSequentialTransportRunnerProfile(
+            profile_id=value.get("profile_id"),
+        )
+    except Exception as exc:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} names an unknown attention transport profile."
+        ) from exc
+    expected = _attention_profile_document(profile)
+    if expected is None or dict(value) != expected:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} differs from the exact typed V5 runner profile."
+        )
+    return profile
+
+
+def _attention_profile_scope_component(
+    value: V5AttentionSequentialTransportRunnerProfile | None,
+) -> str | None:
+    document = _attention_profile_document(value)
+    if document is None:
+        return None
+    return f"attention-profile-{document['profile_sha256'][:16]}"
+
+
 @dataclass(frozen=True, slots=True)
 class FrontierRuntimeLimits:
     """Resource limits for one isolated ratio process."""
@@ -485,6 +568,9 @@ class FrontierSupervisorConfig:
     blank_seed: int = 0
     minimum_hidden_size: int = 32
     maximum_candidates_per_ratio: int = 8
+    attention_sequential_transport_profile: (
+        V5AttentionSequentialTransportRunnerProfile | None
+    ) = None
     attempt_id: str = "attempt-0001"
     python_executable: str = sys.executable
     selective_catalog_store_directory: Path | None = None
@@ -655,6 +741,9 @@ class FrontierSupervisorConfig:
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "runtime_limits must be FrontierRuntimeLimits."
             )
+        _attention_profile_document(
+            self.attention_sequential_transport_profile
+        )
         for name in ("parent_name", "child_name_prefix"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
@@ -1060,6 +1149,11 @@ class FrontierSupervisorPlan:
             "manual_review_required_before_reviewed_rerun": True,
             "publication_authorized": False,
         }
+        profile = _attention_profile_document(
+            self.config.attention_sequential_transport_profile
+        )
+        if profile is not None:
+            body["attention_sequential_transport_profile"] = profile
         return {**body, "plan_sha256": _sha(body)}
 
 
@@ -1095,6 +1189,118 @@ def _source_identities() -> dict[str, str]:
     }
 
 
+def _frontier_catalog_runner_config(
+    config: FrontierSupervisorConfig,
+    *,
+    ratio: int,
+    prepare_only: bool,
+) -> Any:
+    """Build the exact typed runner policy used to seal/read one catalog."""
+
+    if not isinstance(config, FrontierSupervisorConfig):
+        raise TypeError("config must be FrontierSupervisorConfig.")
+    selected_ratio = _positive_int(ratio, "catalog policy ratio")
+    from experiments import run_lfm2_cpcf_v5_selective_blank_fold as runner
+
+    arguments = [
+        "--parent-model-directory",
+        str(config.parent_model_directory),
+        "--donor-tokenizer-directory",
+        str(config.donor_tokenizer_directory),
+        "--target-tokenizer-directory",
+        str(config.target_tokenizer_directory),
+        "--bridge-directory",
+        str(config.bridge_directory),
+        "--trace-cache-directory",
+        str(config.trace_cache_directory),
+        "--trajectory-corpus",
+        str(config.trajectory_corpus),
+        "--diagnostic-json",
+        str(
+            config.work_directory
+            / (
+                "catalog-preparation-failure-diagnostic.json"
+                if prepare_only
+                else "catalog-profile-authentication-diagnostic.json"
+            )
+        ),
+        "--compression-ratio",
+        str(selected_ratio),
+        "--maximum-process-rss-gib",
+        str(config.runtime_limits.maximum_process_rss_gib),
+        "--maximum-logical-resident-gib",
+        str(config.runtime_limits.maximum_logical_resident_gib),
+        "--maximum-cuda-gib-per-device",
+        str(config.runtime_limits.maximum_cuda_gib_per_device),
+        "--minimum-physical-rss-reduction-fraction",
+        str(
+            config.runtime_limits.minimum_physical_rss_reduction_fraction
+        ),
+        "--selective-catalog-store-directory",
+        str(config.selective_catalog_store_directory),
+        "--selective-catalog-receipt-json",
+        str(config.selective_catalog_receipt_json),
+    ]
+    profile = _attention_profile_document(
+        config.attention_sequential_transport_profile
+    )
+    if profile is not None:
+        arguments.extend(
+            (
+                "--attention-sequential-transport-profile",
+                profile["profile_id"],
+            )
+        )
+    if prepare_only:
+        arguments.append("--prepare-selective-catalog-only")
+    else:
+        expected = config.expected_selective_catalog_receipt_sha256
+        if expected is None:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Profile-bound catalog authentication requires its exact "
+                "prepared receipt SHA-256 pin."
+            )
+        arguments.extend(
+            (
+                "--expected-selective-catalog-receipt-sha256",
+                expected,
+            )
+        )
+    return runner.config_from_args(
+        runner.build_parser().parse_args(arguments)
+    )
+
+
+def _runner_policy_identity_fields(
+    runner: Any,
+    runner_config: Any,
+) -> dict[str, Any]:
+    """Return exact opt-in fields, or prove the legacy profile is truly off."""
+
+    identity = runner._configured_model_fold_policy_identity(runner_config)
+    profile = _attention_profile_document(
+        runner_config.attention_sequential_transport_profile
+    )
+    if profile is None:
+        if identity is not None:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Legacy runner config unexpectedly constructed an opt-in "
+                "fold-policy identity."
+            )
+        return {}
+    if identity is None:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Opt-in runner config lost its complete fold-policy identity."
+        )
+    fields = dict(runner._opt_in_policy_identity_fields(identity))
+    if fields.get("attention_sequential_transport_profile") != profile:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Runner fold-policy identity differs from its typed attention "
+            "transport profile."
+        )
+    return fields
+
+
 def authenticate_frontier_catalog_preparation(
     config: FrontierSupervisorConfig,
 ) -> Mapping[str, Any]:
@@ -1111,18 +1317,34 @@ def authenticate_frontier_catalog_preparation(
     from experiments import run_lfm2_cpcf_v5_selective_blank_fold as runner
 
     try:
-        preparation = dict(
-            runner.authenticate_prepared_selective_catalog(
-                trace_cache_directory=config.trace_cache_directory,
-                selective_catalog_store_directory=(
-                    config.selective_catalog_store_directory
-                ),
-                selective_catalog_receipt_json=(
-                    config.selective_catalog_receipt_json
-                ),
-                expected_selective_catalog_receipt_sha256=expected_receipt,
+        if config.attention_sequential_transport_profile is None:
+            preparation = dict(
+                runner.authenticate_prepared_selective_catalog(
+                    trace_cache_directory=config.trace_cache_directory,
+                    selective_catalog_store_directory=(
+                        config.selective_catalog_store_directory
+                    ),
+                    selective_catalog_receipt_json=(
+                        config.selective_catalog_receipt_json
+                    ),
+                    expected_selective_catalog_receipt_sha256=expected_receipt,
+                )
             )
-        )
+        else:
+            if len(config.compression_ratios) != 1:
+                raise Lfm2CpcfV5FrontierSupervisorError(
+                    "An opt-in attention profile requires one exact frontier "
+                    "ratio so its complete model-fold policy can authenticate "
+                    "the prepared catalog."
+                )
+            runner_config = _frontier_catalog_runner_config(
+                config,
+                ratio=config.compression_ratios[0],
+                prepare_only=False,
+            )
+            preparation = dict(
+                runner._read_selective_catalog_preparation(runner_config)
+            )
     except Exception as exc:
         raise Lfm2CpcfV5FrontierSupervisorError(
             "The shared selective catalog preparation failed exact "
@@ -1397,6 +1619,11 @@ def _lane_paths(
             f"{lane.target_plan_fingerprint[:12]}"
         )
     )
+    profile_scope = _attention_profile_scope_component(
+        config.attention_sequential_transport_profile
+    )
+    if profile_scope is not None:
+        plan_root = plan_root / profile_scope
     run = plan_root / config.attempt_id
     return FrontierLanePaths(
         run_directory=run,
@@ -1490,6 +1717,16 @@ def _diagnostic_command(
             "preparation_receipt_sha256"
         ],
     ]
+    profile = _attention_profile_document(
+        config.attention_sequential_transport_profile
+    )
+    if profile is not None:
+        command.extend(
+            (
+                "--attention-sequential-transport-profile",
+                profile["profile_id"],
+            )
+        )
     if lane.resume_reference is not None:
         command.extend(
             (
@@ -1531,7 +1768,7 @@ def _worker_config_record(
         key: value.as_dict()
         for key, value in config.resume_references.items()
     }
-    return {
+    record = {
         **config.input_paths(),
         "work_directory": str(config.work_directory),
         "expected_parent_graph_fingerprint": (
@@ -1562,6 +1799,12 @@ def _worker_config_record(
         "attempt_id": config.attempt_id,
         "python_executable": config.python_executable,
     }
+    profile = _attention_profile_document(
+        config.attention_sequential_transport_profile
+    )
+    if profile is not None:
+        record["attention_sequential_transport_profile"] = profile
+    return record
 
 
 def _worker_command(
@@ -1593,7 +1836,7 @@ def _capture_template(
     )
 
     reviewed = lane.lifecycle_contract.approved_review_bindings
-    return {
+    template = {
         "request_schema": QUARANTINE_REQUEST_SCHEMA,
         "capture_schema": QUARANTINE_CAPTURE_SCHEMA,
         "capture_api": (
@@ -1664,6 +1907,12 @@ def _capture_template(
             "exact_token_matching_is_not_acceptance": True,
         },
     }
+    profile = _attention_profile_document(
+        config.attention_sequential_transport_profile
+    )
+    if profile is not None:
+        template["attention_sequential_transport_profile"] = profile
+    return template
 
 
 def _execution_blockers(ratio: int, lifecycle: str) -> tuple[str, ...]:
@@ -1754,6 +2003,14 @@ def build_frontier_supervisor_plan(
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Schedule ratios differ from the declarative supervisor request."
         )
+    profile = _attention_profile_document(
+        config.attention_sequential_transport_profile
+    )
+    if profile is not None and len(ratios) != 1:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "An opt-in attention transport profile must bind exactly one "
+            "frontier ratio and one complete model-fold policy."
+        )
 
     sources = _source_identities()
     lanes: list[FrontierSupervisorLane] = []
@@ -1803,6 +2060,31 @@ def build_frontier_supervisor_plan(
             paths,
             evidence,
         )
+        policy_fields: dict[str, Any] = {}
+        if profile is not None:
+            from experiments import (
+                run_lfm2_cpcf_v5_selective_blank_fold as runner,
+            )
+
+            runner_config = runner.config_from_args(
+                runner.build_parser().parse_args(
+                    diagnostic_command[2:]
+                )
+            )
+            policy_fields = _runner_policy_identity_fields(
+                runner,
+                runner_config,
+            )
+            try:
+                runner._authenticate_preparation_policy_identity(
+                    catalog_preparation,
+                    config=runner_config,
+                )
+            except Exception as exc:
+                raise Lfm2CpcfV5FrontierSupervisorError(
+                    "Prepared selective catalog differs from the exact "
+                    "frontier attention profile or complete fold policy."
+                ) from exc
         command = _worker_command(config, paths)
         blockers = _execution_blockers(ratio, config.lifecycle.value)
         command_body = {
@@ -1872,6 +2154,8 @@ def build_frontier_supervisor_plan(
             "quantization_permitted": False,
             "structural_diagnostic_may_promote": False,
         }
+        if profile is not None:
+            command_body.update(policy_fields)
         lanes.append(
             FrontierSupervisorLane(
                 ratio=ratio,
@@ -1985,6 +2269,14 @@ def _config_from_worker_record(
     from neural_forge.dynamic_lfm2_cpcf_v5_frontier import (
         Lfm2CpcfV5FrontierLifecycle,
     )
+    profile = (
+        None
+        if "attention_sequential_transport_profile" not in record
+        else _attention_profile_from_document(
+            record["attention_sequential_transport_profile"],
+            name="worker attention transport profile",
+        )
+    )
 
     return FrontierSupervisorConfig(
         parent_model_directory=Path(record["parent_model_directory"]),
@@ -2042,6 +2334,7 @@ def _config_from_worker_record(
         maximum_candidates_per_ratio=record[
             "maximum_candidates_per_ratio"
         ],
+        attention_sequential_transport_profile=profile,
         attempt_id=record["attempt_id"],
         python_executable=record["python_executable"],
         selective_catalog_store_directory=Path(
@@ -2071,6 +2364,153 @@ def _validate_worker_environment(manifest: Mapping[str, Any]) -> None:
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Worker environment differs from the sealed process manifest."
         )
+
+
+def _authenticate_worker_attention_profile(
+    *,
+    manifest: Mapping[str, Any],
+    config: FrontierSupervisorConfig,
+    runner: Any,
+    runner_config: Any,
+    paths: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Bind config, command, manifest, capture, and profile-scoped paths."""
+
+    profile_key = "attention_sequential_transport_profile"
+    expected = _attention_profile_document(
+        config.attention_sequential_transport_profile
+    )
+    runner_profile = _attention_profile_document(
+        runner_config.attention_sequential_transport_profile
+    )
+    worker_record = manifest.get("worker_config")
+    capture = manifest.get("quarantine_capture_template")
+    if not isinstance(worker_record, Mapping) or not isinstance(capture, Mapping):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Worker profile lineage lacks its config or capture template."
+        )
+    manifest_has = profile_key in manifest
+    worker_has = profile_key in worker_record
+    capture_has = profile_key in capture
+    policy_names = tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS)
+    if expected is None:
+        if (
+            runner_profile is not None
+            or manifest_has
+            or worker_has
+            or capture_has
+            or any(name in manifest for name in policy_names)
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Legacy/off worker profile gained an opt-in attention "
+                "transport binding."
+            )
+        return MappingProxyType({})
+    if (
+        runner_profile != expected
+        or not manifest_has
+        or not worker_has
+        or not capture_has
+        or manifest.get(profile_key) != expected
+        or worker_record.get(profile_key) != expected
+        or capture.get(profile_key) != expected
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Worker config, command, manifest, or capture template crossed "
+            "attention transport profiles."
+        )
+    fields = _runner_policy_identity_fields(runner, runner_config)
+    if any(manifest.get(name) != value for name, value in fields.items()):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Worker manifest differs from the command's complete opt-in "
+            "model-fold policy identity."
+        )
+    scope = _attention_profile_scope_component(
+        config.attention_sequential_transport_profile
+    )
+    try:
+        run = Path(paths["run_directory"])
+        resume = Path(paths["resume_directory"])
+        diagnostic = Path(paths["diagnostic_json"])
+        quarantine = Path(paths["quarantine_directory"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Worker profile-scoped paths are incomplete."
+        ) from exc
+    if (
+        scope is None
+        or run.parent.name != scope
+        or resume.parent != run.parent
+        or diagnostic.parent != run
+        or quarantine.parent != run
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Worker run, resume, diagnostic, and quarantine paths are not "
+            "scoped by the exact attention transport profile."
+        )
+    return MappingProxyType(fields)
+
+
+def _authenticate_compiled_attention_profile(
+    *,
+    runner: Any,
+    diagnostic: Mapping[str, Any],
+    expected_policy_fields: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    """Bind the compiled receipt and its resume policy to the launch profile."""
+
+    fields = dict(expected_policy_fields)
+    request = diagnostic.get("request")
+    names = tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS)
+    binding_value = diagnostic.get("resume_policy_binding")
+    if not fields:
+        if (
+            any(name in diagnostic for name in names)
+            or (
+                isinstance(request, Mapping)
+                and any(name in request for name in names)
+            )
+            or binding_value is not None
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Legacy/off compile diagnostic gained an opt-in policy or "
+                "resume binding."
+            )
+        return None
+    if not isinstance(request, Mapping):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Opt-in compile diagnostic has no typed runner request."
+        )
+    if any(
+        diagnostic.get(name) != value or request.get(name) != value
+        for name, value in fields.items()
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Compile diagnostic or runner request crossed its sealed "
+            "attention transport policy."
+        )
+    if not isinstance(binding_value, Mapping):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Opt-in compile diagnostic has no sealed resume-policy binding."
+        )
+    binding = dict(binding_value)
+    claimed = _digest(
+        binding.pop("binding_sha256", None),
+        "resume policy binding SHA-256",
+    )
+    if (
+        binding.get("schema") != runner.RESUME_POLICY_BINDING_SCHEMA
+        or _sha(binding) != claimed
+        or any(binding.get(name) != value for name, value in fields.items())
+        or binding.get("runtime_policy_contains_complete_model_fold_policy")
+        is not True
+        or binding.get("cross_profile_resume_permitted") is not False
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Opt-in resume-policy binding differs from the exact complete "
+            "model-fold policy."
+        )
+    return MappingProxyType({**binding, "binding_sha256": claimed})
 
 
 def _worker_failure_receipt(
@@ -2153,6 +2593,7 @@ def _run_internal_worker(manifest_path: Path) -> int:
     manifest: dict[str, Any] | None = None
     runner_config: Any | None = None
     parsed_runner_args: argparse.Namespace | None = None
+    expected_policy_fields: Mapping[str, Any] = MappingProxyType({})
     try:
         manifest = _read_sealed_json(
             manifest_path,
@@ -2242,6 +2683,13 @@ def _run_internal_worker(manifest_path: Path) -> int:
             diagnostic_command[2:]
         )
         runner_config = runner.config_from_args(parsed_runner_args)
+        expected_policy_fields = _authenticate_worker_attention_profile(
+            manifest=manifest,
+            config=config,
+            runner=runner,
+            runner_config=runner_config,
+            paths=paths,
+        )
         if (
             runner_config.expected_target_plan_fingerprint
             != manifest["target_plan_fingerprint"]
@@ -2294,6 +2742,11 @@ def _run_internal_worker(manifest_path: Path) -> int:
         result = runner.run_with_compiled_candidate_consumer(
             runner_config,
             consumer,
+        )
+        compiled_profile_binding = _authenticate_compiled_attention_profile(
+            runner=runner,
+            diagnostic=result.compile_diagnostic,
+            expected_policy_fields=expected_policy_fields,
         )
         candidate = result.candidate
         if (
@@ -2528,6 +2981,11 @@ def _run_internal_worker(manifest_path: Path) -> int:
             "parameters_pruned": 0,
             "parameters_quantized": 0,
         }
+        if expected_policy_fields:
+            body.update(dict(expected_policy_fields))
+            body["resume_policy_binding"] = dict(
+                compiled_profile_binding
+            )
         receipt = {**body, "receipt_sha256": _sha(body)}
         _atomic_new_json(Path(paths["execution_receipt_json"]), receipt)
         print(json.dumps(receipt, sort_keys=True))
@@ -2967,6 +3425,41 @@ def execute_single_ratio(
         seal_field="receipt_sha256",
         name="worker compile diagnostic",
     )
+    planned_diagnostic_command = lane.command_manifest[
+        "diagnostic_runner_command"
+    ]
+    planned_runner_config = runner.config_from_args(
+        runner.build_parser().parse_args(planned_diagnostic_command[2:])
+    )
+    expected_policy_fields = _authenticate_worker_attention_profile(
+        manifest=lane.command_manifest,
+        config=plan.config,
+        runner=runner,
+        runner_config=planned_runner_config,
+        paths=lane.command_manifest["paths"],
+    )
+    compiled_profile_binding = _authenticate_compiled_attention_profile(
+        runner=runner,
+        diagnostic=diagnostic,
+        expected_policy_fields=expected_policy_fields,
+    )
+    if expected_policy_fields:
+        receipt_profile_valid = (
+            all(
+                receipt.get(name) == value
+                for name, value in expected_policy_fields.items()
+            )
+            and receipt.get("resume_policy_binding")
+            == dict(compiled_profile_binding)
+        )
+    else:
+        receipt_profile_valid = (
+            all(
+                name not in receipt
+                for name in runner._OPT_IN_POLICY_IDENTITY_FIELDS
+            )
+            and "resume_policy_binding" not in receipt
+        )
     _authenticate_quarantine_receipt(plan, lane, receipt)
     inputs = diagnostic.get("inputs")
     compiled = diagnostic.get("compiled_model_fold")
@@ -3102,6 +3595,7 @@ def execute_single_ratio(
         or receipt.get("optimizer_steps") != 0
         or receipt.get("parameters_pruned") != 0
         or receipt.get("parameters_quantized") != 0
+        or not receipt_profile_valid
         or not resume_binding_valid
         or not isinstance(inputs, Mapping)
         or inputs.get("parent_fingerprint")
@@ -3239,6 +3733,9 @@ def build_parser() -> argparse.ArgumentParser:
     from neural_forge.dynamic_lfm2_cpcf_v5_frontier import (
         Lfm2CpcfV5FrontierLifecycle,
     )
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+    )
 
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -3352,6 +3849,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--minimum-hidden-size", type=int, default=32)
     parser.add_argument("--maximum-candidates-per-ratio", type=int, default=8)
     parser.add_argument(
+        "--attention-sequential-transport-profile",
+        choices=(ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,),
+        help=(
+            "Exact versioned opt-in forwarded to the selective V5 fold "
+            "runner and bound into the worker, catalog, resume, quarantine, "
+            "and execution receipts."
+        ),
+    )
+    parser.add_argument(
         "--attempt-id",
         default="attempt-0001",
         help=(
@@ -3367,6 +3873,9 @@ def build_parser() -> argparse.ArgumentParser:
 def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
     from neural_forge.dynamic_lfm2_cpcf_v5_frontier import (
         Lfm2CpcfV5FrontierLifecycle,
+    )
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        V5AttentionSequentialTransportRunnerProfile,
     )
 
     lifecycle = Lfm2CpcfV5FrontierLifecycle(args.lifecycle)
@@ -3438,6 +3947,13 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
         blank_seed=args.blank_seed,
         minimum_hidden_size=args.minimum_hidden_size,
         maximum_candidates_per_ratio=args.maximum_candidates_per_ratio,
+        attention_sequential_transport_profile=(
+            None
+            if args.attention_sequential_transport_profile is None
+            else V5AttentionSequentialTransportRunnerProfile(
+                profile_id=args.attention_sequential_transport_profile,
+            )
+        ),
         attempt_id=args.attempt_id,
         python_executable=args.python_executable,
         selective_catalog_store_directory=(
@@ -3461,36 +3977,10 @@ def prepare_frontier_selective_catalog(
         raise TypeError("config must be FrontierSupervisorConfig.")
     from experiments import run_lfm2_cpcf_v5_selective_blank_fold as runner
 
-    preparation_args = (
-        "--parent-model-directory",
-        str(config.parent_model_directory),
-        "--donor-tokenizer-directory",
-        str(config.donor_tokenizer_directory),
-        "--target-tokenizer-directory",
-        str(config.target_tokenizer_directory),
-        "--bridge-directory",
-        str(config.bridge_directory),
-        "--trace-cache-directory",
-        str(config.trace_cache_directory),
-        "--trajectory-corpus",
-        str(config.trajectory_corpus),
-        "--diagnostic-json",
-        str(
-            config.work_directory
-            / "catalog-preparation-failure-diagnostic.json"
-        ),
-        "--compression-ratio",
-        "4",
-        "--maximum-process-rss-gib",
-        str(config.runtime_limits.maximum_process_rss_gib),
-        "--selective-catalog-store-directory",
-        str(config.selective_catalog_store_directory),
-        "--selective-catalog-receipt-json",
-        str(config.selective_catalog_receipt_json),
-        "--prepare-selective-catalog-only",
-    )
-    runner_config = runner.config_from_args(
-        runner.build_parser().parse_args(preparation_args)
+    runner_config = _frontier_catalog_runner_config(
+        config,
+        ratio=4,
+        prepare_only=True,
     )
     return MappingProxyType(
         dict(runner.prepare_selective_catalog(runner_config))
