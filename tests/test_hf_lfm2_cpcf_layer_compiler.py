@@ -337,14 +337,23 @@ def _chart(kind, source_width=8, target_width=4):
     )
 
 
-def _fixture(kind):
+def _fixture(
+    kind,
+    *,
+    splits=("selection", "fit", "validation"),
+    dtype=None,
+):
     source, target = _models(kind)
+    if dtype is not None:
+        source.to(dtype=dtype)
+        target.to(dtype=dtype)
     generator = torch.Generator().manual_seed(2027)
     records = []
     evidence = []
-    splits = ("selection", "fit", "validation")
     for ordinal, split in enumerate(splits):
-        residual = torch.randn(2, 6, 8, generator=generator) + ordinal * 0.05
+        residual = (torch.randn(2, 6, 8, generator=generator) + ordinal * 0.05).to(
+            dtype=dtype or torch.float32
+        )
         sampled = 6 if kind == "full_attention" else 4
         tensors = (
             _attention_evidence(source, residual, sampled)
@@ -1498,11 +1507,7 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
                 ),
                 weakref.ref(
                     next(
-                        iter(
-                            kwargs[
-                                "selection_replay"
-                            ].post_layer_bank.states.values()
-                        )
+                        iter(kwargs["selection_replay"].post_layer_bank.states.values())
                     )
                 ),
             )
@@ -1691,9 +1696,7 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
         layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS
     )
     assert selection["candidate_count"] == 3
-    assert set(evaluations) == set(
-        layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS
-    )
+    assert set(evaluations) == set(layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS)
     expected_winner = min(
         evaluations,
         key=lambda name: tuple(evaluations[name]["selection_key"]),
@@ -1715,7 +1718,9 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
         assert set(candidate["selection_metrics"]) == {"selection"}
         assert candidate["live_operator_state_authenticated_before_fit_replay"] is True
         assert candidate["live_mlp_state_authenticated_before_selection_replay"] is True
-        assert candidate["sequence_endpoint_ranked_before_context_reconstruction"] is True
+        assert (
+            candidate["sequence_endpoint_ranked_before_context_reconstruction"] is True
+        )
         assert candidate["maximum_consecutive_causal_phase_drift_ranked"] is True
         assert candidate["selection_context_used_as_finite_safeguard"] is True
         assert candidate["selection_context_metrics"]["selection_split_only"] is True
@@ -1780,21 +1785,15 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
 
 
 def test_attention_sequential_transport_policy_round_trips_strictly() -> None:
-    policy = layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
-        enabled=True
-    )
-    parsed = (
-        layer_compiler.parse_lfm2_cpcf_attention_sequential_transport_policy(
-            policy.as_dict()
-        )
+    policy = layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
+    parsed = layer_compiler.parse_lfm2_cpcf_attention_sequential_transport_policy(
+        policy.as_dict()
     )
     assert parsed == policy
     tampered = policy.as_dict()
     tampered["selection_selects_frozen_bundle"] = False
     with pytest.raises(layer_compiler.Lfm2CpcfLayerCompilerError):
-        layer_compiler.parse_lfm2_cpcf_attention_sequential_transport_policy(
-            tampered
-        )
+        layer_compiler.parse_lfm2_cpcf_attention_sequential_transport_policy(tampered)
 
 
 def test_attention_sequential_transport_policy_disabled_is_exact_noop(
@@ -1818,9 +1817,7 @@ def test_attention_sequential_transport_policy_disabled_is_exact_noop(
         input_bank=bank,
         boundary_charts=charts,
         attention_sequential_transport_policy=(
-            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
-                enabled=False
-            )
+            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(enabled=False)
         ),
     )
     disabled_state_sha256 = _state_sha(target.model.layers[0])
@@ -1835,9 +1832,7 @@ def test_attention_sequential_transport_policy_disabled_is_exact_noop(
 
     assert disabled.report == control.report
     assert disabled.result_sha256 == control.result_sha256
-    assert disabled.operator_artifact.as_dict() == (
-        control.operator_artifact.as_dict()
-    )
+    assert disabled.operator_artifact.as_dict() == (control.operator_artifact.as_dict())
     assert disabled.mlp_artifact.as_dict() == control.mlp_artifact.as_dict()
     assert disabled_state_sha256 == _state_sha(target.model.layers[0])
     assert (
@@ -1848,9 +1843,12 @@ def test_attention_sequential_transport_policy_disabled_is_exact_noop(
         "attention_sequential_transport_policy"
         not in disabled.report["solver_evidence_policy"]
     )
-    assert disabled.report["solver_evidence_policy"][
-        "attention_candidate_selection"
-    ]["candidate_count"] == 3
+    assert (
+        disabled.report["solver_evidence_policy"]["attention_candidate_selection"][
+            "candidate_count"
+        ]
+        == 3
+    )
 
 
 def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
@@ -1858,9 +1856,7 @@ def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
 ) -> None:
     source, target, bank, charts = _fixture("full_attention")
     source_chart_sha = charts.layer_charts_sha256
-    source_chart_payload_sha = (
-        layer_compiler._boundary_charts_payload_sha256(charts)
-    )
+    source_chart_payload_sha = layer_compiler._boundary_charts_payload_sha256(charts)
     source_post_layer = charts.post_layer
     replay_events = []
     transport_calls = []
@@ -1869,30 +1865,26 @@ def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
     frozen_candidates = []
 
     original_replay = layer_compiler.replay_lfm2_cpcf_phase_bank
-    original_transport = (
-        layer_compiler.fit_cpcf_sequential_downstream_chart_transport
-    )
-    original_prepare = (
-        layer_compiler.prepare_lfm2_structural_residual_mlp_fold_basis
-    )
+    original_transport = layer_compiler.fit_cpcf_sequential_downstream_chart_transport
+    original_prepare = layer_compiler.prepare_lfm2_structural_residual_mlp_fold_basis
     original_split_metrics = layer_compiler._split_endpoint_metrics
     original_freeze = layer_compiler._freeze_attention_candidate_winner
 
     def replay_spy(*args, **kwargs):
-        splits = tuple(
-            sorted({phase.split for phase in kwargs["input_bank"].phases})
-        )
+        splits = tuple(sorted({phase.split for phase in kwargs["input_bank"].phases}))
         replay_events.append(splits)
         return original_replay(*args, **kwargs)
 
     def transport_spy(upstream, downstream, **kwargs):
         assert upstream is charts.post_operator
         assert downstream is charts.post_layer
-        assert kwargs["fit_parent_downstream_states"].shape[0] == (
-            kwargs["fit_actual_child_upstream_rows"].shape[0]
-        )
-        assert kwargs["fit_weights"].shape[0] == (
+        assert (
             kwargs["fit_parent_downstream_states"].shape[0]
+            == (kwargs["fit_actual_child_upstream_rows"].shape[0])
+        )
+        assert (
+            kwargs["fit_weights"].shape[0]
+            == (kwargs["fit_parent_downstream_states"].shape[0])
         )
         assert not any(name.startswith("selection_") for name in kwargs)
         result = original_transport(upstream, downstream, **kwargs)
@@ -1905,9 +1897,7 @@ def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
         return result
 
     def split_metrics_spy(**kwargs):
-        splits = tuple(
-            kwargs.get("splits", layer_compiler._EVALUATION_SPLITS)
-        )
+        splits = tuple(kwargs.get("splits", layer_compiler._EVALUATION_SPLITS))
         split_metric_calls.append((splits, kwargs["chart"]))
         return original_split_metrics(**kwargs)
 
@@ -1949,9 +1939,7 @@ def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
         input_bank=bank,
         boundary_charts=charts,
         attention_sequential_transport_policy=(
-            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
-                enabled=True
-            )
+            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
         ),
     )
 
@@ -1959,9 +1947,9 @@ def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
     assert len(prepared_bases) == 3
     assert len({id(value) for value in prepared_bases}) == 3
     assert len(frozen_candidates) == 3
-    assert len(
-        {id(value.effective_boundary_charts) for value in frozen_candidates}
-    ) == 3
+    assert (
+        len({id(value.effective_boundary_charts) for value in frozen_candidates}) == 3
+    )
     for candidate in frozen_candidates:
         assert candidate.sequential_boundary_transport is not None
         assert candidate.sequential_transport_binding is not None
@@ -1970,34 +1958,21 @@ def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
         assert candidate.effective_boundary_charts.post_operator is (
             charts.post_operator
         )
-        assert candidate.effective_boundary_charts.post_layer is not (
-            charts.post_layer
-        )
-        assert candidate.report[
-            "candidate_local_mlp_basis_preparation_count"
-        ] == 1
-        assert candidate.report[
-            "cross_candidate_prepared_mlp_basis_reused"
-        ] is False
+        assert candidate.effective_boundary_charts.post_layer is not (charts.post_layer)
+        assert candidate.report["candidate_local_mlp_basis_preparation_count"] == 1
+        assert candidate.report["cross_candidate_prepared_mlp_basis_reused"] is False
         assert candidate.report["validation_phase_count_consumed"] == 0
         phases = candidate.sequential_transport_binding["fit_phases"]
         phase_masses = [value["total_row_weight"] for value in phases]
-        assert phase_masses == pytest.approx(
-            [phase_masses[0]] * len(phase_masses)
-        )
+        assert phase_masses == pytest.approx([phase_masses[0]] * len(phase_masses))
 
     selection_chart_ids = {
-        id(chart)
-        for splits, chart in split_metric_calls
-        if splits == ("selection",)
+        id(chart) for splits, chart in split_metric_calls if splits == ("selection",)
     }
     assert selection_chart_ids == {
-        id(value.effective_boundary_charts)
-        for value in frozen_candidates
+        id(value.effective_boundary_charts) for value in frozen_candidates
     }
-    selection = result.report["solver_evidence_policy"][
-        "attention_candidate_selection"
-    ]
+    selection = result.report["solver_evidence_policy"]["attention_candidate_selection"]
     assert selection["selection_refits_or_mutates_transport"] is False
     assert selection["selection_selects_frozen_bundle"] is True
     winner = next(
@@ -2012,12 +1987,14 @@ def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
     binding = result.report["solver_evidence_policy"][
         "attention_candidate_local_post_layer_transport"
     ]
-    assert binding[
-        "operator_transport_mlp_bundle_sha256"
-    ] == winner.operator_transport_mlp_bundle_sha256
-    assert binding[
-        "validation_first_endpoint_replay_and_metric_after_bundle_freeze"
-    ] is True
+    assert (
+        binding["operator_transport_mlp_bundle_sha256"]
+        == winner.operator_transport_mlp_bundle_sha256
+    )
+    assert (
+        binding["validation_first_endpoint_replay_and_metric_after_bundle_freeze"]
+        is True
+    )
     assert binding["validation_rows_used_by_transport_solver"] == 0
     assert binding["selection_refits_or_mutates_transport"] is False
     assert binding["selection_selects_frozen_bundle"] is True
@@ -2025,12 +2002,18 @@ def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
         binding["effective_boundary_charts_sha256"]
         == winner.effective_boundary_charts.layer_charts_sha256
     )
-    assert result.report["solver_evidence_policy"][
-        "attention_each_candidate_prepares_own_mlp_basis"
-    ] is True
-    assert result.report["solver_evidence_policy"][
-        "attention_cross_candidate_prepared_mlp_basis_reuse"
-    ] is False
+    assert (
+        result.report["solver_evidence_policy"][
+            "attention_each_candidate_prepares_own_mlp_basis"
+        ]
+        is True
+    )
+    assert (
+        result.report["solver_evidence_policy"][
+            "attention_cross_candidate_prepared_mlp_basis_reuse"
+        ]
+        is False
+    )
     assert charts.layer_charts_sha256 == source_chart_sha
     assert (
         layer_compiler._boundary_charts_payload_sha256(charts)
@@ -2191,6 +2174,60 @@ def test_attention_winner_freeze_rejects_noncanonical_inventory(
         layer_compiler._freeze_attention_candidate_winner(candidates)
 
 
+def test_attention_winner_freeze_accepts_opt_in_composed_inventory() -> None:
+    candidates = tuple(
+        SimpleNamespace(
+            candidate_id=candidate_id,
+            selection_key=(float(index), candidate_id),
+            report={"report_sha256": f"{index + 1:064x}"},
+            sequential_boundary_transport=None,
+        )
+        for index, candidate_id in enumerate(
+            layer_compiler.LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS
+        )
+    )
+
+    winner, report = layer_compiler._freeze_attention_candidate_winner(
+        candidates,
+        candidate_ids=(layer_compiler.LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS),
+    )
+
+    assert (
+        winner.candidate_id
+        == (layer_compiler.LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS[0])
+    )
+    assert report["candidate_count"] == 4
+    assert tuple(report["candidate_ids"]) == (
+        layer_compiler.LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS
+    )
+    assert report["winner_frozen_before_validation"] is True
+    assert report["report_sha256"] == _sha(
+        {name: value for name, value in report.items() if name != "report_sha256"}
+    )
+
+
+def test_layer_compiler_rejects_composed_plus_sequential_transport() -> None:
+    source, target, bank, charts = _fixture("full_attention")
+
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="separate authenticated compiler lanes",
+    ):
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+            attention_sequential_transport_policy=(
+                layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
+            ),
+            composed_qk_attention_policy=(
+                layer_compiler.Lfm2ComposedQkAttentionFoldPolicy()
+            ),
+        )
+
+
 def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2222,16 +2259,11 @@ def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
             if candidate_replay_refs:
                 gc.collect()
                 assert all(
-                    replay_ref() is None
-                    for replay_ref in candidate_replay_refs[-1]
+                    replay_ref() is None for replay_ref in candidate_replay_refs[-1]
                 )
             replay = original_replay(*args, **kwargs)
             candidate_replay_refs.append(
-                [
-                    weakref.ref(
-                        next(iter(replay.post_layer_bank.states.values()))
-                    )
-                ]
+                [weakref.ref(next(iter(replay.post_layer_bank.states.values())))]
             )
             return replay
         replay = original_replay(*args, **kwargs)
@@ -2306,9 +2338,10 @@ def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
         layer_compiler._Lfm2CpcfShortConvMacrocellSelector,
     )
     macrocell_selector = observed["macrocell_candidate_selector"]
-    assert {
-        phase.split for phase in macrocell_selector.audit_bank.phases
-    } == {"fit", "selection"}
+    assert {phase.split for phase in macrocell_selector.audit_bank.phases} == {
+        "fit",
+        "selection",
+    }
     assert not hasattr(
         macrocell_selector,
         "input_bank",
@@ -2357,9 +2390,7 @@ def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
         for replay_ref in replay_refs
     )
     assert dict(macrocell_selector.decision) == decision
-    assert {
-        *layer_compiler._Lfm2CpcfShortConvMacrocellEvaluation.__slots__
-    } == {
+    assert {*layer_compiler._Lfm2CpcfShortConvMacrocellEvaluation.__slots__} == {
         "candidate",
         "mlp_artifact",
         "selection_key",
@@ -2373,12 +2404,14 @@ def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
         assert not hasattr(evaluation, "fit_operator_replay")
         assert not hasattr(evaluation, "selection_replay")
         assert not any(
-            isinstance(getattr(evaluation, name), layer_compiler.Lfm2CpcfLayerReplayBank)
+            isinstance(
+                getattr(evaluation, name), layer_compiler.Lfm2CpcfLayerReplayBank
+            )
             for name in evaluation.__slots__
         )
-        assert dict(evaluation.report) == decision["candidate_evaluations"][
-            candidate_id
-        ]
+        assert (
+            dict(evaluation.report) == decision["candidate_evaluations"][candidate_id]
+        )
     assert cluster_builder_calls == 1
     evidence_policy = result.report["solver_evidence_policy"]
     assert evidence_policy["short_conv_mlp_preparation_count"] == 1
@@ -3385,9 +3418,7 @@ def test_two_lane_macrocell_is_serial_equal_bounded_and_completion_order_invaria
             assert execution_layer is not canonical_layer
         replay = original_replay(*args, **kwargs)
         if execution_layer is not None:
-            replay_ref = weakref.ref(
-                next(iter(replay.post_layer_bank.states.values()))
-            )
+            replay_ref = weakref.ref(next(iter(replay.post_layer_bank.states.values())))
             with replay_lock:
                 replay_refs.append(replay_ref)
                 maximum_live_replay_refs = max(
@@ -3491,8 +3522,9 @@ def test_two_lane_macrocell_is_serial_equal_bounded_and_completion_order_invaria
     parallel_policy = parallel.report["solver_evidence_policy"]
     parallel_decision = parallel_policy["short_conv_macrocell_selection"]
     receipt = parallel_policy["short_conv_two_lane_macrocell_execution"]
-    assert parallel_decision["selected_candidate_id"] == (
-        serial_decision["selected_candidate_id"]
+    assert (
+        parallel_decision["selected_candidate_id"]
+        == (serial_decision["selected_candidate_id"])
     )
     assert [
         (value["rank"], value["candidate_id"], value["score"])
@@ -3501,11 +3533,13 @@ def test_two_lane_macrocell_is_serial_equal_bounded_and_completion_order_invaria
         (value["rank"], value["candidate_id"], value["score"])
         for value in serial_decision["macrocell_ranking"]
     ]
-    assert list(parallel_decision["candidate_evaluations"]) == (
-        parallel_decision["evaluated_candidate_ids"]
+    assert (
+        list(parallel_decision["candidate_evaluations"])
+        == (parallel_decision["evaluated_candidate_ids"])
     )
-    assert receipt["canonical_candidate_result_order"] == (
-        parallel_decision["evaluated_candidate_ids"]
+    assert (
+        receipt["canonical_candidate_result_order"]
+        == (parallel_decision["evaluated_candidate_ids"])
     )
     assert receipt["canonical_result_order_restored_after_parallel_completion"] is True
     assert receipt["maximum_active_lanes_observed"] == 2
@@ -3522,7 +3556,9 @@ def test_two_lane_macrocell_is_serial_equal_bounded_and_completion_order_invaria
     evaluated_ids = parallel_decision["evaluated_candidate_ids"]
     assert candidate_counts[evaluated_ids[0]] == 2
     assert sorted(candidate_lanes[evaluated_ids[0]]) == [0, 1]
-    assert all(candidate_counts[candidate_id] == 1 for candidate_id in evaluated_ids[1:])
+    assert all(
+        candidate_counts[candidate_id] == 1 for candidate_id in evaluated_ids[1:]
+    )
     assert {
         candidate_id: candidate_lanes[candidate_id][0]
         for candidate_id in evaluated_ids[1:]
@@ -3559,8 +3595,9 @@ def test_two_lane_macrocell_is_serial_equal_bounded_and_completion_order_invaria
     assert parity["representative_evaluation_count"] == 2
     assert parity["lane_zero_representative_result_reused"] is True
     assert parity["lane_one_representative_result_discarded_after_parity"] is True
-    assert parity["lane_evaluation_report_sha256"][0] != (
-        parity["lane_evaluation_report_sha256"][1]
+    assert (
+        parity["lane_evaluation_report_sha256"][0]
+        != (parity["lane_evaluation_report_sha256"][1])
     )
     assert parity["report_sha256"] == _sha(
         {name: value for name, value in parity.items() if name != "report_sha256"}
@@ -3582,8 +3619,9 @@ def test_two_lane_macrocell_is_serial_equal_bounded_and_completion_order_invaria
         assert actual["fit_replay_released_before_selection_replay"] is True
         assert actual["selection_replay_released_before_candidate_return"] is True
 
-    assert parallel.operator_artifact.report["compiled_state_sha256"] == (
-        serial.operator_artifact.report["compiled_state_sha256"]
+    assert (
+        parallel.operator_artifact.report["compiled_state_sha256"]
+        == (serial.operator_artifact.report["compiled_state_sha256"])
     )
     assert parallel.mlp_artifact.compiled_state_sha256 == (
         serial.mlp_artifact.compiled_state_sha256
@@ -3617,9 +3655,7 @@ def test_two_lane_failure_restores_canonical_and_both_replicas(
         name: value.detach().clone()
         for name, value in canonical_layer.state_dict().items()
     }
-    identities = {
-        name: id(value) for name, value in canonical_layer.named_parameters()
-    }
+    identities = {name: id(value) for name, value in canonical_layer.named_parameters()}
     runtime = _cpu_test_two_lane_runtime()
     monkeypatch.setattr(
         layer_compiler,
@@ -3674,9 +3710,7 @@ def test_two_lane_failure_restores_canonical_and_both_replicas(
             input_bank=bank,
             boundary_charts=charts,
             short_conv_v4_solver_policy=policy,
-            candidate_replay_evaluator=(
-                CpuReferenceLfm2CpcfCandidateReplayEvaluator()
-            ),
+            candidate_replay_evaluator=(CpuReferenceLfm2CpcfCandidateReplayEvaluator()),
         )
 
     assert caught.value.rollback_proof["exact_layer_rollback_proven"] is True
@@ -3704,9 +3738,7 @@ def test_two_lane_semantic_parity_mismatch_fails_before_remaining_candidates(
         name: value.detach().clone()
         for name, value in canonical_layer.state_dict().items()
     }
-    identities = {
-        name: id(value) for name, value in canonical_layer.named_parameters()
-    }
+    identities = {name: id(value) for name, value in canonical_layer.named_parameters()}
     runtime = _cpu_test_two_lane_runtime()
     monkeypatch.setattr(
         layer_compiler,
@@ -3765,9 +3797,7 @@ def test_two_lane_semantic_parity_mismatch_fails_before_remaining_candidates(
             input_bank=bank,
             boundary_charts=charts,
             short_conv_v4_solver_policy=policy,
-            candidate_replay_evaluator=(
-                CpuReferenceLfm2CpcfCandidateReplayEvaluator()
-            ),
+            candidate_replay_evaluator=(CpuReferenceLfm2CpcfCandidateReplayEvaluator()),
         )
 
     assert len(calls) == 2
@@ -3809,9 +3839,7 @@ def test_two_lane_semantic_result_is_repeatable(
             input_bank=bank,
             boundary_charts=charts,
             short_conv_v4_solver_policy=policy,
-            candidate_replay_evaluator=(
-                CpuReferenceLfm2CpcfCandidateReplayEvaluator()
-            ),
+            candidate_replay_evaluator=(CpuReferenceLfm2CpcfCandidateReplayEvaluator()),
         )
         solver_policy = artifact.report["solver_evidence_policy"]
         decision = solver_policy["short_conv_macrocell_selection"]
@@ -3938,8 +3966,9 @@ def test_two_lane_scheduler_receipts_are_fresh_explicit_and_tamper_evident() -> 
     assert tuple(lane.device_receipt_sha256 for lane in runtime.lanes) == tuple(
         replica.device.receipt_sha256 for replica in replicas
     )
-    assert runtime.runtime_authentication_report_sha256 == (
-        runtime_report["report_sha256"]
+    assert (
+        runtime.runtime_authentication_report_sha256
+        == (runtime_report["report_sha256"])
     )
 
     forged_report = dict(runtime_report)
@@ -3972,13 +4001,13 @@ def _rotated_post_operator_input_bank(bank, charts):
     for phase in bank.phases:
         state = bank.state(phase)
         if phase.split in {"fit", "selection"}:
-            parent = phase.parent_evidence.layers[
-                charts.layer_index
-            ].tensors["residual.post_operator"]
+            parent = phase.parent_evidence.layers[charts.layer_index].tensors[
+                "residual.post_operator"
+            ]
             encoded = charts.post_operator.encode_shaped(parent)
-            state[:, -phase.sampled_suffix_tokens :, :] = (
-                encoded @ rotation
-            ).to(dtype=state.dtype)
+            state[:, -phase.sampled_suffix_tokens :, :] = (encoded @ rotation).to(
+                dtype=state.dtype
+            )
         states[phase.identity] = state
     return (
         _phase_state_bank(
@@ -4025,30 +4054,15 @@ def test_post_operator_chart_transport_reduces_write_and_compiles_real_layer():
     assert controller.report["validation_rows_read"] == 0
     assert controller.report["selection_used_by_solver"] is False
     assert controller.report["selection_read_after_transport_freeze"] is True
-    assert (
-        controller.transport.report["required_write_rms_reduction"]
-        > 0.05
-    )
-    assert (
-        controller.report["selection_required_write_rms_reduction"]
-        > 0.05
-    )
-    assert (
-        controller.transport.report["fit_post_alignment_rmse"]
-        < 1e-6
-    )
+    assert controller.transport.report["required_write_rms_reduction"] > 0.05
+    assert controller.report["selection_required_write_rms_reduction"] > 0.05
+    assert controller.transport.report["fit_post_alignment_rmse"] < 1e-6
     assert controller.report["fit_required_write_rms_after"] < 1e-6
     assert controller.report["selection_required_write_rms_after"] < 1e-6
     assert controller.report["fit_required_write_rms_reduction_fraction"] > 0.99
-    assert (
-        controller.report["selection_required_write_rms_reduction_fraction"]
-        > 0.99
-    )
+    assert controller.report["selection_required_write_rms_reduction_fraction"] > 0.99
     assert controller.report["decode_invariance_max_abs_error"] < 1e-10
-    assert (
-        controller.report["feature_predictor_invariance_max_abs_error"]
-        < 1e-10
-    )
+    assert controller.report["feature_predictor_invariance_max_abs_error"] < 1e-10
     torch.testing.assert_close(
         controller.transport.rotation,
         expected_rotation,
@@ -4117,20 +4131,14 @@ def test_post_operator_chart_transport_never_reads_validation(
 
 
 def test_post_operator_chart_transport_rotation_excludes_selection():
-    _source_a, _target_a, first_bank, first_charts = _fixture(
-        "full_attention"
-    )
-    _source_b, _target_b, second_bank, second_charts = _fixture(
-        "full_attention"
-    )
+    _source_a, _target_a, first_bank, first_charts = _fixture("full_attention")
+    _source_b, _target_b, second_bank, second_charts = _fixture("full_attention")
     first = fit_lfm2_cpcf_post_operator_chart_transport(
         first_bank,
         first_charts,
     )
     selection_phase = next(
-        phase
-        for phase in second_bank.phases
-        if phase.split == "selection"
+        phase for phase in second_bank.phases if phase.split == "selection"
     )
     with torch.no_grad():
         second_bank.states[selection_phase.identity].mul_(37.0)

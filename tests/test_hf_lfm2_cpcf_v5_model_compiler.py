@@ -58,9 +58,17 @@ def test_v5_has_distinct_compiler_resume_and_artifact_fingerprints() -> None:
         record["filename"] == "hf_lfm2_structural_residual_attention_fold.py"
         for record in implementation["ordered_source_files"]
     )
+    assert {
+        "hf_lfm2_cached_qk_functional_refit.py",
+        "hf_lfm2_cached_qk_score_residual_fold.py",
+        "hf_lfm2_composed_qk_attention_fold.py",
+        "hf_lfm2_cpcf_attention_dimension_fold.py",
+        "hf_lfm2_qk_global_gauge_sync.py",
+    }.issubset(
+        {record["filename"] for record in implementation["ordered_source_files"]}
+    )
     ordered_modules = [
-        record["module"]
-        for record in implementation["ordered_source_files"]
+        record["module"] for record in implementation["ordered_source_files"]
     ]
     assert ordered_modules == sorted(ordered_modules)
     assert {
@@ -121,27 +129,18 @@ def test_layer_compiler_exposes_opt_in_candidate_replay_without_new_default():
     assert selector_parameter.default is None
     assert frontier_parameter.default is None
     assert signature.parameters["short_conv_v4_solver_policy"].default is None
-    assert (
-        signature.parameters[
-            "attention_sequential_transport_policy"
-        ].default
-        is None
-    )
+    assert signature.parameters["attention_sequential_transport_policy"].default is None
 
 
 def test_v5_runtime_policy_authenticates_opt_in_attention_transport() -> None:
     default_model_policy = v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()
     disabled_model_policy = v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(
         attention_sequential_transport_policy=(
-            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
-                enabled=False
-            )
+            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(enabled=False)
         )
     )
-    enabled_transport = (
-        layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
-            enabled=True
-        )
+    enabled_transport = layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+        enabled=True
     )
     enabled_model_policy = v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(
         attention_sequential_transport_policy=enabled_transport,
@@ -158,9 +157,10 @@ def test_v5_runtime_policy_authenticates_opt_in_attention_transport() -> None:
     assert runtime(disabled_model_policy).as_dict() == default_document
     enabled_document = runtime(enabled_model_policy).as_dict()
     assert enabled_document != default_document
-    assert enabled_document["model_fold_policy"][
-        "attention_sequential_transport_policy"
-    ] == enabled_transport.as_dict()
+    assert (
+        enabled_document["model_fold_policy"]["attention_sequential_transport_policy"]
+        == enabled_transport.as_dict()
+    )
     assert (
         enabled_model_policy.resolved_attention_sequential_transport_policy(
             "full_attention"
@@ -319,13 +319,10 @@ def test_concrete_real_v5_layer_provenance_is_policy_bound() -> None:
         "source_channels_pruned": 0,
         "source_channels_quantized": 0,
         "source_fir_resized_before_basis": True,
-        "fir_solver_backend": (
-            "authenticated_cpu_fp64_batched_all_channel_ridge"
-        ),
+        "fir_solver_backend": ("authenticated_cpu_fp64_batched_all_channel_ridge"),
         "fir_solver_receipt_scope": "aggregate_all_target_fir_channels",
         "fir_scalar_oracle_policy": (
-            "deterministic_first_middle_last_plus_"
-            "threshold_ambiguous_fallback"
+            "deterministic_first_middle_last_plus_threshold_ambiguous_fallback"
         ),
         "fit_only": True,
         "selection_cases_consumed": 0,

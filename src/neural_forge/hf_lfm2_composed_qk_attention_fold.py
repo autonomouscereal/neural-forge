@@ -1,0 +1,1703 @@
+"""Authenticated no-training composition of the LFM2 Q/K folding stages.
+
+This module deliberately keeps the composition opt-in.  It does not alter the
+historical attention candidates or the layer compiler.  The first stage:
+
+* partitions the literal upstream FIT trajectories into local Q/K FIT and
+  FIT-CHECK banks;
+* compiles structural head assignments from Q/K-FIT only;
+* uses CPCF only as an authenticated local factor extractor;
+* synchronizes those FIT factors into one global dense Q/K seed;
+* corrects and gates that seed against disjoint factor-derived target scores;
+* rebuilds a structural producer with the accepted Q/K and FIT-only V planted
+  byte-exactly.
+
+The second stage cross-authenticates an externally compiled, fit-only residual
+V/O artifact, converts it into the existing sequence-effective residual seed,
+and returns an outer Q/K/V/O artifact.  Every numerical operation is an
+analytical solve over cached evidence.  No model forward, backward, optimizer,
+pruning, quantization, or target-template initialization dependence is
+introduced here; template tensors contribute shape, dtype, and provenance only.
+
+The current structural producer API uses one head dimension and one Q/K
+RMSNorm contract for both source evidence and the target replay.  Consequently
+this first production composition fails closed unless source and target head
+dimensions and Q/K RMSNorm weights are identical.  CPCF itself already
+supports head-dimension contraction; removing this composition-level
+restriction requires a future structural-producer API with separate source
+and target norm/head-dimension contracts.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Any
+
+from neural_forge import hf_lfm2_structural_residual_attention_fold as structural
+from neural_forge.hf_lfm2_cached_qk_functional_refit import (
+    Lfm2CachedQkEvidenceBank,
+    adapt_lfm2_cached_attention_case_for_qk_refit,
+    partition_lfm2_cached_qk_fit_cases,
+)
+from neural_forge.hf_lfm2_cached_qk_score_residual_fold import (
+    Lfm2CompiledQkScoreResidualFold,
+    Lfm2QkScoreResidualEvidenceBank,
+    Lfm2QkScoreResidualFoldPolicy,
+    build_lfm2_authenticated_dense_qk_seed,
+    build_lfm2_qk_score_residual_case,
+    compile_lfm2_cached_qk_score_residual_fold,
+    seal_lfm2_qk_score_residual_fit_bank,
+    seal_lfm2_qk_score_residual_fit_check_bank,
+)
+from neural_forge.hf_lfm2_cpcf_attention_dimension_fold import (
+    Lfm2CompiledCpcfAttentionDimensionFold,
+    Lfm2CpcfAttentionCaseProvenance,
+    Lfm2CpcfAttentionDimensionLimits,
+    Lfm2CpcfAttentionDimensionPolicy,
+    Lfm2CpcfAttentionDimensionProductionCase,
+    Lfm2CpcfAttentionDimensionRuntime,
+    Lfm2CpcfAttentionDimensionTopology,
+    Lfm2CpcfBarycentricHeadGroup,
+    compile_lfm2_cpcf_attention_dimension_fold,
+)
+from neural_forge.hf_lfm2_qk_global_gauge_sync import (
+    Lfm2CompiledQkGlobalGaugeSync,
+    Lfm2QkGlobalGaugeSyncPolicy,
+    compile_lfm2_qk_global_gauge_sync,
+    seal_lfm2_qk_global_gauge_sync_provenance,
+)
+from neural_forge.hf_lfm2_sequence_effective_attention_fold import (
+    Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+    Lfm2FixedQkSequenceEffectiveVoAlsPolicy,
+    Lfm2SequenceEffectiveResidualVoSeed,
+    Lfm2SequenceEffectiveResidualVoSeedProvenance,
+    compile_lfm2_fixed_qk_sequence_effective_attention_fold,
+)
+from neural_forge.hf_lfm2_structural_residual_attention_fold import (
+    Lfm2CachedAttentionFoldCase,
+    Lfm2CompiledStructuralAttentionProducerFold,
+    Lfm2CompiledStructuralAttentionValueOutputFold,
+    compile_lfm2_structural_attention_producer_fold,
+)
+
+
+SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID = (
+    "score_routed_residual_seeded_sequence_effective"
+)
+LFM2_COMPOSED_QK_PRODUCER_SCHEMA = "neural-forge-lfm2-composed-qk-attention-producer-v1"
+LFM2_COMPOSED_QK_SEQUENCE_EFFECTIVE_SCHEMA = (
+    "neural-forge-lfm2-composed-qk-sequence-effective-attention-v1"
+)
+
+_ZERO_OPERATION_FIELDS = (
+    "model_forward_calls",
+    "model_generate_calls",
+    "backward_calls",
+    "optimizer_steps",
+    "training_steps",
+    "pruned_parameters",
+    "quantized_parameters",
+    "selection_cases_consumed",
+    "true_validation_cases_consumed",
+    "trace_recaptures",
+)
+
+
+class Lfm2ComposedQkAttentionFoldError(ValueError):
+    """The composed fold failed an evidence, quality, or authentication gate."""
+
+
+class Lfm2ComposedQkAttentionAuthenticationError(Lfm2ComposedQkAttentionFoldError):
+    """A nested artifact or composition seal is invalid."""
+
+
+def _torch() -> Any:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - optional native dependency
+        raise RuntimeError("PyTorch is required for composed LFM2 folding.") from exc
+    return torch
+
+
+def _canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    ).hexdigest()
+
+
+def _required_sha256(value: Any, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            f"{name} must be a lowercase SHA-256 digest."
+        )
+    return value
+
+
+def _tensor_sha256(value: Any) -> str:
+    torch = _torch()
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+    ):
+        raise Lfm2ComposedQkAttentionFoldError(
+            "Tensor hashing requires a dense non-meta tensor."
+        )
+    tensor = value.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(json.dumps(list(tensor.shape), separators=(",", ":")).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _structural_tensor_sha256(value: Any) -> str:
+    """Match the structural/sequence artifact tensor digest exactly."""
+
+    torch = _torch()
+    tensor = value.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(json.dumps(list(tensor.shape), separators=(",", ":")).encode("ascii"))
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _structural_state_sha256(values: Mapping[str, Any]) -> str:
+    digest = hashlib.sha256()
+    for name in sorted(values):
+        digest.update(name.encode("utf-8"))
+        digest.update(bytes.fromhex(_structural_tensor_sha256(values[name])))
+    return digest.hexdigest()
+
+
+def _case_bundle_sha256(cases: Sequence[Lfm2CachedAttentionFoldCase]) -> str:
+    rows: list[dict[str, Any]] = []
+    for index, case in enumerate(cases):
+        if not isinstance(case, Lfm2CachedAttentionFoldCase):
+            raise TypeError("upstream_fit_cases must contain cached attention cases.")
+        tensors: dict[str, str | None] = {}
+        for name in case.__dataclass_fields__:
+            value = getattr(case, name)
+            tensors[name] = None if value is None else _tensor_sha256(value)
+        rows.append({"case_index": index, "tensors": tensors})
+    if not rows:
+        raise Lfm2ComposedQkAttentionFoldError(
+            "At least one upstream FIT case is required."
+        )
+    return _canonical_sha256(rows)
+
+
+def _upstream_trajectory_bundle(
+    values: Sequence[str],
+    *,
+    expected_case_count: int,
+) -> tuple[tuple[str, ...], str]:
+    trajectories = tuple(
+        _required_sha256(value, f"upstream_trajectory_sha256s[{index}]")
+        for index, value in enumerate(values)
+    )
+    if (
+        len(trajectories) != expected_case_count
+        or len(set(trajectories)) != expected_case_count
+    ):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            "The ordered upstream trajectory inventory must contain exactly one "
+            "distinct receipt for every upstream FIT case."
+        )
+    return trajectories, _canonical_sha256(list(trajectories))
+
+
+def _ordered_partition_entries(
+    fit_bank: Lfm2CachedQkEvidenceBank,
+    fit_check_bank: Lfm2CachedQkEvidenceBank,
+    *,
+    expected_case_count: int,
+) -> tuple[tuple[int, str, Lfm2CachedAttentionFoldCase], ...]:
+    entries = tuple(
+        (
+            ordinal,
+            trajectory,
+            case,
+        )
+        for bank in (fit_bank, fit_check_bank)
+        for ordinal, trajectory, case in zip(
+            bank.source_case_ordinals,
+            bank.trajectory_sha256s,
+            bank.cases,
+            strict=True,
+        )
+    )
+    ordinals = tuple(value[0] for value in entries)
+    trajectories = tuple(value[1] for value in entries)
+    if (
+        len(entries) != expected_case_count
+        or sorted(ordinals) != list(range(expected_case_count))
+        or len(set(trajectories)) != expected_case_count
+    ):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            "Q/K-FIT and FIT-CHECK do not form the exact complete upstream "
+            "FIT trajectory partition."
+        )
+    return tuple(sorted(entries, key=lambda value: value[0]))
+
+
+def _ordered_partition_cases(
+    fit_bank: Lfm2CachedQkEvidenceBank,
+    fit_check_bank: Lfm2CachedQkEvidenceBank,
+    *,
+    expected_case_count: int,
+) -> tuple[Lfm2CachedAttentionFoldCase, ...]:
+    return tuple(
+        value[2]
+        for value in _ordered_partition_entries(
+            fit_bank,
+            fit_check_bank,
+            expected_case_count=expected_case_count,
+        )
+    )
+
+
+def _ordered_partition_trajectory_sha256s(
+    fit_bank: Lfm2CachedQkEvidenceBank,
+    fit_check_bank: Lfm2CachedQkEvidenceBank,
+    *,
+    expected_case_count: int,
+) -> tuple[str, ...]:
+    return tuple(
+        value[1]
+        for value in _ordered_partition_entries(
+            fit_bank,
+            fit_check_bank,
+            expected_case_count=expected_case_count,
+        )
+    )
+
+
+def _factor_state_bundle_sha256(states: Sequence[Any]) -> str:
+    return _canonical_sha256([value.as_digest_dict() for value in states])
+
+
+def _structural_artifact_sha256(
+    artifact: Lfm2CompiledStructuralAttentionProducerFold,
+) -> str:
+    return _canonical_sha256(artifact.as_dict())
+
+
+def _value_output_artifact_sha256(
+    artifact: Lfm2CompiledStructuralAttentionValueOutputFold,
+) -> str:
+    return _canonical_sha256(artifact.as_dict())
+
+
+def _same_tensor(left: Any, right: Any) -> bool:
+    torch = _torch()
+    return (
+        tuple(left.shape) == tuple(right.shape)
+        and left.dtype == right.dtype
+        and bool(torch.equal(left.detach().cpu(), right.detach().cpu()))
+    )
+
+
+def _positive_finite(value: Any, name: str) -> float:
+    if isinstance(value, bool):
+        raise Lfm2ComposedQkAttentionFoldError(f"{name} must be finite and positive.")
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise Lfm2ComposedQkAttentionFoldError(
+            f"{name} must be finite and positive."
+        ) from exc
+    if not math.isfinite(result) or result <= 0.0:
+        raise Lfm2ComposedQkAttentionFoldError(f"{name} must be finite and positive.")
+    return result
+
+
+def _diagnostic_cpcf_policy() -> Lfm2CpcfAttentionDimensionPolicy:
+    """CPCF is a factor extractor here; final Q/K gates are downstream."""
+
+    return Lfm2CpcfAttentionDimensionPolicy(
+        minimum_score_spectral_energy_fraction=0.0,
+        maximum_fit_centered_score_relative_rmse=None,
+        maximum_validation_centered_score_relative_rmse=None,
+        maximum_validation_js_divergence=None,
+        maximum_validation_route_probability_relative_rmse=None,
+        minimum_validation_top1_route_agreement=None,
+        anchor_exact_relative_rmse=0.01,
+    )
+
+
+def _strict_score_policy() -> Lfm2QkScoreResidualFoldPolicy:
+    return Lfm2QkScoreResidualFoldPolicy(
+        maximum_fit_centered_score_relative_rmse=0.10,
+        maximum_fit_probability_relative_rmse=0.20,
+        maximum_fit_js_divergence_mean=0.05,
+        maximum_fit_js_divergence_worst=0.10,
+        minimum_fit_top1_route_agreement=0.90,
+        maximum_fit_check_centered_score_relative_rmse=0.20,
+        maximum_fit_check_probability_relative_rmse=0.20,
+        maximum_fit_check_js_divergence_mean=0.05,
+        maximum_fit_check_js_divergence_worst=0.10,
+        minimum_fit_check_top1_route_agreement=0.90,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2ComposedQkAttentionFoldPolicy:
+    """Typed bounded policy for the complete analytical Q/K composition."""
+
+    fit_check_count: int | None = None
+    structural_ridge: float = 1e-8
+    structural_cluster_ridge: float = 1e-8
+    primitive_ridge: float = 1e-8
+    cpcf_policy: Lfm2CpcfAttentionDimensionPolicy = field(
+        default_factory=_diagnostic_cpcf_policy
+    )
+    cpcf_limits: Lfm2CpcfAttentionDimensionLimits | None = None
+    global_policy: Lfm2QkGlobalGaugeSyncPolicy = field(
+        default_factory=Lfm2QkGlobalGaugeSyncPolicy
+    )
+    score_policy: Lfm2QkScoreResidualFoldPolicy = field(
+        default_factory=_strict_score_policy
+    )
+    authentication_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if self.fit_check_count is not None and (
+            isinstance(self.fit_check_count, bool)
+            or not isinstance(self.fit_check_count, int)
+            or self.fit_check_count <= 0
+        ):
+            raise Lfm2ComposedQkAttentionFoldError(
+                "fit_check_count must be a positive integer or None."
+            )
+        for name in (
+            "structural_ridge",
+            "structural_cluster_ridge",
+            "primitive_ridge",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _positive_finite(getattr(self, name), name),
+            )
+        if not isinstance(
+            self.cpcf_policy,
+            Lfm2CpcfAttentionDimensionPolicy,
+        ):
+            raise TypeError("cpcf_policy must be Lfm2CpcfAttentionDimensionPolicy.")
+        if self.cpcf_limits is not None and not isinstance(
+            self.cpcf_limits,
+            Lfm2CpcfAttentionDimensionLimits,
+        ):
+            raise TypeError("cpcf_limits must be Lfm2CpcfAttentionDimensionLimits.")
+        if not isinstance(self.global_policy, Lfm2QkGlobalGaugeSyncPolicy):
+            raise TypeError("global_policy must be Lfm2QkGlobalGaugeSyncPolicy.")
+        if not isinstance(self.score_policy, Lfm2QkScoreResidualFoldPolicy):
+            raise TypeError("score_policy must be Lfm2QkScoreResidualFoldPolicy.")
+        score = self.score_policy
+        upper_bounds = {
+            "maximum_fit_centered_score_relative_rmse": 0.10,
+            "maximum_fit_probability_relative_rmse": 0.20,
+            "maximum_fit_js_divergence_mean": 0.05,
+            "maximum_fit_js_divergence_worst": 0.10,
+            "maximum_fit_check_centered_score_relative_rmse": 0.20,
+            "maximum_fit_check_probability_relative_rmse": 0.20,
+            "maximum_fit_check_js_divergence_mean": 0.05,
+            "maximum_fit_check_js_divergence_worst": 0.10,
+        }
+        if any(getattr(score, name) > limit for name, limit in upper_bounds.items()):
+            raise Lfm2ComposedQkAttentionFoldError(
+                "The composed score policy cannot relax its production quality "
+                "ceilings."
+            )
+        if (
+            score.minimum_fit_top1_route_agreement < 0.90
+            or score.minimum_fit_check_top1_route_agreement < 0.90
+        ):
+            raise Lfm2ComposedQkAttentionFoldError(
+                "The composed score policy cannot relax its top-1 route floor."
+            )
+        expected = _canonical_sha256(self.authentication_body())
+        supplied = str(self.authentication_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "Composed Q/K policy authentication is invalid."
+            )
+        object.__setattr__(self, "authentication_sha256", expected)
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": "neural-forge-lfm2-composed-qk-attention-policy-v1",
+            "fit_check_count": self.fit_check_count,
+            "structural_ridge": self.structural_ridge,
+            "structural_cluster_ridge": self.structural_cluster_ridge,
+            "primitive_ridge": self.primitive_ridge,
+            "cpcf_policy": self.cpcf_policy.as_dict(),
+            "cpcf_limits": (
+                None if self.cpcf_limits is None else self.cpcf_limits.as_dict()
+            ),
+            "global_policy": self.global_policy.as_dict(),
+            "score_policy": self.score_policy.as_dict(),
+            "primitive_local_qk_published": False,
+            "global_and_score_gates_authoritative": True,
+            "training_allowed": False,
+        }
+
+    def verify_authentication(self) -> bool:
+        return self.authentication_sha256 == _canonical_sha256(
+            self.authentication_body()
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            **self.authentication_body(),
+            "authentication_sha256": self.authentication_sha256,
+        }
+
+
+def _verify_structural_producer(
+    artifact: Lfm2CompiledStructuralAttentionProducerFold,
+) -> None:
+    if not isinstance(artifact, Lfm2CompiledStructuralAttentionProducerFold):
+        raise TypeError("Expected a structural attention producer artifact.")
+    if (
+        not artifact.full_source_coverage
+        or _structural_state_sha256(artifact.state_dict())
+        != artifact.compiled_state_sha256
+        or artifact.target_logical_parameters >= artifact.source_logical_parameters
+    ):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            "Structural producer authentication or dense contraction failed."
+        )
+
+
+def _convert_head_groups(
+    groups: Sequence[Sequence[int]],
+    weights: Sequence[Sequence[float]],
+) -> tuple[Lfm2CpcfBarycentricHeadGroup, ...]:
+    if len(groups) != len(weights):
+        raise Lfm2ComposedQkAttentionFoldError(
+            "Structural groups and barycentric weights are misaligned."
+        )
+    return tuple(
+        Lfm2CpcfBarycentricHeadGroup(
+            source_indices=tuple(group),
+            weights=tuple(float(value) for value in group_weights),
+        )
+        for group, group_weights in zip(groups, weights, strict=True)
+    )
+
+
+def _adapt_bank(
+    bank: Lfm2CachedQkEvidenceBank,
+    *,
+    topology: Lfm2CpcfAttentionDimensionTopology,
+    runtime: Lfm2CpcfAttentionDimensionRuntime,
+) -> tuple[Lfm2CpcfAttentionDimensionProductionCase, ...]:
+    return tuple(
+        adapt_lfm2_cached_attention_case_for_qk_refit(
+            case,
+            topology=topology,
+            runtime=runtime,
+            provenance=Lfm2CpcfAttentionCaseProvenance(
+                partition=bank.partition,
+                trajectory_sha256=trajectory,
+                source_split_sha256=bank.source_split_sha256,
+                source_runtime_sha256=bank.source_runtime_sha256,
+                case_ordinal=ordinal,
+            ),
+            case_name=f"{bank.partition}.cases[{index}]",
+        )
+        for index, (case, trajectory, ordinal) in enumerate(
+            zip(
+                bank.cases,
+                bank.trajectory_sha256s,
+                bank.source_case_ordinals,
+                strict=True,
+            )
+        )
+    )
+
+
+def _score_cases(
+    upstream_fold: Lfm2CompiledCpcfAttentionDimensionFold,
+    production_cases: Sequence[Lfm2CpcfAttentionDimensionProductionCase],
+) -> tuple[Any, ...]:
+    state_members = {
+        (state.partition, state.case_ordinal, state.evidence_sha256): state
+        for state in upstream_fold.factor_sufficient_states
+    }
+    if len(state_members) != len(upstream_fold.factor_sufficient_states):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            "The primitive published duplicate factor-state identities."
+        )
+    result = []
+    for production in production_cases:
+        key = (
+            production.provenance.partition,
+            production.provenance.case_ordinal,
+            production.evidence_sha256,
+        )
+        if key not in state_members:
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "A production case has no exact primitive factor-state member."
+            )
+        result.append(
+            build_lfm2_qk_score_residual_case(
+                production_case=production,
+                upstream_fold=upstream_fold,
+                factor_state=state_members[key],
+            )
+        )
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CompiledComposedQkAttentionProducerFold:
+    """Authenticated corrected dense structural producer and nested receipts."""
+
+    policy: Lfm2ComposedQkAttentionFoldPolicy
+    qk_fit_bank: Lfm2CachedQkEvidenceBank
+    qk_fit_check_bank: Lfm2CachedQkEvidenceBank
+    qk_fit_structural_producer: Lfm2CompiledStructuralAttentionProducerFold
+    primitive_fold: Lfm2CompiledCpcfAttentionDimensionFold
+    global_sync: Lfm2CompiledQkGlobalGaugeSync
+    score_fit_bank: Lfm2QkScoreResidualEvidenceBank
+    score_fit_check_bank: Lfm2QkScoreResidualEvidenceBank
+    score_result: Lfm2CompiledQkScoreResidualFold
+    corrected_producer: Lfm2CompiledStructuralAttentionProducerFold
+    upstream_fit_case_count: int
+    upstream_fit_case_bundle_sha256: str
+    upstream_trajectory_sha256s: tuple[str, ...]
+    upstream_trajectory_bundle_sha256: str
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.policy, Lfm2ComposedQkAttentionFoldPolicy)
+            or not self.policy.verify_authentication()
+        ):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "Composed Q/K policy authentication failed."
+            )
+        if (
+            not isinstance(self.qk_fit_bank, Lfm2CachedQkEvidenceBank)
+            or self.qk_fit_bank.partition != "fit"
+            or not isinstance(self.qk_fit_check_bank, Lfm2CachedQkEvidenceBank)
+            or self.qk_fit_check_bank.partition != "fit_check"
+        ):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The composed artifact lacks exact Q/K FIT/FIT-CHECK banks."
+            )
+        fit_sha = self.qk_fit_bank.verify()
+        check_sha = self.qk_fit_check_bank.verify()
+        case_count = self.upstream_fit_case_count
+        if (
+            isinstance(case_count, bool)
+            or not isinstance(case_count, int)
+            or case_count < 3
+        ):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The composed artifact requires at least three upstream FIT "
+                "trajectories."
+            )
+        case_bundle = _required_sha256(
+            self.upstream_fit_case_bundle_sha256,
+            "upstream_fit_case_bundle_sha256",
+        )
+        upstream_trajectories, expected_trajectory_bundle = _upstream_trajectory_bundle(
+            self.upstream_trajectory_sha256s,
+            expected_case_count=case_count,
+        )
+        trajectory_bundle = _required_sha256(
+            self.upstream_trajectory_bundle_sha256,
+            "upstream_trajectory_bundle_sha256",
+        )
+        if trajectory_bundle != expected_trajectory_bundle:
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The upstream trajectory bundle seal does not authenticate its "
+                "complete ordered receipt list."
+            )
+        if (
+            self.qk_fit_bank.source_split_sha256
+            != self.qk_fit_check_bank.source_split_sha256
+            or self.qk_fit_bank.source_runtime_sha256
+            != self.qk_fit_check_bank.source_runtime_sha256
+            or set(self.qk_fit_bank.source_case_ordinals)
+            & set(self.qk_fit_check_bank.source_case_ordinals)
+            or set(self.qk_fit_bank.trajectory_sha256s)
+            & set(self.qk_fit_check_bank.trajectory_sha256s)
+        ):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The local Q/K partitions overlap or name different evidence."
+            )
+        ordered_cases = _ordered_partition_cases(
+            self.qk_fit_bank,
+            self.qk_fit_check_bank,
+            expected_case_count=case_count,
+        )
+        partition_trajectories = _ordered_partition_trajectory_sha256s(
+            self.qk_fit_bank,
+            self.qk_fit_check_bank,
+            expected_case_count=case_count,
+        )
+        if partition_trajectories != upstream_trajectories:
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The Q/K FIT/FIT-CHECK banks do not reconstruct the exact "
+                "ordered upstream trajectory inventory."
+            )
+        if _case_bundle_sha256(ordered_cases) != case_bundle:
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The full upstream FIT case receipt differs from the exact "
+                "Q/K-FIT and FIT-CHECK partition union."
+            )
+        _verify_structural_producer(self.qk_fit_structural_producer)
+        _verify_structural_producer(self.corrected_producer)
+        primitive_sha = self.primitive_fold.verify_authentication()
+        fit_states = tuple(
+            state
+            for state in self.primitive_fold.factor_sufficient_states
+            if state.partition == "fit"
+        )
+        fit_state_sha = _factor_state_bundle_sha256(fit_states)
+        primitive_factor_sha = _factor_state_bundle_sha256(
+            self.primitive_fold.factor_sufficient_states
+        )
+        global_sha = self.global_sync.verify_authentication(
+            expected_fit_receipt_sha256=primitive_sha,
+            expected_source_runtime_receipt_sha256=(
+                self.qk_fit_bank.source_runtime_sha256
+            ),
+            expected_factor_state_bundle_sha256=fit_state_sha,
+        )
+        score_fit_sha = self.score_fit_bank.verify()
+        score_check_sha = self.score_fit_check_bank.verify()
+        score_sha = self.score_result.verify()
+        score_fit_receipts = tuple(
+            (
+                case.production_case.provenance.trajectory_sha256,
+                case.production_case.provenance.case_ordinal,
+            )
+            for case in self.score_fit_bank.cases
+        )
+        score_check_receipts = tuple(
+            (
+                case.production_case.provenance.trajectory_sha256,
+                case.production_case.provenance.case_ordinal,
+            )
+            for case in self.score_fit_check_bank.cases
+        )
+        qk_fit_receipts = tuple(
+            zip(
+                self.qk_fit_bank.trajectory_sha256s,
+                self.qk_fit_bank.source_case_ordinals,
+                strict=True,
+            )
+        )
+        qk_check_receipts = tuple(
+            zip(
+                self.qk_fit_check_bank.trajectory_sha256s,
+                self.qk_fit_check_bank.source_case_ordinals,
+                strict=True,
+            )
+        )
+        global_report = self.global_sync.as_dict()
+        global_provenance = global_report.get("provenance")
+        expected_prior_bundle = _canonical_sha256(
+            {
+                "source_query_weight_prior_sha256": _tensor_sha256(
+                    self.qk_fit_structural_producer.query_weight
+                ),
+                "source_key_weight_prior_sha256": _tensor_sha256(
+                    self.qk_fit_structural_producer.key_weight
+                ),
+            }
+        )
+        if (
+            self.score_fit_bank.partition != "fit"
+            or self.score_fit_check_bank.partition != "fit_check"
+            or score_fit_receipts != qk_fit_receipts
+            or score_check_receipts != qk_check_receipts
+            or any(
+                case.upstream_fold is not self.primitive_fold
+                for case in (
+                    *self.score_fit_bank.cases,
+                    *self.score_fit_check_bank.cases,
+                )
+            )
+            or self.score_fit_bank.source_artifact_sha256 != global_sha
+            or self.score_fit_check_bank.source_artifact_sha256 != global_sha
+            or self.score_result.seed.source_artifact_sha256 != global_sha
+            or self.score_result.seed.upstream_fold is not self.primitive_fold
+            or self.score_result.seed.global_sync is not self.global_sync
+            or self.score_result.report.get("policy")
+            != self.policy.score_policy.as_dict()
+            or not isinstance(global_provenance, Mapping)
+            or global_provenance.get("source_prior_bundle_sha256")
+            != expected_prior_bundle
+            or global_report.get("policy") != self.policy.global_policy.as_dict()
+            or self.primitive_fold.report.get("policy")
+            != self.policy.cpcf_policy.as_dict()
+            or not self.score_result.accepted
+            or not _same_tensor(
+                self.score_result.query_weight,
+                self.corrected_producer.query_weight,
+            )
+            or not _same_tensor(
+                self.score_result.key_weight,
+                self.corrected_producer.key_weight,
+            )
+            or not _same_tensor(
+                self.qk_fit_structural_producer.value_weight,
+                self.corrected_producer.value_weight,
+            )
+            or self.qk_fit_structural_producer.query_groups
+            != self.corrected_producer.query_groups
+            or self.qk_fit_structural_producer.query_barycentric_weights
+            != self.corrected_producer.query_barycentric_weights
+            or self.qk_fit_structural_producer.key_value_groups
+            != self.corrected_producer.key_value_groups
+            or self.qk_fit_structural_producer.key_value_barycentric_weights
+            != self.corrected_producer.key_value_barycentric_weights
+        ):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The accepted score result was not planted exactly into the "
+                "FIT-only structural producer."
+            )
+        body = dict(self.report)
+        seal = body.pop("artifact_sha256", None)
+        expected = {
+            "schema": LFM2_COMPOSED_QK_PRODUCER_SCHEMA,
+            "candidate_id": (
+                SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+            ),
+            "policy": self.policy.as_dict(),
+            "policy_sha256": self.policy.authentication_sha256,
+            "source_split_sha256": self.qk_fit_bank.source_split_sha256,
+            "source_runtime_sha256": self.qk_fit_bank.source_runtime_sha256,
+            "upstream_fit_case_count": case_count,
+            "upstream_fit_case_bundle_sha256": case_bundle,
+            "upstream_trajectory_sha256s": list(upstream_trajectories),
+            "upstream_trajectory_bundle_sha256": trajectory_bundle,
+            "qk_fit_evidence_sha256": fit_sha,
+            "qk_fit_check_evidence_sha256": check_sha,
+            "qk_fit_source_ordinals": list(self.qk_fit_bank.source_case_ordinals),
+            "qk_fit_check_source_ordinals": list(
+                self.qk_fit_check_bank.source_case_ordinals
+            ),
+            "qk_fit_structural_producer_sha256": _structural_artifact_sha256(
+                self.qk_fit_structural_producer
+            ),
+            "primitive_report_sha256": primitive_sha,
+            "primitive_factor_state_bundle_sha256": primitive_factor_sha,
+            "primitive_fit_factor_state_bundle_sha256": fit_state_sha,
+            "global_sync_report_sha256": global_sha,
+            "score_fit_evidence_sha256": score_fit_sha,
+            "score_fit_check_evidence_sha256": score_check_sha,
+            "score_result_report_sha256": score_sha,
+            "corrected_producer_sha256": _structural_artifact_sha256(
+                self.corrected_producer
+            ),
+            "corrected_query_weight_sha256": _tensor_sha256(
+                self.corrected_producer.query_weight
+            ),
+            "corrected_key_weight_sha256": _tensor_sha256(
+                self.corrected_producer.key_weight
+            ),
+            "corrected_value_weight_sha256": _tensor_sha256(
+                self.corrected_producer.value_weight
+            ),
+            "primitive_local_qk_published": False,
+            "fit_check_used_for_structural_groups_or_priors": False,
+            "fit_check_used_for_score_solver_updates": False,
+            "fit_check_used_for_frozen_quality_gate": True,
+            "ordinary_dense_target_qkv": True,
+            "operation_audit": {name: 0 for name in _ZERO_OPERATION_FIELDS},
+        }
+        if seal != _canonical_sha256(body) or any(
+            body.get(name) != value for name, value in expected.items()
+        ):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The composed Q/K producer receipt is invalid."
+            )
+        object.__setattr__(self, "upstream_fit_case_count", case_count)
+        object.__setattr__(self, "upstream_fit_case_bundle_sha256", case_bundle)
+        object.__setattr__(
+            self,
+            "upstream_trajectory_sha256s",
+            upstream_trajectories,
+        )
+        object.__setattr__(
+            self,
+            "upstream_trajectory_bundle_sha256",
+            trajectory_bundle,
+        )
+        object.__setattr__(
+            self,
+            "report",
+            MappingProxyType({**body, "artifact_sha256": seal}),
+        )
+
+    @property
+    def candidate_id(self) -> str:
+        return SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+
+    @property
+    def producer_artifact(self) -> Lfm2CompiledStructuralAttentionProducerFold:
+        return self.corrected_producer
+
+    @property
+    def topology(self) -> Any:
+        return self.corrected_producer.topology
+
+    @property
+    def artifact_sha256(self) -> str:
+        return str(self.report["artifact_sha256"])
+
+    def state_dict(self) -> Mapping[str, Any]:
+        return self.corrected_producer.state_dict()
+
+    def verify_authentication(self) -> str:
+        rebuilt = Lfm2CompiledComposedQkAttentionProducerFold(
+            policy=self.policy,
+            qk_fit_bank=self.qk_fit_bank,
+            qk_fit_check_bank=self.qk_fit_check_bank,
+            qk_fit_structural_producer=self.qk_fit_structural_producer,
+            primitive_fold=self.primitive_fold,
+            global_sync=self.global_sync,
+            score_fit_bank=self.score_fit_bank,
+            score_fit_check_bank=self.score_fit_check_bank,
+            score_result=self.score_result,
+            corrected_producer=self.corrected_producer,
+            upstream_fit_case_count=self.upstream_fit_case_count,
+            upstream_fit_case_bundle_sha256=self.upstream_fit_case_bundle_sha256,
+            upstream_trajectory_sha256s=self.upstream_trajectory_sha256s,
+            upstream_trajectory_bundle_sha256=(self.upstream_trajectory_bundle_sha256),
+            report=self.report,
+        )
+        return rebuilt.artifact_sha256
+
+    def as_dict(self) -> dict[str, Any]:
+        return json.loads(json.dumps(dict(self.report)))
+
+
+def compile_lfm2_composed_qk_attention_producer_fold(
+    *,
+    source_query_weight: Any,
+    source_key_weight: Any,
+    source_value_weight: Any,
+    source_output_weight: Any,
+    target_query_weight_template: Any,
+    target_key_weight_template: Any,
+    target_value_weight_template: Any,
+    target_output_weight_template: Any,
+    upstream_fit_cases: Sequence[Lfm2CachedAttentionFoldCase],
+    trajectory_sha256s: Sequence[str],
+    source_split_sha256: str,
+    source_query_norm_weight: Any,
+    source_key_norm_weight: Any,
+    target_query_norm_weight: Any,
+    target_key_norm_weight: Any,
+    source_head_dim: int,
+    target_head_dim: int,
+    norm_epsilon: float = 1e-5,
+    residual_assignment_sha256: str | None = None,
+    policy: Lfm2ComposedQkAttentionFoldPolicy | None = None,
+) -> Lfm2CompiledComposedQkAttentionProducerFold:
+    """Compile the corrected Q/K/V structural producer from upstream FIT only."""
+
+    torch = _torch()
+    policy_value = policy or Lfm2ComposedQkAttentionFoldPolicy()
+    if (
+        not isinstance(policy_value, Lfm2ComposedQkAttentionFoldPolicy)
+        or not policy_value.verify_authentication()
+    ):
+        raise TypeError("policy must be an authenticated composed Q/K policy.")
+    cases = tuple(upstream_fit_cases)
+    trajectories, trajectory_bundle = _upstream_trajectory_bundle(
+        trajectory_sha256s,
+        expected_case_count=len(cases),
+    )
+    source_split = _required_sha256(source_split_sha256, "source_split_sha256")
+    if len(cases) < 3 or len(trajectories) != len(cases):
+        raise Lfm2ComposedQkAttentionFoldError(
+            "Composition requires at least three aligned upstream FIT "
+            "trajectories so Q/K-FIT contains at least two global-gauge cases."
+        )
+    if (
+        isinstance(source_head_dim, bool)
+        or not isinstance(source_head_dim, int)
+        or source_head_dim <= 0
+        or isinstance(target_head_dim, bool)
+        or not isinstance(target_head_dim, int)
+        or target_head_dim <= 0
+        or source_head_dim % 2
+        or target_head_dim % 2
+    ):
+        raise Lfm2ComposedQkAttentionFoldError(
+            "Source and target head dimensions must be positive even integers."
+        )
+    source_q_norm = source_query_norm_weight.detach().cpu().contiguous()
+    source_k_norm = source_key_norm_weight.detach().cpu().contiguous()
+    target_q_norm = target_query_norm_weight.detach().cpu().contiguous()
+    target_k_norm = target_key_norm_weight.detach().cpu().contiguous()
+    if (
+        source_head_dim != target_head_dim
+        or not _same_tensor(source_q_norm, target_q_norm)
+        or not _same_tensor(source_k_norm, target_k_norm)
+    ):
+        raise Lfm2ComposedQkAttentionFoldError(
+            "The current structural-producer API requires preserved head "
+            "dimension and identical source/target Q/K RMSNorm weights."
+        )
+    target_query_template = target_query_weight_template.detach().cpu().contiguous()
+    target_key_template = target_key_weight_template.detach().cpu().contiguous()
+    if (
+        target_query_template.dtype != torch.bfloat16
+        or target_key_template.dtype != torch.bfloat16
+        or source_q_norm.dtype != torch.bfloat16
+        or source_k_norm.dtype != torch.bfloat16
+        or target_q_norm.dtype != torch.bfloat16
+        or target_k_norm.dtype != torch.bfloat16
+    ):
+        raise Lfm2ComposedQkAttentionFoldError(
+            "The production global/score composition currently publishes exact "
+            "dense BF16 Q/K and therefore requires BF16 Q/K templates and norms."
+        )
+    runtime = Lfm2CpcfAttentionDimensionRuntime(
+        source_query_norm_weight=source_q_norm,
+        source_key_norm_weight=source_k_norm,
+        target_query_norm_weight=target_q_norm,
+        target_key_norm_weight=target_k_norm,
+        target_query_weight_template=target_query_template,
+        target_key_weight_template=target_key_template,
+        norm_epsilon=norm_epsilon,
+        solver_mode="per_case_local_gauge",
+    )
+    qk_fit_bank, qk_fit_check_bank = partition_lfm2_cached_qk_fit_cases(
+        cases,
+        trajectory_sha256s=trajectories,
+        source_split_sha256=source_split,
+        source_runtime_sha256=runtime.source_runtime_sha256,
+        fit_check_count=policy_value.fit_check_count,
+    )
+    common_structural = {
+        "source_query_weight": source_query_weight,
+        "source_key_weight": source_key_weight,
+        "source_value_weight": source_value_weight,
+        "source_output_weight": source_output_weight,
+        "target_query_weight_template": target_query_weight_template,
+        "target_key_weight_template": target_key_weight_template,
+        "target_value_weight_template": target_value_weight_template,
+        "target_output_weight_template": target_output_weight_template,
+        "cases": qk_fit_bank.cases,
+        "head_dim": source_head_dim,
+        "query_norm_weight": source_q_norm,
+        "key_norm_weight": source_k_norm,
+        "residual_assignment_sha256": residual_assignment_sha256,
+        "norm_epsilon": norm_epsilon,
+        "ridge": policy_value.structural_ridge,
+        "cluster_ridge": policy_value.structural_cluster_ridge,
+    }
+    qk_fit_producer = compile_lfm2_structural_attention_producer_fold(
+        **common_structural,
+        max_prior_delta_ratio=None,
+    )
+    _verify_structural_producer(qk_fit_producer)
+    topology = Lfm2CpcfAttentionDimensionTopology(
+        source_query_heads=qk_fit_producer.topology.source_query_heads,
+        source_key_value_heads=qk_fit_producer.topology.source_key_value_heads,
+        target_query_heads=qk_fit_producer.topology.target_query_heads,
+        target_key_value_heads=qk_fit_producer.topology.target_key_value_heads,
+        source_head_dim=source_head_dim,
+        target_head_dim=target_head_dim,
+    )
+    query_groups = _convert_head_groups(
+        qk_fit_producer.query_groups,
+        qk_fit_producer.query_barycentric_weights,
+    )
+    key_value_groups = _convert_head_groups(
+        qk_fit_producer.key_value_groups,
+        qk_fit_producer.key_value_barycentric_weights,
+    )
+    fit_production = _adapt_bank(
+        qk_fit_bank,
+        topology=topology,
+        runtime=runtime,
+    )
+    fit_check_production = _adapt_bank(
+        qk_fit_check_bank,
+        topology=topology,
+        runtime=runtime,
+    )
+    primitive = compile_lfm2_cpcf_attention_dimension_fold(
+        topology=topology,
+        fit_cases=fit_production,
+        validation_cases=(),
+        fit_check_cases=fit_check_production,
+        query_groups=query_groups,
+        key_value_groups=key_value_groups,
+        policy=policy_value.cpcf_policy,
+        limits=policy_value.cpcf_limits,
+        ridge=policy_value.primitive_ridge,
+        runtime=runtime,
+    )
+    primitive_sha = primitive.verify_authentication()
+    fit_states = tuple(
+        state
+        for state in primitive.factor_sufficient_states
+        if state.partition == "fit"
+    )
+    if len(fit_states) < 2:
+        raise Lfm2ComposedQkAttentionFoldError(
+            "Global Q/K synchronization requires at least two Q/K-FIT factors."
+        )
+    global_provenance = seal_lfm2_qk_global_gauge_sync_provenance(
+        fit_receipt_sha256=primitive_sha,
+        source_runtime_receipt_sha256=runtime.source_runtime_sha256,
+        factor_states=fit_states,
+        source_query_weight_prior=qk_fit_producer.query_weight,
+        source_key_weight_prior=qk_fit_producer.key_weight,
+        target_query_norm_weight=target_q_norm,
+        target_key_norm_weight=target_k_norm,
+        target_query_weight_template=target_query_template,
+        target_key_weight_template=target_key_template,
+        norm_epsilon=norm_epsilon,
+    )
+    global_sync = compile_lfm2_qk_global_gauge_sync(
+        factor_states=fit_states,
+        target_query_norm_weight=target_q_norm,
+        target_key_norm_weight=target_k_norm,
+        target_query_weight_template=target_query_template,
+        target_key_weight_template=target_key_template,
+        source_query_weight_prior=qk_fit_producer.query_weight,
+        source_key_weight_prior=qk_fit_producer.key_weight,
+        norm_epsilon=norm_epsilon,
+        provenance=global_provenance,
+        policy=policy_value.global_policy,
+    )
+    global_sha = global_sync.verify_authentication(
+        expected_fit_receipt_sha256=primitive_sha,
+        expected_source_runtime_receipt_sha256=runtime.source_runtime_sha256,
+        expected_factor_state_bundle_sha256=_factor_state_bundle_sha256(fit_states),
+    )
+    seed = build_lfm2_authenticated_dense_qk_seed(
+        upstream_fold=primitive,
+        global_sync=global_sync,
+    )
+    score_fit_cases = _score_cases(primitive, fit_production)
+    score_fit_check_cases = _score_cases(primitive, fit_check_production)
+    score_fit_bank = seal_lfm2_qk_score_residual_fit_bank(
+        score_fit_cases,
+        source_split_sha256=source_split,
+        source_runtime_sha256=runtime.source_runtime_sha256,
+        source_artifact_sha256=global_sha,
+    )
+    score_fit_check_bank = seal_lfm2_qk_score_residual_fit_check_bank(
+        score_fit_check_cases,
+        source_split_sha256=source_split,
+        source_runtime_sha256=runtime.source_runtime_sha256,
+        source_artifact_sha256=global_sha,
+    )
+    score_result = compile_lfm2_cached_qk_score_residual_fold(
+        seed=seed,
+        fit_bank=score_fit_bank,
+        fit_check_bank=score_fit_check_bank,
+        policy=policy_value.score_policy,
+    )
+    if not score_result.accepted:
+        score_report = dict(score_result.report)
+        raise Lfm2ComposedQkAttentionFoldError(
+            "The synchronized Q/K state failed the authoritative score-residual "
+            f"gate: {score_result.status}; "
+            f"FIT={score_result.fit_metrics.as_dict()!r}; "
+            "FIT-CHECK="
+            f"{None if score_result.fit_check_metrics is None else score_result.fit_check_metrics.as_dict()!r}; "
+            "proposed FIT-CHECK="
+            f"{score_report.get('proposed_fit_check_metrics')!r}."
+        )
+    corrected_producer = compile_lfm2_structural_attention_producer_fold(
+        **common_structural,
+        query_weight_prior=score_result.query_weight,
+        key_weight_prior=score_result.key_weight,
+        value_weight_prior=qk_fit_producer.value_weight,
+        max_prior_delta_ratio=0.0,
+    )
+    _verify_structural_producer(corrected_producer)
+    if (
+        not _same_tensor(score_result.query_weight, corrected_producer.query_weight)
+        or not _same_tensor(score_result.key_weight, corrected_producer.key_weight)
+        or not _same_tensor(
+            qk_fit_producer.value_weight,
+            corrected_producer.value_weight,
+        )
+        or qk_fit_producer.query_groups != corrected_producer.query_groups
+        or qk_fit_producer.query_barycentric_weights
+        != corrected_producer.query_barycentric_weights
+        or qk_fit_producer.key_value_groups != corrected_producer.key_value_groups
+        or qk_fit_producer.key_value_barycentric_weights
+        != corrected_producer.key_value_barycentric_weights
+    ):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            "Exact Q/K/V prior planting or FIT-only head assignment changed."
+        )
+    score_sha = score_result.verify()
+    case_bundle = _case_bundle_sha256(cases)
+    body = {
+        "schema": LFM2_COMPOSED_QK_PRODUCER_SCHEMA,
+        "candidate_id": SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID,
+        "policy": policy_value.as_dict(),
+        "policy_sha256": policy_value.authentication_sha256,
+        "source_split_sha256": source_split,
+        "source_runtime_sha256": runtime.source_runtime_sha256,
+        "upstream_fit_case_count": len(cases),
+        "upstream_fit_case_bundle_sha256": case_bundle,
+        "upstream_trajectory_sha256s": list(trajectories),
+        "upstream_trajectory_bundle_sha256": trajectory_bundle,
+        "qk_fit_evidence_sha256": qk_fit_bank.evidence_sha256,
+        "qk_fit_check_evidence_sha256": qk_fit_check_bank.evidence_sha256,
+        "qk_fit_source_ordinals": list(qk_fit_bank.source_case_ordinals),
+        "qk_fit_check_source_ordinals": list(qk_fit_check_bank.source_case_ordinals),
+        "qk_fit_structural_producer_sha256": _structural_artifact_sha256(
+            qk_fit_producer
+        ),
+        "primitive_report_sha256": primitive_sha,
+        "primitive_factor_state_bundle_sha256": _factor_state_bundle_sha256(
+            primitive.factor_sufficient_states
+        ),
+        "primitive_fit_factor_state_bundle_sha256": _factor_state_bundle_sha256(
+            fit_states
+        ),
+        "global_sync_report_sha256": global_sha,
+        "score_fit_evidence_sha256": score_fit_bank.evidence_sha256,
+        "score_fit_check_evidence_sha256": score_fit_check_bank.evidence_sha256,
+        "score_result_report_sha256": score_sha,
+        "corrected_producer_sha256": _structural_artifact_sha256(corrected_producer),
+        "corrected_query_weight_sha256": _tensor_sha256(
+            corrected_producer.query_weight
+        ),
+        "corrected_key_weight_sha256": _tensor_sha256(corrected_producer.key_weight),
+        "corrected_value_weight_sha256": _tensor_sha256(
+            corrected_producer.value_weight
+        ),
+        "primitive_local_qk_published": False,
+        "fit_check_used_for_structural_groups_or_priors": False,
+        "fit_check_used_for_score_solver_updates": False,
+        "fit_check_used_for_frozen_quality_gate": True,
+        "ordinary_dense_target_qkv": True,
+        "operation_audit": {name: 0 for name in _ZERO_OPERATION_FIELDS},
+    }
+    return Lfm2CompiledComposedQkAttentionProducerFold(
+        policy=policy_value,
+        qk_fit_bank=qk_fit_bank,
+        qk_fit_check_bank=qk_fit_check_bank,
+        qk_fit_structural_producer=qk_fit_producer,
+        primitive_fold=primitive,
+        global_sync=global_sync,
+        score_fit_bank=score_fit_bank,
+        score_fit_check_bank=score_fit_check_bank,
+        score_result=score_result,
+        corrected_producer=corrected_producer,
+        upstream_fit_case_count=len(cases),
+        upstream_fit_case_bundle_sha256=case_bundle,
+        upstream_trajectory_sha256s=trajectories,
+        upstream_trajectory_bundle_sha256=trajectory_bundle,
+        report={**body, "artifact_sha256": _canonical_sha256(body)},
+    )
+
+
+def _stage_two_runtime_contract(
+    composed: Lfm2CompiledComposedQkAttentionProducerFold,
+    *,
+    query_norm_weight: Any,
+    key_norm_weight: Any,
+    norm_epsilon: float,
+) -> tuple[Any, Any, float]:
+    torch = _torch()
+    runtime = composed.primitive_fold.runtime
+    if not isinstance(query_norm_weight, torch.Tensor) or not isinstance(
+        key_norm_weight,
+        torch.Tensor,
+    ):
+        raise TypeError("Stage-two Q/K norm weights must be tensors.")
+    query_norm = query_norm_weight.detach().to(device="cpu").contiguous()
+    key_norm = key_norm_weight.detach().to(device="cpu").contiguous()
+    epsilon = _positive_finite(norm_epsilon, "norm_epsilon")
+    if (
+        not _same_tensor(query_norm, runtime.target_query_norm_weight)
+        or not _same_tensor(key_norm, runtime.target_key_norm_weight)
+        or epsilon != runtime.norm_epsilon
+    ):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            "Stage-two Q/K norm weights and epsilon must exactly match the "
+            "authenticated stage-one target runtime."
+        )
+    return query_norm, key_norm, epsilon
+
+
+def _value_output_evidence_receipts(
+    *,
+    composed: Lfm2CompiledComposedQkAttentionProducerFold,
+    cases: Sequence[Lfm2CachedAttentionFoldCase],
+    query_norm_weight: Any,
+    key_norm_weight: Any,
+    norm_epsilon: float,
+    actual_child_contexts: Sequence[Any] | None,
+) -> Mapping[str, str | None]:
+    torch = _torch()
+    topology = composed.topology
+    query_norm = structural._float_tensor(  # noqa: SLF001
+        query_norm_weight,
+        "query_norm_weight",
+        ndim=1,
+    )
+    key_norm = structural._float_tensor(  # noqa: SLF001
+        key_norm_weight,
+        "key_norm_weight",
+        ndim=1,
+    )
+    normalized_cases = tuple(
+        structural._normalize_attention_value_output_case(  # noqa: SLF001
+            case,
+            case_index=index,
+            producer=composed.producer_artifact,
+            query_norm_weight=query_norm_weight,
+            key_norm_weight=key_norm_weight,
+            normalized_query_norm_weight=query_norm,
+            normalized_key_norm_weight=key_norm,
+            norm_epsilon=norm_epsilon,
+        )
+        for index, case in enumerate(cases)
+    )
+    live_value = structural._float_tensor(  # noqa: SLF001
+        composed.producer_artifact.value_weight,
+        "composed.producer_artifact.value_weight",
+        ndim=2,
+    )
+    reconstructed_rows = structural._attention_context_rows_from_value(  # noqa: SLF001
+        normalized_cases,
+        live_value,
+        topology,
+    )
+    endpoint_target = torch.cat(
+        [value["endpoint"] for value in normalized_cases],
+        dim=0,
+    )
+    actual_sha: str | None = None
+    if actual_child_contexts is not None:
+        contexts = tuple(actual_child_contexts)
+        if len(contexts) != len(cases):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "Actual child contexts must align one-to-one with the exact "
+                "upstream FIT cases."
+            )
+        context_width = topology.target_query_heads * topology.head_dim
+        actual_rows = tuple(
+            structural._actual_attention_context_rows(  # noqa: SLF001
+                context,
+                case=case,
+                context_width=context_width,
+                name=f"actual_child_contexts[{index}]",
+            )
+            for index, (context, case) in enumerate(zip(contexts, cases, strict=True))
+        )
+        actual_sha = _structural_state_sha256(
+            {f"context.{index:04d}": value for index, value in enumerate(actual_rows)}
+        )
+    return MappingProxyType(
+        {
+            "live_value_sha256": _structural_tensor_sha256(live_value),
+            "actual_child_context_sha256": actual_sha,
+            "reconstructed_live_context_sha256": _structural_state_sha256(
+                {
+                    f"context.{index:04d}": value
+                    for index, value in enumerate(reconstructed_rows)
+                }
+            ),
+            "endpoint_target_sha256": _structural_tensor_sha256(endpoint_target),
+        }
+    )
+
+
+def _verify_value_output_artifact(
+    artifact: Lfm2CompiledStructuralAttentionValueOutputFold,
+    *,
+    composed: Lfm2CompiledComposedQkAttentionProducerFold,
+    cases: Sequence[Lfm2CachedAttentionFoldCase],
+    query_norm_weight: Any,
+    key_norm_weight: Any,
+    norm_epsilon: float,
+    actual_child_contexts: Sequence[Any] | None,
+) -> tuple[str, Mapping[str, str | None]]:
+    if not isinstance(
+        artifact,
+        Lfm2CompiledStructuralAttentionValueOutputFold,
+    ):
+        raise TypeError("fit_value_output_artifact must be a structural V/O artifact.")
+    state_sha = _structural_state_sha256(artifact.state_dict())
+    receipts = _value_output_evidence_receipts(
+        composed=composed,
+        cases=cases,
+        query_norm_weight=query_norm_weight,
+        key_norm_weight=key_norm_weight,
+        norm_epsilon=norm_epsilon,
+        actual_child_contexts=actual_child_contexts,
+    )
+    if (
+        artifact.topology != composed.topology
+        or artifact.case_count != len(cases)
+        or artifact.fixed_query_key_sha256
+        != composed.producer_artifact.score_state_sha256
+        or state_sha != artifact.compiled_state_sha256
+        or not artifact.fit_nonincreasing
+        or artifact.live_value_sha256 != receipts["live_value_sha256"]
+        or artifact.reconstructed_live_context_sha256
+        != receipts["reconstructed_live_context_sha256"]
+        or artifact.endpoint_target_sha256 != receipts["endpoint_target_sha256"]
+        or (
+            receipts["actual_child_context_sha256"] is not None
+            and artifact.actual_child_context_sha256
+            != receipts["actual_child_context_sha256"]
+        )
+    ):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            "The fit-only V/O artifact is not cross-bound to the corrected "
+            "producer, exact cases/contexts, or dense state."
+        )
+    return _value_output_artifact_sha256(artifact), receipts
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CompiledComposedQkSequenceEffectiveAttentionFold:
+    """Outer authenticated fourth-arm artifact delegating to sequence V/O."""
+
+    composed_qk: Lfm2CompiledComposedQkAttentionProducerFold
+    fit_value_output_artifact: Lfm2CompiledStructuralAttentionValueOutputFold
+    residual_vo_seed: Lfm2SequenceEffectiveResidualVoSeed
+    inner_artifact: Lfm2CompiledFixedQkSequenceEffectiveAttentionFold
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        composed_sha = self.composed_qk.verify_authentication()
+        runtime = self.composed_qk.primitive_fold.runtime
+        cases = _ordered_partition_cases(
+            self.composed_qk.qk_fit_bank,
+            self.composed_qk.qk_fit_check_bank,
+            expected_case_count=self.composed_qk.upstream_fit_case_count,
+        )
+        vo_sha, vo_receipts = _verify_value_output_artifact(
+            self.fit_value_output_artifact,
+            composed=self.composed_qk,
+            cases=cases,
+            query_norm_weight=runtime.target_query_norm_weight,
+            key_norm_weight=runtime.target_key_norm_weight,
+            norm_epsilon=runtime.norm_epsilon,
+            actual_child_contexts=None,
+        )
+        if (
+            not isinstance(
+                self.residual_vo_seed,
+                Lfm2SequenceEffectiveResidualVoSeed,
+            )
+            or not self.residual_vo_seed.verify_authentication()
+            or self.residual_vo_seed.provenance.source_artifact_seal_sha256 != vo_sha
+            or self.residual_vo_seed.provenance.source_compiled_state_sha256
+            != self.fit_value_output_artifact.compiled_state_sha256
+            or not _same_tensor(
+                self.residual_vo_seed.value_weight,
+                self.fit_value_output_artifact.value_weight,
+            )
+            or not _same_tensor(
+                self.residual_vo_seed.output_weight,
+                self.fit_value_output_artifact.output_weight,
+            )
+        ):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "Residual V/O seed does not cross-authenticate its source artifact."
+            )
+        if (
+            not isinstance(
+                self.inner_artifact,
+                Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+            )
+            or not self.inner_artifact.verify_authentication()
+            or self.inner_artifact.producer_artifact
+            is not self.composed_qk.producer_artifact
+            or self.inner_artifact.residual_vo_seed is not self.residual_vo_seed
+            or not _same_tensor(
+                self.inner_artifact.producer_artifact.query_weight,
+                self.composed_qk.score_result.query_weight,
+            )
+            or not _same_tensor(
+                self.inner_artifact.producer_artifact.key_weight,
+                self.composed_qk.score_result.key_weight,
+            )
+        ):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The inner sequence artifact changed the composed Q/K or V/O seed."
+            )
+        inner_report = dict(self.inner_artifact.report)
+        inner_sha = _required_sha256(
+            inner_report.get("report_sha256"),
+            "inner_report_sha256",
+        )
+        body = dict(self.report)
+        seal = body.pop("artifact_sha256", None)
+        expected = {
+            "schema": LFM2_COMPOSED_QK_SEQUENCE_EFFECTIVE_SCHEMA,
+            "candidate_id": (
+                SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+            ),
+            "composed_qk_artifact_sha256": composed_sha,
+            "fit_value_output_artifact_sha256": vo_sha,
+            "fit_value_output_compiled_state_sha256": (
+                self.fit_value_output_artifact.compiled_state_sha256
+            ),
+            "fit_value_output_live_value_sha256": (vo_receipts["live_value_sha256"]),
+            "fit_value_output_actual_child_context_sha256": (
+                self.fit_value_output_artifact.actual_child_context_sha256
+            ),
+            "fit_value_output_reconstructed_live_context_sha256": (
+                vo_receipts["reconstructed_live_context_sha256"]
+            ),
+            "fit_value_output_endpoint_target_sha256": (
+                vo_receipts["endpoint_target_sha256"]
+            ),
+            "residual_vo_seed_sha256": (self.residual_vo_seed.authentication_sha256),
+            "inner_sequence_report_sha256": inner_sha,
+            "inner_compiled_state_sha256": self.inner_artifact.compiled_state_sha256,
+            "fixed_query_key_sha256": (
+                self.composed_qk.producer_artifact.score_state_sha256
+            ),
+            "upstream_fit_case_bundle_sha256": (
+                self.composed_qk.upstream_fit_case_bundle_sha256
+            ),
+            "upstream_trajectory_sha256s": list(
+                self.composed_qk.upstream_trajectory_sha256s
+            ),
+            "upstream_trajectory_bundle_sha256": (
+                self.composed_qk.upstream_trajectory_bundle_sha256
+            ),
+            "query_norm_weight_sha256": _tensor_sha256(
+                runtime.target_query_norm_weight
+            ),
+            "key_norm_weight_sha256": _tensor_sha256(runtime.target_key_norm_weight),
+            "norm_epsilon": runtime.norm_epsilon,
+            "dense_target_native_qkvo": True,
+            "source_seed_fit_provenance_cross_authenticated": True,
+            "operation_audit": {name: 0 for name in _ZERO_OPERATION_FIELDS},
+        }
+        if seal != _canonical_sha256(body) or any(
+            body.get(name) != value for name, value in expected.items()
+        ):
+            raise Lfm2ComposedQkAttentionAuthenticationError(
+                "The outer composed sequence-effective receipt is invalid."
+            )
+        object.__setattr__(
+            self,
+            "report",
+            MappingProxyType({**body, "artifact_sha256": seal}),
+        )
+
+    @property
+    def candidate_id(self) -> str:
+        return SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+
+    @property
+    def producer_artifact(self) -> Lfm2CompiledStructuralAttentionProducerFold:
+        return self.inner_artifact.producer_artifact
+
+    @property
+    def topology(self) -> Any:
+        return self.inner_artifact.topology
+
+    @property
+    def cluster_plan(self) -> Any:
+        return self.inner_artifact.cluster_plan
+
+    @property
+    def artifact_sha256(self) -> str:
+        return str(self.report["artifact_sha256"])
+
+    def state_dict(self) -> Mapping[str, Any]:
+        return self.inner_artifact.state_dict()
+
+    def verify_authentication(self) -> str:
+        rebuilt = Lfm2CompiledComposedQkSequenceEffectiveAttentionFold(
+            composed_qk=self.composed_qk,
+            fit_value_output_artifact=self.fit_value_output_artifact,
+            residual_vo_seed=self.residual_vo_seed,
+            inner_artifact=self.inner_artifact,
+            report=self.report,
+        )
+        return rebuilt.artifact_sha256
+
+    def as_dict(self) -> dict[str, Any]:
+        return json.loads(json.dumps(dict(self.report)))
+
+
+def compile_lfm2_composed_qk_sequence_effective_attention_fold(
+    *,
+    composed_qk: Lfm2CompiledComposedQkAttentionProducerFold,
+    fit_value_output_artifact: Lfm2CompiledStructuralAttentionValueOutputFold,
+    upstream_fit_cases: Sequence[Lfm2CachedAttentionFoldCase],
+    actual_child_contexts: Sequence[Any],
+    target_value_weight_template: Any,
+    target_output_weight_template: Any,
+    query_norm_weight: Any,
+    key_norm_weight: Any,
+    norm_epsilon: float = 1e-5,
+    sequence_policy: Lfm2FixedQkSequenceEffectiveVoAlsPolicy | None = None,
+) -> Lfm2CompiledComposedQkSequenceEffectiveAttentionFold:
+    """Cross-authenticate fit-only V/O and compile the fourth attention arm."""
+
+    if not isinstance(composed_qk, Lfm2CompiledComposedQkAttentionProducerFold):
+        raise TypeError("composed_qk must be a composed Q/K producer artifact.")
+    composed_sha = composed_qk.verify_authentication()
+    query_norm, key_norm, epsilon = _stage_two_runtime_contract(
+        composed_qk,
+        query_norm_weight=query_norm_weight,
+        key_norm_weight=key_norm_weight,
+        norm_epsilon=norm_epsilon,
+    )
+    cases = tuple(upstream_fit_cases)
+    case_bundle = _case_bundle_sha256(cases)
+    if (
+        len(cases) != composed_qk.upstream_fit_case_count
+        or case_bundle != composed_qk.upstream_fit_case_bundle_sha256
+    ):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            "Stage two must consume the exact full upstream FIT case bundle "
+            "authenticated by stage one."
+        )
+    vo_sha, vo_receipts = _verify_value_output_artifact(
+        fit_value_output_artifact,
+        composed=composed_qk,
+        cases=cases,
+        query_norm_weight=query_norm,
+        key_norm_weight=key_norm,
+        norm_epsilon=epsilon,
+        actual_child_contexts=actual_child_contexts,
+    )
+    provenance = Lfm2SequenceEffectiveResidualVoSeedProvenance(
+        source_artifact_schema=(
+            "neural-forge-lfm2-structural-attention-value-output-fold-v1"
+        ),
+        source_artifact_seal_sha256=vo_sha,
+        source_compiled_state_sha256=(fit_value_output_artifact.compiled_state_sha256),
+        source_value_weight_sha256=_structural_tensor_sha256(
+            fit_value_output_artifact.value_weight
+        ),
+        source_output_weight_sha256=_structural_tensor_sha256(
+            fit_value_output_artifact.output_weight
+        ),
+        evidence_split="fit",
+    )
+    residual_seed = Lfm2SequenceEffectiveResidualVoSeed(
+        value_weight=fit_value_output_artifact.value_weight,
+        output_weight=fit_value_output_artifact.output_weight,
+        provenance=provenance,
+    )
+    inner = compile_lfm2_fixed_qk_sequence_effective_attention_fold(
+        producer=composed_qk.producer_artifact,
+        target_value_weight_template=target_value_weight_template,
+        target_output_weight_template=target_output_weight_template,
+        fit_cases=cases,
+        query_norm_weight=query_norm,
+        key_norm_weight=key_norm,
+        norm_epsilon=epsilon,
+        policy=sequence_policy,
+        residual_vo_seed=residual_seed,
+    )
+    if (
+        not inner.verify_authentication()
+        or inner.producer_artifact is not composed_qk.producer_artifact
+        or not _same_tensor(
+            inner.producer_artifact.query_weight,
+            composed_qk.score_result.query_weight,
+        )
+        or not _same_tensor(
+            inner.producer_artifact.key_weight,
+            composed_qk.score_result.key_weight,
+        )
+    ):
+        raise Lfm2ComposedQkAttentionAuthenticationError(
+            "Sequence-effective composition did not preserve exact corrected Q/K."
+        )
+    inner_sha = _required_sha256(
+        dict(inner.report).get("report_sha256"),
+        "inner_report_sha256",
+    )
+    body = {
+        "schema": LFM2_COMPOSED_QK_SEQUENCE_EFFECTIVE_SCHEMA,
+        "candidate_id": SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID,
+        "composed_qk_artifact_sha256": composed_sha,
+        "fit_value_output_artifact_sha256": vo_sha,
+        "fit_value_output_compiled_state_sha256": (
+            fit_value_output_artifact.compiled_state_sha256
+        ),
+        "fit_value_output_live_value_sha256": vo_receipts["live_value_sha256"],
+        "fit_value_output_actual_child_context_sha256": (
+            vo_receipts["actual_child_context_sha256"]
+        ),
+        "fit_value_output_reconstructed_live_context_sha256": (
+            vo_receipts["reconstructed_live_context_sha256"]
+        ),
+        "fit_value_output_endpoint_target_sha256": (
+            vo_receipts["endpoint_target_sha256"]
+        ),
+        "residual_vo_seed_sha256": residual_seed.authentication_sha256,
+        "inner_sequence_report_sha256": inner_sha,
+        "inner_compiled_state_sha256": inner.compiled_state_sha256,
+        "fixed_query_key_sha256": composed_qk.producer_artifact.score_state_sha256,
+        "upstream_fit_case_bundle_sha256": case_bundle,
+        "upstream_trajectory_sha256s": list(composed_qk.upstream_trajectory_sha256s),
+        "upstream_trajectory_bundle_sha256": (
+            composed_qk.upstream_trajectory_bundle_sha256
+        ),
+        "query_norm_weight_sha256": _tensor_sha256(query_norm),
+        "key_norm_weight_sha256": _tensor_sha256(key_norm),
+        "norm_epsilon": epsilon,
+        "dense_target_native_qkvo": True,
+        "source_seed_fit_provenance_cross_authenticated": True,
+        "operation_audit": {name: 0 for name in _ZERO_OPERATION_FIELDS},
+    }
+    return Lfm2CompiledComposedQkSequenceEffectiveAttentionFold(
+        composed_qk=composed_qk,
+        fit_value_output_artifact=fit_value_output_artifact,
+        residual_vo_seed=residual_seed,
+        inner_artifact=inner,
+        report={**body, "artifact_sha256": _canonical_sha256(body)},
+    )
+
+
+__all__ = [
+    "LFM2_COMPOSED_QK_PRODUCER_SCHEMA",
+    "LFM2_COMPOSED_QK_SEQUENCE_EFFECTIVE_SCHEMA",
+    "SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID",
+    "Lfm2CompiledComposedQkAttentionProducerFold",
+    "Lfm2CompiledComposedQkSequenceEffectiveAttentionFold",
+    "Lfm2ComposedQkAttentionAuthenticationError",
+    "Lfm2ComposedQkAttentionFoldError",
+    "Lfm2ComposedQkAttentionFoldPolicy",
+    "compile_lfm2_composed_qk_attention_producer_fold",
+    "compile_lfm2_composed_qk_sequence_effective_attention_fold",
+]

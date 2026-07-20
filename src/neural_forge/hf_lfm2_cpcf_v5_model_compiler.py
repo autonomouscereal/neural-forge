@@ -243,6 +243,10 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
     from neural_forge import dynamic_replay_scheduler
     from neural_forge import hf_cpcf_boundary_chart
     from neural_forge import hf_cpcf_sequential_boundary_transport
+    from neural_forge import hf_lfm2_cached_qk_functional_refit
+    from neural_forge import hf_lfm2_cached_qk_score_residual_fold
+    from neural_forge import hf_lfm2_composed_qk_attention_fold
+    from neural_forge import hf_lfm2_cpcf_attention_dimension_fold
     from neural_forge import hf_lfm2_cpcf_candidate_replay
     from neural_forge import hf_lfm2_cpcf_layer_compiler
     from neural_forge import hf_lfm2_cpcf_macrocell_replay
@@ -253,6 +257,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
     from neural_forge import hf_lfm2_cpcf_short_conv_v5_numerical_adapter
     from neural_forge import hf_lfm2_cpcf_short_conv_v4_fold
     from neural_forge import hf_lfm2_cpcf_selective_evidence
+    from neural_forge import hf_lfm2_qk_global_gauge_sync
     from neural_forge import hf_lfm2_sequence_effective_attention_fold
     from neural_forge import hf_lfm2_structural_residual_attention_fold
 
@@ -263,6 +268,10 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         dynamic_replay_scheduler,
         hf_cpcf_boundary_chart,
         hf_cpcf_sequential_boundary_transport,
+        hf_lfm2_cached_qk_functional_refit,
+        hf_lfm2_cached_qk_score_residual_fold,
+        hf_lfm2_composed_qk_attention_fold,
+        hf_lfm2_cpcf_attention_dimension_fold,
         hf_lfm2_cpcf_candidate_replay,
         hf_lfm2_cpcf_layer_compiler,
         hf_lfm2_cpcf_macrocell_replay,
@@ -274,6 +283,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         hf_lfm2_cpcf_short_conv_v5_numerical_adapter,
         hf_lfm2_cpcf_short_conv_v4_fold,
         hf_lfm2_cpcf_selective_evidence,
+        hf_lfm2_qk_global_gauge_sync,
         hf_lfm2_sequence_effective_attention_fold,
         hf_lfm2_structural_residual_attention_fold,
         sys.modules["neural_forge.hf_lfm2_cpcf_v5_resume"],
@@ -2116,10 +2126,7 @@ def _prove_real_v5_numerical_layer(
         or provenance.get("fir_solver_receipt_scope")
         != "aggregate_all_target_fir_channels"
         or provenance.get("fir_scalar_oracle_policy")
-        != (
-            "deterministic_first_middle_last_plus_"
-            "threshold_ambiguous_fallback"
-        )
+        != ("deterministic_first_middle_last_plus_threshold_ambiguous_fallback")
         or provenance.get("fit_only") is not True
         or provenance.get("selection_cases_consumed") != 0
         or provenance.get("validation_cases_consumed") != 0
@@ -3808,8 +3815,7 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                         candidate_selector=candidate_selector,
                         numerical_frontier_adapter=(numerical_frontier_adapter),
                         attention_sequential_transport_policy=(
-                            runtime_policy.model_fold_policy
-                            .resolved_attention_sequential_transport_policy(
+                            runtime_policy.model_fold_policy.resolved_attention_sequential_transport_policy(
                                 charts.operator_kind
                             )
                         ),

@@ -18,6 +18,11 @@ from neural_forge import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_cpcf_v5_real_attention_probe import (  # noqa: E402
     H776_ATTENTION_CANDIDATE_IDS,
+    H776_COMPOSED_ATTENTION_CANDIDATE_ID,
+    H776_COMPOSED_ATTENTION_CANDIDATE_IDS,
+    H776_COMPOSED_CUDA_DEVICE_NAME,
+    H776_COMPOSED_LOGICAL_CUDA_UUIDS,
+    H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES,
     H776_FULL_POLICY_SHA256,
     H776_ORIGIN_COMPILER_SHA256,
     H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID,
@@ -29,8 +34,10 @@ from neural_forge.hf_lfm2_cpcf_v5_real_attention_probe import (  # noqa: E402
     Lfm2CpcfV5RealAttentionProbeRuntime,
     Lfm2CpcfV5RealAttentionResourceMonitor,
     Lfm2SequenceEffectivePcgCollector,
+    _h776_composed_qk_attention_policy,
     _sha256,
     authenticate_h776_attention_result,
+    authenticate_h776_composed_attention_result,
     authenticate_h776_boundary_frontier,
     authenticate_h776_k2_checkpoint,
     authenticate_h776_phase_inventory,
@@ -45,6 +52,7 @@ def _pins(
     root: Path,
     *,
     attention_sequential_transport_enabled: bool = False,
+    composed_qk_attention_enabled: bool = False,
 ) -> Lfm2CpcfV5RealAttentionProbePins:
     return Lfm2CpcfV5RealAttentionProbePins(
         checkpoint_store_directory=root,
@@ -55,6 +63,12 @@ def _pins(
         expected_sequence_source_sha256=_DIGEST,
         expected_attention_sequential_transport_enabled=(
             attention_sequential_transport_enabled
+        ),
+        expected_composed_qk_attention_enabled=composed_qk_attention_enabled,
+        maximum_process_rss_bytes=(
+            H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES
+            if composed_qk_attention_enabled
+            else 64 * 1024**3
         ),
     )
 
@@ -92,6 +106,42 @@ def test_probe_runtime_chart_transport_shadow_defaults_off() -> None:
     )
     assert runtime.post_operator_chart_transport_shadow is False
     assert runtime.attention_sequential_transport_enabled is False
+    assert runtime.composed_qk_attention_enabled is False
+
+
+def test_composed_probe_pins_and_two_gpu_policy_are_exact(
+    tmp_path: Path,
+) -> None:
+    pins = _pins(tmp_path, composed_qk_attention_enabled=True)
+    policy = _h776_composed_qk_attention_policy()
+
+    assert pins.maximum_process_rss_bytes == (H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES)
+    assert pins.expected_composed_qk_attention_enabled is True
+    assert pins.expected_composed_logical_cuda_uuids == (
+        H776_COMPOSED_LOGICAL_CUDA_UUIDS
+    )
+    assert (
+        pins.expected_composed_qk_attention_policy_sha256
+        == policy.authentication_sha256
+    )
+    assert policy.score_policy.solver_device == "cuda:1"
+    assert policy.score_policy.compute_devices == ("cuda:0", "cuda:1")
+    assert policy.global_policy.maximum_total_score_elements == 134_217_728
+    assert policy.verify_authentication() is True
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        replace(pins, maximum_process_rss_bytes=64 * 1024**3)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        replace(
+            pins,
+            expected_composed_qk_attention_policy_sha256=_DIGEST,
+        )
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        replace(
+            pins,
+            expected_composed_logical_cuda_uuids=tuple(
+                reversed(H776_COMPOSED_LOGICAL_CUDA_UUIDS)
+            ),
+        )
 
 
 class _Reference:
@@ -475,15 +525,11 @@ def _continuous_hidden_partial_trace_pcg_event(
     ]
     construction_body = {
         "schema": (
-            "neural-forge-lfm2-sequence-effective-"
-            "hidden-partial-trace-cholesky-v1"
+            "neural-forge-lfm2-sequence-effective-hidden-partial-trace-cholesky-v1"
         ),
         "role": role,
         "construction": "normalized_hidden_side_partial_trace",
-        "formula": (
-            "P_H=ridge*I_H+sum_(h,o)"
-            "(trace(C_o,h)/head_dim)*A_h,o"
-        ),
+        "formula": ("P_H=ridge*I_H+sum_(h,o)(trace(C_o,h)/head_dim)*A_h,o"),
         "ridge": 1e-6,
         "hidden_size": 776,
         "head_dim": 64,
@@ -555,8 +601,7 @@ def _continuous_hidden_partial_trace_pcg_event(
     report_body = {
         "role": role,
         "solver": (
-            "deterministic_continuous_hidden_partial_trace_"
-            "cholesky_pcg_single_tensor"
+            "deterministic_continuous_hidden_partial_trace_cholesky_pcg_single_tensor"
         ),
         "maximum_iterations": 4096,
         "hard_cap_includes_original_lane_iterations": True,
@@ -910,24 +955,12 @@ def test_pcg_collector_authenticates_continuous_hidden_partial_trace_lane() -> N
     assert audit["legacy_solver_event_count"] == 0
     assert audit["restarted_solver_event_count"] == 0
     assert audit["continuous_hidden_partial_trace_solver_event_count"] == 5
+    assert audit["all_continuous_hidden_partial_trace_lanes_authenticated"] is True
     assert (
-        audit["all_continuous_hidden_partial_trace_lanes_authenticated"]
-        is True
+        audit["all_hidden_partial_trace_preconditioner_receipts_authenticated"] is True
     )
-    assert (
-        audit[
-            "all_hidden_partial_trace_preconditioner_receipts_authenticated"
-        ]
-        is True
-    )
-    assert (
-        audit["continuous_hidden_partial_trace_solver_events_authenticated"]
-        is True
-    )
-    assert (
-        audit["all_hidden_partial_trace_execution_profiles_authenticated"]
-        is True
-    )
+    assert audit["continuous_hidden_partial_trace_solver_events_authenticated"] is True
+    assert audit["all_hidden_partial_trace_execution_profiles_authenticated"] is True
     assert audit["hidden_partial_trace_pcg_execution_profile_sha256"] == (
         sequence_fold.LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
     )
@@ -985,10 +1018,7 @@ def test_pcg_collector_accepts_mixed_three_solver_inventory() -> None:
     assert audit["restarted_solver_event_count"] == 1
     assert audit["continuous_hidden_partial_trace_solver_event_count"] == 3
     assert audit["restarted_extended_solver_events_authenticated"] is True
-    assert (
-        audit["continuous_hidden_partial_trace_solver_events_authenticated"]
-        is True
-    )
+    assert audit["continuous_hidden_partial_trace_solver_events_authenticated"] is True
 
 
 @pytest.mark.parametrize(
@@ -1247,9 +1277,7 @@ def test_pcg_collector_rejects_resealed_wrong_partial_trace_source_group() -> No
         "construction_report"
     ]
     construction["source_terms"][0]["head"] = 2
-    construction["source_terms_sha256"] = _sha256(
-        construction["source_terms"]
-    )
+    construction["source_terms_sha256"] = _sha256(construction["source_terms"])
     _reseal_continuous_hidden_partial_trace_pcg_event(event)
     with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
         Lfm2SequenceEffectivePcgCollector()(event)
@@ -1496,6 +1524,621 @@ def _attention_result(*, selected: str, sequence_tied: bool = False):
         report=report,
         next_bank=SimpleNamespace(layer_index=3, state_bank_sha256=next_sha),
     )
+
+
+class _FakeSelectedDirectArtifact:
+    def __init__(self, report: dict[str, object]) -> None:
+        self._report = dict(report)
+        self._state = {"q_proj.weight": torch.tensor([1.0], dtype=torch.float32)}
+        self.compiled_state_sha256 = str(report["compiled_state_sha256"])
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(self._report)
+
+    def state_dict(self):
+        return {name: value.clone() for name, value in self._state.items()}
+
+
+def _patch_fake_selected_direct_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from neural_forge import hf_lfm2_structural_residual_attention_fold
+
+    monkeypatch.setattr(
+        hf_lfm2_structural_residual_attention_fold,
+        "Lfm2CompiledStructuralAttentionFold",
+        _FakeSelectedDirectArtifact,
+    )
+
+
+def _composed_attention_result():
+    from neural_forge.hf_lfm2_structural_residual_attention_fold import (
+        _state_sha256 as _structural_attention_state_sha256,
+    )
+
+    composed_policy = _h776_composed_qk_attention_policy().as_dict()
+    score_policy = composed_policy["score_policy"]
+    fit_bank_sha256 = "9" * 64
+    trajectory_sha256s = tuple(f"{index:064x}" for index in range(1, 155))
+    trajectory_bundle_sha256 = _sha256(list(trajectory_sha256s))
+    upstream_case_bundle_sha256 = "6" * 64
+    fit_metrics = {
+        "case_count": 134,
+        "eligible_query_rows": 1_000,
+        "centered_score_relative_rmse": 0.05,
+        "probability_relative_rmse": 0.10,
+        "js_divergence_mean": 0.01,
+        "js_divergence_worst": 0.02,
+        "top1_route_agreement_fraction": 0.95,
+        "maximum_causal_probability_leakage": 0.0,
+    }
+    fit_check_metrics = {
+        **fit_metrics,
+        "case_count": 20,
+        "eligible_query_rows": 200,
+        "centered_score_relative_rmse": 0.10,
+    }
+    score_operation = {
+        "fit_cases_consumed": 134,
+        "fit_check_cases_consumed": 20,
+        "selection_cases_consumed": 0,
+        "true_validation_cases_consumed": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+        "model_forward_calls": 0,
+        "model_generate_calls": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "target_mutations_during_compile": 0,
+    }
+    compute_observations = []
+    distinct_case_receipts = []
+    for index, cuda_uuid in enumerate(H776_COMPOSED_LOGICAL_CUDA_UUIDS):
+        case_receipt = f"{300 + index:064x}"
+        distinct_case_receipts.append(case_receipt)
+        observation_body = {
+            "assignment_index": index,
+            "intended_logical_device": f"cuda:{index}",
+            "observed_logical_device": f"cuda:{index}",
+            "observed_device_type": "cuda",
+            "observed_device_index": index,
+            "cuda_uuid": cuda_uuid,
+            "cuda_name": H776_COMPOSED_CUDA_DEVICE_NAME,
+            "cached_evidence_sha256": case_receipt,
+            "cached_content_sha256": f"{310 + index:064x}",
+            "cached_transform_receipt_sha256": f"{320 + index:064x}",
+            "cached_trajectory_sha256": trajectory_sha256s[index],
+            "cached_case_ordinal": index,
+            "analytical_operation": (
+                "masked_centered_score_energy_plus_valid_cell_count"
+            ),
+            "analytical_tensor_element_count": 1_024,
+            "analytical_scalar_dtype": "torch.float64",
+            "analytical_scalar": float(index + 1),
+            "forced_host_scalar_read": True,
+        }
+        compute_observations.append(
+            {
+                **observation_body,
+                "case_execution_receipt_sha256": _sha256(observation_body),
+            }
+        )
+    solver_body = {
+        "intended_logical_device": "cuda:1",
+        "observed_logical_device": "cuda:1",
+        "observed_device_type": "cuda",
+        "observed_device_index": 1,
+        "cuda_uuid": H776_COMPOSED_LOGICAL_CUDA_UUIDS[1],
+        "cuda_name": H776_COMPOSED_CUDA_DEVICE_NAME,
+        "source_seed_sha256": f"{340:064x}",
+        "source_query_weight_sha256": f"{341:064x}",
+        "source_key_weight_sha256": f"{342:064x}",
+        "analytical_operation": "dense_seed_qk_energy_plus_parameter_count",
+        "analytical_tensor_element_count": 2_048,
+        "analytical_scalar_dtype": "torch.float64",
+        "analytical_scalar": 3.0,
+        "forced_host_scalar_read": True,
+    }
+    solver_observation = {
+        **solver_body,
+        "solver_execution_receipt_sha256": _sha256(solver_body),
+    }
+    observed_execution_body = {
+        "schema": "neural-forge-lfm2-qk-score-observed-execution-v1",
+        "requested_solver_device": "cuda:1",
+        "requested_compute_devices": ["cuda:0", "cuda:1"],
+        "requested_compute_device_count": 2,
+        "observed_compute_device_count": 2,
+        "every_requested_compute_device_observed": True,
+        "solver_device_observed": True,
+        "cached_evidence_analytical_tensor_operation_count": 2,
+        "solver_tensor_operation_count": 1,
+        "distinct_case_receipts": distinct_case_receipts,
+        "distinct_case_receipt_count": 2,
+        "distinct_case_execution_receipt_count": 2,
+        "per_device_case_counts": {"cuda:0": 1, "cuda:1": 1},
+        "compute_observations": compute_observations,
+        "solver_observation": solver_observation,
+        "operation_audit": {
+            "model_forward_calls": 0,
+            "model_generate_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+        },
+    }
+    observed_execution = {
+        **observed_execution_body,
+        "receipt_sha256": _sha256(observed_execution_body),
+    }
+    execution = {
+        "solver_device": "cuda:1",
+        "compute_devices": ["cuda:0", "cuda:1"],
+        "case_assignment": "authenticated_bank_order_round_robin",
+        "compute_device_concurrency": "serial_round_robin",
+        "streamed_evidence": True,
+        "maximum_logically_resident_prepared_cases": 1,
+        "jvp_vjp_dtype": "torch.float32",
+        "pcg_vector_dtype": "torch.float32",
+        "scalar_reduction_dtype": "torch.float64",
+        "observed_execution_receipt": observed_execution,
+    }
+    score_body = {
+        "schema": "neural-forge-lfm2-cached-qk-score-residual-fold-v1",
+        "policy": score_policy,
+        "seed_sha256": f"{340:064x}",
+        "query_weight_sha256": f"{350:064x}",
+        "key_weight_sha256": f"{351:064x}",
+        "accepted": True,
+        "changed": True,
+        "status": "fit_check_accepted",
+        "fit_check_evaluated": True,
+        "fit_check_triggered_refit": False,
+        "source_evidence_unchanged": True,
+        "fit_metrics": fit_metrics,
+        "fit_check_metrics": fit_check_metrics,
+        "execution": execution,
+        "operation_audit": score_operation,
+    }
+    score = {**score_body, "report_sha256": _sha256(score_body)}
+    global_body = {
+        "schema": "neural-forge-lfm2-qk-global-gauge-sync-v1",
+        "policy": composed_policy["global_policy"],
+        "query_weight_sha256": f"{341:064x}",
+        "key_weight_sha256": f"{342:064x}",
+        "resource_usage": {
+            "total_rows": 40_656,
+            "total_score_elements": 50_000_000,
+            "total_factor_elements": 30_000_000,
+            "total_output_elements": 100_000_000,
+            "total_svd_workspace_elements": 40_000_000,
+        },
+    }
+    global_sync = {
+        **global_body,
+        "report_sha256": _sha256(global_body),
+    }
+    producer_body = {
+        "schema": "neural-forge-lfm2-composed-qk-attention-producer-v1",
+        "candidate_id": H776_COMPOSED_ATTENTION_CANDIDATE_ID,
+        "policy": composed_policy,
+        "policy_sha256": composed_policy["authentication_sha256"],
+        "source_split_sha256": fit_bank_sha256,
+        "upstream_fit_case_count": 154,
+        "upstream_fit_case_bundle_sha256": upstream_case_bundle_sha256,
+        "upstream_trajectory_sha256s": list(trajectory_sha256s),
+        "upstream_trajectory_bundle_sha256": trajectory_bundle_sha256,
+        "qk_fit_source_ordinals": list(range(134)),
+        "qk_fit_check_source_ordinals": list(range(134, 154)),
+        "global_sync_report_sha256": global_sync["report_sha256"],
+        "score_result_report_sha256": score["report_sha256"],
+        "operation_audit": {
+            "model_forward_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        },
+    }
+    producer = {
+        **producer_body,
+        "artifact_sha256": _sha256(producer_body),
+    }
+    qk_sha = _sha256({"qk": "composed"})
+    outer_body = {
+        "schema": ("neural-forge-lfm2-composed-qk-sequence-effective-attention-v1"),
+        "candidate_id": H776_COMPOSED_ATTENTION_CANDIDATE_ID,
+        "composed_qk_artifact_sha256": producer["artifact_sha256"],
+        "fixed_query_key_sha256": qk_sha,
+        "upstream_fit_case_bundle_sha256": upstream_case_bundle_sha256,
+        "upstream_trajectory_sha256s": list(trajectory_sha256s),
+        "upstream_trajectory_bundle_sha256": trajectory_bundle_sha256,
+        "operation_audit": {
+            "model_forward_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        },
+    }
+    outer = {**outer_body, "artifact_sha256": _sha256(outer_body)}
+    evaluations = {}
+    candidate_reports = {}
+    for ordinal, candidate_id in enumerate(H776_COMPOSED_ATTENTION_CANDIDATE_IDS):
+        if candidate_id == H776_COMPOSED_ATTENTION_CANDIDATE_ID:
+            artifact = outer
+        elif candidate_id == H776_ATTENTION_CANDIDATE_IDS[0]:
+            artifact = {
+                "candidate_id": candidate_id,
+                "compiled_state_sha256": _structural_attention_state_sha256(
+                    {
+                        "q_proj.weight": torch.tensor(
+                            [1.0],
+                            dtype=torch.float32,
+                        )
+                    }
+                ),
+            }
+        else:
+            artifact = {"candidate_id": candidate_id}
+        evaluation_body = {
+            "candidate_id": candidate_id,
+            "operator_artifact": artifact,
+            "operator_artifact_sha256": _sha256(artifact),
+            "query_key_score_state_sha256": (
+                qk_sha
+                if candidate_id == H776_COMPOSED_ATTENTION_CANDIDATE_ID
+                else _sha256({"qk": candidate_id})
+            ),
+            "operator_compiled_from_splits": ["fit"],
+            "mlp_compiled_from_splits": ["fit"],
+            "candidate_evaluated_on_splits": ["selection"],
+            "validation_phase_count_consumed": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+            "selection_key": [float(ordinal + 1)] * 10 + [candidate_id],
+        }
+        evaluation = {
+            **evaluation_body,
+            "report_sha256": _sha256(evaluation_body),
+        }
+        evaluations[candidate_id] = evaluation
+        candidate_reports[candidate_id] = evaluation["report_sha256"]
+    selected = H776_COMPOSED_ATTENTION_CANDIDATE_IDS[0]
+    selection_body = {
+        "candidate_ids": list(H776_COMPOSED_ATTENTION_CANDIDATE_IDS),
+        "selected_candidate_id": selected,
+        "candidate_count": 4,
+        "candidate_report_sha256": candidate_reports,
+        "selected_candidate_report_sha256": candidate_reports[selected],
+        "selection_split_only": True,
+        "winner_frozen_before_validation": True,
+        "validation_phase_count_consumed_before_freeze": 0,
+    }
+    selection = {
+        **selection_body,
+        "report_sha256": _sha256(selection_body),
+    }
+    next_sha = "7" * 64
+    body = {
+        "layer_index": 2,
+        "operator_kind": "full_attention",
+        "input_bank_sha256": "8" * 64,
+        "next_bank_sha256": next_sha,
+        "operator_artifact": evaluations[selected]["operator_artifact"],
+        "split_phase_counts": dict(H776_SPLIT_PHASE_COUNTS),
+        "split_metrics": {"validation": {"relative_rmse": 0.5}},
+        "solver_evidence_policy": {
+            "operator_case_count": 154,
+            "attention_candidate_selection": selection,
+            "attention_candidate_evaluations": evaluations,
+            "attention_each_candidate_has_own_fit_only_mlp": True,
+            "attention_winner_frozen_before_validation": True,
+            "attention_validation_replays_before_winner_freeze": 0,
+            "attention_candidate_inventory_mode": ("opt_in_authenticated_four_arm"),
+            "composed_qk_attention_policy": composed_policy,
+            "composed_qk_producer_artifact_sha256": (producer["artifact_sha256"]),
+            "composed_qk_producer_artifact": producer,
+            "composed_qk_global_sync": global_sync,
+            "composed_qk_score_result": score,
+        },
+    }
+    report = {**body, "result_sha256": _sha256(body)}
+    return SimpleNamespace(
+        report=report,
+        operator_artifact=_FakeSelectedDirectArtifact(
+            evaluations[selected]["operator_artifact"]
+        ),
+        next_bank=SimpleNamespace(layer_index=3, state_bank_sha256=next_sha),
+        expected_fit_bank_sha256=fit_bank_sha256,
+        expected_fit_trajectory_sha256s=trajectory_sha256s,
+    )
+
+
+def _reseal_composed_result(result, mutate):
+    report = runner._plain(result.report)
+    policy = report["solver_evidence_policy"]
+    score = policy["composed_qk_score_result"]
+    global_sync = policy["composed_qk_global_sync"]
+    producer = policy["composed_qk_producer_artifact"]
+    evaluations = policy["attention_candidate_evaluations"]
+    composed_evaluation = evaluations[H776_COMPOSED_ATTENTION_CANDIDATE_ID]
+    outer = composed_evaluation["operator_artifact"]
+    mutate(
+        policy=policy,
+        score=score,
+        global_sync=global_sync,
+        producer=producer,
+        outer=outer,
+    )
+
+    composed_policy = policy["composed_qk_attention_policy"]
+    score["policy"] = composed_policy["score_policy"]
+    global_sync["policy"] = composed_policy["global_policy"]
+    producer["policy"] = composed_policy
+    producer["policy_sha256"] = composed_policy["authentication_sha256"]
+
+    score.pop("report_sha256", None)
+    score["report_sha256"] = _sha256(score)
+    global_sync.pop("report_sha256", None)
+    global_sync["report_sha256"] = _sha256(global_sync)
+    producer["score_result_report_sha256"] = score["report_sha256"]
+    producer["global_sync_report_sha256"] = global_sync["report_sha256"]
+    producer.pop("artifact_sha256", None)
+    producer["artifact_sha256"] = _sha256(producer)
+    outer["composed_qk_artifact_sha256"] = producer["artifact_sha256"]
+    outer.pop("artifact_sha256", None)
+    outer["artifact_sha256"] = _sha256(outer)
+
+    composed_evaluation["operator_artifact"] = outer
+    composed_evaluation["operator_artifact_sha256"] = _sha256(outer)
+    composed_evaluation.pop("report_sha256", None)
+    composed_evaluation["report_sha256"] = _sha256(composed_evaluation)
+    selection = policy["attention_candidate_selection"]
+    selection["candidate_report_sha256"][H776_COMPOSED_ATTENTION_CANDIDATE_ID] = (
+        composed_evaluation["report_sha256"]
+    )
+    selected_id = selection["selected_candidate_id"]
+    selection["selected_candidate_report_sha256"] = selection[
+        "candidate_report_sha256"
+    ][selected_id]
+    selection.pop("report_sha256", None)
+    selection["report_sha256"] = _sha256(selection)
+    policy["composed_qk_producer_artifact_sha256"] = producer["artifact_sha256"]
+    report["operator_artifact"] = evaluations[selected_id]["operator_artifact"]
+    report.pop("result_sha256", None)
+    report["result_sha256"] = _sha256(report)
+    return SimpleNamespace(
+        report=report,
+        operator_artifact=_FakeSelectedDirectArtifact(
+            evaluations[selected_id]["operator_artifact"]
+        ),
+        next_bank=result.next_bank,
+        expected_fit_bank_sha256=result.expected_fit_bank_sha256,
+        expected_fit_trajectory_sha256s=(result.expected_fit_trajectory_sha256s),
+    )
+
+
+def test_composed_attention_result_authenticates_four_arm_negative(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    result = _composed_attention_result()
+    audit = authenticate_h776_composed_attention_result(
+        result,
+        input_bank_sha256="8" * 64,
+        expected_fit_bank_sha256=result.expected_fit_bank_sha256,
+        expected_fit_trajectory_sha256s=(result.expected_fit_trajectory_sha256s),
+        pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+    )
+
+    assert audit["candidate_ids"] == list(H776_COMPOSED_ATTENTION_CANDIDATE_IDS)
+    assert audit["scientific_outcome"] == ("honest_negative_or_legacy_arm_selected")
+    assert audit["two_3090_score_execution_authenticated"] is True
+
+
+def test_composed_attention_result_rejects_resealed_score_rejection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    result = _composed_attention_result()
+    report = runner._plain(result.report)
+    score = report["solver_evidence_policy"]["composed_qk_score_result"]
+    score.pop("report_sha256")
+    score["accepted"] = False
+    score["report_sha256"] = _sha256(score)
+    body = dict(report)
+    body.pop("result_sha256")
+    tampered = SimpleNamespace(
+        report={**body, "result_sha256": _sha256(body)},
+        operator_artifact=result.operator_artifact,
+        next_bank=result.next_bank,
+    )
+
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_composed_attention_result(
+            tampered,
+            input_bank_sha256="8" * 64,
+            expected_fit_bank_sha256=result.expected_fit_bank_sha256,
+            expected_fit_trajectory_sha256s=(result.expected_fit_trajectory_sha256s),
+            pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+        )
+
+
+def test_composed_attention_result_rejects_resealed_consumed_count_lie(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    original = _composed_attention_result()
+
+    def mutate(**parts) -> None:
+        parts["score"]["operation_audit"]["fit_cases_consumed"] = 0
+        parts["score"]["operation_audit"]["fit_check_cases_consumed"] = 0
+
+    tampered = _reseal_composed_result(original, mutate)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_composed_attention_result(
+            tampered,
+            input_bank_sha256="8" * 64,
+            expected_fit_bank_sha256=original.expected_fit_bank_sha256,
+            expected_fit_trajectory_sha256s=(original.expected_fit_trajectory_sha256s),
+            pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+        )
+
+
+def test_composed_attention_result_rejects_resealed_relaxed_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    original = _composed_attention_result()
+
+    def mutate(**parts) -> None:
+        composed_policy = parts["policy"]["composed_qk_attention_policy"]
+        composed_policy["score_policy"]["maximum_fit_centered_score_relative_rmse"] = (
+            0.35
+        )
+        composed_policy.pop("authentication_sha256", None)
+        composed_policy["authentication_sha256"] = _sha256(composed_policy)
+
+    tampered = _reseal_composed_result(original, mutate)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_composed_attention_result(
+            tampered,
+            input_bank_sha256="8" * 64,
+            expected_fit_bank_sha256=original.expected_fit_bank_sha256,
+            expected_fit_trajectory_sha256s=(original.expected_fit_trajectory_sha256s),
+            pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+        )
+
+
+def test_composed_attention_result_rejects_resealed_alien_fit_receipts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    original = _composed_attention_result()
+
+    def mutate(**parts) -> None:
+        alien = ["a" * 64, *parts["producer"]["upstream_trajectory_sha256s"][1:]]
+        alien_bundle = _sha256(alien)
+        parts["producer"]["source_split_sha256"] = "b" * 64
+        parts["producer"]["upstream_trajectory_sha256s"] = alien
+        parts["producer"]["upstream_trajectory_bundle_sha256"] = alien_bundle
+        parts["outer"]["upstream_trajectory_sha256s"] = alien
+        parts["outer"]["upstream_trajectory_bundle_sha256"] = alien_bundle
+
+    tampered = _reseal_composed_result(original, mutate)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_composed_attention_result(
+            tampered,
+            input_bank_sha256="8" * 64,
+            expected_fit_bank_sha256=original.expected_fit_bank_sha256,
+            expected_fit_trajectory_sha256s=(original.expected_fit_trajectory_sha256s),
+            pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+        )
+
+
+def test_composed_attention_result_rejects_missing_live_legacy_winner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    original = _composed_attention_result()
+    missing_live = SimpleNamespace(
+        report=original.report,
+        next_bank=original.next_bank,
+    )
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_composed_attention_result(
+            missing_live,
+            input_bank_sha256="8" * 64,
+            expected_fit_bank_sha256=original.expected_fit_bank_sha256,
+            expected_fit_trajectory_sha256s=(original.expected_fit_trajectory_sha256s),
+            pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+        )
+
+
+def test_composed_attention_result_rejects_mutated_live_direct_winner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    result = _composed_attention_result()
+    result.operator_artifact._state["q_proj.weight"].add_(1.0)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_composed_attention_result(
+            result,
+            input_bank_sha256="8" * 64,
+            expected_fit_bank_sha256=result.expected_fit_bank_sha256,
+            expected_fit_trajectory_sha256s=(result.expected_fit_trajectory_sha256s),
+            pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+        )
+
+
+def test_composed_attention_result_rejects_resealed_fake_second_gpu(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    original = _composed_attention_result()
+
+    def mutate(**parts) -> None:
+        receipt = parts["score"]["execution"]["observed_execution_receipt"]
+        observation = receipt["compute_observations"][1]
+        observation["cuda_uuid"] = H776_COMPOSED_LOGICAL_CUDA_UUIDS[0]
+        observation.pop("case_execution_receipt_sha256", None)
+        observation["case_execution_receipt_sha256"] = _sha256(observation)
+        receipt.pop("receipt_sha256", None)
+        receipt["receipt_sha256"] = _sha256(receipt)
+
+    tampered = _reseal_composed_result(original, mutate)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_composed_attention_result(
+            tampered,
+            input_bank_sha256="8" * 64,
+            expected_fit_bank_sha256=original.expected_fit_bank_sha256,
+            expected_fit_trajectory_sha256s=(original.expected_fit_trajectory_sha256s),
+            pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+        )
+
+
+@pytest.mark.parametrize("tamper_kind", ["alien_trajectory", "alien_seed"])
+def test_composed_attention_result_rejects_resealed_gpu_workload_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tamper_kind: str,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    original = _composed_attention_result()
+
+    def mutate(**parts) -> None:
+        receipt = parts["score"]["execution"]["observed_execution_receipt"]
+        if tamper_kind == "alien_trajectory":
+            observation = receipt["compute_observations"][0]
+            observation["cached_trajectory_sha256"] = "e" * 64
+            observation.pop("case_execution_receipt_sha256", None)
+            observation["case_execution_receipt_sha256"] = _sha256(observation)
+        else:
+            solver = receipt["solver_observation"]
+            solver["source_seed_sha256"] = "e" * 64
+            solver.pop("solver_execution_receipt_sha256", None)
+            solver["solver_execution_receipt_sha256"] = _sha256(solver)
+        receipt.pop("receipt_sha256", None)
+        receipt["receipt_sha256"] = _sha256(receipt)
+
+    tampered = _reseal_composed_result(original, mutate)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_composed_attention_result(
+            tampered,
+            input_bank_sha256="8" * 64,
+            expected_fit_bank_sha256=original.expected_fit_bank_sha256,
+            expected_fit_trajectory_sha256s=(original.expected_fit_trajectory_sha256s),
+            pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+        )
 
 
 def _attention_result_with_sequential_transport(*, selected: str):
@@ -1924,6 +2567,25 @@ def test_cli_accepts_only_exact_h776_resource_and_parameter_lane(
     transport_args.append("--attention-sequential-transport")
     transport = runner.config_from_args(parser.parse_args(transport_args))
     assert transport.attention_sequential_transport_enabled is True
+    composed_args = _parser_args(tmp_path / "composed")
+    composed_args.append("--composed-qk-attention")
+    composed = runner.config_from_args(parser.parse_args(composed_args))
+    assert composed.composed_qk_attention_enabled is True
+    assert composed.fold.maximum_process_rss_bytes == 64 * 1024**3
+    assert (
+        composed.observer_maximum_process_rss_bytes
+        == H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES
+    )
+    composed_legacy_transport = list(composed_args)
+    composed_legacy_transport.append("--attention-sequential-transport")
+    with pytest.raises(runner.Lfm2CpcfV5RealAttentionProbeRunnerError):
+        runner.config_from_args(parser.parse_args(composed_legacy_transport))
+    composed_bad_rss = _parser_args(tmp_path / "composed_bad_rss")
+    composed_bad_rss.append("--composed-qk-attention")
+    rss_index = composed_bad_rss.index("--maximum-process-rss-gib") + 1
+    composed_bad_rss[rss_index] = "192"
+    with pytest.raises(runner.Lfm2CpcfV5RealAttentionProbeRunnerError):
+        runner.config_from_args(parser.parse_args(composed_bad_rss))
     bad = _parser_args(tmp_path / "bad")
     ratio_index = bad.index("--compression-ratio") + 1
     bad[ratio_index] = "4.01"

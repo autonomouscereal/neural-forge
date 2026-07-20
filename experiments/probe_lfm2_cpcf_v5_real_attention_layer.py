@@ -35,9 +35,7 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 
 PROBE_RUN_SCHEMA = "neural-forge-lfm2-cpcf-v5-real-attention-probe-run-v1"
-PROBE_FAILURE_SCHEMA = (
-    "neural-forge-lfm2-cpcf-v5-real-attention-probe-failure-v1"
-)
+PROBE_FAILURE_SCHEMA = "neural-forge-lfm2-cpcf-v5-real-attention-probe-failure-v1"
 _GIB = 1024**3
 
 
@@ -78,10 +76,7 @@ def _digest(value: Any, name: str) -> str:
 
 def _plain(value: Any) -> Any:
     if isinstance(value, Mapping):
-        value = {
-            str(name): _plain(child)
-            for name, child in value.items()
-        }
+        value = {str(name): _plain(child) for name, child in value.items()}
     elif isinstance(value, Sequence) and not isinstance(
         value,
         (str, bytes, bytearray),
@@ -150,9 +145,7 @@ def validate_diagnostic_destination_args(
             "selective_catalog_store_directory": (
                 args.selective_catalog_store_directory
             ),
-            "selective_catalog_receipt_json": (
-                args.selective_catalog_receipt_json
-            ),
+            "selective_catalog_receipt_json": (args.selective_catalog_receipt_json),
         },
     )
 
@@ -179,6 +172,7 @@ class RealAttentionProbeConfig:
     expected_sequence_source_sha256: str
     post_operator_chart_transport_shadow: bool = False
     attention_sequential_transport_enabled: bool = False
+    composed_qk_attention_enabled: bool = False
 
     def __post_init__(self) -> None:
         from neural_forge.hf_lfm2_cpcf_v5_real_attention_probe import (
@@ -190,12 +184,18 @@ class RealAttentionProbeConfig:
 
         fold = self.fold
         if type(self.post_operator_chart_transport_shadow) is not bool:
-            raise TypeError(
-                "post_operator_chart_transport_shadow must be bool."
-            )
+            raise TypeError("post_operator_chart_transport_shadow must be bool.")
         if type(self.attention_sequential_transport_enabled) is not bool:
-            raise TypeError(
-                "attention_sequential_transport_enabled must be bool."
+            raise TypeError("attention_sequential_transport_enabled must be bool.")
+        if type(self.composed_qk_attention_enabled) is not bool:
+            raise TypeError("composed_qk_attention_enabled must be bool.")
+        if (
+            self.attention_sequential_transport_enabled
+            and self.composed_qk_attention_enabled
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeRunnerError(
+                "Composed Q/K attention and legacy sequential transport are "
+                "separate diagnostic lanes."
             )
         compression = fold.compression
         changed = []
@@ -205,17 +205,11 @@ class RealAttentionProbeConfig:
             changed.append("target_unique_parameters")
         if fold.selected_candidate_rank is not None:
             changed.append("selected_candidate_rank")
-        if (
-            fold.expected_target_plan_fingerprint
-            != H776_TARGET_PLAN_FINGERPRINT
-        ):
+        if fold.expected_target_plan_fingerprint != H776_TARGET_PLAN_FINGERPRINT:
             changed.append("expected_target_plan_fingerprint")
         if fold.maximum_process_rss_bytes != H776_MAXIMUM_PROCESS_RSS_BYTES:
             changed.append("maximum_process_rss_gib")
-        if (
-            fold.maximum_cuda_bytes_per_device
-            != H776_MAXIMUM_CUDA_BYTES_PER_DEVICE
-        ):
+        if fold.maximum_cuda_bytes_per_device != H776_MAXIMUM_CUDA_BYTES_PER_DEVICE:
             changed.append("maximum_cuda_gib_per_device")
         if fold.model_device != "cuda:0":
             changed.append("model_device")
@@ -267,10 +261,23 @@ class RealAttentionProbeConfig:
                 "selective_catalog_store_directory": (
                     fold.selective_catalog_store_directory
                 ),
-                "selective_catalog_receipt_json": (
-                    fold.selective_catalog_receipt_json
-                ),
+                "selective_catalog_receipt_json": (fold.selective_catalog_receipt_json),
             },
+        )
+
+    @property
+    def observer_maximum_process_rss_bytes(self) -> int:
+        """Return the live observer cap independently of the prefix policy."""
+
+        from neural_forge.hf_lfm2_cpcf_v5_real_attention_probe import (
+            H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES,
+            H776_MAXIMUM_PROCESS_RSS_BYTES,
+        )
+
+        return (
+            H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES
+            if self.composed_qk_attention_enabled
+            else H776_MAXIMUM_PROCESS_RSS_BYTES
         )
 
 
@@ -301,6 +308,14 @@ def build_parser() -> argparse.ArgumentParser:
             "inside the non-promotable layer-2 attention tournament."
         ),
     )
+    parser.add_argument(
+        "--composed-qk-attention",
+        action="store_true",
+        help=(
+            "Run the authenticated four-arm global-gauge plus score-residual "
+            "attention fold on two logical 3090 devices."
+        ),
+    )
     return parser
 
 
@@ -318,16 +333,14 @@ def config_from_args(args: argparse.Namespace) -> RealAttentionProbeConfig:
         post_operator_chart_transport_shadow=(
             args.post_operator_chart_transport_shadow
         ),
-        attention_sequential_transport_enabled=(
-            args.attention_sequential_transport
-        ),
+        attention_sequential_transport_enabled=(args.attention_sequential_transport),
+        composed_qk_attention_enabled=args.composed_qk_attention,
     )
 
 
 def _cuda_peak_sampler(torch: Any) -> Mapping[str, int]:
     return {
-        f"cuda:{index}": int(torch.cuda.max_memory_reserved(index))
-        for index in (0, 1)
+        f"cuda:{index}": int(torch.cuda.max_memory_reserved(index)) for index in (0, 1)
     }
 
 
@@ -339,9 +352,7 @@ def _runtime_guard_report(
     allocator_policy: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     body = {
-        "schema": (
-            "neural-forge-lfm2-cpcf-v5-real-attention-runtime-guard-v1"
-        ),
+        "schema": ("neural-forge-lfm2-cpcf-v5-real-attention-runtime-guard-v1"),
         "cuda_allocator_policy": _plain(allocator_policy),
         "optimizer_constructions": int(guard.optimizer_constructions),
         "optimizer_steps": int(guard.optimizer_steps),
@@ -352,18 +363,14 @@ def _runtime_guard_report(
         "parent_module_forward_calls": int(
             parent_execution.get("module_forward_calls", 0)
         ),
-        "parent_root_forward_calls": int(
-            parent_execution.get("root_forward_calls", 0)
-        ),
+        "parent_root_forward_calls": int(parent_execution.get("root_forward_calls", 0)),
         "parent_inference_entrypoint_calls": int(
             parent_execution.get("inference_entrypoint_calls", 0)
         ),
         "target_module_forward_calls": int(
             target_execution.get("module_forward_calls", 0)
         ),
-        "target_root_forward_calls": int(
-            target_execution.get("root_forward_calls", 0)
-        ),
+        "target_root_forward_calls": int(target_execution.get("root_forward_calls", 0)),
         "target_inference_entrypoint_calls": int(
             target_execution.get("inference_entrypoint_calls", 0)
         ),
@@ -451,9 +458,7 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
             "selective_catalog_store_directory": (
                 fold.selective_catalog_store_directory
             ),
-            "selective_catalog_receipt_json": (
-                fold.selective_catalog_receipt_json
-            ),
+            "selective_catalog_receipt_json": (fold.selective_catalog_receipt_json),
         },
     )
 
@@ -464,9 +469,7 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
     torch = v5_runner._configure_torch()
     allocator_policy = v5_runner._enforce_cuda_allocator_caps(
         torch,
-        maximum_cuda_bytes_per_device=(
-            fold.maximum_cuda_bytes_per_device
-        ),
+        maximum_cuda_bytes_per_device=(fold.maximum_cuda_bytes_per_device),
     )
 
     from experiments.run_lfm2_residual_attention_fold import (
@@ -506,6 +509,8 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
         fingerprint_hf_tokenizer_semantics,
         load_strict_tokenizer_bridge_artifact,
     )
+
+    observer_maximum_process_rss_bytes = config.observer_maximum_process_rss_bytes
 
     dtype = base._torch_dtype(torch, fold.dtype)
     device = torch.device(fold.model_device)
@@ -568,9 +573,7 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                 parent_tokenizer_fingerprint=donor_fingerprint,
                 evidence_fingerprint=cache.cache_key,
                 child_name=fold.child_name,
-                target_vocabulary_size=(
-                    bridge.transport_profile.target_row_capacity
-                ),
+                target_vocabulary_size=(bridge.transport_profile.target_row_capacity),
                 child_tokenizer_fingerprint=target_fingerprint,
                 tokenizer_bridge_artifact=bridge,
                 minimum_hidden_size=fold.minimum_hidden_size,
@@ -589,8 +592,7 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
             target.eval()
             target_inventory = independent_parameter_inventory(target)
             if (
-                blank.plan.fingerprint
-                != fold.expected_target_plan_fingerprint
+                blank.plan.fingerprint != fold.expected_target_plan_fingerprint
                 or blank.unique_parameters != H776_TARGET_UNIQUE_PARAMETERS
                 or int(target_inventory["unique_parameters"])
                 != H776_TARGET_UNIQUE_PARAMETERS
@@ -606,58 +608,38 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
             structural = audit_lfm2_cpcf_parameter_compaction(
                 parent,
                 target,
-                planned_target_unique_parameters=(
-                    H776_TARGET_UNIQUE_PARAMETERS
-                ),
+                planned_target_unique_parameters=(H776_TARGET_UNIQUE_PARAMETERS),
                 promotion_compression_ratio=structural_compression_floor,
             )
             try:
-                provider = (
-                    open_lfm2_cpcf_selective_evidence_provider_from_catalog(
-                        cache,
-                        artifact_store=fold.selective_catalog_store_directory,
-                        expected_binding_sha256=(
-                            catalog_authentication["binding_sha256"]
-                        ),
-                        expected_manifest_sha256=(
-                            catalog_authentication[
-                                "artifact_manifest_sha256"
-                            ]
-                        ),
-                        expected_catalog_sha256=(
-                            catalog_authentication[
-                                "artifact_catalog_sha256"
-                            ]
-                        ),
-                    )
+                provider = open_lfm2_cpcf_selective_evidence_provider_from_catalog(
+                    cache,
+                    artifact_store=fold.selective_catalog_store_directory,
+                    expected_binding_sha256=(catalog_authentication["binding_sha256"]),
+                    expected_manifest_sha256=(
+                        catalog_authentication["artifact_manifest_sha256"]
+                    ),
+                    expected_catalog_sha256=(
+                        catalog_authentication["artifact_catalog_sha256"]
+                    ),
                 )
                 catalog = provider.catalog
                 logical_budget, _required_budget = (
                     v5_runner._resolved_logical_resident_bytes(
                         references=catalog.dynamic_catalog.references,
-                        final_norm_logical_bytes=(
-                            catalog.final_norm_logical_bytes
-                        ),
+                        final_norm_logical_bytes=(catalog.final_norm_logical_bytes),
                         requested_gib=fold.maximum_logical_resident_gib,
                     )
                 )
-                full_phase_tree_bytes = int(
-                    catalog.final_norm_logical_bytes
-                ) + sum(
+                full_phase_tree_bytes = int(catalog.final_norm_logical_bytes) + sum(
                     int(reference.logical_bytes)
                     for reference in catalog.dynamic_catalog.references
                 )
                 effective_reduction, _maximum_increase = (
                     v5_runner._derive_effective_rss_reduction_fraction(
-                        full_phase_tree_logical_bytes=(
-                            full_phase_tree_bytes
-                        ),
-                        compiler_baseline_rss_bytes=int(
-                            v5._process_rss_bytes()
-                        ),
-                        maximum_process_rss_bytes=(
-                            fold.maximum_process_rss_bytes
-                        ),
+                        full_phase_tree_logical_bytes=(full_phase_tree_bytes),
+                        compiler_baseline_rss_bytes=int(v5._process_rss_bytes()),
+                        maximum_process_rss_bytes=(fold.maximum_process_rss_bytes),
                         requested_minimum_reduction_fraction=(
                             fold.minimum_physical_rss_reduction_fraction
                         ),
@@ -668,14 +650,10 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                     variable_projection_passes=(
                         fold.short_conv_v4_variable_projection_passes
                     ),
-                    writer_trust_radius=(
-                        fold.short_conv_v4_writer_trust_radius
-                    ),
+                    writer_trust_radius=(fold.short_conv_v4_writer_trust_radius),
                     fir_trust_radius=fold.short_conv_v4_fir_trust_radius,
                     bcx_trust_radius=fold.short_conv_v4_bcx_trust_radius,
-                    correction_rms_floor=(
-                        fold.short_conv_v4_correction_rms_floor
-                    ),
+                    correction_rms_floor=(fold.short_conv_v4_correction_rms_floor),
                     context_objective_weight=(
                         fold.short_conv_v4_context_objective_weight
                     ),
@@ -694,29 +672,19 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                     ),
                     enforce_validation_block_floor=True,
                     short_conv_v4_solver_policy=short_conv_policy,
-                    promotion_compression_ratio=(
-                        structural_compression_floor
-                    ),
+                    promotion_compression_ratio=(structural_compression_floor),
                     require_promotion_ratio=True,
                 )
                 runtime_policy = v5.Lfm2CpcfV5RuntimePolicy(
                     model_fold_policy=model_policy,
                     maximum_resident_evidence_bytes=logical_budget,
                     full_phase_tree_logical_bytes=full_phase_tree_bytes,
-                    maximum_process_rss_bytes=(
-                        fold.maximum_process_rss_bytes
-                    ),
-                    minimum_physical_rss_reduction_fraction=(
-                        effective_reduction
-                    ),
+                    maximum_process_rss_bytes=(fold.maximum_process_rss_bytes),
+                    minimum_physical_rss_reduction_fraction=(effective_reduction),
                     rss_sample_interval_seconds=0.05,
                     require_short_conv_v5_endpoint_first_selector=True,
-                    require_short_conv_v5_authenticated_whole_macrocell_selector=(
-                        True
-                    ),
-                    require_short_conv_v5_real_numerical_frontier_adapter=(
-                        True
-                    ),
+                    require_short_conv_v5_authenticated_whole_macrocell_selector=(True),
+                    require_short_conv_v5_real_numerical_frontier_adapter=(True),
                 )
                 source_tied_table = base._mapped_source_tied_table(
                     parent,
@@ -725,9 +693,7 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                 pins = Lfm2CpcfV5RealAttentionProbePins(
                     checkpoint_store_directory=checkpoint_store,
                     checkpoint_key=config.checkpoint_key,
-                    checkpoint_manifest_sha256=(
-                        config.checkpoint_manifest_sha256
-                    ),
+                    checkpoint_manifest_sha256=(config.checkpoint_manifest_sha256),
                     expected_trace_sha256=config.expected_trace_sha256,
                     expected_runtime_compiler_implementation_sha256=(
                         config.expected_runtime_compiler_implementation_sha256
@@ -738,6 +704,10 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                     expected_attention_sequential_transport_enabled=(
                         config.attention_sequential_transport_enabled
                     ),
+                    expected_composed_qk_attention_enabled=(
+                        config.composed_qk_attention_enabled
+                    ),
+                    maximum_process_rss_bytes=(observer_maximum_process_rss_bytes),
                 )
                 runtime = Lfm2CpcfV5RealAttentionProbeRuntime(
                     source_model=parent,
@@ -754,12 +724,17 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                     attention_sequential_transport_enabled=(
                         config.attention_sequential_transport_enabled
                     ),
+                    composed_qk_attention_enabled=(
+                        config.composed_qk_attention_enabled
+                    ),
                 )
                 for index in (0, 1):
                     torch.cuda.reset_peak_memory_stats(index)
                 monitor = Lfm2CpcfV5RealAttentionResourceMonitor(
                     cuda_sampler=lambda: _cuda_peak_sampler(torch),
                     sample_interval_seconds=0.05,
+                    maximum_process_rss_bytes=(observer_maximum_process_rss_bytes),
+                    maximum_cuda_bytes_per_device=(fold.maximum_cuda_bytes_per_device),
                 )
                 probe = execute_lfm2_cpcf_v5_real_attention_probe(
                     runtime,
@@ -800,6 +775,7 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
         "attention_sequential_transport_enabled": (
             config.attention_sequential_transport_enabled
         ),
+        "composed_qk_attention_enabled": config.composed_qk_attention_enabled,
         "diagnostic_only": True,
         "child_checkpoint_saved": False,
         "publication_attempted": False,
@@ -822,9 +798,7 @@ def _failure(
     while current is not None and id(current) not in seen:
         seen.add(id(current))
         chain_index = len(chain)
-        exception_type = (
-            f"{type(current).__module__}.{type(current).__qualname__}"
-        )
+        exception_type = f"{type(current).__module__}.{type(current).__qualname__}"
         chain.append(
             {
                 "type": exception_type,
@@ -876,26 +850,19 @@ def _failure(
         "schema": PROBE_FAILURE_SCHEMA,
         "status": "failed_closed",
         "error_chain": chain,
-        "checkpoint_key": (
-            None if config is None else config.checkpoint_key
-        ),
+        "checkpoint_key": (None if config is None else config.checkpoint_key),
         "layer_index": 2,
         "non_promotable_probe_only": True,
         "child_checkpoint_saved": False,
         "publication_attempted": False,
         "promotion_authorized": False,
     }
-    if (
-        nested_failure_reports
-        or nested_failure_report_authentication_errors
-    ):
+    if nested_failure_reports or nested_failure_report_authentication_errors:
         body = {
             **body,
             "nested_failure_reports": nested_failure_reports,
             "nested_failure_report_count": len(nested_failure_reports),
-            "nested_failure_report_inventory_sha256": _sha256(
-                nested_failure_reports
-            ),
+            "nested_failure_report_inventory_sha256": _sha256(nested_failure_reports),
             "nested_failure_reports_authenticated": (
                 not nested_failure_report_authentication_errors
             ),
@@ -912,8 +879,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         safe_diagnostic = validate_diagnostic_destination_args(args)
     except Exception as exc:
         print(
-            "error: unsafe diagnostic destination; no diagnostic was written: "
-            f"{exc}",
+            f"error: unsafe diagnostic destination; no diagnostic was written: {exc}",
             file=sys.stderr,
         )
         return 2

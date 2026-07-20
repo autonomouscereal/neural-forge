@@ -40,6 +40,9 @@ LFM2_CPCF_V5_REAL_ATTENTION_CHECKPOINT_AUDIT_SCHEMA = (
 LFM2_CPCF_V5_REAL_ATTENTION_PCG_AUDIT_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-real-attention-pcg-audit-v2"
 )
+LFM2_CPCF_V5_REAL_COMPOSED_ATTENTION_AUDIT_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-real-composed-attention-audit-v1"
+)
 
 H776_LAYER_INDEX = 2
 H776_LAYER_COUNT = 14
@@ -80,6 +83,11 @@ H776_ATTENTION_CANDIDATE_IDS = (
     "fixed_qk_sequence_effective_vo_als",
 )
 H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID = H776_ATTENTION_CANDIDATE_IDS[-1]
+H776_COMPOSED_ATTENTION_CANDIDATE_ID = "score_routed_residual_seeded_sequence_effective"
+H776_COMPOSED_ATTENTION_CANDIDATE_IDS = (
+    *H776_ATTENTION_CANDIDATE_IDS,
+    H776_COMPOSED_ATTENTION_CANDIDATE_ID,
+)
 H776_PHASE_COUNT = 2_304
 H776_TRAJECTORY_COUNT = 256
 H776_PHASES_PER_TRAJECTORY = 9
@@ -91,8 +99,20 @@ H776_SPLIT_TRAJECTORY_COUNTS = MappingProxyType(
 )
 H776_FIT_QUERY_ROWS = 40_656
 H776_VALIDATION_QUERY_ROWS = 13_199
+H776_COMPOSED_UPSTREAM_FIT_CASES = 154
+H776_COMPOSED_QK_FIT_CASES = 134
+H776_COMPOSED_QK_FIT_CHECK_CASES = 20
 H776_MAXIMUM_PROCESS_RSS_BYTES = 64 * 1024**3
+H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES = 192 * 1024**3
 H776_MAXIMUM_CUDA_BYTES_PER_DEVICE = 20 * 1024**3
+H776_COMPOSED_QK_ATTENTION_POLICY_SHA256 = (
+    "a241c7a77990fbc45d20785fbe2c1897818642667cf7ff24b767db8ada1fb0bd"
+)
+H776_COMPOSED_LOGICAL_CUDA_UUIDS = (
+    "2ce6a95c-7b1f-644a-3808-d781732a0582",
+    "4ead7f3a-cc79-fa5b-de42-ef024e27f561",
+)
+H776_COMPOSED_CUDA_DEVICE_NAME = "NVIDIA GeForce RTX 3090"
 H776_PCG_MAXIMUM_ITERATIONS = 64
 H776_PCG_RESTART_BLOCK_ITERATIONS = 64
 H776_PCG_HARD_MAXIMUM_ITERATIONS = 512
@@ -103,8 +123,7 @@ H776_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA = (
     "neural-forge-lfm2-sequence-effective-hidden-partial-trace-cholesky-v1"
 )
 H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SCHEMA = (
-    "neural-forge-lfm2-sequence-effective-hidden-partial-trace-"
-    "pcg-execution-profile-v1"
+    "neural-forge-lfm2-sequence-effective-hidden-partial-trace-pcg-execution-profile-v1"
 )
 H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256 = (
     "7f71ffe700643b6fc017c518dd2f853092917d288f8e70b4cb659e941aa5f13e"
@@ -296,6 +315,13 @@ class Lfm2CpcfV5RealAttentionProbePins:
     expected_full_policy_sha256: str = H776_FULL_POLICY_SHA256
     expected_origin_compiler_sha256: str = H776_ORIGIN_COMPILER_SHA256
     expected_sequence_solver_plan_sha256: str = H776_SEQUENCE_SOLVER_PLAN_SHA256
+    expected_composed_qk_attention_policy_sha256: str = (
+        H776_COMPOSED_QK_ATTENTION_POLICY_SHA256
+    )
+    expected_composed_logical_cuda_uuids: tuple[str, str] = (
+        H776_COMPOSED_LOGICAL_CUDA_UUIDS
+    )
+    expected_composed_qk_attention_enabled: bool = False
     layer_index: int = H776_LAYER_INDEX
     expected_target_unique_parameters: int = H776_TARGET_UNIQUE_PARAMETERS
     maximum_process_rss_bytes: int = H776_MAXIMUM_PROCESS_RSS_BYTES
@@ -334,6 +360,7 @@ class Lfm2CpcfV5RealAttentionProbePins:
             "expected_full_policy_sha256",
             "expected_origin_compiler_sha256",
             "expected_sequence_solver_plan_sha256",
+            "expected_composed_qk_attention_policy_sha256",
         ):
             _digest(getattr(self, name), name)
         fixed = {
@@ -353,9 +380,17 @@ class Lfm2CpcfV5RealAttentionProbePins:
             "expected_full_policy_sha256": H776_FULL_POLICY_SHA256,
             "expected_origin_compiler_sha256": H776_ORIGIN_COMPILER_SHA256,
             "expected_sequence_solver_plan_sha256": (H776_SEQUENCE_SOLVER_PLAN_SHA256),
+            "expected_composed_qk_attention_policy_sha256": (
+                H776_COMPOSED_QK_ATTENTION_POLICY_SHA256
+            ),
+            "expected_composed_logical_cuda_uuids": (H776_COMPOSED_LOGICAL_CUDA_UUIDS),
             "layer_index": H776_LAYER_INDEX,
             "expected_target_unique_parameters": H776_TARGET_UNIQUE_PARAMETERS,
-            "maximum_process_rss_bytes": H776_MAXIMUM_PROCESS_RSS_BYTES,
+            "maximum_process_rss_bytes": (
+                H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES
+                if self.expected_composed_qk_attention_enabled
+                else H776_MAXIMUM_PROCESS_RSS_BYTES
+            ),
             "maximum_cuda_bytes_per_device": (H776_MAXIMUM_CUDA_BYTES_PER_DEVICE),
             "require_zero_swap": True,
         }
@@ -375,9 +410,18 @@ class Lfm2CpcfV5RealAttentionProbePins:
                 "The probe requires the explicitly pinned new compiler runtime, "
                 "not ordinary same-runtime resume."
             )
-        if type(self.expected_attention_sequential_transport_enabled) is not bool:
-            raise TypeError(
-                "expected_attention_sequential_transport_enabled must be bool."
+        if (
+            type(self.expected_attention_sequential_transport_enabled) is not bool
+            or type(self.expected_composed_qk_attention_enabled) is not bool
+        ):
+            raise TypeError("Expected attention diagnostic modes must be bool.")
+        if (
+            self.expected_attention_sequential_transport_enabled
+            and self.expected_composed_qk_attention_enabled
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "Composed Q/K attention and legacy sequential transport are "
+                "separate authenticated diagnostic lanes."
             )
 
     def as_dict(self) -> dict[str, Any]:
@@ -414,6 +458,15 @@ class Lfm2CpcfV5RealAttentionProbePins:
             "expected_sequence_solver_plan_sha256": (
                 self.expected_sequence_solver_plan_sha256
             ),
+            "expected_composed_qk_attention_policy_sha256": (
+                self.expected_composed_qk_attention_policy_sha256
+            ),
+            "expected_composed_logical_cuda_uuids": list(
+                self.expected_composed_logical_cuda_uuids
+            ),
+            "expected_composed_qk_attention_enabled": (
+                self.expected_composed_qk_attention_enabled
+            ),
             "layer_index": self.layer_index,
             "expected_target_unique_parameters": (
                 self.expected_target_unique_parameters
@@ -441,6 +494,7 @@ class Lfm2CpcfV5RealAttentionProbeRuntime:
     runtime_policy: Any
     post_operator_chart_transport_shadow: bool = False
     attention_sequential_transport_enabled: bool = False
+    composed_qk_attention_enabled: bool = False
 
 
 def _checkpoint_reference_mapping(verified: Any) -> dict[str, str]:
@@ -1028,16 +1082,10 @@ def _authenticate_h776_row_block_jacobi_receipt(
         seal_field="report_sha256",
         name="row-block Jacobi construction report",
     )
-    diagonal_error = construction.get(
-        "scalar_diagonal_maximum_absolute_error"
-    )
-    diagonal_tolerance = construction.get(
-        "scalar_diagonal_match_tolerance"
-    )
+    diagonal_error = construction.get("scalar_diagonal_maximum_absolute_error")
+    diagonal_tolerance = construction.get("scalar_diagonal_match_tolerance")
     asymmetry = construction.get("row_blocks_maximum_asymmetry")
-    symmetry_tolerance = construction.get(
-        "row_blocks_symmetry_tolerance"
-    )
+    symmetry_tolerance = construction.get("row_blocks_symmetry_tolerance")
     ridge = construction.get("ridge")
     expected_source_terms = (
         H776_TARGET_QUERY_HEADS // H776_TARGET_KEY_VALUE_HEADS
@@ -1047,8 +1095,7 @@ def _authenticate_h776_row_block_jacobi_receipt(
         or set(construction) != construction_fields
         or construction.get("schema") != H776_ROW_BLOCK_JACOBI_SCHEMA
         or construction.get("role") != role
-        or construction.get("construction")
-        != "exact_structured_operator_row_blocks"
+        or construction.get("construction") != "exact_structured_operator_row_blocks"
         or construction.get("row_block_count") != H776_TARGET_HIDDEN_SIZE
         or construction.get("row_block_size") != H776_HEAD_DIM
         or construction.get("row_blocks_shape")
@@ -1066,19 +1113,14 @@ def _authenticate_h776_row_block_jacobi_receipt(
         or not _finite_nonnegative_number(ridge)
         or float(ridge) <= 0.0
         or construction.get("full_operator_materialized") is not False
-        or receipt.get("kind")
-        != "deterministic_exact_row_block_jacobi_cholesky"
-        or receipt.get("construction_report_sha256")
-        != construction["report_sha256"]
-        or receipt.get("row_blocks_sha256")
-        != construction.get("row_blocks_sha256")
+        or receipt.get("kind") != "deterministic_exact_row_block_jacobi_cholesky"
+        or receipt.get("construction_report_sha256") != construction["report_sha256"]
+        or receipt.get("row_blocks_sha256") != construction.get("row_blocks_sha256")
         or receipt.get("factorization") != "batched_lower_cholesky_ex"
         or receipt.get("row_block_count") != H776_TARGET_HIDDEN_SIZE
         or receipt.get("row_block_size") != H776_HEAD_DIM
         or receipt.get("all_row_blocks_spd") is not True
-        or receipt.get(
-            "factorization_materialized_only_after_original_lane_exact_miss"
-        )
+        or receipt.get("factorization_materialized_only_after_original_lane_exact_miss")
         is not True
         or receipt.get("full_operator_materialized") is not False
     ):
@@ -1155,21 +1197,15 @@ def _authenticate_continuous_row_block_pcg_report(
     role = report.get("role")
     iterations = report.get("iterations_executed")
     original_iterations = report.get("original_lane_iterations_executed")
-    block_iterations = report.get(
-        "continuous_row_block_lane_iterations_executed"
-    )
+    block_iterations = report.get("continuous_row_block_lane_iterations_executed")
     initial = report.get("initial_relative_normal_residual")
     original_final = report.get(
         "original_lane_final_recurrence_relative_normal_residual"
     )
-    recurrence_final = report.get(
-        "final_recurrence_relative_normal_residual"
-    )
+    recurrence_final = report.get("final_recurrence_relative_normal_residual")
     exact_final = report.get("final_relative_normal_residual")
     history = report.get("relative_normal_residual_history")
-    checkpoints = report.get(
-        "exact_relative_normal_residual_checkpoints"
-    )
+    checkpoints = report.get("exact_relative_normal_residual_checkpoints")
     total_matvec_calls = report.get("total_matvec_calls")
     lane = report.get("continuous_row_block_lane")
     preconditioner = report.get("restart_preconditioner")
@@ -1180,13 +1216,10 @@ def _authenticate_continuous_row_block_pcg_report(
         or report.get("maximum_iterations")
         != H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
         or report.get("hard_cap_includes_original_lane_iterations") is not True
-        or report.get("original_lane_maximum_iterations")
-        != H776_PCG_MAXIMUM_ITERATIONS
+        or report.get("original_lane_maximum_iterations") != H776_PCG_MAXIMUM_ITERATIONS
         or original_iterations != H776_PCG_MAXIMUM_ITERATIONS
         or isinstance(original_iterations, bool)
-        or report.get(
-            "single_restart_after_original_lane_exact_authentication_miss"
-        )
+        or report.get("single_restart_after_original_lane_exact_authentication_miss")
         is not True
         or report.get("periodic_restart_count") != 0
         or isinstance(iterations, bool)
@@ -1206,8 +1239,7 @@ def _authenticate_continuous_row_block_pcg_report(
         or not _finite_nonnegative_number(original_final)
         or not _finite_nonnegative_number(recurrence_final)
         or not _finite_nonnegative_number(exact_final)
-        or float(exact_final)
-        > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+        or float(exact_final) > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
         or not isinstance(history, list)
         or len(history) != iterations
         or any(not _finite_nonnegative_number(item) for item in history)
@@ -1216,22 +1248,15 @@ def _authenticate_continuous_row_block_pcg_report(
         or report.get("recurrence_history_sha256") != _sha256(history)
         or not isinstance(checkpoints, list)
         or len(checkpoints) < 2
-        or report.get("exact_residual_checkpoints_sha256")
-        != _sha256(checkpoints)
+        or report.get("exact_residual_checkpoints_sha256") != _sha256(checkpoints)
         or isinstance(total_matvec_calls, bool)
         or not isinstance(total_matvec_calls, int)
         or report.get("exact_final_residual_authenticated") is not True
-        or report.get(
-            "extended_after_original_lane_exact_authentication_miss"
-        )
+        or report.get("extended_after_original_lane_exact_authentication_miss")
         is not True
-        or report.get(
-            "exact_residual_used_to_initialize_continuous_lane_once"
-        )
+        or report.get("exact_residual_used_to_initialize_continuous_lane_once")
         is not True
-        or report.get(
-            "exact_diagnostic_matvecs_modify_recurrence_state_or_direction"
-        )
+        or report.get("exact_diagnostic_matvecs_modify_recurrence_state_or_direction")
         is not False
         or not isinstance(lane, dict)
         or set(lane) != lane_fields
@@ -1247,11 +1272,11 @@ def _authenticate_continuous_row_block_pcg_report(
     checkpoint_by_iteration: dict[int, float] = {}
     previous_iteration = -1
     for checkpoint in checkpoints:
-        if (
-            not isinstance(checkpoint, dict)
-            or set(checkpoint)
-            != {"iteration", "relative_normal_residual", "finite"}
-        ):
+        if not isinstance(checkpoint, dict) or set(checkpoint) != {
+            "iteration",
+            "relative_normal_residual",
+            "finite",
+        }:
             raise Lfm2CpcfV5RealAttentionProbeError(
                 "Continuous row-block PCG exact checkpoints are malformed."
             )
@@ -1275,8 +1300,7 @@ def _authenticate_continuous_row_block_pcg_report(
         or float(checkpoints[0]["relative_normal_residual"])
         <= H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
         or checkpoints[-1]["iteration"] != iterations
-        or float(checkpoints[-1]["relative_normal_residual"])
-        != float(exact_final)
+        or float(checkpoints[-1]["relative_normal_residual"]) != float(exact_final)
         or any(
             float(checkpoint["relative_normal_residual"])
             <= H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
@@ -1297,8 +1321,7 @@ def _authenticate_continuous_row_block_pcg_report(
         != H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
         or lane.get("iterations_executed") != block_iterations
         or lane.get("attempted_matvec_calls") != lane_attempted_matvecs
-        or lane.get("exact_diagnostic_matvec_calls")
-        != exact_diagnostic_count
+        or lane.get("exact_diagnostic_matvec_calls") != exact_diagnostic_count
         or lane.get("ending_iteration") != iterations
         or not _finite_nonnegative_number(
             lane.get("ending_recurrence_relative_normal_residual")
@@ -1308,8 +1331,7 @@ def _authenticate_continuous_row_block_pcg_report(
         or not _finite_nonnegative_number(
             lane.get("ending_exact_relative_normal_residual")
         )
-        or float(lane["ending_exact_relative_normal_residual"])
-        != float(exact_final)
+        or float(lane["ending_exact_relative_normal_residual"]) != float(exact_final)
         or lane.get("ending_exact_residual_authenticated") is not True
         or termination
         not in {
@@ -1319,10 +1341,8 @@ def _authenticate_continuous_row_block_pcg_report(
         or (
             termination == "exact_tolerance_reached"
             and (
-                iterations
-                >= H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
-                or float(history[-1])
-                > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
+                iterations >= H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
+                or float(history[-1]) > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
             )
         )
         or (
@@ -1334,8 +1354,7 @@ def _authenticate_continuous_row_block_pcg_report(
             > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
             for checkpoint in checkpoints[1:-1]
         )
-        or total_matvec_calls
-        != iterations + 1 + len(checkpoints)
+        or total_matvec_calls != iterations + 1 + len(checkpoints)
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "The continuous row-block PCG lane counters or exact-residual "
@@ -1343,8 +1362,7 @@ def _authenticate_continuous_row_block_pcg_report(
         )
 
     if (
-        preconditioner.get("kind")
-        != "deterministic_exact_row_block_jacobi_cholesky"
+        preconditioner.get("kind") != "deterministic_exact_row_block_jacobi_cholesky"
         or preconditioner.get("supplied") is not True
         or preconditioner.get("authentication_attempted") is not True
         or preconditioner.get("authenticated") is not True
@@ -1354,8 +1372,7 @@ def _authenticate_continuous_row_block_pcg_report(
         or preconditioner.get("authentication_failure_reason") is not None
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
-            "The continuous row-block PCG preconditioner lifecycle is "
-            "inconsistent."
+            "The continuous row-block PCG preconditioner lifecycle is inconsistent."
         )
     _authenticate_h776_row_block_jacobi_receipt(
         preconditioner.get("receipt"),
@@ -1427,12 +1444,8 @@ def _authenticate_h776_hidden_partial_trace_receipt(
     asymmetry = construction.get("raw_maximum_absolute_asymmetry")
     symmetry_tolerance = construction.get("symmetry_tolerance")
     ridge = construction.get("ridge")
-    inverse_probe_residual = receipt.get(
-        "inverse_orientation_probe_relative_residual"
-    )
-    inverse_probe_tolerance = receipt.get(
-        "inverse_orientation_probe_tolerance"
-    )
+    inverse_probe_residual = receipt.get("inverse_orientation_probe_relative_residual")
+    inverse_probe_tolerance = receipt.get("inverse_orientation_probe_tolerance")
     source_terms = construction.get("source_terms")
     expected_source_terms = (
         H776_TARGET_QUERY_HEADS // H776_TARGET_KEY_VALUE_HEADS
@@ -1440,11 +1453,9 @@ def _authenticate_h776_hidden_partial_trace_receipt(
     if (
         set(receipt) != receipt_fields
         or set(construction) != construction_fields
-        or construction.get("schema")
-        != H776_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA
+        or construction.get("schema") != H776_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA
         or construction.get("role") != role
-        or construction.get("construction")
-        != "normalized_hidden_side_partial_trace"
+        or construction.get("construction") != "normalized_hidden_side_partial_trace"
         or construction.get("formula")
         != "P_H=ridge*I_H+sum_(h,o)(trace(C_o,h)/head_dim)*A_h,o"
         or construction.get("hidden_size") != H776_TARGET_HIDDEN_SIZE
@@ -1469,8 +1480,7 @@ def _authenticate_h776_hidden_partial_trace_receipt(
         or not _finite_nonnegative_number(ridge)
         or float(ridge) <= 0.0
         or construction.get("full_operator_materialized") is not False
-        or receipt.get("kind")
-        != "deterministic_hidden_partial_trace_cholesky"
+        or receipt.get("kind") != "deterministic_hidden_partial_trace_cholesky"
         or receipt.get("construction_report_sha256") != construction["report_sha256"]
         or receipt.get("partial_trace_sha256")
         != construction.get("partial_trace_sha256")
@@ -1479,8 +1489,7 @@ def _authenticate_h776_hidden_partial_trace_receipt(
         or receipt.get("factor_shape")
         != [H776_TARGET_HIDDEN_SIZE, H776_TARGET_HIDDEN_SIZE]
         or receipt.get("factor_dtype") != "torch.float64"
-        or receipt.get("factor_device")
-        != construction.get("partial_trace_device")
+        or receipt.get("factor_device") != construction.get("partial_trace_device")
         or receipt.get("hidden_size") != H776_TARGET_HIDDEN_SIZE
         or receipt.get("head_dim") != H776_HEAD_DIM
         or receipt.get("partial_trace_spd") is not True
@@ -1533,14 +1542,10 @@ def _authenticate_h776_hidden_partial_trace_receipt(
             "The hidden partial-trace receipt role is not an H776 group solve."
         )
     group = int(role_match.group(2))
-    first_head = group * (
-        H776_TARGET_QUERY_HEADS // H776_TARGET_KEY_VALUE_HEADS
-    )
+    first_head = group * (H776_TARGET_QUERY_HEADS // H776_TARGET_KEY_VALUE_HEADS)
     group_heads = (first_head, first_head + 1)
     expected_pairs = {
-        (head, other_head)
-        for head in group_heads
-        for other_head in group_heads
+        (head, other_head) for head in group_heads for other_head in group_heads
     }
     if seen_pairs != expected_pairs:
         raise Lfm2CpcfV5RealAttentionProbeError(
@@ -1593,37 +1598,25 @@ def _authenticate_h776_hidden_partial_trace_pcg_execution_profile(
         or profile.get("original_lane_maximum_iterations")
         != H776_PCG_MAXIMUM_ITERATIONS
         or profile.get("continuation_lane_solver")
-        != (
-            "deterministic_continuous_hidden_partial_trace_"
-            "cholesky_pcg_single_tensor"
-        )
+        != ("deterministic_continuous_hidden_partial_trace_cholesky_pcg_single_tensor")
         or profile.get("continuation_preconditioner_schema")
         != H776_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA
         or profile.get("continuation_preconditioner_formula")
         != "P_H=ridge*I_H+sum_(h,o)(trace(C_o,h)/head_dim)*A_h,o"
-        or profile.get(
-            "single_restart_after_original_lane_exact_authentication_miss"
-        )
+        or profile.get("single_restart_after_original_lane_exact_authentication_miss")
         is not True
         or profile.get("periodic_restart_count") != 0
         or profile.get("hard_maximum_iterations")
         != H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
         or profile.get("required_relative_normal_residual")
         != H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
-        or profile.get(
-            "exact_residual_used_to_initialize_continuous_lane_once"
-        )
+        or profile.get("exact_residual_used_to_initialize_continuous_lane_once")
         is not True
-        or profile.get(
-            "exact_diagnostic_matvecs_modify_recurrence_state_or_direction"
-        )
+        or profile.get("exact_diagnostic_matvecs_modify_recurrence_state_or_direction")
         is not False
-        or profile.get(
-            "factorization_materialized_only_after_original_lane_exact_miss"
-        )
+        or profile.get("factorization_materialized_only_after_original_lane_exact_miss")
         is not True
-        or profile.get("production_row_block_preconditioner_selected")
-        is not False
+        or profile.get("production_row_block_preconditioner_selected") is not False
         or profile.get("full_operator_materialized") is not False
         or profile.get("report_sha256")
         != H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
@@ -1713,10 +1706,7 @@ def _authenticate_continuous_hidden_partial_trace_pcg_report(
     if (
         set(report) != report_fields
         or report.get("solver")
-        != (
-            "deterministic_continuous_hidden_partial_trace_"
-            "cholesky_pcg_single_tensor"
-        )
+        != ("deterministic_continuous_hidden_partial_trace_cholesky_pcg_single_tensor")
         or report.get("maximum_iterations")
         != H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
         or report.get("hard_cap_includes_original_lane_iterations") is not True
@@ -1850,15 +1840,13 @@ def _authenticate_continuous_hidden_partial_trace_pcg_report(
         or (
             termination == "exact_tolerance_reached"
             and (
-                iterations
-                >= H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+                iterations >= H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
                 or float(history[-1]) > H776_PCG_MAXIMUM_RELATIVE_NORMAL_RESIDUAL
             )
         )
         or (
             termination == "exact_tolerance_reached_at_hard_cap"
-            and iterations
-            != H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
+            and iterations != H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
         )
         or any(
             float(history[checkpoint["iteration"] - 1])
@@ -1873,14 +1861,12 @@ def _authenticate_continuous_hidden_partial_trace_pcg_report(
         )
 
     if (
-        preconditioner.get("kind")
-        != "deterministic_hidden_partial_trace_cholesky"
+        preconditioner.get("kind") != "deterministic_hidden_partial_trace_cholesky"
         or preconditioner.get("supplied") is not True
         or preconditioner.get("authentication_attempted") is not True
         or preconditioner.get("authenticated") is not True
         or preconditioner.get("applied") is not True
-        or preconditioner.get("application_attempt_count")
-        != partial_trace_iterations
+        or preconditioner.get("application_attempt_count") != partial_trace_iterations
         or preconditioner.get("application_count") != partial_trace_iterations
         or preconditioner.get("authentication_failure_reason") is not None
     ):
@@ -1947,13 +1933,10 @@ class Lfm2SequenceEffectivePcgCollector:
             _authenticate_legacy_pcg_report(report)
         elif solver == "deterministic_restarted_jacobi_pcg_single_tensor":
             _authenticate_restarted_pcg_report(report)
-        elif solver == (
-            "deterministic_continuous_row_block_jacobi_pcg_single_tensor"
-        ):
+        elif solver == ("deterministic_continuous_row_block_jacobi_pcg_single_tensor"):
             _authenticate_continuous_row_block_pcg_report(report)
         elif solver == (
-            "deterministic_continuous_hidden_partial_trace_"
-            "cholesky_pcg_single_tensor"
+            "deterministic_continuous_hidden_partial_trace_cholesky_pcg_single_tensor"
         ):
             _authenticate_continuous_hidden_partial_trace_pcg_report(report)
         else:
@@ -2202,12 +2185,8 @@ class Lfm2SequenceEffectivePcgCollector:
                     - hidden_partial_trace_event_count
                 ),
                 "restarted_solver_event_count": restarted_event_count,
-                "continuous_row_block_solver_event_count": (
-                    row_block_event_count
-                ),
-                "original_lane_maximum_iterations": (
-                    H776_PCG_MAXIMUM_ITERATIONS
-                ),
+                "continuous_row_block_solver_event_count": (row_block_event_count),
+                "original_lane_maximum_iterations": (H776_PCG_MAXIMUM_ITERATIONS),
                 "row_block_hard_maximum_iterations": (
                     H776_PCG_ROW_BLOCK_HARD_MAXIMUM_ITERATIONS
                 ),
@@ -2246,15 +2225,11 @@ class Lfm2SequenceEffectivePcgCollector:
                 "all_hidden_partial_trace_preconditioner_receipts_authenticated": (
                     True
                 ),
-                "continuous_hidden_partial_trace_solver_events_authenticated": (
-                    True
-                ),
+                "continuous_hidden_partial_trace_solver_events_authenticated": (True),
                 "hidden_partial_trace_pcg_execution_profile_sha256": (
                     H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256
                 ),
-                "all_hidden_partial_trace_execution_profiles_authenticated": (
-                    True
-                ),
+                "all_hidden_partial_trace_execution_profiles_authenticated": (True),
                 "stale_row_block_event_count": row_block_event_count,
             }
         return MappingProxyType({**body, "audit_sha256": _sha256(body)})
@@ -2301,6 +2276,8 @@ class Lfm2CpcfV5RealAttentionResourceMonitor:
         ),
         cuda_sampler: Callable[[], Mapping[str, int]],
         sample_interval_seconds: float = 0.05,
+        maximum_process_rss_bytes: int = H776_MAXIMUM_PROCESS_RSS_BYTES,
+        maximum_cuda_bytes_per_device: int = H776_MAXIMUM_CUDA_BYTES_PER_DEVICE,
     ) -> None:
         if not callable(process_sampler) or not callable(cuda_sampler):
             raise TypeError("Resource samplers must be callable.")
@@ -2311,21 +2288,39 @@ class Lfm2CpcfV5RealAttentionResourceMonitor:
             raise Lfm2CpcfV5RealAttentionProbeError(
                 "Resource sample interval must be in (0, 1]."
             )
+        for name, value in (
+            ("maximum_process_rss_bytes", maximum_process_rss_bytes),
+            ("maximum_cuda_bytes_per_device", maximum_cuda_bytes_per_device),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise Lfm2CpcfV5RealAttentionProbeError(
+                    f"{name} must be a positive integer."
+                )
+        self._maximum_process_rss_bytes = maximum_process_rss_bytes
+        self._maximum_cuda_bytes_per_device = maximum_cuda_bytes_per_device
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._samples: list[dict[str, Any]] = []
         self._failure: BaseException | None = None
 
+    @property
+    def maximum_process_rss_bytes(self) -> int:
+        return self._maximum_process_rss_bytes
+
+    @property
+    def maximum_cuda_bytes_per_device(self) -> int:
+        return self._maximum_cuda_bytes_per_device
+
     def _sample(self, label: str) -> None:
         process = {str(k): int(v) for k, v in self._process_sampler().items()}
         cuda = {str(k): int(v) for k, v in self._cuda_sampler().items()}
         if (
-            process["VmRSS"] > H776_MAXIMUM_PROCESS_RSS_BYTES
-            or process["VmHWM"] > H776_MAXIMUM_PROCESS_RSS_BYTES
+            process["VmRSS"] > self._maximum_process_rss_bytes
+            or process["VmHWM"] > self._maximum_process_rss_bytes
             or process["VmSwap"] != 0
             or any(
-                value > H776_MAXIMUM_CUDA_BYTES_PER_DEVICE for value in cuda.values()
+                value > self._maximum_cuda_bytes_per_device for value in cuda.values()
             )
         ):
             raise Lfm2CpcfV5RealAttentionProbeError(
@@ -2401,8 +2396,8 @@ class Lfm2CpcfV5RealAttentionResourceMonitor:
             "schema": LFM2_CPCF_V5_REAL_ATTENTION_RESOURCE_REPORT_SCHEMA,
             "sample_interval_seconds": self._interval,
             "sample_count": len(samples),
-            "maximum_process_rss_bytes": H776_MAXIMUM_PROCESS_RSS_BYTES,
-            "maximum_cuda_bytes_per_device": (H776_MAXIMUM_CUDA_BYTES_PER_DEVICE),
+            "maximum_process_rss_bytes": self._maximum_process_rss_bytes,
+            "maximum_cuda_bytes_per_device": (self._maximum_cuda_bytes_per_device),
             "peak_vm_rss_bytes": max(sample["process"]["VmRSS"] for sample in samples),
             "peak_vm_hwm_bytes": max(sample["process"]["VmHWM"] for sample in samples),
             "peak_vm_swap_bytes": max(
@@ -2813,8 +2808,7 @@ def authenticate_h776_attention_result(
         or (
             authenticated_pcg.get("all_iterations_at_most")
             == H776_PCG_HIDDEN_PARTIAL_TRACE_HARD_MAXIMUM_ITERATIONS
-            and authenticated_pcg.get("stale_row_block_event_count")
-            != 0
+            and authenticated_pcg.get("stale_row_block_event_count") != 0
         )
         or authenticated_pcg.get("solver_results_or_arguments_modified") is not False
     ):
@@ -3086,6 +3080,760 @@ def authenticate_h776_attention_result(
     return MappingProxyType({**body, "audit_sha256": _sha256(body)})
 
 
+def _h776_composed_qk_attention_policy() -> Any:
+    """Build the fixed two-3090 analytical policy for the real H776 lane."""
+
+    from .hf_lfm2_cached_qk_score_residual_fold import (
+        Lfm2QkScoreResidualFoldPolicy,
+    )
+    from .hf_lfm2_composed_qk_attention_fold import (
+        Lfm2ComposedQkAttentionFoldPolicy,
+    )
+    from .hf_lfm2_qk_global_gauge_sync import (
+        Lfm2QkGlobalGaugeSyncPolicy,
+    )
+
+    return Lfm2ComposedQkAttentionFoldPolicy(
+        global_policy=Lfm2QkGlobalGaugeSyncPolicy(
+            maximum_total_score_elements=134_217_728,
+            maximum_total_factor_elements=67_108_864,
+            maximum_total_output_elements=201_326_592,
+            maximum_total_svd_workspace_elements=67_108_864,
+        ),
+        score_policy=Lfm2QkScoreResidualFoldPolicy(
+            maximum_fit_centered_score_relative_rmse=0.10,
+            maximum_fit_probability_relative_rmse=0.20,
+            maximum_fit_js_divergence_mean=0.05,
+            maximum_fit_js_divergence_worst=0.10,
+            minimum_fit_top1_route_agreement=0.90,
+            maximum_fit_check_centered_score_relative_rmse=0.20,
+            maximum_fit_check_probability_relative_rmse=0.20,
+            maximum_fit_check_js_divergence_mean=0.05,
+            maximum_fit_check_js_divergence_worst=0.10,
+            minimum_fit_check_top1_route_agreement=0.90,
+            solver_device="cuda:1",
+            compute_devices=("cuda:0", "cuda:1"),
+        ),
+    )
+
+
+def _authenticate_qk_routing_metrics(
+    metrics: Any,
+    *,
+    policy: Mapping[str, Any],
+    partition: str,
+    expected_case_count: int,
+) -> dict[str, Any]:
+    if not isinstance(metrics, Mapping):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            f"Composed {partition} routing metrics are absent."
+        )
+    result = _plain(metrics)
+    prefix = "fit" if partition == "fit" else "fit_check"
+    ceilings = {
+        "centered_score_relative_rmse": (
+            f"maximum_{prefix}_centered_score_relative_rmse"
+        ),
+        "probability_relative_rmse": (f"maximum_{prefix}_probability_relative_rmse"),
+        "js_divergence_mean": f"maximum_{prefix}_js_divergence_mean",
+        "js_divergence_worst": f"maximum_{prefix}_js_divergence_worst",
+    }
+    for metric_name, policy_name in ceilings.items():
+        value = result.get(metric_name)
+        maximum = policy.get(policy_name)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or float(value) < 0.0
+            or isinstance(maximum, bool)
+            or not isinstance(maximum, (int, float))
+            or float(value) > float(maximum)
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Composed {partition} {metric_name} failed its fixed gate."
+            )
+    top1 = result.get("top1_route_agreement_fraction")
+    minimum_top1 = policy.get(f"minimum_{prefix}_top1_route_agreement")
+    if (
+        isinstance(top1, bool)
+        or not isinstance(top1, (int, float))
+        or not math.isfinite(float(top1))
+        or isinstance(minimum_top1, bool)
+        or not isinstance(minimum_top1, (int, float))
+        or float(top1) < float(minimum_top1)
+        or result.get("maximum_causal_probability_leakage") != 0.0
+        or result.get("case_count") != expected_case_count
+        or not isinstance(result.get("eligible_query_rows"), int)
+        or result["eligible_query_rows"] <= 0
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            f"Composed {partition} routing agreement or causal mask failed."
+        )
+    return result
+
+
+def _authenticate_h776_composed_device_execution(
+    score: Mapping[str, Any],
+    *,
+    producer: Mapping[str, Any],
+    global_sync: Mapping[str, Any],
+    fit_trajectory_sha256s: Sequence[str],
+    pins: Lfm2CpcfV5RealAttentionProbePins,
+) -> Mapping[str, Any]:
+    from .hf_lfm2_cached_qk_score_residual_fold import (
+        LFM2_QK_OBSERVED_EXECUTION_RECEIPT_SCHEMA,
+    )
+
+    execution = score.get("execution")
+    if (
+        not isinstance(execution, Mapping)
+        or execution.get("solver_device") != "cuda:1"
+        or execution.get("compute_devices") != ["cuda:0", "cuda:1"]
+        or execution.get("case_assignment") != "authenticated_bank_order_round_robin"
+        or execution.get("compute_device_concurrency") != "serial_round_robin"
+        or execution.get("streamed_evidence") is not True
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The score fold lacks its exact two-device execution contract."
+        )
+    receipt = _self_sealed(
+        execution.get("observed_execution_receipt"),
+        seal_field="receipt_sha256",
+        name="observed score execution",
+    )
+    observations = receipt.get("compute_observations")
+    solver = receipt.get("solver_observation")
+    distinct_case_receipts = receipt.get("distinct_case_receipts")
+    expected_devices = ["cuda:0", "cuda:1"]
+    expected_uuids = list(pins.expected_composed_logical_cuda_uuids)
+    qk_fit_ordinals = producer.get("qk_fit_source_ordinals")
+    trajectories = tuple(fit_trajectory_sha256s)
+    if (
+        not isinstance(qk_fit_ordinals, list)
+        or len(qk_fit_ordinals) != H776_COMPOSED_QK_FIT_CASES
+        or len(trajectories) != H776_COMPOSED_UPSTREAM_FIT_CASES
+        or any(type(value) is not int for value in qk_fit_ordinals)
+        or any(value < 0 or value >= len(trajectories) for value in qk_fit_ordinals)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Observed score execution lacks the exact Q/K-FIT assignment map."
+        )
+    expected_assignments = tuple(
+        (ordinal, trajectories[ordinal]) for ordinal in qk_fit_ordinals[:2]
+    )
+    if (
+        receipt.get("schema") != LFM2_QK_OBSERVED_EXECUTION_RECEIPT_SCHEMA
+        or receipt.get("requested_solver_device") != "cuda:1"
+        or receipt.get("requested_compute_devices") != expected_devices
+        or receipt.get("requested_compute_device_count") != 2
+        or receipt.get("observed_compute_device_count") != 2
+        or receipt.get("every_requested_compute_device_observed") is not True
+        or receipt.get("solver_device_observed") is not True
+        or receipt.get("cached_evidence_analytical_tensor_operation_count") != 2
+        or receipt.get("solver_tensor_operation_count") != 1
+        or receipt.get("distinct_case_receipt_count") != 2
+        or receipt.get("distinct_case_execution_receipt_count") != 2
+        or receipt.get("per_device_case_counts") != {"cuda:0": 1, "cuda:1": 1}
+        or not isinstance(observations, list)
+        or len(observations) != 2
+        or not isinstance(solver, dict)
+        or not isinstance(distinct_case_receipts, list)
+        or len(distinct_case_receipts) != 2
+        or not isinstance(receipt.get("operation_audit"), dict)
+        or any(
+            type(value) is not int or value != 0
+            for value in receipt["operation_audit"].values()
+        )
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Observed score execution is incomplete or not fold-only."
+        )
+    for index, value in enumerate(distinct_case_receipts):
+        _digest(value, f"observed distinct case receipt {index}")
+    if len(set(distinct_case_receipts)) != 2:
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Observed score execution did not use two distinct FIT cases."
+        )
+    authenticated_observations = []
+    for index, observation in enumerate(observations):
+        authenticated = _self_sealed(
+            observation,
+            seal_field="case_execution_receipt_sha256",
+            name=f"observed score compute device {index}",
+        )
+        scalar = authenticated.get("analytical_scalar")
+        if (
+            authenticated.get("assignment_index") != index
+            or authenticated.get("intended_logical_device") != expected_devices[index]
+            or authenticated.get("observed_logical_device") != expected_devices[index]
+            or authenticated.get("observed_device_type") != "cuda"
+            or authenticated.get("observed_device_index") != index
+            or authenticated.get("cuda_uuid") != expected_uuids[index]
+            or authenticated.get("cuda_name") != H776_COMPOSED_CUDA_DEVICE_NAME
+            or (
+                authenticated.get("cached_case_ordinal"),
+                authenticated.get("cached_trajectory_sha256"),
+            )
+            != expected_assignments[index]
+            or authenticated.get("analytical_operation")
+            != "masked_centered_score_energy_plus_valid_cell_count"
+            or type(authenticated.get("analytical_tensor_element_count")) is not int
+            or authenticated["analytical_tensor_element_count"] <= 0
+            or authenticated.get("analytical_scalar_dtype") != "torch.float64"
+            or isinstance(scalar, bool)
+            or not isinstance(scalar, (int, float))
+            or not math.isfinite(float(scalar))
+            or float(scalar) <= 0.0
+            or authenticated.get("forced_host_scalar_read") is not True
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Logical CUDA device {index} lacks observed cached-evidence work."
+            )
+        for name in (
+            "cached_evidence_sha256",
+            "cached_content_sha256",
+            "cached_transform_receipt_sha256",
+            "cached_trajectory_sha256",
+        ):
+            _digest(authenticated.get(name), f"device {index} {name}")
+        if type(authenticated.get("cached_case_ordinal")) is not int:
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Logical CUDA device {index} lacks a case ordinal."
+            )
+        authenticated_observations.append(authenticated)
+    if [
+        value["cached_evidence_sha256"] for value in authenticated_observations
+    ] != distinct_case_receipts:
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Observed device work differs from the sealed case inventory."
+        )
+    authenticated_solver = _self_sealed(
+        solver,
+        seal_field="solver_execution_receipt_sha256",
+        name="observed score solver device",
+    )
+    solver_scalar = authenticated_solver.get("analytical_scalar")
+    if (
+        authenticated_solver.get("intended_logical_device") != "cuda:1"
+        or authenticated_solver.get("observed_logical_device") != "cuda:1"
+        or authenticated_solver.get("observed_device_type") != "cuda"
+        or authenticated_solver.get("observed_device_index") != 1
+        or authenticated_solver.get("cuda_uuid") != expected_uuids[1]
+        or authenticated_solver.get("cuda_name") != H776_COMPOSED_CUDA_DEVICE_NAME
+        or authenticated_solver.get("source_seed_sha256") != score.get("seed_sha256")
+        or authenticated_solver.get("source_query_weight_sha256")
+        != global_sync.get("query_weight_sha256")
+        or authenticated_solver.get("source_key_weight_sha256")
+        != global_sync.get("key_weight_sha256")
+        or authenticated_solver.get("analytical_operation")
+        != "dense_seed_qk_energy_plus_parameter_count"
+        or type(authenticated_solver.get("analytical_tensor_element_count")) is not int
+        or authenticated_solver["analytical_tensor_element_count"] <= 0
+        or authenticated_solver.get("analytical_scalar_dtype") != "torch.float64"
+        or isinstance(solver_scalar, bool)
+        or not isinstance(solver_scalar, (int, float))
+        or not math.isfinite(float(solver_scalar))
+        or float(solver_scalar) <= 0.0
+        or authenticated_solver.get("forced_host_scalar_read") is not True
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The logical CUDA solver device lacks observed dense Q/K work."
+        )
+    for name in (
+        "source_seed_sha256",
+        "source_query_weight_sha256",
+        "source_key_weight_sha256",
+    ):
+        _digest(authenticated_solver.get(name), f"solver {name}")
+    body = {
+        "observed_execution_receipt_sha256": receipt["receipt_sha256"],
+        "logical_compute_devices": expected_devices,
+        "physical_cuda_uuids": expected_uuids,
+        "cuda_device_name": H776_COMPOSED_CUDA_DEVICE_NAME,
+        "distinct_cached_fit_cases_executed": 2,
+        "solver_device": "cuda:1",
+        "every_requested_compute_device_observed": True,
+        "solver_device_observed": True,
+        "fold_only_execution_authenticated": True,
+    }
+    return MappingProxyType({**body, "audit_sha256": _sha256(body)})
+
+
+def authenticate_h776_composed_attention_result(
+    result: Any,
+    *,
+    input_bank_sha256: str,
+    expected_fit_bank_sha256: str,
+    expected_fit_trajectory_sha256s: Sequence[str],
+    pins: Lfm2CpcfV5RealAttentionProbePins,
+) -> Mapping[str, Any]:
+    """Authenticate the opt-in four-arm result without the legacy PCG observer."""
+
+    from .hf_lfm2_composed_qk_attention_fold import (
+        LFM2_COMPOSED_QK_PRODUCER_SCHEMA,
+        LFM2_COMPOSED_QK_SEQUENCE_EFFECTIVE_SCHEMA,
+        Lfm2CompiledComposedQkSequenceEffectiveAttentionFold,
+    )
+    from .hf_lfm2_cpcf_layer_compiler import (
+        DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID,
+        RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID,
+        Lfm2CompiledCpcfResidualAttentionSplitFold,
+        _tensor_bundle_sha256,
+    )
+    from .hf_lfm2_sequence_effective_attention_fold import (
+        Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+    )
+    from .hf_lfm2_structural_residual_attention_fold import (
+        Lfm2CompiledStructuralAttentionFold,
+        _state_sha256 as _structural_attention_state_sha256,
+    )
+
+    if pins.expected_composed_qk_attention_enabled is not True:
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed attention authentication was not independently pinned."
+        )
+    input_bank_sha = _digest(input_bank_sha256, "input_bank_sha256")
+    fit_bank_sha = _digest(
+        expected_fit_bank_sha256,
+        "expected_fit_bank_sha256",
+    )
+    fit_trajectory_sha256s = tuple(expected_fit_trajectory_sha256s)
+    if len(fit_trajectory_sha256s) != H776_COMPOSED_UPSTREAM_FIT_CASES or len(
+        set(fit_trajectory_sha256s)
+    ) != len(fit_trajectory_sha256s):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The independent H776 FIT trajectory inventory is incomplete."
+        )
+    for index, value in enumerate(fit_trajectory_sha256s):
+        _digest(value, f"expected_fit_trajectory_sha256s[{index}]")
+    report = _self_sealed(
+        getattr(result, "report", None),
+        seal_field="result_sha256",
+        name="composed layer result",
+    )
+    policy = report.get("solver_evidence_policy")
+    if not isinstance(policy, dict):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed layer result lacks solver evidence policy."
+        )
+    selection = _self_sealed(
+        policy.get("attention_candidate_selection"),
+        seal_field="report_sha256",
+        name="composed attention candidate selection",
+    )
+    evaluations = policy.get("attention_candidate_evaluations")
+    if not isinstance(evaluations, dict):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed layer result lacks four candidate evaluations."
+        )
+    candidate_ids = tuple(selection.get("candidate_ids", ()))
+    selected_id = selection.get("selected_candidate_id")
+    if (
+        report.get("layer_index") != H776_LAYER_INDEX
+        or report.get("operator_kind") != "full_attention"
+        or report.get("input_bank_sha256") != input_bank_sha
+        or report.get("split_phase_counts") != dict(H776_SPLIT_PHASE_COUNTS)
+        or policy.get("operator_case_count") != H776_COMPOSED_UPSTREAM_FIT_CASES
+        or candidate_ids != H776_COMPOSED_ATTENTION_CANDIDATE_IDS
+        or set(evaluations) != set(H776_COMPOSED_ATTENTION_CANDIDATE_IDS)
+        or selection.get("candidate_count") != 4
+        or selection.get("selection_split_only") is not True
+        or selection.get("winner_frozen_before_validation") is not True
+        or selection.get("validation_phase_count_consumed_before_freeze") != 0
+        or policy.get("attention_candidate_inventory_mode")
+        != "opt_in_authenticated_four_arm"
+        or policy.get("attention_each_candidate_has_own_fit_only_mlp") is not True
+        or policy.get("attention_winner_frozen_before_validation") is not True
+        or policy.get("attention_validation_replays_before_winner_freeze") != 0
+        or {
+            "attention_candidate_local_post_layer_transport",
+            "attention_sequential_transport_policy",
+            "attention_each_candidate_prepares_own_mlp_basis",
+            "attention_cross_candidate_prepared_mlp_basis_reuse",
+            "attention_final_endpoint_effective_boundary_charts_sha256",
+        }.intersection(policy)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed tournament, split isolation, or layer identity changed."
+        )
+
+    authenticated_evaluations: dict[str, dict[str, Any]] = {}
+    selection_keys: dict[str, tuple[Any, ...]] = {}
+    behavioral_keys: dict[str, tuple[float, ...]] = {}
+    candidate_report_sha256 = selection.get("candidate_report_sha256")
+    if not isinstance(candidate_report_sha256, dict) or set(
+        candidate_report_sha256
+    ) != set(H776_COMPOSED_ATTENTION_CANDIDATE_IDS):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed selection lacks the exact candidate-report inventory."
+        )
+    for candidate_id in H776_COMPOSED_ATTENTION_CANDIDATE_IDS:
+        evaluation = _self_sealed(
+            evaluations.get(candidate_id),
+            seal_field="report_sha256",
+            name=f"composed attention candidate {candidate_id!r}",
+        )
+        raw_key = evaluation.get("selection_key")
+        if (
+            evaluation.get("candidate_id") != candidate_id
+            or evaluation.get("operator_compiled_from_splits") != ["fit"]
+            or evaluation.get("mlp_compiled_from_splits") != ["fit"]
+            or evaluation.get("candidate_evaluated_on_splits") != ["selection"]
+            or evaluation.get("validation_phase_count_consumed") != 0
+            or evaluation.get("training_steps") != 0
+            or evaluation.get("parameters_pruned") != 0
+            or evaluation.get("parameters_quantized") != 0
+            or candidate_report_sha256.get(candidate_id)
+            != evaluation.get("report_sha256")
+            or {
+                "sequential_boundary_transport",
+                "sequential_transport_binding",
+                "effective_boundary_charts_sha256",
+                "operator_transport_mlp_bundle_sha256",
+            }.intersection(evaluation)
+            or not isinstance(raw_key, list)
+            or len(raw_key) != 11
+            or raw_key[-1] != candidate_id
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                for value in raw_key[:-1]
+            )
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Composed candidate {candidate_id!r} crossed a split, "
+                "mutation, or behavioral-ranking gate."
+            )
+        authenticated_evaluations[candidate_id] = evaluation
+        selection_keys[candidate_id] = tuple(raw_key)
+        behavioral_keys[candidate_id] = tuple(float(value) for value in raw_key[:-1])
+    expected_selected_id = min(
+        H776_COMPOSED_ATTENTION_CANDIDATE_IDS,
+        key=lambda candidate_id: selection_keys[candidate_id],
+    )
+    if (
+        selected_id != expected_selected_id
+        or selection.get("selected_candidate_report_sha256")
+        != candidate_report_sha256[selected_id]
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed winner does not reproduce from the sealed ranking keys."
+        )
+
+    composed_evaluation = authenticated_evaluations[
+        H776_COMPOSED_ATTENTION_CANDIDATE_ID
+    ]
+    outer = _self_sealed(
+        composed_evaluation.get("operator_artifact"),
+        seal_field="artifact_sha256",
+        name="outer composed attention artifact",
+    )
+    producer = _self_sealed(
+        policy.get("composed_qk_producer_artifact"),
+        seal_field="artifact_sha256",
+        name="composed Q/K producer artifact",
+    )
+    global_sync = _self_sealed(
+        policy.get("composed_qk_global_sync"),
+        seal_field="report_sha256",
+        name="composed global Q/K synchronization",
+    )
+    score = _self_sealed(
+        policy.get("composed_qk_score_result"),
+        seal_field="report_sha256",
+        name="composed score-residual result",
+    )
+    composed_policy = policy.get("composed_qk_attention_policy")
+    if not isinstance(composed_policy, dict):
+        raise Lfm2CpcfV5RealAttentionProbeError("Composed Q/K policy is absent.")
+    expected_composed_policy = _plain(_h776_composed_qk_attention_policy().as_dict())
+    expected_policy_sha = _digest(
+        expected_composed_policy.get("authentication_sha256"),
+        "expected composed Q/K policy authentication",
+    )
+    composed_policy_body = dict(composed_policy)
+    composed_policy_sha = _digest(
+        composed_policy_body.pop("authentication_sha256", None),
+        "composed Q/K policy authentication",
+    )
+    score_policy = composed_policy.get("score_policy")
+    global_policy = composed_policy.get("global_policy")
+    if (
+        _sha256(composed_policy_body) != composed_policy_sha
+        or expected_policy_sha != H776_COMPOSED_QK_ATTENTION_POLICY_SHA256
+        or expected_policy_sha != pins.expected_composed_qk_attention_policy_sha256
+        or composed_policy_sha != expected_policy_sha
+        or composed_policy != expected_composed_policy
+        or not isinstance(score_policy, dict)
+        or not isinstance(global_policy, dict)
+        or score_policy.get("solver_device") != "cuda:1"
+        or score_policy.get("compute_devices") != ["cuda:0", "cuda:1"]
+        or composed_policy.get("training_allowed") is not False
+        or producer.get("policy") != expected_composed_policy
+        or producer.get("policy_sha256") != expected_policy_sha
+        or score.get("policy") != score_policy
+        or global_sync.get("policy") != global_policy
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed policy authentication or two-3090 routing changed."
+        )
+    producer_seal = producer["artifact_sha256"]
+    global_seal = global_sync["report_sha256"]
+    score_seal = score["report_sha256"]
+    outer_operation = outer.get("operation_audit")
+    producer_operation = producer.get("operation_audit")
+    score_operation = score.get("operation_audit")
+    expected_trajectory_bundle_sha = _sha256(list(fit_trajectory_sha256s))
+    qk_fit_ordinals = producer.get("qk_fit_source_ordinals")
+    qk_fit_check_ordinals = producer.get("qk_fit_check_source_ordinals")
+    if (
+        outer.get("schema") != LFM2_COMPOSED_QK_SEQUENCE_EFFECTIVE_SCHEMA
+        or producer.get("schema") != LFM2_COMPOSED_QK_PRODUCER_SCHEMA
+        or outer.get("candidate_id") != H776_COMPOSED_ATTENTION_CANDIDATE_ID
+        or producer.get("candidate_id") != H776_COMPOSED_ATTENTION_CANDIDATE_ID
+        or producer.get("source_split_sha256") != fit_bank_sha
+        or producer.get("upstream_fit_case_count") != H776_COMPOSED_UPSTREAM_FIT_CASES
+        or producer.get("upstream_trajectory_sha256s") != list(fit_trajectory_sha256s)
+        or producer.get("upstream_trajectory_bundle_sha256")
+        != expected_trajectory_bundle_sha
+        or outer.get("upstream_trajectory_sha256s") != list(fit_trajectory_sha256s)
+        or outer.get("upstream_trajectory_bundle_sha256")
+        != expected_trajectory_bundle_sha
+        or outer.get("upstream_fit_case_bundle_sha256")
+        != producer.get("upstream_fit_case_bundle_sha256")
+        or not isinstance(qk_fit_ordinals, list)
+        or not isinstance(qk_fit_check_ordinals, list)
+        or len(qk_fit_ordinals) != H776_COMPOSED_QK_FIT_CASES
+        or len(qk_fit_check_ordinals) != H776_COMPOSED_QK_FIT_CHECK_CASES
+        or any(type(value) is not int for value in qk_fit_ordinals)
+        or any(type(value) is not int for value in qk_fit_check_ordinals)
+        or set(qk_fit_ordinals) & set(qk_fit_check_ordinals)
+        or set(qk_fit_ordinals) | set(qk_fit_check_ordinals)
+        != set(range(H776_COMPOSED_UPSTREAM_FIT_CASES))
+        or outer.get("composed_qk_artifact_sha256") != producer_seal
+        or policy.get("composed_qk_producer_artifact_sha256") != producer_seal
+        or producer.get("global_sync_report_sha256") != global_seal
+        or producer.get("score_result_report_sha256") != score_seal
+        or composed_evaluation.get("query_key_score_state_sha256")
+        != outer.get("fixed_query_key_sha256")
+        or composed_evaluation.get("operator_artifact_sha256") != _sha256(outer)
+        or score.get("accepted") is not True
+        or score.get("status") not in {"fit_check_accepted", "quality_gated_seed_no_op"}
+        or score.get("fit_check_evaluated") is not True
+        or score.get("fit_check_triggered_refit") is not False
+        or score.get("source_evidence_unchanged") is not True
+        or not isinstance(score_operation, dict)
+        or score_operation.get("fit_cases_consumed") != H776_COMPOSED_QK_FIT_CASES
+        or score_operation.get("fit_check_cases_consumed")
+        != H776_COMPOSED_QK_FIT_CHECK_CASES
+        or not isinstance(outer_operation, dict)
+        or any(
+            type(value) is not int or value != 0 for value in outer_operation.values()
+        )
+        or not isinstance(producer_operation, dict)
+        or any(
+            type(value) is not int or value != 0
+            for value in producer_operation.values()
+        )
+        or any(
+            type(score_operation.get(name)) is not int or score_operation.get(name) != 0
+            for name in (
+                "selection_cases_consumed",
+                "true_validation_cases_consumed",
+                "backward_calls",
+                "optimizer_steps",
+                "training_steps",
+                "model_forward_calls",
+                "model_generate_calls",
+                "parameters_pruned",
+                "parameters_quantized",
+                "target_mutations_during_compile",
+            )
+        )
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed artifacts are not cross-bound, accepted, or fold-only."
+        )
+    fit_metrics = _authenticate_qk_routing_metrics(
+        score.get("fit_metrics"),
+        policy=score_policy,
+        partition="fit",
+        expected_case_count=H776_COMPOSED_QK_FIT_CASES,
+    )
+    fit_check_metrics = _authenticate_qk_routing_metrics(
+        score.get("fit_check_metrics"),
+        policy=score_policy,
+        partition="fit_check",
+        expected_case_count=H776_COMPOSED_QK_FIT_CHECK_CASES,
+    )
+    device_execution = _authenticate_h776_composed_device_execution(
+        score,
+        producer=producer,
+        global_sync=global_sync,
+        fit_trajectory_sha256s=fit_trajectory_sha256s,
+        pins=pins,
+    )
+    resource_usage = global_sync.get("resource_usage")
+    resource_limits = (
+        ("total_rows", "maximum_total_rows"),
+        ("total_score_elements", "maximum_total_score_elements"),
+        ("total_factor_elements", "maximum_total_factor_elements"),
+        ("total_output_elements", "maximum_total_output_elements"),
+        (
+            "total_svd_workspace_elements",
+            "maximum_total_svd_workspace_elements",
+        ),
+    )
+    if not isinstance(resource_usage, dict):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed global synchronization exceeded its authenticated budget."
+        )
+    for metric, limit in resource_limits:
+        observed = resource_usage.get(metric)
+        maximum = global_policy.get(limit)
+        if (
+            type(observed) is not int
+            or observed < 0
+            or type(maximum) is not int
+            or maximum <= 0
+            or observed > maximum
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "Composed global synchronization exceeded its authenticated "
+                f"budget for {metric}."
+            )
+    selected_type_by_id = {
+        DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID: (Lfm2CompiledStructuralAttentionFold),
+        RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID: (
+            Lfm2CompiledCpcfResidualAttentionSplitFold
+        ),
+        H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID: (
+            Lfm2CompiledFixedQkSequenceEffectiveAttentionFold
+        ),
+        H776_COMPOSED_ATTENTION_CANDIDATE_ID: (
+            Lfm2CompiledComposedQkSequenceEffectiveAttentionFold
+        ),
+    }
+    selected_artifact = getattr(result, "operator_artifact", None)
+    expected_selected_type = selected_type_by_id[selected_id]
+    expected_selected_report = authenticated_evaluations[selected_id].get(
+        "operator_artifact"
+    )
+    if (
+        not isinstance(selected_artifact, expected_selected_type)
+        or not callable(getattr(selected_artifact, "as_dict", None))
+        or not callable(getattr(selected_artifact, "state_dict", None))
+        or _plain(selected_artifact.as_dict()) != expected_selected_report
+        or report.get("operator_artifact") != expected_selected_report
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The live selected attention artifact is absent, has the wrong "
+            "typed arm, or differs from the frozen winner."
+        )
+    if isinstance(selected_artifact, Lfm2CompiledStructuralAttentionFold):
+        live_state_sha = _structural_attention_state_sha256(
+            selected_artifact.state_dict()
+        )
+        if (
+            live_state_sha != selected_artifact.compiled_state_sha256
+            or live_state_sha != expected_selected_report.get("compiled_state_sha256")
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "The live direct attention winner tensors differ from their "
+                "compiled-state receipt."
+            )
+    elif isinstance(
+        selected_artifact,
+        Lfm2CompiledCpcfResidualAttentionSplitFold,
+    ):
+        live_state_sha = _tensor_bundle_sha256(selected_artifact.state_dict())
+        if (
+            live_state_sha != selected_artifact.compiled_state_sha256
+            or live_state_sha != expected_selected_report.get("compiled_state_sha256")
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "The live residual-attention winner tensors differ from their "
+                "compiled-state receipt."
+            )
+    if (
+        isinstance(
+            selected_artifact,
+            Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+        )
+        and selected_artifact.verify_authentication() is not True
+    ) or (
+        isinstance(
+            selected_artifact,
+            Lfm2CompiledComposedQkSequenceEffectiveAttentionFold,
+        )
+        and selected_artifact.verify_authentication()
+        != selected_artifact.artifact_sha256
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The live selected sequence artifact failed typed authentication."
+        )
+    next_bank = getattr(result, "next_bank", None)
+    if (
+        next_bank is None
+        or getattr(next_bank, "layer_index", None) != H776_LAYER_INDEX + 1
+        or report.get("next_bank_sha256")
+        != getattr(next_bank, "state_bank_sha256", None)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed layer result did not create the layer-3 input bank."
+        )
+    composed_won = selected_id == H776_COMPOSED_ATTENTION_CANDIDATE_ID
+    composed_strictly_better = all(
+        behavioral_keys[H776_COMPOSED_ATTENTION_CANDIDATE_ID]
+        < behavioral_keys[candidate_id]
+        for candidate_id in H776_ATTENTION_CANDIDATE_IDS
+    )
+    body = {
+        "schema": LFM2_CPCF_V5_REAL_COMPOSED_ATTENTION_AUDIT_SCHEMA,
+        "layer_result_sha256": report["result_sha256"],
+        "input_bank_sha256": input_bank_sha,
+        "fit_bank_sha256": fit_bank_sha,
+        "fit_trajectory_sha256s": list(fit_trajectory_sha256s),
+        "fit_trajectory_bundle_sha256": expected_trajectory_bundle_sha,
+        "next_bank_sha256": report["next_bank_sha256"],
+        "candidate_ids": list(candidate_ids),
+        "selected_candidate_id": selected_id,
+        "selection_keys": {
+            candidate_id: list(selection_keys[candidate_id])
+            for candidate_id in candidate_ids
+        },
+        "behavioral_selection_keys": {
+            candidate_id: list(behavioral_keys[candidate_id])
+            for candidate_id in candidate_ids
+        },
+        "composed_qk_won": composed_won,
+        "composed_qk_strictly_better_than_all_legacy_arms": (composed_strictly_better),
+        "scientific_outcome": (
+            "positive_composed_qk_selection"
+            if composed_won and composed_strictly_better
+            else "honest_negative_or_legacy_arm_selected"
+        ),
+        "full_validation_metrics": _plain(report["split_metrics"]["validation"]),
+        "composed_outer_artifact": outer,
+        "composed_producer_artifact": producer,
+        "global_sync": global_sync,
+        "score_result": score,
+        "composed_qk_attention_policy_sha256": expected_policy_sha,
+        "fit_routing_metrics": fit_metrics,
+        "fit_check_routing_metrics": fit_check_metrics,
+        "score_device_execution": _plain(device_execution),
+        "two_3090_score_execution_authenticated": True,
+        "selected_live_operator_artifact_bound": True,
+        "in_memory_next_bank_created_by_layer_replay": True,
+        "k3_checkpoint_published": False,
+        "layer_3_compiled": False,
+        "automatic_retry_or_retuning_performed": False,
+    }
+    return MappingProxyType({**body, "audit_sha256": _sha256(body)})
+
+
 def execute_lfm2_cpcf_v5_real_attention_probe(
     runtime: Lfm2CpcfV5RealAttentionProbeRuntime,
     pins: Lfm2CpcfV5RealAttentionProbePins,
@@ -3109,6 +3857,16 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         raise TypeError("post_operator_chart_transport_shadow must be bool.")
     if type(runtime.attention_sequential_transport_enabled) is not bool:
         raise TypeError("attention_sequential_transport_enabled must be bool.")
+    if type(runtime.composed_qk_attention_enabled) is not bool:
+        raise TypeError("composed_qk_attention_enabled must be bool.")
+    if (
+        runtime.attention_sequential_transport_enabled
+        and runtime.composed_qk_attention_enabled
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed Q/K attention and legacy sequential transport cannot "
+            "share one authenticated diagnostic run."
+        )
     if (
         runtime.attention_sequential_transport_enabled
         != pins.expected_attention_sequential_transport_enabled
@@ -3117,16 +3875,33 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             "Runtime attention sequential-transport mode differs from its "
             "independent invocation pin."
         )
+    if (
+        runtime.composed_qk_attention_enabled
+        != pins.expected_composed_qk_attention_enabled
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Runtime composed Q/K mode differs from its independent invocation pin."
+        )
+    if (
+        resource_monitor.maximum_process_rss_bytes != pins.maximum_process_rss_bytes
+        or resource_monitor.maximum_cuda_bytes_per_device
+        != pins.maximum_cuda_bytes_per_device
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Resource monitor caps differ from the independently pinned lane."
+        )
 
     from . import hf_lfm2_cpcf_model_fold as model_fold
     from . import hf_lfm2_cpcf_v5_model_compiler as v5
     from . import hf_lfm2_sequence_effective_attention_fold as sequence_fold
     from .hf_lfm2_cpcf_layer_compiler import (
         Lfm2CpcfAttentionSequentialTransportPolicy,
+        _attention_trajectory_sha256s,
         compile_and_install_lfm2_cpcf_layer,
     )
     from .hf_lfm2_cpcf_model_compiler import (
         rebind_lfm2_cpcf_phase_state_bank,
+        select_lfm2_cpcf_phase_state_bank,
     )
     from .hf_lfm2_cpcf_residual_error_controller import (
         apply_lfm2_cpcf_post_operator_chart_transport_shadow,
@@ -3370,10 +4145,33 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                 resource_monitor.checkpoint(
                     "layer_2_post_operator_chart_transport_frozen"
                 )
-            collector = Lfm2SequenceEffectivePcgCollector()
             resource_monitor.checkpoint("layer_2_evidence_and_charts_ready")
-            with sequence_fold.observe_lfm2_sequence_effective_pcg(collector):
-                result = compile_and_install_lfm2_cpcf_layer(
+            composed_fit_bank = (
+                select_lfm2_cpcf_phase_state_bank(
+                    layer_bank,
+                    splits=("fit",),
+                )
+                if runtime.composed_qk_attention_enabled
+                else None
+            )
+            composed_fit_trajectory_sha256s = (
+                _attention_trajectory_sha256s(
+                    composed_fit_bank,
+                    required_split="fit",
+                )
+                if composed_fit_bank is not None
+                else ()
+            )
+            composed_qk_policy = (
+                _h776_composed_qk_attention_policy()
+                if runtime.composed_qk_attention_enabled
+                else None
+            )
+
+            def compile_layer() -> Any:
+                """Execute the one authenticated layer transaction exactly once."""
+
+                return compile_and_install_lfm2_cpcf_layer(
                     runtime.source_model,
                     runtime.target_model,
                     layer_index=H776_LAYER_INDEX,
@@ -3390,23 +4188,43 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                         if runtime.attention_sequential_transport_enabled
                         else None
                     ),
+                    composed_qk_attention_policy=composed_qk_policy,
                 )
+
+            if runtime.composed_qk_attention_enabled:
+                # The composed lane contains both the legacy sequence arm and a
+                # second seeded sequence arm.  The old single-arm PCG observer
+                # intentionally cannot authenticate that two-artifact inventory.
+                result = compile_layer()
+            else:
+                collector = Lfm2SequenceEffectivePcgCollector()
+                with sequence_fold.observe_lfm2_sequence_effective_pcg(collector):
+                    result = compile_layer()
             resource_monitor.checkpoint("layer_2_compiled_and_validated")
-            sequence_artifact = result.report["solver_evidence_policy"][
-                "attention_candidate_evaluations"
-            ][H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID]["operator_artifact"]
-            pcg_audit = collector.finalize(
-                sequence_artifact=sequence_artifact,
-            )
-            result_audit = authenticate_h776_attention_result(
-                result,
-                input_bank_sha256=layer_bank.state_bank_sha256,
-                pcg_audit=pcg_audit,
-                pins=pins,
-                expected_attention_sequential_transport_enabled=(
-                    pins.expected_attention_sequential_transport_enabled
-                ),
-            )
+            if runtime.composed_qk_attention_enabled:
+                result_audit = authenticate_h776_composed_attention_result(
+                    result,
+                    input_bank_sha256=layer_bank.state_bank_sha256,
+                    expected_fit_bank_sha256=(composed_fit_bank.state_bank_sha256),
+                    expected_fit_trajectory_sha256s=(composed_fit_trajectory_sha256s),
+                    pins=pins,
+                )
+            else:
+                sequence_artifact = result.report["solver_evidence_policy"][
+                    "attention_candidate_evaluations"
+                ][H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID]["operator_artifact"]
+                pcg_audit = collector.finalize(
+                    sequence_artifact=sequence_artifact,
+                )
+                result_audit = authenticate_h776_attention_result(
+                    result,
+                    input_bank_sha256=layer_bank.state_bank_sha256,
+                    pcg_audit=pcg_audit,
+                    pins=pins,
+                    expected_attention_sequential_transport_enabled=(
+                        pins.expected_attention_sequential_transport_enabled
+                    ),
+                )
             if (
                 result.report.get("boundary_charts_sha256")
                 != charts.layer_charts_sha256
@@ -3494,14 +4312,29 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         **sequential_transport_body,
         "binding_sha256": _sha256(sequential_transport_body),
     }
+    if runtime.composed_qk_attention_enabled:
+        positive_attention_outcome = (
+            result_audit["composed_qk_won"]
+            and result_audit["composed_qk_strictly_better_than_all_legacy_arms"]
+        )
+        completed_status = (
+            "completed_positive_composed_qk_selection"
+            if positive_attention_outcome
+            else "completed_honest_negative_or_legacy_arm_selected"
+        )
+    else:
+        positive_attention_outcome = (
+            result_audit["sequence_effective_won"]
+            and result_audit["sequence_effective_strictly_better_than_both_controls"]
+        )
+        completed_status = (
+            "completed_positive_sequence_effective_selection"
+            if positive_attention_outcome
+            else "completed_honest_negative_or_control_selected"
+        )
     body = {
         "schema": LFM2_CPCF_V5_REAL_ATTENTION_PROBE_SCHEMA,
-        "status": (
-            "completed_positive_sequence_effective_selection"
-            if result_audit["sequence_effective_won"]
-            and result_audit["sequence_effective_strictly_better_than_both_controls"]
-            else "completed_honest_negative_or_control_selected"
-        ),
+        "status": completed_status,
         "pins": pins.as_dict(),
         "runtime_compiler_implementation": implementation,
         "runtime_sequence_source_sha256": sequence_source_sha256,
@@ -3534,6 +4367,19 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         "layer_2_result": _plain(result_audit),
         "post_operator_chart_transport_shadow": (_plain(chart_transport_binding)),
         "attention_sequential_transport": _plain(sequential_transport_binding),
+        "composed_qk_attention": {
+            "enabled": runtime.composed_qk_attention_enabled,
+            "runtime_matches_independent_invocation_pin": True,
+            "candidate_inventory": list(
+                H776_COMPOSED_ATTENTION_CANDIDATE_IDS
+                if runtime.composed_qk_attention_enabled
+                else H776_ATTENTION_CANDIDATE_IDS
+            ),
+            "legacy_single_artifact_pcg_observer_used": (
+                not runtime.composed_qk_attention_enabled
+            ),
+            "positive_attention_outcome": positive_attention_outcome,
+        },
         "resource_report": _plain(resource_report),
         "stop_conditions": {
             "exactly_one_layer_compiled": True,
@@ -3561,6 +4407,15 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
 
 __all__ = [
     "H776_ATTENTION_CANDIDATE_IDS",
+    "H776_COMPOSED_ATTENTION_CANDIDATE_ID",
+    "H776_COMPOSED_ATTENTION_CANDIDATE_IDS",
+    "H776_COMPOSED_CUDA_DEVICE_NAME",
+    "H776_COMPOSED_LOGICAL_CUDA_UUIDS",
+    "H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES",
+    "H776_COMPOSED_QK_ATTENTION_POLICY_SHA256",
+    "H776_COMPOSED_QK_FIT_CASES",
+    "H776_COMPOSED_QK_FIT_CHECK_CASES",
+    "H776_COMPOSED_UPSTREAM_FIT_CASES",
     "H776_LAYER_INDEX",
     "H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256",
     "H776_MAXIMUM_CUDA_BYTES_PER_DEVICE",
@@ -3573,12 +4428,14 @@ __all__ = [
     "H776_TARGET_UNIQUE_PARAMETERS",
     "LFM2_CPCF_V5_REAL_ATTENTION_PCG_AUDIT_SCHEMA",
     "LFM2_CPCF_V5_REAL_ATTENTION_PROBE_SCHEMA",
+    "LFM2_CPCF_V5_REAL_COMPOSED_ATTENTION_AUDIT_SCHEMA",
     "Lfm2CpcfV5RealAttentionProbeError",
     "Lfm2CpcfV5RealAttentionProbePins",
     "Lfm2CpcfV5RealAttentionProbeRuntime",
     "Lfm2CpcfV5RealAttentionResourceMonitor",
     "Lfm2SequenceEffectivePcgCollector",
     "authenticate_h776_attention_result",
+    "authenticate_h776_composed_attention_result",
     "authenticate_h776_boundary_frontier",
     "authenticate_h776_k2_checkpoint",
     "authenticate_h776_phase_inventory",
