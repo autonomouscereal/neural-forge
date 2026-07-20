@@ -510,8 +510,7 @@ class Lfm2CpcfV5RuntimePolicy:
     ) -> Lfm2ComposedQkAttentionFoldPolicy | None:
         if operator_kind not in {"full_attention", "short_conv"}:
             raise Lfm2CpcfV5ModelCompilerError(
-                "Composed Q/K attention folding requires one canonical "
-                "operator kind."
+                "Composed Q/K attention folding requires one canonical operator kind."
             )
         if operator_kind == "full_attention":
             return self.composed_qk_attention_policy
@@ -614,9 +613,7 @@ def _authenticate_endpoint_attention_candidate_inventory(
         else LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
     )
     candidate_ids = (
-        selection.get("candidate_ids")
-        if isinstance(selection, Mapping)
-        else None
+        selection.get("candidate_ids") if isinstance(selection, Mapping) else None
     )
     if (
         not isinstance(evaluations, Mapping)
@@ -761,9 +758,7 @@ def _build_composed_attention_coverage_receipt(
                 name=f"layer[{receipt.layer_index}].composed_qk_score_result",
             )
             attempt_operation_audit = (
-                attempt.get("operation_audit")
-                if isinstance(attempt, Mapping)
-                else None
+                attempt.get("operation_audit") if isinstance(attempt, Mapping) else None
             )
             if (
                 candidate_ids is None
@@ -771,8 +766,7 @@ def _build_composed_attention_coverage_receipt(
                 or not isinstance(endpoint_start, Mapping)
                 or not isinstance(score_result, Mapping)
                 or not isinstance(attempt_operation_audit, Mapping)
-                or attempt.get("schema")
-                != LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA
+                or attempt.get("schema") != LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA
                 or attempt.get("composed_candidate_eligible") is not False
                 or attempt.get("score_result_accepted") is not False
                 or attempt.get("failed_composed_candidate_omitted") is not True
@@ -780,26 +774,18 @@ def _build_composed_attention_coverage_receipt(
                 or attempt.get("endpoint_start_source")
                 != "structural_global_gauge_dense_qkv"
                 or attempt.get("composed_candidate_artifact_sha256") is not None
-                or attempt.get("endpoint_start_artifact_sha256")
-                != endpoint_start_sha
+                or attempt.get("endpoint_start_artifact_sha256") != endpoint_start_sha
                 or attempt.get("global_gauge_fallback_start_artifact_sha256")
                 != endpoint_start_sha
-                or attempt.get("score_result_report_sha256")
-                != score_result_sha
+                or attempt.get("score_result_report_sha256") != score_result_sha
                 or solver.get("endpoint_qk_start_source")
                 != attempt.get("endpoint_start_source")
                 or endpoint_start.get("schema") != LFM2_ENDPOINT_QK_START_SCHEMA
-                or endpoint_start.get("global_sync_report_sha256")
-                != global_sync_sha
-                or endpoint_start.get("score_result_report_sha256")
-                != score_result_sha
+                or endpoint_start.get("global_sync_report_sha256") != global_sync_sha
+                or endpoint_start.get("score_result_report_sha256") != score_result_sha
                 or score_result.get("accepted") is not False
-                or any(
-                    value != 0
-                    for value in attempt_operation_audit.values()
-                )
-                or ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
-                not in evaluations
+                or any(value != 0 for value in attempt_operation_audit.values())
+                or ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID not in evaluations
             ):
                 raise Lfm2CpcfV5ModelCompilerError(
                     f"Attention layer {receipt.layer_index} has an invalid "
@@ -825,10 +811,7 @@ def _build_composed_attention_coverage_receipt(
         producer_sha = _sealed_mapping_sha256(
             producer,
             seal_field="artifact_sha256",
-            name=(
-                f"layer[{receipt.layer_index}]."
-                "composed_qk_producer_artifact"
-            ),
+            name=(f"layer[{receipt.layer_index}].composed_qk_producer_artifact"),
         )
         if solver.get("composed_qk_producer_artifact_sha256") != producer_sha:
             raise Lfm2CpcfV5ModelCompilerError(
@@ -843,9 +826,11 @@ def _build_composed_attention_coverage_receipt(
             seal_field="report_sha256",
             name=f"layer[{receipt.layer_index}].composed_candidate_evaluation",
         )
-        if not isinstance(evaluation, Mapping) or evaluation.get(
-            "candidate_id"
-        ) != SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID:
+        if (
+            not isinstance(evaluation, Mapping)
+            or evaluation.get("candidate_id")
+            != SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+        ):
             raise Lfm2CpcfV5ModelCompilerError(
                 f"Attention layer {receipt.layer_index} has the wrong composed "
                 "candidate identity."
@@ -879,9 +864,8 @@ def _build_composed_attention_coverage_receipt(
             or outer.get("candidate_id")
             != SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
             or outer.get("composed_qk_artifact_sha256") != producer_sha
-            or evaluation.get("operator_artifact_sha256") != _sha(
-                _plain_metadata(outer)
-            )
+            or evaluation.get("operator_artifact_sha256")
+            != _sha(_plain_metadata(outer))
         ):
             raise Lfm2CpcfV5ModelCompilerError(
                 f"Attention layer {receipt.layer_index} did not cross-bind "
@@ -926,14 +910,10 @@ def _build_composed_attention_coverage_receipt(
             row["composed_candidate_eligible"] for row in rows
         ],
         "composed_candidate_admitted_layer_indices": [
-            row["layer_index"]
-            for row in rows
-            if row["composed_candidate_eligible"]
+            row["layer_index"] for row in rows if row["composed_candidate_eligible"]
         ],
         "authenticated_endpoint_fallback_layer_indices": [
-            row["layer_index"]
-            for row in rows
-            if not row["composed_candidate_eligible"]
+            row["layer_index"] for row in rows if not row["composed_candidate_eligible"]
         ],
         "exact_ordered_attention_layer_coverage": True,
         "full_attention_only_forwarding": True,
@@ -1006,25 +986,18 @@ def _build_endpoint_residual_attention_coverage_receipt(
         artifact_sha = _sealed_mapping_sha256(
             artifact,
             seal_field="artifact_sha256",
-            name=(
-                f"layer[{receipt.layer_index}]."
-                "endpoint_residual_attention_artifact"
-            ),
+            name=(f"layer[{receipt.layer_index}].endpoint_residual_attention_artifact"),
         )
         if (
             not isinstance(artifact, Mapping)
-            or solver.get("endpoint_residual_attention_artifact_sha256")
-            != artifact_sha
+            or solver.get("endpoint_residual_attention_artifact_sha256") != artifact_sha
             or artifact.get("candidate_id")
             != ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
             or artifact.get("accepted") is not True
             or artifact.get("policy") != expected_policy
             or artifact.get("policy_sha256") != policy.authentication_sha256
-            or artifact.get("fit_check_endpoint_and_route_nonregressing")
-            is not True
-            or artifact.get(
-                "fit_check_first_metric_evaluation_after_all_outer_blocks"
-            )
+            or artifact.get("fit_check_endpoint_and_route_nonregressing") is not True
+            or artifact.get("fit_check_first_metric_evaluation_after_all_outer_blocks")
             is not True
             or artifact.get("fit_check_triggered_refit") is not False
         ):
@@ -1033,9 +1006,8 @@ def _build_endpoint_residual_attention_coverage_receipt(
                 "endpoint-residual artifact."
             )
         operation_audit = artifact.get("operation_audit")
-        if (
-            not isinstance(operation_audit, Mapping)
-            or any(value != 0 for value in operation_audit.values())
+        if not isinstance(operation_audit, Mapping) or any(
+            value != 0 for value in operation_audit.values()
         ):
             raise Lfm2CpcfV5ModelCompilerError(
                 f"Attention layer {receipt.layer_index} endpoint artifact "
@@ -1053,8 +1025,7 @@ def _build_endpoint_residual_attention_coverage_receipt(
             or output_prior.get("construction")
             != "zero_from_target_shape_and_dtype_metadata_only"
             or output_prior.get("blank_target_values_read") is not False
-            or solver.get("endpoint_residual_blank_target_values_read")
-            is not False
+            or solver.get("endpoint_residual_blank_target_values_read") is not False
         ):
             raise Lfm2CpcfV5ModelCompilerError(
                 f"Attention layer {receipt.layer_index} did not authenticate "
@@ -1102,9 +1073,7 @@ def _build_endpoint_residual_attention_coverage_receipt(
         )
         selection = solver["attention_candidate_selection"]
         block_reports = solver.get("endpoint_residual_block_reports")
-        proposal_reports = solver.get(
-            "endpoint_residual_qk_fit_proposal_reports"
-        )
+        proposal_reports = solver.get("endpoint_residual_qk_fit_proposal_reports")
         outer_block_count = artifact.get("outer_block_count")
         if (
             not isinstance(block_reports, Sequence)
@@ -1131,17 +1100,13 @@ def _build_endpoint_residual_attention_coverage_receipt(
             block_sha = _sealed_mapping_sha256(
                 block,
                 seal_field="block_sha256",
-                name=(
-                    f"layer[{receipt.layer_index}]."
-                    f"endpoint_block[{block_index}]"
-                ),
+                name=(f"layer[{receipt.layer_index}].endpoint_block[{block_index}]"),
             )
             proposal_sha = _sealed_mapping_sha256(
                 proposal,
                 seal_field="report_sha256",
                 name=(
-                    f"layer[{receipt.layer_index}]."
-                    f"endpoint_qk_proposal[{block_index}]"
+                    f"layer[{receipt.layer_index}].endpoint_qk_proposal[{block_index}]"
                 ),
             )
             execution = (
@@ -1158,6 +1123,22 @@ def _build_endpoint_residual_attention_coverage_receipt(
                 ),
             )
             requested_devices = list(policy.endpoint_policy.compute_devices)
+            concurrent_static_cuda_shards = (
+                len(requested_devices) > 1
+                and len(set(requested_devices)) == len(requested_devices)
+                and all(device.startswith("cuda:") for device in requested_devices)
+            )
+            expected_concurrency = (
+                "thread_barrier_concurrent_static_cuda_shards"
+                if concurrent_static_cuda_shards
+                else "serial_static_device_shards"
+            )
+            expected_transfer_execution = (
+                "one_local_accumulation_per_concurrent_static_cuda_shard_then_"
+                "canonical_requested_device_reduction"
+                if concurrent_static_cuda_shards
+                else "once_per_static_device_shard_serial_requested_device_order"
+            )
             if (
                 not isinstance(block, Mapping)
                 or not isinstance(proposal, Mapping)
@@ -1166,18 +1147,15 @@ def _build_endpoint_residual_attention_coverage_receipt(
                 or block.get("qk_fit_proposal_sha256") != proposal_sha
                 or block.get("fit_check_accessible") is not False
                 or block.get("fit_check_cases_consumed") != 0
-                or proposal.get("policy")
-                != policy.endpoint_policy.as_dict()
+                or proposal.get("policy") != policy.endpoint_policy.as_dict()
                 or proposal.get("fit_check_accessible") is not False
                 or proposal.get("fit_check_cases_consumed") != 0
                 or execution.get("requested_solver_device")
                 != policy.endpoint_policy.solver_device
-                or execution.get("requested_compute_devices")
-                != requested_devices
+                or execution.get("requested_compute_devices") != requested_devices
                 or execution.get("requested_compute_device_count")
                 != len(requested_devices)
-                or execution.get("every_requested_compute_device_observed")
-                is not True
+                or execution.get("every_requested_compute_device_observed") is not True
             ):
                 raise Lfm2CpcfV5ModelCompilerError(
                     f"Attention layer {receipt.layer_index} endpoint block "
@@ -1188,6 +1166,8 @@ def _build_endpoint_residual_attention_coverage_receipt(
             summaries = execution.get("compute_device_summaries")
             resource_observation = execution.get("resource_observation")
             solver_observation = execution.get("solver_observation")
+            numerical_sweep_count = execution.get("numerical_sweep_count")
+            numerical_normal_calls = execution.get("numerical_normal_operator_calls")
             if (
                 not isinstance(observations, Sequence)
                 or isinstance(observations, (str, bytes, bytearray))
@@ -1197,16 +1177,17 @@ def _build_endpoint_residual_attention_coverage_receipt(
                 or len(summaries) != len(requested_devices)
                 or not isinstance(resource_observation, Mapping)
                 or resource_observation.get("fit_case_count") != len(observations)
-                or resource_observation.get("within_all_resource_ceilings")
-                is not True
-                or resource_observation.get(
-                    "every_compute_device_within_byte_ceiling"
-                )
+                or resource_observation.get("within_all_resource_ceilings") is not True
+                or resource_observation.get("every_compute_device_within_byte_ceiling")
                 is not True
                 or execution.get("case_assignment")
                 != "authenticated_bank_order_round_robin"
-                or execution.get("compute_device_concurrency")
-                != "serial_round_robin"
+                or execution.get("compute_device_concurrency") != expected_concurrency
+                or execution.get("qk_transfer_execution") != expected_transfer_execution
+                or type(numerical_sweep_count) is not int
+                or numerical_sweep_count < 1
+                or type(numerical_normal_calls) is not int
+                or numerical_normal_calls < 1
                 or execution.get("total_semantic_probe_calls") != len(observations)
                 or not isinstance(execution.get("operation_audit"), Mapping)
                 or any(
@@ -1250,10 +1231,8 @@ def _build_endpoint_residual_attention_coverage_receipt(
                     not observation_sha
                     or not isinstance(observation, Mapping)
                     or observation.get("assignment_index") != assignment_index
-                    or observation.get("intended_logical_device")
-                    != expected_device
-                    or observation.get("observed_logical_device")
-                    != expected_device
+                    or observation.get("intended_logical_device") != expected_device
+                    or observation.get("observed_logical_device") != expected_device
                     or observation.get("analytical_operation")
                     != "exact_endpoint_jvp_then_vjp_normal_probe"
                     or observation.get("semantic_probe_calls") != 1
@@ -1283,9 +1262,7 @@ def _build_endpoint_residual_attention_coverage_receipt(
                         f"observation at assignment {assignment_index}."
                     )
                 observed_devices.append(expected_device)
-                per_device_assignment_indices[expected_device].append(
-                    assignment_index
-                )
+                per_device_assignment_indices[expected_device].append(assignment_index)
                 per_device_semantic_probe_calls[expected_device] += int(
                     observation["semantic_probe_calls"]
                 )
@@ -1324,8 +1301,13 @@ def _build_endpoint_residual_attention_coverage_receipt(
                     != per_device_physical_identity[expected_device][0]
                     or summary.get("cuda_name")
                     != per_device_physical_identity[expected_device][1]
-                    or summary.get("within_compute_device_byte_ceiling")
-                    is not True
+                    or summary.get("within_compute_device_byte_ceiling") is not True
+                    or summary.get("qk_transfer_execution")
+                    != expected_transfer_execution
+                    or summary.get("concurrent_rhs_shard_launches")
+                    != (numerical_sweep_count if concurrent_static_cuda_shards else 0)
+                    or summary.get("concurrent_normal_shard_launches")
+                    != (numerical_normal_calls if concurrent_static_cuda_shards else 0)
                 ):
                     raise Lfm2CpcfV5ModelCompilerError(
                         f"Attention layer {receipt.layer_index} endpoint block "
@@ -1392,13 +1374,9 @@ def _build_endpoint_residual_attention_coverage_receipt(
                 "outer_block_count": outer_block_count,
                 "ordered_block_sha256s": block_sha256s,
                 "ordered_qk_fit_proposal_sha256s": proposal_sha256s,
-                "ordered_execution_receipt_sha256s": (
-                    execution_receipt_sha256s
-                ),
+                "ordered_execution_receipt_sha256s": (execution_receipt_sha256s),
                 "ordered_observed_compute_devices": observed_compute_devices,
-                "source_inventory_sha256": artifact.get(
-                    "source_inventory_sha256"
-                ),
+                "source_inventory_sha256": artifact.get("source_inventory_sha256"),
                 "blank_independent_output_prior_sha256": output_prior_sha,
                 "evaluation_fit_evidence_sha256": artifact.get(
                     "evaluation_fit_evidence_sha256"
@@ -1406,9 +1384,7 @@ def _build_endpoint_residual_attention_coverage_receipt(
                 "evaluation_fit_check_evidence_sha256": artifact.get(
                     "evaluation_fit_check_evidence_sha256"
                 ),
-                "selected_candidate_id": selection.get(
-                    "selected_candidate_id"
-                ),
+                "selected_candidate_id": selection.get("selected_candidate_id"),
             }
         )
     if tuple(covered) != expected:
@@ -1425,12 +1401,8 @@ def _build_endpoint_residual_attention_coverage_receipt(
         "ordered_layer_coverage": rows,
         "exact_ordered_attention_layer_coverage": True,
         "full_attention_only_forwarding": True,
-        "candidate_count_per_attention_layer": [
-            row["candidate_count"] for row in rows
-        ],
-        "candidate_ids_per_attention_layer": [
-            row["candidate_ids"] for row in rows
-        ],
+        "candidate_count_per_attention_layer": [row["candidate_count"] for row in rows],
+        "candidate_ids_per_attention_layer": [row["candidate_ids"] for row in rows],
         "composed_candidate_eligible_per_attention_layer": [
             row["composed_candidate_eligible"] for row in rows
         ],
@@ -5116,13 +5088,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             "terminal_action_residual_enabled": (
                 runtime_policy.terminal_action_residual_policy is not None
             ),
-            "terminal_action_residual_integrated": (
-                terminal_action_report is not None
-            ),
+            "terminal_action_residual_integrated": (terminal_action_report is not None),
             "terminal_action_residual_report": (
-                None
-                if terminal_action_report is None
-                else dict(terminal_action_report)
+                None if terminal_action_report is None else dict(terminal_action_report)
             ),
             "terminal_action_residual_report_sha256": (
                 None
@@ -5234,9 +5202,7 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             },
         }
         if composed_attention_coverage is not None:
-            body["composed_qk_attention_coverage"] = dict(
-                composed_attention_coverage
-            )
+            body["composed_qk_attention_coverage"] = dict(composed_attention_coverage)
         if endpoint_residual_attention_coverage is not None:
             body["endpoint_residual_attention_coverage"] = dict(
                 endpoint_residual_attention_coverage
@@ -5246,9 +5212,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             operation_audit = dict(body["operation_audit"])
             operation_audit.pop("target_model_forward_calls")
             operation_audit["target_full_model_forward_calls"] = 0
-            operation_audit["target_final_layer_replay_calls"] = (
-                terminal_operation["target_final_layer_replay_calls"]
-            )
+            operation_audit["target_final_layer_replay_calls"] = terminal_operation[
+                "target_final_layer_replay_calls"
+            ]
             body["operation_audit"] = operation_audit
         result_sha = _sha(body)
         return legacy_model_fold.Lfm2CpcfCompiledModelFold(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import threading
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -904,6 +905,8 @@ def test_execution_receipt_authenticates_real_semantic_work_and_resources(
     )
     assert summary["semantic_direction_shard_builds"] == 1
     assert summary["semantic_gradient_shard_reductions"] == 1
+    assert summary["concurrent_rhs_shard_launches"] == 0
+    assert summary["concurrent_normal_shard_launches"] == 0
     assert receipt["compute_device_concurrency"] == "serial_static_device_shards"
     static = receipt["static_device_shard_receipt"]
     assert static["shards"][0]["all_cases_share_fixed_cache_by_identity"]
@@ -950,6 +953,95 @@ def test_prepared_cases_share_fixed_cache_and_normal_transfers_once_per_shard() 
     assert sum(case.endpoint_vjp_calls for case in cases) == len(cases)
 
 
+def test_concurrent_shard_launcher_enters_both_workers_and_returns_canonical_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shards = (
+        SimpleNamespace(device=torch.device("cpu"), marker="first"),
+        SimpleNamespace(device=torch.device("cpu"), marker="second"),
+    )
+    both_workers_inside_operation = threading.Barrier(2)
+    monkeypatch.setattr(
+        endpoint_fold,
+        "_uses_concurrent_static_cuda_shards",
+        lambda _shards: True,
+    )
+
+    def operation(shard: SimpleNamespace) -> str:
+        both_workers_inside_operation.wait(timeout=5.0)
+        return shard.marker
+
+    assert endpoint_fold._execute_static_device_shards(shards, operation) == (
+        "first",
+        "second",
+    )
+
+
+def test_two_phase_rhs_and_normal_match_serial_static_shard_reduction_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _make_fixture()
+    seed = fixture["seed_a"]
+    cases = endpoint_fold._prepare_cases_round_robin(
+        fixture["fit_bank"].cases,
+        seed,
+        compute_devices=(torch.device("cpu"),),
+    )
+    endpoint_fold._attach_replay(
+        cases,
+        seed,
+        seed.query_weight,
+        seed.key_weight,
+    )
+    operator = endpoint_fold.Lfm2EndpointQkLinearOperator(
+        seed=seed,
+        prepared_cases=cases,
+        current_query_weight=seed.query_weight.to(torch.float32),
+        current_key_weight=seed.key_weight.to(torch.float32),
+        policy=_policy(),
+    )
+    midpoint = (len(cases) + 1) // 2
+    operator.shards = (
+        endpoint_fold._StaticDeviceShard(
+            device=torch.device("cpu"),
+            fixed_cache=cases[0].fixed_cache,
+            cases=tuple(cases[:midpoint]),
+        ),
+        endpoint_fold._StaticDeviceShard(
+            device=torch.device("cpu"),
+            fixed_cache=cases[0].fixed_cache,
+            cases=tuple(cases[midpoint:]),
+        ),
+    )
+    direction = operator.pack(
+        torch.linspace(-0.25, 0.25, seed.query_weight.numel()).reshape(
+            seed.query_weight.shape
+        ),
+        torch.linspace(0.25, -0.25, seed.key_weight.numel()).reshape(
+            seed.key_weight.shape
+        ),
+    )
+
+    monkeypatch.setattr(
+        endpoint_fold,
+        "_uses_concurrent_static_cuda_shards",
+        lambda _shards: False,
+    )
+    serial_rhs = operator.right_hand_side()
+    serial_normal = operator.normal(direction)
+
+    monkeypatch.setattr(
+        endpoint_fold,
+        "_uses_concurrent_static_cuda_shards",
+        lambda _shards: True,
+    )
+    concurrent_rhs = operator.right_hand_side()
+    concurrent_normal = operator.normal(direction)
+
+    assert torch.equal(concurrent_rhs, serial_rhs)
+    assert torch.equal(concurrent_normal, serial_normal)
+
+
 def test_resealed_forged_static_shard_transfer_count_is_rejected(
     fit_proposal_fixture: tuple[dict[str, object], object],
 ) -> None:
@@ -965,6 +1057,27 @@ def test_resealed_forged_static_shard_transfer_count_is_rejected(
     with pytest.raises(
         Lfm2EndpointQkResidualAuthenticationError,
         match="aggregate receipt",
+    ):
+        replace(proposal, report=report)
+
+
+def test_resealed_forged_concurrent_execution_mode_is_rejected(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    report = json.loads(json.dumps(dict(proposal.report)))
+    receipt = report["observed_execution_receipt"]
+    receipt["compute_device_concurrency"] = (
+        "thread_barrier_concurrent_static_cuda_shards"
+    )
+    receipt.pop("receipt_sha256")
+    receipt["receipt_sha256"] = endpoint_fold._canonical_sha256(receipt)
+    report.pop("report_sha256")
+    report["report_sha256"] = endpoint_fold._canonical_sha256(report)
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="requested devices/cases",
     ):
         replace(proposal, report=report)
 
@@ -1104,6 +1217,14 @@ def test_two_cuda_workers_receive_real_round_robin_semantic_work() -> None:
     )
     receipt = proposal.report["observed_execution_receipt"]
     assert receipt["distinct_cuda_uuid_count"] == 2
+    assert (
+        receipt["compute_device_concurrency"]
+        == "thread_barrier_concurrent_static_cuda_shards"
+    )
+    assert receipt["qk_transfer_execution"] == (
+        "one_local_accumulation_per_concurrent_static_cuda_shard_then_"
+        "canonical_requested_device_reduction"
+    )
     assert [
         summary["case_count"] for summary in receipt["compute_device_summaries"]
     ] == [
@@ -1121,6 +1242,9 @@ def test_two_cuda_workers_receive_real_round_robin_semantic_work() -> None:
         and summary["normal_qk_direction_shard_broadcasts"]
         == receipt["numerical_normal_operator_calls"]
         and summary["normal_gradient_shard_reductions"]
+        == receipt["numerical_normal_operator_calls"]
+        and summary["concurrent_rhs_shard_launches"] == receipt["numerical_sweep_count"]
+        and summary["concurrent_normal_shard_launches"]
         == receipt["numerical_normal_operator_calls"]
         for summary in receipt["compute_device_summaries"]
     )

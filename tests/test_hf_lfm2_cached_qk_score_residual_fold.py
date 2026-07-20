@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import copy
 import math
+import threading
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -1167,6 +1169,185 @@ def test_cuda_fixed_linearization_cache_preserves_exact_rhs_normal_and_pcg() -> 
     _assert_cached_operator_exact_equivalence(torch.device("cuda:0"))
 
 
+def test_concurrent_score_shard_launcher_enters_workers_and_returns_shard_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shards = (
+        SimpleNamespace(device=torch.device("cpu"), marker="first"),
+        SimpleNamespace(device=torch.device("cpu"), marker="second"),
+    )
+    both_workers_inside_operation = threading.Barrier(2)
+    monkeypatch.setattr(
+        score_fold,
+        "_uses_concurrent_static_cuda_shards",
+        lambda _shards: True,
+    )
+
+    def operation(shard: SimpleNamespace) -> str:
+        both_workers_inside_operation.wait(timeout=5.0)
+        return shard.marker
+
+    assert score_fold._execute_static_device_shards(shards, operation) == (
+        "first",
+        "second",
+    )
+
+
+def test_two_phase_score_rhs_and_normal_preserve_global_case_order_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed, fit_bank, _fit_check = _banks()
+    policy = Lfm2QkScoreResidualFoldPolicy(
+        maximum_sweeps=1,
+        maximum_pcg_iterations=8,
+        minimum_pcg_iterations=1,
+        pcg_restart_iterations=4,
+        pcg_relative_tolerance=1e-6,
+    )
+    evidence_cases = (*fit_bank.cases, *fit_bank.cases)
+    operator = score_fold._StreamingQkScoreResidualLinearOperator(
+        seed=seed,
+        evidence_cases=evidence_cases,
+        current_query_weight=seed.query_weight.float(),
+        current_key_weight=seed.key_weight.float(),
+        ridge=policy.ridge,
+        policy=policy,
+        solver_device=torch.device("cpu"),
+        compute_devices=(torch.device("cpu"),),
+    )
+    direction = torch.linspace(
+        -0.125,
+        0.25,
+        seed.query_weight.numel() + seed.key_weight.numel(),
+        dtype=torch.float32,
+    )
+
+    monkeypatch.setattr(
+        score_fold,
+        "_uses_concurrent_static_cuda_shards",
+        lambda _shards: False,
+    )
+    serial_rhs = operator.right_hand_side()
+    serial_normal = operator.normal(direction)
+
+    cases = operator._linearization_cache
+    operator.shards = (
+        score_fold._StaticDeviceShard(
+            device=torch.device("cpu"),
+            indexed_cases=((0, cases[0]), (2, cases[2])),
+        ),
+        score_fold._StaticDeviceShard(
+            device=torch.device("cpu"),
+            indexed_cases=((1, cases[1]), (3, cases[3])),
+        ),
+    )
+    monkeypatch.setattr(
+        score_fold,
+        "_uses_concurrent_static_cuda_shards",
+        lambda _shards: True,
+    )
+    concurrent_rhs = operator.right_hand_side()
+    concurrent_normal = operator.normal(direction)
+
+    assert torch.equal(concurrent_rhs, serial_rhs)
+    assert torch.equal(concurrent_normal, serial_normal)
+    receipt = operator.linearization_cache_resource_receipt
+    assert receipt["compute_device_concurrency"] == "serial_round_robin"
+    assert not receipt["actual_multi_cuda_concurrent_path_executed"]
+    assert receipt["concurrent_right_hand_side_calls"] == 0
+    assert receipt["concurrent_normal_operator_calls"] == 0
+    assert receipt["solver_gradient_reduction_order"] == (
+        "original_global_fit_case_order"
+    )
+
+
+@pytest.mark.skipif(
+    torch.cuda.device_count() < 2,
+    reason="Two CUDA devices are required for concurrent score-shard parity.",
+)
+def test_two_cuda_score_rhs_normal_are_serial_exact_and_receipt_is_concurrent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed, fit_bank, _fit_check = _banks()
+    devices = (torch.device("cuda:0"), torch.device("cuda:1"))
+    policy = Lfm2QkScoreResidualFoldPolicy(
+        maximum_sweeps=1,
+        maximum_pcg_iterations=8,
+        minimum_pcg_iterations=1,
+        pcg_restart_iterations=4,
+        pcg_relative_tolerance=1e-6,
+        solver_device=str(devices[-1]),
+        compute_devices=tuple(str(device) for device in devices),
+    )
+    evidence_cases = (*fit_bank.cases, *fit_bank.cases)
+
+    def build_operator() -> score_fold._StreamingQkScoreResidualLinearOperator:
+        return score_fold._StreamingQkScoreResidualLinearOperator(
+            seed=seed,
+            evidence_cases=evidence_cases,
+            current_query_weight=seed.query_weight.to(
+                device=devices[-1],
+                dtype=torch.float32,
+            ),
+            current_key_weight=seed.key_weight.to(
+                device=devices[-1],
+                dtype=torch.float32,
+            ),
+            ridge=policy.ridge,
+            policy=policy,
+            solver_device=devices[-1],
+            compute_devices=devices,
+        )
+
+    direction = torch.linspace(
+        -0.125,
+        0.25,
+        seed.query_weight.numel() + seed.key_weight.numel(),
+        device=devices[-1],
+        dtype=torch.float32,
+    )
+    original_concurrency_check = score_fold._uses_concurrent_static_cuda_shards
+    monkeypatch.setattr(
+        score_fold,
+        "_uses_concurrent_static_cuda_shards",
+        lambda _shards: False,
+    )
+    serial = build_operator()
+    serial_rhs = serial.right_hand_side()
+    serial_normal = serial.normal(direction)
+
+    monkeypatch.setattr(
+        score_fold,
+        "_uses_concurrent_static_cuda_shards",
+        original_concurrency_check,
+    )
+    concurrent = build_operator()
+    concurrent_rhs = concurrent.right_hand_side()
+    concurrent_normal = concurrent.normal(direction)
+
+    assert torch.equal(concurrent_rhs, serial_rhs)
+    assert torch.equal(concurrent_normal, serial_normal)
+    receipt = concurrent.linearization_cache_resource_receipt
+    assert receipt["compute_device_concurrency"] == (
+        "thread_barrier_concurrent_static_cuda_shards"
+    )
+    assert receipt["actual_multi_cuda_concurrent_path_executed"]
+    assert receipt["concurrent_right_hand_side_calls"] == 1
+    assert receipt["concurrent_normal_operator_calls"] == 1
+    assert receipt["static_device_shards"] == [
+        {
+            "logical_device": "cuda:0",
+            "case_assignment_indices": [0, 2],
+            "case_count": 2,
+        },
+        {
+            "logical_device": "cuda:1",
+            "case_assignment_indices": [1, 3],
+            "case_count": 2,
+        },
+    ]
+
+
 def test_fixed_linearization_cache_replays_once_per_case_per_sweep(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1347,6 +1528,32 @@ def test_compile_improves_fit_and_accepts_frozen_fit_check_without_training() ->
         assert resource["cache_reused_for_right_hand_side"]
         assert resource["cache_reused_for_normal_operator_calls"]
         assert resource["cache_invalidated_at_sweep_end"]
+        assert resource["case_assignment"] == ("authenticated_bank_order_round_robin")
+        assert resource["static_device_shards"] == [
+            {
+                "logical_device": "cpu",
+                "case_assignment_indices": [0, 1],
+                "case_count": 2,
+            }
+        ]
+        assert resource["compute_device_concurrency"] == "serial_round_robin"
+        assert not resource["actual_multi_cuda_concurrent_path_executed"]
+        assert resource["successful_right_hand_side_calls"] == 1
+        assert (
+            resource["successful_normal_operator_calls"]
+            == sweep["pcg"]["normal_operator_calls"]
+        )
+        assert resource["concurrent_right_hand_side_calls"] == 0
+        assert resource["concurrent_normal_operator_calls"] == 0
+        assert resource["concurrent_per_case_gradients_retained_until_reduction"]
+        assert resource["solver_gradient_reduction_order"] == (
+            "original_global_fit_case_order"
+        )
+        assert not resource["nondeterministic_timing_fields_included"]
+        assert not any(
+            "time" in name or "duration" in name or "latency" in name
+            for name in resource
+        )
         resource_body = dict(resource)
         resource_seal = resource_body.pop("resource_receipt_sha256")
         assert score_fold._canonical_sha256(resource_body) == resource_seal

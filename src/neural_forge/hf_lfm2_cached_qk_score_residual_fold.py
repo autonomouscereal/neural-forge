@@ -16,7 +16,9 @@ import hashlib
 import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from threading import Barrier
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -38,7 +40,7 @@ LFM2_QK_OBSERVED_EXECUTION_RECEIPT_SCHEMA = (
     "neural-forge-lfm2-qk-score-observed-execution-v1"
 )
 LFM2_QK_LINEARIZATION_CACHE_RESOURCE_SCHEMA = (
-    "neural-forge-lfm2-qk-fixed-linearization-cache-resource-v1"
+    "neural-forge-lfm2-qk-fixed-linearization-cache-resource-v2"
 )
 
 _MAXIMUM_PCG_ITERATIONS = 4_096
@@ -1781,6 +1783,107 @@ class _PreparedCase:
     baseline_scores: Any | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _StaticDeviceShard:
+    device: Any
+    indexed_cases: tuple[tuple[int, _PreparedCase], ...]
+
+
+def _static_device_shards(
+    cases: Sequence[_PreparedCase],
+) -> tuple[_StaticDeviceShard, ...]:
+    """Group round-robin cases by their already-authenticated device assignment."""
+
+    ordered_cases = tuple(cases)
+    devices: list[str] = []
+    for case in ordered_cases:
+        logical_device = str(case.query_inputs.device)
+        if logical_device not in devices:
+            devices.append(logical_device)
+    shards = []
+    for logical_device in devices:
+        indexed_cases = tuple(
+            (case_index, case)
+            for case_index, case in enumerate(ordered_cases)
+            if str(case.query_inputs.device) == logical_device
+        )
+        if not indexed_cases:
+            raise Lfm2CachedQkScoreResidualFoldError(
+                "A static score device shard is unexpectedly empty."
+            )
+        if any(
+            str(case.key_inputs.device) != logical_device
+            for _case_index, case in indexed_cases
+        ):
+            raise Lfm2CachedQkScoreResidualAuthenticationError(
+                "Prepared score cases do not remain on one assigned device."
+            )
+        shards.append(
+            _StaticDeviceShard(
+                device=_torch().device(logical_device),
+                indexed_cases=indexed_cases,
+            )
+        )
+    if sum(len(shard.indexed_cases) for shard in shards) != len(ordered_cases):
+        raise Lfm2CachedQkScoreResidualFoldError(
+            "Static score device shards do not cover every prepared case."
+        )
+    return tuple(shards)
+
+
+def _supports_concurrent_static_cuda_devices(devices: Sequence[Any]) -> bool:
+    """Return whether distinct CUDA devices can execute independent shard work."""
+
+    torch = _torch()
+    resolved = tuple(torch.device(device) for device in devices)
+    return (
+        len(resolved) > 1
+        and all(device.type == "cuda" for device in resolved)
+        and len({str(device) for device in resolved}) == len(resolved)
+    )
+
+
+def _uses_concurrent_static_cuda_shards(
+    shards: Sequence[_StaticDeviceShard],
+) -> bool:
+    return _supports_concurrent_static_cuda_devices(
+        tuple(shard.device for shard in shards)
+    )
+
+
+def _execute_static_device_shards(
+    shards: Sequence[_StaticDeviceShard],
+    operation: Any,
+) -> tuple[Any, ...]:
+    """Launch independent CUDA shards together and return shard-order results."""
+
+    ordered = tuple(shards)
+    if not _uses_concurrent_static_cuda_shards(ordered):
+        return tuple(operation(shard) for shard in ordered)
+
+    torch = _torch()
+    start_barrier = Barrier(len(ordered))
+
+    def _worker(shard: _StaticDeviceShard) -> Any:
+        start_barrier.wait()
+        with torch.no_grad():
+            if shard.device.type != "cuda":  # test-only forced-concurrency path
+                return operation(shard)
+            with torch.cuda.device(shard.device):
+                result = operation(shard)
+                # Queued CUDA work must finish before canonical solver reduction.
+                torch.cuda.synchronize(shard.device)
+                return result
+
+    with ThreadPoolExecutor(
+        max_workers=len(ordered),
+        thread_name_prefix="lfm2-score-shard",
+    ) as executor:
+        futures = tuple(executor.submit(_worker, shard) for shard in ordered)
+        # Completion order cannot influence the later global-case-order reduction.
+        return tuple(future.result() for future in futures)
+
+
 def _resolve_execution_devices(
     policy: Lfm2QkScoreResidualFoldPolicy,
 ) -> tuple[Any, tuple[Any, ...]]:
@@ -2722,11 +2825,17 @@ class _StreamingQkScoreResidualLinearOperator:
             float(current_key_weight.to(torch.float64).square().sum().item()),
             self.key_numel * torch.finfo(torch.float32).eps,
         )
+        self.normal_operator_calls = 0
+        self._successful_right_hand_side_calls = 0
+        self._successful_normal_operator_calls = 0
+        self._concurrent_right_hand_side_calls = 0
+        self._concurrent_normal_operator_calls = 0
         self._linearization_cache = tuple(self._build_linearized_cases())
         if len(self._linearization_cache) != len(self.evidence_cases):
             raise Lfm2CachedQkScoreResidualFoldError(
                 "Fixed-linearization cache does not cover every FIT case."
             )
+        self.shards = _static_device_shards(self._linearization_cache)
         self.linearization_cache_resource_receipt = (
             self._build_linearization_cache_resource_receipt()
         )
@@ -2743,7 +2852,6 @@ class _StreamingQkScoreResidualLinearOperator:
                 .item()
             )
         self.residual_energy = max(energy, torch.finfo(torch.float64).tiny)
-        self.normal_operator_calls = 0
 
     def _build_linearized_cases(self) -> Iterable[_PreparedCase]:
         for case in _iter_prepared_evidence_cases(
@@ -2813,10 +2921,36 @@ class _StreamingQkScoreResidualLinearOperator:
             raise Lfm2CachedQkScoreResidualFoldError(
                 "Fixed-linearization cache resource accounting is empty."
             )
+        successful_gradient_calls = (
+            self._successful_right_hand_side_calls
+            + self._successful_normal_operator_calls
+        )
+        concurrent_gradient_calls = (
+            self._concurrent_right_hand_side_calls
+            + self._concurrent_normal_operator_calls
+        )
+        concurrent_path_executed = concurrent_gradient_calls > 0
+        if concurrent_path_executed:
+            concurrency_mode = "thread_barrier_concurrent_static_cuda_shards"
+        elif successful_gradient_calls > 0:
+            concurrency_mode = "serial_round_robin"
+        else:
+            concurrency_mode = "not_executed"
         body = {
             "schema": LFM2_QK_LINEARIZATION_CACHE_RESOURCE_SCHEMA,
             "cache_scope": "one_gauss_newton_sweep",
             "resident_storage": "compute_device",
+            "case_assignment": "authenticated_bank_order_round_robin",
+            "static_device_shards": [
+                {
+                    "logical_device": str(shard.device),
+                    "case_assignment_indices": [
+                        case_index for case_index, _case in shard.indexed_cases
+                    ],
+                    "case_count": len(shard.indexed_cases),
+                }
+                for shard in self.shards
+            ],
             "source_fit_case_count": len(self.evidence_cases),
             "resident_prepared_case_count": len(self._linearization_cache),
             "linearization_replay_call_count": len(self._linearization_cache),
@@ -2829,6 +2963,23 @@ class _StreamingQkScoreResidualLinearOperator:
             "cache_reused_for_right_hand_side": True,
             "cache_reused_for_normal_operator_calls": True,
             "cache_invalidated_at_sweep_end": True,
+            "compute_device_concurrency": concurrency_mode,
+            "actual_multi_cuda_concurrent_path_executed": (concurrent_path_executed),
+            "successful_right_hand_side_calls": (
+                self._successful_right_hand_side_calls
+            ),
+            "successful_normal_operator_calls": (
+                self._successful_normal_operator_calls
+            ),
+            "concurrent_right_hand_side_calls": (
+                self._concurrent_right_hand_side_calls
+            ),
+            "concurrent_normal_operator_calls": (
+                self._concurrent_normal_operator_calls
+            ),
+            "concurrent_per_case_gradients_retained_until_reduction": True,
+            "solver_gradient_reduction_order": "original_global_fit_case_order",
+            "nondeterministic_timing_fields_included": False,
             "model_forward_calls": 0,
             "model_generate_calls": 0,
             "backward_calls": 0,
@@ -2839,6 +2990,24 @@ class _StreamingQkScoreResidualLinearOperator:
             **body,
             "resource_receipt_sha256": _canonical_sha256(body),
         }
+
+    def _record_gradient_execution(
+        self,
+        *,
+        operation: Literal["right_hand_side", "normal"],
+        actual_multi_cuda_concurrent_path_executed: bool,
+    ) -> None:
+        if operation == "right_hand_side":
+            self._successful_right_hand_side_calls += 1
+            if actual_multi_cuda_concurrent_path_executed:
+                self._concurrent_right_hand_side_calls += 1
+        else:
+            self._successful_normal_operator_calls += 1
+            if actual_multi_cuda_concurrent_path_executed:
+                self._concurrent_normal_operator_calls += 1
+        self.linearization_cache_resource_receipt = (
+            self._build_linearization_cache_resource_receipt()
+        )
 
     def pack(self, query: Any, key: Any) -> Any:
         return _torch().cat((query.reshape(-1), key.reshape(-1)))
@@ -2868,8 +3037,73 @@ class _StreamingQkScoreResidualLinearOperator:
             ),
         )
 
+    def _canonical_reduce_per_case_gradients(
+        self,
+        shard_gradients: Sequence[Mapping[int, tuple[Any, Any]]],
+    ) -> tuple[Any, Any]:
+        by_case: dict[int, tuple[Any, Any]] = {}
+        for shard_result in shard_gradients:
+            for case_index, gradients in shard_result.items():
+                if case_index in by_case:
+                    raise Lfm2CachedQkScoreResidualFoldError(
+                        "Concurrent score shards returned a duplicate case gradient."
+                    )
+                by_case[case_index] = gradients
+        expected_indices = set(range(len(self._linearization_cache)))
+        if set(by_case) != expected_indices:
+            raise Lfm2CachedQkScoreResidualFoldError(
+                "Concurrent score shards did not return every case gradient."
+            )
+        query, key = self._empty_gradient()
+        # This is intentionally identical to the former global case-order
+        # accumulation.  Shard completion order cannot alter FP association.
+        for case_index in range(len(self._linearization_cache)):
+            query_delta, key_delta = by_case[case_index]
+            query.add_(query_delta.to(device=self.device, dtype=_torch().float32))
+            key.add_(key_delta.to(device=self.device, dtype=_torch().float32))
+        return query, key
+
     def right_hand_side(self) -> Any:
         torch = _torch()
+        if _uses_concurrent_static_cuda_shards(self.shards):
+
+            def _case_gradients(
+                shard: _StaticDeviceShard,
+            ) -> dict[int, tuple[Any, Any]]:
+                gradients = {}
+                for case_index, case in shard.indexed_cases:
+                    assert case.baseline_scores is not None
+                    residual = case.target_scores - case.baseline_scores
+                    query_delta, key_delta = _score_vjp(
+                        case,
+                        self.seed,
+                        case.cell_weights * residual / self.residual_energy,
+                    )
+                    if (
+                        query_delta.device != shard.device
+                        or key_delta.device != shard.device
+                    ):
+                        raise Lfm2CachedQkScoreResidualAuthenticationError(
+                            "A score RHS gradient left its static device shard."
+                        )
+                    gradients[case_index] = (query_delta, key_delta)
+                return gradients
+
+            shard_gradients = _execute_static_device_shards(
+                self.shards,
+                _case_gradients,
+            )
+            query, key = self._canonical_reduce_per_case_gradients(shard_gradients)
+            self._record_gradient_execution(
+                operation="right_hand_side",
+                actual_multi_cuda_concurrent_path_executed=(
+                    _supports_concurrent_static_cuda_devices(
+                        tuple(shard.device for shard in self.shards)
+                    )
+                ),
+            )
+            return self.pack(query, key)
+
         query, key = self._empty_gradient()
         for case in self._linearized_cases():
             assert case.baseline_scores is not None
@@ -2891,12 +3125,75 @@ class _StreamingQkScoreResidualLinearOperator:
                     dtype=torch.float32,
                 )
             )
+        self._record_gradient_execution(
+            operation="right_hand_side",
+            actual_multi_cuda_concurrent_path_executed=False,
+        )
         return self.pack(query, key)
 
     def normal(self, vector: Any) -> Any:
         torch = _torch()
         self.normal_operator_calls += 1
         delta_query, delta_key = self.unpack(vector)
+        if _uses_concurrent_static_cuda_shards(self.shards):
+
+            def _case_gradients(
+                shard: _StaticDeviceShard,
+            ) -> dict[int, tuple[Any, Any]]:
+                worker_query = delta_query.to(
+                    device=shard.device,
+                    dtype=torch.float32,
+                )
+                worker_key = delta_key.to(
+                    device=shard.device,
+                    dtype=torch.float32,
+                )
+                gradients = {}
+                for case_index, case in shard.indexed_cases:
+                    delta_scores = _score_jvp(
+                        case,
+                        self.seed,
+                        worker_query,
+                        worker_key,
+                    )
+                    query_delta, key_delta = _score_vjp(
+                        case,
+                        self.seed,
+                        case.cell_weights * delta_scores / self.residual_energy,
+                    )
+                    if (
+                        query_delta.device != shard.device
+                        or key_delta.device != shard.device
+                    ):
+                        raise Lfm2CachedQkScoreResidualAuthenticationError(
+                            "A score normal gradient left its static device shard."
+                        )
+                    gradients[case_index] = (query_delta, key_delta)
+                return gradients
+
+            shard_gradients = _execute_static_device_shards(
+                self.shards,
+                _case_gradients,
+            )
+            query, key = self._canonical_reduce_per_case_gradients(shard_gradients)
+            query.add_(
+                delta_query,
+                alpha=self.ridge / self.query_scale_squared,
+            )
+            key.add_(
+                delta_key,
+                alpha=self.ridge / self.key_scale_squared,
+            )
+            self._record_gradient_execution(
+                operation="normal",
+                actual_multi_cuda_concurrent_path_executed=(
+                    _supports_concurrent_static_cuda_devices(
+                        tuple(shard.device for shard in self.shards)
+                    )
+                ),
+            )
+            return self.pack(query, key)
+
         query, key = self._empty_gradient()
         for case in self._linearized_cases():
             worker_device = case.query_inputs.device
@@ -2938,6 +3235,10 @@ class _StreamingQkScoreResidualLinearOperator:
         key.add_(
             delta_key,
             alpha=self.ridge / self.key_scale_squared,
+        )
+        self._record_gradient_execution(
+            operation="normal",
+            actual_multi_cuda_concurrent_path_executed=False,
         )
         return self.pack(query, key)
 
@@ -3758,6 +4059,13 @@ def compile_lfm2_cached_qk_score_residual_fold(
             operator.right_hand_side(),
             policy_value,
         )
+        linearization_resource_receipt = dict(
+            operator.linearization_cache_resource_receipt
+        )
+        if linearization_resource_receipt["actual_multi_cuda_concurrent_path_executed"]:
+            execution["compute_device_concurrency"] = linearization_resource_receipt[
+                "compute_device_concurrency"
+            ]
         pcg_iterate = _pcg_iterate_assessment(direction, pcg_report)
         sweep_report: dict[str, Any] = {
             "sweep": sweep,
@@ -3765,9 +4073,7 @@ def compile_lfm2_cached_qk_score_residual_fold(
             "pcg_numerically_converged": pcg_report.converged,
             "pcg_iterate": pcg_iterate,
             "residual_energy": operator.residual_energy,
-            "linearization_cache_resource_receipt": dict(
-                operator.linearization_cache_resource_receipt
-            ),
+            "linearization_cache_resource_receipt": (linearization_resource_receipt),
         }
         zero_bilinear_jacobian = (
             zero_bilinear_jacobian

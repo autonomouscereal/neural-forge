@@ -91,9 +91,7 @@ H776_COMPOSED_ATTENTION_CANDIDATE_IDS = (
     *H776_ATTENTION_CANDIDATE_IDS,
     H776_COMPOSED_ATTENTION_CANDIDATE_ID,
 )
-H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID = (
-    "endpoint_residual_alternating_qkvo"
-)
+H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID = "endpoint_residual_alternating_qkvo"
 H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS = (
     *H776_COMPOSED_ATTENTION_CANDIDATE_IDS,
     H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID,
@@ -3180,8 +3178,7 @@ def _h776_endpoint_residual_attention_policy() -> Any:
         ),
     )
     if (
-        policy.authentication_sha256
-        != H776_ENDPOINT_RESIDUAL_ATTENTION_POLICY_SHA256
+        policy.authentication_sha256 != H776_ENDPOINT_RESIDUAL_ATTENTION_POLICY_SHA256
         or policy.verify_authentication() is not True
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
@@ -3276,33 +3273,24 @@ def _authenticate_h776_composed_score_outcome(
         "fit_check_rejected_seed_fallback",
     }
     expected_fit_check_evaluated = (
-        composed_candidate_eligible
-        or status in rejected_with_fit_check_statuses
+        composed_candidate_eligible or status in rejected_with_fit_check_statuses
     )
     if (
         score.get("accepted") is not composed_candidate_eligible
         or type(score.get("changed")) is not bool
-        or (
-            composed_candidate_eligible
-            and status not in accepted_statuses
-        )
+        or (composed_candidate_eligible and status not in accepted_statuses)
         or (
             not composed_candidate_eligible
             and status
             not in (
-                rejected_without_fit_check_statuses
-                | rejected_with_fit_check_statuses
+                rejected_without_fit_check_statuses | rejected_with_fit_check_statuses
             )
         )
         or (
             composed_candidate_eligible
-            and score.get("changed")
-            is not (status == "fit_check_accepted")
+            and score.get("changed") is not (status == "fit_check_accepted")
         )
-        or (
-            not composed_candidate_eligible
-            and score.get("changed") is not False
-        )
+        or (not composed_candidate_eligible and score.get("changed") is not False)
         or not isinstance(operation, Mapping)
         or operation.get("fit_cases_consumed") != H776_COMPOSED_QK_FIT_CASES
         or operation.get("selection_cases_consumed") != 0
@@ -3393,21 +3381,6 @@ def _authenticate_h776_composed_device_execution(
     )
 
     execution = score.get("execution")
-    if (
-        not isinstance(execution, Mapping)
-        or execution.get("solver_device") != "cuda:1"
-        or execution.get("compute_devices") != ["cuda:0", "cuda:1"]
-        or execution.get("case_assignment") != "authenticated_bank_order_round_robin"
-        or execution.get("compute_device_concurrency") != "serial_round_robin"
-        or execution.get("streamed_evidence") is not False
-        or execution.get("fixed_linearization_cache") is not True
-        or execution.get("linearization_cache_scope") != "one_gauss_newton_sweep"
-        or execution.get("maximum_logically_resident_prepared_cases")
-        != H776_COMPOSED_QK_FIT_CASES
-    ):
-        raise Lfm2CpcfV5RealAttentionProbeError(
-            "The score fold lacks its exact two-device execution contract."
-        )
     sweeps = score.get("sweeps")
     if (
         not isinstance(sweeps, list)
@@ -3417,6 +3390,36 @@ def _authenticate_h776_composed_device_execution(
         raise Lfm2CpcfV5RealAttentionProbeError(
             "The score fold lacks its per-sweep fixed-linearization inventory."
         )
+    expected_concurrency = (
+        "thread_barrier_concurrent_static_cuda_shards"
+        if sweeps
+        else "serial_round_robin"
+    )
+    if (
+        not isinstance(execution, Mapping)
+        or execution.get("solver_device") != "cuda:1"
+        or execution.get("compute_devices") != ["cuda:0", "cuda:1"]
+        or execution.get("case_assignment") != "authenticated_bank_order_round_robin"
+        or execution.get("compute_device_concurrency") != expected_concurrency
+        or execution.get("streamed_evidence") is not False
+        or execution.get("fixed_linearization_cache") is not True
+        or execution.get("linearization_cache_scope") != "one_gauss_newton_sweep"
+        or execution.get("maximum_logically_resident_prepared_cases")
+        != H776_COMPOSED_QK_FIT_CASES
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The score fold lacks its exact two-device execution contract."
+        )
+    expected_static_shards = [
+        {
+            "logical_device": f"cuda:{device_index}",
+            "case_assignment_indices": list(
+                range(device_index, H776_COMPOSED_QK_FIT_CASES, 2)
+            ),
+            "case_count": H776_COMPOSED_QK_FIT_CASES // 2,
+        }
+        for device_index in range(2)
+    ]
     cache_resource_receipts: list[Mapping[str, Any]] = []
     for sweep_index, sweep in enumerate(sweeps):
         if not isinstance(sweep, Mapping) or sweep.get("sweep") != sweep_index:
@@ -3430,10 +3433,16 @@ def _authenticate_h776_composed_device_execution(
         )
         per_device_counts = resource.get("per_device_case_counts")
         per_device_bytes = resource.get("per_device_logical_tensor_bytes")
+        pcg = sweep.get("pcg")
+        normal_operator_calls = (
+            pcg.get("normal_operator_calls") if isinstance(pcg, Mapping) else None
+        )
         if (
             resource.get("schema") != LFM2_QK_LINEARIZATION_CACHE_RESOURCE_SCHEMA
             or resource.get("cache_scope") != "one_gauss_newton_sweep"
             or resource.get("resident_storage") != "compute_device"
+            or resource.get("case_assignment") != "authenticated_bank_order_round_robin"
+            or resource.get("static_device_shards") != expected_static_shards
             or resource.get("source_fit_case_count") != H776_COMPOSED_QK_FIT_CASES
             or resource.get("resident_prepared_case_count")
             != H776_COMPOSED_QK_FIT_CASES
@@ -3455,6 +3464,20 @@ def _authenticate_h776_composed_device_execution(
             or resource.get("cache_reused_for_right_hand_side") is not True
             or resource.get("cache_reused_for_normal_operator_calls") is not True
             or resource.get("cache_invalidated_at_sweep_end") is not True
+            or resource.get("compute_device_concurrency")
+            != "thread_barrier_concurrent_static_cuda_shards"
+            or resource.get("actual_multi_cuda_concurrent_path_executed") is not True
+            or resource.get("successful_right_hand_side_calls") != 1
+            or type(normal_operator_calls) is not int
+            or normal_operator_calls < 0
+            or resource.get("successful_normal_operator_calls") != normal_operator_calls
+            or resource.get("concurrent_right_hand_side_calls") != 1
+            or resource.get("concurrent_normal_operator_calls") != normal_operator_calls
+            or resource.get("concurrent_per_case_gradients_retained_until_reduction")
+            is not True
+            or resource.get("solver_gradient_reduction_order")
+            != "original_global_fit_case_order"
+            or resource.get("nondeterministic_timing_fields_included") is not False
             or any(
                 type(resource.get(name)) is not int or resource.get(name) != 0
                 for name in (
@@ -3652,15 +3675,15 @@ def _authenticate_h776_endpoint_device_execution(
     expected_devices = ["cuda:0", "cuda:1"]
     expected_uuids = list(pins.expected_composed_logical_cuda_uuids)
     expected_transfer_execution = (
-        "once_per_static_device_shard_serial_requested_device_order"
+        "one_local_accumulation_per_concurrent_static_cuda_shard_then_"
+        "canonical_requested_device_reduction"
     )
     expected_fixed_cache_bytes = 4_470_528
     expected_static_shard_workspace_bytes = 11_919_360
     expected_solver_workspace_bytes = 47_677_440
     trajectories = tuple(expected_fit_trajectory_sha256s)
-    if (
-        len(trajectories) != H776_COMPOSED_QK_FIT_CASES
-        or len(set(trajectories)) != len(trajectories)
+    if len(trajectories) != H776_COMPOSED_QK_FIT_CASES or len(set(trajectories)) != len(
+        trajectories
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Endpoint execution lacks the exact ordered H776 Q/K-FIT inventory."
@@ -3686,18 +3709,16 @@ def _authenticate_h776_endpoint_device_execution(
     if (
         proposal.get("solver_device") != "cuda:1"
         or proposal.get("compute_devices") != expected_devices
-        or proposal.get("case_assignment")
-        != "authenticated_bank_order_round_robin"
+        or proposal.get("case_assignment") != "authenticated_bank_order_round_robin"
         or proposal.get("fit_check_accessible") is not False
         or proposal.get("fit_check_cases_consumed") != 0
         or execution.get("schema") != LFM2_ENDPOINT_QK_EXECUTION_SCHEMA
         or execution.get("requested_solver_device") != "cuda:1"
         or execution.get("requested_compute_devices") != expected_devices
         or execution.get("requested_compute_device_count") != 2
-        or execution.get("case_assignment")
-        != "authenticated_bank_order_round_robin"
+        or execution.get("case_assignment") != "authenticated_bank_order_round_robin"
         or execution.get("compute_device_concurrency")
-        != "serial_static_device_shards"
+        != "thread_barrier_concurrent_static_cuda_shards"
         or execution.get("qk_transfer_execution") != expected_transfer_execution
         or execution.get("every_requested_compute_device_observed") is not True
         or execution.get("distinct_cuda_uuid_count") != 2
@@ -3770,12 +3791,10 @@ def _authenticate_h776_endpoint_device_execution(
             != "exact_endpoint_jvp_then_vjp_normal_probe"
             or type(authenticated.get("exact_replay_calls")) is not int
             or authenticated["exact_replay_calls"] < 1
-            or authenticated.get("endpoint_jvp_calls")
-            != numerical_normal_calls + 1
+            or authenticated.get("endpoint_jvp_calls") != numerical_normal_calls + 1
             or authenticated.get("endpoint_vjp_calls")
             != numerical_normal_calls + numerical_sweep_count + 1
-            or authenticated.get("normal_operator_calls")
-            != numerical_normal_calls + 1
+            or authenticated.get("normal_operator_calls") != numerical_normal_calls + 1
             or authenticated.get("semantic_probe_calls") != 1
             or type(authenticated.get("prepared_persistent_tensor_bytes")) is not int
             or authenticated["prepared_persistent_tensor_bytes"] <= 0
@@ -3846,8 +3865,7 @@ def _authenticate_h776_endpoint_device_execution(
             for value in matching_observations
         )
         maximum_probe_bytes = max(
-            int(value["semantic_probe_tensor_bytes"])
-            for value in matching_observations
+            int(value["semantic_probe_tensor_bytes"]) for value in matching_observations
         )
         expected_device_solver_workspace = (
             expected_solver_workspace_bytes if device_index == 1 else 0
@@ -3897,12 +3915,12 @@ def _authenticate_h776_endpoint_device_execution(
             or summary.get("replay_qk_shard_broadcasts") != exact_replay_calls
             or summary.get("normal_qk_direction_shard_broadcasts")
             != numerical_normal_calls
-            or summary.get("rhs_gradient_shard_reductions")
-            != numerical_sweep_count
-            or summary.get("normal_gradient_shard_reductions")
-            != numerical_normal_calls
+            or summary.get("rhs_gradient_shard_reductions") != numerical_sweep_count
+            or summary.get("normal_gradient_shard_reductions") != numerical_normal_calls
             or summary.get("semantic_direction_shard_builds") != 1
             or summary.get("semantic_gradient_shard_reductions") != 1
+            or summary.get("concurrent_rhs_shard_launches") != numerical_sweep_count
+            or summary.get("concurrent_normal_shard_launches") != numerical_normal_calls
             or summary.get("qk_transfer_execution") != expected_transfer_execution
             or summary.get("maximum_serial_semantic_probe_tensor_bytes")
             != maximum_probe_bytes
@@ -3910,8 +3928,7 @@ def _authenticate_h776_endpoint_device_execution(
             != expected_static_shard_workspace_bytes
             or summary.get("conservative_solver_workspace_bytes")
             != expected_device_solver_workspace
-            or summary.get("conservative_peak_accounted_bytes")
-            != expected_peak_bytes
+            or summary.get("conservative_peak_accounted_bytes") != expected_peak_bytes
             or summary.get("byte_accounting_scope")
             != "deterministic_declared_tensor_bytes_not_allocator_peak"
             or summary.get("maximum_bytes_per_compute_device")
@@ -3939,8 +3956,7 @@ def _authenticate_h776_endpoint_device_execution(
         != sum(int(value["endpoint_vjp_calls"]) for value in authenticated_observations)
         or execution.get("total_normal_operator_calls")
         != sum(
-            int(value["normal_operator_calls"])
-            for value in authenticated_observations
+            int(value["normal_operator_calls"]) for value in authenticated_observations
         )
         or resource.get("prepared_persistent_tensor_bytes")
         != sum(
@@ -3998,9 +4014,7 @@ def _authenticate_h776_endpoint_device_execution(
         },
         "semantic_probe_calls": len(trajectories),
         "solver_device": "cuda:1",
-        "static_device_shards_sha256": static_shards[
-            "static_device_shards_sha256"
-        ],
+        "static_device_shards_sha256": static_shards["static_device_shards_sha256"],
         "fixed_tensor_cache_count": 2,
         "shared_fixed_tensor_cache_bytes": 2 * expected_fixed_cache_bytes,
         "qk_transfer_execution": expected_transfer_execution,
@@ -4532,10 +4546,9 @@ def authenticate_h776_endpoint_residual_attention_result(
     input_bank_sha = _digest(input_bank_sha256, "input_bank_sha256")
     fit_bank_sha = _digest(expected_fit_bank_sha256, "expected_fit_bank_sha256")
     full_fit_trajectories = tuple(expected_fit_trajectory_sha256s)
-    if (
-        len(full_fit_trajectories) != H776_COMPOSED_UPSTREAM_FIT_CASES
-        or len(set(full_fit_trajectories)) != len(full_fit_trajectories)
-    ):
+    if len(full_fit_trajectories) != H776_COMPOSED_UPSTREAM_FIT_CASES or len(
+        set(full_fit_trajectories)
+    ) != len(full_fit_trajectories):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "The endpoint lane lacks the exact independent H776 FIT inventory."
         )
@@ -4570,8 +4583,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         "opt_in_authenticated_five_arm"
         if composed_candidate_eligible
         else (
-            "opt_in_authenticated_endpoint_four_arm_without_rejected_"
-            "composed_candidate"
+            "opt_in_authenticated_endpoint_four_arm_without_rejected_composed_candidate"
         )
     )
     selected_id = selection.get("selected_candidate_id")
@@ -4588,34 +4600,29 @@ def authenticate_h776_endpoint_residual_attention_result(
         or not isinstance(evaluations, dict)
         or set(evaluations) != set(candidate_ids)
         or selection.get("candidate_count") != len(candidate_ids)
-        or selection.get("candidate_local_mlp_preparation_count")
-        != len(candidate_ids)
+        or selection.get("candidate_local_mlp_preparation_count") != len(candidate_ids)
         or selection.get("cross_candidate_prepared_mlp_basis_reused") is not False
         or selection.get("endpoint_residual_candidate_fit_only_mlp_evaluated")
         is not True
         or selection.get("selection_split_only") is not True
         or selection.get("winner_frozen_before_validation") is not True
         or selection.get("validation_phase_count_consumed_before_freeze") != 0
-        or policy.get("attention_candidate_inventory_mode")
-        != expected_inventory_mode
+        or policy.get("attention_candidate_inventory_mode") != expected_inventory_mode
         or policy.get("attention_each_candidate_has_own_fit_only_mlp") is not True
         or policy.get("attention_each_candidate_prepares_own_mlp_basis") is not True
-        or policy.get("attention_cross_candidate_prepared_mlp_basis_reuse")
-        is not False
+        or policy.get("attention_cross_candidate_prepared_mlp_basis_reuse") is not False
         or policy.get("endpoint_residual_fit_only_downstream_mlp_evaluation")
         is not True
-        or policy.get("endpoint_residual_fit_check_final_one_shot_only")
-        is not True
+        or policy.get("endpoint_residual_fit_check_final_one_shot_only") is not True
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Endpoint-residual dynamic tournament or split isolation changed."
         )
 
     candidate_report_sha256 = selection.get("candidate_report_sha256")
-    if (
-        not isinstance(candidate_report_sha256, dict)
-        or set(candidate_report_sha256) != set(candidate_ids)
-    ):
+    if not isinstance(candidate_report_sha256, dict) or set(
+        candidate_report_sha256
+    ) != set(candidate_ids):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Endpoint selection lacks its exact dynamic candidate receipts."
         )
@@ -4687,8 +4694,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         or endpoint_policy.get("allow_legacy_recomputed_parent_probabilities")
         is not False
         or endpoint_policy.get("training_allowed") is not False
-        or endpoint_policy.get("endpoint_policy", {}).get("solver_device")
-        != "cuda:1"
+        or endpoint_policy.get("endpoint_policy", {}).get("solver_device") != "cuda:1"
         or endpoint_policy.get("endpoint_policy", {}).get("compute_devices")
         != ["cuda:0", "cuda:1"]
     ):
@@ -4716,8 +4722,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         else LFM2_ENDPOINT_QK_START_SCHEMA
     )
     if (
-        stage_one_attempt.get("schema")
-        != LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA
+        stage_one_attempt.get("schema") != LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA
         or stage_one_attempt.get("composed_candidate_eligible")
         is not composed_candidate_eligible
         or stage_one_attempt.get("score_result_accepted")
@@ -4732,9 +4737,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         or policy.get("endpoint_qk_start_source") != expected_start_source
         or policy.get("composed_qk_candidate_eligible")
         is not composed_candidate_eligible
-        or (
-            policy.get("composed_qk_producer_artifact") is None
-        )
+        or (policy.get("composed_qk_producer_artifact") is None)
         is composed_candidate_eligible
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
@@ -4776,7 +4779,10 @@ def authenticate_h776_endpoint_residual_attention_result(
             not isinstance(tensor_receipt, dict)
             or not isinstance(tensor_receipt.get("shape"), list)
             or len(tensor_receipt["shape"]) != 2
-            or any(type(value) is not int or value <= 0 for value in tensor_receipt["shape"])
+            or any(
+                type(value) is not int or value <= 0
+                for value in tensor_receipt["shape"]
+            )
             or tensor_receipt.get("dtype") != "torch.bfloat16"
             or type(tensor_receipt.get("logical_parameters")) is not int
             or tensor_receipt["logical_parameters"]
@@ -4794,8 +4800,7 @@ def authenticate_h776_endpoint_residual_attention_result(
     endpoint_operation = endpoint.get("operation_audit")
     if (
         endpoint.get("schema") != LFM2_COMPOSED_ENDPOINT_RESIDUAL_SCHEMA
-        or endpoint.get("candidate_id")
-        != H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID
+        or endpoint.get("candidate_id") != H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID
         or endpoint.get("accepted") is not True
         or endpoint.get("policy") != expected_endpoint_policy
         or endpoint.get("policy_sha256")
@@ -4804,8 +4809,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         or endpoint_evaluation.get("operator_artifact_sha256") != _sha256(endpoint)
         or policy.get("endpoint_residual_attention_artifact_sha256")
         != endpoint["artifact_sha256"]
-        or source_inventory.get("count_derived_from_actual_dense_tensors")
-        is not True
+        or source_inventory.get("count_derived_from_actual_dense_tensors") is not True
         or source_inventory.get("logical_parameters") != source_logical_parameters
         or endpoint.get("source_inventory_sha256")
         != source_inventory["inventory_sha256"]
@@ -4823,9 +4827,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         )
         or endpoint.get("ordinary_dense_target_qkvo") is not True
         or endpoint.get("fit_check_endpoint_and_route_nonregressing") is not True
-        or endpoint.get(
-            "fit_check_first_metric_evaluation_after_all_outer_blocks"
-        )
+        or endpoint.get("fit_check_first_metric_evaluation_after_all_outer_blocks")
         is not True
         or endpoint.get("fit_check_triggered_refit") is not False
         or endpoint.get("fit_check_role")
@@ -4844,8 +4846,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         or endpoint.get("legacy_recomputed_parent_probability_case_count") != 0
         or endpoint.get("all_parent_probability_targets_from_authenticated_cache")
         is not True
-        or endpoint.get("legacy_parent_probability_recomputation_allowed")
-        is not False
+        or endpoint.get("legacy_parent_probability_recomputation_allowed") is not False
         or not isinstance(endpoint_operation, dict)
         or any(
             type(value) is not int or value != 0
@@ -4853,8 +4854,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         )
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
-            "Endpoint artifact is not source-bound, cache-bound, compact, or "
-            "fold-only."
+            "Endpoint artifact is not source-bound, cache-bound, compact, or fold-only."
         )
 
     composed_producer = None
@@ -4866,8 +4866,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         )
         if composed_producer != endpoint_qk_start:
             raise Lfm2CpcfV5RealAttentionProbeError(
-                "Accepted composed producer differs from the selected endpoint "
-                "start."
+                "Accepted composed producer differs from the selected endpoint start."
             )
     elif policy.get("composed_qk_producer_artifact") is not None:
         raise Lfm2CpcfV5RealAttentionProbeError(
@@ -4922,13 +4921,10 @@ def authenticate_h776_endpoint_residual_attention_result(
             )
             and isinstance(endpoint_qk_start.get("starting_producer_sha256"), str)
             and endpoint_qk_start.get("score_result_accepted") is False
-            and endpoint_qk_start.get("score_residual_fourth_arm_eligible")
-            is False
+            and endpoint_qk_start.get("score_residual_fourth_arm_eligible") is False
             and endpoint_qk_start.get("starting_state_source")
             == "fit_structural_groups_plus_global_gauge_qk_plus_fit_only_v"
-            and stage_one_attempt.get(
-                "global_gauge_fallback_start_artifact_sha256"
-            )
+            and stage_one_attempt.get("global_gauge_fallback_start_artifact_sha256")
             == endpoint_qk_start["artifact_sha256"]
         )
     for receipt_name in start_weight_receipt_names:
@@ -4985,8 +4981,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         )
         or stage_one_producer.get("score_result_report_sha256")
         != score["report_sha256"]
-        or stage_one_attempt.get("score_result_report_sha256")
-        != score["report_sha256"]
+        or stage_one_attempt.get("score_result_report_sha256") != score["report_sha256"]
         or stage_one_attempt.get("score_result_status") != score.get("status")
         or stage_one_attempt.get("composed_candidate_artifact_sha256")
         != (
@@ -5003,23 +4998,19 @@ def authenticate_h776_endpoint_residual_attention_result(
         )
         or not isinstance(start_operation, Mapping)
         or any(
-            type(value) is not int or value != 0
-            for value in start_operation.values()
+            type(value) is not int or value != 0 for value in start_operation.values()
         )
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
-            "Endpoint artifact lost its exact admitted-or-fallback Q/K start "
-            "lineage."
+            "Endpoint artifact lost its exact admitted-or-fallback Q/K start lineage."
         )
     fit_trajectories = tuple(full_fit_trajectories[index] for index in qk_fit_ordinals)
     fit_check_trajectories = tuple(
         full_fit_trajectories[index] for index in qk_fit_check_ordinals
     )
-    if (
-        endpoint.get("fit_trajectory_sha256s") != list(fit_trajectories)
-        or endpoint.get("fit_check_trajectory_sha256s")
-        != list(fit_check_trajectories)
-    ):
+    if endpoint.get("fit_trajectory_sha256s") != list(fit_trajectories) or endpoint.get(
+        "fit_check_trajectory_sha256s"
+    ) != list(fit_check_trajectories):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Endpoint final evaluation does not use the exact composed "
             "Q/K FIT and FIT-CHECK partitions."
@@ -5121,8 +5112,7 @@ def authenticate_h776_endpoint_residual_attention_result(
             )
         ):
             raise Lfm2CpcfV5RealAttentionProbeError(
-                f"Endpoint outer block {block_index} is not FIT-only or "
-                "authenticated."
+                f"Endpoint outer block {block_index} is not FIT-only or authenticated."
             )
         positive_frontier_step_observed = False
         for sweep_index, sweep in enumerate(sweeps):
@@ -5160,9 +5150,7 @@ def authenticate_h776_endpoint_residual_attention_result(
                 or type(solve.get("iterations")) is not int
                 or not 0
                 <= solve["iterations"]
-                <= expected_endpoint_policy["endpoint_policy"][
-                    "maximum_cg_iterations"
-                ]
+                <= expected_endpoint_policy["endpoint_policy"]["maximum_cg_iterations"]
                 or type(solve.get("normal_operator_calls")) is not int
                 or solve["normal_operator_calls"] < 0
             ):
@@ -5222,35 +5210,27 @@ def authenticate_h776_endpoint_residual_attention_result(
                 )
             )
         )
-    if (
-        block_shas != endpoint.get("block_sha256s")
-        or block_shas
-        != [block["block_sha256"] for block in block_reports]
-    ):
-        raise Lfm2CpcfV5RealAttentionProbeError(
-            "Endpoint outer-block lineage changed."
-        )
+    if block_shas != endpoint.get("block_sha256s") or block_shas != [
+        block["block_sha256"] for block in block_reports
+    ]:
+        raise Lfm2CpcfV5RealAttentionProbeError("Endpoint outer-block lineage changed.")
 
     baseline_fit = endpoint.get("baseline_fit_metrics")
     final_fit = endpoint.get("final_fit_metrics")
     baseline_check = endpoint.get("baseline_fit_check_metrics")
     final_check = endpoint.get("final_fit_check_metrics")
-    if (
-        not all(
-            isinstance(value, dict)
-            for value in (baseline_fit, final_fit, baseline_check, final_check)
-        )
-        or final_fit.get("endpoint_relative_rmse", math.inf)
-        >= baseline_fit.get("endpoint_relative_rmse", -math.inf)
+    if not all(
+        isinstance(value, dict)
+        for value in (baseline_fit, final_fit, baseline_check, final_check)
+    ) or final_fit.get("endpoint_relative_rmse", math.inf) >= baseline_fit.get(
+        "endpoint_relative_rmse", -math.inf
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Endpoint final state did not strictly improve FIT endpoint error."
         )
 
     selected_type_by_id = {
-        DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID: (
-            Lfm2CompiledStructuralAttentionFold
-        ),
+        DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID: (Lfm2CompiledStructuralAttentionFold),
         RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID: (
             Lfm2CompiledCpcfResidualAttentionSplitFold
         ),
@@ -5277,9 +5257,7 @@ def authenticate_h776_endpoint_residual_attention_result(
             "Endpoint tournament winner is not the exact typed frozen artifact."
         )
     if isinstance(selected_artifact, Lfm2CompiledStructuralAttentionFold):
-        state_sha = _structural_attention_state_sha256(
-            selected_artifact.state_dict()
-        )
+        state_sha = _structural_attention_state_sha256(selected_artifact.state_dict())
         authenticated = state_sha == selected_artifact.compiled_state_sha256
     elif isinstance(selected_artifact, Lfm2CompiledCpcfResidualAttentionSplitFold):
         state_sha = _tensor_bundle_sha256(selected_artifact.state_dict())
@@ -5308,9 +5286,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Endpoint layer transaction did not create its in-memory k=3 bank."
         )
-    endpoint_won = (
-        selected_id == H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID
-    )
+    endpoint_won = selected_id == H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID
     prior_candidate_ids = tuple(
         candidate_id
         for candidate_id in candidate_ids
@@ -5349,17 +5325,13 @@ def authenticate_h776_endpoint_residual_attention_result(
         "endpoint_residual_attention_policy_sha256": (
             pins.expected_endpoint_residual_attention_policy_sha256
         ),
-        "composed_prerequisite_device_execution": _plain(
-            composed_device_execution
-        ),
+        "composed_prerequisite_device_execution": _plain(composed_device_execution),
         "composed_score_outcome": _plain(score_outcome_audit),
         "endpoint_block_device_execution": device_execution_audits,
         "all_parent_probability_targets_from_authenticated_cache": True,
         "blank_target_values_read": False,
         "candidate_local_fit_only_mlp_count": len(candidate_ids),
-        "composed_score_residual_candidate_eligible": (
-            composed_candidate_eligible
-        ),
+        "composed_score_residual_candidate_eligible": (composed_candidate_eligible),
         "endpoint_qk_start_source": expected_start_source,
         "fit_check_final_one_shot_only": True,
         "continuous_cuda_allocator_peak_monitor_is_authority": True,
@@ -5754,9 +5726,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                         else None
                     ),
                     composed_qk_attention_policy=composed_qk_policy,
-                    endpoint_residual_attention_policy=(
-                        endpoint_residual_policy
-                    ),
+                    endpoint_residual_attention_policy=(endpoint_residual_policy),
                 )
 
             if (
@@ -5774,18 +5744,12 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                     result = compile_layer()
             resource_monitor.checkpoint("layer_2_compiled_and_validated")
             if runtime.endpoint_residual_attention_enabled:
-                result_audit = (
-                    authenticate_h776_endpoint_residual_attention_result(
-                        result,
-                        input_bank_sha256=layer_bank.state_bank_sha256,
-                        expected_fit_bank_sha256=(
-                            composed_fit_bank.state_bank_sha256
-                        ),
-                        expected_fit_trajectory_sha256s=(
-                            composed_fit_trajectory_sha256s
-                        ),
-                        pins=pins,
-                    )
+                result_audit = authenticate_h776_endpoint_residual_attention_result(
+                    result,
+                    input_bank_sha256=layer_bank.state_bank_sha256,
+                    expected_fit_bank_sha256=(composed_fit_bank.state_bank_sha256),
+                    expected_fit_trajectory_sha256s=(composed_fit_trajectory_sha256s),
+                    pins=pins,
                 )
             elif runtime.composed_qk_attention_enabled:
                 result_audit = authenticate_h776_composed_attention_result(
@@ -5901,9 +5865,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
     if runtime.endpoint_residual_attention_enabled:
         positive_attention_outcome = (
             result_audit["endpoint_residual_won"]
-            and result_audit[
-                "endpoint_residual_strictly_better_than_all_prior_arms"
-            ]
+            and result_audit["endpoint_residual_strictly_better_than_all_prior_arms"]
         )
         completed_status = (
             "completed_positive_endpoint_residual_selection"
@@ -5980,9 +5942,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                 runtime.endpoint_residual_attention_enabled
             ),
             "runtime_matches_independent_invocation_pin": True,
-            "candidate_inventory": list(
-                resolved_attention_candidate_ids
-            ),
+            "candidate_inventory": list(resolved_attention_candidate_ids),
             "legacy_single_artifact_pcg_observer_used": (
                 not (
                     runtime.composed_qk_attention_enabled
@@ -5997,9 +5957,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             "composed_qk_prerequisite_enabled_in_layer_call": (
                 runtime.endpoint_residual_attention_enabled
             ),
-            "candidate_inventory": list(
-                resolved_attention_candidate_ids
-            ),
+            "candidate_inventory": list(resolved_attention_candidate_ids),
             "candidate_local_fit_only_mlp_count": (
                 len(resolved_attention_candidate_ids)
                 if runtime.endpoint_residual_attention_enabled

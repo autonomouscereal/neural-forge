@@ -82,10 +82,7 @@ def _pins(
         ),
         maximum_process_rss_bytes=(
             H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES
-            if (
-                composed_qk_attention_enabled
-                or endpoint_residual_attention_enabled
-            )
+            if (composed_qk_attention_enabled or endpoint_residual_attention_enabled)
             else 64 * 1024**3
         ),
     )
@@ -264,9 +261,7 @@ def _endpoint_execution_proposal(
             "key_rms_float32_sha256": f"{8_050 + device_index:064x}",
             "shared_fixed_tensor_bytes": fixed_cache_bytes,
             "fixed_cache_builds": 1,
-            "fixed_tensor_materialization": (
-                "once_per_requested_compute_device"
-            ),
+            "fixed_tensor_materialization": ("once_per_requested_compute_device"),
         }
         fixed_cache = {
             **fixed_cache_body,
@@ -306,11 +301,7 @@ def _endpoint_execution_proposal(
                 ),
                 "endpoint_vjp_calls": (
                     len(indices)
-                    * (
-                        numerical_normal_operator_calls
-                        + numerical_sweep_count
-                        + 1
-                    )
+                    * (numerical_normal_operator_calls + numerical_sweep_count + 1)
                 ),
                 "normal_operator_calls": (
                     len(indices) * (numerical_normal_operator_calls + 1)
@@ -324,18 +315,17 @@ def _endpoint_execution_proposal(
                     numerical_normal_operator_calls
                 ),
                 "rhs_gradient_shard_reductions": numerical_sweep_count,
-                "normal_gradient_shard_reductions": (
-                    numerical_normal_operator_calls
-                ),
+                "normal_gradient_shard_reductions": (numerical_normal_operator_calls),
                 "semantic_direction_shard_builds": 1,
                 "semantic_gradient_shard_reductions": 1,
+                "concurrent_rhs_shard_launches": numerical_sweep_count,
+                "concurrent_normal_shard_launches": (numerical_normal_operator_calls),
                 "qk_transfer_execution": (
-                    "once_per_static_device_shard_serial_requested_device_order"
+                    "one_local_accumulation_per_concurrent_static_cuda_shard_then_"
+                    "canonical_requested_device_reduction"
                 ),
                 "maximum_serial_semantic_probe_tensor_bytes": 10_000_000,
-                "conservative_static_shard_workspace_bytes": (
-                    shard_workspace_bytes
-                ),
+                "conservative_static_shard_workspace_bytes": (shard_workspace_bytes),
                 "conservative_solver_workspace_bytes": device_solver_workspace,
                 "conservative_peak_accounted_bytes": conservative_peak_bytes,
                 "byte_accounting_scope": (
@@ -379,9 +369,7 @@ def _endpoint_execution_proposal(
         "shared_fixed_tensor_cache_bytes": 2 * fixed_cache_bytes,
         "fixed_tensor_cache_count": 2,
         "maximum_serial_semantic_probe_tensor_bytes": 10_000_000,
-        "conservative_static_shard_workspace_bytes_per_device": (
-            shard_workspace_bytes
-        ),
+        "conservative_static_shard_workspace_bytes_per_device": (shard_workspace_bytes),
         "byte_accounting_scope": (
             "deterministic_declared_tensor_bytes_not_allocator_peak"
         ),
@@ -397,9 +385,10 @@ def _endpoint_execution_proposal(
         "requested_compute_devices": ["cuda:0", "cuda:1"],
         "requested_compute_device_count": 2,
         "case_assignment": "authenticated_bank_order_round_robin",
-        "compute_device_concurrency": "serial_static_device_shards",
+        "compute_device_concurrency": ("thread_barrier_concurrent_static_cuda_shards"),
         "qk_transfer_execution": (
-            "once_per_static_device_shard_serial_requested_device_order"
+            "one_local_accumulation_per_concurrent_static_cuda_shard_then_"
+            "canonical_requested_device_reduction"
         ),
         "static_device_shard_receipt": static_receipt,
         "every_requested_compute_device_observed": True,
@@ -407,20 +396,11 @@ def _endpoint_execution_proposal(
         "numerical_sweep_count": numerical_sweep_count,
         "numerical_normal_operator_calls": numerical_normal_operator_calls,
         "total_exact_replay_calls": 134 * exact_replay_calls,
-        "total_endpoint_jvp_calls": (
-            134 * (numerical_normal_operator_calls + 1)
-        ),
+        "total_endpoint_jvp_calls": (134 * (numerical_normal_operator_calls + 1)),
         "total_endpoint_vjp_calls": (
-            134
-            * (
-                numerical_normal_operator_calls
-                + numerical_sweep_count
-                + 1
-            )
+            134 * (numerical_normal_operator_calls + numerical_sweep_count + 1)
         ),
-        "total_normal_operator_calls": (
-            134 * (numerical_normal_operator_calls + 1)
-        ),
+        "total_normal_operator_calls": (134 * (numerical_normal_operator_calls + 1)),
         "total_semantic_probe_calls": len(trajectories),
         "compute_observations": observations,
         "compute_device_summaries": summaries,
@@ -499,6 +479,27 @@ def test_endpoint_device_execution_rejects_resealed_shard_transfer_counter(
     receipt = proposal["observed_execution_receipt"]
     summary = receipt["compute_device_summaries"][0]
     summary["normal_qk_direction_shard_broadcasts"] += 1
+    receipt.pop("receipt_sha256")
+    receipt["receipt_sha256"] = _sha256(receipt)
+
+    with pytest.raises(
+        Lfm2CpcfV5RealAttentionProbeError,
+        match="cuda:0 summary",
+    ):
+        _authenticate_h776_endpoint_device_execution(
+            proposal,
+            expected_fit_trajectory_sha256s=trajectories,
+            pins=_pins(tmp_path, endpoint_residual_attention_enabled=True),
+        )
+
+
+def test_endpoint_device_execution_rejects_resealed_concurrent_launch_counter(
+    tmp_path: Path,
+) -> None:
+    proposal, trajectories = _endpoint_execution_proposal()
+    receipt = proposal["observed_execution_receipt"]
+    summary = receipt["compute_device_summaries"][0]
+    summary["concurrent_normal_shard_launches"] -= 1
     receipt.pop("receipt_sha256")
     receipt["receipt_sha256"] = _sha256(receipt)
 
@@ -2068,9 +2069,18 @@ def _composed_attention_result():
         "receipt_sha256": _sha256(observed_execution_body),
     }
     cache_resource_body = {
-        "schema": "neural-forge-lfm2-qk-fixed-linearization-cache-resource-v1",
+        "schema": "neural-forge-lfm2-qk-fixed-linearization-cache-resource-v2",
         "cache_scope": "one_gauss_newton_sweep",
         "resident_storage": "compute_device",
+        "case_assignment": "authenticated_bank_order_round_robin",
+        "static_device_shards": [
+            {
+                "logical_device": f"cuda:{device_index}",
+                "case_assignment_indices": list(range(device_index, 134, 2)),
+                "case_count": 67,
+            }
+            for device_index in range(2)
+        ],
         "source_fit_case_count": 134,
         "resident_prepared_case_count": 134,
         "linearization_replay_call_count": 134,
@@ -2084,6 +2094,15 @@ def _composed_attention_result():
         "cache_reused_for_right_hand_side": True,
         "cache_reused_for_normal_operator_calls": True,
         "cache_invalidated_at_sweep_end": True,
+        "compute_device_concurrency": ("thread_barrier_concurrent_static_cuda_shards"),
+        "actual_multi_cuda_concurrent_path_executed": True,
+        "successful_right_hand_side_calls": 1,
+        "successful_normal_operator_calls": 3,
+        "concurrent_right_hand_side_calls": 1,
+        "concurrent_normal_operator_calls": 3,
+        "concurrent_per_case_gradients_retained_until_reduction": True,
+        "solver_gradient_reduction_order": "original_global_fit_case_order",
+        "nondeterministic_timing_fields_included": False,
         "model_forward_calls": 0,
         "model_generate_calls": 0,
         "backward_calls": 0,
@@ -2098,7 +2117,7 @@ def _composed_attention_result():
         "solver_device": "cuda:1",
         "compute_devices": ["cuda:0", "cuda:1"],
         "case_assignment": "authenticated_bank_order_round_robin",
-        "compute_device_concurrency": "serial_round_robin",
+        "compute_device_concurrency": ("thread_barrier_concurrent_static_cuda_shards"),
         "streamed_evidence": False,
         "fixed_linearization_cache": True,
         "linearization_cache_scope": "one_gauss_newton_sweep",
@@ -2126,6 +2145,7 @@ def _composed_attention_result():
         "sweeps": [
             {
                 "sweep": 0,
+                "pcg": {"normal_operator_calls": 3},
                 "linearization_cache_resource_receipt": cache_resource,
             }
         ],
@@ -2397,9 +2417,7 @@ def _endpoint_attention_result():
     proposal_body = {
         "schema": "neural-forge-lfm2-endpoint-qk-fit-proposal-v1",
         "policy": endpoint_policy["endpoint_policy"],
-        "policy_sha256": endpoint_policy["endpoint_policy"][
-            "authentication_sha256"
-        ],
+        "policy_sha256": endpoint_policy["endpoint_policy"]["authentication_sha256"],
         "changed": True,
         "solver_device": "cuda:1",
         "compute_devices": ["cuda:0", "cuda:1"],
@@ -2557,9 +2575,7 @@ def _endpoint_attention_result():
     evaluations[endpoint_id] = endpoint_evaluation
     selection = policy["attention_candidate_selection"]
     selection.pop("report_sha256")
-    selection["candidate_ids"] = list(
-        H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
-    )
+    selection["candidate_ids"] = list(H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS)
     selection["candidate_count"] = 5
     selection["candidate_report_sha256"][endpoint_id] = endpoint_evaluation[
         "report_sha256"
@@ -2603,9 +2619,7 @@ def _endpoint_attention_result():
     }
     policy.update(
         {
-            "attention_candidate_inventory_mode": (
-                "opt_in_authenticated_five_arm"
-            ),
+            "attention_candidate_inventory_mode": ("opt_in_authenticated_five_arm"),
             "endpoint_residual_attention_policy": endpoint_policy,
             "endpoint_residual_attention_artifact_sha256": (
                 endpoint["artifact_sha256"]
@@ -2622,9 +2636,7 @@ def _endpoint_attention_result():
             "composed_qk_candidate_eligible": True,
             "composed_qk_stage_one_attempt": stage_one,
             "endpoint_qk_start_artifact": producer,
-            "endpoint_qk_start_source": (
-                "accepted_score_residual_corrected_dense_qkv"
-            ),
+            "endpoint_qk_start_source": ("accepted_score_residual_corrected_dense_qkv"),
         }
     )
     report.pop("result_sha256")
@@ -2713,9 +2725,7 @@ def _endpoint_attention_result_with_rejected_composed():
     endpoint.update(
         {
             "composed_qk_artifact_sha256": None,
-            "endpoint_qk_start_artifact_sha256": (
-                fallback_start["artifact_sha256"]
-            ),
+            "endpoint_qk_start_artifact_sha256": (fallback_start["artifact_sha256"]),
             "endpoint_qk_start_artifact_schema": (
                 "neural-forge-lfm2-endpoint-qk-start-v1"
             ),
@@ -2741,9 +2751,7 @@ def _endpoint_attention_result_with_rejected_composed():
     )
     selection["candidate_count"] = 4
     selection["candidate_local_mlp_preparation_count"] = 4
-    selection["candidate_report_sha256"].pop(
-        H776_COMPOSED_ATTENTION_CANDIDATE_ID
-    )
+    selection["candidate_report_sha256"].pop(H776_COMPOSED_ATTENTION_CANDIDATE_ID)
     selection["candidate_report_sha256"][endpoint_id] = endpoint_evaluation[
         "report_sha256"
     ]
@@ -2800,9 +2808,7 @@ def test_endpoint_attention_result_authenticates_five_arm_negative(
     assert audit["candidate_ids"] == list(
         H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
     )
-    assert audit["scientific_outcome"] == (
-        "honest_negative_or_prior_arm_selected"
-    )
+    assert audit["scientific_outcome"] == ("honest_negative_or_prior_arm_selected")
     assert audit["all_parent_probability_targets_from_authenticated_cache"] is True
     assert audit["blank_target_values_read"] is False
     assert len(audit["endpoint_block_device_execution"]) == 1
@@ -2826,9 +2832,7 @@ def test_endpoint_attention_authenticates_rejected_composed_without_fit_check(
         H776_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
     )
     assert audit["composed_score_residual_candidate_eligible"] is False
-    assert audit["endpoint_qk_start_source"] == (
-        "structural_global_gauge_dense_qkv"
-    )
+    assert audit["endpoint_qk_start_source"] == ("structural_global_gauge_dense_qkv")
     assert audit["composed_score_outcome"]["fit_check_evaluated"] is False
     assert audit["composed_score_outcome"]["fit_check_cases_consumed"] == 0
     assert audit["composed_score_outcome"]["status"] == (
@@ -3035,6 +3039,30 @@ def test_composed_attention_result_rejects_resealed_cache_resource_lie(
         resource["resident_prepared_case_count"] = 1
         resource["linearization_replay_call_count"] = 1
         resource["per_device_case_counts"] = {"cuda:0": 1, "cuda:1": 0}
+        resource.pop("resource_receipt_sha256", None)
+        resource["resource_receipt_sha256"] = _sha256(resource)
+
+    tampered = _reseal_composed_result(original, mutate)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_composed_attention_result(
+            tampered,
+            input_bank_sha256="8" * 64,
+            expected_fit_bank_sha256=original.expected_fit_bank_sha256,
+            expected_fit_trajectory_sha256s=(original.expected_fit_trajectory_sha256s),
+            pins=_pins(tmp_path, composed_qk_attention_enabled=True),
+        )
+
+
+def test_composed_attention_result_rejects_resealed_concurrent_score_count_lie(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    original = _composed_attention_result()
+
+    def mutate(**parts) -> None:
+        resource = parts["score"]["sweeps"][0]["linearization_cache_resource_receipt"]
+        resource["concurrent_normal_operator_calls"] -= 1
         resource.pop("resource_receipt_sha256", None)
         resource["resource_receipt_sha256"] = _sha256(resource)
 

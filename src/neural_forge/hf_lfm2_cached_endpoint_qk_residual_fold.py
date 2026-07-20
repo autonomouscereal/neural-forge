@@ -21,7 +21,9 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from threading import Barrier
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -36,7 +38,7 @@ LFM2_ENDPOINT_QK_POLICY_SCHEMA = "neural-forge-lfm2-endpoint-qk-policy-v1"
 LFM2_ENDPOINT_QK_RESULT_SCHEMA = "neural-forge-lfm2-endpoint-qk-result-v1"
 LFM2_ENDPOINT_QK_FIT_PROPOSAL_SCHEMA = "neural-forge-lfm2-endpoint-qk-fit-proposal-v1"
 LFM2_ENDPOINT_QK_EXECUTION_SCHEMA = (
-    "neural-forge-lfm2-endpoint-qk-observed-execution-v3"
+    "neural-forge-lfm2-endpoint-qk-observed-execution-v4"
 )
 _FIXED_DEVICE_CACHE_SCHEMA = "neural-forge-lfm2-endpoint-fixed-device-cache-v1"
 _STATIC_DEVICE_SHARD_SCHEMA = "neural-forge-lfm2-endpoint-static-device-shards-v1"
@@ -1704,8 +1706,8 @@ def _conservative_static_shard_workspace_bytes(
     seed: Lfm2EndpointQkvoSeed,
 ) -> int:
     # One device-resident packed Q/K direction, one packed gradient
-    # accumulator, and one FP64 semantic aggregate. These phases are serial,
-    # so this remains deliberately conservative.
+    # accumulator, and one FP64 semantic aggregate. Concurrent shards occupy
+    # distinct devices, so this remains a conservative per-device ceiling.
     packed = int(seed.query_weight.numel()) + int(seed.key_weight.numel())
     return packed * 16
 
@@ -1926,10 +1928,12 @@ def _build_observed_execution_receipt(
         raise Lfm2EndpointQkResidualFoldError(
             "Observed execution did not preserve round-robin device assignment."
         )
+    static_shards = _static_device_shards(cases)
     static_shard_receipt = _static_device_shard_receipt(cases)
-    shards_by_device = {
-        str(shard.device): shard for shard in _static_device_shards(cases)
-    }
+    shards_by_device = {str(shard.device): shard for shard in static_shards}
+    concurrent_static_cuda_shards = _uses_concurrent_static_cuda_shards(static_shards)
+    concurrency_mode = _static_shard_concurrency_mode(concurrent_static_cuda_shards)
+    transfer_mode = _static_shard_transfer_mode(concurrent_static_cuda_shards)
     device_summaries = []
     cuda_uuids_by_device: dict[str, str] = {}
     for device in workers:
@@ -1978,6 +1982,12 @@ def _build_observed_execution_receipt(
             "normal_gradient_shard_reductions": numerical_normal_calls,
             "semantic_direction_shard_builds": 1,
             "semantic_gradient_shard_reductions": 1,
+            "concurrent_rhs_shard_launches": (
+                len(sweeps) if concurrent_static_cuda_shards else 0
+            ),
+            "concurrent_normal_shard_launches": (
+                numerical_normal_calls if concurrent_static_cuda_shards else 0
+            ),
         }
         if any(
             getattr(cache, name) != expected
@@ -2026,9 +2036,7 @@ def _build_observed_execution_receipt(
                 "shared_fixed_tensor_cache_bytes": fixed_cache_bytes,
                 "fixed_cache_receipt": _fixed_device_cache_receipt(cache),
                 **expected_cache_counters,
-                "qk_transfer_execution": (
-                    "once_per_static_device_shard_serial_requested_device_order"
-                ),
+                "qk_transfer_execution": transfer_mode,
                 "maximum_serial_semantic_probe_tensor_bytes": probe_device_bytes,
                 "conservative_static_shard_workspace_bytes": (shard_workspace_bytes),
                 "conservative_solver_workspace_bytes": solver_workspace_bytes,
@@ -2117,10 +2125,8 @@ def _build_observed_execution_receipt(
         "requested_compute_devices": requested,
         "requested_compute_device_count": len(requested),
         "case_assignment": "authenticated_bank_order_round_robin",
-        "compute_device_concurrency": "serial_static_device_shards",
-        "qk_transfer_execution": (
-            "once_per_static_device_shard_serial_requested_device_order"
-        ),
+        "compute_device_concurrency": concurrency_mode,
+        "qk_transfer_execution": transfer_mode,
         "static_device_shard_receipt": static_shard_receipt,
         "every_requested_compute_device_observed": True,
         "distinct_cuda_uuid_count": len(set(cuda_uuids_by_device.values())),
@@ -2211,6 +2217,15 @@ def _verify_observed_execution_receipt(
         "training_steps": 0,
     }
     expected_workers = list(policy.compute_devices)
+    expected_concurrent_static_cuda_shards = _supports_concurrent_static_cuda_devices(
+        expected_workers
+    )
+    expected_concurrency_mode = _static_shard_concurrency_mode(
+        expected_concurrent_static_cuda_shards
+    )
+    expected_transfer_mode = _static_shard_transfer_mode(
+        expected_concurrent_static_cuda_shards
+    )
     observations = body.get("compute_observations")
     summaries = body.get("compute_device_summaries")
     if (
@@ -2220,9 +2235,8 @@ def _verify_observed_execution_receipt(
         or body.get("requested_compute_devices") != expected_workers
         or body.get("requested_compute_device_count") != len(expected_workers)
         or body.get("case_assignment") != "authenticated_bank_order_round_robin"
-        or body.get("compute_device_concurrency") != "serial_static_device_shards"
-        or body.get("qk_transfer_execution")
-        != "once_per_static_device_shard_serial_requested_device_order"
+        or body.get("compute_device_concurrency") != expected_concurrency_mode
+        or body.get("qk_transfer_execution") != expected_transfer_mode
         or body.get("every_requested_compute_device_observed") is not True
         or body.get("operation_audit") != expected_operation_audit
         or not isinstance(observations, list)
@@ -2429,6 +2443,12 @@ def _verify_observed_execution_receipt(
             "normal_gradient_shard_reductions": numerical_normal_calls,
             "semantic_direction_shard_builds": 1,
             "semantic_gradient_shard_reductions": 1,
+            "concurrent_rhs_shard_launches": (
+                len(sweep_values) if expected_concurrent_static_cuda_shards else 0
+            ),
+            "concurrent_normal_shard_launches": (
+                numerical_normal_calls if expected_concurrent_static_cuda_shards else 0
+            ),
         }
         conservative_peak_bytes = (
             prepared_device_bytes
@@ -2458,9 +2478,7 @@ def _verify_observed_execution_receipt(
                     replay_shard.fixed_cache
                 ),
                 **expected_cache_counters,
-                "qk_transfer_execution": (
-                    "once_per_static_device_shard_serial_requested_device_order"
-                ),
+                "qk_transfer_execution": expected_transfer_mode,
                 "maximum_serial_semantic_probe_tensor_bytes": probe_device_bytes,
                 "conservative_static_shard_workspace_bytes": (shard_workspace_bytes),
                 "conservative_solver_workspace_bytes": solver_workspace_bytes,
@@ -2747,6 +2765,8 @@ class _FixedDeviceTensorCache:
     normal_gradient_shard_reductions: int = 0
     semantic_direction_shard_builds: int = 0
     semantic_gradient_shard_reductions: int = 0
+    concurrent_rhs_shard_launches: int = 0
+    concurrent_normal_shard_launches: int = 0
 
 
 def _build_fixed_device_tensor_cache(
@@ -2880,6 +2900,75 @@ def _static_device_shards(
             )
         )
     return tuple(shards)
+
+
+def _supports_concurrent_static_cuda_devices(devices: Sequence[Any]) -> bool:
+    """Return whether distinct CUDA devices can execute independent shard work."""
+
+    torch = _torch()
+    resolved = tuple(torch.device(device) for device in devices)
+    return (
+        len(resolved) > 1
+        and all(device.type == "cuda" for device in resolved)
+        and len({str(device) for device in resolved}) == len(resolved)
+    )
+
+
+def _uses_concurrent_static_cuda_shards(
+    shards: Sequence[_StaticDeviceShard],
+) -> bool:
+    return _supports_concurrent_static_cuda_devices(
+        tuple(shard.device for shard in shards)
+    )
+
+
+def _static_shard_concurrency_mode(concurrent: bool) -> str:
+    if concurrent:
+        return "thread_barrier_concurrent_static_cuda_shards"
+    return "serial_static_device_shards"
+
+
+def _static_shard_transfer_mode(concurrent: bool) -> str:
+    if concurrent:
+        return (
+            "one_local_accumulation_per_concurrent_static_cuda_shard_then_"
+            "canonical_requested_device_reduction"
+        )
+    return "once_per_static_device_shard_serial_requested_device_order"
+
+
+def _execute_static_device_shards(
+    shards: Sequence[_StaticDeviceShard],
+    operation: Any,
+) -> tuple[Any, ...]:
+    """Launch independent CUDA shards together and return canonical-order results."""
+
+    ordered = tuple(shards)
+    if not _uses_concurrent_static_cuda_shards(ordered):
+        return tuple(operation(shard) for shard in ordered)
+
+    torch = _torch()
+    start_barrier = Barrier(len(ordered))
+
+    def _worker(shard: _StaticDeviceShard) -> Any:
+        start_barrier.wait()
+        with torch.no_grad():
+            if shard.device.type != "cuda":  # test-only forced-concurrency path
+                return operation(shard)
+            with torch.cuda.device(shard.device):
+                result = operation(shard)
+                # A returned tensor is not evidence that queued CUDA work completed.
+                # Synchronize each independent device before canonical reduction.
+                torch.cuda.synchronize(shard.device)
+                return result
+
+    with ThreadPoolExecutor(
+        max_workers=len(ordered),
+        thread_name_prefix="lfm2-endpoint-shard",
+    ) as executor:
+        futures = tuple(executor.submit(_worker, shard) for shard in ordered)
+        # Consume in authenticated shard order, independent of completion order.
+        return tuple(future.result() for future in futures)
 
 
 def _fixed_device_cache_receipt(
@@ -3601,11 +3690,23 @@ class Lfm2EndpointQkLinearOperator:
         torch = _torch()
         query = torch.zeros(self.query_shape, device=self.device, dtype=torch.float32)
         key = torch.zeros(self.key_shape, device=self.device, dtype=torch.float32)
-        for shard in self.shards:
-            shard_query, shard_key = self._accumulate_shard_vjp(
-                shard,
-                cotangents,
-            )
+        concurrent = _uses_concurrent_static_cuda_shards(self.shards)
+
+        def _accumulate(shard: _StaticDeviceShard) -> tuple[Any, Any]:
+            shard_query, shard_key = self._accumulate_shard_vjp(shard, cotangents)
+            if concurrent:
+                if reduction_kind == "rhs":
+                    shard.fixed_cache.concurrent_rhs_shard_launches += 1
+                else:
+                    shard.fixed_cache.concurrent_normal_shard_launches += 1
+            return shard_query, shard_key
+
+        shard_gradients = _execute_static_device_shards(self.shards, _accumulate)
+        for shard, (shard_query, shard_key) in zip(
+            self.shards,
+            shard_gradients,
+            strict=True,
+        ):
             if shard.device == self.device:
                 query.add_(shard_query)
                 key.add_(shard_key)
@@ -3701,7 +3802,9 @@ class Lfm2EndpointQkLinearOperator:
         delta_query, delta_key = self.unpack(vector)
         query = torch.zeros(self.query_shape, device=self.device, dtype=torch.float32)
         key = torch.zeros(self.key_shape, device=self.device, dtype=torch.float32)
-        for shard in self.shards:
+        concurrent = _uses_concurrent_static_cuda_shards(self.shards)
+
+        def _accumulate_normal(shard: _StaticDeviceShard) -> tuple[Any, Any]:
             shard_query, shard_key = self._broadcast_direction(
                 shard,
                 delta_query,
@@ -3745,6 +3848,19 @@ class Lfm2EndpointQkLinearOperator:
                 )
                 shard_query_gradient.add_(query_delta)
                 shard_key_gradient.add_(key_delta)
+            if concurrent:
+                shard.fixed_cache.concurrent_normal_shard_launches += 1
+            return shard_query_gradient, shard_key_gradient
+
+        shard_gradients = _execute_static_device_shards(
+            self.shards,
+            _accumulate_normal,
+        )
+        for shard, (shard_query_gradient, shard_key_gradient) in zip(
+            self.shards,
+            shard_gradients,
+            strict=True,
+        ):
             if shard.device == self.device:
                 query.add_(shard_query_gradient)
                 key.add_(shard_key_gradient)
