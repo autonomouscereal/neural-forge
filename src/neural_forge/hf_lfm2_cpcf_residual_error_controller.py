@@ -39,12 +39,83 @@ from neural_forge.hf_lfm2_cpcf_model_compiler import (
 LFM2_CPCF_RESIDUAL_ERROR_CONTROLLER_SCHEMA = (
     "neural-forge-lfm2-cpcf-residual-error-controller-v1"
 )
+LFM2_CPCF_POST_OPERATOR_TRANSPORT_POLICY_SCHEMA = (
+    "neural-forge-lfm2-cpcf-post-operator-transport-policy-v1"
+)
+LFM2_CPCF_POST_OPERATOR_TRANSPORT_PRODUCTION_SCHEMA = (
+    "neural-forge-lfm2-cpcf-post-operator-transport-production-v1"
+)
+LFM2_CPCF_POST_OPERATOR_TRANSPORT_PROFILE_ID = (
+    "endpoint-residual-two-sided-sequential-terminal-w2-v1"
+)
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _CONTROL_SPLITS = ("fit", "selection")
 
 
 class Lfm2CpcfResidualErrorControllerError(ValueError):
     """The post-operator chart-transport contract is not authenticated."""
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfPostOperatorTransportPolicy:
+    """Exact production authorization for the fit-only upstream transport."""
+
+    profile_id: str = LFM2_CPCF_POST_OPERATOR_TRANSPORT_PROFILE_ID
+    alignment_tolerance: float = 1e-12
+    orthogonality_tolerance: float = 1e-10
+    preservation_tolerance: float = 1e-10
+
+    def __post_init__(self) -> None:
+        if self.profile_id != LFM2_CPCF_POST_OPERATOR_TRANSPORT_PROFILE_ID:
+            raise Lfm2CpcfResidualErrorControllerError(
+                "Unknown production post-operator transport profile."
+            )
+        for name in (
+            "alignment_tolerance",
+            "orthogonality_tolerance",
+            "preservation_tolerance",
+        ):
+            value = getattr(self, name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or float(value) < 0.0
+            ):
+                raise Lfm2CpcfResidualErrorControllerError(
+                    f"{name} must be nonnegative and finite."
+                )
+
+    def as_dict(self) -> dict[str, Any]:
+        body = {
+            "schema": LFM2_CPCF_POST_OPERATOR_TRANSPORT_POLICY_SCHEMA,
+            "profile_id": self.profile_id,
+            "alignment_tolerance": float(self.alignment_tolerance),
+            "orthogonality_tolerance": float(self.orthogonality_tolerance),
+            "preservation_tolerance": float(self.preservation_tolerance),
+            "fit_split_only": True,
+            "selection_read_after_freeze_only": True,
+            "validation_rows_read": 0,
+            "one_closed_form_orthogonal_procrustes": True,
+            "post_layer_chart_unchanged": True,
+            "automatic_accept_reject_controller": False,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        return {**body, "authentication_sha256": _sha256(body)}
+
+    @property
+    def authentication_sha256(self) -> str:
+        return self.as_dict()["authentication_sha256"]
+
+    def verify_authentication(self) -> bool:
+        document = self.as_dict()
+        body = dict(document)
+        claimed = body.pop("authentication_sha256")
+        return claimed == _sha256(body)
 
 
 def _torch() -> Any:
@@ -475,6 +546,8 @@ class Lfm2CpcfResidualErrorControllerResult:
 def fit_lfm2_cpcf_post_operator_chart_transport(
     input_bank: Lfm2CpcfPhaseStateBank,
     boundary_charts: Lfm2CpcfLayerBoundaryCharts,
+    *,
+    _production_policy: Lfm2CpcfPostOperatorTransportPolicy | None = None,
 ) -> Lfm2CpcfResidualErrorControllerResult:
     """Freeze a fit-only chart transport, then evaluate selection once."""
 
@@ -482,6 +555,14 @@ def fit_lfm2_cpcf_post_operator_chart_transport(
         raise TypeError("input_bank must be Lfm2CpcfPhaseStateBank.")
     if not isinstance(boundary_charts, Lfm2CpcfLayerBoundaryCharts):
         raise TypeError("boundary_charts must be Lfm2CpcfLayerBoundaryCharts.")
+    if _production_policy is not None and (
+        type(_production_policy) is not Lfm2CpcfPostOperatorTransportPolicy
+        or not _production_policy.verify_authentication()
+    ):
+        raise TypeError(
+            "_production_policy must be the exact authenticated "
+            "Lfm2CpcfPostOperatorTransportPolicy."
+        )
     if (
         input_bank.layer_index != boundary_charts.layer_index
         or input_bank.hidden_size != boundary_charts.target_width
@@ -521,12 +602,24 @@ def fit_lfm2_cpcf_post_operator_chart_transport(
         "lfm2-cpcf-post-operator-chart-transport/fit/"
         + fit_lineage["row_lineage_sha256"]
     )
+    tolerance_kwargs = (
+        {}
+        if _production_policy is None
+        else {
+            "alignment_tolerance": float(_production_policy.alignment_tolerance),
+            "orthogonality_tolerance": float(
+                _production_policy.orthogonality_tolerance
+            ),
+            "preservation_tolerance": float(_production_policy.preservation_tolerance),
+        }
+    )
     transport = fit_cpcf_orthogonal_chart_transport(
         boundary_charts.post_operator,
         fit_actual_child_rows=fit_actual,
         fit_provenance=fit_provenance,
         fit_parent_states=fit_parent,
         fit_weights=fit_weights,
+        **tolerance_kwargs,
     )
     if transport.chart is None:
         raise Lfm2CpcfResidualErrorControllerError(
@@ -621,9 +714,18 @@ def fit_lfm2_cpcf_post_operator_chart_transport(
             "Transport did not preserve decoded state and feature predictions."
         )
 
+    production_enabled = _production_policy is not None
     body = {
-        "schema": LFM2_CPCF_RESIDUAL_ERROR_CONTROLLER_SCHEMA,
-        "component": "fit_only_post_operator_chart_transport_shadow",
+        "schema": (
+            LFM2_CPCF_POST_OPERATOR_TRANSPORT_PRODUCTION_SCHEMA
+            if production_enabled
+            else LFM2_CPCF_RESIDUAL_ERROR_CONTROLLER_SCHEMA
+        ),
+        "component": (
+            "fit_only_post_operator_chart_transport"
+            if production_enabled
+            else "fit_only_post_operator_chart_transport_shadow"
+        ),
         "layer_index": boundary_charts.layer_index,
         "operator_kind": boundary_charts.operator_kind,
         "input_boundary": input_bank.boundary,
@@ -656,9 +758,7 @@ def fit_lfm2_cpcf_post_operator_chart_transport(
         "fit_required_write_rms_before": (
             transport.report["required_write_rms_before"]
         ),
-        "fit_required_write_rms_after": (
-            transport.report["required_write_rms_after"]
-        ),
+        "fit_required_write_rms_after": (transport.report["required_write_rms_after"]),
         "fit_required_write_rms_reduction": (
             transport.report["required_write_rms_reduction"]
         ),
@@ -671,8 +771,7 @@ def fit_lfm2_cpcf_post_operator_chart_transport(
             selection_before_rmse - selection_after_rmse
         ),
         "selection_required_write_rms_reduction_fraction": (
-            (selection_before_rmse - selection_after_rmse)
-            / selection_before_rmse
+            (selection_before_rmse - selection_after_rmse) / selection_before_rmse
             if selection_before_rmse > 1e-30
             else 0.0
         ),
@@ -680,12 +779,8 @@ def fit_lfm2_cpcf_post_operator_chart_transport(
             transport.report["effective_cross_covariance_rank"]
         ),
         "alignment_tolerance": transport.report["alignment_tolerance"],
-        "orthogonality_tolerance": (
-            transport.report["orthogonality_tolerance"]
-        ),
-        "preservation_tolerance": (
-            transport.report["preservation_tolerance"]
-        ),
+        "orthogonality_tolerance": (transport.report["orthogonality_tolerance"]),
+        "preservation_tolerance": (transport.report["preservation_tolerance"]),
         "orthogonality_max_abs_error": (
             transport.report["orthogonality_max_abs_error"]
         ),
@@ -693,9 +788,7 @@ def fit_lfm2_cpcf_post_operator_chart_transport(
             transport.report["decode_invariance_max_abs_error"]
         ),
         "feature_predictor_invariance_max_abs_error": (
-            transport.report[
-                "feature_predictor_invariance_max_abs_error"
-            ]
+            transport.report["feature_predictor_invariance_max_abs_error"]
         ),
         "validation_rows_read": 0,
         "validation_used_by_solver": False,
@@ -718,9 +811,15 @@ def fit_lfm2_cpcf_post_operator_chart_transport(
         "sparsity_introduced": False,
         "parent_sidecar_required": False,
         "automatic_retry_or_retuning_performed": False,
-        "forced_shadow_for_controlled_comparison": True,
+        "forced_shadow_for_controlled_comparison": not production_enabled,
         "automatic_accept_reject_controller": False,
     }
+    if production_enabled:
+        body["production_profile_authorized"] = True
+        body["post_operator_transport_policy"] = _production_policy.as_dict()
+        body["post_operator_transport_policy_sha256"] = (
+            _production_policy.authentication_sha256
+        )
     report = MappingProxyType({**body, "report_sha256": _sha256(body)})
     return Lfm2CpcfResidualErrorControllerResult(
         boundary_charts=transported_charts,
@@ -747,10 +846,38 @@ def apply_lfm2_cpcf_post_operator_chart_transport_shadow(
     )
 
 
+def fit_lfm2_cpcf_post_operator_chart_transport_for_profile(
+    input_bank: Lfm2CpcfPhaseStateBank,
+    boundary_charts: Lfm2CpcfLayerBoundaryCharts,
+    *,
+    policy: Lfm2CpcfPostOperatorTransportPolicy,
+) -> Lfm2CpcfResidualErrorControllerResult:
+    """Apply the production transport under one exact authenticated policy."""
+
+    if (
+        type(policy) is not Lfm2CpcfPostOperatorTransportPolicy
+        or not policy.verify_authentication()
+    ):
+        raise TypeError(
+            "policy must be the exact authenticated "
+            "Lfm2CpcfPostOperatorTransportPolicy."
+        )
+    return fit_lfm2_cpcf_post_operator_chart_transport(
+        input_bank,
+        boundary_charts,
+        _production_policy=policy,
+    )
+
+
 __all__ = [
     "LFM2_CPCF_RESIDUAL_ERROR_CONTROLLER_SCHEMA",
+    "LFM2_CPCF_POST_OPERATOR_TRANSPORT_POLICY_SCHEMA",
+    "LFM2_CPCF_POST_OPERATOR_TRANSPORT_PRODUCTION_SCHEMA",
+    "LFM2_CPCF_POST_OPERATOR_TRANSPORT_PROFILE_ID",
+    "Lfm2CpcfPostOperatorTransportPolicy",
     "Lfm2CpcfResidualErrorControllerError",
     "Lfm2CpcfResidualErrorControllerResult",
     "apply_lfm2_cpcf_post_operator_chart_transport_shadow",
     "fit_lfm2_cpcf_post_operator_chart_transport",
+    "fit_lfm2_cpcf_post_operator_chart_transport_for_profile",
 ]

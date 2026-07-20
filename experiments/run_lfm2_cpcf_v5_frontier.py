@@ -37,6 +37,7 @@ if TYPE_CHECKING:
         V5AttentionSequentialTransportRunnerProfile,
         V5ComposedQkAttentionRunnerProfile,
         V5EndpointResidualAttentionRunnerProfile,
+        V5EndpointSequentialTerminalActionRunnerProfile,
         V5EndpointTerminalActionRunnerProfile,
     )
 
@@ -58,9 +59,7 @@ SUPERVISOR_SCHEMA = "neural-forge-lfm2-cpcf-v5-frontier-supervisor-v1"
 LANE_SCHEMA = "neural-forge-lfm2-cpcf-v5-frontier-supervisor-lane-v1"
 COMMAND_SCHEMA = "neural-forge-lfm2-cpcf-v5-frontier-command-v1"
 EXECUTION_SCHEMA = "neural-forge-lfm2-cpcf-v5-frontier-execution-v1"
-FAILURE_EXECUTION_SCHEMA = (
-    "neural-forge-lfm2-cpcf-v5-frontier-execution-failure-v1"
-)
+FAILURE_EXECUTION_SCHEMA = "neural-forge-lfm2-cpcf-v5-frontier-execution-failure-v1"
 DECLARATIVE_RATIOS = (4, 10, 25, 50, 100, 250)
 DEFAULT_RTX3090_GPU_SELECTORS = (
     "GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561",
@@ -68,49 +67,25 @@ DEFAULT_RTX3090_GPU_SELECTORS = (
 )
 
 _DIAGNOSTIC_RUNNER = (
-    _REPOSITORY_ROOT
-    / "experiments"
-    / "run_lfm2_cpcf_v5_selective_blank_fold.py"
+    _REPOSITORY_ROOT / "experiments" / "run_lfm2_cpcf_v5_selective_blank_fold.py"
 )
-_BLANK_RUNNER = (
-    _REPOSITORY_ROOT / "experiments" / "run_lfm2_cpcf_blank_fold.py"
-)
+_BLANK_RUNNER = _REPOSITORY_ROOT / "experiments" / "run_lfm2_cpcf_blank_fold.py"
 _HOLDOUT_CAPTURE = (
-    _REPOSITORY_ROOT
-    / "experiments"
-    / "capture_lfm2_cpcf_holdout_candidate.py"
+    _REPOSITORY_ROOT / "experiments" / "capture_lfm2_cpcf_holdout_candidate.py"
 )
 _POSTHOC_EVALUATOR = (
-    _REPOSITORY_ROOT
-    / "experiments"
-    / "evaluate_lfm2_intelligence_retention.py"
+    _REPOSITORY_ROOT / "experiments" / "evaluate_lfm2_intelligence_retention.py"
 )
-_GPU_PARITY_RECEIPT = (
-    _REPOSITORY_ROOT / "reports" / "2a80198-two-rtx3090-bf16.json"
-)
+_GPU_PARITY_RECEIPT = _REPOSITORY_ROOT / "reports" / "2a80198-two-rtx3090-bf16.json"
 _RESIDUAL_RUNNER = (
-    _REPOSITORY_ROOT
-    / "experiments"
-    / "run_lfm2_residual_attention_fold.py"
+    _REPOSITORY_ROOT / "experiments" / "run_lfm2_residual_attention_fold.py"
 )
-_FRONTIER_SOURCE = (
-    _SOURCE_ROOT
-    / "neural_forge"
-    / "dynamic_lfm2_cpcf_v5_frontier.py"
-)
-_CAPTURE_SOURCE = (
-    _SOURCE_ROOT / "neural_forge" / "dynamic_candidate_capture.py"
-)
+_FRONTIER_SOURCE = _SOURCE_ROOT / "neural_forge" / "dynamic_lfm2_cpcf_v5_frontier.py"
+_CAPTURE_SOURCE = _SOURCE_ROOT / "neural_forge" / "dynamic_candidate_capture.py"
 _LFM2_QUARANTINE_SOURCE = (
-    _SOURCE_ROOT
-    / "neural_forge"
-    / "hf_lfm2_cpcf_v5_quarantine.py"
+    _SOURCE_ROOT / "neural_forge" / "hf_lfm2_cpcf_v5_quarantine.py"
 )
-_COMPILER_SOURCE = (
-    _SOURCE_ROOT
-    / "neural_forge"
-    / "hf_lfm2_cpcf_v5_model_compiler.py"
-)
+_COMPILER_SOURCE = _SOURCE_ROOT / "neural_forge" / "hf_lfm2_cpcf_v5_model_compiler.py"
 _FOLD_ONLY_RUNTIME_GUARD_SOURCE = (
     _SOURCE_ROOT / "neural_forge" / "dynamic_fold_executor.py"
 )
@@ -121,29 +96,27 @@ _INTELLIGENCE_HOLDOUT_SOURCE = (
     _SOURCE_ROOT / "neural_forge" / "hf_lfm2_intelligence_holdout.py"
 )
 _SELECTIVE_EVIDENCE_SOURCE = (
-    _SOURCE_ROOT
-    / "neural_forge"
-    / "hf_lfm2_cpcf_selective_evidence.py"
+    _SOURCE_ROOT / "neural_forge" / "hf_lfm2_cpcf_selective_evidence.py"
 )
 _CATALOG_ARTIFACT_SOURCE = (
-    _SOURCE_ROOT
-    / "neural_forge"
-    / "dynamic_evidence_catalog_artifact.py"
+    _SOURCE_ROOT / "neural_forge" / "dynamic_evidence_catalog_artifact.py"
 )
 _TERMINAL_ACTION_POLICY_SOURCE = (
     _SOURCE_ROOT / "neural_forge" / "hf_lfm2_cpcf_terminal_action_residual.py"
 )
 _TERMINAL_ACTION_INTEGRATION_SOURCE = (
-    _SOURCE_ROOT
-    / "neural_forge"
-    / "hf_lfm2_cpcf_v5_terminal_action_integration.py"
+    _SOURCE_ROOT / "neural_forge" / "hf_lfm2_cpcf_v5_terminal_action_integration.py"
+)
+_POST_OPERATOR_TRANSPORT_SOURCE = (
+    _SOURCE_ROOT / "neural_forge" / "hf_lfm2_cpcf_residual_error_controller.py"
+)
+_SEQUENTIAL_BOUNDARY_TRANSPORT_SOURCE = (
+    _SOURCE_ROOT / "neural_forge" / "hf_cpcf_sequential_boundary_transport.py"
 )
 
 _SHA256 = frozenset("0123456789abcdef")
 _IDENTIFIER_CHARACTERS = frozenset(
-    "abcdefghijklmnopqrstuvwxyz"
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "0123456789_.-"
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-"
 )
 _GIB = 1024**3
 
@@ -193,9 +166,7 @@ def _digest(value: Any, name: str) -> str:
 
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{name} must be a positive integer."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{name} must be a positive integer.")
     return value
 
 
@@ -233,12 +204,7 @@ def _identifier(value: Any, name: str) -> str:
 
 def _path_text(value: str | os.PathLike[str], name: str) -> str:
     raw = os.fspath(value)
-    if (
-        not raw
-        or "://" in raw
-        or raw.startswith("\\\\")
-        or raw.startswith("//")
-    ):
+    if not raw or "://" in raw or raw.startswith("\\\\") or raw.startswith("//"):
         raise Lfm2CpcfV5FrontierSupervisorError(
             f"{name} must be an explicit local path."
         )
@@ -254,15 +220,11 @@ def _existing_local_path(
     raw = _path_text(value, name)
     lexical = Path(raw).expanduser().absolute()
     if lexical.is_symlink():
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{name} cannot be a symbolic link."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{name} cannot be a symbolic link.")
     try:
         result = lexical.resolve(strict=True)
     except OSError as exc:
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{name} does not exist."
-        ) from exc
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{name} does not exist.") from exc
     valid = result.is_dir() if directory else result.is_file()
     if not valid:
         expected = "directory" if directory else "file"
@@ -280,9 +242,7 @@ def _new_local_root(
     raw = _path_text(value, name)
     lexical = Path(raw).expanduser().absolute()
     if lexical.exists() and lexical.is_symlink():
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{name} cannot be a symbolic link."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{name} cannot be a symbolic link.")
     ancestor = lexical
     while not ancestor.exists() and ancestor != ancestor.parent:
         ancestor = ancestor.parent
@@ -301,13 +261,9 @@ def _local_file_target(
     raw = _path_text(value, name)
     lexical = Path(raw).expanduser().absolute()
     if lexical.is_symlink():
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{name} cannot be a symbolic link."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{name} cannot be a symbolic link.")
     if lexical.exists() and not lexical.is_file():
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{name} must be a regular file path."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{name} must be a regular file path.")
     ancestor = lexical.parent
     while not ancestor.exists() and ancestor != ancestor.parent:
         ancestor = ancestor.parent
@@ -333,18 +289,12 @@ def _assert_catalog_store_disjoint(
     *,
     roots: Mapping[str, Path],
 ) -> None:
-    overlaps = [
-        name
-        for name, path in roots.items()
-        if _paths_overlap(store, path)
-    ]
+    overlaps = [name for name, path in roots.items() if _paths_overlap(store, path)]
     if overlaps:
         raise Lfm2CpcfV5FrontierSupervisorError(
             "selective catalog store cannot equal, contain, or be contained "
             "by protected model, tokenizer, trace, work, resume, or "
-            "quarantine roots: "
-            + ", ".join(sorted(overlaps))
-            + "."
+            "quarantine roots: " + ", ".join(sorted(overlaps)) + "."
         )
 
 
@@ -353,11 +303,7 @@ def _assert_catalog_receipt_disjoint(
     *,
     roots: Mapping[str, Path],
 ) -> None:
-    overlaps = [
-        name
-        for name, path in roots.items()
-        if _paths_overlap(receipt, path)
-    ]
+    overlaps = [name for name, path in roots.items() if _paths_overlap(receipt, path)]
     if overlaps:
         raise Lfm2CpcfV5FrontierSupervisorError(
             "selective catalog receipt cannot equal, contain, or be contained "
@@ -376,9 +322,7 @@ def _freeze_mapping(
     if value is None:
         return MappingProxyType({})
     if not isinstance(value, Mapping):
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{name} must be a mapping."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{name} must be a mapping.")
     return MappingProxyType(dict(value))
 
 
@@ -407,10 +351,8 @@ def _attention_profile_document(
         "attention transport profile SHA-256",
     )
     if (
-        body.get("schema")
-        != ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_SCHEMA
-        or body.get("profile_id")
-        != ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID
+        body.get("schema") != ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_SCHEMA
+        or body.get("profile_id") != ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID
         or _sha(body) != claimed
         or document != value.as_dict()
     ):
@@ -473,8 +415,7 @@ def _composed_qk_profile_document(
 
     if type(value) is not V5ComposedQkAttentionRunnerProfile:
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "composed_qk_attention_profile must be the exact typed V5 "
-            "runner profile."
+            "composed_qk_attention_profile must be the exact typed V5 runner profile."
         )
     document = value.as_dict()
     body = dict(document)
@@ -546,10 +487,8 @@ def _endpoint_residual_profile_document(
         "endpoint-residual attention profile SHA-256",
     )
     if (
-        body.get("schema")
-        != ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_SCHEMA
-        or body.get("profile_id")
-        != ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID
+        body.get("schema") != ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_SCHEMA
+        or body.get("profile_id") != ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID
         or _sha(body) != claimed
         or document != value.as_dict()
     ):
@@ -655,20 +594,95 @@ def _endpoint_terminal_profile_from_document(
     return profile
 
 
+def _endpoint_sequential_terminal_profile_document(
+    value: V5EndpointSequentialTerminalActionRunnerProfile | None,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_RUNNER_PROFILE_ID,
+        ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_RUNNER_PROFILE_SCHEMA,
+        V5EndpointSequentialTerminalActionRunnerProfile,
+    )
+
+    if type(value) is not V5EndpointSequentialTerminalActionRunnerProfile:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "endpoint_sequential_terminal_action_profile must be the exact "
+            "typed V5 runner profile."
+        )
+    document = value.as_dict()
+    body = dict(document)
+    claimed = _digest(
+        body.pop("profile_sha256", None),
+        "endpoint sequential terminal-action profile SHA-256",
+    )
+    if (
+        body.get("schema") != ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_RUNNER_PROFILE_SCHEMA
+        or body.get("profile_id")
+        != ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_RUNNER_PROFILE_ID
+        or _sha(body) != claimed
+        or document != value.as_dict()
+        or body.get("post_operator_transport_source_sha256")
+        != _file_sha256(_POST_OPERATOR_TRANSPORT_SOURCE)
+        or body.get("sequential_boundary_transport_source_sha256")
+        != _file_sha256(_SEQUENTIAL_BOUNDARY_TRANSPORT_SOURCE)
+        or body.get("terminal_action_policy_source_sha256")
+        != _file_sha256(_TERMINAL_ACTION_POLICY_SOURCE)
+        or body.get("terminal_action_integration_source_sha256")
+        != _file_sha256(_TERMINAL_ACTION_INTEGRATION_SOURCE)
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Endpoint sequential terminal-action profile schema, sources, "
+            "or seal are invalid."
+        )
+    return dict(document)
+
+
+def _endpoint_sequential_terminal_profile_from_document(
+    value: Any,
+    *,
+    name: str,
+) -> V5EndpointSequentialTerminalActionRunnerProfile:
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} must be one sealed endpoint sequential terminal-action profile."
+        )
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        V5EndpointSequentialTerminalActionRunnerProfile,
+    )
+
+    try:
+        profile = V5EndpointSequentialTerminalActionRunnerProfile(
+            profile_id=value.get("profile_id"),
+        )
+    except Exception as exc:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} names an unknown endpoint sequential terminal-action profile."
+        ) from exc
+    expected = _endpoint_sequential_terminal_profile_document(profile)
+    if expected is None or dict(value) != expected:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} differs from the exact typed endpoint sequential "
+            "terminal-action profile."
+        )
+    return profile
+
+
 def _active_profile_scope_component(
     config: FrontierSupervisorConfig,
 ) -> str | None:
     attention = _attention_profile_scope_component(
         config.attention_sequential_transport_profile
     )
-    composed = _composed_qk_profile_document(
-        config.composed_qk_attention_profile
-    )
+    composed = _composed_qk_profile_document(config.composed_qk_attention_profile)
     endpoint = _endpoint_residual_profile_document(
         config.endpoint_residual_attention_profile
     )
     terminal = _endpoint_terminal_profile_document(
         config.endpoint_terminal_action_profile
+    )
+    sequential_terminal = _endpoint_sequential_terminal_profile_document(
+        config.endpoint_sequential_terminal_action_profile
     )
     if attention is not None:
         return attention
@@ -678,6 +692,11 @@ def _active_profile_scope_component(
         return f"endpoint-residual-profile-{endpoint['profile_sha256'][:16]}"
     if terminal is not None:
         return f"endpoint-terminal-profile-{terminal['profile_sha256'][:16]}"
+    if sequential_terminal is not None:
+        return (
+            "endpoint-sequential-terminal-profile-"
+            f"{sequential_terminal['profile_sha256'][:16]}"
+        )
     return None
 
 
@@ -732,8 +751,7 @@ class FrontierRuntimeLimits:
             len(selectors) != 2
             or len(set(selectors)) != 2
             or any(
-                not isinstance(value, str) or not value.strip()
-                for value in selectors
+                not isinstance(value, str) or not value.strip() for value in selectors
             )
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
@@ -748,15 +766,9 @@ class FrontierRuntimeLimits:
     def as_dict(self) -> dict[str, Any]:
         return {
             "maximum_process_rss_gib": self.maximum_process_rss_gib,
-            "maximum_process_rss_bytes": int(
-                self.maximum_process_rss_gib * _GIB
-            ),
-            "maximum_logical_resident_gib": (
-                self.maximum_logical_resident_gib
-            ),
-            "maximum_cuda_gib_per_device": (
-                self.maximum_cuda_gib_per_device
-            ),
+            "maximum_process_rss_bytes": int(self.maximum_process_rss_gib * _GIB),
+            "maximum_logical_resident_gib": (self.maximum_logical_resident_gib),
+            "maximum_cuda_gib_per_device": (self.maximum_cuda_gib_per_device),
             "maximum_cuda_bytes_per_device": int(
                 self.maximum_cuda_gib_per_device * _GIB
             ),
@@ -788,13 +800,9 @@ class FrontierSupervisorConfig:
     expected_parent_envelope_file_sha256: str
     lifecycle: Any
     compression_ratios: tuple[int, ...] = DECLARATIVE_RATIOS
-    approved_review_bindings: Mapping[str, Any] = field(
-        default_factory=dict
-    )
+    approved_review_bindings: Mapping[str, Any] = field(default_factory=dict)
     resume_references: Mapping[str, Any] = field(default_factory=dict)
-    runtime_limits: FrontierRuntimeLimits = field(
-        default_factory=FrontierRuntimeLimits
-    )
+    runtime_limits: FrontierRuntimeLimits = field(default_factory=FrontierRuntimeLimits)
     parent_name: str = "LiquidAI-LFM2.5-230M"
     child_name_prefix: str = "lfm2-cpcf-v5"
     blank_seed: int = 0
@@ -803,14 +811,15 @@ class FrontierSupervisorConfig:
     attention_sequential_transport_profile: (
         V5AttentionSequentialTransportRunnerProfile | None
     ) = None
-    composed_qk_attention_profile: (
-        V5ComposedQkAttentionRunnerProfile | None
-    ) = None
+    composed_qk_attention_profile: V5ComposedQkAttentionRunnerProfile | None = None
     endpoint_residual_attention_profile: (
         V5EndpointResidualAttentionRunnerProfile | None
     ) = None
-    endpoint_terminal_action_profile: (
-        V5EndpointTerminalActionRunnerProfile | None
+    endpoint_terminal_action_profile: V5EndpointTerminalActionRunnerProfile | None = (
+        None
+    )
+    endpoint_sequential_terminal_action_profile: (
+        V5EndpointSequentialTerminalActionRunnerProfile | None
     ) = None
     attempt_id: str = "attempt-0001"
     python_executable: str = sys.executable
@@ -866,8 +875,7 @@ class FrontierSupervisorConfig:
             )
         )
         catalog_receipt_candidate = (
-            self.work_directory.parent
-            / "selective-catalog-preparation.json"
+            self.work_directory.parent / "selective-catalog-preparation.json"
             if self.selective_catalog_receipt_json is None
             else self.selective_catalog_receipt_json
         )
@@ -879,12 +887,8 @@ class FrontierSupervisorConfig:
             catalog_store,
             roots={
                 "parent_model_directory": self.parent_model_directory,
-                "donor_tokenizer_directory": (
-                    self.donor_tokenizer_directory
-                ),
-                "target_tokenizer_directory": (
-                    self.target_tokenizer_directory
-                ),
+                "donor_tokenizer_directory": (self.donor_tokenizer_directory),
+                "target_tokenizer_directory": (self.target_tokenizer_directory),
                 "bridge_directory": self.bridge_directory,
                 "trace_cache_directory": self.trace_cache_directory,
                 "work_directory": self.work_directory,
@@ -895,18 +899,12 @@ class FrontierSupervisorConfig:
             catalog_receipt,
             roots={
                 "parent_model_directory": self.parent_model_directory,
-                "donor_tokenizer_directory": (
-                    self.donor_tokenizer_directory
-                ),
-                "target_tokenizer_directory": (
-                    self.target_tokenizer_directory
-                ),
+                "donor_tokenizer_directory": (self.donor_tokenizer_directory),
+                "target_tokenizer_directory": (self.target_tokenizer_directory),
                 "bridge_directory": self.bridge_directory,
                 "trace_cache_directory": self.trace_cache_directory,
                 "trajectory_corpus": self.trajectory_corpus,
-                "trajectory_corpus_parent": (
-                    self.trajectory_corpus.parent
-                ),
+                "trajectory_corpus_parent": (self.trajectory_corpus.parent),
                 "parent_envelope": self.parent_envelope,
                 "parent_envelope_parent": self.parent_envelope.parent,
                 "work_directory": self.work_directory,
@@ -952,10 +950,7 @@ class FrontierSupervisorConfig:
             not ratios
             or len(set(ratios)) != len(ratios)
             or any(value not in DECLARATIVE_RATIOS for value in ratios)
-            or tuple(
-                value for value in DECLARATIVE_RATIOS if value in ratios
-            )
-            != ratios
+            or tuple(value for value in DECLARATIVE_RATIOS if value in ratios) != ratios
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "compression_ratios must be an ordered nonempty subset of "
@@ -982,15 +977,12 @@ class FrontierSupervisorConfig:
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "runtime_limits must be FrontierRuntimeLimits."
             )
-        _attention_profile_document(
-            self.attention_sequential_transport_profile
-        )
+        _attention_profile_document(self.attention_sequential_transport_profile)
         _composed_qk_profile_document(self.composed_qk_attention_profile)
-        _endpoint_residual_profile_document(
-            self.endpoint_residual_attention_profile
-        )
-        _endpoint_terminal_profile_document(
-            self.endpoint_terminal_action_profile
+        _endpoint_residual_profile_document(self.endpoint_residual_attention_profile)
+        _endpoint_terminal_profile_document(self.endpoint_terminal_action_profile)
+        _endpoint_sequential_terminal_profile_document(
+            self.endpoint_sequential_terminal_action_profile
         )
         if (
             sum(
@@ -1000,14 +992,16 @@ class FrontierSupervisorConfig:
                     self.composed_qk_attention_profile,
                     self.endpoint_residual_attention_profile,
                     self.endpoint_terminal_action_profile,
+                    self.endpoint_sequential_terminal_action_profile,
                 )
             )
             > 1
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Attention sequential transport, composed Q/K attention, "
-                "endpoint-residual attention, and endpoint terminal-action "
-                "are mutually exclusive frontier profiles."
+                "endpoint-residual attention, endpoint terminal-action, and "
+                "endpoint sequential terminal-action are mutually exclusive "
+                "frontier profiles."
             )
         for name in ("parent_name", "child_name_prefix"):
             value = getattr(self, name)
@@ -1054,12 +1048,8 @@ class FrontierSupervisorConfig:
     def input_paths(self) -> dict[str, str]:
         return {
             "parent_model_directory": str(self.parent_model_directory),
-            "donor_tokenizer_directory": str(
-                self.donor_tokenizer_directory
-            ),
-            "target_tokenizer_directory": str(
-                self.target_tokenizer_directory
-            ),
+            "donor_tokenizer_directory": str(self.donor_tokenizer_directory),
+            "target_tokenizer_directory": str(self.target_tokenizer_directory),
             "bridge_directory": str(self.bridge_directory),
             "trace_cache_directory": str(self.trace_cache_directory),
             "trajectory_corpus": str(self.trajectory_corpus),
@@ -1067,9 +1057,7 @@ class FrontierSupervisorConfig:
             "selective_catalog_store_directory": str(
                 self.selective_catalog_store_directory
             ),
-            "selective_catalog_receipt_json": str(
-                self.selective_catalog_receipt_json
-            ),
+            "selective_catalog_receipt_json": str(self.selective_catalog_receipt_json),
         }
 
 
@@ -1087,9 +1075,7 @@ class FrontierEvidenceBindings:
     holdout_manifest_sha256: str
     holdout_manifest_document_sha256: str
     holdout_case_count: int
-    selective_catalog_preparation: Mapping[str, Any] = field(
-        default_factory=dict
-    )
+    selective_catalog_preparation: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for name in (
@@ -1138,12 +1124,9 @@ class FrontierEvidenceBindings:
                     f"selective_catalog_preparation.{name}",
                 )
             if (
-                catalog.get("status")
-                != "prepared_authenticated_tensor_free_catalog"
-                or catalog.get("warm_hit_required_for_production_fold")
-                is not True
-                or catalog.get("cold_rebuild_permitted_in_production_fold")
-                is not False
+                catalog.get("status") != "prepared_authenticated_tensor_free_catalog"
+                or catalog.get("warm_hit_required_for_production_fold") is not True
+                or catalog.get("cold_rebuild_permitted_in_production_fold") is not False
             ):
                 raise Lfm2CpcfV5FrontierSupervisorError(
                     "Selective catalog preparation lifecycle is invalid."
@@ -1156,32 +1139,18 @@ class FrontierEvidenceBindings:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "parent_model_identity_sha256": (
-                self.parent_model_identity_sha256
-            ),
-            "donor_tokenizer_package_sha256": (
-                self.donor_tokenizer_package_sha256
-            ),
+            "parent_model_identity_sha256": (self.parent_model_identity_sha256),
+            "donor_tokenizer_package_sha256": (self.donor_tokenizer_package_sha256),
             "cache_sha256": self.cache_sha256,
             "corpus_sha256": self.corpus_sha256,
-            "parent_envelope_file_sha256": (
-                self.parent_envelope_file_sha256
-            ),
+            "parent_envelope_file_sha256": (self.parent_envelope_file_sha256),
             "parent_envelope_sha256": self.parent_envelope_sha256,
-            "parent_envelope_document_sha256": (
-                self.parent_envelope_document_sha256
-            ),
+            "parent_envelope_document_sha256": (self.parent_envelope_document_sha256),
             "holdout_manifest_sha256": self.holdout_manifest_sha256,
-            "holdout_manifest_document_sha256": (
-                self.holdout_manifest_document_sha256
-            ),
+            "holdout_manifest_document_sha256": (self.holdout_manifest_document_sha256),
             "holdout_case_count": self.holdout_case_count,
-            "selective_catalog_preparation": dict(
-                self.selective_catalog_preparation
-            ),
-            "selective_catalog_prepared": bool(
-                self.selective_catalog_preparation
-            ),
+            "selective_catalog_preparation": dict(self.selective_catalog_preparation),
+            "selective_catalog_prepared": bool(self.selective_catalog_preparation),
             "parent_outputs_cached_once": True,
             "parent_trace_generation_permitted": False,
         }
@@ -1221,16 +1190,12 @@ class FrontierLanePaths:
             self.process_manifest_json,
             self.execution_receipt_json,
         )
-        if any(
-            path.exists() or path.is_symlink()
-            for path in create_new_paths
-        ):
+        if any(path.exists() or path.is_symlink() for path in create_new_paths):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "A planned lane path already exists; refusing overwrite."
             )
         resume_exists = (
-            self.resume_directory.exists()
-            or self.resume_directory.is_symlink()
+            self.resume_directory.exists() or self.resume_directory.is_symlink()
         )
         if resume_exists and (
             not self.resume_reopen_allowed
@@ -1296,9 +1261,7 @@ class FrontierSupervisorLane:
             ),
             "realized_compression": lane.exact_compression.as_dict(),
             "selected_candidate_rank": lane.selected_candidate_rank,
-            "selected_candidate_fingerprint": (
-                lane.selected_candidate.fingerprint
-            ),
+            "selected_candidate_fingerprint": (lane.selected_candidate.fingerprint),
             "selected_candidate_configuration": dict(
                 lane.selected_candidate.configuration
             ),
@@ -1343,12 +1306,8 @@ class FrontierSupervisorPlan:
         lanes = tuple(self.lanes)
         if (
             not lanes
-            or any(
-                not isinstance(lane, FrontierSupervisorLane)
-                for lane in lanes
-            )
-            or tuple(lane.ratio for lane in lanes)
-            != self.config.compression_ratios
+            or any(not isinstance(lane, FrontierSupervisorLane) for lane in lanes)
+            or tuple(lane.ratio for lane in lanes) != self.config.compression_ratios
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Supervisor lanes differ from the requested ratios."
@@ -1434,6 +1393,13 @@ class FrontierSupervisorPlan:
         )
         if terminal_profile is not None:
             body["endpoint_terminal_action_profile"] = terminal_profile
+        sequential_terminal_profile = _endpoint_sequential_terminal_profile_document(
+            self.config.endpoint_sequential_terminal_action_profile
+        )
+        if sequential_terminal_profile is not None:
+            body["endpoint_sequential_terminal_action_profile"] = (
+                sequential_terminal_profile
+            )
         return {**body, "plan_sha256": _sha(body)}
 
 
@@ -1461,14 +1427,9 @@ def _source_identities() -> dict[str, str]:
     missing = tuple(name for name, path in sources.items() if not path.is_file())
     if missing:
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "Required supervisor sources are missing: "
-            + ", ".join(missing)
-            + "."
+            "Required supervisor sources are missing: " + ", ".join(missing) + "."
         )
-    return {
-        name: _file_sha256(path)
-        for name, path in sorted(sources.items())
-    }
+    return {name: _file_sha256(path) for name, path in sorted(sources.items())}
 
 
 def _frontier_catalog_runner_config(
@@ -1515,17 +1476,13 @@ def _frontier_catalog_runner_config(
         "--maximum-cuda-gib-per-device",
         str(config.runtime_limits.maximum_cuda_gib_per_device),
         "--minimum-physical-rss-reduction-fraction",
-        str(
-            config.runtime_limits.minimum_physical_rss_reduction_fraction
-        ),
+        str(config.runtime_limits.minimum_physical_rss_reduction_fraction),
         "--selective-catalog-store-directory",
         str(config.selective_catalog_store_directory),
         "--selective-catalog-receipt-json",
         str(config.selective_catalog_receipt_json),
     ]
-    profile = _attention_profile_document(
-        config.attention_sequential_transport_profile
-    )
+    profile = _attention_profile_document(config.attention_sequential_transport_profile)
     if profile is not None:
         arguments.extend(
             (
@@ -1549,6 +1506,9 @@ def _frontier_catalog_runner_config(
     terminal_profile = _endpoint_terminal_profile_document(
         config.endpoint_terminal_action_profile
     )
+    sequential_terminal_profile = _endpoint_sequential_terminal_profile_document(
+        config.endpoint_sequential_terminal_action_profile
+    )
     if endpoint_profile is not None:
         arguments.extend(
             (
@@ -1566,6 +1526,13 @@ def _frontier_catalog_runner_config(
                 terminal_profile["profile_id"],
             )
         )
+    if sequential_terminal_profile is not None:
+        arguments.extend(
+            (
+                "--endpoint-sequential-terminal-action-profile",
+                sequential_terminal_profile["profile_id"],
+            )
+        )
     if prepare_only:
         arguments.append("--prepare-selective-catalog-only")
     else:
@@ -1581,9 +1548,7 @@ def _frontier_catalog_runner_config(
                 expected,
             )
         )
-    return runner.config_from_args(
-        runner.build_parser().parse_args(arguments)
-    )
+    return runner.config_from_args(runner.build_parser().parse_args(arguments))
 
 
 def _runner_policy_identity_fields(
@@ -1604,15 +1569,19 @@ def _runner_policy_identity_fields(
     terminal_profile = _endpoint_terminal_profile_document(
         runner_config.endpoint_terminal_action_profile
     )
-    model_identity = runner._configured_model_fold_policy_identity(runner_config)
-    composed_identity = runner._configured_composed_qk_policy_identity(
-        runner_config
+    sequential_terminal_profile = _endpoint_sequential_terminal_profile_document(
+        runner_config.endpoint_sequential_terminal_action_profile
     )
+    model_identity = runner._configured_model_fold_policy_identity(runner_config)
+    composed_identity = runner._configured_composed_qk_policy_identity(runner_config)
     endpoint_identity = runner._configured_endpoint_residual_policy_identity(
         runner_config
     )
-    terminal_identity = (
-        runner._configured_endpoint_terminal_action_policy_identity(
+    terminal_identity = runner._configured_endpoint_terminal_action_policy_identity(
+        runner_config
+    )
+    sequential_terminal_identity = (
+        runner._configured_endpoint_sequential_terminal_action_policy_identity(
             runner_config
         )
     )
@@ -1621,12 +1590,14 @@ def _runner_policy_identity_fields(
         and composed_profile is None
         and endpoint_profile is None
         and terminal_profile is None
+        and sequential_terminal_profile is None
     ):
         if (
             model_identity is not None
             or composed_identity is not None
             or endpoint_identity is not None
             or terminal_identity is not None
+            or sequential_terminal_identity is not None
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Legacy runner config unexpectedly constructed an opt-in "
@@ -1639,6 +1610,7 @@ def _runner_policy_identity_fields(
             or composed_identity is not None
             or endpoint_identity is not None
             or terminal_identity is not None
+            or sequential_terminal_identity is not None
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Attention transport runner config lost or crossed its "
@@ -1651,21 +1623,46 @@ def _runner_policy_identity_fields(
                 "transport profile."
             )
         return fields
+    if sequential_terminal_profile is not None:
+        if (
+            sequential_terminal_identity is None
+            or model_identity is not None
+            or composed_identity is not None
+            or endpoint_identity is not None
+            or terminal_identity is not None
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Endpoint sequential terminal-action runner config lost or "
+                "crossed its exact policy identity."
+            )
+        fields = dict(
+            runner._endpoint_sequential_terminal_action_policy_identity_fields(
+                sequential_terminal_identity
+            )
+        )
+        if (
+            fields.get("endpoint_sequential_terminal_action_profile")
+            != sequential_terminal_profile
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Runner endpoint sequential terminal-action identity differs "
+                "from its typed profile."
+            )
+        return fields
     if terminal_profile is not None:
         if (
             terminal_identity is None
             or model_identity is not None
             or composed_identity is not None
             or endpoint_identity is not None
+            or sequential_terminal_identity is not None
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Endpoint terminal-action runner config lost or crossed its "
                 "exact policy identity."
             )
         fields = dict(
-            runner._endpoint_terminal_action_policy_identity_fields(
-                terminal_identity
-            )
+            runner._endpoint_terminal_action_policy_identity_fields(terminal_identity)
         )
         if fields.get("endpoint_terminal_action_profile") != terminal_profile:
             raise Lfm2CpcfV5FrontierSupervisorError(
@@ -1679,6 +1676,7 @@ def _runner_policy_identity_fields(
             or model_identity is not None
             or composed_identity is not None
             or terminal_identity is not None
+            or sequential_terminal_identity is not None
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Endpoint-residual runner config lost or crossed its exact "
@@ -1689,8 +1687,7 @@ def _runner_policy_identity_fields(
         )
         if fields.get("endpoint_residual_attention_profile") != endpoint_profile:
             raise Lfm2CpcfV5FrontierSupervisorError(
-                "Runner endpoint-residual identity differs from its typed "
-                "profile."
+                "Runner endpoint-residual identity differs from its typed profile."
             )
         return fields
     if (
@@ -1698,14 +1695,12 @@ def _runner_policy_identity_fields(
         or model_identity is not None
         or endpoint_identity is not None
         or terminal_identity is not None
+        or sequential_terminal_identity is not None
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "Composed Q/K runner config lost or crossed its exact policy "
-            "identity."
+            "Composed Q/K runner config lost or crossed its exact policy identity."
         )
-    fields = dict(
-        runner._composed_qk_policy_identity_fields(composed_identity)
-    )
+    fields = dict(runner._composed_qk_policy_identity_fields(composed_identity))
     if fields.get("composed_qk_attention_profile") != composed_profile:
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Runner composed Q/K identity differs from its typed profile."
@@ -1734,6 +1729,7 @@ def authenticate_frontier_catalog_preparation(
             and config.composed_qk_attention_profile is None
             and config.endpoint_residual_attention_profile is None
             and config.endpoint_terminal_action_profile is None
+            and config.endpoint_sequential_terminal_action_profile is None
         ):
             preparation = dict(
                 runner.authenticate_prepared_selective_catalog(
@@ -1764,23 +1760,18 @@ def authenticate_frontier_catalog_preparation(
             )
     except Exception as exc:
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "The shared selective catalog preparation failed exact "
-            "authentication."
+            "The shared selective catalog preparation failed exact authentication."
         ) from exc
     sources = _source_identities()
     expected_source_identities = {
         "dynamic_evidence_catalog_artifact": sources[
             "dynamic_evidence_catalog_artifact"
         ],
-        "hf_lfm2_cpcf_selective_evidence": sources[
-            "lfm2_selective_evidence_provider"
-        ],
+        "hf_lfm2_cpcf_selective_evidence": sources["lfm2_selective_evidence_provider"],
     }
     if (
-        preparation.get("preparation_receipt_sha256")
-        != expected_receipt
-        or preparation.get("source_identities")
-        != expected_source_identities
+        preparation.get("preparation_receipt_sha256") != expected_receipt
+        or preparation.get("source_identities") != expected_source_identities
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
             "The prepared catalog receipt or its source implementation "
@@ -1844,9 +1835,7 @@ def _read_parent_envelope(
         )
     try:
         donor_tokenizer_package_sha256, _donor_tokenizer_files = (
-            fingerprint_bound_local_tokenizer(
-                config.donor_tokenizer_directory
-            )
+            fingerprint_bound_local_tokenizer(config.donor_tokenizer_directory)
         )
     except (Lfm2PosthocEvaluationError, OSError) as exc:
         raise Lfm2CpcfV5FrontierSupervisorError(
@@ -1867,19 +1856,13 @@ def _read_parent_envelope(
         config.parent_envelope,
         expected_envelope_sha256=document["envelope_sha256"],
         expected_manifest_sha256=manifest.manifest_sha256,
-        expected_parent_state_fingerprint=(
-            document["parent_state_fingerprint"]
-        ),
-        expected_parent_model_fingerprint=(
-            document["parent_model_fingerprint"]
-        ),
+        expected_parent_state_fingerprint=(document["parent_state_fingerprint"]),
+        expected_parent_model_fingerprint=(document["parent_model_fingerprint"]),
         expected_tokenizer_fingerprint=document["tokenizer_fingerprint"],
     )
     if (
-        envelope.parent_model_fingerprint
-        != parent_model_identity_sha256
-        or envelope.tokenizer_fingerprint
-        != donor_tokenizer_package_sha256
+        envelope.parent_model_fingerprint != parent_model_identity_sha256
+        or envelope.tokenizer_fingerprint != donor_tokenizer_package_sha256
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Parent holdout envelope and folding trace cache do not share "
@@ -1960,14 +1943,9 @@ def discover_frontier_schedule(
         parent_graph = inspect_model_circuits(
             parent,
             model_name=config.parent_name,
-            tokenizer_fingerprint=(
-                bridge.donor_tokenizer_semantics_sha256
-            ),
+            tokenizer_fingerprint=(bridge.donor_tokenizer_semantics_sha256),
         )
-        if (
-            parent_graph.fingerprint
-            != config.expected_parent_graph_fingerprint
-        ):
+        if parent_graph.fingerprint != config.expected_parent_graph_fingerprint:
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Inspected parent graph differs from its independent pin."
             )
@@ -1977,18 +1955,14 @@ def discover_frontier_schedule(
                 config.expected_parent_graph_fingerprint
             ),
             tokenizer_bridge=bridge,
-            expected_bridge_artifact_sha256=(
-                config.expected_bridge_artifact_sha256
-            ),
+            expected_bridge_artifact_sha256=(config.expected_bridge_artifact_sha256),
             compression_ratios=config.compression_ratios,
             lifecycle=config.lifecycle,
             approved_review_bindings=config.approved_review_bindings,
             resume_references=config.resume_references,
             child_name_prefix=config.child_name_prefix,
             blank_seed=config.blank_seed,
-            maximum_candidates_per_ratio=(
-                config.maximum_candidates_per_ratio
-            ),
+            maximum_candidates_per_ratio=(config.maximum_candidates_per_ratio),
             maximum_parallel_lanes=1,
             minimum_hidden_size=config.minimum_hidden_size,
         )
@@ -2003,14 +1977,10 @@ def discover_frontier_schedule(
     corpus_sha = _file_sha256(config.trajectory_corpus)
     evidence = FrontierEvidenceBindings(
         parent_model_identity_sha256=cache.parent_fingerprint,
-        donor_tokenizer_package_sha256=(
-            envelope.tokenizer_fingerprint
-        ),
+        donor_tokenizer_package_sha256=(envelope.tokenizer_fingerprint),
         cache_sha256=cache.cache_key,
         corpus_sha256=corpus_sha,
-        parent_envelope_file_sha256=(
-            config.expected_parent_envelope_file_sha256
-        ),
+        parent_envelope_file_sha256=(config.expected_parent_envelope_file_sha256),
         parent_envelope_sha256=envelope.envelope_sha256,
         parent_envelope_document_sha256=envelope.document_sha256,
         holdout_manifest_sha256=manifest.manifest_sha256,
@@ -2044,18 +2014,10 @@ def _lane_paths(
         run_directory=run,
         diagnostic_json=run / "diagnostic.json",
         resume_directory=(
-            plan_root
-            / (
-                "resume-"
-                f"{lane.identity.resume_namespace_sha256[:16]}"
-            )
+            plan_root / (f"resume-{lane.identity.resume_namespace_sha256[:16]}")
         ),
         quarantine_directory=(
-            run
-            / (
-                "quarantine-"
-                f"{lane.identity.quarantine_namespace_sha256[:16]}"
-            )
+            run / (f"quarantine-{lane.identity.quarantine_namespace_sha256[:16]}")
         ),
         process_manifest_json=run / "process-manifest.json",
         execution_receipt_json=run / "execution-receipt.json",
@@ -2071,9 +2033,7 @@ def _diagnostic_command(
 ) -> tuple[str, ...]:
     requested = lane.exact_compression.requested_ratio
     if requested.denominator != 1:
-        ratio_text = (
-            f"{requested.numerator}/{requested.denominator}"
-        )
+        ratio_text = f"{requested.numerator}/{requested.denominator}"
     else:
         ratio_text = str(requested.numerator)
     command = [
@@ -2102,9 +2062,7 @@ def _diagnostic_command(
         "--maximum-cuda-gib-per-device",
         str(config.runtime_limits.maximum_cuda_gib_per_device),
         "--minimum-physical-rss-reduction-fraction",
-        str(
-            config.runtime_limits.minimum_physical_rss_reduction_fraction
-        ),
+        str(config.runtime_limits.minimum_physical_rss_reduction_fraction),
         "--model-device",
         "cuda:0",
         "--dtype",
@@ -2128,13 +2086,9 @@ def _diagnostic_command(
         "--selective-catalog-receipt-json",
         str(config.selective_catalog_receipt_json),
         "--expected-selective-catalog-receipt-sha256",
-        evidence.selective_catalog_preparation[
-            "preparation_receipt_sha256"
-        ],
+        evidence.selective_catalog_preparation["preparation_receipt_sha256"],
     ]
-    profile = _attention_profile_document(
-        config.attention_sequential_transport_profile
-    )
+    profile = _attention_profile_document(config.attention_sequential_transport_profile)
     if profile is not None:
         command.extend(
             (
@@ -2158,6 +2112,9 @@ def _diagnostic_command(
     terminal_profile = _endpoint_terminal_profile_document(
         config.endpoint_terminal_action_profile
     )
+    sequential_terminal_profile = _endpoint_sequential_terminal_profile_document(
+        config.endpoint_sequential_terminal_action_profile
+    )
     if endpoint_profile is not None:
         command.extend(
             (
@@ -2170,6 +2127,13 @@ def _diagnostic_command(
             (
                 "--endpoint-terminal-action-profile",
                 terminal_profile["profile_id"],
+            )
+        )
+    if sequential_terminal_profile is not None:
+        command.extend(
+            (
+                "--endpoint-sequential-terminal-action-profile",
+                sequential_terminal_profile["profile_id"],
             )
         )
     if lane.resume_reference is not None:
@@ -2188,9 +2152,7 @@ def _environment(config: FrontierSupervisorConfig) -> dict[str, str]:
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
         "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
-        "CUDA_VISIBLE_DEVICES": ",".join(
-            config.runtime_limits.gpu_selectors
-        ),
+        "CUDA_VISIBLE_DEVICES": ",".join(config.runtime_limits.gpu_selectors),
         "OMP_NUM_THREADS": threads,
         "MKL_NUM_THREADS": threads,
         "OPENBLAS_NUM_THREADS": threads,
@@ -2206,22 +2168,14 @@ def _worker_config_record(
     ratio: int,
 ) -> dict[str, Any]:
     reviews = {
-        key: value.as_dict()
-        for key, value in config.approved_review_bindings.items()
+        key: value.as_dict() for key, value in config.approved_review_bindings.items()
     }
-    resumes = {
-        key: value.as_dict()
-        for key, value in config.resume_references.items()
-    }
+    resumes = {key: value.as_dict() for key, value in config.resume_references.items()}
     record = {
         **config.input_paths(),
         "work_directory": str(config.work_directory),
-        "expected_parent_graph_fingerprint": (
-            config.expected_parent_graph_fingerprint
-        ),
-        "expected_bridge_artifact_sha256": (
-            config.expected_bridge_artifact_sha256
-        ),
+        "expected_parent_graph_fingerprint": (config.expected_parent_graph_fingerprint),
+        "expected_bridge_artifact_sha256": (config.expected_bridge_artifact_sha256),
         "expected_cache_sha256": config.expected_cache_sha256,
         "expected_parent_envelope_file_sha256": (
             config.expected_parent_envelope_file_sha256
@@ -2238,15 +2192,11 @@ def _worker_config_record(
         "child_name_prefix": config.child_name_prefix,
         "blank_seed": config.blank_seed,
         "minimum_hidden_size": config.minimum_hidden_size,
-        "maximum_candidates_per_ratio": (
-            config.maximum_candidates_per_ratio
-        ),
+        "maximum_candidates_per_ratio": (config.maximum_candidates_per_ratio),
         "attempt_id": config.attempt_id,
         "python_executable": config.python_executable,
     }
-    profile = _attention_profile_document(
-        config.attention_sequential_transport_profile
-    )
+    profile = _attention_profile_document(config.attention_sequential_transport_profile)
     if profile is not None:
         record["attention_sequential_transport_profile"] = profile
     composed_profile = _composed_qk_profile_document(
@@ -2264,6 +2214,13 @@ def _worker_config_record(
     )
     if terminal_profile is not None:
         record["endpoint_terminal_action_profile"] = terminal_profile
+    sequential_terminal_profile = _endpoint_sequential_terminal_profile_document(
+        config.endpoint_sequential_terminal_action_profile
+    )
+    if sequential_terminal_profile is not None:
+        record["endpoint_sequential_terminal_action_profile"] = (
+            sequential_terminal_profile
+        )
     return record
 
 
@@ -2311,19 +2268,13 @@ def _capture_template(
             "plan_sha256": lane.target_plan_fingerprint,
             "parent_sha256": evidence.parent_model_identity_sha256,
             "cache_sha256": evidence.cache_sha256,
-            "bridge_sha256": (
-                config.expected_bridge_artifact_sha256
-            ),
+            "bridge_sha256": (config.expected_bridge_artifact_sha256),
             "corpus_sha256": evidence.corpus_sha256,
             "expected_model_state_sha256": (
-                None
-                if reviewed is None
-                else reviewed.approved_candidate_state_sha256
+                None if reviewed is None else reviewed.approved_candidate_state_sha256
             ),
             "expected_output_sha256": (
-                None
-                if reviewed is None
-                else reviewed.approved_candidate_outputs_sha256
+                None if reviewed is None else reviewed.approved_candidate_outputs_sha256
             ),
         },
         "prelaunch_source_bundle_sha256": _sha(dict(source_identities)),
@@ -2343,33 +2294,26 @@ def _capture_template(
         ),
         "required_reuse": {
             "saver_and_reload_alias_logic": (
-                "experiments.run_lfm2_cpcf_blank_fold."
-                "_save_reload_evaluate"
+                "experiments.run_lfm2_cpcf_blank_fold._save_reload_evaluate"
             ),
             "local_loader": (
-                "experiments.run_lfm2_residual_attention_fold."
-                "load_local_lfm2_model"
+                "experiments.run_lfm2_residual_attention_fold.load_local_lfm2_model"
             ),
             "whole_output_generator": (
                 "experiments.capture_lfm2_cpcf_holdout_candidate."
                 "generate_candidate_rows_once"
             ),
             "semantic_evaluator": (
-                "neural_forge.hf_lfm2_intelligence_gate."
-                "evaluate_cached_intelligence"
+                "neural_forge.hf_lfm2_intelligence_gate.evaluate_cached_intelligence"
             ),
             "parent_envelope": str(config.parent_envelope),
-            "holdout_manifest_sha256": (
-                evidence.holdout_manifest_sha256
-            ),
+            "holdout_manifest_sha256": (evidence.holdout_manifest_sha256),
             "per_case_manifest_generation_limits_required": True,
             "arbitrary_global_64_token_cap_forbidden": True,
             "exact_token_matching_is_not_acceptance": True,
         },
     }
-    profile = _attention_profile_document(
-        config.attention_sequential_transport_profile
-    )
+    profile = _attention_profile_document(config.attention_sequential_transport_profile)
     if profile is not None:
         template["attention_sequential_transport_profile"] = profile
     composed_profile = _composed_qk_profile_document(
@@ -2387,6 +2331,13 @@ def _capture_template(
     )
     if terminal_profile is not None:
         template["endpoint_terminal_action_profile"] = terminal_profile
+    sequential_terminal_profile = _endpoint_sequential_terminal_profile_document(
+        config.endpoint_sequential_terminal_action_profile
+    )
+    if sequential_terminal_profile is not None:
+        template["endpoint_sequential_terminal_action_profile"] = (
+            sequential_terminal_profile
+        )
     return template
 
 
@@ -2417,8 +2368,7 @@ def _execution_blockers(ratio: int, lifecycle: str) -> tuple[str, ...]:
             Lfm2CpcfV5QuarantineConsumer
         ):
             blockers.append(
-                "The fixed live-child consumer or quarantine backend is not "
-                "callable."
+                "The fixed live-child consumer or quarantine backend is not callable."
             )
     return tuple(blockers)
 
@@ -2442,9 +2392,7 @@ def build_frontier_supervisor_plan(
         raise TypeError("config must be FrontierSupervisorConfig.")
     if not isinstance(evidence, FrontierEvidenceBindings):
         raise TypeError("evidence must be FrontierEvidenceBindings.")
-    catalog_preparation = dict(
-        evidence.selective_catalog_preparation
-    )
+    catalog_preparation = dict(evidence.selective_catalog_preparation)
     if (
         not catalog_preparation
         or config.expected_selective_catalog_receipt_sha256 is None
@@ -2456,10 +2404,8 @@ def build_frontier_supervisor_plan(
             "selective catalog preparation."
         )
     if (
-        schedule.parent_graph_fingerprint
-        != config.expected_parent_graph_fingerprint
-        or schedule.bridge_artifact_sha256
-        != config.expected_bridge_artifact_sha256
+        schedule.parent_graph_fingerprint != config.expected_parent_graph_fingerprint
+        or schedule.bridge_artifact_sha256 != config.expected_bridge_artifact_sha256
         or schedule.lifecycle is not config.lifecycle
         or schedule.maximum_parallel_lanes != 1
     ):
@@ -2468,19 +2414,19 @@ def build_frontier_supervisor_plan(
             "or one-process-at-a-time policy."
         )
     ratios = tuple(
-        int(lane.exact_compression.requested_ratio)
-        for lane in schedule.lanes
+        int(lane.exact_compression.requested_ratio) for lane in schedule.lanes
     )
-    if any(
-        lane.exact_compression.requested_ratio.denominator != 1
-        for lane in schedule.lanes
-    ) or ratios != config.compression_ratios:
+    if (
+        any(
+            lane.exact_compression.requested_ratio.denominator != 1
+            for lane in schedule.lanes
+        )
+        or ratios != config.compression_ratios
+    ):
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Schedule ratios differ from the declarative supervisor request."
         )
-    profile = _attention_profile_document(
-        config.attention_sequential_transport_profile
-    )
+    profile = _attention_profile_document(config.attention_sequential_transport_profile)
     composed_profile = _composed_qk_profile_document(
         config.composed_qk_attention_profile
     )
@@ -2490,11 +2436,15 @@ def build_frontier_supervisor_plan(
     terminal_profile = _endpoint_terminal_profile_document(
         config.endpoint_terminal_action_profile
     )
+    sequential_terminal_profile = _endpoint_sequential_terminal_profile_document(
+        config.endpoint_sequential_terminal_action_profile
+    )
     if (
         profile is not None
         or composed_profile is not None
         or endpoint_profile is not None
         or terminal_profile is not None
+        or sequential_terminal_profile is not None
     ) and len(ratios) != 1:
         raise Lfm2CpcfV5FrontierSupervisorError(
             "An opt-in attention profile must bind exactly one frontier "
@@ -2555,15 +2505,14 @@ def build_frontier_supervisor_plan(
             or composed_profile is not None
             or endpoint_profile is not None
             or terminal_profile is not None
+            or sequential_terminal_profile is not None
         ):
             from experiments import (
                 run_lfm2_cpcf_v5_selective_blank_fold as runner,
             )
 
             runner_config = runner.config_from_args(
-                runner.build_parser().parse_args(
-                    diagnostic_command[2:]
-                )
+                runner.build_parser().parse_args(diagnostic_command[2:])
             )
             policy_fields = _runner_policy_identity_fields(
                 runner,
@@ -2585,18 +2534,14 @@ def build_frontier_supervisor_plan(
             "schema": COMMAND_SCHEMA,
             "kind": "fixed_quarantine_worker_subprocess_manifest",
             "ratio": ratio,
-            "target_plan_fingerprint": (
-                catalog_lane.target_plan_fingerprint
-            ),
+            "target_plan_fingerprint": (catalog_lane.target_plan_fingerprint),
             "target_unique_parameters": (
                 catalog_lane.exact_compression.target_unique_parameters
             ),
             "selected_candidate_fingerprint": (
                 catalog_lane.selected_candidate.fingerprint
             ),
-            "selected_candidate_rank": (
-                catalog_lane.selected_candidate_rank
-            ),
+            "selected_candidate_rank": (catalog_lane.selected_candidate_rank),
             "command": list(command),
             "diagnostic_runner_command": list(diagnostic_command),
             "environment_overrides": _environment(config),
@@ -2611,12 +2556,8 @@ def build_frontier_supervisor_plan(
             "selective_catalog_authenticated_warm_hit_required": True,
             "selective_catalog_cold_rebuild_permitted": False,
             "schedule_bindings": {
-                "parent_graph_fingerprint": (
-                    schedule.parent_graph_fingerprint
-                ),
-                "bridge_artifact_sha256": (
-                    schedule.bridge_artifact_sha256
-                ),
+                "parent_graph_fingerprint": (schedule.parent_graph_fingerprint),
+                "bridge_artifact_sha256": (schedule.bridge_artifact_sha256),
                 "bridge_profile_sha256": schedule.bridge_profile_sha256,
                 "donor_tokenizer_semantics_sha256": (
                     schedule.donor_tokenizer_semantics_sha256
@@ -2652,6 +2593,8 @@ def build_frontier_supervisor_plan(
             profile is not None
             or composed_profile is not None
             or endpoint_profile is not None
+            or terminal_profile is not None
+            or sequential_terminal_profile is not None
         ):
             command_body.update(policy_fields)
         lanes.append(
@@ -2687,9 +2630,7 @@ def _read_sealed_json(
     name: str,
 ) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{name} is missing or unsafe."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{name} is missing or unsafe.")
     raw = path.read_bytes()
     try:
         payload = json.loads(raw.decode("ascii"))
@@ -2697,10 +2638,7 @@ def _read_sealed_json(
         raise Lfm2CpcfV5FrontierSupervisorError(
             f"{name} is not canonical ASCII JSON."
         ) from exc
-    if (
-        not isinstance(payload, Mapping)
-        or raw != _canonical_json(payload) + b"\n"
-    ):
+    if not isinstance(payload, Mapping) or raw != _canonical_json(payload) + b"\n":
         raise Lfm2CpcfV5FrontierSupervisorError(
             f"{name} is not an exact canonical JSON object."
         )
@@ -2755,18 +2693,15 @@ def _config_from_worker_record(
     value: Any,
 ) -> FrontierSupervisorConfig:
     if not isinstance(value, Mapping):
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            "worker_config must be an object."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError("worker_config must be an object.")
     record = dict(value)
     runtime = record.get("runtime_limits")
     if not isinstance(runtime, Mapping):
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            "worker runtime_limits are missing."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError("worker runtime_limits are missing.")
     from neural_forge.dynamic_lfm2_cpcf_v5_frontier import (
         Lfm2CpcfV5FrontierLifecycle,
     )
+
     profile = (
         None
         if "attention_sequential_transport_profile" not in record
@@ -2799,26 +2734,26 @@ def _config_from_worker_record(
             name="worker endpoint terminal-action profile",
         )
     )
+    sequential_terminal_profile = (
+        None
+        if "endpoint_sequential_terminal_action_profile" not in record
+        else _endpoint_sequential_terminal_profile_from_document(
+            record["endpoint_sequential_terminal_action_profile"],
+            name="worker endpoint sequential terminal-action profile",
+        )
+    )
 
     return FrontierSupervisorConfig(
         parent_model_directory=Path(record["parent_model_directory"]),
-        donor_tokenizer_directory=Path(
-            record["donor_tokenizer_directory"]
-        ),
-        target_tokenizer_directory=Path(
-            record["target_tokenizer_directory"]
-        ),
+        donor_tokenizer_directory=Path(record["donor_tokenizer_directory"]),
+        target_tokenizer_directory=Path(record["target_tokenizer_directory"]),
         bridge_directory=Path(record["bridge_directory"]),
         trace_cache_directory=Path(record["trace_cache_directory"]),
         trajectory_corpus=Path(record["trajectory_corpus"]),
         parent_envelope=Path(record["parent_envelope"]),
         work_directory=Path(record["work_directory"]),
-        expected_parent_graph_fingerprint=record[
-            "expected_parent_graph_fingerprint"
-        ],
-        expected_bridge_artifact_sha256=record[
-            "expected_bridge_artifact_sha256"
-        ],
+        expected_parent_graph_fingerprint=record["expected_parent_graph_fingerprint"],
+        expected_bridge_artifact_sha256=record["expected_bridge_artifact_sha256"],
         expected_cache_sha256=record["expected_cache_sha256"],
         expected_parent_envelope_file_sha256=record[
             "expected_parent_envelope_file_sha256"
@@ -2834,15 +2769,9 @@ def _config_from_worker_record(
             kind="resume_references",
         ),
         runtime_limits=FrontierRuntimeLimits(
-            maximum_process_rss_gib=runtime[
-                "maximum_process_rss_gib"
-            ],
-            maximum_logical_resident_gib=runtime[
-                "maximum_logical_resident_gib"
-            ],
-            maximum_cuda_gib_per_device=runtime[
-                "maximum_cuda_gib_per_device"
-            ],
+            maximum_process_rss_gib=runtime["maximum_process_rss_gib"],
+            maximum_logical_resident_gib=runtime["maximum_logical_resident_gib"],
+            maximum_cuda_gib_per_device=runtime["maximum_cuda_gib_per_device"],
             minimum_physical_rss_reduction_fraction=runtime[
                 "minimum_physical_rss_reduction_fraction"
             ],
@@ -2853,21 +2782,18 @@ def _config_from_worker_record(
         child_name_prefix=record["child_name_prefix"],
         blank_seed=record["blank_seed"],
         minimum_hidden_size=record["minimum_hidden_size"],
-        maximum_candidates_per_ratio=record[
-            "maximum_candidates_per_ratio"
-        ],
+        maximum_candidates_per_ratio=record["maximum_candidates_per_ratio"],
         attention_sequential_transport_profile=profile,
         composed_qk_attention_profile=composed_profile,
         endpoint_residual_attention_profile=endpoint_profile,
         endpoint_terminal_action_profile=terminal_profile,
+        endpoint_sequential_terminal_action_profile=(sequential_terminal_profile),
         attempt_id=record["attempt_id"],
         python_executable=record["python_executable"],
         selective_catalog_store_directory=Path(
             record["selective_catalog_store_directory"]
         ),
-        selective_catalog_receipt_json=Path(
-            record["selective_catalog_receipt_json"]
-        ),
+        selective_catalog_receipt_json=Path(record["selective_catalog_receipt_json"]),
         expected_selective_catalog_receipt_sha256=record[
             "expected_selective_catalog_receipt_sha256"
         ],
@@ -2905,6 +2831,7 @@ def _authenticate_worker_attention_profile(
     composed_key = "composed_qk_attention_profile"
     endpoint_key = "endpoint_residual_attention_profile"
     terminal_key = "endpoint_terminal_action_profile"
+    sequential_terminal_key = "endpoint_sequential_terminal_action_profile"
     expected_attention = _attention_profile_document(
         config.attention_sequential_transport_profile
     )
@@ -2916,6 +2843,9 @@ def _authenticate_worker_attention_profile(
     )
     expected_terminal = _endpoint_terminal_profile_document(
         config.endpoint_terminal_action_profile
+    )
+    expected_sequential_terminal = _endpoint_sequential_terminal_profile_document(
+        config.endpoint_sequential_terminal_action_profile
     )
     runner_attention = _attention_profile_document(
         runner_config.attention_sequential_transport_profile
@@ -2929,6 +2859,9 @@ def _authenticate_worker_attention_profile(
     runner_terminal = _endpoint_terminal_profile_document(
         runner_config.endpoint_terminal_action_profile
     )
+    runner_sequential_terminal = _endpoint_sequential_terminal_profile_document(
+        runner_config.endpoint_sequential_terminal_action_profile
+    )
     worker_record = manifest.get("worker_config")
     capture = manifest.get("quarantine_capture_template")
     if not isinstance(worker_record, Mapping) or not isinstance(capture, Mapping):
@@ -2940,18 +2873,21 @@ def _authenticate_worker_attention_profile(
         *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
         *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
         *tuple(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
+        *tuple(runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
     )
     if (
         expected_attention is None
         and expected_composed is None
         and expected_endpoint is None
         and expected_terminal is None
+        and expected_sequential_terminal is None
     ):
         if (
             runner_attention is not None
             or runner_composed is not None
             or runner_endpoint is not None
             or runner_terminal is not None
+            or runner_sequential_terminal is not None
             or any(
                 key in container
                 for key in (
@@ -2959,6 +2895,7 @@ def _authenticate_worker_attention_profile(
                     composed_key,
                     endpoint_key,
                     terminal_key,
+                    sequential_terminal_key,
                 )
                 for container in (manifest, worker_record, capture)
             )
@@ -2970,64 +2907,130 @@ def _authenticate_worker_attention_profile(
         return MappingProxyType({})
     if expected_attention is not None:
         profile_key = attention_key
-        inactive_keys = (composed_key, endpoint_key, terminal_key)
+        inactive_keys = (
+            composed_key,
+            endpoint_key,
+            terminal_key,
+            sequential_terminal_key,
+        )
         expected = expected_attention
         runner_profile = runner_attention
         inactive_runner_profiles = (
             runner_composed,
             runner_endpoint,
             runner_terminal,
+            runner_sequential_terminal,
         )
         inactive_policy_names = (
             *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
             *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
             *tuple(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
         )
     elif expected_composed is not None:
         profile_key = composed_key
-        inactive_keys = (attention_key, endpoint_key, terminal_key)
+        inactive_keys = (
+            attention_key,
+            endpoint_key,
+            terminal_key,
+            sequential_terminal_key,
+        )
         expected = expected_composed
         runner_profile = runner_composed
         inactive_runner_profiles = (
             runner_attention,
             runner_endpoint,
             runner_terminal,
+            runner_sequential_terminal,
         )
         inactive_policy_names = (
             *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
             *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
             *tuple(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
         )
     elif expected_endpoint is not None:
         profile_key = endpoint_key
-        inactive_keys = (attention_key, composed_key, terminal_key)
+        inactive_keys = (
+            attention_key,
+            composed_key,
+            terminal_key,
+            sequential_terminal_key,
+        )
         expected = expected_endpoint
         runner_profile = runner_endpoint
         inactive_runner_profiles = (
             runner_attention,
             runner_composed,
             runner_terminal,
+            runner_sequential_terminal,
         )
         inactive_policy_names = (
             *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
             *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
             *tuple(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
         )
-    else:
+    elif expected_terminal is not None:
         profile_key = terminal_key
-        inactive_keys = (attention_key, composed_key, endpoint_key)
+        inactive_keys = (
+            attention_key,
+            composed_key,
+            endpoint_key,
+            sequential_terminal_key,
+        )
         expected = expected_terminal
         runner_profile = runner_terminal
         inactive_runner_profiles = (
             runner_attention,
             runner_composed,
             runner_endpoint,
+            runner_sequential_terminal,
         )
         inactive_policy_names = (
             *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
             *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
             *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
         )
+    else:
+        profile_key = sequential_terminal_key
+        inactive_keys = (
+            attention_key,
+            composed_key,
+            endpoint_key,
+            terminal_key,
+        )
+        expected = expected_sequential_terminal
+        runner_profile = runner_sequential_terminal
+        inactive_runner_profiles = (
+            runner_attention,
+            runner_composed,
+            runner_endpoint,
+            runner_terminal,
+        )
+        inactive_policy_names = (
+            *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
+        )
+    active_policy_names_by_profile = {
+        attention_key: set(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
+        composed_key: set(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
+        endpoint_key: set(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+        terminal_key: set(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
+        sequential_terminal_key: set(
+            runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+        ),
+    }
+    # Some exact component digests are intentionally shared between profiles.
+    # Only fields outside the active canonical identity are inactive; treating
+    # a shared terminal/source/model digest as inactive would reject the valid
+    # combined manifest (and could also reject a legacy terminal manifest).
+    inactive_policy_names = tuple(
+        set(all_policy_names) - active_policy_names_by_profile[profile_key]
+    )
     manifest_has = profile_key in manifest
     worker_has = profile_key in worker_record
     capture_has = profile_key in capture
@@ -3055,8 +3058,7 @@ def _authenticate_worker_attention_profile(
     fields = _runner_policy_identity_fields(runner, runner_config)
     if any(manifest.get(name) != value for name, value in fields.items()):
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "Worker manifest differs from the command's exact opt-in policy "
-            "identity."
+            "Worker manifest differs from the command's exact opt-in policy identity."
         )
     scope = _active_profile_scope_component(config)
     try:
@@ -3095,10 +3097,17 @@ def _authenticate_compiled_attention_profile(
     attention_names = set(runner._OPT_IN_POLICY_IDENTITY_FIELDS)
     composed_names = set(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS)
     endpoint_names = set(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS)
-    terminal_names = set(
-        runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+    terminal_names = set(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS)
+    sequential_terminal_names = set(
+        runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
     )
-    all_names = attention_names | composed_names | endpoint_names | terminal_names
+    all_names = (
+        attention_names
+        | composed_names
+        | endpoint_names
+        | terminal_names
+        | sequential_terminal_names
+    )
     if not fields:
         if (
             any(name in diagnostic for name in all_names)
@@ -3108,10 +3117,11 @@ def _authenticate_compiled_attention_profile(
             )
             or diagnostic.get("resume_policy_binding") is not None
             or diagnostic.get("composed_qk_runtime_policy_binding") is not None
-            or diagnostic.get("endpoint_residual_runtime_policy_binding")
+            or diagnostic.get("endpoint_residual_runtime_policy_binding") is not None
+            or diagnostic.get("endpoint_terminal_action_runtime_policy_binding")
             is not None
             or diagnostic.get(
-                "endpoint_terminal_action_runtime_policy_binding"
+                "endpoint_sequential_terminal_action_runtime_policy_binding"
             )
             is not None
         ):
@@ -3128,13 +3138,12 @@ def _authenticate_compiled_attention_profile(
         binding_key = "resume_policy_binding"
         binding_schema = runner.RESUME_POLICY_BINDING_SCHEMA
         binding_names = attention_names
-        exact_policy_flag = (
-            "runtime_policy_contains_complete_model_fold_policy"
-        )
+        exact_policy_flag = "runtime_policy_contains_complete_model_fold_policy"
         inactive_binding_keys = (
             "composed_qk_runtime_policy_binding",
             "endpoint_residual_runtime_policy_binding",
             "endpoint_terminal_action_runtime_policy_binding",
+            "endpoint_sequential_terminal_action_runtime_policy_binding",
         )
     elif set(fields) == composed_names:
         binding_key = "composed_qk_runtime_policy_binding"
@@ -3145,6 +3154,7 @@ def _authenticate_compiled_attention_profile(
             "resume_policy_binding",
             "endpoint_residual_runtime_policy_binding",
             "endpoint_terminal_action_runtime_policy_binding",
+            "endpoint_sequential_terminal_action_runtime_policy_binding",
         )
     elif set(fields) == endpoint_names:
         binding_key = "endpoint_residual_runtime_policy_binding"
@@ -3157,12 +3167,24 @@ def _authenticate_compiled_attention_profile(
             "resume_policy_binding",
             "composed_qk_runtime_policy_binding",
             "endpoint_terminal_action_runtime_policy_binding",
+            "endpoint_sequential_terminal_action_runtime_policy_binding",
+        )
+    elif set(fields) == sequential_terminal_names:
+        binding_key = "endpoint_sequential_terminal_action_runtime_policy_binding"
+        binding_schema = (
+            runner.ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_RUNTIME_POLICY_BINDING_SCHEMA
+        )
+        binding_names = sequential_terminal_names
+        exact_policy_flag = "runtime_policy_contains_all_exact_component_policies"
+        inactive_binding_keys = (
+            "resume_policy_binding",
+            "composed_qk_runtime_policy_binding",
+            "endpoint_residual_runtime_policy_binding",
+            "endpoint_terminal_action_runtime_policy_binding",
         )
     elif set(fields) == terminal_names:
         binding_key = "endpoint_terminal_action_runtime_policy_binding"
-        binding_schema = (
-            runner.ENDPOINT_TERMINAL_ACTION_RUNTIME_POLICY_BINDING_SCHEMA
-        )
+        binding_schema = runner.ENDPOINT_TERMINAL_ACTION_RUNTIME_POLICY_BINDING_SCHEMA
         binding_names = terminal_names
         exact_policy_flag = (
             "runtime_policy_contains_exact_composed_endpoint_and_terminal_policies"
@@ -3171,6 +3193,7 @@ def _authenticate_compiled_attention_profile(
             "resume_policy_binding",
             "composed_qk_runtime_policy_binding",
             "endpoint_residual_runtime_policy_binding",
+            "endpoint_sequential_terminal_action_runtime_policy_binding",
         )
     else:
         raise Lfm2CpcfV5FrontierSupervisorError(
@@ -3180,12 +3203,10 @@ def _authenticate_compiled_attention_profile(
         diagnostic.get(name) != value or request.get(name) != value
         for name, value in fields.items()
     ) or any(
-        name in diagnostic or name in request
-        for name in (all_names - binding_names)
+        name in diagnostic or name in request for name in (all_names - binding_names)
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "Compile diagnostic or runner request crossed its sealed "
-            "attention policy."
+            "Compile diagnostic or runner request crossed its sealed attention policy."
         )
     binding_value = diagnostic.get(binding_key)
     if not isinstance(binding_value, Mapping):
@@ -3210,17 +3231,21 @@ def _authenticate_compiled_attention_profile(
     }
     if binding_names == terminal_names:
         expected_binding_fields.add("terminal_integration_receipt_required")
+    if binding_names == sequential_terminal_names:
+        expected_binding_fields.update(
+            {
+                "two_sided_transport_coverage_receipt_required",
+                "terminal_integration_receipt_required",
+            }
+        )
     compiled = diagnostic.get("compiled_model_fold")
     compiled_runtime_policy = (
-        compiled.get("policy")
-        if isinstance(compiled, Mapping)
-        else None
+        compiled.get("policy") if isinstance(compiled, Mapping) else None
     )
     if (
         set(binding) != expected_binding_fields
         or not isinstance(compiled_runtime_policy, Mapping)
-        or _sha(compiled_runtime_policy)
-        != binding.get("runtime_policy_sha256")
+        or _sha(compiled_runtime_policy) != binding.get("runtime_policy_sha256")
         or binding.get("schema") != binding_schema
         or _digest(
             binding.get("runtime_policy_sha256"),
@@ -3234,6 +3259,13 @@ def _authenticate_compiled_attention_profile(
             binding_names == terminal_names
             and binding.get("terminal_integration_receipt_required") is not True
         )
+        or (
+            binding_names == sequential_terminal_names
+            and (
+                binding.get("two_sided_transport_coverage_receipt_required") is not True
+                or binding.get("terminal_integration_receipt_required") is not True
+            )
+        )
         or binding.get("cross_profile_resume_permitted") is not False
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
@@ -3242,9 +3274,8 @@ def _authenticate_compiled_attention_profile(
         )
     if binding_names == composed_names:
         profile = fields["composed_qk_attention_profile"]
-        if (
-            compiled_runtime_policy.get("composed_qk_attention_policy")
-            != profile.get("composed_qk_attention_policy")
+        if compiled_runtime_policy.get("composed_qk_attention_policy") != profile.get(
+            "composed_qk_attention_policy"
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Compiled runtime policy changed the composed Q/K policy."
@@ -3268,32 +3299,23 @@ def _authenticate_compiled_attention_profile(
             != runner.COMPOSED_QK_ATTENTION_COVERAGE_SCHEMA
             or coverage_body.get("policy_authentication_sha256")
             != fields["composed_qk_attention_policy_sha256"]
-            or coverage_body.get("expected_attention_layer_indices")
-            != expected_layers
-            or coverage_body.get("observed_attention_layer_indices")
-            != expected_layers
-            or coverage_body.get("covered_attention_layer_indices")
-            != expected_layers
+            or coverage_body.get("expected_attention_layer_indices") != expected_layers
+            or coverage_body.get("observed_attention_layer_indices") != expected_layers
+            or coverage_body.get("covered_attention_layer_indices") != expected_layers
             or coverage_body.get("attention_layer_count") != len(expected_layers)
             or coverage_body.get("endpoint_fallback_permitted") is not False
-            or coverage_body.get(
-                "composed_candidate_eligible_per_attention_layer"
-            )
+            or coverage_body.get("composed_candidate_eligible_per_attention_layer")
             != [True] * len(expected_layers)
             or coverage_body.get("composed_candidate_admitted_layer_indices")
             != expected_layers
-            or coverage_body.get(
-                "authenticated_endpoint_fallback_layer_indices"
-            )
-            != []
+            or coverage_body.get("authenticated_endpoint_fallback_layer_indices") != []
             or not isinstance(rows, list)
             or [row.get("layer_index") for row in rows] != expected_layers
             or any(
                 not isinstance(row, Mapping)
                 or row.get("composed_candidate_eligible") is not True
                 or any(
-                    not isinstance(row.get(name), str)
-                    or len(row[name]) != 64
+                    not isinstance(row.get(name), str) or len(row[name]) != 64
                     for name in (
                         "layer_result_sha256",
                         "composed_qk_producer_artifact_sha256",
@@ -3305,11 +3327,9 @@ def _authenticate_compiled_attention_profile(
                 )
                 for row in rows
             )
-            or coverage_body.get("exact_ordered_attention_layer_coverage")
-            is not True
+            or coverage_body.get("exact_ordered_attention_layer_coverage") is not True
             or coverage_body.get("full_attention_only_forwarding") is not True
-            or coverage_body.get("actual_upstream_child_contexts_consumed")
-            is not True
+            or coverage_body.get("actual_upstream_child_contexts_consumed") is not True
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Compiled composed Q/K coverage is not the exact ordered "
@@ -3317,22 +3337,17 @@ def _authenticate_compiled_attention_profile(
             )
     elif binding_names == endpoint_names:
         profile = fields["endpoint_residual_attention_profile"]
-        if (
-            compiled_runtime_policy.get("composed_qk_attention_policy")
-            != profile.get("composed_qk_attention_policy")
-            or compiled_runtime_policy.get(
-                "endpoint_residual_attention_policy"
-            )
-            != profile.get("endpoint_residual_attention_policy")
-        ):
+        if compiled_runtime_policy.get("composed_qk_attention_policy") != profile.get(
+            "composed_qk_attention_policy"
+        ) or compiled_runtime_policy.get(
+            "endpoint_residual_attention_policy"
+        ) != profile.get("endpoint_residual_attention_policy"):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Compiled runtime policy changed the endpoint-residual "
                 "profile policies."
             )
         coverage = compiled.get("endpoint_residual_attention_coverage")
-        diagnostic_coverage = diagnostic.get(
-            "endpoint_residual_attention_coverage"
-        )
+        diagnostic_coverage = diagnostic.get("endpoint_residual_attention_coverage")
         if not isinstance(coverage, Mapping) or diagnostic_coverage != coverage:
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Compile diagnostic lost its endpoint-residual coverage receipt."
@@ -3373,14 +3388,125 @@ def _authenticate_compiled_attention_profile(
                 "Compiled endpoint-residual coverage is not the exact ordered "
                 "mixed four/five-arm residual-fold receipt."
             ) from exc
+    elif binding_names == sequential_terminal_names:
+        profile = fields["endpoint_sequential_terminal_action_profile"]
+        nested_model = compiled_runtime_policy.get("model_fold_policy")
+        if (
+            not isinstance(nested_model, Mapping)
+            or nested_model.get("attention_sequential_transport_policy")
+            != profile.get("attention_sequential_transport_policy")
+            or compiled_runtime_policy.get("composed_qk_attention_policy")
+            != profile.get("composed_qk_attention_policy")
+            or compiled_runtime_policy.get("endpoint_residual_attention_policy")
+            != profile.get("endpoint_residual_attention_policy")
+            or compiled_runtime_policy.get("endpoint_sequential_transport_policy")
+            != profile.get("endpoint_sequential_transport_combination_policy")
+            or compiled_runtime_policy.get("post_operator_transport_policy")
+            != profile.get("post_operator_transport_policy")
+            or compiled_runtime_policy.get("terminal_action_residual_policy")
+            != profile.get("terminal_action_residual_policy")
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiled runtime policy changed a combined endpoint, "
+                "transport, or terminal component policy."
+            )
+        identity_body = {
+            "schema": (
+                runner.ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_SCHEMA
+            ),
+            "endpoint_sequential_terminal_action_profile": profile,
+            "complete_model_fold_policy_sha256": fields[
+                "complete_model_fold_policy_sha256"
+            ],
+            "endpoint_sequential_composed_qk_attention_policy_sha256": fields[
+                "endpoint_sequential_composed_qk_attention_policy_sha256"
+            ],
+            "endpoint_sequential_residual_attention_policy_sha256": fields[
+                "endpoint_sequential_residual_attention_policy_sha256"
+            ],
+            "attention_sequential_transport_policy_sha256": fields[
+                "attention_sequential_transport_policy_sha256"
+            ],
+            "post_operator_transport_policy_sha256": fields[
+                "post_operator_transport_policy_sha256"
+            ],
+            "endpoint_sequential_transport_combination_policy_sha256": fields[
+                "endpoint_sequential_transport_combination_policy_sha256"
+            ],
+            "terminal_action_residual_policy_sha256": fields[
+                "terminal_action_residual_policy_sha256"
+            ],
+            "post_operator_transport_source_sha256": fields[
+                "post_operator_transport_source_sha256"
+            ],
+            "sequential_boundary_transport_source_sha256": fields[
+                "sequential_boundary_transport_source_sha256"
+            ],
+            "terminal_action_policy_source_sha256": fields[
+                "terminal_action_policy_source_sha256"
+            ],
+            "terminal_action_integration_source_sha256": fields[
+                "terminal_action_integration_source_sha256"
+            ],
+            "expected_attention_layer_indices": list(
+                runner.COMPOSED_QK_ATTENTION_LAYER_INDICES
+            ),
+            "runtime_policy_must_embed_all_exact_component_policies": True,
+            "two_sided_transport_coverage_receipt_required": True,
+            "terminal_integration_receipt_required": True,
+            "cross_profile_resume_permitted": False,
+        }
+        reconstructed_identity = {
+            **identity_body,
+            "identity_sha256": _sha(identity_body),
+        }
+        if (
+            reconstructed_identity["identity_sha256"]
+            != fields["endpoint_sequential_terminal_action_policy_identity_sha256"]
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Endpoint sequential terminal-action identity could not be "
+                "reconstructed."
+            )
+        try:
+            endpoint_coverage = runner._authenticate_endpoint_residual_coverage(
+                compiled,
+                policy_identity=reconstructed_identity,
+            )
+            transport_coverage = (
+                runner._authenticate_endpoint_sequential_transport_coverage(
+                    compiled,
+                    policy_identity=reconstructed_identity,
+                )
+            )
+            terminal_receipt = runner._authenticate_terminal_action_integration_receipt(
+                compiled,
+                policy_identity=reconstructed_identity,
+            )
+        except Exception as exc:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiled endpoint sequential terminal-action attention, "
+                "two-sided transport, or terminal integration receipt is "
+                "invalid."
+            ) from exc
+        if (
+            diagnostic.get("endpoint_residual_attention_coverage")
+            != dict(endpoint_coverage)
+            or diagnostic.get("endpoint_sequential_transport_coverage")
+            != dict(transport_coverage)
+            or diagnostic.get("terminal_action_integration_receipt")
+            != dict(terminal_receipt)
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compile diagnostic lost the combined profile's attention, "
+                "two-sided transport, or terminal-action receipt."
+            )
     elif binding_names == terminal_names:
         profile = fields["endpoint_terminal_action_profile"]
         if (
             compiled_runtime_policy.get("composed_qk_attention_policy")
             != profile.get("composed_qk_attention_policy")
-            or compiled_runtime_policy.get(
-                "endpoint_residual_attention_policy"
-            )
+            or compiled_runtime_policy.get("endpoint_residual_attention_policy")
             != profile.get("endpoint_residual_attention_policy")
             or compiled_runtime_policy.get("terminal_action_residual_policy")
             != profile.get("terminal_action_residual_policy")
@@ -3441,11 +3567,10 @@ def _authenticate_compiled_attention_profile(
                 "Compiled endpoint terminal-action attention coverage or "
                 "terminal integration receipt is invalid."
             ) from exc
-        if (
-            diagnostic.get("endpoint_residual_attention_coverage")
-            != compiled.get("endpoint_residual_attention_coverage")
-            or diagnostic.get("terminal_action_integration_receipt")
-            != dict(terminal_receipt)
+        if diagnostic.get("endpoint_residual_attention_coverage") != compiled.get(
+            "endpoint_residual_attention_coverage"
+        ) or diagnostic.get("terminal_action_integration_receipt") != dict(
+            terminal_receipt
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Compile diagnostic lost the terminal profile's attention or "
@@ -3469,9 +3594,33 @@ def _compiled_policy_binding_field(
         return "endpoint_residual_runtime_policy_binding"
     if names == set(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS):
         return "endpoint_terminal_action_runtime_policy_binding"
+    if names == set(runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS):
+        return "endpoint_sequential_terminal_action_runtime_policy_binding"
     raise Lfm2CpcfV5FrontierSupervisorError(
         "Policy fields do not select one canonical runtime binding."
     )
+
+
+def _foreign_policy_identity_field_names(
+    runner: Any,
+    record: Mapping[str, Any],
+    active_policy_fields: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Return identity fields that do not belong to the active profile."""
+
+    if not isinstance(record, Mapping) or not isinstance(
+        active_policy_fields,
+        Mapping,
+    ):
+        raise TypeError("record and active_policy_fields must be mappings.")
+    all_fields = set().union(
+        set(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
+        set(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
+        set(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+        set(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
+        set(runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS),
+    )
+    return tuple(sorted((set(record) & all_fields) - set(active_policy_fields)))
 
 
 def _worker_failure_receipt(
@@ -3482,12 +3631,8 @@ def _worker_failure_receipt(
         "schema": FAILURE_EXECUTION_SCHEMA,
         "status": "failed_closed",
         "ratio": manifest.get("ratio"),
-        "target_plan_fingerprint": manifest.get(
-            "target_plan_fingerprint"
-        ),
-        "error_type": (
-            f"{type(error).__module__}.{type(error).__qualname__}"
-        ),
+        "target_plan_fingerprint": manifest.get("target_plan_fingerprint"),
+        "error_type": (f"{type(error).__module__}.{type(error).__qualname__}"),
         "error_message": str(error),
         "publication_authorized": False,
         "promotable": False,
@@ -3508,9 +3653,7 @@ def _authenticate_runtime_guard_receipt(
     name: str,
 ) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{name} is not a mapping."
-        )
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{name} is not a mapping.")
     report = dict(value)
     claimed = _digest(
         report.pop("report_sha256", None),
@@ -3563,8 +3706,7 @@ def _run_internal_worker(manifest_path: Path) -> int:
             name="worker process manifest",
         )
         if (
-            manifest.get("kind")
-            != "fixed_quarantine_worker_subprocess_manifest"
+            manifest.get("kind") != "fixed_quarantine_worker_subprocess_manifest"
             or manifest.get("one_ratio_only") is not True
             or manifest.get("new_process_required") is not True
             or manifest.get("ordinary_diagnostic_runner_cli_used_for_capture")
@@ -3589,16 +3731,12 @@ def _run_internal_worker(manifest_path: Path) -> int:
         evidence = manifest.get("input_bindings")
         schedule = manifest.get("schedule_bindings")
         paths = manifest.get("paths")
-        if not all(
-            isinstance(value, Mapping)
-            for value in (evidence, schedule, paths)
-        ):
+        if not all(isinstance(value, Mapping) for value in (evidence, schedule, paths)):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Worker input, schedule, or path bindings are missing."
             )
         if (
-            evidence.get("cache_sha256")
-            != config.expected_cache_sha256
+            evidence.get("cache_sha256") != config.expected_cache_sha256
             or schedule.get("parent_graph_fingerprint")
             != config.expected_parent_graph_fingerprint
             or schedule.get("bridge_artifact_sha256")
@@ -3607,20 +3745,13 @@ def _run_internal_worker(manifest_path: Path) -> int:
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Worker config differs from its schedule or evidence pins."
             )
-        catalog_preparation = authenticate_frontier_catalog_preparation(
-            config
-        )
+        catalog_preparation = authenticate_frontier_catalog_preparation(config)
         if (
-            evidence.get("selective_catalog_preparation")
-            != dict(catalog_preparation)
-            or manifest.get("selective_catalog_artifact")
-            != dict(catalog_preparation)
-            or manifest.get(
-                "selective_catalog_authenticated_warm_hit_required"
-            )
+            evidence.get("selective_catalog_preparation") != dict(catalog_preparation)
+            or manifest.get("selective_catalog_artifact") != dict(catalog_preparation)
+            or manifest.get("selective_catalog_authenticated_warm_hit_required")
             is not True
-            or manifest.get("selective_catalog_cold_rebuild_permitted")
-            is not False
+            or manifest.get("selective_catalog_cold_rebuild_permitted") is not False
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Worker does not bind the exact authenticated shared warm "
@@ -3631,18 +3762,14 @@ def _run_internal_worker(manifest_path: Path) -> int:
         if (
             not isinstance(diagnostic_command, list)
             or len(diagnostic_command) < 3
-            or Path(diagnostic_command[1]).resolve() != (
-                _DIAGNOSTIC_RUNNER.resolve()
-            )
+            or Path(diagnostic_command[1]).resolve() != (_DIAGNOSTIC_RUNNER.resolve())
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Worker diagnostic-runner command is invalid."
             )
         from experiments import run_lfm2_cpcf_v5_selective_blank_fold as runner
 
-        parsed_runner_args = runner.build_parser().parse_args(
-            diagnostic_command[2:]
-        )
+        parsed_runner_args = runner.build_parser().parse_args(diagnostic_command[2:])
         runner_config = runner.config_from_args(parsed_runner_args)
         expected_policy_fields = _authenticate_worker_attention_profile(
             manifest=manifest,
@@ -3657,8 +3784,7 @@ def _run_internal_worker(manifest_path: Path) -> int:
             or runner_config.selected_candidate_rank is not None
             or runner_config.maximum_cuda_gib_per_device
             != config.runtime_limits.maximum_cuda_gib_per_device
-            or Path(runner_config.diagnostic_json)
-            != Path(paths["diagnostic_json"])
+            or Path(runner_config.diagnostic_json) != Path(paths["diagnostic_json"])
             or runner_config.selective_catalog_store_directory
             != config.selective_catalog_store_directory
             or runner_config.selective_catalog_receipt_json
@@ -3673,13 +3799,10 @@ def _run_internal_worker(manifest_path: Path) -> int:
 
         _manifest, parent_envelope = _read_parent_envelope(
             config,
-            parent_model_identity_sha256=evidence[
-                "parent_model_identity_sha256"
-            ],
+            parent_model_identity_sha256=evidence["parent_model_identity_sha256"],
         )
-        if (
-            parent_envelope.tokenizer_fingerprint
-            != evidence.get("donor_tokenizer_package_sha256")
+        if parent_envelope.tokenizer_fingerprint != evidence.get(
+            "donor_tokenizer_package_sha256"
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Worker donor tokenizer package differs from the planned "
@@ -3711,8 +3834,7 @@ def _run_internal_worker(manifest_path: Path) -> int:
         )
         candidate = result.candidate
         if (
-            result.target_plan_fingerprint
-            != manifest["target_plan_fingerprint"]
+            result.target_plan_fingerprint != manifest["target_plan_fingerprint"]
             or Path(candidate.path).resolve()
             != Path(paths["quarantine_directory"]).resolve()
             or result.compiler_child_checkpoint_saved is not False
@@ -3724,9 +3846,7 @@ def _run_internal_worker(manifest_path: Path) -> int:
                 "Worker result differs from its plan, quarantine path, or "
                 "non-publication lifecycle."
             )
-        compiled_catalog = result.compile_diagnostic.get(
-            "selective_catalog_artifact"
-        )
+        compiled_catalog = result.compile_diagnostic.get("selective_catalog_artifact")
         compiled_catalog_reverification = result.compile_diagnostic.get(
             "selective_catalog_post_run_reverification"
         )
@@ -3737,9 +3857,8 @@ def _run_internal_worker(manifest_path: Path) -> int:
                 name="Compiler diagnostic",
             )
         )
-        if (
-            not isinstance(compiled_catalog, Mapping)
-            or dict(compiled_catalog) != dict(catalog_preparation)
+        if not isinstance(compiled_catalog, Mapping) or dict(compiled_catalog) != dict(
+            catalog_preparation
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Compiler diagnostic did not retain and freshly reverify the "
@@ -3763,9 +3882,7 @@ def _run_internal_worker(manifest_path: Path) -> int:
         resume_reference = config.resume_references.get(
             manifest["target_plan_fingerprint"]
         )
-        resume_progress = result.compile_diagnostic.get(
-            "resume_progress"
-        )
+        resume_progress = result.compile_diagnostic.get("resume_progress")
         if not isinstance(resume_progress, Mapping):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Compile diagnostic lacks typed resume progress."
@@ -3801,15 +3918,12 @@ def _run_internal_worker(manifest_path: Path) -> int:
                     "checkpoint artifact bound by the catalog lane."
                 )
         post_capture_source_identities = _source_identities()
-        post_capture_catalog_preparation = (
-            authenticate_frontier_catalog_preparation(config)
+        post_capture_catalog_preparation = authenticate_frontier_catalog_preparation(
+            config
         )
-        if (
-            manifest.get("source_identities")
-            != post_capture_source_identities
-            or dict(post_capture_catalog_preparation)
-            != dict(catalog_preparation)
-        ):
+        if manifest.get("source_identities") != post_capture_source_identities or dict(
+            post_capture_catalog_preparation
+        ) != dict(catalog_preparation):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Worker source files or prepared catalog changed during "
                 "compilation or capture."
@@ -3827,10 +3941,8 @@ def _run_internal_worker(manifest_path: Path) -> int:
             or guard_implementation.get("source_sha256")
             != post_capture_source_identities["fold_only_runtime_guard"]
             or guard_implementation.get("training_api_firewall") is not True
-            or guard_implementation.get("common_pruning_api_firewall")
-            is not True
-            or guard_implementation.get("common_quantization_api_firewall")
-            is not True
+            or guard_implementation.get("common_pruning_api_firewall") is not True
+            or guard_implementation.get("common_quantization_api_firewall") is not True
             or runtime_guard.get("clean") is not True
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
@@ -3839,31 +3951,23 @@ def _run_internal_worker(manifest_path: Path) -> int:
             )
         compiler_guard = _authenticate_runtime_guard_receipt(
             runtime_guard,
-            schema=(
-                "neural-forge-lfm2-cpcf-v5-compiler-runtime-guard-v1"
-            ),
+            schema=("neural-forge-lfm2-cpcf-v5-compiler-runtime-guard-v1"),
             guard_source_sha256=post_capture_source_identities[
                 "fold_only_runtime_guard"
             ],
             name="compiler runtime fold-only guard",
         )
-        final_reload_verification = dict(
-            candidate.verification_receipt
-        )
+        final_reload_verification = dict(candidate.verification_receipt)
         if (
             final_reload_verification.get("capture_receipt_sha256")
             != result.capture_receipt_sha256
-            or final_reload_verification.get(
-                "fresh_final_destination_reload_performed"
-            )
+            or final_reload_verification.get("fresh_final_destination_reload_performed")
             is not True
             or final_reload_verification.get("model_state_sha256")
             != result.target_state_sha256
             or final_reload_verification.get("promotable") is not False
-            or final_reload_verification.get("publication_authorized")
-            is not False
-            or final_reload_verification.get("requires_reviewed_rerun")
-            is not True
+            or final_reload_verification.get("publication_authorized") is not False
+            or final_reload_verification.get("requires_reviewed_rerun") is not True
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Final-destination reload verification is absent or differs "
@@ -3871,20 +3975,17 @@ def _run_internal_worker(manifest_path: Path) -> int:
             )
         consumer_guard = _authenticate_runtime_guard_receipt(
             result.consumer_runtime_guard_receipt,
-            schema=(
-                "neural-forge-lfm2-cpcf-v5-consumer-runtime-fold-only-guard-v1"
-            ),
+            schema=("neural-forge-lfm2-cpcf-v5-consumer-runtime-fold-only-guard-v1"),
             guard_source_sha256=post_capture_source_identities[
                 "fold_only_runtime_guard"
             ],
             name="consumer runtime fold-only guard",
         )
-        if (
-            consumer_guard.get("compiler_runtime_guard_sha256")
-            != compiler_guard["report_sha256"]
-            or consumer_guard.get("capture_verification_sha256")
-            != final_reload_verification.get("verification_sha256")
-        ):
+        if consumer_guard.get("compiler_runtime_guard_sha256") != compiler_guard[
+            "report_sha256"
+        ] or consumer_guard.get(
+            "capture_verification_sha256"
+        ) != final_reload_verification.get("verification_sha256"):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Consumer runtime guard differs from the compiler guard or "
                 "final retained-destination reload."
@@ -3898,15 +3999,11 @@ def _run_internal_worker(manifest_path: Path) -> int:
             "status": "captured_quarantine_requires_reviewed_rerun",
             "ratio": manifest["ratio"],
             "target_plan_fingerprint": result.target_plan_fingerprint,
-            "target_unique_parameters": manifest[
-                "target_unique_parameters"
-            ],
+            "target_unique_parameters": manifest["target_unique_parameters"],
             "selected_candidate_fingerprint": manifest[
                 "selected_candidate_fingerprint"
             ],
-            "selected_candidate_rank": manifest[
-                "selected_candidate_rank"
-            ],
+            "selected_candidate_rank": manifest["selected_candidate_rank"],
             "compiler_receipt_sha256": result.compiler_receipt_sha256,
             "capture_receipt_sha256": result.capture_receipt_sha256,
             "target_state_sha256": result.target_state_sha256,
@@ -3922,9 +4019,7 @@ def _run_internal_worker(manifest_path: Path) -> int:
             "selective_catalog_post_run_reverification": dict(
                 authenticated_catalog_reverification
             ),
-            "post_capture_source_identities": (
-                post_capture_source_identities
-            ),
+            "post_capture_source_identities": (post_capture_source_identities),
             "final_reload_verification": final_reload_verification,
             "consumer_runtime_guard_receipt": dict(consumer_guard),
             "diagnostic_json": paths["diagnostic_json"],
@@ -3949,9 +4044,16 @@ def _run_internal_worker(manifest_path: Path) -> int:
                 expected_policy_fields,
             )
             body[binding_field] = dict(compiled_profile_binding)
-            if set(expected_policy_fields) == set(
+            terminal_profile_fields = set(
                 runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
-            ):
+            )
+            sequential_terminal_profile_fields = set(
+                runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+            )
+            if frozenset(expected_policy_fields) in {
+                frozenset(terminal_profile_fields),
+                frozenset(sequential_terminal_profile_fields),
+            }:
                 terminal_receipt = result.compile_diagnostic.get(
                     "terminal_action_integration_receipt"
                 )
@@ -3959,12 +4061,26 @@ def _run_internal_worker(manifest_path: Path) -> int:
                     raise Lfm2CpcfV5FrontierSupervisorError(
                         "Terminal profile execution lacks its integration receipt."
                     )
-                body["terminal_action_integration_receipt"] = dict(
-                    terminal_receipt
-                )
+                body["terminal_action_integration_receipt"] = dict(terminal_receipt)
                 body["terminal_action_integration_receipt_sha256"] = _digest(
                     terminal_receipt.get("result_sha256"),
                     "terminal-action integration receipt SHA-256",
+                )
+            if set(expected_policy_fields) == sequential_terminal_profile_fields:
+                transport_coverage = result.compile_diagnostic.get(
+                    "endpoint_sequential_transport_coverage"
+                )
+                if not isinstance(transport_coverage, Mapping):
+                    raise Lfm2CpcfV5FrontierSupervisorError(
+                        "Combined profile execution lacks its two-sided "
+                        "transport coverage receipt."
+                    )
+                body["endpoint_sequential_transport_coverage"] = dict(
+                    transport_coverage
+                )
+                body["endpoint_sequential_transport_coverage_sha256"] = _digest(
+                    transport_coverage.get("report_sha256"),
+                    "two-sided transport coverage receipt SHA-256",
                 )
         receipt = {**body, "receipt_sha256": _sha(body)}
         _atomic_new_json(Path(paths["execution_receipt_json"]), receipt)
@@ -4055,11 +4171,9 @@ def _retained_inventory_matches(
         if actual_directories != inventory.get("directories"):
             return False
         declared_files = inventory.get("files")
-        if (
-            not isinstance(declared_files, list)
-            or actual_files
-            != [record.get("path") for record in declared_files]
-        ):
+        if not isinstance(declared_files, list) or actual_files != [
+            record.get("path") for record in declared_files
+        ]:
             return False
 
         root_stat = candidate.stat()
@@ -4072,10 +4186,9 @@ def _retained_inventory_matches(
         }:
             return False
         directory_identities = inventory.get("directory_identities")
-        if (
-            not isinstance(directory_identities, list)
-            or len(directory_identities) != len(actual_directories)
-        ):
+        if not isinstance(directory_identities, list) or len(
+            directory_identities
+        ) != len(actual_directories):
             return False
         for relative, expected in zip(
             actual_directories,
@@ -4128,10 +4241,7 @@ def _authenticate_quarantine_receipt(
         _read_artifact_metadata,
     )
 
-    path = (
-        lane.paths.quarantine_directory
-        / QUARANTINE_RECEIPT_FILENAME
-    )
+    path = lane.paths.quarantine_directory / QUARANTINE_RECEIPT_FILENAME
     payload = _read_sealed_json(
         path,
         schema=QUARANTINE_CAPTURE_SCHEMA,
@@ -4139,9 +4249,7 @@ def _authenticate_quarantine_receipt(
         name="generic quarantine receipt",
     )
     try:
-        authenticated = QuarantineCaptureReceipt.from_dict(
-            payload
-        ).as_dict()
+        authenticated = QuarantineCaptureReceipt.from_dict(payload).as_dict()
     except Exception as exc:
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Generic quarantine receipt failed its typed authentication."
@@ -4154,24 +4262,16 @@ def _authenticate_quarantine_receipt(
     evaluations = authenticated.get("evaluations")
     reload_receipt = authenticated.get("standalone_reload_receipt")
     audit = authenticated.get("audit")
-    final_reload = execution_receipt.get(
-        "final_reload_verification"
-    )
+    final_reload = execution_receipt.get("final_reload_verification")
     expected_bindings = {
         "plan_sha256": lane.catalog_lane.target_plan_fingerprint,
         "parent_sha256": plan.evidence.parent_model_identity_sha256,
         "cache_sha256": plan.evidence.cache_sha256,
         "bridge_sha256": plan.config.expected_bridge_artifact_sha256,
         "corpus_sha256": plan.evidence.corpus_sha256,
-        "compiler_sha256": execution_receipt.get(
-            "compiler_receipt_sha256"
-        ),
-        "source_sha256": execution_receipt.get(
-            "source_binding_sha256"
-        ),
-        "model_state_sha256": execution_receipt.get(
-            "target_state_sha256"
-        ),
+        "compiler_sha256": execution_receipt.get("compiler_receipt_sha256"),
+        "source_sha256": execution_receipt.get("source_binding_sha256"),
+        "model_state_sha256": execution_receipt.get("target_state_sha256"),
     }
     lifecycle_false = (
         "published_compilation",
@@ -4190,11 +4290,7 @@ def _authenticate_quarantine_receipt(
         "no_resume_sidecar",
         "receipt_outside_candidate_artifact",
     )
-    inventory = (
-        artifact.get("inventory")
-        if isinstance(artifact, Mapping)
-        else None
-    )
+    inventory = artifact.get("inventory") if isinstance(artifact, Mapping) else None
     try:
         metadata = _read_artifact_metadata(
             lane.paths.quarantine_directory / "candidate"
@@ -4204,11 +4300,7 @@ def _authenticate_quarantine_receipt(
             "Retained LFM2 candidate metadata failed authentication."
         ) from exc
     parameter_inventory = metadata.get("parameter_inventory")
-    final_reload_body = (
-        dict(final_reload)
-        if isinstance(final_reload, Mapping)
-        else {}
-    )
+    final_reload_body = dict(final_reload) if isinstance(final_reload, Mapping) else {}
     final_reload_sha = final_reload_body.pop(
         "verification_sha256",
         None,
@@ -4216,14 +4308,10 @@ def _authenticate_quarantine_receipt(
     if (
         authenticated.get("receipt_sha256")
         != execution_receipt.get("capture_receipt_sha256")
-        or authenticated.get("status")
-        != "quarantined-unreviewed-candidate"
+        or authenticated.get("status") != "quarantined-unreviewed-candidate"
         or authenticated.get("lifecycle") != "immutable-quarantine"
         or not isinstance(bindings, Mapping)
-        or any(
-            bindings.get(name) != value
-            for name, value in expected_bindings.items()
-        )
+        or any(bindings.get(name) != value for name, value in expected_bindings.items())
         or not isinstance(request, Mapping)
         or any(
             request.get(name) != value
@@ -4232,21 +4320,14 @@ def _authenticate_quarantine_receipt(
         )
         or request.get("expected_model_state_sha256")
         != execution_receipt.get("target_state_sha256")
-        or any(
-            authenticated.get(name) is not False
-            for name in lifecycle_false
-        )
-        or any(
-            authenticated.get(name) is not True
-            for name in lifecycle_true
-        )
+        or any(authenticated.get(name) is not False for name in lifecycle_false)
+        or any(authenticated.get(name) is not True for name in lifecycle_true)
         or not isinstance(artifact, Mapping)
         or artifact.get("standalone") is not True
         or artifact.get("strict_sidecar_scan_passed") is not True
         or artifact.get("foreign_entries_present") is not False
         or not isinstance(inventory, Mapping)
-        or artifact.get("inventory_sha256")
-        != inventory.get("inventory_sha256")
+        or artifact.get("inventory_sha256") != inventory.get("inventory_sha256")
         or not isinstance(model_state, Mapping)
         or model_state.get("in_memory_sha256")
         != execution_receipt.get("target_state_sha256")
@@ -4260,8 +4341,7 @@ def _authenticate_quarantine_receipt(
         or evaluations.get("output_reproduced_after_reload") is not True
         or evaluations.get("evaluation_reproduced_after_reload") is not True
         or evaluations.get("corpus_sha256") != plan.evidence.corpus_sha256
-        or evaluations.get("evaluator_sha256")
-        != request.get("evaluator_sha256")
+        or evaluations.get("evaluator_sha256") != request.get("evaluator_sha256")
         or not isinstance(reload_receipt, Mapping)
         or reload_receipt.get("state_reproduced_after_reload") is not True
         or reload_receipt.get("output_reproduced_after_reload") is not True
@@ -4281,8 +4361,7 @@ def _authenticate_quarantine_receipt(
         or parameter_inventory.get("pruning_mask_adjustment_used") is not False
         or parameter_inventory.get("inventory_sha256")
         != metadata.get("parameter_inventory_sha256")
-        or final_reload_body.get("schema")
-        != QUARANTINE_VERIFICATION_SCHEMA
+        or final_reload_body.get("schema") != QUARANTINE_VERIFICATION_SCHEMA
         or _digest(
             final_reload_sha,
             "final reload verification SHA",
@@ -4292,20 +4371,14 @@ def _authenticate_quarantine_receipt(
         != authenticated.get("receipt_sha256")
         or final_reload_body.get("model_state_sha256")
         != execution_receipt.get("target_state_sha256")
-        or final_reload_body.get("output_sha256")
-        != bindings.get("output_sha256")
+        or final_reload_body.get("output_sha256") != bindings.get("output_sha256")
         or final_reload_body.get("evaluation_sha256")
         != evaluations.get("fresh_reload_evaluation_sha256")
         or final_reload_body.get("artifact_inventory_sha256")
         != artifact.get("inventory_sha256")
-        or final_reload_body.get("loader_sha256")
-        != request.get("loader_sha256")
-        or final_reload_body.get("evaluator_sha256")
-        != request.get("evaluator_sha256")
-        or final_reload_body.get(
-            "fresh_final_destination_reload_performed"
-        )
-        is not True
+        or final_reload_body.get("loader_sha256") != request.get("loader_sha256")
+        or final_reload_body.get("evaluator_sha256") != request.get("evaluator_sha256")
+        or final_reload_body.get("fresh_final_destination_reload_performed") is not True
         or final_reload_body.get("promotable") is not False
         or final_reload_body.get("publication_authorized") is not False
         or final_reload_body.get("requires_reviewed_rerun") is not True
@@ -4337,13 +4410,8 @@ def execute_single_ratio(
             "Refusing to execute a blocked frontier lane: "
             + " | ".join(lane.execution_blockers)
         )
-    catalog_preparation = authenticate_frontier_catalog_preparation(
-        plan.config
-    )
-    if (
-        dict(catalog_preparation)
-        != dict(plan.evidence.selective_catalog_preparation)
-    ):
+    catalog_preparation = authenticate_frontier_catalog_preparation(plan.config)
+    if dict(catalog_preparation) != dict(plan.evidence.selective_catalog_preparation):
         raise Lfm2CpcfV5FrontierSupervisorError(
             "The shared selective catalog differs from the planned binding."
         )
@@ -4359,9 +4427,7 @@ def execute_single_ratio(
         lane.command_manifest,
     )
     environment = dict(os.environ)
-    environment.update(
-        lane.command_manifest["environment_overrides"]
-    )
+    environment.update(lane.command_manifest["environment_overrides"])
     completed = subprocess_runner(
         lane.command_manifest["command"],
         cwd=lane.command_manifest["working_directory"],
@@ -4373,23 +4439,18 @@ def execute_single_ratio(
     if getattr(completed, "returncode", None) != 0:
         stderr = str(getattr(completed, "stderr", "")).strip()
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "Capture worker failed closed"
-            + (f": {stderr[-2000:]}" if stderr else ".")
+            "Capture worker failed closed" + (f": {stderr[-2000:]}" if stderr else ".")
         )
     if dict(plan.source_identities) != _source_identities():
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Supervisor source files changed across the worker boundary."
         )
-    post_run_catalog_preparation = (
-        authenticate_frontier_catalog_preparation(plan.config)
+    post_run_catalog_preparation = authenticate_frontier_catalog_preparation(
+        plan.config
     )
-    if (
-        dict(post_run_catalog_preparation)
-        != dict(catalog_preparation)
-    ):
+    if dict(post_run_catalog_preparation) != dict(catalog_preparation):
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "The shared selective catalog changed across the worker "
-            "boundary."
+            "The shared selective catalog changed across the worker boundary."
         )
     receipt = _read_sealed_json(
         lane.paths.execution_receipt_json,
@@ -4405,9 +4466,7 @@ def execute_single_ratio(
         seal_field="receipt_sha256",
         name="worker compile diagnostic",
     )
-    planned_diagnostic_command = lane.command_manifest[
-        "diagnostic_runner_command"
-    ]
+    planned_diagnostic_command = lane.command_manifest["diagnostic_runner_command"]
     planned_runner_config = runner.config_from_args(
         runner.build_parser().parse_args(planned_diagnostic_command[2:])
     )
@@ -4424,6 +4483,11 @@ def execute_single_ratio(
         expected_policy_fields=expected_policy_fields,
     )
     if expected_policy_fields:
+        foreign_policy_identity_fields = _foreign_policy_identity_field_names(
+            runner,
+            receipt,
+            expected_policy_fields,
+        )
         binding_field = _compiled_policy_binding_field(
             runner,
             expected_policy_fields,
@@ -4433,19 +4497,24 @@ def execute_single_ratio(
             "composed_qk_runtime_policy_binding",
             "endpoint_residual_runtime_policy_binding",
             "endpoint_terminal_action_runtime_policy_binding",
+            "endpoint_sequential_terminal_action_runtime_policy_binding",
         } - {binding_field}
         receipt_profile_valid = (
             all(
                 receipt.get(name) == value
                 for name, value in expected_policy_fields.items()
             )
+            and not foreign_policy_identity_fields
             and receipt.get(binding_field) == dict(compiled_profile_binding)
-            and all(
-                inactive not in receipt for inactive in inactive_binding_fields
-            )
+            and all(inactive not in receipt for inactive in inactive_binding_fields)
         )
-        if set(expected_policy_fields) == set(
-            runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+        terminal_names = set(runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS)
+        sequential_terminal_names = set(
+            runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
+        )
+        if set(expected_policy_fields) in (
+            terminal_names,
+            sequential_terminal_names,
         ):
             diagnostic_terminal_receipt = diagnostic.get(
                 "terminal_action_integration_receipt"
@@ -4454,15 +4523,29 @@ def execute_single_ratio(
                 isinstance(diagnostic_terminal_receipt, Mapping)
                 and receipt.get("terminal_action_integration_receipt")
                 == diagnostic_terminal_receipt
-                and receipt.get(
-                    "terminal_action_integration_receipt_sha256"
-                )
+                and receipt.get("terminal_action_integration_receipt_sha256")
                 == diagnostic_terminal_receipt.get("result_sha256")
             )
         else:
             terminal_execution_receipt_valid = (
                 "terminal_action_integration_receipt" not in receipt
                 and "terminal_action_integration_receipt_sha256" not in receipt
+            )
+        if set(expected_policy_fields) == sequential_terminal_names:
+            diagnostic_transport_coverage = diagnostic.get(
+                "endpoint_sequential_transport_coverage"
+            )
+            transport_execution_receipt_valid = bool(
+                isinstance(diagnostic_transport_coverage, Mapping)
+                and receipt.get("endpoint_sequential_transport_coverage")
+                == diagnostic_transport_coverage
+                and receipt.get("endpoint_sequential_transport_coverage_sha256")
+                == diagnostic_transport_coverage.get("report_sha256")
+            )
+        else:
+            transport_execution_receipt_valid = (
+                "endpoint_sequential_transport_coverage" not in receipt
+                and "endpoint_sequential_transport_coverage_sha256" not in receipt
             )
     else:
         receipt_profile_valid = (
@@ -4473,16 +4556,23 @@ def execute_single_ratio(
                     *runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS,
                     *runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS,
                     *runner._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS,
+                    *runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS,
                 )
             )
             and "resume_policy_binding" not in receipt
             and "composed_qk_runtime_policy_binding" not in receipt
             and "endpoint_residual_runtime_policy_binding" not in receipt
             and "endpoint_terminal_action_runtime_policy_binding" not in receipt
+            and "endpoint_sequential_terminal_action_runtime_policy_binding"
+            not in receipt
         )
         terminal_execution_receipt_valid = (
             "terminal_action_integration_receipt" not in receipt
             and "terminal_action_integration_receipt_sha256" not in receipt
+        )
+        transport_execution_receipt_valid = (
+            "endpoint_sequential_transport_coverage" not in receipt
+            and "endpoint_sequential_transport_coverage_sha256" not in receipt
         )
     _authenticate_quarantine_receipt(plan, lane, receipt)
     inputs = diagnostic.get("inputs")
@@ -4500,22 +4590,14 @@ def execute_single_ratio(
     )
     compiler_guard = _authenticate_runtime_guard_receipt(
         runtime_guard,
-        schema=(
-            "neural-forge-lfm2-cpcf-v5-compiler-runtime-guard-v1"
-        ),
-        guard_source_sha256=plan.source_identities[
-            "fold_only_runtime_guard"
-        ],
+        schema=("neural-forge-lfm2-cpcf-v5-compiler-runtime-guard-v1"),
+        guard_source_sha256=plan.source_identities["fold_only_runtime_guard"],
         name="retained compiler runtime fold-only guard",
     )
     consumer_guard = _authenticate_runtime_guard_receipt(
         receipt.get("consumer_runtime_guard_receipt"),
-        schema=(
-            "neural-forge-lfm2-cpcf-v5-consumer-runtime-fold-only-guard-v1"
-        ),
-        guard_source_sha256=plan.source_identities[
-            "fold_only_runtime_guard"
-        ],
+        schema=("neural-forge-lfm2-cpcf-v5-consumer-runtime-fold-only-guard-v1"),
+        guard_source_sha256=plan.source_identities["fold_only_runtime_guard"],
         name="retained consumer runtime fold-only guard",
     )
     final_reload_verification = receipt.get("final_reload_verification")
@@ -4551,12 +4633,8 @@ def execute_single_ratio(
             == resume_reference.resume_artifact_sha256
         )
     expected_source_binding = runner._source_binding_sha256(
-        selective_source_sha256=receipt.get(
-            "selective_source_sha256"
-        ),
-        compiler_implementation_sha256=receipt.get(
-            "compiler_implementation_sha256"
-        ),
+        selective_source_sha256=receipt.get("selective_source_sha256"),
+        compiler_implementation_sha256=receipt.get("compiler_implementation_sha256"),
         runner_source_sha256=receipt.get("runner_source_sha256"),
         fold_only_runtime_guard_identity_sha256=(
             guard_implementation.get("identity_sha256")
@@ -4583,8 +4661,7 @@ def execute_single_ratio(
         name="Worker execution receipt",
     )
     if (
-        receipt.get("status")
-        != "captured_quarantine_requires_reviewed_rerun"
+        receipt.get("status") != "captured_quarantine_requires_reviewed_rerun"
         or receipt.get("target_plan_fingerprint")
         != lane.catalog_lane.target_plan_fingerprint
         or receipt.get("target_unique_parameters")
@@ -4593,24 +4670,17 @@ def execute_single_ratio(
         != lane.catalog_lane.selected_candidate.fingerprint
         or receipt.get("selected_candidate_rank")
         != lane.catalog_lane.selected_candidate_rank
-        or receipt.get("parent_sha256")
-        != plan.evidence.parent_model_identity_sha256
+        or receipt.get("parent_sha256") != plan.evidence.parent_model_identity_sha256
         or receipt.get("cache_sha256") != plan.evidence.cache_sha256
-        or receipt.get("bridge_sha256")
-        != plan.config.expected_bridge_artifact_sha256
+        or receipt.get("bridge_sha256") != plan.config.expected_bridge_artifact_sha256
         or receipt.get("corpus_sha256") != plan.evidence.corpus_sha256
-        or receipt.get("source_binding_sha256")
-        != expected_source_binding
-        or receipt.get("selective_catalog_artifact")
-        != dict(catalog_preparation)
+        or receipt.get("source_binding_sha256") != expected_source_binding
+        or receipt.get("selective_catalog_artifact") != dict(catalog_preparation)
         or receipt.get("runner_source_sha256")
         != plan.source_identities["v5_diagnostic_runner"]
-        or receipt.get("post_capture_source_identities")
-        != dict(plan.source_identities)
-        or receipt.get("diagnostic_json")
-        != str(lane.paths.diagnostic_json)
-        or receipt.get("quarantine_directory")
-        != str(lane.paths.quarantine_directory)
+        or receipt.get("post_capture_source_identities") != dict(plan.source_identities)
+        or receipt.get("diagnostic_json") != str(lane.paths.diagnostic_json)
+        or receipt.get("quarantine_directory") != str(lane.paths.quarantine_directory)
         or receipt.get("standalone_reload_verified") is not True
         or receipt.get("whole_output_evaluation_captured") is not True
         or receipt.get("manual_review_status") != "pending"
@@ -4621,20 +4691,17 @@ def execute_single_ratio(
         or receipt.get("parameters_quantized") != 0
         or not receipt_profile_valid
         or not terminal_execution_receipt_valid
+        or not transport_execution_receipt_valid
         or not resume_binding_valid
         or not isinstance(inputs, Mapping)
-        or inputs.get("parent_fingerprint")
-        != receipt.get("parent_sha256")
+        or inputs.get("parent_fingerprint") != receipt.get("parent_sha256")
         or inputs.get("cache_key") != receipt.get("cache_sha256")
-        or inputs.get("bridge_artifact_sha256")
-        != receipt.get("bridge_sha256")
-        or inputs.get("trajectory_corpus_sha256")
-        != receipt.get("corpus_sha256")
+        or inputs.get("bridge_artifact_sha256") != receipt.get("bridge_sha256")
+        or inputs.get("trajectory_corpus_sha256") != receipt.get("corpus_sha256")
         or not isinstance(diagnostic_catalog, Mapping)
         or dict(diagnostic_catalog) != dict(catalog_preparation)
         or not isinstance(compiled, Mapping)
-        or compiled.get("result_sha256")
-        != receipt.get("compiler_receipt_sha256")
+        or compiled.get("result_sha256") != receipt.get("compiler_receipt_sha256")
         or compiled.get("selective_source_sha256")
         != receipt.get("selective_source_sha256")
         or not isinstance(compiler_implementation, Mapping)
@@ -4645,8 +4712,7 @@ def execute_single_ratio(
         != plan.source_identities.get("fold_only_runtime_guard")
         or guard_implementation.get("training_api_firewall") is not True
         or guard_implementation.get("common_pruning_api_firewall") is not True
-        or guard_implementation.get("common_quantization_api_firewall")
-        is not True
+        or guard_implementation.get("common_quantization_api_firewall") is not True
         or runtime_guard.get("clean") is not True
         or consumer_guard.get("compiler_runtime_guard_sha256")
         != compiler_guard["report_sha256"]
@@ -4667,9 +4733,7 @@ def execute_single_ratio(
 
 
 def _atomic_new_json(path: Path, value: Mapping[str, Any]) -> None:
-    lexical = Path(
-        _path_text(path, "plan_output")
-    ).expanduser().absolute()
+    lexical = Path(_path_text(path, "plan_output")).expanduser().absolute()
     if lexical.exists() or lexical.is_symlink():
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Plan output already exists; refusing overwrite."
@@ -4718,9 +4782,7 @@ def _load_typed_mapping(
     try:
         payload = json.loads(source.read_text("ascii"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            f"{kind} JSON is unreadable."
-        ) from exc
+        raise Lfm2CpcfV5FrontierSupervisorError(f"{kind} JSON is unreadable.") from exc
     if not isinstance(payload, Mapping):
         raise Lfm2CpcfV5FrontierSupervisorError(
             f"{kind} JSON must be an object keyed by target-plan fingerprint."
@@ -4762,6 +4824,7 @@ def build_parser() -> argparse.ArgumentParser:
         ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
         COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID,
         ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,
+        ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_RUNNER_PROFILE_ID,
         ENDPOINT_TERMINAL_ACTION_RUNNER_PROFILE_ID,
     )
 
@@ -4923,6 +4986,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--endpoint-sequential-terminal-action-profile",
+        dest="endpoint_sequential_terminal_action_profile",
+        nargs="?",
+        const=ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_RUNNER_PROFILE_ID,
+        choices=(ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_RUNNER_PROFILE_ID,),
+        help=(
+            "Exact source-bound endpoint QKVO plus FIT-only upstream and "
+            "candidate-local downstream sequential transport plus terminal-W2 "
+            "opt-in, sealed through catalog, resume, quarantine, and execution "
+            "receipts."
+        ),
+    )
+    parser.add_argument(
         "--attempt-id",
         default="attempt-0001",
         help=(
@@ -4943,6 +5019,7 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
         V5AttentionSequentialTransportRunnerProfile,
         V5ComposedQkAttentionRunnerProfile,
         V5EndpointResidualAttentionRunnerProfile,
+        V5EndpointSequentialTerminalActionRunnerProfile,
         V5EndpointTerminalActionRunnerProfile,
     )
 
@@ -4955,19 +5032,11 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
         args.resume_references_json,
         kind="resume_references",
     )
-    if (
-        lifecycle
-        is Lfm2CpcfV5FrontierLifecycle.CAPTURE_QUARANTINE
-        and reviews
-    ):
+    if lifecycle is Lfm2CpcfV5FrontierLifecycle.CAPTURE_QUARANTINE and reviews:
         raise Lfm2CpcfV5FrontierSupervisorError(
             "capture_quarantine accepts no approved review bindings."
         )
-    ratios = (
-        DECLARATIVE_RATIOS
-        if args.execute_ratio is None
-        else (args.execute_ratio,)
-    )
+    ratios = DECLARATIVE_RATIOS if args.execute_ratio is None else (args.execute_ratio,)
     devices = (
         DEFAULT_RTX3090_GPU_SELECTORS
         if args.gpu_devices is None
@@ -4982,12 +5051,8 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
         trajectory_corpus=args.trajectory_corpus,
         parent_envelope=args.parent_envelope,
         work_directory=args.work_directory,
-        expected_parent_graph_fingerprint=(
-            args.expected_parent_graph_fingerprint
-        ),
-        expected_bridge_artifact_sha256=(
-            args.expected_bridge_artifact_sha256
-        ),
+        expected_parent_graph_fingerprint=(args.expected_parent_graph_fingerprint),
+        expected_bridge_artifact_sha256=(args.expected_bridge_artifact_sha256),
         expected_cache_sha256=args.expected_cache_sha256,
         expected_parent_envelope_file_sha256=(
             args.expected_parent_envelope_file_sha256
@@ -4998,12 +5063,8 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
         resume_references=resumes,
         runtime_limits=FrontierRuntimeLimits(
             maximum_process_rss_gib=args.maximum_process_rss_gib,
-            maximum_logical_resident_gib=(
-                args.maximum_logical_resident_gib
-            ),
-            maximum_cuda_gib_per_device=(
-                args.maximum_cuda_gib_per_device
-            ),
+            maximum_logical_resident_gib=(args.maximum_logical_resident_gib),
+            maximum_cuda_gib_per_device=(args.maximum_cuda_gib_per_device),
             minimum_physical_rss_reduction_fraction=(
                 args.minimum_physical_rss_reduction_fraction
             ),
@@ -5031,8 +5092,7 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
         ),
         endpoint_residual_attention_profile=(
             None
-            if getattr(args, "endpoint_residual_attention_profile", None)
-            is None
+            if getattr(args, "endpoint_residual_attention_profile", None) is None
             else V5EndpointResidualAttentionRunnerProfile(
                 profile_id=args.endpoint_residual_attention_profile,
             )
@@ -5044,14 +5104,22 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
                 profile_id=args.endpoint_terminal_action_profile,
             )
         ),
+        endpoint_sequential_terminal_action_profile=(
+            None
+            if getattr(
+                args,
+                "endpoint_sequential_terminal_action_profile",
+                None,
+            )
+            is None
+            else V5EndpointSequentialTerminalActionRunnerProfile(
+                profile_id=args.endpoint_sequential_terminal_action_profile,
+            )
+        ),
         attempt_id=args.attempt_id,
         python_executable=args.python_executable,
-        selective_catalog_store_directory=(
-            args.selective_catalog_store_directory
-        ),
-        selective_catalog_receipt_json=(
-            args.selective_catalog_receipt_json
-        ),
+        selective_catalog_store_directory=(args.selective_catalog_store_directory),
+        selective_catalog_receipt_json=(args.selective_catalog_receipt_json),
         expected_selective_catalog_receipt_sha256=(
             args.expected_selective_catalog_receipt_sha256
         ),
@@ -5072,9 +5140,7 @@ def prepare_frontier_selective_catalog(
         ratio=4,
         prepare_only=True,
     )
-    return MappingProxyType(
-        dict(runner.prepare_selective_catalog(runner_config))
-    )
+    return MappingProxyType(dict(runner.prepare_selective_catalog(runner_config)))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -5102,9 +5168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 },
             )
         if args.prepare_selective_catalog_only:
-            preparation = dict(
-                prepare_frontier_selective_catalog(config)
-            )
+            preparation = dict(prepare_frontier_selective_catalog(config))
             print(json.dumps(preparation, indent=2, sort_keys=True))
             return 0
         schedule, evidence = discover_frontier_schedule(config)

@@ -12,10 +12,15 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from neural_forge.hf_lfm2_cpcf_boundary_bundle import (  # noqa: E402
+    LFM2_CPCF_LAYER_CHARTS_SCHEMA,
     Lfm2CpcfBoundaryBundle,
     Lfm2CpcfBoundaryBundleError,
+    Lfm2CpcfLayerBoundaryCharts,
     build_lfm2_cpcf_causal_anchor_splits,
     fit_lfm2_cpcf_boundary_bundle,
+)
+from neural_forge.hf_cpcf_boundary_chart import (  # noqa: E402
+    fit_cpcf_orthogonal_chart_transport,
 )
 from neural_forge.hf_lfm2_cpcf_installability import (  # noqa: E402
     Lfm2CpcfInstallableLayerEvidence,
@@ -490,6 +495,99 @@ def test_v5_selective_boundary_compiler_is_byte_exact_to_v4():
     assert [layer.as_dict() for layer in observed.layers] == [
         layer.as_dict() for layer in expected.layers
     ]
+
+
+def test_v5_combined_profile_persists_only_upstream_transported_chart():
+    phases = _phases()
+    source_table = _source_table()
+    policy = Lfm2CpcfModelFoldPolicy(
+        state_reconstruction_weight=0.0,
+        minimum_predictive_energy_fraction=0.90,
+        minimum_validation_block_retention=0.90,
+    )
+    layer_kinds = tuple(
+        layer.operator_kind for layer in phases[0].parent_evidence.layers
+    )
+    catalog = SimpleNamespace(
+        source_width=4,
+        layer_count=len(layer_kinds),
+        phase_references=tuple(
+            SimpleNamespace(layer_operator_kinds=layer_kinds) for _phase in phases
+        ),
+    )
+    compiler = _SelectiveBoundaryCompiler(
+        phases,
+        catalog,
+        source_table,
+        target_hidden_width=2,
+        model_policy=policy,
+    )
+    compiler.fit_interface(phases, target_norm_epsilon=1e-5)
+    source = compiler.fit_layer(phases, layer_index=0)
+    parent_rows = torch.randn(
+        12,
+        source.source_width,
+        generator=torch.Generator().manual_seed(9773),
+        dtype=torch.float64,
+    )
+    rotation = torch.tensor(
+        [[0.0, 1.0], [-1.0, 0.0]],
+        dtype=torch.float64,
+    )
+    transport = fit_cpcf_orthogonal_chart_transport(
+        source.post_operator,
+        fit_actual_child_rows=source.post_operator.encode(parent_rows) @ rotation,
+        fit_parent_states=parent_rows,
+        fit_provenance="test/upstream-fit-only",
+    )
+    assert transport.chart is not None
+    layer_body = {
+        "schema": LFM2_CPCF_LAYER_CHARTS_SCHEMA,
+        "layer_index": source.layer_index,
+        "operator_kind": source.operator_kind,
+        "source_width": source.source_width,
+        "target_width": source.target_width,
+        "post_operator_report_sha256": transport.chart.report["report_sha256"],
+        "post_layer_report_sha256": source.post_layer.report["report_sha256"],
+        "independent_boundary_coordinates": True,
+    }
+    effective = Lfm2CpcfLayerBoundaryCharts(
+        layer_index=source.layer_index,
+        operator_kind=source.operator_kind,
+        post_operator=transport.chart,
+        post_layer=source.post_layer,
+        layer_charts_sha256=_canonical_sha256(layer_body),
+    )
+    controller_body = {
+        "component": "fit_only_post_operator_chart_transport",
+        "production_profile_authorized": True,
+        "source_layer_charts_sha256": source.layer_charts_sha256,
+        "transported_layer_charts_sha256": effective.layer_charts_sha256,
+        "unchanged_post_layer_report_sha256": (
+            source.post_layer.report["report_sha256"]
+        ),
+        "transported_post_operator_report_sha256": (
+            effective.post_operator.report["report_sha256"]
+        ),
+    }
+    controller = {
+        **controller_body,
+        "report_sha256": _canonical_sha256(controller_body),
+    }
+
+    compiler.replace_latest_layer_charts(
+        source,
+        effective,
+        controller_report=controller,
+    )
+    for layer_index in range(1, len(layer_kinds)):
+        compiler.fit_layer(phases, layer_index=layer_index)
+    observed = compiler.finalize()
+
+    assert observed.layers[0] is effective
+    assert observed.layers[0].layer_charts_sha256 == effective.layer_charts_sha256
+    assert observed.layers[0].post_layer is source.post_layer
+    assert observed.layers[0].post_operator is not source.post_operator
 
 
 def test_fit_validation_are_disjoint_and_selection_cannot_affect_fits():

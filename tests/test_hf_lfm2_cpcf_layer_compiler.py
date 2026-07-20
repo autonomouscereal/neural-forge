@@ -35,8 +35,11 @@ from neural_forge.hf_lfm2_cpcf_model_compiler import (  # noqa: E402
     seed_lfm2_cpcf_phase_states,
 )
 from neural_forge.hf_lfm2_cpcf_residual_error_controller import (  # noqa: E402
+    LFM2_CPCF_POST_OPERATOR_TRANSPORT_PRODUCTION_SCHEMA,
+    Lfm2CpcfPostOperatorTransportPolicy,
     apply_lfm2_cpcf_post_operator_chart_transport_shadow,
     fit_lfm2_cpcf_post_operator_chart_transport,
+    fit_lfm2_cpcf_post_operator_chart_transport_for_profile,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
     Lfm2CpcfShortConvV4SolverPolicy,
@@ -2254,9 +2257,7 @@ def test_rejected_composed_still_attempts_endpoint_and_endpoint_failure_rolls_ba
         dtype=torch.bfloat16,
     )
     state_before = _state_sha(target.model.layers[0])
-    base_policy = layer_compiler.Lfm2ComposedQkAttentionFoldPolicy(
-        fit_check_count=1
-    )
+    base_policy = layer_compiler.Lfm2ComposedQkAttentionFoldPolicy(fit_check_count=1)
     rejecting_score_policy = replace(
         base_policy.score_policy,
         maximum_fit_centered_score_relative_rmse=0.0,
@@ -2281,9 +2282,7 @@ def test_rejected_composed_still_attempts_endpoint_and_endpoint_failure_rolls_ba
         observed["start"] = composed_qk
         observed["score_accepted"] = composed_qk.score_result.accepted
         observed["start_source"] = composed_qk.report["starting_state_source"]
-        raise RuntimeError(
-            "synthetic independently gated endpoint rejection"
-        )
+        raise RuntimeError("synthetic independently gated endpoint rejection")
 
     monkeypatch.setattr(
         layer_compiler,
@@ -2339,6 +2338,49 @@ def test_layer_compiler_rejects_composed_plus_sequential_transport() -> None:
             composed_qk_attention_policy=(
                 layer_compiler.Lfm2ComposedQkAttentionFoldPolicy()
             ),
+        )
+
+
+def test_endpoint_sequential_combination_requires_exact_bound_controller():
+    from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+        Lfm2CpcfTerminalActionPolicy,
+    )
+
+    source, target, bank, charts = _fixture("full_attention")
+    composed = layer_compiler.Lfm2ComposedQkAttentionFoldPolicy()
+    endpoint = layer_compiler.Lfm2ComposedEndpointResidualAttentionFoldPolicy()
+    sequential = layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
+    post_operator = Lfm2CpcfPostOperatorTransportPolicy()
+    terminal = Lfm2CpcfTerminalActionPolicy()
+    combined = layer_compiler.Lfm2CpcfEndpointSequentialTransportPolicy(
+        composed_qk_attention_policy_sha256=composed.authentication_sha256,
+        endpoint_residual_attention_policy_sha256=(endpoint.authentication_sha256),
+        attention_sequential_transport_policy_sha256=(
+            sequential.as_dict()["report_sha256"]
+        ),
+        post_operator_transport_policy_sha256=(post_operator.authentication_sha256),
+        terminal_action_residual_policy_sha256=(terminal.authentication_sha256),
+    )
+
+    assert combined.authenticates_components(
+        composed_qk_attention_policy=composed,
+        endpoint_residual_attention_policy=endpoint,
+        attention_sequential_transport_policy=sequential,
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="requires its frozen post-operator controller report",
+    ):
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+            attention_sequential_transport_policy=sequential,
+            composed_qk_attention_policy=composed,
+            endpoint_residual_attention_policy=endpoint,
+            endpoint_sequential_transport_policy=combined,
         )
 
 
@@ -4203,6 +4245,54 @@ def test_post_operator_chart_transport_reduces_write_and_compiles_real_layer():
     assert compiled.report["execution"]["training_steps"] == 0
     assert compiled.report["execution"]["optimizer_steps"] == 0
     assert compiled.report["execution"]["backward_calls"] == 0
+
+
+def test_post_operator_chart_transport_profile_authorizes_same_closed_form_gain():
+    _source, _target, bank, charts = _fixture("full_attention")
+    aligned_bank, _expected_rotation = _rotated_post_operator_input_bank(
+        bank,
+        charts,
+    )
+    policy = Lfm2CpcfPostOperatorTransportPolicy()
+
+    result = fit_lfm2_cpcf_post_operator_chart_transport_for_profile(
+        aligned_bank,
+        charts,
+        policy=policy,
+    )
+
+    assert result.report["schema"] == (
+        LFM2_CPCF_POST_OPERATOR_TRANSPORT_PRODUCTION_SCHEMA
+    )
+    assert result.report["component"] == ("fit_only_post_operator_chart_transport")
+    assert result.report["production_profile_authorized"] is True
+    assert result.report["forced_shadow_for_controlled_comparison"] is False
+    assert result.report["post_operator_transport_policy"] == policy.as_dict()
+    assert result.report["post_operator_transport_policy_sha256"] == (
+        policy.authentication_sha256
+    )
+    assert result.report["fit_required_write_rms_reduction_fraction"] > 0.99
+    assert result.report["selection_required_write_rms_reduction_fraction"] > 0.99
+    assert result.report["validation_rows_read"] == 0
+    assert result.report["training_steps"] == 0
+    assert result.report["optimizer_steps"] == 0
+    assert result.report["backward_calls"] == 0
+    assert result.boundary_charts.post_layer is charts.post_layer
+
+
+def test_legacy_post_operator_transport_receipt_remains_forced_shadow():
+    _source, _target, bank, charts = _fixture("full_attention")
+    result = fit_lfm2_cpcf_post_operator_chart_transport(bank, charts)
+
+    assert result.report["schema"] == (
+        "neural-forge-lfm2-cpcf-residual-error-controller-v1"
+    )
+    assert result.report["component"] == (
+        "fit_only_post_operator_chart_transport_shadow"
+    )
+    assert result.report["forced_shadow_for_controlled_comparison"] is True
+    assert "production_profile_authorized" not in result.report
+    assert "post_operator_transport_policy" not in result.report
 
 
 def test_post_operator_chart_transport_never_reads_validation(

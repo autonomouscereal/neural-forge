@@ -157,6 +157,12 @@ LFM2_CPCF_ATTENTION_CANDIDATE_SELECTION_SCHEMA = (
 LFM2_CPCF_ATTENTION_SEQUENTIAL_TRANSPORT_POLICY_SCHEMA = (
     "neural-forge-lfm2-cpcf-attention-sequential-transport-policy-v1"
 )
+LFM2_CPCF_ENDPOINT_SEQUENTIAL_TRANSPORT_POLICY_SCHEMA = (
+    "neural-forge-lfm2-cpcf-endpoint-sequential-transport-policy-v1"
+)
+LFM2_CPCF_ENDPOINT_SEQUENTIAL_TRANSPORT_PROFILE_ID = (
+    "endpoint-residual-two-sided-sequential-terminal-w2-v1"
+)
 LFM2_CPCF_SHORT_CONV_TWO_LANE_EXECUTION_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-two-lane-execution-v1"
 )
@@ -262,6 +268,110 @@ class Lfm2CpcfAttentionSequentialTransportPolicy:
             "parameters_quantized": 0,
         }
         return {**body, "report_sha256": _sha(body)}
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfEndpointSequentialTransportPolicy:
+    """Authenticate the one endpoint + two-sided transport compiler lane.
+
+    This policy is deliberately only an authorization/binding object.  It
+    introduces no fitted state: it binds the already authenticated composed
+    Q/K, endpoint-residual, and candidate-local sequential-transport policies
+    so the generic layer compiler cannot accidentally enable their otherwise
+    forbidden combination.
+    """
+
+    composed_qk_attention_policy_sha256: str
+    endpoint_residual_attention_policy_sha256: str
+    attention_sequential_transport_policy_sha256: str
+    post_operator_transport_policy_sha256: str
+    terminal_action_residual_policy_sha256: str
+    profile_id: str = LFM2_CPCF_ENDPOINT_SEQUENTIAL_TRANSPORT_PROFILE_ID
+
+    def __post_init__(self) -> None:
+        if self.profile_id != LFM2_CPCF_ENDPOINT_SEQUENTIAL_TRANSPORT_PROFILE_ID:
+            raise Lfm2CpcfLayerCompilerError(
+                "Unknown endpoint sequential-transport combination profile."
+            )
+        for name in (
+            "composed_qk_attention_policy_sha256",
+            "endpoint_residual_attention_policy_sha256",
+            "attention_sequential_transport_policy_sha256",
+            "post_operator_transport_policy_sha256",
+            "terminal_action_residual_policy_sha256",
+        ):
+            _digest(getattr(self, name), name)
+
+    def as_dict(self) -> dict[str, Any]:
+        body = {
+            "schema": LFM2_CPCF_ENDPOINT_SEQUENTIAL_TRANSPORT_POLICY_SCHEMA,
+            "profile_id": self.profile_id,
+            "composed_qk_attention_policy_sha256": (
+                self.composed_qk_attention_policy_sha256
+            ),
+            "endpoint_residual_attention_policy_sha256": (
+                self.endpoint_residual_attention_policy_sha256
+            ),
+            "attention_sequential_transport_policy_sha256": (
+                self.attention_sequential_transport_policy_sha256
+            ),
+            "post_operator_transport_policy_sha256": (
+                self.post_operator_transport_policy_sha256
+            ),
+            "terminal_action_residual_policy_sha256": (
+                self.terminal_action_residual_policy_sha256
+            ),
+            "fit_only_post_operator_chart_transport_required": True,
+            "candidate_local_post_layer_chart_transport_required": True,
+            "exact_qkvo_installed_before_candidate_fit_replay": True,
+            "candidate_specific_closed_form_mlp_required": True,
+            "winner_bundle_frozen_before_validation": True,
+            "actual_child_state_propagated": True,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        return {**body, "authentication_sha256": _sha(body)}
+
+    @property
+    def authentication_sha256(self) -> str:
+        return self.as_dict()["authentication_sha256"]
+
+    def verify_authentication(self) -> bool:
+        document = self.as_dict()
+        body = dict(document)
+        claimed = body.pop("authentication_sha256")
+        return claimed == _sha(body)
+
+    def authenticates_components(
+        self,
+        *,
+        composed_qk_attention_policy: Lfm2ComposedQkAttentionFoldPolicy,
+        endpoint_residual_attention_policy: (
+            Lfm2ComposedEndpointResidualAttentionFoldPolicy
+        ),
+        attention_sequential_transport_policy: (
+            Lfm2CpcfAttentionSequentialTransportPolicy
+        ),
+    ) -> bool:
+        return (
+            type(composed_qk_attention_policy) is Lfm2ComposedQkAttentionFoldPolicy
+            and composed_qk_attention_policy.verify_authentication()
+            and type(endpoint_residual_attention_policy)
+            is Lfm2ComposedEndpointResidualAttentionFoldPolicy
+            and endpoint_residual_attention_policy.verify_authentication()
+            and type(attention_sequential_transport_policy)
+            is Lfm2CpcfAttentionSequentialTransportPolicy
+            and attention_sequential_transport_policy.enabled
+            and self.composed_qk_attention_policy_sha256
+            == composed_qk_attention_policy.authentication_sha256
+            and self.endpoint_residual_attention_policy_sha256
+            == endpoint_residual_attention_policy.authentication_sha256
+            and self.attention_sequential_transport_policy_sha256
+            == attention_sequential_transport_policy.as_dict()["report_sha256"]
+        )
 
 
 def parse_lfm2_cpcf_attention_sequential_transport_policy(
@@ -2246,8 +2356,7 @@ def _validated_cached_attention_probabilities(
         or query_heads % key_value_heads
         or tuple(key_mask.shape) != (batch, query_rows, key_rows)
         or tuple(values.shape) != (batch, key_value_heads, key_rows, head_dim)
-        or tuple(context.shape)
-        != (batch, query_heads, query_rows, head_dim)
+        or tuple(context.shape) != (batch, query_heads, query_rows, head_dim)
         or tuple(cached_context.shape) != tuple(context.shape)
     ):
         raise Lfm2CpcfLayerCompilerError(
@@ -2272,10 +2381,12 @@ def _validated_cached_attention_probabilities(
     if (
         bool((observed < 0).any().item())
         or not bool(key_mask.any(dim=-1).all().item())
-        or not bool(torch.equal(
-            observed.masked_fill(expanded_mask, 0),
-            torch.zeros_like(observed),
-        ))
+        or not bool(
+            torch.equal(
+                observed.masked_fill(expanded_mask, 0),
+                torch.zeros_like(observed),
+            )
+        )
     ):
         raise Lfm2CpcfLayerCompilerError(
             f"{name} cached probabilities are negative, mask-leaking, or "
@@ -3563,9 +3674,9 @@ def _attention_cases(
             or final_sin is None
             or key_linear_history is None
             or key_history is None
-                or value_history is None
-                or key_mask_history is None
-                or probability_history is None
+            or value_history is None
+            or key_mask_history is None
+            or probability_history is None
         ):
             raise Lfm2CpcfLayerCompilerError(
                 "Attention trajectory did not produce one complete causal case."
@@ -9977,6 +10088,10 @@ def compile_and_install_lfm2_cpcf_layer(
     endpoint_residual_attention_policy: (
         Lfm2ComposedEndpointResidualAttentionFoldPolicy | None
     ) = None,
+    endpoint_sequential_transport_policy: (
+        Lfm2CpcfEndpointSequentialTransportPolicy | None
+    ) = None,
+    post_operator_transport_controller_report: Mapping[str, Any] | None = None,
 ) -> Lfm2CpcfCompiledLayerResult:
     """Compile, install, and replay one next sequential LFM2 target layer."""
 
@@ -10022,9 +10137,118 @@ def compile_and_install_lfm2_cpcf_layer(
             "Endpoint-residual attention requires the authenticated composed "
             "Q/K producer policy."
         )
+    if endpoint_sequential_transport_policy is not None and (
+        type(endpoint_sequential_transport_policy)
+        is not Lfm2CpcfEndpointSequentialTransportPolicy
+        or not endpoint_sequential_transport_policy.verify_authentication()
+    ):
+        raise TypeError(
+            "endpoint_sequential_transport_policy must be the exact "
+            "authenticated Lfm2CpcfEndpointSequentialTransportPolicy."
+        )
+    combined_endpoint_transport = (
+        endpoint_sequential_transport_policy is not None
+        and attention_sequential_transport_policy is not None
+        and composed_qk_attention_policy is not None
+        and endpoint_residual_attention_policy is not None
+        and endpoint_sequential_transport_policy.authenticates_components(
+            composed_qk_attention_policy=composed_qk_attention_policy,
+            endpoint_residual_attention_policy=(endpoint_residual_attention_policy),
+            attention_sequential_transport_policy=(
+                attention_sequential_transport_policy
+            ),
+        )
+    )
+    if endpoint_sequential_transport_policy is not None and not (
+        combined_endpoint_transport
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "The endpoint sequential-transport combination policy does not "
+            "bind the exact composed, endpoint, and enabled transport policies."
+        )
+    upstream_transport_report = None
+    if post_operator_transport_controller_report is not None:
+        if not isinstance(post_operator_transport_controller_report, Mapping):
+            raise TypeError(
+                "post_operator_transport_controller_report must be a mapping."
+            )
+        upstream_transport_report = dict(post_operator_transport_controller_report)
+        upstream_body = dict(upstream_transport_report)
+        upstream_seal = upstream_body.pop("report_sha256", None)
+        upstream_policy = upstream_transport_report.get(
+            "post_operator_transport_policy"
+        )
+        upstream_policy_body = (
+            dict(upstream_policy) if isinstance(upstream_policy, Mapping) else {}
+        )
+        upstream_policy_seal = upstream_policy_body.pop(
+            "authentication_sha256",
+            None,
+        )
+        expected_upstream_policy_body = {
+            "schema": ("neural-forge-lfm2-cpcf-post-operator-transport-policy-v1"),
+            "profile_id": LFM2_CPCF_ENDPOINT_SEQUENTIAL_TRANSPORT_PROFILE_ID,
+            "alignment_tolerance": 1e-12,
+            "orthogonality_tolerance": 1e-10,
+            "preservation_tolerance": 1e-10,
+            "fit_split_only": True,
+            "selection_read_after_freeze_only": True,
+            "validation_rows_read": 0,
+            "one_closed_form_orthogonal_procrustes": True,
+            "post_layer_chart_unchanged": True,
+            "automatic_accept_reject_controller": False,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        if (
+            endpoint_sequential_transport_policy is None
+            or upstream_seal != _sha(upstream_body)
+            or upstream_transport_report.get("schema")
+            != "neural-forge-lfm2-cpcf-post-operator-transport-production-v1"
+            or upstream_transport_report.get("component")
+            != "fit_only_post_operator_chart_transport"
+            or upstream_transport_report.get("production_profile_authorized")
+            is not True
+            or upstream_transport_report.get("forced_shadow_for_controlled_comparison")
+            is not False
+            or upstream_transport_report.get("layer_index") != index
+            or upstream_transport_report.get("operator_kind")
+            != boundary_charts.operator_kind
+            or upstream_transport_report.get("source_state_bank_sha256")
+            != input_bank.state_bank_sha256
+            or upstream_transport_report.get("post_operator_transport_policy_sha256")
+            != endpoint_sequential_transport_policy.post_operator_transport_policy_sha256
+            or upstream_policy_seal
+            != endpoint_sequential_transport_policy.post_operator_transport_policy_sha256
+            or upstream_policy_seal != _sha(upstream_policy_body)
+            or upstream_policy_body != expected_upstream_policy_body
+            or upstream_transport_report.get("transported_layer_charts_sha256")
+            != boundary_charts.layer_charts_sha256
+            or upstream_transport_report.get("validation_rows_read") != 0
+            or upstream_transport_report.get("validation_used_by_solver") is not False
+            or upstream_transport_report.get(
+                "fit_only_closed_form_orthogonal_procrustes"
+            )
+            is not True
+            or upstream_transport_report.get("post_layer_chart_same_object") is not True
+            or upstream_transport_report.get("source_charts_unchanged") is not True
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "The combined profile requires one exact authenticated "
+                "FIT-only post-operator chart-transport controller report."
+            )
+    elif endpoint_sequential_transport_policy is not None:
+        raise Lfm2CpcfLayerCompilerError(
+            "The endpoint sequential-transport profile requires its frozen "
+            "post-operator controller report."
+        )
     if (
         composed_qk_attention_policy is not None
         and attention_sequential_transport_policy is not None
+        and not combined_endpoint_transport
     ):
         raise Lfm2CpcfLayerCompilerError(
             "Composed Q/K attention and candidate-local sequential transport "
@@ -10033,6 +10257,7 @@ def compile_and_install_lfm2_cpcf_layer(
     if (
         endpoint_residual_attention_policy is not None
         and attention_sequential_transport_policy is not None
+        and not combined_endpoint_transport
     ):
         raise Lfm2CpcfLayerCompilerError(
             "Endpoint-residual attention and candidate-local sequential "
@@ -10132,6 +10357,12 @@ def compile_and_install_lfm2_cpcf_layer(
     ):
         raise Lfm2CpcfLayerCompilerError(
             "Endpoint-residual attention folding is attention-only."
+        )
+    if endpoint_sequential_transport_policy is not None and (
+        operator_kind != "full_attention"
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "The endpoint sequential-transport profile is attention-only."
         )
     for phase in input_bank.phases:
         evidence = phase.parent_evidence.layers[index]
@@ -10338,9 +10569,7 @@ def compile_and_install_lfm2_cpcf_layer(
                     )
                 else:
                     composed_qk_stage_one_attempt = (
-                        compile_lfm2_composed_qk_stage_one_attempt(
-                            **stage_one_inputs
-                        )
+                        compile_lfm2_composed_qk_stage_one_attempt(**stage_one_inputs)
                     )
                     composed_qk_artifact = (
                         composed_qk_stage_one_attempt.composed_candidate
@@ -10673,9 +10902,7 @@ def compile_and_install_lfm2_cpcf_layer(
                             ),
                             "shape": list(endpoint_output_prior.shape),
                             "dtype": str(endpoint_output_prior.dtype),
-                            "tensor_sha256": _tensor_sha256(
-                                endpoint_output_prior
-                            ),
+                            "tensor_sha256": _tensor_sha256(endpoint_output_prior),
                             "blank_target_values_read": False,
                         }
                     )
@@ -10713,9 +10940,7 @@ def compile_and_install_lfm2_cpcf_layer(
                             target_query_weight_template=(
                                 target_attention.q_proj.weight
                             ),
-                            target_key_weight_template=(
-                                target_attention.k_proj.weight
-                            ),
+                            target_key_weight_template=(target_attention.k_proj.weight),
                             target_value_weight_template=(
                                 target_attention.v_proj.weight
                             ),
@@ -10784,9 +11009,9 @@ def compile_and_install_lfm2_cpcf_layer(
                     SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
                 ] = composed_operator_artifact
             if endpoint_operator_artifact is not None:
-                candidate_artifacts[
-                    ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
-                ] = endpoint_operator_artifact
+                candidate_artifacts[ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID] = (
+                    endpoint_operator_artifact
+                )
             for candidate_id in attention_candidate_ids:
                 candidate_artifact = candidate_artifacts[candidate_id]
                 candidate_prepared_mlp_basis = (
@@ -10838,12 +11063,9 @@ def compile_and_install_lfm2_cpcf_layer(
                     prepared_mlp_basis=candidate_prepared_mlp_basis,
                     sequential_transport_policy=(attention_sequential_transport_policy),
                 )
-                if (
-                    endpoint_residual_attention_policy is None
-                    and not (
-                        attention_sequential_transport_policy is not None
-                        and attention_sequential_transport_policy.enabled
-                    )
+                if endpoint_residual_attention_policy is None and not (
+                    attention_sequential_transport_policy is not None
+                    and attention_sequential_transport_policy.enabled
                 ):
                     attention_mlp_prepared_basis = candidate_prepared_mlp_basis
                 _restore_layer(target_layer, target_before)
@@ -11528,10 +11750,7 @@ def compile_and_install_lfm2_cpcf_layer(
             },
         }
         if composed_qk_attention_policy is not None:
-            if (
-                composed_qk_artifact is None
-                and composed_qk_stage_one_attempt is None
-            ):
+            if composed_qk_artifact is None and composed_qk_stage_one_attempt is None:
                 raise Lfm2CpcfLayerCompilerError(
                     "Composed Q/K policy produced neither an admitted candidate "
                     "nor an authenticated endpoint start."
@@ -11634,6 +11853,40 @@ def compile_and_install_lfm2_cpcf_layer(
                     "attention_cross_candidate_prepared_mlp_basis_reuse": False,
                     "endpoint_residual_fit_only_downstream_mlp_evaluation": True,
                     "endpoint_residual_fit_check_final_one_shot_only": True,
+                },
+            }
+        if endpoint_sequential_transport_policy is not None:
+            if attention_final_transport_binding is None:
+                raise Lfm2CpcfLayerCompilerError(
+                    "The authenticated endpoint sequential-transport profile "
+                    "produced no frozen candidate-local downstream transport."
+                )
+            body = {
+                **body,
+                "solver_evidence_policy": {
+                    **body["solver_evidence_policy"],
+                    "endpoint_sequential_transport_policy": (
+                        endpoint_sequential_transport_policy.as_dict()
+                    ),
+                    "endpoint_sequential_transport_policy_sha256": (
+                        endpoint_sequential_transport_policy.authentication_sha256
+                    ),
+                    "fit_only_post_operator_transport_controller": dict(
+                        upstream_transport_report
+                    ),
+                    "fit_only_post_operator_transport_controller_sha256": (
+                        upstream_transport_report["report_sha256"]
+                    ),
+                    "exact_endpoint_qkvo_candidate_replayed_before_own_mlp": True,
+                    "candidate_local_transport_frozen_before_own_mlp": True,
+                    "selected_operator_transport_mlp_bundle_frozen": True,
+                },
+                "actual_child_state_policy": {
+                    **body["actual_child_state_policy"],
+                    "endpoint_sequential_transport_profile": (
+                        "authenticated_candidate_local_two_sided_gauge_lane"
+                    ),
+                    "selected_actual_child_post_layer_propagated": True,
                 },
             }
         if attention_final_transport_binding is not None:
@@ -11752,6 +12005,8 @@ __all__ = [
     "LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS",
     "LFM2_CPCF_ATTENTION_CANDIDATE_SELECTION_SCHEMA",
     "LFM2_CPCF_ATTENTION_SEQUENTIAL_TRANSPORT_POLICY_SCHEMA",
+    "LFM2_CPCF_ENDPOINT_SEQUENTIAL_TRANSPORT_POLICY_SCHEMA",
+    "LFM2_CPCF_ENDPOINT_SEQUENTIAL_TRANSPORT_PROFILE_ID",
     "LFM2_CPCF_LAYER_COMPILER_SCHEMA",
     "LFM2_CPCF_LAYER_FAILURE_SCHEMA",
     "LFM2_CPCF_RESIDUAL_ATTENTION_SPLIT_SCHEMA",
@@ -11763,6 +12018,7 @@ __all__ = [
     "Lfm2ComposedQkAttentionFoldPolicy",
     "Lfm2ComposedEndpointResidualAttentionFoldPolicy",
     "Lfm2CpcfAttentionSequentialTransportPolicy",
+    "Lfm2CpcfEndpointSequentialTransportPolicy",
     "Lfm2CpcfCompiledLayerResult",
     "Lfm2CpcfLayerCompilationFailure",
     "Lfm2CpcfLayerCompilerError",

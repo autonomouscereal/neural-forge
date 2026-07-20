@@ -42,6 +42,39 @@ def _file_sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def test_execution_receipt_rejects_cross_profile_orphan_identity_fields() -> None:
+    from experiments import run_lfm2_cpcf_v5_selective_blank_fold as runner
+
+    active = {
+        name: _digest(f"combined-{name}")
+        for name in (runner._ENDPOINT_SEQUENTIAL_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS)
+    }
+    assert (
+        supervisor._foreign_policy_identity_field_names(
+            runner,
+            active,
+            active,
+        )
+        == ()
+    )
+    crossed = {
+        **active,
+        "composed_qk_attention_policy_identity_sha256": _digest(
+            "foreign-composed-identity"
+        ),
+    }
+    assert supervisor._foreign_policy_identity_field_names(
+        runner,
+        crossed,
+        active,
+    ) == ("composed_qk_attention_policy_identity_sha256",)
+    assert supervisor._foreign_policy_identity_field_names(
+        runner,
+        {"terminal_action_residual_policy_sha256": _digest("orphan-terminal")},
+        {},
+    ) == ("terminal_action_residual_policy_sha256",)
+
+
 def _catalog_preparation() -> dict[str, Any]:
     digests = {
         name: _digest(f"catalog-{name}")
@@ -103,20 +136,14 @@ def _evidence(
 ) -> supervisor.FrontierEvidenceBindings:
     return supervisor.FrontierEvidenceBindings(
         parent_model_identity_sha256=_digest("parent-identity"),
-        donor_tokenizer_package_sha256=_digest(
-            "donor-tokenizer-package"
-        ),
+        donor_tokenizer_package_sha256=_digest("donor-tokenizer-package"),
         cache_sha256=cache_sha256,
         corpus_sha256=_file_sha(corpus),
         parent_envelope_file_sha256=_file_sha(envelope),
         parent_envelope_sha256=_digest("parent-envelope-seal"),
-        parent_envelope_document_sha256=_digest(
-            "parent-envelope-document"
-        ),
+        parent_envelope_document_sha256=_digest("parent-envelope-document"),
         holdout_manifest_sha256=_digest("holdout-manifest"),
-        holdout_manifest_document_sha256=_digest(
-            "holdout-manifest-document"
-        ),
+        holdout_manifest_document_sha256=_digest("holdout-manifest-document"),
         holdout_case_count=64,
         selective_catalog_preparation=_catalog_preparation(),
     )
@@ -198,9 +225,7 @@ def _write_fake_quarantine_receipt(
     for role in ("saver", "loader", "evaluator"):
         reachable = {"fixture": role}
         identity_body = {
-            "schema": (
-                "neural-forge-dynamic-candidate-callable-binding-v1"
-            ),
+            "schema": ("neural-forge-dynamic-candidate-callable-binding-v1"),
             "role": role,
             "implementation_sha256": _digest(f"{role}-implementation"),
             "resource_sha256": _digest(f"{role}-resource"),
@@ -442,9 +467,7 @@ def _config(
         donor_tokenizer_directory=inputs["donor_tokenizer"],
         target_tokenizer_directory=inputs["target_tokenizer"],
         bridge_directory=(
-            tmp_path / "bridge"
-            if bridge_directory is None
-            else bridge_directory
+            tmp_path / "bridge" if bridge_directory is None else bridge_directory
         ),
         trace_cache_directory=inputs["cache"],
         trajectory_corpus=inputs["corpus"],
@@ -453,9 +476,7 @@ def _config(
         expected_parent_graph_fingerprint=graph.fingerprint,
         expected_bridge_artifact_sha256=schedule.bridge_artifact_sha256,
         expected_cache_sha256=_digest("cache"),
-        expected_parent_envelope_file_sha256=_file_sha(
-            inputs["envelope"]
-        ),
+        expected_parent_envelope_file_sha256=_file_sha(inputs["envelope"]),
         lifecycle=lifecycle,
         compression_ratios=ratios,
         approved_review_bindings={} if reviews is None else reviews,
@@ -642,12 +663,14 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
         250,
     )
     assert report["maximum_parallel_ratio_processes"] == 1
-    assert report["input_bindings"][
-        "donor_tokenizer_package_sha256"
-    ] == evidence.donor_tokenizer_package_sha256
-    assert report["catalog_schedule"][
-        "donor_tokenizer_semantics_sha256"
-    ] == schedule.donor_tokenizer_semantics_sha256
+    assert (
+        report["input_bindings"]["donor_tokenizer_package_sha256"]
+        == evidence.donor_tokenizer_package_sha256
+    )
+    assert (
+        report["catalog_schedule"]["donor_tokenizer_semantics_sha256"]
+        == schedule.donor_tokenizer_semantics_sha256
+    )
     assert (
         evidence.donor_tokenizer_package_sha256
         != schedule.donor_tokenizer_semantics_sha256
@@ -659,17 +682,12 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
     assert report["structural_diagnostics_can_authorize_promotion"] is False
     assert report["publication_authorized"] is False
     assert report["status"] == "capture_quarantine_processes_ready"
-    assert report[
-        "shared_selective_catalog_preparation_receipt_sha256"
-    ] == evidence.selective_catalog_preparation[
-        "preparation_receipt_sha256"
-    ]
-    assert report[
-        "all_ratio_workers_require_exact_authenticated_warm_hit"
-    ] is True
-    assert report[
-        "catalog_cold_rebuilds_permitted_in_ratio_workers"
-    ] is False
+    assert (
+        report["shared_selective_catalog_preparation_receipt_sha256"]
+        == evidence.selective_catalog_preparation["preparation_receipt_sha256"]
+    )
+    assert report["all_ratio_workers_require_exact_authenticated_warm_hit"] is True
+    assert report["catalog_cold_rebuilds_permitted_in_ratio_workers"] is False
     assert "attention_sequential_transport_profile" not in report
 
     all_paths: set[str] = set()
@@ -693,41 +711,23 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
         assert command[ratio_index + 1] == str(lane.ratio)
         assert "--selected-candidate-rank" not in command
         assert "--attention-sequential-transport-profile" not in command
-        assert (
-            "attention_sequential_transport_profile"
-            not in manifest["worker_config"]
-        )
+        assert "attention_sequential_transport_profile" not in manifest["worker_config"]
         assert "attention_sequential_transport_profile" not in manifest
         assert "complete_model_fold_policy_sha256" not in manifest
         assert "model_fold_policy_identity_sha256" not in manifest
         plan_index = command.index("--expected-target-plan-fingerprint")
-        assert command[plan_index + 1] == (
-            lane.catalog_lane.target_plan_fingerprint
-        )
+        assert command[plan_index + 1] == (lane.catalog_lane.target_plan_fingerprint)
         assert "--resume-store-directory" in command
-        store_index = command.index(
-            "--selective-catalog-store-directory"
+        store_index = command.index("--selective-catalog-store-directory")
+        assert command[store_index + 1] == str(config.selective_catalog_store_directory)
+        receipt_index = command.index("--selective-catalog-receipt-json")
+        assert command[receipt_index + 1] == str(config.selective_catalog_receipt_json)
+        receipt_sha_index = command.index("--expected-selective-catalog-receipt-sha256")
+        assert (
+            command[receipt_sha_index + 1]
+            == (evidence.selective_catalog_preparation["preparation_receipt_sha256"])
         )
-        assert command[store_index + 1] == str(
-            config.selective_catalog_store_directory
-        )
-        receipt_index = command.index(
-            "--selective-catalog-receipt-json"
-        )
-        assert command[receipt_index + 1] == str(
-            config.selective_catalog_receipt_json
-        )
-        receipt_sha_index = command.index(
-            "--expected-selective-catalog-receipt-sha256"
-        )
-        assert command[receipt_sha_index + 1] == (
-            evidence.selective_catalog_preparation[
-                "preparation_receipt_sha256"
-            ]
-        )
-        cuda_cap_index = command.index(
-            "--maximum-cuda-gib-per-device"
-        )
+        cuda_cap_index = command.index("--maximum-cuda-gib-per-device")
         assert command[cuda_cap_index + 1] == "20.0"
         assert "--train" not in command
         assert "--prune" not in command
@@ -742,12 +742,8 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
         assert manifest["selective_catalog_artifact"] == dict(
             evidence.selective_catalog_preparation
         )
-        assert manifest[
-            "selective_catalog_authenticated_warm_hit_required"
-        ] is True
-        assert (
-            manifest["selective_catalog_cold_rebuild_permitted"] is False
-        )
+        assert manifest["selective_catalog_authenticated_warm_hit_required"] is True
+        assert manifest["selective_catalog_cold_rebuild_permitted"] is False
 
         capture = manifest["quarantine_capture_template"]
         assert capture["quarantine_capture_request_constructed"] is False
@@ -758,21 +754,18 @@ def test_plan_builds_all_exact_real_targets_as_isolated_blocked_processes(
             "loader_sha256": None,
             "evaluator_sha256": None,
         }
-        assert "source_sha256" not in (
-            capture["resolved_plan_and_input_bindings"]
-        )
+        assert "source_sha256" not in (capture["resolved_plan_and_input_bindings"])
         assert len(capture["prelaunch_source_bundle_sha256"]) == 64
-        assert capture["required_reuse"][
-            "per_case_manifest_generation_limits_required"
-        ] is True
-        assert capture["required_reuse"][
-            "arbitrary_global_64_token_cap_forbidden"
-        ] is True
+        assert (
+            capture["required_reuse"]["per_case_manifest_generation_limits_required"]
+            is True
+        )
+        assert (
+            capture["required_reuse"]["arbitrary_global_64_token_cap_forbidden"] is True
+        )
 
         paths = lane.paths.as_dict()
-        path_values = {
-            value for value in paths.values() if isinstance(value, str)
-        }
+        path_values = {value for value in paths.values() if isinstance(value, str)}
         assert not (path_values & all_paths)
         all_paths.update(path_values)
 
@@ -796,31 +789,27 @@ def test_opt_in_attention_profile_is_typed_and_bound_end_to_end(
         runner.V5AttentionSequentialTransportRunnerProfile
     )
     assert command.count("--attention-sequential-transport-profile") == 1
-    profile_index = command.index(
-        "--attention-sequential-transport-profile"
-    )
+    profile_index = command.index("--attention-sequential-transport-profile")
     assert command[profile_index + 1] == (
         runner.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID
     )
-    assert manifest["attention_sequential_transport_profile"] == (
-        profile_document
+    assert manifest["attention_sequential_transport_profile"] == (profile_document)
+    assert (
+        manifest["worker_config"]["attention_sequential_transport_profile"]
+        == profile_document
     )
-    assert manifest["worker_config"][
-        "attention_sequential_transport_profile"
-    ] == profile_document
-    assert manifest["quarantine_capture_template"][
-        "attention_sequential_transport_profile"
-    ] == profile_document
-    assert all(
-        manifest[name] == value for name, value in policy_fields.items()
+    assert (
+        manifest["quarantine_capture_template"][
+            "attention_sequential_transport_profile"
+        ]
+        == profile_document
     )
+    assert all(manifest[name] == value for name, value in policy_fields.items())
     assert plan.as_dict()["attention_sequential_transport_profile"] == (
         profile_document
     )
 
-    reconstructed = supervisor._config_from_worker_record(
-        manifest["worker_config"]
-    )
+    reconstructed = supervisor._config_from_worker_record(manifest["worker_config"])
     assert type(reconstructed.attention_sequential_transport_profile) is (
         runner.V5AttentionSequentialTransportRunnerProfile
     )
@@ -830,22 +819,18 @@ def test_opt_in_attention_profile_is_typed_and_bound_end_to_end(
     parsed_runner_config = runner.config_from_args(
         runner.build_parser().parse_args(command[2:])
     )
-    authenticated_fields = (
-        supervisor._authenticate_worker_attention_profile(
-            manifest=manifest,
-            config=reconstructed,
-            runner=runner,
-            runner_config=parsed_runner_config,
-            paths=manifest["paths"],
-        )
+    authenticated_fields = supervisor._authenticate_worker_attention_profile(
+        manifest=manifest,
+        config=reconstructed,
+        runner=runner,
+        runner_config=parsed_runner_config,
+        paths=manifest["paths"],
     )
     assert dict(authenticated_fields) == policy_fields
 
     scope = supervisor._attention_profile_scope_component(profile)
     assert lane.paths.run_directory.parent.name == scope
-    assert lane.paths.resume_directory.parent == (
-        lane.paths.run_directory.parent
-    )
+    assert lane.paths.resume_directory.parent == (lane.paths.run_directory.parent)
     off_config = replace(
         config,
         attention_sequential_transport_profile=None,
@@ -880,27 +865,19 @@ def test_composed_qk_profile_is_bound_through_frontier_and_worker(
 
     assert command.count("--composed-qk-attention-profile") == 1
     flag_index = command.index("--composed-qk-attention-profile")
-    assert command[flag_index + 1] == (
-        runner.COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID
-    )
+    assert command[flag_index + 1] == (runner.COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID)
     assert manifest["composed_qk_attention_profile"] == profile_document
-    assert manifest["worker_config"][
-        "composed_qk_attention_profile"
-    ] == profile_document
-    assert manifest["quarantine_capture_template"][
-        "composed_qk_attention_profile"
-    ] == profile_document
-    assert case["plan"].as_dict()["composed_qk_attention_profile"] == (
-        profile_document
+    assert (
+        manifest["worker_config"]["composed_qk_attention_profile"] == profile_document
     )
-    assert all(
-        manifest[name] == value
-        for name, value in case["policy_fields"].items()
+    assert (
+        manifest["quarantine_capture_template"]["composed_qk_attention_profile"]
+        == profile_document
     )
+    assert case["plan"].as_dict()["composed_qk_attention_profile"] == (profile_document)
+    assert all(manifest[name] == value for name, value in case["policy_fields"].items())
 
-    reconstructed = supervisor._config_from_worker_record(
-        manifest["worker_config"]
-    )
+    reconstructed = supervisor._config_from_worker_record(manifest["worker_config"])
     assert type(reconstructed.composed_qk_attention_profile) is (
         runner.V5ComposedQkAttentionRunnerProfile
     )
@@ -915,9 +892,7 @@ def test_composed_qk_profile_is_bound_through_frontier_and_worker(
         paths=manifest["paths"],
     )
     assert dict(authenticated) == case["policy_fields"]
-    assert lane.paths.run_directory.parent.name.startswith(
-        "composed-qk-profile-"
-    )
+    assert lane.paths.run_directory.parent.name.startswith("composed-qk-profile-")
 
     with pytest.raises(
         supervisor.Lfm2CpcfV5FrontierSupervisorError,
@@ -952,10 +927,7 @@ def test_endpoint_profile_document_roundtrip_is_exact_and_tuned() -> None:
     assert policy.endpoint_policy.compute_devices == ("cuda:0", "cuda:1")
     assert document["allowed_candidate_count_per_attention_layer"] == [4, 5]
     assert (
-        document[
-            "candidate_count_depends_on_authenticated_composed_acceptance"
-        ]
-        is True
+        document["candidate_count_depends_on_authenticated_composed_acceptance"] is True
     )
     assert document["blank_target_values_read"] is False
     tampered = json.loads(json.dumps(document))
@@ -989,11 +961,13 @@ def test_endpoint_terminal_profile_roundtrip_pins_policy_and_sources() -> None:
     assert restored.as_dict() == document
     assert document["allowed_candidate_count_per_attention_layer"] == [4, 5]
     assert document["terminal_integration_receipt_required"] is True
-    assert document["terminal_action_policy_source_sha256"] == (
-        sources["terminal_action_policy"]
+    assert (
+        document["terminal_action_policy_source_sha256"]
+        == (sources["terminal_action_policy"])
     )
-    assert document["terminal_action_integration_source_sha256"] == (
-        sources["terminal_action_v5_integration"]
+    assert (
+        document["terminal_action_integration_source_sha256"]
+        == (sources["terminal_action_v5_integration"])
     )
     tampered = json.loads(json.dumps(document))
     tampered["terminal_action_policy_source_sha256"] = "0" * 64
@@ -1019,14 +993,10 @@ def test_composed_qk_compiled_binding_requires_exact_six_layer_coverage(
     runner = case["runner"]
     manifest = dict(case["plan"].lane_for_ratio(4).command_manifest)
     runner_config = runner.config_from_args(
-        runner.build_parser().parse_args(
-            manifest["diagnostic_runner_command"][2:]
-        )
+        runner.build_parser().parse_args(manifest["diagnostic_runner_command"][2:])
     )
     model_policy = runner._build_configured_model_fold_policy(runner_config)
-    composed = runner._build_configured_composed_qk_attention_policy(
-        runner_config
-    )
+    composed = runner._build_configured_composed_qk_attention_policy(runner_config)
     identity = runner._configured_composed_qk_policy_identity(
         runner_config,
         composed_policy=composed,
@@ -1046,21 +1016,15 @@ def test_composed_qk_compiled_binding_requires_exact_six_layer_coverage(
         {
             "layer_index": layer,
             "layer_result_sha256": _digest(f"layer-{layer}"),
-            "composed_qk_producer_artifact_sha256": _digest(
-                f"producer-{layer}"
-            ),
+            "composed_qk_producer_artifact_sha256": _digest(f"producer-{layer}"),
             "sequence_effective_stage_two_artifact_sha256": _digest(
                 f"stage-two-{layer}"
             ),
-            "actual_child_context_sha256": _digest(
-                f"actual-context-{layer}"
-            ),
+            "actual_child_context_sha256": _digest(f"actual-context-{layer}"),
             "reconstructed_live_context_sha256": _digest(
                 f"reconstructed-context-{layer}"
             ),
-            "candidate_evaluation_report_sha256": _digest(
-                f"candidate-{layer}"
-            ),
+            "candidate_evaluation_report_sha256": _digest(f"candidate-{layer}"),
             "composed_candidate_eligible": True,
             "selected_candidate_id": "fixture",
         }
@@ -1109,10 +1073,13 @@ def test_composed_qk_compiled_binding_requires_exact_six_layer_coverage(
         expected_policy_fields=case["policy_fields"],
     )
     assert dict(authenticated) == dict(binding)
-    assert supervisor._compiled_policy_binding_field(
-        runner,
-        case["policy_fields"],
-    ) == "composed_qk_runtime_policy_binding"
+    assert (
+        supervisor._compiled_policy_binding_field(
+            runner,
+            case["policy_fields"],
+        )
+        == "composed_qk_runtime_policy_binding"
+    )
 
     with pytest.raises(
         supervisor.Lfm2CpcfV5FrontierSupervisorError,
@@ -1155,9 +1122,7 @@ def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(
     off_record.pop("attention_sequential_transport_profile")
     off_config = supervisor._config_from_worker_record(off_record)
     parsed_runner_config = runner.config_from_args(
-        runner.build_parser().parse_args(
-            manifest["diagnostic_runner_command"][2:]
-        )
+        runner.build_parser().parse_args(manifest["diagnostic_runner_command"][2:])
     )
     with pytest.raises(
         supervisor.Lfm2CpcfV5FrontierSupervisorError,
@@ -1171,9 +1136,7 @@ def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(
             paths=manifest["paths"],
         )
 
-    model_policy = runner._build_configured_model_fold_policy(
-        parsed_runner_config
-    )
+    model_policy = runner._build_configured_model_fold_policy(parsed_runner_config)
     runtime_policy = Lfm2CpcfV5RuntimePolicy(
         model_fold_policy=model_policy,
         maximum_resident_evidence_bytes=1,
@@ -1195,12 +1158,10 @@ def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(
         },
         "resume_policy_binding": dict(binding),
     }
-    authenticated_binding = (
-        supervisor._authenticate_compiled_attention_profile(
-            runner=runner,
-            diagnostic=diagnostic,
-            expected_policy_fields=case["policy_fields"],
-        )
+    authenticated_binding = supervisor._authenticate_compiled_attention_profile(
+        runner=runner,
+        diagnostic=diagnostic,
+        expected_policy_fields=case["policy_fields"],
     )
     assert dict(authenticated_binding) == dict(binding)
 
@@ -1235,9 +1196,7 @@ def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(
             )
         tampered_body = dict(tampered_binding)
         tampered_body.pop("binding_sha256")
-        tampered_binding["binding_sha256"] = supervisor._sha(
-            tampered_body
-        )
+        tampered_binding["binding_sha256"] = supervisor._sha(tampered_body)
         with pytest.raises(
             supervisor.Lfm2CpcfV5FrontierSupervisorError,
             match="differs from the exact complete",
@@ -1251,9 +1210,7 @@ def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(
                 expected_policy_fields=case["policy_fields"],
             )
 
-    mismatched_policy = json.loads(
-        json.dumps(runtime_policy.as_dict())
-    )
+    mismatched_policy = json.loads(json.dumps(runtime_policy.as_dict()))
     mismatched_policy["maximum_resident_evidence_bytes"] = 3
     with pytest.raises(
         supervisor.Lfm2CpcfV5FrontierSupervisorError,
@@ -1269,9 +1226,7 @@ def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(
         )
 
     off_command = list(manifest["diagnostic_runner_command"])
-    profile_index = off_command.index(
-        "--attention-sequential-transport-profile"
-    )
+    profile_index = off_command.index("--attention-sequential-transport-profile")
     del off_command[profile_index : profile_index + 2]
     off_runner_config = runner.config_from_args(
         runner.build_parser().parse_args(off_command[2:])
@@ -1297,9 +1252,7 @@ def test_profile_flag_reaches_frontier_parser_and_catalog_preparation(
     case = _profile_bound_case(tmp_path)
     runner = case["runner"]
     config = case["config"]
-    profile_id = (
-        runner.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID
-    )
+    profile_id = runner.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID
     arguments = [
         "--execute-ratio",
         "4",
@@ -1360,9 +1313,7 @@ def test_profile_flag_reaches_frontier_parser_and_catalog_preparation(
     assert prepared_config.attention_sequential_transport_profile.as_dict() == (
         case["profile"].as_dict()
     )
-    assert dict(preparation) == dict(
-        case["evidence"].selective_catalog_preparation
-    )
+    assert dict(preparation) == dict(case["evidence"].selective_catalog_preparation)
 
     sources = supervisor._source_identities()
     authenticated_preparation = {
@@ -1386,9 +1337,7 @@ def test_profile_flag_reaches_frontier_parser_and_catalog_preparation(
         "_read_selective_catalog_preparation",
         fake_read,
     )
-    authenticated = supervisor.authenticate_frontier_catalog_preparation(
-        config
-    )
+    authenticated = supervisor.authenticate_frontier_catalog_preparation(config)
     authentication_config = observed["authentication_runner_config"]
     assert (
         authentication_config.attention_sequential_transport_profile.as_dict()
@@ -1447,8 +1396,7 @@ def test_plan_rejects_missing_catalog_and_store_or_receipt_overlap(
         with pytest.raises(
             supervisor.Lfm2CpcfV5FrontierSupervisorError,
             match=(
-                "cannot equal, contain, or be contained|"
-                "must be a regular file path"
+                "cannot equal, contain, or be contained|must be a regular file path"
             ),
         ):
             replace(
@@ -1471,9 +1419,7 @@ def test_frontier_catalog_control_paths_accept_safe_sibling_layout(
         bridge_directory=bridge_directory,
     )
 
-    assert config.selective_catalog_store_directory == (
-        tmp_path / "selective-catalogs"
-    )
+    assert config.selective_catalog_store_directory == (tmp_path / "selective-catalogs")
     assert config.selective_catalog_receipt_json == (
         tmp_path / "selective-catalog-preparation.json"
     )
@@ -1484,9 +1430,7 @@ def test_frontier_catalog_control_paths_accept_safe_sibling_layout(
     )
     reopened = replace(
         config,
-        selective_catalog_receipt_json=(
-            config.selective_catalog_receipt_json
-        ),
+        selective_catalog_receipt_json=(config.selective_catalog_receipt_json),
     )
     assert reopened.selective_catalog_receipt_json == (
         config.selective_catalog_receipt_json
@@ -1503,18 +1447,12 @@ def test_frontier_consumes_exact_runner_catalog_reverification_record() -> None:
     )
 
     preparation = _catalog_preparation()
-    emitted = dict(
-        runner.selective_catalog_post_run_reverification_record(
-            preparation
-        )
-    )
+    emitted = dict(runner.selective_catalog_post_run_reverification_record(preparation))
 
-    authenticated = (
-        supervisor._authenticate_catalog_post_run_reverification(
-            emitted,
-            catalog_preparation=preparation,
-            name="integration fixture",
-        )
+    authenticated = supervisor._authenticate_catalog_post_run_reverification(
+        emitted,
+        catalog_preparation=preparation,
+        name="integration fixture",
     )
     assert dict(authenticated) == emitted
     assert set(emitted) == {
@@ -1534,9 +1472,7 @@ def test_frontier_consumes_exact_runner_catalog_reverification_record() -> None:
             {
                 "performed": True,
                 "unchanged": True,
-                "preparation_receipt_sha256": preparation[
-                    "preparation_receipt_sha256"
-                ],
+                "preparation_receipt_sha256": preparation["preparation_receipt_sha256"],
             },
             catalog_preparation=preparation,
             name="obsolete frontier fixture",
@@ -1597,9 +1533,10 @@ def test_prepare_only_main_never_discovers_or_allocates_parent(
 
     assert result == 0
     output = json.loads(capsys.readouterr().out)
-    assert output["preparation_receipt_sha256"] == preparation[
-        "preparation_receipt_sha256"
-    ]
+    assert (
+        output["preparation_receipt_sha256"]
+        == preparation["preparation_receipt_sha256"]
+    )
 
     def forbidden_preparation(_config):
         raise AssertionError("overlapping plan output reached preparation")
@@ -1669,19 +1606,15 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
             compiler_implementation_sha256=compiler_implementation,
             runner_source_sha256=runner_source,
             fold_only_runtime_guard_identity_sha256=guard_identity,
-            catalog_preparation=(
-                evidence.selective_catalog_preparation
-            ),
+            catalog_preparation=(evidence.selective_catalog_preparation),
         )
-        capture_receipt, final_reload_verification = (
-            _write_fake_quarantine_receipt(
+        capture_receipt, final_reload_verification = _write_fake_quarantine_receipt(
             lane=lane,
             evidence=evidence,
             config=config,
             compiler_receipt=compiler_receipt,
             source_binding=source_binding,
             target_state=target_state,
-            )
         )
         compiled = {
             "result_sha256": compiler_receipt,
@@ -1691,14 +1624,10 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
             },
         }
         guard_body = {
-            "schema": (
-                "neural-forge-lfm2-cpcf-v5-compiler-runtime-guard-v1"
-            ),
+            "schema": ("neural-forge-lfm2-cpcf-v5-compiler-runtime-guard-v1"),
             "guard_implementation": {
                 "identity_sha256": guard_identity,
-                "source_sha256": plan.source_identities[
-                    "fold_only_runtime_guard"
-                ],
+                "source_sha256": plan.source_identities["fold_only_runtime_guard"],
                 "training_api_firewall": True,
                 "common_pruning_api_firewall": True,
                 "common_quantization_api_firewall": True,
@@ -1717,15 +1646,9 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
             "report_sha256": supervisor._sha(guard_body),
         }
         consumer_guard_body = {
-            "schema": (
-                "neural-forge-lfm2-cpcf-v5-consumer-runtime-fold-only-guard-v1"
-            ),
-            "guard_implementation": dict(
-                guard_body["guard_implementation"]
-            ),
-            "compiler_runtime_guard_sha256": runtime_guard[
-                "report_sha256"
-            ],
+            "schema": ("neural-forge-lfm2-cpcf-v5-consumer-runtime-fold-only-guard-v1"),
+            "guard_implementation": dict(guard_body["guard_implementation"]),
+            "compiler_runtime_guard_sha256": runtime_guard["report_sha256"],
             "capture_verification_sha256": (
                 final_reload_verification["verification_sha256"]
             ),
@@ -1743,24 +1666,16 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
             "report_sha256": supervisor._sha(consumer_guard_body),
         }
         diagnostic_body = {
-            "schema": (
-                "neural-forge-lfm2-cpcf-v5-selective-blank-fold-run-v1"
-            ),
+            "schema": ("neural-forge-lfm2-cpcf-v5-selective-blank-fold-run-v1"),
             "inputs": {
-                "parent_fingerprint": (
-                    evidence.parent_model_identity_sha256
-                ),
+                "parent_fingerprint": (evidence.parent_model_identity_sha256),
                 "cache_key": evidence.cache_sha256,
-                "bridge_artifact_sha256": (
-                    config.expected_bridge_artifact_sha256
-                ),
+                "bridge_artifact_sha256": (config.expected_bridge_artifact_sha256),
                 "trajectory_corpus_sha256": evidence.corpus_sha256,
             },
             "compiled_model_fold": compiled,
             "compiler_runtime_fold_only_guard": runtime_guard,
-            "selective_catalog_artifact": dict(
-                evidence.selective_catalog_preparation
-            ),
+            "selective_catalog_artifact": dict(evidence.selective_catalog_preparation),
             "selective_catalog_post_run_reverification": dict(
                 runner.selective_catalog_post_run_reverification_record(
                     evidence.selective_catalog_preparation
@@ -1783,18 +1698,14 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
             "schema": supervisor.EXECUTION_SCHEMA,
             "status": "captured_quarantine_requires_reviewed_rerun",
             "ratio": 100,
-            "target_plan_fingerprint": (
-                lane.catalog_lane.target_plan_fingerprint
-            ),
+            "target_plan_fingerprint": (lane.catalog_lane.target_plan_fingerprint),
             "target_unique_parameters": (
                 lane.catalog_lane.exact_compression.target_unique_parameters
             ),
             "selected_candidate_fingerprint": (
                 lane.catalog_lane.selected_candidate.fingerprint
             ),
-            "selected_candidate_rank": (
-                lane.catalog_lane.selected_candidate_rank
-            ),
+            "selected_candidate_rank": (lane.catalog_lane.selected_candidate_rank),
             "compiler_receipt_sha256": compiler_receipt,
             "capture_receipt_sha256": capture_receipt,
             "target_state_sha256": target_state,
@@ -1806,23 +1717,17 @@ def test_single_ratio_launches_exactly_one_fixed_worker_and_authenticates(
             "compiler_implementation_sha256": compiler_implementation,
             "runner_source_sha256": runner_source,
             "source_binding_sha256": source_binding,
-            "selective_catalog_artifact": dict(
-                evidence.selective_catalog_preparation
-            ),
+            "selective_catalog_artifact": dict(evidence.selective_catalog_preparation),
             "selective_catalog_post_run_reverification": dict(
                 runner.selective_catalog_post_run_reverification_record(
                     evidence.selective_catalog_preparation
                 )
             ),
-            "post_capture_source_identities": dict(
-                plan.source_identities
-            ),
+            "post_capture_source_identities": dict(plan.source_identities),
             "final_reload_verification": final_reload_verification,
             "consumer_runtime_guard_receipt": consumer_guard,
             "diagnostic_json": str(lane.paths.diagnostic_json),
-            "quarantine_directory": str(
-                lane.paths.quarantine_directory
-            ),
+            "quarantine_directory": str(lane.paths.quarantine_directory),
             "standalone_candidate": True,
             "standalone_reload_verified": True,
             "whole_output_evaluation_captured": True,
@@ -1864,9 +1769,7 @@ def test_reviewed_rerun_binds_state_output_and_manual_review_but_not_promotion(
     graph, capture_schedule, bridge_directory = frontier_fixture
     inputs = _inputs(tmp_path)
     reviews = {
-        lane.target_plan_fingerprint: _approved(
-            lane.target_plan_fingerprint
-        )
+        lane.target_plan_fingerprint: _approved(lane.target_plan_fingerprint)
         for lane in capture_schedule.lanes
     }
     reviewed = authorize_lfm2_cpcf_v5_reviewed_rerun(
@@ -1895,9 +1798,7 @@ def test_reviewed_rerun_binds_state_output_and_manual_review_but_not_promotion(
     )
     for lane in plan.lanes:
         approved = reviews[lane.catalog_lane.target_plan_fingerprint]
-        template = lane.command_manifest[
-            "quarantine_capture_template"
-        ]
+        template = lane.command_manifest["quarantine_capture_template"]
         bindings = template["resolved_plan_and_input_bindings"]
         assert (
             bindings["expected_model_state_sha256"]
@@ -1908,17 +1809,14 @@ def test_reviewed_rerun_binds_state_output_and_manual_review_but_not_promotion(
             == approved.approved_candidate_outputs_sha256
         )
         report = lane.as_dict()
-        assert report["lifecycle_contract"][
-            "approved_review_bindings"
-        ]["approved_manual_review_sha256"] == (
-            approved.approved_manual_review_sha256
-        )
+        assert report["lifecycle_contract"]["approved_review_bindings"][
+            "approved_manual_review_sha256"
+        ] == (approved.approved_manual_review_sha256)
         assert report["promotable"] is False
         assert report["publication_authorized"] is False
         assert lane.execution_ready is False
         assert any(
-            "reviewed_rerun" in blocker
-            for blocker in report["execution_blockers"]
+            "reviewed_rerun" in blocker for blocker in report["execution_blockers"]
         )
 
 
@@ -1970,9 +1868,7 @@ def test_lane_outputs_are_create_new_and_collision_fails_closed(
         retry_config,
         evidence,
     )
-    assert retry.lanes[0].paths.run_directory != (
-        first.lanes[0].paths.run_directory
-    )
+    assert retry.lanes[0].paths.run_directory != (first.lanes[0].paths.run_directory)
     assert retry.lanes[0].paths.resume_directory == (
         first.lanes[0].paths.resume_directory
     )
@@ -1985,9 +1881,7 @@ def test_authenticated_resume_reopens_plan_store_under_new_attempt(
     graph, schedule, bridge_directory = frontier_fixture
     inputs = _inputs(tmp_path)
     resumes = {
-        lane.target_plan_fingerprint: _resume(
-            lane.target_plan_fingerprint
-        )
+        lane.target_plan_fingerprint: _resume(lane.target_plan_fingerprint)
         for lane in schedule.lanes
     }
     resumed_schedule = replace(
@@ -2086,9 +1980,7 @@ def test_parent_envelope_may_use_a_distinct_cache_key_when_parent_matches(
     bridge = tmp_path / "bridge"
     bridge.mkdir()
     parent_identity = _digest("shared-parent-model-identity")
-    tokenizer_identity = fingerprint_bound_local_tokenizer(
-        inputs["donor_tokenizer"]
-    )[0]
+    tokenizer_identity = fingerprint_bound_local_tokenizer(inputs["donor_tokenizer"])[0]
     semantic_identity = _digest("distinct-live-tokenizer-semantics")
     assert tokenizer_identity != semantic_identity
     envelope_document = {
@@ -2113,9 +2005,7 @@ def test_parent_envelope_may_use_a_distinct_cache_key_when_parent_matches(
         expected_parent_graph_fingerprint=_digest("graph"),
         expected_bridge_artifact_sha256=_digest("bridge"),
         expected_cache_sha256=_digest("folding-trace-cache"),
-        expected_parent_envelope_file_sha256=_file_sha(
-            inputs["envelope"]
-        ),
+        expected_parent_envelope_file_sha256=_file_sha(inputs["envelope"]),
         lifecycle=Lfm2CpcfV5FrontierLifecycle.CAPTURE_QUARANTINE,
     )
     manifest = SimpleNamespace(

@@ -119,6 +119,7 @@ def test_parser_reuses_shared_compression_request_and_bounds_memory(
     assert config.composed_qk_attention_profile is None
     assert config.endpoint_residual_attention_profile is None
     assert config.endpoint_terminal_action_profile is None
+    assert config.endpoint_sequential_terminal_action_profile is None
     assert config.forbidden_requests == ()
 
 
@@ -181,26 +182,51 @@ def test_default_attention_transport_profile_is_exact_legacy_noop() -> None:
         "98ecbc677c2352b457d3aebcfe100223512307d946a78e37265e0b814bfc4c1a"
     )
     assert not set(MODULE._OPT_IN_POLICY_IDENTITY_FIELDS) & set(config_document)
-    assert not set(MODULE._COMPOSED_QK_POLICY_IDENTITY_FIELDS) & set(
-        config_document
-    )
+    assert not set(MODULE._COMPOSED_QK_POLICY_IDENTITY_FIELDS) & set(config_document)
     assert not set(MODULE._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS) & set(
         config_document
     )
-    assert not set(
-        MODULE._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS
-    ) & set(config_document)
+    assert not set(MODULE._ENDPOINT_TERMINAL_ACTION_POLICY_IDENTITY_FIELDS) & set(
+        config_document
+    )
     assert actual.as_dict() == expected.as_dict()
     assert actual.attention_sequential_transport_policy is None
     assert MODULE._configured_model_fold_policy_identity(config) is None
-    assert MODULE._build_resume_policy_binding(
-        None,
-        runtime_policy=SimpleNamespace(as_dict=lambda: {"legacy": True}),
-    ) is None
-    assert MODULE._build_composed_qk_runtime_policy_binding(
-        None,
-        runtime_policy=SimpleNamespace(as_dict=lambda: {"legacy": True}),
-    ) is None
+    assert (
+        MODULE._build_resume_policy_binding(
+            None,
+            runtime_policy=SimpleNamespace(as_dict=lambda: {"legacy": True}),
+        )
+        is None
+    )
+    assert (
+        MODULE._build_composed_qk_runtime_policy_binding(
+            None,
+            runtime_policy=SimpleNamespace(as_dict=lambda: {"legacy": True}),
+        )
+        is None
+    )
+
+
+def test_existing_attention_profile_hashes_remain_byte_stable() -> None:
+    pytest.importorskip("torch")
+    expected = {
+        MODULE.V5AttentionSequentialTransportRunnerProfile: (
+            "a16010a680cad00e8ceadd596b4aeefe070d2eafa498700213966584ba12d241"
+        ),
+        MODULE.V5ComposedQkAttentionRunnerProfile: (
+            "eee3ef8b8474227c3031147776ad1a8ba5d457e689925d19bbf4f0716f33e3f5"
+        ),
+        MODULE.V5EndpointResidualAttentionRunnerProfile: (
+            "c2ae580fafb3c76b97ba858e50154503e7e8a648e840c5ecc8cfd47c8051af62"
+        ),
+        MODULE.V5EndpointTerminalActionRunnerProfile: (
+            "9ff4adb2c26daaaee4a4843efc438d410642dc23aaa1acf1aab263d1adc999b5"
+        ),
+    }
+
+    for profile_type, profile_sha256 in expected.items():
+        assert profile_type().as_dict()["profile_sha256"] == profile_sha256
 
 
 def test_opt_in_profile_builds_typed_attention_only_forwarding_policy(
@@ -237,10 +263,7 @@ def test_opt_in_profile_builds_typed_attention_only_forwarding_policy(
         policy.resolved_attention_sequential_transport_policy("full_attention")
         is transport
     )
-    assert (
-        policy.resolved_attention_sequential_transport_policy("short_conv")
-        is None
-    )
+    assert policy.resolved_attention_sequential_transport_policy("short_conv") is None
     assert policy.as_dict()["attention_sequential_transport_policy"] == (
         transport.as_dict()
     )
@@ -251,8 +274,9 @@ def test_opt_in_profile_builds_typed_attention_only_forwarding_policy(
     assert config_document["complete_model_fold_policy_sha256"] == MODULE._sha(
         policy.as_dict()
     )
-    assert config_document["model_fold_policy_identity_sha256"] == (
-        identity["identity_sha256"]
+    assert (
+        config_document["model_fold_policy_identity_sha256"]
+        == (identity["identity_sha256"])
     )
     compiler_source = inspect.getsource(
         v5_compiler.compile_lfm2_cpcf_v5_selective_model_fold
@@ -302,9 +326,7 @@ def test_composed_profile_builds_exact_all_layer_runtime_policy(
     assert composed.global_policy.maximum_total_score_elements == 134_217_728
     assert composed.global_policy.maximum_total_output_elements == 201_326_592
     assert identity is not None and binding is not None
-    assert runtime.resolved_composed_qk_attention_policy(
-        "full_attention"
-    ) is composed
+    assert runtime.resolved_composed_qk_attention_policy("full_attention") is composed
     assert runtime.resolved_composed_qk_attention_policy("short_conv") is None
     assert request["composed_qk_attention_profile"] == (
         config.composed_qk_attention_profile.as_dict()
@@ -392,9 +414,10 @@ def test_endpoint_profile_builds_exact_five_arm_runtime_policy(
     assert config.endpoint_residual_attention_profile.as_dict()[
         "allowed_candidate_count_per_attention_layer"
     ] == [4, 5]
-    assert runtime.resolved_endpoint_residual_attention_policy(
-        "full_attention"
-    ) is endpoint
+    assert (
+        runtime.resolved_endpoint_residual_attention_policy("full_attention")
+        is endpoint
+    )
     assert runtime.resolved_endpoint_residual_attention_policy("short_conv") is None
     assert identity is not None and binding is not None
     assert request["endpoint_residual_attention_profile"] == (
@@ -522,9 +545,7 @@ def test_endpoint_coverage_rejects_resealed_mixed_inventory_tamper() -> None:
     tampered = copy.deepcopy(compiled_report)
     coverage_body = tampered["endpoint_residual_attention_coverage"]
     coverage_body.pop("report_sha256")
-    coverage_body["ordered_layer_coverage"][0][
-        "composed_candidate_eligible"
-    ] = True
+    coverage_body["ordered_layer_coverage"][0]["composed_candidate_eligible"] = True
     coverage_body["composed_candidate_eligible_per_attention_layer"][0] = True
     coverage_body["report_sha256"] = MODULE._sha(coverage_body)
 
@@ -655,21 +676,59 @@ def test_endpoint_terminal_profile_pins_policy_sources_runtime_and_receipt(
         **receipt_body,
         "result_sha256": MODULE._sha(receipt_body),
     }
+    publication_body = {
+        "schema": v5_compiler.LFM2_CPCF_V5_TERMINAL_RESUME_PUBLICATION_SCHEMA,
+        "next_layer_index": 14,
+        "expected_layer_count": 14,
+        "terminal_action_enabled": True,
+        "preintegration_final_layer_prefix": True,
+        "publish_resume_prefix": False,
+        "latest_safe_recovery_boundary": (
+            "preceding_admitted_prefix_then_reexecute_final_layer_and_terminal"
+        ),
+        "postintegration_checkpoint_published": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    publication = {
+        **publication_body,
+        "report_sha256": MODULE._sha(publication_body),
+    }
     compiled = {
         "terminal_action_residual_enabled": True,
         "terminal_action_residual_integrated": True,
         "terminal_action_residual_report": receipt,
         "terminal_action_residual_report_sha256": receipt["result_sha256"],
+        "ordered_layer_result_sha256": [
+            MODULE._sha({"layer": index}) for index in range(14)
+        ],
+        "resume_admitted_prefixes": [
+            {"next_layer_index": index} for index in range(14)
+        ],
+        "terminal_action_preintegration_final_prefix_publication_suppressed": True,
+        "terminal_action_resume_publication_receipt": publication,
+        "terminal_action_suppressed_resume_prefix_indices": [14],
+        "terminal_action_resume_requires_final_layer_reexecution": True,
+        "terminal_action_postintegration_resume_checkpoint_published": False,
     }
     authenticated = MODULE._authenticate_terminal_action_integration_receipt(
         compiled,
         policy_identity=identity,
     )
     assert authenticated["result_sha256"] == receipt["result_sha256"]
+    leaked_final_prefix = copy.deepcopy(compiled)
+    leaked_final_prefix["resume_admitted_prefixes"].append({"next_layer_index": 14})
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="Terminal-action integration receipt",
+    ):
+        MODULE._authenticate_terminal_action_integration_receipt(
+            leaked_final_prefix,
+            policy_identity=identity,
+        )
     tampered = copy.deepcopy(compiled)
-    tampered["terminal_action_residual_report"]["operation_audit"][
-        "training_steps"
-    ] = 1
+    tampered["terminal_action_residual_report"]["operation_audit"]["training_steps"] = 1
     with pytest.raises(
         MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
         match="Terminal-action integration receipt",
@@ -700,6 +759,210 @@ def test_endpoint_terminal_profile_is_mutually_exclusive_with_every_prior_profil
             match="mutually exclusive",
         ):
             MODULE.config_from_args(parser.parse_args(args))
+
+
+def test_endpoint_sequential_terminal_profile_binds_every_exact_component(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge import hf_lfm2_cpcf_v5_model_compiler as v5_compiler
+
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--endpoint-sequential-terminal-action-profile",
+            ]
+        )
+    )
+    profile = config.endpoint_sequential_terminal_action_profile
+    model = MODULE._build_configured_model_fold_policy(config)
+    composed = MODULE._build_configured_composed_qk_attention_policy(config)
+    endpoint = MODULE._build_configured_endpoint_residual_attention_policy(config)
+    combination = MODULE._build_configured_endpoint_sequential_transport_policy(config)
+    terminal = MODULE._build_configured_terminal_action_residual_policy(config)
+    post_operator = profile.build_post_operator_transport_policy()
+    identity = MODULE._configured_endpoint_sequential_terminal_action_policy_identity(
+        config,
+        model_fold_policy=model,
+        composed_policy=composed,
+        endpoint_policy=endpoint,
+        combination_policy=combination,
+        terminal_policy=terminal,
+    )
+    fields = MODULE._endpoint_sequential_terminal_action_policy_identity_fields(
+        identity
+    )
+    runtime = v5_compiler.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=model,
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=2,
+        composed_qk_attention_policy=composed,
+        endpoint_residual_attention_policy=endpoint,
+        terminal_action_residual_policy=terminal,
+        endpoint_sequential_transport_policy=combination,
+        post_operator_transport_policy=post_operator,
+    )
+    binding = MODULE._build_endpoint_sequential_terminal_action_runtime_policy_binding(
+        identity,
+        runtime_policy=runtime,
+    )
+
+    assert type(profile) is MODULE.V5EndpointSequentialTerminalActionRunnerProfile
+    assert combination.authenticates_components(
+        composed_qk_attention_policy=composed,
+        endpoint_residual_attention_policy=endpoint,
+        attention_sequential_transport_policy=(
+            model.attention_sequential_transport_policy
+        ),
+    )
+    assert fields["post_operator_transport_policy_sha256"] == (
+        post_operator.authentication_sha256
+    )
+    assert fields["endpoint_sequential_transport_combination_policy_sha256"] == (
+        combination.authentication_sha256
+    )
+    assert binding["runtime_policy_sha256"] == MODULE._sha(runtime.as_dict())
+    assert binding["runtime_policy_contains_all_exact_component_policies"] is True
+    assert binding["two_sided_transport_coverage_receipt_required"] is True
+    assert binding["terminal_integration_receipt_required"] is True
+    assert (
+        runtime.resolved_endpoint_sequential_transport_policy("full_attention")
+        is combination
+    )
+    assert runtime.resolved_endpoint_sequential_transport_policy("short_conv") is None
+
+
+def test_endpoint_sequential_terminal_profile_catalog_round_trip_and_exclusion(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--endpoint-sequential-terminal-action-profile",
+            ]
+        )
+    )
+    identity = MODULE._configured_endpoint_sequential_terminal_action_policy_identity(
+        config
+    )
+    fields = MODULE._endpoint_sequential_terminal_action_policy_identity_fields(
+        identity
+    )
+    preparation = {**_catalog_preparation(), **fields}
+
+    MODULE._authenticate_preparation_policy_identity(preparation, config=config)
+    for prior in (
+        ("--composed-qk-attention-profile",),
+        ("--endpoint-residual-attention-profile",),
+        ("--endpoint-terminal-action-profile",),
+        (
+            "--attention-sequential-transport-profile",
+            MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+        ),
+    ):
+        with pytest.raises(
+            MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+            match="mutually exclusive",
+        ):
+            MODULE.config_from_args(
+                MODULE.build_parser().parse_args(
+                    [
+                        *_required_args(tmp_path / prior[0][2:]),
+                        *prior,
+                        "--endpoint-sequential-terminal-action-profile",
+                    ]
+                )
+            )
+
+
+def test_endpoint_sequential_transport_coverage_is_exact_and_tamper_closed(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_v5_model_compiler import (
+        LFM2_CPCF_V5_ENDPOINT_SEQUENTIAL_TRANSPORT_COVERAGE_SCHEMA,
+    )
+
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--endpoint-sequential-terminal-action-profile",
+            ]
+        )
+    )
+    identity = MODULE._configured_endpoint_sequential_terminal_action_policy_identity(
+        config
+    )
+    fields = MODULE._endpoint_sequential_terminal_action_policy_identity_fields(
+        identity
+    )
+    indices = list(MODULE.COMPOSED_QK_ATTENTION_LAYER_INDICES)
+    rows = [
+        {
+            "layer_index": layer_index,
+            "layer_result_sha256": MODULE._sha({"result": layer_index}),
+            "post_operator_transport_report_sha256": MODULE._sha(
+                {"upstream": layer_index}
+            ),
+            "candidate_selection_report_sha256": MODULE._sha(
+                {"selection": layer_index}
+            ),
+            "candidate_count": 5,
+            "selected_candidate_id": "endpoint_residual_alternating_qkvo",
+            "selected_effective_boundary_charts_sha256": MODULE._sha(
+                {"downstream": layer_index}
+            ),
+            "fit_required_write_rms_reduction_fraction": 0.33,
+            "selection_required_write_rms_reduction_fraction": 0.16,
+        }
+        for layer_index in indices
+    ]
+    body = {
+        "schema": LFM2_CPCF_V5_ENDPOINT_SEQUENTIAL_TRANSPORT_COVERAGE_SCHEMA,
+        "policy_authentication_sha256": fields[
+            "endpoint_sequential_transport_combination_policy_sha256"
+        ],
+        "expected_attention_layer_indices": indices,
+        "observed_attention_layer_indices": indices,
+        "covered_attention_layer_indices": indices,
+        "ordered_layer_coverage": rows,
+        "fit_only_post_operator_transport_per_attention_layer": True,
+        "candidate_local_post_layer_transport_per_qkvo_candidate": True,
+        "candidate_specific_closed_form_mlp_per_qkvo_candidate": True,
+        "winner_bundle_frozen_before_validation": True,
+        "actual_child_post_layer_state_propagated": True,
+        "short_conv_transport_enabled": False,
+        "validation_rows_read_by_transport_solvers": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    coverage = {**body, "report_sha256": MODULE._sha(body)}
+
+    observed = MODULE._authenticate_endpoint_sequential_transport_coverage(
+        {"endpoint_sequential_transport_coverage": coverage},
+        policy_identity=identity,
+    )
+    assert observed["covered_attention_layer_indices"] == indices
+    tampered = copy.deepcopy(coverage)
+    tampered["training_steps"] = 1
+    tampered_body = dict(tampered)
+    tampered_body.pop("report_sha256")
+    tampered["report_sha256"] = MODULE._sha(tampered_body)
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="six-attention-layer no-training receipt",
+    ):
+        MODULE._authenticate_endpoint_sequential_transport_coverage(
+            {"endpoint_sequential_transport_coverage": tampered},
+            policy_identity=identity,
+        )
 
 
 def test_composed_profile_catalog_identity_is_exact_and_tamper_closed(
@@ -757,9 +1020,7 @@ def test_opt_in_profile_changes_sealed_request_and_preparation_identity(
     off_preparation = dict(common_preparation)
     on_preparation = {**common_preparation, **fields}
 
-    assert MODULE._canonical_json(off.as_dict()) != MODULE._canonical_json(
-        on.as_dict()
-    )
+    assert MODULE._canonical_json(off.as_dict()) != MODULE._canonical_json(on.as_dict())
     assert MODULE._sha(off.as_dict()) != MODULE._sha(on.as_dict())
     assert MODULE._sha(off_preparation) != MODULE._sha(on_preparation)
     MODULE._authenticate_preparation_policy_identity(
@@ -770,6 +1031,30 @@ def test_opt_in_profile_changes_sealed_request_and_preparation_identity(
         on_preparation,
         config=on,
     )
+    orphaned_off = {
+        **off_preparation,
+        "complete_model_fold_policy_sha256": MODULE._sha({"orphan": "model"}),
+    }
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="opt-in fold policy profile",
+    ):
+        MODULE._authenticate_preparation_policy_identity(
+            orphaned_off,
+            config=off,
+        )
+    foreign_active = {
+        **on_preparation,
+        "terminal_action_residual_policy_sha256": MODULE._sha({"orphan": "terminal"}),
+    }
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="differs from this request",
+    ):
+        MODULE._authenticate_preparation_policy_identity(
+            foreign_active,
+            config=on,
+        )
     with pytest.raises(
         MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
         match="opt-in fold policy profile",
@@ -1615,9 +1900,7 @@ def test_off_and_on_profiles_cannot_cross_resume(
     checkpoint_reference = Lfm2CpcfArtifactReference(
         artifact_kind="checkpoint",
         artifact_key=hashlib.sha256(b"profile-checkpoint-key").hexdigest(),
-        manifest_sha256=hashlib.sha256(
-            b"profile-checkpoint-manifest"
-        ).hexdigest(),
+        manifest_sha256=hashlib.sha256(b"profile-checkpoint-manifest").hexdigest(),
     )
 
     def cross_state(self, _exact_digest, *, state_runtime_sha256):

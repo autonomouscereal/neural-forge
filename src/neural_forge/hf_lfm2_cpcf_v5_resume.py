@@ -305,9 +305,7 @@ class Lfm2CpcfV5ResumeError(Lfm2CpcfResumeArtifactIntegrityError):
     """A v5 continuation object failed exact authentication."""
 
 
-_EXPECTED_RSS_GUARD_MODULE = (
-    "neural_forge.hf_lfm2_cpcf_v5_model_compiler"
-)
+_EXPECTED_RSS_GUARD_MODULE = "neural_forge.hf_lfm2_cpcf_v5_model_compiler"
 _EXPECTED_RSS_GUARD_QUALNAME = "_PhysicalRssGuard"
 
 
@@ -746,10 +744,8 @@ def _authenticate_rss_checkpoint(
             and (
                 numbers["current_increase_bytes"] > numbers["maximum_increase_bytes"]
                 or numbers["peak_increase_bytes"] > numbers["maximum_increase_bytes"]
-                or numbers["current_rss_bytes"]
-                > numbers["maximum_process_rss_bytes"]
-                or numbers["peak_rss_bytes"]
-                > numbers["maximum_process_rss_bytes"]
+                or numbers["current_rss_bytes"] > numbers["maximum_process_rss_bytes"]
+                or numbers["peak_rss_bytes"] > numbers["maximum_process_rss_bytes"]
                 or numbers["current_lifetime_peak_bytes"]
                 > numbers["maximum_process_rss_bytes"]
             )
@@ -1512,10 +1508,20 @@ class Lfm2CpcfV5ProgressEvent:
             )
         verify()
         receipts = tuple(self.completed_layer_receipts)
+        frontier_charts = self.frontier.report.get("completed_layer_charts")
         if (
             len(receipts) != self.frontier.next_layer_index
+            or not isinstance(frontier_charts, (list, tuple))
+            or len(frontier_charts) != len(receipts)
             or tuple(receipt.layer_index for receipt in receipts)
             != tuple(range(len(receipts)))
+            or any(
+                not isinstance(chart, Mapping)
+                or chart.get("layer_index") != receipt.layer_index
+                or chart.get("layer_charts_sha256")
+                != receipt.report.get("boundary_charts_sha256")
+                for receipt, chart in zip(receipts, frontier_charts, strict=True)
+            )
             or incoming.layer_index != self.frontier.next_layer_index
             or (
                 receipts and receipts[-1].next_bank_sha256 != incoming.state_bank_sha256
@@ -2943,6 +2949,26 @@ class Lfm2CpcfV5ResumeCoordinator:
                 reopened.checkpoint_reference
             ).completed_layers["completed_layer_receipts"]
         )
+        frontier_charts = reopened.frontier.report.get("completed_layer_charts")
+        if (
+            not isinstance(frontier_charts, (list, tuple))
+            or len(frontier_charts) != len(receipts)
+            or any(
+                not isinstance(chart, Mapping)
+                or chart.get("layer_index") != receipt.layer_index
+                or chart.get("layer_charts_sha256")
+                != receipt.report.get("boundary_charts_sha256")
+                for receipt, chart in zip(
+                    receipts,
+                    frontier_charts,
+                    strict=True,
+                )
+            )
+        ):
+            raise Lfm2CpcfV5ResumeError(
+                "Restored completed-layer receipts and frontier boundary "
+                "charts are not byte-identical per layer."
+            )
         seed = seed_lfm2_cpcf_phase_states(target_model, phases)
         if (not receipts and incoming.state_bank_sha256 != seed.state_bank_sha256) or (
             receipts

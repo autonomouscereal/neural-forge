@@ -54,7 +54,12 @@ from neural_forge.hf_lfm2_cpcf_installability import (
 from neural_forge.hf_lfm2_cpcf_layer_compiler import (
     LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS,
     LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS,
+    Lfm2CpcfEndpointSequentialTransportPolicy,
     compile_and_install_lfm2_cpcf_layer,
+)
+from neural_forge.hf_lfm2_cpcf_residual_error_controller import (
+    Lfm2CpcfPostOperatorTransportPolicy,
+    fit_lfm2_cpcf_post_operator_chart_transport_for_profile,
 )
 from neural_forge.hf_lfm2_composed_qk_attention_fold import (
     ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID,
@@ -140,6 +145,12 @@ LFM2_CPCF_V5_COMPOSED_ATTENTION_COVERAGE_SCHEMA = (
 )
 LFM2_CPCF_V5_ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-endpoint-residual-attention-coverage-v1"
+)
+LFM2_CPCF_V5_ENDPOINT_SEQUENTIAL_TRANSPORT_COVERAGE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-endpoint-sequential-transport-coverage-v1"
+)
+LFM2_CPCF_V5_TERMINAL_RESUME_PUBLICATION_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-terminal-resume-publication-v1"
 )
 LFM2_CPCF_V5_COMPOSED_ATTENTION_LAYER_INDICES = (2, 4, 6, 8, 10, 12)
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -392,6 +403,10 @@ class Lfm2CpcfV5RuntimePolicy:
         Lfm2ComposedEndpointResidualAttentionFoldPolicy | None
     ) = None
     terminal_action_residual_policy: Lfm2CpcfTerminalActionPolicy | None = None
+    endpoint_sequential_transport_policy: (
+        Lfm2CpcfEndpointSequentialTransportPolicy | None
+    ) = None
+    post_operator_transport_policy: Lfm2CpcfPostOperatorTransportPolicy | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -487,14 +502,63 @@ class Lfm2CpcfV5RuntimePolicy:
                 "Lfm2CpcfTerminalActionPolicy."
             )
         sequential = self.model_fold_policy.attention_sequential_transport_policy
+        combination = self.endpoint_sequential_transport_policy
+        post_operator = self.post_operator_transport_policy
+        if post_operator is not None and (
+            type(post_operator) is not Lfm2CpcfPostOperatorTransportPolicy
+            or not post_operator.verify_authentication()
+        ):
+            raise TypeError(
+                "post_operator_transport_policy must be the exact "
+                "authenticated Lfm2CpcfPostOperatorTransportPolicy."
+            )
+        if combination is not None and (
+            type(combination) is not Lfm2CpcfEndpointSequentialTransportPolicy
+            or not combination.verify_authentication()
+        ):
+            raise TypeError(
+                "endpoint_sequential_transport_policy must be the exact "
+                "authenticated Lfm2CpcfEndpointSequentialTransportPolicy."
+            )
+        combined_components_valid = (
+            combination is not None
+            and composed is not None
+            and endpoint is not None
+            and terminal is not None
+            and sequential is not None
+            and sequential.enabled
+            and post_operator is not None
+            and combination.authenticates_components(
+                composed_qk_attention_policy=composed,
+                endpoint_residual_attention_policy=endpoint,
+                attention_sequential_transport_policy=sequential,
+            )
+            and combination.post_operator_transport_policy_sha256
+            == post_operator.authentication_sha256
+            and combination.terminal_action_residual_policy_sha256
+            == terminal.authentication_sha256
+        )
+        if combination is not None and not combined_components_valid:
+            raise Lfm2CpcfV5ModelCompilerError(
+                "The endpoint sequential-transport runtime policy requires "
+                "exact bound composed, endpoint, enabled sequential, and "
+                "terminal-W2 policies."
+            )
+        if post_operator is not None and combination is None:
+            raise Lfm2CpcfV5ModelCompilerError(
+                "The production post-operator transport policy is authorized "
+                "only by the exact endpoint sequential-terminal profile."
+            )
         if (
             (composed is not None or endpoint is not None)
             and sequential is not None
             and sequential.enabled
+            and not combined_components_valid
         ):
             raise Lfm2CpcfV5ModelCompilerError(
                 "Composed Q/K attention folding and attention sequential "
-                "transport are mutually exclusive opt-in policies."
+                "transport remain mutually exclusive outside the exact "
+                "authenticated endpoint sequential-terminal profile."
             )
 
     @property
@@ -527,6 +591,18 @@ class Lfm2CpcfV5RuntimePolicy:
             )
         if operator_kind == "full_attention":
             return self.endpoint_residual_attention_policy
+        return None
+
+    def resolved_endpoint_sequential_transport_policy(
+        self,
+        operator_kind: str,
+    ) -> Lfm2CpcfEndpointSequentialTransportPolicy | None:
+        if operator_kind not in {"full_attention", "short_conv"}:
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Endpoint sequential transport requires one canonical operator kind."
+            )
+        if operator_kind == "full_attention":
+            return self.endpoint_sequential_transport_policy
         return None
 
     def as_dict(self) -> dict[str, Any]:
@@ -567,7 +643,59 @@ class Lfm2CpcfV5RuntimePolicy:
             result["terminal_action_residual_policy"] = (
                 self.terminal_action_residual_policy.as_dict()
             )
+        if self.endpoint_sequential_transport_policy is not None:
+            result["endpoint_sequential_transport_policy"] = (
+                self.endpoint_sequential_transport_policy.as_dict()
+            )
+        if self.post_operator_transport_policy is not None:
+            result["post_operator_transport_policy"] = (
+                self.post_operator_transport_policy.as_dict()
+            )
         return result
+
+
+def _terminal_resume_prefix_publication_decision(
+    *,
+    next_layer_index: int,
+    expected_layer_count: int,
+    terminal_action_enabled: bool,
+) -> Mapping[str, Any]:
+    """Seal whether a pre-terminal layer prefix is safe to resume from."""
+
+    if (
+        isinstance(next_layer_index, bool)
+        or not isinstance(next_layer_index, int)
+        or isinstance(expected_layer_count, bool)
+        or not isinstance(expected_layer_count, int)
+        or expected_layer_count <= 0
+        or not 0 <= next_layer_index <= expected_layer_count
+    ):
+        raise Lfm2CpcfV5ModelCompilerError(
+            "Resume publication decision requires a valid layer boundary."
+        )
+    if type(terminal_action_enabled) is not bool:
+        raise TypeError("terminal_action_enabled must be bool.")
+    preintegration_final = bool(
+        terminal_action_enabled and next_layer_index == expected_layer_count
+    )
+    body = {
+        "schema": LFM2_CPCF_V5_TERMINAL_RESUME_PUBLICATION_SCHEMA,
+        "next_layer_index": next_layer_index,
+        "expected_layer_count": expected_layer_count,
+        "terminal_action_enabled": terminal_action_enabled,
+        "preintegration_final_layer_prefix": preintegration_final,
+        "publish_resume_prefix": not preintegration_final,
+        "latest_safe_recovery_boundary": (
+            "preceding_admitted_prefix_then_reexecute_final_layer_and_terminal"
+            if preintegration_final
+            else "this_prefix"
+        ),
+        "postintegration_checkpoint_published": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    return MappingProxyType({**body, "report_sha256": _sha(body)})
 
 
 def _sealed_mapping_sha256(
@@ -1414,6 +1542,178 @@ def _build_endpoint_residual_attention_coverage_receipt(
         "parameters_pruned": 0,
         "parameters_quantized": 0,
         "blank_target_values_read": False,
+    }
+    return MappingProxyType({**body, "report_sha256": _sha(body)})
+
+
+def _build_endpoint_sequential_transport_coverage_receipt(
+    completed_receipts: Sequence[legacy_model_fold.Lfm2CpcfCompletedLayerReceipt],
+    policy: Lfm2CpcfEndpointSequentialTransportPolicy,
+) -> Mapping[str, Any]:
+    """Authenticate both gauge transports on every exact attention layer."""
+
+    if (
+        type(policy) is not Lfm2CpcfEndpointSequentialTransportPolicy
+        or not policy.verify_authentication()
+    ):
+        raise TypeError(
+            "policy must be the exact authenticated endpoint sequential-"
+            "transport policy."
+        )
+    receipts = tuple(completed_receipts)
+    expected = LFM2_CPCF_V5_COMPOSED_ATTENTION_LAYER_INDICES
+    observed = tuple(
+        receipt.layer_index
+        for receipt in receipts
+        if receipt.operator_kind == "full_attention"
+    )
+    if observed != expected:
+        raise Lfm2CpcfV5ModelCompilerError(
+            "Endpoint sequential transport requires exact ordered attention "
+            f"coverage {list(expected)}, got {list(observed)}."
+        )
+    rows = []
+    expected_policy = policy.as_dict()
+    for receipt in receipts:
+        solver = receipt.report.get("solver_evidence_policy")
+        if not isinstance(solver, Mapping):
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"Layer {receipt.layer_index} has no solver evidence policy."
+            )
+        combined_fields = (
+            "endpoint_sequential_transport_policy",
+            "fit_only_post_operator_transport_controller",
+            "attention_candidate_local_post_layer_transport",
+        )
+        if receipt.operator_kind != "full_attention":
+            if any(name in solver for name in combined_fields):
+                raise Lfm2CpcfV5ModelCompilerError(
+                    "A short-conv layer received a combined attention "
+                    "transport policy or report."
+                )
+            continue
+        if (
+            solver.get("endpoint_sequential_transport_policy") != expected_policy
+            or solver.get("endpoint_sequential_transport_policy_sha256")
+            != policy.authentication_sha256
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"Attention layer {receipt.layer_index} did not bind the "
+                "exact combined transport policy."
+            )
+        upstream = solver.get("fit_only_post_operator_transport_controller")
+        upstream_sha = _sealed_mapping_sha256(
+            upstream,
+            seal_field="report_sha256",
+            name=f"layer[{receipt.layer_index}].post_operator_transport",
+        )
+        if (
+            not isinstance(upstream, Mapping)
+            or solver.get("fit_only_post_operator_transport_controller_sha256")
+            != upstream_sha
+            or upstream.get("layer_index") != receipt.layer_index
+            or upstream.get("component") != "fit_only_post_operator_chart_transport"
+            or upstream.get("production_profile_authorized") is not True
+            or upstream.get("post_operator_transport_policy_sha256")
+            != policy.post_operator_transport_policy_sha256
+            or upstream.get("transported_layer_charts_sha256")
+            != receipt.report.get("boundary_charts_sha256")
+            or upstream.get("validation_rows_read") != 0
+            or upstream.get("selection_used_by_solver") is not False
+            or upstream.get("fit_only_closed_form_orthogonal_procrustes") is not True
+            or upstream.get("source_bank_unchanged") is not True
+            or upstream.get("source_charts_unchanged") is not True
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"Attention layer {receipt.layer_index} has an invalid "
+                "FIT-only post-operator transport receipt."
+            )
+        selection = solver.get("attention_candidate_selection")
+        selection_sha = _sealed_mapping_sha256(
+            selection,
+            seal_field="report_sha256",
+            name=f"layer[{receipt.layer_index}].attention_candidate_selection",
+        )
+        evaluations = solver.get("attention_candidate_evaluations")
+        final_binding = solver.get("attention_candidate_local_post_layer_transport")
+        if (
+            not isinstance(selection, Mapping)
+            or selection.get("candidate_count") not in {4, 5}
+            or not isinstance(selection.get("candidate_ids"), list)
+            or selection.get("candidate_local_post_layer_transport_enabled") is not True
+            or selection.get("operator_transport_mlp_bundle_frozen_together")
+            is not True
+            or selection.get("selection_refits_or_mutates_transport") is not False
+            or not isinstance(evaluations, Mapping)
+            or not evaluations
+            or len(evaluations) != selection.get("candidate_count")
+            or set(evaluations) != set(selection.get("candidate_ids", ()))
+            or any(
+                not isinstance(evaluation, Mapping)
+                or evaluation.get("candidate_id") != candidate_id
+                or evaluation.get(
+                    "candidate_local_post_layer_transport_frozen_before_mlp"
+                )
+                is not True
+                or evaluation.get("operator_transport_and_mlp_ranked_as_one_bundle")
+                is not True
+                for candidate_id, evaluation in evaluations.items()
+            )
+            or not isinstance(final_binding, Mapping)
+            or final_binding.get("selected_candidate_id")
+            != selection.get("selected_candidate_id")
+            or final_binding.get("source_boundary_charts_sha256")
+            != receipt.report.get("boundary_charts_sha256")
+            or final_binding.get("effective_boundary_charts_sha256")
+            != selection.get("selected_effective_boundary_charts_sha256")
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"Attention layer {receipt.layer_index} did not freeze one "
+                "candidate-local downstream transport and own closed-form MLP "
+                "for every exact QKVO candidate before selection."
+            )
+        rows.append(
+            {
+                "layer_index": receipt.layer_index,
+                "layer_result_sha256": receipt.result_sha256,
+                "post_operator_transport_report_sha256": upstream_sha,
+                "candidate_selection_report_sha256": selection_sha,
+                "candidate_count": selection.get("candidate_count"),
+                "selected_candidate_id": selection.get("selected_candidate_id"),
+                "selected_effective_boundary_charts_sha256": selection.get(
+                    "selected_effective_boundary_charts_sha256"
+                ),
+                "fit_required_write_rms_reduction_fraction": upstream.get(
+                    "fit_required_write_rms_reduction_fraction"
+                ),
+                "selection_required_write_rms_reduction_fraction": upstream.get(
+                    "selection_required_write_rms_reduction_fraction"
+                ),
+            }
+        )
+    if tuple(row["layer_index"] for row in rows) != expected:
+        raise Lfm2CpcfV5ModelCompilerError(
+            "Two-sided sequential transport did not cover every attention layer."
+        )
+    body = {
+        "schema": LFM2_CPCF_V5_ENDPOINT_SEQUENTIAL_TRANSPORT_COVERAGE_SCHEMA,
+        "policy_authentication_sha256": policy.authentication_sha256,
+        "expected_attention_layer_indices": list(expected),
+        "observed_attention_layer_indices": list(observed),
+        "covered_attention_layer_indices": [row["layer_index"] for row in rows],
+        "ordered_layer_coverage": rows,
+        "fit_only_post_operator_transport_per_attention_layer": True,
+        "candidate_local_post_layer_transport_per_qkvo_candidate": True,
+        "candidate_specific_closed_form_mlp_per_qkvo_candidate": True,
+        "winner_bundle_frozen_before_validation": True,
+        "actual_child_post_layer_state_propagated": True,
+        "short_conv_transport_enabled": False,
+        "validation_rows_read_by_transport_solvers": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
     }
     return MappingProxyType({**body, "report_sha256": _sha(body)})
 
@@ -2690,6 +2990,52 @@ class _SelectiveBoundaryCompiler:
         del values, charts
         gc.collect()
         return result
+
+    def replace_latest_layer_charts(
+        self,
+        source: boundary.Lfm2CpcfLayerBoundaryCharts,
+        effective: boundary.Lfm2CpcfLayerBoundaryCharts,
+        *,
+        controller_report: Mapping[str, Any],
+    ) -> None:
+        """Persist one authenticated production chart transport in the frontier."""
+
+        if (
+            not self.layer_results
+            or self.layer_results[-1] is not source
+            or not isinstance(effective, boundary.Lfm2CpcfLayerBoundaryCharts)
+            or not isinstance(controller_report, Mapping)
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "Only the just-fitted source chart may be replaced by one "
+                "typed effective chart."
+            )
+        report = dict(controller_report)
+        report_body = dict(report)
+        report_seal = report_body.pop("report_sha256", None)
+        if (
+            report_seal != _sha(report_body)
+            or report.get("component") != "fit_only_post_operator_chart_transport"
+            or report.get("production_profile_authorized") is not True
+            or report.get("source_layer_charts_sha256") != source.layer_charts_sha256
+            or report.get("transported_layer_charts_sha256")
+            != effective.layer_charts_sha256
+            or source.layer_index != effective.layer_index
+            or source.operator_kind != effective.operator_kind
+            or source.source_width != effective.source_width
+            or source.target_width != effective.target_width
+            or source.post_layer is not effective.post_layer
+            or source.post_operator is effective.post_operator
+            or report.get("unchanged_post_layer_report_sha256")
+            != source.post_layer.report["report_sha256"]
+            or report.get("transported_post_operator_report_sha256")
+            != effective.post_operator.report["report_sha256"]
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "The production chart replacement is not exactly bound to "
+                "the just-fitted source and transported boundary charts."
+            )
+        self.layer_results[-1] = effective
 
     def finalize(self) -> boundary.Lfm2CpcfBoundaryBundle:
         if (
@@ -4402,7 +4748,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
     resume_final_phases: tuple[Lfm2CpcfTargetPhase, ...] | None = None
     terminal_action_capture: Lfm2CpcfV5TerminalActionCapture | None = None
     terminal_action_report: Mapping[str, Any] | None = None
+    terminal_resume_publication_receipt: Mapping[str, Any] | None = None
     admitted_prefixes: list[dict[str, Any]] = []
+    suppressed_terminal_preintegration_prefixes: list[int] = []
     resume_input_admission_chain_proof: Mapping[str, Any] | None = None
     executed_layer_indices: list[int] = []
     try:
@@ -4643,7 +4991,10 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             next_layer_index: int,
             *,
             label: str,
+            publish_resume_prefix: bool = True,
         ) -> None:
+            if not publish_resume_prefix:
+                suppressed_terminal_preintegration_prefixes.append(next_layer_index)
             if resume_coordinator is None:
                 rss_guard.checkpoint(label)
                 return
@@ -4669,6 +5020,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                     "runtime state changed before resumable prefix "
                     "publication."
                 )
+            if not publish_resume_prefix:
+                rss_guard.checkpoint(label)
+                return
             frontier = Lfm2CpcfV5BoundaryFrontier.capture(
                 boundary_compiler,
                 context=resume_context,
@@ -4763,6 +5117,44 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                         materialized_phases,
                         layer_index=layer_index,
                     )
+                    endpoint_sequential_policy = (
+                        runtime_policy.resolved_endpoint_sequential_transport_policy(
+                            charts.operator_kind
+                        )
+                    )
+                    controller = None
+                    if endpoint_sequential_policy is not None:
+                        controller = (
+                            fit_lfm2_cpcf_post_operator_chart_transport_for_profile(
+                                layer_bank,
+                                charts,
+                                policy=runtime_policy.post_operator_transport_policy,
+                            )
+                        )
+                        if (
+                            controller.report.get("validation_rows_read", 0) != 0
+                            or controller.report.get("post_layer_chart_same_object")
+                            is not True
+                            or controller.report.get(
+                                "fit_only_closed_form_orthogonal_procrustes"
+                            )
+                            is not True
+                            or controller.report.get("component")
+                            != "fit_only_post_operator_chart_transport"
+                            or controller.report.get("production_profile_authorized")
+                            is not True
+                        ):
+                            raise Lfm2CpcfV5ModelCompilerError(
+                                "The combined profile's post-operator chart "
+                                "controller did not prove one frozen FIT-only "
+                                "orthogonal transport."
+                            )
+                        boundary_compiler.replace_latest_layer_charts(
+                            charts,
+                            controller.boundary_charts,
+                            controller_report=controller.report,
+                        )
+                        charts = controller.boundary_charts
                     result = compile_and_install_lfm2_cpcf_layer(
                         source_model,
                         target_model,
@@ -4793,6 +5185,12 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                             runtime_policy.resolved_endpoint_residual_attention_policy(
                                 charts.operator_kind
                             )
+                        ),
+                        endpoint_sequential_transport_policy=(
+                            endpoint_sequential_policy
+                        ),
+                        post_operator_transport_controller_report=(
+                            None if controller is None else controller.report
                         ),
                     )
                     receipt = legacy_model_fold.Lfm2CpcfCompletedLayerReceipt(
@@ -4825,11 +5223,39 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                         )
                     completed_receipts.append(receipt)
                     state_bank = next_bank
+                    resume_publication_decision = (
+                        _terminal_resume_prefix_publication_decision(
+                            next_layer_index=layer_index + 1,
+                            expected_layer_count=catalog.layer_count,
+                            terminal_action_enabled=(
+                                runtime_policy.terminal_action_residual_policy
+                                is not None
+                            ),
+                        )
+                    )
+                    terminal_preintegration_final_prefix = (
+                        resume_publication_decision["preintegration_final_layer_prefix"]
+                        is True
+                    )
+                    if terminal_preintegration_final_prefix:
+                        terminal_resume_publication_receipt = (
+                            resume_publication_decision
+                        )
                     persist_prefix_before_rss(
                         layer_index + 1,
                         label=(
-                            f"layer_{layer_index:03d}_compiled_"
-                            "checkpoint_persisted_before_release"
+                            (
+                                f"layer_{layer_index:03d}_compiled_terminal_"
+                                "pending_without_resume_publication"
+                            )
+                            if terminal_preintegration_final_prefix
+                            else (
+                                f"layer_{layer_index:03d}_compiled_"
+                                "checkpoint_persisted_before_release"
+                            )
+                        ),
+                        publish_resume_prefix=(
+                            resume_publication_decision["publish_resume_prefix"]
                         ),
                     )
                     del (
@@ -4928,6 +5354,14 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                 _build_endpoint_residual_attention_coverage_receipt(
                     completed_receipts,
                     runtime_policy.endpoint_residual_attention_policy,
+                )
+            )
+        endpoint_sequential_transport_coverage = None
+        if runtime_policy.endpoint_sequential_transport_policy is not None:
+            endpoint_sequential_transport_coverage = (
+                _build_endpoint_sequential_transport_coverage_receipt(
+                    completed_receipts,
+                    runtime_policy.endpoint_sequential_transport_policy,
                 )
             )
         if (
@@ -5207,6 +5641,10 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             body["endpoint_residual_attention_coverage"] = dict(
                 endpoint_residual_attention_coverage
             )
+        if endpoint_sequential_transport_coverage is not None:
+            body["endpoint_sequential_transport_coverage"] = dict(
+                endpoint_sequential_transport_coverage
+            )
         if terminal_action_report is not None:
             terminal_operation = terminal_action_report["operation_audit"]
             operation_audit = dict(body["operation_audit"])
@@ -5216,6 +5654,31 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                 "target_final_layer_replay_calls"
             ]
             body["operation_audit"] = operation_audit
+        if runtime_policy.terminal_action_residual_policy is not None:
+            if any(
+                int(record["next_layer_index"]) >= catalog.layer_count
+                for record in admitted_prefixes
+            ):
+                raise Lfm2CpcfV5ModelCompilerError(
+                    "A pre-terminal final-layer prefix was incorrectly admitted "
+                    "as resumable."
+                )
+            body[
+                "terminal_action_preintegration_final_prefix_publication_suppressed"
+            ] = True
+            if terminal_resume_publication_receipt is None:
+                raise Lfm2CpcfV5ModelCompilerError(
+                    "Terminal-action compilation produced no sealed final-prefix "
+                    "resume publication decision."
+                )
+            body["terminal_action_resume_publication_receipt"] = dict(
+                terminal_resume_publication_receipt
+            )
+            body["terminal_action_suppressed_resume_prefix_indices"] = list(
+                suppressed_terminal_preintegration_prefixes
+            )
+            body["terminal_action_resume_requires_final_layer_reexecution"] = True
+            body["terminal_action_postintegration_resume_checkpoint_published"] = False
         result_sha = _sha(body)
         return legacy_model_fold.Lfm2CpcfCompiledModelFold(
             boundary_bundle=bundle,
@@ -5281,6 +5744,8 @@ __all__ = [
     "LFM2_CPCF_V5_COMPOSED_ATTENTION_COVERAGE_SCHEMA",
     "LFM2_CPCF_V5_COMPOSED_ATTENTION_LAYER_INDICES",
     "LFM2_CPCF_V5_ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA",
+    "LFM2_CPCF_V5_ENDPOINT_SEQUENTIAL_TRANSPORT_COVERAGE_SCHEMA",
+    "LFM2_CPCF_V5_TERMINAL_RESUME_PUBLICATION_SCHEMA",
     "LFM2_CPCF_V5_COMPILER_IMPLEMENTATION_SCHEMA",
     "LFM2_CPCF_V5_MODEL_FOLD_SCHEMA",
     "LFM2_CPCF_V5_PHYSICAL_RSS_CHECKPOINT_SCHEMA",

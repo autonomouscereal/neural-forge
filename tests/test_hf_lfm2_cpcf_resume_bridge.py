@@ -1359,8 +1359,33 @@ def test_v5_authenticated_frontier_restores_exact_prefix_without_replay(
     assert [layer.layer_index for layer in fresh_compiler.layer_results] == list(
         range(next_layer_index)
     )
+    assert [layer.layer_charts_sha256 for layer in fresh_compiler.layer_results] == [
+        receipt.report["boundary_charts_sha256"] for receipt in progress["receipts"]
+    ]
     assert restored.frontier.frontier_sha256 == progress["frontier"].frontier_sha256
     assert restored.prefix_install_report["training_steps"] == 0
+
+
+def test_v5_progress_rejects_receipt_frontier_chart_drift():
+    progress = _v5_progress(1)
+    original = progress["receipts"][0]
+    drifted = _progress_layer_receipt(
+        layer_index=original.layer_index,
+        input_bank_sha256=original.input_bank_sha256,
+        next_bank_sha256=original.next_bank_sha256,
+        charts_sha256=_digest("different-upstream-transported-chart"),
+    )
+
+    with pytest.raises(
+        v5_resume.Lfm2CpcfV5ResumeError,
+        match="receipts and incoming child state are not contiguous",
+    ):
+        v5_resume.Lfm2CpcfV5ProgressEvent.capture(
+            frontier=progress["frontier"],
+            incoming_state_bank=progress["incoming"],
+            completed_layer_receipts=(drifted,),
+            target_model=progress["target"],
+        )
 
 
 def test_v5_resume_rejects_live_context_drift_and_store_tamper(tmp_path):
@@ -1426,9 +1451,9 @@ def test_v5_rss_rejection_retains_pending_but_blocks_normal_admission(
         pending,
         rss_violation_report=(
             rejection_receipt := _v5_rss_receipt(
-            expectation,
-            passed=False,
-            peak_increase_bytes=1_500_000,
+                expectation,
+                passed=False,
+                peak_increase_bytes=1_500_000,
             )
         ),
     )

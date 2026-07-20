@@ -169,8 +169,9 @@ def test_v5_runtime_policy_authenticates_opt_in_attention_transport() -> None:
     )
 
 
-def test_v5_runtime_composed_attention_policy_is_typed_exclusive_and_attention_only(
-) -> None:
+def test_v5_runtime_composed_attention_policy_is_typed_exclusive_and_attention_only() -> (
+    None
+):
     composed = v5.Lfm2ComposedQkAttentionFoldPolicy()
     runtime = v5.Lfm2CpcfV5RuntimePolicy(
         model_fold_policy=v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(),
@@ -182,15 +183,16 @@ def test_v5_runtime_composed_attention_policy_is_typed_exclusive_and_attention_o
     assert runtime.as_dict()["composed_qk_attention_policy"] == composed.as_dict()
     assert runtime.resolved_composed_qk_attention_policy("full_attention") is composed
     assert runtime.resolved_composed_qk_attention_policy("short_conv") is None
-    assert "composed_qk_attention_policy" not in v5.Lfm2CpcfV5RuntimePolicy(
-        model_fold_policy=v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(),
-        maximum_resident_evidence_bytes=1,
-        full_phase_tree_logical_bytes=1,
-    ).as_dict()
-
-    sequential = layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
-        enabled=True
+    assert (
+        "composed_qk_attention_policy"
+        not in v5.Lfm2CpcfV5RuntimePolicy(
+            model_fold_policy=v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(),
+            maximum_resident_evidence_bytes=1,
+            full_phase_tree_logical_bytes=1,
+        ).as_dict()
     )
+
+    sequential = layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
     with pytest.raises(
         v5.Lfm2CpcfV5ModelCompilerError,
         match="mutually exclusive",
@@ -205,14 +207,103 @@ def test_v5_runtime_composed_attention_policy_is_typed_exclusive_and_attention_o
         )
 
 
+def test_v5_runtime_combined_profile_requires_every_exact_policy() -> None:
+    from neural_forge.hf_lfm2_cpcf_residual_error_controller import (
+        Lfm2CpcfPostOperatorTransportPolicy,
+    )
+    from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+        Lfm2CpcfTerminalActionPolicy,
+    )
+
+    composed = v5.Lfm2ComposedQkAttentionFoldPolicy()
+    endpoint = v5.Lfm2ComposedEndpointResidualAttentionFoldPolicy()
+    sequential = layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
+    model = v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(
+        attention_sequential_transport_policy=sequential,
+    )
+    post_operator = Lfm2CpcfPostOperatorTransportPolicy()
+    terminal = Lfm2CpcfTerminalActionPolicy()
+    combination = layer_compiler.Lfm2CpcfEndpointSequentialTransportPolicy(
+        composed_qk_attention_policy_sha256=composed.authentication_sha256,
+        endpoint_residual_attention_policy_sha256=(endpoint.authentication_sha256),
+        attention_sequential_transport_policy_sha256=(
+            sequential.as_dict()["report_sha256"]
+        ),
+        post_operator_transport_policy_sha256=(post_operator.authentication_sha256),
+        terminal_action_residual_policy_sha256=(terminal.authentication_sha256),
+    )
+    runtime = v5.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=model,
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=1,
+        composed_qk_attention_policy=composed,
+        endpoint_residual_attention_policy=endpoint,
+        terminal_action_residual_policy=terminal,
+        endpoint_sequential_transport_policy=combination,
+        post_operator_transport_policy=post_operator,
+    )
+
+    assert (
+        runtime.resolved_endpoint_sequential_transport_policy("full_attention")
+        is combination
+    )
+    assert runtime.resolved_endpoint_sequential_transport_policy("short_conv") is None
+    assert runtime.as_dict()["post_operator_transport_policy"] == (
+        post_operator.as_dict()
+    )
+    with pytest.raises(
+        v5.Lfm2CpcfV5ModelCompilerError,
+        match="authorized only by the exact endpoint sequential-terminal profile",
+    ):
+        v5.Lfm2CpcfV5RuntimePolicy(
+            model_fold_policy=v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(),
+            maximum_resident_evidence_bytes=1,
+            full_phase_tree_logical_bytes=1,
+            post_operator_transport_policy=post_operator,
+        )
+
+
+def test_terminal_resume_publication_suppresses_only_preintegration_final_prefix():
+    before_final = v5._terminal_resume_prefix_publication_decision(
+        next_layer_index=13,
+        expected_layer_count=14,
+        terminal_action_enabled=True,
+    )
+    preintegration_final = v5._terminal_resume_prefix_publication_decision(
+        next_layer_index=14,
+        expected_layer_count=14,
+        terminal_action_enabled=True,
+    )
+    nonterminal_final = v5._terminal_resume_prefix_publication_decision(
+        next_layer_index=14,
+        expected_layer_count=14,
+        terminal_action_enabled=False,
+    )
+
+    assert before_final["publish_resume_prefix"] is True
+    assert before_final["preintegration_final_layer_prefix"] is False
+    assert preintegration_final["publish_resume_prefix"] is False
+    assert preintegration_final["preintegration_final_layer_prefix"] is True
+    assert preintegration_final["latest_safe_recovery_boundary"] == (
+        "preceding_admitted_prefix_then_reexecute_final_layer_and_terminal"
+    )
+    assert nonterminal_final["publish_resume_prefix"] is True
+    assert nonterminal_final["preintegration_final_layer_prefix"] is False
+    for receipt in (before_final, preintegration_final, nonterminal_final):
+        body = dict(receipt)
+        claimed = body.pop("report_sha256")
+        assert claimed == v5._sha(body)
+        assert receipt["training_steps"] == 0
+        assert receipt["backward_calls"] == 0
+        assert receipt["optimizer_steps"] == 0
+
+
 def _composed_coverage_fixture() -> tuple[
     tuple[SimpleNamespace, ...],
     v5.Lfm2ComposedQkAttentionFoldPolicy,
 ]:
     policy = v5.Lfm2ComposedQkAttentionFoldPolicy()
-    candidate_id = (
-        v5.SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
-    )
+    candidate_id = v5.SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
     receipts = []
     for layer_index in range(14):
         if layer_index not in v5.LFM2_CPCF_V5_COMPOSED_ATTENTION_LAYER_INDICES:
@@ -280,12 +371,11 @@ def _composed_coverage_fixture() -> tuple[
     return tuple(receipts), policy
 
 
-def test_composed_attention_coverage_receipt_requires_exact_ordered_six_layers(
-) -> None:
+def test_composed_attention_coverage_receipt_requires_exact_ordered_six_layers() -> (
+    None
+):
     receipts, policy = _composed_coverage_fixture()
-    coverage = dict(
-        v5._build_composed_attention_coverage_receipt(receipts, policy)
-    )
+    coverage = dict(v5._build_composed_attention_coverage_receipt(receipts, policy))
     body = dict(coverage)
     seal = body.pop("report_sha256")
 
@@ -354,9 +444,7 @@ def test_composed_coverage_authenticates_mixed_endpoint_fallback_layers() -> Non
             }
             attempt_body = {
                 "schema": v5.LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA,
-                "endpoint_start_artifact_sha256": endpoint_start[
-                    "artifact_sha256"
-                ],
+                "endpoint_start_artifact_sha256": endpoint_start["artifact_sha256"],
                 "global_gauge_fallback_start_artifact_sha256": endpoint_start[
                     "artifact_sha256"
                 ],
@@ -378,9 +466,7 @@ def test_composed_coverage_authenticates_mixed_endpoint_fallback_layers() -> Non
                         "attempt_sha256": v5._sha(attempt_body),
                     },
                     "endpoint_qk_start_artifact": endpoint_start,
-                    "endpoint_qk_start_source": (
-                        "structural_global_gauge_dense_qkv"
-                    ),
+                    "endpoint_qk_start_source": ("structural_global_gauge_dense_qkv"),
                     "composed_qk_global_sync": global_sync,
                     "composed_qk_score_result": score,
                 }
@@ -453,8 +539,9 @@ def _endpoint_candidate_inventory_solver(
     }
 
 
-def test_endpoint_candidate_inventory_authenticates_mixed_four_and_five_arm_layers(
-) -> None:
+def test_endpoint_candidate_inventory_authenticates_mixed_four_and_five_arm_layers() -> (
+    None
+):
     expected_counts = [4, 5, 4, 5, 4, 5]
     observed_counts = []
     observed_eligibility = []
