@@ -1061,6 +1061,7 @@ def test_composed_qk_compiled_binding_requires_exact_six_layer_coverage(
             "candidate_evaluation_report_sha256": _digest(
                 f"candidate-{layer}"
             ),
+            "composed_candidate_eligible": True,
             "selected_candidate_id": "fixture",
         }
         for layer in expected_layers
@@ -1073,6 +1074,10 @@ def test_composed_qk_compiled_binding_requires_exact_six_layer_coverage(
         "covered_attention_layer_indices": expected_layers,
         "attention_layer_count": 6,
         "ordered_layer_coverage": rows,
+        "endpoint_fallback_permitted": False,
+        "composed_candidate_eligible_per_attention_layer": [True] * 6,
+        "composed_candidate_admitted_layer_indices": expected_layers,
+        "authenticated_endpoint_fallback_layer_indices": [],
         "exact_ordered_attention_layer_coverage": True,
         "full_attention_only_forwarding": True,
         "actual_upstream_child_contexts_consumed": True,

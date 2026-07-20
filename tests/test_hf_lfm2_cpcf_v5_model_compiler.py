@@ -312,6 +312,204 @@ def test_composed_attention_coverage_receipt_requires_exact_ordered_six_layers(
         v5._build_composed_attention_coverage_receipt(wrong, policy)
 
 
+def test_composed_coverage_authenticates_mixed_endpoint_fallback_layers() -> None:
+    receipts, policy = _composed_coverage_fixture()
+    mixed = []
+    fallback_layers = {2, 6, 10}
+    for receipt in receipts:
+        if receipt.operator_kind != "full_attention":
+            mixed.append(receipt)
+            continue
+        solver = dict(receipt.report["solver_evidence_policy"])
+        eligible = receipt.layer_index not in fallback_layers
+        candidate_ids = (
+            v5.LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+            if eligible
+            else v5.LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+        )
+        evaluations = {candidate_id: {} for candidate_id in candidate_ids}
+        if eligible:
+            composed_id = (
+                v5.SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+            )
+            evaluations[composed_id] = solver["attention_candidate_evaluations"][
+                composed_id
+            ]
+        else:
+            score_body = {"accepted": False, "status": "rejected_fixture"}
+            score = {**score_body, "report_sha256": v5._sha(score_body)}
+            global_body = {"schema": "test-global-sync"}
+            global_sync = {
+                **global_body,
+                "report_sha256": v5._sha(global_body),
+            }
+            endpoint_start_body = {
+                "schema": v5.LFM2_ENDPOINT_QK_START_SCHEMA,
+                "global_sync_report_sha256": global_sync["report_sha256"],
+                "score_result_report_sha256": score["report_sha256"],
+            }
+            endpoint_start = {
+                **endpoint_start_body,
+                "artifact_sha256": v5._sha(endpoint_start_body),
+            }
+            attempt_body = {
+                "schema": v5.LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA,
+                "endpoint_start_artifact_sha256": endpoint_start[
+                    "artifact_sha256"
+                ],
+                "global_gauge_fallback_start_artifact_sha256": endpoint_start[
+                    "artifact_sha256"
+                ],
+                "endpoint_start_source": "structural_global_gauge_dense_qkv",
+                "score_result_report_sha256": score["report_sha256"],
+                "score_result_accepted": False,
+                "composed_candidate_eligible": False,
+                "composed_candidate_artifact_sha256": None,
+                "failed_composed_candidate_omitted": True,
+                "endpoint_start_issued_independently": True,
+                "operation_audit": {"training_steps": 0},
+            }
+            solver.update(
+                {
+                    "composed_qk_producer_artifact": None,
+                    "composed_qk_producer_artifact_sha256": None,
+                    "composed_qk_stage_one_attempt": {
+                        **attempt_body,
+                        "attempt_sha256": v5._sha(attempt_body),
+                    },
+                    "endpoint_qk_start_artifact": endpoint_start,
+                    "endpoint_qk_start_source": (
+                        "structural_global_gauge_dense_qkv"
+                    ),
+                    "composed_qk_global_sync": global_sync,
+                    "composed_qk_score_result": score,
+                }
+            )
+        selection_body = {
+            "candidate_count": len(candidate_ids),
+            "candidate_ids": list(candidate_ids),
+            "selected_candidate_id": candidate_ids[0],
+            "candidate_local_mlp_preparation_count": len(candidate_ids),
+            "cross_candidate_prepared_mlp_basis_reused": False,
+        }
+        solver.update(
+            {
+                "composed_qk_candidate_eligible": eligible,
+                "attention_candidate_evaluations": evaluations,
+                "attention_candidate_selection": {
+                    **selection_body,
+                    "report_sha256": v5._sha(selection_body),
+                },
+            }
+        )
+        mixed.append(
+            SimpleNamespace(
+                **{
+                    **receipt.__dict__,
+                    "report": {"solver_evidence_policy": solver},
+                }
+            )
+        )
+
+    coverage = v5._build_composed_attention_coverage_receipt(
+        mixed,
+        policy,
+        allow_endpoint_fallback=True,
+    )
+
+    assert coverage["composed_candidate_eligible_per_attention_layer"] == [
+        False,
+        True,
+        False,
+        True,
+        False,
+        True,
+    ]
+    assert coverage["authenticated_endpoint_fallback_layer_indices"] == [2, 6, 10]
+
+
+def _endpoint_candidate_inventory_solver(
+    candidate_ids: tuple[str, ...],
+    *,
+    composed_candidate_eligible: bool,
+) -> dict[str, object]:
+    selection_body = {
+        "candidate_count": len(candidate_ids),
+        "candidate_ids": list(candidate_ids),
+        "selected_candidate_id": candidate_ids[0],
+        "candidate_local_mlp_preparation_count": len(candidate_ids),
+        "cross_candidate_prepared_mlp_basis_reused": False,
+    }
+    return {
+        "composed_qk_candidate_eligible": composed_candidate_eligible,
+        "attention_candidate_selection": {
+            **selection_body,
+            "report_sha256": v5._sha(selection_body),
+        },
+        "attention_candidate_evaluations": {
+            candidate_id: {"candidate_id": candidate_id}
+            for candidate_id in candidate_ids
+        },
+    }
+
+
+def test_endpoint_candidate_inventory_authenticates_mixed_four_and_five_arm_layers(
+) -> None:
+    expected_counts = [4, 5, 4, 5, 4, 5]
+    observed_counts = []
+    observed_eligibility = []
+    for layer_index, candidate_count in zip(
+        v5.LFM2_CPCF_V5_COMPOSED_ATTENTION_LAYER_INDICES,
+        expected_counts,
+        strict=True,
+    ):
+        eligible = candidate_count == 5
+        candidate_ids = (
+            v5.LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+            if eligible
+            else v5.LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+        )
+        authenticated_ids, authenticated_eligible, selection_sha = (
+            v5._authenticate_endpoint_attention_candidate_inventory(
+                _endpoint_candidate_inventory_solver(
+                    candidate_ids,
+                    composed_candidate_eligible=eligible,
+                ),
+                layer_index=layer_index,
+            )
+        )
+        observed_counts.append(len(authenticated_ids))
+        observed_eligibility.append(authenticated_eligible)
+        assert len(selection_sha) == 64
+
+    assert observed_counts == expected_counts
+    assert observed_eligibility == [False, True, False, True, False, True]
+
+
+def test_endpoint_candidate_inventory_rejects_resealed_count_tamper() -> None:
+    candidate_ids = v5.LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+    solver = _endpoint_candidate_inventory_solver(
+        candidate_ids,
+        composed_candidate_eligible=True,
+    )
+    selection = dict(solver["attention_candidate_selection"])
+    selection.pop("report_sha256")
+    selection["candidate_count"] = 4
+    solver["attention_candidate_selection"] = {
+        **selection,
+        "report_sha256": v5._sha(selection),
+    }
+
+    with pytest.raises(
+        v5.Lfm2CpcfV5ModelCompilerError,
+        match="exact 5-arm",
+    ):
+        v5._authenticate_endpoint_attention_candidate_inventory(
+            solver,
+            layer_index=2,
+        )
+
+
 def test_whole_macrocell_selector_requirement_is_opt_in_and_serialized() -> None:
     policy = v5.Lfm2CpcfV5RuntimePolicy(
         model_fold_policy=(v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()),

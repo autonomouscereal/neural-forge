@@ -2592,10 +2592,16 @@ def _authenticate_composed_qk_coverage(
         or body.get("observed_attention_layer_indices") != expected
         or body.get("covered_attention_layer_indices") != expected
         or body.get("attention_layer_count") != len(expected)
+        or body.get("endpoint_fallback_permitted") is not False
+        or body.get("composed_candidate_eligible_per_attention_layer")
+        != [True] * len(expected)
+        or body.get("composed_candidate_admitted_layer_indices") != expected
+        or body.get("authenticated_endpoint_fallback_layer_indices") != []
         or not isinstance(rows, list)
         or [row.get("layer_index") for row in rows] != expected
         or any(
             not isinstance(row, Mapping)
+            or row.get("composed_candidate_eligible") is not True
             or any(
                 _SHA256.fullmatch(str(row.get(name, ""))) is None
                 for name in (
@@ -2635,6 +2641,11 @@ def _authenticate_endpoint_residual_coverage(
     *,
     policy_identity: Mapping[str, Any],
 ) -> Mapping[str, Any]:
+    from neural_forge.hf_lfm2_cpcf_layer_compiler import (
+        LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS,
+        LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS,
+    )
+
     terminal_profile = "endpoint_terminal_action_profile" in policy_identity
     fields = (
         _endpoint_terminal_action_policy_identity_fields(policy_identity)
@@ -2664,11 +2675,52 @@ def _authenticate_endpoint_residual_coverage(
         "layer_result_sha256",
         "endpoint_artifact_sha256",
         "candidate_evaluation_report_sha256",
+        "candidate_selection_report_sha256",
         "source_inventory_sha256",
         "evaluation_fit_evidence_sha256",
         "evaluation_fit_check_evidence_sha256",
         "blank_independent_output_prior_sha256",
     )
+    candidate_counts = body.get("candidate_count_per_attention_layer")
+    candidate_ids = body.get("candidate_ids_per_attention_layer")
+    composed_eligibility = body.get(
+        "composed_candidate_eligible_per_attention_layer"
+    )
+    rows_are_mappings = isinstance(rows, list) and all(
+        isinstance(row, Mapping) for row in rows
+    )
+    row_indices = (
+        [row.get("layer_index") for row in rows] if rows_are_mappings else None
+    )
+    projected_counts = (
+        [row.get("candidate_count") for row in rows] if rows_are_mappings else None
+    )
+    projected_candidate_ids = (
+        [row.get("candidate_ids") for row in rows] if rows_are_mappings else None
+    )
+    projected_eligibility = (
+        [row.get("composed_candidate_eligible") for row in rows]
+        if rows_are_mappings
+        else None
+    )
+
+    def _row_has_exact_inventory(row: Mapping[str, Any]) -> bool:
+        eligible = row.get("composed_candidate_eligible")
+        expected_ids = (
+            LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+            if eligible is True
+            else LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+            if eligible is False
+            else ()
+        )
+        ids = row.get("candidate_ids")
+        return (
+            bool(expected_ids)
+            and isinstance(ids, list)
+            and ids == list(expected_ids)
+            and row.get("candidate_count") == len(expected_ids)
+        )
+
     if (
         _sha(body) != seal
         or body.get("schema") != ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA
@@ -2678,12 +2730,22 @@ def _authenticate_endpoint_residual_coverage(
         or body.get("observed_attention_layer_indices") != expected
         or body.get("covered_attention_layer_indices") != expected
         or body.get("attention_layer_count") != len(expected)
-        or body.get("candidate_count_per_attention_layer") not in {4, 5}
-        or not isinstance(rows, list)
-        or [row.get("layer_index") for row in rows] != expected
+        or not rows_are_mappings
+        or row_indices != expected
+        or not isinstance(candidate_counts, list)
+        or len(candidate_counts) != len(expected)
+        or candidate_counts != projected_counts
+        or any(type(count) is not int or count not in {4, 5} for count in candidate_counts)
+        or not isinstance(candidate_ids, list)
+        or len(candidate_ids) != len(expected)
+        or candidate_ids != projected_candidate_ids
+        or not isinstance(composed_eligibility, list)
+        or len(composed_eligibility) != len(expected)
+        or composed_eligibility != projected_eligibility
+        or any(type(value) is not bool for value in composed_eligibility)
+        or any(not _row_has_exact_inventory(row) for row in rows)
         or any(
-            not isinstance(row, Mapping)
-            or any(
+            any(
                 _SHA256.fullmatch(str(row.get(name, ""))) is None
                 for name in required_row_digests
             )
@@ -5638,10 +5700,13 @@ def _run(
         )
         if (
             _sha(prerequisite_body) != prerequisite_seal
+            or prerequisite_body.get("schema")
+            != COMPOSED_QK_ATTENTION_COVERAGE_SCHEMA
             or prerequisite_body.get("policy_authentication_sha256")
             != endpoint_fields[composed_policy_sha_name]
             or prerequisite_body.get("covered_attention_layer_indices")
             != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+            or prerequisite_body.get("endpoint_fallback_permitted") is not True
         ):
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
                 "Endpoint-residual prerequisite composed coverage is invalid."
@@ -5658,6 +5723,17 @@ def _run(
             compiled_report,
             policy_identity=active_endpoint_identity,
         )
+        if prerequisite_body.get(
+            "composed_candidate_eligible_per_attention_layer"
+        ) != list(
+            endpoint_residual_coverage[
+                "composed_candidate_eligible_per_attention_layer"
+            ]
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Endpoint-residual coverage changed per-layer composed "
+                "candidate eligibility from its prerequisite coverage receipt."
+            )
     elif "endpoint_residual_attention_coverage" in compiled_report:
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
             "Endpoint-off compiler receipt unexpectedly contains endpoint "

@@ -53,10 +53,13 @@ from neural_forge.hf_lfm2_cpcf_installability import (
 )
 from neural_forge.hf_lfm2_cpcf_layer_compiler import (
     LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS,
+    LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS,
     compile_and_install_lfm2_cpcf_layer,
 )
 from neural_forge.hf_lfm2_composed_qk_attention_fold import (
     ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID,
+    LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA,
+    LFM2_ENDPOINT_QK_START_SCHEMA,
     SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID,
     Lfm2ComposedEndpointResidualAttentionFoldPolicy,
     Lfm2ComposedQkAttentionFoldPolicy,
@@ -585,10 +588,70 @@ def _sealed_mapping_sha256(
     return seal
 
 
+def _authenticate_endpoint_attention_candidate_inventory(
+    solver: Mapping[str, Any],
+    *,
+    layer_index: int,
+) -> tuple[tuple[str, ...], bool, str]:
+    """Authenticate the exact per-layer endpoint tournament inventory."""
+
+    selection = solver.get("attention_candidate_selection")
+    selection_sha = _sealed_mapping_sha256(
+        selection,
+        seal_field="report_sha256",
+        name=f"layer[{layer_index}].attention_candidate_selection",
+    )
+    evaluations = solver.get("attention_candidate_evaluations")
+    composed_candidate_eligible = solver.get("composed_qk_candidate_eligible")
+    if type(composed_candidate_eligible) is not bool:
+        raise Lfm2CpcfV5ModelCompilerError(
+            f"Attention layer {layer_index} did not state exact composed "
+            "candidate eligibility."
+        )
+    expected_candidate_ids = (
+        LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+        if composed_candidate_eligible
+        else LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+    )
+    candidate_ids = (
+        selection.get("candidate_ids")
+        if isinstance(selection, Mapping)
+        else None
+    )
+    if (
+        not isinstance(evaluations, Mapping)
+        or not isinstance(candidate_ids, list)
+        or candidate_ids != list(expected_candidate_ids)
+        or list(evaluations) != candidate_ids
+        or selection.get("candidate_count") != len(expected_candidate_ids)
+        or selection.get("candidate_local_mlp_preparation_count")
+        != len(expected_candidate_ids)
+        or selection.get("cross_candidate_prepared_mlp_basis_reused") is not False
+        or ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID not in evaluations
+        or (
+            (
+                SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+                in evaluations
+            )
+            is not composed_candidate_eligible
+        )
+    ):
+        raise Lfm2CpcfV5ModelCompilerError(
+            f"Attention layer {layer_index} did not seal the exact "
+            f"{len(expected_candidate_ids)}-arm candidate-local MLP tournament "
+            "for its authenticated composed-candidate eligibility."
+        )
+    return expected_candidate_ids, composed_candidate_eligible, selection_sha
+
+
 def _build_composed_attention_coverage_receipt(
     completed_receipts: Sequence[legacy_model_fold.Lfm2CpcfCompletedLayerReceipt],
     policy: Lfm2ComposedQkAttentionFoldPolicy,
+    *,
+    allow_endpoint_fallback: bool = False,
 ) -> Mapping[str, Any]:
+    if type(allow_endpoint_fallback) is not bool:
+        raise TypeError("allow_endpoint_fallback must be bool.")
     if type(policy) is not Lfm2ComposedQkAttentionFoldPolicy or not (
         policy.verify_authentication()
     ):
@@ -633,7 +696,132 @@ def _build_composed_attention_coverage_receipt(
                 f"Attention layer {receipt.layer_index} did not bind the exact "
                 "runtime composed Q/K policy."
             )
+        evaluations = solver.get("attention_candidate_evaluations")
+        if not isinstance(evaluations, Mapping):
+            raise Lfm2CpcfV5ModelCompilerError(
+                f"Attention layer {receipt.layer_index} has no candidate inventory."
+            )
+        candidate_ids: tuple[str, ...] | None = None
+        candidate_selection_sha: str | None = None
+        if allow_endpoint_fallback:
+            (
+                candidate_ids,
+                composed_candidate_eligible,
+                candidate_selection_sha,
+            ) = _authenticate_endpoint_attention_candidate_inventory(
+                solver,
+                layer_index=receipt.layer_index,
+            )
+        else:
+            composed_candidate_eligible = True
+            if solver.get("composed_qk_candidate_eligible", True) is not True:
+                raise Lfm2CpcfV5ModelCompilerError(
+                    f"Attention layer {receipt.layer_index} rejected the composed "
+                    "candidate in a composed-only runtime."
+                )
+        selection = solver.get("attention_candidate_selection")
+        selected_candidate_id = (
+            None
+            if not isinstance(selection, Mapping)
+            else selection.get("selected_candidate_id")
+        )
         producer = solver.get("composed_qk_producer_artifact")
+        if not composed_candidate_eligible:
+            if (
+                not allow_endpoint_fallback
+                or producer is not None
+                or solver.get("composed_qk_producer_artifact_sha256") is not None
+            ):
+                raise Lfm2CpcfV5ModelCompilerError(
+                    f"Attention layer {receipt.layer_index} relabeled a rejected "
+                    "composed candidate."
+                )
+            attempt = solver.get("composed_qk_stage_one_attempt")
+            attempt_sha = _sealed_mapping_sha256(
+                attempt,
+                seal_field="attempt_sha256",
+                name=f"layer[{receipt.layer_index}].composed_qk_stage_one_attempt",
+            )
+            endpoint_start = solver.get("endpoint_qk_start_artifact")
+            endpoint_start_sha = _sealed_mapping_sha256(
+                endpoint_start,
+                seal_field="artifact_sha256",
+                name=f"layer[{receipt.layer_index}].endpoint_qk_start_artifact",
+            )
+            global_sync = solver.get("composed_qk_global_sync")
+            global_sync_sha = _sealed_mapping_sha256(
+                global_sync,
+                seal_field="report_sha256",
+                name=f"layer[{receipt.layer_index}].composed_qk_global_sync",
+            )
+            score_result = solver.get("composed_qk_score_result")
+            score_result_sha = _sealed_mapping_sha256(
+                score_result,
+                seal_field="report_sha256",
+                name=f"layer[{receipt.layer_index}].composed_qk_score_result",
+            )
+            attempt_operation_audit = (
+                attempt.get("operation_audit")
+                if isinstance(attempt, Mapping)
+                else None
+            )
+            if (
+                candidate_ids is None
+                or not isinstance(attempt, Mapping)
+                or not isinstance(endpoint_start, Mapping)
+                or not isinstance(score_result, Mapping)
+                or not isinstance(attempt_operation_audit, Mapping)
+                or attempt.get("schema")
+                != LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA
+                or attempt.get("composed_candidate_eligible") is not False
+                or attempt.get("score_result_accepted") is not False
+                or attempt.get("failed_composed_candidate_omitted") is not True
+                or attempt.get("endpoint_start_issued_independently") is not True
+                or attempt.get("endpoint_start_source")
+                != "structural_global_gauge_dense_qkv"
+                or attempt.get("composed_candidate_artifact_sha256") is not None
+                or attempt.get("endpoint_start_artifact_sha256")
+                != endpoint_start_sha
+                or attempt.get("global_gauge_fallback_start_artifact_sha256")
+                != endpoint_start_sha
+                or attempt.get("score_result_report_sha256")
+                != score_result_sha
+                or solver.get("endpoint_qk_start_source")
+                != attempt.get("endpoint_start_source")
+                or endpoint_start.get("schema") != LFM2_ENDPOINT_QK_START_SCHEMA
+                or endpoint_start.get("global_sync_report_sha256")
+                != global_sync_sha
+                or endpoint_start.get("score_result_report_sha256")
+                != score_result_sha
+                or score_result.get("accepted") is not False
+                or any(
+                    value != 0
+                    for value in attempt_operation_audit.values()
+                )
+                or ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
+                not in evaluations
+            ):
+                raise Lfm2CpcfV5ModelCompilerError(
+                    f"Attention layer {receipt.layer_index} has an invalid "
+                    "authenticated composed-rejection endpoint fallback."
+                )
+            covered.append(receipt.layer_index)
+            rows.append(
+                {
+                    "layer_index": receipt.layer_index,
+                    "layer_result_sha256": receipt.result_sha256,
+                    "composed_candidate_eligible": False,
+                    "candidate_count": len(candidate_ids),
+                    "candidate_ids": list(candidate_ids),
+                    "candidate_selection_report_sha256": candidate_selection_sha,
+                    "composed_qk_stage_one_attempt_sha256": attempt_sha,
+                    "endpoint_qk_start_artifact_sha256": endpoint_start_sha,
+                    "global_sync_report_sha256": global_sync_sha,
+                    "score_result_report_sha256": score_result_sha,
+                    "selected_candidate_id": selected_candidate_id,
+                }
+            )
+            continue
         producer_sha = _sealed_mapping_sha256(
             producer,
             seal_field="artifact_sha256",
@@ -646,11 +834,6 @@ def _build_composed_attention_coverage_receipt(
             raise Lfm2CpcfV5ModelCompilerError(
                 f"Attention layer {receipt.layer_index} changed its composed "
                 "producer artifact reference."
-            )
-        evaluations = solver.get("attention_candidate_evaluations")
-        if not isinstance(evaluations, Mapping):
-            raise Lfm2CpcfV5ModelCompilerError(
-                f"Attention layer {receipt.layer_index} has no candidate inventory."
             )
         evaluation = evaluations.get(
             SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
@@ -705,27 +888,27 @@ def _build_composed_attention_coverage_receipt(
                 "the composed producer to the residual-seeded sequence-effective "
                 "stage-two artifact."
             )
-        selection = solver.get("attention_candidate_selection")
-        selected_candidate_id = (
-            None
-            if not isinstance(selection, Mapping)
-            else selection.get("selected_candidate_id")
-        )
         covered.append(receipt.layer_index)
-        rows.append(
-            {
-                "layer_index": receipt.layer_index,
-                "layer_result_sha256": receipt.result_sha256,
-                "composed_qk_producer_artifact_sha256": producer_sha,
-                "sequence_effective_stage_two_artifact_sha256": outer_sha,
-                "actual_child_context_sha256": actual_child_context_sha,
-                "reconstructed_live_context_sha256": (
-                    reconstructed_live_context_sha
-                ),
-                "candidate_evaluation_report_sha256": evaluation_sha,
-                "selected_candidate_id": selected_candidate_id,
-            }
-        )
+        row = {
+            "layer_index": receipt.layer_index,
+            "layer_result_sha256": receipt.result_sha256,
+            "composed_candidate_eligible": True,
+            "composed_qk_producer_artifact_sha256": producer_sha,
+            "sequence_effective_stage_two_artifact_sha256": outer_sha,
+            "actual_child_context_sha256": actual_child_context_sha,
+            "reconstructed_live_context_sha256": reconstructed_live_context_sha,
+            "candidate_evaluation_report_sha256": evaluation_sha,
+            "selected_candidate_id": selected_candidate_id,
+        }
+        if candidate_ids is not None:
+            row.update(
+                {
+                    "candidate_count": len(candidate_ids),
+                    "candidate_ids": list(candidate_ids),
+                    "candidate_selection_report_sha256": candidate_selection_sha,
+                }
+            )
+        rows.append(row)
     if tuple(covered) != expected:
         raise Lfm2CpcfV5ModelCompilerError(
             "Composed Q/K attention did not cover every required attention layer."
@@ -738,6 +921,20 @@ def _build_composed_attention_coverage_receipt(
         "covered_attention_layer_indices": covered,
         "attention_layer_count": len(expected),
         "ordered_layer_coverage": rows,
+        "endpoint_fallback_permitted": allow_endpoint_fallback,
+        "composed_candidate_eligible_per_attention_layer": [
+            row["composed_candidate_eligible"] for row in rows
+        ],
+        "composed_candidate_admitted_layer_indices": [
+            row["layer_index"]
+            for row in rows
+            if row["composed_candidate_eligible"]
+        ],
+        "authenticated_endpoint_fallback_layer_indices": [
+            row["layer_index"]
+            for row in rows
+            if not row["composed_candidate_eligible"]
+        ],
         "exact_ordered_attention_layer_coverage": True,
         "full_attention_only_forwarding": True,
         "actual_upstream_child_contexts_consumed": True,
@@ -895,20 +1092,15 @@ def _build_endpoint_residual_attention_coverage_receipt(
                 f"Attention layer {receipt.layer_index} did not evaluate the "
                 "exact endpoint artifact with its own FIT-only downstream MLP."
             )
-        selection = solver.get("attention_candidate_selection")
-        if (
-            not isinstance(selection, Mapping)
-            or selection.get("candidate_count") != 5
-            or selection.get("candidate_ids")
-            != list(LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS)
-            or selection.get("candidate_local_mlp_preparation_count") != 5
-            or selection.get("cross_candidate_prepared_mlp_basis_reused")
-            is not False
-        ):
-            raise Lfm2CpcfV5ModelCompilerError(
-                f"Attention layer {receipt.layer_index} did not seal the exact "
-                "five-arm candidate-local MLP tournament."
-            )
+        (
+            candidate_ids,
+            composed_candidate_eligible,
+            candidate_selection_sha,
+        ) = _authenticate_endpoint_attention_candidate_inventory(
+            solver,
+            layer_index=receipt.layer_index,
+        )
+        selection = solver["attention_candidate_selection"]
         block_reports = solver.get("endpoint_residual_block_reports")
         proposal_reports = solver.get(
             "endpoint_residual_qk_fit_proposal_reports"
@@ -1193,6 +1385,10 @@ def _build_endpoint_residual_attention_coverage_receipt(
                 "layer_result_sha256": receipt.result_sha256,
                 "endpoint_artifact_sha256": artifact_sha,
                 "candidate_evaluation_report_sha256": evaluation_sha,
+                "candidate_selection_report_sha256": candidate_selection_sha,
+                "candidate_count": len(candidate_ids),
+                "candidate_ids": list(candidate_ids),
+                "composed_candidate_eligible": composed_candidate_eligible,
                 "outer_block_count": outer_block_count,
                 "ordered_block_sha256s": block_sha256s,
                 "ordered_qk_fit_proposal_sha256s": proposal_sha256s,
@@ -1229,7 +1425,15 @@ def _build_endpoint_residual_attention_coverage_receipt(
         "ordered_layer_coverage": rows,
         "exact_ordered_attention_layer_coverage": True,
         "full_attention_only_forwarding": True,
-        "candidate_count_per_attention_layer": 5,
+        "candidate_count_per_attention_layer": [
+            row["candidate_count"] for row in rows
+        ],
+        "candidate_ids_per_attention_layer": [
+            row["candidate_ids"] for row in rows
+        ],
+        "composed_candidate_eligible_per_attention_layer": [
+            row["composed_candidate_eligible"] for row in rows
+        ],
         "candidate_local_fit_only_downstream_mlp_evaluation": True,
         "fit_check_final_one_shot_nonregression_only": True,
         "training_steps": 0,
@@ -4742,6 +4946,9 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             composed_attention_coverage = _build_composed_attention_coverage_receipt(
                 completed_receipts,
                 runtime_policy.composed_qk_attention_policy,
+                allow_endpoint_fallback=(
+                    runtime_policy.endpoint_residual_attention_policy is not None
+                ),
             )
         endpoint_residual_attention_coverage = None
         if runtime_policy.endpoint_residual_attention_policy is not None:

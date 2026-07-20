@@ -3275,10 +3275,22 @@ def _authenticate_compiled_attention_profile(
             or coverage_body.get("covered_attention_layer_indices")
             != expected_layers
             or coverage_body.get("attention_layer_count") != len(expected_layers)
+            or coverage_body.get("endpoint_fallback_permitted") is not False
+            or coverage_body.get(
+                "composed_candidate_eligible_per_attention_layer"
+            )
+            != [True] * len(expected_layers)
+            or coverage_body.get("composed_candidate_admitted_layer_indices")
+            != expected_layers
+            or coverage_body.get(
+                "authenticated_endpoint_fallback_layer_indices"
+            )
+            != []
             or not isinstance(rows, list)
             or [row.get("layer_index") for row in rows] != expected_layers
             or any(
                 not isinstance(row, Mapping)
+                or row.get("composed_candidate_eligible") is not True
                 or any(
                     not isinstance(row.get(name), str)
                     or len(row[name]) != 64
@@ -3325,43 +3337,42 @@ def _authenticate_compiled_attention_profile(
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Compile diagnostic lost its endpoint-residual coverage receipt."
             )
-        coverage_body = dict(coverage)
-        coverage_sha = _digest(
-            coverage_body.pop("report_sha256", None),
-            "endpoint-residual coverage SHA-256",
-        )
-        expected_layers = list(runner.COMPOSED_QK_ATTENTION_LAYER_INDICES)
-        rows = coverage_body.get("ordered_layer_coverage")
+        identity_body = {
+            "schema": runner.ENDPOINT_RESIDUAL_POLICY_IDENTITY_SCHEMA,
+            "endpoint_residual_attention_profile": profile,
+            "endpoint_residual_composed_qk_attention_policy_sha256": fields[
+                "endpoint_residual_composed_qk_attention_policy_sha256"
+            ],
+            "endpoint_residual_attention_policy_sha256": fields[
+                "endpoint_residual_attention_policy_sha256"
+            ],
+            "expected_attention_layer_indices": list(
+                runner.COMPOSED_QK_ATTENTION_LAYER_INDICES
+            ),
+            "runtime_policy_must_embed_exact_composed_and_endpoint_policies": True,
+            "cross_profile_resume_permitted": False,
+        }
+        reconstructed_identity = {
+            **identity_body,
+            "identity_sha256": _sha(identity_body),
+        }
         if (
-            _sha(coverage_body) != coverage_sha
-            or coverage_body.get("schema")
-            != runner.ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA
-            or coverage_body.get("policy_authentication_sha256")
-            != fields["endpoint_residual_attention_policy_sha256"]
-            or coverage_body.get("expected_attention_layer_indices")
-            != expected_layers
-            or coverage_body.get("observed_attention_layer_indices")
-            != expected_layers
-            or coverage_body.get("covered_attention_layer_indices")
-            != expected_layers
-            or coverage_body.get("candidate_count_per_attention_layer")
-            not in {4, 5}
-            or not isinstance(rows, list)
-            or [row.get("layer_index") for row in rows] != expected_layers
-            or coverage_body.get(
-                "candidate_local_fit_only_downstream_mlp_evaluation"
-            )
-            is not True
-            or coverage_body.get(
-                "fit_check_final_one_shot_nonregression_only"
-            )
-            is not True
-            or coverage_body.get("blank_target_values_read") is not False
+            reconstructed_identity["identity_sha256"]
+            != fields["endpoint_residual_attention_policy_identity_sha256"]
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
-                "Compiled endpoint-residual coverage is not the exact ordered "
-                "six-layer residual-fold receipt."
+                "Endpoint-residual identity could not be reconstructed."
             )
+        try:
+            runner._authenticate_endpoint_residual_coverage(
+                compiled,
+                policy_identity=reconstructed_identity,
+            )
+        except Exception as exc:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiled endpoint-residual coverage is not the exact ordered "
+                "mixed four/five-arm residual-fold receipt."
+            ) from exc
     elif binding_names == terminal_names:
         profile = fields["endpoint_terminal_action_profile"]
         if (

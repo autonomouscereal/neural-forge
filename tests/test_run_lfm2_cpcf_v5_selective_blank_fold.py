@@ -407,6 +407,137 @@ def test_endpoint_profile_builds_exact_five_arm_runtime_policy(
     assert binding["cross_profile_resume_permitted"] is False
 
 
+def _mixed_endpoint_coverage_fixture() -> tuple[dict[str, object], dict[str, object]]:
+    from neural_forge.hf_lfm2_cpcf_layer_compiler import (
+        LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS,
+        LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS,
+    )
+
+    profile = MODULE.V5EndpointResidualAttentionRunnerProfile().as_dict()
+    identity_body = {
+        "schema": MODULE.ENDPOINT_RESIDUAL_POLICY_IDENTITY_SCHEMA,
+        "endpoint_residual_attention_profile": profile,
+        "endpoint_residual_composed_qk_attention_policy_sha256": profile[
+            "composed_qk_attention_policy"
+        ]["authentication_sha256"],
+        "endpoint_residual_attention_policy_sha256": profile[
+            "endpoint_residual_attention_policy"
+        ]["authentication_sha256"],
+        "expected_attention_layer_indices": list(
+            MODULE.COMPOSED_QK_ATTENTION_LAYER_INDICES
+        ),
+        "runtime_policy_must_embed_exact_composed_and_endpoint_policies": True,
+        "cross_profile_resume_permitted": False,
+    }
+    identity = {**identity_body, "identity_sha256": MODULE._sha(identity_body)}
+    candidate_counts = [4, 5, 4, 5, 4, 5]
+    rows = []
+    for layer_index, candidate_count in zip(
+        MODULE.COMPOSED_QK_ATTENTION_LAYER_INDICES,
+        candidate_counts,
+        strict=True,
+    ):
+        eligible = candidate_count == 5
+        ids = (
+            LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+            if eligible
+            else LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+        )
+        digest = MODULE._sha({"layer": layer_index})
+        rows.append(
+            {
+                "layer_index": layer_index,
+                "layer_result_sha256": digest,
+                "endpoint_artifact_sha256": digest,
+                "candidate_evaluation_report_sha256": digest,
+                "candidate_selection_report_sha256": digest,
+                "candidate_count": candidate_count,
+                "candidate_ids": list(ids),
+                "composed_candidate_eligible": eligible,
+                "source_inventory_sha256": digest,
+                "evaluation_fit_evidence_sha256": digest,
+                "evaluation_fit_check_evidence_sha256": digest,
+                "blank_independent_output_prior_sha256": digest,
+                "outer_block_count": 1,
+                "ordered_block_sha256s": [digest],
+                "ordered_qk_fit_proposal_sha256s": [digest],
+                "ordered_execution_receipt_sha256s": [digest],
+            }
+        )
+    expected_layers = list(MODULE.COMPOSED_QK_ATTENTION_LAYER_INDICES)
+    coverage_body = {
+        "schema": MODULE.ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA,
+        "policy_authentication_sha256": identity_body[
+            "endpoint_residual_attention_policy_sha256"
+        ],
+        "expected_attention_layer_indices": expected_layers,
+        "observed_attention_layer_indices": expected_layers,
+        "covered_attention_layer_indices": expected_layers,
+        "attention_layer_count": len(expected_layers),
+        "ordered_layer_coverage": rows,
+        "exact_ordered_attention_layer_coverage": True,
+        "full_attention_only_forwarding": True,
+        "candidate_count_per_attention_layer": candidate_counts,
+        "candidate_ids_per_attention_layer": [row["candidate_ids"] for row in rows],
+        "composed_candidate_eligible_per_attention_layer": [
+            row["composed_candidate_eligible"] for row in rows
+        ],
+        "candidate_local_fit_only_downstream_mlp_evaluation": True,
+        "fit_check_final_one_shot_nonregression_only": True,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "blank_target_values_read": False,
+    }
+    coverage = {
+        **coverage_body,
+        "report_sha256": MODULE._sha(coverage_body),
+    }
+    return {"endpoint_residual_attention_coverage": coverage}, identity
+
+
+def test_endpoint_coverage_accepts_exact_mixed_four_and_five_arm_layers() -> None:
+    compiled_report, identity = _mixed_endpoint_coverage_fixture()
+
+    coverage = MODULE._authenticate_endpoint_residual_coverage(
+        compiled_report,
+        policy_identity=identity,
+    )
+
+    assert coverage["candidate_count_per_attention_layer"] == [4, 5, 4, 5, 4, 5]
+    assert coverage["composed_candidate_eligible_per_attention_layer"] == [
+        False,
+        True,
+        False,
+        True,
+        False,
+        True,
+    ]
+
+
+def test_endpoint_coverage_rejects_resealed_mixed_inventory_tamper() -> None:
+    compiled_report, identity = _mixed_endpoint_coverage_fixture()
+    tampered = copy.deepcopy(compiled_report)
+    coverage_body = tampered["endpoint_residual_attention_coverage"]
+    coverage_body.pop("report_sha256")
+    coverage_body["ordered_layer_coverage"][0][
+        "composed_candidate_eligible"
+    ] = True
+    coverage_body["composed_candidate_eligible_per_attention_layer"][0] = True
+    coverage_body["report_sha256"] = MODULE._sha(coverage_body)
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="dynamic four/five-arm",
+    ):
+        MODULE._authenticate_endpoint_residual_coverage(
+            tampered,
+            policy_identity=identity,
+        )
+
+
 def test_endpoint_profile_is_mutually_exclusive_with_prior_attention_profiles(
     tmp_path: Path,
 ) -> None:
