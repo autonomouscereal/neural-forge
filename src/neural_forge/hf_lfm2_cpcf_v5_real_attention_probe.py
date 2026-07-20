@@ -98,6 +98,10 @@ H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS = (
     *H776_COMPOSED_ATTENTION_CANDIDATE_IDS,
     H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID,
 )
+H776_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS = (
+    *H776_ATTENTION_CANDIDATE_IDS,
+    H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID,
+)
 H776_PHASE_COUNT = 2_304
 H776_TRAJECTORY_COUNT = 256
 H776_PHASES_PER_TRAJECTORY = 9
@@ -3192,7 +3196,10 @@ def _authenticate_qk_routing_metrics(
     policy: Mapping[str, Any],
     partition: str,
     expected_case_count: int,
+    require_gate: bool = True,
 ) -> dict[str, Any]:
+    if type(require_gate) is not bool:
+        raise TypeError("require_gate must be bool.")
     if not isinstance(metrics, Mapping):
         raise Lfm2CpcfV5RealAttentionProbeError(
             f"Composed {partition} routing metrics are absent."
@@ -3217,7 +3224,7 @@ def _authenticate_qk_routing_metrics(
             or float(value) < 0.0
             or isinstance(maximum, bool)
             or not isinstance(maximum, (int, float))
-            or float(value) > float(maximum)
+            or (require_gate and float(value) > float(maximum))
         ):
             raise Lfm2CpcfV5RealAttentionProbeError(
                 f"Composed {partition} {metric_name} failed its fixed gate."
@@ -3230,7 +3237,7 @@ def _authenticate_qk_routing_metrics(
         or not math.isfinite(float(top1))
         or isinstance(minimum_top1, bool)
         or not isinstance(minimum_top1, (int, float))
-        or float(top1) < float(minimum_top1)
+        or (require_gate and float(top1) < float(minimum_top1))
         or result.get("maximum_causal_probability_leakage") != 0.0
         or result.get("case_count") != expected_case_count
         or not isinstance(result.get("eligible_query_rows"), int)
@@ -3240,6 +3247,136 @@ def _authenticate_qk_routing_metrics(
             f"Composed {partition} routing agreement or causal mask failed."
         )
     return result
+
+
+def _authenticate_h776_composed_score_outcome(
+    score: Mapping[str, Any],
+    *,
+    policy: Mapping[str, Any],
+    composed_candidate_eligible: bool,
+) -> Mapping[str, Any]:
+    """Authenticate accepted or truthful rejected score-stage split use."""
+
+    if type(composed_candidate_eligible) is not bool:
+        raise TypeError("composed_candidate_eligible must be bool.")
+    operation = score.get("operation_audit")
+    fit_check_evaluated = score.get("fit_check_evaluated")
+    status = score.get("status")
+    accepted_statuses = {
+        "fit_check_accepted",
+        "quality_gated_seed_no_op",
+    }
+    rejected_without_fit_check_statuses = {
+        "pcg_nonconverged_seed_fallback",
+        "pcg_unusable_seed_fallback",
+        "poor_quality_seed_fallback",
+        "unidentifiable_zero_bilinear_jacobian",
+    }
+    rejected_with_fit_check_statuses = {
+        "fit_check_rejected_seed_fallback",
+    }
+    expected_fit_check_evaluated = (
+        composed_candidate_eligible
+        or status in rejected_with_fit_check_statuses
+    )
+    if (
+        score.get("accepted") is not composed_candidate_eligible
+        or type(score.get("changed")) is not bool
+        or (
+            composed_candidate_eligible
+            and status not in accepted_statuses
+        )
+        or (
+            not composed_candidate_eligible
+            and status
+            not in (
+                rejected_without_fit_check_statuses
+                | rejected_with_fit_check_statuses
+            )
+        )
+        or (
+            composed_candidate_eligible
+            and score.get("changed")
+            is not (status == "fit_check_accepted")
+        )
+        or (
+            not composed_candidate_eligible
+            and score.get("changed") is not False
+        )
+        or not isinstance(operation, Mapping)
+        or operation.get("fit_cases_consumed") != H776_COMPOSED_QK_FIT_CASES
+        or operation.get("selection_cases_consumed") != 0
+        or operation.get("true_validation_cases_consumed") != 0
+        or any(
+            operation.get(name) != 0
+            for name in (
+                "backward_calls",
+                "optimizer_steps",
+                "training_steps",
+                "model_forward_calls",
+                "model_generate_calls",
+                "parameters_pruned",
+                "parameters_quantized",
+                "target_mutations_during_compile",
+            )
+        )
+        or type(fit_check_evaluated) is not bool
+        or fit_check_evaluated is not expected_fit_check_evaluated
+        or (
+            fit_check_evaluated
+            and (
+                score.get("fit_check_triggered_refit") is not False
+                or score.get("source_evidence_unchanged") is not True
+            )
+        )
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Composed score outcome crossed an evidence split or training gate."
+        )
+    fit_metrics = _authenticate_qk_routing_metrics(
+        score.get("fit_metrics"),
+        policy=policy,
+        partition="fit",
+        expected_case_count=H776_COMPOSED_QK_FIT_CASES,
+        require_gate=composed_candidate_eligible,
+    )
+    fit_check_metrics = None
+    if fit_check_evaluated:
+        if (
+            operation.get("fit_check_cases_consumed")
+            != H776_COMPOSED_QK_FIT_CHECK_CASES
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "Evaluated composed FIT-CHECK has the wrong case count."
+            )
+        fit_check_metrics = _authenticate_qk_routing_metrics(
+            score.get("fit_check_metrics"),
+            policy=policy,
+            partition="fit_check",
+            expected_case_count=H776_COMPOSED_QK_FIT_CHECK_CASES,
+            require_gate=composed_candidate_eligible,
+        )
+    elif (
+        score.get("fit_check_metrics") is not None
+        or operation.get("fit_check_cases_consumed") != 0
+        or score.get("seed_fit_check_metrics") is not None
+        or score.get("proposed_fit_check_metrics") is not None
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Unevaluated rejected composed score outcome consumed FIT-CHECK."
+        )
+    body = {
+        "status": status,
+        "accepted": composed_candidate_eligible,
+        "changed": score["changed"],
+        "fit_check_evaluated": fit_check_evaluated,
+        "fit_cases_consumed": operation["fit_cases_consumed"],
+        "fit_check_cases_consumed": operation["fit_check_cases_consumed"],
+        "fit_metrics": fit_metrics,
+        "fit_check_metrics": fit_check_metrics,
+        "fold_only": True,
+    }
+    return MappingProxyType({**body, "audit_sha256": _sha256(body)})
 
 
 def _authenticate_h776_composed_device_execution(
@@ -3274,8 +3411,8 @@ def _authenticate_h776_composed_device_execution(
     sweeps = score.get("sweeps")
     if (
         not isinstance(sweeps, list)
-        or (score.get("changed") is True and (not sweeps or len(sweeps) > 2))
-        or (score.get("changed") is not True and sweeps)
+        or len(sweeps) > 2
+        or (score.get("changed") is True and not sweeps)
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "The score fold lacks its per-sweep fixed-linearization inventory."
@@ -4359,13 +4496,15 @@ def authenticate_h776_endpoint_residual_attention_result(
     expected_fit_trajectory_sha256s: Sequence[str],
     pins: Lfm2CpcfV5RealAttentionProbePins,
 ) -> Mapping[str, Any]:
-    """Authenticate the real five-arm endpoint-residual H776 transaction."""
+    """Authenticate the real independently gated endpoint H776 transaction."""
 
     from .hf_lfm2_composed_qk_attention_fold import (
         ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID,
         LFM2_COMPOSED_ENDPOINT_RESIDUAL_BLOCK_SCHEMA,
         LFM2_COMPOSED_ENDPOINT_RESIDUAL_SCHEMA,
         LFM2_COMPOSED_QK_PRODUCER_SCHEMA,
+        LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA,
+        LFM2_ENDPOINT_QK_START_SCHEMA,
         Lfm2CompiledComposedEndpointResidualAttentionFold,
         Lfm2CompiledComposedQkSequenceEffectiveAttentionFold,
     )
@@ -4420,6 +4559,21 @@ def authenticate_h776_endpoint_residual_attention_result(
     )
     evaluations = policy.get("attention_candidate_evaluations")
     candidate_ids = tuple(selection.get("candidate_ids", ()))
+    candidate_inventory_is_five_arm = (
+        candidate_ids == H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+    )
+    candidate_inventory_is_endpoint_without_composed = (
+        candidate_ids == H776_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+    )
+    composed_candidate_eligible = candidate_inventory_is_five_arm
+    expected_inventory_mode = (
+        "opt_in_authenticated_five_arm"
+        if composed_candidate_eligible
+        else (
+            "opt_in_authenticated_endpoint_four_arm_without_rejected_"
+            "composed_candidate"
+        )
+    )
     selected_id = selection.get("selected_candidate_id")
     if (
         report.get("layer_index") != H776_LAYER_INDEX
@@ -4427,11 +4581,15 @@ def authenticate_h776_endpoint_residual_attention_result(
         or report.get("input_bank_sha256") != input_bank_sha
         or report.get("split_phase_counts") != dict(H776_SPLIT_PHASE_COUNTS)
         or policy.get("operator_case_count") != H776_COMPOSED_UPSTREAM_FIT_CASES
-        or candidate_ids != H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+        or not (
+            candidate_inventory_is_five_arm
+            or candidate_inventory_is_endpoint_without_composed
+        )
         or not isinstance(evaluations, dict)
-        or set(evaluations) != set(H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS)
-        or selection.get("candidate_count") != 5
-        or selection.get("candidate_local_mlp_preparation_count") != 5
+        or set(evaluations) != set(candidate_ids)
+        or selection.get("candidate_count") != len(candidate_ids)
+        or selection.get("candidate_local_mlp_preparation_count")
+        != len(candidate_ids)
         or selection.get("cross_candidate_prepared_mlp_basis_reused") is not False
         or selection.get("endpoint_residual_candidate_fit_only_mlp_evaluated")
         is not True
@@ -4439,7 +4597,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         or selection.get("winner_frozen_before_validation") is not True
         or selection.get("validation_phase_count_consumed_before_freeze") != 0
         or policy.get("attention_candidate_inventory_mode")
-        != "opt_in_authenticated_five_arm"
+        != expected_inventory_mode
         or policy.get("attention_each_candidate_has_own_fit_only_mlp") is not True
         or policy.get("attention_each_candidate_prepares_own_mlp_basis") is not True
         or policy.get("attention_cross_candidate_prepared_mlp_basis_reuse")
@@ -4450,22 +4608,21 @@ def authenticate_h776_endpoint_residual_attention_result(
         is not True
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
-            "Endpoint-residual five-arm tournament or split isolation changed."
+            "Endpoint-residual dynamic tournament or split isolation changed."
         )
 
     candidate_report_sha256 = selection.get("candidate_report_sha256")
     if (
         not isinstance(candidate_report_sha256, dict)
-        or set(candidate_report_sha256)
-        != set(H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS)
+        or set(candidate_report_sha256) != set(candidate_ids)
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
-            "Endpoint selection lacks its exact five candidate receipts."
+            "Endpoint selection lacks its exact dynamic candidate receipts."
         )
     authenticated_evaluations: dict[str, dict[str, Any]] = {}
     selection_keys: dict[str, tuple[Any, ...]] = {}
     behavioral_keys: dict[str, tuple[float, ...]] = {}
-    for candidate_id in H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS:
+    for candidate_id in candidate_ids:
         evaluation = _self_sealed(
             evaluations.get(candidate_id),
             seal_field="report_sha256",
@@ -4501,7 +4658,7 @@ def authenticate_h776_endpoint_residual_attention_result(
         selection_keys[candidate_id] = tuple(raw_key)
         behavioral_keys[candidate_id] = tuple(float(value) for value in raw_key[:-1])
     expected_selected_id = min(
-        H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS,
+        candidate_ids,
         key=lambda candidate_id: selection_keys[candidate_id],
     )
     if (
@@ -4510,7 +4667,8 @@ def authenticate_h776_endpoint_residual_attention_result(
         != candidate_report_sha256[selected_id]
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
-            "Endpoint five-arm winner does not reproduce from its ranking keys."
+            "Endpoint dynamic-inventory winner does not reproduce from its "
+            "ranking keys."
         )
 
     expected_composed_policy = _plain(_h776_composed_qk_attention_policy().as_dict())
@@ -4536,6 +4694,52 @@ def authenticate_h776_endpoint_residual_attention_result(
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Endpoint or prerequisite composed policy authentication changed."
+        )
+    stage_one_attempt = _self_sealed(
+        policy.get("composed_qk_stage_one_attempt"),
+        seal_field="attempt_sha256",
+        name="endpoint prerequisite stage-one attempt",
+    )
+    endpoint_qk_start = _self_sealed(
+        policy.get("endpoint_qk_start_artifact"),
+        seal_field="artifact_sha256",
+        name="selected endpoint Q/K start",
+    )
+    expected_start_source = (
+        "accepted_score_residual_corrected_dense_qkv"
+        if composed_candidate_eligible
+        else "structural_global_gauge_dense_qkv"
+    )
+    expected_start_schema = (
+        LFM2_COMPOSED_QK_PRODUCER_SCHEMA
+        if composed_candidate_eligible
+        else LFM2_ENDPOINT_QK_START_SCHEMA
+    )
+    if (
+        stage_one_attempt.get("schema")
+        != LFM2_COMPOSED_QK_STAGE_ONE_ATTEMPT_SCHEMA
+        or stage_one_attempt.get("composed_candidate_eligible")
+        is not composed_candidate_eligible
+        or stage_one_attempt.get("score_result_accepted")
+        is not composed_candidate_eligible
+        or stage_one_attempt.get("failed_composed_candidate_omitted")
+        is composed_candidate_eligible
+        or stage_one_attempt.get("endpoint_start_issued_independently") is not True
+        or stage_one_attempt.get("endpoint_start_source") != expected_start_source
+        or stage_one_attempt.get("endpoint_start_artifact_sha256")
+        != endpoint_qk_start["artifact_sha256"]
+        or endpoint_qk_start.get("schema") != expected_start_schema
+        or policy.get("endpoint_qk_start_source") != expected_start_source
+        or policy.get("composed_qk_candidate_eligible")
+        is not composed_candidate_eligible
+        or (
+            policy.get("composed_qk_producer_artifact") is None
+        )
+        is composed_candidate_eligible
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint stage-one outcome relabeled a rejected composed arm or "
+            "changed its selected dense QKV start."
         )
 
     endpoint_evaluation = authenticated_evaluations[
@@ -4653,11 +4857,23 @@ def authenticate_h776_endpoint_residual_attention_result(
             "fold-only."
         )
 
-    composed_producer = _self_sealed(
-        policy.get("composed_qk_producer_artifact"),
-        seal_field="artifact_sha256",
-        name="endpoint prerequisite composed producer",
-    )
+    composed_producer = None
+    if composed_candidate_eligible:
+        composed_producer = _self_sealed(
+            policy.get("composed_qk_producer_artifact"),
+            seal_field="artifact_sha256",
+            name="endpoint prerequisite composed producer",
+        )
+        if composed_producer != endpoint_qk_start:
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "Accepted composed producer differs from the selected endpoint "
+                "start."
+            )
+    elif policy.get("composed_qk_producer_artifact") is not None:
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Rejected composed candidate was retained in the tournament."
+        )
+    stage_one_producer = endpoint_qk_start
     global_sync = _self_sealed(
         policy.get("composed_qk_global_sync"),
         seal_field="report_sha256",
@@ -4668,14 +4884,86 @@ def authenticate_h776_endpoint_residual_attention_result(
         seal_field="report_sha256",
         name="endpoint prerequisite score residual",
     )
-    qk_fit_ordinals = composed_producer.get("qk_fit_source_ordinals")
-    qk_fit_check_ordinals = composed_producer.get("qk_fit_check_source_ordinals")
+    stage_one_operation = stage_one_attempt.get("operation_audit")
+    start_operation = endpoint_qk_start.get("operation_audit")
+    if composed_candidate_eligible:
+        start_weight_receipt_names = (
+            "corrected_query_weight_sha256",
+            "corrected_key_weight_sha256",
+            "corrected_value_weight_sha256",
+        )
+        start_specific_lineage_is_valid = (
+            endpoint_qk_start.get("candidate_id")
+            == H776_COMPOSED_ATTENTION_CANDIDATE_ID
+            and endpoint_qk_start.get("corrected_query_weight_sha256")
+            == score.get("query_weight_sha256")
+            and endpoint_qk_start.get("corrected_key_weight_sha256")
+            == score.get("key_weight_sha256")
+            and isinstance(
+                endpoint_qk_start.get("corrected_value_weight_sha256"),
+                str,
+            )
+        )
+    else:
+        start_weight_receipt_names = (
+            "starting_producer_sha256",
+            "starting_query_weight_sha256",
+            "starting_key_weight_sha256",
+            "starting_value_weight_sha256",
+        )
+        start_specific_lineage_is_valid = (
+            endpoint_qk_start.get("starting_query_weight_sha256")
+            == global_sync.get("query_weight_sha256")
+            and endpoint_qk_start.get("starting_key_weight_sha256")
+            == global_sync.get("key_weight_sha256")
+            and isinstance(
+                endpoint_qk_start.get("starting_value_weight_sha256"),
+                str,
+            )
+            and isinstance(endpoint_qk_start.get("starting_producer_sha256"), str)
+            and endpoint_qk_start.get("score_result_accepted") is False
+            and endpoint_qk_start.get("score_residual_fourth_arm_eligible")
+            is False
+            and endpoint_qk_start.get("starting_state_source")
+            == "fit_structural_groups_plus_global_gauge_qk_plus_fit_only_v"
+            and stage_one_attempt.get(
+                "global_gauge_fallback_start_artifact_sha256"
+            )
+            == endpoint_qk_start["artifact_sha256"]
+        )
+    for receipt_name in start_weight_receipt_names:
+        _digest(
+            endpoint_qk_start.get(receipt_name),
+            f"endpoint Q/K start {receipt_name}",
+        )
+    qk_fit_ordinals = stage_one_producer.get("qk_fit_source_ordinals")
+    qk_fit_check_ordinals = stage_one_producer.get("qk_fit_check_source_ordinals")
+    endpoint_start_link_is_valid = (
+        endpoint.get("composed_qk_artifact_sha256")
+        == stage_one_producer["artifact_sha256"]
+        if composed_candidate_eligible
+        else (
+            endpoint.get("composed_qk_artifact_sha256") is None
+            and endpoint.get("endpoint_qk_start_artifact_sha256")
+            == stage_one_producer["artifact_sha256"]
+            and endpoint.get("endpoint_qk_start_artifact_schema")
+            == LFM2_ENDPOINT_QK_START_SCHEMA
+            and endpoint.get("endpoint_qk_start_source")
+            == "structural_global_gauge_dense_qkv"
+            and endpoint.get("composed_score_residual_candidate_eligible") is False
+            and endpoint.get("composed_score_residual_result_sha256")
+            == score["report_sha256"]
+        )
+    )
     if (
-        composed_producer.get("schema") != LFM2_COMPOSED_QK_PRODUCER_SCHEMA
-        or composed_producer.get("source_split_sha256") != fit_bank_sha
-        or composed_producer.get("upstream_fit_case_count")
+        stage_one_producer.get("schema") != expected_start_schema
+        or stage_one_producer.get("policy") != expected_composed_policy
+        or stage_one_producer.get("policy_sha256")
+        != expected_composed_policy["authentication_sha256"]
+        or stage_one_producer.get("source_split_sha256") != fit_bank_sha
+        or stage_one_producer.get("upstream_fit_case_count")
         != H776_COMPOSED_UPSTREAM_FIT_CASES
-        or composed_producer.get("upstream_trajectory_sha256s")
+        or stage_one_producer.get("upstream_trajectory_sha256s")
         != list(full_fit_trajectories)
         or not isinstance(qk_fit_ordinals, list)
         or not isinstance(qk_fit_check_ordinals, list)
@@ -4686,13 +4974,42 @@ def authenticate_h776_endpoint_residual_attention_result(
         or set(qk_fit_ordinals) & set(qk_fit_check_ordinals)
         or set(qk_fit_ordinals) | set(qk_fit_check_ordinals)
         != set(range(H776_COMPOSED_UPSTREAM_FIT_CASES))
-        or endpoint.get("composed_qk_artifact_sha256")
-        != composed_producer["artifact_sha256"]
+        or not endpoint_start_link_is_valid
+        or not start_specific_lineage_is_valid
+        or stage_one_producer.get("global_sync_report_sha256")
+        != global_sync["report_sha256"]
+        or score.get("accepted") is not composed_candidate_eligible
+        or (
+            not composed_candidate_eligible
+            and stage_one_producer.get("score_result_accepted") is not False
+        )
+        or stage_one_producer.get("score_result_report_sha256")
+        != score["report_sha256"]
+        or stage_one_attempt.get("score_result_report_sha256")
+        != score["report_sha256"]
+        or stage_one_attempt.get("score_result_status") != score.get("status")
+        or stage_one_attempt.get("composed_candidate_artifact_sha256")
+        != (
+            stage_one_producer["artifact_sha256"]
+            if composed_candidate_eligible
+            else None
+        )
         or score.get("policy") != expected_composed_policy["score_policy"]
         or global_sync.get("policy") != expected_composed_policy["global_policy"]
+        or not isinstance(stage_one_operation, Mapping)
+        or any(
+            type(value) is not int or value != 0
+            for value in stage_one_operation.values()
+        )
+        or not isinstance(start_operation, Mapping)
+        or any(
+            type(value) is not int or value != 0
+            for value in start_operation.values()
+        )
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
-            "Endpoint artifact lost its exact composed Q/K prerequisite lineage."
+            "Endpoint artifact lost its exact admitted-or-fallback Q/K start "
+            "lineage."
         )
     fit_trajectories = tuple(full_fit_trajectories[index] for index in qk_fit_ordinals)
     fit_check_trajectories = tuple(
@@ -4707,21 +5024,14 @@ def authenticate_h776_endpoint_residual_attention_result(
             "Endpoint final evaluation does not use the exact composed "
             "Q/K FIT and FIT-CHECK partitions."
         )
-    _authenticate_qk_routing_metrics(
-        score.get("fit_metrics"),
+    score_outcome_audit = _authenticate_h776_composed_score_outcome(
+        score,
         policy=expected_composed_policy["score_policy"],
-        partition="fit",
-        expected_case_count=H776_COMPOSED_QK_FIT_CASES,
-    )
-    _authenticate_qk_routing_metrics(
-        score.get("fit_check_metrics"),
-        policy=expected_composed_policy["score_policy"],
-        partition="fit_check",
-        expected_case_count=H776_COMPOSED_QK_FIT_CHECK_CASES,
+        composed_candidate_eligible=composed_candidate_eligible,
     )
     composed_device_execution = _authenticate_h776_composed_device_execution(
         score,
-        producer=composed_producer,
+        producer=stage_one_producer,
         global_sync=global_sync,
         fit_trajectory_sha256s=full_fit_trajectories,
         pins=pins,
@@ -5001,10 +5311,15 @@ def authenticate_h776_endpoint_residual_attention_result(
     endpoint_won = (
         selected_id == H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID
     )
+    prior_candidate_ids = tuple(
+        candidate_id
+        for candidate_id in candidate_ids
+        if candidate_id != H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID
+    )
     endpoint_strictly_better = all(
         behavioral_keys[H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID]
         < behavioral_keys[candidate_id]
-        for candidate_id in H776_COMPOSED_ATTENTION_CANDIDATE_IDS
+        for candidate_id in prior_candidate_ids
     )
     body = {
         "schema": LFM2_CPCF_V5_REAL_ENDPOINT_RESIDUAL_ATTENTION_AUDIT_SCHEMA,
@@ -5037,10 +5352,15 @@ def authenticate_h776_endpoint_residual_attention_result(
         "composed_prerequisite_device_execution": _plain(
             composed_device_execution
         ),
+        "composed_score_outcome": _plain(score_outcome_audit),
         "endpoint_block_device_execution": device_execution_audits,
         "all_parent_probability_targets_from_authenticated_cache": True,
         "blank_target_values_read": False,
-        "candidate_local_fit_only_mlp_count": 5,
+        "candidate_local_fit_only_mlp_count": len(candidate_ids),
+        "composed_score_residual_candidate_eligible": (
+            composed_candidate_eligible
+        ),
+        "endpoint_qk_start_source": expected_start_source,
         "fit_check_final_one_shot_only": True,
         "continuous_cuda_allocator_peak_monitor_is_authority": True,
         "selected_live_operator_artifact_bound": True,
@@ -5610,6 +5930,15 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             if positive_attention_outcome
             else "completed_honest_negative_or_control_selected"
         )
+    resolved_attention_candidate_ids = (
+        tuple(result_audit["candidate_ids"])
+        if runtime.endpoint_residual_attention_enabled
+        else (
+            H776_COMPOSED_ATTENTION_CANDIDATE_IDS
+            if runtime.composed_qk_attention_enabled
+            else H776_ATTENTION_CANDIDATE_IDS
+        )
+    )
     body = {
         "schema": LFM2_CPCF_V5_REAL_ATTENTION_PROBE_SCHEMA,
         "status": completed_status,
@@ -5652,11 +5981,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             ),
             "runtime_matches_independent_invocation_pin": True,
             "candidate_inventory": list(
-                H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
-                if runtime.endpoint_residual_attention_enabled
-                else H776_COMPOSED_ATTENTION_CANDIDATE_IDS
-                if runtime.composed_qk_attention_enabled
-                else H776_ATTENTION_CANDIDATE_IDS
+                resolved_attention_candidate_ids
             ),
             "legacy_single_artifact_pcg_observer_used": (
                 not (
@@ -5673,16 +5998,12 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                 runtime.endpoint_residual_attention_enabled
             ),
             "candidate_inventory": list(
-                H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
-                if runtime.endpoint_residual_attention_enabled
-                else (
-                    H776_COMPOSED_ATTENTION_CANDIDATE_IDS
-                    if runtime.composed_qk_attention_enabled
-                    else H776_ATTENTION_CANDIDATE_IDS
-                )
+                resolved_attention_candidate_ids
             ),
             "candidate_local_fit_only_mlp_count": (
-                5 if runtime.endpoint_residual_attention_enabled else None
+                len(resolved_attention_candidate_ids)
+                if runtime.endpoint_residual_attention_enabled
+                else None
             ),
             "fit_check_final_one_shot_only": (
                 True if runtime.endpoint_residual_attention_enabled else None

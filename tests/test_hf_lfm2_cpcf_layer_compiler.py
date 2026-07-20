@@ -2206,6 +2206,120 @@ def test_attention_winner_freeze_accepts_opt_in_composed_inventory() -> None:
     )
 
 
+def test_attention_winner_freeze_accepts_endpoint_without_rejected_composed() -> None:
+    candidate_ids = (
+        layer_compiler.LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+    )
+    candidates = tuple(
+        SimpleNamespace(
+            candidate_id=candidate_id,
+            selection_key=(float(index), candidate_id),
+            report={"report_sha256": f"{index + 1:064x}"},
+            sequential_boundary_transport=None,
+        )
+        for index, candidate_id in enumerate(candidate_ids)
+    )
+
+    winner, report = layer_compiler._freeze_attention_candidate_winner(
+        candidates,
+        candidate_ids=candidate_ids,
+    )
+
+    assert winner.candidate_id == candidate_ids[0]
+    assert report["candidate_count"] == 4
+    assert tuple(report["candidate_ids"]) == candidate_ids
+    assert (
+        layer_compiler.SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+        not in report["candidate_ids"]
+    )
+    assert (
+        layer_compiler.ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
+        in report["candidate_ids"]
+    )
+
+
+def test_rejected_composed_still_attempts_endpoint_and_endpoint_failure_rolls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, target, bank, charts = _fixture(
+        "full_attention",
+        splits=(
+            "selection",
+            "fit",
+            "fit",
+            "fit",
+            "fit",
+            "validation",
+        ),
+        dtype=torch.bfloat16,
+    )
+    state_before = _state_sha(target.model.layers[0])
+    base_policy = layer_compiler.Lfm2ComposedQkAttentionFoldPolicy(
+        fit_check_count=1
+    )
+    rejecting_score_policy = replace(
+        base_policy.score_policy,
+        maximum_fit_centered_score_relative_rmse=0.0,
+        maximum_fit_probability_relative_rmse=0.0,
+        maximum_fit_js_divergence_mean=0.0,
+        maximum_fit_js_divergence_worst=0.0,
+        minimum_fit_top1_route_agreement=1.0,
+        maximum_fit_check_centered_score_relative_rmse=0.0,
+        maximum_fit_check_probability_relative_rmse=0.0,
+        maximum_fit_check_js_divergence_mean=0.0,
+        maximum_fit_check_js_divergence_worst=0.0,
+        minimum_fit_check_top1_route_agreement=1.0,
+    )
+    composed_policy = replace(
+        base_policy,
+        score_policy=rejecting_score_policy,
+        authentication_sha256="",
+    )
+    observed = {}
+
+    def reject_endpoint(*, composed_qk, **_kwargs):
+        observed["start"] = composed_qk
+        observed["score_accepted"] = composed_qk.score_result.accepted
+        observed["start_source"] = composed_qk.report["starting_state_source"]
+        raise RuntimeError(
+            "synthetic independently gated endpoint rejection"
+        )
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "compile_lfm2_composed_endpoint_residual_attention_fold",
+        reject_endpoint,
+    )
+
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilationFailure,
+        match="synthetic independently gated endpoint rejection",
+    ) as caught:
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+            composed_qk_attention_policy=composed_policy,
+            endpoint_residual_attention_policy=(
+                layer_compiler.Lfm2ComposedEndpointResidualAttentionFoldPolicy()
+            ),
+        )
+
+    assert observed["score_accepted"] is False
+    assert observed["start_source"] == (
+        "fit_structural_groups_plus_global_gauge_qk_plus_fit_only_v"
+    )
+    assert isinstance(
+        observed["start"],
+        layer_compiler.Lfm2AuthenticatedEndpointQkStart,
+    )
+    assert caught.value.rollback_proof["exact_layer_rollback_proven"] is True
+    assert caught.value.report["promotion_claimed"] is False
+    assert _state_sha(target.model.layers[0]) == state_before
+
+
 def test_layer_compiler_rejects_composed_plus_sequential_transport() -> None:
     source, target, bank, charts = _fixture("full_attention")
 

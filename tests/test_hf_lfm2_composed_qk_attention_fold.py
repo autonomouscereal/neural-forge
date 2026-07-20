@@ -590,6 +590,173 @@ def test_composed_producer_uses_distinct_fit_check_and_plants_exact_state(
     assert artifact.producer_artifact.target_logical_parameters == 32
 
 
+def test_rejected_composed_score_still_issues_authenticated_endpoint_start(
+    composed_artifacts: SimpleNamespace,
+) -> None:
+    baseline = composed_artifacts.composed
+    rejecting_score_policy = replace(
+        baseline.policy.score_policy,
+        maximum_fit_centered_score_relative_rmse=0.0,
+        maximum_fit_probability_relative_rmse=0.0,
+        maximum_fit_js_divergence_mean=0.0,
+        maximum_fit_js_divergence_worst=0.0,
+        minimum_fit_top1_route_agreement=1.0,
+        maximum_fit_check_centered_score_relative_rmse=0.0,
+        maximum_fit_check_probability_relative_rmse=0.0,
+        maximum_fit_check_js_divergence_mean=0.0,
+        maximum_fit_check_js_divergence_worst=0.0,
+        minimum_fit_check_top1_route_agreement=1.0,
+    )
+    rejecting_policy = replace(
+        baseline.policy,
+        score_policy=rejecting_score_policy,
+        authentication_sha256="",
+    )
+    attempt = composed_fold.compile_lfm2_composed_qk_stage_one_attempt(
+        source_query_weight=composed_artifacts.source.query,
+        source_key_weight=composed_artifacts.source.key,
+        source_value_weight=composed_artifacts.source.value,
+        source_output_weight=composed_artifacts.source.output,
+        target_query_weight_template=torch.zeros_like(
+            composed_artifacts.target.query
+        ),
+        target_key_weight_template=torch.zeros_like(composed_artifacts.target.key),
+        target_value_weight_template=composed_artifacts.value_template,
+        target_output_weight_template=composed_artifacts.output_template,
+        upstream_fit_cases=composed_artifacts.cases,
+        trajectory_sha256s=composed_artifacts.trajectories,
+        source_split_sha256=SOURCE_SPLIT_SHA256,
+        source_query_norm_weight=composed_artifacts.norm,
+        source_key_norm_weight=composed_artifacts.norm,
+        target_query_norm_weight=composed_artifacts.norm,
+        target_key_norm_weight=composed_artifacts.norm,
+        source_head_dim=HEAD_DIM,
+        target_head_dim=HEAD_DIM,
+        norm_epsilon=1e-5,
+        residual_assignment_sha256="b" * 64,
+        policy=rejecting_policy,
+    )
+
+    assert attempt.verify_authentication() == attempt.attempt_sha256
+    assert attempt.composed_candidate is None
+    assert attempt.endpoint_start.score_result.accepted is False
+    assert attempt.selected_endpoint_start is attempt.endpoint_start
+    assert attempt.report["failed_composed_candidate_omitted"] is True
+    assert attempt.report["endpoint_start_source"] == (
+        "structural_global_gauge_dense_qkv"
+    )
+    assert torch.equal(
+        attempt.endpoint_start.producer_artifact.query_weight,
+        attempt.endpoint_start.global_sync.query_weight,
+    )
+    assert torch.equal(
+        attempt.endpoint_start.producer_artifact.key_weight,
+        attempt.endpoint_start.global_sync.key_weight,
+    )
+    assert torch.equal(
+        attempt.endpoint_start.producer_artifact.value_weight,
+        attempt.endpoint_start.qk_fit_structural_producer.value_weight,
+    )
+    endpoint_fit_cases = tuple(attempt.endpoint_start.qk_fit_bank.cases)
+    endpoint_fit_contexts = tuple(
+        _child_context(attempt.endpoint_start.producer_artifact, case)
+        for case in endpoint_fit_cases
+    )
+    output_prior = (composed_artifacts.target.output.float() * 1.5).to(
+        torch.bfloat16
+    )
+    fit_value_output = compile_lfm2_structural_attention_value_output_fold(
+        producer=attempt.endpoint_start.producer_artifact,
+        target_value_weight_template=composed_artifacts.value_template,
+        target_output_weight_template=composed_artifacts.output_template,
+        actual_child_contexts=endpoint_fit_contexts,
+        cases=endpoint_fit_cases,
+        live_value_weight=attempt.endpoint_start.producer_artifact.value_weight,
+        value_weight_prior=attempt.endpoint_start.producer_artifact.value_weight,
+        output_weight_prior=output_prior,
+        query_norm_weight=composed_artifacts.norm,
+        key_norm_weight=composed_artifacts.norm,
+        norm_epsilon=1e-5,
+        ridge=1e-8,
+        context_ridge=1e-6,
+        max_prior_delta_ratio=0.0,
+        iterations=2,
+        context_equivalence_tolerance=0.10,
+    )
+    endpoint = composed_fold.compile_lfm2_composed_endpoint_residual_attention_fold(
+        composed_qk=attempt.selected_endpoint_start,
+        fit_value_output_artifact=fit_value_output,
+        source_query_weight=composed_artifacts.source.query,
+        source_key_weight=composed_artifacts.source.key,
+        source_value_weight=composed_artifacts.source.value,
+        source_output_weight=composed_artifacts.source.output,
+        target_query_weight_template=torch.zeros_like(
+            composed_artifacts.target.query
+        ),
+        target_key_weight_template=torch.zeros_like(composed_artifacts.target.key),
+        target_value_weight_template=composed_artifacts.value_template,
+        target_output_weight_template=composed_artifacts.output_template,
+        query_norm_weight=composed_artifacts.norm,
+        key_norm_weight=composed_artifacts.norm,
+        norm_epsilon=1e-5,
+        policy=composed_fold.Lfm2ComposedEndpointResidualAttentionFoldPolicy(
+            maximum_outer_blocks=2,
+            endpoint_policy=composed_fold.Lfm2EndpointQkResidualFoldPolicy(
+                ridge=1e-4,
+                route_objective_weight=0.2,
+                trust_radius=2.0,
+                maximum_sweeps=4,
+                maximum_cg_iterations=512,
+                minimum_cg_iterations=2,
+                cg_restart_iterations=64,
+                cg_relative_tolerance=1e-3,
+                metric_regression_tolerance=5e-5,
+                minimum_fit_endpoint_improvement=1e-10,
+                solver_device="cpu",
+                compute_devices=("cpu",),
+            ),
+        ),
+    )
+    assert endpoint.accepted is True
+    assert endpoint.composed_qk is attempt.endpoint_start
+    assert endpoint.report["composed_qk_artifact_sha256"] is None
+    assert endpoint.report["endpoint_qk_start_artifact_sha256"] == (
+        attempt.endpoint_start.artifact_sha256
+    )
+    assert endpoint.report["composed_score_residual_candidate_eligible"] is False
+    assert endpoint.verify_authentication() == endpoint.artifact_sha256
+    with pytest.raises(
+        composed_fold.Lfm2ComposedQkAttentionFoldError,
+        match="failed the authoritative score-residual gate",
+    ):
+        composed_fold.compile_lfm2_composed_qk_attention_producer_fold(
+            source_query_weight=composed_artifacts.source.query,
+            source_key_weight=composed_artifacts.source.key,
+            source_value_weight=composed_artifacts.source.value,
+            source_output_weight=composed_artifacts.source.output,
+            target_query_weight_template=torch.zeros_like(
+                composed_artifacts.target.query
+            ),
+            target_key_weight_template=torch.zeros_like(
+                composed_artifacts.target.key
+            ),
+            target_value_weight_template=composed_artifacts.value_template,
+            target_output_weight_template=composed_artifacts.output_template,
+            upstream_fit_cases=composed_artifacts.cases,
+            trajectory_sha256s=composed_artifacts.trajectories,
+            source_split_sha256=SOURCE_SPLIT_SHA256,
+            source_query_norm_weight=composed_artifacts.norm,
+            source_key_norm_weight=composed_artifacts.norm,
+            target_query_norm_weight=composed_artifacts.norm,
+            target_key_norm_weight=composed_artifacts.norm,
+            source_head_dim=HEAD_DIM,
+            target_head_dim=HEAD_DIM,
+            norm_epsilon=1e-5,
+            residual_assignment_sha256="b" * 64,
+            policy=rejecting_policy,
+        )
+
+
 def test_composed_producer_is_independent_of_blank_qk_initialization(
     composed_artifacts: SimpleNamespace,
 ) -> None:

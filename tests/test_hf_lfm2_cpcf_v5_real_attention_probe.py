@@ -28,7 +28,9 @@ from neural_forge.hf_lfm2_cpcf_v5_real_attention_probe import (  # noqa: E402
     H776_COMPOSED_LOGICAL_CUDA_UUIDS,
     H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES,
     H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS,
+    H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID,
     H776_ENDPOINT_RESIDUAL_ATTENTION_POLICY_SHA256,
+    H776_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS,
     H776_FULL_POLICY_SHA256,
     H776_ORIGIN_COMPILER_SHA256,
     H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID,
@@ -2161,6 +2163,11 @@ def _composed_attention_result():
         "qk_fit_check_source_ordinals": list(range(134, 154)),
         "global_sync_report_sha256": global_sync["report_sha256"],
         "score_result_report_sha256": score["report_sha256"],
+        "corrected_producer_sha256": f"{352:064x}",
+        "corrected_query_weight_sha256": score["query_weight_sha256"],
+        "corrected_key_weight_sha256": score["key_weight_sha256"],
+        "corrected_value_weight_sha256": f"{353:064x}",
+        "ordinary_dense_target_qkv": True,
         "operation_audit": {
             "model_forward_calls": 0,
             "training_steps": 0,
@@ -2569,6 +2576,31 @@ def _endpoint_attention_result():
         "tensor_sha256": f"{8_400:064x}",
         "blank_target_values_read": False,
     }
+    producer = policy["composed_qk_producer_artifact"]
+    score = policy["composed_qk_score_result"]
+    stage_one_body = {
+        "schema": "neural-forge-lfm2-composed-qk-stage-one-attempt-v1",
+        "endpoint_start_artifact_sha256": producer["artifact_sha256"],
+        "global_gauge_fallback_start_artifact_sha256": f"{8_401:064x}",
+        "endpoint_start_source": "accepted_score_residual_corrected_dense_qkv",
+        "score_result_report_sha256": score["report_sha256"],
+        "score_result_status": score["status"],
+        "score_result_accepted": True,
+        "composed_candidate_eligible": True,
+        "composed_candidate_artifact_sha256": producer["artifact_sha256"],
+        "failed_composed_candidate_omitted": False,
+        "endpoint_start_issued_independently": True,
+        "operation_audit": {
+            "model_forward_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        },
+    }
+    stage_one = {
+        **stage_one_body,
+        "attempt_sha256": _sha256(stage_one_body),
+    }
     policy.update(
         {
             "attention_candidate_inventory_mode": (
@@ -2587,6 +2619,12 @@ def _endpoint_attention_result():
             "attention_cross_candidate_prepared_mlp_basis_reuse": False,
             "endpoint_residual_fit_only_downstream_mlp_evaluation": True,
             "endpoint_residual_fit_check_final_one_shot_only": True,
+            "composed_qk_candidate_eligible": True,
+            "composed_qk_stage_one_attempt": stage_one,
+            "endpoint_qk_start_artifact": producer,
+            "endpoint_qk_start_source": (
+                "accepted_score_residual_corrected_dense_qkv"
+            ),
         }
     )
     report.pop("result_sha256")
@@ -2597,6 +2635,151 @@ def _endpoint_attention_result():
         next_bank=result.next_bank,
         expected_fit_bank_sha256=result.expected_fit_bank_sha256,
         expected_fit_trajectory_sha256s=result.expected_fit_trajectory_sha256s,
+    )
+
+
+def _endpoint_attention_result_with_rejected_composed():
+    original = _endpoint_attention_result()
+    report = runner._plain(original.report)
+    policy = report["solver_evidence_policy"]
+    score = policy["composed_qk_score_result"]
+    score.pop("report_sha256")
+    score.update(
+        {
+            "accepted": False,
+            "changed": False,
+            "status": "pcg_nonconverged_seed_fallback",
+            "fit_check_evaluated": False,
+            "fit_check_metrics": None,
+        }
+    )
+    score["operation_audit"]["fit_check_cases_consumed"] = 0
+    score.pop("seed_fit_check_metrics", None)
+    score.pop("proposed_fit_check_metrics", None)
+    score["report_sha256"] = _sha256(score)
+
+    accepted_producer = policy["composed_qk_producer_artifact"]
+    fallback_body = {
+        **accepted_producer,
+        "schema": "neural-forge-lfm2-endpoint-qk-start-v1",
+        "score_result_report_sha256": score["report_sha256"],
+        "score_result_accepted": False,
+        "score_residual_fourth_arm_eligible": False,
+        "starting_producer_sha256": f"{8_402:064x}",
+        "starting_query_weight_sha256": policy["composed_qk_global_sync"][
+            "query_weight_sha256"
+        ],
+        "starting_key_weight_sha256": policy["composed_qk_global_sync"][
+            "key_weight_sha256"
+        ],
+        "starting_value_weight_sha256": f"{8_403:064x}",
+        "starting_state_source": (
+            "fit_structural_groups_plus_global_gauge_qk_plus_fit_only_v"
+        ),
+    }
+    fallback_body.pop("artifact_sha256", None)
+    fallback_start = {
+        **fallback_body,
+        "artifact_sha256": _sha256(fallback_body),
+    }
+    stage_one_body = {
+        "schema": "neural-forge-lfm2-composed-qk-stage-one-attempt-v1",
+        "endpoint_start_artifact_sha256": fallback_start["artifact_sha256"],
+        "global_gauge_fallback_start_artifact_sha256": (
+            fallback_start["artifact_sha256"]
+        ),
+        "endpoint_start_source": "structural_global_gauge_dense_qkv",
+        "score_result_report_sha256": score["report_sha256"],
+        "score_result_status": score["status"],
+        "score_result_accepted": False,
+        "composed_candidate_eligible": False,
+        "composed_candidate_artifact_sha256": None,
+        "failed_composed_candidate_omitted": True,
+        "endpoint_start_issued_independently": True,
+        "operation_audit": {
+            "model_forward_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        },
+    }
+    stage_one = {
+        **stage_one_body,
+        "attempt_sha256": _sha256(stage_one_body),
+    }
+
+    endpoint = policy["endpoint_residual_attention_artifact"]
+    endpoint.pop("artifact_sha256")
+    endpoint.update(
+        {
+            "composed_qk_artifact_sha256": None,
+            "endpoint_qk_start_artifact_sha256": (
+                fallback_start["artifact_sha256"]
+            ),
+            "endpoint_qk_start_artifact_schema": (
+                "neural-forge-lfm2-endpoint-qk-start-v1"
+            ),
+            "endpoint_qk_start_source": "structural_global_gauge_dense_qkv",
+            "composed_score_residual_candidate_eligible": False,
+            "composed_score_residual_result_sha256": score["report_sha256"],
+        }
+    )
+    endpoint["artifact_sha256"] = _sha256(endpoint)
+    endpoint_id = H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID
+    evaluations = policy["attention_candidate_evaluations"]
+    evaluations.pop(H776_COMPOSED_ATTENTION_CANDIDATE_ID)
+    endpoint_evaluation = evaluations[endpoint_id]
+    endpoint_evaluation.pop("report_sha256")
+    endpoint_evaluation["operator_artifact"] = endpoint
+    endpoint_evaluation["operator_artifact_sha256"] = _sha256(endpoint)
+    endpoint_evaluation["report_sha256"] = _sha256(endpoint_evaluation)
+
+    selection = policy["attention_candidate_selection"]
+    selection.pop("report_sha256")
+    selection["candidate_ids"] = list(
+        H776_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+    )
+    selection["candidate_count"] = 4
+    selection["candidate_local_mlp_preparation_count"] = 4
+    selection["candidate_report_sha256"].pop(
+        H776_COMPOSED_ATTENTION_CANDIDATE_ID
+    )
+    selection["candidate_report_sha256"][endpoint_id] = endpoint_evaluation[
+        "report_sha256"
+    ]
+    selected_id = selection["selected_candidate_id"]
+    selection["selected_candidate_report_sha256"] = selection[
+        "candidate_report_sha256"
+    ][selected_id]
+    selection["report_sha256"] = _sha256(selection)
+
+    policy.update(
+        {
+            "attention_candidate_inventory_mode": (
+                "opt_in_authenticated_endpoint_four_arm_without_rejected_"
+                "composed_candidate"
+            ),
+            "composed_qk_producer_artifact_sha256": None,
+            "composed_qk_producer_artifact": None,
+            "composed_qk_candidate_eligible": False,
+            "composed_qk_stage_one_attempt": stage_one,
+            "endpoint_qk_start_artifact": fallback_start,
+            "endpoint_qk_start_source": "structural_global_gauge_dense_qkv",
+            "composed_qk_score_result": score,
+            "endpoint_residual_attention_artifact_sha256": (
+                endpoint["artifact_sha256"]
+            ),
+            "endpoint_residual_attention_artifact": endpoint,
+        }
+    )
+    report.pop("result_sha256")
+    report["result_sha256"] = _sha256(report)
+    return SimpleNamespace(
+        report=report,
+        operator_artifact=original.operator_artifact,
+        next_bank=original.next_bank,
+        expected_fit_bank_sha256=original.expected_fit_bank_sha256,
+        expected_fit_trajectory_sha256s=(original.expected_fit_trajectory_sha256s),
     )
 
 
@@ -2623,6 +2806,34 @@ def test_endpoint_attention_result_authenticates_five_arm_negative(
     assert audit["all_parent_probability_targets_from_authenticated_cache"] is True
     assert audit["blank_target_values_read"] is False
     assert len(audit["endpoint_block_device_execution"]) == 1
+
+
+def test_endpoint_attention_authenticates_rejected_composed_without_fit_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_selected_direct_artifact(monkeypatch)
+    result = _endpoint_attention_result_with_rejected_composed()
+    audit = authenticate_h776_endpoint_residual_attention_result(
+        result,
+        input_bank_sha256="8" * 64,
+        expected_fit_bank_sha256=result.expected_fit_bank_sha256,
+        expected_fit_trajectory_sha256s=result.expected_fit_trajectory_sha256s,
+        pins=_pins(tmp_path, endpoint_residual_attention_enabled=True),
+    )
+
+    assert audit["candidate_ids"] == list(
+        H776_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+    )
+    assert audit["composed_score_residual_candidate_eligible"] is False
+    assert audit["endpoint_qk_start_source"] == (
+        "structural_global_gauge_dense_qkv"
+    )
+    assert audit["composed_score_outcome"]["fit_check_evaluated"] is False
+    assert audit["composed_score_outcome"]["fit_check_cases_consumed"] == 0
+    assert audit["composed_score_outcome"]["status"] == (
+        "pcg_nonconverged_seed_fallback"
+    )
 
 
 def test_composed_attention_result_authenticates_four_arm_negative(

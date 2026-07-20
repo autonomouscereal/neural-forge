@@ -47,10 +47,13 @@ from neural_forge.hf_lfm2_composed_qk_attention_fold import (
     Lfm2CompiledComposedEndpointResidualAttentionFold,
     Lfm2CompiledComposedQkAttentionProducerFold,
     Lfm2CompiledComposedQkSequenceEffectiveAttentionFold,
+    Lfm2AuthenticatedEndpointQkStart,
+    Lfm2ComposedQkStageOneAttempt,
     Lfm2ComposedEndpointResidualAttentionFoldPolicy,
     Lfm2ComposedQkAttentionFoldPolicy,
     compile_lfm2_composed_endpoint_residual_attention_fold,
     compile_lfm2_composed_qk_attention_producer_fold,
+    compile_lfm2_composed_qk_stage_one_attempt,
     compile_lfm2_composed_qk_sequence_effective_attention_fold,
 )
 from neural_forge.hf_lfm2_cpcf_boundary_bundle import (
@@ -175,6 +178,10 @@ LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS = (
     *LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS,
     ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID,
 )
+LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS = (
+    *LFM2_CPCF_ATTENTION_CANDIDATE_IDS,
+    ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID,
+)
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _EVALUATION_SPLITS = ("fit", "validation")
 _SHORT_CONV_CASE_SPLITS = ("selection", "fit", "validation")
@@ -200,6 +207,7 @@ def _canonical_attention_candidate_ids(
         LFM2_CPCF_ATTENTION_CANDIDATE_IDS,
         LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS,
         LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS,
+        LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS,
     }:
         raise Lfm2CpcfLayerCompilerError(
             "Attention candidate inventory is not one authenticated canonical lane."
@@ -10151,14 +10159,8 @@ def compile_and_install_lfm2_cpcf_layer(
         attention_candidate_selection_report: Mapping[str, Any] | None = None
         attention_candidate_reports: Mapping[str, Any] | None = None
         attention_final_transport_binding: Mapping[str, Any] | None = None
-        if endpoint_residual_attention_policy is not None:
-            attention_candidate_ids = (
-                LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
-            )
-        elif composed_qk_attention_policy is not None:
-            attention_candidate_ids = LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS
-        else:
-            attention_candidate_ids = LFM2_CPCF_ATTENTION_CANDIDATE_IDS
+        attention_candidate_ids = LFM2_CPCF_ATTENTION_CANDIDATE_IDS
+        composed_qk_stage_one_attempt: Lfm2ComposedQkStageOneAttempt | None = None
         endpoint_evaluation_charts = boundary_charts
         short_conv_macrocell_selector: _Lfm2CpcfShortConvMacrocellSelector | None = None
         if operator_kind == "full_attention":
@@ -10290,6 +10292,11 @@ def compile_and_install_lfm2_cpcf_layer(
             composed_qk_artifact: Lfm2CompiledComposedQkAttentionProducerFold | None = (
                 None
             )
+            endpoint_qk_start_artifact: (
+                Lfm2CompiledComposedQkAttentionProducerFold
+                | Lfm2AuthenticatedEndpointQkStart
+                | None
+            ) = None
             if composed_qk_attention_policy is not None:
                 trajectory_sha256s = _attention_trajectory_sha256s(
                     fit_bank,
@@ -10299,7 +10306,7 @@ def compile_and_install_lfm2_cpcf_layer(
                     raise Lfm2CpcfLayerCompilerError(
                         "Packed attention cases and trajectory receipts differ."
                     )
-                composed_qk_artifact = compile_lfm2_composed_qk_attention_producer_fold(
+                stage_one_inputs = dict(
                     source_query_weight=source_attention.q_proj.weight,
                     source_key_weight=source_attention.k_proj.weight,
                     source_value_weight=source_attention.v_proj.weight,
@@ -10323,6 +10330,24 @@ def compile_and_install_lfm2_cpcf_layer(
                     ),
                     policy=composed_qk_attention_policy,
                 )
+                if endpoint_residual_attention_policy is None:
+                    composed_qk_artifact = (
+                        compile_lfm2_composed_qk_attention_producer_fold(
+                            **stage_one_inputs
+                        )
+                    )
+                else:
+                    composed_qk_stage_one_attempt = (
+                        compile_lfm2_composed_qk_stage_one_attempt(
+                            **stage_one_inputs
+                        )
+                    )
+                    composed_qk_artifact = (
+                        composed_qk_stage_one_attempt.composed_candidate
+                    )
+                    endpoint_qk_start_artifact = (
+                        composed_qk_stage_one_attempt.selected_endpoint_start
+                    )
             sequence_effective_operator_artifact = (
                 compile_lfm2_fixed_qk_sequence_effective_attention_fold(
                     producer=producer_artifact,
@@ -10494,8 +10519,13 @@ def compile_and_install_lfm2_cpcf_layer(
                 Lfm2CompiledComposedEndpointResidualAttentionFold | None
             ) = None
             endpoint_output_prior_receipt: Mapping[str, Any] | None = None
-            if composed_qk_artifact is not None:
-                corrected_producer = composed_qk_artifact.producer_artifact
+            stage_two_qk_artifact = (
+                endpoint_qk_start_artifact
+                if endpoint_residual_attention_policy is not None
+                else composed_qk_artifact
+            )
+            if stage_two_qk_artifact is not None:
+                corrected_producer = stage_two_qk_artifact.producer_artifact
                 stage = "operator_install"
                 _copy_attention_norms(
                     source_attention,
@@ -10563,55 +10593,58 @@ def compile_and_install_lfm2_cpcf_layer(
                         max_prior_delta_ratio=None,
                     )
                 )
-                composed_operator_artifact = (
-                    compile_lfm2_composed_qk_sequence_effective_attention_fold(
-                        composed_qk=composed_qk_artifact,
-                        fit_value_output_artifact=(corrected_value_output_artifact),
-                        upstream_fit_cases=fit_cases,
-                        actual_child_contexts=corrected_actual_fit_contexts,
-                        target_value_weight_template=(target_attention.v_proj.weight),
-                        target_output_weight_template=(
-                            target_attention.out_proj.weight
-                        ),
-                        query_norm_weight=source_q_norm,
-                        key_norm_weight=source_k_norm,
-                        norm_epsilon=source_q_epsilon,
-                    )
-                )
-                if (
-                    composed_operator_artifact.verify_authentication()
-                    != composed_operator_artifact.artifact_sha256
-                    or _tensor_bundle_sha256(
-                        {
-                            "q_proj.weight": (
-                                composed_operator_artifact.producer_artifact.query_weight
+                if composed_qk_artifact is not None:
+                    composed_operator_artifact = (
+                        compile_lfm2_composed_qk_sequence_effective_attention_fold(
+                            composed_qk=composed_qk_artifact,
+                            fit_value_output_artifact=(corrected_value_output_artifact),
+                            upstream_fit_cases=fit_cases,
+                            actual_child_contexts=corrected_actual_fit_contexts,
+                            target_value_weight_template=(
+                                target_attention.v_proj.weight
                             ),
-                            "k_proj.weight": (
-                                composed_operator_artifact.producer_artifact.key_weight
+                            target_output_weight_template=(
+                                target_attention.out_proj.weight
                             ),
-                        }
+                            query_norm_weight=source_q_norm,
+                            key_norm_weight=source_k_norm,
+                            norm_epsilon=source_q_epsilon,
+                        )
                     )
-                    != query_key_state_sha256s[
-                        SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
-                    ]
-                ):
-                    raise Lfm2CpcfLayerCompilerError(
-                        "Composed sequence-effective attention changed its "
-                        "authenticated corrected Q/K state."
-                    )
+                    if (
+                        composed_operator_artifact.verify_authentication()
+                        != composed_operator_artifact.artifact_sha256
+                        or _tensor_bundle_sha256(
+                            {
+                                "q_proj.weight": (
+                                    composed_operator_artifact.producer_artifact.query_weight
+                                ),
+                                "k_proj.weight": (
+                                    composed_operator_artifact.producer_artifact.key_weight
+                                ),
+                            }
+                        )
+                        != query_key_state_sha256s[
+                            SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+                        ]
+                    ):
+                        raise Lfm2CpcfLayerCompilerError(
+                            "Composed sequence-effective attention changed its "
+                            "authenticated corrected Q/K state."
+                        )
                 if endpoint_residual_attention_policy is not None:
                     qk_fit_ordinals = tuple(
-                        composed_qk_artifact.qk_fit_bank.source_case_ordinals
+                        stage_two_qk_artifact.qk_fit_bank.source_case_ordinals
                     )
                     if (
                         not qk_fit_ordinals
                         or len(qk_fit_ordinals)
-                        != len(composed_qk_artifact.qk_fit_bank.cases)
+                        != len(stage_two_qk_artifact.qk_fit_bank.cases)
                         or any(
                             fit_cases[ordinal] is not bank_case
                             for ordinal, bank_case in zip(
                                 qk_fit_ordinals,
-                                composed_qk_artifact.qk_fit_bank.cases,
+                                stage_two_qk_artifact.qk_fit_bank.cases,
                                 strict=True,
                             )
                         )
@@ -10669,7 +10702,7 @@ def compile_and_install_lfm2_cpcf_layer(
                     )
                     endpoint_operator_artifact = (
                         compile_lfm2_composed_endpoint_residual_attention_fold(
-                            composed_qk=composed_qk_artifact,
+                            composed_qk=stage_two_qk_artifact,
                             fit_value_output_artifact=(
                                 endpoint_fit_value_output_artifact
                             ),
@@ -10727,6 +10760,16 @@ def compile_and_install_lfm2_cpcf_layer(
                     )
                 del corrected_fit_context_replay
 
+            if endpoint_operator_artifact is not None:
+                attention_candidate_ids = (
+                    LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+                    if composed_operator_artifact is not None
+                    else LFM2_CPCF_ENDPOINT_WITHOUT_COMPOSED_ATTENTION_CANDIDATE_IDS
+                )
+            elif composed_operator_artifact is not None:
+                attention_candidate_ids = LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS
+            else:
+                attention_candidate_ids = LFM2_CPCF_ATTENTION_CANDIDATE_IDS
             candidate_evaluations = []
             attention_mlp_prepared_basis = None
             candidate_artifacts = {
@@ -11485,10 +11528,19 @@ def compile_and_install_lfm2_cpcf_layer(
             },
         }
         if composed_qk_attention_policy is not None:
-            if composed_qk_artifact is None:
+            if (
+                composed_qk_artifact is None
+                and composed_qk_stage_one_attempt is None
+            ):
                 raise Lfm2CpcfLayerCompilerError(
-                    "Composed Q/K policy produced no authenticated artifact."
+                    "Composed Q/K policy produced neither an admitted candidate "
+                    "nor an authenticated endpoint start."
                 )
+            stage_one_evidence = (
+                composed_qk_artifact
+                if composed_qk_artifact is not None
+                else composed_qk_stage_one_attempt.endpoint_start
+            )
             body = {
                 **body,
                 "solver_evidence_policy": {
@@ -11497,19 +11549,50 @@ def compile_and_install_lfm2_cpcf_layer(
                         composed_qk_attention_policy.as_dict()
                     ),
                     "composed_qk_producer_artifact_sha256": (
-                        composed_qk_artifact.artifact_sha256
+                        None
+                        if composed_qk_artifact is None
+                        else composed_qk_artifact.artifact_sha256
                     ),
-                    "composed_qk_producer_artifact": (composed_qk_artifact.as_dict()),
+                    "composed_qk_producer_artifact": (
+                        None
+                        if composed_qk_artifact is None
+                        else composed_qk_artifact.as_dict()
+                    ),
+                    "composed_qk_candidate_eligible": (
+                        composed_qk_artifact is not None
+                    ),
+                    "composed_qk_stage_one_attempt": (
+                        None
+                        if composed_qk_stage_one_attempt is None
+                        else composed_qk_stage_one_attempt.as_dict()
+                    ),
+                    "endpoint_qk_start_artifact": (
+                        None
+                        if composed_qk_stage_one_attempt is None
+                        else composed_qk_stage_one_attempt.selected_endpoint_start.as_dict()
+                    ),
+                    "endpoint_qk_start_source": (
+                        None
+                        if composed_qk_stage_one_attempt is None
+                        else composed_qk_stage_one_attempt.report[
+                            "endpoint_start_source"
+                        ]
+                    ),
                     "composed_qk_global_sync": (
-                        composed_qk_artifact.global_sync.as_dict()
+                        stage_one_evidence.global_sync.as_dict()
                     ),
                     "composed_qk_score_result": (
-                        dict(composed_qk_artifact.score_result.report)
+                        dict(stage_one_evidence.score_result.report)
                     ),
                     "attention_candidate_inventory_mode": (
                         "opt_in_authenticated_five_arm"
-                        if endpoint_residual_attention_policy is not None
-                        else "opt_in_authenticated_four_arm"
+                        if len(attention_candidate_ids) == 5
+                        else (
+                            "opt_in_authenticated_endpoint_four_arm_without_"
+                            "rejected_composed_candidate"
+                            if endpoint_residual_attention_policy is not None
+                            else "opt_in_authenticated_four_arm"
+                        )
                     ),
                 },
             }
@@ -11520,7 +11603,7 @@ def compile_and_install_lfm2_cpcf_layer(
             ):
                 raise Lfm2CpcfLayerCompilerError(
                     "Endpoint-residual policy produced no authenticated "
-                    "fifth-arm artifact."
+                    "independently gated artifact."
                 )
             body = {
                 **body,
