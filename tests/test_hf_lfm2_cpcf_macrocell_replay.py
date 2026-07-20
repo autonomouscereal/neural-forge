@@ -27,6 +27,7 @@ def _tiny_installed_target(
     dtype: Any,
     *,
     seed: int,
+    head_dim: int = 4,
 ) -> Any:
     config = transformers.Lfm2Config(
         vocab_size=37,
@@ -35,7 +36,7 @@ def _tiny_installed_target(
         num_hidden_layers=1,
         num_attention_heads=2,
         num_key_value_heads=1,
-        head_dim=4,
+        head_dim=head_dim,
         layer_types=["full_attention" if operator_kind == "full_attention" else "conv"],
         conv_L_cache=3,
         conv_bias=True,
@@ -65,14 +66,18 @@ def _tiny_installed_target(
         )
         if operator_kind == "full_attention":
             layer.self_attn.q_layernorm.weight.copy_(
-                torch.tensor(
-                    [0.75, 1.25, 0.9, 1.1],
+                torch.linspace(
+                    0.75,
+                    1.25,
+                    head_dim,
                     dtype=torch.float32,
                 ).to(dtype)
             )
             layer.self_attn.k_layernorm.weight.copy_(
-                torch.tensor(
-                    [1.2, 0.8, 1.05, 0.95],
+                torch.linspace(
+                    1.2,
+                    0.8,
+                    head_dim,
                     dtype=torch.float32,
                 ).to(dtype)
             )
@@ -348,6 +353,17 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
         if operator_kind == "full_attention"
         else "short_conv.output_input"
     )
+    assert report["residual_endpoint_shape"] == [2, 5, 8]
+    assert report["operator_output_input_shape"] == [
+        int(size) for size in replay.operator_output_input.shape
+    ]
+    assert report["operator_output_input_width"] == int(
+        replay.operator_output_input.shape[-1]
+    )
+    assert report["operator_topology"]["output_projection_input_width"] == int(
+        replay.operator_output_input.shape[-1]
+    )
+    assert report["operator_output_input_matches_residual_width"]
     source_detail_name = (
         "concatenated_context" if operator_kind == "full_attention" else "output_input"
     )
@@ -387,6 +403,103 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
     ):
         assert execution[name] == 0
     assert replay.replay_sha256 == report["report_sha256"]
+
+
+def test_attention_replay_allows_projection_input_wider_than_residual_stream() -> None:
+    model = _tiny_installed_target(
+        "full_attention",
+        torch.float32,
+        seed=9289,
+        head_dim=6,
+    )
+    layer = model.model.layers[0]
+    residual = _actual_prefill_residual(model)
+    position_embeddings = _position_embeddings(model, residual)
+    attention_mask = _causal_mask(residual)
+    reference = _reference_layer_replay(
+        layer,
+        residual,
+        position_embeddings=position_embeddings,
+        attention_mask=attention_mask,
+    )
+
+    replay = replay_lfm2_cpcf_macrocell(
+        layer,
+        residual,
+        position_embeddings=position_embeddings,
+        additive_causal_mask=attention_mask,
+    )
+
+    residual_shape = (2, 5, 8)
+    for name in (
+        "operator_input",
+        "operator_delta",
+        "post_operator_residual",
+        "mlp_input",
+        "mlp_delta",
+        "post_layer_residual",
+    ):
+        assert tuple(getattr(replay, name).shape) == residual_shape
+        assert torch.equal(getattr(replay, name), reference[name])
+    assert tuple(replay.operator_output_input.shape) == (2, 5, 12)
+    assert torch.equal(
+        replay.operator_output_input,
+        reference["operator_output_input"],
+    )
+    assert replay.report["operator_output_input_width"] == 12
+    assert replay.report["operator_topology"]["query_heads"] == 2
+    assert replay.report["operator_topology"]["head_dim"] == 6
+    assert (
+        replay.report["operator_topology"]["output_projection_input_width"]
+        == 12
+    )
+    assert not replay.report["operator_output_input_matches_residual_width"]
+
+
+@pytest.mark.parametrize(
+    ("changed_endpoint", "expected_error"),
+    (
+        ("operator_output_input", "batch and sequence dimensions"),
+        ("operator_delta", "Residual replay endpoint shapes differ"),
+    ),
+)
+def test_replay_archive_rejects_invalid_endpoint_geometry(
+    changed_endpoint: str,
+    expected_error: str,
+) -> None:
+    model = _tiny_installed_target(
+        "full_attention",
+        torch.float32,
+        seed=9290,
+        head_dim=6,
+    )
+    residual = _actual_prefill_residual(model)
+    replay = replay_lfm2_cpcf_macrocell(
+        model.model.layers[0],
+        residual,
+        position_embeddings=_position_embeddings(model, residual),
+        additive_causal_mask=_causal_mask(residual),
+    )
+    endpoints = {
+        "operator_input": replay.operator_input,
+        "operator_output_input": replay.operator_output_input,
+        "operator_delta": replay.operator_delta,
+        "post_operator_residual": replay.post_operator_residual,
+        "mlp_input": replay.mlp_input,
+        "mlp_delta": replay.mlp_delta,
+        "post_layer_residual": replay.post_layer_residual,
+    }
+    changed = endpoints[changed_endpoint]
+    if changed_endpoint == "operator_output_input":
+        endpoints[changed_endpoint] = changed[:1].clone()
+    else:
+        endpoints[changed_endpoint] = changed[:, :, :-1].clone()
+
+    with pytest.raises(Lfm2CpcfMacrocellReplayError, match=expected_error):
+        Lfm2CpcfMacrocellReplay(
+            **endpoints,
+            report=replay.report,
+        )
 
 
 @pytest.mark.parametrize(
