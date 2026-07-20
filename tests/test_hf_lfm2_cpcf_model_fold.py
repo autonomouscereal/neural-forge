@@ -978,6 +978,53 @@ def test_model_fold_policy_keeps_generic_budget_separate_from_promotion() -> Non
     with pytest.raises(TypeError, match="short_conv_v4_solver_policy"):
         Lfm2CpcfModelFoldPolicy(short_conv_v4_solver_policy=object())
 
+    attention_policy = (
+        layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+            enabled=True
+        )
+    )
+    attention = Lfm2CpcfModelFoldPolicy(
+        attention_sequential_transport_policy=attention_policy,
+    )
+    assert (
+        attention.resolved_attention_sequential_transport_policy(
+            "full_attention"
+        )
+        is attention_policy
+    )
+    assert (
+        attention.resolved_attention_sequential_transport_policy(
+            "short_conv"
+        )
+        is None
+    )
+    assert attention.as_dict()[
+        "attention_sequential_transport_policy"
+    ] == attention_policy.as_dict()
+    disabled_attention = Lfm2CpcfModelFoldPolicy(
+        attention_sequential_transport_policy=(
+            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+                enabled=False
+            )
+        ),
+    )
+    assert disabled_attention.as_dict() == generic.as_dict()
+    assert (
+        disabled_attention.resolved_attention_sequential_transport_policy(
+            "full_attention"
+        )
+        is None
+    )
+    with pytest.raises(TypeError, match="attention_sequential_transport_policy"):
+        Lfm2CpcfModelFoldPolicy(
+            attention_sequential_transport_policy=object(),
+        )
+    with pytest.raises(
+        Lfm2CpcfModelFoldError,
+        match="canonical operator kind",
+    ):
+        attention.resolved_attention_sequential_transport_policy("unknown")
+
 
 def test_model_fold_passes_one_authenticated_v4_policy_to_each_layer(
     monkeypatch: pytest.MonkeyPatch,
@@ -992,6 +1039,11 @@ def test_model_fold_passes_one_authenticated_v4_policy_to_each_layer(
     )
     policy = Lfm2CpcfModelFoldPolicy(
         short_conv_v4_solver_policy=solver_policy,
+        attention_sequential_transport_policy=(
+            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+                enabled=True
+            )
+        ),
     )
     charts = SimpleNamespace(operator_kind="short_conv")
     boundary = SimpleNamespace(
@@ -1086,6 +1138,7 @@ def test_model_fold_passes_one_authenticated_v4_policy_to_each_layer(
 
     assert observed["short_conv_v4_solver_policy"] is solver_policy
     assert observed["short_conv_gate_policy"] == policy.resolved_short_conv_policy()
+    assert observed["attention_sequential_transport_policy"] is None
     assert observed["layer_index"] == 0
 
 

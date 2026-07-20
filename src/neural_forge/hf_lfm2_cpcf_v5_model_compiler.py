@@ -242,6 +242,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
     from neural_forge import dynamic_evidence_residency
     from neural_forge import dynamic_replay_scheduler
     from neural_forge import hf_cpcf_boundary_chart
+    from neural_forge import hf_cpcf_sequential_boundary_transport
     from neural_forge import hf_lfm2_cpcf_candidate_replay
     from neural_forge import hf_lfm2_cpcf_layer_compiler
     from neural_forge import hf_lfm2_cpcf_macrocell_replay
@@ -261,6 +262,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         dynamic_evidence_residency,
         dynamic_replay_scheduler,
         hf_cpcf_boundary_chart,
+        hf_cpcf_sequential_boundary_transport,
         hf_lfm2_cpcf_candidate_replay,
         hf_lfm2_cpcf_layer_compiler,
         hf_lfm2_cpcf_macrocell_replay,
@@ -3805,6 +3807,12 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                         candidate_replay_evaluator=(candidate_replay_evaluator),
                         candidate_selector=candidate_selector,
                         numerical_frontier_adapter=(numerical_frontier_adapter),
+                        attention_sequential_transport_policy=(
+                            runtime_policy.model_fold_policy
+                            .resolved_attention_sequential_transport_policy(
+                                charts.operator_kind
+                            )
+                        ),
                     )
                     receipt = legacy_model_fold.Lfm2CpcfCompletedLayerReceipt(
                         result.report

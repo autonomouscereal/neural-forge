@@ -72,6 +72,9 @@ from neural_forge.hf_lfm2_cpcf_model_fold import (
     Lfm2CpcfCompletedLayerReceipt,
     Lfm2CpcfModelFoldPolicy,
 )
+from neural_forge.hf_lfm2_cpcf_layer_compiler import (
+    Lfm2CpcfAttentionSequentialTransportPolicy,
+)
 from neural_forge.hf_lfm2_cpcf_candidate_replay import (
     LFM2_CPCF_CANDIDATE_REPLAY_BACKEND_SCHEMA,
     LFM2_CPCF_CANDIDATE_REPLAY_WORK_SCHEMA,
@@ -2487,6 +2490,28 @@ def test_compiled_model_fold_v4_policy_round_trips_typed() -> None:
     observed = reviewed_gate_module._normalize_model_fold_policy(expected.as_dict())
 
     assert observed == expected.as_dict()
+
+
+def test_compiled_model_fold_attention_transport_round_trips_typed() -> None:
+    expected = Lfm2CpcfModelFoldPolicy(
+        attention_sequential_transport_policy=(
+            Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
+        )
+    )
+
+    observed = reviewed_gate_module._normalize_model_fold_policy(
+        expected.as_dict()
+    )
+
+    assert observed == expected.as_dict()
+    runtime = Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=expected,
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=1,
+    )
+    assert reviewed_gate_module._normalize_v5_model_fold_policy(
+        runtime.as_dict()
+    ) == runtime.as_dict()
 
 
 def test_compiled_model_fold_v4_policy_rejects_authentication_drift() -> None:

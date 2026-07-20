@@ -37,6 +37,9 @@ from neural_forge.hf_lfm2_cpcf_installability import (
 from neural_forge.hf_lfm2_cpcf_model_compiler import (
     build_lfm2_cpcf_target_phases,
 )
+from neural_forge.hf_lfm2_cpcf_layer_compiler import (
+    Lfm2CpcfAttentionSequentialTransportPolicy,
+)
 from neural_forge.hf_lfm2_cpcf_model_fold import (
     LFM2_CPCF_MODEL_FOLD_SCHEMA,
     Lfm2CpcfModelFoldPolicy,
@@ -583,6 +586,30 @@ def test_receipt_reconstructs_authenticated_v4_solver_policy() -> None:
     assert observed.as_dict() == expected.as_dict()
     assert observed.short_conv_v4_solver_policy is not None
     assert observed.short_conv_v4_solver_policy.verify_authentication()
+
+
+def test_receipt_reconstructs_authenticated_attention_transport_policy() -> None:
+    transport = Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
+    expected = Lfm2CpcfModelFoldPolicy(
+        attention_sequential_transport_policy=transport,
+        promotion_compression_ratio=100.0,
+        require_promotion_ratio=True,
+    )
+    body = {
+        "schema": LFM2_CPCF_MODEL_FOLD_SCHEMA,
+        "policy": expected.as_dict(),
+    }
+    document = {
+        "compiled_model_fold": {
+            **body,
+            "result_sha256": canonical_sha256(body),
+        }
+    }
+
+    observed = resources_module._policy_from_receipt(document)
+
+    assert observed.as_dict() == expected.as_dict()
+    assert observed.attention_sequential_transport_policy == transport
 
 
 def test_budget_receipt_round_trips_typed_ratio() -> None:

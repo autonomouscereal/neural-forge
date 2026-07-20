@@ -72,6 +72,9 @@ from .hf_lfm2_circuit_trace_cache import (
 )
 from .hf_lfm2_cpcf_installability import Lfm2CpcfInstallabilityAdapter
 from .hf_lfm2_cpcf_blank_target import LFM2_CPCF_BLANK_TARGET_SCHEMA
+from .hf_lfm2_cpcf_layer_compiler import (
+    parse_lfm2_cpcf_attention_sequential_transport_policy,
+)
 from .hf_lfm2_cpcf_model_compiler import (
     Lfm2CpcfTargetPhase,
     build_lfm2_cpcf_target_phases,
@@ -722,14 +725,22 @@ def _policy_from_receipt(document: Mapping[str, Any]) -> Lfm2CpcfModelFoldPolicy
         "require_promotion_ratio",
     }
     optional_v4_key = "short_conv_v4_solver_policy"
-    if set(payload) not in {
-        frozenset(expected_keys),
-        frozenset({*expected_keys, optional_v4_key}),
-    }:
+    optional_attention_key = "attention_sequential_transport_policy"
+    if (
+        not expected_keys.issubset(payload)
+        or not set(payload).issubset(
+            {
+                *expected_keys,
+                optional_v4_key,
+                optional_attention_key,
+            }
+        )
+    ):
         raise Lfm2CpcfResourceError(
             "CPCF fold policy has unknown or incomplete fields."
         )
     v4_payload = payload.pop(optional_v4_key, None)
+    attention_payload = payload.pop(optional_attention_key, None)
     short_payload = _canonical_mapping(
         payload.pop("short_conv_gate_policy"),
         "short-convolution gate policy",
@@ -757,6 +768,17 @@ def _policy_from_receipt(document: Mapping[str, Any]) -> Lfm2CpcfModelFoldPolicy
         except (TypeError, ValueError) as exc:
             raise Lfm2CpcfResourceError(
                 "Short-convolution v4 solver policy is invalid."
+            ) from exc
+    if attention_payload is not None:
+        try:
+            constructor[optional_attention_key] = (
+                parse_lfm2_cpcf_attention_sequential_transport_policy(
+                    attention_payload
+                )
+            )
+        except (TypeError, ValueError, RuntimeError) as exc:
+            raise Lfm2CpcfResourceError(
+                "Attention sequential transport policy is invalid."
             ) from exc
     policy = Lfm2CpcfModelFoldPolicy(**constructor)
     expected_policy = _mapping(body.get("policy"), "CPCF fold policy")

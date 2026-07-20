@@ -1139,3 +1139,419 @@ def test_pcg_fails_closed_when_authenticated_residual_cap_is_not_met(
             diagonal=torch.diagonal(matrix),
             role="ill_conditioned_test_oracle",
         )
+
+
+def _legacy_pcg_single_tensor(*, right, matvec, diagonal, initial, role):
+    """Exact pre-restart implementation used to prove fast-path stability."""
+
+    solution = initial.clone()
+    residual = right - matvec(solution)
+    right_norm = torch.linalg.vector_norm(right).clamp_min(
+        torch.finfo(torch.float64).eps
+    )
+    initial_relative = float(
+        (torch.linalg.vector_norm(residual) / right_norm).item()
+    )
+    if (
+        initial_relative
+        <= sequence_fold._PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+    ):
+        return solution.contiguous(), sequence_fold._seal(
+            {
+                "role": role,
+                "solver": "deterministic_jacobi_pcg_single_tensor",
+                "maximum_iterations": sequence_fold._PCG_MAXIMUM_ITERATIONS,
+                "iterations_executed": 0,
+                "required_relative_normal_residual": (
+                    sequence_fold._PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+                ),
+                "initial_relative_normal_residual": initial_relative,
+                "final_relative_normal_residual": initial_relative,
+                "relative_normal_residual_history": [],
+                "solution_sha256": sequence_fold._tensor_sha256(solution),
+            }
+        )
+    preconditioned = residual / diagonal
+    direction = preconditioned.clone()
+    rz = (residual * preconditioned).sum()
+    history = []
+    iterations = 0
+    for iteration in range(1, sequence_fold._PCG_MAXIMUM_ITERATIONS + 1):
+        applied = matvec(direction)
+        denominator = (direction * applied).sum()
+        alpha = rz / denominator
+        solution = solution + alpha * direction
+        residual = residual - alpha * applied
+        relative = float(
+            (torch.linalg.vector_norm(residual) / right_norm).item()
+        )
+        history.append(relative)
+        iterations = iteration
+        if (
+            relative
+            <= sequence_fold._PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+        ):
+            break
+        next_preconditioned = residual / diagonal
+        next_rz = (residual * next_preconditioned).sum()
+        direction = next_preconditioned + (next_rz / rz) * direction
+        preconditioned = next_preconditioned
+        rz = next_rz
+    body = {
+        "role": role,
+        "solver": "deterministic_jacobi_pcg_single_tensor",
+        "maximum_iterations": sequence_fold._PCG_MAXIMUM_ITERATIONS,
+        "iterations_executed": iterations,
+        "required_relative_normal_residual": (
+            sequence_fold._PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+        ),
+        "initial_relative_normal_residual": initial_relative,
+        "final_relative_normal_residual": history[-1],
+        "relative_normal_residual_history": history,
+        "solution_sha256": sequence_fold._tensor_sha256(solution),
+    }
+    return solution.contiguous(), sequence_fold._seal(body)
+
+
+def _tridiagonal_spd_problem(size: int):
+    generator = torch.Generator().manual_seed(7)
+    right = torch.randn(size, generator=generator, dtype=DTYPE)
+    diagonal = torch.full((size,), 2.000001, dtype=DTYPE)
+
+    def matvec(value):
+        result = 2.000001 * value.clone()
+        result[1:] -= value[:-1]
+        result[:-1] -= value[1:]
+        return result
+
+    return right, diagonal, matvec
+
+
+def test_single_tensor_pcg_original_success_path_is_byte_identical() -> None:
+    matrix = torch.tensor(
+        [
+            [5.0, 1.0, 0.0],
+            [1.0, 4.0, 0.5],
+            [0.0, 0.5, 3.0],
+        ],
+        dtype=DTYPE,
+    )
+    right = torch.tensor([1.0, -2.0, 0.5], dtype=DTYPE)
+    diagonal = torch.diagonal(matrix)
+    initial = torch.zeros_like(right)
+    role = "original_lane_byte_identity"
+
+    expected_solution, expected_report = _legacy_pcg_single_tensor(
+        right=right,
+        matvec=lambda value: matrix @ value,
+        diagonal=diagonal,
+        initial=initial,
+        role=role,
+    )
+    observed_solution, observed_report = sequence_fold._pcg_single_tensor(
+        right=right,
+        matvec=lambda value: matrix @ value,
+        diagonal=diagonal,
+        initial=initial,
+        role=role,
+    )
+
+    assert torch.equal(observed_solution, expected_solution)
+    assert sequence_fold._canonical_json(observed_report) == (
+        sequence_fold._canonical_json(expected_report)
+    )
+    assert observed_report["iterations_executed"] <= 64
+    assert "restart_schedule" not in observed_report
+
+
+def test_single_tensor_pcg_restarts_after_64_and_authenticates_exact_residual() -> None:
+    right, diagonal, raw_matvec = _tridiagonal_spd_problem(72)
+    calls = 0
+
+    def matvec(value):
+        nonlocal calls
+        calls += 1
+        return raw_matvec(value)
+
+    solution, report = sequence_fold._pcg_single_tensor(
+        right=right,
+        matvec=matvec,
+        diagonal=diagonal,
+        initial=torch.zeros_like(right),
+        role="ill_conditioned_restarted_oracle",
+    )
+    exact_relative = float(
+        (
+            torch.linalg.vector_norm(right - raw_matvec(solution))
+            / torch.linalg.vector_norm(right)
+        ).item()
+    )
+
+    assert report["solver"] == (
+        "deterministic_restarted_jacobi_pcg_single_tensor"
+    )
+    assert report["original_lane_maximum_iterations"] == 64
+    assert report["original_lane_iterations_executed"] == 64
+    assert report["restart_block_iterations"] == 64
+    assert report["maximum_iterations"] == 512
+    assert report["original_lane_final_recurrence_relative_normal_residual"] > 1e-8
+    assert 64 < report["iterations_executed"] < 512
+    assert report["final_relative_normal_residual"] == exact_relative
+    assert exact_relative <= 1e-8
+    assert report["exact_final_residual_authenticated"] is True
+    assert report["total_matvec_calls"] == calls
+    assert report["exact_relative_normal_residual_checkpoints"][0][
+        "iteration"
+    ] == 64
+    assert report["exact_relative_normal_residual_checkpoints"][-1] == {
+        "iteration": report["iterations_executed"],
+        "relative_normal_residual": exact_relative,
+        "finite": True,
+    }
+    assert (
+        report["extended_after_original_lane_exact_authentication_miss"]
+        is True
+    )
+    assert report["recurrence_history_sha256"] == sequence_fold._sha256(
+        report["relative_normal_residual_history"]
+    )
+    assert report["exact_residual_checkpoints_sha256"] == sequence_fold._sha256(
+        report["exact_relative_normal_residual_checkpoints"]
+    )
+    assert report["restart_schedule_sha256"] == sequence_fold._sha256(
+        report["restart_schedule"]
+    )
+    assert report["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in report.items()
+            if key != "report_sha256"
+        }
+    )
+
+
+def test_single_tensor_pcg_hard_cap_fails_with_sealed_exact_residual() -> None:
+    right, diagonal, raw_matvec = _tridiagonal_spd_problem(96)
+    calls = 0
+
+    def matvec(value):
+        nonlocal calls
+        calls += 1
+        return raw_matvec(value)
+
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError,
+        match="authenticated exact residual tolerance",
+    ) as raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=diagonal,
+            initial=torch.zeros_like(right),
+            role="ill_conditioned_hard_cap_oracle",
+        )
+
+    failure = dict(raised.value.failure_report)
+    assert failure["status"] == "failed_closed"
+    assert failure["failure_reason"] == "hard_iteration_cap_reached"
+    assert failure["iterations_executed"] == 512
+    assert failure["maximum_iterations"] == 512
+    assert failure["final_relative_normal_residual"] > 1e-8
+    assert failure["exact_final_residual_authenticated"] is True
+    assert failure["exact_relative_normal_residual_checkpoints"][-1][
+        "iteration"
+    ] == 512
+    assert failure["total_matvec_calls"] == calls
+    assert failure["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in failure.items()
+            if key != "report_sha256"
+        }
+    )
+
+
+def test_sequence_policy_digest_remains_v2_compatible() -> None:
+    assert (
+        sequence_fold.FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_POLICY_SHA256
+        == "fc9846f62e13a45e63e58b1c0414c3818c4ba8bb08d0cc72f1d7656c253fcabb"
+    )
+    body = sequence_fold.Lfm2FixedQkSequenceEffectiveVoAlsPolicy().as_dict()
+    assert "pcg_restart_block_iterations" not in body
+    assert "pcg_hard_maximum_iterations" not in body
+    assert "pcg_exact_residual_recomputation_after_original_lane_miss" not in body
+
+
+def test_single_tensor_pcg_rejects_false_fast_success_by_exact_residual() -> None:
+    right = torch.tensor([1.0], dtype=DTYPE)
+    calls = 0
+
+    def matvec(value):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return 0.5 * value
+        if calls == 2:
+            return value
+        return 0.5 * value
+
+    solution, report = sequence_fold._pcg_single_tensor(
+        right=right,
+        matvec=matvec,
+        diagonal=torch.ones_like(right),
+        initial=torch.zeros_like(right),
+        role="false_fast_success_exact_rejection",
+    )
+
+    assert torch.equal(solution, torch.tensor([2.0], dtype=DTYPE))
+    assert report["solver"] == (
+        "deterministic_restarted_jacobi_pcg_single_tensor"
+    )
+    assert report["original_lane_iterations_executed"] == 1
+    assert (
+        report["original_lane_final_recurrence_relative_normal_residual"]
+        == 0.0
+    )
+    assert report["exact_relative_normal_residual_checkpoints"][0] == {
+        "iteration": 1,
+        "relative_normal_residual": 0.5,
+        "finite": True,
+    }
+    assert (
+        report["extended_after_original_lane_exact_authentication_miss"]
+        is True
+    )
+    assert report["final_relative_normal_residual"] == 0.0
+    assert report["exact_final_residual_authenticated"] is True
+    assert report["total_matvec_calls"] == calls
+
+
+@pytest.mark.parametrize("diagonal_value", (0.0, -1.0))
+def test_single_tensor_pcg_rejects_non_positive_diagonal(
+    diagonal_value,
+) -> None:
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as raised:
+        sequence_fold._pcg_single_tensor(
+            right=torch.tensor([1.0], dtype=DTYPE),
+            matvec=lambda value: value,
+            diagonal=torch.tensor([diagonal_value], dtype=DTYPE),
+            initial=torch.tensor([0.0], dtype=DTYPE),
+            role="invalid_diagonal_oracle",
+        )
+
+    failure = dict(raised.value.failure_report)
+    assert failure["failure_stage"] == "input_validation"
+    assert failure["failure_details"]["diagonal_strictly_positive"] is False
+    assert failure["total_matvec_calls"] == 0
+
+
+def test_single_tensor_pcg_nonfinite_failure_report_is_json_safe() -> None:
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as raised:
+        sequence_fold._pcg_single_tensor(
+            right=torch.tensor([1.0], dtype=DTYPE),
+            matvec=lambda value: torch.full_like(value, float("nan")),
+            diagonal=torch.tensor([1.0], dtype=DTYPE),
+            initial=torch.tensor([0.0], dtype=DTYPE),
+            role="nonfinite_operator_oracle",
+        )
+
+    failure = dict(raised.value.failure_report)
+    assert failure["status"] == "failed_closed"
+    assert failure["failure_reason"] == (
+        "non_finite_initial_operator_application"
+    )
+    assert failure["exact_final_residual_authenticated"] is False
+    assert failure["final_relative_normal_residual"] is None
+    assert failure["total_matvec_calls"] == 1
+    assert "nan" not in sequence_fold._canonical_json(failure).decode("ascii")
+    assert failure["report_sha256"] == sequence_fold._sha256(
+        {
+            key: value
+            for key, value in failure.items()
+            if key != "report_sha256"
+        }
+    )
+
+
+def test_single_tensor_pcg_indefinite_curvature_fails_closed() -> None:
+    calls = 0
+
+    def matvec(value):
+        nonlocal calls
+        calls += 1
+        return -value
+
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as raised:
+        sequence_fold._pcg_single_tensor(
+            right=torch.tensor([1.0], dtype=DTYPE),
+            matvec=matvec,
+            diagonal=torch.tensor([1.0], dtype=DTYPE),
+            initial=torch.tensor([0.0], dtype=DTYPE),
+            role="indefinite_curvature_oracle",
+        )
+
+    failure = dict(raised.value.failure_report)
+    assert failure["failure_reason"] == (
+        "non_positive_or_non_finite_curvature"
+    )
+    assert failure["failure_stage"] == "original_lane_curvature"
+    assert failure["failure_details"]["curvature"] == -1.0
+    assert failure["failure_details"][
+        "curvature_finite_strictly_positive"
+    ] is False
+    assert failure["iterations_executed"] == 0
+    assert failure["total_matvec_calls"] == calls == 2
+    assert failure["exact_final_residual_authenticated"] is True
+
+
+def test_single_tensor_pcg_restart_curvature_failure_counts_attempt() -> None:
+    right = torch.tensor([1.0], dtype=DTYPE)
+    calls = 0
+
+    def matvec(value):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return 0.5 * value
+        if calls == 2:
+            return value
+        if calls == 3:
+            return 0.5 * value
+        if calls == 4:
+            return torch.zeros_like(value)
+        raise AssertionError("solver continued after restart curvature failure")
+
+    with pytest.raises(
+        sequence_fold.Lfm2SequenceEffectiveAttentionFoldError
+    ) as raised:
+        sequence_fold._pcg_single_tensor(
+            right=right,
+            matvec=matvec,
+            diagonal=torch.ones_like(right),
+            initial=torch.zeros_like(right),
+            role="restart_singular_curvature_oracle",
+        )
+
+    failure = dict(raised.value.failure_report)
+    assert failure["failure_stage"] == "restart_curvature"
+    assert failure["failure_reason"] == (
+        "non_positive_or_non_finite_curvature"
+    )
+    assert failure["iterations_executed"] == 1
+    assert failure["total_matvec_calls"] == calls == 4
+    assert failure["failure_details"]["curvature_matvec_call"] == 4
+    assert failure["restart_schedule"][-1][
+        "attempted_matvec_calls"
+    ] == 1
+    assert failure["restart_schedule"][-1]["iterations_executed"] == 0
+    assert failure["restart_schedule"][-1]["termination"] == (
+        "curvature_failure"
+    )
+    assert failure["exact_final_residual_authenticated"] is True
+    assert failure["final_relative_normal_residual"] == 0.5

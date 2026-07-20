@@ -77,6 +77,16 @@ def _digest(value: Any, name: str) -> str:
 
 
 def _plain(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        value = {
+            str(name): _plain(child)
+            for name, child in value.items()
+        }
+    elif isinstance(value, Sequence) and not isinstance(
+        value,
+        (str, bytes, bytearray),
+    ):
+        value = [_plain(child) for child in value]
     return json.loads(_canonical_json(value).decode("ascii"))
 
 
@@ -168,6 +178,7 @@ class RealAttentionProbeConfig:
     expected_runtime_compiler_implementation_sha256: str
     expected_sequence_source_sha256: str
     post_operator_chart_transport_shadow: bool = False
+    attention_sequential_transport_enabled: bool = False
 
     def __post_init__(self) -> None:
         from neural_forge.hf_lfm2_cpcf_v5_real_attention_probe import (
@@ -181,6 +192,10 @@ class RealAttentionProbeConfig:
         if type(self.post_operator_chart_transport_shadow) is not bool:
             raise TypeError(
                 "post_operator_chart_transport_shadow must be bool."
+            )
+        if type(self.attention_sequential_transport_enabled) is not bool:
+            raise TypeError(
+                "attention_sequential_transport_enabled must be bool."
             )
         compression = fold.compression
         changed = []
@@ -278,6 +293,14 @@ def build_parser() -> argparse.ArgumentParser:
             "before the non-promotable layer-2 compile."
         ),
     )
+    parser.add_argument(
+        "--attention-sequential-transport",
+        action="store_true",
+        help=(
+            "Run the candidate-local fit-only post-layer transport lane "
+            "inside the non-promotable layer-2 attention tournament."
+        ),
+    )
     return parser
 
 
@@ -294,6 +317,9 @@ def config_from_args(args: argparse.Namespace) -> RealAttentionProbeConfig:
         expected_sequence_source_sha256=args.expected_sequence_source_sha256,
         post_operator_chart_transport_shadow=(
             args.post_operator_chart_transport_shadow
+        ),
+        attention_sequential_transport_enabled=(
+            args.attention_sequential_transport
         ),
     )
 
@@ -709,6 +735,9 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                     expected_sequence_source_sha256=(
                         config.expected_sequence_source_sha256
                     ),
+                    expected_attention_sequential_transport_enabled=(
+                        config.attention_sequential_transport_enabled
+                    ),
                 )
                 runtime = Lfm2CpcfV5RealAttentionProbeRuntime(
                     source_model=parent,
@@ -721,6 +750,9 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                     runtime_policy=runtime_policy,
                     post_operator_chart_transport_shadow=(
                         config.post_operator_chart_transport_shadow
+                    ),
+                    attention_sequential_transport_enabled=(
+                        config.attention_sequential_transport_enabled
                     ),
                 )
                 for index in (0, 1):
@@ -765,6 +797,9 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
         "post_operator_chart_transport_shadow_enabled": (
             config.post_operator_chart_transport_shadow
         ),
+        "attention_sequential_transport_enabled": (
+            config.attention_sequential_transport_enabled
+        ),
         "diagnostic_only": True,
         "child_checkpoint_saved": False,
         "publication_attempted": False,
@@ -779,16 +814,63 @@ def _failure(
     config: RealAttentionProbeConfig | None,
 ) -> Mapping[str, Any]:
     chain = []
+    nested_failure_reports = []
+    nested_failure_report_authentication_errors = []
+    observed_failure_report_hashes = set()
     seen = set()
     current: BaseException | None = error
     while current is not None and id(current) not in seen:
         seen.add(id(current))
+        chain_index = len(chain)
+        exception_type = (
+            f"{type(current).__module__}.{type(current).__qualname__}"
+        )
         chain.append(
             {
-                "type": f"{type(current).__module__}.{type(current).__qualname__}",
+                "type": exception_type,
                 "message": str(current),
             }
         )
+        raw_failure_report = getattr(current, "failure_report", None)
+        if raw_failure_report is not None:
+            try:
+                failure_report = _plain(raw_failure_report)
+                if not isinstance(failure_report, dict):
+                    raise Lfm2CpcfV5RealAttentionProbeRunnerError(
+                        "failure_report must be a mapping."
+                    )
+                failure_body = dict(failure_report)
+                report_sha256 = _digest(
+                    failure_body.pop("report_sha256", None),
+                    "failure_report.report_sha256",
+                )
+                if _sha256(failure_body) != report_sha256:
+                    raise Lfm2CpcfV5RealAttentionProbeRunnerError(
+                        "failure_report is not self-sealed."
+                    )
+                if report_sha256 not in observed_failure_report_hashes:
+                    observed_failure_report_hashes.add(report_sha256)
+                    nested_failure_reports.append(
+                        {
+                            "error_chain_index": chain_index,
+                            "exception_type": exception_type,
+                            "report_sha256": report_sha256,
+                            "failure_report": failure_report,
+                            "self_seal_authenticated": True,
+                        }
+                    )
+            except Exception as authentication_error:
+                nested_failure_report_authentication_errors.append(
+                    {
+                        "error_chain_index": chain_index,
+                        "exception_type": exception_type,
+                        "error_type": (
+                            f"{type(authentication_error).__module__}."
+                            f"{type(authentication_error).__qualname__}"
+                        ),
+                        "message": str(authentication_error),
+                    }
+                )
         current = current.__cause__ or current.__context__
     body = {
         "schema": PROBE_FAILURE_SCHEMA,
@@ -803,6 +885,24 @@ def _failure(
         "publication_attempted": False,
         "promotion_authorized": False,
     }
+    if (
+        nested_failure_reports
+        or nested_failure_report_authentication_errors
+    ):
+        body = {
+            **body,
+            "nested_failure_reports": nested_failure_reports,
+            "nested_failure_report_count": len(nested_failure_reports),
+            "nested_failure_report_inventory_sha256": _sha256(
+                nested_failure_reports
+            ),
+            "nested_failure_reports_authenticated": (
+                not nested_failure_report_authentication_errors
+            ),
+            "nested_failure_report_authentication_errors": (
+                nested_failure_report_authentication_errors
+            ),
+        }
     return {**body, "failure_sha256": _sha256(body)}
 
 

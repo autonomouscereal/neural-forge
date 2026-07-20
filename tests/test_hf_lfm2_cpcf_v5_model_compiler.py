@@ -65,6 +65,7 @@ def test_v5_has_distinct_compiler_resume_and_artifact_fingerprints() -> None:
     assert ordered_modules == sorted(ordered_modules)
     assert {
         "neural_forge.hf_cpcf_boundary_chart",
+        "neural_forge.hf_cpcf_sequential_boundary_transport",
         "neural_forge.hf_lfm2_cpcf_macrocell_replay",
         "neural_forge.hf_lfm2_cpcf_residual_error_controller",
     }.issubset(ordered_modules)
@@ -120,6 +121,52 @@ def test_layer_compiler_exposes_opt_in_candidate_replay_without_new_default():
     assert selector_parameter.default is None
     assert frontier_parameter.default is None
     assert signature.parameters["short_conv_v4_solver_policy"].default is None
+    assert (
+        signature.parameters[
+            "attention_sequential_transport_policy"
+        ].default
+        is None
+    )
+
+
+def test_v5_runtime_policy_authenticates_opt_in_attention_transport() -> None:
+    default_model_policy = v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()
+    disabled_model_policy = v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(
+        attention_sequential_transport_policy=(
+            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+                enabled=False
+            )
+        )
+    )
+    enabled_transport = (
+        layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+            enabled=True
+        )
+    )
+    enabled_model_policy = v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(
+        attention_sequential_transport_policy=enabled_transport,
+    )
+
+    def runtime(model_policy):
+        return v5.Lfm2CpcfV5RuntimePolicy(
+            model_fold_policy=model_policy,
+            maximum_resident_evidence_bytes=1,
+            full_phase_tree_logical_bytes=1,
+        )
+
+    default_document = runtime(default_model_policy).as_dict()
+    assert runtime(disabled_model_policy).as_dict() == default_document
+    enabled_document = runtime(enabled_model_policy).as_dict()
+    assert enabled_document != default_document
+    assert enabled_document["model_fold_policy"][
+        "attention_sequential_transport_policy"
+    ] == enabled_transport.as_dict()
+    assert (
+        enabled_model_policy.resolved_attention_sequential_transport_policy(
+            "full_attention"
+        )
+        is enabled_transport
+    )
 
 
 def test_whole_macrocell_selector_requirement_is_opt_in_and_serialized() -> None:

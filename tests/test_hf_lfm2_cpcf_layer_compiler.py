@@ -1779,6 +1779,271 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
     )
 
 
+def test_attention_sequential_transport_policy_round_trips_strictly() -> None:
+    policy = layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+        enabled=True
+    )
+    parsed = (
+        layer_compiler.parse_lfm2_cpcf_attention_sequential_transport_policy(
+            policy.as_dict()
+        )
+    )
+    assert parsed == policy
+    tampered = policy.as_dict()
+    tampered["selection_selects_frozen_bundle"] = False
+    with pytest.raises(layer_compiler.Lfm2CpcfLayerCompilerError):
+        layer_compiler.parse_lfm2_cpcf_attention_sequential_transport_policy(
+            tampered
+        )
+
+
+def test_attention_sequential_transport_policy_disabled_is_exact_noop(
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("full_attention")
+    blank_layer_state = copy.deepcopy(target.model.layers[0].state_dict())
+
+    def unexpected_transport(*_args, **_kwargs):
+        pytest.fail("disabled sequential transport policy executed")
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "fit_cpcf_sequential_downstream_chart_transport",
+        unexpected_transport,
+    )
+    disabled = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        source,
+        target,
+        layer_index=0,
+        input_bank=bank,
+        boundary_charts=charts,
+        attention_sequential_transport_policy=(
+            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+                enabled=False
+            )
+        ),
+    )
+    disabled_state_sha256 = _state_sha(target.model.layers[0])
+    target.model.layers[0].load_state_dict(blank_layer_state, strict=True)
+    control = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        source,
+        target,
+        layer_index=0,
+        input_bank=bank,
+        boundary_charts=charts,
+    )
+
+    assert disabled.report == control.report
+    assert disabled.result_sha256 == control.result_sha256
+    assert disabled.operator_artifact.as_dict() == (
+        control.operator_artifact.as_dict()
+    )
+    assert disabled.mlp_artifact.as_dict() == control.mlp_artifact.as_dict()
+    assert disabled_state_sha256 == _state_sha(target.model.layers[0])
+    assert (
+        "attention_candidate_local_post_layer_transport"
+        not in disabled.report["solver_evidence_policy"]
+    )
+    assert (
+        "attention_sequential_transport_policy"
+        not in disabled.report["solver_evidence_policy"]
+    )
+    assert disabled.report["solver_evidence_policy"][
+        "attention_candidate_selection"
+    ]["candidate_count"] == 3
+
+
+def test_attention_candidate_local_sequential_transport_is_fit_only_and_frozen(
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("full_attention")
+    source_chart_sha = charts.layer_charts_sha256
+    source_chart_payload_sha = (
+        layer_compiler._boundary_charts_payload_sha256(charts)
+    )
+    source_post_layer = charts.post_layer
+    replay_events = []
+    transport_calls = []
+    prepared_bases = []
+    split_metric_calls = []
+    frozen_candidates = []
+
+    original_replay = layer_compiler.replay_lfm2_cpcf_phase_bank
+    original_transport = (
+        layer_compiler.fit_cpcf_sequential_downstream_chart_transport
+    )
+    original_prepare = (
+        layer_compiler.prepare_lfm2_structural_residual_mlp_fold_basis
+    )
+    original_split_metrics = layer_compiler._split_endpoint_metrics
+    original_freeze = layer_compiler._freeze_attention_candidate_winner
+
+    def replay_spy(*args, **kwargs):
+        splits = tuple(
+            sorted({phase.split for phase in kwargs["input_bank"].phases})
+        )
+        replay_events.append(splits)
+        return original_replay(*args, **kwargs)
+
+    def transport_spy(upstream, downstream, **kwargs):
+        assert upstream is charts.post_operator
+        assert downstream is charts.post_layer
+        assert kwargs["fit_parent_downstream_states"].shape[0] == (
+            kwargs["fit_actual_child_upstream_rows"].shape[0]
+        )
+        assert kwargs["fit_weights"].shape[0] == (
+            kwargs["fit_parent_downstream_states"].shape[0]
+        )
+        assert not any(name.startswith("selection_") for name in kwargs)
+        result = original_transport(upstream, downstream, **kwargs)
+        transport_calls.append(result)
+        return result
+
+    def prepare_spy(**kwargs):
+        result = original_prepare(**kwargs)
+        prepared_bases.append(result)
+        return result
+
+    def split_metrics_spy(**kwargs):
+        splits = tuple(
+            kwargs.get("splits", layer_compiler._EVALUATION_SPLITS)
+        )
+        split_metric_calls.append((splits, kwargs["chart"]))
+        return original_split_metrics(**kwargs)
+
+    def freeze_spy(candidates):
+        assert not any("validation" in splits for splits in replay_events)
+        frozen_candidates.extend(candidates)
+        return original_freeze(candidates)
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "replay_lfm2_cpcf_phase_bank",
+        replay_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "fit_cpcf_sequential_downstream_chart_transport",
+        transport_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "prepare_lfm2_structural_residual_mlp_fold_basis",
+        prepare_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "_split_endpoint_metrics",
+        split_metrics_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
+        "_freeze_attention_candidate_winner",
+        freeze_spy,
+    )
+
+    result = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        source,
+        target,
+        layer_index=0,
+        input_bank=bank,
+        boundary_charts=charts,
+        attention_sequential_transport_policy=(
+            layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+                enabled=True
+            )
+        ),
+    )
+
+    assert len(transport_calls) == 3
+    assert len(prepared_bases) == 3
+    assert len({id(value) for value in prepared_bases}) == 3
+    assert len(frozen_candidates) == 3
+    assert len(
+        {id(value.effective_boundary_charts) for value in frozen_candidates}
+    ) == 3
+    for candidate in frozen_candidates:
+        assert candidate.sequential_boundary_transport is not None
+        assert candidate.sequential_transport_binding is not None
+        assert candidate.operator_transport_mlp_bundle_sha256 is not None
+        assert candidate.effective_boundary_charts is not charts
+        assert candidate.effective_boundary_charts.post_operator is (
+            charts.post_operator
+        )
+        assert candidate.effective_boundary_charts.post_layer is not (
+            charts.post_layer
+        )
+        assert candidate.report[
+            "candidate_local_mlp_basis_preparation_count"
+        ] == 1
+        assert candidate.report[
+            "cross_candidate_prepared_mlp_basis_reused"
+        ] is False
+        assert candidate.report["validation_phase_count_consumed"] == 0
+        phases = candidate.sequential_transport_binding["fit_phases"]
+        phase_masses = [value["total_row_weight"] for value in phases]
+        assert phase_masses == pytest.approx(
+            [phase_masses[0]] * len(phase_masses)
+        )
+
+    selection_chart_ids = {
+        id(chart)
+        for splits, chart in split_metric_calls
+        if splits == ("selection",)
+    }
+    assert selection_chart_ids == {
+        id(value.effective_boundary_charts)
+        for value in frozen_candidates
+    }
+    selection = result.report["solver_evidence_policy"][
+        "attention_candidate_selection"
+    ]
+    assert selection["selection_refits_or_mutates_transport"] is False
+    assert selection["selection_selects_frozen_bundle"] is True
+    winner = next(
+        value
+        for value in frozen_candidates
+        if value.candidate_id == selection["selected_candidate_id"]
+    )
+    final_metric_call = split_metric_calls[-1]
+    assert final_metric_call[0] == layer_compiler._EVALUATION_SPLITS
+    assert final_metric_call[1] is winner.effective_boundary_charts
+    assert any("validation" in splits for splits in replay_events)
+    binding = result.report["solver_evidence_policy"][
+        "attention_candidate_local_post_layer_transport"
+    ]
+    assert binding[
+        "operator_transport_mlp_bundle_sha256"
+    ] == winner.operator_transport_mlp_bundle_sha256
+    assert binding[
+        "validation_first_endpoint_replay_and_metric_after_bundle_freeze"
+    ] is True
+    assert binding["validation_rows_used_by_transport_solver"] == 0
+    assert binding["selection_refits_or_mutates_transport"] is False
+    assert binding["selection_selects_frozen_bundle"] is True
+    assert (
+        binding["effective_boundary_charts_sha256"]
+        == winner.effective_boundary_charts.layer_charts_sha256
+    )
+    assert result.report["solver_evidence_policy"][
+        "attention_each_candidate_prepares_own_mlp_basis"
+    ] is True
+    assert result.report["solver_evidence_policy"][
+        "attention_cross_candidate_prepared_mlp_basis_reuse"
+    ] is False
+    assert charts.layer_charts_sha256 == source_chart_sha
+    assert (
+        layer_compiler._boundary_charts_payload_sha256(charts)
+        == source_chart_payload_sha
+    )
+    assert charts.post_layer is source_post_layer
+    assert result.report["execution"]["training_steps"] == 0
+    assert result.report["execution"]["optimizer_steps"] == 0
+    assert result.report["execution"]["backward_calls"] == 0
+    assert result.report["execution"]["parameters_pruned"] == 0
+    assert result.report["execution"]["parameters_quantized"] == 0
+
+
 @pytest.mark.parametrize(
     "forced_candidate",
     layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS,

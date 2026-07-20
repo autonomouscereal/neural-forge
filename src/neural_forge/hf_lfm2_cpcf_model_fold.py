@@ -36,6 +36,7 @@ from neural_forge.hf_lfm2_cpcf_boundary_bundle import (
 from neural_forge.hf_lfm2_cpcf_layer_compiler import (
     LFM2_CPCF_LAYER_COMPILER_SCHEMA,
     LFM2_CPCF_LAYER_FAILURE_SCHEMA,
+    Lfm2CpcfAttentionSequentialTransportPolicy,
     Lfm2CpcfCompiledLayerResult,
     Lfm2CpcfLayerCompilationFailure,
     compile_and_install_lfm2_cpcf_layer,
@@ -3158,6 +3159,9 @@ class Lfm2CpcfModelFoldPolicy:
     short_conv_v4_solver_policy: Lfm2CpcfShortConvV4SolverPolicy | None = None
     promotion_compression_ratio: float = 1.0
     require_promotion_ratio: bool = False
+    attention_sequential_transport_policy: (
+        Lfm2CpcfAttentionSequentialTransportPolicy | None
+    ) = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -3213,6 +3217,17 @@ class Lfm2CpcfModelFoldPolicy:
                 raise Lfm2CpcfModelFoldError(
                     "short_conv_v4_solver_policy authentication failed."
                 )
+        if (
+            self.attention_sequential_transport_policy is not None
+            and not isinstance(
+                self.attention_sequential_transport_policy,
+                Lfm2CpcfAttentionSequentialTransportPolicy,
+            )
+        ):
+            raise TypeError(
+                "attention_sequential_transport_policy must be "
+                "Lfm2CpcfAttentionSequentialTransportPolicy."
+            )
         promotion = _nonnegative_float(
             self.promotion_compression_ratio,
             "promotion_compression_ratio",
@@ -3234,6 +3249,24 @@ class Lfm2CpcfModelFoldPolicy:
             return self.short_conv_gate_policy
         return Lfm2CpcfShortConvGatePolicy()
 
+    def resolved_attention_sequential_transport_policy(
+        self,
+        operator_kind: str,
+    ) -> Lfm2CpcfAttentionSequentialTransportPolicy | None:
+        if operator_kind not in {"full_attention", "short_conv"}:
+            raise Lfm2CpcfModelFoldError(
+                "attention sequential transport requires one canonical "
+                "operator kind."
+            )
+        policy = self.attention_sequential_transport_policy
+        if (
+            operator_kind == "full_attention"
+            and policy is not None
+            and policy.enabled
+        ):
+            return policy
+        return None
+
     def as_dict(self) -> dict[str, Any]:
         result = {
             "ridge": self.ridge,
@@ -3252,6 +3285,13 @@ class Lfm2CpcfModelFoldPolicy:
         if self.short_conv_v4_solver_policy is not None:
             result["short_conv_v4_solver_policy"] = (
                 self.short_conv_v4_solver_policy.as_dict()
+            )
+        if (
+            self.attention_sequential_transport_policy is not None
+            and self.attention_sequential_transport_policy.enabled
+        ):
+            result["attention_sequential_transport_policy"] = (
+                self.attention_sequential_transport_policy.as_dict()
             )
         return result
 
@@ -3518,6 +3558,11 @@ def _compile_lfm2_cpcf_model_fold_mutating(
             ridge=resolved_policy.ridge,
             short_conv_gate_policy=short_conv_policy,
             short_conv_v4_solver_policy=(resolved_policy.short_conv_v4_solver_policy),
+            attention_sequential_transport_policy=(
+                resolved_policy.resolved_attention_sequential_transport_policy(
+                    charts.operator_kind
+                )
+            ),
         )
         if result.layer_index != index:
             raise Lfm2CpcfModelFoldInstallError(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
@@ -41,7 +41,11 @@ _DIGEST = "1" * 64
 _OTHER_DIGEST = "2" * 64
 
 
-def _pins(root: Path) -> Lfm2CpcfV5RealAttentionProbePins:
+def _pins(
+    root: Path,
+    *,
+    attention_sequential_transport_enabled: bool = False,
+) -> Lfm2CpcfV5RealAttentionProbePins:
     return Lfm2CpcfV5RealAttentionProbePins(
         checkpoint_store_directory=root,
         checkpoint_key=_DIGEST,
@@ -49,6 +53,9 @@ def _pins(root: Path) -> Lfm2CpcfV5RealAttentionProbePins:
         expected_trace_sha256=_DIGEST,
         expected_runtime_compiler_implementation_sha256=_OTHER_DIGEST,
         expected_sequence_source_sha256=_DIGEST,
+        expected_attention_sequential_transport_enabled=(
+            attention_sequential_transport_enabled
+        ),
     )
 
 
@@ -84,6 +91,7 @@ def test_probe_runtime_chart_transport_shadow_defaults_off() -> None:
         runtime_policy=object(),
     )
     assert runtime.post_operator_chart_transport_shadow is False
+    assert runtime.attention_sequential_transport_enabled is False
 
 
 class _Reference:
@@ -352,6 +360,98 @@ def _pcg_event(
     return events[0]
 
 
+def _restarted_pcg_event(
+    role: str = "sequence_effective_structured_value_iteration_1_group_0",
+    *,
+    original_lane_iterations: int = 64,
+):
+    history = [2e-8] * original_lane_iterations + [5e-9]
+    checkpoints = [
+        {
+            "iteration": original_lane_iterations,
+            "relative_normal_residual": 2e-8,
+            "finite": True,
+        },
+        {
+            "iteration": original_lane_iterations + 1,
+            "relative_normal_residual": 5e-9,
+            "finite": True,
+        },
+    ]
+    schedule = [
+        {
+            "restart_iteration": original_lane_iterations,
+            "planned_stop_iteration": min(
+                original_lane_iterations + 64,
+                512,
+            ),
+            "iterations_executed": 1,
+            "ending_iteration": original_lane_iterations + 1,
+            "attempted_matvec_calls": 2,
+            "termination": "exact_tolerance_reached",
+            "ending_recurrence_relative_normal_residual": 5e-9,
+            "ending_exact_relative_normal_residual": 5e-9,
+            "ending_exact_residual_authenticated": True,
+        }
+    ]
+    report_body = {
+        "role": role,
+        "solver": "deterministic_restarted_jacobi_pcg_single_tensor",
+        "maximum_iterations": 512,
+        "original_lane_maximum_iterations": 64,
+        "original_lane_iterations_executed": original_lane_iterations,
+        "restart_block_iterations": 64,
+        "iterations_executed": original_lane_iterations + 1,
+        "required_relative_normal_residual": 1e-8,
+        "initial_relative_normal_residual": 1.0,
+        "original_lane_final_recurrence_relative_normal_residual": 2e-8,
+        "final_recurrence_relative_normal_residual": 5e-9,
+        "final_relative_normal_residual": 5e-9,
+        "relative_normal_residual_history": history,
+        "recurrence_history_sha256": _sha256(history),
+        "exact_relative_normal_residual_checkpoints": checkpoints,
+        "exact_residual_checkpoints_sha256": _sha256(checkpoints),
+        "restart_schedule": schedule,
+        "restart_schedule_sha256": _sha256(schedule),
+        "total_matvec_calls": original_lane_iterations + 4,
+        "exact_final_residual_authenticated": True,
+        "extended_after_original_lane_exact_authentication_miss": True,
+        "solution_finite": True,
+        "solution_sha256": _sha256({"solution": role}),
+    }
+    report = {
+        **report_body,
+        "report_sha256": _sha256(report_body),
+    }
+    observation_body = {
+        "schema": (
+            "neural-forge-lfm2-sequence-effective-pcg-observation-v1"
+        ),
+        "solver_kind": "single_tensor",
+        "report": report,
+        "report_sha256": report["report_sha256"],
+        "solver_result_or_arguments_modified": False,
+    }
+    return {
+        **observation_body,
+        "observation_sha256": _sha256(observation_body),
+    }
+
+
+def _reseal_pcg_event(event):
+    report_body = dict(event["report"])
+    report_body.pop("report_sha256", None)
+    event["report"] = {
+        **report_body,
+        "report_sha256": _sha256(report_body),
+    }
+    event["report_sha256"] = event["report"]["report_sha256"]
+    observation_body = dict(event)
+    observation_body.pop("observation_sha256", None)
+    event["observation_sha256"] = _sha256(observation_body)
+    return event
+
+
 def test_scoped_pcg_observation_does_not_change_solver() -> None:
     event = _pcg_event()
     assert event["solver_result_or_arguments_modified"] is False
@@ -408,6 +508,71 @@ def test_pcg_collector_accepts_exact_five_group_sweeps() -> None:
         )
     with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
         incomplete.finalize(sequence_artifact=artifact)
+
+
+def test_pcg_collector_authenticates_restarted_exact_residual_lane() -> None:
+    artifact = _sequence_artifact()
+    collector = Lfm2SequenceEffectivePcgCollector()
+    for group in range(5):
+        collector(
+            _restarted_pcg_event(
+                "sequence_effective_structured_value_iteration_1_"
+                f"group_{group}"
+            )
+        )
+    audit = collector.finalize(sequence_artifact=artifact)
+    assert audit["all_iterations_at_most"] == 512
+    assert audit["restarted_solver_event_count"] == 5
+    assert audit["legacy_solver_event_count"] == 0
+    assert audit["all_extended_final_residuals_exactly_recomputed"] is True
+    assert audit["all_restart_schedules_authenticated"] is True
+    assert audit["all_matvec_counts_authenticated"] is True
+
+    early = Lfm2SequenceEffectivePcgCollector()
+    for group in range(5):
+        early(
+            _restarted_pcg_event(
+                "sequence_effective_structured_value_iteration_1_"
+                f"group_{group}",
+                original_lane_iterations=(7 if group == 0 else 64),
+            )
+        )
+    early_audit = early.finalize(sequence_artifact=artifact)
+    assert early_audit["restarted_solver_event_count"] == 5
+
+    mixed = Lfm2SequenceEffectivePcgCollector()
+    for group in range(5):
+        role = (
+            "sequence_effective_structured_value_iteration_1_"
+            f"group_{group}"
+        )
+        mixed(
+            _pcg_event(role)
+            if group == 0
+            else _restarted_pcg_event(role)
+        )
+    mixed_audit = mixed.finalize(sequence_artifact=artifact)
+    assert mixed_audit["legacy_solver_event_count"] == 1
+    assert mixed_audit["restarted_solver_event_count"] == 4
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("total_matvec_calls", 67),
+        ("final_relative_normal_residual", 2e-8),
+        ("restart_schedule_sha256", _DIGEST),
+    ),
+)
+def test_pcg_collector_rejects_resealed_restarted_semantic_tamper(
+    field: str,
+    value,
+) -> None:
+    event = _restarted_pcg_event()
+    event["report"][field] = value
+    _reseal_pcg_event(event)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        Lfm2SequenceEffectivePcgCollector()(event)
 
 
 def test_resource_monitor_enforces_rss_cuda_and_zero_swap() -> None:
@@ -622,6 +787,188 @@ def _attention_result(*, selected: str, sequence_tied: bool = False):
     )
 
 
+def _attention_result_with_sequential_transport(*, selected: str):
+    result = _attention_result(selected=selected)
+    report = runner._plain(result.report)
+    policy = report["solver_evidence_policy"]
+    evaluations = policy["attention_candidate_evaluations"]
+    transport_policy_body = {
+        "enabled": True,
+        "fit_split_only": True,
+        "selection_refits_or_mutates_transport": False,
+        "selection_selects_frozen_bundle": True,
+        "validation_argument_supported": False,
+    }
+    transport_policy = {
+        **transport_policy_body,
+        "report_sha256": _sha256(transport_policy_body),
+    }
+    source_chart_sha = _sha256({"chart": "source"})
+    source_chart_payload_sha = _sha256({"chart_payload": "source"})
+    candidate_charts = {}
+    candidate_bundles = {}
+    candidate_reports = {}
+    for candidate_id in H776_ATTENTION_CANDIDATE_IDS:
+        evaluation = evaluations[candidate_id]
+        chart_sha = _sha256({"chart": candidate_id})
+        chart_payload_sha = _sha256({"chart_payload": candidate_id})
+        bundle_sha = _sha256({"bundle": candidate_id})
+        transport_body = {
+            "candidate_id": candidate_id,
+            "fit_only": True,
+        }
+        transport = {
+            **transport_body,
+            "report_sha256": _sha256(transport_body),
+        }
+        binding_body = {
+            "candidate_id": candidate_id,
+            "effective_boundary_charts_sha256": chart_sha,
+            "sequential_transport_report_sha256": (
+                transport["report_sha256"]
+            ),
+            "policy_report_sha256": transport_policy["report_sha256"],
+            "source_boundary_charts_sha256": source_chart_sha,
+            "source_boundary_charts_payload_sha256": (
+                source_chart_payload_sha
+            ),
+            "effective_boundary_charts_payload_sha256": (
+                chart_payload_sha
+            ),
+            "fit_split_only": True,
+            "selection_rows_read_by_transport": 0,
+            "selection_rows_read_before_transport_freeze": 0,
+            "validation_rows_read": 0,
+            "equal_total_mass_per_fit_phase": True,
+            "one_closed_form_svd": True,
+            "source_post_operator_chart_same_object": True,
+            "source_post_layer_chart_unchanged": True,
+            "transported_post_layer_chart_candidate_local": True,
+            "automatic_retry_or_retuning_performed": False,
+        }
+        binding = {
+            **binding_body,
+            "report_sha256": _sha256(binding_body),
+        }
+        evaluation.update(
+            {
+                "sequential_boundary_transport": transport,
+                "sequential_transport_binding": binding,
+                "effective_boundary_charts_sha256": chart_sha,
+                "effective_boundary_charts_payload_sha256": (
+                    chart_payload_sha
+                ),
+                "operator_transport_mlp_bundle_sha256": bundle_sha,
+                "candidate_local_post_layer_transport_frozen_before_mlp": (
+                    True
+                ),
+                "candidate_local_mlp_basis_preparation_count": 1,
+                "cross_candidate_prepared_mlp_basis_reused": False,
+                "selection_metrics_use_effective_boundary_charts": True,
+                "operator_transport_and_mlp_ranked_as_one_bundle": True,
+            }
+        )
+        evaluation["report_sha256"] = _sha256(evaluation)
+        candidate_charts[candidate_id] = chart_sha
+        candidate_bundles[candidate_id] = bundle_sha
+        candidate_reports[candidate_id] = evaluation["report_sha256"]
+
+    selection = policy["attention_candidate_selection"]
+    selection.update(
+        {
+            "candidate_report_sha256": candidate_reports,
+            "candidate_effective_boundary_charts_sha256": (
+                candidate_charts
+            ),
+            "candidate_operator_transport_mlp_bundle_sha256": (
+                candidate_bundles
+            ),
+            "selected_effective_boundary_charts_sha256": (
+                candidate_charts[selected]
+            ),
+            "selected_candidate_report_sha256": (
+                candidate_reports[selected]
+            ),
+            "selected_operator_transport_mlp_bundle_sha256": (
+                candidate_bundles[selected]
+            ),
+            "candidate_local_post_layer_transport_enabled": True,
+            "candidate_local_mlp_preparation_count": 3,
+            "cross_candidate_prepared_mlp_basis_reused": False,
+            "operator_transport_mlp_bundle_frozen_together": True,
+            "selection_metrics_use_candidate_effective_charts": True,
+            "selection_refits_or_mutates_transport": False,
+            "selection_selects_frozen_bundle": True,
+        }
+    )
+    selection["report_sha256"] = _sha256(selection)
+    selected_evaluation = evaluations[selected]
+    final_binding_body = {
+        "policy": transport_policy,
+        "selected_candidate_id": selected,
+        "selected_candidate_report_sha256": (
+            selected_evaluation["report_sha256"]
+        ),
+        "candidate_selection_report_sha256": selection["report_sha256"],
+        "operator_transport_mlp_bundle_sha256": candidate_bundles[selected],
+        "effective_boundary_charts_sha256": candidate_charts[selected],
+        "effective_boundary_charts_payload_sha256": (
+            selected_evaluation[
+                "effective_boundary_charts_payload_sha256"
+            ]
+        ),
+        "source_boundary_charts_sha256": source_chart_sha,
+        "source_boundary_charts_payload_sha256": source_chart_payload_sha,
+        "sequential_transport_report_sha256": (
+            selected_evaluation["sequential_boundary_transport"][
+                "report_sha256"
+            ]
+        ),
+        "sequential_transport_binding_report_sha256": (
+            selected_evaluation["sequential_transport_binding"][
+                "report_sha256"
+            ]
+        ),
+        "final_endpoint_metrics_use_winning_effective_chart": True,
+        "validation_first_endpoint_replay_and_metric_after_bundle_freeze": (
+            True
+        ),
+        "validation_rows_used_by_transport_solver": 0,
+        "selection_refits_or_mutates_transport": False,
+        "selection_selects_frozen_bundle": True,
+        "operator_transport_mlp_bundle_installed_exactly": True,
+    }
+    policy.update(
+        {
+            "attention_candidate_local_post_layer_transport": {
+                **final_binding_body,
+                "report_sha256": _sha256(final_binding_body),
+            },
+            "attention_sequential_transport_policy": transport_policy,
+            "attention_each_candidate_prepares_own_mlp_basis": True,
+            "attention_cross_candidate_prepared_mlp_basis_reuse": False,
+            "attention_final_endpoint_effective_boundary_charts_sha256": (
+                candidate_charts[selected]
+            ),
+        }
+    )
+    report["boundary_charts_sha256"] = source_chart_sha
+    report["audit"] = {
+        "source_boundary_charts_unchanged_after_candidate_transports": True,
+        "winning_effective_boundary_chart_used_for_validation": True,
+    }
+    report["actual_child_state_policy"] = {
+        "attention_operator_transport_mlp_frozen_together": True,
+    }
+    report_body = dict(report)
+    report_body.pop("result_sha256", None)
+    report = {
+        **report_body,
+        "result_sha256": _sha256(report_body),
+    }
+    return SimpleNamespace(report=report, next_bank=result.next_bank)
+
+
 def test_attention_result_reports_positive_or_honest_negative(
     tmp_path: Path,
 ) -> None:
@@ -681,6 +1028,65 @@ def test_attention_behavioral_tie_is_not_positive(tmp_path: Path) -> None:
     assert audit["scientific_outcome"] == (
         "honest_negative_or_control_selected"
     )
+
+
+def test_attention_authenticator_cross_binds_frozen_transport_winner(
+    tmp_path: Path,
+) -> None:
+    pins = _pins(
+        tmp_path,
+        attention_sequential_transport_enabled=True,
+    )
+    result = _attention_result_with_sequential_transport(
+        selected=H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+    )
+    artifact = result.report["solver_evidence_policy"][
+        "attention_candidate_evaluations"
+    ][H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID]["operator_artifact"]
+    audit = authenticate_h776_attention_result(
+        result,
+        input_bank_sha256="8" * 64,
+        pcg_audit=_pcg_audit(artifact),
+        pins=pins,
+        expected_attention_sequential_transport_enabled=True,
+    )
+    transport = audit["attention_sequential_transport"]
+    assert transport["fit_only_candidate_local_transport_authenticated"] is True
+    assert (
+        transport["selection_selects_frozen_bundle_without_refit"]
+        is True
+    )
+    assert transport["winning_chart_used_for_final_metrics"] is True
+
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_attention_result(
+            result,
+            input_bank_sha256="8" * 64,
+            pcg_audit=_pcg_audit(artifact),
+            pins=replace(
+                pins,
+                expected_attention_sequential_transport_enabled=False,
+            ),
+        )
+
+    final_binding = result.report["solver_evidence_policy"][
+        "attention_candidate_local_post_layer_transport"
+    ]
+    final_binding["selection_refits_or_mutates_transport"] = True
+    final_binding_body = dict(final_binding)
+    final_binding_body.pop("report_sha256")
+    final_binding["report_sha256"] = _sha256(final_binding_body)
+    layer_body = dict(result.report)
+    layer_body.pop("result_sha256")
+    result.report["result_sha256"] = _sha256(layer_body)
+    with pytest.raises(Lfm2CpcfV5RealAttentionProbeError):
+        authenticate_h776_attention_result(
+            result,
+            input_bank_sha256="8" * 64,
+            pcg_audit=_pcg_audit(artifact),
+            pins=pins,
+            expected_attention_sequential_transport_enabled=True,
+        )
 
 
 def test_attention_rejects_resealed_pcg_cross_binding_tamper(
@@ -782,10 +1188,15 @@ def test_cli_accepts_only_exact_h776_resource_and_parameter_lane(
     assert config.fold.selected_candidate_rank is None
     assert config.fold.maximum_process_rss_bytes == 64 * 1024**3
     assert config.post_operator_chart_transport_shadow is False
+    assert config.attention_sequential_transport_enabled is False
     shadow_args = _parser_args(tmp_path / "shadow")
     shadow_args.append("--post-operator-chart-transport-shadow")
     shadow = runner.config_from_args(parser.parse_args(shadow_args))
     assert shadow.post_operator_chart_transport_shadow is True
+    transport_args = _parser_args(tmp_path / "transport")
+    transport_args.append("--attention-sequential-transport")
+    transport = runner.config_from_args(parser.parse_args(transport_args))
+    assert transport.attention_sequential_transport_enabled is True
     bad = _parser_args(tmp_path / "bad")
     ratio_index = bad.index("--compression-ratio") + 1
     bad[ratio_index] = "4.01"
@@ -889,3 +1300,32 @@ def test_runtime_guard_starts_before_every_post_load_model_operation() -> None:
         < tied_mapping
         < probe
     )
+
+
+def test_failure_diagnostic_preserves_authenticated_nested_solver_report() -> None:
+    failure_body = {
+        "status": "failed_closed",
+        "solver": "deterministic_restarted_jacobi_pcg_single_tensor",
+        "failure_reason": "hard_iteration_cap_reached",
+    }
+    failure_report = {
+        **failure_body,
+        "report_sha256": _sha256(failure_body),
+    }
+    inner = RuntimeError("solver failed")
+    inner.failure_report = MappingProxyType(failure_report)
+    outer = RuntimeError("layer failed")
+    outer.__cause__ = inner
+
+    diagnostic = runner._failure(outer, config=None)
+
+    assert diagnostic["nested_failure_report_count"] == 1
+    assert diagnostic["nested_failure_reports_authenticated"] is True
+    nested = diagnostic["nested_failure_reports"][0]
+    assert nested["error_chain_index"] == 1
+    assert nested["report_sha256"] == failure_report["report_sha256"]
+    assert nested["failure_report"] == failure_report
+    assert nested["self_seal_authenticated"] is True
+    body = dict(diagnostic)
+    claimed = body.pop("failure_sha256")
+    assert claimed == _sha256(body)

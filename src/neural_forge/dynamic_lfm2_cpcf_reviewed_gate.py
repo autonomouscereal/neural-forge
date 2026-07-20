@@ -75,6 +75,9 @@ from .hf_lfm2_cpcf_candidate_replay import (
     LFM2_CPCF_CANDIDATE_REPLAY_BACKEND_SCHEMA,
     LFM2_CPCF_CANDIDATE_REPLAY_OUTPUT_SCHEMA,
 )
+from .hf_lfm2_cpcf_layer_compiler import (
+    parse_lfm2_cpcf_attention_sequential_transport_policy,
+)
 from .hf_lfm2_cpcf_short_conv_fold import Lfm2CpcfShortConvGatePolicy
 from .hf_lfm2_cpcf_short_conv_v4 import (
     Lfm2CpcfShortConvV4SolverPolicy,
@@ -611,6 +614,16 @@ def _normalize_model_fold_policy(value: Any) -> dict[str, Any]:
             constructor["short_conv_v4_solver_policy"] = (
                 parse_lfm2_cpcf_short_conv_v4_solver_policy(serialized_v4)
             )
+        serialized_attention = constructor.pop(
+            "attention_sequential_transport_policy",
+            None,
+        )
+        if serialized_attention is not None:
+            constructor["attention_sequential_transport_policy"] = (
+                parse_lfm2_cpcf_attention_sequential_transport_policy(
+                    serialized_attention
+                )
+            )
         normalized = Lfm2CpcfModelFoldPolicy(**constructor).as_dict()
     except (TypeError, ValueError) as exc:
         raise Lfm2CpcfReviewedPromotionError(
@@ -651,6 +664,16 @@ def _normalize_v5_model_fold_policy(value: Any) -> dict[str, Any]:
         if serialized_v4 is not None:
             model_constructor["short_conv_v4_solver_policy"] = (
                 parse_lfm2_cpcf_short_conv_v4_solver_policy(serialized_v4)
+            )
+        serialized_attention = model_constructor.pop(
+            "attention_sequential_transport_policy",
+            None,
+        )
+        if serialized_attention is not None:
+            model_constructor["attention_sequential_transport_policy"] = (
+                parse_lfm2_cpcf_attention_sequential_transport_policy(
+                    serialized_attention
+                )
             )
         typed_model_policy = Lfm2CpcfModelFoldPolicy(**model_constructor)
 

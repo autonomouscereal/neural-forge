@@ -58,6 +58,8 @@ _MAXIMUM_EXPLICIT_COEFFICIENT_ELEMENTS = 16_000_000
 _MAXIMUM_STREAMED_ALS_ITERATIONS = 2
 _STATISTICS_ROW_CHUNK_SIZE = 2048
 _PCG_MAXIMUM_ITERATIONS = 64
+_PCG_RESTART_BLOCK_ITERATIONS = 64
+_PCG_HARD_MAXIMUM_ITERATIONS = 512
 _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE = 1e-8
 _ZERO_EXECUTION = {
     "parent_model_forward_calls": 0,
@@ -75,6 +77,19 @@ _ZERO_EXECUTION = {
 
 class Lfm2SequenceEffectiveAttentionFoldError(ValueError):
     """Sequence-effective attention input, topology, or authentication error."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_report: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.failure_report = (
+            None
+            if failure_report is None
+            else MappingProxyType(dict(failure_report))
+        )
 
 
 class Lfm2SequenceEffectiveAttentionInstallError(RuntimeError):
@@ -1018,6 +1033,83 @@ def _pcg_multi_rhs(
     )
 
 
+def _pcg_json_float(value: Any) -> float | None:
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if math.isfinite(normalized) else None
+
+
+def _single_tensor_pcg_extended_body(
+    *,
+    role: str,
+    solution: Any,
+    initial_relative: float | None,
+    original_lane_iterations: int,
+    original_lane_final_relative: float | None,
+    total_iterations: int,
+    history: Sequence[float],
+    exact_relative: float | None,
+    exact_final_residual_authenticated: bool,
+    exact_checkpoints: Sequence[Mapping[str, Any]],
+    restart_schedule: Sequence[Mapping[str, Any]],
+    total_matvec_calls: int,
+    extension_triggered: bool,
+) -> dict[str, Any]:
+    torch = _torch()
+    solution_finite = bool(torch.isfinite(solution).all().item())
+    recurrence_history = list(history)
+    checkpoints = [dict(value) for value in exact_checkpoints]
+    schedule = [dict(value) for value in restart_schedule]
+    final_recurrence = (
+        recurrence_history[-1]
+        if recurrence_history
+        else _pcg_json_float(initial_relative)
+    )
+    return {
+        "role": role,
+        "solver": "deterministic_restarted_jacobi_pcg_single_tensor",
+        "maximum_iterations": _PCG_HARD_MAXIMUM_ITERATIONS,
+        "original_lane_maximum_iterations": _PCG_MAXIMUM_ITERATIONS,
+        "original_lane_iterations_executed": original_lane_iterations,
+        "restart_block_iterations": _PCG_RESTART_BLOCK_ITERATIONS,
+        "iterations_executed": total_iterations,
+        "required_relative_normal_residual": (
+            _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+        ),
+        "initial_relative_normal_residual": _pcg_json_float(initial_relative),
+        "original_lane_final_recurrence_relative_normal_residual": (
+            _pcg_json_float(original_lane_final_relative)
+        ),
+        "final_recurrence_relative_normal_residual": _pcg_json_float(
+            final_recurrence
+        ),
+        "final_relative_normal_residual": (
+            _pcg_json_float(exact_relative)
+            if exact_final_residual_authenticated
+            else None
+        ),
+        "relative_normal_residual_history": recurrence_history,
+        "recurrence_history_sha256": _sha256(recurrence_history),
+        "exact_relative_normal_residual_checkpoints": checkpoints,
+        "exact_residual_checkpoints_sha256": _sha256(checkpoints),
+        "restart_schedule": schedule,
+        "restart_schedule_sha256": _sha256(schedule),
+        "total_matvec_calls": total_matvec_calls,
+        "exact_final_residual_authenticated": (
+            exact_final_residual_authenticated
+        ),
+        "extended_after_original_lane_exact_authentication_miss": (
+            extension_triggered
+        ),
+        "solution_finite": solution_finite,
+        "solution_sha256": (
+            _tensor_sha256(solution) if solution_finite else None
+        ),
+    }
+
+
 def _pcg_single_tensor(
     *,
     right: Any,
@@ -1028,13 +1120,123 @@ def _pcg_single_tensor(
 ) -> tuple[Any, dict[str, Any]]:
     torch = _torch()
     solution = initial.clone()
-    residual = right - matvec(solution)
+    history: list[float] = []
+    exact_checkpoints: list[dict[str, Any]] = []
+    restart_schedule: list[dict[str, Any]] = []
+    total_iterations = 0
+    total_matvec_calls = 0
+    initial_relative: float | None = None
+    original_lane_iterations = 0
+    original_lane_final_relative: float | None = None
+    exact_residual = None
+    exact_relative: float | None = None
+    exact_iteration: int | None = None
+    extension_triggered = False
+
+    def extended_body() -> dict[str, Any]:
+        return _single_tensor_pcg_extended_body(
+            role=role,
+            solution=solution,
+            initial_relative=initial_relative,
+            original_lane_iterations=original_lane_iterations,
+            original_lane_final_relative=original_lane_final_relative,
+            total_iterations=total_iterations,
+            history=history,
+            exact_relative=exact_relative,
+            exact_final_residual_authenticated=(
+                exact_iteration == total_iterations
+                and _pcg_json_float(exact_relative) is not None
+            ),
+            exact_checkpoints=exact_checkpoints,
+            restart_schedule=restart_schedule,
+            total_matvec_calls=total_matvec_calls,
+            extension_triggered=extension_triggered,
+        )
+
+    def fail_closed(
+        reason: str,
+        *,
+        stage: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        failure_report = _seal(
+            {
+                **extended_body(),
+                "status": "failed_closed",
+                "failure_reason": reason,
+                "failure_stage": stage,
+                "failure_details": (
+                    {} if details is None else dict(details)
+                ),
+            }
+        )
+        authenticated = failure_report[
+            "exact_final_residual_authenticated"
+        ]
+        value = failure_report["final_relative_normal_residual"]
+        residual_text = (
+            f"{float(value):.6e}"
+            if authenticated and value is not None
+            else "unavailable"
+        )
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            f"{role} PCG failed its authenticated exact residual tolerance "
+            f"or solver invariant at {stage}; exact residual {residual_text}; "
+            f"failure report "
+            f"{failure_report['report_sha256']}.",
+            failure_report=failure_report,
+        )
+
+    right_finite = bool(torch.isfinite(right).all().item())
+    initial_finite = bool(torch.isfinite(solution).all().item())
+    diagonal_finite = bool(torch.isfinite(diagonal).all().item())
+    diagonal_positive = bool((diagonal > 0.0).all().item())
+    if (
+        not right_finite
+        or not initial_finite
+        or not diagonal_finite
+        or not diagonal_positive
+    ):
+        fail_closed(
+            "invalid_non_finite_or_non_positive_input",
+            stage="input_validation",
+            details={
+                "right_finite": right_finite,
+                "initial_finite": initial_finite,
+                "diagonal_finite": diagonal_finite,
+                "diagonal_strictly_positive": diagonal_positive,
+            },
+        )
+
     right_norm = torch.linalg.vector_norm(right).clamp_min(
         torch.finfo(torch.float64).eps
     )
+    if not bool(torch.isfinite(right_norm).item()):
+        fail_closed(
+            "non_finite_right_norm",
+            stage="input_validation",
+        )
+    applied_initial = matvec(solution)
+    total_matvec_calls += 1
+    residual = right - applied_initial
+    if not bool(torch.isfinite(applied_initial).all().item()) or not bool(
+        torch.isfinite(residual).all().item()
+    ):
+        fail_closed(
+            "non_finite_initial_operator_application",
+            stage="initial_exact_residual",
+        )
     initial_relative = float(
         (torch.linalg.vector_norm(residual) / right_norm).item()
     )
+    if not math.isfinite(initial_relative):
+        fail_closed(
+            "non_finite_initial_relative_residual",
+            stage="initial_exact_residual",
+        )
+    exact_residual = residual
+    exact_relative = initial_relative
+    exact_iteration = 0
     if initial_relative <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE:
         body = {
             "role": role,
@@ -1053,59 +1255,426 @@ def _pcg_single_tensor(
             "single_tensor",
             body,
         )
+
     preconditioned = residual / diagonal
     direction = preconditioned.clone()
-    rz = (residual * preconditioned).sum()
-    history = []
-    iterations = 0
+    rz = float((residual * preconditioned).sum().item())
+    if not math.isfinite(rz) or rz <= 0.0:
+        if not math.isfinite(rz):
+            exact_iteration = None
+        fail_closed(
+            "non_positive_or_non_finite_preconditioned_residual",
+            stage="original_lane_initialization",
+            details={"residual_preconditioner_inner_product": _pcg_json_float(rz)},
+        )
+
+    original_lane_exact_checked = False
     for iteration in range(1, _PCG_MAXIMUM_ITERATIONS + 1):
         applied = matvec(direction)
-        denominator = (direction * applied).sum()
-        if float(denominator.abs().item()) <= torch.finfo(torch.float64).eps:
-            raise Lfm2SequenceEffectiveAttentionFoldError(
-                f"{role} PCG encountered a singular search direction."
+        total_matvec_calls += 1
+        denominator = float((direction * applied).sum().item())
+        applied_finite = bool(torch.isfinite(applied).all().item())
+        curvature_finite = math.isfinite(denominator)
+        if (
+            not applied_finite
+            or not curvature_finite
+            or denominator <= 0.0
+        ):
+            if not applied_finite or not curvature_finite:
+                exact_iteration = None
+            original_lane_iterations = total_iterations
+            original_lane_final_relative = (
+                history[-1] if history else initial_relative
+            )
+            fail_closed(
+                "non_positive_or_non_finite_curvature",
+                stage="original_lane_curvature",
+                details={
+                    "attempted_iteration": iteration,
+                    "curvature": _pcg_json_float(denominator),
+                    "curvature_finite_strictly_positive": False,
+                    "curvature_matvec_call": total_matvec_calls,
+                },
             )
         alpha = rz / denominator
         solution = solution + alpha * direction
         residual = residual - alpha * applied
+        total_iterations = iteration
+        exact_iteration = None
+        if (
+            not bool(torch.isfinite(solution).all().item())
+            or not bool(torch.isfinite(residual).all().item())
+            or not math.isfinite(alpha)
+        ):
+            original_lane_iterations = total_iterations
+            original_lane_final_relative = (
+                history[-1] if history else initial_relative
+            )
+            fail_closed(
+                "non_finite_original_lane_update",
+                stage="original_lane_update",
+                details={"attempted_iteration": iteration},
+            )
         relative = float(
             (torch.linalg.vector_norm(residual) / right_norm).item()
         )
+        if not math.isfinite(relative):
+            original_lane_iterations = total_iterations
+            original_lane_final_relative = (
+                history[-1] if history else initial_relative
+            )
+            fail_closed(
+                "non_finite_original_lane_recurrence_residual",
+                stage="original_lane_update",
+                details={"attempted_iteration": iteration},
+            )
         history.append(relative)
-        iterations = iteration
         if relative <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE:
+            original_lane_iterations = total_iterations
+            original_lane_final_relative = relative
+            applied_exact = matvec(solution)
+            total_matvec_calls += 1
+            exact_residual = right - applied_exact
+            exact_finite = (
+                bool(torch.isfinite(applied_exact).all().item())
+                and bool(torch.isfinite(exact_residual).all().item())
+            )
+            exact_relative = (
+                float(
+                    (
+                        torch.linalg.vector_norm(exact_residual)
+                        / right_norm
+                    ).item()
+                )
+                if exact_finite
+                else None
+            )
+            exact_finite = (
+                exact_finite
+                and _pcg_json_float(exact_relative) is not None
+            )
+            exact_iteration = total_iterations if exact_finite else None
+            exact_checkpoints.append(
+                {
+                    "iteration": total_iterations,
+                    "relative_normal_residual": (
+                        _pcg_json_float(exact_relative)
+                    ),
+                    "finite": exact_finite,
+                }
+            )
+            original_lane_exact_checked = True
+            if (
+                exact_finite
+                and exact_relative is not None
+                and exact_relative
+                <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+            ):
+                body = {
+                    "role": role,
+                    "solver": "deterministic_jacobi_pcg_single_tensor",
+                    "maximum_iterations": _PCG_MAXIMUM_ITERATIONS,
+                    "iterations_executed": iteration,
+                    "required_relative_normal_residual": (
+                        _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+                    ),
+                    "initial_relative_normal_residual": initial_relative,
+                    "final_relative_normal_residual": relative,
+                    "relative_normal_residual_history": history,
+                    "solution_sha256": _tensor_sha256(solution),
+                }
+                return solution.contiguous(), _seal_observe_pcg_report(
+                    "single_tensor",
+                    body,
+                )
+            extension_triggered = True
             break
         next_preconditioned = residual / diagonal
-        next_rz = (residual * next_preconditioned).sum()
+        next_rz = float((residual * next_preconditioned).sum().item())
+        if not math.isfinite(next_rz) or next_rz <= 0.0:
+            original_lane_iterations = total_iterations
+            original_lane_final_relative = relative
+            fail_closed(
+                "non_positive_or_non_finite_preconditioned_residual",
+                stage="original_lane_direction_update",
+                details={
+                    "attempted_iteration": iteration,
+                    "residual_preconditioner_inner_product": (
+                        _pcg_json_float(next_rz)
+                    ),
+                },
+            )
         direction = next_preconditioned + (next_rz / rz) * direction
         preconditioned = next_preconditioned
         rz = next_rz
-    final_relative = history[-1]
-    if (
-        not bool(torch.isfinite(solution).all().item())
-        or final_relative > _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
-    ):
-        raise Lfm2SequenceEffectiveAttentionFoldError(
-            f"{role} PCG failed its authenticated residual tolerance "
-            f"({final_relative:.6e})."
+
+    if not original_lane_exact_checked:
+        original_lane_iterations = total_iterations
+        original_lane_final_relative = history[-1]
+        applied_exact = matvec(solution)
+        total_matvec_calls += 1
+        exact_residual = right - applied_exact
+        exact_finite = (
+            bool(torch.isfinite(applied_exact).all().item())
+            and bool(torch.isfinite(exact_residual).all().item())
         )
-    body = {
-        "role": role,
-        "solver": "deterministic_jacobi_pcg_single_tensor",
-        "maximum_iterations": _PCG_MAXIMUM_ITERATIONS,
-        "iterations_executed": iterations,
-        "required_relative_normal_residual": (
-            _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
-        ),
-        "initial_relative_normal_residual": initial_relative,
-        "final_relative_normal_residual": final_relative,
-        "relative_normal_residual_history": history,
-        "solution_sha256": _tensor_sha256(solution),
-    }
-    return solution.contiguous(), _seal_observe_pcg_report(
-        "single_tensor",
-        body,
+        exact_relative = (
+            float(
+                (
+                    torch.linalg.vector_norm(exact_residual)
+                    / right_norm
+                ).item()
+            )
+            if exact_finite
+            else None
+        )
+        exact_finite = (
+            exact_finite and _pcg_json_float(exact_relative) is not None
+        )
+        exact_iteration = total_iterations if exact_finite else None
+        exact_checkpoints.append(
+            {
+                "iteration": total_iterations,
+                "relative_normal_residual": _pcg_json_float(exact_relative),
+                "finite": exact_finite,
+            }
+        )
+        extension_triggered = True
+
+    if exact_iteration != total_iterations or exact_relative is None:
+        fail_closed(
+            "non_finite_original_lane_exact_residual",
+            stage="original_lane_exact_authentication",
+        )
+    if exact_relative <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE:
+        return solution.contiguous(), _seal_observe_pcg_report(
+            "single_tensor",
+            extended_body(),
+        )
+
+    while total_iterations < _PCG_HARD_MAXIMUM_ITERATIONS:
+        block_start = total_iterations
+        block_stop = min(
+            block_start + _PCG_RESTART_BLOCK_ITERATIONS,
+            _PCG_HARD_MAXIMUM_ITERATIONS,
+        )
+        residual = exact_residual
+        preconditioned = residual / diagonal
+        direction = preconditioned.clone()
+        rz = float((residual * preconditioned).sum().item())
+        if not math.isfinite(rz) or rz <= 0.0:
+            if not math.isfinite(rz):
+                exact_iteration = None
+            fail_closed(
+                "non_positive_or_non_finite_preconditioned_residual",
+                stage="restart_initialization",
+                details={
+                    "restart_iteration": block_start,
+                    "residual_preconditioner_inner_product": (
+                        _pcg_json_float(rz)
+                    ),
+                },
+            )
+        block_history_start = len(history)
+        block_matvec_start = total_matvec_calls
+        exact_checkpoint_taken = False
+
+        for attempted_iteration in range(block_start + 1, block_stop + 1):
+            applied = matvec(direction)
+            total_matvec_calls += 1
+            denominator = float((direction * applied).sum().item())
+            applied_finite = bool(torch.isfinite(applied).all().item())
+            curvature_finite = math.isfinite(denominator)
+            if (
+                not applied_finite
+                or not curvature_finite
+                or denominator <= 0.0
+            ):
+                if not applied_finite or not curvature_finite:
+                    exact_iteration = None
+                exact_is_current = exact_iteration == total_iterations
+                restart_schedule.append(
+                    {
+                        "restart_iteration": block_start,
+                        "planned_stop_iteration": block_stop,
+                        "iterations_executed": (
+                            len(history) - block_history_start
+                        ),
+                        "ending_iteration": total_iterations,
+                        "attempted_matvec_calls": (
+                            total_matvec_calls - block_matvec_start
+                        ),
+                        "termination": "curvature_failure",
+                        "ending_recurrence_relative_normal_residual": (
+                            history[-1]
+                        ),
+                        "ending_exact_relative_normal_residual": (
+                            _pcg_json_float(exact_relative)
+                            if exact_is_current
+                            else None
+                        ),
+                        "ending_exact_residual_authenticated": exact_is_current,
+                    }
+                )
+                fail_closed(
+                    "non_positive_or_non_finite_curvature",
+                    stage="restart_curvature",
+                    details={
+                        "attempted_iteration": attempted_iteration,
+                        "curvature": _pcg_json_float(denominator),
+                        "curvature_finite_strictly_positive": False,
+                        "curvature_matvec_call": total_matvec_calls,
+                    },
+                )
+            alpha = rz / denominator
+            solution = solution + alpha * direction
+            residual = residual - alpha * applied
+            total_iterations += 1
+            exact_iteration = None
+            if (
+                not bool(torch.isfinite(solution).all().item())
+                or not bool(torch.isfinite(residual).all().item())
+                or not math.isfinite(alpha)
+            ):
+                fail_closed(
+                    "non_finite_restart_update",
+                    stage="restart_update",
+                    details={"attempted_iteration": attempted_iteration},
+                )
+            relative = float(
+                (torch.linalg.vector_norm(residual) / right_norm).item()
+            )
+            if not math.isfinite(relative):
+                fail_closed(
+                    "non_finite_restart_recurrence_residual",
+                    stage="restart_update",
+                    details={"attempted_iteration": attempted_iteration},
+                )
+            history.append(relative)
+            if relative <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE:
+                applied_exact = matvec(solution)
+                total_matvec_calls += 1
+                exact_residual = right - applied_exact
+                exact_finite = (
+                    bool(torch.isfinite(applied_exact).all().item())
+                    and bool(torch.isfinite(exact_residual).all().item())
+                )
+                exact_relative = (
+                    float(
+                        (
+                            torch.linalg.vector_norm(exact_residual)
+                            / right_norm
+                        ).item()
+                    )
+                    if exact_finite
+                    else None
+                )
+                exact_finite = (
+                    exact_finite
+                    and _pcg_json_float(exact_relative) is not None
+                )
+                exact_iteration = total_iterations if exact_finite else None
+                exact_checkpoints.append(
+                    {
+                        "iteration": total_iterations,
+                        "relative_normal_residual": (
+                            _pcg_json_float(exact_relative)
+                        ),
+                        "finite": exact_finite,
+                    }
+                )
+                exact_checkpoint_taken = True
+                break
+            next_preconditioned = residual / diagonal
+            next_rz = float((residual * next_preconditioned).sum().item())
+            if not math.isfinite(next_rz) or next_rz <= 0.0:
+                fail_closed(
+                    "non_positive_or_non_finite_preconditioned_residual",
+                    stage="restart_direction_update",
+                    details={
+                        "attempted_iteration": attempted_iteration,
+                        "residual_preconditioner_inner_product": (
+                            _pcg_json_float(next_rz)
+                        ),
+                    },
+                )
+            direction = next_preconditioned + (next_rz / rz) * direction
+            preconditioned = next_preconditioned
+            rz = next_rz
+
+        if not exact_checkpoint_taken:
+            applied_exact = matvec(solution)
+            total_matvec_calls += 1
+            exact_residual = right - applied_exact
+            exact_finite = (
+                bool(torch.isfinite(applied_exact).all().item())
+                and bool(torch.isfinite(exact_residual).all().item())
+            )
+            exact_relative = (
+                float(
+                    (
+                        torch.linalg.vector_norm(exact_residual)
+                        / right_norm
+                    ).item()
+                )
+                if exact_finite
+                else None
+            )
+            exact_finite = (
+                exact_finite and _pcg_json_float(exact_relative) is not None
+            )
+            exact_iteration = total_iterations if exact_finite else None
+            exact_checkpoints.append(
+                {
+                    "iteration": total_iterations,
+                    "relative_normal_residual": _pcg_json_float(exact_relative),
+                    "finite": exact_finite,
+                }
+            )
+
+        exact_authenticated = exact_iteration == total_iterations
+        restart_schedule.append(
+            {
+                "restart_iteration": block_start,
+                "planned_stop_iteration": block_stop,
+                "iterations_executed": len(history) - block_history_start,
+                "ending_iteration": total_iterations,
+                "attempted_matvec_calls": (
+                    total_matvec_calls - block_matvec_start
+                ),
+                "termination": (
+                    "exact_tolerance_reached"
+                    if exact_authenticated
+                    and exact_relative is not None
+                    and exact_relative
+                    <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE
+                    else "block_boundary"
+                ),
+                "ending_recurrence_relative_normal_residual": history[-1],
+                "ending_exact_relative_normal_residual": (
+                    _pcg_json_float(exact_relative)
+                    if exact_authenticated
+                    else None
+                ),
+                "ending_exact_residual_authenticated": exact_authenticated,
+            }
+        )
+        if not exact_authenticated or exact_relative is None:
+            fail_closed(
+                "non_finite_restart_exact_residual",
+                stage="restart_exact_authentication",
+            )
+        if exact_relative <= _PCG_RELATIVE_NORMAL_RESIDUAL_TOLERANCE:
+            return solution.contiguous(), _seal_observe_pcg_report(
+                "single_tensor",
+                extended_body(),
+            )
+
+    fail_closed(
+        "hard_iteration_cap_reached",
+        stage="hard_iteration_cap",
     )
+    raise AssertionError("unreachable")
 
 
 def _canonicalize_value_factor(
