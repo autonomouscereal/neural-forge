@@ -173,6 +173,7 @@ class RealAttentionProbeConfig:
     post_operator_chart_transport_shadow: bool = False
     attention_sequential_transport_enabled: bool = False
     composed_qk_attention_enabled: bool = False
+    endpoint_residual_attention_enabled: bool = False
 
     def __post_init__(self) -> None:
         from neural_forge.hf_lfm2_cpcf_v5_real_attention_probe import (
@@ -189,13 +190,21 @@ class RealAttentionProbeConfig:
             raise TypeError("attention_sequential_transport_enabled must be bool.")
         if type(self.composed_qk_attention_enabled) is not bool:
             raise TypeError("composed_qk_attention_enabled must be bool.")
+        if type(self.endpoint_residual_attention_enabled) is not bool:
+            raise TypeError("endpoint_residual_attention_enabled must be bool.")
         if (
-            self.attention_sequential_transport_enabled
-            and self.composed_qk_attention_enabled
+            sum(
+                (
+                    self.attention_sequential_transport_enabled,
+                    self.composed_qk_attention_enabled,
+                    self.endpoint_residual_attention_enabled,
+                )
+            )
+            > 1
         ):
             raise Lfm2CpcfV5RealAttentionProbeRunnerError(
-                "Composed Q/K attention and legacy sequential transport are "
-                "separate diagnostic lanes."
+                "Sequential transport, four-arm composed Q/K, and five-arm "
+                "endpoint-residual attention are separate diagnostic lanes."
             )
         compression = fold.compression
         changed = []
@@ -276,7 +285,10 @@ class RealAttentionProbeConfig:
 
         return (
             H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES
-            if self.composed_qk_attention_enabled
+            if (
+                self.composed_qk_attention_enabled
+                or self.endpoint_residual_attention_enabled
+            )
             else H776_MAXIMUM_PROCESS_RSS_BYTES
         )
 
@@ -316,6 +328,14 @@ def build_parser() -> argparse.ArgumentParser:
             "attention fold on two logical 3090 devices."
         ),
     )
+    parser.add_argument(
+        "--endpoint-residual-attention",
+        action="store_true",
+        help=(
+            "Run the authenticated five-arm endpoint-residual Q/K-to-V/O "
+            "fold on two logical 3090 devices."
+        ),
+    )
     return parser
 
 
@@ -335,6 +355,7 @@ def config_from_args(args: argparse.Namespace) -> RealAttentionProbeConfig:
         ),
         attention_sequential_transport_enabled=(args.attention_sequential_transport),
         composed_qk_attention_enabled=args.composed_qk_attention,
+        endpoint_residual_attention_enabled=args.endpoint_residual_attention,
     )
 
 
@@ -707,6 +728,9 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                     expected_composed_qk_attention_enabled=(
                         config.composed_qk_attention_enabled
                     ),
+                    expected_endpoint_residual_attention_enabled=(
+                        config.endpoint_residual_attention_enabled
+                    ),
                     maximum_process_rss_bytes=(observer_maximum_process_rss_bytes),
                 )
                 runtime = Lfm2CpcfV5RealAttentionProbeRuntime(
@@ -726,6 +750,9 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                     ),
                     composed_qk_attention_enabled=(
                         config.composed_qk_attention_enabled
+                    ),
+                    endpoint_residual_attention_enabled=(
+                        config.endpoint_residual_attention_enabled
                     ),
                 )
                 for index in (0, 1):
@@ -776,6 +803,9 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
             config.attention_sequential_transport_enabled
         ),
         "composed_qk_attention_enabled": config.composed_qk_attention_enabled,
+        "endpoint_residual_attention_enabled": (
+            config.endpoint_residual_attention_enabled
+        ),
         "diagnostic_only": True,
         "child_checkpoint_saved": False,
         "publication_attempted": False,

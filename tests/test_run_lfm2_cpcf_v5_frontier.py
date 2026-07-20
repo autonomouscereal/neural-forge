@@ -433,6 +433,8 @@ def _config(
     bridge_directory: Path | None = None,
     attempt_id: str = "attempt-0001",
     attention_profile: Any | None = None,
+    composed_profile: Any | None = None,
+    endpoint_profile: Any | None = None,
 ) -> supervisor.FrontierSupervisorConfig:
     return supervisor.FrontierSupervisorConfig(
         parent_model_directory=inputs["parent"],
@@ -464,6 +466,8 @@ def _config(
             gpu_selectors=("GPU-test-3090-a", "GPU-test-3090-b"),
         ),
         attention_sequential_transport_profile=attention_profile,
+        composed_qk_attention_profile=composed_profile,
+        endpoint_residual_attention_profile=endpoint_profile,
         attempt_id=attempt_id,
         expected_selective_catalog_receipt_sha256=(
             _catalog_preparation()["preparation_receipt_sha256"]
@@ -534,6 +538,69 @@ def _profile_bound_case(tmp_path: Path) -> dict[str, Any]:
         "config": config,
         "policy_fields": policy_fields,
         "evidence": evidence,
+        "plan": plan,
+    }
+
+
+def _composed_profile_bound_case(tmp_path: Path) -> dict[str, Any]:
+    from experiments import (
+        run_lfm2_cpcf_v5_selective_blank_fold as runner,
+    )
+
+    bridge = _sealed_bridge(tmp_path / "bridge")
+    graph = _real_geometry_graph(
+        tokenizer_fingerprint=bridge.donor_tokenizer_semantics_sha256
+    )
+    schedule = plan_lfm2_cpcf_v5_frontier(
+        parent_graph=graph,
+        expected_parent_graph_fingerprint=graph.fingerprint,
+        tokenizer_bridge=bridge,
+        expected_bridge_artifact_sha256=bridge.artifact_sha256,
+        compression_ratios=(4,),
+        maximum_candidates_per_ratio=8,
+        maximum_parallel_lanes=1,
+    )
+    inputs = _inputs(tmp_path)
+    profile = runner.V5ComposedQkAttentionRunnerProfile()
+    config = _config(
+        tmp_path,
+        graph=graph,
+        schedule=schedule,
+        inputs=inputs,
+        ratios=(4,),
+        bridge_directory=bridge.root_dir,
+        composed_profile=profile,
+    )
+    catalog_runner_config = supervisor._frontier_catalog_runner_config(
+        config,
+        ratio=4,
+        prepare_only=False,
+    )
+    policy_fields = supervisor._runner_policy_identity_fields(
+        runner,
+        catalog_runner_config,
+    )
+    evidence = replace(
+        _evidence(
+            cache_sha256=config.expected_cache_sha256,
+            corpus=inputs["corpus"],
+            envelope=inputs["envelope"],
+        ),
+        selective_catalog_preparation={
+            **_catalog_preparation(),
+            **policy_fields,
+        },
+    )
+    plan = supervisor.build_frontier_supervisor_plan(
+        schedule,
+        config,
+        evidence,
+    )
+    return {
+        "runner": runner,
+        "profile": profile,
+        "config": config,
+        "policy_fields": policy_fields,
         "plan": plan,
     }
 
@@ -795,6 +862,222 @@ def test_opt_in_attention_profile_is_typed_and_bound_end_to_end(
     assert off_paths.run_directory != lane.paths.run_directory
     assert retry_paths.resume_directory == lane.paths.resume_directory
     assert retry_paths.run_directory != lane.paths.run_directory
+
+
+def test_composed_qk_profile_is_bound_through_frontier_and_worker(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    case = _composed_profile_bound_case(tmp_path)
+    runner = case["runner"]
+    profile = case["profile"]
+    lane = case["plan"].lane_for_ratio(4)
+    manifest = dict(lane.command_manifest)
+    command = manifest["diagnostic_runner_command"]
+    profile_document = profile.as_dict()
+
+    assert command.count("--composed-qk-attention-profile") == 1
+    flag_index = command.index("--composed-qk-attention-profile")
+    assert command[flag_index + 1] == (
+        runner.COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID
+    )
+    assert manifest["composed_qk_attention_profile"] == profile_document
+    assert manifest["worker_config"][
+        "composed_qk_attention_profile"
+    ] == profile_document
+    assert manifest["quarantine_capture_template"][
+        "composed_qk_attention_profile"
+    ] == profile_document
+    assert case["plan"].as_dict()["composed_qk_attention_profile"] == (
+        profile_document
+    )
+    assert all(
+        manifest[name] == value
+        for name, value in case["policy_fields"].items()
+    )
+
+    reconstructed = supervisor._config_from_worker_record(
+        manifest["worker_config"]
+    )
+    assert type(reconstructed.composed_qk_attention_profile) is (
+        runner.V5ComposedQkAttentionRunnerProfile
+    )
+    parsed_runner_config = runner.config_from_args(
+        runner.build_parser().parse_args(command[2:])
+    )
+    authenticated = supervisor._authenticate_worker_attention_profile(
+        manifest=manifest,
+        config=reconstructed,
+        runner=runner,
+        runner_config=parsed_runner_config,
+        paths=manifest["paths"],
+    )
+    assert dict(authenticated) == case["policy_fields"]
+    assert lane.paths.run_directory.parent.name.startswith(
+        "composed-qk-profile-"
+    )
+
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="mutually exclusive",
+    ):
+        replace(
+            case["config"],
+            attention_sequential_transport_profile=(
+                runner.V5AttentionSequentialTransportRunnerProfile()
+            ),
+        )
+
+
+def test_endpoint_profile_document_roundtrip_is_exact_and_tuned() -> None:
+    pytest.importorskip("torch")
+    from experiments import (
+        run_lfm2_cpcf_v5_selective_blank_fold as runner,
+    )
+
+    profile = runner.V5EndpointResidualAttentionRunnerProfile()
+    document = supervisor._endpoint_residual_profile_document(profile)
+    restored = supervisor._endpoint_residual_profile_from_document(
+        document,
+        name="endpoint profile",
+    )
+    policy = restored.build_policy()
+
+    assert restored.as_dict() == document
+    assert policy.endpoint_policy.maximum_cg_iterations == 64
+    assert policy.endpoint_policy.cg_restart_iterations == 64
+    assert policy.endpoint_policy.cg_relative_tolerance == 1e-2
+    assert policy.endpoint_policy.compute_devices == ("cuda:0", "cuda:1")
+    assert document["expected_candidate_count_per_attention_layer"] == 5
+    assert document["blank_target_values_read"] is False
+    tampered = json.loads(json.dumps(document))
+    tampered["endpoint_residual_attention_policy"][
+        "allow_legacy_recomputed_parent_probabilities"
+    ] = True
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="differs from the exact typed",
+    ):
+        supervisor._endpoint_residual_profile_from_document(
+            tampered,
+            name="endpoint profile",
+        )
+
+
+def test_composed_qk_compiled_binding_requires_exact_six_layer_coverage(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_v5_model_compiler import (
+        Lfm2CpcfV5RuntimePolicy,
+    )
+
+    case = _composed_profile_bound_case(tmp_path)
+    runner = case["runner"]
+    manifest = dict(case["plan"].lane_for_ratio(4).command_manifest)
+    runner_config = runner.config_from_args(
+        runner.build_parser().parse_args(
+            manifest["diagnostic_runner_command"][2:]
+        )
+    )
+    model_policy = runner._build_configured_model_fold_policy(runner_config)
+    composed = runner._build_configured_composed_qk_attention_policy(
+        runner_config
+    )
+    identity = runner._configured_composed_qk_policy_identity(
+        runner_config,
+        composed_policy=composed,
+    )
+    runtime = Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=model_policy,
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=2,
+        composed_qk_attention_policy=composed,
+    )
+    binding = runner._build_composed_qk_runtime_policy_binding(
+        identity,
+        runtime_policy=runtime,
+    )
+    expected_layers = list(runner.COMPOSED_QK_ATTENTION_LAYER_INDICES)
+    rows = [
+        {
+            "layer_index": layer,
+            "layer_result_sha256": _digest(f"layer-{layer}"),
+            "composed_qk_producer_artifact_sha256": _digest(
+                f"producer-{layer}"
+            ),
+            "sequence_effective_stage_two_artifact_sha256": _digest(
+                f"stage-two-{layer}"
+            ),
+            "actual_child_context_sha256": _digest(
+                f"actual-context-{layer}"
+            ),
+            "reconstructed_live_context_sha256": _digest(
+                f"reconstructed-context-{layer}"
+            ),
+            "candidate_evaluation_report_sha256": _digest(
+                f"candidate-{layer}"
+            ),
+            "selected_candidate_id": "fixture",
+        }
+        for layer in expected_layers
+    ]
+    coverage_body = {
+        "schema": runner.COMPOSED_QK_ATTENTION_COVERAGE_SCHEMA,
+        "policy_authentication_sha256": composed.authentication_sha256,
+        "expected_attention_layer_indices": expected_layers,
+        "observed_attention_layer_indices": expected_layers,
+        "covered_attention_layer_indices": expected_layers,
+        "attention_layer_count": 6,
+        "ordered_layer_coverage": rows,
+        "exact_ordered_attention_layer_coverage": True,
+        "full_attention_only_forwarding": True,
+        "actual_upstream_child_contexts_consumed": True,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    coverage = {
+        **coverage_body,
+        "report_sha256": supervisor._sha(coverage_body),
+    }
+    compiled = {
+        "policy": runtime.as_dict(),
+        "composed_qk_attention_coverage": coverage,
+    }
+    diagnostic = {
+        "request": runner_config.as_dict(),
+        **case["policy_fields"],
+        "compiled_model_fold": compiled,
+        "composed_qk_runtime_policy_binding": dict(binding),
+        "composed_qk_attention_coverage": coverage,
+    }
+
+    authenticated = supervisor._authenticate_compiled_attention_profile(
+        runner=runner,
+        diagnostic=diagnostic,
+        expected_policy_fields=case["policy_fields"],
+    )
+    assert dict(authenticated) == dict(binding)
+    assert supervisor._compiled_policy_binding_field(
+        runner,
+        case["policy_fields"],
+    ) == "composed_qk_runtime_policy_binding"
+
+    with pytest.raises(
+        supervisor.Lfm2CpcfV5FrontierSupervisorError,
+        match="coverage",
+    ):
+        supervisor._authenticate_compiled_attention_profile(
+            runner=runner,
+            diagnostic={
+                **diagnostic,
+                "compiled_model_fold": {"policy": runtime.as_dict()},
+            },
+            expected_policy_fields=case["policy_fields"],
+        )
 
 
 def test_opt_in_attention_profile_tamper_and_cross_profile_fail_closed(

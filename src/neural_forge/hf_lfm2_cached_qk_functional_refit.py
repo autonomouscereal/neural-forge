@@ -164,6 +164,10 @@ def _cached_case_sha256(case: Lfm2CachedAttentionFoldCase) -> str:
         digest.update(
             b"none" if value is None else bytes.fromhex(_tensor_sha256(value))
         )
+    if case.parent_probabilities is not None:
+        digest.update(b"parent_probabilities")
+        digest.update(b"\0")
+        digest.update(bytes.fromhex(_tensor_sha256(case.parent_probabilities)))
     return digest.hexdigest()
 
 
@@ -216,6 +220,10 @@ def _cached_resource_usage(
                 value = getattr(case, name)
                 if isinstance(value, torch.Tensor):
                     evidence_bytes += int(value.numel()) * int(value.element_size())
+            if isinstance(case.parent_probabilities, torch.Tensor):
+                evidence_bytes += int(case.parent_probabilities.numel()) * int(
+                    case.parent_probabilities.element_size()
+                )
     return {
         "aggregate_query_rows": query_rows,
         "aggregate_key_rows": key_rows,

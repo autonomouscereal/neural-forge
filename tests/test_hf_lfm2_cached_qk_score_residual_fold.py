@@ -1058,6 +1058,216 @@ def test_matrix_free_normal_is_symmetric_positive_with_ridge() -> None:
     )
 
 
+class _TestReplayingQkScoreResidualLinearOperator(
+    score_fold._StreamingQkScoreResidualLinearOperator
+):
+    """Test-only reconstruction of the former per-call replay behavior."""
+
+    def __init__(self, **kwargs: object) -> None:
+        self._use_initial_cache = True
+        super().__init__(**kwargs)
+        self._use_initial_cache = False
+
+    def _linearized_cases(self):  # type: ignore[no-untyped-def]
+        if self._use_initial_cache:
+            yield from super()._linearized_cases()
+        else:
+            yield from self._build_linearized_cases()
+
+
+def _operator_pair(
+    device: torch.device,
+) -> tuple[
+    score_fold.Lfm2QkScoreResidualLinearOperator,
+    score_fold._StreamingQkScoreResidualLinearOperator,
+    Lfm2QkScoreResidualFoldPolicy,
+]:
+    seed, fit_bank, _fit_check = _banks()
+    policy = Lfm2QkScoreResidualFoldPolicy(
+        maximum_sweeps=1,
+        maximum_pcg_iterations=8,
+        minimum_pcg_iterations=1,
+        pcg_restart_iterations=4,
+        pcg_relative_tolerance=1e-6,
+        solver_device=str(device),
+        compute_devices=(str(device),),
+    )
+    current_query = seed.query_weight.to(device=device, dtype=torch.float32)
+    current_key = seed.key_weight.to(device=device, dtype=torch.float32)
+    prepared = tuple(
+        score_fold._prepare_evidence_case(
+            value,
+            seed,
+            policy,
+            device=device,
+        )
+        for value in fit_bank.cases
+    )
+    score_fold._attach_linearization(
+        prepared,
+        seed,
+        current_query,
+        current_key,
+    )
+    reference = score_fold.Lfm2QkScoreResidualLinearOperator(
+        seed=seed,
+        prepared_cases=prepared,
+        current_query_weight=current_query,
+        current_key_weight=current_key,
+        ridge=policy.ridge,
+    )
+    cached = score_fold._StreamingQkScoreResidualLinearOperator(
+        seed=seed,
+        evidence_cases=fit_bank.cases,
+        current_query_weight=current_query,
+        current_key_weight=current_key,
+        ridge=policy.ridge,
+        policy=policy,
+        solver_device=device,
+        compute_devices=(device,),
+    )
+    return reference, cached, policy
+
+
+def _assert_cached_operator_exact_equivalence(device: torch.device) -> None:
+    reference, cached, policy = _operator_pair(device)
+    assert cached.residual_energy == reference.residual_energy
+    reference_rhs = reference.right_hand_side()
+    cached_rhs = cached.right_hand_side()
+    assert torch.equal(cached_rhs, reference_rhs)
+    vector = torch.linspace(
+        -0.125,
+        0.25,
+        reference_rhs.numel(),
+        device=device,
+        dtype=torch.float32,
+    )
+    assert torch.equal(cached.normal(vector), reference.normal(vector))
+    reference_direction, reference_report = score_fold._pcg(
+        reference,
+        reference_rhs,
+        policy,
+    )
+    cached_direction, cached_report = score_fold._pcg(
+        cached,
+        cached_rhs,
+        policy,
+    )
+    assert torch.equal(cached_direction, reference_direction)
+    assert cached_report == reference_report
+
+
+def test_fixed_linearization_cache_preserves_exact_rhs_normal_and_pcg() -> None:
+    _assert_cached_operator_exact_equivalence(torch.device("cpu"))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+def test_cuda_fixed_linearization_cache_preserves_exact_rhs_normal_and_pcg() -> None:
+    _assert_cached_operator_exact_equivalence(torch.device("cuda:0"))
+
+
+def test_fixed_linearization_cache_replays_once_per_case_per_sweep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed, fit_bank, _fit_check = _banks()
+    policy = Lfm2QkScoreResidualFoldPolicy(
+        maximum_sweeps=1,
+        maximum_pcg_iterations=4,
+        minimum_pcg_iterations=1,
+        pcg_restart_iterations=4,
+    )
+    replay_calls = 0
+    original_replay = score_fold._exact_replay
+
+    def counted_replay(*args: object, **kwargs: object):
+        nonlocal replay_calls
+        replay_calls += 1
+        return original_replay(*args, **kwargs)
+
+    monkeypatch.setattr(score_fold, "_exact_replay", counted_replay)
+    cached = score_fold._StreamingQkScoreResidualLinearOperator(
+        seed=seed,
+        evidence_cases=fit_bank.cases,
+        current_query_weight=seed.query_weight.float(),
+        current_key_weight=seed.key_weight.float(),
+        ridge=policy.ridge,
+        policy=policy,
+        solver_device=torch.device("cpu"),
+        compute_devices=(torch.device("cpu"),),
+    )
+    case_count = len(fit_bank.cases)
+    assert replay_calls == case_count
+    cached.right_hand_side()
+    vector = torch.linspace(
+        -0.2,
+        0.3,
+        seed.query_weight.numel() + seed.key_weight.numel(),
+    )
+    cached.normal(vector)
+    cached.normal(vector)
+    assert replay_calls == case_count
+    resource = cached.linearization_cache_resource_receipt
+    assert resource["linearization_replay_call_count"] == case_count
+
+    replay_calls = 0
+    replaying = _TestReplayingQkScoreResidualLinearOperator(
+        seed=seed,
+        evidence_cases=fit_bank.cases,
+        current_query_weight=seed.query_weight.float(),
+        current_key_weight=seed.key_weight.float(),
+        ridge=policy.ridge,
+        policy=policy,
+        solver_device=torch.device("cpu"),
+        compute_devices=(torch.device("cpu"),),
+    )
+    assert replay_calls == case_count
+    replaying.right_hand_side()
+    replaying.normal(vector)
+    replaying.normal(vector)
+    assert replay_calls == case_count * 4
+
+
+def test_fixed_linearization_cache_preserves_exact_selected_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed, fit_bank, fit_check_bank = _banks()
+    policy = Lfm2QkScoreResidualFoldPolicy(
+        ridge=2e-3,
+        trust_radius=2.0,
+        maximum_sweeps=2,
+        maximum_pcg_iterations=96,
+        minimum_pcg_iterations=2,
+        pcg_restart_iterations=48,
+        pcg_relative_tolerance=2e-4,
+        metric_regression_tolerance=5e-3,
+    )
+    cached = compile_lfm2_cached_qk_score_residual_fold(
+        seed=seed,
+        fit_bank=fit_bank,
+        fit_check_bank=fit_check_bank,
+        policy=policy,
+    )
+    monkeypatch.setattr(
+        score_fold,
+        "_StreamingQkScoreResidualLinearOperator",
+        _TestReplayingQkScoreResidualLinearOperator,
+    )
+    replaying = compile_lfm2_cached_qk_score_residual_fold(
+        seed=seed,
+        fit_bank=fit_bank,
+        fit_check_bank=fit_check_bank,
+        policy=policy,
+    )
+    assert torch.equal(cached.query_weight, replaying.query_weight)
+    assert torch.equal(cached.key_weight, replaying.key_weight)
+    assert cached.accepted == replaying.accepted
+    assert cached.changed == replaying.changed
+    assert cached.status == replaying.status
+    assert cached.fit_metrics == replaying.fit_metrics
+    assert cached.fit_check_metrics == replaying.fit_check_metrics
+    assert cached.report == replaying.report
+
+
 def test_compile_improves_fit_and_accepts_frozen_fit_check_without_training() -> None:
     seed, fit_bank, fit_check_bank = _banks()
     result = compile_lfm2_cached_qk_score_residual_fold(
@@ -1091,6 +1301,8 @@ def test_compile_improves_fit_and_accepts_frozen_fit_check_without_training() ->
             "case_assignment",
             "compute_device_concurrency",
             "streamed_evidence",
+            "fixed_linearization_cache",
+            "linearization_cache_scope",
             "maximum_logically_resident_prepared_cases",
             "jvp_vjp_dtype",
             "pcg_vector_dtype",
@@ -1101,12 +1313,42 @@ def test_compile_improves_fit_and_accepts_frozen_fit_check_without_training() ->
         "compute_devices": ["cpu"],
         "case_assignment": "authenticated_bank_order_round_robin",
         "compute_device_concurrency": "serial_round_robin",
-        "streamed_evidence": True,
-        "maximum_logically_resident_prepared_cases": 1,
+        "streamed_evidence": False,
+        "fixed_linearization_cache": True,
+        "linearization_cache_scope": "one_gauss_newton_sweep",
+        "maximum_logically_resident_prepared_cases": 2,
         "jvp_vjp_dtype": "torch.float32",
         "pcg_vector_dtype": "torch.float32",
         "scalar_reduction_dtype": "torch.float64",
     }
+    assert len(result.report["sweeps"]) == 2
+    for sweep_index, sweep in enumerate(result.report["sweeps"]):
+        resource = sweep["linearization_cache_resource_receipt"]
+        assert sweep["sweep"] == sweep_index
+        assert (
+            resource["schema"] == score_fold.LFM2_QK_LINEARIZATION_CACHE_RESOURCE_SCHEMA
+        )
+        assert resource["cache_scope"] == "one_gauss_newton_sweep"
+        assert resource["resident_storage"] == "compute_device"
+        assert resource["source_fit_case_count"] == 2
+        assert resource["resident_prepared_case_count"] == 2
+        assert resource["linearization_replay_call_count"] == 2
+        assert resource["per_device_case_counts"] == {"cpu": 2}
+        assert resource["per_device_logical_tensor_bytes"]["cpu"] > 0
+        assert (
+            resource["total_logical_tensor_bytes"]
+            == resource["per_device_logical_tensor_bytes"]["cpu"]
+        )
+        assert (
+            resource["maximum_device_logical_tensor_bytes"]
+            == resource["total_logical_tensor_bytes"]
+        )
+        assert resource["cache_reused_for_right_hand_side"]
+        assert resource["cache_reused_for_normal_operator_calls"]
+        assert resource["cache_invalidated_at_sweep_end"]
+        resource_body = dict(resource)
+        resource_seal = resource_body.pop("resource_receipt_sha256")
+        assert score_fold._canonical_sha256(resource_body) == resource_seal
     observed = execution["observed_execution_receipt"]
     assert observed["schema"] == score_fold.LFM2_QK_OBSERVED_EXECUTION_RECEIPT_SCHEMA
     assert observed["requested_solver_device"] == "cpu"

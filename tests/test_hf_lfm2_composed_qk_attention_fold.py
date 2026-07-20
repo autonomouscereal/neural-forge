@@ -262,6 +262,7 @@ def _case(
         parent_query=query,
         parent_key=key,
         parent_context=context,
+        parent_probabilities=probabilities.contiguous(),
         parent_post_attention_residual_target_space=endpoint,
         target_pre_attention_residual=target_inputs,
         query_cosine=cosine,
@@ -436,6 +437,81 @@ def composed_artifacts() -> SimpleNamespace:
         norm=norm,
         value_template=value_template,
         output_template=output_template,
+    )
+
+
+@pytest.fixture(scope="module")
+def endpoint_residual_artifacts(
+    composed_artifacts: SimpleNamespace,
+) -> SimpleNamespace:
+    composed = composed_artifacts.composed
+    fit_cases = tuple(composed.qk_fit_bank.cases)
+    fit_contexts = tuple(
+        composed_artifacts.actual_contexts[ordinal]
+        for ordinal in composed.qk_fit_bank.source_case_ordinals
+    )
+    # Keep a deliberately imperfect but authenticated closed-form V/O seed so
+    # the endpoint-QK block has a material correction to prove. The fifth arm
+    # must then refit V/O analytically and generalize to the untouched case.
+    output_prior = (composed_artifacts.target.output.float() * 1.5).to(torch.bfloat16)
+    fit_value_output = compile_lfm2_structural_attention_value_output_fold(
+        producer=composed.producer_artifact,
+        target_value_weight_template=composed_artifacts.value_template,
+        target_output_weight_template=composed_artifacts.output_template,
+        actual_child_contexts=fit_contexts,
+        cases=fit_cases,
+        live_value_weight=composed.producer_artifact.value_weight,
+        value_weight_prior=composed.producer_artifact.value_weight,
+        output_weight_prior=output_prior,
+        query_norm_weight=composed_artifacts.norm,
+        key_norm_weight=composed_artifacts.norm,
+        norm_epsilon=1e-5,
+        ridge=1e-8,
+        context_ridge=1e-6,
+        max_prior_delta_ratio=0.0,
+        iterations=2,
+        context_equivalence_tolerance=0.10,
+    )
+    endpoint_policy = composed_fold.Lfm2EndpointQkResidualFoldPolicy(
+        ridge=1e-4,
+        route_objective_weight=0.2,
+        trust_radius=2.0,
+        maximum_sweeps=4,
+        maximum_cg_iterations=512,
+        minimum_cg_iterations=2,
+        cg_restart_iterations=64,
+        cg_relative_tolerance=1e-3,
+        metric_regression_tolerance=5e-5,
+        minimum_fit_endpoint_improvement=1e-10,
+        solver_device="cpu",
+        compute_devices=("cpu",),
+    )
+    fifth = composed_fold.compile_lfm2_composed_endpoint_residual_attention_fold(
+        composed_qk=composed,
+        fit_value_output_artifact=fit_value_output,
+        source_query_weight=composed_artifacts.source.query,
+        source_key_weight=composed_artifacts.source.key,
+        source_value_weight=composed_artifacts.source.value,
+        source_output_weight=composed_artifacts.source.output,
+        target_query_weight_template=torch.zeros_like(composed_artifacts.target.query),
+        target_key_weight_template=torch.zeros_like(composed_artifacts.target.key),
+        target_value_weight_template=composed_artifacts.value_template,
+        target_output_weight_template=composed_artifacts.output_template,
+        query_norm_weight=composed_artifacts.norm,
+        key_norm_weight=composed_artifacts.norm,
+        norm_epsilon=1e-5,
+        policy=(
+            composed_fold.Lfm2ComposedEndpointResidualAttentionFoldPolicy(
+                maximum_outer_blocks=2,
+                endpoint_policy=endpoint_policy,
+            )
+        ),
+    )
+    return SimpleNamespace(
+        fifth=fifth,
+        fit_value_output=fit_value_output,
+        fit_cases=fit_cases,
+        fit_contexts=fit_contexts,
     )
 
 
@@ -852,6 +928,309 @@ def test_outer_rejects_a_different_upstream_fit_bundle(
             query_norm_weight=composed_artifacts.norm,
             key_norm_weight=composed_artifacts.norm,
             norm_epsilon=1e-5,
+        )
+
+
+def test_endpoint_residual_fifth_arm_is_an_authenticated_4x_qkvo_chain(
+    composed_artifacts: SimpleNamespace,
+    endpoint_residual_artifacts: SimpleNamespace,
+) -> None:
+    fifth = endpoint_residual_artifacts.fifth
+    assert fifth.accepted
+    assert fifth.candidate_id == (
+        composed_fold.ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
+    )
+    assert fifth.verify_authentication() == fifth.artifact_sha256
+    assert len(fifth.blocks) == 2
+    assert fifth.report["outer_block_count"] == 2
+    assert fifth.report["fit_check_endpoint_and_route_nonregressing"]
+    assert fifth.report["fit_check_first_metric_evaluation_after_all_outer_blocks"]
+    assert fifth.report["fit_check_triggered_refit"] is False
+    assert fifth.report["fit_check_role"] == (
+        "reused_development_acceptance_gate_not_unbiased_validation"
+    )
+    assert fifth.report["unbiased_generalization_claimed"] is False
+    assert fifth.report["fresh_whole_child_intelligence_validation_required"]
+    assert fifth.report["proof_scope"] == (
+        "source_bound_local_attention_operator_fold_not_whole_child_intelligence"
+    )
+    assert fifth.report["all_parent_probability_targets_from_authenticated_cache"]
+    assert fifth.report["legacy_recomputed_parent_probability_case_count"] == 0
+    assert (
+        fifth.final_fit_metrics.endpoint_relative_rmse
+        < fifth.baseline_fit_metrics.endpoint_relative_rmse
+    )
+    tolerance = fifth.policy.endpoint_policy.metric_regression_tolerance
+    assert (
+        fifth.final_fit_check_metrics.endpoint_relative_rmse
+        <= fifth.baseline_fit_check_metrics.endpoint_relative_rmse + tolerance
+    )
+    assert (
+        fifth.final_fit_check_metrics.probability_relative_rmse
+        <= fifth.baseline_fit_check_metrics.probability_relative_rmse + tolerance
+    )
+    assert (
+        fifth.final_fit_check_metrics.js_divergence_mean
+        <= fifth.baseline_fit_check_metrics.js_divergence_mean + tolerance
+    )
+    assert (
+        fifth.final_fit_check_metrics.js_divergence_worst
+        <= fifth.baseline_fit_check_metrics.js_divergence_worst + tolerance
+    )
+    assert (
+        fifth.final_fit_check_metrics.top1_route_agreement_fraction + tolerance
+        >= fifth.baseline_fit_check_metrics.top1_route_agreement_fraction
+    )
+    source_parameters = sum(
+        tensor.numel()
+        for tensor in (
+            composed_artifacts.source.query,
+            composed_artifacts.source.key,
+            composed_artifacts.source.value,
+            composed_artifacts.source.output,
+        )
+    )
+    target_parameters = sum(tensor.numel() for tensor in fifth.state_dict().values())
+    assert source_parameters == 192
+    assert target_parameters == 48
+    assert fifth.source_inventory.logical_parameters == source_parameters
+    assert fifth.report["source_logical_parameters"] == source_parameters
+    assert fifth.report["target_logical_parameters"] == target_parameters
+    assert fifth.report["parameter_compaction_ratio"] == 4.0
+    assert fifth.report["source_inventory"] == fifth.source_inventory.as_dict()
+    assert all(value == 0 for value in fifth.report["operation_audit"].values())
+    _assert_zero_training_counters(fifth.as_dict())
+
+    previous_state_sha = fifth.report["initial_state_sha256"]
+    for block in fifth.blocks:
+        assert block.verify() == block.block_sha256
+        assert block.input_state_sha256 == previous_state_sha
+        assert block.fit_bank.partition == "fit"
+        assert block.qk_proposal.report["fit_check_accessible"] is False
+        assert block.qk_proposal.report["fit_check_cases_consumed"] == 0
+        assert block.report["fit_check_accessible"] is False
+        assert block.report["fit_check_cases_consumed"] == 0
+        assert torch.equal(
+            block.endpoint_seed.value_weight,
+            block.residual_vo_seed.value_weight,
+        )
+        assert torch.equal(
+            block.endpoint_seed.output_weight,
+            block.residual_vo_seed.output_weight,
+        )
+        assert torch.equal(
+            block.qk_proposal.query_weight,
+            block.vo_artifact.producer_artifact.query_weight,
+        )
+        assert torch.equal(
+            block.qk_proposal.key_weight,
+            block.vo_artifact.producer_artifact.key_weight,
+        )
+        execution = block.qk_proposal.report["observed_execution_receipt"]
+        assert execution["requested_solver_device"] == "cpu"
+        assert execution["requested_compute_devices"] == ["cpu"]
+        assert execution["case_assignment"] == ("authenticated_bank_order_round_robin")
+        assert execution["every_requested_compute_device_observed"]
+        assert execution["compute_observations"][0]["case_execution_receipt_sha256"]
+        assert execution["solver_observation"]["solver_execution_receipt_sha256"]
+        previous_state_sha = block.output_state_sha256
+    assert previous_state_sha == fifth.report["final_state_sha256"]
+
+
+def test_endpoint_cases_use_arithmetic_parent_barycenters_and_direct_endpoints(
+    endpoint_residual_artifacts: SimpleNamespace,
+) -> None:
+    fifth = endpoint_residual_artifacts.fifth
+    case = fifth.evaluation_fit_bank.cases[0]
+    parent_probabilities = case.parent_probabilities
+    expected_heads = []
+    for members, weights in zip(
+        case.query_groups,
+        case.query_group_weights,
+        strict=True,
+    ):
+        expected_heads.append(
+            sum(
+                parent_probabilities[:, member] * weight
+                for member, weight in zip(members, weights, strict=True)
+            )
+        )
+    expected = torch.stack(expected_heads, dim=1)
+    expected = torch.where(
+        case.target_causal_mask,
+        expected,
+        torch.zeros_like(expected),
+    )
+    expected = expected / expected.sum(dim=-1, keepdim=True)
+    assert torch.allclose(
+        case.target_probability_barycenter,
+        expected,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    cached = endpoint_residual_artifacts.fit_cases[0]
+    direct_endpoint = (
+        cached.parent_post_attention_residual_target_space.float()
+        - cached.target_pre_attention_residual.float()
+    )
+    assert torch.equal(case.parent_endpoint_target, direct_endpoint)
+    assert case.target_receipt["probability_target_is_mean_of_parent_probabilities"]
+    assert not case.target_receipt[
+        "probability_target_is_softmax_of_mean_parent_logits"
+    ]
+    assert case.parent_probability_provenance == (
+        "authenticated_cached_parent_attention_probabilities"
+    )
+    assert torch.equal(
+        case.parent_probabilities,
+        cached.parent_probabilities.double(),
+    )
+    check_receipts = set(fifth.evaluation_fit_check_bank.target_receipt_sha256s)
+    assert check_receipts
+    assert all(
+        check_receipts.isdisjoint(block.fit_bank.target_receipt_sha256s)
+        for block in fifth.blocks
+    )
+
+
+def test_endpoint_fifth_arm_rejects_unsealed_source_tensor_substitution(
+    composed_artifacts: SimpleNamespace,
+    endpoint_residual_artifacts: SimpleNamespace,
+) -> None:
+    altered_query = composed_artifacts.source.query.clone()
+    altered_query[0, 0] += torch.tensor(0.25, dtype=torch.bfloat16)
+    with pytest.raises(
+        composed_fold.Lfm2ComposedQkAttentionAuthenticationError,
+        match="Actual source Q/K/V/O tensors differ",
+    ):
+        composed_fold.compile_lfm2_composed_endpoint_residual_attention_fold(
+            composed_qk=composed_artifacts.composed,
+            fit_value_output_artifact=(endpoint_residual_artifacts.fit_value_output),
+            source_query_weight=altered_query,
+            source_key_weight=composed_artifacts.source.key,
+            source_value_weight=composed_artifacts.source.value,
+            source_output_weight=composed_artifacts.source.output,
+            target_query_weight_template=torch.zeros_like(
+                composed_artifacts.target.query
+            ),
+            target_key_weight_template=torch.zeros_like(composed_artifacts.target.key),
+            target_value_weight_template=composed_artifacts.value_template,
+            target_output_weight_template=composed_artifacts.output_template,
+            query_norm_weight=composed_artifacts.norm,
+            key_norm_weight=composed_artifacts.norm,
+            norm_epsilon=1e-5,
+            policy=endpoint_residual_artifacts.fifth.policy,
+        )
+
+
+def test_endpoint_fifth_arm_is_independent_of_blank_target_values(
+    composed_artifacts: SimpleNamespace,
+    endpoint_residual_artifacts: SimpleNamespace,
+) -> None:
+    generator = torch.Generator().manual_seed(20260721)
+    changed_blank = (
+        composed_fold.compile_lfm2_composed_endpoint_residual_attention_fold(
+            composed_qk=composed_artifacts.composed,
+            fit_value_output_artifact=(endpoint_residual_artifacts.fit_value_output),
+            source_query_weight=composed_artifacts.source.query,
+            source_key_weight=composed_artifacts.source.key,
+            source_value_weight=composed_artifacts.source.value,
+            source_output_weight=composed_artifacts.source.output,
+            target_query_weight_template=torch.randn(
+                composed_artifacts.target.query.shape,
+                generator=generator,
+                dtype=torch.bfloat16,
+            ),
+            target_key_weight_template=torch.randn(
+                composed_artifacts.target.key.shape,
+                generator=generator,
+                dtype=torch.bfloat16,
+            ),
+            target_value_weight_template=torch.randn(
+                composed_artifacts.target.value.shape,
+                generator=generator,
+                dtype=torch.bfloat16,
+            ),
+            target_output_weight_template=torch.randn(
+                composed_artifacts.target.output.shape,
+                generator=generator,
+                dtype=torch.bfloat16,
+            ),
+            query_norm_weight=composed_artifacts.norm,
+            key_norm_weight=composed_artifacts.norm,
+            norm_epsilon=1e-5,
+            policy=endpoint_residual_artifacts.fifth.policy,
+        )
+    )
+    baseline = endpoint_residual_artifacts.fifth
+    assert changed_blank.verify_authentication() == changed_blank.artifact_sha256
+    assert changed_blank.compiled_state_sha256 == baseline.compiled_state_sha256
+    assert (
+        changed_blank.report["final_state_sha256"]
+        == baseline.report["final_state_sha256"]
+    )
+    assert tuple(changed_blank.state_dict()) == tuple(baseline.state_dict())
+    assert all(
+        torch.equal(
+            changed_blank.state_dict()[name],
+            baseline.state_dict()[name],
+        )
+        for name in baseline.state_dict()
+    )
+    assert all(
+        left.endpoint_seed.target_template_spec_sha256
+        == right.endpoint_seed.target_template_spec_sha256
+        for left, right in zip(
+            changed_blank.blocks,
+            baseline.blocks,
+            strict=True,
+        )
+    )
+
+
+def test_endpoint_fifth_arm_rejects_resealed_forged_final_metrics(
+    endpoint_residual_artifacts: SimpleNamespace,
+) -> None:
+    fifth = endpoint_residual_artifacts.fifth
+    forged_metrics = replace(
+        fifth.final_fit_metrics,
+        endpoint_relative_rmse=0.0,
+    )
+    report = dict(fifth.report)
+    report.pop("artifact_sha256")
+    report["final_fit_metrics"] = forged_metrics.as_dict()
+    report["artifact_sha256"] = composed_fold._canonical_sha256(report)
+    with pytest.raises(
+        composed_fold.Lfm2ComposedQkAttentionAuthenticationError,
+        match="metrics do not replay",
+    ):
+        replace(
+            fifth,
+            final_fit_metrics=forged_metrics,
+            report=report,
+        )
+
+
+def test_endpoint_direct_cached_probability_context_mismatch_is_rejected(
+    composed_artifacts: SimpleNamespace,
+) -> None:
+    case = composed_artifacts.cases[0]
+    altered_context = case.parent_context.clone()
+    altered_context[0, 0, 0, 0] += torch.tensor(
+        1.0,
+        dtype=altered_context.dtype,
+    )
+    alien = replace(case, parent_context=altered_context)
+    producer = composed_artifacts.composed.producer_artifact
+    with pytest.raises(
+        composed_fold.Lfm2ComposedQkAttentionAuthenticationError,
+        match="trace-cache tolerance",
+    ):
+        composed_fold._endpoint_case_from_cached_attention(
+            alien,
+            trajectory_sha256=composed_artifacts.trajectories[0],
+            query_groups=producer.query_groups,
+            query_group_weights=producer.query_barycentric_weights,
         )
 
 

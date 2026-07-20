@@ -169,6 +169,149 @@ def test_v5_runtime_policy_authenticates_opt_in_attention_transport() -> None:
     )
 
 
+def test_v5_runtime_composed_attention_policy_is_typed_exclusive_and_attention_only(
+) -> None:
+    composed = v5.Lfm2ComposedQkAttentionFoldPolicy()
+    runtime = v5.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(),
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=1,
+        composed_qk_attention_policy=composed,
+    )
+
+    assert runtime.as_dict()["composed_qk_attention_policy"] == composed.as_dict()
+    assert runtime.resolved_composed_qk_attention_policy("full_attention") is composed
+    assert runtime.resolved_composed_qk_attention_policy("short_conv") is None
+    assert "composed_qk_attention_policy" not in v5.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(),
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=1,
+    ).as_dict()
+
+    sequential = layer_compiler.Lfm2CpcfAttentionSequentialTransportPolicy(
+        enabled=True
+    )
+    with pytest.raises(
+        v5.Lfm2CpcfV5ModelCompilerError,
+        match="mutually exclusive",
+    ):
+        v5.Lfm2CpcfV5RuntimePolicy(
+            model_fold_policy=v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy(
+                attention_sequential_transport_policy=sequential,
+            ),
+            maximum_resident_evidence_bytes=1,
+            full_phase_tree_logical_bytes=1,
+            composed_qk_attention_policy=composed,
+        )
+
+
+def _composed_coverage_fixture() -> tuple[
+    tuple[SimpleNamespace, ...],
+    v5.Lfm2ComposedQkAttentionFoldPolicy,
+]:
+    policy = v5.Lfm2ComposedQkAttentionFoldPolicy()
+    candidate_id = (
+        v5.SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
+    )
+    receipts = []
+    for layer_index in range(14):
+        if layer_index not in v5.LFM2_CPCF_V5_COMPOSED_ATTENTION_LAYER_INDICES:
+            receipts.append(
+                SimpleNamespace(
+                    layer_index=layer_index,
+                    operator_kind="short_conv",
+                    result_sha256=v5._sha({"layer": layer_index}),
+                    report={"solver_evidence_policy": {}},
+                )
+            )
+            continue
+        producer_body = {
+            "schema": "test-composed-producer",
+            "layer_index": layer_index,
+        }
+        producer = {
+            **producer_body,
+            "artifact_sha256": v5._sha(producer_body),
+        }
+        outer_body = {
+            "schema": "test-composed-sequence-effective",
+            "candidate_id": candidate_id,
+            "composed_qk_artifact_sha256": producer["artifact_sha256"],
+            "fit_value_output_actual_child_context_sha256": v5._sha(
+                {"actual-context": layer_index}
+            ),
+            "fit_value_output_reconstructed_live_context_sha256": v5._sha(
+                {"reconstructed-context": layer_index}
+            ),
+            "layer_index": layer_index,
+        }
+        outer = {**outer_body, "artifact_sha256": v5._sha(outer_body)}
+        evaluation_body = {
+            "candidate_id": candidate_id,
+            "operator_artifact": outer,
+            "operator_artifact_sha256": v5._sha(outer),
+        }
+        evaluation = {
+            **evaluation_body,
+            "report_sha256": v5._sha(evaluation_body),
+        }
+        receipts.append(
+            SimpleNamespace(
+                layer_index=layer_index,
+                operator_kind="full_attention",
+                result_sha256=v5._sha({"layer": layer_index}),
+                report={
+                    "solver_evidence_policy": {
+                        "composed_qk_attention_policy": policy.as_dict(),
+                        "composed_qk_producer_artifact": producer,
+                        "composed_qk_producer_artifact_sha256": (
+                            producer["artifact_sha256"]
+                        ),
+                        "attention_candidate_evaluations": {
+                            candidate_id: evaluation,
+                        },
+                        "attention_candidate_selection": {
+                            "selected_candidate_id": candidate_id,
+                        },
+                    }
+                },
+            )
+        )
+    return tuple(receipts), policy
+
+
+def test_composed_attention_coverage_receipt_requires_exact_ordered_six_layers(
+) -> None:
+    receipts, policy = _composed_coverage_fixture()
+    coverage = dict(
+        v5._build_composed_attention_coverage_receipt(receipts, policy)
+    )
+    body = dict(coverage)
+    seal = body.pop("report_sha256")
+
+    assert seal == v5._sha(body)
+    assert coverage["expected_attention_layer_indices"] == [2, 4, 6, 8, 10, 12]
+    assert coverage["observed_attention_layer_indices"] == [2, 4, 6, 8, 10, 12]
+    assert coverage["covered_attention_layer_indices"] == [2, 4, 6, 8, 10, 12]
+    assert coverage["attention_layer_count"] == 6
+    assert coverage["exact_ordered_attention_layer_coverage"] is True
+    assert coverage["training_steps"] == 0
+
+    wrong = list(receipts)
+    wrong[12] = SimpleNamespace(
+        **{
+            **wrong[12].__dict__,
+            "operator_kind": "short_conv",
+            "report": {"solver_evidence_policy": {}},
+        }
+    )
+    with pytest.raises(
+        v5.Lfm2CpcfV5ModelCompilerError,
+        match="exact ordered",
+    ):
+        v5._build_composed_attention_coverage_receipt(wrong, policy)
+
+
 def test_whole_macrocell_selector_requirement_is_opt_in_and_serialized() -> None:
     policy = v5.Lfm2CpcfV5RuntimePolicy(
         model_fold_policy=(v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()),

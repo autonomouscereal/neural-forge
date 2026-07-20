@@ -43,6 +43,9 @@ LFM2_CPCF_V5_REAL_ATTENTION_PCG_AUDIT_SCHEMA = (
 LFM2_CPCF_V5_REAL_COMPOSED_ATTENTION_AUDIT_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-real-composed-attention-audit-v1"
 )
+LFM2_CPCF_V5_REAL_ENDPOINT_RESIDUAL_ATTENTION_AUDIT_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-real-endpoint-residual-attention-audit-v1"
+)
 
 H776_LAYER_INDEX = 2
 H776_LAYER_COUNT = 14
@@ -88,6 +91,13 @@ H776_COMPOSED_ATTENTION_CANDIDATE_IDS = (
     *H776_ATTENTION_CANDIDATE_IDS,
     H776_COMPOSED_ATTENTION_CANDIDATE_ID,
 )
+H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID = (
+    "endpoint_residual_alternating_qkvo"
+)
+H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS = (
+    *H776_COMPOSED_ATTENTION_CANDIDATE_IDS,
+    H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID,
+)
 H776_PHASE_COUNT = 2_304
 H776_TRAJECTORY_COUNT = 256
 H776_PHASES_PER_TRAJECTORY = 9
@@ -107,6 +117,9 @@ H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES = 192 * 1024**3
 H776_MAXIMUM_CUDA_BYTES_PER_DEVICE = 20 * 1024**3
 H776_COMPOSED_QK_ATTENTION_POLICY_SHA256 = (
     "a241c7a77990fbc45d20785fbe2c1897818642667cf7ff24b767db8ada1fb0bd"
+)
+H776_ENDPOINT_RESIDUAL_ATTENTION_POLICY_SHA256 = (
+    "8b83650718ec0ce471a29ae67e28fec604f7f6a04e46dd03a12009ff43e09f87"
 )
 H776_COMPOSED_LOGICAL_CUDA_UUIDS = (
     "2ce6a95c-7b1f-644a-3808-d781732a0582",
@@ -318,10 +331,14 @@ class Lfm2CpcfV5RealAttentionProbePins:
     expected_composed_qk_attention_policy_sha256: str = (
         H776_COMPOSED_QK_ATTENTION_POLICY_SHA256
     )
+    expected_endpoint_residual_attention_policy_sha256: str = (
+        H776_ENDPOINT_RESIDUAL_ATTENTION_POLICY_SHA256
+    )
     expected_composed_logical_cuda_uuids: tuple[str, str] = (
         H776_COMPOSED_LOGICAL_CUDA_UUIDS
     )
     expected_composed_qk_attention_enabled: bool = False
+    expected_endpoint_residual_attention_enabled: bool = False
     layer_index: int = H776_LAYER_INDEX
     expected_target_unique_parameters: int = H776_TARGET_UNIQUE_PARAMETERS
     maximum_process_rss_bytes: int = H776_MAXIMUM_PROCESS_RSS_BYTES
@@ -361,6 +378,7 @@ class Lfm2CpcfV5RealAttentionProbePins:
             "expected_origin_compiler_sha256",
             "expected_sequence_solver_plan_sha256",
             "expected_composed_qk_attention_policy_sha256",
+            "expected_endpoint_residual_attention_policy_sha256",
         ):
             _digest(getattr(self, name), name)
         fixed = {
@@ -383,12 +401,18 @@ class Lfm2CpcfV5RealAttentionProbePins:
             "expected_composed_qk_attention_policy_sha256": (
                 H776_COMPOSED_QK_ATTENTION_POLICY_SHA256
             ),
+            "expected_endpoint_residual_attention_policy_sha256": (
+                H776_ENDPOINT_RESIDUAL_ATTENTION_POLICY_SHA256
+            ),
             "expected_composed_logical_cuda_uuids": (H776_COMPOSED_LOGICAL_CUDA_UUIDS),
             "layer_index": H776_LAYER_INDEX,
             "expected_target_unique_parameters": H776_TARGET_UNIQUE_PARAMETERS,
             "maximum_process_rss_bytes": (
                 H776_COMPOSED_MAXIMUM_PROCESS_RSS_BYTES
-                if self.expected_composed_qk_attention_enabled
+                if (
+                    self.expected_composed_qk_attention_enabled
+                    or self.expected_endpoint_residual_attention_enabled
+                )
                 else H776_MAXIMUM_PROCESS_RSS_BYTES
             ),
             "maximum_cuda_bytes_per_device": (H776_MAXIMUM_CUDA_BYTES_PER_DEVICE),
@@ -413,15 +437,22 @@ class Lfm2CpcfV5RealAttentionProbePins:
         if (
             type(self.expected_attention_sequential_transport_enabled) is not bool
             or type(self.expected_composed_qk_attention_enabled) is not bool
+            or type(self.expected_endpoint_residual_attention_enabled) is not bool
         ):
             raise TypeError("Expected attention diagnostic modes must be bool.")
         if (
-            self.expected_attention_sequential_transport_enabled
-            and self.expected_composed_qk_attention_enabled
+            sum(
+                (
+                    self.expected_attention_sequential_transport_enabled,
+                    self.expected_composed_qk_attention_enabled,
+                    self.expected_endpoint_residual_attention_enabled,
+                )
+            )
+            > 1
         ):
             raise Lfm2CpcfV5RealAttentionProbeError(
-                "Composed Q/K attention and legacy sequential transport are "
-                "separate authenticated diagnostic lanes."
+                "Sequential transport, four-arm composed Q/K, and five-arm "
+                "endpoint-residual attention are separate authenticated lanes."
             )
 
     def as_dict(self) -> dict[str, Any]:
@@ -461,11 +492,17 @@ class Lfm2CpcfV5RealAttentionProbePins:
             "expected_composed_qk_attention_policy_sha256": (
                 self.expected_composed_qk_attention_policy_sha256
             ),
+            "expected_endpoint_residual_attention_policy_sha256": (
+                self.expected_endpoint_residual_attention_policy_sha256
+            ),
             "expected_composed_logical_cuda_uuids": list(
                 self.expected_composed_logical_cuda_uuids
             ),
             "expected_composed_qk_attention_enabled": (
                 self.expected_composed_qk_attention_enabled
+            ),
+            "expected_endpoint_residual_attention_enabled": (
+                self.expected_endpoint_residual_attention_enabled
             ),
             "layer_index": self.layer_index,
             "expected_target_unique_parameters": (
@@ -495,6 +532,7 @@ class Lfm2CpcfV5RealAttentionProbeRuntime:
     post_operator_chart_transport_shadow: bool = False
     attention_sequential_transport_enabled: bool = False
     composed_qk_attention_enabled: bool = False
+    endpoint_residual_attention_enabled: bool = False
 
 
 def _checkpoint_reference_mapping(verified: Any) -> dict[str, str]:
@@ -3117,6 +3155,37 @@ def _h776_composed_qk_attention_policy() -> Any:
     )
 
 
+def _h776_endpoint_residual_attention_policy() -> Any:
+    """Build the fixed fifth-arm endpoint policy for the real H776 lane."""
+
+    from .hf_lfm2_cached_endpoint_qk_residual_fold import (
+        Lfm2EndpointQkResidualFoldPolicy,
+    )
+    from .hf_lfm2_composed_qk_attention_fold import (
+        Lfm2ComposedEndpointResidualAttentionFoldPolicy,
+    )
+
+    policy = Lfm2ComposedEndpointResidualAttentionFoldPolicy(
+        maximum_outer_blocks=2,
+        endpoint_policy=Lfm2EndpointQkResidualFoldPolicy(
+            maximum_cg_iterations=64,
+            cg_restart_iterations=64,
+            cg_relative_tolerance=1e-2,
+            solver_device="cuda:1",
+            compute_devices=("cuda:0", "cuda:1"),
+        ),
+    )
+    if (
+        policy.authentication_sha256
+        != H776_ENDPOINT_RESIDUAL_ATTENTION_POLICY_SHA256
+        or policy.verify_authentication() is not True
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The fixed H776 endpoint-residual policy fingerprint changed."
+        )
+    return policy
+
+
 def _authenticate_qk_routing_metrics(
     metrics: Any,
     *,
@@ -3182,6 +3251,7 @@ def _authenticate_h776_composed_device_execution(
     pins: Lfm2CpcfV5RealAttentionProbePins,
 ) -> Mapping[str, Any]:
     from .hf_lfm2_cached_qk_score_residual_fold import (
+        LFM2_QK_LINEARIZATION_CACHE_RESOURCE_SCHEMA,
         LFM2_QK_OBSERVED_EXECUTION_RECEIPT_SCHEMA,
     )
 
@@ -3192,11 +3262,77 @@ def _authenticate_h776_composed_device_execution(
         or execution.get("compute_devices") != ["cuda:0", "cuda:1"]
         or execution.get("case_assignment") != "authenticated_bank_order_round_robin"
         or execution.get("compute_device_concurrency") != "serial_round_robin"
-        or execution.get("streamed_evidence") is not True
+        or execution.get("streamed_evidence") is not False
+        or execution.get("fixed_linearization_cache") is not True
+        or execution.get("linearization_cache_scope") != "one_gauss_newton_sweep"
+        or execution.get("maximum_logically_resident_prepared_cases")
+        != H776_COMPOSED_QK_FIT_CASES
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "The score fold lacks its exact two-device execution contract."
         )
+    sweeps = score.get("sweeps")
+    if (
+        not isinstance(sweeps, list)
+        or (score.get("changed") is True and (not sweeps or len(sweeps) > 2))
+        or (score.get("changed") is not True and sweeps)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The score fold lacks its per-sweep fixed-linearization inventory."
+        )
+    cache_resource_receipts: list[Mapping[str, Any]] = []
+    for sweep_index, sweep in enumerate(sweeps):
+        if not isinstance(sweep, Mapping) or sweep.get("sweep") != sweep_index:
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "The score fold has a malformed linearization sweep."
+            )
+        resource = _self_sealed(
+            sweep.get("linearization_cache_resource_receipt"),
+            seal_field="resource_receipt_sha256",
+            name=f"score fixed-linearization sweep {sweep_index}",
+        )
+        per_device_counts = resource.get("per_device_case_counts")
+        per_device_bytes = resource.get("per_device_logical_tensor_bytes")
+        if (
+            resource.get("schema") != LFM2_QK_LINEARIZATION_CACHE_RESOURCE_SCHEMA
+            or resource.get("cache_scope") != "one_gauss_newton_sweep"
+            or resource.get("resident_storage") != "compute_device"
+            or resource.get("source_fit_case_count") != H776_COMPOSED_QK_FIT_CASES
+            or resource.get("resident_prepared_case_count")
+            != H776_COMPOSED_QK_FIT_CASES
+            or resource.get("linearization_replay_call_count")
+            != H776_COMPOSED_QK_FIT_CASES
+            or per_device_counts != {"cuda:0": 67, "cuda:1": 67}
+            or not isinstance(per_device_bytes, dict)
+            or set(per_device_bytes) != {"cuda:0", "cuda:1"}
+            or any(
+                type(value) is not int or value <= 0
+                for value in per_device_bytes.values()
+            )
+            or resource.get("total_logical_tensor_bytes")
+            != sum(per_device_bytes.values())
+            or resource.get("maximum_device_logical_tensor_bytes")
+            != max(per_device_bytes.values())
+            or resource["maximum_device_logical_tensor_bytes"]
+            > pins.maximum_cuda_bytes_per_device
+            or resource.get("cache_reused_for_right_hand_side") is not True
+            or resource.get("cache_reused_for_normal_operator_calls") is not True
+            or resource.get("cache_invalidated_at_sweep_end") is not True
+            or any(
+                type(resource.get(name)) is not int or resource.get(name) != 0
+                for name in (
+                    "model_forward_calls",
+                    "model_generate_calls",
+                    "backward_calls",
+                    "optimizer_steps",
+                    "training_steps",
+                )
+            )
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                "The score fold has an invalid fixed-linearization resource receipt."
+            )
+        cache_resource_receipts.append(resource)
     receipt = _self_sealed(
         execution.get("observed_execution_receipt"),
         seal_field="receipt_sha256",
@@ -3355,6 +3491,387 @@ def _authenticate_h776_composed_device_execution(
         "solver_device": "cuda:1",
         "every_requested_compute_device_observed": True,
         "solver_device_observed": True,
+        "fixed_linearization_cache_authenticated": bool(cache_resource_receipts),
+        "linearization_cache_resource_receipt_sha256s": [
+            value["resource_receipt_sha256"] for value in cache_resource_receipts
+        ],
+        "fold_only_execution_authenticated": True,
+    }
+    return MappingProxyType({**body, "audit_sha256": _sha256(body)})
+
+
+def _authenticate_h776_endpoint_device_execution(
+    proposal: Mapping[str, Any],
+    *,
+    expected_fit_trajectory_sha256s: Sequence[str],
+    pins: Lfm2CpcfV5RealAttentionProbePins,
+) -> Mapping[str, Any]:
+    """Authenticate real endpoint JVP/VJP work across both pinned 3090s."""
+
+    from .hf_lfm2_cached_endpoint_qk_residual_fold import (
+        LFM2_ENDPOINT_QK_EXECUTION_SCHEMA,
+    )
+
+    expected_devices = ["cuda:0", "cuda:1"]
+    expected_uuids = list(pins.expected_composed_logical_cuda_uuids)
+    expected_transfer_execution = (
+        "once_per_static_device_shard_serial_requested_device_order"
+    )
+    expected_fixed_cache_bytes = 4_470_528
+    expected_static_shard_workspace_bytes = 11_919_360
+    expected_solver_workspace_bytes = 47_677_440
+    trajectories = tuple(expected_fit_trajectory_sha256s)
+    if (
+        len(trajectories) != H776_COMPOSED_QK_FIT_CASES
+        or len(set(trajectories)) != len(trajectories)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint execution lacks the exact ordered H776 Q/K-FIT inventory."
+        )
+    for index, trajectory in enumerate(trajectories):
+        _digest(trajectory, f"endpoint fit trajectory {index}")
+    execution = _self_sealed(
+        proposal.get("observed_execution_receipt"),
+        seal_field="receipt_sha256",
+        name="observed endpoint execution",
+    )
+    observations = execution.get("compute_observations")
+    summaries = execution.get("compute_device_summaries")
+    solver = execution.get("solver_observation")
+    resource = execution.get("resource_observation")
+    static_shards = _self_sealed(
+        execution.get("static_device_shard_receipt"),
+        seal_field="static_device_shards_sha256",
+        name="endpoint static device shards",
+    )
+    numerical_sweep_count = execution.get("numerical_sweep_count")
+    numerical_normal_calls = execution.get("numerical_normal_operator_calls")
+    if (
+        proposal.get("solver_device") != "cuda:1"
+        or proposal.get("compute_devices") != expected_devices
+        or proposal.get("case_assignment")
+        != "authenticated_bank_order_round_robin"
+        or proposal.get("fit_check_accessible") is not False
+        or proposal.get("fit_check_cases_consumed") != 0
+        or execution.get("schema") != LFM2_ENDPOINT_QK_EXECUTION_SCHEMA
+        or execution.get("requested_solver_device") != "cuda:1"
+        or execution.get("requested_compute_devices") != expected_devices
+        or execution.get("requested_compute_device_count") != 2
+        or execution.get("case_assignment")
+        != "authenticated_bank_order_round_robin"
+        or execution.get("compute_device_concurrency")
+        != "serial_static_device_shards"
+        or execution.get("qk_transfer_execution") != expected_transfer_execution
+        or execution.get("every_requested_compute_device_observed") is not True
+        or execution.get("distinct_cuda_uuid_count") != 2
+        or type(numerical_sweep_count) is not int
+        or numerical_sweep_count < 1
+        or type(numerical_normal_calls) is not int
+        or numerical_normal_calls < 1
+        or execution.get("total_semantic_probe_calls") != len(trajectories)
+        or not isinstance(observations, list)
+        or len(observations) != len(trajectories)
+        or not isinstance(summaries, list)
+        or len(summaries) != 2
+        or not isinstance(resource, dict)
+        or resource.get("fit_case_count") != len(trajectories)
+        or resource.get("fixed_tensor_cache_count") != 2
+        or resource.get("shared_fixed_tensor_cache_bytes")
+        != 2 * expected_fixed_cache_bytes
+        or resource.get("conservative_static_shard_workspace_bytes_per_device")
+        != expected_static_shard_workspace_bytes
+        or resource.get("byte_accounting_scope")
+        != "deterministic_declared_tensor_bytes_not_allocator_peak"
+        or resource.get("production_allocator_peak_authority")
+        != "outer_real_probe_continuous_cuda_peak_reserved_monitor"
+        or resource.get("within_all_resource_ceilings") is not True
+        or resource.get("every_compute_device_within_byte_ceiling") is not True
+        or not isinstance(execution.get("operation_audit"), dict)
+        or any(
+            type(value) is not int or value != 0
+            for value in execution["operation_audit"].values()
+        )
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint execution is not the exact FIT-only two-3090 contract."
+        )
+    static_entries = static_shards.get("shards")
+    if (
+        static_shards.get("schema")
+        != "neural-forge-lfm2-endpoint-static-device-shards-v1"
+        or static_shards.get("assignment")
+        != "authenticated_bank_order_round_robin_static_shards"
+        or static_shards.get("device_order") != expected_devices
+        or not isinstance(static_entries, list)
+        or len(static_entries) != 2
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint execution lacks its authenticated static device shards."
+        )
+    authenticated_observations = []
+    for index, (observation, trajectory) in enumerate(
+        zip(observations, trajectories, strict=True)
+    ):
+        authenticated = _self_sealed(
+            observation,
+            seal_field="case_execution_receipt_sha256",
+            name=f"observed endpoint FIT case {index}",
+        )
+        expected_device_index = index % 2
+        expected_device = expected_devices[expected_device_index]
+        scalar = authenticated.get("analytical_scalar")
+        if (
+            authenticated.get("assignment_index") != index
+            or authenticated.get("intended_logical_device") != expected_device
+            or authenticated.get("observed_logical_device") != expected_device
+            or authenticated.get("observed_device_type") != "cuda"
+            or authenticated.get("observed_device_index") != expected_device_index
+            or authenticated.get("cuda_uuid") != expected_uuids[expected_device_index]
+            or authenticated.get("cuda_name") != H776_COMPOSED_CUDA_DEVICE_NAME
+            or authenticated.get("trajectory_sha256") != trajectory
+            or authenticated.get("analytical_operation")
+            != "exact_endpoint_jvp_then_vjp_normal_probe"
+            or type(authenticated.get("exact_replay_calls")) is not int
+            or authenticated["exact_replay_calls"] < 1
+            or authenticated.get("endpoint_jvp_calls")
+            != numerical_normal_calls + 1
+            or authenticated.get("endpoint_vjp_calls")
+            != numerical_normal_calls + numerical_sweep_count + 1
+            or authenticated.get("normal_operator_calls")
+            != numerical_normal_calls + 1
+            or authenticated.get("semantic_probe_calls") != 1
+            or type(authenticated.get("prepared_persistent_tensor_bytes")) is not int
+            or authenticated["prepared_persistent_tensor_bytes"] <= 0
+            or type(authenticated.get("attached_replay_tensor_bytes")) is not int
+            or authenticated["attached_replay_tensor_bytes"] <= 0
+            or type(authenticated.get("semantic_probe_tensor_bytes")) is not int
+            or authenticated["semantic_probe_tensor_bytes"] <= 0
+            or type(authenticated.get("analytical_tensor_element_count")) is not int
+            or authenticated["analytical_tensor_element_count"] <= 0
+            or isinstance(scalar, bool)
+            or not isinstance(scalar, (int, float))
+            or not math.isfinite(float(scalar))
+            or float(scalar) <= 0.0
+            or authenticated.get("forced_host_scalar_read") is not True
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Endpoint FIT case {index} lacks real semantic work on "
+                f"{expected_device}."
+            )
+        for name in (
+            "evidence_sha256",
+            "trajectory_sha256",
+            "target_receipt_sha256",
+            "semantic_delta_probability_sha256",
+            "semantic_delta_endpoint_sha256",
+            "semantic_query_gradient_sha256",
+            "semantic_key_gradient_sha256",
+        ):
+            _digest(authenticated.get(name), f"endpoint case {index} {name}")
+        authenticated_observations.append(authenticated)
+    exact_replay_calls = authenticated_observations[0]["exact_replay_calls"]
+    if any(
+        observation["exact_replay_calls"] != exact_replay_calls
+        for observation in authenticated_observations
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint FIT cases disagree on exact replay round count."
+        )
+    for device_index, summary in enumerate(summaries):
+        expected_device = expected_devices[device_index]
+        expected_indices = list(range(device_index, len(trajectories), 2))
+        static_entry = static_entries[device_index]
+        if not isinstance(static_entry, Mapping):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Endpoint static shard {device_index} is malformed."
+            )
+        fixed_cache = _self_sealed(
+            static_entry.get("fixed_cache_receipt"),
+            seal_field="fixed_cache_receipt_sha256",
+            name=f"endpoint {expected_device} fixed cache",
+        )
+        summary_fixed_cache = _self_sealed(
+            summary.get("fixed_cache_receipt")
+            if isinstance(summary, Mapping)
+            else None,
+            seal_field="fixed_cache_receipt_sha256",
+            name=f"endpoint {expected_device} summary fixed cache",
+        )
+        matching_observations = [
+            authenticated_observations[index] for index in expected_indices
+        ]
+        prepared_bytes = sum(
+            int(value["prepared_persistent_tensor_bytes"])
+            for value in matching_observations
+        )
+        replay_bytes = sum(
+            int(value["attached_replay_tensor_bytes"])
+            for value in matching_observations
+        )
+        maximum_probe_bytes = max(
+            int(value["semantic_probe_tensor_bytes"])
+            for value in matching_observations
+        )
+        expected_device_solver_workspace = (
+            expected_solver_workspace_bytes if device_index == 1 else 0
+        )
+        expected_peak_bytes = (
+            prepared_bytes
+            + replay_bytes
+            + maximum_probe_bytes
+            + expected_fixed_cache_bytes
+            + expected_static_shard_workspace_bytes
+            + expected_device_solver_workspace
+        )
+        if (
+            not isinstance(summary, dict)
+            or static_entry.get("logical_device") != expected_device
+            or static_entry.get("case_assignment_indices") != expected_indices
+            or static_entry.get("case_count") != len(expected_indices)
+            or static_entry.get("all_cases_share_fixed_cache_by_identity") is not True
+            or fixed_cache != summary_fixed_cache
+            or fixed_cache.get("schema")
+            != "neural-forge-lfm2-endpoint-fixed-device-cache-v1"
+            or fixed_cache.get("logical_device") != expected_device
+            or fixed_cache.get("shared_fixed_tensor_bytes")
+            != expected_fixed_cache_bytes
+            or fixed_cache.get("fixed_cache_builds") != 1
+            or fixed_cache.get("fixed_tensor_materialization")
+            != "once_per_requested_compute_device"
+            or summary.get("logical_device") != expected_device
+            or summary.get("case_assignment_indices") != expected_indices
+            or summary.get("case_count") != len(expected_indices)
+            or summary.get("exact_replay_calls")
+            != len(expected_indices) * exact_replay_calls
+            or summary.get("endpoint_jvp_calls")
+            != len(expected_indices) * (numerical_normal_calls + 1)
+            or summary.get("endpoint_vjp_calls")
+            != len(expected_indices)
+            * (numerical_normal_calls + numerical_sweep_count + 1)
+            or summary.get("normal_operator_calls")
+            != len(expected_indices) * (numerical_normal_calls + 1)
+            or summary.get("semantic_probe_calls") != len(expected_indices)
+            or summary.get("cuda_uuid") != expected_uuids[device_index]
+            or summary.get("cuda_name") != H776_COMPOSED_CUDA_DEVICE_NAME
+            or summary.get("prepared_persistent_tensor_bytes") != prepared_bytes
+            or summary.get("attached_replay_tensor_bytes") != replay_bytes
+            or summary.get("shared_fixed_tensor_cache_bytes")
+            != expected_fixed_cache_bytes
+            or summary.get("replay_qk_shard_broadcasts") != exact_replay_calls
+            or summary.get("normal_qk_direction_shard_broadcasts")
+            != numerical_normal_calls
+            or summary.get("rhs_gradient_shard_reductions")
+            != numerical_sweep_count
+            or summary.get("normal_gradient_shard_reductions")
+            != numerical_normal_calls
+            or summary.get("semantic_direction_shard_builds") != 1
+            or summary.get("semantic_gradient_shard_reductions") != 1
+            or summary.get("qk_transfer_execution") != expected_transfer_execution
+            or summary.get("maximum_serial_semantic_probe_tensor_bytes")
+            != maximum_probe_bytes
+            or summary.get("conservative_static_shard_workspace_bytes")
+            != expected_static_shard_workspace_bytes
+            or summary.get("conservative_solver_workspace_bytes")
+            != expected_device_solver_workspace
+            or summary.get("conservative_peak_accounted_bytes")
+            != expected_peak_bytes
+            or summary.get("byte_accounting_scope")
+            != "deterministic_declared_tensor_bytes_not_allocator_peak"
+            or summary.get("maximum_bytes_per_compute_device")
+            != pins.maximum_cuda_bytes_per_device
+            or summary.get("within_compute_device_byte_ceiling") is not True
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Endpoint execution lacks the exact {expected_device} summary."
+            )
+        for name in (
+            "fixed_value_bfloat16_sha256",
+            "fixed_output_float64_sha256",
+            "query_rms_bfloat16_sha256",
+            "key_rms_bfloat16_sha256",
+            "query_rms_float32_sha256",
+            "key_rms_float32_sha256",
+        ):
+            _digest(fixed_cache.get(name), f"{expected_device} fixed cache {name}")
+    if (
+        execution.get("total_exact_replay_calls")
+        != sum(int(value["exact_replay_calls"]) for value in authenticated_observations)
+        or execution.get("total_endpoint_jvp_calls")
+        != sum(int(value["endpoint_jvp_calls"]) for value in authenticated_observations)
+        or execution.get("total_endpoint_vjp_calls")
+        != sum(int(value["endpoint_vjp_calls"]) for value in authenticated_observations)
+        or execution.get("total_normal_operator_calls")
+        != sum(
+            int(value["normal_operator_calls"])
+            for value in authenticated_observations
+        )
+        or resource.get("prepared_persistent_tensor_bytes")
+        != sum(
+            int(value["prepared_persistent_tensor_bytes"])
+            for value in authenticated_observations
+        )
+        or resource.get("attached_replay_tensor_bytes")
+        != sum(
+            int(value["attached_replay_tensor_bytes"])
+            for value in authenticated_observations
+        )
+        or resource.get("maximum_serial_semantic_probe_tensor_bytes")
+        != max(
+            int(value["semantic_probe_tensor_bytes"])
+            for value in authenticated_observations
+        )
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint aggregate execution/resource counters do not match "
+            "the authenticated static shards."
+        )
+    authenticated_solver = _self_sealed(
+        solver,
+        seal_field="solver_execution_receipt_sha256",
+        name="observed endpoint solver",
+    )
+    solver_scalar = authenticated_solver.get("analytical_scalar")
+    if (
+        authenticated_solver.get("intended_logical_device") != "cuda:1"
+        or authenticated_solver.get("observed_logical_device") != "cuda:1"
+        or authenticated_solver.get("observed_device_type") != "cuda"
+        or authenticated_solver.get("observed_device_index") != 1
+        or authenticated_solver.get("cuda_uuid") != expected_uuids[1]
+        or authenticated_solver.get("cuda_name") != H776_COMPOSED_CUDA_DEVICE_NAME
+        or authenticated_solver.get("analytical_operation")
+        != "dense_seed_qk_plus_worker_normal_sum_energy_and_parameter_count"
+        or isinstance(solver_scalar, bool)
+        or not isinstance(solver_scalar, (int, float))
+        or not math.isfinite(float(solver_scalar))
+        or float(solver_scalar) <= 0.0
+        or authenticated_solver.get("forced_host_scalar_read") is not True
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint solver lacks observed dense Q/K plus worker-normal work."
+        )
+    body = {
+        "observed_execution_receipt_sha256": execution["receipt_sha256"],
+        "logical_compute_devices": expected_devices,
+        "physical_cuda_uuids": expected_uuids,
+        "cuda_device_name": H776_COMPOSED_CUDA_DEVICE_NAME,
+        "fit_case_count": len(trajectories),
+        "per_device_case_counts": {
+            "cuda:0": len(range(0, len(trajectories), 2)),
+            "cuda:1": len(range(1, len(trajectories), 2)),
+        },
+        "semantic_probe_calls": len(trajectories),
+        "solver_device": "cuda:1",
+        "static_device_shards_sha256": static_shards[
+            "static_device_shards_sha256"
+        ],
+        "fixed_tensor_cache_count": 2,
+        "shared_fixed_tensor_cache_bytes": 2 * expected_fixed_cache_bytes,
+        "qk_transfer_execution": expected_transfer_execution,
+        "once_per_shard_transfer_counters_authenticated": True,
+        "deterministic_logical_byte_accounting_authenticated": True,
+        "allocator_peak_authority": (
+            "outer_real_probe_continuous_cuda_peak_reserved_monitor"
+        ),
         "fold_only_execution_authenticated": True,
     }
     return MappingProxyType({**body, "audit_sha256": _sha256(body)})
@@ -3834,6 +4351,707 @@ def authenticate_h776_composed_attention_result(
     return MappingProxyType({**body, "audit_sha256": _sha256(body)})
 
 
+def authenticate_h776_endpoint_residual_attention_result(
+    result: Any,
+    *,
+    input_bank_sha256: str,
+    expected_fit_bank_sha256: str,
+    expected_fit_trajectory_sha256s: Sequence[str],
+    pins: Lfm2CpcfV5RealAttentionProbePins,
+) -> Mapping[str, Any]:
+    """Authenticate the real five-arm endpoint-residual H776 transaction."""
+
+    from .hf_lfm2_composed_qk_attention_fold import (
+        ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID,
+        LFM2_COMPOSED_ENDPOINT_RESIDUAL_BLOCK_SCHEMA,
+        LFM2_COMPOSED_ENDPOINT_RESIDUAL_SCHEMA,
+        LFM2_COMPOSED_QK_PRODUCER_SCHEMA,
+        Lfm2CompiledComposedEndpointResidualAttentionFold,
+        Lfm2CompiledComposedQkSequenceEffectiveAttentionFold,
+    )
+    from .hf_lfm2_cpcf_layer_compiler import (
+        DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID,
+        RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID,
+        Lfm2CompiledCpcfResidualAttentionSplitFold,
+        _tensor_bundle_sha256,
+    )
+    from .hf_lfm2_sequence_effective_attention_fold import (
+        Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+    )
+    from .hf_lfm2_structural_residual_attention_fold import (
+        Lfm2CompiledStructuralAttentionFold,
+        _state_sha256 as _structural_attention_state_sha256,
+    )
+
+    if (
+        pins.expected_endpoint_residual_attention_enabled is not True
+        or pins.expected_composed_qk_attention_enabled is not False
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint-residual authentication was not independently pinned."
+        )
+    input_bank_sha = _digest(input_bank_sha256, "input_bank_sha256")
+    fit_bank_sha = _digest(expected_fit_bank_sha256, "expected_fit_bank_sha256")
+    full_fit_trajectories = tuple(expected_fit_trajectory_sha256s)
+    if (
+        len(full_fit_trajectories) != H776_COMPOSED_UPSTREAM_FIT_CASES
+        or len(set(full_fit_trajectories)) != len(full_fit_trajectories)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "The endpoint lane lacks the exact independent H776 FIT inventory."
+        )
+    for index, trajectory in enumerate(full_fit_trajectories):
+        _digest(trajectory, f"endpoint upstream FIT trajectory {index}")
+
+    report = _self_sealed(
+        getattr(result, "report", None),
+        seal_field="result_sha256",
+        name="endpoint-residual layer result",
+    )
+    policy = report.get("solver_evidence_policy")
+    if not isinstance(policy, dict):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint-residual layer result lacks solver evidence."
+        )
+    selection = _self_sealed(
+        policy.get("attention_candidate_selection"),
+        seal_field="report_sha256",
+        name="endpoint-residual attention candidate selection",
+    )
+    evaluations = policy.get("attention_candidate_evaluations")
+    candidate_ids = tuple(selection.get("candidate_ids", ()))
+    selected_id = selection.get("selected_candidate_id")
+    if (
+        report.get("layer_index") != H776_LAYER_INDEX
+        or report.get("operator_kind") != "full_attention"
+        or report.get("input_bank_sha256") != input_bank_sha
+        or report.get("split_phase_counts") != dict(H776_SPLIT_PHASE_COUNTS)
+        or policy.get("operator_case_count") != H776_COMPOSED_UPSTREAM_FIT_CASES
+        or candidate_ids != H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+        or not isinstance(evaluations, dict)
+        or set(evaluations) != set(H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS)
+        or selection.get("candidate_count") != 5
+        or selection.get("candidate_local_mlp_preparation_count") != 5
+        or selection.get("cross_candidate_prepared_mlp_basis_reused") is not False
+        or selection.get("endpoint_residual_candidate_fit_only_mlp_evaluated")
+        is not True
+        or selection.get("selection_split_only") is not True
+        or selection.get("winner_frozen_before_validation") is not True
+        or selection.get("validation_phase_count_consumed_before_freeze") != 0
+        or policy.get("attention_candidate_inventory_mode")
+        != "opt_in_authenticated_five_arm"
+        or policy.get("attention_each_candidate_has_own_fit_only_mlp") is not True
+        or policy.get("attention_each_candidate_prepares_own_mlp_basis") is not True
+        or policy.get("attention_cross_candidate_prepared_mlp_basis_reuse")
+        is not False
+        or policy.get("endpoint_residual_fit_only_downstream_mlp_evaluation")
+        is not True
+        or policy.get("endpoint_residual_fit_check_final_one_shot_only")
+        is not True
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint-residual five-arm tournament or split isolation changed."
+        )
+
+    candidate_report_sha256 = selection.get("candidate_report_sha256")
+    if (
+        not isinstance(candidate_report_sha256, dict)
+        or set(candidate_report_sha256)
+        != set(H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint selection lacks its exact five candidate receipts."
+        )
+    authenticated_evaluations: dict[str, dict[str, Any]] = {}
+    selection_keys: dict[str, tuple[Any, ...]] = {}
+    behavioral_keys: dict[str, tuple[float, ...]] = {}
+    for candidate_id in H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS:
+        evaluation = _self_sealed(
+            evaluations.get(candidate_id),
+            seal_field="report_sha256",
+            name=f"endpoint attention candidate {candidate_id!r}",
+        )
+        raw_key = evaluation.get("selection_key")
+        if (
+            evaluation.get("candidate_id") != candidate_id
+            or evaluation.get("operator_compiled_from_splits") != ["fit"]
+            or evaluation.get("mlp_compiled_from_splits") != ["fit"]
+            or evaluation.get("candidate_evaluated_on_splits") != ["selection"]
+            or evaluation.get("validation_phase_count_consumed") != 0
+            or evaluation.get("training_steps") != 0
+            or evaluation.get("parameters_pruned") != 0
+            or evaluation.get("parameters_quantized") != 0
+            or candidate_report_sha256.get(candidate_id)
+            != evaluation.get("report_sha256")
+            or not isinstance(raw_key, list)
+            or len(raw_key) != 11
+            or raw_key[-1] != candidate_id
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                for value in raw_key[:-1]
+            )
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Endpoint candidate {candidate_id!r} crossed a split or "
+                "fold-only gate."
+            )
+        authenticated_evaluations[candidate_id] = evaluation
+        selection_keys[candidate_id] = tuple(raw_key)
+        behavioral_keys[candidate_id] = tuple(float(value) for value in raw_key[:-1])
+    expected_selected_id = min(
+        H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS,
+        key=lambda candidate_id: selection_keys[candidate_id],
+    )
+    if (
+        selected_id != expected_selected_id
+        or selection.get("selected_candidate_report_sha256")
+        != candidate_report_sha256[selected_id]
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint five-arm winner does not reproduce from its ranking keys."
+        )
+
+    expected_composed_policy = _plain(_h776_composed_qk_attention_policy().as_dict())
+    expected_endpoint_policy = _plain(
+        _h776_endpoint_residual_attention_policy().as_dict()
+    )
+    composed_policy = policy.get("composed_qk_attention_policy")
+    endpoint_policy = policy.get("endpoint_residual_attention_policy")
+    if (
+        composed_policy != expected_composed_policy
+        or endpoint_policy != expected_endpoint_policy
+        or composed_policy.get("authentication_sha256")
+        != pins.expected_composed_qk_attention_policy_sha256
+        or endpoint_policy.get("authentication_sha256")
+        != pins.expected_endpoint_residual_attention_policy_sha256
+        or endpoint_policy.get("allow_legacy_recomputed_parent_probabilities")
+        is not False
+        or endpoint_policy.get("training_allowed") is not False
+        or endpoint_policy.get("endpoint_policy", {}).get("solver_device")
+        != "cuda:1"
+        or endpoint_policy.get("endpoint_policy", {}).get("compute_devices")
+        != ["cuda:0", "cuda:1"]
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint or prerequisite composed policy authentication changed."
+        )
+
+    endpoint_evaluation = authenticated_evaluations[
+        ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
+    ]
+    endpoint = _self_sealed(
+        policy.get("endpoint_residual_attention_artifact"),
+        seal_field="artifact_sha256",
+        name="endpoint-residual operator artifact",
+    )
+    endpoint_from_evaluation = _self_sealed(
+        endpoint_evaluation.get("operator_artifact"),
+        seal_field="artifact_sha256",
+        name="endpoint-residual evaluated operator artifact",
+    )
+    source_inventory = _self_sealed(
+        endpoint.get("source_inventory"),
+        seal_field="inventory_sha256",
+        name="actual source dense Q/K/V/O inventory",
+    )
+    tensor_receipts = source_inventory.get("tensor_receipts")
+    if not isinstance(tensor_receipts, dict) or set(tensor_receipts) != {
+        "q_proj.weight",
+        "k_proj.weight",
+        "v_proj.weight",
+        "out_proj.weight",
+    }:
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint source inventory is not actual dense Q/K/V/O."
+        )
+    source_logical_parameters = 0
+    for name, tensor_receipt in tensor_receipts.items():
+        if (
+            not isinstance(tensor_receipt, dict)
+            or not isinstance(tensor_receipt.get("shape"), list)
+            or len(tensor_receipt["shape"]) != 2
+            or any(type(value) is not int or value <= 0 for value in tensor_receipt["shape"])
+            or tensor_receipt.get("dtype") != "torch.bfloat16"
+            or type(tensor_receipt.get("logical_parameters")) is not int
+            or tensor_receipt["logical_parameters"]
+            != math.prod(tensor_receipt["shape"])
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Endpoint source tensor receipt {name!r} is invalid."
+            )
+        _digest(tensor_receipt.get("tensor_sha256"), f"{name} tensor_sha256")
+        _digest(
+            tensor_receipt.get("structural_tensor_sha256"),
+            f"{name} structural_tensor_sha256",
+        )
+        source_logical_parameters += tensor_receipt["logical_parameters"]
+    endpoint_operation = endpoint.get("operation_audit")
+    if (
+        endpoint.get("schema") != LFM2_COMPOSED_ENDPOINT_RESIDUAL_SCHEMA
+        or endpoint.get("candidate_id")
+        != H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID
+        or endpoint.get("accepted") is not True
+        or endpoint.get("policy") != expected_endpoint_policy
+        or endpoint.get("policy_sha256")
+        != pins.expected_endpoint_residual_attention_policy_sha256
+        or endpoint_from_evaluation != endpoint
+        or endpoint_evaluation.get("operator_artifact_sha256") != _sha256(endpoint)
+        or policy.get("endpoint_residual_attention_artifact_sha256")
+        != endpoint["artifact_sha256"]
+        or source_inventory.get("count_derived_from_actual_dense_tensors")
+        is not True
+        or source_inventory.get("logical_parameters") != source_logical_parameters
+        or endpoint.get("source_inventory_sha256")
+        != source_inventory["inventory_sha256"]
+        or endpoint.get("source_structural_state_sha256")
+        != source_inventory.get("structural_source_state_sha256")
+        or endpoint.get("source_logical_parameters") != source_logical_parameters
+        or type(endpoint.get("target_logical_parameters")) is not int
+        or endpoint["target_logical_parameters"] <= 0
+        or endpoint["target_logical_parameters"] >= source_logical_parameters
+        or not math.isclose(
+            float(endpoint.get("parameter_compaction_ratio", math.nan)),
+            source_logical_parameters / endpoint["target_logical_parameters"],
+            rel_tol=1e-15,
+            abs_tol=0.0,
+        )
+        or endpoint.get("ordinary_dense_target_qkvo") is not True
+        or endpoint.get("fit_check_endpoint_and_route_nonregressing") is not True
+        or endpoint.get(
+            "fit_check_first_metric_evaluation_after_all_outer_blocks"
+        )
+        is not True
+        or endpoint.get("fit_check_triggered_refit") is not False
+        or endpoint.get("fit_check_role")
+        != "reused_development_acceptance_gate_not_unbiased_validation"
+        or endpoint.get("unbiased_generalization_claimed") is not False
+        or endpoint.get("fresh_whole_child_intelligence_validation_required")
+        is not True
+        or endpoint.get("proof_scope")
+        != "source_bound_local_attention_operator_fold_not_whole_child_intelligence"
+        or endpoint.get("direct_parent_probability_barycenter_target") is not True
+        or endpoint.get("direct_parent_attention_endpoint_target") is not True
+        or endpoint.get("parent_probability_evidence_modes")
+        != ["authenticated_cached_parent_attention_probabilities"]
+        or endpoint.get("authenticated_cached_parent_probability_case_count")
+        != H776_COMPOSED_UPSTREAM_FIT_CASES
+        or endpoint.get("legacy_recomputed_parent_probability_case_count") != 0
+        or endpoint.get("all_parent_probability_targets_from_authenticated_cache")
+        is not True
+        or endpoint.get("legacy_parent_probability_recomputation_allowed")
+        is not False
+        or not isinstance(endpoint_operation, dict)
+        or any(
+            type(value) is not int or value != 0
+            for value in endpoint_operation.values()
+        )
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint artifact is not source-bound, cache-bound, compact, or "
+            "fold-only."
+        )
+
+    composed_producer = _self_sealed(
+        policy.get("composed_qk_producer_artifact"),
+        seal_field="artifact_sha256",
+        name="endpoint prerequisite composed producer",
+    )
+    global_sync = _self_sealed(
+        policy.get("composed_qk_global_sync"),
+        seal_field="report_sha256",
+        name="endpoint prerequisite global synchronization",
+    )
+    score = _self_sealed(
+        policy.get("composed_qk_score_result"),
+        seal_field="report_sha256",
+        name="endpoint prerequisite score residual",
+    )
+    qk_fit_ordinals = composed_producer.get("qk_fit_source_ordinals")
+    qk_fit_check_ordinals = composed_producer.get("qk_fit_check_source_ordinals")
+    if (
+        composed_producer.get("schema") != LFM2_COMPOSED_QK_PRODUCER_SCHEMA
+        or composed_producer.get("source_split_sha256") != fit_bank_sha
+        or composed_producer.get("upstream_fit_case_count")
+        != H776_COMPOSED_UPSTREAM_FIT_CASES
+        or composed_producer.get("upstream_trajectory_sha256s")
+        != list(full_fit_trajectories)
+        or not isinstance(qk_fit_ordinals, list)
+        or not isinstance(qk_fit_check_ordinals, list)
+        or len(qk_fit_ordinals) != H776_COMPOSED_QK_FIT_CASES
+        or len(qk_fit_check_ordinals) != H776_COMPOSED_QK_FIT_CHECK_CASES
+        or any(type(value) is not int for value in qk_fit_ordinals)
+        or any(type(value) is not int for value in qk_fit_check_ordinals)
+        or set(qk_fit_ordinals) & set(qk_fit_check_ordinals)
+        or set(qk_fit_ordinals) | set(qk_fit_check_ordinals)
+        != set(range(H776_COMPOSED_UPSTREAM_FIT_CASES))
+        or endpoint.get("composed_qk_artifact_sha256")
+        != composed_producer["artifact_sha256"]
+        or score.get("policy") != expected_composed_policy["score_policy"]
+        or global_sync.get("policy") != expected_composed_policy["global_policy"]
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint artifact lost its exact composed Q/K prerequisite lineage."
+        )
+    fit_trajectories = tuple(full_fit_trajectories[index] for index in qk_fit_ordinals)
+    fit_check_trajectories = tuple(
+        full_fit_trajectories[index] for index in qk_fit_check_ordinals
+    )
+    if (
+        endpoint.get("fit_trajectory_sha256s") != list(fit_trajectories)
+        or endpoint.get("fit_check_trajectory_sha256s")
+        != list(fit_check_trajectories)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint final evaluation does not use the exact composed "
+            "Q/K FIT and FIT-CHECK partitions."
+        )
+    _authenticate_qk_routing_metrics(
+        score.get("fit_metrics"),
+        policy=expected_composed_policy["score_policy"],
+        partition="fit",
+        expected_case_count=H776_COMPOSED_QK_FIT_CASES,
+    )
+    _authenticate_qk_routing_metrics(
+        score.get("fit_check_metrics"),
+        policy=expected_composed_policy["score_policy"],
+        partition="fit_check",
+        expected_case_count=H776_COMPOSED_QK_FIT_CHECK_CASES,
+    )
+    composed_device_execution = _authenticate_h776_composed_device_execution(
+        score,
+        producer=composed_producer,
+        global_sync=global_sync,
+        fit_trajectory_sha256s=full_fit_trajectories,
+        pins=pins,
+    )
+
+    block_reports = policy.get("endpoint_residual_block_reports")
+    proposal_reports = policy.get("endpoint_residual_qk_fit_proposal_reports")
+    outer_block_count = endpoint.get("outer_block_count")
+    output_prior = policy.get("endpoint_residual_output_prior_receipt")
+    if (
+        type(outer_block_count) is not int
+        or outer_block_count not in {1, 2}
+        or not isinstance(block_reports, list)
+        or len(block_reports) != outer_block_count
+        or not isinstance(proposal_reports, list)
+        or len(proposal_reports) != outer_block_count
+        or not isinstance(output_prior, dict)
+        or output_prior.get("construction")
+        != "zero_from_target_shape_and_dtype_metadata_only"
+        or output_prior.get("blank_target_values_read") is not False
+        or policy.get("endpoint_residual_blank_target_values_read") is not False
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint blocks or blank-independent output prior are incomplete."
+        )
+    _digest(output_prior.get("tensor_sha256"), "endpoint output prior tensor")
+    block_shas = []
+    proposal_shas = []
+    device_execution_audits = []
+    for block_index, (block, proposal) in enumerate(
+        zip(block_reports, proposal_reports, strict=True)
+    ):
+        authenticated_block = _self_sealed(
+            block,
+            seal_field="block_sha256",
+            name=f"endpoint outer block {block_index}",
+        )
+        authenticated_proposal = _self_sealed(
+            proposal,
+            seal_field="report_sha256",
+            name=f"endpoint Q/K FIT proposal {block_index}",
+        )
+        block_operation = authenticated_block.get("operation_audit")
+        proposal_operation = authenticated_proposal.get("operation_audit")
+        sweeps = authenticated_proposal.get("sweeps")
+        if (
+            authenticated_block.get("schema")
+            != LFM2_COMPOSED_ENDPOINT_RESIDUAL_BLOCK_SCHEMA
+            or authenticated_block.get("block_index") != block_index
+            or authenticated_block.get("fit_trajectory_sha256s")
+            != list(fit_trajectories)
+            or authenticated_block.get("qk_fit_proposal_sha256")
+            != authenticated_proposal["report_sha256"]
+            or authenticated_block.get("fit_check_accessible") is not False
+            or authenticated_block.get("fit_check_cases_consumed") != 0
+            or authenticated_proposal.get("policy")
+            != expected_endpoint_policy["endpoint_policy"]
+            or authenticated_proposal.get("fit_check_accessible") is not False
+            or authenticated_proposal.get("fit_check_cases_consumed") != 0
+            or authenticated_proposal.get("changed") is not True
+            or not isinstance(sweeps, list)
+            or not sweeps
+            or len(sweeps)
+            > expected_endpoint_policy["endpoint_policy"]["maximum_sweeps"]
+            or not isinstance(block_operation, dict)
+            or any(
+                type(value) is not int or value != 0
+                for value in block_operation.values()
+            )
+            or not isinstance(proposal_operation, dict)
+            or proposal_operation.get("fit_cases_consumed")
+            != H776_COMPOSED_QK_FIT_CASES
+            or proposal_operation.get("fit_check_cases_consumed") != 0
+            or any(
+                type(proposal_operation.get(name)) is not int
+                or proposal_operation.get(name) != 0
+                for name in (
+                    "model_forward_calls",
+                    "model_generate_calls",
+                    "backward_calls",
+                    "optimizer_steps",
+                    "training_steps",
+                    "parameters_pruned",
+                    "parameters_quantized",
+                    "blank_target_value_reads",
+                )
+            )
+        ):
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Endpoint outer block {block_index} is not FIT-only or "
+                "authenticated."
+            )
+        positive_frontier_step_observed = False
+        for sweep_index, sweep in enumerate(sweeps):
+            solve = sweep.get("solve_report") if isinstance(sweep, dict) else None
+            if (
+                not isinstance(sweep, dict)
+                or sweep.get("sweep") != sweep_index
+                or not isinstance(solve, dict)
+                or set(solve)
+                != {
+                    "converged",
+                    "usable_direction",
+                    "usable_direction_rule",
+                    "direction_is_finite",
+                    "direction_has_nonzero_entry",
+                    "iterations",
+                    "relative_normal_residual",
+                    "termination",
+                    "normal_operator_calls",
+                }
+                or solve.get("usable_direction_rule")
+                != (
+                    "finite_nonzero_solution_and_relative_residual_or_"
+                    "maximum_iterations"
+                )
+                or any(
+                    type(solve.get(name)) is not bool
+                    for name in (
+                        "converged",
+                        "usable_direction",
+                        "direction_is_finite",
+                        "direction_has_nonzero_entry",
+                    )
+                )
+                or type(solve.get("iterations")) is not int
+                or not 0
+                <= solve["iterations"]
+                <= expected_endpoint_policy["endpoint_policy"][
+                    "maximum_cg_iterations"
+                ]
+                or type(solve.get("normal_operator_calls")) is not int
+                or solve["normal_operator_calls"] < 0
+            ):
+                raise Lfm2CpcfV5RealAttentionProbeError(
+                    f"Endpoint block {block_index} sweep {sweep_index} has "
+                    "invalid usable-direction evidence."
+                )
+            expected_usable = bool(
+                solve["direction_is_finite"]
+                and solve["direction_has_nonzero_entry"]
+                and solve.get("termination")
+                in {"relative_normal_residual", "maximum_iterations"}
+            )
+            if (
+                solve["usable_direction"] is not expected_usable
+                or (
+                    solve.get("termination") == "maximum_iterations"
+                    and (
+                        solve["converged"] is not False
+                        or solve["iterations"]
+                        != expected_endpoint_policy["endpoint_policy"][
+                            "maximum_cg_iterations"
+                        ]
+                    )
+                )
+                or (
+                    solve.get("termination") == "relative_normal_residual"
+                    and solve["converged"] is not True
+                )
+            ):
+                raise Lfm2CpcfV5RealAttentionProbeError(
+                    f"Endpoint block {block_index} sweep {sweep_index} "
+                    "misstates its usable truncated-CG direction."
+                )
+            selected_alpha = sweep.get("selected_alpha")
+            if (
+                expected_usable
+                and isinstance(selected_alpha, (int, float))
+                and not isinstance(selected_alpha, bool)
+                and math.isfinite(float(selected_alpha))
+                and float(selected_alpha) > 0.0
+            ):
+                positive_frontier_step_observed = True
+        if not positive_frontier_step_observed:
+            raise Lfm2CpcfV5RealAttentionProbeError(
+                f"Endpoint block {block_index} changed state without one "
+                "authenticated positive exact-BF16 frontier step."
+            )
+        block_shas.append(authenticated_block["block_sha256"])
+        proposal_shas.append(authenticated_proposal["report_sha256"])
+        device_execution_audits.append(
+            _plain(
+                _authenticate_h776_endpoint_device_execution(
+                    authenticated_proposal,
+                    expected_fit_trajectory_sha256s=fit_trajectories,
+                    pins=pins,
+                )
+            )
+        )
+    if (
+        block_shas != endpoint.get("block_sha256s")
+        or block_shas
+        != [block["block_sha256"] for block in block_reports]
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint outer-block lineage changed."
+        )
+
+    baseline_fit = endpoint.get("baseline_fit_metrics")
+    final_fit = endpoint.get("final_fit_metrics")
+    baseline_check = endpoint.get("baseline_fit_check_metrics")
+    final_check = endpoint.get("final_fit_check_metrics")
+    if (
+        not all(
+            isinstance(value, dict)
+            for value in (baseline_fit, final_fit, baseline_check, final_check)
+        )
+        or final_fit.get("endpoint_relative_rmse", math.inf)
+        >= baseline_fit.get("endpoint_relative_rmse", -math.inf)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint final state did not strictly improve FIT endpoint error."
+        )
+
+    selected_type_by_id = {
+        DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID: (
+            Lfm2CompiledStructuralAttentionFold
+        ),
+        RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID: (
+            Lfm2CompiledCpcfResidualAttentionSplitFold
+        ),
+        H776_SEQUENCE_EFFECTIVE_CANDIDATE_ID: (
+            Lfm2CompiledFixedQkSequenceEffectiveAttentionFold
+        ),
+        H776_COMPOSED_ATTENTION_CANDIDATE_ID: (
+            Lfm2CompiledComposedQkSequenceEffectiveAttentionFold
+        ),
+        H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID: (
+            Lfm2CompiledComposedEndpointResidualAttentionFold
+        ),
+    }
+    selected_artifact = getattr(result, "operator_artifact", None)
+    selected_report = authenticated_evaluations[selected_id].get("operator_artifact")
+    if (
+        not isinstance(selected_artifact, selected_type_by_id[selected_id])
+        or not callable(getattr(selected_artifact, "as_dict", None))
+        or not callable(getattr(selected_artifact, "state_dict", None))
+        or _plain(selected_artifact.as_dict()) != selected_report
+        or report.get("operator_artifact") != selected_report
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint tournament winner is not the exact typed frozen artifact."
+        )
+    if isinstance(selected_artifact, Lfm2CompiledStructuralAttentionFold):
+        state_sha = _structural_attention_state_sha256(
+            selected_artifact.state_dict()
+        )
+        authenticated = state_sha == selected_artifact.compiled_state_sha256
+    elif isinstance(selected_artifact, Lfm2CompiledCpcfResidualAttentionSplitFold):
+        state_sha = _tensor_bundle_sha256(selected_artifact.state_dict())
+        authenticated = state_sha == selected_artifact.compiled_state_sha256
+    elif isinstance(
+        selected_artifact,
+        Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+    ):
+        authenticated = selected_artifact.verify_authentication() is True
+    else:
+        authenticated = (
+            selected_artifact.verify_authentication()
+            == selected_artifact.artifact_sha256
+        )
+    if not authenticated:
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint tournament winner failed live typed authentication."
+        )
+    next_bank = getattr(result, "next_bank", None)
+    if (
+        next_bank is None
+        or getattr(next_bank, "layer_index", None) != H776_LAYER_INDEX + 1
+        or report.get("next_bank_sha256")
+        != getattr(next_bank, "state_bank_sha256", None)
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Endpoint layer transaction did not create its in-memory k=3 bank."
+        )
+    endpoint_won = (
+        selected_id == H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID
+    )
+    endpoint_strictly_better = all(
+        behavioral_keys[H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID]
+        < behavioral_keys[candidate_id]
+        for candidate_id in H776_COMPOSED_ATTENTION_CANDIDATE_IDS
+    )
+    body = {
+        "schema": LFM2_CPCF_V5_REAL_ENDPOINT_RESIDUAL_ATTENTION_AUDIT_SCHEMA,
+        "layer_result_sha256": report["result_sha256"],
+        "input_bank_sha256": input_bank_sha,
+        "fit_bank_sha256": fit_bank_sha,
+        "fit_trajectory_sha256s": list(full_fit_trajectories),
+        "next_bank_sha256": report["next_bank_sha256"],
+        "candidate_ids": list(candidate_ids),
+        "selected_candidate_id": selected_id,
+        "selection_keys": {
+            candidate_id: list(selection_keys[candidate_id])
+            for candidate_id in candidate_ids
+        },
+        "endpoint_residual_won": endpoint_won,
+        "endpoint_residual_strictly_better_than_all_prior_arms": (
+            endpoint_strictly_better
+        ),
+        "scientific_outcome": (
+            "positive_endpoint_residual_selection"
+            if endpoint_won and endpoint_strictly_better
+            else "honest_negative_or_prior_arm_selected"
+        ),
+        "full_validation_metrics": _plain(report["split_metrics"]["validation"]),
+        "endpoint_artifact": endpoint,
+        "source_dense_qkvo_inventory": source_inventory,
+        "endpoint_residual_attention_policy_sha256": (
+            pins.expected_endpoint_residual_attention_policy_sha256
+        ),
+        "composed_prerequisite_device_execution": _plain(
+            composed_device_execution
+        ),
+        "endpoint_block_device_execution": device_execution_audits,
+        "all_parent_probability_targets_from_authenticated_cache": True,
+        "blank_target_values_read": False,
+        "candidate_local_fit_only_mlp_count": 5,
+        "fit_check_final_one_shot_only": True,
+        "continuous_cuda_allocator_peak_monitor_is_authority": True,
+        "selected_live_operator_artifact_bound": True,
+        "in_memory_next_bank_created_by_layer_replay": True,
+        "k3_checkpoint_published": False,
+        "layer_3_compiled": False,
+        "automatic_retry_or_retuning_performed": False,
+    }
+    return MappingProxyType({**body, "audit_sha256": _sha256(body)})
+
+
 def execute_lfm2_cpcf_v5_real_attention_probe(
     runtime: Lfm2CpcfV5RealAttentionProbeRuntime,
     pins: Lfm2CpcfV5RealAttentionProbePins,
@@ -3859,13 +5077,21 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         raise TypeError("attention_sequential_transport_enabled must be bool.")
     if type(runtime.composed_qk_attention_enabled) is not bool:
         raise TypeError("composed_qk_attention_enabled must be bool.")
+    if type(runtime.endpoint_residual_attention_enabled) is not bool:
+        raise TypeError("endpoint_residual_attention_enabled must be bool.")
     if (
-        runtime.attention_sequential_transport_enabled
-        and runtime.composed_qk_attention_enabled
+        sum(
+            (
+                runtime.attention_sequential_transport_enabled,
+                runtime.composed_qk_attention_enabled,
+                runtime.endpoint_residual_attention_enabled,
+            )
+        )
+        > 1
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
-            "Composed Q/K attention and legacy sequential transport cannot "
-            "share one authenticated diagnostic run."
+            "Sequential transport, four-arm composed Q/K, and five-arm "
+            "endpoint-residual attention cannot share one diagnostic run."
         )
     if (
         runtime.attention_sequential_transport_enabled
@@ -3881,6 +5107,14 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
     ):
         raise Lfm2CpcfV5RealAttentionProbeError(
             "Runtime composed Q/K mode differs from its independent invocation pin."
+        )
+    if (
+        runtime.endpoint_residual_attention_enabled
+        != pins.expected_endpoint_residual_attention_enabled
+    ):
+        raise Lfm2CpcfV5RealAttentionProbeError(
+            "Runtime endpoint-residual mode differs from its independent "
+            "invocation pin."
         )
     if (
         resource_monitor.maximum_process_rss_bytes != pins.maximum_process_rss_bytes
@@ -4151,7 +5385,10 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                     layer_bank,
                     splits=("fit",),
                 )
-                if runtime.composed_qk_attention_enabled
+                if (
+                    runtime.composed_qk_attention_enabled
+                    or runtime.endpoint_residual_attention_enabled
+                )
                 else None
             )
             composed_fit_trajectory_sha256s = (
@@ -4164,7 +5401,15 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             )
             composed_qk_policy = (
                 _h776_composed_qk_attention_policy()
-                if runtime.composed_qk_attention_enabled
+                if (
+                    runtime.composed_qk_attention_enabled
+                    or runtime.endpoint_residual_attention_enabled
+                )
+                else None
+            )
+            endpoint_residual_policy = (
+                _h776_endpoint_residual_attention_policy()
+                if runtime.endpoint_residual_attention_enabled
                 else None
             )
 
@@ -4189,19 +5434,40 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                         else None
                     ),
                     composed_qk_attention_policy=composed_qk_policy,
+                    endpoint_residual_attention_policy=(
+                        endpoint_residual_policy
+                    ),
                 )
 
-            if runtime.composed_qk_attention_enabled:
+            if (
+                runtime.composed_qk_attention_enabled
+                or runtime.endpoint_residual_attention_enabled
+            ):
                 # The composed lane contains both the legacy sequence arm and a
-                # second seeded sequence arm.  The old single-arm PCG observer
-                # intentionally cannot authenticate that two-artifact inventory.
+                # second seeded sequence arm; the endpoint lane adds a fifth
+                # artifact.  The old single-arm PCG observer intentionally
+                # cannot authenticate either expanded inventory.
                 result = compile_layer()
             else:
                 collector = Lfm2SequenceEffectivePcgCollector()
                 with sequence_fold.observe_lfm2_sequence_effective_pcg(collector):
                     result = compile_layer()
             resource_monitor.checkpoint("layer_2_compiled_and_validated")
-            if runtime.composed_qk_attention_enabled:
+            if runtime.endpoint_residual_attention_enabled:
+                result_audit = (
+                    authenticate_h776_endpoint_residual_attention_result(
+                        result,
+                        input_bank_sha256=layer_bank.state_bank_sha256,
+                        expected_fit_bank_sha256=(
+                            composed_fit_bank.state_bank_sha256
+                        ),
+                        expected_fit_trajectory_sha256s=(
+                            composed_fit_trajectory_sha256s
+                        ),
+                        pins=pins,
+                    )
+                )
+            elif runtime.composed_qk_attention_enabled:
                 result_audit = authenticate_h776_composed_attention_result(
                     result,
                     input_bank_sha256=layer_bank.state_bank_sha256,
@@ -4312,7 +5578,19 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         **sequential_transport_body,
         "binding_sha256": _sha256(sequential_transport_body),
     }
-    if runtime.composed_qk_attention_enabled:
+    if runtime.endpoint_residual_attention_enabled:
+        positive_attention_outcome = (
+            result_audit["endpoint_residual_won"]
+            and result_audit[
+                "endpoint_residual_strictly_better_than_all_prior_arms"
+            ]
+        )
+        completed_status = (
+            "completed_positive_endpoint_residual_selection"
+            if positive_attention_outcome
+            else "completed_honest_negative_or_prior_arm_selected"
+        )
+    elif runtime.composed_qk_attention_enabled:
         positive_attention_outcome = (
             result_audit["composed_qk_won"]
             and result_audit["composed_qk_strictly_better_than_all_legacy_arms"]
@@ -4369,14 +5647,51 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         "attention_sequential_transport": _plain(sequential_transport_binding),
         "composed_qk_attention": {
             "enabled": runtime.composed_qk_attention_enabled,
+            "enabled_as_endpoint_prerequisite": (
+                runtime.endpoint_residual_attention_enabled
+            ),
             "runtime_matches_independent_invocation_pin": True,
             "candidate_inventory": list(
-                H776_COMPOSED_ATTENTION_CANDIDATE_IDS
+                H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+                if runtime.endpoint_residual_attention_enabled
+                else H776_COMPOSED_ATTENTION_CANDIDATE_IDS
                 if runtime.composed_qk_attention_enabled
                 else H776_ATTENTION_CANDIDATE_IDS
             ),
             "legacy_single_artifact_pcg_observer_used": (
-                not runtime.composed_qk_attention_enabled
+                not (
+                    runtime.composed_qk_attention_enabled
+                    or runtime.endpoint_residual_attention_enabled
+                )
+            ),
+            "positive_attention_outcome": positive_attention_outcome,
+        },
+        "endpoint_residual_attention": {
+            "enabled": runtime.endpoint_residual_attention_enabled,
+            "runtime_matches_independent_invocation_pin": True,
+            "composed_qk_prerequisite_enabled_in_layer_call": (
+                runtime.endpoint_residual_attention_enabled
+            ),
+            "candidate_inventory": list(
+                H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+                if runtime.endpoint_residual_attention_enabled
+                else (
+                    H776_COMPOSED_ATTENTION_CANDIDATE_IDS
+                    if runtime.composed_qk_attention_enabled
+                    else H776_ATTENTION_CANDIDATE_IDS
+                )
+            ),
+            "candidate_local_fit_only_mlp_count": (
+                5 if runtime.endpoint_residual_attention_enabled else None
+            ),
+            "fit_check_final_one_shot_only": (
+                True if runtime.endpoint_residual_attention_enabled else None
+            ),
+            "blank_target_values_read": (
+                False if runtime.endpoint_residual_attention_enabled else None
+            ),
+            "continuous_cuda_allocator_peak_monitor_authoritative": (
+                True if runtime.endpoint_residual_attention_enabled else None
             ),
             "positive_attention_outcome": positive_attention_outcome,
         },
@@ -4416,6 +5731,9 @@ __all__ = [
     "H776_COMPOSED_QK_FIT_CASES",
     "H776_COMPOSED_QK_FIT_CHECK_CASES",
     "H776_COMPOSED_UPSTREAM_FIT_CASES",
+    "H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_ID",
+    "H776_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS",
+    "H776_ENDPOINT_RESIDUAL_ATTENTION_POLICY_SHA256",
     "H776_LAYER_INDEX",
     "H776_HIDDEN_PARTIAL_TRACE_PCG_EXECUTION_PROFILE_SHA256",
     "H776_MAXIMUM_CUDA_BYTES_PER_DEVICE",
@@ -4429,6 +5747,7 @@ __all__ = [
     "LFM2_CPCF_V5_REAL_ATTENTION_PCG_AUDIT_SCHEMA",
     "LFM2_CPCF_V5_REAL_ATTENTION_PROBE_SCHEMA",
     "LFM2_CPCF_V5_REAL_COMPOSED_ATTENTION_AUDIT_SCHEMA",
+    "LFM2_CPCF_V5_REAL_ENDPOINT_RESIDUAL_ATTENTION_AUDIT_SCHEMA",
     "Lfm2CpcfV5RealAttentionProbeError",
     "Lfm2CpcfV5RealAttentionProbePins",
     "Lfm2CpcfV5RealAttentionProbeRuntime",
@@ -4436,6 +5755,7 @@ __all__ = [
     "Lfm2SequenceEffectivePcgCollector",
     "authenticate_h776_attention_result",
     "authenticate_h776_composed_attention_result",
+    "authenticate_h776_endpoint_residual_attention_result",
     "authenticate_h776_boundary_frontier",
     "authenticate_h776_k2_checkpoint",
     "authenticate_h776_phase_inventory",

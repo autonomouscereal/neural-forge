@@ -68,11 +68,42 @@ ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_SCHEMA = (
 ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID = (
     "candidate-local-residual-attention-v1"
 )
+COMPOSED_QK_ATTENTION_RUNNER_PROFILE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-composed-qk-attention-runner-profile-v1"
+)
+COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID = (
+    "score-routed-residual-seeded-sequence-effective-v1"
+)
+COMPOSED_QK_ATTENTION_LAYER_INDICES = (2, 4, 6, 8, 10, 12)
+COMPOSED_QK_ATTENTION_COVERAGE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-composed-attention-coverage-v1"
+)
+ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-endpoint-residual-attention-runner-profile-v1"
+)
+ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID = (
+    "endpoint-residual-alternating-qkvo-v1"
+)
+ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-endpoint-residual-attention-coverage-v1"
+)
 MODEL_FOLD_POLICY_IDENTITY_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-model-fold-policy-identity-v1"
 )
 RESUME_POLICY_BINDING_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-runner-resume-policy-binding-v1"
+)
+COMPOSED_QK_POLICY_IDENTITY_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-composed-qk-policy-identity-v1"
+)
+COMPOSED_QK_RUNTIME_POLICY_BINDING_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-composed-qk-runtime-policy-binding-v1"
+)
+ENDPOINT_RESIDUAL_POLICY_IDENTITY_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-endpoint-residual-policy-identity-v1"
+)
+ENDPOINT_RESIDUAL_RUNTIME_POLICY_BINDING_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-endpoint-residual-runtime-policy-binding-v1"
 )
 GPU_REPLAY_SCHEMA = "neural-forge-lfm2-cpcf-v5-authenticated-two-gpu-replay-v1"
 PROVEN_GPU_PARITY_RECEIPT = (
@@ -140,6 +171,17 @@ _OPT_IN_POLICY_IDENTITY_FIELDS = (
     "attention_sequential_transport_profile",
     "complete_model_fold_policy_sha256",
     "model_fold_policy_identity_sha256",
+)
+_COMPOSED_QK_POLICY_IDENTITY_FIELDS = (
+    "composed_qk_attention_profile",
+    "composed_qk_attention_policy_sha256",
+    "composed_qk_attention_policy_identity_sha256",
+)
+_ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS = (
+    "endpoint_residual_attention_profile",
+    "endpoint_residual_composed_qk_attention_policy_sha256",
+    "endpoint_residual_attention_policy_sha256",
+    "endpoint_residual_attention_policy_identity_sha256",
 )
 
 
@@ -218,6 +260,151 @@ class V5AttentionSequentialTransportRunnerProfile:
             "short_conv_transport_enabled": False,
             "validation_tuning_permitted": False,
             "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        return {**body, "profile_sha256": _sha(body)}
+
+
+@dataclass(frozen=True, slots=True)
+class V5ComposedQkAttentionRunnerProfile:
+    """One exact all-attention-layer analytical residual-fold opt-in."""
+
+    profile_id: str = COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID
+
+    def __post_init__(self) -> None:
+        if self.profile_id != COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Unknown composed Q/K attention runner profile."
+            )
+
+    def build_policy(self) -> Any:
+        from neural_forge.hf_lfm2_cached_qk_score_residual_fold import (
+            Lfm2QkScoreResidualFoldPolicy,
+        )
+        from neural_forge.hf_lfm2_composed_qk_attention_fold import (
+            Lfm2ComposedQkAttentionFoldPolicy,
+        )
+        from neural_forge.hf_lfm2_qk_global_gauge_sync import (
+            Lfm2QkGlobalGaugeSyncPolicy,
+        )
+
+        policy = Lfm2ComposedQkAttentionFoldPolicy(
+            global_policy=Lfm2QkGlobalGaugeSyncPolicy(
+                maximum_total_score_elements=134_217_728,
+                maximum_total_factor_elements=67_108_864,
+                maximum_total_output_elements=201_326_592,
+                maximum_total_svd_workspace_elements=67_108_864,
+            ),
+            score_policy=Lfm2QkScoreResidualFoldPolicy(
+                maximum_fit_centered_score_relative_rmse=0.10,
+                maximum_fit_probability_relative_rmse=0.20,
+                maximum_fit_js_divergence_mean=0.05,
+                maximum_fit_js_divergence_worst=0.10,
+                minimum_fit_top1_route_agreement=0.90,
+                maximum_fit_check_centered_score_relative_rmse=0.20,
+                maximum_fit_check_probability_relative_rmse=0.20,
+                maximum_fit_check_js_divergence_mean=0.05,
+                maximum_fit_check_js_divergence_worst=0.10,
+                minimum_fit_check_top1_route_agreement=0.90,
+                solver_device="cuda:1",
+                compute_devices=("cuda:0", "cuda:1"),
+            ),
+        )
+        if (
+            type(policy) is not Lfm2ComposedQkAttentionFoldPolicy
+            or not policy.verify_authentication()
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "The composed Q/K profile did not construct its exact "
+                "authenticated typed policy."
+            )
+        return policy
+
+    def as_dict(self) -> dict[str, Any]:
+        policy = self.build_policy()
+        body = {
+            "schema": COMPOSED_QK_ATTENTION_RUNNER_PROFILE_SCHEMA,
+            "profile_id": self.profile_id,
+            "composed_qk_attention_policy": policy.as_dict(),
+            "expected_attention_layer_indices": list(
+                COMPOSED_QK_ATTENTION_LAYER_INDICES
+            ),
+            "full_attention_only_via_runtime_policy_resolver": True,
+            "short_conv_composed_attention_enabled": False,
+            "actual_upstream_child_contexts_required": True,
+            "validation_tuning_permitted": False,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        return {**body, "profile_sha256": _sha(body)}
+
+
+@dataclass(frozen=True, slots=True)
+class V5EndpointResidualAttentionRunnerProfile:
+    """Exact five-arm, all-full-attention endpoint-residual opt-in."""
+
+    profile_id: str = ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID
+
+    def __post_init__(self) -> None:
+        if self.profile_id != ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Unknown endpoint-residual attention runner profile."
+            )
+
+    def build_composed_policy(self) -> Any:
+        return V5ComposedQkAttentionRunnerProfile().build_policy()
+
+    def build_policy(self) -> Any:
+        from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
+            Lfm2EndpointQkResidualFoldPolicy,
+        )
+        from neural_forge.hf_lfm2_composed_qk_attention_fold import (
+            Lfm2ComposedEndpointResidualAttentionFoldPolicy,
+        )
+
+        policy = Lfm2ComposedEndpointResidualAttentionFoldPolicy(
+            maximum_outer_blocks=2,
+            endpoint_policy=Lfm2EndpointQkResidualFoldPolicy(
+                maximum_cg_iterations=64,
+                cg_restart_iterations=64,
+                cg_relative_tolerance=1e-2,
+                solver_device="cuda:1",
+                compute_devices=("cuda:0", "cuda:1"),
+            ),
+        )
+        if (
+            type(policy) is not Lfm2ComposedEndpointResidualAttentionFoldPolicy
+            or not policy.verify_authentication()
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "The endpoint-residual profile did not construct its exact "
+                "authenticated typed policy."
+            )
+        return policy
+
+    def as_dict(self) -> dict[str, Any]:
+        composed_policy = self.build_composed_policy()
+        endpoint_policy = self.build_policy()
+        body = {
+            "schema": ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_SCHEMA,
+            "profile_id": self.profile_id,
+            "composed_qk_attention_policy": composed_policy.as_dict(),
+            "endpoint_residual_attention_policy": endpoint_policy.as_dict(),
+            "expected_attention_layer_indices": list(
+                COMPOSED_QK_ATTENTION_LAYER_INDICES
+            ),
+            "expected_candidate_count_per_attention_layer": 5,
+            "full_attention_only_via_runtime_policy_resolver": True,
+            "candidate_local_fit_only_downstream_mlp_required": True,
+            "fit_check_final_one_shot_nonregression_only": True,
+            "blank_target_values_read": False,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
             "parameters_pruned": 0,
             "parameters_quantized": 0,
         }
@@ -1073,6 +1260,12 @@ class V5SelectiveBlankFoldConfig:
     attention_sequential_transport_profile: (
         V5AttentionSequentialTransportRunnerProfile | None
     ) = None
+    composed_qk_attention_profile: (
+        V5ComposedQkAttentionRunnerProfile | None
+    ) = None
+    endpoint_residual_attention_profile: (
+        V5EndpointResidualAttentionRunnerProfile | None
+    ) = None
     expected_target_plan_fingerprint: str | None = None
     resume_store_directory: Path | None = None
     resume_admission_sha256: str | None = None
@@ -1198,6 +1391,40 @@ class V5SelectiveBlankFoldConfig:
             raise TypeError(
                 "attention_sequential_transport_profile must be the exact "
                 "typed V5 runner profile."
+            )
+        if (
+            self.composed_qk_attention_profile is not None
+            and type(self.composed_qk_attention_profile)
+            is not V5ComposedQkAttentionRunnerProfile
+        ):
+            raise TypeError(
+                "composed_qk_attention_profile must be the exact typed V5 "
+                "runner profile."
+            )
+        if (
+            self.endpoint_residual_attention_profile is not None
+            and type(self.endpoint_residual_attention_profile)
+            is not V5EndpointResidualAttentionRunnerProfile
+        ):
+            raise TypeError(
+                "endpoint_residual_attention_profile must be the exact typed "
+                "V5 runner profile."
+            )
+        if (
+            sum(
+                value is not None
+                for value in (
+                    self.attention_sequential_transport_profile,
+                    self.composed_qk_attention_profile,
+                    self.endpoint_residual_attention_profile,
+                )
+            )
+            > 1
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Attention sequential transport, composed Q/K attention, and "
+                "endpoint-residual attention are mutually exclusive runner "
+                "profiles."
             )
         if self.resume_admission_sha256 is not None:
             if (
@@ -1477,6 +1704,14 @@ class V5SelectiveBlankFoldConfig:
         policy_identity = _configured_model_fold_policy_identity(self)
         if policy_identity is not None:
             result.update(_opt_in_policy_identity_fields(policy_identity))
+        composed_identity = _configured_composed_qk_policy_identity(self)
+        if composed_identity is not None:
+            result.update(_composed_qk_policy_identity_fields(composed_identity))
+        endpoint_identity = _configured_endpoint_residual_policy_identity(self)
+        if endpoint_identity is not None:
+            result.update(
+                _endpoint_residual_policy_identity_fields(endpoint_identity)
+            )
         return result
 
 
@@ -1535,6 +1770,31 @@ def _build_configured_model_fold_policy(
         require_promotion_ratio=True,
         attention_sequential_transport_policy=sequential_transport,
     )
+
+
+def _build_configured_composed_qk_attention_policy(
+    config: V5SelectiveBlankFoldConfig,
+) -> Any | None:
+    if not isinstance(config, V5SelectiveBlankFoldConfig):
+        raise TypeError("config must be V5SelectiveBlankFoldConfig.")
+    profile = config.composed_qk_attention_profile
+    endpoint_profile = config.endpoint_residual_attention_profile
+    if profile is not None:
+        return profile.build_policy()
+    return (
+        None
+        if endpoint_profile is None
+        else endpoint_profile.build_composed_policy()
+    )
+
+
+def _build_configured_endpoint_residual_attention_policy(
+    config: V5SelectiveBlankFoldConfig,
+) -> Any | None:
+    if not isinstance(config, V5SelectiveBlankFoldConfig):
+        raise TypeError("config must be V5SelectiveBlankFoldConfig.")
+    profile = config.endpoint_residual_attention_profile
+    return None if profile is None else profile.build_policy()
 
 
 def _configured_model_fold_policy_identity(
@@ -1607,6 +1867,231 @@ def _opt_in_policy_identity_fields(
     }
 
 
+def _configured_composed_qk_policy_identity(
+    config: V5SelectiveBlankFoldConfig,
+    *,
+    composed_policy: Any | None = None,
+) -> Mapping[str, Any] | None:
+    profile = config.composed_qk_attention_profile
+    if profile is None:
+        return None
+    policy = (
+        _build_configured_composed_qk_attention_policy(config)
+        if composed_policy is None
+        else composed_policy
+    )
+    if (
+        policy is None
+        or not callable(getattr(policy, "as_dict", None))
+        or not callable(getattr(policy, "verify_authentication", None))
+        or policy.verify_authentication() is not True
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Composed Q/K policy identity requires an authenticated typed policy."
+        )
+    profile_document = profile.as_dict()
+    if profile_document.get("composed_qk_attention_policy") != policy.as_dict():
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Composed Q/K profile and configured policy differ."
+        )
+    body = {
+        "schema": COMPOSED_QK_POLICY_IDENTITY_SCHEMA,
+        "composed_qk_attention_profile": profile_document,
+        "composed_qk_attention_policy_sha256": policy.authentication_sha256,
+        "expected_attention_layer_indices": list(
+            COMPOSED_QK_ATTENTION_LAYER_INDICES
+        ),
+        "runtime_policy_must_embed_exact_composed_policy": True,
+        "cross_profile_resume_permitted": False,
+    }
+    return MappingProxyType({**body, "identity_sha256": _sha(body)})
+
+
+def _composed_qk_policy_identity_fields(
+    identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    body = dict(identity)
+    identity_sha256 = _digest(
+        body.pop("identity_sha256", None),
+        "composed Q/K policy identity",
+    )
+    if (
+        set(body)
+        != {
+            "schema",
+            "composed_qk_attention_profile",
+            "composed_qk_attention_policy_sha256",
+            "expected_attention_layer_indices",
+            "runtime_policy_must_embed_exact_composed_policy",
+            "cross_profile_resume_permitted",
+        }
+        or body.get("schema") != COMPOSED_QK_POLICY_IDENTITY_SCHEMA
+        or _sha(body) != identity_sha256
+        or body.get("expected_attention_layer_indices")
+        != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+        or body.get("runtime_policy_must_embed_exact_composed_policy") is not True
+        or body.get("cross_profile_resume_permitted") is not False
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Composed Q/K policy identity schema or seal is invalid."
+        )
+    profile = body.get("composed_qk_attention_profile")
+    policy_sha = _digest(
+        body.get("composed_qk_attention_policy_sha256"),
+        "composed_qk_attention_policy_sha256",
+    )
+    if (
+        not isinstance(profile, Mapping)
+        or profile.get("expected_attention_layer_indices")
+        != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+        or not isinstance(profile.get("composed_qk_attention_policy"), Mapping)
+        or profile["composed_qk_attention_policy"].get("authentication_sha256")
+        != policy_sha
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Composed Q/K profile does not authenticate its policy or layers."
+        )
+    return {
+        "composed_qk_attention_profile": _plain_json(profile),
+        "composed_qk_attention_policy_sha256": policy_sha,
+        "composed_qk_attention_policy_identity_sha256": identity_sha256,
+    }
+
+
+def _configured_endpoint_residual_policy_identity(
+    config: V5SelectiveBlankFoldConfig,
+    *,
+    composed_policy: Any | None = None,
+    endpoint_policy: Any | None = None,
+) -> Mapping[str, Any] | None:
+    profile = config.endpoint_residual_attention_profile
+    if profile is None:
+        return None
+    composed = (
+        _build_configured_composed_qk_attention_policy(config)
+        if composed_policy is None
+        else composed_policy
+    )
+    endpoint = (
+        _build_configured_endpoint_residual_attention_policy(config)
+        if endpoint_policy is None
+        else endpoint_policy
+    )
+    if (
+        composed is None
+        or endpoint is None
+        or not callable(getattr(composed, "as_dict", None))
+        or not callable(getattr(endpoint, "as_dict", None))
+        or not callable(getattr(composed, "verify_authentication", None))
+        or not callable(getattr(endpoint, "verify_authentication", None))
+        or composed.verify_authentication() is not True
+        or endpoint.verify_authentication() is not True
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint-residual identity requires exact authenticated composed "
+            "and endpoint policies."
+        )
+    profile_document = profile.as_dict()
+    if (
+        profile_document.get("composed_qk_attention_policy")
+        != composed.as_dict()
+        or profile_document.get("endpoint_residual_attention_policy")
+        != endpoint.as_dict()
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint-residual profile and configured policies differ."
+        )
+    body = {
+        "schema": ENDPOINT_RESIDUAL_POLICY_IDENTITY_SCHEMA,
+        "endpoint_residual_attention_profile": profile_document,
+        "endpoint_residual_composed_qk_attention_policy_sha256": (
+            composed.authentication_sha256
+        ),
+        "endpoint_residual_attention_policy_sha256": (
+            endpoint.authentication_sha256
+        ),
+        "expected_attention_layer_indices": list(
+            COMPOSED_QK_ATTENTION_LAYER_INDICES
+        ),
+        "runtime_policy_must_embed_exact_composed_and_endpoint_policies": True,
+        "cross_profile_resume_permitted": False,
+    }
+    return MappingProxyType({**body, "identity_sha256": _sha(body)})
+
+
+def _endpoint_residual_policy_identity_fields(
+    identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    body = dict(identity)
+    identity_sha256 = _digest(
+        body.pop("identity_sha256", None),
+        "endpoint-residual policy identity",
+    )
+    if (
+        set(body)
+        != {
+            "schema",
+            "endpoint_residual_attention_profile",
+            "endpoint_residual_composed_qk_attention_policy_sha256",
+            "endpoint_residual_attention_policy_sha256",
+            "expected_attention_layer_indices",
+            "runtime_policy_must_embed_exact_composed_and_endpoint_policies",
+            "cross_profile_resume_permitted",
+        }
+        or body.get("schema") != ENDPOINT_RESIDUAL_POLICY_IDENTITY_SCHEMA
+        or _sha(body) != identity_sha256
+        or body.get("expected_attention_layer_indices")
+        != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+        or body.get(
+            "runtime_policy_must_embed_exact_composed_and_endpoint_policies"
+        )
+        is not True
+        or body.get("cross_profile_resume_permitted") is not False
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint-residual policy identity schema or seal is invalid."
+        )
+    profile = body.get("endpoint_residual_attention_profile")
+    composed_sha = _digest(
+        body.get("endpoint_residual_composed_qk_attention_policy_sha256"),
+        "endpoint_residual_composed_qk_attention_policy_sha256",
+    )
+    endpoint_sha = _digest(
+        body.get("endpoint_residual_attention_policy_sha256"),
+        "endpoint_residual_attention_policy_sha256",
+    )
+    if (
+        not isinstance(profile, Mapping)
+        or profile.get("expected_attention_layer_indices")
+        != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+        or profile.get("expected_candidate_count_per_attention_layer") != 5
+        or not isinstance(profile.get("composed_qk_attention_policy"), Mapping)
+        or not isinstance(
+            profile.get("endpoint_residual_attention_policy"),
+            Mapping,
+        )
+        or profile["composed_qk_attention_policy"].get(
+            "authentication_sha256"
+        )
+        != composed_sha
+        or profile["endpoint_residual_attention_policy"].get(
+            "authentication_sha256"
+        )
+        != endpoint_sha
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint-residual profile does not authenticate its policies."
+        )
+    return {
+        "endpoint_residual_attention_profile": _plain_json(profile),
+        "endpoint_residual_composed_qk_attention_policy_sha256": (
+            composed_sha
+        ),
+        "endpoint_residual_attention_policy_sha256": endpoint_sha,
+        "endpoint_residual_attention_policy_identity_sha256": identity_sha256,
+    }
+
+
 def _build_resume_policy_binding(
     policy_identity: Mapping[str, Any] | None,
     *,
@@ -1638,6 +2123,219 @@ def _build_resume_policy_binding(
         "cross_profile_resume_permitted": False,
     }
     return MappingProxyType({**body, "binding_sha256": _sha(body)})
+
+
+def _build_composed_qk_runtime_policy_binding(
+    policy_identity: Mapping[str, Any] | None,
+    *,
+    runtime_policy: Any,
+) -> Mapping[str, Any] | None:
+    if policy_identity is None:
+        return None
+    if not callable(getattr(runtime_policy, "as_dict", None)):
+        raise TypeError("runtime_policy must expose as_dict().")
+    fields = _composed_qk_policy_identity_fields(policy_identity)
+    runtime_document = runtime_policy.as_dict()
+    nested_policy = runtime_document.get("composed_qk_attention_policy")
+    profile = fields["composed_qk_attention_profile"]
+    if (
+        not isinstance(nested_policy, Mapping)
+        or nested_policy != profile.get("composed_qk_attention_policy")
+        or nested_policy.get("authentication_sha256")
+        != fields["composed_qk_attention_policy_sha256"]
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "V5 runtime policy embeds a different composed Q/K policy than "
+            "the selected profile identity."
+        )
+    body = {
+        "schema": COMPOSED_QK_RUNTIME_POLICY_BINDING_SCHEMA,
+        **fields,
+        "runtime_policy_sha256": _sha(runtime_document),
+        "runtime_policy_contains_exact_composed_policy": True,
+        "cross_profile_resume_permitted": False,
+    }
+    return MappingProxyType({**body, "binding_sha256": _sha(body)})
+
+
+def _build_endpoint_residual_runtime_policy_binding(
+    policy_identity: Mapping[str, Any] | None,
+    *,
+    runtime_policy: Any,
+) -> Mapping[str, Any] | None:
+    if policy_identity is None:
+        return None
+    if not callable(getattr(runtime_policy, "as_dict", None)):
+        raise TypeError("runtime_policy must expose as_dict().")
+    fields = _endpoint_residual_policy_identity_fields(policy_identity)
+    runtime_document = runtime_policy.as_dict()
+    profile = fields["endpoint_residual_attention_profile"]
+    composed = runtime_document.get("composed_qk_attention_policy")
+    endpoint = runtime_document.get("endpoint_residual_attention_policy")
+    if (
+        composed != profile.get("composed_qk_attention_policy")
+        or endpoint != profile.get("endpoint_residual_attention_policy")
+        or not isinstance(composed, Mapping)
+        or not isinstance(endpoint, Mapping)
+        or composed.get("authentication_sha256")
+        != fields["endpoint_residual_composed_qk_attention_policy_sha256"]
+        or endpoint.get("authentication_sha256")
+        != fields["endpoint_residual_attention_policy_sha256"]
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "V5 runtime policy embeds different endpoint-residual policies "
+            "than the selected profile identity."
+        )
+    body = {
+        "schema": ENDPOINT_RESIDUAL_RUNTIME_POLICY_BINDING_SCHEMA,
+        **fields,
+        "runtime_policy_sha256": _sha(runtime_document),
+        "runtime_policy_contains_exact_composed_and_endpoint_policies": True,
+        "cross_profile_resume_permitted": False,
+    }
+    return MappingProxyType({**body, "binding_sha256": _sha(body)})
+
+
+def _authenticate_composed_qk_coverage(
+    compiled_report: Mapping[str, Any],
+    *,
+    policy_identity: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    fields = _composed_qk_policy_identity_fields(policy_identity)
+    coverage = compiled_report.get("composed_qk_attention_coverage")
+    if not isinstance(coverage, Mapping):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Compiler emitted no composed Q/K all-layer coverage receipt."
+        )
+    body = _plain_json(coverage)
+    seal = _digest(
+        body.pop("report_sha256", None),
+        "composed Q/K coverage report",
+    )
+    rows = body.get("ordered_layer_coverage")
+    expected = list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+    if (
+        _sha(body) != seal
+        or body.get("schema") != COMPOSED_QK_ATTENTION_COVERAGE_SCHEMA
+        or body.get("policy_authentication_sha256")
+        != fields["composed_qk_attention_policy_sha256"]
+        or body.get("expected_attention_layer_indices") != expected
+        or body.get("observed_attention_layer_indices") != expected
+        or body.get("covered_attention_layer_indices") != expected
+        or body.get("attention_layer_count") != len(expected)
+        or not isinstance(rows, list)
+        or [row.get("layer_index") for row in rows] != expected
+        or any(
+            not isinstance(row, Mapping)
+            or any(
+                _SHA256.fullmatch(str(row.get(name, ""))) is None
+                for name in (
+                    "layer_result_sha256",
+                    "composed_qk_producer_artifact_sha256",
+                    "sequence_effective_stage_two_artifact_sha256",
+                    "actual_child_context_sha256",
+                    "reconstructed_live_context_sha256",
+                    "candidate_evaluation_report_sha256",
+                )
+            )
+            for row in rows
+        )
+        or body.get("exact_ordered_attention_layer_coverage") is not True
+        or body.get("full_attention_only_forwarding") is not True
+        or body.get("actual_upstream_child_contexts_consumed") is not True
+        or any(
+            body.get(name) != 0
+            for name in (
+                "training_steps",
+                "backward_calls",
+                "optimizer_steps",
+                "parameters_pruned",
+                "parameters_quantized",
+            )
+        )
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Composed Q/K coverage is not the exact ordered six-layer "
+            "no-training receipt required by this runner profile."
+        )
+    return MappingProxyType({**body, "report_sha256": seal})
+
+
+def _authenticate_endpoint_residual_coverage(
+    compiled_report: Mapping[str, Any],
+    *,
+    policy_identity: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    fields = _endpoint_residual_policy_identity_fields(policy_identity)
+    coverage = compiled_report.get("endpoint_residual_attention_coverage")
+    if not isinstance(coverage, Mapping):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Compiler emitted no endpoint-residual all-layer coverage receipt."
+        )
+    body = _plain_json(coverage)
+    seal = _digest(
+        body.pop("report_sha256", None),
+        "endpoint-residual coverage report",
+    )
+    rows = body.get("ordered_layer_coverage")
+    expected = list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+    required_row_digests = (
+        "layer_result_sha256",
+        "endpoint_artifact_sha256",
+        "candidate_evaluation_report_sha256",
+        "source_inventory_sha256",
+        "evaluation_fit_evidence_sha256",
+        "evaluation_fit_check_evidence_sha256",
+        "blank_independent_output_prior_sha256",
+    )
+    if (
+        _sha(body) != seal
+        or body.get("schema") != ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA
+        or body.get("policy_authentication_sha256")
+        != fields["endpoint_residual_attention_policy_sha256"]
+        or body.get("expected_attention_layer_indices") != expected
+        or body.get("observed_attention_layer_indices") != expected
+        or body.get("covered_attention_layer_indices") != expected
+        or body.get("attention_layer_count") != len(expected)
+        or body.get("candidate_count_per_attention_layer") != 5
+        or not isinstance(rows, list)
+        or [row.get("layer_index") for row in rows] != expected
+        or any(
+            not isinstance(row, Mapping)
+            or any(
+                _SHA256.fullmatch(str(row.get(name, ""))) is None
+                for name in required_row_digests
+            )
+            or row.get("outer_block_count")
+            != len(row.get("ordered_block_sha256s", ()))
+            or row.get("outer_block_count")
+            != len(row.get("ordered_qk_fit_proposal_sha256s", ()))
+            or row.get("outer_block_count")
+            != len(row.get("ordered_execution_receipt_sha256s", ()))
+            for row in rows
+        )
+        or body.get("exact_ordered_attention_layer_coverage") is not True
+        or body.get("full_attention_only_forwarding") is not True
+        or body.get("candidate_local_fit_only_downstream_mlp_evaluation")
+        is not True
+        or body.get("fit_check_final_one_shot_nonregression_only") is not True
+        or body.get("blank_target_values_read") is not False
+        or any(
+            body.get(name) != 0
+            for name in (
+                "training_steps",
+                "backward_calls",
+                "optimizer_steps",
+                "parameters_pruned",
+                "parameters_quantized",
+            )
+        )
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint-residual coverage is not the exact ordered six-layer "
+            "five-arm no-training receipt required by this profile."
+        )
+    return MappingProxyType({**body, "report_sha256": seal})
 
 
 @dataclass(frozen=True, slots=True)
@@ -1882,7 +2580,20 @@ def _build_resume_runtime(
             expected_runtime_policy_sha256,
             "expected_runtime_policy_sha256",
         )
-    profile_identity = _configured_model_fold_policy_identity(config)
+    model_profile_identity = _configured_model_fold_policy_identity(config)
+    composed_profile_identity = _configured_composed_qk_policy_identity(config)
+    endpoint_profile_identity = _configured_endpoint_residual_policy_identity(
+        config
+    )
+    profile_identity = (
+        model_profile_identity
+        if model_profile_identity is not None
+        else (
+            composed_profile_identity
+            if composed_profile_identity is not None
+            else endpoint_profile_identity
+        )
+    )
     if (
         profile_identity is not None
         and expected_runtime_policy_sha256 is None
@@ -1902,17 +2613,52 @@ def _build_resume_runtime(
             binding_body.pop("binding_sha256", None),
             "resume policy binding",
         )
-        expected_fields = _opt_in_policy_identity_fields(profile_identity)
-        if (
-            set(binding_body)
-            != {
+        if model_profile_identity is not None:
+            expected_fields = _opt_in_policy_identity_fields(
+                model_profile_identity
+            )
+            expected_keys = {
                 "schema",
                 *_OPT_IN_POLICY_IDENTITY_FIELDS,
                 "runtime_policy_sha256",
                 "runtime_policy_contains_complete_model_fold_policy",
                 "cross_profile_resume_permitted",
             }
-            or binding_body.get("schema") != RESUME_POLICY_BINDING_SCHEMA
+            expected_schema = RESUME_POLICY_BINDING_SCHEMA
+            exact_policy_flag = (
+                "runtime_policy_contains_complete_model_fold_policy"
+            )
+        elif composed_profile_identity is not None:
+            expected_fields = _composed_qk_policy_identity_fields(
+                composed_profile_identity
+            )
+            expected_keys = {
+                "schema",
+                *_COMPOSED_QK_POLICY_IDENTITY_FIELDS,
+                "runtime_policy_sha256",
+                "runtime_policy_contains_exact_composed_policy",
+                "cross_profile_resume_permitted",
+            }
+            expected_schema = COMPOSED_QK_RUNTIME_POLICY_BINDING_SCHEMA
+            exact_policy_flag = "runtime_policy_contains_exact_composed_policy"
+        else:
+            expected_fields = _endpoint_residual_policy_identity_fields(
+                endpoint_profile_identity
+            )
+            expected_keys = {
+                "schema",
+                *_ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS,
+                "runtime_policy_sha256",
+                "runtime_policy_contains_exact_composed_and_endpoint_policies",
+                "cross_profile_resume_permitted",
+            }
+            expected_schema = ENDPOINT_RESIDUAL_RUNTIME_POLICY_BINDING_SCHEMA
+            exact_policy_flag = (
+                "runtime_policy_contains_exact_composed_and_endpoint_policies"
+            )
+        invalid_binding = (
+            set(binding_body) != expected_keys
+            or binding_body.get("schema") != expected_schema
             or _sha(binding_body) != binding_sha256
             or any(
                 binding_body.get(name) != value
@@ -1923,15 +2669,12 @@ def _build_resume_runtime(
                 and binding_body.get("runtime_policy_sha256")
                 != expected_runtime_policy_sha256
             )
-            or binding_body.get(
-                "runtime_policy_contains_complete_model_fold_policy"
-            )
-            is not True
+            or binding_body.get(exact_policy_flag) is not True
             or binding_body.get("cross_profile_resume_permitted") is not False
-        ):
+        )
+        if invalid_binding:
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-                "Resume profile, complete model policy, or runtime policy "
-                "binding is invalid."
+                "Resume profile or exact runtime policy binding is invalid."
             )
     progress = _ResumeProgressTracker(
         store_directory=(
@@ -3044,9 +3787,19 @@ def _authenticate_preparation_policy_identity(
     """Require an exact profile/policy match while preserving legacy off bytes."""
 
     profile = getattr(config, "attention_sequential_transport_profile", None)
+    composed_profile = getattr(config, "composed_qk_attention_profile", None)
+    endpoint_profile = getattr(config, "endpoint_residual_attention_profile", None)
     present = {name for name in _OPT_IN_POLICY_IDENTITY_FIELDS if name in receipt}
-    if profile is None:
-        if present:
+    composed_present = {
+        name for name in _COMPOSED_QK_POLICY_IDENTITY_FIELDS if name in receipt
+    }
+    endpoint_present = {
+        name
+        for name in _ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS
+        if name in receipt
+    }
+    if profile is None and composed_profile is None and endpoint_profile is None:
+        if present or composed_present or endpoint_present:
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
                 "Selective catalog preparation belongs to an opt-in fold "
                 "policy profile, but this request uses the legacy off profile."
@@ -3057,17 +3810,68 @@ def _authenticate_preparation_policy_identity(
             "Opt-in catalog authentication requires the complete typed runner "
             "configuration."
         )
-    identity = _configured_model_fold_policy_identity(config)
+    if profile is not None:
+        identity = _configured_model_fold_policy_identity(config)
+        if identity is None:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Opt-in model fold policy identity was not constructed."
+            )
+        expected = _opt_in_policy_identity_fields(identity)
+        observed = {
+            name: receipt.get(name) for name in _OPT_IN_POLICY_IDENTITY_FIELDS
+        }
+        if (
+            composed_present
+            or endpoint_present
+            or present != set(_OPT_IN_POLICY_IDENTITY_FIELDS)
+            or observed != expected
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Selective catalog preparation profile or complete model fold "
+                "policy digest differs from this request."
+        )
+        return
+    if endpoint_profile is not None:
+        identity = _configured_endpoint_residual_policy_identity(config)
+        if identity is None:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Endpoint-residual policy identity was not constructed."
+            )
+        expected = _endpoint_residual_policy_identity_fields(identity)
+        observed = {
+            name: receipt.get(name)
+            for name in _ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS
+        }
+        if (
+            present
+            or composed_present
+            or endpoint_present
+            != set(_ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS)
+            or observed != expected
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Selective catalog preparation endpoint-residual profile or "
+                "policy digest differs from this request."
+            )
+        return
+    identity = _configured_composed_qk_policy_identity(config)
     if identity is None:
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            "Opt-in model fold policy identity was not constructed."
+            "Composed Q/K policy identity was not constructed."
         )
-    expected = _opt_in_policy_identity_fields(identity)
-    observed = {name: receipt.get(name) for name in _OPT_IN_POLICY_IDENTITY_FIELDS}
-    if present != set(_OPT_IN_POLICY_IDENTITY_FIELDS) or observed != expected:
+    expected = _composed_qk_policy_identity_fields(identity)
+    observed = {
+        name: receipt.get(name) for name in _COMPOSED_QK_POLICY_IDENTITY_FIELDS
+    }
+    if (
+        present
+        or endpoint_present
+        or composed_present != set(_COMPOSED_QK_POLICY_IDENTITY_FIELDS)
+        or observed != expected
+    ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            "Selective catalog preparation profile or complete model fold "
-            "policy digest differs from this request."
+            "Selective catalog preparation composed Q/K profile or policy "
+            "digest differs from this request."
         )
 
 
@@ -3465,6 +4269,12 @@ def prepare_selective_catalog(
     policy_identity = _configured_model_fold_policy_identity(config)
     if policy_identity is not None:
         body.update(_opt_in_policy_identity_fields(policy_identity))
+    composed_identity = _configured_composed_qk_policy_identity(config)
+    if composed_identity is not None:
+        body.update(_composed_qk_policy_identity_fields(composed_identity))
+    endpoint_identity = _configured_endpoint_residual_policy_identity(config)
+    if endpoint_identity is not None:
+        body.update(_endpoint_residual_policy_identity_fields(endpoint_identity))
     receipt = {
         **body,
         "preparation_receipt_sha256": _sha(body),
@@ -3972,6 +4782,23 @@ def _run(
             config,
             model_fold_policy=model_policy,
         )
+        composed_qk_attention_policy = (
+            _build_configured_composed_qk_attention_policy(config)
+        )
+        composed_qk_policy_identity = _configured_composed_qk_policy_identity(
+            config,
+            composed_policy=composed_qk_attention_policy,
+        )
+        endpoint_residual_attention_policy = (
+            _build_configured_endpoint_residual_attention_policy(config)
+        )
+        endpoint_residual_policy_identity = (
+            _configured_endpoint_residual_policy_identity(
+                config,
+                composed_policy=composed_qk_attention_policy,
+                endpoint_policy=endpoint_residual_attention_policy,
+            )
+        )
         runtime_policy = v5_compiler.Lfm2CpcfV5RuntimePolicy(
             model_fold_policy=model_policy,
             maximum_resident_evidence_bytes=logical_budget,
@@ -3984,11 +4811,36 @@ def _run(
             require_short_conv_v5_endpoint_first_selector=True,
             require_short_conv_v5_authenticated_whole_macrocell_selector=True,
             require_short_conv_v5_real_numerical_frontier_adapter=True,
+            composed_qk_attention_policy=composed_qk_attention_policy,
+            endpoint_residual_attention_policy=(
+                endpoint_residual_attention_policy
+            ),
         )
         runtime_policy_sha256 = _sha(runtime_policy.as_dict())
         resume_policy_binding = _build_resume_policy_binding(
             model_policy_identity,
             runtime_policy=runtime_policy,
+        )
+        composed_qk_runtime_policy_binding = (
+            _build_composed_qk_runtime_policy_binding(
+                composed_qk_policy_identity,
+                runtime_policy=runtime_policy,
+            )
+        )
+        endpoint_residual_runtime_policy_binding = (
+            _build_endpoint_residual_runtime_policy_binding(
+                endpoint_residual_policy_identity,
+                runtime_policy=runtime_policy,
+            )
+        )
+        active_policy_binding = (
+            resume_policy_binding
+            if resume_policy_binding is not None
+            else (
+                composed_qk_runtime_policy_binding
+                if composed_qk_runtime_policy_binding is not None
+                else endpoint_residual_runtime_policy_binding
+            )
         )
         source_tied_table = base._mapped_source_tied_table(parent, bridge)
         selector = v5_compiler.Lfm2CpcfV5EndpointFirstCandidateSelector()
@@ -3997,7 +4849,7 @@ def _run(
             config,
             catalog_preparation=catalog_preparation,
             expected_runtime_policy_sha256=runtime_policy_sha256,
-            policy_binding=resume_policy_binding,
+            policy_binding=active_policy_binding,
         )
         compiler_guard = dynamic_fold_executor._FoldOnlyTorchGuard()
         compiler_parent_execution: Mapping[str, int] = {}
@@ -4165,6 +5017,84 @@ def _run(
                 "Opt-in policy identity differs from the compiler's complete "
                 "model fold policy."
             )
+    composed_qk_coverage = None
+    if composed_qk_policy_identity is not None:
+        expected_composed_policy = composed_qk_attention_policy.as_dict()
+        if compiled_runtime_policy.get(
+            "composed_qk_attention_policy"
+        ) != expected_composed_policy:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiler receipt differs from the configured composed Q/K policy."
+            )
+        composed_qk_coverage = _authenticate_composed_qk_coverage(
+            compiled_report,
+            policy_identity=composed_qk_policy_identity,
+        )
+    elif (
+        endpoint_residual_policy_identity is None
+        and "composed_qk_attention_coverage" in compiled_report
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Legacy-off compiler receipt unexpectedly contains composed Q/K "
+            "coverage."
+        )
+    endpoint_residual_coverage = None
+    if endpoint_residual_policy_identity is not None:
+        endpoint_fields = _endpoint_residual_policy_identity_fields(
+            endpoint_residual_policy_identity
+        )
+        endpoint_profile_document = endpoint_fields[
+            "endpoint_residual_attention_profile"
+        ]
+        if compiled_runtime_policy.get(
+            "composed_qk_attention_policy"
+        ) != endpoint_profile_document.get("composed_qk_attention_policy"):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Endpoint-residual runtime changed its prerequisite composed "
+                "Q/K policy."
+            )
+        prerequisite_coverage = compiled_report.get(
+            "composed_qk_attention_coverage"
+        )
+        if not isinstance(prerequisite_coverage, Mapping):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Endpoint-residual compiler receipt lacks prerequisite "
+                "composed Q/K all-layer coverage."
+            )
+        prerequisite_body = _plain_json(prerequisite_coverage)
+        prerequisite_seal = _digest(
+            prerequisite_body.pop("report_sha256", None),
+            "endpoint prerequisite composed coverage",
+        )
+        if (
+            _sha(prerequisite_body) != prerequisite_seal
+            or prerequisite_body.get("policy_authentication_sha256")
+            != endpoint_fields[
+                "endpoint_residual_composed_qk_attention_policy_sha256"
+            ]
+            or prerequisite_body.get("covered_attention_layer_indices")
+            != list(COMPOSED_QK_ATTENTION_LAYER_INDICES)
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Endpoint-residual prerequisite composed coverage is invalid."
+            )
+        expected_endpoint_policy = endpoint_residual_attention_policy.as_dict()
+        if compiled_runtime_policy.get(
+            "endpoint_residual_attention_policy"
+        ) != expected_endpoint_policy:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Compiler receipt differs from the configured endpoint-residual "
+                "attention policy."
+            )
+        endpoint_residual_coverage = _authenticate_endpoint_residual_coverage(
+            compiled_report,
+            policy_identity=endpoint_residual_policy_identity,
+        )
+    elif "endpoint_residual_attention_coverage" in compiled_report:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Endpoint-off compiler receipt unexpectedly contains endpoint "
+            "coverage."
+        )
     layer_reports = [result.as_dict() for result in compiled.layer_results]
     gpu_execution = _gpu_execution_audit(layer_reports)
     resume_progress = resume_runtime.progress.as_dict()
@@ -4582,6 +5512,28 @@ def _run(
     if model_policy_identity is not None:
         body.update(_opt_in_policy_identity_fields(model_policy_identity))
         body["resume_policy_binding"] = _plain_json(resume_policy_binding)
+    if composed_qk_policy_identity is not None:
+        body.update(
+            _composed_qk_policy_identity_fields(composed_qk_policy_identity)
+        )
+        body["composed_qk_runtime_policy_binding"] = _plain_json(
+            composed_qk_runtime_policy_binding
+        )
+        body["composed_qk_attention_coverage"] = _plain_json(
+            composed_qk_coverage
+        )
+    if endpoint_residual_policy_identity is not None:
+        body.update(
+            _endpoint_residual_policy_identity_fields(
+                endpoint_residual_policy_identity
+            )
+        )
+        body["endpoint_residual_runtime_policy_binding"] = _plain_json(
+            endpoint_residual_runtime_policy_binding
+        )
+        body["endpoint_residual_attention_coverage"] = _plain_json(
+            endpoint_residual_coverage
+        )
     compile_diagnostic = {**body, "receipt_sha256": _sha(body)}
     if candidate_consumer is None:
         return compile_diagnostic
@@ -4950,6 +5902,30 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--composed-qk-attention-profile",
+        dest="composed_qk_attention_profile",
+        nargs="?",
+        const=COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID,
+        choices=(COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID,),
+        help=(
+            "Explicit versioned opt-in for the authenticated composed Q/K "
+            "residual-seeded sequence-effective attention fold on every "
+            "full-attention layer."
+        ),
+    )
+    parser.add_argument(
+        "--endpoint-residual-attention-profile",
+        dest="endpoint_residual_attention_profile",
+        nargs="?",
+        const=ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,
+        choices=(ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,),
+        help=(
+            "Explicit versioned opt-in for the authenticated five-arm "
+            "endpoint-residual Q/K/V/O tournament on every full-attention "
+            "layer."
+        ),
+    )
+    parser.add_argument(
         "--resume-store-directory",
         type=Path,
         help=(
@@ -5062,6 +6038,21 @@ def config_from_args(args: argparse.Namespace) -> V5SelectiveBlankFoldConfig:
             if args.attention_sequential_transport_profile is None
             else V5AttentionSequentialTransportRunnerProfile(
                 profile_id=args.attention_sequential_transport_profile,
+            )
+        ),
+        composed_qk_attention_profile=(
+            None
+            if getattr(args, "composed_qk_attention_profile", None) is None
+            else V5ComposedQkAttentionRunnerProfile(
+                profile_id=args.composed_qk_attention_profile,
+            )
+        ),
+        endpoint_residual_attention_profile=(
+            None
+            if getattr(args, "endpoint_residual_attention_profile", None)
+            is None
+            else V5EndpointResidualAttentionRunnerProfile(
+                profile_id=args.endpoint_residual_attention_profile,
             )
         ),
         model_device=args.model_device,

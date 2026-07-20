@@ -69,6 +69,9 @@ LFM2_SEQUENCE_EFFECTIVE_HIDDEN_PARTIAL_TRACE_CHOLESKY_SCHEMA = (
 LFM2_SEQUENCE_EFFECTIVE_ROW_BLOCK_JACOBI_SCHEMA = (
     "neural-forge-lfm2-sequence-effective-row-block-jacobi-v1"
 )
+LFM2_SEQUENCE_EFFECTIVE_VO_SEED_BANK_SCHEMA = (
+    "neural-forge-lfm2-sequence-effective-vo-seed-bank-v1"
+)
 FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID = (
     "fixed_qk_sequence_effective_vo_als"
 )
@@ -76,6 +79,7 @@ _IMPLEMENTATION = "neural_forge.hf_lfm2_sequence_effective_attention_fold"
 _MAXIMUM_DENSE_RIDGE_SYSTEM_ELEMENTS = 8_000_000
 _MAXIMUM_EXPLICIT_COEFFICIENT_ELEMENTS = 16_000_000
 _MAXIMUM_STREAMED_ALS_ITERATIONS = 2
+_MAXIMUM_STREAMED_VO_SEED_CANDIDATES = 4
 _STATISTICS_ROW_CHUNK_SIZE = 2048
 _PCG_MAXIMUM_ITERATIONS = 64
 _PCG_RESTART_BLOCK_ITERATIONS = 64
@@ -867,6 +871,37 @@ class Lfm2CompiledFixedQkSequenceEffectiveAttentionFold:
             or not isinstance(execution, Mapping)
             or any(execution.get(name) != value for name, value in _ZERO_EXECUTION.items())
             or (
+                report.get("solver_strategy")
+                == "streamed_cross_head_statistics_pcg"
+                and (
+                    not _verify_streamed_vo_seed_bank_report(
+                        report.get("initial_vo_seed_bank"),
+                        fit_case_count=case_count,
+                        fit_case_bundle_sha256=fit_sha,
+                    )
+                    or report.get("initial_vo_seed_bank_sha256")
+                    != report.get("initial_vo_seed_bank", {}).get(
+                        "report_sha256"
+                    )
+                    or report.get(
+                        "selected_initial_vo_seed_candidate_id"
+                    )
+                    != report.get("initial_vo_seed_bank", {}).get(
+                        "selected_candidate_id"
+                    )
+                    or report.get(
+                        "selected_initial_vo_seed_candidate_index"
+                    )
+                    != report.get("initial_vo_seed_bank", {}).get(
+                        "selected_candidate_index"
+                    )
+                    or report.get(
+                        "selected_initial_vo_seed_nonincreasing"
+                    )
+                    is not True
+                )
+            )
+            or (
                 seeded
                 and (
                     report.get("residual_vo_seed")
@@ -926,6 +961,23 @@ class Lfm2CompiledFixedQkSequenceEffectiveAttentionFold:
                 == _sha256(report.get("candidate_frontier"))
                 and report.get("fixed_query_key_sha256")
                 == self.producer_artifact.score_state_sha256
+                and (
+                    report.get("solver_strategy")
+                    != "streamed_cross_head_statistics_pcg"
+                    or (
+                        _verify_streamed_vo_seed_bank_report(
+                            report.get("initial_vo_seed_bank"),
+                            fit_case_count=self.fit_case_count,
+                            fit_case_bundle_sha256=(
+                                self.fit_case_bundle_sha256
+                            ),
+                        )
+                        and report.get("initial_vo_seed_bank_sha256")
+                        == report.get("initial_vo_seed_bank", {}).get(
+                            "report_sha256"
+                        )
+                    )
+                )
                 and (
                     self.residual_vo_seed is None
                     or (
@@ -4747,6 +4799,625 @@ def _materialize_vo_proposal(
     )
 
 
+def _verify_streamed_vo_seed_bank_report(
+    report: Any,
+    *,
+    fit_case_count: int,
+    fit_case_bundle_sha256: str,
+) -> bool:
+    """Verify one bounded FIT-only exact-target-dtype seed tournament."""
+
+    try:
+        bank = dict(report)
+        supplied = bank.pop("report_sha256")
+        candidates = bank["candidates"]
+        attempts = bank["effective_operator_attempts"]
+        selected_index = bank["selected_candidate_index"]
+        incumbent_index = bank["incumbent_candidate_index"]
+        if (
+            supplied != _sha256(bank)
+            or bank.get("schema")
+            != LFM2_SEQUENCE_EFFECTIVE_VO_SEED_BANK_SCHEMA
+            or bank.get("fit_case_count") != fit_case_count
+            or bank.get("fit_case_bundle_sha256")
+            != fit_case_bundle_sha256
+            or bank.get("compiled_from_splits") != ["fit"]
+            or bank.get("selection_case_count_consumed") != 0
+            or bank.get("validation_case_count_consumed") != 0
+            or bank.get("selection_inputs_accessible") is not False
+            or bank.get("validation_inputs_accessible") is not False
+            or bank.get("maximum_candidate_count")
+            != _MAXIMUM_STREAMED_VO_SEED_CANDIDATES
+            or not isinstance(candidates, list)
+            or not 1
+            <= len(candidates)
+            <= _MAXIMUM_STREAMED_VO_SEED_CANDIDATES
+            or bank.get("candidate_count") != len(candidates)
+            or bank.get("exact_target_dtype_evaluation_count")
+            != len(candidates)
+            or not isinstance(attempts, list)
+            or [attempt.get("candidate_id") for attempt in attempts]
+            != [
+                "headwise_effective_operator_svd",
+                "global_effective_operator_svd",
+            ]
+            or incumbent_index != 0
+            or not isinstance(selected_index, int)
+            or isinstance(selected_index, bool)
+            or not 0 <= selected_index < len(candidates)
+        ):
+            return False
+        exact_bfloat16 = bool(
+            bank.get("value_target_dtype") == "torch.bfloat16"
+            and bank.get("output_target_dtype") == "torch.bfloat16"
+        )
+        if bank.get("exact_bfloat16_evaluation") is not exact_bfloat16:
+            return False
+        candidate_ids = []
+        for index, candidate in enumerate(candidates):
+            body = dict(candidate)
+            candidate_seal = body.pop("report_sha256")
+            score = body.get(
+                "weighted_fit_relative_rmse_exact_target_dtype"
+            )
+            if (
+                candidate_seal != _sha256(body)
+                or body.get("candidate_index") != index
+                or body.get("evidence_split") != "fit"
+                or body.get("fit_case_bundle_sha256")
+                != fit_case_bundle_sha256
+                or body.get("selection_inputs_consumed") != 0
+                or body.get("validation_inputs_consumed") != 0
+                or not isinstance(score, (int, float))
+                or isinstance(score, bool)
+                or not math.isfinite(float(score))
+                or body.get("exact_target_dtype_evaluated") is not True
+                or body.get("exact_bfloat16_evaluated")
+                is not exact_bfloat16
+            ):
+                return False
+            for name in (
+                "source_report_sha256",
+                "value_factor_fp64_sha256_before_materialization",
+                "output_blocks_fp64_sha256_before_materialization",
+                "value_weight_sha256",
+                "output_weight_sha256",
+            ):
+                _digest(body.get(name), name)
+            candidate_ids.append(body.get("candidate_id"))
+        allowed = {
+            "authenticated_residual_vo",
+            "producer_shared_value",
+            "headwise_effective_operator_svd",
+            "global_effective_operator_svd",
+        }
+        if (
+            len(set(candidate_ids)) != len(candidate_ids)
+            or not set(candidate_ids).issubset(allowed)
+            or "producer_shared_value" not in candidate_ids
+            or candidate_ids[0]
+            not in {
+                "authenticated_residual_vo",
+                "producer_shared_value",
+            }
+            or candidates[selected_index].get("candidate_id")
+            != bank.get("selected_candidate_id")
+            or candidates[incumbent_index].get("candidate_id")
+            != bank.get("incumbent_candidate_id")
+        ):
+            return False
+        accepted_attempt_ids = []
+        for attempt in attempts:
+            body = dict(attempt)
+            attempt_seal = body.pop("report_sha256")
+            candidate_id = body.get("candidate_id")
+            status = body.get("status")
+            if (
+                attempt_seal != _sha256(body)
+                or candidate_id
+                not in {
+                    "headwise_effective_operator_svd",
+                    "global_effective_operator_svd",
+                }
+                or status
+                not in {
+                    "accepted_into_seed_bank",
+                    "typed_numerical_or_evidence_rejection",
+                }
+                or body.get("selection_inputs_consumed") != 0
+                or body.get("validation_inputs_consumed") != 0
+                or (
+                    status == "accepted_into_seed_bank"
+                    and candidate_id not in candidate_ids
+                )
+                or (
+                    status == "typed_numerical_or_evidence_rejection"
+                    and candidate_id in candidate_ids
+                )
+            ):
+                return False
+            if status == "accepted_into_seed_bank":
+                accepted_attempt_ids.append(candidate_id)
+                candidate = next(
+                    value
+                    for value in candidates
+                    if value["candidate_id"] == candidate_id
+                )
+                if (
+                    body.get("source_report_sha256")
+                    != candidate.get("source_report_sha256")
+                ):
+                    return False
+        expected_ids = (
+            (
+                ["authenticated_residual_vo"]
+                if candidate_ids[0] == "authenticated_residual_vo"
+                else []
+            )
+            + ["producer_shared_value"]
+            + accepted_attempt_ids
+        )
+        if candidate_ids != expected_ids:
+            return False
+        selected_score = float(
+            candidates[selected_index][
+                "weighted_fit_relative_rmse_exact_target_dtype"
+            ]
+        )
+        incumbent_score = float(
+            candidates[incumbent_index][
+                "weighted_fit_relative_rmse_exact_target_dtype"
+            ]
+        )
+        fit_tolerance = float(bank.get("fit_tolerance"))
+        return bool(
+            bank.get(
+                "selected_weighted_fit_relative_rmse_exact_target_dtype"
+            )
+            == selected_score
+            and bank.get(
+                "incumbent_weighted_fit_relative_rmse_exact_target_dtype"
+            )
+            == incumbent_score
+            and bank.get("selected_seed_nonincreasing_from_incumbent")
+            is True
+            and math.isfinite(fit_tolerance)
+            and fit_tolerance >= 0.0
+            and selected_score <= incumbent_score + fit_tolerance
+        )
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        Lfm2SequenceEffectiveAttentionFoldError,
+    ):
+        return False
+
+
+def _build_streamed_vo_seed_bank(
+    *,
+    producer: Lfm2CompiledStructuralAttentionProducerFold,
+    cases: Sequence[Lfm2CachedAttentionFoldCase],
+    statistics: Mapping[str, Any],
+    query_norm_weight: Any | None,
+    key_norm_weight: Any | None,
+    norm_epsilon: float,
+    policy: Lfm2FixedQkSequenceEffectiveVoAlsPolicy,
+    value_dtype: Any,
+    output_dtype: Any,
+    fit_case_bundle_sha256: str,
+    residual_vo_seed: Lfm2SequenceEffectiveResidualVoSeed | None,
+) -> tuple[Any, Any, list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+    """Build, target-dtype score, and select bounded FIT-only V/O starts."""
+
+    torch = _torch()
+    topology = producer.topology
+    candidates: list[dict[str, Any]] = []
+    candidate_states: list[tuple[Any, Any]] = []
+    attempts: list[dict[str, Any]] = []
+
+    def add_candidate(
+        *,
+        candidate_id: str,
+        source_kind: str,
+        value_factor: Any,
+        output_blocks: Any,
+        source_report: Mapping[str, Any],
+        svd_reports: Sequence[Mapping[str, Any]],
+    ) -> None:
+        if len(candidates) >= _MAXIMUM_STREAMED_VO_SEED_CANDIDATES:
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                "The streamed V/O seed bank exceeded its authenticated bound."
+            )
+        (
+            materialized_value,
+            materialized_output,
+            materialized_factor,
+            materialized_blocks,
+        ) = _materialize_vo_proposal(
+            value_factor=value_factor,
+            output_blocks=output_blocks,
+            topology=topology,
+            value_dtype=value_dtype,
+            output_dtype=output_dtype,
+        )
+        if not bool(
+            torch.isfinite(materialized_value).all().item()
+            and torch.isfinite(materialized_output).all().item()
+        ):
+            raise Lfm2SequenceEffectiveAttentionFoldError(
+                f"{candidate_id} produced a non-finite target-dtype seed."
+            )
+        score = _sequence_statistics_relative_rmse(
+            statistics=statistics,
+            topology=topology,
+            value_factor=materialized_factor,
+            output_blocks=materialized_blocks,
+        )
+        body = {
+            "candidate_index": len(candidates),
+            "candidate_id": candidate_id,
+            "source_kind": source_kind,
+            "evidence_split": "fit",
+            "fit_case_bundle_sha256": fit_case_bundle_sha256,
+            "source_report_sha256": source_report["report_sha256"],
+            "shared_value_svd_report_sha256": [
+                _sha256(dict(value)) for value in svd_reports
+            ],
+            "value_factor_fp64_sha256_before_materialization": (
+                _tensor_sha256(value_factor)
+            ),
+            "output_blocks_fp64_sha256_before_materialization": (
+                _tensor_sha256(output_blocks)
+            ),
+            "value_weight_shape": list(materialized_value.shape),
+            "value_weight_dtype": str(materialized_value.dtype),
+            "value_weight_sha256": _tensor_sha256(materialized_value),
+            "output_weight_shape": list(materialized_output.shape),
+            "output_weight_dtype": str(materialized_output.dtype),
+            "output_weight_sha256": _tensor_sha256(materialized_output),
+            "weighted_fit_relative_rmse_exact_target_dtype": score,
+            "fit_score_source": (
+                "projected_cached_cross_head_gram_and_endpoint_right"
+            ),
+            "exact_target_dtype_evaluated": True,
+            "exact_bfloat16_evaluated": bool(
+                value_dtype == torch.bfloat16
+                and output_dtype == torch.bfloat16
+            ),
+            "selection_inputs_consumed": 0,
+            "validation_inputs_consumed": 0,
+        }
+        candidates.append(_seal(body))
+        candidate_states.append(
+            (
+                materialized_factor.contiguous(),
+                materialized_blocks.contiguous(),
+            )
+        )
+
+    if residual_vo_seed is not None:
+        residual_factor = residual_vo_seed.value_weight.to(
+            torch.float64
+        ).reshape(
+            topology.target_key_value_heads,
+            topology.head_dim,
+            topology.target_hidden_size,
+        ).permute(0, 2, 1).contiguous()
+        residual_blocks = residual_vo_seed.output_weight.to(
+            torch.float64
+        ).T.reshape(
+            topology.target_query_heads,
+            topology.head_dim,
+            topology.target_output_size,
+        ).contiguous()
+        residual_report = _seal(
+            {
+                "role": "streamed_vo_seed_bank_residual_incumbent",
+                "residual_vo_seed_sha256": (
+                    residual_vo_seed.authentication_sha256
+                ),
+                "fit_seed_only": True,
+                "selection_inputs_consumed": 0,
+                "validation_inputs_consumed": 0,
+            }
+        )
+        add_candidate(
+            candidate_id="authenticated_residual_vo",
+            source_kind="authenticated_dense_residual_vo_split",
+            value_factor=residual_factor,
+            output_blocks=residual_blocks,
+            source_report=residual_report,
+            svd_reports=(),
+        )
+
+    producer_factor = producer.value_weight.to(torch.float64).reshape(
+        topology.target_key_value_heads,
+        topology.head_dim,
+        topology.target_hidden_size,
+    ).permute(0, 2, 1).contiguous()
+    producer_blocks, producer_report = (
+        _fit_output_from_sequence_statistics(
+            statistics=statistics,
+            topology=topology,
+            value_factor=producer_factor,
+            policy=policy,
+            role="streamed_vo_seed_bank_producer_output",
+        )
+    )
+    producer_factor, producer_blocks = _canonicalize_value_factor(
+        producer_factor,
+        producer_blocks,
+    )
+    add_candidate(
+        candidate_id="producer_shared_value",
+        source_kind="fit_compiled_producer_shared_value_subspace",
+        value_factor=producer_factor,
+        output_blocks=producer_blocks,
+        source_report=producer_report,
+        svd_reports=(),
+    )
+
+    def add_effective_candidate(
+        *,
+        candidate_id: str,
+        fit_operator: Callable[
+            [],
+            tuple[Any, Mapping[str, Any], int | None],
+        ],
+    ) -> None:
+        try:
+            effective, operator_report, explicit_weight_count = (
+                fit_operator()
+            )
+            value_factor, _svd_output, svd_reports = (
+                _initial_shared_value_factors(
+                    effective,
+                    target_key_value_heads=(
+                        topology.target_key_value_heads
+                    ),
+                    heads_per_group=(
+                        topology.target_query_heads_per_group
+                    ),
+                    head_dim=topology.head_dim,
+                )
+            )
+            output_blocks, output_report = (
+                _fit_output_from_sequence_statistics(
+                    statistics=statistics,
+                    topology=topology,
+                    value_factor=value_factor,
+                    policy=policy,
+                    role=(
+                        f"streamed_vo_seed_bank_{candidate_id}_output"
+                    ),
+                )
+            )
+            value_factor, output_blocks = _canonicalize_value_factor(
+                value_factor,
+                output_blocks,
+            )
+            source_report = _seal(
+                {
+                    "role": f"streamed_vo_seed_bank_{candidate_id}",
+                    "effective_operator_report": dict(operator_report),
+                    "effective_operator_report_sha256": operator_report[
+                        "report_sha256"
+                    ],
+                    "output_solve_report": dict(output_report),
+                    "output_solve_report_sha256": output_report[
+                        "report_sha256"
+                    ],
+                    "effective_operator_sha256": _tensor_sha256(
+                        effective
+                    ),
+                    "explicit_fit_row_weight_case_count": (
+                        explicit_weight_count
+                    ),
+                    "selection_inputs_consumed": 0,
+                    "validation_inputs_consumed": 0,
+                }
+            )
+            add_candidate(
+                candidate_id=candidate_id,
+                source_kind="fit_effective_operator_shared_value_svd",
+                value_factor=value_factor,
+                output_blocks=output_blocks,
+                source_report=source_report,
+                svd_reports=svd_reports,
+            )
+            attempts.append(
+                _seal(
+                    {
+                        "candidate_id": candidate_id,
+                        "status": "accepted_into_seed_bank",
+                        "source_report_sha256": source_report[
+                            "report_sha256"
+                        ],
+                        "selection_inputs_consumed": 0,
+                        "validation_inputs_consumed": 0,
+                    }
+                )
+            )
+        except Lfm2SequenceEffectiveAttentionFoldError as error:
+            failure = (
+                None
+                if error.failure_report is None
+                else dict(error.failure_report)
+            )
+            attempts.append(
+                _seal(
+                    {
+                        "candidate_id": candidate_id,
+                        "status": (
+                            "typed_numerical_or_evidence_rejection"
+                        ),
+                        "exception_type": type(error).__name__,
+                        "failure_report": failure,
+                        "failure_report_sha256": (
+                            None
+                            if failure is None
+                            else failure.get("report_sha256")
+                        ),
+                        "selection_inputs_consumed": 0,
+                        "validation_inputs_consumed": 0,
+                    }
+                )
+            )
+
+    add_effective_candidate(
+        candidate_id="headwise_effective_operator_svd",
+        fit_operator=lambda: _fit_streamed_headwise_effective_operator(
+            producer=producer,
+            cases=cases,
+            query_norm_weight=query_norm_weight,
+            key_norm_weight=key_norm_weight,
+            norm_epsilon=norm_epsilon,
+            policy=policy,
+        ),
+    )
+
+    def global_operator() -> tuple[Any, Mapping[str, Any], int | None]:
+        effective, report = _fit_streamed_global_effective_operator(
+            statistics=statistics,
+            topology=topology,
+            policy=policy,
+        )
+        return effective, report, None
+
+    add_effective_candidate(
+        candidate_id="global_effective_operator_svd",
+        fit_operator=global_operator,
+    )
+    incumbent_index = 0
+    best_score = min(
+        float(
+            candidate[
+                "weighted_fit_relative_rmse_exact_target_dtype"
+            ]
+        )
+        for candidate in candidates
+    )
+    selection_pool = tuple(
+        index
+        for index, candidate in enumerate(candidates)
+        if float(
+            candidate[
+                "weighted_fit_relative_rmse_exact_target_dtype"
+            ]
+        )
+        <= best_score + policy.fit_tolerance
+    )
+    selected_index = min(selection_pool)
+    selected_score = float(
+        candidates[selected_index][
+            "weighted_fit_relative_rmse_exact_target_dtype"
+        ]
+    )
+    incumbent_score = float(
+        candidates[incumbent_index][
+            "weighted_fit_relative_rmse_exact_target_dtype"
+        ]
+    )
+    if selected_score > incumbent_score + policy.fit_tolerance:
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            "The streamed V/O seed tournament was not nonincreasing."
+        )
+    bank_report = _seal(
+        {
+            "schema": LFM2_SEQUENCE_EFFECTIVE_VO_SEED_BANK_SCHEMA,
+            "fit_case_count": len(cases),
+            "fit_case_bundle_sha256": fit_case_bundle_sha256,
+            "compiled_from_splits": ["fit"],
+            "selection_case_count_consumed": 0,
+            "validation_case_count_consumed": 0,
+            "selection_inputs_accessible": False,
+            "validation_inputs_accessible": False,
+            "maximum_candidate_count": (
+                _MAXIMUM_STREAMED_VO_SEED_CANDIDATES
+            ),
+            "candidate_count": len(candidates),
+            "candidates": candidates,
+            "effective_operator_attempts": attempts,
+            "exact_target_dtype_evaluation_count": len(candidates),
+            "value_target_dtype": str(value_dtype),
+            "output_target_dtype": str(output_dtype),
+            "exact_bfloat16_evaluation": bool(
+                value_dtype == torch.bfloat16
+                and output_dtype == torch.bfloat16
+            ),
+            "incumbent_candidate_index": incumbent_index,
+            "incumbent_candidate_id": candidates[incumbent_index][
+                "candidate_id"
+            ],
+            (
+                "incumbent_weighted_fit_relative_rmse_"
+                "exact_target_dtype"
+            ): incumbent_score,
+            "selected_candidate_index": selected_index,
+            "selected_candidate_id": candidates[selected_index][
+                "candidate_id"
+            ],
+            (
+                "selected_weighted_fit_relative_rmse_"
+                "exact_target_dtype"
+            ): selected_score,
+            "selected_seed_nonincreasing_from_incumbent": True,
+            "fit_tolerance": policy.fit_tolerance,
+            "deterministic_selection_rule": (
+                "lowest_candidate_index_within_fit_tolerance_of_best"
+            ),
+            "ordinary_dense_target_value_output": True,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+    )
+    if not _verify_streamed_vo_seed_bank_report(
+        bank_report,
+        fit_case_count=len(cases),
+        fit_case_bundle_sha256=fit_case_bundle_sha256,
+    ):
+        raise Lfm2SequenceEffectiveAttentionFoldError(
+            "The streamed V/O seed bank authentication failed."
+        )
+    selected_factor, selected_blocks = candidate_states[selected_index]
+    svd_reports = [
+        {
+            "seed": "bounded_fit_only_effective_operator_seed_bank",
+            "selected_candidate_id": candidates[selected_index][
+                "candidate_id"
+            ],
+            "selected_candidate_index": selected_index,
+            "seed_bank_report_sha256": bank_report["report_sha256"],
+            "exact_target_dtype_start": True,
+        }
+    ]
+    selection_report = _seal(
+        {
+            "role": "sequence_effective_streamed_vo_seed_bank_selection",
+            "seed_bank_report_sha256": bank_report["report_sha256"],
+            "selected_candidate_id": candidates[selected_index][
+                "candidate_id"
+            ],
+            "selected_candidate_index": selected_index,
+            "relative_rmse": selected_score,
+            "exact_target_dtype_start": True,
+            "selection_inputs_consumed": 0,
+            "validation_inputs_consumed": 0,
+        }
+    )
+    return (
+        selected_factor.clone(),
+        selected_blocks.clone(),
+        svd_reports,
+        selection_report,
+        bank_report,
+    )
+
+
 def _recoverable_residual_delta_solve_failure(
     error: Lfm2SequenceEffectiveAttentionFoldError,
 ) -> bool:
@@ -4920,6 +5591,7 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
     plain_attended_inputs = plain_endpoint_target = None
     sequence_statistics: Mapping[str, Any] | None = None
     statistics_report: Mapping[str, Any] | None = None
+    initial_vo_seed_bank: Mapping[str, Any] | None = None
     if streamed_headwise:
         (
             sequence_statistics,
@@ -5039,7 +5711,46 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
                 topology.target_hidden_size,
                 topology.target_output_size,
             )
-    if seeded:
+    if streamed_headwise:
+        (
+            value_factor,
+            output_blocks,
+            svd_reports,
+            output_solve,
+            initial_vo_seed_bank,
+        ) = _build_streamed_vo_seed_bank(
+            producer=producer,
+            cases=cases,
+            statistics=sequence_statistics,
+            query_norm_weight=q_norm,
+            key_norm_weight=k_norm,
+            norm_epsilon=epsilon,
+            policy=selected_policy,
+            value_dtype=value_dtype,
+            output_dtype=output_dtype,
+            fit_case_bundle_sha256=case_bundle_before,
+            residual_vo_seed=residual_vo_seed,
+        )
+        effective_solve = _seal(
+            {
+                "role": "sequence_effective_streamed_vo_seed_bank",
+                "seed_bank_report_sha256": initial_vo_seed_bank[
+                    "report_sha256"
+                ],
+                "selected_candidate_id": initial_vo_seed_bank[
+                    "selected_candidate_id"
+                ],
+                "selected_candidate_index": initial_vo_seed_bank[
+                    "selected_candidate_index"
+                ],
+                "complete_effective_operator_solve_skipped": False,
+                "headwise_effective_operator_attempted": True,
+                "global_effective_operator_attempted": True,
+                "selection_inputs_consumed": 0,
+                "validation_inputs_consumed": 0,
+            }
+        )
+    elif seeded:
         value_factor = residual_vo_seed.value_weight.to(
             torch.float64
         ).reshape(
@@ -5061,30 +5772,6 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
                 "svd_materialization_avoided": True,
             }
         ]
-    elif streamed_headwise:
-        value_factor = producer.value_weight.to(torch.float64).reshape(
-            topology.target_key_value_heads,
-            topology.head_dim,
-            topology.target_hidden_size,
-        ).permute(0, 2, 1).contiguous()
-        output_blocks = torch.zeros(
-            topology.target_query_heads,
-            topology.head_dim,
-            topology.target_output_size,
-            dtype=torch.float64,
-        )
-        svd_reports = [
-            {
-                "group": group,
-                "retained_rank": topology.head_dim,
-                "seed": "producer_shared_value_subspace",
-                "producer_value_group_sha256": _tensor_sha256(
-                    value_factor[group]
-                ),
-                "large_topology_svd_materialization_avoided": True,
-            }
-            for group in range(topology.target_key_value_heads)
-        ]
     else:
         value_factor, output_blocks, svd_reports = (
             _initial_shared_value_factors(
@@ -5094,7 +5781,9 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
                 head_dim=topology.head_dim,
             )
         )
-    if seeded:
+    if streamed_headwise:
+        pass
+    elif seeded:
         output_solve = _seal(
             {
                 "role": "sequence_effective_residual_vo_seed_identity",
@@ -5108,14 +5797,6 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
                 "validation_inputs_consumed": 0,
             }
         )
-    elif streamed_headwise:
-        output_blocks, output_solve = _fit_output_from_sequence_statistics(
-            statistics=sequence_statistics,
-            topology=topology,
-            value_factor=value_factor,
-            policy=selected_policy,
-            role="sequence_effective_streamed_svd_seed_output",
-        )
     else:
         output_blocks, _features, output_solve = _fit_output(
             attended_inputs,
@@ -5125,7 +5806,7 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
             policy=selected_policy,
             role="sequence_effective_svd_seed_output",
         )
-    if not seeded:
+    if not seeded and not streamed_headwise:
         value_factor, output_blocks = _canonicalize_value_factor(
             value_factor,
             output_blocks,
@@ -5137,8 +5818,6 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
             value_factor=value_factor,
             output_blocks=output_blocks,
         )
-        if streamed_headwise and seeded
-        else float(output_solve["relative_rmse"])
         if streamed_headwise
         else _relative_rmse(
             _prediction(
@@ -5154,10 +5833,23 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         {
             "proposal_index": 0,
             "stage": (
-                "residual_vo_seed_zero_delta_identity_anchor"
-                if seeded
-                else "scalable_producer_shared_value_sequence_output_seed"
+                (
+                    "residual_vo_seed_zero_delta_identity_anchor"
+                    if initial_vo_seed_bank["selected_candidate_id"]
+                    == "authenticated_residual_vo"
+                    else (
+                        "scalable_producer_shared_value_sequence_output_seed"
+                        if initial_vo_seed_bank["selected_candidate_id"]
+                        == "producer_shared_value"
+                        else (
+                            initial_vo_seed_bank["selected_candidate_id"]
+                            + "_exact_target_dtype_seed"
+                        )
+                    )
+                )
                 if streamed_headwise
+                else "residual_vo_seed_zero_delta_identity_anchor"
+                if seeded
                 else "effective_operator_shared_value_svd_seed"
             ),
             "accepted": True,
@@ -5169,6 +5861,22 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
             "value_factor_sha256": _tensor_sha256(value_factor),
             "output_blocks_sha256": _tensor_sha256(output_blocks),
             "solve_report_sha256": output_solve["report_sha256"],
+            **(
+                {
+                    "initial_vo_seed_bank_sha256": (
+                        initial_vo_seed_bank["report_sha256"]
+                    ),
+                    "initial_vo_seed_candidate_id": (
+                        initial_vo_seed_bank["selected_candidate_id"]
+                    ),
+                    "initial_vo_seed_candidate_index": (
+                        initial_vo_seed_bank["selected_candidate_index"]
+                    ),
+                    "initial_vo_seed_exact_target_dtype": True,
+                }
+                if streamed_headwise
+                else {}
+            ),
             **(
                 {
                     "zero_delta_ridge_anchor": True,
@@ -5783,6 +6491,27 @@ def compile_lfm2_fixed_qk_sequence_effective_attention_fold(
         ),
         "streamed_sufficient_statistics": (
             None if statistics_report is None else dict(statistics_report)
+        ),
+        **(
+            {
+                "initial_vo_seed_bank": dict(initial_vo_seed_bank),
+                "initial_vo_seed_bank_sha256": initial_vo_seed_bank[
+                    "report_sha256"
+                ],
+                "selected_initial_vo_seed_candidate_id": (
+                    initial_vo_seed_bank["selected_candidate_id"]
+                ),
+                "selected_initial_vo_seed_candidate_index": (
+                    initial_vo_seed_bank["selected_candidate_index"]
+                ),
+                "selected_initial_vo_seed_nonincreasing": (
+                    initial_vo_seed_bank[
+                        "selected_seed_nonincreasing_from_incumbent"
+                    ]
+                ),
+            }
+            if streamed_headwise
+            else {}
         ),
         "complete_operator_quadratic_gram_avoided": solver_plan[
             "complete_operator_quadratic_gram_avoided"

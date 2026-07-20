@@ -37,6 +37,9 @@ LFM2_QK_TARGET_SCORE_TRANSFORM_SCHEMA = "neural-forge-lfm2-qk-target-score-trans
 LFM2_QK_OBSERVED_EXECUTION_RECEIPT_SCHEMA = (
     "neural-forge-lfm2-qk-score-observed-execution-v1"
 )
+LFM2_QK_LINEARIZATION_CACHE_RESOURCE_SCHEMA = (
+    "neural-forge-lfm2-qk-fixed-linearization-cache-resource-v1"
+)
 
 _MAXIMUM_PCG_ITERATIONS = 4_096
 _MAXIMUM_FRONTIER_POINTS = 9
@@ -2029,14 +2032,18 @@ def _execution_report(
     solver_device: Any,
     compute_devices: Sequence[Any],
     observed_execution_receipt: Mapping[str, Any],
+    *,
+    fit_case_count: int,
 ) -> dict[str, Any]:
     return {
         "solver_device": str(solver_device),
         "compute_devices": [str(value) for value in compute_devices],
         "case_assignment": "authenticated_bank_order_round_robin",
         "compute_device_concurrency": "serial_round_robin",
-        "streamed_evidence": True,
-        "maximum_logically_resident_prepared_cases": 1,
+        "streamed_evidence": False,
+        "fixed_linearization_cache": True,
+        "linearization_cache_scope": "one_gauss_newton_sweep",
+        "maximum_logically_resident_prepared_cases": fit_case_count,
         "jvp_vjp_dtype": "torch.float32",
         "pcg_vector_dtype": "torch.float32",
         "scalar_reduction_dtype": "torch.float64",
@@ -2674,7 +2681,7 @@ class Lfm2QkScoreResidualLinearOperator:
 
 
 class _StreamingQkScoreResidualLinearOperator:
-    """Stream one authenticated case at a time through a matrix-free solve."""
+    """Reuse one device-resident fixed linearization within a matrix-free sweep."""
 
     def __init__(
         self,
@@ -2709,6 +2716,14 @@ class _StreamingQkScoreResidualLinearOperator:
             float(current_key_weight.to(torch.float64).square().sum().item()),
             self.key_numel * torch.finfo(torch.float32).eps,
         )
+        self._linearization_cache = tuple(self._build_linearized_cases())
+        if len(self._linearization_cache) != len(self.evidence_cases):
+            raise Lfm2CachedQkScoreResidualFoldError(
+                "Fixed-linearization cache does not cover every FIT case."
+            )
+        self.linearization_cache_resource_receipt = (
+            self._build_linearization_cache_resource_receipt()
+        )
         energy = 0.0
         for case in self._linearized_cases():
             assert case.baseline_scores is not None
@@ -2724,7 +2739,7 @@ class _StreamingQkScoreResidualLinearOperator:
         self.residual_energy = max(energy, torch.finfo(torch.float64).tiny)
         self.normal_operator_calls = 0
 
-    def _linearized_cases(self) -> Iterable[_PreparedCase]:
+    def _build_linearized_cases(self) -> Iterable[_PreparedCase]:
         for case in _iter_prepared_evidence_cases(
             self.evidence_cases,
             self.seed,
@@ -2738,6 +2753,86 @@ class _StreamingQkScoreResidualLinearOperator:
                 self.current_key_weight,
             )
             yield case
+
+    def _linearized_cases(self) -> Iterable[_PreparedCase]:
+        yield from self._linearization_cache
+
+    @staticmethod
+    def _case_cached_tensors(case: _PreparedCase) -> tuple[Any, ...]:
+        return (
+            case.query_inputs,
+            case.key_inputs,
+            case.target_scores,
+            case.target_probabilities,
+            case.mask,
+            case.informative_query_rows,
+            case.query_cosine,
+            case.query_sine,
+            case.key_cosine,
+            case.key_sine,
+            case.cell_weights,
+            case.query_linear,
+            case.key_linear,
+            case.query_post_rope,
+            case.key_post_rope,
+            case.baseline_scores,
+        )
+
+    def _build_linearization_cache_resource_receipt(self) -> dict[str, Any]:
+        torch = _torch()
+        requested_devices = [str(value) for value in self.compute_devices]
+        per_device_case_counts = {device: 0 for device in requested_devices}
+        per_device_logical_tensor_bytes = {device: 0 for device in requested_devices}
+        for case_index, case in enumerate(self._linearization_cache):
+            expected_device = requested_devices[case_index % len(requested_devices)]
+            tensors = self._case_cached_tensors(case)
+            if any(not isinstance(value, torch.Tensor) for value in tensors):
+                raise Lfm2CachedQkScoreResidualFoldError(
+                    "Fixed-linearization cache contains an absent tensor."
+                )
+            observed_devices = {str(value.device) for value in tensors}
+            if observed_devices != {expected_device}:
+                raise Lfm2CachedQkScoreResidualFoldError(
+                    "Fixed-linearization cache differs from round-robin device "
+                    "assignment."
+                )
+            per_device_case_counts[expected_device] += 1
+            per_device_logical_tensor_bytes[expected_device] += sum(
+                _tensor_nbytes(value) for value in tensors
+            )
+        total_bytes = sum(per_device_logical_tensor_bytes.values())
+        if total_bytes <= 0 or sum(per_device_case_counts.values()) != len(
+            self.evidence_cases
+        ):
+            raise Lfm2CachedQkScoreResidualFoldError(
+                "Fixed-linearization cache resource accounting is empty."
+            )
+        body = {
+            "schema": LFM2_QK_LINEARIZATION_CACHE_RESOURCE_SCHEMA,
+            "cache_scope": "one_gauss_newton_sweep",
+            "resident_storage": "compute_device",
+            "source_fit_case_count": len(self.evidence_cases),
+            "resident_prepared_case_count": len(self._linearization_cache),
+            "linearization_replay_call_count": len(self._linearization_cache),
+            "per_device_case_counts": per_device_case_counts,
+            "per_device_logical_tensor_bytes": per_device_logical_tensor_bytes,
+            "total_logical_tensor_bytes": total_bytes,
+            "maximum_device_logical_tensor_bytes": max(
+                per_device_logical_tensor_bytes.values()
+            ),
+            "cache_reused_for_right_hand_side": True,
+            "cache_reused_for_normal_operator_calls": True,
+            "cache_invalidated_at_sweep_end": True,
+            "model_forward_calls": 0,
+            "model_generate_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+        }
+        return {
+            **body,
+            "resource_receipt_sha256": _canonical_sha256(body),
+        }
 
     def pack(self, query: Any, key: Any) -> Any:
         return _torch().cat((query.reshape(-1), key.reshape(-1)))
@@ -3570,6 +3665,7 @@ def compile_lfm2_cached_qk_score_residual_fold(
         solver_device,
         compute_devices,
         observed_execution_receipt,
+        fit_case_count=len(fit_bank.cases),
     )
     current_query = seed.query_weight.to(device=solver_device).clone()
     current_key = seed.key_weight.to(device=solver_device).clone()
@@ -3619,6 +3715,9 @@ def compile_lfm2_cached_qk_score_residual_fold(
             "sweep": sweep,
             "pcg": pcg_report.as_dict(),
             "residual_energy": operator.residual_energy,
+            "linearization_cache_resource_receipt": dict(
+                operator.linearization_cache_resource_receipt
+            ),
         }
         zero_bilinear_jacobian = (
             zero_bilinear_jacobian
@@ -3671,6 +3770,7 @@ def compile_lfm2_cached_qk_score_residual_fold(
                 report_body=fallback_body,
             )
         delta_query, delta_key = operator.unpack(direction)
+        del operator
         (
             delta_query,
             delta_key,
@@ -4013,6 +4113,7 @@ def compile_lfm2_cached_qk_score_residual_fold(
 
 __all__ = [
     "LFM2_CACHED_QK_SCORE_RESIDUAL_SCHEMA",
+    "LFM2_QK_LINEARIZATION_CACHE_RESOURCE_SCHEMA",
     "LFM2_QK_OBSERVED_EXECUTION_RECEIPT_SCHEMA",
     "LFM2_QK_TARGET_SCORE_TRANSFORM_SCHEMA",
     "Lfm2AuthenticatedDenseQkSeed",

@@ -116,6 +116,8 @@ def test_parser_reuses_shared_compression_request_and_bounds_memory(
     assert config.resume_store_directory is None
     assert config.resume_admission_sha256 is None
     assert config.attention_sequential_transport_profile is None
+    assert config.composed_qk_attention_profile is None
+    assert config.endpoint_residual_attention_profile is None
     assert config.forbidden_requests == ()
 
 
@@ -178,10 +180,20 @@ def test_default_attention_transport_profile_is_exact_legacy_noop() -> None:
         "98ecbc677c2352b457d3aebcfe100223512307d946a78e37265e0b814bfc4c1a"
     )
     assert not set(MODULE._OPT_IN_POLICY_IDENTITY_FIELDS) & set(config_document)
+    assert not set(MODULE._COMPOSED_QK_POLICY_IDENTITY_FIELDS) & set(
+        config_document
+    )
+    assert not set(MODULE._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS) & set(
+        config_document
+    )
     assert actual.as_dict() == expected.as_dict()
     assert actual.attention_sequential_transport_policy is None
     assert MODULE._configured_model_fold_policy_identity(config) is None
     assert MODULE._build_resume_policy_binding(
+        None,
+        runtime_policy=SimpleNamespace(as_dict=lambda: {"legacy": True}),
+    ) is None
+    assert MODULE._build_composed_qk_runtime_policy_binding(
         None,
         runtime_policy=SimpleNamespace(as_dict=lambda: {"legacy": True}),
     ) is None
@@ -243,6 +255,204 @@ def test_opt_in_profile_builds_typed_attention_only_forwarding_policy(
     )
     assert "resolved_attention_sequential_transport_policy" in compiler_source
     assert "attention_sequential_transport_policy=(" in compiler_source
+
+
+def test_composed_profile_builds_exact_all_layer_runtime_policy(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge import hf_lfm2_cpcf_v5_model_compiler as v5_compiler
+    from neural_forge.hf_lfm2_composed_qk_attention_fold import (
+        Lfm2ComposedQkAttentionFoldPolicy,
+    )
+
+    args = MODULE.build_parser().parse_args(
+        [*_required_args(tmp_path), "--composed-qk-attention-profile"]
+    )
+    config = MODULE.config_from_args(args)
+    model_policy = MODULE._build_configured_model_fold_policy(config)
+    composed = MODULE._build_configured_composed_qk_attention_policy(config)
+    identity = MODULE._configured_composed_qk_policy_identity(
+        config,
+        composed_policy=composed,
+    )
+    runtime = v5_compiler.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=model_policy,
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=2,
+        composed_qk_attention_policy=composed,
+    )
+    binding = MODULE._build_composed_qk_runtime_policy_binding(
+        identity,
+        runtime_policy=runtime,
+    )
+    request = config.as_dict()
+
+    assert type(config.composed_qk_attention_profile) is (
+        MODULE.V5ComposedQkAttentionRunnerProfile
+    )
+    assert type(composed) is Lfm2ComposedQkAttentionFoldPolicy
+    assert composed.verify_authentication()
+    assert composed.score_policy.solver_device == "cuda:1"
+    assert composed.score_policy.compute_devices == ("cuda:0", "cuda:1")
+    assert composed.global_policy.maximum_total_score_elements == 134_217_728
+    assert composed.global_policy.maximum_total_output_elements == 201_326_592
+    assert identity is not None and binding is not None
+    assert runtime.resolved_composed_qk_attention_policy(
+        "full_attention"
+    ) is composed
+    assert runtime.resolved_composed_qk_attention_policy("short_conv") is None
+    assert request["composed_qk_attention_profile"] == (
+        config.composed_qk_attention_profile.as_dict()
+    )
+    assert request["composed_qk_attention_policy_sha256"] == (
+        composed.authentication_sha256
+    )
+    assert binding["runtime_policy_sha256"] == MODULE._sha(runtime.as_dict())
+    assert binding["cross_profile_resume_permitted"] is False
+
+    compiler_source = inspect.getsource(
+        v5_compiler.compile_lfm2_cpcf_v5_selective_model_fold
+    )
+    assert "resolved_composed_qk_attention_policy" in compiler_source
+    assert "composed_qk_attention_policy=(" in compiler_source
+
+
+def test_composed_and_sequential_attention_profiles_are_mutually_exclusive(
+    tmp_path: Path,
+) -> None:
+    args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--attention-sequential-transport-profile",
+            MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+            "--composed-qk-attention-profile",
+        ]
+    )
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="mutually exclusive",
+    ):
+        MODULE.config_from_args(args)
+
+
+def test_endpoint_profile_builds_exact_five_arm_runtime_policy(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge import hf_lfm2_cpcf_v5_model_compiler as v5_compiler
+    from neural_forge.hf_lfm2_composed_qk_attention_fold import (
+        Lfm2ComposedEndpointResidualAttentionFoldPolicy,
+        Lfm2ComposedQkAttentionFoldPolicy,
+    )
+
+    args = MODULE.build_parser().parse_args(
+        [*_required_args(tmp_path), "--endpoint-residual-attention-profile"]
+    )
+    config = MODULE.config_from_args(args)
+    model_policy = MODULE._build_configured_model_fold_policy(config)
+    composed = MODULE._build_configured_composed_qk_attention_policy(config)
+    endpoint = MODULE._build_configured_endpoint_residual_attention_policy(config)
+    identity = MODULE._configured_endpoint_residual_policy_identity(
+        config,
+        composed_policy=composed,
+        endpoint_policy=endpoint,
+    )
+    runtime = v5_compiler.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=model_policy,
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=2,
+        composed_qk_attention_policy=composed,
+        endpoint_residual_attention_policy=endpoint,
+    )
+    binding = MODULE._build_endpoint_residual_runtime_policy_binding(
+        identity,
+        runtime_policy=runtime,
+    )
+    request = config.as_dict()
+
+    assert type(config.endpoint_residual_attention_profile) is (
+        MODULE.V5EndpointResidualAttentionRunnerProfile
+    )
+    assert type(composed) is Lfm2ComposedQkAttentionFoldPolicy
+    assert type(endpoint) is Lfm2ComposedEndpointResidualAttentionFoldPolicy
+    assert composed.verify_authentication() is True
+    assert endpoint.verify_authentication() is True
+    assert endpoint.maximum_outer_blocks == 2
+    assert endpoint.endpoint_policy.maximum_cg_iterations == 64
+    assert endpoint.endpoint_policy.cg_restart_iterations == 64
+    assert endpoint.endpoint_policy.cg_relative_tolerance == 1e-2
+    assert endpoint.endpoint_policy.solver_device == "cuda:1"
+    assert endpoint.endpoint_policy.compute_devices == ("cuda:0", "cuda:1")
+    assert endpoint.allow_legacy_recomputed_parent_probabilities is False
+    assert runtime.resolved_endpoint_residual_attention_policy(
+        "full_attention"
+    ) is endpoint
+    assert runtime.resolved_endpoint_residual_attention_policy("short_conv") is None
+    assert identity is not None and binding is not None
+    assert request["endpoint_residual_attention_profile"] == (
+        config.endpoint_residual_attention_profile.as_dict()
+    )
+    assert request["endpoint_residual_attention_policy_sha256"] == (
+        endpoint.authentication_sha256
+    )
+    assert binding["runtime_policy_sha256"] == MODULE._sha(runtime.as_dict())
+    assert binding["cross_profile_resume_permitted"] is False
+
+
+def test_endpoint_profile_is_mutually_exclusive_with_prior_attention_profiles(
+    tmp_path: Path,
+) -> None:
+    parser = MODULE.build_parser()
+    for prior_flag in (
+        "--composed-qk-attention-profile",
+        "--attention-sequential-transport-profile",
+    ):
+        args = [*_required_args(tmp_path / prior_flag.removeprefix("--"))]
+        args.append("--endpoint-residual-attention-profile")
+        if prior_flag == "--attention-sequential-transport-profile":
+            args.extend(
+                [
+                    prior_flag,
+                    MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+                ]
+            )
+        else:
+            args.append(prior_flag)
+        with pytest.raises(
+            MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+            match="mutually exclusive",
+        ):
+            MODULE.config_from_args(parser.parse_args(args))
+
+
+def test_composed_profile_catalog_identity_is_exact_and_tamper_closed(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [*_required_args(tmp_path), "--composed-qk-attention-profile"]
+        )
+    )
+    identity = MODULE._configured_composed_qk_policy_identity(config)
+    fields = MODULE._composed_qk_policy_identity_fields(identity)
+    preparation = {**_catalog_preparation(), **fields}
+
+    MODULE._authenticate_preparation_policy_identity(
+        preparation,
+        config=config,
+    )
+    tampered = dict(preparation)
+    tampered["composed_qk_attention_policy_sha256"] = "0" * 64
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="differs from this request",
+    ):
+        MODULE._authenticate_preparation_policy_identity(
+            tampered,
+            config=config,
+        )
 
 
 def test_opt_in_profile_changes_sealed_request_and_preparation_identity(

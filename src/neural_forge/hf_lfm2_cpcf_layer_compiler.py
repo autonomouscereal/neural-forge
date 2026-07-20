@@ -42,10 +42,14 @@ from neural_forge.hf_cpcf_sequential_boundary_transport import (
     fit_cpcf_sequential_downstream_chart_transport,
 )
 from neural_forge.hf_lfm2_composed_qk_attention_fold import (
+    ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID,
     SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID,
+    Lfm2CompiledComposedEndpointResidualAttentionFold,
     Lfm2CompiledComposedQkAttentionProducerFold,
     Lfm2CompiledComposedQkSequenceEffectiveAttentionFold,
+    Lfm2ComposedEndpointResidualAttentionFoldPolicy,
     Lfm2ComposedQkAttentionFoldPolicy,
+    compile_lfm2_composed_endpoint_residual_attention_fold,
     compile_lfm2_composed_qk_attention_producer_fold,
     compile_lfm2_composed_qk_sequence_effective_attention_fold,
 )
@@ -167,6 +171,10 @@ LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS = (
     *LFM2_CPCF_ATTENTION_CANDIDATE_IDS,
     SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID,
 )
+LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS = (
+    *LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS,
+    ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID,
+)
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _EVALUATION_SPLITS = ("fit", "validation")
 _SHORT_CONV_CASE_SPLITS = ("selection", "fit", "validation")
@@ -191,6 +199,7 @@ def _canonical_attention_candidate_ids(
     if values not in {
         LFM2_CPCF_ATTENTION_CANDIDATE_IDS,
         LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS,
+        LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS,
     }:
         raise Lfm2CpcfLayerCompilerError(
             "Attention candidate inventory is not one authenticated canonical lane."
@@ -2182,6 +2191,133 @@ def _attention_key_mask(additive_mask: Any) -> Any:
     return allowed[:, 0, :, :].contiguous()
 
 
+def _validated_cached_attention_probabilities(
+    *,
+    probabilities: Any,
+    context_from_probabilities: Any,
+    parent_context: Any,
+    value_history: Any,
+    key_mask: Any,
+    absolute_query_start: int,
+    name: str,
+) -> Any:
+    """Cross-check direct cached softmax evidence and its executed context."""
+
+    torch = _torch()
+    observed = _finite_tensor(
+        probabilities,
+        f"{name}.probabilities",
+        dimensions=4,
+    )
+    cached_context = _finite_tensor(
+        context_from_probabilities,
+        f"{name}.context_from_probabilities",
+        dimensions=4,
+    )
+    context = _finite_tensor(
+        parent_context,
+        f"{name}.context",
+        dimensions=4,
+    )
+    values = _finite_tensor(
+        value_history,
+        f"{name}.value_history",
+        dimensions=4,
+    )
+    if not isinstance(key_mask, torch.Tensor) or key_mask.dtype is not torch.bool:
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} key mask must be a dense boolean tensor."
+        )
+    batch, query_heads, query_rows, key_rows = map(int, observed.shape)
+    key_value_heads = int(values.shape[1])
+    head_dim = int(values.shape[3])
+    if (
+        absolute_query_start < 0
+        or query_heads <= 0
+        or key_value_heads <= 0
+        or query_heads % key_value_heads
+        or tuple(key_mask.shape) != (batch, query_rows, key_rows)
+        or tuple(values.shape) != (batch, key_value_heads, key_rows, head_dim)
+        or tuple(context.shape)
+        != (batch, query_heads, query_rows, head_dim)
+        or tuple(cached_context.shape) != tuple(context.shape)
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} cached probabilities, V history, mask, and contexts "
+            "are not one aligned attention execution."
+        )
+    absolute_queries = torch.arange(
+        absolute_query_start,
+        absolute_query_start + query_rows,
+        dtype=torch.long,
+    ).reshape(1, query_rows, 1)
+    absolute_keys = torch.arange(key_rows, dtype=torch.long).reshape(
+        1,
+        1,
+        key_rows,
+    )
+    if bool((key_mask & (absolute_keys > absolute_queries)).any().item()):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} cached mask permits a future causal key."
+        )
+    expanded_mask = key_mask[:, None, :, :].expand_as(observed)
+    if (
+        bool((observed < 0).any().item())
+        or not bool(key_mask.any(dim=-1).all().item())
+        or not bool(torch.equal(
+            observed.masked_fill(expanded_mask, 0),
+            torch.zeros_like(observed),
+        ))
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} cached probabilities are negative, mask-leaking, or "
+            "contain a query row with no legal key."
+        )
+    probability_tolerance = max(
+        2e-3,
+        4.0 * float(torch.finfo(observed.dtype).eps),
+    )
+    row_sums = observed.to(torch.float32).sum(dim=-1)
+    if not bool(
+        torch.allclose(
+            row_sums,
+            torch.ones_like(row_sums),
+            rtol=probability_tolerance,
+            atol=probability_tolerance,
+        )
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} cached probability rows do not sum to one."
+        )
+    repeated_values = values.repeat_interleave(
+        query_heads // key_value_heads,
+        dim=1,
+    )
+    reconstructed = torch.matmul(
+        observed.to(torch.float32),
+        repeated_values.to(torch.float32),
+    )
+    if not (
+        torch.allclose(
+            reconstructed,
+            cached_context.to(torch.float32),
+            rtol=2e-2,
+            atol=2e-3,
+        )
+        and torch.allclose(
+            cached_context.to(torch.float32),
+            context.to(torch.float32),
+            rtol=2e-2,
+            atol=2e-3,
+        )
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            f"{name} cached probability replay differs from its authenticated "
+            "context_from_probabilities or executed context."
+        )
+    return observed
+
+
 def _equal_causal_phase_sqrt_weights(
     phases: Sequence[Lfm2CpcfTargetPhase],
     *,
@@ -3066,6 +3202,7 @@ def _attention_cases(
         key_history = None
         value_history = None
         key_mask_history = None
+        probability_history = None
         previous_phase: Lfm2CpcfTargetPhase | None = None
         previous_child_input = None
         previous_child_state = None
@@ -3236,6 +3373,17 @@ def _attention_cases(
                     f"Phase {phase.identity!r} attention mask does not cover "
                     "its terminal queries over the complete key history."
                 )
+            current_probabilities = _validated_cached_attention_probabilities(
+                probabilities=tensors["attention.probabilities"],
+                context_from_probabilities=(
+                    tensors["attention.context_from_probabilities"]
+                ),
+                parent_context=parent_context,
+                value_history=observed_value_history,
+                key_mask=observed_mask,
+                absolute_query_start=phase.full_prefix_tokens - current,
+                name=f"phase {phase.identity!r} attention",
+            )
             child_input = _finite_tensor(
                 replay.operator_input,
                 f"phase {phase.identity!r} actual child operator input",
@@ -3268,6 +3416,7 @@ def _attention_cases(
                 key_history = observed_key_history
                 value_history = observed_value_history
                 key_mask_history = observed_mask
+                probability_history = current_probabilities
             else:
                 previous_tokens = previous_phase.full_prefix_tokens
                 if not (
@@ -3301,7 +3450,10 @@ def _attention_cases(
                     or key_history is None
                     or value_history is None
                     or key_mask_history is None
+                    or probability_history is None
                     or int(key_linear_history.shape[2]) != previous_tokens
+                    or tuple(probability_history.shape[2:])
+                    != (previous_tokens, previous_tokens)
                     or not torch.equal(
                         observed_key_history[:, :, :previous_tokens, :],
                         key_history,
@@ -3329,6 +3481,18 @@ def _attention_cases(
                 key_mask_history = torch.cat(
                     (padded_previous_mask, observed_mask),
                     dim=1,
+                ).contiguous()
+                padded_previous_probabilities = torch.nn.functional.pad(
+                    probability_history,
+                    (0, current),
+                    value=0.0,
+                )
+                probability_history = torch.cat(
+                    (
+                        padded_previous_probabilities,
+                        current_probabilities,
+                    ),
+                    dim=2,
                 ).contiguous()
 
             endpoint = chart.post_operator.encode_shaped(
@@ -3391,8 +3555,9 @@ def _attention_cases(
             or final_sin is None
             or key_linear_history is None
             or key_history is None
-            or value_history is None
-            or key_mask_history is None
+                or value_history is None
+                or key_mask_history is None
+                or probability_history is None
         ):
             raise Lfm2CpcfLayerCompilerError(
                 "Attention trajectory did not produce one complete causal case."
@@ -3419,6 +3584,8 @@ def _attention_cases(
             == int(parent_contribution.shape[2])
             == int(parent_endpoint.shape[1])
             == int(row_sqrt_weights.shape[1])
+            == int(probability_history.shape[2])
+            == int(probability_history.shape[3])
             == final_phase.full_prefix_tokens
         ):
             raise Lfm2CpcfLayerCompilerError(
@@ -3445,6 +3612,7 @@ def _attention_cases(
                 parent_contribution=parent_contribution,
                 query_row_sqrt_weights=row_sqrt_weights,
                 key_value_row_sqrt_weights=row_sqrt_weights.clone(),
+                parent_probabilities=probability_history,
             )
         )
     if not result:
@@ -4324,6 +4492,7 @@ def _attention_context_preservation_metrics(
         | Lfm2CompiledCpcfResidualAttentionSplitFold
         | Lfm2CompiledFixedQkSequenceEffectiveAttentionFold
         | Lfm2CompiledComposedQkSequenceEffectiveAttentionFold
+        | Lfm2CompiledComposedEndpointResidualAttentionFold
     ),
     cases: Sequence[Lfm2CachedAttentionFoldCase],
     actual_child_contexts: Sequence[Any],
@@ -4337,6 +4506,7 @@ def _attention_context_preservation_metrics(
             Lfm2CompiledCpcfResidualAttentionSplitFold,
             Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
             Lfm2CompiledComposedQkSequenceEffectiveAttentionFold,
+            Lfm2CompiledComposedEndpointResidualAttentionFold,
         ),
     ):
         producer = operator_artifact.producer_artifact
@@ -4632,6 +4802,7 @@ def _install_cpcf_attention_artifact(
         | Lfm2CompiledCpcfResidualAttentionSplitFold
         | Lfm2CompiledFixedQkSequenceEffectiveAttentionFold
         | Lfm2CompiledComposedQkSequenceEffectiveAttentionFold
+        | Lfm2CompiledComposedEndpointResidualAttentionFold
     ),
 ) -> Mapping[str, Any]:
     """Install one complete attention candidate into the existing blank shell."""
@@ -4644,6 +4815,14 @@ def _install_cpcf_attention_artifact(
         raw_operator_install = install_lfm2_structural_attention_fold(
             target_attention,
             artifact,
+        ).as_dict()
+    elif isinstance(
+        artifact,
+        Lfm2CompiledComposedEndpointResidualAttentionFold,
+    ):
+        raw_operator_install = install_lfm2_fixed_qk_sequence_effective_attention_fold(
+            target_attention,
+            artifact.blocks[-1].vo_artifact,
         ).as_dict()
     elif isinstance(
         artifact,
@@ -5541,7 +5720,11 @@ def _freeze_attention_candidate_winner(
     if {value.candidate_id for value in values} != set(active_candidate_ids) or len(
         values
     ) != len(active_candidate_ids):
-        inventory_label = "three-arm" if len(active_candidate_ids) == 3 else "four-arm"
+        inventory_label = {
+            3: "three-arm",
+            4: "four-arm",
+            5: "five-arm",
+        }.get(len(active_candidate_ids), "noncanonical")
         raise Lfm2CpcfLayerCompilerError(
             "Attention selection requires exactly the authenticated "
             f"{inventory_label} macrocell inventory."
@@ -7585,6 +7768,7 @@ class Lfm2CpcfCompiledLayerResult:
                     Lfm2CompiledCpcfResidualAttentionSplitFold,
                     Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
                     Lfm2CompiledComposedQkSequenceEffectiveAttentionFold,
+                    Lfm2CompiledComposedEndpointResidualAttentionFold,
                 ),
             ):
                 raise TypeError("Attention result has the wrong operator artifact.")
@@ -9782,6 +9966,9 @@ def compile_and_install_lfm2_cpcf_layer(
         Lfm2CpcfAttentionSequentialTransportPolicy | None
     ) = None,
     composed_qk_attention_policy: Lfm2ComposedQkAttentionFoldPolicy | None = None,
+    endpoint_residual_attention_policy: (
+        Lfm2ComposedEndpointResidualAttentionFoldPolicy | None
+    ) = None,
 ) -> Lfm2CpcfCompiledLayerResult:
     """Compile, install, and replay one next sequential LFM2 target layer."""
 
@@ -9810,6 +9997,23 @@ def compile_and_install_lfm2_cpcf_layer(
             "composed_qk_attention_policy must be an authenticated "
             "Lfm2ComposedQkAttentionFoldPolicy."
         )
+    if endpoint_residual_attention_policy is not None and (
+        type(endpoint_residual_attention_policy)
+        is not Lfm2ComposedEndpointResidualAttentionFoldPolicy
+        or not endpoint_residual_attention_policy.verify_authentication()
+    ):
+        raise TypeError(
+            "endpoint_residual_attention_policy must be an exact authenticated "
+            "Lfm2ComposedEndpointResidualAttentionFoldPolicy."
+        )
+    if (
+        endpoint_residual_attention_policy is not None
+        and composed_qk_attention_policy is None
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Endpoint-residual attention requires the authenticated composed "
+            "Q/K producer policy."
+        )
     if (
         composed_qk_attention_policy is not None
         and attention_sequential_transport_policy is not None
@@ -9817,6 +10021,14 @@ def compile_and_install_lfm2_cpcf_layer(
         raise Lfm2CpcfLayerCompilerError(
             "Composed Q/K attention and candidate-local sequential transport "
             "are separate authenticated compiler lanes."
+        )
+    if (
+        endpoint_residual_attention_policy is not None
+        and attention_sequential_transport_policy is not None
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Endpoint-residual attention and candidate-local sequential "
+            "transport are separate authenticated compiler lanes."
         )
     if short_conv_v4_solver_policy is not None and not isinstance(
         short_conv_v4_solver_policy,
@@ -9906,6 +10118,13 @@ def compile_and_install_lfm2_cpcf_layer(
         raise Lfm2CpcfLayerCompilerError(
             "Composed Q/K residual attention folding is attention-only."
         )
+    if (
+        endpoint_residual_attention_policy is not None
+        and operator_kind != "full_attention"
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Endpoint-residual attention folding is attention-only."
+        )
     for phase in input_bank.phases:
         evidence = phase.parent_evidence.layers[index]
         if (
@@ -9932,11 +10151,14 @@ def compile_and_install_lfm2_cpcf_layer(
         attention_candidate_selection_report: Mapping[str, Any] | None = None
         attention_candidate_reports: Mapping[str, Any] | None = None
         attention_final_transport_binding: Mapping[str, Any] | None = None
-        attention_candidate_ids = (
-            LFM2_CPCF_ATTENTION_CANDIDATE_IDS
-            if composed_qk_attention_policy is None
-            else LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS
-        )
+        if endpoint_residual_attention_policy is not None:
+            attention_candidate_ids = (
+                LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS
+            )
+        elif composed_qk_attention_policy is not None:
+            attention_candidate_ids = LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS
+        else:
+            attention_candidate_ids = LFM2_CPCF_ATTENTION_CANDIDATE_IDS
         endpoint_evaluation_charts = boundary_charts
         short_conv_macrocell_selector: _Lfm2CpcfShortConvMacrocellSelector | None = None
         if operator_kind == "full_attention":
@@ -10138,6 +10360,11 @@ def compile_and_install_lfm2_cpcf_layer(
                 query_key_score_producers[
                     SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
                 ] = composed_qk_artifact.producer_artifact
+            score_candidate_ids = (
+                LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS
+                if composed_qk_artifact is not None
+                else LFM2_CPCF_ATTENTION_CANDIDATE_IDS
+            )
             query_key_score_reports = {
                 candidate_id: (
                     evaluate_lfm2_compiled_attention_producer_score_preservation(
@@ -10148,13 +10375,13 @@ def compile_and_install_lfm2_cpcf_layer(
                         norm_epsilon=source_q_epsilon,
                     )
                 )
-                for candidate_id in attention_candidate_ids
+                for candidate_id in score_candidate_ids
             }
             query_key_state_sha256s = {
                 candidate_id: _tensor_bundle_sha256(
                     query_key_score_producers[candidate_id].score_state_dict()
                 )
-                for candidate_id in attention_candidate_ids
+                for candidate_id in score_candidate_ids
             }
             score_selection_report = query_key_score_reports[
                 RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID
@@ -10263,6 +10490,10 @@ def compile_and_install_lfm2_cpcf_layer(
             composed_operator_artifact: (
                 Lfm2CompiledComposedQkSequenceEffectiveAttentionFold | None
             ) = None
+            endpoint_operator_artifact: (
+                Lfm2CompiledComposedEndpointResidualAttentionFold | None
+            ) = None
+            endpoint_output_prior_receipt: Mapping[str, Any] | None = None
             if composed_qk_artifact is not None:
                 corrected_producer = composed_qk_artifact.producer_artifact
                 stage = "operator_install"
@@ -10368,6 +10599,132 @@ def compile_and_install_lfm2_cpcf_layer(
                         "Composed sequence-effective attention changed its "
                         "authenticated corrected Q/K state."
                     )
+                if endpoint_residual_attention_policy is not None:
+                    qk_fit_ordinals = tuple(
+                        composed_qk_artifact.qk_fit_bank.source_case_ordinals
+                    )
+                    if (
+                        not qk_fit_ordinals
+                        or len(qk_fit_ordinals)
+                        != len(composed_qk_artifact.qk_fit_bank.cases)
+                        or any(
+                            fit_cases[ordinal] is not bank_case
+                            for ordinal, bank_case in zip(
+                                qk_fit_ordinals,
+                                composed_qk_artifact.qk_fit_bank.cases,
+                                strict=True,
+                            )
+                        )
+                    ):
+                        raise Lfm2CpcfLayerCompilerError(
+                            "Endpoint-residual V/O fitting does not match the "
+                            "authenticated Q/K-FIT partition."
+                        )
+                    endpoint_fit_cases = tuple(
+                        fit_cases[ordinal] for ordinal in qk_fit_ordinals
+                    )
+                    endpoint_actual_fit_contexts = tuple(
+                        corrected_actual_fit_contexts[ordinal]
+                        for ordinal in qk_fit_ordinals
+                    )
+                    torch = _torch()
+                    endpoint_output_prior = torch.zeros(
+                        tuple(target_attention.out_proj.weight.shape),
+                        dtype=target_attention.out_proj.weight.dtype,
+                        device="cpu",
+                    )
+                    endpoint_output_prior_receipt = MappingProxyType(
+                        {
+                            "construction": (
+                                "zero_from_target_shape_and_dtype_metadata_only"
+                            ),
+                            "shape": list(endpoint_output_prior.shape),
+                            "dtype": str(endpoint_output_prior.dtype),
+                            "tensor_sha256": _tensor_sha256(
+                                endpoint_output_prior
+                            ),
+                            "blank_target_values_read": False,
+                        }
+                    )
+                    endpoint_fit_value_output_artifact = (
+                        compile_lfm2_structural_attention_value_output_fold(
+                            producer=corrected_producer,
+                            target_value_weight_template=(
+                                target_attention.v_proj.weight
+                            ),
+                            target_output_weight_template=(
+                                target_attention.out_proj.weight
+                            ),
+                            actual_child_contexts=endpoint_actual_fit_contexts,
+                            cases=endpoint_fit_cases,
+                            live_value_weight=corrected_producer.value_weight,
+                            value_weight_prior=corrected_producer.value_weight,
+                            output_weight_prior=endpoint_output_prior,
+                            query_norm_weight=source_q_norm,
+                            key_norm_weight=source_k_norm,
+                            norm_epsilon=source_q_epsilon,
+                            ridge=ridge_value,
+                            max_prior_delta_ratio=None,
+                        )
+                    )
+                    endpoint_operator_artifact = (
+                        compile_lfm2_composed_endpoint_residual_attention_fold(
+                            composed_qk=composed_qk_artifact,
+                            fit_value_output_artifact=(
+                                endpoint_fit_value_output_artifact
+                            ),
+                            source_query_weight=source_attention.q_proj.weight,
+                            source_key_weight=source_attention.k_proj.weight,
+                            source_value_weight=source_attention.v_proj.weight,
+                            source_output_weight=source_attention.out_proj.weight,
+                            target_query_weight_template=(
+                                target_attention.q_proj.weight
+                            ),
+                            target_key_weight_template=(
+                                target_attention.k_proj.weight
+                            ),
+                            target_value_weight_template=(
+                                target_attention.v_proj.weight
+                            ),
+                            target_output_weight_template=(
+                                target_attention.out_proj.weight
+                            ),
+                            query_norm_weight=source_q_norm,
+                            key_norm_weight=source_k_norm,
+                            norm_epsilon=source_q_epsilon,
+                            policy=endpoint_residual_attention_policy,
+                        )
+                    )
+                    if (
+                        endpoint_operator_artifact.accepted is not True
+                        or endpoint_operator_artifact.candidate_id
+                        != ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
+                        or endpoint_operator_artifact.verify_authentication()
+                        != endpoint_operator_artifact.artifact_sha256
+                    ):
+                        raise Lfm2CpcfLayerCompilerError(
+                            "Endpoint-residual fifth arm failed authentication."
+                        )
+                    endpoint_score_producer = (
+                        endpoint_operator_artifact.producer_artifact
+                    )
+                    query_key_score_producers[
+                        ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
+                    ] = endpoint_score_producer
+                    query_key_score_reports[
+                        ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
+                    ] = evaluate_lfm2_compiled_attention_producer_score_preservation(
+                        endpoint_score_producer,
+                        selection_cases,
+                        query_norm_weight=source_q_norm,
+                        key_norm_weight=source_k_norm,
+                        norm_epsilon=source_q_epsilon,
+                    )
+                    query_key_state_sha256s[
+                        ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
+                    ] = _tensor_bundle_sha256(
+                        endpoint_score_producer.score_state_dict()
+                    )
                 del corrected_fit_context_replay
 
             candidate_evaluations = []
@@ -10383,6 +10740,10 @@ def compile_and_install_lfm2_cpcf_layer(
                 candidate_artifacts[
                     SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID
                 ] = composed_operator_artifact
+            if endpoint_operator_artifact is not None:
+                candidate_artifacts[
+                    ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID
+                ] = endpoint_operator_artifact
             for candidate_id in attention_candidate_ids:
                 candidate_artifact = candidate_artifacts[candidate_id]
                 candidate_prepared_mlp_basis = (
@@ -10391,6 +10752,7 @@ def compile_and_install_lfm2_cpcf_layer(
                         attention_sequential_transport_policy is not None
                         and attention_sequential_transport_policy.enabled
                     )
+                    or endpoint_residual_attention_policy is not None
                     else attention_mlp_prepared_basis
                 )
                 stage = "operator_install"
@@ -10433,9 +10795,12 @@ def compile_and_install_lfm2_cpcf_layer(
                     prepared_mlp_basis=candidate_prepared_mlp_basis,
                     sequential_transport_policy=(attention_sequential_transport_policy),
                 )
-                if not (
-                    attention_sequential_transport_policy is not None
-                    and attention_sequential_transport_policy.enabled
+                if (
+                    endpoint_residual_attention_policy is None
+                    and not (
+                        attention_sequential_transport_policy is not None
+                        and attention_sequential_transport_policy.enabled
+                    )
                 ):
                     attention_mlp_prepared_basis = candidate_prepared_mlp_basis
                 _restore_layer(target_layer, target_before)
@@ -10494,6 +10859,24 @@ def compile_and_install_lfm2_cpcf_layer(
                 ) = _freeze_attention_candidate_winner(
                     candidate_evaluations,
                     candidate_ids=attention_candidate_ids,
+                )
+            if endpoint_residual_attention_policy is not None:
+                five_arm_selection = dict(attention_candidate_selection_report)
+                five_arm_selection.pop("report_sha256", None)
+                five_arm_selection.update(
+                    {
+                        "candidate_local_mlp_preparation_count": len(
+                            attention_candidate_ids
+                        ),
+                        "cross_candidate_prepared_mlp_basis_reused": False,
+                        "endpoint_residual_candidate_fit_only_mlp_evaluated": True,
+                    }
+                )
+                attention_candidate_selection_report = MappingProxyType(
+                    {
+                        **five_arm_selection,
+                        "report_sha256": _sha(five_arm_selection),
+                    }
                 )
             attention_candidate_reports = MappingProxyType(
                 {
@@ -11124,8 +11507,50 @@ def compile_and_install_lfm2_cpcf_layer(
                         dict(composed_qk_artifact.score_result.report)
                     ),
                     "attention_candidate_inventory_mode": (
-                        "opt_in_authenticated_four_arm"
+                        "opt_in_authenticated_five_arm"
+                        if endpoint_residual_attention_policy is not None
+                        else "opt_in_authenticated_four_arm"
                     ),
+                },
+            }
+        if endpoint_residual_attention_policy is not None:
+            if (
+                endpoint_operator_artifact is None
+                or endpoint_output_prior_receipt is None
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    "Endpoint-residual policy produced no authenticated "
+                    "fifth-arm artifact."
+                )
+            body = {
+                **body,
+                "solver_evidence_policy": {
+                    **body["solver_evidence_policy"],
+                    "endpoint_residual_attention_policy": (
+                        endpoint_residual_attention_policy.as_dict()
+                    ),
+                    "endpoint_residual_attention_artifact_sha256": (
+                        endpoint_operator_artifact.artifact_sha256
+                    ),
+                    "endpoint_residual_attention_artifact": (
+                        endpoint_operator_artifact.as_dict()
+                    ),
+                    "endpoint_residual_block_reports": [
+                        dict(block.report)
+                        for block in endpoint_operator_artifact.blocks
+                    ],
+                    "endpoint_residual_qk_fit_proposal_reports": [
+                        dict(block.qk_proposal.report)
+                        for block in endpoint_operator_artifact.blocks
+                    ],
+                    "endpoint_residual_output_prior_receipt": dict(
+                        endpoint_output_prior_receipt
+                    ),
+                    "endpoint_residual_blank_target_values_read": False,
+                    "attention_each_candidate_prepares_own_mlp_basis": True,
+                    "attention_cross_candidate_prepared_mlp_basis_reuse": False,
+                    "endpoint_residual_fit_only_downstream_mlp_evaluation": True,
+                    "endpoint_residual_fit_check_final_one_shot_only": True,
                 },
             }
         if attention_final_transport_binding is not None:
@@ -11237,9 +11662,11 @@ def compile_and_install_lfm2_cpcf_layer(
 
 __all__ = [
     "DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID",
+    "ENDPOINT_RESIDUAL_ALTERNATING_QKVO_CANDIDATE_ID",
     "FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID",
     "LFM2_CPCF_ATTENTION_CANDIDATE_IDS",
     "LFM2_CPCF_COMPOSED_ATTENTION_CANDIDATE_IDS",
+    "LFM2_CPCF_ENDPOINT_RESIDUAL_ATTENTION_CANDIDATE_IDS",
     "LFM2_CPCF_ATTENTION_CANDIDATE_SELECTION_SCHEMA",
     "LFM2_CPCF_ATTENTION_SEQUENTIAL_TRANSPORT_POLICY_SCHEMA",
     "LFM2_CPCF_LAYER_COMPILER_SCHEMA",
@@ -11247,9 +11674,11 @@ __all__ = [
     "LFM2_CPCF_RESIDUAL_ATTENTION_SPLIT_SCHEMA",
     "LFM2_CPCF_SHORT_CONV_TWO_LANE_EXECUTION_SCHEMA",
     "Lfm2CompiledCpcfResidualAttentionSplitFold",
+    "Lfm2CompiledComposedEndpointResidualAttentionFold",
     "Lfm2CompiledComposedQkSequenceEffectiveAttentionFold",
     "Lfm2CompiledFixedQkSequenceEffectiveAttentionFold",
     "Lfm2ComposedQkAttentionFoldPolicy",
+    "Lfm2ComposedEndpointResidualAttentionFoldPolicy",
     "Lfm2CpcfAttentionSequentialTransportPolicy",
     "Lfm2CpcfCompiledLayerResult",
     "Lfm2CpcfLayerCompilationFailure",

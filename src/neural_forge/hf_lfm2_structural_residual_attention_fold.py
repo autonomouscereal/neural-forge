@@ -1560,6 +1560,7 @@ class Lfm2CachedAttentionFoldCase:
     parent_contribution: Any | None = None
     query_row_sqrt_weights: Any | None = None
     key_value_row_sqrt_weights: Any | None = None
+    parent_probabilities: Any | None = None
 
 
 @dataclass(frozen=True, slots=True)

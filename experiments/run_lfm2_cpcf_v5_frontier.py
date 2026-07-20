@@ -35,6 +35,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
         V5AttentionSequentialTransportRunnerProfile,
+        V5ComposedQkAttentionRunnerProfile,
+        V5EndpointResidualAttentionRunnerProfile,
     )
 
 
@@ -449,6 +451,155 @@ def _attention_profile_scope_component(
     return f"attention-profile-{document['profile_sha256'][:16]}"
 
 
+def _composed_qk_profile_document(
+    value: V5ComposedQkAttentionRunnerProfile | None,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID,
+        COMPOSED_QK_ATTENTION_RUNNER_PROFILE_SCHEMA,
+        V5ComposedQkAttentionRunnerProfile,
+    )
+
+    if type(value) is not V5ComposedQkAttentionRunnerProfile:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "composed_qk_attention_profile must be the exact typed V5 "
+            "runner profile."
+        )
+    document = value.as_dict()
+    body = dict(document)
+    claimed = _digest(
+        body.pop("profile_sha256", None),
+        "composed Q/K attention profile SHA-256",
+    )
+    if (
+        body.get("schema") != COMPOSED_QK_ATTENTION_RUNNER_PROFILE_SCHEMA
+        or body.get("profile_id") != COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID
+        or _sha(body) != claimed
+        or document != value.as_dict()
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Composed Q/K runner profile schema or seal is invalid."
+        )
+    return dict(document)
+
+
+def _composed_qk_profile_from_document(
+    value: Any,
+    *,
+    name: str,
+) -> V5ComposedQkAttentionRunnerProfile:
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} must be one sealed composed Q/K profile object."
+        )
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        V5ComposedQkAttentionRunnerProfile,
+    )
+
+    try:
+        profile = V5ComposedQkAttentionRunnerProfile(
+            profile_id=value.get("profile_id"),
+        )
+    except Exception as exc:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} names an unknown composed Q/K profile."
+        ) from exc
+    expected = _composed_qk_profile_document(profile)
+    if expected is None or dict(value) != expected:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} differs from the exact typed composed Q/K profile."
+        )
+    return profile
+
+
+def _endpoint_residual_profile_document(
+    value: V5EndpointResidualAttentionRunnerProfile | None,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,
+        ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_SCHEMA,
+        V5EndpointResidualAttentionRunnerProfile,
+    )
+
+    if type(value) is not V5EndpointResidualAttentionRunnerProfile:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "endpoint_residual_attention_profile must be the exact typed V5 "
+            "runner profile."
+        )
+    document = value.as_dict()
+    body = dict(document)
+    claimed = _digest(
+        body.pop("profile_sha256", None),
+        "endpoint-residual attention profile SHA-256",
+    )
+    if (
+        body.get("schema")
+        != ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_SCHEMA
+        or body.get("profile_id")
+        != ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID
+        or _sha(body) != claimed
+        or document != value.as_dict()
+    ):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Endpoint-residual runner profile schema or seal is invalid."
+        )
+    return dict(document)
+
+
+def _endpoint_residual_profile_from_document(
+    value: Any,
+    *,
+    name: str,
+) -> V5EndpointResidualAttentionRunnerProfile:
+    if not isinstance(value, Mapping):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} must be one sealed endpoint-residual profile object."
+        )
+    from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
+        V5EndpointResidualAttentionRunnerProfile,
+    )
+
+    try:
+        profile = V5EndpointResidualAttentionRunnerProfile(
+            profile_id=value.get("profile_id"),
+        )
+    except Exception as exc:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} names an unknown endpoint-residual profile."
+        ) from exc
+    expected = _endpoint_residual_profile_document(profile)
+    if expected is None or dict(value) != expected:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            f"{name} differs from the exact typed endpoint-residual profile."
+        )
+    return profile
+
+
+def _active_profile_scope_component(
+    config: FrontierSupervisorConfig,
+) -> str | None:
+    attention = _attention_profile_scope_component(
+        config.attention_sequential_transport_profile
+    )
+    composed = _composed_qk_profile_document(
+        config.composed_qk_attention_profile
+    )
+    endpoint = _endpoint_residual_profile_document(
+        config.endpoint_residual_attention_profile
+    )
+    if attention is not None:
+        return attention
+    if composed is not None:
+        return f"composed-qk-profile-{composed['profile_sha256'][:16]}"
+    if endpoint is not None:
+        return f"endpoint-residual-profile-{endpoint['profile_sha256'][:16]}"
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class FrontierRuntimeLimits:
     """Resource limits for one isolated ratio process."""
@@ -570,6 +721,12 @@ class FrontierSupervisorConfig:
     maximum_candidates_per_ratio: int = 8
     attention_sequential_transport_profile: (
         V5AttentionSequentialTransportRunnerProfile | None
+    ) = None
+    composed_qk_attention_profile: (
+        V5ComposedQkAttentionRunnerProfile | None
+    ) = None
+    endpoint_residual_attention_profile: (
+        V5EndpointResidualAttentionRunnerProfile | None
     ) = None
     attempt_id: str = "attempt-0001"
     python_executable: str = sys.executable
@@ -744,6 +901,26 @@ class FrontierSupervisorConfig:
         _attention_profile_document(
             self.attention_sequential_transport_profile
         )
+        _composed_qk_profile_document(self.composed_qk_attention_profile)
+        _endpoint_residual_profile_document(
+            self.endpoint_residual_attention_profile
+        )
+        if (
+            sum(
+                value is not None
+                for value in (
+                    self.attention_sequential_transport_profile,
+                    self.composed_qk_attention_profile,
+                    self.endpoint_residual_attention_profile,
+                )
+            )
+            > 1
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Attention sequential transport, composed Q/K attention, and "
+                "endpoint-residual attention are mutually exclusive frontier "
+                "profiles."
+            )
         for name in ("parent_name", "child_name_prefix"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
@@ -1154,6 +1331,16 @@ class FrontierSupervisorPlan:
         )
         if profile is not None:
             body["attention_sequential_transport_profile"] = profile
+        composed_profile = _composed_qk_profile_document(
+            self.config.composed_qk_attention_profile
+        )
+        if composed_profile is not None:
+            body["composed_qk_attention_profile"] = composed_profile
+        endpoint_profile = _endpoint_residual_profile_document(
+            self.config.endpoint_residual_attention_profile
+        )
+        if endpoint_profile is not None:
+            body["endpoint_residual_attention_profile"] = endpoint_profile
         return {**body, "plan_sha256": _sha(body)}
 
 
@@ -1251,6 +1438,26 @@ def _frontier_catalog_runner_config(
                 profile["profile_id"],
             )
         )
+    composed_profile = _composed_qk_profile_document(
+        config.composed_qk_attention_profile
+    )
+    if composed_profile is not None:
+        arguments.extend(
+            (
+                "--composed-qk-attention-profile",
+                composed_profile["profile_id"],
+            )
+        )
+    endpoint_profile = _endpoint_residual_profile_document(
+        config.endpoint_residual_attention_profile
+    )
+    if endpoint_profile is not None:
+        arguments.extend(
+            (
+                "--endpoint-residual-attention-profile",
+                endpoint_profile["profile_id"],
+            )
+        )
     if prepare_only:
         arguments.append("--prepare-selective-catalog-only")
     else:
@@ -1277,26 +1484,84 @@ def _runner_policy_identity_fields(
 ) -> dict[str, Any]:
     """Return exact opt-in fields, or prove the legacy profile is truly off."""
 
-    identity = runner._configured_model_fold_policy_identity(runner_config)
     profile = _attention_profile_document(
         runner_config.attention_sequential_transport_profile
     )
-    if profile is None:
-        if identity is not None:
+    composed_profile = _composed_qk_profile_document(
+        runner_config.composed_qk_attention_profile
+    )
+    endpoint_profile = _endpoint_residual_profile_document(
+        runner_config.endpoint_residual_attention_profile
+    )
+    model_identity = runner._configured_model_fold_policy_identity(runner_config)
+    composed_identity = runner._configured_composed_qk_policy_identity(
+        runner_config
+    )
+    endpoint_identity = runner._configured_endpoint_residual_policy_identity(
+        runner_config
+    )
+    if profile is None and composed_profile is None and endpoint_profile is None:
+        if (
+            model_identity is not None
+            or composed_identity is not None
+            or endpoint_identity is not None
+        ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Legacy runner config unexpectedly constructed an opt-in "
-                "fold-policy identity."
+                "policy identity."
             )
         return {}
-    if identity is None:
-        raise Lfm2CpcfV5FrontierSupervisorError(
-            "Opt-in runner config lost its complete fold-policy identity."
+    if profile is not None:
+        if (
+            model_identity is None
+            or composed_identity is not None
+            or endpoint_identity is not None
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Attention transport runner config lost or crossed its "
+                "complete fold-policy identity."
+            )
+        fields = dict(runner._opt_in_policy_identity_fields(model_identity))
+        if fields.get("attention_sequential_transport_profile") != profile:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Runner fold-policy identity differs from its typed attention "
+                "transport profile."
+            )
+        return fields
+    if endpoint_profile is not None:
+        if (
+            endpoint_identity is None
+            or model_identity is not None
+            or composed_identity is not None
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Endpoint-residual runner config lost or crossed its exact "
+                "policy identity."
+            )
+        fields = dict(
+            runner._endpoint_residual_policy_identity_fields(endpoint_identity)
         )
-    fields = dict(runner._opt_in_policy_identity_fields(identity))
-    if fields.get("attention_sequential_transport_profile") != profile:
+        if fields.get("endpoint_residual_attention_profile") != endpoint_profile:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Runner endpoint-residual identity differs from its typed "
+                "profile."
+            )
+        return fields
+    if (
+        composed_identity is None
+        or model_identity is not None
+        or endpoint_identity is not None
+    ):
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "Runner fold-policy identity differs from its typed attention "
-            "transport profile."
+            "Composed Q/K runner config lost or crossed its exact policy "
+            "identity."
+        )
+    fields = dict(
+        runner._composed_qk_policy_identity_fields(composed_identity)
+    )
+    if fields.get("composed_qk_attention_profile") != composed_profile:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Runner composed Q/K identity differs from its typed profile."
         )
     return fields
 
@@ -1317,7 +1582,11 @@ def authenticate_frontier_catalog_preparation(
     from experiments import run_lfm2_cpcf_v5_selective_blank_fold as runner
 
     try:
-        if config.attention_sequential_transport_profile is None:
+        if (
+            config.attention_sequential_transport_profile is None
+            and config.composed_qk_attention_profile is None
+            and config.endpoint_residual_attention_profile is None
+        ):
             preparation = dict(
                 runner.authenticate_prepared_selective_catalog(
                     trace_cache_directory=config.trace_cache_directory,
@@ -1619,9 +1888,7 @@ def _lane_paths(
             f"{lane.target_plan_fingerprint[:12]}"
         )
     )
-    profile_scope = _attention_profile_scope_component(
-        config.attention_sequential_transport_profile
-    )
+    profile_scope = _active_profile_scope_component(config)
     if profile_scope is not None:
         plan_root = plan_root / profile_scope
     run = plan_root / config.attempt_id
@@ -1727,6 +1994,26 @@ def _diagnostic_command(
                 profile["profile_id"],
             )
         )
+    composed_profile = _composed_qk_profile_document(
+        config.composed_qk_attention_profile
+    )
+    if composed_profile is not None:
+        command.extend(
+            (
+                "--composed-qk-attention-profile",
+                composed_profile["profile_id"],
+            )
+        )
+    endpoint_profile = _endpoint_residual_profile_document(
+        config.endpoint_residual_attention_profile
+    )
+    if endpoint_profile is not None:
+        command.extend(
+            (
+                "--endpoint-residual-attention-profile",
+                endpoint_profile["profile_id"],
+            )
+        )
     if lane.resume_reference is not None:
         command.extend(
             (
@@ -1804,6 +2091,16 @@ def _worker_config_record(
     )
     if profile is not None:
         record["attention_sequential_transport_profile"] = profile
+    composed_profile = _composed_qk_profile_document(
+        config.composed_qk_attention_profile
+    )
+    if composed_profile is not None:
+        record["composed_qk_attention_profile"] = composed_profile
+    endpoint_profile = _endpoint_residual_profile_document(
+        config.endpoint_residual_attention_profile
+    )
+    if endpoint_profile is not None:
+        record["endpoint_residual_attention_profile"] = endpoint_profile
     return record
 
 
@@ -1912,6 +2209,16 @@ def _capture_template(
     )
     if profile is not None:
         template["attention_sequential_transport_profile"] = profile
+    composed_profile = _composed_qk_profile_document(
+        config.composed_qk_attention_profile
+    )
+    if composed_profile is not None:
+        template["composed_qk_attention_profile"] = composed_profile
+    endpoint_profile = _endpoint_residual_profile_document(
+        config.endpoint_residual_attention_profile
+    )
+    if endpoint_profile is not None:
+        template["endpoint_residual_attention_profile"] = endpoint_profile
     return template
 
 
@@ -2006,10 +2313,20 @@ def build_frontier_supervisor_plan(
     profile = _attention_profile_document(
         config.attention_sequential_transport_profile
     )
-    if profile is not None and len(ratios) != 1:
+    composed_profile = _composed_qk_profile_document(
+        config.composed_qk_attention_profile
+    )
+    endpoint_profile = _endpoint_residual_profile_document(
+        config.endpoint_residual_attention_profile
+    )
+    if (
+        profile is not None
+        or composed_profile is not None
+        or endpoint_profile is not None
+    ) and len(ratios) != 1:
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "An opt-in attention transport profile must bind exactly one "
-            "frontier ratio and one complete model-fold policy."
+            "An opt-in attention profile must bind exactly one frontier "
+            "ratio and one complete runtime policy."
         )
 
     sources = _source_identities()
@@ -2061,7 +2378,11 @@ def build_frontier_supervisor_plan(
             evidence,
         )
         policy_fields: dict[str, Any] = {}
-        if profile is not None:
+        if (
+            profile is not None
+            or composed_profile is not None
+            or endpoint_profile is not None
+        ):
             from experiments import (
                 run_lfm2_cpcf_v5_selective_blank_fold as runner,
             )
@@ -2154,7 +2475,11 @@ def build_frontier_supervisor_plan(
             "quantization_permitted": False,
             "structural_diagnostic_may_promote": False,
         }
-        if profile is not None:
+        if (
+            profile is not None
+            or composed_profile is not None
+            or endpoint_profile is not None
+        ):
             command_body.update(policy_fields)
         lanes.append(
             FrontierSupervisorLane(
@@ -2277,6 +2602,22 @@ def _config_from_worker_record(
             name="worker attention transport profile",
         )
     )
+    composed_profile = (
+        None
+        if "composed_qk_attention_profile" not in record
+        else _composed_qk_profile_from_document(
+            record["composed_qk_attention_profile"],
+            name="worker composed Q/K attention profile",
+        )
+    )
+    endpoint_profile = (
+        None
+        if "endpoint_residual_attention_profile" not in record
+        else _endpoint_residual_profile_from_document(
+            record["endpoint_residual_attention_profile"],
+            name="worker endpoint-residual attention profile",
+        )
+    )
 
     return FrontierSupervisorConfig(
         parent_model_directory=Path(record["parent_model_directory"]),
@@ -2335,6 +2676,8 @@ def _config_from_worker_record(
             "maximum_candidates_per_ratio"
         ],
         attention_sequential_transport_profile=profile,
+        composed_qk_attention_profile=composed_profile,
+        endpoint_residual_attention_profile=endpoint_profile,
         attempt_id=record["attempt_id"],
         python_executable=record["python_executable"],
         selective_catalog_store_directory=Path(
@@ -2376,12 +2719,26 @@ def _authenticate_worker_attention_profile(
 ) -> Mapping[str, Any]:
     """Bind config, command, manifest, capture, and profile-scoped paths."""
 
-    profile_key = "attention_sequential_transport_profile"
-    expected = _attention_profile_document(
+    attention_key = "attention_sequential_transport_profile"
+    composed_key = "composed_qk_attention_profile"
+    endpoint_key = "endpoint_residual_attention_profile"
+    expected_attention = _attention_profile_document(
         config.attention_sequential_transport_profile
     )
-    runner_profile = _attention_profile_document(
+    expected_composed = _composed_qk_profile_document(
+        config.composed_qk_attention_profile
+    )
+    expected_endpoint = _endpoint_residual_profile_document(
+        config.endpoint_residual_attention_profile
+    )
+    runner_attention = _attention_profile_document(
         runner_config.attention_sequential_transport_profile
+    )
+    runner_composed = _composed_qk_profile_document(
+        runner_config.composed_qk_attention_profile
+    )
+    runner_endpoint = _endpoint_residual_profile_document(
+        runner_config.endpoint_residual_attention_profile
     )
     worker_record = manifest.get("worker_config")
     capture = manifest.get("quarantine_capture_template")
@@ -2389,45 +2746,92 @@ def _authenticate_worker_attention_profile(
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Worker profile lineage lacks its config or capture template."
         )
+    all_policy_names = (
+        *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
+        *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
+        *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+    )
+    if (
+        expected_attention is None
+        and expected_composed is None
+        and expected_endpoint is None
+    ):
+        if (
+            runner_attention is not None
+            or runner_composed is not None
+            or runner_endpoint is not None
+            or any(
+                key in container
+                for key in (attention_key, composed_key, endpoint_key)
+                for container in (manifest, worker_record, capture)
+            )
+            or any(name in manifest for name in all_policy_names)
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Legacy/off worker profile gained an opt-in attention binding."
+            )
+        return MappingProxyType({})
+    if expected_attention is not None:
+        profile_key = attention_key
+        inactive_keys = (composed_key, endpoint_key)
+        expected = expected_attention
+        runner_profile = runner_attention
+        inactive_runner_profiles = (runner_composed, runner_endpoint)
+        inactive_policy_names = (
+            *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+        )
+    elif expected_composed is not None:
+        profile_key = composed_key
+        inactive_keys = (attention_key, endpoint_key)
+        expected = expected_composed
+        runner_profile = runner_composed
+        inactive_runner_profiles = (runner_attention, runner_endpoint)
+        inactive_policy_names = (
+            *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS),
+        )
+    else:
+        profile_key = endpoint_key
+        inactive_keys = (attention_key, composed_key)
+        expected = expected_endpoint
+        runner_profile = runner_endpoint
+        inactive_runner_profiles = (runner_attention, runner_composed)
+        inactive_policy_names = (
+            *tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS),
+            *tuple(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS),
+        )
     manifest_has = profile_key in manifest
     worker_has = profile_key in worker_record
     capture_has = profile_key in capture
-    policy_names = tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS)
-    if expected is None:
-        if (
-            runner_profile is not None
-            or manifest_has
-            or worker_has
-            or capture_has
-            or any(name in manifest for name in policy_names)
-        ):
-            raise Lfm2CpcfV5FrontierSupervisorError(
-                "Legacy/off worker profile gained an opt-in attention "
-                "transport binding."
-            )
-        return MappingProxyType({})
     if (
         runner_profile != expected
+        or any(value is not None for value in inactive_runner_profiles)
         or not manifest_has
         or not worker_has
         or not capture_has
         or manifest.get(profile_key) != expected
         or worker_record.get(profile_key) != expected
         or capture.get(profile_key) != expected
+        or any(
+            inactive_key in container
+            for inactive_key in inactive_keys
+            for container in (manifest, worker_record, capture)
+        )
+        or any(name in manifest for name in inactive_policy_names)
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Worker config, command, manifest, or capture template crossed "
-            "attention transport profiles."
+            "attention transport profiles or another mutually exclusive "
+            "attention profile."
         )
     fields = _runner_policy_identity_fields(runner, runner_config)
     if any(manifest.get(name) != value for name, value in fields.items()):
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "Worker manifest differs from the command's complete opt-in "
-            "model-fold policy identity."
+            "Worker manifest differs from the command's exact opt-in policy "
+            "identity."
         )
-    scope = _attention_profile_scope_component(
-        config.attention_sequential_transport_profile
-    )
+    scope = _active_profile_scope_component(config)
     try:
         run = Path(paths["run_directory"])
         resume = Path(paths["resume_directory"])
@@ -2446,7 +2850,7 @@ def _authenticate_worker_attention_profile(
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Worker run, resume, diagnostic, and quarantine paths are not "
-            "scoped by the exact attention transport profile."
+            "scoped by the exact attention profile."
         )
     return MappingProxyType(fields)
 
@@ -2461,16 +2865,21 @@ def _authenticate_compiled_attention_profile(
 
     fields = dict(expected_policy_fields)
     request = diagnostic.get("request")
-    names = tuple(runner._OPT_IN_POLICY_IDENTITY_FIELDS)
-    binding_value = diagnostic.get("resume_policy_binding")
+    attention_names = set(runner._OPT_IN_POLICY_IDENTITY_FIELDS)
+    composed_names = set(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS)
+    endpoint_names = set(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS)
+    all_names = attention_names | composed_names | endpoint_names
     if not fields:
         if (
-            any(name in diagnostic for name in names)
+            any(name in diagnostic for name in all_names)
             or (
                 isinstance(request, Mapping)
-                and any(name in request for name in names)
+                and any(name in request for name in all_names)
             )
-            or binding_value is not None
+            or diagnostic.get("resume_policy_binding") is not None
+            or diagnostic.get("composed_qk_runtime_policy_binding") is not None
+            or diagnostic.get("endpoint_residual_runtime_policy_binding")
+            is not None
         ):
             raise Lfm2CpcfV5FrontierSupervisorError(
                 "Legacy/off compile diagnostic gained an opt-in policy or "
@@ -2481,29 +2890,71 @@ def _authenticate_compiled_attention_profile(
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Opt-in compile diagnostic has no typed runner request."
         )
+    if set(fields) == attention_names:
+        binding_key = "resume_policy_binding"
+        binding_schema = runner.RESUME_POLICY_BINDING_SCHEMA
+        binding_names = attention_names
+        exact_policy_flag = (
+            "runtime_policy_contains_complete_model_fold_policy"
+        )
+        inactive_binding_keys = (
+            "composed_qk_runtime_policy_binding",
+            "endpoint_residual_runtime_policy_binding",
+        )
+    elif set(fields) == composed_names:
+        binding_key = "composed_qk_runtime_policy_binding"
+        binding_schema = runner.COMPOSED_QK_RUNTIME_POLICY_BINDING_SCHEMA
+        binding_names = composed_names
+        exact_policy_flag = "runtime_policy_contains_exact_composed_policy"
+        inactive_binding_keys = (
+            "resume_policy_binding",
+            "endpoint_residual_runtime_policy_binding",
+        )
+    elif set(fields) == endpoint_names:
+        binding_key = "endpoint_residual_runtime_policy_binding"
+        binding_schema = runner.ENDPOINT_RESIDUAL_RUNTIME_POLICY_BINDING_SCHEMA
+        binding_names = endpoint_names
+        exact_policy_flag = (
+            "runtime_policy_contains_exact_composed_and_endpoint_policies"
+        )
+        inactive_binding_keys = (
+            "resume_policy_binding",
+            "composed_qk_runtime_policy_binding",
+        )
+    else:
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Compile profile identity fields mix or omit canonical profiles."
+        )
     if any(
         diagnostic.get(name) != value or request.get(name) != value
         for name, value in fields.items()
+    ) or any(
+        name in diagnostic or name in request
+        for name in (all_names - binding_names)
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
             "Compile diagnostic or runner request crossed its sealed "
-            "attention transport policy."
+            "attention policy."
         )
+    binding_value = diagnostic.get(binding_key)
     if not isinstance(binding_value, Mapping):
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "Opt-in compile diagnostic has no sealed resume-policy binding."
+            "Opt-in compile diagnostic has no sealed runtime-policy binding."
+        )
+    if any(diagnostic.get(key) is not None for key in inactive_binding_keys):
+        raise Lfm2CpcfV5FrontierSupervisorError(
+            "Compile diagnostic crossed attention runtime-policy bindings."
         )
     binding = dict(binding_value)
     claimed = _digest(
         binding.pop("binding_sha256", None),
         "resume policy binding SHA-256",
     )
-    expected_policy_names = set(runner._OPT_IN_POLICY_IDENTITY_FIELDS)
     expected_binding_fields = {
         "schema",
-        *expected_policy_names,
+        *binding_names,
         "runtime_policy_sha256",
-        "runtime_policy_contains_complete_model_fold_policy",
+        exact_policy_flag,
         "cross_profile_resume_permitted",
     }
     compiled = diagnostic.get("compiled_model_fold")
@@ -2513,12 +2964,11 @@ def _authenticate_compiled_attention_profile(
         else None
     )
     if (
-        set(fields) != expected_policy_names
-        or set(binding) != expected_binding_fields
+        set(binding) != expected_binding_fields
         or not isinstance(compiled_runtime_policy, Mapping)
         or _sha(compiled_runtime_policy)
         != binding.get("runtime_policy_sha256")
-        or binding.get("schema") != runner.RESUME_POLICY_BINDING_SCHEMA
+        or binding.get("schema") != binding_schema
         or _digest(
             binding.get("runtime_policy_sha256"),
             "resume binding runtime policy SHA-256",
@@ -2526,15 +2976,153 @@ def _authenticate_compiled_attention_profile(
         != binding["runtime_policy_sha256"]
         or _sha(binding) != claimed
         or any(binding.get(name) != value for name, value in fields.items())
-        or binding.get("runtime_policy_contains_complete_model_fold_policy")
-        is not True
+        or binding.get(exact_policy_flag) is not True
         or binding.get("cross_profile_resume_permitted") is not False
     ):
         raise Lfm2CpcfV5FrontierSupervisorError(
-            "Opt-in resume-policy binding differs from the exact complete "
-            "model-fold policy."
+            "Opt-in runtime-policy binding differs from the exact complete "
+            "launch policy."
         )
+    if binding_names == composed_names:
+        profile = fields["composed_qk_attention_profile"]
+        if (
+            compiled_runtime_policy.get("composed_qk_attention_policy")
+            != profile.get("composed_qk_attention_policy")
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiled runtime policy changed the composed Q/K policy."
+            )
+        coverage = compiled.get("composed_qk_attention_coverage")
+        diagnostic_coverage = diagnostic.get("composed_qk_attention_coverage")
+        if not isinstance(coverage, Mapping) or diagnostic_coverage != coverage:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compile diagnostic lost its composed Q/K coverage receipt."
+            )
+        coverage_body = dict(coverage)
+        coverage_sha = _digest(
+            coverage_body.pop("report_sha256", None),
+            "composed Q/K coverage SHA-256",
+        )
+        expected_layers = list(runner.COMPOSED_QK_ATTENTION_LAYER_INDICES)
+        rows = coverage_body.get("ordered_layer_coverage")
+        if (
+            _sha(coverage_body) != coverage_sha
+            or coverage_body.get("schema")
+            != runner.COMPOSED_QK_ATTENTION_COVERAGE_SCHEMA
+            or coverage_body.get("policy_authentication_sha256")
+            != fields["composed_qk_attention_policy_sha256"]
+            or coverage_body.get("expected_attention_layer_indices")
+            != expected_layers
+            or coverage_body.get("observed_attention_layer_indices")
+            != expected_layers
+            or coverage_body.get("covered_attention_layer_indices")
+            != expected_layers
+            or coverage_body.get("attention_layer_count") != len(expected_layers)
+            or not isinstance(rows, list)
+            or [row.get("layer_index") for row in rows] != expected_layers
+            or any(
+                not isinstance(row, Mapping)
+                or any(
+                    not isinstance(row.get(name), str)
+                    or len(row[name]) != 64
+                    for name in (
+                        "layer_result_sha256",
+                        "composed_qk_producer_artifact_sha256",
+                        "sequence_effective_stage_two_artifact_sha256",
+                        "actual_child_context_sha256",
+                        "reconstructed_live_context_sha256",
+                        "candidate_evaluation_report_sha256",
+                    )
+                )
+                for row in rows
+            )
+            or coverage_body.get("exact_ordered_attention_layer_coverage")
+            is not True
+            or coverage_body.get("full_attention_only_forwarding") is not True
+            or coverage_body.get("actual_upstream_child_contexts_consumed")
+            is not True
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiled composed Q/K coverage is not the exact ordered "
+                "six-layer receipt."
+            )
+    elif binding_names == endpoint_names:
+        profile = fields["endpoint_residual_attention_profile"]
+        if (
+            compiled_runtime_policy.get("composed_qk_attention_policy")
+            != profile.get("composed_qk_attention_policy")
+            or compiled_runtime_policy.get(
+                "endpoint_residual_attention_policy"
+            )
+            != profile.get("endpoint_residual_attention_policy")
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiled runtime policy changed the endpoint-residual "
+                "profile policies."
+            )
+        coverage = compiled.get("endpoint_residual_attention_coverage")
+        diagnostic_coverage = diagnostic.get(
+            "endpoint_residual_attention_coverage"
+        )
+        if not isinstance(coverage, Mapping) or diagnostic_coverage != coverage:
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compile diagnostic lost its endpoint-residual coverage receipt."
+            )
+        coverage_body = dict(coverage)
+        coverage_sha = _digest(
+            coverage_body.pop("report_sha256", None),
+            "endpoint-residual coverage SHA-256",
+        )
+        expected_layers = list(runner.COMPOSED_QK_ATTENTION_LAYER_INDICES)
+        rows = coverage_body.get("ordered_layer_coverage")
+        if (
+            _sha(coverage_body) != coverage_sha
+            or coverage_body.get("schema")
+            != runner.ENDPOINT_RESIDUAL_ATTENTION_COVERAGE_SCHEMA
+            or coverage_body.get("policy_authentication_sha256")
+            != fields["endpoint_residual_attention_policy_sha256"]
+            or coverage_body.get("expected_attention_layer_indices")
+            != expected_layers
+            or coverage_body.get("observed_attention_layer_indices")
+            != expected_layers
+            or coverage_body.get("covered_attention_layer_indices")
+            != expected_layers
+            or coverage_body.get("candidate_count_per_attention_layer") != 5
+            or not isinstance(rows, list)
+            or [row.get("layer_index") for row in rows] != expected_layers
+            or coverage_body.get(
+                "candidate_local_fit_only_downstream_mlp_evaluation"
+            )
+            is not True
+            or coverage_body.get(
+                "fit_check_final_one_shot_nonregression_only"
+            )
+            is not True
+            or coverage_body.get("blank_target_values_read") is not False
+        ):
+            raise Lfm2CpcfV5FrontierSupervisorError(
+                "Compiled endpoint-residual coverage is not the exact ordered "
+                "six-layer five-arm receipt."
+            )
     return MappingProxyType({**binding, "binding_sha256": claimed})
+
+
+def _compiled_policy_binding_field(
+    runner: Any,
+    expected_policy_fields: Mapping[str, Any],
+) -> str | None:
+    names = set(expected_policy_fields)
+    if not names:
+        return None
+    if names == set(runner._OPT_IN_POLICY_IDENTITY_FIELDS):
+        return "resume_policy_binding"
+    if names == set(runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS):
+        return "composed_qk_runtime_policy_binding"
+    if names == set(runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS):
+        return "endpoint_residual_runtime_policy_binding"
+    raise Lfm2CpcfV5FrontierSupervisorError(
+        "Policy fields do not select one canonical runtime binding."
+    )
 
 
 def _worker_failure_receipt(
@@ -3007,9 +3595,11 @@ def _run_internal_worker(manifest_path: Path) -> int:
         }
         if expected_policy_fields:
             body.update(dict(expected_policy_fields))
-            body["resume_policy_binding"] = dict(
-                compiled_profile_binding
+            binding_field = _compiled_policy_binding_field(
+                runner,
+                expected_policy_fields,
             )
+            body[binding_field] = dict(compiled_profile_binding)
         receipt = {**body, "receipt_sha256": _sha(body)}
         _atomic_new_json(Path(paths["execution_receipt_json"]), receipt)
         print(json.dumps(receipt, sort_keys=True))
@@ -3468,21 +4058,38 @@ def execute_single_ratio(
         expected_policy_fields=expected_policy_fields,
     )
     if expected_policy_fields:
+        binding_field = _compiled_policy_binding_field(
+            runner,
+            expected_policy_fields,
+        )
+        inactive_binding_fields = {
+            "resume_policy_binding",
+            "composed_qk_runtime_policy_binding",
+            "endpoint_residual_runtime_policy_binding",
+        } - {binding_field}
         receipt_profile_valid = (
             all(
                 receipt.get(name) == value
                 for name, value in expected_policy_fields.items()
             )
-            and receipt.get("resume_policy_binding")
-            == dict(compiled_profile_binding)
+            and receipt.get(binding_field) == dict(compiled_profile_binding)
+            and all(
+                inactive not in receipt for inactive in inactive_binding_fields
+            )
         )
     else:
         receipt_profile_valid = (
             all(
                 name not in receipt
-                for name in runner._OPT_IN_POLICY_IDENTITY_FIELDS
+                for name in (
+                    *runner._OPT_IN_POLICY_IDENTITY_FIELDS,
+                    *runner._COMPOSED_QK_POLICY_IDENTITY_FIELDS,
+                    *runner._ENDPOINT_RESIDUAL_POLICY_IDENTITY_FIELDS,
+                )
             )
             and "resume_policy_binding" not in receipt
+            and "composed_qk_runtime_policy_binding" not in receipt
+            and "endpoint_residual_runtime_policy_binding" not in receipt
         )
     _authenticate_quarantine_receipt(plan, lane, receipt)
     inputs = diagnostic.get("inputs")
@@ -3759,6 +4366,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
         ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+        COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID,
+        ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,
     )
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -3882,6 +4491,31 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--composed-qk-attention-profile",
+        "--composed-qk-attention",
+        dest="composed_qk_attention_profile",
+        nargs="?",
+        const=COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID,
+        choices=(COMPOSED_QK_ATTENTION_RUNNER_PROFILE_ID,),
+        help=(
+            "Exact versioned all-attention-layer composed Q/K opt-in bound "
+            "into the runner, catalog, resume, quarantine, and execution "
+            "receipts."
+        ),
+    )
+    parser.add_argument(
+        "--endpoint-residual-attention-profile",
+        dest="endpoint_residual_attention_profile",
+        nargs="?",
+        const=ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,
+        choices=(ENDPOINT_RESIDUAL_ATTENTION_RUNNER_PROFILE_ID,),
+        help=(
+            "Exact versioned five-arm endpoint-residual attention opt-in "
+            "bound into runner, catalog, resume, quarantine, and execution "
+            "receipts."
+        ),
+    )
+    parser.add_argument(
         "--attempt-id",
         default="attempt-0001",
         help=(
@@ -3900,6 +4534,8 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
     )
     from experiments.run_lfm2_cpcf_v5_selective_blank_fold import (
         V5AttentionSequentialTransportRunnerProfile,
+        V5ComposedQkAttentionRunnerProfile,
+        V5EndpointResidualAttentionRunnerProfile,
     )
 
     lifecycle = Lfm2CpcfV5FrontierLifecycle(args.lifecycle)
@@ -3976,6 +4612,21 @@ def config_from_args(args: argparse.Namespace) -> FrontierSupervisorConfig:
             if args.attention_sequential_transport_profile is None
             else V5AttentionSequentialTransportRunnerProfile(
                 profile_id=args.attention_sequential_transport_profile,
+            )
+        ),
+        composed_qk_attention_profile=(
+            None
+            if getattr(args, "composed_qk_attention_profile", None) is None
+            else V5ComposedQkAttentionRunnerProfile(
+                profile_id=args.composed_qk_attention_profile,
+            )
+        ),
+        endpoint_residual_attention_profile=(
+            None
+            if getattr(args, "endpoint_residual_attention_profile", None)
+            is None
+            else V5EndpointResidualAttentionRunnerProfile(
+                profile_id=args.endpoint_residual_attention_profile,
             )
         ),
         attempt_id=args.attempt_id,

@@ -1377,6 +1377,252 @@ def test_streamed_statistics_pcg_path_beats_both_controls_on_heldout_sequences(
     assert compiled.report["forbidden_hidden_head_dim_gram_materialized"] is False
 
 
+def test_streamed_seed_bank_invokes_both_effective_operator_fits(
+    sequence_frontier,
+    monkeypatch,
+) -> None:
+    values = sequence_frontier
+    monkeypatch.setattr(
+        sequence_fold,
+        "_MAXIMUM_DENSE_RIDGE_SYSTEM_ELEMENTS",
+        64,
+    )
+    original_headwise = (
+        sequence_fold._fit_streamed_headwise_effective_operator
+    )
+    original_global = sequence_fold._fit_streamed_global_effective_operator
+    calls = {"headwise": 0, "global": 0}
+
+    def observed_headwise(**arguments):
+        calls["headwise"] += 1
+        return original_headwise(**arguments)
+
+    def observed_global(**arguments):
+        calls["global"] += 1
+        return original_global(**arguments)
+
+    monkeypatch.setattr(
+        sequence_fold,
+        "_fit_streamed_headwise_effective_operator",
+        observed_headwise,
+    )
+    monkeypatch.setattr(
+        sequence_fold,
+        "_fit_streamed_global_effective_operator",
+        observed_global,
+    )
+    compiled = (
+        sequence_fold.compile_lfm2_fixed_qk_sequence_effective_attention_fold(
+            producer=values.producer,
+            target_value_weight_template=values.templates["value"],
+            target_output_weight_template=values.templates["output"],
+            fit_cases=values.fit.cases,
+        )
+    )
+    bank = compiled.report["initial_vo_seed_bank"]
+
+    assert calls == {"headwise": 1, "global": 1}
+    assert [
+        attempt["candidate_id"]
+        for attempt in bank["effective_operator_attempts"]
+    ] == [
+        "headwise_effective_operator_svd",
+        "global_effective_operator_svd",
+    ]
+    assert {
+        candidate["candidate_id"] for candidate in bank["candidates"]
+    } >= {
+        "producer_shared_value",
+        "headwise_effective_operator_svd",
+        "global_effective_operator_svd",
+    }
+    assert bank["exact_target_dtype_evaluation_count"] == bank[
+        "candidate_count"
+    ]
+    assert compiled.verify_authentication() is True
+
+
+def test_effective_operator_seed_beats_producer_on_planted_bf16_fit(
+    sequence_frontier,
+    monkeypatch,
+) -> None:
+    values = sequence_frontier
+    producer_factor = values.producer.value_weight.to(DTYPE).reshape(
+        TARGET_KV_HEADS,
+        HEAD_DIM,
+        TARGET_HIDDEN,
+    ).permute(0, 2, 1)[0]
+    left = torch.linalg.svd(
+        producer_factor,
+        full_matrices=True,
+    ).U
+    planted_value = left[:, HEAD_DIM : 2 * HEAD_DIM].contiguous()
+    generator = torch.Generator().manual_seed(20260720)
+    planted_output = torch.randn(
+        TARGET_QUERY_HEADS,
+        HEAD_DIM,
+        TARGET_HIDDEN,
+        generator=generator,
+        dtype=DTYPE,
+    )
+    planted_effective = torch.stack(
+        [
+            planted_value @ planted_output[head]
+            for head in range(TARGET_QUERY_HEADS)
+        ]
+    )
+    cross = torch.zeros(
+        TARGET_QUERY_HEADS,
+        TARGET_QUERY_HEADS,
+        TARGET_HIDDEN,
+        TARGET_HIDDEN,
+        dtype=DTYPE,
+    )
+    for head in range(TARGET_QUERY_HEADS):
+        cross[head, head] = torch.eye(TARGET_HIDDEN, dtype=DTYPE)
+    statistics = {
+        "cross_head_gram": cross,
+        "endpoint_right": planted_effective.clone(),
+        "endpoint_square_sum": float(planted_effective.square().sum()),
+        "row_count": TARGET_QUERY_HEADS * TARGET_HIDDEN,
+    }
+    calls = {"headwise": 0, "global": 0}
+
+    def planted_headwise(**arguments):
+        calls["headwise"] += 1
+        assert arguments["cases"] is values.fit.cases
+        return (
+            planted_effective.clone(),
+            sequence_fold._seal({"role": "planted_headwise"}),
+            len(values.fit.cases),
+        )
+
+    def planted_global(**arguments):
+        calls["global"] += 1
+        assert arguments["statistics"] is statistics
+        return (
+            planted_effective.clone(),
+            sequence_fold._seal({"role": "planted_global"}),
+        )
+
+    monkeypatch.setattr(
+        sequence_fold,
+        "_fit_streamed_headwise_effective_operator",
+        planted_headwise,
+    )
+    monkeypatch.setattr(
+        sequence_fold,
+        "_fit_streamed_global_effective_operator",
+        planted_global,
+    )
+    fit_sha = sequence_fold._case_bundle_sha256(values.fit.cases)
+    (
+        selected_factor,
+        selected_blocks,
+        _svd_reports,
+        _selection_report,
+        bank,
+    ) = sequence_fold._build_streamed_vo_seed_bank(
+        producer=values.producer,
+        cases=values.fit.cases,
+        statistics=statistics,
+        query_norm_weight=None,
+        key_norm_weight=None,
+        norm_epsilon=1e-6,
+        policy=sequence_fold.Lfm2FixedQkSequenceEffectiveVoAlsPolicy(),
+        value_dtype=torch.bfloat16,
+        output_dtype=torch.bfloat16,
+        fit_case_bundle_sha256=fit_sha,
+        residual_vo_seed=None,
+    )
+    by_id = {
+        candidate["candidate_id"]: candidate
+        for candidate in bank["candidates"]
+    }
+
+    assert calls == {"headwise": 1, "global": 1}
+    assert bank["exact_bfloat16_evaluation"] is True
+    assert bank["selected_candidate_id"] == (
+        "headwise_effective_operator_svd"
+    )
+    assert by_id["headwise_effective_operator_svd"][
+        "weighted_fit_relative_rmse_exact_target_dtype"
+    ] < by_id["producer_shared_value"][
+        "weighted_fit_relative_rmse_exact_target_dtype"
+    ]
+    torch.testing.assert_close(
+        selected_factor,
+        selected_factor.to(torch.bfloat16).to(DTYPE),
+        rtol=0.0,
+        atol=0.0,
+    )
+    torch.testing.assert_close(
+        selected_blocks,
+        selected_blocks.to(torch.bfloat16).to(DTYPE),
+        rtol=0.0,
+        atol=0.0,
+    )
+
+
+def test_streamed_seed_bank_has_no_heldout_evidence_path(
+    sequence_frontier,
+    monkeypatch,
+) -> None:
+    values = sequence_frontier
+    monkeypatch.setattr(
+        sequence_fold,
+        "_MAXIMUM_DENSE_RIDGE_SYSTEM_ELEMENTS",
+        64,
+    )
+    original_headwise = (
+        sequence_fold._fit_streamed_headwise_effective_operator
+    )
+    observed_case_bundles = []
+
+    def fit_only_headwise(**arguments):
+        observed_case_bundles.append(
+            sequence_fold._case_bundle_sha256(arguments["cases"])
+        )
+        return original_headwise(**arguments)
+
+    monkeypatch.setattr(
+        sequence_fold,
+        "_fit_streamed_headwise_effective_operator",
+        fit_only_headwise,
+    )
+    compiled = (
+        sequence_fold.compile_lfm2_fixed_qk_sequence_effective_attention_fold(
+            producer=values.producer,
+            target_value_weight_template=values.templates["value"],
+            target_output_weight_template=values.templates["output"],
+            fit_cases=values.fit.cases,
+        )
+    )
+    bank = compiled.report["initial_vo_seed_bank"]
+    fit_sha = sequence_fold._case_bundle_sha256(values.fit.cases)
+    heldout_sha = sequence_fold._case_bundle_sha256(values.heldout.cases)
+    parameters = inspect.signature(
+        sequence_fold._build_streamed_vo_seed_bank
+    ).parameters
+
+    assert fit_sha != heldout_sha
+    assert observed_case_bundles == [fit_sha]
+    assert "selection_cases" not in parameters
+    assert "validation_cases" not in parameters
+    assert "heldout_cases" not in parameters
+    assert bank["fit_case_bundle_sha256"] == fit_sha
+    assert bank["compiled_from_splits"] == ["fit"]
+    assert bank["selection_case_count_consumed"] == 0
+    assert bank["validation_case_count_consumed"] == 0
+    assert all(
+        candidate["evidence_split"] == "fit"
+        and candidate["fit_case_bundle_sha256"] == fit_sha
+        and candidate["selection_inputs_consumed"] == 0
+        and candidate["validation_inputs_consumed"] == 0
+        for candidate in bank["candidates"]
+    )
+
+
 def test_streamed_statistics_and_pcg_match_explicit_small_oracle(
     sequence_frontier,
     monkeypatch,
