@@ -62,6 +62,18 @@ COMPILED_CANDIDATE_ZERO_AUDIT_SCHEMA = (
 SELECTIVE_CATALOG_PREPARATION_SCHEMA = (
     "neural-forge-lfm2-cpcf-v5-selective-catalog-preparation-v1"
 )
+ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-attention-sequential-transport-runner-profile-v1"
+)
+ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID = (
+    "candidate-local-residual-attention-v1"
+)
+MODEL_FOLD_POLICY_IDENTITY_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-model-fold-policy-identity-v1"
+)
+RESUME_POLICY_BINDING_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-runner-resume-policy-binding-v1"
+)
 GPU_REPLAY_SCHEMA = "neural-forge-lfm2-cpcf-v5-authenticated-two-gpu-replay-v1"
 PROVEN_GPU_PARITY_RECEIPT = (
     _REPOSITORY_ROOT / "reports" / "2a80198-two-rtx3090-bf16.json"
@@ -124,6 +136,11 @@ _SELECTIVE_EVIDENCE_SOURCE = (
 _CATALOG_ARTIFACT_SOURCE = (
     _SOURCE_ROOT / "neural_forge" / "dynamic_evidence_catalog_artifact.py"
 )
+_OPT_IN_POLICY_IDENTITY_FIELDS = (
+    "attention_sequential_transport_profile",
+    "complete_model_fold_policy_sha256",
+    "model_fold_policy_identity_sha256",
+)
 
 
 class Lfm2CpcfV5SelectiveBlankFoldRunnerError(RuntimeError):
@@ -159,6 +176,52 @@ def _file_sha256(path: Path) -> str:
         while chunk := handle.read(8 * 1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class V5AttentionSequentialTransportRunnerProfile:
+    """One versioned runner opt-in for candidate-local attention transport."""
+
+    profile_id: str = ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID
+
+    def __post_init__(self) -> None:
+        if self.profile_id != ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Unknown attention sequential transport runner profile."
+            )
+
+    def build_policy(self) -> Any:
+        """Construct the exact typed layer policy selected by this profile."""
+
+        from neural_forge.hf_lfm2_cpcf_layer_compiler import (
+            Lfm2CpcfAttentionSequentialTransportPolicy,
+        )
+
+        policy = Lfm2CpcfAttentionSequentialTransportPolicy(enabled=True)
+        if (
+            type(policy) is not Lfm2CpcfAttentionSequentialTransportPolicy
+            or policy.enabled is not True
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "The attention transport profile did not construct its exact "
+                "enabled typed policy."
+            )
+        return policy
+
+    def as_dict(self) -> dict[str, Any]:
+        policy = self.build_policy()
+        body = {
+            "schema": ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_SCHEMA,
+            "profile_id": self.profile_id,
+            "attention_sequential_transport_policy": policy.as_dict(),
+            "full_attention_only_via_model_policy_resolver": True,
+            "short_conv_transport_enabled": False,
+            "validation_tuning_permitted": False,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        return {**body, "profile_sha256": _sha(body)}
 
 
 def _base_runner() -> Any:
@@ -1007,6 +1070,9 @@ class V5SelectiveBlankFoldConfig:
     short_conv_v4_correction_rms_floor: float
     short_conv_v4_context_objective_weight: float
     maximum_cuda_gib_per_device: float = 20.0
+    attention_sequential_transport_profile: (
+        V5AttentionSequentialTransportRunnerProfile | None
+    ) = None
     expected_target_plan_fingerprint: str | None = None
     resume_store_directory: Path | None = None
     resume_admission_sha256: str | None = None
@@ -1123,6 +1189,15 @@ class V5SelectiveBlankFoldConfig:
             raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
                 "expected_target_plan_fingerprint must be one exact lowercase "
                 "SHA-256 digest."
+            )
+        if (
+            self.attention_sequential_transport_profile is not None
+            and type(self.attention_sequential_transport_profile)
+            is not V5AttentionSequentialTransportRunnerProfile
+        ):
+            raise TypeError(
+                "attention_sequential_transport_profile must be the exact "
+                "typed V5 runner profile."
             )
         if self.resume_admission_sha256 is not None:
             if (
@@ -1323,7 +1398,7 @@ class V5SelectiveBlankFoldConfig:
         return int(self.maximum_cuda_gib_per_device * _GIB)
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "parent_model_directory": str(self.parent_model_directory),
             "donor_tokenizer_directory": str(self.donor_tokenizer_directory),
             "target_tokenizer_directory": str(self.target_tokenizer_directory),
@@ -1399,6 +1474,10 @@ class V5SelectiveBlankFoldConfig:
             ),
             "publication_requested": False,
         }
+        policy_identity = _configured_model_fold_policy_identity(self)
+        if policy_identity is not None:
+            result.update(_opt_in_policy_identity_fields(policy_identity))
+        return result
 
 
 def _request_derived_structural_compression_floor(compression: Any) -> float:
@@ -1406,6 +1485,159 @@ def _request_derived_structural_compression_floor(compression: Any) -> float:
 
     ratio = getattr(compression, "compression_ratio", None)
     return 1.0 if ratio is None else float(ratio)
+
+
+def _build_configured_model_fold_policy(
+    config: V5SelectiveBlankFoldConfig,
+) -> Any:
+    """Construct the complete production fold policy from one runner config."""
+
+    if not isinstance(config, V5SelectiveBlankFoldConfig):
+        raise TypeError("config must be V5SelectiveBlankFoldConfig.")
+    from neural_forge.hf_lfm2_cpcf_model_fold import (
+        Lfm2CpcfModelFoldPolicy,
+    )
+    from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
+        Lfm2CpcfShortConvV4SolverPolicy,
+    )
+
+    short_conv_policy = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=config.short_conv_v4_ridge_alphas,
+        variable_projection_passes=(
+            config.short_conv_v4_variable_projection_passes
+        ),
+        writer_trust_radius=config.short_conv_v4_writer_trust_radius,
+        fir_trust_radius=config.short_conv_v4_fir_trust_radius,
+        bcx_trust_radius=config.short_conv_v4_bcx_trust_radius,
+        correction_rms_floor=config.short_conv_v4_correction_rms_floor,
+        context_objective_weight=config.short_conv_v4_context_objective_weight,
+        target_dtype=config.dtype,
+    )
+    sequential_transport = (
+        None
+        if config.attention_sequential_transport_profile is None
+        else config.attention_sequential_transport_profile.build_policy()
+    )
+    return Lfm2CpcfModelFoldPolicy(
+        ridge=config.ridge,
+        state_reconstruction_weight=(config.boundary_state_reconstruction_weight),
+        minimum_predictive_energy_fraction=(
+            config.boundary_predictive_energy_floor
+        ),
+        minimum_validation_block_retention=(
+            config.boundary_validation_retention_floor
+        ),
+        enforce_validation_block_floor=True,
+        short_conv_v4_solver_policy=short_conv_policy,
+        promotion_compression_ratio=(
+            _request_derived_structural_compression_floor(config.compression)
+        ),
+        require_promotion_ratio=True,
+        attention_sequential_transport_policy=sequential_transport,
+    )
+
+
+def _configured_model_fold_policy_identity(
+    config: V5SelectiveBlankFoldConfig,
+    *,
+    model_fold_policy: Any | None = None,
+) -> Mapping[str, Any] | None:
+    """Seal the selected profile and digest of the complete model policy."""
+
+    profile = config.attention_sequential_transport_profile
+    if profile is None:
+        return None
+    policy = (
+        _build_configured_model_fold_policy(config)
+        if model_fold_policy is None
+        else model_fold_policy
+    )
+    if not callable(getattr(policy, "as_dict", None)):
+        raise TypeError("model_fold_policy must expose as_dict().")
+    policy_document = policy.as_dict()
+    profile_document = profile.as_dict()
+    body = {
+        "schema": MODEL_FOLD_POLICY_IDENTITY_SCHEMA,
+        "attention_sequential_transport_profile": profile_document,
+        "complete_model_fold_policy_sha256": _sha(policy_document),
+        "complete_model_fold_policy_includes_all_runner_controls": True,
+        "runtime_policy_must_embed_complete_model_fold_policy": True,
+    }
+    return MappingProxyType({**body, "identity_sha256": _sha(body)})
+
+
+def _opt_in_policy_identity_fields(
+    identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project the authenticated opt-in identity into larger receipts."""
+
+    body = dict(identity)
+    identity_sha256 = _digest(
+        body.pop("identity_sha256", None),
+        "model fold policy identity",
+    )
+    if (
+        set(body)
+        != {
+            "schema",
+            "attention_sequential_transport_profile",
+            "complete_model_fold_policy_sha256",
+            "complete_model_fold_policy_includes_all_runner_controls",
+            "runtime_policy_must_embed_complete_model_fold_policy",
+        }
+        or body.get("schema") != MODEL_FOLD_POLICY_IDENTITY_SCHEMA
+        or _sha(body) != identity_sha256
+        or body.get("complete_model_fold_policy_includes_all_runner_controls")
+        is not True
+        or body.get("runtime_policy_must_embed_complete_model_fold_policy")
+        is not True
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Model fold policy identity schema or seal is invalid."
+        )
+    return {
+        "attention_sequential_transport_profile": _plain_json(
+            body["attention_sequential_transport_profile"]
+        ),
+        "complete_model_fold_policy_sha256": _digest(
+            body.get("complete_model_fold_policy_sha256"),
+            "complete_model_fold_policy_sha256",
+        ),
+        "model_fold_policy_identity_sha256": identity_sha256,
+    }
+
+
+def _build_resume_policy_binding(
+    policy_identity: Mapping[str, Any] | None,
+    *,
+    runtime_policy: Any,
+) -> Mapping[str, Any] | None:
+    """Bind the opt-in profile to the exact complete V5 runtime policy."""
+
+    if policy_identity is None:
+        return None
+    if not callable(getattr(runtime_policy, "as_dict", None)):
+        raise TypeError("runtime_policy must expose as_dict().")
+    fields = _opt_in_policy_identity_fields(policy_identity)
+    runtime_document = runtime_policy.as_dict()
+    nested_model_policy = runtime_document.get("model_fold_policy")
+    if (
+        not isinstance(nested_model_policy, Mapping)
+        or _sha(nested_model_policy)
+        != fields["complete_model_fold_policy_sha256"]
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Resume runtime policy embeds a different complete model fold "
+            "policy than the selected profile identity."
+        )
+    body = {
+        "schema": RESUME_POLICY_BINDING_SCHEMA,
+        **fields,
+        "runtime_policy_sha256": _sha(runtime_document),
+        "runtime_policy_contains_complete_model_fold_policy": True,
+        "cross_profile_resume_permitted": False,
+    }
+    return MappingProxyType({**body, "binding_sha256": _sha(body)})
 
 
 @dataclass(frozen=True, slots=True)
@@ -1421,6 +1653,7 @@ class _ResumeProgressTracker:
     store_directory: Path | None
     requested_admission_sha256: str | None
     catalog_preparation: Mapping[str, Any] | None = None
+    policy_binding: Mapping[str, Any] | None = None
     invocation_head: dict[str, Any] | None = None
     published_pending_prefixes: list[dict[str, Any]] = field(default_factory=list)
     admitted_prefixes: list[dict[str, Any]] = field(default_factory=list)
@@ -1535,6 +1768,8 @@ class _ResumeProgressTracker:
                 "parameters_quantized": 0,
             },
         }
+        if self.policy_binding is not None:
+            body["fold_policy_binding"] = _plain_json(self.policy_binding)
         return {**body, "report_sha256": _sha(body)}
 
 
@@ -1639,7 +1874,65 @@ def _build_resume_runtime(
     config: V5SelectiveBlankFoldConfig,
     *,
     catalog_preparation: Mapping[str, Any] | None = None,
+    expected_runtime_policy_sha256: str | None = None,
+    policy_binding: Mapping[str, Any] | None = None,
 ) -> _ResumeRuntime:
+    if expected_runtime_policy_sha256 is not None:
+        expected_runtime_policy_sha256 = _digest(
+            expected_runtime_policy_sha256,
+            "expected_runtime_policy_sha256",
+        )
+    profile_identity = _configured_model_fold_policy_identity(config)
+    if (
+        profile_identity is not None
+        and expected_runtime_policy_sha256 is None
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Opt-in resume requires the exact expected runtime policy digest "
+            "before the resume store may be opened."
+        )
+    if (profile_identity is None) != (policy_binding is None):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Resume policy binding presence differs from the selected runner "
+            "profile."
+        )
+    if policy_binding is not None:
+        binding_body = dict(policy_binding)
+        binding_sha256 = _digest(
+            binding_body.pop("binding_sha256", None),
+            "resume policy binding",
+        )
+        expected_fields = _opt_in_policy_identity_fields(profile_identity)
+        if (
+            set(binding_body)
+            != {
+                "schema",
+                *_OPT_IN_POLICY_IDENTITY_FIELDS,
+                "runtime_policy_sha256",
+                "runtime_policy_contains_complete_model_fold_policy",
+                "cross_profile_resume_permitted",
+            }
+            or binding_body.get("schema") != RESUME_POLICY_BINDING_SCHEMA
+            or _sha(binding_body) != binding_sha256
+            or any(
+                binding_body.get(name) != value
+                for name, value in expected_fields.items()
+            )
+            or (
+                expected_runtime_policy_sha256 is not None
+                and binding_body.get("runtime_policy_sha256")
+                != expected_runtime_policy_sha256
+            )
+            or binding_body.get(
+                "runtime_policy_contains_complete_model_fold_policy"
+            )
+            is not True
+            or binding_body.get("cross_profile_resume_permitted") is not False
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Resume profile, complete model policy, or runtime policy "
+                "binding is invalid."
+            )
     progress = _ResumeProgressTracker(
         store_directory=(
             None
@@ -1648,6 +1941,7 @@ def _build_resume_runtime(
         ),
         requested_admission_sha256=config.resume_admission_sha256,
         catalog_preparation=catalog_preparation,
+        policy_binding=policy_binding,
     )
     if config.resume_store_directory is None:
         return _ResumeRuntime(
@@ -1695,6 +1989,15 @@ def _build_resume_runtime(
                         "Resume state selective identities differ from the "
                         "prepared catalog artifact."
                     )
+            if (
+                expected_runtime_policy_sha256 is not None
+                and state.frontier.context.get("runtime_policy_sha256")
+                != expected_runtime_policy_sha256
+            ):
+                raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                    "Resume state runtime policy differs from the complete "
+                    "configured fold policy/profile."
+                )
             progress.record_invocation_head(state)
     except Exception as error:
         _attach_resume_progress(error, progress)
@@ -2733,6 +3036,41 @@ def _catalog_authentication_summary(
     return MappingProxyType(result)
 
 
+def _authenticate_preparation_policy_identity(
+    receipt: Mapping[str, Any],
+    *,
+    config: Any,
+) -> None:
+    """Require an exact profile/policy match while preserving legacy off bytes."""
+
+    profile = getattr(config, "attention_sequential_transport_profile", None)
+    present = {name for name in _OPT_IN_POLICY_IDENTITY_FIELDS if name in receipt}
+    if profile is None:
+        if present:
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Selective catalog preparation belongs to an opt-in fold "
+                "policy profile, but this request uses the legacy off profile."
+            )
+        return
+    if not isinstance(config, V5SelectiveBlankFoldConfig):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Opt-in catalog authentication requires the complete typed runner "
+            "configuration."
+        )
+    identity = _configured_model_fold_policy_identity(config)
+    if identity is None:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Opt-in model fold policy identity was not constructed."
+        )
+    expected = _opt_in_policy_identity_fields(identity)
+    observed = {name: receipt.get(name) for name in _OPT_IN_POLICY_IDENTITY_FIELDS}
+    if present != set(_OPT_IN_POLICY_IDENTITY_FIELDS) or observed != expected:
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Selective catalog preparation profile or complete model fold "
+            "policy digest differs from this request."
+        )
+
+
 def selective_catalog_post_run_reverification_record(
     catalog_preparation: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -2863,6 +3201,7 @@ def _read_selective_catalog_preparation(
         **receipt,
         "preparation_receipt_sha256": claimed,
     }
+    _authenticate_preparation_policy_identity(receipt, config=config)
     summary = _catalog_authentication_summary(complete)
     if (
         receipt.get("status") != "prepared_authenticated_tensor_free_catalog"
@@ -3123,6 +3462,9 @@ def prepare_selective_catalog(
         "pruning_used": False,
         "quantization_used": False,
     }
+    policy_identity = _configured_model_fold_policy_identity(config)
+    if policy_identity is not None:
+        body.update(_opt_in_policy_identity_fields(policy_identity))
     receipt = {
         **body,
         "preparation_receipt_sha256": _sha(body),
@@ -3441,15 +3783,11 @@ def _run(
         plan_and_synthesize_lfm2_cpcf_blank,
     )
     from neural_forge.hf_lfm2_cpcf_model_fold import (
-        Lfm2CpcfModelFoldPolicy,
         audit_lfm2_cpcf_parameter_compaction,
         independent_parameter_inventory,
     )
     from neural_forge.hf_lfm2_cpcf_selective_evidence import (
         open_lfm2_cpcf_selective_evidence_provider_from_catalog,
-    )
-    from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
-        Lfm2CpcfShortConvV4SolverPolicy,
     )
     from neural_forge import dynamic_fold_executor
     from neural_forge import hf_lfm2_cpcf_v5_model_compiler as v5_compiler
@@ -3629,31 +3967,10 @@ def _run(
                 ),
             )
         )
-        short_conv_policy = Lfm2CpcfShortConvV4SolverPolicy(
-            ridge_alphas=config.short_conv_v4_ridge_alphas,
-            variable_projection_passes=(
-                config.short_conv_v4_variable_projection_passes
-            ),
-            writer_trust_radius=(config.short_conv_v4_writer_trust_radius),
-            fir_trust_radius=config.short_conv_v4_fir_trust_radius,
-            bcx_trust_radius=config.short_conv_v4_bcx_trust_radius,
-            correction_rms_floor=(config.short_conv_v4_correction_rms_floor),
-            context_objective_weight=(config.short_conv_v4_context_objective_weight),
-            target_dtype=config.dtype,
-        )
-        model_policy = Lfm2CpcfModelFoldPolicy(
-            ridge=config.ridge,
-            state_reconstruction_weight=(config.boundary_state_reconstruction_weight),
-            minimum_predictive_energy_fraction=(
-                config.boundary_predictive_energy_floor
-            ),
-            minimum_validation_block_retention=(
-                config.boundary_validation_retention_floor
-            ),
-            enforce_validation_block_floor=True,
-            short_conv_v4_solver_policy=short_conv_policy,
-            promotion_compression_ratio=structural_compression_floor,
-            require_promotion_ratio=True,
+        model_policy = _build_configured_model_fold_policy(config)
+        model_policy_identity = _configured_model_fold_policy_identity(
+            config,
+            model_fold_policy=model_policy,
         )
         runtime_policy = v5_compiler.Lfm2CpcfV5RuntimePolicy(
             model_fold_policy=model_policy,
@@ -3668,12 +3985,19 @@ def _run(
             require_short_conv_v5_authenticated_whole_macrocell_selector=True,
             require_short_conv_v5_real_numerical_frontier_adapter=True,
         )
+        runtime_policy_sha256 = _sha(runtime_policy.as_dict())
+        resume_policy_binding = _build_resume_policy_binding(
+            model_policy_identity,
+            runtime_policy=runtime_policy,
+        )
         source_tied_table = base._mapped_source_tied_table(parent, bridge)
         selector = v5_compiler.Lfm2CpcfV5EndpointFirstCandidateSelector()
         numerical_adapter = _build_preregistered_real_v5_numerical_adapter()
         resume_runtime = _build_resume_runtime(
             config,
             catalog_preparation=catalog_preparation,
+            expected_runtime_policy_sha256=runtime_policy_sha256,
+            policy_binding=resume_policy_binding,
         )
         compiler_guard = dynamic_fold_executor._FoldOnlyTorchGuard()
         compiler_parent_execution: Mapping[str, int] = {}
@@ -3818,6 +4142,29 @@ def _run(
             "Folding changed the dense child parameter count."
         )
     compiled_report = compiled.as_dict()
+    compiled_runtime_policy = compiled_report.get("policy")
+    expected_model_policy = model_policy.as_dict()
+    if (
+        not isinstance(compiled_runtime_policy, Mapping)
+        or _sha(compiled_runtime_policy) != runtime_policy_sha256
+        or compiled_runtime_policy.get("model_fold_policy")
+        != expected_model_policy
+        or _sha(expected_model_policy)
+        != _sha(runtime_policy.as_dict()["model_fold_policy"])
+    ):
+        raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+            "Compiler receipt differs from the complete configured model fold "
+            "policy."
+        )
+    if model_policy_identity is not None:
+        policy_fields = _opt_in_policy_identity_fields(model_policy_identity)
+        if policy_fields["complete_model_fold_policy_sha256"] != _sha(
+            expected_model_policy
+        ):
+            raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
+                "Opt-in policy identity differs from the compiler's complete "
+                "model fold policy."
+            )
     layer_reports = [result.as_dict() for result in compiled.layer_results]
     gpu_execution = _gpu_execution_audit(layer_reports)
     resume_progress = resume_runtime.progress.as_dict()
@@ -4232,6 +4579,9 @@ def _run(
             "manual_intelligence_review_performed": False,
         },
     }
+    if model_policy_identity is not None:
+        body.update(_opt_in_policy_identity_fields(model_policy_identity))
+        body["resume_policy_binding"] = _plain_json(resume_policy_binding)
     compile_diagnostic = {**body, "receipt_sha256": _sha(body)}
     if candidate_consumer is None:
         return compile_diagnostic
@@ -4592,6 +4942,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.05,
     )
     parser.add_argument(
+        "--attention-sequential-transport-profile",
+        choices=(ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,),
+        help=(
+            "Explicit versioned opt-in for candidate-local residual-attention "
+            "sequential transport. Omit to retain the exact legacy runner policy."
+        ),
+    )
+    parser.add_argument(
         "--resume-store-directory",
         type=Path,
         help=(
@@ -4699,6 +5057,13 @@ def config_from_args(args: argparse.Namespace) -> V5SelectiveBlankFoldConfig:
             args.minimum_physical_rss_reduction_fraction
         ),
         maximum_cuda_gib_per_device=args.maximum_cuda_gib_per_device,
+        attention_sequential_transport_profile=(
+            None
+            if args.attention_sequential_transport_profile is None
+            else V5AttentionSequentialTransportRunnerProfile(
+                profile_id=args.attention_sequential_transport_profile,
+            )
+        ),
         model_device=args.model_device,
         dtype=args.dtype,
         parent_name=args.parent_name,

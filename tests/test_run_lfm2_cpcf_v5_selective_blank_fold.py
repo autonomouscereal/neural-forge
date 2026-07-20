@@ -115,7 +115,267 @@ def test_parser_reuses_shared_compression_request_and_bounds_memory(
     assert config.short_conv_v4_ridge_alphas == (1e-8, 1e-4)
     assert config.resume_store_directory is None
     assert config.resume_admission_sha256 is None
+    assert config.attention_sequential_transport_profile is None
     assert config.forbidden_requests == ()
+
+
+def test_default_attention_transport_profile_is_exact_legacy_noop() -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_model_fold import (
+        Lfm2CpcfModelFoldPolicy,
+    )
+    from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
+        Lfm2CpcfShortConvV4SolverPolicy,
+    )
+
+    args = MODULE.build_parser().parse_args(
+        [
+            "--parent-model-directory",
+            "parent",
+            "--donor-tokenizer-directory",
+            "donor",
+            "--target-tokenizer-directory",
+            "target",
+            "--bridge-directory",
+            "bridge",
+            "--trace-cache-directory",
+            "cache",
+            "--trajectory-corpus",
+            "rows.json",
+            "--diagnostic-json",
+            "diag.json",
+            "--target-unique-parameters",
+            "2291840",
+            "--maximum-process-rss-gib",
+            "24",
+        ]
+    )
+    config = MODULE.config_from_args(args)
+    config_document = config.as_dict()
+    actual = MODULE._build_configured_model_fold_policy(config)
+    expected_short_conv = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-8, 1e-4),
+        variable_projection_passes=2,
+        writer_trust_radius=4.0,
+        fir_trust_radius=1.0,
+        bcx_trust_radius=0.25,
+        correction_rms_floor=1e-6,
+        context_objective_weight=0.05,
+        target_dtype="bfloat16",
+    )
+    expected = Lfm2CpcfModelFoldPolicy(
+        ridge=1e-8,
+        state_reconstruction_weight=0.05,
+        minimum_predictive_energy_fraction=0.90,
+        minimum_validation_block_retention=0.0,
+        enforce_validation_block_floor=True,
+        short_conv_v4_solver_policy=expected_short_conv,
+        promotion_compression_ratio=1.0,
+        require_promotion_ratio=True,
+    )
+
+    assert MODULE._sha(config_document) == (
+        "98ecbc677c2352b457d3aebcfe100223512307d946a78e37265e0b814bfc4c1a"
+    )
+    assert not set(MODULE._OPT_IN_POLICY_IDENTITY_FIELDS) & set(config_document)
+    assert actual.as_dict() == expected.as_dict()
+    assert actual.attention_sequential_transport_policy is None
+    assert MODULE._configured_model_fold_policy_identity(config) is None
+    assert MODULE._build_resume_policy_binding(
+        None,
+        runtime_policy=SimpleNamespace(as_dict=lambda: {"legacy": True}),
+    ) is None
+
+
+def test_opt_in_profile_builds_typed_attention_only_forwarding_policy(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge import hf_lfm2_cpcf_v5_model_compiler as v5_compiler
+    from neural_forge.hf_lfm2_cpcf_layer_compiler import (
+        Lfm2CpcfAttentionSequentialTransportPolicy,
+    )
+
+    args = MODULE.build_parser().parse_args(
+        [
+            *_required_args(tmp_path),
+            "--attention-sequential-transport-profile",
+            MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+        ]
+    )
+    config = MODULE.config_from_args(args)
+    policy = MODULE._build_configured_model_fold_policy(config)
+    transport = policy.attention_sequential_transport_policy
+    config_document = config.as_dict()
+    identity = MODULE._configured_model_fold_policy_identity(
+        config,
+        model_fold_policy=policy,
+    )
+
+    assert type(config.attention_sequential_transport_profile) is (
+        MODULE.V5AttentionSequentialTransportRunnerProfile
+    )
+    assert type(transport) is Lfm2CpcfAttentionSequentialTransportPolicy
+    assert transport.enabled is True
+    assert (
+        policy.resolved_attention_sequential_transport_policy("full_attention")
+        is transport
+    )
+    assert (
+        policy.resolved_attention_sequential_transport_policy("short_conv")
+        is None
+    )
+    assert policy.as_dict()["attention_sequential_transport_policy"] == (
+        transport.as_dict()
+    )
+    assert identity is not None
+    assert config_document["attention_sequential_transport_profile"] == (
+        config.attention_sequential_transport_profile.as_dict()
+    )
+    assert config_document["complete_model_fold_policy_sha256"] == MODULE._sha(
+        policy.as_dict()
+    )
+    assert config_document["model_fold_policy_identity_sha256"] == (
+        identity["identity_sha256"]
+    )
+    compiler_source = inspect.getsource(
+        v5_compiler.compile_lfm2_cpcf_v5_selective_model_fold
+    )
+    assert "resolved_attention_sequential_transport_policy" in compiler_source
+    assert "attention_sequential_transport_policy=(" in compiler_source
+
+
+def test_opt_in_profile_changes_sealed_request_and_preparation_identity(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    off = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(_required_args(tmp_path))
+    )
+    on = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--attention-sequential-transport-profile",
+                MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+            ]
+        )
+    )
+    identity = MODULE._configured_model_fold_policy_identity(on)
+    assert identity is not None
+    fields = MODULE._opt_in_policy_identity_fields(identity)
+    common_preparation = {
+        "schema": MODULE.SELECTIVE_CATALOG_PREPARATION_SCHEMA,
+        "fixture": "same-catalog",
+    }
+    off_preparation = dict(common_preparation)
+    on_preparation = {**common_preparation, **fields}
+
+    assert MODULE._canonical_json(off.as_dict()) != MODULE._canonical_json(
+        on.as_dict()
+    )
+    assert MODULE._sha(off.as_dict()) != MODULE._sha(on.as_dict())
+    assert MODULE._sha(off_preparation) != MODULE._sha(on_preparation)
+    MODULE._authenticate_preparation_policy_identity(
+        off_preparation,
+        config=off,
+    )
+    MODULE._authenticate_preparation_policy_identity(
+        on_preparation,
+        config=on,
+    )
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="opt-in fold policy profile",
+    ):
+        MODULE._authenticate_preparation_policy_identity(
+            on_preparation,
+            config=off,
+        )
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="differs from this request",
+    ):
+        MODULE._authenticate_preparation_policy_identity(
+            off_preparation,
+            config=on,
+        )
+
+
+def test_opt_in_profile_tampering_fails_closed(tmp_path: Path) -> None:
+    pytest.importorskip("torch")
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--attention-sequential-transport-profile",
+                MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+            ]
+        )
+    )
+    identity = MODULE._configured_model_fold_policy_identity(config)
+    assert identity is not None
+    fields = MODULE._opt_in_policy_identity_fields(identity)
+
+    tampered_identity = dict(identity)
+    tampered_identity["complete_model_fold_policy_sha256"] = "0" * 64
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="schema or seal",
+    ):
+        MODULE._opt_in_policy_identity_fields(tampered_identity)
+
+    tampered_preparation = dict(fields)
+    tampered_preparation["complete_model_fold_policy_sha256"] = "0" * 64
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="differs from this request",
+    ):
+        MODULE._authenticate_preparation_policy_identity(
+            tampered_preparation,
+            config=config,
+        )
+
+
+def test_resume_binding_rejects_nested_model_policy_ridge_mismatch(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_v5_model_compiler import (
+        Lfm2CpcfV5RuntimePolicy,
+    )
+
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--attention-sequential-transport-profile",
+                MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+            ]
+        )
+    )
+    selected_policy = MODULE._build_configured_model_fold_policy(config)
+    identity = MODULE._configured_model_fold_policy_identity(
+        config,
+        model_fold_policy=selected_policy,
+    )
+    mismatched_runtime = Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=replace(
+            selected_policy,
+            ridge=selected_policy.ridge * 10.0,
+        ),
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=1,
+    )
+
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="embeds a different complete model fold policy",
+    ):
+        MODULE._build_resume_policy_binding(
+            identity,
+            runtime_policy=mismatched_runtime,
+        )
 
 
 def test_catalog_store_overlap_is_rejected_at_configuration(
@@ -748,6 +1008,182 @@ def test_exact_admission_opens_only_typed_v5_state(
     assert head["next_layer_index"] == 3
     assert head["typed_v5_state_opened"] is True
     assert head["checkpoint_reference"] == checkpoint_reference.as_dict()
+
+
+def test_opt_in_resume_requires_runtime_digest_before_store_open(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_v5_model_compiler import (
+        Lfm2CpcfV5RuntimePolicy,
+    )
+
+    store = tmp_path / "must-not-open"
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--resume-store-directory",
+                str(store),
+                "--attention-sequential-transport-profile",
+                MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+            ]
+        )
+    )
+    policy = MODULE._build_configured_model_fold_policy(config)
+    identity = MODULE._configured_model_fold_policy_identity(
+        config,
+        model_fold_policy=policy,
+    )
+    runtime = Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=policy,
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=1,
+    )
+    binding = MODULE._build_resume_policy_binding(
+        identity,
+        runtime_policy=runtime,
+    )
+
+    assert not store.exists()
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="before the resume store may be opened",
+    ):
+        MODULE._build_resume_runtime(
+            config,
+            expected_runtime_policy_sha256=None,
+            policy_binding=binding,
+        )
+    assert not store.exists()
+
+
+def test_off_and_on_profiles_cannot_cross_resume(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("torch")
+    from neural_forge.hf_lfm2_cpcf_resume_artifact import (
+        Lfm2CpcfArtifactReference,
+    )
+    from neural_forge.hf_lfm2_cpcf_v5_model_compiler import (
+        Lfm2CpcfV5RuntimePolicy,
+    )
+    from neural_forge.hf_lfm2_cpcf_v5_resume import (
+        Lfm2CpcfV5ResumeCoordinator,
+        Lfm2CpcfV5ResumeState,
+    )
+
+    admission_sha = hashlib.sha256(b"profile-cross-resume").hexdigest()
+
+    def configured(*, enabled: bool, store_name: str):
+        profile_args = (
+            [
+                "--attention-sequential-transport-profile",
+                MODULE.ATTENTION_SEQUENTIAL_TRANSPORT_RUNNER_PROFILE_ID,
+            ]
+            if enabled
+            else []
+        )
+        return MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--resume-store-directory",
+                    str(tmp_path / store_name),
+                    "--resume-admission-sha256",
+                    admission_sha,
+                    *profile_args,
+                ]
+            )
+        )
+
+    off = configured(enabled=False, store_name="resume-off")
+    on = configured(enabled=True, store_name="resume-on")
+
+    def runtime(config):
+        return Lfm2CpcfV5RuntimePolicy(
+            model_fold_policy=MODULE._build_configured_model_fold_policy(config),
+            maximum_resident_evidence_bytes=1,
+            full_phase_tree_logical_bytes=1,
+        )
+
+    off_runtime = runtime(off)
+    on_runtime = runtime(on)
+    off_sha256 = MODULE._sha(off_runtime.as_dict())
+    on_sha256 = MODULE._sha(on_runtime.as_dict())
+    assert off_sha256 != on_sha256
+    on_identity = MODULE._configured_model_fold_policy_identity(
+        on,
+        model_fold_policy=on_runtime.model_fold_policy,
+    )
+    on_binding = MODULE._build_resume_policy_binding(
+        on_identity,
+        runtime_policy=on_runtime,
+    )
+    frontier_reference = Lfm2CpcfArtifactReference(
+        artifact_kind="boundary",
+        artifact_key=hashlib.sha256(b"profile-boundary-key").hexdigest(),
+        manifest_sha256=hashlib.sha256(b"profile-boundary-manifest").hexdigest(),
+    )
+    checkpoint_reference = Lfm2CpcfArtifactReference(
+        artifact_kind="checkpoint",
+        artifact_key=hashlib.sha256(b"profile-checkpoint-key").hexdigest(),
+        manifest_sha256=hashlib.sha256(
+            b"profile-checkpoint-manifest"
+        ).hexdigest(),
+    )
+
+    def cross_state(self, _exact_digest, *, state_runtime_sha256):
+        return Lfm2CpcfV5ResumeState(
+            coordinator=self,
+            frontier=SimpleNamespace(
+                next_layer_index=2,
+                frontier_sha256=hashlib.sha256(b"profile-frontier").hexdigest(),
+                context={"runtime_policy_sha256": state_runtime_sha256},
+            ),
+            frontier_reference=frontier_reference,
+            checkpoint_reference=checkpoint_reference,
+            admission={"admission_sha256": admission_sha},
+        )
+
+    monkeypatch.setattr(
+        Lfm2CpcfV5ResumeCoordinator,
+        "open_admitted",
+        lambda self, digest: cross_state(
+            self,
+            digest,
+            state_runtime_sha256=off_sha256,
+        ),
+    )
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="runtime policy differs",
+    ):
+        MODULE._build_resume_runtime(
+            on,
+            expected_runtime_policy_sha256=on_sha256,
+            policy_binding=on_binding,
+        )
+
+    monkeypatch.setattr(
+        Lfm2CpcfV5ResumeCoordinator,
+        "open_admitted",
+        lambda self, digest: cross_state(
+            self,
+            digest,
+            state_runtime_sha256=on_sha256,
+        ),
+    )
+    with pytest.raises(
+        MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError,
+        match="runtime policy differs",
+    ):
+        MODULE._build_resume_runtime(
+            off,
+            expected_runtime_policy_sha256=off_sha256,
+            policy_binding=None,
+        )
 
 
 @pytest.mark.parametrize("kind", ("pending", "rejected"))
