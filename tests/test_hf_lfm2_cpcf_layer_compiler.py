@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import replace
 from types import MappingProxyType, SimpleNamespace
 
@@ -28,9 +29,14 @@ from neural_forge.hf_lfm2_cpcf_installability import (  # noqa: E402
     Lfm2CpcfInstallablePhaseEvidence,
 )
 from neural_forge.hf_lfm2_cpcf_model_compiler import (  # noqa: E402
+    _phase_state_bank,
     build_lfm2_cpcf_target_phases,
     install_lfm2_cpcf_neutral_norms,
     seed_lfm2_cpcf_phase_states,
+)
+from neural_forge.hf_lfm2_cpcf_residual_error_controller import (  # noqa: E402
+    apply_lfm2_cpcf_post_operator_chart_transport_shadow,
+    fit_lfm2_cpcf_post_operator_chart_transport,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (  # noqa: E402
     Lfm2CpcfShortConvV4SolverPolicy,
@@ -3687,3 +3693,201 @@ def test_two_lane_scheduler_receipts_are_fresh_explicit_and_tamper_evident() -> 
         match="authentication is incomplete|identity or receipt",
     ):
         layer_compiler._authenticated_short_conv_two_lane_runtime(evaluator)
+
+
+def _rotated_post_operator_input_bank(bank, charts):
+    raw = torch.randn(
+        charts.target_width,
+        charts.target_width,
+        generator=torch.Generator().manual_seed(7619),
+        dtype=torch.float64,
+    )
+    rotation, _ = torch.linalg.qr(raw)
+    states = {}
+    for phase in bank.phases:
+        state = bank.state(phase)
+        if phase.split in {"fit", "selection"}:
+            parent = phase.parent_evidence.layers[
+                charts.layer_index
+            ].tensors["residual.post_operator"]
+            encoded = charts.post_operator.encode_shaped(parent)
+            state[:, -phase.sampled_suffix_tokens :, :] = (
+                encoded @ rotation
+            ).to(dtype=state.dtype)
+        states[phase.identity] = state
+    return (
+        _phase_state_bank(
+            bank.boundary,
+            bank.layer_index,
+            bank.phases,
+            states,
+        ),
+        rotation,
+    )
+
+
+def test_post_operator_chart_transport_shadow_off_is_exact_noop():
+    assert (
+        apply_lfm2_cpcf_post_operator_chart_transport_shadow(
+            object(),
+            object(),
+            enabled=False,
+        )
+        is None
+    )
+
+
+def test_post_operator_chart_transport_reduces_write_and_compiles_real_layer():
+    source, target, bank, charts = _fixture("full_attention")
+    aligned_bank, expected_rotation = _rotated_post_operator_input_bank(
+        bank,
+        charts,
+    )
+    source_before = _state_sha(source)
+    target_before = _state_sha(target)
+    bank_before = aligned_bank.state_bank_sha256
+    charts_before = charts.layer_charts_sha256
+    post_layer_before = charts.post_layer
+
+    controller = fit_lfm2_cpcf_post_operator_chart_transport(
+        aligned_bank,
+        charts,
+    )
+
+    assert controller.report["source_bank_unchanged"] is True
+    assert controller.report["source_charts_unchanged"] is True
+    assert controller.report["source_evidence_unchanged"] is True
+    assert controller.report["validation_rows_read"] == 0
+    assert controller.report["selection_used_by_solver"] is False
+    assert controller.report["selection_read_after_transport_freeze"] is True
+    assert (
+        controller.transport.report["required_write_rms_reduction"]
+        > 0.05
+    )
+    assert (
+        controller.report["selection_required_write_rms_reduction"]
+        > 0.05
+    )
+    assert (
+        controller.transport.report["fit_post_alignment_rmse"]
+        < 1e-6
+    )
+    assert controller.report["fit_required_write_rms_after"] < 1e-6
+    assert controller.report["selection_required_write_rms_after"] < 1e-6
+    assert controller.report["fit_required_write_rms_reduction_fraction"] > 0.99
+    assert (
+        controller.report["selection_required_write_rms_reduction_fraction"]
+        > 0.99
+    )
+    assert controller.report["decode_invariance_max_abs_error"] < 1e-10
+    assert (
+        controller.report["feature_predictor_invariance_max_abs_error"]
+        < 1e-10
+    )
+    torch.testing.assert_close(
+        controller.transport.rotation,
+        expected_rotation,
+        rtol=1e-5,
+        atol=1e-5,
+    )
+    assert controller.boundary_charts.post_layer is post_layer_before
+    assert aligned_bank.state_bank_sha256 == bank_before
+    assert charts.layer_charts_sha256 == charts_before
+    assert _state_sha(source) == source_before
+    assert _state_sha(target) == target_before
+
+    compiled = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        source,
+        target,
+        layer_index=0,
+        input_bank=aligned_bank,
+        boundary_charts=controller.boundary_charts,
+    )
+    assert compiled.next_bank.layer_index == 1
+    assert compiled.report["boundary_charts_sha256"] == (
+        controller.boundary_charts.layer_charts_sha256
+    )
+    assert compiled.report["execution"]["training_steps"] == 0
+    assert compiled.report["execution"]["optimizer_steps"] == 0
+    assert compiled.report["execution"]["backward_calls"] == 0
+
+
+def test_post_operator_chart_transport_never_reads_validation(
+    monkeypatch,
+):
+    _source, _target, bank, charts = _fixture("full_attention")
+    original_state = type(bank).state
+
+    def guarded_state(self, phase):
+        if phase.split == "validation":
+            pytest.fail("validation child state was read by controller")
+        return original_state(self, phase)
+
+    monkeypatch.setattr(type(bank), "state", guarded_state)
+    validation_phase = next(
+        phase for phase in bank.phases if phase.split == "validation"
+    )
+
+    class ExplodingValidationEvidence(Mapping):
+        def __getitem__(self, _key):
+            pytest.fail("validation parent evidence was read by controller")
+
+        def __iter__(self):
+            pytest.fail("validation parent evidence was iterated by controller")
+
+        def __len__(self):
+            pytest.fail("validation parent evidence length was read")
+
+    validation_layer = validation_phase.parent_evidence.layers[0]
+    object.__setattr__(
+        validation_layer,
+        "tensors",
+        ExplodingValidationEvidence(),
+    )
+
+    result = fit_lfm2_cpcf_post_operator_chart_transport(bank, charts)
+
+    assert result.report["validation_rows_read"] == 0
+    assert result.report["validation_used_by_solver"] is False
+
+
+def test_post_operator_chart_transport_rotation_excludes_selection():
+    _source_a, _target_a, first_bank, first_charts = _fixture(
+        "full_attention"
+    )
+    _source_b, _target_b, second_bank, second_charts = _fixture(
+        "full_attention"
+    )
+    first = fit_lfm2_cpcf_post_operator_chart_transport(
+        first_bank,
+        first_charts,
+    )
+    selection_phase = next(
+        phase
+        for phase in second_bank.phases
+        if phase.split == "selection"
+    )
+    with torch.no_grad():
+        second_bank.states[selection_phase.identity].mul_(37.0)
+        selection_phase.parent_evidence.layers[0].tensors[
+            "residual.post_operator"
+        ].mul_(-19.0)
+    second = fit_lfm2_cpcf_post_operator_chart_transport(
+        second_bank,
+        second_charts,
+    )
+
+    torch.testing.assert_close(
+        first.transport.rotation,
+        second.transport.rotation,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert (
+        first.transport.report["tensor_sha256"]["rotation"]
+        == second.transport.report["tensor_sha256"]["rotation"]
+    )
+    assert (
+        first.report["selection_lineage"]["tensor_inventory_sha256"]
+        != second.report["selection_lineage"]["tensor_inventory_sha256"]
+    )

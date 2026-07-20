@@ -58,6 +58,16 @@ def test_v5_has_distinct_compiler_resume_and_artifact_fingerprints() -> None:
         record["filename"] == "hf_lfm2_structural_residual_attention_fold.py"
         for record in implementation["ordered_source_files"]
     )
+    ordered_modules = [
+        record["module"]
+        for record in implementation["ordered_source_files"]
+    ]
+    assert ordered_modules == sorted(ordered_modules)
+    assert {
+        "neural_forge.hf_cpcf_boundary_chart",
+        "neural_forge.hf_lfm2_cpcf_macrocell_replay",
+        "neural_forge.hf_lfm2_cpcf_residual_error_controller",
+    }.issubset(ordered_modules)
     assert numerical_adapter._ADAPTER_IMPLEMENTATION.endswith(
         "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v6"
     )

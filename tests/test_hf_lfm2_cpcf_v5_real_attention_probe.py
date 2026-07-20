@@ -26,6 +26,7 @@ from neural_forge.hf_lfm2_cpcf_v5_real_attention_probe import (  # noqa: E402
     H776_TARGET_TOPOLOGY_SHA256,
     Lfm2CpcfV5RealAttentionProbeError,
     Lfm2CpcfV5RealAttentionProbePins,
+    Lfm2CpcfV5RealAttentionProbeRuntime,
     Lfm2CpcfV5RealAttentionResourceMonitor,
     Lfm2SequenceEffectivePcgCollector,
     _sha256,
@@ -69,6 +70,20 @@ def test_probe_pins_are_exact_and_cross_runtime(tmp_path: Path) -> None:
                 H776_ORIGIN_COMPILER_SHA256
             ),
         )
+
+
+def test_probe_runtime_chart_transport_shadow_defaults_off() -> None:
+    runtime = Lfm2CpcfV5RealAttentionProbeRuntime(
+        source_model=object(),
+        target_model=object(),
+        trace_adapter=object(),
+        evidence_provider=object(),
+        source_tied_table=object(),
+        blank_target_report={},
+        target_plan_fingerprint=_DIGEST,
+        runtime_policy=object(),
+    )
+    assert runtime.post_operator_chart_transport_shadow is False
 
 
 class _Reference:
@@ -766,6 +781,11 @@ def test_cli_accepts_only_exact_h776_resource_and_parameter_lane(
     assert config.fold.compression.target_unique_parameters is None
     assert config.fold.selected_candidate_rank is None
     assert config.fold.maximum_process_rss_bytes == 64 * 1024**3
+    assert config.post_operator_chart_transport_shadow is False
+    shadow_args = _parser_args(tmp_path / "shadow")
+    shadow_args.append("--post-operator-chart-transport-shadow")
+    shadow = runner.config_from_args(parser.parse_args(shadow_args))
+    assert shadow.post_operator_chart_transport_shadow is True
     bad = _parser_args(tmp_path / "bad")
     ratio_index = bad.index("--compression-ratio") + 1
     bad[ratio_index] = "4.01"

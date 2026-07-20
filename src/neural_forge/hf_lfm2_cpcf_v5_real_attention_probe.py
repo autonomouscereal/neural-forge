@@ -434,6 +434,7 @@ class Lfm2CpcfV5RealAttentionProbeRuntime:
     blank_target_report: Mapping[str, Any]
     target_plan_fingerprint: str
     runtime_policy: Any
+    post_operator_chart_transport_shadow: bool = False
 
 
 def _checkpoint_reference_mapping(verified: Any) -> dict[str, str]:
@@ -1506,6 +1507,10 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         raise TypeError(
             "resource_monitor must be Lfm2CpcfV5RealAttentionResourceMonitor."
         )
+    if type(runtime.post_operator_chart_transport_shadow) is not bool:
+        raise TypeError(
+            "post_operator_chart_transport_shadow must be bool."
+        )
 
     from . import hf_lfm2_cpcf_model_fold as model_fold
     from . import hf_lfm2_cpcf_v5_model_compiler as v5
@@ -1515,6 +1520,9 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
     )
     from .hf_lfm2_cpcf_model_compiler import (
         rebind_lfm2_cpcf_phase_state_bank,
+    )
+    from .hf_lfm2_cpcf_residual_error_controller import (
+        apply_lfm2_cpcf_post_operator_chart_transport_shadow,
     )
     from .hf_lfm2_cpcf_resume_artifact import (
         Lfm2CpcfArtifactReference,
@@ -1638,6 +1646,7 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
     final_payload = None
     layer_payload = None
     result = None
+    chart_transport_controller = None
     with resource_monitor:
         resource_monitor.checkpoint("authenticated_inputs_ready")
         try:
@@ -1744,6 +1753,21 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                 materialized_phases,
                 layer_index=H776_LAYER_INDEX,
             )
+            source_charts_sha256 = charts.layer_charts_sha256
+            chart_transport_controller = (
+                apply_lfm2_cpcf_post_operator_chart_transport_shadow(
+                    layer_bank,
+                    charts,
+                    enabled=(
+                        runtime.post_operator_chart_transport_shadow
+                    ),
+                )
+            )
+            if chart_transport_controller is not None:
+                charts = chart_transport_controller.boundary_charts
+                resource_monitor.checkpoint(
+                    "layer_2_post_operator_chart_transport_frozen"
+                )
             collector = Lfm2SequenceEffectivePcgCollector()
             resource_monitor.checkpoint("layer_2_evidence_and_charts_ready")
             with sequence_fold.observe_lfm2_sequence_effective_pcg(collector):
@@ -1773,6 +1797,13 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
                 pcg_audit=pcg_audit,
                 pins=pins,
             )
+            if (
+                result.report.get("boundary_charts_sha256")
+                != charts.layer_charts_sha256
+            ):
+                raise Lfm2CpcfV5RealAttentionProbeError(
+                    "Layer result is not bound to the chart-transport mode."
+                )
             provider.release_layer_payload(reference, layer_payload)
             layer_payload = None
             resource_monitor.checkpoint("layer_2_evidence_released")
@@ -1797,6 +1828,47 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
             "Source model changed during the layer-2 probe."
         )
     assert result is not None
+    controller_report = (
+        None
+        if chart_transport_controller is None
+        else chart_transport_controller.as_dict()
+    )
+    chart_transport_body = {
+        "enabled": runtime.post_operator_chart_transport_shadow,
+        "mode": (
+            "fit_only_post_operator_orthogonal_chart_transport"
+            if runtime.post_operator_chart_transport_shadow
+            else "off"
+        ),
+        "source_layer_charts_sha256": source_charts_sha256,
+        "compiler_input_layer_charts_sha256": (
+            result.report["boundary_charts_sha256"]
+        ),
+        "controller_report_sha256": (
+            None
+            if controller_report is None
+            else controller_report["report_sha256"]
+        ),
+        "transport_report_sha256": (
+            None
+            if controller_report is None
+            else controller_report["transport_report_sha256"]
+        ),
+        "selection_used_by_controller_solver": (
+            False if controller_report is not None else None
+        ),
+        "validation_rows_read_by_controller": (
+            0 if controller_report is not None else None
+        ),
+        "default_off_semantics_preserved": (
+            not runtime.post_operator_chart_transport_shadow
+        ),
+        "controller_report": controller_report,
+    }
+    chart_transport_binding = {
+        **chart_transport_body,
+        "binding_sha256": _sha256(chart_transport_body),
+    }
     body = {
         "schema": LFM2_CPCF_V5_REAL_ATTENTION_PROBE_SCHEMA,
         "status": (
@@ -1841,6 +1913,9 @@ def execute_lfm2_cpcf_v5_real_attention_probe(
         "phase_audit": _plain(phase_audit),
         "prefix_install_report": _plain(install_report),
         "layer_2_result": _plain(result_audit),
+        "post_operator_chart_transport_shadow": (
+            _plain(chart_transport_binding)
+        ),
         "resource_report": _plain(resource_report),
         "stop_conditions": {
             "exactly_one_layer_compiled": True,

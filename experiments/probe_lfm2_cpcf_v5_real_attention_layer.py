@@ -167,6 +167,7 @@ class RealAttentionProbeConfig:
     expected_trace_sha256: str
     expected_runtime_compiler_implementation_sha256: str
     expected_sequence_source_sha256: str
+    post_operator_chart_transport_shadow: bool = False
 
     def __post_init__(self) -> None:
         from neural_forge.hf_lfm2_cpcf_v5_real_attention_probe import (
@@ -177,6 +178,10 @@ class RealAttentionProbeConfig:
         )
 
         fold = self.fold
+        if type(self.post_operator_chart_transport_shadow) is not bool:
+            raise TypeError(
+                "post_operator_chart_transport_shadow must be bool."
+            )
         compression = fold.compression
         changed = []
         if compression.compression_ratio != "4":
@@ -265,6 +270,14 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument("--expected-sequence-source-sha256", required=True)
+    parser.add_argument(
+        "--post-operator-chart-transport-shadow",
+        action="store_true",
+        help=(
+            "Apply one fit-only orthogonal post-operator chart transport "
+            "before the non-promotable layer-2 compile."
+        ),
+    )
     return parser
 
 
@@ -279,6 +292,9 @@ def config_from_args(args: argparse.Namespace) -> RealAttentionProbeConfig:
             args.expected_runtime_compiler_implementation_sha256
         ),
         expected_sequence_source_sha256=args.expected_sequence_source_sha256,
+        post_operator_chart_transport_shadow=(
+            args.post_operator_chart_transport_shadow
+        ),
     )
 
 
@@ -703,6 +719,9 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
                     blank_target_report=blank.as_dict(),
                     target_plan_fingerprint=blank.plan.fingerprint,
                     runtime_policy=runtime_policy,
+                    post_operator_chart_transport_shadow=(
+                        config.post_operator_chart_transport_shadow
+                    ),
                 )
                 for index in (0, 1):
                     torch.cuda.reset_peak_memory_stats(index)
@@ -743,6 +762,9 @@ def run(config: RealAttentionProbeConfig) -> Mapping[str, Any]:
             catalog_authentication["preparation_receipt_sha256"]
         ),
         "catalog_reauthenticated_after_provider_close": True,
+        "post_operator_chart_transport_shadow_enabled": (
+            config.post_operator_chart_transport_shadow
+        ),
         "diagnostic_only": True,
         "child_checkpoint_saved": False,
         "publication_attempted": False,

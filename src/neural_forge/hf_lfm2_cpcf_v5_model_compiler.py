@@ -241,9 +241,12 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
 
     from neural_forge import dynamic_evidence_residency
     from neural_forge import dynamic_replay_scheduler
+    from neural_forge import hf_cpcf_boundary_chart
     from neural_forge import hf_lfm2_cpcf_candidate_replay
     from neural_forge import hf_lfm2_cpcf_layer_compiler
+    from neural_forge import hf_lfm2_cpcf_macrocell_replay
     from neural_forge import hf_lfm2_cpcf_model_compiler
+    from neural_forge import hf_lfm2_cpcf_residual_error_controller
     from neural_forge import hf_lfm2_cpcf_short_conv_v5
     from neural_forge import hf_lfm2_cpcf_short_conv_v5_fhvr_mf
     from neural_forge import hf_lfm2_cpcf_short_conv_v5_numerical_adapter
@@ -257,9 +260,12 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         boundary,
         dynamic_evidence_residency,
         dynamic_replay_scheduler,
+        hf_cpcf_boundary_chart,
         hf_lfm2_cpcf_candidate_replay,
         hf_lfm2_cpcf_layer_compiler,
+        hf_lfm2_cpcf_macrocell_replay,
         hf_lfm2_cpcf_model_compiler,
+        hf_lfm2_cpcf_residual_error_controller,
         legacy_model_fold,
         hf_lfm2_cpcf_short_conv_v5,
         hf_lfm2_cpcf_short_conv_v5_fhvr_mf,
