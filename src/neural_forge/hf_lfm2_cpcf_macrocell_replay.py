@@ -624,7 +624,6 @@ def _attention_replay(
         "key_value_heads": key_value_heads,
         "query_heads_per_kv_group": groups,
         "head_dim": head_dim,
-        "output_projection_input_width": query_heads * head_dim,
         "attention_scaling": float(scaling),
         "rope_shape": [int(size) for size in cos.shape],
         "additive_mask_shape": [int(size) for size in mask.shape],
@@ -779,7 +778,6 @@ def _short_conv_replay(
     }
     topology = {
         "channels": hidden,
-        "output_projection_input_width": hidden,
         "fir_length": fir_length,
         "fir_bias": fir_bias is not None,
         "input_projection_bias": (
@@ -936,18 +934,34 @@ class Lfm2CpcfMacrocellReplay:
             raise Lfm2CpcfMacrocellReplayError("Replay report seal is invalid.")
         topology = report.get("operator_topology")
         projection_width = projection_input_shape[2]
+        operator_kind = report.get("operator_kind")
+        expected_projection_width = None
+        if isinstance(topology, Mapping):
+            if operator_kind == "full_attention":
+                query_heads = topology.get("query_heads")
+                head_dim = topology.get("head_dim")
+                if (
+                    isinstance(query_heads, int)
+                    and not isinstance(query_heads, bool)
+                    and query_heads > 0
+                    and isinstance(head_dim, int)
+                    and not isinstance(head_dim, bool)
+                    and head_dim > 0
+                ):
+                    expected_projection_width = query_heads * head_dim
+            elif operator_kind == "short_conv":
+                channels = topology.get("channels")
+                if (
+                    isinstance(channels, int)
+                    and not isinstance(channels, bool)
+                    and channels > 0
+                ):
+                    expected_projection_width = channels
         if (
-            not isinstance(topology, Mapping)
-            or topology.get("output_projection_input_width") != projection_width
+            expected_projection_width != projection_width
             or report.get("batch_size") != residual_shape[0]
             or report.get("sequence_length") != residual_shape[1]
             or report.get("hidden_size") != residual_shape[2]
-            or report.get("residual_endpoint_shape") != list(residual_shape)
-            or report.get("operator_output_input_shape")
-            != list(projection_input_shape)
-            or report.get("operator_output_input_width") != projection_width
-            or report.get("operator_output_input_matches_residual_width")
-            is not (projection_width == residual_shape[2])
         ):
             raise Lfm2CpcfMacrocellReplayError(
                 "Replay endpoint geometry differs from its authenticated report."
@@ -1157,18 +1171,6 @@ def replay_lfm2_cpcf_macrocell(
         "batch_size": int(residual.shape[0]),
         "sequence_length": int(residual.shape[1]),
         "hidden_size": int(residual.shape[2]),
-        "residual_endpoint_shape": [
-            int(residual.shape[0]),
-            int(residual.shape[1]),
-            int(residual.shape[2]),
-        ],
-        "operator_output_input_shape": [
-            int(size) for size in operator_output_input.shape
-        ],
-        "operator_output_input_width": int(operator_output_input.shape[2]),
-        "operator_output_input_matches_residual_width": (
-            int(operator_output_input.shape[2]) == int(residual.shape[2])
-        ),
         "runtime_dtype": _dtype_name(residual),
         "runtime_device": str(residual.device),
         "operator_topology": operator_topology,

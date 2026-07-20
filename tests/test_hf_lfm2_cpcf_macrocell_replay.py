@@ -353,17 +353,6 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
         if operator_kind == "full_attention"
         else "short_conv.output_input"
     )
-    assert report["residual_endpoint_shape"] == [2, 5, 8]
-    assert report["operator_output_input_shape"] == [
-        int(size) for size in replay.operator_output_input.shape
-    ]
-    assert report["operator_output_input_width"] == int(
-        replay.operator_output_input.shape[-1]
-    )
-    assert report["operator_topology"]["output_projection_input_width"] == int(
-        replay.operator_output_input.shape[-1]
-    )
-    assert report["operator_output_input_matches_residual_width"]
     source_detail_name = (
         "concatenated_context" if operator_kind == "full_attention" else "output_input"
     )
@@ -405,12 +394,15 @@ def test_replay_matches_real_transformers_lfm2_layer_forward_without_mutation(
     assert replay.replay_sha256 == report["report_sha256"]
 
 
-def test_attention_replay_allows_projection_input_wider_than_residual_stream() -> None:
+@pytest.mark.parametrize("head_dim", (2, 6))
+def test_attention_replay_allows_projection_width_different_from_residual_stream(
+    head_dim: int,
+) -> None:
     model = _tiny_installed_target(
         "full_attention",
         torch.float32,
         seed=9289,
-        head_dim=6,
+        head_dim=head_dim,
     )
     layer = model.model.layers[0]
     residual = _actual_prefill_residual(model)
@@ -441,19 +433,19 @@ def test_attention_replay_allows_projection_input_wider_than_residual_stream() -
     ):
         assert tuple(getattr(replay, name).shape) == residual_shape
         assert torch.equal(getattr(replay, name), reference[name])
-    assert tuple(replay.operator_output_input.shape) == (2, 5, 12)
+    projection_width = 2 * head_dim
+    assert tuple(replay.operator_output_input.shape) == (
+        2,
+        5,
+        projection_width,
+    )
     assert torch.equal(
         replay.operator_output_input,
         reference["operator_output_input"],
     )
-    assert replay.report["operator_output_input_width"] == 12
     assert replay.report["operator_topology"]["query_heads"] == 2
-    assert replay.report["operator_topology"]["head_dim"] == 6
-    assert (
-        replay.report["operator_topology"]["output_projection_input_width"]
-        == 12
-    )
-    assert not replay.report["operator_output_input_matches_residual_width"]
+    assert replay.report["operator_topology"]["head_dim"] == head_dim
+    assert projection_width != residual_shape[-1]
 
 
 @pytest.mark.parametrize(
