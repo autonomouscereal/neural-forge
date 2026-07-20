@@ -1048,6 +1048,23 @@ def _finish_pair_metrics(
     rows: int,
 ) -> Lfm2CpcfTerminalActionLogitMetrics:
     torch = _torch()
+    fraction_tolerance = 64.0 * torch.finfo(torch.float64).eps
+    for name, value in (
+        ("top1", accumulator.top1),
+        ("positive_margin", accumulator.positive_margin),
+    ):
+        if value < -fraction_tolerance or value > 1.0 + fraction_tolerance:
+            raise Lfm2CpcfTerminalActionResidualError(
+                f"Accumulated terminal {name} fraction escaped [0,1]."
+            )
+
+    def bounded_fraction(value: float) -> float:
+        if abs(value) <= fraction_tolerance:
+            return 0.0
+        if abs(value - 1.0) <= fraction_tolerance:
+            return 1.0
+        return min(1.0, max(0.0, value))
+
     denominator = max(
         accumulator.reference_square,
         torch.finfo(torch.float64).tiny,
@@ -1057,9 +1074,11 @@ def _finish_pair_metrics(
         centered_logit_relative_rmse=math.sqrt(
             max(0.0, accumulator.error_square) / denominator
         ),
-        top1_agreement_fraction=accumulator.top1,
+        top1_agreement_fraction=bounded_fraction(accumulator.top1),
         reference_winner_mean_margin=accumulator.margin,
-        reference_winner_positive_margin_fraction=(accumulator.positive_margin),
+        reference_winner_positive_margin_fraction=(
+            bounded_fraction(accumulator.positive_margin)
+        ),
     )
 
 

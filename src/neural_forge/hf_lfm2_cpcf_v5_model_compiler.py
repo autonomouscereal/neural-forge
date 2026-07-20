@@ -100,6 +100,14 @@ from neural_forge.hf_lfm2_cpcf_v5_resume import (
 from neural_forge.hf_lfm2_cpcf_v5_admission_proof import (
     build_lfm2_cpcf_v5_admission_chain_proof,
 )
+from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+    Lfm2CpcfTerminalActionPolicy,
+)
+from neural_forge.hf_lfm2_cpcf_v5_terminal_action_integration import (
+    Lfm2CpcfV5TerminalActionCapture,
+    capture_lfm2_cpcf_v5_terminal_action_inputs,
+    compile_install_lfm2_cpcf_v5_terminal_action,
+)
 from neural_forge.hf_lfm2_cpcf_resume_artifact import (
     build_lfm2_cpcf_target_topology_snapshot,
 )
@@ -275,6 +283,8 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
     from neural_forge import hf_lfm2_qk_global_gauge_sync
     from neural_forge import hf_lfm2_sequence_effective_attention_fold
     from neural_forge import hf_lfm2_structural_residual_attention_fold
+    from neural_forge import hf_lfm2_cpcf_terminal_action_residual
+    from neural_forge import hf_lfm2_cpcf_v5_terminal_action_integration
 
     modules = (
         sys.modules[__name__],
@@ -302,6 +312,8 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         hf_lfm2_qk_global_gauge_sync,
         hf_lfm2_sequence_effective_attention_fold,
         hf_lfm2_structural_residual_attention_fold,
+        hf_lfm2_cpcf_terminal_action_residual,
+        hf_lfm2_cpcf_v5_terminal_action_integration,
         sys.modules["neural_forge.hf_lfm2_cpcf_v5_resume"],
     )
     files = []
@@ -376,6 +388,7 @@ class Lfm2CpcfV5RuntimePolicy:
     endpoint_residual_attention_policy: (
         Lfm2ComposedEndpointResidualAttentionFoldPolicy | None
     ) = None
+    terminal_action_residual_policy: Lfm2CpcfTerminalActionPolicy | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -461,6 +474,15 @@ class Lfm2CpcfV5RuntimePolicy:
             raise Lfm2CpcfV5ModelCompilerError(
                 "Endpoint-residual attention requires the composed Q/K policy."
             )
+        terminal = self.terminal_action_residual_policy
+        if terminal is not None and (
+            type(terminal) is not Lfm2CpcfTerminalActionPolicy
+            or not terminal.verify_authentication()
+        ):
+            raise TypeError(
+                "terminal_action_residual_policy must be an exact authenticated "
+                "Lfm2CpcfTerminalActionPolicy."
+            )
         sequential = self.model_fold_policy.attention_sequential_transport_policy
         if (
             (composed is not None or endpoint is not None)
@@ -538,6 +560,10 @@ class Lfm2CpcfV5RuntimePolicy:
         if self.endpoint_residual_attention_policy is not None:
             result["endpoint_residual_attention_policy"] = (
                 self.endpoint_residual_attention_policy.as_dict()
+            )
+        if self.terminal_action_residual_policy is not None:
+            result["terminal_action_residual_policy"] = (
+                self.terminal_action_residual_policy.as_dict()
             )
         return result
 
@@ -4198,6 +4224,8 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
     bootstrap_payload: Lfm2CpcfSelectiveLayerPayload | None = None
     final_payload: Lfm2CpcfSelectiveFinalNormPayload | None = None
     resume_final_phases: tuple[Lfm2CpcfTargetPhase, ...] | None = None
+    terminal_action_capture: Lfm2CpcfV5TerminalActionCapture | None = None
+    terminal_action_report: Mapping[str, Any] | None = None
     admitted_prefixes: list[dict[str, Any]] = []
     resume_input_admission_chain_proof: Mapping[str, Any] | None = None
     executed_layer_indices: list[int] = []
@@ -4605,6 +4633,20 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
                         raise Lfm2CpcfV5ModelCompilerError(
                             "Layer receipt differs from tensor-free state-bank lineage."
                         )
+                    if (
+                        runtime_policy.terminal_action_residual_policy is not None
+                        and layer_index + 1 == catalog.layer_count
+                    ):
+                        terminal_action_capture = (
+                            capture_lfm2_cpcf_v5_terminal_action_inputs(
+                                layer_index=layer_index,
+                                input_bank=rebind_lfm2_cpcf_phase_state_bank(
+                                    layer_bank,
+                                    phases,
+                                ),
+                                final_replay=result.final_replay,
+                            )
+                        )
                     completed_receipts.append(receipt)
                     state_bank = next_bank
                     persist_prefix_before_rss(
@@ -4752,6 +4794,27 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             boundary_bundle=bundle,
             ridge=runtime_policy.model_fold_policy.ridge,
         )
+        if runtime_policy.terminal_action_residual_policy is not None:
+            if terminal_action_capture is None:
+                raise Lfm2CpcfV5ModelCompilerError(
+                    "Terminal-action folding requires the final layer to execute "
+                    "in this invocation; a completed pre-terminal resume frontier "
+                    "does not contain its input replay bank."
+                )
+            terminal_result = compile_install_lfm2_cpcf_v5_terminal_action(
+                target_model=target_model,
+                capture=terminal_action_capture,
+                incumbent_final_state_bank=state_bank,
+                final_phases=final_phases,
+                interface=bundle.interface,
+                source_tied_table=source_tied_table,
+                norm_epsilon=legacy_model_fold._final_norm_epsilon(target_model),
+                policy=runtime_policy.terminal_action_residual_policy,
+            )
+            state_bank = terminal_result.final_state_bank
+            terminal_action_report = terminal_result.as_dict()
+            del terminal_result, terminal_action_capture
+            terminal_action_capture = None
         del final_phases
         evidence_provider.release_final_norm_payload(final_payload)
         final_payload = None
@@ -4843,6 +4906,25 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             ],
             "final_state_bank_sha256": state_bank.state_bank_sha256,
             "final_norm_report_sha256": (final_norm_report["report_sha256"]),
+            "terminal_action_residual_enabled": (
+                runtime_policy.terminal_action_residual_policy is not None
+            ),
+            "terminal_action_residual_integrated": (
+                terminal_action_report is not None
+            ),
+            "terminal_action_residual_report": (
+                None
+                if terminal_action_report is None
+                else dict(terminal_action_report)
+            ),
+            "terminal_action_residual_report_sha256": (
+                None
+                if terminal_action_report is None
+                else terminal_action_report["result_sha256"]
+            ),
+            "terminal_action_residual_requires_final_layer_execution_on_resume": (
+                runtime_policy.terminal_action_residual_policy is not None
+            ),
             "parameter_receipt": dict(parameter_receipt),
             "target_parameter_inventory_before": dict(target_inventory_before),
             "target_parameter_inventory_after": dict(target_inventory_after),
@@ -4952,6 +5034,15 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             body["endpoint_residual_attention_coverage"] = dict(
                 endpoint_residual_attention_coverage
             )
+        if terminal_action_report is not None:
+            terminal_operation = terminal_action_report["operation_audit"]
+            operation_audit = dict(body["operation_audit"])
+            operation_audit.pop("target_model_forward_calls")
+            operation_audit["target_full_model_forward_calls"] = 0
+            operation_audit["target_final_layer_replay_calls"] = (
+                terminal_operation["target_final_layer_replay_calls"]
+            )
+            body["operation_audit"] = operation_audit
         result_sha = _sha(body)
         return legacy_model_fold.Lfm2CpcfCompiledModelFold(
             boundary_bundle=bundle,

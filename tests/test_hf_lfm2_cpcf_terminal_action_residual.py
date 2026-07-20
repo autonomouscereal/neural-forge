@@ -7,6 +7,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+import neural_forge.hf_lfm2_cpcf_terminal_action_residual as terminal  # noqa: E402
+
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     Lfm2CpcfTerminalActionAuthenticationError,
     Lfm2CpcfTerminalActionEvidence,
@@ -17,6 +19,27 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     damped_rmsnorm_gauss_newton_target,
     rmsnorm_jvp,
 )
+
+
+def test_non_power_of_two_normalized_weights_do_not_escape_probability_bounds() -> None:
+    weights = torch.ones(7, dtype=torch.float64)
+    weights = weights / weights.sum()
+    logits = torch.tensor(
+        [[1.0, -1.0]] * 7,
+        dtype=torch.float64,
+    )
+    accumulator = terminal._PairMetricAccumulator()
+
+    terminal._accumulate_pair_metrics(
+        accumulator,
+        logits,
+        logits,
+        weights,
+    )
+    metrics = terminal._finish_pair_metrics(accumulator, 7)
+
+    assert metrics.top1_agreement_fraction == 1.0
+    assert metrics.reference_winner_positive_margin_fraction == 1.0
 
 
 def test_rmsnorm_woodbury_gauss_newton_matches_explicit_jacobian() -> None:
