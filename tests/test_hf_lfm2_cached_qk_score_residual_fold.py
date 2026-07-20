@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
 
 import pytest
@@ -1635,7 +1636,7 @@ def test_exact_seed_target_is_authenticated_no_op_without_fit_check_access() -> 
     assert result.report["operation_audit"]["fit_check_cases_consumed"] == 1
 
 
-def test_pcg_nonconvergence_returns_exact_seed_and_never_opens_fit_check() -> None:
+def test_finite_max_iteration_pcg_iterate_can_pass_functional_gates() -> None:
     seed, fit_bank, fit_check_bank = _banks()
     result = compile_lfm2_cached_qk_score_residual_fold(
         seed=seed,
@@ -1649,13 +1650,216 @@ def test_pcg_nonconvergence_returns_exact_seed_and_never_opens_fit_check() -> No
             pcg_relative_tolerance=1e-15,
         ),
     )
-    assert not result.accepted
-    assert not result.changed
-    assert result.status == "pcg_nonconverged_seed_fallback"
+    assert result.accepted and result.changed
+    assert result.status == "fit_check_accepted"
+    sweep = result.report["sweeps"][0]
+    assert not sweep["pcg_numerically_converged"]
+    assert not sweep["pcg"]["converged"]
+    assert sweep["pcg"]["termination"] == "maximum_iterations"
+    assert sweep["pcg"]["relative_normal_residual_finite"]
+    assert sweep["pcg_iterate"]["all_finite"]
+    assert sweep["pcg_iterate"]["nonzero"]
+    assert sweep["pcg_iterate"]["l2_norm"] > 0.0
+    assert sweep["pcg_iterate"]["termination_permits_functional_frontier"]
+    assert sweep["pcg_iterate"]["functional_frontier_permitted"]
+    assert sweep["functional_frontier_evaluated"]
+    assert sweep["functional_frontier_materialization_dtype"] == "torch.bfloat16"
+    assert sweep["functional_candidate_eligible"]
+    assert sweep["functionally_selected_approximate_pcg_iterate"]
+    assert sweep["selected_alpha"] > 0.0
+    assert result.report["fit_absolute_quality_eligible"]
+    assert result.report["fit_check_absolute_quality_eligible"]
+    assert result.report["fit_check_evaluated"]
+    assert result.report["functionally_accepted_approximate_pcg_iterate"]
+
+
+def test_bad_finite_max_iteration_iterate_rolls_back_before_fit_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed, fit_bank, fit_check_bank = _banks()
+
+    def bad_max_iteration(
+        operator: object,
+        right_hand_side: torch.Tensor,
+        policy: Lfm2QkScoreResidualFoldPolicy,
+    ) -> tuple[torch.Tensor, score_fold.Lfm2QkPcgReport]:
+        return torch.ones_like(right_hand_side), score_fold.Lfm2QkPcgReport(
+            converged=False,
+            iterations=policy.maximum_pcg_iterations,
+            normal_operator_calls=int(getattr(operator, "normal_operator_calls")),
+            relative_normal_residual=1.0,
+            termination="maximum_iterations",
+        )
+
+    monkeypatch.setattr(score_fold, "_pcg", bad_max_iteration)
+    result = compile_lfm2_cached_qk_score_residual_fold(
+        seed=seed,
+        fit_bank=fit_bank,
+        fit_check_bank=fit_check_bank,
+        policy=Lfm2QkScoreResidualFoldPolicy(
+            maximum_sweeps=1,
+            maximum_pcg_iterations=1,
+            minimum_pcg_iterations=1,
+            pcg_restart_iterations=1,
+            pcg_relative_tolerance=1e-15,
+        ),
+    )
+    assert not result.accepted and not result.changed
+    assert result.status == "poor_quality_seed_fallback"
     assert torch.equal(result.query_weight, seed.query_weight)
     assert torch.equal(result.key_weight, seed.key_weight)
-    assert result.report["operation_audit"]["fit_check_cases_consumed"] == 0
+    sweep = result.report["sweeps"][0]
+    assert not sweep["pcg_numerically_converged"]
+    assert sweep["pcg_iterate"]["functional_frontier_permitted"]
+    assert sweep["functional_frontier_evaluated"]
+    assert not sweep["functional_candidate_eligible"]
+    assert sweep["selected_alpha"] == 0.0
+    assert all(
+        not candidate["eligible"]
+        for candidate in sweep["frontier"]
+        if candidate["alpha"] > 0.0
+    )
     assert not result.report["fit_check_evaluated"]
+    assert result.report["operation_audit"]["fit_check_cases_consumed"] == 0
+
+
+@pytest.mark.parametrize("nonfinite", [False, True])
+def test_zero_or_nonfinite_pcg_iterate_fails_closed_before_frontier(
+    monkeypatch: pytest.MonkeyPatch,
+    nonfinite: bool,
+) -> None:
+    seed, fit_bank, fit_check_bank = _banks()
+
+    def unusable_max_iteration(
+        operator: object,
+        right_hand_side: torch.Tensor,
+        policy: Lfm2QkScoreResidualFoldPolicy,
+    ) -> tuple[torch.Tensor, score_fold.Lfm2QkPcgReport]:
+        direction = torch.zeros_like(right_hand_side)
+        if nonfinite:
+            direction[0] = torch.nan
+        return direction, score_fold.Lfm2QkPcgReport(
+            converged=False,
+            iterations=policy.maximum_pcg_iterations,
+            normal_operator_calls=int(getattr(operator, "normal_operator_calls")),
+            relative_normal_residual=math.inf if nonfinite else 1.0,
+            termination="maximum_iterations",
+        )
+
+    monkeypatch.setattr(score_fold, "_pcg", unusable_max_iteration)
+    result = compile_lfm2_cached_qk_score_residual_fold(
+        seed=seed,
+        fit_bank=fit_bank,
+        fit_check_bank=fit_check_bank,
+        policy=Lfm2QkScoreResidualFoldPolicy(
+            maximum_sweeps=1,
+            maximum_pcg_iterations=1,
+            minimum_pcg_iterations=1,
+            pcg_restart_iterations=1,
+        ),
+    )
+    assert not result.accepted and not result.changed
+    assert result.status == "pcg_nonconverged_seed_fallback"
+    assert result.verify() == result.report["report_sha256"]
+    assert torch.equal(result.query_weight, seed.query_weight)
+    assert torch.equal(result.key_weight, seed.key_weight)
+    sweep = result.report["sweeps"][0]
+    assert not sweep["pcg_iterate"]["functional_frontier_permitted"]
+    assert not sweep["functional_frontier_evaluated"]
+    assert "frontier" not in sweep
+    if nonfinite:
+        assert sweep["pcg"]["relative_normal_residual"] is None
+        assert not sweep["pcg"]["relative_normal_residual_finite"]
+        assert sweep["pcg_iterate"]["l2_norm"] is None
+        assert not sweep["pcg_iterate"]["l2_norm_finite"]
+    else:
+        assert sweep["pcg"]["relative_normal_residual"] == 1.0
+        assert sweep["pcg"]["relative_normal_residual_finite"]
+        assert sweep["pcg_iterate"]["l2_norm"] == 0.0
+        assert sweep["pcg_iterate"]["l2_norm_finite"]
+    assert not result.report["fit_check_evaluated"]
+    assert result.report["operation_audit"]["fit_check_cases_consumed"] == 0
+
+
+def test_approximate_pcg_path_preserves_split_isolation_and_operation_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed, fit_bank, fit_check_bank = _banks()
+    fit_before = fit_bank.verify()
+    fit_check_before = fit_check_bank.verify()
+    fit_evaluation_partitions: list[tuple[str, ...]] = []
+    fit_check_evaluation_partitions: list[tuple[str, ...]] = []
+    original_evaluate = score_fold._evaluate
+    original_evaluate_pair = score_fold._evaluate_pair_streamed
+
+    def tracked_evaluate(
+        cases: Iterable[score_fold._PreparedCase],
+        seed_value: Lfm2AuthenticatedDenseQkSeed,
+        query_weight: torch.Tensor,
+        key_weight: torch.Tensor,
+    ) -> score_fold.Lfm2QkRoutingMetrics:
+        materialized = tuple(cases)
+        fit_evaluation_partitions.append(
+            tuple(
+                case.source.production_case.provenance.partition
+                for case in materialized
+            )
+        )
+        return original_evaluate(
+            materialized,
+            seed_value,
+            query_weight,
+            key_weight,
+        )
+
+    def tracked_evaluate_pair(
+        evidence_cases: Sequence[Lfm2QkScoreResidualCase],
+        *args: object,
+        **kwargs: object,
+    ) -> tuple[score_fold.Lfm2QkRoutingMetrics, score_fold.Lfm2QkRoutingMetrics]:
+        materialized = tuple(evidence_cases)
+        fit_check_evaluation_partitions.append(
+            tuple(case.production_case.provenance.partition for case in materialized)
+        )
+        return original_evaluate_pair(materialized, *args, **kwargs)
+
+    monkeypatch.setattr(score_fold, "_evaluate", tracked_evaluate)
+    monkeypatch.setattr(score_fold, "_evaluate_pair_streamed", tracked_evaluate_pair)
+    result = compile_lfm2_cached_qk_score_residual_fold(
+        seed=seed,
+        fit_bank=fit_bank,
+        fit_check_bank=fit_check_bank,
+        policy=Lfm2QkScoreResidualFoldPolicy(
+            maximum_sweeps=1,
+            maximum_pcg_iterations=1,
+            minimum_pcg_iterations=1,
+            pcg_restart_iterations=1,
+            pcg_relative_tolerance=1e-15,
+        ),
+    )
+    assert result.accepted and result.changed
+    assert fit_evaluation_partitions
+    assert all(set(partitions) == {"fit"} for partitions in fit_evaluation_partitions)
+    assert fit_check_evaluation_partitions == [("fit_check",)]
+    assert fit_bank.verify() == fit_before
+    assert fit_check_bank.verify() == fit_check_before
+    assert result.verify() == result.report["report_sha256"]
+    assert result.report["functionally_accepted_approximate_pcg_iterate"]
+    assert result.report["operation_audit"] == {
+        "fit_cases_consumed": 2,
+        "fit_check_cases_consumed": 1,
+        "selection_cases_consumed": 0,
+        "true_validation_cases_consumed": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+        "model_forward_calls": 0,
+        "model_generate_calls": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "target_mutations_during_compile": 0,
+        "published_state_cast_before_fit_check": True,
+    }
 
 
 def test_fit_check_rejection_falls_back_without_refit() -> None:

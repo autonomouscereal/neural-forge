@@ -1751,7 +1751,13 @@ class Lfm2QkPcgReport:
             )
 
     def as_dict(self) -> dict[str, Any]:
-        return {name: getattr(self, name) for name in self.__dataclass_fields__}
+        body = {name: getattr(self, name) for name in self.__dataclass_fields__}
+        residual_is_finite = math.isfinite(self.relative_normal_residual)
+        body["relative_normal_residual"] = (
+            self.relative_normal_residual if residual_is_finite else None
+        )
+        body["relative_normal_residual_finite"] = residual_is_finite
+        return body
 
 
 @dataclass(slots=True)
@@ -3041,6 +3047,47 @@ def _pcg(
     )
 
 
+def _pcg_iterate_assessment(
+    direction: Any,
+    report: Lfm2QkPcgReport,
+) -> dict[str, Any]:
+    """Separate numerical convergence from safe functional evaluation.
+
+    Reaching the fixed PCG iteration ceiling is not, by itself, evidence that
+    the accumulated analytical direction is behaviorally useless.  A finite,
+    nonzero ceiling iterate may therefore enter the already-fixed exact-BF16
+    frontier.  Numerical breakdown terminations and zero directions remain
+    fail-closed and never open that frontier.
+    """
+
+    torch = _torch()
+    all_finite = bool(torch.isfinite(direction).all().item())
+    l2_norm = (
+        float(torch.linalg.vector_norm(direction.to(torch.float64)).item())
+        if all_finite
+        else math.inf
+    )
+    l2_norm_is_finite = math.isfinite(l2_norm)
+    nonzero = (
+        all_finite and l2_norm_is_finite and l2_norm > torch.finfo(torch.float64).tiny
+    )
+    termination_permits_functional_frontier = (
+        report.converged or report.termination == "maximum_iterations"
+    )
+    return {
+        "all_finite": all_finite,
+        "nonzero": nonzero,
+        "l2_norm": l2_norm if l2_norm_is_finite else None,
+        "l2_norm_finite": l2_norm_is_finite,
+        "termination_permits_functional_frontier": (
+            termination_permits_functional_frontier
+        ),
+        "functional_frontier_permitted": (
+            nonzero and termination_permits_functional_frontier
+        ),
+    }
+
+
 @dataclass(slots=True)
 class _RoutingMetricAccumulator:
     case_count: int = 0
@@ -3711,9 +3758,12 @@ def compile_lfm2_cached_qk_score_residual_fold(
             operator.right_hand_side(),
             policy_value,
         )
+        pcg_iterate = _pcg_iterate_assessment(direction, pcg_report)
         sweep_report: dict[str, Any] = {
             "sweep": sweep,
             "pcg": pcg_report.as_dict(),
+            "pcg_numerically_converged": pcg_report.converged,
+            "pcg_iterate": pcg_iterate,
             "residual_energy": operator.residual_energy,
             "linearization_cache_resource_receipt": dict(
                 operator.linearization_cache_resource_receipt
@@ -3723,7 +3773,8 @@ def compile_lfm2_cached_qk_score_residual_fold(
             zero_bilinear_jacobian
             or pcg_report.termination == "zero_score_residual_gradient"
         )
-        if not pcg_report.converged:
+        if not pcg_iterate["functional_frontier_permitted"]:
+            sweep_report["functional_frontier_evaluated"] = False
             sweeps.append(sweep_report)
             fallback_body = {
                 "schema": LFM2_CACHED_QK_SCORE_RESIDUAL_SCHEMA,
@@ -3764,7 +3815,15 @@ def compile_lfm2_cached_qk_score_residual_fold(
                 seed=seed,
                 accepted=False,
                 changed=False,
-                status="pcg_nonconverged_seed_fallback",
+                status=(
+                    "unidentifiable_zero_bilinear_jacobian"
+                    if zero_bilinear_jacobian
+                    else (
+                        "pcg_nonconverged_seed_fallback"
+                        if not pcg_report.converged
+                        else "pcg_unusable_seed_fallback"
+                    )
+                ),
                 fit_metrics=initial_fit_metrics,
                 fit_check_metrics=None,
                 report_body=fallback_body,
@@ -3864,6 +3923,8 @@ def compile_lfm2_cached_qk_score_residual_fold(
                 "unscaled_query_relative_delta": query_relative,
                 "unscaled_key_relative_delta": key_relative,
                 "trust_scale": trust_scale,
+                "functional_frontier_evaluated": True,
+                "functional_frontier_materialization_dtype": "torch.bfloat16",
                 "frontier": frontier,
                 "selected_alpha": selected_alpha,
                 "selected_query_weight_sha256": _tensor_sha256(selected_query),
@@ -3873,6 +3934,11 @@ def compile_lfm2_cached_qk_score_residual_fold(
         sweeps.append(sweep_report)
         same_state = torch.equal(selected_query, current_query) and torch.equal(
             selected_key, current_key
+        )
+        functional_candidate_eligible = selected_alpha != 0.0 and not same_state
+        sweep_report["functional_candidate_eligible"] = functional_candidate_eligible
+        sweep_report["functionally_selected_approximate_pcg_iterate"] = (
+            functional_candidate_eligible and not pcg_report.converged
         )
         if selected_alpha == 0.0 or same_state:
             break
@@ -4041,6 +4107,10 @@ def compile_lfm2_cached_qk_score_residual_fold(
     fit_check_after = fit_check_bank.verify()
     source_unchanged = fit_before == fit_after and fit_check_before == fit_check_after
     accepted = fit_check_accepted and source_unchanged
+    functionally_selected_approximate_pcg_iterate = any(
+        bool(sweep.get("functionally_selected_approximate_pcg_iterate", False))
+        for sweep in sweeps
+    )
     published_query = current_query.detach().cpu() if accepted else seed.query_weight
     published_key = current_key.detach().cpu() if accepted else seed.key_weight
     final_body = {
@@ -4074,6 +4144,9 @@ def compile_lfm2_cached_qk_score_residual_fold(
         "fit_check_exact_seed_target_proof": (fit_check_exact_seed_target_proof),
         "fit_check_evaluated": True,
         "fit_check_triggered_refit": False,
+        "functionally_accepted_approximate_pcg_iterate": (
+            accepted and functionally_selected_approximate_pcg_iterate
+        ),
         "operation_audit": {
             "fit_cases_consumed": len(fit_bank.cases),
             "fit_check_cases_consumed": len(fit_check_bank.cases),
