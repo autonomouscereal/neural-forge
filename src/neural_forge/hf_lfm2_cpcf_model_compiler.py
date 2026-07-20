@@ -857,6 +857,68 @@ def _layer_runtime(layer: Any) -> tuple[Any, Any]:
     return next(iter(devices)), next(iter(dtypes))
 
 
+def _named_layer_tensors(
+    layer: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return alias-complete parameter and buffer inventories."""
+
+    def values(method_name: str) -> dict[str, Any]:
+        method = getattr(layer, method_name, None)
+        if not callable(method):
+            raise Lfm2CpcfModelCompilerError(
+                f"Target layer must expose {method_name}()."
+            )
+        try:
+            observed = tuple(method(remove_duplicate=False))
+        except TypeError as exc:  # pragma: no cover - unsupported Torch boundary
+            raise Lfm2CpcfModelCompilerError(
+                f"Target layer {method_name}() does not expose the required "
+                "alias-complete inventory."
+            ) from exc
+        names = [str(name) for name, _value in observed]
+        if len(set(names)) != len(names):
+            raise Lfm2CpcfModelCompilerError(
+                f"Target layer {method_name}() contains duplicate names."
+            )
+        return {str(name): value for name, value in observed}
+
+    parameters = values("named_parameters")
+    buffers = values("named_buffers")
+    if set(parameters) & set(buffers):
+        raise Lfm2CpcfModelCompilerError(
+            "Target layer parameter and buffer names collide."
+        )
+    return parameters, buffers
+
+
+def _layer_tensor_alias_partition(
+    values: Mapping[str, Any],
+    *,
+    storage: bool,
+) -> tuple[tuple[str, ...], ...]:
+    """Describe object or storage aliases without binding device addresses."""
+
+    groups: dict[Any, list[str]] = {}
+    for name, value in values.items():
+        if storage and int(value.numel()) != 0:
+            key = (
+                value.device.type,
+                value.device.index,
+                int(value.untyped_storage().data_ptr()),
+            )
+        elif storage:
+            key = ("empty", id(value))
+        else:
+            key = id(value)
+        groups.setdefault(key, []).append(name)
+    return tuple(
+        sorted(
+            (tuple(sorted(names)) for names in groups.values()),
+            key=lambda names: names,
+        )
+    )
+
+
 def _unique_parameter_count(model: Any) -> int:
     seen: set[int] = set()
     count = 0
@@ -1479,8 +1541,16 @@ def replay_lfm2_cpcf_phase_bank(
     *,
     layer_index: int,
     input_bank: Lfm2CpcfPhaseStateBank,
+    execution_layer: Any | None = None,
 ) -> Lfm2CpcfLayerReplayBank:
-    """Replay one installed macrocell on all actual folded-upstream prefixes."""
+    """Replay one installed macrocell on all actual folded-upstream prefixes.
+
+    ``execution_layer`` is an explicit layer-local execution override used by
+    bounded candidate evaluators.  Omitting it retains the canonical serial
+    path exactly: the layer is read from ``target_model`` as before.  The
+    override never substitutes a model, changes the causal input bank, or
+    permits a topology different from the canonical target layer.
+    """
 
     torch = _torch()
     if not isinstance(input_bank, Lfm2CpcfPhaseStateBank):
@@ -1493,7 +1563,115 @@ def replay_lfm2_cpcf_phase_bank(
         raise Lfm2CpcfModelCompilerError(
             "Input state bank is not the next sequential layer boundary."
         )
-    layer = layers[index]
+    canonical_layer = layers[index]
+    layer = canonical_layer if execution_layer is None else execution_layer
+    if execution_layer is not None:
+        torch = _torch()
+        canonical_parameters, canonical_buffers = _named_layer_tensors(
+            canonical_layer
+        )
+        execution_parameters, execution_buffers = _named_layer_tensors(layer)
+        canonical_tensors = {
+            **{
+                f"parameter::{name}": value
+                for name, value in canonical_parameters.items()
+            },
+            **{
+                f"buffer::{name}": value
+                for name, value in canonical_buffers.items()
+            },
+        }
+        execution_tensors = {
+            **{
+                f"parameter::{name}": value
+                for name, value in execution_parameters.items()
+            },
+            **{
+                f"buffer::{name}": value
+                for name, value in execution_buffers.items()
+            },
+        }
+        execution_devices = {
+            value.device for value in execution_tensors.values()
+        }
+        if (
+            layer is canonical_layer
+            or bool(getattr(layer, "is_attention_layer", False))
+            != bool(getattr(canonical_layer, "is_attention_layer", False))
+            or not canonical_parameters
+            or set(execution_parameters) != set(canonical_parameters)
+            or set(execution_buffers) != set(canonical_buffers)
+            or set(execution_tensors) != set(canonical_tensors)
+            or len(execution_devices) != 1
+            or any(
+                not isinstance(actual, torch.Tensor)
+                or not isinstance(expected, torch.Tensor)
+                or tuple(actual.shape) != tuple(expected.shape)
+                or actual.dtype != expected.dtype
+                or actual.layout != expected.layout
+                or tuple(actual.stride()) != tuple(expected.stride())
+                or int(actual.storage_offset())
+                != int(expected.storage_offset())
+                for name, expected in canonical_tensors.items()
+                for actual in (execution_tensors[name],)
+            )
+            or _layer_tensor_alias_partition(
+                canonical_tensors,
+                storage=False,
+            )
+            != _layer_tensor_alias_partition(
+                execution_tensors,
+                storage=False,
+            )
+            or _layer_tensor_alias_partition(
+                canonical_tensors,
+                storage=True,
+            )
+            != _layer_tensor_alias_partition(
+                execution_tensors,
+                storage=True,
+            )
+            or any(
+                bool(execution_parameters[name].requires_grad)
+                != bool(canonical_parameters[name].requires_grad)
+                for name in canonical_parameters
+            )
+        ):
+            raise Lfm2CpcfModelCompilerError(
+                "execution_layer must be one private topology-identical "
+                "parameter-and-buffer target layer replica."
+            )
+        canonical_storage = {
+            (
+                value.device.type,
+                value.device.index,
+                int(value.untyped_storage().data_ptr()),
+            )
+            for value in canonical_tensors.values()
+            if value.numel() != 0
+        }
+        execution_storage = {
+            (
+                value.device.type,
+                value.device.index,
+                int(value.untyped_storage().data_ptr()),
+            )
+            for value in execution_tensors.values()
+            if value.numel() != 0
+        }
+        if canonical_storage & execution_storage:
+            raise Lfm2CpcfModelCompilerError(
+                "execution_layer shares parameter storage or buffer storage "
+                "with the canonical target layer."
+            )
+        if any(
+            value.device != next(iter(execution_devices))
+            for value in execution_tensors.values()
+        ):
+            raise Lfm2CpcfModelCompilerError(
+                "execution_layer parameters and buffers do not share one "
+                "execution device."
+            )
     runtime_device, runtime_dtype = _layer_runtime(layer)
     replays = {}
     post_states = {}
@@ -1773,6 +1951,23 @@ def replay_lfm2_cpcf_phase_bank(
         "parameters_pruned": 0,
         "parameters_quantized": 0,
     }
+    if execution_layer is not None:
+        body = {
+            **body,
+            "execution_layer_override": True,
+            "canonical_model_layer_executed": False,
+            "private_layer_replica_required": True,
+            "private_layer_replica_storage_isolated": True,
+            "private_layer_replica_parameter_and_buffer_topology_verified": (
+                True
+            ),
+            "private_layer_replica_parameter_and_buffer_aliases_preserved": (
+                True
+            ),
+            "private_layer_replica_parameter_and_buffer_storage_isolated": (
+                True
+            ),
+        }
     report = {**body, "report_sha256": _sha(body)}
     return Lfm2CpcfLayerReplayBank(
         layer_index=index,

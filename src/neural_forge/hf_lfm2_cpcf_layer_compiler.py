@@ -21,19 +21,27 @@ training, pruning, quantization, or fallback path is used here.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
 import re
+import threading
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
+from neural_forge.dynamic_replay_scheduler import (
+    DeterministicReplayScheduler,
+    ReplayReplicaReceipt,
+)
 from neural_forge.hf_lfm2_cpcf_boundary_bundle import (
     Lfm2CpcfLayerBoundaryCharts,
 )
 from neural_forge.hf_lfm2_cpcf_candidate_replay import (
+    AuthenticatedTwoGpuLfm2CpcfCandidateReplayEvaluator,
     Lfm2CpcfCandidateReplayEvaluator,
 )
 from neural_forge.hf_lfm2_cpcf_model_compiler import (
@@ -89,6 +97,12 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
 from neural_forge.hf_lfm2_cpcf_short_conv_v4_policy import (
     parse_lfm2_cpcf_short_conv_v4_solver_policy,
 )
+from neural_forge.hf_lfm2_sequence_effective_attention_fold import (
+    FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID,
+    Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+    compile_lfm2_fixed_qk_sequence_effective_attention_fold,
+    install_lfm2_fixed_qk_sequence_effective_attention_fold,
+)
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (
     Lfm2AttentionScorePreservationReport,
     Lfm2CachedAttentionFoldCase,
@@ -116,6 +130,22 @@ LFM2_CPCF_LAYER_COMPILER_SCHEMA = "neural-forge-lfm2-cpcf-layer-compiler-v1"
 LFM2_CPCF_LAYER_FAILURE_SCHEMA = "neural-forge-lfm2-cpcf-layer-failure-v3"
 LFM2_CPCF_RESIDUAL_ATTENTION_SPLIT_SCHEMA = (
     "neural-forge-lfm2-cpcf-residual-attention-split-v1"
+)
+LFM2_CPCF_ATTENTION_CANDIDATE_SELECTION_SCHEMA = (
+    "neural-forge-lfm2-cpcf-attention-candidate-selection-v2"
+)
+LFM2_CPCF_SHORT_CONV_TWO_LANE_EXECUTION_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-two-lane-execution-v1"
+)
+LFM2_CPCF_SHORT_CONV_TWO_LANE_SEMANTIC_PARITY_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-two-lane-semantic-parity-v1"
+)
+DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID = "direct_monolithic"
+RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID = "residual_attention_split"
+LFM2_CPCF_ATTENTION_CANDIDATE_IDS = (
+    DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID,
+    RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID,
+    FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID,
 )
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _EVALUATION_SPLITS = ("fit", "validation")
@@ -4113,7 +4143,9 @@ def _metrics(prediction: Any, target: Any) -> Mapping[str, Any]:
 def _attention_context_preservation_metrics(
     *,
     operator_artifact: (
-        Lfm2CompiledStructuralAttentionFold | Lfm2CompiledCpcfResidualAttentionSplitFold
+        Lfm2CompiledStructuralAttentionFold
+        | Lfm2CompiledCpcfResidualAttentionSplitFold
+        | Lfm2CompiledFixedQkSequenceEffectiveAttentionFold
     ),
     cases: Sequence[Lfm2CachedAttentionFoldCase],
     actual_child_contexts: Sequence[Any],
@@ -4123,7 +4155,10 @@ def _attention_context_preservation_metrics(
     torch = _torch()
     if isinstance(
         operator_artifact,
-        Lfm2CompiledCpcfResidualAttentionSplitFold,
+        (
+            Lfm2CompiledCpcfResidualAttentionSplitFold,
+            Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+        ),
     ):
         producer = operator_artifact.producer_artifact
         query_groups = producer.query_groups
@@ -4414,7 +4449,9 @@ def _install_cpcf_attention_artifact(
     source_attention: Any,
     target_attention: Any,
     artifact: (
-        Lfm2CompiledStructuralAttentionFold | Lfm2CompiledCpcfResidualAttentionSplitFold
+        Lfm2CompiledStructuralAttentionFold
+        | Lfm2CompiledCpcfResidualAttentionSplitFold
+        | Lfm2CompiledFixedQkSequenceEffectiveAttentionFold
     ),
 ) -> Mapping[str, Any]:
     """Install one complete attention candidate into the existing blank shell."""
@@ -4428,6 +4465,16 @@ def _install_cpcf_attention_artifact(
             target_attention,
             artifact,
         ).as_dict()
+    elif isinstance(
+        artifact,
+        Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+    ):
+        raw_operator_install = (
+            install_lfm2_fixed_qk_sequence_effective_attention_fold(
+                target_attention,
+                artifact,
+            ).as_dict()
+        )
     elif isinstance(
         artifact,
         Lfm2CompiledCpcfResidualAttentionSplitFold,
@@ -4571,8 +4618,20 @@ def _attention_candidate_selection_key(
     selection_metrics: Mapping[str, Any],
     selection_context_metrics: Mapping[str, Any],
     query_key_score_report: Lfm2AttentionScorePreservationReport,
-) -> tuple[float, float, float, float, float, float, float, str]:
-    """Rank attention behavior first, then the complete macrocell endpoint."""
+) -> tuple[
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    str,
+]:
+    """Rank closed-loop sequence endpoint/drift before context safeguards."""
 
     if set(selection_metrics) != {"selection"}:
         raise Lfm2CpcfLayerCompilerError(
@@ -4608,9 +4667,31 @@ def _attention_candidate_selection_key(
         raise Lfm2CpcfLayerCompilerError(
             "Attention candidate lacks causal-phase selection metrics."
         )
+    ordered_phases: list[tuple[int, str]] = []
+    for phase_name in phase_metrics:
+        if phase_name == "prefill":
+            causal_index = 0
+        else:
+            match = re.fullmatch(r"decode\.(\d{3,})", phase_name)
+            if match is None:
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Attention candidate phase {phase_name!r} is not causal."
+                )
+            causal_index = int(match.group(1)) + 1
+        ordered_phases.append((causal_index, phase_name))
+    ordered_phases.sort()
+    if (
+        ordered_phases[0][1] != "prefill"
+        or [value[0] for value in ordered_phases]
+        != list(range(len(ordered_phases)))
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention candidate selection phases are not one complete "
+            "prefill-plus-decode trajectory."
+        )
     relative_errors = []
     cosines = []
-    for phase_name in sorted(phase_metrics):
+    for _causal_index, phase_name in ordered_phases:
         post_layer = phase_metrics[phase_name].get("post_layer")
         if not isinstance(post_layer, Mapping):
             raise Lfm2CpcfLayerCompilerError(
@@ -4632,7 +4713,12 @@ def _attention_candidate_selection_key(
             )
         relative_errors.append(float(relative_error))
         cosines.append(float(cosine))
-    aggregate = split["post_layer"]["relative_rmse"]
+    aggregate_metrics = split.get("post_layer")
+    if not isinstance(aggregate_metrics, Mapping):
+        raise Lfm2CpcfLayerCompilerError(
+            "Attention candidate lacks aggregate post-layer metrics."
+        )
+    aggregate = aggregate_metrics.get("relative_rmse")
     if (
         isinstance(aggregate, bool)
         or not isinstance(aggregate, (int, float))
@@ -4642,14 +4728,27 @@ def _attention_candidate_selection_key(
         raise Lfm2CpcfLayerCompilerError(
             "Attention aggregate selection metric is invalid."
         )
+    maximum_causal_drift = max(
+        (
+            abs(current - previous)
+            for previous, current in zip(
+                relative_errors,
+                relative_errors[1:],
+            )
+        ),
+        default=0.0,
+    )
     return (
+        relative_errors[-1],
+        maximum_causal_drift,
+        max(relative_errors),
+        float(aggregate),
+        -cosines[-1],
+        -min(cosines),
         float(context_relative_error),
         -float(context_cosine),
         float(query_key_score_report.js_divergence_worst),
         -float(query_key_score_report.top1_key_agreement_fraction),
-        max(relative_errors),
-        -min(cosines),
-        float(aggregate),
         candidate_id,
     )
 
@@ -4668,6 +4767,9 @@ class _Lfm2CpcfAttentionCandidateEvaluation:
     installed_mlp_state_sha256: str
     rollback_proof: Mapping[str, Any]
     selection_key: tuple[
+        float,
+        float,
+        float,
         float,
         float,
         float,
@@ -4827,6 +4929,10 @@ def _seal_attention_candidate_evaluation(
     installed_mlp_state_sha256: str,
     rollback_proof: Mapping[str, Any],
 ) -> _Lfm2CpcfAttentionCandidateEvaluation:
+    if candidate_id not in LFM2_CPCF_ATTENTION_CANDIDATE_IDS:
+        raise Lfm2CpcfLayerCompilerError(
+            f"Unknown attention candidate {candidate_id!r}."
+        )
     selection_key = _attention_candidate_selection_key(
         candidate_id,
         selection_metrics,
@@ -4886,7 +4992,9 @@ def _seal_attention_candidate_evaluation(
         "validation_phase_count_consumed": 0,
         "live_operator_state_authenticated_before_fit_replay": True,
         "live_mlp_state_authenticated_before_selection_replay": True,
-        "selection_context_ranked_before_post_layer_endpoint": True,
+        "sequence_endpoint_ranked_before_context_reconstruction": True,
+        "maximum_consecutive_causal_phase_drift_ranked": True,
+        "selection_context_used_as_finite_safeguard": True,
         "whole_macrocell_post_layer_causal_phase_ranking": True,
         "training_steps": 0,
         "parameters_pruned": 0,
@@ -4917,28 +5025,34 @@ def _freeze_attention_candidate_winner(
     Mapping[str, Any],
 ]:
     values = tuple(candidates)
-    if {value.candidate_id for value in values} != {
-        "direct_monolithic",
-        "residual_attention_split",
-    } or len(values) != 2:
+    if (
+        {value.candidate_id for value in values}
+        != set(LFM2_CPCF_ATTENTION_CANDIDATE_IDS)
+        or len(values) != len(LFM2_CPCF_ATTENTION_CANDIDATE_IDS)
+    ):
         raise Lfm2CpcfLayerCompilerError(
-            "Attention selection requires exactly the direct and split "
-            "macrocell candidates."
+            "Attention selection requires exactly the authenticated "
+            "three-arm macrocell inventory."
         )
     winner = min(values, key=lambda value: value.selection_key)
-    ordered = sorted(values, key=lambda value: value.candidate_id)
+    by_id = {value.candidate_id: value for value in values}
+    ordered = [by_id[candidate_id] for candidate_id in LFM2_CPCF_ATTENTION_CANDIDATE_IDS]
     body = {
-        "schema": "neural-forge-lfm2-cpcf-attention-candidate-selection-v1",
+        "schema": LFM2_CPCF_ATTENTION_CANDIDATE_SELECTION_SCHEMA,
         "ranking_rule": [
-            "minimum_selection_context_relative_rmse",
-            "maximum_selection_context_cosine_similarity",
-            "minimum_selection_query_key_js_divergence",
-            "maximum_selection_query_key_top1_agreement",
+            "minimum_final_causal_phase_post_layer_relative_rmse",
+            "minimum_maximum_consecutive_causal_phase_relative_rmse_drift",
             "minimum_worst_causal_phase_post_layer_relative_rmse",
-            "maximum_worst_causal_phase_post_layer_cosine_similarity",
             "minimum_aggregate_post_layer_relative_rmse",
+            "maximum_final_causal_phase_post_layer_cosine_similarity",
+            "maximum_worst_causal_phase_post_layer_cosine_similarity",
+            "minimum_selection_context_relative_rmse_safeguard",
+            "maximum_selection_context_cosine_similarity_safeguard",
+            "minimum_selection_query_key_js_divergence_safeguard",
+            "maximum_selection_query_key_top1_agreement_safeguard",
             "lexical_candidate_id_tie_break",
         ],
+        "candidate_count": len(ordered),
         "candidate_ids": [value.candidate_id for value in ordered],
         "candidate_report_sha256": {
             value.candidate_id: value.report["report_sha256"] for value in ordered
@@ -4949,6 +5063,10 @@ def _freeze_attention_candidate_winner(
         "winner_frozen_before_validation": True,
         "validation_phase_count_consumed_before_freeze": 0,
         "operator_and_own_fit_mlp_ranked_together": True,
+        "selection_objective": (
+            "closed_loop_sequence_endpoint_then_causal_drift_with_context_"
+            "and_query_key_finite_safeguards"
+        ),
         "training_steps": 0,
         "parameters_pruned": 0,
         "parameters_quantized": 0,
@@ -5244,11 +5362,383 @@ def _short_conv_macrocell_score(
 
 
 @dataclass(frozen=True, slots=True)
+class _Lfm2CpcfShortConvExecutionLane:
+    lane_index: int
+    device: Any
+    device_index: int
+    device_uuid: str
+    device_receipt_sha256: str
+    replica_receipt_sha256: str
+    installed_state_fingerprint_sha256: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "lane_index": self.lane_index,
+            "device": str(self.device),
+            "device_index": self.device_index,
+            "device_uuid": self.device_uuid,
+            "device_receipt_sha256": self.device_receipt_sha256,
+            "replica_receipt_sha256": self.replica_receipt_sha256,
+            "installed_state_fingerprint_sha256": (
+                self.installed_state_fingerprint_sha256
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class _Lfm2CpcfShortConvTwoLaneRuntime:
+    lanes: tuple[
+        _Lfm2CpcfShortConvExecutionLane,
+        _Lfm2CpcfShortConvExecutionLane,
+    ]
+    runtime_authentication_report: Mapping[str, Any]
+    runtime_authentication_report_sha256: str
+    scheduler_policy_sha256: str
+
+
+def _authenticated_short_conv_two_lane_runtime(
+    candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None,
+) -> _Lfm2CpcfShortConvTwoLaneRuntime | None:
+    """Derive two explicit devices solely from a freshly sealed scheduler."""
+
+    scheduler = getattr(candidate_replay_evaluator, "scheduler", None)
+    if scheduler is None:
+        return None
+    if (
+        type(candidate_replay_evaluator)
+        is not AuthenticatedTwoGpuLfm2CpcfCandidateReplayEvaluator
+        or type(scheduler) is not DeterministicReplayScheduler
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "A requested macrocell scheduler must be the exact authenticated "
+            "two-CUDA replay runtime."
+        )
+    runtime_value = scheduler.authenticate_runtime()
+    runtime_report = _plain_json_metadata(runtime_value)
+    runtime_body = dict(runtime_report)
+    runtime_sha = _digest(
+        runtime_body.pop("report_sha256", None),
+        "two_lane_runtime.report_sha256",
+    )
+    replicas = scheduler.replicas
+    policy = scheduler.policy
+    if (
+        _sha(runtime_body) != runtime_sha
+        or runtime_report.get("schema")
+        != "neural-forge-dynamic-replay-live-runtime-authentication-v1"
+        or runtime_report.get("device_receipts_freshly_probed") is not True
+        or runtime_report.get("installed_states_freshly_rehashed") is not True
+        or not isinstance(replicas, tuple)
+        or len(replicas) != 2
+        or policy.expected_device_count != 2
+        or runtime_report.get("replicas")
+        != [_plain_json_metadata(replica.as_dict()) for replica in replicas]
+        or runtime_report.get("policy") != _plain_json_metadata(policy.as_dict())
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Fresh two-lane scheduler authentication is incomplete or changed."
+        )
+    torch = _torch()
+    lanes = []
+    seen_indices: set[int] = set()
+    seen_uuids: set[str] = set()
+    seen_pci: set[tuple[int, int, int]] = set()
+    for lane_index, replica in enumerate(replicas):
+        if type(replica) is not ReplayReplicaReceipt:
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane execution requires exact sealed replay replicas."
+            )
+        device_receipt = replica.device
+        installed_state = replica.installed_state
+        device_index = device_receipt.device_index
+        pci_identity = (
+            device_receipt.pci_domain_id,
+            device_receipt.pci_bus_id,
+            device_receipt.pci_device_id,
+        )
+        if (
+            replica.receipt_sha256 != _sha(replica._body())
+            or device_receipt.receipt_sha256 != _sha(device_receipt._body())
+            or installed_state.fingerprint_sha256 != _sha(installed_state._body())
+            or isinstance(device_index, bool)
+            or not isinstance(device_index, int)
+            or device_index < 0
+            or device_index in seen_indices
+            or device_receipt.device_uuid in seen_uuids
+            or pci_identity in seen_pci
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane CUDA replica identity or receipt authentication failed."
+            )
+        explicit_device = torch.device(f"cuda:{device_index}")
+        if explicit_device.type != "cuda" or explicit_device.index != device_index:
+            raise Lfm2CpcfLayerCompilerError(
+                "Authenticated scheduler did not resolve an explicit CUDA device."
+            )
+        seen_indices.add(device_index)
+        seen_uuids.add(device_receipt.device_uuid)
+        seen_pci.add(pci_identity)
+        lanes.append(
+            _Lfm2CpcfShortConvExecutionLane(
+                lane_index=lane_index,
+                device=explicit_device,
+                device_index=device_index,
+                device_uuid=device_receipt.device_uuid,
+                device_receipt_sha256=device_receipt.receipt_sha256,
+                replica_receipt_sha256=replica.receipt_sha256,
+                installed_state_fingerprint_sha256=(
+                    installed_state.fingerprint_sha256
+                ),
+            )
+        )
+    if len(lanes) != 2:
+        raise Lfm2CpcfLayerCompilerError(
+            "Two-lane execution requires exactly two authenticated devices."
+        )
+    return _Lfm2CpcfShortConvTwoLaneRuntime(
+        lanes=(lanes[0], lanes[1]),
+        runtime_authentication_report=MappingProxyType(runtime_report),
+        runtime_authentication_report_sha256=runtime_sha,
+        scheduler_policy_sha256=_sha(runtime_report["policy"]),
+    )
+
+
+def _replay_archive_logical_bytes(replay_bank: Lfm2CpcfLayerReplayBank) -> int:
+    """Count unique archived tensor storages retained by one replay tree."""
+
+    torch = _torch()
+    tensors = []
+    for replay in replay_bank.replays.values():
+        tensors.extend(
+            (
+                replay.operator_input,
+                replay.operator_delta,
+                replay.post_operator_residual,
+                replay.mlp_input,
+                replay.mlp_delta,
+                replay.post_layer_residual,
+            )
+        )
+    tensors.extend(replay_bank.post_layer_bank.states.values())
+    seen: set[tuple[str, int | None, int]] = set()
+    total = 0
+    for value in tensors:
+        if not isinstance(value, torch.Tensor) or value.numel() == 0:
+            continue
+        key = (
+            value.device.type,
+            value.device.index,
+            int(value.untyped_storage().data_ptr()),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        total += int(value.untyped_storage().nbytes())
+    return total
+
+
+def _macrocell_replay_semantic_signature(
+    replay_bank: Lfm2CpcfLayerReplayBank,
+) -> Mapping[str, Any]:
+    """Seal lane-independent replay endpoints and the causal output bank."""
+
+    expected_endpoints = {
+        "operator_input",
+        "operator_output_input",
+        "operator_delta",
+        "post_operator_residual",
+        "mlp_input",
+        "mlp_delta",
+        "post_layer_residual",
+    }
+    ordered = []
+    for phase in replay_bank.post_layer_bank.phases:
+        replay = replay_bank.replays[phase.identity]
+        endpoint_sha256 = replay.report.get("endpoint_sha256")
+        if (
+            not isinstance(endpoint_sha256, Mapping)
+            or set(endpoint_sha256) != expected_endpoints
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane semantic parity lacks one complete replay endpoint "
+                "hash bundle."
+            )
+        normalized_endpoints = {
+            str(name): _digest(
+                endpoint_sha256[name],
+                f"replay.endpoint_sha256.{name}",
+            )
+            for name in sorted(expected_endpoints)
+        }
+        ordered.append(
+            {
+                "identity": [phase.batch_index, phase.phase],
+                "endpoint_sha256": normalized_endpoints,
+                "endpoint_bundle_sha256": _sha(normalized_endpoints),
+            }
+        )
+    body = {
+        "schema": (
+            "neural-forge-lfm2-cpcf-short-conv-replay-semantic-signature-v1"
+        ),
+        "layer_index": replay_bank.layer_index,
+        "input_bank_sha256": replay_bank.input_bank_sha256,
+        "ordered_phase_endpoint_sha256": ordered,
+        "post_layer_bank_sha256": (
+            replay_bank.post_layer_bank.state_bank_sha256
+        ),
+    }
+    return MappingProxyType({**body, "signature_sha256": _sha(body)})
+
+
+def _private_two_lane_replicas(
+    target_layer: Any,
+    runtime: _Lfm2CpcfShortConvTwoLaneRuntime,
+) -> tuple[Any, Any]:
+    """Create exactly two layer-only copies and prove storage isolation."""
+
+    replicas = tuple(
+        copy.deepcopy(target_layer).to(device=lane.device)
+        for lane in runtime.lanes
+    )
+    if len(replicas) != 2 or replicas[0] is replicas[1]:
+        raise Lfm2CpcfLayerCompilerError(
+            "Two-lane macrocell execution did not create exactly two replicas."
+        )
+    canonical_tensors = _module_tensors(target_layer)
+    replica_tensors = tuple(_module_tensors(replica) for replica in replicas)
+    expected = {
+        name: (tuple(value.shape), value.dtype)
+        for name, value in canonical_tensors.items()
+    }
+    storage_sets = []
+    for lane, values in zip(runtime.lanes, replica_tensors, strict=True):
+        observed = {
+            name: (tuple(value.shape), value.dtype) for name, value in values.items()
+        }
+        devices = {value.device for value in values.values()}
+        if observed != expected or devices != {lane.device}:
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane target replica topology or device differs from its "
+                "canonical layer contract."
+            )
+        storage_sets.append(
+            {
+                (
+                    value.device.type,
+                    value.device.index,
+                    int(value.untyped_storage().data_ptr()),
+                )
+                for value in values.values()
+                if value.numel() != 0
+            }
+        )
+    canonical_storage = {
+        (
+            value.device.type,
+            value.device.index,
+            int(value.untyped_storage().data_ptr()),
+        )
+        for value in canonical_tensors.values()
+        if value.numel() != 0
+    }
+    if (
+        canonical_storage & storage_sets[0]
+        or canonical_storage & storage_sets[1]
+        or storage_sets[0] & storage_sets[1]
+    ):
+        raise Lfm2CpcfLayerCompilerError(
+            "Two-lane target replicas share tensor storage with another lane "
+            "or the canonical target layer."
+        )
+    return replicas[0], replicas[1]
+
+
+@dataclass(frozen=True, slots=True)
 class _Lfm2CpcfShortConvMacrocellEvaluation:
     candidate: Lfm2CpcfShortConvV5MacrocellCandidate
     mlp_artifact: Lfm2CompiledStructuralMlpFold
     selection_key: tuple[float | str, ...]
     report: Mapping[str, Any]
+
+
+def _prove_exact_cross_lane_macrocell_parity(
+    left: _Lfm2CpcfShortConvMacrocellEvaluation,
+    right: _Lfm2CpcfShortConvMacrocellEvaluation,
+    *,
+    left_signature: Mapping[str, Any],
+    right_signature: Mapping[str, Any],
+    runtime: _Lfm2CpcfShortConvTwoLaneRuntime,
+) -> Mapping[str, Any]:
+    """Fail closed unless both real lanes produce byte-identical semantics."""
+
+    signatures = []
+    for lane, evaluation, signature_value in zip(
+        runtime.lanes,
+        (left, right),
+        (left_signature, right_signature),
+        strict=True,
+    ):
+        if not isinstance(signature_value, Mapping):
+            raise Lfm2CpcfLayerCompilerError(
+                "Cross-lane macrocell parity lacks a semantic signature."
+            )
+        signature = _plain_json_metadata(signature_value)
+        signature_body = dict(signature)
+        signature_sha256 = _digest(
+            signature_body.pop("signature_sha256", None),
+            "semantic_parity_signature.signature_sha256",
+        )
+        if (
+            signature.get("schema")
+            != LFM2_CPCF_SHORT_CONV_TWO_LANE_SEMANTIC_PARITY_SCHEMA
+            or _sha(signature_body) != signature_sha256
+            or signature.get("candidate_id")
+            != evaluation.candidate.candidate_id
+            or signature.get("candidate_state_sha256")
+            != evaluation.candidate.state_sha256
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                f"Lane {lane.lane_index} semantic parity signature is "
+                "unauthenticated."
+            )
+        signatures.append(signature)
+    if _canonical_json(signatures[0]) != _canonical_json(signatures[1]):
+        raise Lfm2CpcfLayerCompilerError(
+            "Cross-lane macrocell semantic parity failed exact comparison."
+        )
+    representative_id = left.candidate.candidate_id
+    if representative_id != right.candidate.candidate_id:
+        raise Lfm2CpcfLayerCompilerError(
+            "Cross-lane macrocell parity evaluated different candidates."
+        )
+    body = {
+        "schema": (
+            "neural-forge-lfm2-cpcf-short-conv-cross-lane-parity-proof-v1"
+        ),
+        "representative_candidate_id": representative_id,
+        "representative_candidate_state_sha256": left.candidate.state_sha256,
+        "semantic_signature_sha256": signatures[0]["signature_sha256"],
+        "lane_evaluation_report_sha256": [
+            left.report["report_sha256"],
+            right.report["report_sha256"],
+        ],
+        "comparison_policy": "exact_canonical_json_byte_equality",
+        "exact_semantic_parity_proven": True,
+        "numeric_tolerances_used": False,
+        "relative_tolerance": 0.0,
+        "absolute_tolerance": 0.0,
+        "same_two_authenticated_execution_lanes_used": True,
+        "cpu_parity_replica_used": False,
+        "third_replica_used": False,
+        "representative_evaluation_count": 2,
+        "lane_zero_representative_result_reused": True,
+        "lane_one_representative_result_discarded_after_parity": True,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    return MappingProxyType({**body, "report_sha256": _sha(body)})
 
 
 class _Lfm2CpcfShortConvMacrocellSelector:
@@ -5272,6 +5762,7 @@ class _Lfm2CpcfShortConvMacrocellSelector:
         audit_input_sha256_before: str,
         boundary_charts_sha256_before: str,
         boundary_charts_payload_sha256_before: str,
+        candidate_replay_evaluator: Lfm2CpcfCandidateReplayEvaluator | None,
         endpoint_selector: Lfm2CpcfShortConvV5CandidateSelector | None,
     ) -> None:
         self.source_layer = source_layer
@@ -5291,6 +5782,7 @@ class _Lfm2CpcfShortConvMacrocellSelector:
         self.boundary_charts_payload_sha256_before = (
             boundary_charts_payload_sha256_before
         )
+        self.candidate_replay_evaluator = candidate_replay_evaluator
         self.endpoint_selector = endpoint_selector
         self.endpoint_control_id: str | None = None
         self.endpoint_selector_report: Mapping[str, Any] | None = None
@@ -5301,9 +5793,776 @@ class _Lfm2CpcfShortConvMacrocellSelector:
         ] = {}
         self.selected: _Lfm2CpcfShortConvMacrocellEvaluation | None = None
         self.decision: Mapping[str, Any] | None = None
+        self.two_lane_execution_receipt: Mapping[str, Any] | None = None
         self.mlp_prepared_basis: Lfm2PreparedStructuralMlpFoldBasis | None = None
         self.mlp_preparation_count = 0
         self.mlp_candidate_compile_count = 0
+
+    def _prepare_two_lane_mlp_basis(
+        self,
+        *,
+        candidate: Lfm2CpcfShortConvV5MacrocellCandidate,
+        execution_layer: Any,
+        execution_snapshot: _LayerSnapshot,
+    ) -> tuple[int, Mapping[str, Any]]:
+        """Prepare the immutable parent-side MLP basis exactly once."""
+
+        fit_replay: Lfm2CpcfLayerReplayBank | None = None
+        peak_replay_bytes = 0
+        _restore_layer(execution_layer, execution_snapshot)
+        try:
+            _install_short_conv_macrocell_candidate(
+                execution_layer.conv,
+                candidate,
+            )
+            fit_replay = replay_lfm2_cpcf_phase_bank(
+                self.target_model,
+                layer_index=self.layer_index,
+                input_bank=self.fit_bank,
+                execution_layer=execution_layer,
+            )
+            peak_replay_bytes = _replay_archive_logical_bytes(fit_replay)
+            self.mlp_prepared_basis = _prepare_cpcf_mlp_basis_from_fit_replay(
+                source_layer=self.source_layer,
+                target_layer=execution_layer,
+                layer_index=self.layer_index,
+                fit_bank=self.fit_bank,
+                operator_fit_replay=fit_replay,
+                chart=self.boundary_charts,
+            )
+            self.mlp_preparation_count += 1
+            del fit_replay
+            fit_replay = None
+        finally:
+            _restore_layer(execution_layer, execution_snapshot)
+        rollback = _prove_exact_layer_rollback(
+            execution_layer,
+            execution_snapshot,
+            source_layer=self.source_layer,
+            source_snapshot=self.source_snapshot,
+            input_bank=self.audit_bank,
+            layer_index=self.layer_index,
+            evidence_sha256_before=self.audit_evidence_sha256_before,
+            input_sha256_before=self.audit_input_sha256_before,
+            boundary_charts=self.boundary_charts,
+            boundary_charts_sha256_before=self.boundary_charts_sha256_before,
+            boundary_charts_payload_sha256_before=(
+                self.boundary_charts_payload_sha256_before
+            ),
+        )
+        if (
+            fit_replay is not None
+            or self.mlp_preparation_count != 1
+            or self.mlp_prepared_basis is None
+            or not self.mlp_prepared_basis.verify_authentication()
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane MLP basis preparation retained replay state or "
+                "failed authentication."
+            )
+        return peak_replay_bytes, rollback
+
+    def _evaluate_two_lane_candidate(
+        self,
+        *,
+        candidate: Lfm2CpcfShortConvV5MacrocellCandidate,
+        execution_layer: Any,
+        execution_snapshot: _LayerSnapshot,
+        lane: _Lfm2CpcfShortConvExecutionLane,
+        runtime: _Lfm2CpcfShortConvTwoLaneRuntime,
+        semantic_parity_sink: list[Mapping[str, Any]] | None = None,
+    ) -> _Lfm2CpcfShortConvMacrocellEvaluation:
+        """Evaluate one candidate on one lane-local target-layer replica."""
+
+        if semantic_parity_sink is not None and (
+            not isinstance(semantic_parity_sink, list)
+            or semantic_parity_sink
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "A semantic parity sink must be one empty invocation-local list."
+            )
+        prepared_basis = self.mlp_prepared_basis
+        if (
+            prepared_basis is None
+            or self.mlp_preparation_count != 1
+            or not prepared_basis.verify_authentication()
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane candidate evaluation lacks its shared MLP basis."
+            )
+        candidate_id = candidate.candidate_id
+        fit_replay: Lfm2CpcfLayerReplayBank | None = None
+        selection_replay: Lfm2CpcfLayerReplayBank | None = None
+        fit_semantic_signature: Mapping[str, Any] | None = None
+        selection_semantic_signature: Mapping[str, Any] | None = None
+        peak_replay_bytes = 0
+        _restore_layer(execution_layer, execution_snapshot)
+        try:
+            install = _install_short_conv_macrocell_candidate(
+                execution_layer.conv,
+                candidate,
+            )
+            fit_replay = replay_lfm2_cpcf_phase_bank(
+                self.target_model,
+                layer_index=self.layer_index,
+                input_bank=self.fit_bank,
+                execution_layer=execution_layer,
+            )
+            peak_replay_bytes = max(
+                peak_replay_bytes,
+                _replay_archive_logical_bytes(fit_replay),
+            )
+            if semantic_parity_sink is not None:
+                fit_semantic_signature = _macrocell_replay_semantic_signature(
+                    fit_replay
+                )
+            fit_replay_sha256 = fit_replay.report["report_sha256"]
+            mlp_artifact = _compile_cpcf_mlp_from_fit_replay(
+                source_layer=self.source_layer,
+                target_layer=execution_layer,
+                layer_index=self.layer_index,
+                fit_bank=self.fit_bank,
+                operator_fit_replay=fit_replay,
+                chart=self.boundary_charts,
+                ridge=self.ridge,
+                prepared_basis=prepared_basis,
+            )
+            if (
+                mlp_artifact.prepared_basis_reused is not True
+                or mlp_artifact.prepared_basis_sha256
+                != prepared_basis.preparation_sha256
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    "Two-lane candidate MLP does not bind the shared prepared "
+                    "parent basis."
+                )
+            mlp_install = install_lfm2_structural_mlp_fold(
+                execution_layer.feed_forward,
+                mlp_artifact,
+            ).as_dict()
+            # The fit replay is no longer needed after the candidate MLP is
+            # materialized.  Releasing it before selection bounds the process
+            # to one live replay tree per lane, two globally.
+            del fit_replay
+            fit_replay = None
+            selection_replay = replay_lfm2_cpcf_phase_bank(
+                self.target_model,
+                layer_index=self.layer_index,
+                input_bank=self.selection_bank,
+                execution_layer=execution_layer,
+            )
+            peak_replay_bytes = max(
+                peak_replay_bytes,
+                _replay_archive_logical_bytes(selection_replay),
+            )
+            selection_replay_sha256 = selection_replay.report["report_sha256"]
+            raw_metrics = _split_endpoint_metrics(
+                layer_index=self.layer_index,
+                input_bank=self.selection_bank,
+                operator_replay=selection_replay,
+                final_replay=selection_replay,
+                chart=self.boundary_charts,
+                splits=("selection",),
+            )
+            metrics = _normalized_macrocell_selection_metrics(
+                candidate_id,
+                self.selection_bank.state_bank_sha256,
+                raw_metrics,
+            )
+            if semantic_parity_sink is not None:
+                selection_semantic_signature = (
+                    _macrocell_replay_semantic_signature(selection_replay)
+                )
+            del selection_replay
+            selection_replay = None
+        finally:
+            _restore_layer(execution_layer, execution_snapshot)
+        rollback = _prove_exact_layer_rollback(
+            execution_layer,
+            execution_snapshot,
+            source_layer=self.source_layer,
+            source_snapshot=self.source_snapshot,
+            input_bank=self.audit_bank,
+            layer_index=self.layer_index,
+            evidence_sha256_before=self.audit_evidence_sha256_before,
+            input_sha256_before=self.audit_input_sha256_before,
+            boundary_charts=self.boundary_charts,
+            boundary_charts_sha256_before=self.boundary_charts_sha256_before,
+            boundary_charts_payload_sha256_before=(
+                self.boundary_charts_payload_sha256_before
+            ),
+        )
+        if fit_replay is not None or selection_replay is not None:
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane candidate retained a replay tree after evaluation."
+            )
+        install_actual = _seal_macrocell_actual(
+            "operator_install",
+            candidate_id,
+            source_report_sha256=install["report_sha256"],
+            compiled_state_sha256=install["compiled_state_sha256"],
+            installed_state_sha256=install["installed_state_sha256"],
+        )
+        install_evidence = _seal_macrocell_evidence(
+            "actual_operator_install",
+            candidate_id,
+            install_actual,
+            candidate_state_sha256=candidate.state_sha256,
+            installed_state_sha256=install["installed_state_sha256"],
+        )
+        fit_actual = _seal_macrocell_actual(
+            "fit_operator_replay",
+            candidate_id,
+            source_report_sha256=fit_replay_sha256,
+            input_bank_sha256=self.fit_bank.state_bank_sha256,
+            macrocell_execution_mode="authenticated_two_static_lanes",
+            macrocell_execution_lane_index=lane.lane_index,
+            macrocell_execution_device=str(lane.device),
+            macrocell_execution_device_receipt_sha256=(
+                lane.device_receipt_sha256
+            ),
+            macrocell_execution_replica_receipt_sha256=(
+                lane.replica_receipt_sha256
+            ),
+            macrocell_execution_runtime_authentication_report_sha256=(
+                runtime.runtime_authentication_report_sha256
+            ),
+            maximum_live_replay_trees_for_lane=1,
+            peak_replay_archive_logical_bytes=peak_replay_bytes,
+            fit_replay_released_before_selection_replay=True,
+            selection_replay_released_before_candidate_return=True,
+        )
+        fit_evidence = _seal_macrocell_evidence(
+            "actual_fit_operator_replay",
+            candidate_id,
+            fit_actual,
+            candidate_state_sha256=candidate.state_sha256,
+            input_bank_sha256=self.fit_bank.state_bank_sha256,
+        )
+        mlp_actual = _seal_macrocell_actual(
+            "fit_mlp_artifact",
+            candidate_id,
+            source_report_sha256=_sha(mlp_artifact.as_dict()),
+            compiled_state_sha256=mlp_artifact.compiled_state_sha256,
+        )
+        mlp_evidence = _seal_macrocell_evidence(
+            "actual_fit_mlp_artifact",
+            candidate_id,
+            mlp_actual,
+            fit_bank_sha256=self.fit_bank.state_bank_sha256,
+            compiled_state_sha256=mlp_artifact.compiled_state_sha256,
+        )
+        mlp_install_actual = _seal_macrocell_actual(
+            "fit_mlp_install",
+            candidate_id,
+            source_report_sha256=_sha(mlp_install),
+            compiled_state_sha256=mlp_install["compiled_state_sha256"],
+            installed_state_sha256=mlp_install["installed_state_sha256"],
+        )
+        mlp_install_evidence = _seal_macrocell_evidence(
+            "actual_fit_mlp_install",
+            candidate_id,
+            mlp_install_actual,
+            compiled_state_sha256=mlp_artifact.compiled_state_sha256,
+            installed_state_sha256=mlp_install["installed_state_sha256"],
+        )
+        selection_actual = _seal_macrocell_actual(
+            "selection_final_replay",
+            candidate_id,
+            source_report_sha256=selection_replay_sha256,
+            input_bank_sha256=self.selection_bank.state_bank_sha256,
+        )
+        selection_evidence = _seal_macrocell_evidence(
+            "actual_selection_final_replay",
+            candidate_id,
+            selection_actual,
+            candidate_state_sha256=candidate.state_sha256,
+            input_bank_sha256=self.selection_bank.state_bank_sha256,
+            mlp_compiled_state_sha256=mlp_artifact.compiled_state_sha256,
+        )
+        rollback_actual = _seal_macrocell_actual(
+            "candidate_rollback",
+            candidate_id,
+            source_report_sha256=rollback["proof_sha256"],
+            target_state_sha256_before=rollback["target_state_sha256_before"],
+            target_state_sha256_after=rollback["target_state_sha256_after"],
+            target_tensor_bytes_restored=True,
+            target_tensor_identities_preserved=True,
+            target_gradient_state_preserved=True,
+            target_module_modes_restored=True,
+            exact_layer_snapshot_restored=True,
+        )
+        rollback_body = {
+            "schema": LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVIDENCE_SCHEMA,
+            "kind": "actual_candidate_rollback",
+            "candidate_id": candidate_id,
+            "target_state_sha256_before": rollback["target_state_sha256_before"],
+            "target_state_sha256_after": rollback["target_state_sha256_after"],
+            "target_tensor_bytes_restored": True,
+            "target_tensor_identities_preserved": True,
+            "target_gradient_state_preserved": True,
+            "target_module_modes_restored": True,
+            "exact_layer_snapshot_restored": True,
+            "actual_report": rollback_actual,
+            "actual_report_sha256": rollback_actual["report_sha256"],
+            "execution": _macrocell_zero_execution(),
+        }
+        rollback_evidence = {
+            **rollback_body,
+            "report_sha256": _sha(rollback_body),
+        }
+        evaluation_body = {
+            "schema": LFM2_CPCF_SHORT_CONV_V5_MACROCELL_EVALUATION_SCHEMA,
+            "candidate_id": candidate_id,
+            "candidate_state_sha256": candidate.state_sha256,
+            "operator_selection_report_sha256": (
+                candidate.operator_selection_report["report_sha256"]
+            ),
+            "fit_provenance_report_sha256": (
+                candidate.fit_provenance["report_sha256"]
+            ),
+            "fit_bank_sha256": self.fit_bank.state_bank_sha256,
+            "selection_bank_sha256": self.selection_bank.state_bank_sha256,
+            "operator_install_report": install_evidence,
+            "operator_install_report_sha256": install_evidence["report_sha256"],
+            "fit_operator_replay_report": fit_evidence,
+            "fit_operator_replay_sha256": fit_evidence["report_sha256"],
+            "fit_mlp_artifact_report": mlp_evidence,
+            "fit_mlp_artifact_report_sha256": mlp_evidence["report_sha256"],
+            "fit_mlp_compiled_state_sha256": mlp_artifact.compiled_state_sha256,
+            "fit_mlp_install_report": mlp_install_evidence,
+            "fit_mlp_install_report_sha256": (
+                mlp_install_evidence["report_sha256"]
+            ),
+            "selection_final_replay_report": selection_evidence,
+            "selection_final_replay_sha256": selection_evidence["report_sha256"],
+            "selection_metrics": metrics,
+            "selection_metrics_report_sha256": metrics["report_sha256"],
+            "fit_only_mlp_fold": True,
+            "selection_only_candidate_evaluation": True,
+            "validation_accessible": False,
+            "validation_replays": 0,
+            "rollback_proof": rollback_evidence,
+            "rollback_proof_sha256": rollback_evidence["report_sha256"],
+            "execution": _macrocell_zero_execution(),
+        }
+        evaluation_report = {
+            **evaluation_body,
+            "report_sha256": _sha(evaluation_body),
+        }
+        key = _short_conv_macrocell_score(candidate_id, metrics)
+        if semantic_parity_sink is not None:
+            if (
+                fit_semantic_signature is None
+                or selection_semantic_signature is None
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    "Two-lane candidate lacks its lane-independent semantic "
+                    "replay signatures."
+                )
+            semantic_body = {
+                "schema": LFM2_CPCF_SHORT_CONV_TWO_LANE_SEMANTIC_PARITY_SCHEMA,
+                "candidate_id": candidate_id,
+                "candidate_state_sha256": candidate.state_sha256,
+                "operator_installed_state_sha256": (
+                    install["installed_state_sha256"]
+                ),
+                "fit_replay_semantic_signature": _plain_json_metadata(
+                    fit_semantic_signature
+                ),
+                "fit_replay_semantic_signature_sha256": (
+                    fit_semantic_signature["signature_sha256"]
+                ),
+                "shared_mlp_basis_sha256": prepared_basis.preparation_sha256,
+                "mlp_compiled_state_sha256": (
+                    mlp_artifact.compiled_state_sha256
+                ),
+                "mlp_installed_state_sha256": (
+                    mlp_install["installed_state_sha256"]
+                ),
+                "selection_replay_semantic_signature": _plain_json_metadata(
+                    selection_semantic_signature
+                ),
+                "selection_replay_semantic_signature_sha256": (
+                    selection_semantic_signature["signature_sha256"]
+                ),
+                "selection_metrics_report_sha256": metrics["report_sha256"],
+                "selection_key": list(key),
+            }
+            semantic_parity_sink.append(
+                MappingProxyType(
+                    {
+                        **semantic_body,
+                        "signature_sha256": _sha(semantic_body),
+                    }
+                )
+            )
+        return _Lfm2CpcfShortConvMacrocellEvaluation(
+            candidate=candidate,
+            mlp_artifact=mlp_artifact,
+            selection_key=key,
+            report=MappingProxyType(evaluation_report),
+        )
+
+    def _evaluate_two_lane(
+        self,
+        *,
+        frontier: Lfm2CpcfShortConvV5CandidateFrontier,
+        evaluated_ids: Sequence[str],
+        runtime: _Lfm2CpcfShortConvTwoLaneRuntime,
+    ) -> tuple[
+        tuple[_Lfm2CpcfShortConvMacrocellEvaluation, ...],
+        Mapping[str, Any],
+    ]:
+        """Run exact cross-lane parity, then canonical static assignments."""
+
+        canonical_ids = tuple(evaluated_ids)
+        if (
+            not canonical_ids
+            or len(set(canonical_ids)) != len(canonical_ids)
+            or len(runtime.lanes) != 2
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane macrocell work must be nonempty and canonical."
+            )
+        replicas = _private_two_lane_replicas(self.target_layer, runtime)
+        replica_snapshots = tuple(_layer_snapshot(replica) for replica in replicas)
+        representative_id = canonical_ids[0]
+        # Candidate zero is first run once on each existing lane.  After exact
+        # semantic parity, lane zero's real result is reused; every other
+        # candidate keeps its original canonical-index parity assignment.
+        assignments = (
+            canonical_ids[2::2],
+            canonical_ids[1::2],
+        )
+        preparation_peak = 0
+        preparation_rollback: Mapping[str, Any] | None = None
+        lane_final_rollbacks: list[Mapping[str, Any] | None] = [None, None]
+        canonical_rollback: Mapping[str, Any] | None = None
+        parity_results: list[
+            _Lfm2CpcfShortConvMacrocellEvaluation | None
+        ] = [None, None]
+        parity_signatures: list[Mapping[str, Any] | None] = [None, None]
+        lane_results: list[
+            tuple[_Lfm2CpcfShortConvMacrocellEvaluation, ...] | None
+        ] = [None, None]
+        parity_proof: Mapping[str, Any] | None = None
+        active_lock = threading.Lock()
+        stop_event = threading.Event()
+        active_lanes = 0
+        maximum_active_lanes = 0
+        failure: BaseException | None = None
+        futures = ()
+        try:
+            preparation_peak, preparation_rollback = (
+                self._prepare_two_lane_mlp_basis(
+                    candidate=frontier.candidate(representative_id),
+                    execution_layer=replicas[0],
+                    execution_snapshot=replica_snapshots[0],
+                )
+            )
+
+            parity_barrier = threading.Barrier(2)
+
+            def run_parity_lane(
+                lane_index: int,
+            ) -> tuple[
+                _Lfm2CpcfShortConvMacrocellEvaluation,
+                Mapping[str, Any],
+            ]:
+                nonlocal active_lanes, maximum_active_lanes
+                parity_barrier.wait()
+                with active_lock:
+                    active_lanes += 1
+                    maximum_active_lanes = max(maximum_active_lanes, active_lanes)
+                try:
+                    semantic_parity_sink: list[Mapping[str, Any]] = []
+                    evaluation = self._evaluate_two_lane_candidate(
+                        candidate=frontier.candidate(representative_id),
+                        execution_layer=replicas[lane_index],
+                        execution_snapshot=replica_snapshots[lane_index],
+                        lane=runtime.lanes[lane_index],
+                        runtime=runtime,
+                        semantic_parity_sink=semantic_parity_sink,
+                    )
+                    if len(semantic_parity_sink) != 1:
+                        raise Lfm2CpcfLayerCompilerError(
+                            "Cross-lane representative did not emit exactly "
+                            "one semantic signature."
+                        )
+                    return evaluation, semantic_parity_sink[0]
+                except BaseException:
+                    stop_event.set()
+                    raise
+                finally:
+                    with active_lock:
+                        active_lanes -= 1
+
+            with ThreadPoolExecutor(
+                max_workers=2,
+                thread_name_prefix="lfm2-shortconv-parity",
+            ) as executor:
+                futures = (
+                    executor.submit(run_parity_lane, 0),
+                    executor.submit(run_parity_lane, 1),
+                )
+                lane_by_future = {
+                    future: lane_index for lane_index, future in enumerate(futures)
+                }
+                for future in as_completed(futures):
+                    lane_index = lane_by_future[future]
+                    evaluation, semantic_signature = future.result()
+                    parity_results[lane_index] = evaluation
+                    parity_signatures[lane_index] = semantic_signature
+            if any(value is None for value in parity_results) or any(
+                value is None for value in parity_signatures
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    "Cross-lane representative evaluation did not complete."
+                )
+            parity_proof = _prove_exact_cross_lane_macrocell_parity(
+                parity_results[0],
+                parity_results[1],
+                left_signature=parity_signatures[0],
+                right_signature=parity_signatures[1],
+                runtime=runtime,
+            )
+            stop_event.clear()
+            work_barrier = threading.Barrier(2)
+
+            def run_lane(lane_index: int) -> tuple[
+                _Lfm2CpcfShortConvMacrocellEvaluation,
+                ...,
+            ]:
+                nonlocal active_lanes, maximum_active_lanes
+                work_barrier.wait()
+                values = []
+                with active_lock:
+                    active_lanes += 1
+                    maximum_active_lanes = max(maximum_active_lanes, active_lanes)
+                try:
+                    for candidate_id in assignments[lane_index]:
+                        if stop_event.is_set():
+                            break
+                        values.append(
+                            self._evaluate_two_lane_candidate(
+                                candidate=frontier.candidate(candidate_id),
+                                execution_layer=replicas[lane_index],
+                                execution_snapshot=replica_snapshots[lane_index],
+                                lane=runtime.lanes[lane_index],
+                                runtime=runtime,
+                            )
+                        )
+                except BaseException:
+                    stop_event.set()
+                    raise
+                finally:
+                    with active_lock:
+                        active_lanes -= 1
+                return tuple(values)
+
+            with ThreadPoolExecutor(
+                max_workers=2,
+                thread_name_prefix="lfm2-shortconv-macrocell",
+            ) as executor:
+                futures = (
+                    executor.submit(run_lane, 0),
+                    executor.submit(run_lane, 1),
+                )
+                lane_by_future = {
+                    future: lane_index for lane_index, future in enumerate(futures)
+                }
+                for future in as_completed(futures):
+                    lane_index = lane_by_future[future]
+                    lane_results[lane_index] = future.result()
+        except BaseException as error:
+            failure = error
+        finally:
+            for lane_index, (replica, snapshot) in enumerate(
+                zip(replicas, replica_snapshots, strict=True)
+            ):
+                _restore_layer(replica, snapshot)
+                lane_final_rollbacks[lane_index] = _prove_exact_layer_rollback(
+                    replica,
+                    snapshot,
+                    source_layer=self.source_layer,
+                    source_snapshot=self.source_snapshot,
+                    input_bank=self.audit_bank,
+                    layer_index=self.layer_index,
+                    evidence_sha256_before=self.audit_evidence_sha256_before,
+                    input_sha256_before=self.audit_input_sha256_before,
+                    boundary_charts=self.boundary_charts,
+                    boundary_charts_sha256_before=(
+                        self.boundary_charts_sha256_before
+                    ),
+                    boundary_charts_payload_sha256_before=(
+                        self.boundary_charts_payload_sha256_before
+                    ),
+                )
+            _restore_layer(self.target_layer, self.target_snapshot)
+            canonical_rollback = _prove_exact_layer_rollback(
+                self.target_layer,
+                self.target_snapshot,
+                source_layer=self.source_layer,
+                source_snapshot=self.source_snapshot,
+                input_bank=self.audit_bank,
+                layer_index=self.layer_index,
+                evidence_sha256_before=self.audit_evidence_sha256_before,
+                input_sha256_before=self.audit_input_sha256_before,
+                boundary_charts=self.boundary_charts,
+                boundary_charts_sha256_before=self.boundary_charts_sha256_before,
+                boundary_charts_payload_sha256_before=(
+                    self.boundary_charts_payload_sha256_before
+                ),
+            )
+        if failure is not None:
+            # Futures otherwise retain worker traceback frames and their last
+            # replay locals.  Drop those references before failing closed.
+            futures = ()
+            parity_results = [None, None]
+            parity_signatures = [None, None]
+            lane_results = [None, None]
+            raise failure.with_traceback(None)
+        if (
+            any(value is None for value in parity_results)
+            or any(value is None for value in parity_signatures)
+            or any(value is None for value in lane_results)
+            or parity_proof is None
+            or preparation_rollback is None
+            or canonical_rollback is None
+            or any(value is None for value in lane_final_rollbacks)
+            or active_lanes != 0
+            or maximum_active_lanes > 2
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane macrocell execution did not close every bounded lane."
+            )
+        representative = parity_results[0]
+        if representative is None:  # pragma: no cover - guarded above
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane representative result disappeared."
+            )
+        by_id = {representative.candidate.candidate_id: representative}
+        for lane_values in lane_results:
+            if lane_values is None:  # pragma: no cover - guarded above
+                continue
+            for value in lane_values:
+                candidate_id = value.candidate.candidate_id
+                if candidate_id in by_id:
+                    raise Lfm2CpcfLayerCompilerError(
+                        "Two-lane candidate result was evaluated more than "
+                        "its authenticated parity budget."
+                    )
+                by_id[candidate_id] = value
+        if set(by_id) != set(canonical_ids) or len(by_id) != len(canonical_ids):
+            raise Lfm2CpcfLayerCompilerError(
+                "Two-lane candidate results are missing, duplicated, or changed."
+            )
+        ordered = tuple(by_id[candidate_id] for candidate_id in canonical_ids)
+        per_lane_sources = (
+            (parity_results[0], *(lane_results[0] or ())),
+            (parity_results[1], *(lane_results[1] or ())),
+        )
+        per_lane_peak = [
+            max(
+                int(
+                    value.report["fit_operator_replay_report"]["actual_report"][
+                        "peak_replay_archive_logical_bytes"
+                    ]
+                )
+                for value in lane_values
+                if value is not None
+            )
+            for lane_values in per_lane_sources
+        ]
+        estimated_peak = max(preparation_peak, sum(per_lane_peak))
+        lane_assignment = {
+            candidate_id: runtime.lanes[index % 2].lane_index
+            for index, candidate_id in enumerate(canonical_ids)
+        }
+        compile_executions = len(canonical_ids) + 1
+        receipt_body = {
+            "schema": LFM2_CPCF_SHORT_CONV_TWO_LANE_EXECUTION_SCHEMA,
+            "runtime_authentication_report_sha256": (
+                runtime.runtime_authentication_report_sha256
+            ),
+            "scheduler_policy_sha256": runtime.scheduler_policy_sha256,
+            "lanes": [lane.as_dict() for lane in runtime.lanes],
+            "lane_assignment": lane_assignment,
+            "assignment_policy": "canonical_candidate_index_parity",
+            "canonical_candidate_result_order": list(canonical_ids),
+            "canonical_result_order_restored_after_parallel_completion": True,
+            "cross_lane_semantic_parity_proof": _plain_json_metadata(parity_proof),
+            "cross_lane_semantic_parity_proof_sha256": (
+                parity_proof["report_sha256"]
+            ),
+            "cross_lane_semantic_parity_completed_before_remaining_candidates": (
+                True
+            ),
+            "representative_candidate_id": representative_id,
+            "representative_candidate_evaluated_once_per_lane": True,
+            "representative_candidate_compile_execution_count": 2,
+            "representative_lane_zero_result_reused": True,
+            "representative_lane_one_result_discarded": True,
+            "all_nonrepresentative_candidates_evaluated_exactly_once": True,
+            "candidate_result_count": len(canonical_ids),
+            "candidate_compile_result_count": len(canonical_ids),
+            "candidate_compile_execution_count": compile_executions,
+            "duplicate_parity_compile_execution_count": 1,
+            "per_lane_candidate_compile_execution_count": [
+                1 + len(assignments[0]),
+                1 + len(assignments[1]),
+            ],
+            "static_lane_count": 2,
+            "worker_phase_count": 2,
+            "worker_future_count": 4,
+            "maximum_simultaneous_worker_future_count": 2,
+            "maximum_active_lanes_observed": maximum_active_lanes,
+            "maximum_live_replay_tree_slots": 2,
+            "maximum_live_replay_trees_per_lane": 1,
+            "per_lane_peak_replay_archive_logical_bytes": per_lane_peak,
+            "shared_basis_preparation_peak_replay_archive_logical_bytes": (
+                preparation_peak
+            ),
+            "estimated_peak_replay_archive_logical_bytes": estimated_peak,
+            "fit_replay_released_before_selection_replay": True,
+            "candidate_replays_released_before_next_candidate": True,
+            "completed_replay_accelerator_storage_retained": False,
+            "two_private_deep_copied_target_layers": True,
+            "whole_model_clones": 0,
+            "replica_parameter_storage_isolated": True,
+            "replica_parameter_and_buffer_storage_isolated": True,
+            "cached_banks_charts_and_source_shared_read_only": True,
+            "shared_mlp_basis_preparation_count": self.mlp_preparation_count,
+            "shared_mlp_basis_sha256": (
+                self.mlp_prepared_basis.preparation_sha256
+                if self.mlp_prepared_basis is not None
+                else None
+            ),
+            "preparation_replica_rollback_proof_sha256": (
+                preparation_rollback["proof_sha256"]
+            ),
+            "lane_final_rollback_proof_sha256": [
+                value["proof_sha256"]
+                for value in lane_final_rollbacks
+                if value is not None
+            ],
+            "canonical_target_rollback_proof_sha256": (
+                canonical_rollback["proof_sha256"]
+            ),
+            "canonical_target_untouched_until_winner_install": True,
+            "parent_forward_count": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        receipt = MappingProxyType(
+            {
+                **receipt_body,
+                "report_sha256": _sha(receipt_body),
+            }
+        )
+        return ordered, receipt
 
     def select(
         self,
@@ -5451,7 +6710,34 @@ class _Lfm2CpcfShortConvMacrocellSelector:
             )
         evaluations: dict[str, dict[str, Any]] = {}
         scored = []
-        for candidate_id in evaluated_ids:
+        two_lane_receipt: Mapping[str, Any] | None = None
+        two_lane_runtime = _authenticated_short_conv_two_lane_runtime(
+            self.candidate_replay_evaluator
+        )
+        serial_evaluated_ids: Sequence[str] = evaluated_ids
+        if two_lane_runtime is not None:
+            parallel_evaluations, two_lane_receipt = self._evaluate_two_lane(
+                frontier=frontier,
+                evaluated_ids=evaluated_ids,
+                runtime=two_lane_runtime,
+            )
+            serial_evaluated_ids = ()
+            self.mlp_candidate_compile_count = len(parallel_evaluations)
+            for evaluation in parallel_evaluations:
+                candidate_id = evaluation.candidate.candidate_id
+                self.evaluations[candidate_id] = evaluation
+                evaluation_report = dict(evaluation.report)
+                evaluations[candidate_id] = evaluation_report
+                scored.append(
+                    {
+                        "candidate_id": candidate_id,
+                        "score": list(evaluation.selection_key),
+                        "evaluation_report_sha256": (
+                            evaluation_report["report_sha256"]
+                        ),
+                    }
+                )
+        for candidate_id in serial_evaluated_ids:
             candidate = frontier.candidate(candidate_id)
             _restore_layer(self.target_layer, self.target_snapshot)
             try:
@@ -5735,6 +7021,8 @@ class _Lfm2CpcfShortConvMacrocellSelector:
             "exact_candidate_rollbacks": len(evaluated_ids),
             "execution": _macrocell_zero_execution(),
         }
+        if two_lane_receipt is not None:
+            self.two_lane_execution_receipt = two_lane_receipt
         self.decision = MappingProxyType({**body, "report_sha256": _sha(body)})
         return self.decision
 
@@ -5768,6 +7056,7 @@ class Lfm2CpcfCompiledLayerResult:
                 (
                     Lfm2CompiledStructuralAttentionFold,
                     Lfm2CompiledCpcfResidualAttentionSplitFold,
+                    Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
                 ),
             ):
                 raise TypeError("Attention result has the wrong operator artifact.")
@@ -8198,6 +9487,35 @@ def compile_and_install_lfm2_cpcf_layer(
                     "Direct and residual-attention candidates do not share "
                     "the exact fit-compiled Q/K producer state."
                 )
+            sequence_effective_operator_artifact = (
+                compile_lfm2_fixed_qk_sequence_effective_attention_fold(
+                    producer=producer_artifact,
+                    target_value_weight_template=(target_attention.v_proj.weight),
+                    target_output_weight_template=(target_attention.out_proj.weight),
+                    fit_cases=fit_cases,
+                    query_norm_weight=source_q_norm,
+                    key_norm_weight=source_k_norm,
+                    norm_epsilon=source_q_epsilon,
+                )
+            )
+            sequence_effective_query_key_sha = _tensor_bundle_sha256(
+                {
+                    "q_proj.weight": (
+                        sequence_effective_operator_artifact.producer_artifact.query_weight
+                    ),
+                    "k_proj.weight": (
+                        sequence_effective_operator_artifact.producer_artifact.key_weight
+                    ),
+                }
+            )
+            if (
+                not sequence_effective_operator_artifact.verify_authentication()
+                or sequence_effective_query_key_sha != producer_query_key_sha
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    "Sequence-effective attention did not preserve the exact "
+                    "fit-compiled Q/K producer state."
+                )
             query_key_score_reports = {
                 candidate_id: (
                     evaluate_lfm2_compiled_attention_producer_score_preservation(
@@ -8208,12 +9526,11 @@ def compile_and_install_lfm2_cpcf_layer(
                         norm_epsilon=source_q_epsilon,
                     )
                 )
-                for candidate_id in (
-                    "direct_monolithic",
-                    "residual_attention_split",
-                )
+                for candidate_id in LFM2_CPCF_ATTENTION_CANDIDATE_IDS
             }
-            score_selection_report = query_key_score_reports["residual_attention_split"]
+            score_selection_report = query_key_score_reports[
+                RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID
+            ]
             attention_runtime_receipt = _attention_runtime_complexity_receipt(
                 output_transport_receipt=output_transport_receipt,
                 cases=fit_cases,
@@ -8317,10 +9634,17 @@ def compile_and_install_lfm2_cpcf_layer(
 
             candidate_evaluations = []
             attention_mlp_prepared_basis = None
-            for candidate_id, candidate_artifact in (
-                ("direct_monolithic", direct_operator_artifact),
-                ("residual_attention_split", split_operator_artifact),
-            ):
+            candidate_artifacts = {
+                DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID: (
+                    direct_operator_artifact
+                ),
+                RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID: split_operator_artifact,
+                FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID: (
+                    sequence_effective_operator_artifact
+                ),
+            }
+            for candidate_id in LFM2_CPCF_ATTENTION_CANDIDATE_IDS:
+                candidate_artifact = candidate_artifacts[candidate_id]
                 stage = "operator_install"
                 candidate_operator_install = _install_cpcf_attention_artifact(
                     source_attention=source_attention,
@@ -8509,6 +9833,7 @@ def compile_and_install_lfm2_cpcf_layer(
                     ),
                     boundary_charts_sha256_before=chart_seal_before,
                     boundary_charts_payload_sha256_before=(chart_payload_before),
+                    candidate_replay_evaluator=candidate_replay_evaluator,
                     endpoint_selector=candidate_selector,
                 )
                 operator_artifact = compile_lfm2_cpcf_short_conv_v4_fold(
@@ -8902,6 +10227,20 @@ def compile_and_install_lfm2_cpcf_layer(
                 "fallback_paths": 0,
             },
         }
+        if (
+            short_conv_macrocell_selector is not None
+            and short_conv_macrocell_selector.two_lane_execution_receipt is not None
+        ):
+            solver_policy_report = {
+                **body["solver_evidence_policy"],
+                "short_conv_two_lane_macrocell_execution": dict(
+                    short_conv_macrocell_selector.two_lane_execution_receipt
+                ),
+            }
+            body = {
+                **body,
+                "solver_evidence_policy": solver_policy_report,
+            }
         result_sha = _sha(body)
         return Lfm2CpcfCompiledLayerResult(
             layer_index=index,
@@ -8963,14 +10302,21 @@ def compile_and_install_lfm2_cpcf_layer(
 
 
 __all__ = [
+    "DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID",
+    "FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID",
+    "LFM2_CPCF_ATTENTION_CANDIDATE_IDS",
+    "LFM2_CPCF_ATTENTION_CANDIDATE_SELECTION_SCHEMA",
     "LFM2_CPCF_LAYER_COMPILER_SCHEMA",
     "LFM2_CPCF_LAYER_FAILURE_SCHEMA",
     "LFM2_CPCF_RESIDUAL_ATTENTION_SPLIT_SCHEMA",
+    "LFM2_CPCF_SHORT_CONV_TWO_LANE_EXECUTION_SCHEMA",
     "Lfm2CompiledCpcfResidualAttentionSplitFold",
+    "Lfm2CompiledFixedQkSequenceEffectiveAttentionFold",
     "Lfm2CpcfCompiledLayerResult",
     "Lfm2CpcfLayerCompilationFailure",
     "Lfm2CpcfLayerCompilerError",
     "Lfm2CpcfLayerInstallError",
+    "RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID",
     "compile_and_install_lfm2_cpcf_layer",
     "invert_lfm2_rope",
     "recover_lfm2_full_key_linear_history",

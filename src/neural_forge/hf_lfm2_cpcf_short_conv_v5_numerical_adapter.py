@@ -7,13 +7,15 @@ closed-form folding in this audited order:
 1. resize the source FIR to the target FIR length;
 2. build case-balanced activation and endpoint descriptors;
 3. build a commutator-gated, balanced, all-source-channel basis;
-4. realize one future-Hankel Volterra matrix-free candidate;
+4. realize two authenticated future-Hankel Volterra matrix-free policy arms;
 5. fit the two frozen condition-cap input lifts and transport parent priors;
 6. construct target projection cases;
 7. alternate affine writer, no-intercept physical FIR, and no-intercept
    physical B/C/x projection solves;
-8. chain every FIT-accepted state and interpolate every accepted edge; and
-9. return the complete typed raw frontier to the existing compiler.
+8. chain every FIT-accepted state and interpolate every accepted edge;
+9. select the strongest accepted writer control on FIT evidence only and
+   construct one fixed full-coverage writer hybrid per FHVR arm; and
+10. return the complete typed raw frontier to the existing compiler.
 
 There are no model forwards, generation calls, gradients, optimizer steps,
 training steps, pruning decisions, quantization operations, selection cases,
@@ -46,6 +48,7 @@ from .hf_lfm2_cpcf_short_conv_v5 import (
     V5_PRIOR_CONTROL_SUFFIX,
     Lfm2CpcfShortConvV5Error,
     Lfm2CpcfV5AcceptedPathState,
+    Lfm2CpcfV5AllChannelFirRidgeCase,
     Lfm2CpcfV5FirBasisCase,
     Lfm2CpcfV5FirCommutingBasis,
     Lfm2CpcfV5FirBasisPolicy,
@@ -54,15 +57,27 @@ from .hf_lfm2_cpcf_short_conv_v5 import (
     build_fir_commuting_balanced_all_channel_basis,
     condition_capped_equilibrated_prior_residual_ridge_frontier,
     interpolate_every_lfm2_cpcf_v5_accepted_edge,
+    solve_condition_capped_batched_all_channel_fir_ridge_candidate,
+    solve_condition_capped_equilibrated_prior_residual_ridge_candidate,
 )
 from .hf_lfm2_cpcf_short_conv_v5_matrix_free_bcx import (
     Lfm2CpcfV5MatrixFreeBcxPolicy,
     solve_lfm2_cpcf_v5_matrix_free_bcx,
 )
 from .hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+    FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+    FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+    FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+    FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
     FHVR_MF_CANDIDATE_ID,
     FHVR_MF_CANDIDATE_KIND,
+    FHVR_MF_FULL_COVERAGE_FHVR_FRACTION,
+    FHVR_MF_FULL_COVERAGE_HYBRID_KIND,
+    FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS,
+    FHVR_MF_FULL_COVERAGE_WRITER_FRACTION,
+    Lfm2CpcfFhvrMfPolicy,
     build_lfm2_cpcf_fhvr_mf_candidate,
+    build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate,
 )
 from .hf_lfm2_cpcf_short_conv_v5_residual_subspace_bcx import (
     causal_horizon_balanced_row_weights,
@@ -75,7 +90,7 @@ LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_ADAPTER_SCHEMA = (
 )
 _ADAPTER_IMPLEMENTATION = (
     "neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter."
-    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v4"
+    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v6"
 )
 _STATE_ROLES = (
     "in_proj_weight",
@@ -153,6 +168,16 @@ def _cap_id(condition_cap: float) -> str:
     return f"kappa-{int(condition_cap):05d}"
 
 
+def _condition_cap_from_id(
+    ridge_policy: Lfm2CpcfV5RidgePolicy,
+    cap_id: str,
+) -> float:
+    return {
+        _cap_id(condition_cap): condition_cap
+        for condition_cap in ridge_policy.condition_caps
+    }[cap_id]
+
+
 def _factor_ridge_policy(
     base: Lfm2CpcfV5RidgePolicy,
     *,
@@ -211,6 +236,31 @@ def _lag_windows(value: Any, fir_length: int) -> Any:
     torch = _torch()
     padded = torch.nn.functional.pad(value, (fir_length - 1, 0))
     return padded.unfold(dimension=1, size=fir_length, step=1)
+
+
+def _all_channel_fir_design(
+    replay: Any,
+    fir_length: int,
+    *,
+    include_bias: bool,
+) -> Any:
+    """Build every channel's FIR design in one tensor operation."""
+
+    torch = _torch()
+    product = (replay.b_history * replay.x_history).movedim(-1, 1)
+    lagged = torch.nn.functional.pad(
+        product,
+        (fir_length - 1, 0),
+    ).unfold(
+        dimension=2,
+        size=fir_length,
+        step=1,
+    )
+    c_history = replay.c_history.movedim(-1, 1).unsqueeze(-1)
+    design = lagged * c_history
+    if include_bias:
+        design = torch.cat((design, c_history), dim=-1)
+    return design.movedim(1, 0).contiguous()
 
 
 def _present_state(state: Mapping[str, Any | None]) -> dict[str, Any]:
@@ -705,6 +755,7 @@ def _solve_writer(
     replays: Sequence[Any] | None = None,
 ) -> tuple[dict[str, Any | None], list[str]]:
     fit_intercept = state["writer_bias"] is not None
+    condition_cap = _condition_cap_from_id(ridge_policy, cap_id)
     ridge_cases = []
     current_replays = _replays(cases, state) if replays is None else tuple(replays)
     for case, replay in zip(cases, current_replays):
@@ -724,13 +775,14 @@ def _solve_writer(
                 valid_rows=case.valid_suffix_mask.reshape(-1),
             )
         )
-    result = condition_capped_equilibrated_prior_residual_ridge_frontier(
+    result = solve_condition_capped_equilibrated_prior_residual_ridge_candidate(
         ridge_cases,
+        condition_cap=condition_cap,
         prior_weight=state["writer_weight"].T,
         prior_bias=state["writer_bias"],
         fit_intercept=fit_intercept,
         policy=ridge_policy,
-    )[cap_id]
+    )
     candidate = _clone_state(state)
     candidate["writer_weight"] = result.weight.T.contiguous()
     candidate["writer_bias"] = None if result.bias is None else result.bias.contiguous()
@@ -750,53 +802,55 @@ def _solve_fir(
     kernel = state["fir_kernel"].clone()
     fir_bias = None if state["fir_bias"] is None else state["fir_bias"].clone()
     target_hidden, fir_length = map(int, kernel.shape)
-    receipts = []
-    for channel in range(target_hidden):
-        ridge_cases = []
-        for case, replay in zip(cases, current_replays):
-            base_design = _lag_windows(
-                replay.b_history[..., channel] * replay.x_history[..., channel],
-                fir_length,
-            ) * replay.c_history[..., channel].unsqueeze(-1)
-            if fir_bias is not None:
-                base_design = torch.cat(
-                    (
-                        base_design,
-                        replay.c_history[..., channel].unsqueeze(-1),
-                    ),
-                    dim=-1,
-                )
-            ridge_cases.append(
-                Lfm2CpcfV5RidgeCase(
-                    case_id=case.case_id,
-                    split="fit",
-                    design=base_design.reshape(
-                        -1,
-                        int(base_design.shape[-1]),
-                    ),
-                    target=case.desired_context_history[..., channel].reshape(-1, 1),
-                    valid_rows=case.valid_prefix_mask.reshape(-1),
-                )
-            )
-        prior_parts = [kernel[channel]]
-        if fir_bias is not None:
-            prior_parts.append(fir_bias[channel].reshape(1))
-        prior = torch.cat(prior_parts).reshape(-1, 1)
-        result = condition_capped_equilibrated_prior_residual_ridge_frontier(
-            ridge_cases,
-            prior_weight=prior,
-            prior_bias=None,
-            fit_intercept=False,
-            policy=ridge_policy,
-        )[cap_id]
-        kernel[channel] = result.weight[:fir_length, 0]
-        if fir_bias is not None:
-            fir_bias[channel] = result.weight[-1, 0]
-        receipts.append(str(result.diagnostics["report_sha256"]))
+    condition_cap = _condition_cap_from_id(ridge_policy, cap_id)
+    case_designs = tuple(
+        _all_channel_fir_design(
+            replay,
+            fir_length,
+            include_bias=fir_bias is not None,
+        )
+        for replay in current_replays
+    )
+    ridge_cases = tuple(
+        Lfm2CpcfV5AllChannelFirRidgeCase(
+            case_id=case.case_id,
+            split="fit",
+            design=base_design.reshape(
+                target_hidden,
+                -1,
+                int(base_design.shape[-1]),
+            ),
+            target=case.desired_context_history.movedim(-1, 0).reshape(
+                target_hidden,
+                -1,
+            ),
+            valid_rows=case.valid_prefix_mask.reshape(-1),
+        )
+        for case, base_design in zip(cases, case_designs)
+    )
+    prior = (
+        kernel
+        if fir_bias is None
+        else torch.cat((kernel, fir_bias.unsqueeze(-1)), dim=1)
+    )
+    result = solve_condition_capped_batched_all_channel_fir_ridge_candidate(
+        ridge_cases,
+        condition_cap=condition_cap,
+        prior_parameters=prior,
+        physical_bias_coordinate=fir_bias is not None,
+        policy=ridge_policy,
+    )
+    if not result.verify_authentication():
+        raise Lfm2CpcfShortConvV5NumericalAdapterError(
+            "Batched all-channel FIR ridge result failed authentication."
+        )
+    kernel = result.parameters[:, :fir_length].contiguous()
+    if fir_bias is not None:
+        fir_bias = result.parameters[:, -1].contiguous()
     candidate = _clone_state(state)
     candidate["fir_kernel"] = kernel.contiguous()
     candidate["fir_bias"] = None if fir_bias is None else fir_bias.contiguous()
-    return candidate, receipts
+    return candidate, [str(result.diagnostics["report_sha256"])]
 
 
 def _solve_bcx_legacy(
@@ -813,6 +867,7 @@ def _solve_bcx_legacy(
     in_bias = None if state["in_proj_bias"] is None else state["in_proj_bias"].clone()
     target_hidden = int(in_weight.shape[1])
     fit_physical_bias = in_bias is not None
+    condition_cap = _condition_cap_from_id(ridge_policy, cap_id)
     receipts = []
     for channel in range(target_hidden):
         row_indices = (
@@ -852,13 +907,14 @@ def _solve_bcx_legacy(
                     valid_rows=case.valid_prefix_mask.reshape(-1),
                 )
             )
-        result = condition_capped_equilibrated_prior_residual_ridge_frontier(
+        result = solve_condition_capped_equilibrated_prior_residual_ridge_candidate(
             ridge_cases,
+            condition_cap=condition_cap,
             prior_weight=prior,
             prior_bias=None,
             fit_intercept=False,
             policy=ridge_policy,
-        )[cap_id]
+        )
         feature_width = target_hidden + int(fit_physical_bias)
         solution = result.weight.reshape(3, feature_width)
         for role, row in enumerate(row_indices):
@@ -947,6 +1003,7 @@ def _accepted_phase_report(
     phase: str,
     solver_intercept_contract: str,
     solver_report_sha256: Sequence[str],
+    solver_channel_count: int | None,
     before: Mapping[str, Any],
     after: Mapping[str, Any],
     accepted: bool,
@@ -962,6 +1019,12 @@ def _accepted_phase_report(
             "solver_intercept_contract": solver_intercept_contract,
             "solver_report_sha256": list(solver_report_sha256),
             "solver_report_count": len(solver_report_sha256),
+            "solver_report_scope": (
+                "aggregate_all_target_fir_channels"
+                if phase == "fir"
+                else "solver_native"
+            ),
+            "solver_channel_count": solver_channel_count,
             "before_objective_report_sha256": before["report_sha256"],
             "after_objective_report_sha256": after["report_sha256"],
             "before_combined_fit_objective": before["combined_fit_objective"],
@@ -1085,6 +1148,11 @@ def _projection_path(
                 phase=phase,
                 solver_intercept_contract=solver_intercept_contract,
                 solver_report_sha256=solver_receipts,
+                solver_channel_count=(
+                    int(state["fir_kernel"].shape[0])
+                    if phase == "fir"
+                    else None
+                ),
                 before=before,
                 after=after,
                 accepted=accepted,
@@ -1235,18 +1303,65 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                 "The FIR-commuting basis failed authentication or full "
                 "source participation."
             )
-        fhvr_candidate = build_lfm2_cpcf_fhvr_mf_candidate(
-            request,
-            context_encoder=basis.encoder,
+        fhvr_arm_specs = (
+            (
+                FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+                Lfm2CpcfFhvrMfPolicy(),
+            ),
+            (
+                FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+                Lfm2CpcfFhvrMfPolicy(
+                    condition_cap=10_000.0,
+                    factor_sweeps=1,
+                ),
+            ),
         )
-        if (
-            not fhvr_candidate.verify_authentication()
-            or fhvr_candidate.candidate_id != FHVR_MF_CANDIDATE_ID
-            or fhvr_candidate.candidate_kind != FHVR_MF_CANDIDATE_KIND
-        ):
-            raise Lfm2CpcfShortConvV5NumericalAdapterError(
-                "The FHVR-MF candidate failed authentication or identity binding."
+        fhvr_candidates = tuple(
+            build_lfm2_cpcf_fhvr_mf_candidate(
+                request,
+                context_encoder=basis.encoder,
+                policy=policy,
+                candidate_id=candidate_id,
             )
+            for candidate_id, policy in fhvr_arm_specs
+        )
+        for (candidate_id, policy), candidate in zip(
+            fhvr_arm_specs,
+            fhvr_candidates,
+            strict=True,
+        ):
+            if (
+                not candidate.verify_authentication()
+                or candidate.candidate_id != candidate_id
+                or candidate.candidate_kind != FHVR_MF_CANDIDATE_KIND
+                or dict(candidate.method_provenance.get("policy", {}))
+                != policy.as_dict()
+            ):
+                raise Lfm2CpcfShortConvV5NumericalAdapterError(
+                    "An FHVR-MF policy arm failed authentication, identity, "
+                    "or policy binding."
+                )
+        legacy_fhvr_candidate = fhvr_candidates[0]
+        if legacy_fhvr_candidate.candidate_id != FHVR_MF_CANDIDATE_ID:
+            raise Lfm2CpcfShortConvV5NumericalAdapterError(
+                "The legacy FHVR-MF candidate id changed policy-arm identity."
+            )
+        fhvr_candidate_inventory = [
+            {
+                "arm_index": arm_index,
+                "candidate_id": candidate.candidate_id,
+                "candidate_kind": candidate.candidate_kind,
+                "condition_cap": policy.condition_cap,
+                "factor_sweeps": policy.factor_sweeps,
+                "pcg_iterations": policy.pcg_iterations,
+                "policy_sha256": policy.authentication_sha256,
+                "candidate_state_sha256": candidate.state_sha256,
+                "candidate_report_sha256": candidate.report["report_sha256"],
+            }
+            for arm_index, ((_, policy), candidate) in enumerate(
+                zip(fhvr_arm_specs, fhvr_candidates, strict=True)
+            )
+        ]
         lift_frontier = _input_lift_frontier(
             request,
             prior_weight=basis.decoder,
@@ -1386,6 +1501,8 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                             "solver_intercept_contract"
                         ],
                         "solver_report_count": report["solver_report_count"],
+                        "solver_report_scope": report["solver_report_scope"],
+                        "solver_channel_count": report["solver_channel_count"],
                         "before_combined_fit_objective": report[
                             "before_combined_fit_objective"
                         ],
@@ -1406,7 +1523,235 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                     interpolation.report["report_sha256"]
                 ),
             }
-        raw_candidates.append(fhvr_candidate)
+        writer_controls = tuple(
+            candidate
+            for candidate in raw_candidates
+            if candidate.candidate_kind == "accepted_fit_projection_path_anchor"
+            and candidate.candidate_id.endswith("-writer")
+        )
+        if not writer_controls:
+            raise Lfm2CpcfShortConvV5NumericalAdapterError(
+                "The full-coverage FHVR hybrids require at least one "
+                "FIT-accepted writer control."
+            )
+        writer_control_fit_reports = {
+            candidate.candidate_id: _fit_objective(
+                projection_cases,
+                candidate.state_dict(),
+                context_objective_weight=(
+                    request.policy.context_objective_weight
+                ),
+            )
+            for candidate in writer_controls
+        }
+        if any(
+            not math.isfinite(
+                float(report["mean_case_endpoint_relative_rmse"])
+            )
+            or not math.isfinite(float(report["combined_fit_objective"]))
+            for report in writer_control_fit_reports.values()
+        ):
+            raise Lfm2CpcfShortConvV5NumericalAdapterError(
+                "A FIT-only writer-control objective is non-finite."
+            )
+        writer_control_ranking = sorted(
+            (
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "candidate_kind": candidate.candidate_kind,
+                    "candidate_state_sha256": candidate.state_sha256,
+                    "candidate_report_sha256": (
+                        candidate.report["report_sha256"]
+                    ),
+                    "fit_objective_report_sha256": (
+                        writer_control_fit_reports[
+                            candidate.candidate_id
+                        ]["report_sha256"]
+                    ),
+                    "mean_case_endpoint_relative_rmse": (
+                        writer_control_fit_reports[
+                            candidate.candidate_id
+                        ]["mean_case_endpoint_relative_rmse"]
+                    ),
+                    "combined_fit_objective": (
+                        writer_control_fit_reports[
+                            candidate.candidate_id
+                        ]["combined_fit_objective"]
+                    ),
+                }
+                for candidate in writer_controls
+            ),
+            key=lambda value: (
+                value["mean_case_endpoint_relative_rmse"],
+                value["combined_fit_objective"],
+                value["candidate_id"],
+            ),
+        )
+        strongest_writer_control_id = str(
+            writer_control_ranking[0]["candidate_id"]
+        )
+        strongest_writer_control = next(
+            candidate
+            for candidate in writer_controls
+            if candidate.candidate_id == strongest_writer_control_id
+        )
+        writer_control_fit_selection = _seal_report(
+            {
+                "schema": (
+                    LFM2_CPCF_SHORT_CONV_V5_NUMERICAL_ADAPTER_SCHEMA
+                ),
+                "kind": "fit_only_strongest_accepted_writer_control",
+                "request_sha256": request.request_sha256,
+                "eligible_candidate_count": len(writer_controls),
+                "ranking": writer_control_ranking,
+                "ranking_key": [
+                    "mean_case_endpoint_relative_rmse",
+                    "combined_fit_objective",
+                    "candidate_id",
+                ],
+                "selected_candidate_id": strongest_writer_control_id,
+                "selected_candidate_state_sha256": (
+                    strongest_writer_control.state_sha256
+                ),
+                "selected_candidate_report_sha256": (
+                    strongest_writer_control.report["report_sha256"]
+                ),
+                "fit_only": True,
+                "selection_cases_consumed": 0,
+                "validation_cases_consumed": 0,
+                "execution": dict(_ZERO_EXECUTION),
+            }
+        )
+        hybrid_arm_specs = (
+            (
+                fhvr_candidates[0],
+                fhvr_arm_specs[0][1],
+                FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+            ),
+            (
+                fhvr_candidates[1],
+                fhvr_arm_specs[1][1],
+                FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+            ),
+        )
+        hybrid_candidates = tuple(
+            build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate(
+                request,
+                context_encoder=basis.encoder,
+                writer_candidate=strongest_writer_control,
+                fhvr_candidate=fhvr_candidate,
+                policy=policy,
+                candidate_id=hybrid_id,
+            )
+            for fhvr_candidate, policy, hybrid_id in hybrid_arm_specs
+        )
+        fhvr_hybrid_inventory = []
+        for (
+            source_fhvr,
+            policy,
+            hybrid_id,
+        ), hybrid_candidate in zip(
+            hybrid_arm_specs,
+            hybrid_candidates,
+            strict=True,
+        ):
+            hybrid_provenance = hybrid_candidate.method_provenance
+            coverage = hybrid_provenance.get("full_coverage", {})
+            if (
+                not hybrid_candidate.verify_authentication()
+                or hybrid_candidate.request_sha256 != request.request_sha256
+                or hybrid_candidate.candidate_id != hybrid_id
+                or hybrid_candidate.candidate_kind
+                != FHVR_MF_FULL_COVERAGE_HYBRID_KIND
+                or hybrid_provenance.get("source_writer_candidate_id")
+                != strongest_writer_control_id
+                or hybrid_provenance.get("source_fhvr_candidate_id")
+                != source_fhvr.candidate_id
+                or dict(hybrid_provenance.get("policy", {}))
+                != policy.as_dict()
+                or hybrid_provenance.get("fixed_fhvr_fraction")
+                != FHVR_MF_FULL_COVERAGE_FHVR_FRACTION
+                or hybrid_provenance.get("fixed_writer_fraction")
+                != FHVR_MF_FULL_COVERAGE_WRITER_FRACTION
+                or hybrid_provenance.get("fixed_refactor_sweeps")
+                != FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS
+                or coverage.get("writer_channels_covered") != target_hidden
+                or coverage.get("fhvr_channels_covered") != target_hidden
+                or coverage.get("source_channel_tuples_assigned")
+                != 2 * target_hidden
+                or coverage.get(
+                    "each_source_channel_assigned_exactly_once"
+                )
+                is not True
+                or coverage.get("both_source_masses_strictly_positive")
+                is not True
+                or coverage.get("source_channels_dropped") != 0
+                or coverage.get("source_channels_pruned") != 0
+                or hybrid_provenance.get("fit_only") is not True
+                or hybrid_provenance.get("selection_cases_consumed") != 0
+                or hybrid_provenance.get("validation_cases_consumed") != 0
+            ):
+                raise Lfm2CpcfShortConvV5NumericalAdapterError(
+                    "An FHVR full-coverage hybrid failed authentication, "
+                    "source binding, fixed-policy binding, or coverage."
+                )
+            synthetic_evidence = hybrid_provenance.get(
+                "synthetic_evidence",
+                {},
+            )
+            if (
+                synthetic_evidence.get("total_arm_seed_losses") != 2
+                or synthetic_evidence.get("total_arm_seed_trials") != 10
+                or synthetic_evidence.get("losses_disclosed") is not True
+            ):
+                raise Lfm2CpcfShortConvV5NumericalAdapterError(
+                    "FHVR hybrid synthetic evidence must disclose all losses."
+                )
+            fhvr_hybrid_inventory.append(
+                {
+                    "candidate_id": hybrid_candidate.candidate_id,
+                    "candidate_kind": hybrid_candidate.candidate_kind,
+                    "candidate_state_sha256": (
+                        hybrid_candidate.state_sha256
+                    ),
+                    "candidate_report_sha256": (
+                        hybrid_candidate.report["report_sha256"]
+                    ),
+                    "source_fhvr_candidate_id": source_fhvr.candidate_id,
+                    "source_fhvr_candidate_state_sha256": (
+                        source_fhvr.state_sha256
+                    ),
+                    "source_writer_candidate_id": (
+                        strongest_writer_control_id
+                    ),
+                    "source_writer_candidate_state_sha256": (
+                        strongest_writer_control.state_sha256
+                    ),
+                    "policy_sha256": policy.authentication_sha256,
+                    "writer_channels_covered": coverage[
+                        "writer_channels_covered"
+                    ],
+                    "fhvr_channels_covered": coverage[
+                        "fhvr_channels_covered"
+                    ],
+                    "source_channels_dropped": 0,
+                    "source_channels_pruned": 0,
+                    "fixed_fhvr_fraction": (
+                        FHVR_MF_FULL_COVERAGE_FHVR_FRACTION
+                    ),
+                    "fixed_writer_fraction": (
+                        FHVR_MF_FULL_COVERAGE_WRITER_FRACTION
+                    ),
+                    "fixed_refactor_sweeps": (
+                        FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS
+                    ),
+                    "total_arm_seed_losses": 2,
+                    "total_arm_seed_trials": 10,
+                    "losses_disclosed": True,
+                }
+            )
+        raw_candidates.extend(fhvr_candidates)
+        raw_candidates.extend(hybrid_candidates)
         prior_controls = [
             candidate.candidate_id
             for candidate in raw_candidates
@@ -1433,13 +1778,16 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                     "resize_source_fir",
                     "case_balanced_activation_endpoint_descriptors",
                     "commutator_gated_all_channel_basis",
-                    "future_hankel_volterra_matrix_free_realization",
+                    "future_hankel_volterra_matrix_free_two_policy_arm_frontier",
                     "condition_capped_input_lift",
                     "transported_parent_priors",
                     "fit_only_projection_cases",
-                    "condition_capped_writer_fir_coupled_residual_bcx_solves",
+                    "condition_capped_writer_batched_all_channel_fir_"
+                    "coupled_residual_bcx_solves",
                     "accepted_path_chaining",
                     "every_accepted_edge_interpolation",
+                    "fit_only_strongest_accepted_writer_control",
+                    "full_coverage_fhvr_writer_response_refactor",
                     "typed_raw_frontier",
                 ],
                 "source_hidden_size": source_hidden,
@@ -1457,6 +1805,14 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                     phase: policy.parameter_trust_radius
                     for phase, policy in factor_ridge_policies.items()
                 },
+                "fir_solver_backend": (
+                    "authenticated_cpu_fp64_batched_all_channel_ridge"
+                ),
+                "fir_solver_receipt_scope": "aggregate_all_target_fir_channels",
+                "fir_scalar_oracle_policy": (
+                    "deterministic_first_middle_last_plus_"
+                    "threshold_ambiguous_fallback"
+                ),
                 "bcx_solver_backend_inventory": (
                     {
                         _cap_id(V5_CONDITION_CAP_CANDIDATES[0]): (
@@ -1514,11 +1870,56 @@ class Lfm2CpcfShortConvV5NumericalFrontierAdapter:
                 "fit_descriptor_case_count": len(descriptors),
                 "fit_projection_case_count": len(projection_cases),
                 "fhvr_mf_candidate_included": True,
-                "fhvr_mf_candidate_id": fhvr_candidate.candidate_id,
-                "fhvr_mf_candidate_kind": fhvr_candidate.candidate_kind,
+                "fhvr_mf_candidate_id": legacy_fhvr_candidate.candidate_id,
+                "fhvr_mf_candidate_kind": legacy_fhvr_candidate.candidate_kind,
                 "fhvr_mf_candidate_report_sha256": (
-                    fhvr_candidate.report["report_sha256"]
+                    legacy_fhvr_candidate.report["report_sha256"]
                 ),
+                "fhvr_mf_candidate_count": len(fhvr_candidates),
+                "fhvr_mf_candidate_ids": [
+                    candidate.candidate_id for candidate in fhvr_candidates
+                ],
+                "fhvr_mf_candidate_inventory": fhvr_candidate_inventory,
+                "fhvr_mf_selector_diversity_axis": "condition_cap",
+                "fhvr_mf_full_coverage_hybrid_count": len(
+                    hybrid_candidates
+                ),
+                "fhvr_mf_full_coverage_hybrid_ids": [
+                    candidate.candidate_id
+                    for candidate in hybrid_candidates
+                ],
+                "fhvr_mf_full_coverage_hybrid_kind": (
+                    FHVR_MF_FULL_COVERAGE_HYBRID_KIND
+                ),
+                "fhvr_mf_full_coverage_hybrid_inventory": (
+                    fhvr_hybrid_inventory
+                ),
+                "fhvr_mf_full_coverage_fhvr_fraction": (
+                    FHVR_MF_FULL_COVERAGE_FHVR_FRACTION
+                ),
+                "fhvr_mf_full_coverage_writer_fraction": (
+                    FHVR_MF_FULL_COVERAGE_WRITER_FRACTION
+                ),
+                "fhvr_mf_full_coverage_refactor_sweeps": (
+                    FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS
+                ),
+                "fhvr_mf_hybrid_writer_control_fit_selection": (
+                    writer_control_fit_selection
+                ),
+                "fhvr_mf_hybrid_real_selection_deferred_to_compiler": True,
+                "fhvr_mf_hybrid_candidate_specific_fit_mlp_deferred_to_compiler": (
+                    True
+                ),
+                "fhvr_mf_hybrid_synthetic_evidence": {
+                    "fhvr_fractions_tested": [0.25, 0.5, 0.75],
+                    "retained_fhvr_fraction": (
+                        FHVR_MF_FULL_COVERAGE_FHVR_FRACTION
+                    ),
+                    "rejected_fhvr_fractions": [0.25, 0.5],
+                    "total_arm_seed_losses": 2,
+                    "total_arm_seed_trials": 10,
+                    "losses_disclosed": True,
+                },
                 "condition_cap_inventory": cap_inventory,
                 "prior_control_candidate_id": prior_controls[0],
                 "prior_control_candidate_count": 1,

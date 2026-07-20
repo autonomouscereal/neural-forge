@@ -54,7 +54,12 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (  # noqa: E402
     rescore_sealed_v4_short_conv_selection_frontier,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (  # noqa: E402
+    FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+    FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+    FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+    FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
     FHVR_MF_CANDIDATE_KIND,
+    FHVR_MF_FULL_COVERAGE_HYBRID_KIND,
 )
 
 
@@ -583,10 +588,16 @@ def _synthetic_macrocell_frontier(
     *,
     ranking_ids,
     selected_candidate_id,
-    source_candidate_kinds=None,
+    source_candidate_ids=None,
+    hybrid_source_candidate_ids=None,
 ):
-    source_candidate_kinds = (
-        {} if source_candidate_kinds is None else source_candidate_kinds
+    source_candidate_ids = (
+        {} if source_candidate_ids is None else source_candidate_ids
+    )
+    hybrid_source_candidate_ids = (
+        {}
+        if hybrid_source_candidate_ids is None
+        else hybrid_source_candidate_ids
     )
     candidates = []
     for ordinal, candidate_id in enumerate(sorted(candidate_ids)):
@@ -606,12 +617,35 @@ def _synthetic_macrocell_frontier(
             "candidate_id": candidate_id,
             "target_dtype_candidate_state_sha256": state_sha256,
         }
-        if candidate_id in source_candidate_kinds:
-            fit_provenance["sources"] = [
-                {
-                    "candidate_kind": source_candidate_kinds[candidate_id],
-                }
-            ]
+        sources = []
+        if candidate_id in source_candidate_ids:
+            sources.extend(
+                [
+                    {
+                        "candidate_id": source_candidate_id,
+                        "candidate_kind": FHVR_MF_CANDIDATE_KIND,
+                    }
+                    for source_candidate_id in source_candidate_ids[
+                        candidate_id
+                    ]
+                ]
+            )
+        if candidate_id in hybrid_source_candidate_ids:
+            sources.extend(
+                [
+                    {
+                        "candidate_id": source_candidate_id,
+                        "candidate_kind": (
+                            FHVR_MF_FULL_COVERAGE_HYBRID_KIND
+                        ),
+                    }
+                    for source_candidate_id in hybrid_source_candidate_ids[
+                        candidate_id
+                    ]
+                ]
+            )
+        if sources:
+            fit_provenance["sources"] = sources
         candidates.append(
             Lfm2CpcfShortConvV5MacrocellCandidate(
                 candidate_id=candidate_id,
@@ -895,6 +929,81 @@ def test_typed_numerical_frontier_reuses_replay_and_installs_candidate() -> None
             artifact.state_dict()[installed_name],
             expected.to(dtype=torch.float32),
         )
+    assert artifact.verify_authentication()
+
+
+def test_target_dtype_dedup_preserves_each_full_coverage_hybrid_arm() -> None:
+    class DuplicateHybridAdapter(_DeterministicToyNumericalFrontierAdapter):
+        def generate(self, request):
+            base = super().generate(request)
+            state = base.raw_candidates[0].state_dict()
+            candidates = tuple(
+                Lfm2CpcfShortConvNumericalRawCandidate(
+                    request_sha256=request.request_sha256,
+                    candidate_id=candidate_id,
+                    candidate_kind=FHVR_MF_FULL_COVERAGE_HYBRID_KIND,
+                    in_proj_weight=state["in_proj_weight"],
+                    in_proj_bias=state["in_proj_bias"],
+                    fir_kernel=state["fir_kernel"],
+                    fir_bias=state["fir_bias"],
+                    writer_weight=state["writer_weight"],
+                    writer_bias=state["writer_bias"],
+                    method_provenance={
+                        "method": (
+                            "test_identical_full_coverage_hybrid_arm"
+                        ),
+                        "fit_only": True,
+                        "selection_cases_consumed": 0,
+                        "validation_cases_consumed": 0,
+                    },
+                )
+                for candidate_id in (
+                    FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+                    FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+                )
+            )
+            self.frontier = Lfm2CpcfShortConvNumericalFrontier(
+                adapter_id="tests.duplicate_full_coverage_hybrid_frontier",
+                request_sha256=request.request_sha256,
+                context_encoder=base.context_encoder,
+                raw_candidates=candidates,
+                fit_case_authentication_sha256=(
+                    base.fit_case_authentication_sha256
+                ),
+                adapter_provenance={
+                    "implementation": (
+                        "tests.duplicate_full_coverage_hybrid_frontier.v1"
+                    ),
+                    "real_v5_numerical_algorithm": False,
+                },
+            )
+            return self.frontier
+
+    adapter = DuplicateHybridAdapter()
+    artifact = _compile(
+        _fixture(),
+        numerical_frontier_adapter=adapter,
+    )
+    candidate_ids = (
+        FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+        FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+    )
+    pool = artifact.report["candidate_pool_report"]
+
+    assert adapter.frontier.raw_candidates[0].state_sha256 == (
+        adapter.frontier.raw_candidates[1].state_sha256
+    )
+    assert pool["raw_candidate_count"] == 2
+    assert pool["unique_target_dtype_candidate_count"] == 2
+    assert pool["target_dtype_duplicate_count"] == 0
+    assert set(artifact.report["candidate_fit_reports"]) == set(candidate_ids)
+    assert all(
+        artifact.report["candidate_fit_reports"][candidate_id][
+            "source_alias_count"
+        ]
+        == 1
+        for candidate_id in candidate_ids
+    )
     assert artifact.verify_authentication()
 
 
@@ -1193,53 +1302,168 @@ def test_macrocell_inventory_without_anchors_falls_back_to_endpoint_ranking() ->
     ) == tuple(sorted(ranking_ids[:3]))
 
 
-def test_macrocell_inventory_reserves_one_fhvr_source_without_losing_spread() -> None:
+def test_macrocell_inventory_reserves_two_fhvr_arms_at_exact_budget_eight() -> None:
     endpoint_control = "candidate-endpoint-control"
-    fhvr_candidate = "candidate-fhvr-survivor"
-    anchor_ids = tuple(f"candidate--anchor-{ordinal:02d}" for ordinal in range(6))
+    cap1k_candidate = "candidate-fhvr-cap1k"
+    cap10k_candidate = "candidate-fhvr-cap10k"
+    anchor_ids = tuple(f"candidate--anchor-{ordinal:02d}" for ordinal in range(10))
     ordinary_ids = ("candidate-ranked-a", "candidate-ranked-b")
     ranking_ids = (
         endpoint_control,
         *ordinary_ids,
-        fhvr_candidate,
+        cap1k_candidate,
+        cap10k_candidate,
         *anchor_ids,
     )
     frontier = _synthetic_macrocell_frontier(
-        (endpoint_control, fhvr_candidate, *anchor_ids, *ordinary_ids),
+        (
+            endpoint_control,
+            cap1k_candidate,
+            cap10k_candidate,
+            *anchor_ids,
+            *ordinary_ids,
+        ),
         ranking_ids=ranking_ids,
         selected_candidate_id=endpoint_control,
-        source_candidate_kinds={
-            fhvr_candidate: FHVR_MF_CANDIDATE_KIND,
+        source_candidate_ids={
+            cap1k_candidate: (FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,),
+            cap10k_candidate: (FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,),
         },
     )
 
     selected_ids = select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
         frontier,
-        4,
+        8,
     )
     assert selected_ids == tuple(
         sorted(
             (
                 endpoint_control,
-                fhvr_candidate,
+                cap1k_candidate,
+                cap10k_candidate,
                 anchor_ids[0],
-                anchor_ids[-1],
+                anchor_ids[2],
+                anchor_ids[4],
+                anchor_ids[6],
+                anchor_ids[9],
             )
         )
     )
-    assert sum(
-        any(
-            source.get("candidate_kind") == FHVR_MF_CANDIDATE_KIND
-            for source in frontier.candidate(candidate_id).fit_provenance.get(
-                "sources",
-                (),
+    decision = _valid_macrocell_decision(
+        frontier,
+        candidate_budget=8,
+    )
+    _, verified = _verified_macrocell_selector_decision(frontier, decision)
+    assert verified["candidate_budget"] == 8
+    assert verified["evaluated_candidate_ids"] == list(selected_ids)
+    forged = _valid_macrocell_decision(
+        frontier,
+        candidate_budget=8,
+        evaluated_candidate_ids=(
+            endpoint_control,
+            cap10k_candidate,
+            *anchor_ids[:6],
+        ),
+    )
+    with pytest.raises(
+        Lfm2CpcfShortConvV4FoldError,
+        match="deterministic structural frontier inventory",
+    ):
+        _verified_macrocell_selector_decision(frontier, forged)
+
+
+def test_macrocell_budget_eight_retains_both_pure_and_hybrid_fhvr_arms() -> None:
+    endpoint_control = "candidate-endpoint-control"
+    cap1k_candidate = "candidate-fhvr-cap1k"
+    cap10k_candidate = "candidate-fhvr-cap10k"
+    cap1k_hybrid = "candidate-hybrid-cap1k"
+    cap10k_hybrid = "candidate-hybrid-cap10k"
+    anchor_ids = tuple(
+        f"candidate--anchor-{ordinal:02d}" for ordinal in range(10)
+    )
+    ordinary_ids = ("candidate-ranked-a", "candidate-ranked-b")
+    ranking_ids = (
+        endpoint_control,
+        *ordinary_ids,
+        cap1k_candidate,
+        cap10k_candidate,
+        cap1k_hybrid,
+        cap10k_hybrid,
+        *anchor_ids,
+    )
+    frontier = _synthetic_macrocell_frontier(
+        (
+            endpoint_control,
+            cap1k_candidate,
+            cap10k_candidate,
+            cap1k_hybrid,
+            cap10k_hybrid,
+            *anchor_ids,
+            *ordinary_ids,
+        ),
+        ranking_ids=ranking_ids,
+        selected_candidate_id=endpoint_control,
+        source_candidate_ids={
+            cap1k_candidate: (FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,),
+            cap10k_candidate: (FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,),
+        },
+        hybrid_source_candidate_ids={
+            cap1k_hybrid: (
+                FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+            ),
+            cap10k_hybrid: (
+                FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+            ),
+        },
+    )
+
+    selected_ids = select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
+        frontier,
+        8,
+    )
+    assert selected_ids == tuple(
+        sorted(
+            (
+                endpoint_control,
+                cap1k_candidate,
+                cap10k_candidate,
+                cap1k_hybrid,
+                cap10k_hybrid,
+                anchor_ids[0],
+                anchor_ids[4],
+                anchor_ids[9],
             )
         )
-        for candidate_id in selected_ids
-    ) == 1
+    )
+    decision = _valid_macrocell_decision(
+        frontier,
+        candidate_budget=8,
+    )
+    _, verified = _verified_macrocell_selector_decision(frontier, decision)
+    assert tuple(verified["evaluated_candidate_ids"]) == selected_ids
+    forged = _valid_macrocell_decision(
+        frontier,
+        candidate_budget=8,
+        evaluated_candidate_ids=tuple(
+            sorted(
+                (
+                    endpoint_control,
+                    cap1k_candidate,
+                    cap10k_candidate,
+                    cap10k_hybrid,
+                    *anchor_ids[:4],
+                )
+            )
+        ),
+    )
+    with pytest.raises(
+        Lfm2CpcfShortConvV4FoldError,
+        match="deterministic structural frontier inventory",
+    ):
+        _verified_macrocell_selector_decision(frontier, forged)
 
 
-def test_macrocell_inventory_reuses_fhvr_endpoint_slot_after_deduplication() -> None:
+def test_macrocell_inventory_reuses_one_representative_for_both_deduped_arms() -> None:
     endpoint_control = "candidate-endpoint-control"
     anchor_ids = tuple(f"candidate--anchor-{ordinal:02d}" for ordinal in range(6))
     ordinary_id = "candidate-ranked-fill"
@@ -1247,8 +1471,11 @@ def test_macrocell_inventory_reuses_fhvr_endpoint_slot_after_deduplication() -> 
         (endpoint_control, ordinary_id, *anchor_ids),
         ranking_ids=(endpoint_control, ordinary_id, *anchor_ids),
         selected_candidate_id=endpoint_control,
-        source_candidate_kinds={
-            endpoint_control: FHVR_MF_CANDIDATE_KIND,
+        source_candidate_ids={
+            endpoint_control: (
+                FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+                FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+            ),
         },
     )
 
@@ -1260,6 +1487,57 @@ def test_macrocell_inventory_reuses_fhvr_endpoint_slot_after_deduplication() -> 
         sorted((endpoint_control, anchor_ids[0], anchor_ids[-1]))
     )
     assert ordinary_id not in selected_ids
+
+
+def test_macrocell_inventory_prioritizes_cap10k_at_budget_two_then_both_arms() -> None:
+    endpoint_control = "candidate-endpoint-control"
+    cap1k_candidate = "candidate-fhvr-cap1k"
+    cap10k_candidate = "candidate-fhvr-cap10k"
+    ordinary_id = "candidate-ranked-fill"
+    frontier = _synthetic_macrocell_frontier(
+        (endpoint_control, cap1k_candidate, cap10k_candidate, ordinary_id),
+        ranking_ids=(
+            endpoint_control,
+            cap1k_candidate,
+            ordinary_id,
+            cap10k_candidate,
+        ),
+        selected_candidate_id=endpoint_control,
+        source_candidate_ids={
+            cap1k_candidate: (FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,),
+            cap10k_candidate: (FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,),
+        },
+    )
+
+    assert select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
+        frontier,
+        2,
+    ) == tuple(sorted((endpoint_control, cap10k_candidate)))
+    assert select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
+        frontier,
+        3,
+    ) == tuple(sorted((endpoint_control, cap1k_candidate, cap10k_candidate)))
+
+
+def test_macrocell_inventory_rejects_one_arm_with_multiple_representatives() -> None:
+    endpoint_control = "candidate-endpoint-control"
+    first = "candidate-fhvr-first"
+    second = "candidate-fhvr-second"
+    frontier = _synthetic_macrocell_frontier(
+        (endpoint_control, first, second),
+        ranking_ids=(endpoint_control, first, second),
+        selected_candidate_id=endpoint_control,
+        source_candidate_ids={
+            first: (FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,),
+            second: (FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,),
+        },
+    )
+
+    with pytest.raises(
+        Lfm2CpcfShortConvV4FoldError,
+        match="maps to multiple target-dtype macrocell representatives",
+    ):
+        select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(frontier, 3)
 
 
 def test_macrocell_frontier_rejects_heterogeneous_native_bias_topology() -> None:

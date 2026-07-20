@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -13,6 +14,7 @@ from neural_forge import hf_lfm2_cpcf_short_conv_v5 as v5_module  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (  # noqa: E402
     Lfm2CpcfShortConvV5Error,
     Lfm2CpcfV5AcceptedPathState,
+    Lfm2CpcfV5AllChannelFirRidgeCase,
     Lfm2CpcfV5FirBasisCase,
     Lfm2CpcfV5FirBasisPolicy,
     Lfm2CpcfV5RidgeCase,
@@ -23,6 +25,8 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (  # noqa: E402
     fixed_v5_accepted_edge_interpolation_fractions,
     interpolate_every_lfm2_cpcf_v5_accepted_edge,
     rescore_sealed_v4_short_conv_selection_frontier,
+    solve_condition_capped_batched_all_channel_fir_ridge_candidate,
+    solve_condition_capped_equilibrated_prior_residual_ridge_candidate,
     verify_lfm2_cpcf_short_conv_v5_report,
 )
 
@@ -423,6 +427,388 @@ def test_equilibrated_ridge_frontier_shares_one_system_with_exact_parity(
         assert actual_result.diagnostics["condition_cap_passed"] is True
         assert actual_result.diagnostics["nullspace_preserves_prior"] is True
         assert actual_result.verify_authentication()
+
+
+@pytest.mark.parametrize("condition_cap", [1_000.0, 10_000.0])
+@pytest.mark.parametrize("fit_intercept", [False, True])
+def test_single_condition_cap_is_byte_identical_to_frontier_candidate(
+    monkeypatch,
+    condition_cap,
+    fit_intercept,
+) -> None:
+    generator = torch.Generator().manual_seed(20260719)
+    design_a = torch.randn((41, 5), generator=generator, dtype=torch.float64)
+    design_b = torch.randn((23, 5), generator=generator, dtype=torch.float64)
+    coefficient = torch.randn((5, 2), generator=generator, dtype=torch.float64)
+    target_bias = torch.tensor([0.75, -1.25], dtype=torch.float64)
+    cases = (
+        Lfm2CpcfV5RidgeCase(
+            "fit-a",
+            "fit",
+            design_a,
+            design_a @ coefficient + target_bias,
+        ),
+        Lfm2CpcfV5RidgeCase(
+            "fit-b",
+            "fit",
+            design_b,
+            design_b @ coefficient + target_bias,
+        ),
+    )
+    prior_weight = 0.6 * coefficient
+    prior_bias = (
+        0.6 * target_bias
+        if fit_intercept
+        else None
+    )
+    policy = Lfm2CpcfV5RidgePolicy(
+        parameter_trust_radius=0.75,
+        effect_trust_radius=0.5,
+    )
+    candidate_id = f"kappa-{int(condition_cap):05d}"
+    expected = condition_capped_equilibrated_prior_residual_ridge_frontier(
+        cases,
+        prior_weight=prior_weight,
+        prior_bias=prior_bias,
+        fit_intercept=fit_intercept,
+        policy=policy,
+    )[candidate_id]
+    prepare_calls = []
+    solve_calls = []
+    original_prepare = v5_module._prepare_equilibrated_ridge_system
+    original_solve = v5_module._solve_equilibrated_candidate
+
+    def counted_prepare(**kwargs):
+        prepare_calls.append(kwargs)
+        return original_prepare(**kwargs)
+
+    def counted_solve(**kwargs):
+        solve_calls.append(kwargs)
+        return original_solve(**kwargs)
+
+    monkeypatch.setattr(
+        v5_module,
+        "_prepare_equilibrated_ridge_system",
+        counted_prepare,
+    )
+    monkeypatch.setattr(
+        v5_module,
+        "_solve_equilibrated_candidate",
+        counted_solve,
+    )
+    actual = solve_condition_capped_equilibrated_prior_residual_ridge_candidate(
+        cases,
+        condition_cap=condition_cap,
+        prior_weight=prior_weight,
+        prior_bias=prior_bias,
+        fit_intercept=fit_intercept,
+        policy=policy,
+    )
+
+    assert len(prepare_calls) == 1
+    assert len(solve_calls) == 1
+    assert solve_calls[0]["condition_cap"] == condition_cap
+    assert solve_calls[0]["shared_system"] is not None
+    assert torch.equal(actual.weight, expected.weight)
+    if expected.bias is None:
+        assert actual.bias is None
+    else:
+        assert torch.equal(actual.bias, expected.bias)
+    assert dict(actual.diagnostics) == dict(expected.diagnostics)
+    assert (
+        actual.diagnostics["report_sha256"]
+        == expected.diagnostics["report_sha256"]
+    )
+    assert actual.verify_authentication()
+
+
+def test_single_condition_cap_rejects_cap_outside_authenticated_policy() -> None:
+    design = torch.ones((4, 1), dtype=torch.float64)
+    case = Lfm2CpcfV5RidgeCase("fit", "fit", design, 2.0 * design)
+
+    with pytest.raises(
+        Lfm2CpcfShortConvV5Error,
+        match="authenticated by the ridge policy",
+    ):
+        solve_condition_capped_equilibrated_prior_residual_ridge_candidate(
+            (case,),
+            condition_cap=2_000.0,
+            prior_weight=torch.zeros((1, 1), dtype=torch.float64),
+            prior_bias=None,
+            fit_intercept=False,
+        )
+
+
+def _all_channel_fir_problem(
+    *,
+    channel_count: int,
+    fir_length: int,
+    physical_bias: bool,
+    seed: int = 20260719,
+):
+    generator = torch.Generator().manual_seed(seed)
+    feature_width = fir_length + int(physical_bias)
+    prior = (
+        torch.randn(
+            (channel_count, feature_width),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.2
+    )
+    desired = (
+        prior
+        + torch.randn(
+            (channel_count, feature_width),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.35
+    )
+    cases = []
+    for case_index, row_count in enumerate((37, 23, 11)):
+        design = torch.randn(
+            (channel_count, row_count, feature_width),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        target = torch.bmm(
+            design,
+            desired.unsqueeze(-1),
+        ).squeeze(-1)
+        target = target + 0.01 * torch.randn(
+            target.shape,
+            generator=generator,
+            dtype=torch.float64,
+        )
+        mask = torch.ones(row_count, dtype=torch.bool)
+        mask[(case_index + 1) :: (case_index + 5)] = False
+        cases.append(
+            Lfm2CpcfV5AllChannelFirRidgeCase(
+                case_id=f"fit-{case_index:02d}",
+                split="fit",
+                design=design,
+                target=target,
+                valid_rows=mask,
+            )
+        )
+    return tuple(cases), prior
+
+
+def _scalar_all_channel_fir_oracle(
+    cases,
+    prior,
+    *,
+    condition_cap,
+    policy,
+):
+    results = []
+    for channel in range(int(prior.shape[0])):
+        scalar_cases = tuple(
+            Lfm2CpcfV5RidgeCase(
+                case_id=case.case_id,
+                split="fit",
+                design=case.design[channel],
+                target=case.target[channel].unsqueeze(-1),
+                valid_rows=case.valid_rows,
+            )
+            for case in cases
+        )
+        results.append(
+            solve_condition_capped_equilibrated_prior_residual_ridge_candidate(
+                scalar_cases,
+                condition_cap=condition_cap,
+                prior_weight=prior[channel].unsqueeze(-1),
+                prior_bias=None,
+                fit_intercept=False,
+                policy=policy,
+            ).weight[:, 0]
+        )
+    return torch.stack(results)
+
+
+@pytest.mark.parametrize("condition_cap", [1_000.0, 10_000.0])
+@pytest.mark.parametrize("physical_bias", [False, True])
+def test_batched_fir_matches_scalar_for_both_caps_bias_and_masks(
+    condition_cap,
+    physical_bias,
+) -> None:
+    cases, prior = _all_channel_fir_problem(
+        channel_count=17,
+        fir_length=3,
+        physical_bias=physical_bias,
+    )
+    policy = Lfm2CpcfV5RidgePolicy(
+        parameter_trust_radius=0.7,
+        effect_trust_radius=0.5,
+    )
+
+    actual = solve_condition_capped_batched_all_channel_fir_ridge_candidate(
+        tuple(reversed(cases)),
+        condition_cap=condition_cap,
+        prior_parameters=prior,
+        physical_bias_coordinate=physical_bias,
+        policy=policy,
+    )
+    expected = _scalar_all_channel_fir_oracle(
+        cases,
+        prior,
+        condition_cap=condition_cap,
+        policy=policy,
+    )
+
+    assert actual.verify_authentication()
+    assert torch.allclose(actual.parameters, expected, atol=5e-12, rtol=5e-12)
+    assert (
+        float((actual.parameters - expected).abs().max().item())
+        < 5e-12
+    )
+    report = actual.diagnostics
+    assert report["case_balanced"] is True
+    assert report["mask_scope"] == "case_shared_all_channels"
+    assert report["channel_count"] == 17
+    assert report["fir_length"] == 3
+    assert report["physical_bias_coordinate_present"] is physical_bias
+    assert report["condition_cap"] == condition_cap
+    assert report["condition_cap_passed"] is True
+    assert report["parameter_space_trust"]["passed"] is True
+    assert report["function_space_trust"]["passed"] is True
+    assert report["scalar_oracle_policy"]["deterministic_indices"] == [
+        0,
+        8,
+        16,
+    ]
+    assert report["scalar_oracle_policy"]["oracle_results_installed"] is True
+    assert report["execution_device"] == "cpu"
+    assert report["execution_dtype"] == "float64"
+
+
+def test_batched_fir_degenerate_threshold_and_tight_trust_fallback() -> None:
+    generator = torch.Generator().manual_seed(20260720)
+    channel_count = 7
+    row_count = 41
+    feature_width = 4
+    design = torch.randn(
+        (channel_count, row_count, feature_width),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    design[0] = 0.0
+    design[1, :, 3] = design[1, :, 0] * 1e-12
+    design[2, :, 2] = design[2, :, 1]
+    prior = torch.randn(
+        (channel_count, feature_width),
+        generator=generator,
+        dtype=torch.float64,
+    )
+    target = torch.randn(
+        (channel_count, row_count),
+        generator=generator,
+        dtype=torch.float64,
+    ) * 100.0
+    mask = torch.ones(row_count, dtype=torch.bool)
+    mask[::7] = False
+    case = Lfm2CpcfV5AllChannelFirRidgeCase(
+        "fit-degenerate",
+        "fit",
+        design,
+        target,
+        mask,
+    )
+    policy = Lfm2CpcfV5RidgePolicy(
+        parameter_trust_radius=0.01,
+        effect_trust_radius=0.02,
+    )
+
+    actual = solve_condition_capped_batched_all_channel_fir_ridge_candidate(
+        (case,),
+        condition_cap=1_000.0,
+        prior_parameters=prior,
+        physical_bias_coordinate=True,
+        policy=policy,
+    )
+    expected = _scalar_all_channel_fir_oracle(
+        (case,),
+        prior,
+        condition_cap=1_000.0,
+        policy=policy,
+    )
+
+    assert actual.verify_authentication()
+    assert torch.allclose(actual.parameters, expected, atol=5e-11, rtol=5e-11)
+    ambiguous = actual.diagnostics["scalar_oracle_policy"][
+        "threshold_ambiguous_indices"
+    ]
+    assert 0 in ambiguous
+    assert set((0, channel_count // 2, channel_count - 1)) <= set(
+        actual.diagnostics["scalar_oracle_policy"]["oracle_channel_indices"]
+    )
+    assert torch.equal(actual.parameters[0], prior[0])
+    assert actual.diagnostics["effective_rank_minimum"] == 0
+    assert actual.diagnostics["nullspace_preserves_prior"] is True
+    assert actual.diagnostics["parameter_space_trust"]["passed"] is True
+    assert actual.diagnostics["function_space_trust"]["passed"] is True
+
+
+def test_batched_fir_receipt_and_solution_tamper_fail_authentication() -> None:
+    cases, prior = _all_channel_fir_problem(
+        channel_count=9,
+        fir_length=3,
+        physical_bias=True,
+    )
+    result = solve_condition_capped_batched_all_channel_fir_ridge_candidate(
+        cases,
+        condition_cap=10_000.0,
+        prior_parameters=prior,
+        physical_bias_coordinate=True,
+    )
+
+    assert result.verify_authentication()
+    tampered_report = dict(result.diagnostics)
+    tampered_report["channel_count"] += 1
+    assert not replace(result, diagnostics=tampered_report).verify_authentication()
+    tampered_parameters = result.parameters.clone()
+    tampered_parameters[1, 1] += 1e-4
+    assert not replace(
+        result,
+        parameters=tampered_parameters,
+    ).verify_authentication()
+
+
+def test_batched_fir_production_shape_shadow_preserves_target_dtype_decisions() -> None:
+    cases, prior = _all_channel_fir_problem(
+        channel_count=64,
+        fir_length=3,
+        physical_bias=True,
+        seed=20260721,
+    )
+    policy = Lfm2CpcfV5RidgePolicy(
+        parameter_trust_radius=0.8,
+        effect_trust_radius=0.6,
+    )
+    batched = solve_condition_capped_batched_all_channel_fir_ridge_candidate(
+        cases,
+        condition_cap=1_000.0,
+        prior_parameters=prior,
+        physical_bias_coordinate=True,
+        policy=policy,
+    )
+    scalar = _scalar_all_channel_fir_oracle(
+        cases,
+        prior,
+        condition_cap=1_000.0,
+        policy=policy,
+    )
+
+    assert torch.allclose(batched.parameters, scalar, atol=5e-12, rtol=5e-12)
+    assert torch.equal(
+        batched.parameters.to(dtype=torch.float32),
+        scalar.to(dtype=torch.float32),
+    )
+    assert torch.equal(
+        batched.parameters.to(dtype=torch.bfloat16),
+        scalar.to(dtype=torch.bfloat16),
+    )
 
 
 def test_equilibrated_ridge_separates_intercept_and_trust_units() -> None:

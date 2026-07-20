@@ -7,13 +7,25 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
     causal_depthwise_context,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
+    Lfm2CpcfShortConvNumericalRawCandidate,
     Lfm2CpcfShortConvNumericalFrontierRequest,
     Lfm2CpcfShortConvV4FoldCase,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+    FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+    FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+    FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+    FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
     FHVR_MF_CANDIDATE_KIND,
+    FHVR_MF_FULL_COVERAGE_FHVR_FRACTION,
+    FHVR_MF_FULL_COVERAGE_HYBRID_KIND,
+    FHVR_MF_FULL_COVERAGE_HYBRID_SELECTOR_ARM_CANDIDATE_IDS,
+    FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS,
+    FHVR_MF_FULL_COVERAGE_WRITER_FRACTION,
+    FHVR_MF_SELECTOR_ARM_CANDIDATE_IDS,
     Lfm2CpcfFhvrMfPolicy,
     build_lfm2_cpcf_fhvr_mf_candidate,
+    build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate,
     solve_lfm2_cpcf_fhvr_mf_conditional_factor,
 )
 
@@ -351,3 +363,165 @@ def test_full_fhvr_mf_candidate_is_authenticated_and_repeatable() -> None:
     assert provenance["execution"]["training_steps"] == 0
     assert provenance["execution"]["backward_calls"] == 0
     assert provenance["execution"]["optimizer_steps"] == 0
+
+
+def test_production_fhvr_policy_arms_have_exact_authenticated_identities() -> None:
+    legacy = Lfm2CpcfFhvrMfPolicy()
+    future = Lfm2CpcfFhvrMfPolicy(
+        condition_cap=10_000.0,
+        factor_sweeps=1,
+    )
+
+    assert legacy.verify_authentication()
+    assert future.verify_authentication()
+    assert legacy.authentication_sha256 == (
+        "24ebd98465cd44c335f224f5709b05af8eb21a89e582f0a26eefb6263a0585ed"
+    )
+    assert future.authentication_sha256 == (
+        "7435a10ed9a7efc3d0420cf40883903951f82fd6aacdad1491532609207580bd"
+    )
+    assert legacy.condition_cap == 1_000.0
+    assert legacy.factor_sweeps == 2
+    assert future.condition_cap == 10_000.0
+    assert future.factor_sweeps == 1
+    assert legacy.pcg_iterations == future.pcg_iterations == 16
+    assert FHVR_MF_SELECTOR_ARM_CANDIDATE_IDS == (
+        FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+        FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+    )
+    assert FHVR_MF_FULL_COVERAGE_HYBRID_SELECTOR_ARM_CANDIDATE_IDS == (
+        FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+        FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+    )
+
+
+def test_full_coverage_hybrids_are_fit_only_complete_and_repeatable() -> None:
+    request, context_encoder = _request()
+    legacy_policy = Lfm2CpcfFhvrMfPolicy()
+    cap10k_policy = Lfm2CpcfFhvrMfPolicy(
+        condition_cap=10_000.0,
+        factor_sweeps=1,
+    )
+    pure_candidates = (
+        build_lfm2_cpcf_fhvr_mf_candidate(
+            request,
+            context_encoder=context_encoder,
+            policy=legacy_policy,
+            candidate_id=FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+        ),
+        build_lfm2_cpcf_fhvr_mf_candidate(
+            request,
+            context_encoder=context_encoder,
+            policy=cap10k_policy,
+            candidate_id=FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+        ),
+    )
+    writer_state = pure_candidates[0].state_dict()
+    writer = Lfm2CpcfShortConvNumericalRawCandidate(
+        request_sha256=request.request_sha256,
+        candidate_id="v5-test--anchor-01-pass-00-writer",
+        candidate_kind="accepted_fit_projection_path_anchor",
+        in_proj_weight=writer_state["in_proj_weight"],
+        in_proj_bias=writer_state["in_proj_bias"],
+        fir_kernel=writer_state["fir_kernel"],
+        fir_bias=writer_state["fir_bias"],
+        writer_weight=writer_state["writer_weight"],
+        writer_bias=writer_state["writer_bias"],
+        method_provenance={
+            "method": "test_fit_only_writer_control",
+            "fit_only": True,
+            "selection_cases_consumed": 0,
+            "validation_cases_consumed": 0,
+        },
+    )
+    hybrid_specs = (
+        (
+            pure_candidates[0],
+            legacy_policy,
+            FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+        ),
+        (
+            pure_candidates[1],
+            cap10k_policy,
+            FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+        ),
+    )
+    hybrids = tuple(
+        build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate(
+            request,
+            context_encoder=context_encoder,
+            writer_candidate=writer,
+            fhvr_candidate=pure,
+            policy=policy,
+            candidate_id=hybrid_id,
+        )
+        for pure, policy, hybrid_id in hybrid_specs
+    )
+    repeated = build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate(
+        request,
+        context_encoder=context_encoder,
+        writer_candidate=writer,
+        fhvr_candidate=pure_candidates[0],
+        policy=legacy_policy,
+        candidate_id=FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+    )
+
+    assert all(candidate.verify_authentication() for candidate in hybrids)
+    assert hybrids[0].state_sha256 == repeated.state_sha256
+    assert hybrids[0].report["report_sha256"] == repeated.report["report_sha256"]
+    assert [candidate.candidate_id for candidate in hybrids] == [
+        FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+        FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+    ]
+    assert all(
+        candidate.candidate_kind == FHVR_MF_FULL_COVERAGE_HYBRID_KIND
+        for candidate in hybrids
+    )
+    for candidate, (source, policy, _) in zip(
+        hybrids,
+        hybrid_specs,
+        strict=True,
+    ):
+        provenance = candidate.method_provenance
+        coverage = provenance["full_coverage"]
+        assert provenance["source_writer_candidate_id"] == writer.candidate_id
+        assert provenance["source_fhvr_candidate_id"] == source.candidate_id
+        assert dict(provenance["policy"]) == policy.as_dict()
+        assert (
+            provenance["fixed_fhvr_fraction"]
+            == FHVR_MF_FULL_COVERAGE_FHVR_FRACTION
+            == 0.75
+        )
+        assert (
+            provenance["fixed_writer_fraction"]
+            == FHVR_MF_FULL_COVERAGE_WRITER_FRACTION
+            == 0.25
+        )
+        assert (
+            provenance["fixed_refactor_sweeps"]
+            == FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS
+            == 2
+        )
+        assert coverage["source_channel_tuples_presented"] == 4
+        assert coverage["source_channel_tuples_assigned"] == 4
+        assert coverage["writer_source_channel_coverage"] == (0, 1)
+        assert coverage["fhvr_source_channel_coverage"] == (0, 1)
+        assert coverage["each_source_channel_assigned_exactly_once"] is True
+        assert coverage["both_source_masses_strictly_positive"] is True
+        assert coverage["source_channels_dropped"] == 0
+        assert coverage["source_channels_pruned"] == 0
+        assert provenance["fit_only"] is True
+        assert provenance["selection_cases_consumed"] == 0
+        assert provenance["validation_cases_consumed"] == 0
+        assert provenance["execution"]["training_steps"] == 0
+        assert provenance["execution"]["parameters_pruned"] == 0
+        assert provenance["execution"]["parameters_quantized"] == 0
+        evidence = provenance["synthetic_evidence"]
+        assert evidence["fhvr_fractions_tested"] == (0.25, 0.5, 0.75)
+        assert evidence["retained_fhvr_fraction"] == 0.75
+        assert evidence["rejected_fhvr_fractions"] == (0.25, 0.5)
+        assert evidence["legacy_arm"]["final_proxy_win_count"] == 4
+        assert evidence["cap10k_arm"]["final_proxy_win_count"] == 4
+        assert evidence["total_arm_seed_losses"] == 2
+        assert evidence["total_arm_seed_trials"] == 10
+        assert evidence["losses_disclosed"] is True

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 
@@ -9,6 +10,7 @@ import pytest
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 
+import neural_forge.hf_lfm2_cpcf_model_compiler as model_compiler  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_installability import (  # noqa: E402
     Lfm2CpcfInstallableLayerEvidence,
     Lfm2CpcfInstallablePhaseEvidence,
@@ -447,4 +449,201 @@ def test_phase_bank_rejects_skipping_a_sequential_layer() -> None:
             target,
             layer_index=1,
             input_bank=bank,
+        )
+
+
+def test_explicit_execution_layer_replays_only_private_replica_and_is_serial_equal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = _target()
+    install_lfm2_cpcf_tied_interface(target, _interface())
+    install_lfm2_cpcf_neutral_norms(target)
+    bank = seed_lfm2_cpcf_phase_states(target, _phases())
+    canonical_layer = target.model.layers[0]
+    canonical_layer.register_buffer(
+        "execution_seam_test_buffer",
+        torch.arange(4, dtype=torch.float32),
+    )
+    canonical_before = {
+        name: value.detach().clone()
+        for name, value in canonical_layer.state_dict().items()
+    }
+    canonical_identities = {
+        name: id(value) for name, value in canonical_layer.named_parameters()
+    }
+    serial = replay_lfm2_cpcf_phase_bank(
+        target,
+        layer_index=0,
+        input_bank=bank,
+    )
+    explicit_none = replay_lfm2_cpcf_phase_bank(
+        target,
+        layer_index=0,
+        input_bank=bank,
+        execution_layer=None,
+    )
+    assert serial.report == explicit_none.report
+    assert json.dumps(
+        serial.as_dict(),
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii") == json.dumps(
+        explicit_none.as_dict(),
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+
+    replica = copy.deepcopy(canonical_layer)
+    replica_storage = {
+        int(value.untyped_storage().data_ptr())
+        for value in replica.parameters()
+        if value.numel() != 0
+    }
+    canonical_storage = {
+        int(value.untyped_storage().data_ptr())
+        for value in canonical_layer.parameters()
+        if value.numel() != 0
+    }
+    assert not replica_storage.intersection(canonical_storage)
+    executed_layers = []
+    original_macrocell = model_compiler.replay_lfm2_cpcf_macrocell
+
+    def macrocell_spy(layer, *args, **kwargs):
+        executed_layers.append(layer)
+        return original_macrocell(layer, *args, **kwargs)
+
+    monkeypatch.setattr(
+        model_compiler,
+        "replay_lfm2_cpcf_macrocell",
+        macrocell_spy,
+    )
+    overridden = replay_lfm2_cpcf_phase_bank(
+        target,
+        layer_index=0,
+        input_bank=bank,
+        execution_layer=replica,
+    )
+
+    assert executed_layers
+    assert all(layer is replica for layer in executed_layers)
+    assert all(layer is not canonical_layer for layer in executed_layers)
+    assert overridden.report["execution_layer_override"] is True
+    assert overridden.report["canonical_model_layer_executed"] is False
+    assert overridden.report["private_layer_replica_storage_isolated"] is True
+    assert (
+        overridden.report[
+            "private_layer_replica_parameter_and_buffer_topology_verified"
+        ]
+        is True
+    )
+    assert (
+        overridden.report[
+            "private_layer_replica_parameter_and_buffer_aliases_preserved"
+        ]
+        is True
+    )
+    assert (
+        overridden.report[
+            "private_layer_replica_parameter_and_buffer_storage_isolated"
+        ]
+        is True
+    )
+    assert (
+        overridden.post_layer_bank.state_bank_sha256
+        == serial.post_layer_bank.state_bank_sha256
+    )
+    assert {
+        name: id(value) for name, value in canonical_layer.named_parameters()
+    } == canonical_identities
+    for name, value in canonical_layer.state_dict().items():
+        torch.testing.assert_close(value, canonical_before[name], rtol=0, atol=0)
+
+
+def test_explicit_execution_layer_rejects_canonical_or_shared_storage() -> None:
+    target = _target()
+    install_lfm2_cpcf_tied_interface(target, _interface())
+    install_lfm2_cpcf_neutral_norms(target)
+    bank = seed_lfm2_cpcf_phase_states(target, _phases())
+    canonical_layer = target.model.layers[0]
+
+    with pytest.raises(
+        Lfm2CpcfModelCompilerError,
+        match="private topology-identical",
+    ):
+        replay_lfm2_cpcf_phase_bank(
+            target,
+            layer_index=0,
+            input_bank=bank,
+            execution_layer=canonical_layer,
+        )
+
+    shared = copy.deepcopy(canonical_layer)
+    shared.conv.in_proj.weight = canonical_layer.conv.in_proj.weight
+    with pytest.raises(
+        Lfm2CpcfModelCompilerError,
+        match="shares parameter storage",
+    ):
+        replay_lfm2_cpcf_phase_bank(
+            target,
+            layer_index=0,
+            input_bank=bank,
+            execution_layer=shared,
+        )
+
+
+def test_explicit_execution_layer_rejects_buffer_topology_alias_or_storage_drift(
+) -> None:
+    target = _target()
+    install_lfm2_cpcf_tied_interface(target, _interface())
+    install_lfm2_cpcf_neutral_norms(target)
+    bank = seed_lfm2_cpcf_phase_states(target, _phases())
+    canonical_layer = target.model.layers[0]
+    shared_alias = torch.arange(4, dtype=torch.float32)
+    canonical_layer.register_buffer("execution_seam_buffer_a", shared_alias)
+    canonical_layer.register_buffer("execution_seam_buffer_b", shared_alias)
+
+    topology_drift = copy.deepcopy(canonical_layer)
+    topology_drift.execution_seam_buffer_a = torch.zeros(5)
+    with pytest.raises(
+        Lfm2CpcfModelCompilerError,
+        match="private topology-identical",
+    ):
+        replay_lfm2_cpcf_phase_bank(
+            target,
+            layer_index=0,
+            input_bank=bank,
+            execution_layer=topology_drift,
+        )
+
+    alias_drift = copy.deepcopy(canonical_layer)
+    alias_drift.execution_seam_buffer_b = (
+        alias_drift.execution_seam_buffer_b.clone()
+    )
+    with pytest.raises(
+        Lfm2CpcfModelCompilerError,
+        match="private topology-identical",
+    ):
+        replay_lfm2_cpcf_phase_bank(
+            target,
+            layer_index=0,
+            input_bank=bank,
+            execution_layer=alias_drift,
+        )
+
+    storage_shared = copy.deepcopy(canonical_layer)
+    storage_shared.execution_seam_buffer_a = canonical_layer.execution_seam_buffer_a
+    storage_shared.execution_seam_buffer_b = canonical_layer.execution_seam_buffer_b
+    with pytest.raises(
+        Lfm2CpcfModelCompilerError,
+        match="buffer storage",
+    ):
+        replay_lfm2_cpcf_phase_bank(
+            target,
+            layer_index=0,
+            input_bank=bank,
+            execution_layer=storage_shared,
         )

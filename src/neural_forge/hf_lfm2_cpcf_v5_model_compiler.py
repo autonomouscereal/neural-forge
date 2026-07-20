@@ -249,6 +249,8 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
     from neural_forge import hf_lfm2_cpcf_short_conv_v5_numerical_adapter
     from neural_forge import hf_lfm2_cpcf_short_conv_v4_fold
     from neural_forge import hf_lfm2_cpcf_selective_evidence
+    from neural_forge import hf_lfm2_sequence_effective_attention_fold
+    from neural_forge import hf_lfm2_structural_residual_attention_fold
 
     modules = (
         sys.modules[__name__],
@@ -264,6 +266,8 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         hf_lfm2_cpcf_short_conv_v5_numerical_adapter,
         hf_lfm2_cpcf_short_conv_v4_fold,
         hf_lfm2_cpcf_selective_evidence,
+        hf_lfm2_sequence_effective_attention_fold,
+        hf_lfm2_structural_residual_attention_fold,
         sys.modules["neural_forge.hf_lfm2_cpcf_v5_resume"],
     )
     files = []
@@ -1955,7 +1959,7 @@ def _authenticated_bootstrap_payload(
 
 _REAL_V5_NUMERICAL_ADAPTER_IMPLEMENTATION = (
     "neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter."
-    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v4"
+    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v6"
 )
 _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS = {
     "parent_model_forward_calls",
@@ -2099,6 +2103,15 @@ def _prove_real_v5_numerical_layer(
         or provenance.get("source_channels_pruned") != 0
         or provenance.get("source_channels_quantized") != 0
         or provenance.get("source_fir_resized_before_basis") is not True
+        or provenance.get("fir_solver_backend")
+        != "authenticated_cpu_fp64_batched_all_channel_ridge"
+        or provenance.get("fir_solver_receipt_scope")
+        != "aggregate_all_target_fir_channels"
+        or provenance.get("fir_scalar_oracle_policy")
+        != (
+            "deterministic_first_middle_last_plus_"
+            "threshold_ambiguous_fallback"
+        )
         or provenance.get("fit_only") is not True
         or provenance.get("selection_cases_consumed") != 0
         or provenance.get("validation_cases_consumed") != 0

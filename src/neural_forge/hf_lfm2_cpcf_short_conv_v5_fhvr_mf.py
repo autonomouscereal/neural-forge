@@ -42,8 +42,34 @@ LFM2_CPCF_SHORT_CONV_V5_FHVR_MF_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-v5-fhvr-mf-v1"
 )
 FHVR_MF_CANDIDATE_ID = "v5-fhvr-mf-future-state-realization"
+FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID = FHVR_MF_CANDIDATE_ID
+FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID = (
+    "v5-fhvr-mf-future-state-realization-kappa-10000-sweeps-01"
+)
+FHVR_MF_SELECTOR_ARM_CANDIDATE_IDS = (
+    FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+    FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+)
 FHVR_MF_CANDIDATE_KIND = (
     "fit_only_future_hankel_volterra_matrix_free_realization"
+)
+FHVR_MF_FULL_COVERAGE_HYBRID_KIND = (
+    "fit_only_full_coverage_fhvr_writer_response_refactor"
+)
+FHVR_MF_FULL_COVERAGE_FHVR_FRACTION = 0.75
+FHVR_MF_FULL_COVERAGE_WRITER_FRACTION = 0.25
+FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS = 2
+FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID = (
+    f"{FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID}"
+    "--full-coverage-writer-hybrid-fhvr-075"
+)
+FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID = (
+    f"{FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID}"
+    "--full-coverage-writer-hybrid-fhvr-075"
+)
+FHVR_MF_FULL_COVERAGE_HYBRID_SELECTOR_ARM_CANDIDATE_IDS = (
+    FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+    FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
 )
 _IMPLEMENTATION = "neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf"
 _ZERO_EXECUTION = {
@@ -1625,6 +1651,692 @@ def _compact_solve_report(report: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _candidate_state_for_compute(
+    request: Lfm2CpcfShortConvNumericalFrontierRequest,
+    candidate: Lfm2CpcfShortConvNumericalRawCandidate,
+    *,
+    device: Any,
+    dtype: Any,
+    name: str,
+) -> dict[str, Any | None]:
+    torch = _torch()
+    if (
+        not isinstance(candidate, Lfm2CpcfShortConvNumericalRawCandidate)
+        or not candidate.verify_authentication()
+        or candidate.request_sha256 != request.request_sha256
+    ):
+        raise Lfm2CpcfFhvrMfError(
+            f"{name} is not an authenticated candidate for this request."
+        )
+    state = dict(candidate.state_dict())
+    for role, template in request.target_templates.items():
+        value = state[role]
+        if (value is None) != (template is None) or (
+            value is not None and tuple(value.shape) != tuple(template.shape)
+        ):
+            raise Lfm2CpcfFhvrMfError(
+                f"{name} differs from target topology for {role}."
+            )
+        if value is not None:
+            value = value.detach().to(device=device, dtype=dtype).contiguous()
+            if not bool(torch.isfinite(value).all().item()):
+                raise Lfm2CpcfFhvrMfError(f"{name}.{role} is non-finite.")
+            state[role] = value
+    return state
+
+
+def _candidate_histories(
+    evidence: Sequence[_EvidenceCase],
+    state: Mapping[str, Any | None],
+) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
+    hidden = int(state["writer_weight"].shape[0])
+    b_weight, c_weight, x_weight = _split_augmented_roles(state, hidden)
+    contexts = []
+    writes = []
+    for case in evidence:
+        b_value = case.features @ b_weight.T
+        c_value = case.features @ c_weight.T
+        x_value = case.features @ x_weight.T
+        filtered = _causal_filter(
+            b_value * x_value,
+            state["fir_kernel"],
+            state["fir_bias"],
+        )
+        context = (c_value * filtered).contiguous()
+        write = context @ state["writer_weight"].T
+        if state["writer_bias"] is not None:
+            write = write + state["writer_bias"]
+        contexts.append(context)
+        writes.append(write.contiguous())
+    return tuple(contexts), tuple(writes)
+
+
+def _full_coverage_pairing(
+    evidence: Sequence[_EvidenceCase],
+    writer_contexts: Sequence[Any],
+    fhvr_contexts: Sequence[Any],
+) -> tuple[Any, Any, Any, dict[str, Any]]:
+    torch = _torch()
+    hidden = int(writer_contexts[0].shape[-1])
+    device = writer_contexts[0].device
+    dtype = writer_contexts[0].dtype
+    cross = torch.zeros((hidden, hidden), device=device, dtype=dtype)
+    writer_energy = torch.zeros((hidden,), device=device, dtype=dtype)
+    fhvr_energy = torch.zeros((hidden,), device=device, dtype=dtype)
+    for case, writer_context, fhvr_context in zip(
+        evidence,
+        writer_contexts,
+        fhvr_contexts,
+        strict=True,
+    ):
+        weight = case.prefix_weight.reshape(-1, 1)
+        writer_rows = writer_context.reshape(-1, hidden)
+        fhvr_rows = fhvr_context.reshape(-1, hidden)
+        cross = cross + writer_rows.T @ (weight * fhvr_rows)
+        writer_energy = writer_energy + (weight * writer_rows.square()).sum(dim=0)
+        fhvr_energy = fhvr_energy + (weight * fhvr_rows.square()).sum(dim=0)
+    epsilon = torch.finfo(dtype).eps
+    score = cross.abs() / (
+        writer_energy.clamp(min=epsilon).sqrt().unsqueeze(1)
+        * fhvr_energy.clamp(min=epsilon).sqrt().unsqueeze(0)
+    ).clamp(min=epsilon)
+    flat_order = torch.argsort(
+        score.detach().to(device="cpu").reshape(-1),
+        descending=True,
+        stable=True,
+    )
+    assignment = [-1] * hidden
+    used_fhvr = [False] * hidden
+    for flat_index in flat_order.tolist():
+        writer_channel, fhvr_channel = divmod(int(flat_index), hidden)
+        if assignment[writer_channel] >= 0 or used_fhvr[fhvr_channel]:
+            continue
+        assignment[writer_channel] = fhvr_channel
+        used_fhvr[fhvr_channel] = True
+        if all(value >= 0 for value in assignment):
+            break
+    if (
+        any(value < 0 for value in assignment)
+        or sorted(assignment) != list(range(hidden))
+    ):
+        raise Lfm2CpcfFhvrMfError(
+            "Full-coverage pairing did not assign every source channel exactly once."
+        )
+    permutation = torch.tensor(
+        assignment,
+        device=device,
+        dtype=torch.long,
+    )
+    paired_cross = cross[
+        torch.arange(hidden, device=device),
+        permutation,
+    ]
+    signs = torch.where(
+        paired_cross < 0.0,
+        -torch.ones_like(paired_cross),
+        torch.ones_like(paired_cross),
+    )
+    paired_fhvr_energy = fhvr_energy.index_select(0, permutation)
+    scales = (
+        writer_energy.clamp(min=epsilon)
+        / paired_fhvr_energy.clamp(min=epsilon)
+    ).sqrt().clamp(min=0.125, max=8.0)
+    gauge = signs * scales
+    paired_scores = score[
+        torch.arange(hidden, device=device),
+        permutation,
+    ]
+    report = {
+        "algorithm": (
+            "deterministic_global_correlation_greedy_lowest_flat_index_ties"
+        ),
+        "writer_channel_count": hidden,
+        "fhvr_channel_count": hidden,
+        "target_group_count": hidden,
+        "assignment": assignment,
+        "writer_source_channel_coverage": list(range(hidden)),
+        "fhvr_source_channel_coverage": sorted(assignment),
+        "writer_channels_covered": hidden,
+        "fhvr_channels_covered": hidden,
+        "source_channel_tuples_presented": 2 * hidden,
+        "source_channel_tuples_assigned": 2 * hidden,
+        "source_channels_dropped": 0,
+        "source_channels_pruned": 0,
+        "each_source_channel_assigned_exactly_once": True,
+        "minimum_paired_absolute_correlation": float(paired_scores.min().item()),
+        "mean_paired_absolute_correlation": float(paired_scores.mean().item()),
+        "maximum_paired_absolute_correlation": float(paired_scores.max().item()),
+        "cross_correlation_sha256": _tensor_sha256(
+            cross,
+            "hybrid.fit_cross_correlation",
+        ),
+        "writer_energy_sha256": _tensor_sha256(
+            writer_energy,
+            "hybrid.writer_context_energy",
+        ),
+        "fhvr_energy_sha256": _tensor_sha256(
+            fhvr_energy,
+            "hybrid.fhvr_context_energy",
+        ),
+    }
+    return permutation, gauge, cross, report
+
+
+def _gauge_aligned_fhvr_state(
+    state: Mapping[str, Any | None],
+    *,
+    permutation: Any,
+    gauge: Any,
+) -> dict[str, Any | None]:
+    hidden = int(state["writer_weight"].shape[0])
+    role_weight = state["in_proj_weight"].reshape(3, hidden, hidden)
+    aligned_weight = role_weight.index_select(1, permutation).clone()
+    aligned_weight[1] = aligned_weight[1] * gauge.unsqueeze(-1)
+    aligned_bias = None
+    if state["in_proj_bias"] is not None:
+        role_bias = state["in_proj_bias"].reshape(3, hidden)
+        aligned_bias = role_bias.index_select(1, permutation).clone()
+        aligned_bias[1] = aligned_bias[1] * gauge
+        aligned_bias = aligned_bias.reshape(3 * hidden).contiguous()
+    return {
+        "in_proj_weight": aligned_weight.reshape(3 * hidden, hidden).contiguous(),
+        "in_proj_bias": aligned_bias,
+        "fir_kernel": state["fir_kernel"].index_select(0, permutation).contiguous(),
+        "fir_bias": (
+            None
+            if state["fir_bias"] is None
+            else state["fir_bias"].index_select(0, permutation).contiguous()
+        ),
+        "writer_weight": (
+            state["writer_weight"].index_select(1, permutation)
+            / gauge.unsqueeze(0)
+        ).contiguous(),
+        "writer_bias": (
+            None
+            if state["writer_bias"] is None
+            else state["writer_bias"].clone().contiguous()
+        ),
+    }
+
+
+def _blend_full_coverage_states(
+    writer_state: Mapping[str, Any | None],
+    fhvr_state: Mapping[str, Any | None],
+) -> dict[str, Any | None]:
+    result = {}
+    for role in writer_state:
+        writer_value = writer_state[role]
+        fhvr_value = fhvr_state[role]
+        if (writer_value is None) != (fhvr_value is None):
+            raise Lfm2CpcfFhvrMfError(
+                "Full-coverage source candidates have different bias topology."
+            )
+        result[role] = (
+            None
+            if writer_value is None
+            else (
+                FHVR_MF_FULL_COVERAGE_WRITER_FRACTION * writer_value
+                + FHVR_MF_FULL_COVERAGE_FHVR_FRACTION * fhvr_value
+            ).contiguous()
+        )
+    return result
+
+
+def _weighted_context_relative_rmse(
+    cases: Sequence[_PreparedCase],
+    contexts: Sequence[Any],
+) -> float:
+    torch = _torch()
+    difference = torch.zeros(
+        (),
+        device=contexts[0].device,
+        dtype=contexts[0].dtype,
+    )
+    target = torch.zeros_like(difference)
+    for case, context in zip(cases, contexts, strict=True):
+        weight = case.prefix_weight.unsqueeze(-1)
+        difference = difference + (
+            weight * (context - case.desired_context).square()
+        ).sum()
+        target = target + (weight * case.desired_context.square()).sum()
+    return float(
+        (
+            difference
+            / target.clamp(min=torch.finfo(target.dtype).eps)
+        )
+        .clamp(min=0.0)
+        .sqrt()
+        .item()
+    )
+
+
+def build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate(
+    request: Lfm2CpcfShortConvNumericalFrontierRequest,
+    *,
+    context_encoder: Any,
+    writer_candidate: Lfm2CpcfShortConvNumericalRawCandidate,
+    fhvr_candidate: Lfm2CpcfShortConvNumericalRawCandidate,
+    policy: Lfm2CpcfFhvrMfPolicy,
+    candidate_id: str,
+) -> Lfm2CpcfShortConvNumericalRawCandidate:
+    """Merge one writer/FHVR pair with complete fit-only channel coverage."""
+
+    torch = _torch()
+    expected_sources = {
+        FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID: (
+            FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID
+        ),
+        FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID: (
+            FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID
+        ),
+    }
+    normalized_id = str(candidate_id).strip()
+    if (
+        not isinstance(request, Lfm2CpcfShortConvNumericalFrontierRequest)
+        or not request.verify_authentication()
+        or any(case.split != "fit" for case in request.cases)
+    ):
+        raise Lfm2CpcfFhvrMfError(
+            "Full-coverage hybrid requires one authenticated fit-only request."
+        )
+    if (
+        normalized_id not in expected_sources
+        or not isinstance(policy, Lfm2CpcfFhvrMfPolicy)
+        or not policy.verify_authentication()
+        or not isinstance(
+            writer_candidate,
+            Lfm2CpcfShortConvNumericalRawCandidate,
+        )
+        or not isinstance(
+            fhvr_candidate,
+            Lfm2CpcfShortConvNumericalRawCandidate,
+        )
+        or fhvr_candidate.candidate_id != expected_sources[normalized_id]
+        or fhvr_candidate.candidate_kind != FHVR_MF_CANDIDATE_KIND
+        or dict(fhvr_candidate.method_provenance.get("policy", {}))
+        != policy.as_dict()
+        or writer_candidate.candidate_kind
+        != "accepted_fit_projection_path_anchor"
+        or not writer_candidate.candidate_id.endswith("-writer")
+    ):
+        raise Lfm2CpcfFhvrMfError(
+            "Full-coverage hybrid source identity or policy is invalid."
+        )
+    source_hidden = int(request.report["source_hidden_size"])
+    hidden = int(request.report["target_hidden_size"])
+    if (
+        not isinstance(context_encoder, torch.Tensor)
+        or tuple(context_encoder.shape) != (source_hidden, hidden)
+        or not bool(torch.isfinite(context_encoder).all().item())
+    ):
+        raise Lfm2CpcfFhvrMfError(
+            "Full-coverage hybrid context encoder is invalid."
+        )
+    device, dtype, device_name = _resolve_device(policy)
+    audit = _WorkspaceAudit(
+        row_cap=policy.row_chunk_size,
+        channel_cap=policy.channel_chunk_size,
+    )
+    with _deterministic_compute_scope(device):
+        encoder = context_encoder.detach().to(device=device, dtype=dtype)
+        evidence = _prepare_evidence(
+            request,
+            context_encoder=encoder,
+            device=device,
+            dtype=dtype,
+            policy=policy,
+            audit=audit,
+        )
+        writer_state = _candidate_state_for_compute(
+            request,
+            writer_candidate,
+            device=device,
+            dtype=dtype,
+            name="writer_candidate",
+        )
+        fhvr_state = _candidate_state_for_compute(
+            request,
+            fhvr_candidate,
+            device=device,
+            dtype=dtype,
+            name="fhvr_candidate",
+        )
+        writer_contexts, _writer_writes = _candidate_histories(
+            evidence,
+            writer_state,
+        )
+        fhvr_contexts, fhvr_writes = _candidate_histories(
+            evidence,
+            fhvr_state,
+        )
+        permutation, gauge, _cross, pairing_report = _full_coverage_pairing(
+            evidence,
+            writer_contexts,
+            fhvr_contexts,
+        )
+        aligned_fhvr_state = _gauge_aligned_fhvr_state(
+            fhvr_state,
+            permutation=permutation,
+            gauge=gauge,
+        )
+        aligned_fhvr_contexts, aligned_fhvr_writes = _candidate_histories(
+            evidence,
+            aligned_fhvr_state,
+        )
+        maximum_invariance_error = max(
+            float((before - after).abs().max().item())
+            for before, after in zip(
+                fhvr_writes,
+                aligned_fhvr_writes,
+                strict=True,
+            )
+        )
+        invariance_scale = max(
+            1.0,
+            max(float(value.abs().max().item()) for value in fhvr_writes),
+        )
+        invariance_tolerance = (
+            256.0 * torch.finfo(dtype).eps * invariance_scale
+        )
+        if maximum_invariance_error > invariance_tolerance:
+            raise Lfm2CpcfFhvrMfError(
+                "Full-coverage gauge alignment changed the FHVR response."
+            )
+        desired_contexts = tuple(
+            (
+                FHVR_MF_FULL_COVERAGE_WRITER_FRACTION * writer_context
+                + FHVR_MF_FULL_COVERAGE_FHVR_FRACTION * fhvr_context
+            ).contiguous()
+            for writer_context, fhvr_context in zip(
+                writer_contexts,
+                aligned_fhvr_contexts,
+                strict=True,
+            )
+        )
+        cases = tuple(
+            _PreparedCase(
+                case_id=case.case_id,
+                case_authentication_sha256=case.case_authentication_sha256,
+                features=case.features,
+                desired_state=desired_context,
+                desired_context=desired_context,
+                desired_write=case.desired_write,
+                prefix_weight=case.prefix_weight,
+                suffix_weight=case.suffix_weight,
+                valid_mask=case.valid_mask,
+            )
+            for case, desired_context in zip(
+                evidence,
+                desired_contexts,
+                strict=True,
+            )
+        )
+        initial_state = _blend_full_coverage_states(
+            writer_state,
+            aligned_fhvr_state,
+        )
+        b_weight, c_weight, x_weight = _split_augmented_roles(
+            initial_state,
+            hidden,
+        )
+        fir_kernel = initial_state["fir_kernel"].clone()
+        fir_bias = (
+            None
+            if initial_state["fir_bias"] is None
+            else initial_state["fir_bias"].clone()
+        )
+        initial_contexts = tuple(
+            (case.features @ c_weight.T) * filtered
+            for case, filtered in zip(
+                cases,
+                _filtered_histories(
+                    cases,
+                    b_weight=b_weight,
+                    x_weight=x_weight,
+                    fir_kernel=fir_kernel,
+                    fir_bias=fir_bias,
+                ),
+                strict=True,
+            )
+        )
+        refactor_reports = []
+        for sweep in range(FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS):
+            filtered = _filtered_histories(
+                cases,
+                b_weight=b_weight,
+                x_weight=x_weight,
+                fir_kernel=fir_kernel,
+                fir_bias=fir_bias,
+            )
+            c_weight, c_report = _factor_solve(
+                cases,
+                other=c_weight,
+                prior=c_weight,
+                target_name="desired_context",
+                direct_multiplier=filtered,
+                policy=policy,
+                audit=audit,
+            )
+            fir_kernel, fir_bias, fir_report = _solve_fir(
+                cases,
+                b_weight=b_weight,
+                x_weight=x_weight,
+                c_weight=c_weight,
+                prior_kernel=fir_kernel,
+                prior_bias=fir_bias,
+                policy=policy,
+                audit=audit,
+            )
+            c_weight, fir_kernel, fir_bias = _balance_context_fir(
+                cases,
+                b_weight=b_weight,
+                x_weight=x_weight,
+                c_weight=c_weight,
+                fir_kernel=fir_kernel,
+                fir_bias=fir_bias,
+            )
+            refactor_reports.append(
+                {
+                    "sweep": sweep,
+                    "c": _compact_solve_report(c_report),
+                    "fir": fir_report,
+                    "reciprocal_c_fir_rms_balance": True,
+                }
+            )
+        final_contexts = tuple(
+            (case.features @ c_weight.T) * filtered
+            for case, filtered in zip(
+                cases,
+                _filtered_histories(
+                    cases,
+                    b_weight=b_weight,
+                    x_weight=x_weight,
+                    fir_kernel=fir_kernel,
+                    fir_bias=fir_bias,
+                ),
+                strict=True,
+            )
+        )
+        writer_weight, writer_bias, writer_report = _final_writer(
+            cases,
+            b_weight=b_weight,
+            c_weight=c_weight,
+            x_weight=x_weight,
+            fir_kernel=fir_kernel,
+            fir_bias=fir_bias,
+            prior_weight=initial_state["writer_weight"],
+            prior_bias=initial_state["writer_bias"],
+            policy=policy,
+            audit=audit,
+        )
+        in_proj_weight = torch.cat(
+            (
+                b_weight[:, :hidden],
+                c_weight[:, :hidden],
+                x_weight[:, :hidden],
+            ),
+            dim=0,
+        ).contiguous()
+        in_proj_bias = (
+            None
+            if request.target_templates["in_proj_bias"] is None
+            else torch.cat(
+                (
+                    b_weight[:, -1],
+                    c_weight[:, -1],
+                    x_weight[:, -1],
+                )
+            ).contiguous()
+        )
+        final_state = {
+            "in_proj_weight": in_proj_weight,
+            "in_proj_bias": in_proj_bias,
+            "fir_kernel": fir_kernel,
+            "fir_bias": fir_bias,
+            "writer_weight": writer_weight,
+            "writer_bias": writer_bias,
+        }
+        for role, value in final_state.items():
+            template = request.target_templates[role]
+            if (value is None) != (template is None) or (
+                value is not None and tuple(value.shape) != tuple(template.shape)
+            ):
+                raise Lfm2CpcfFhvrMfError(
+                    f"Full-coverage hybrid produced invalid topology for {role}."
+                )
+            if value is not None and not bool(torch.isfinite(value).all().item()):
+                raise Lfm2CpcfFhvrMfError(
+                    f"Full-coverage hybrid produced non-finite {role}."
+                )
+        coverage = {
+            **pairing_report,
+            "writer_tuple_mass": FHVR_MF_FULL_COVERAGE_WRITER_FRACTION,
+            "fhvr_tuple_mass": FHVR_MF_FULL_COVERAGE_FHVR_FRACTION,
+            "both_source_masses_strictly_positive": True,
+            "complete_native_b_c_x_fir_tuple_initial_merge": True,
+            "response_refactor_consumes_every_paired_target_context": True,
+        }
+        provenance = {
+            "method": "full_coverage_fhvr_writer_response_refactor",
+            "implementation": _IMPLEMENTATION,
+            "schema": LFM2_CPCF_SHORT_CONV_V5_FHVR_MF_SCHEMA,
+            "request_sha256": request.request_sha256,
+            "candidate_id": normalized_id,
+            "source_writer_candidate_id": writer_candidate.candidate_id,
+            "source_writer_candidate_kind": writer_candidate.candidate_kind,
+            "source_writer_candidate_state_sha256": writer_candidate.state_sha256,
+            "source_writer_candidate_report_sha256": (
+                writer_candidate.report["report_sha256"]
+            ),
+            "source_fhvr_candidate_id": fhvr_candidate.candidate_id,
+            "source_fhvr_candidate_kind": fhvr_candidate.candidate_kind,
+            "source_fhvr_candidate_state_sha256": fhvr_candidate.state_sha256,
+            "source_fhvr_candidate_report_sha256": (
+                fhvr_candidate.report["report_sha256"]
+            ),
+            "policy": policy.as_dict(),
+            "fixed_fhvr_fraction": FHVR_MF_FULL_COVERAGE_FHVR_FRACTION,
+            "fixed_writer_fraction": FHVR_MF_FULL_COVERAGE_WRITER_FRACTION,
+            "fixed_refactor_sweeps": (
+                FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS
+            ),
+            "context_encoder_sha256": _tensor_sha256(
+                encoder,
+                "hybrid.context_encoder",
+            ),
+            "fit_case_authentication_sha256": [
+                case.case_authentication_sha256 for case in cases
+            ],
+            "full_coverage": coverage,
+            "gauge": {
+                "assignment": permutation.tolist(),
+                "signed_context_scale": [
+                    float(value) for value in gauge.tolist()
+                ],
+                "maximum_fit_write_invariance_error": maximum_invariance_error,
+                "fit_write_invariance_tolerance": invariance_tolerance,
+                "exact_function_preserving_channel_permutation_c_writer_gauge": True,
+            },
+            "initial_fit_context_relative_rmse": (
+                _weighted_context_relative_rmse(cases, initial_contexts)
+            ),
+            "final_fit_context_relative_rmse": (
+                _weighted_context_relative_rmse(cases, final_contexts)
+            ),
+            "context_refactor_solves": refactor_reports,
+            "writer_solve": writer_report,
+            "allocation_audit": audit.report(),
+            "compute_device": device_name,
+            "compute_dtype": str(dtype).removeprefix("torch."),
+            "target_native_dense_weights": True,
+            "fit_only": True,
+            "selection_cases_consumed": 0,
+            "validation_cases_consumed": 0,
+            "synthetic_evidence": {
+                "fixture": (
+                    "h8_to_h4_fir6_to_fir3_"
+                    "six_fit_eight_selection_sixteen_heldout"
+                ),
+                "heldout_tokens": 96,
+                "seed_count": 5,
+                "fhvr_fractions_tested": [0.25, 0.5, 0.75],
+                "retained_fhvr_fraction": 0.75,
+                "rejected_fhvr_fractions": [0.25, 0.5],
+                "legacy_arm": {
+                    "pure_operator_relative_rmse": 0.555883,
+                    "hybrid_operator_relative_rmse": 0.546428,
+                    "operator_relative_improvement_fraction": 0.0170,
+                    "pure_final_proxy_relative_rmse": 0.574838,
+                    "hybrid_final_proxy_relative_rmse": 0.555359,
+                    "final_proxy_relative_improvement_fraction": 0.0339,
+                    "final_proxy_win_count": 4,
+                    "seed_count": 5,
+                    "worst_seed_relative_loss_fraction": 0.0364,
+                },
+                "cap10k_arm": {
+                    "pure_operator_relative_rmse": 0.591107,
+                    "hybrid_operator_relative_rmse": 0.576016,
+                    "operator_relative_improvement_fraction": 0.0255,
+                    "pure_final_proxy_relative_rmse": 0.577482,
+                    "hybrid_final_proxy_relative_rmse": 0.550517,
+                    "final_proxy_relative_improvement_fraction": 0.0467,
+                    "final_proxy_win_count": 4,
+                    "seed_count": 5,
+                    "worst_seed_relative_loss_fraction": 0.0104,
+                },
+                "legacy_final_proxy_win_count": 4,
+                "cap10k_final_proxy_win_count": 4,
+                "total_arm_seed_losses": 2,
+                "total_arm_seed_trials": 10,
+                "losses_disclosed": True,
+            },
+            "execution": {
+                **_ZERO_EXECUTION,
+                "closed_form_iterative_linear_solves": True,
+            },
+        }
+    cpu_state = {
+        role: (
+            None
+            if value is None
+            else value.detach().to(device="cpu").contiguous()
+        )
+        for role, value in final_state.items()
+    }
+    return Lfm2CpcfShortConvNumericalRawCandidate(
+        request_sha256=request.request_sha256,
+        candidate_id=normalized_id,
+        candidate_kind=FHVR_MF_FULL_COVERAGE_HYBRID_KIND,
+        in_proj_weight=cpu_state["in_proj_weight"],
+        in_proj_bias=cpu_state["in_proj_bias"],
+        fir_kernel=cpu_state["fir_kernel"],
+        fir_bias=cpu_state["fir_bias"],
+        writer_weight=cpu_state["writer_weight"],
+        writer_bias=cpu_state["writer_bias"],
+        method_provenance=provenance,
+    )
+
+
 def build_lfm2_cpcf_fhvr_mf_candidate(
     request: Lfm2CpcfShortConvNumericalFrontierRequest,
     *,
@@ -1897,12 +2609,23 @@ def build_lfm2_cpcf_fhvr_mf_candidate(
 
 
 __all__ = [
+    "FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID",
+    "FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID",
+    "FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID",
+    "FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID",
     "FHVR_MF_CANDIDATE_ID",
     "FHVR_MF_CANDIDATE_KIND",
+    "FHVR_MF_FULL_COVERAGE_FHVR_FRACTION",
+    "FHVR_MF_FULL_COVERAGE_HYBRID_KIND",
+    "FHVR_MF_FULL_COVERAGE_HYBRID_SELECTOR_ARM_CANDIDATE_IDS",
+    "FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS",
+    "FHVR_MF_FULL_COVERAGE_WRITER_FRACTION",
+    "FHVR_MF_SELECTOR_ARM_CANDIDATE_IDS",
     "LFM2_CPCF_SHORT_CONV_V5_FHVR_MF_SCHEMA",
     "Lfm2CpcfFhvrMfConditionalResult",
     "Lfm2CpcfFhvrMfError",
     "Lfm2CpcfFhvrMfPolicy",
     "build_lfm2_cpcf_fhvr_mf_candidate",
+    "build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate",
     "solve_lfm2_cpcf_fhvr_mf_conditional_factor",
 ]

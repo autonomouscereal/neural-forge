@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -25,8 +26,17 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
     build_fir_commuting_balanced_all_channel_basis,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+    FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+    FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+    FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+    FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
     FHVR_MF_CANDIDATE_ID,
     FHVR_MF_CANDIDATE_KIND,
+    FHVR_MF_FULL_COVERAGE_FHVR_FRACTION,
+    FHVR_MF_FULL_COVERAGE_HYBRID_KIND,
+    FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS,
+    FHVR_MF_FULL_COVERAGE_WRITER_FRACTION,
+    Lfm2CpcfFhvrMfPolicy,
 )
 from neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter import (
     Lfm2CpcfShortConvV5NumericalAdapterError,
@@ -343,14 +353,54 @@ def test_real_adapter_generates_complete_authenticated_dynamic_frontier() -> Non
         for candidate in frontier.raw_candidates
         if candidate.candidate_kind == FHVR_MF_CANDIDATE_KIND
     ]
-    assert len(fhvr_candidates) == 1
-    assert fhvr_candidates[0].candidate_id == FHVR_MF_CANDIDATE_ID
-    assert fhvr_candidates[0].method_provenance["fit_only"] is True
-    assert fhvr_candidates[0].method_provenance["selection_cases_consumed"] == 0
-    assert fhvr_candidates[0].method_provenance["validation_cases_consumed"] == 0
+    assert [candidate.candidate_id for candidate in fhvr_candidates] == [
+        FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+        FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+    ]
+    assert FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID == FHVR_MF_CANDIDATE_ID
+    assert all(
+        candidate.method_provenance["fit_only"] is True
+        and candidate.method_provenance["selection_cases_consumed"] == 0
+        and candidate.method_provenance["validation_cases_consumed"] == 0
+        for candidate in fhvr_candidates
+    )
+    expected_fhvr_policies = (
+        Lfm2CpcfFhvrMfPolicy(),
+        Lfm2CpcfFhvrMfPolicy(
+            condition_cap=10_000.0,
+            factor_sweeps=1,
+        ),
+    )
+    assert [
+        dict(candidate.method_provenance["policy"])
+        for candidate in fhvr_candidates
+    ] == [policy.as_dict() for policy in expected_fhvr_policies]
+    hybrid_candidates = [
+        candidate
+        for candidate in frontier.raw_candidates
+        if candidate.candidate_kind == FHVR_MF_FULL_COVERAGE_HYBRID_KIND
+    ]
+    assert [candidate.candidate_id for candidate in hybrid_candidates] == [
+        FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+        FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+    ]
+    assert all(
+        candidate.method_provenance["fit_only"] is True
+        and candidate.method_provenance["selection_cases_consumed"] == 0
+        and candidate.method_provenance["validation_cases_consumed"] == 0
+        and candidate.method_provenance["full_coverage"][
+            "source_channels_dropped"
+        ]
+        == 0
+        and candidate.method_provenance["full_coverage"][
+            "source_channels_pruned"
+        ]
+        == 0
+        for candidate in hybrid_candidates
+    )
     provenance = frontier.report["adapter_provenance"]
     assert provenance["implementation"].endswith(
-        "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v4"
+        "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v6"
     )
     assert provenance["real_v5_numerical_algorithm"] is True
     assert provenance["dynamic_source_target_topology"] is True
@@ -366,12 +416,102 @@ def test_real_adapter_generates_complete_authenticated_dynamic_frontier() -> Non
         provenance["fhvr_mf_candidate_report_sha256"]
         == fhvr_candidates[0].report["report_sha256"]
     )
+    assert provenance["fhvr_mf_candidate_count"] == 2
+    assert provenance["fhvr_mf_candidate_ids"] == (
+        FHVR_MF_CAP1K_SWEEPS2_CANDIDATE_ID,
+        FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+    )
+    assert provenance["fhvr_mf_selector_diversity_axis"] == "condition_cap"
+    assert provenance["fhvr_mf_candidate_inventory"] == tuple(
+        {
+            "arm_index": arm_index,
+            "candidate_id": candidate.candidate_id,
+            "candidate_kind": FHVR_MF_CANDIDATE_KIND,
+            "condition_cap": policy.condition_cap,
+            "factor_sweeps": policy.factor_sweeps,
+            "pcg_iterations": policy.pcg_iterations,
+            "policy_sha256": policy.authentication_sha256,
+            "candidate_state_sha256": candidate.state_sha256,
+            "candidate_report_sha256": candidate.report["report_sha256"],
+        }
+        for arm_index, (candidate, policy) in enumerate(
+            zip(fhvr_candidates, expected_fhvr_policies, strict=True)
+        )
+    )
+    assert provenance["fhvr_mf_full_coverage_hybrid_count"] == 2
+    assert provenance["fhvr_mf_full_coverage_hybrid_ids"] == (
+        FHVR_MF_CAP1K_SWEEPS2_FULL_COVERAGE_HYBRID_ID,
+        FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+    )
+    assert (
+        provenance["fhvr_mf_full_coverage_hybrid_kind"]
+        == FHVR_MF_FULL_COVERAGE_HYBRID_KIND
+    )
+    assert (
+        provenance["fhvr_mf_full_coverage_fhvr_fraction"]
+        == FHVR_MF_FULL_COVERAGE_FHVR_FRACTION
+        == 0.75
+    )
+    assert (
+        provenance["fhvr_mf_full_coverage_writer_fraction"]
+        == FHVR_MF_FULL_COVERAGE_WRITER_FRACTION
+        == 0.25
+    )
+    assert (
+        provenance["fhvr_mf_full_coverage_refactor_sweeps"]
+        == FHVR_MF_FULL_COVERAGE_REFACTOR_SWEEPS
+        == 2
+    )
+    writer_selection = provenance[
+        "fhvr_mf_hybrid_writer_control_fit_selection"
+    ]
+    assert writer_selection["fit_only"] is True
+    assert writer_selection["selection_cases_consumed"] == 0
+    assert writer_selection["validation_cases_consumed"] == 0
+    assert writer_selection["eligible_candidate_count"] >= 1
+    assert writer_selection["selected_candidate_id"].endswith("-writer")
+    assert writer_selection["ranking"][0]["candidate_id"] == (
+        writer_selection["selected_candidate_id"]
+    )
+    assert provenance[
+        "fhvr_mf_hybrid_real_selection_deferred_to_compiler"
+    ] is True
+    assert provenance[
+        "fhvr_mf_hybrid_candidate_specific_fit_mlp_deferred_to_compiler"
+    ] is True
+    assert provenance["fhvr_mf_hybrid_synthetic_evidence"] == {
+        "fhvr_fractions_tested": (0.25, 0.5, 0.75),
+        "retained_fhvr_fraction": 0.75,
+        "rejected_fhvr_fractions": (0.25, 0.5),
+        "total_arm_seed_losses": 2,
+        "total_arm_seed_trials": 10,
+        "losses_disclosed": True,
+    }
+    assert all(
+        item["source_writer_candidate_id"]
+        == writer_selection["selected_candidate_id"]
+        and item["writer_channels_covered"] == 2
+        and item["fhvr_channels_covered"] == 2
+        and item["source_channels_dropped"] == 0
+        and item["source_channels_pruned"] == 0
+        and item["total_arm_seed_losses"] == 2
+        and item["total_arm_seed_trials"] == 10
+        and item["losses_disclosed"] is True
+        for item in provenance["fhvr_mf_full_coverage_hybrid_inventory"]
+    )
     assert provenance["selection_cases_consumed"] == 0
     assert provenance["validation_cases_consumed"] == 0
     assert provenance["model_forward_calls"] == 0
     assert provenance["training"] is False
     assert provenance["quantization"] is False
     assert provenance["pruning"] is False
+    assert provenance["fir_solver_backend"] == (
+        "authenticated_cpu_fp64_batched_all_channel_ridge"
+    )
+    assert (
+        provenance["fir_solver_receipt_scope"]
+        == "aggregate_all_target_fir_channels"
+    )
     assert set(provenance["condition_cap_inventory"]) == {
         "kappa-01000",
         "kappa-10000",
@@ -409,6 +549,53 @@ def test_real_adapter_generates_complete_authenticated_dynamic_frontier() -> Non
             for value in cap["phase_inventory"]
             if value["phase"] == "bcx"
         )
+        fir_phases = [
+            value
+            for value in cap["phase_inventory"]
+            if value["phase"] == "fir"
+        ]
+        assert all(
+            value["solver_report_count"] == 1
+            and value["solver_report_scope"]
+            == "aggregate_all_target_fir_channels"
+            and value["solver_channel_count"] == 2
+            for value in fir_phases
+        )
+
+
+def test_real_adapter_rejects_fhvr_arm_policy_identity_tamper(
+    monkeypatch,
+) -> None:
+    real_builder = numerical_adapter_module.build_lfm2_cpcf_fhvr_mf_candidate
+
+    def tampered_builder(
+        request,
+        *,
+        context_encoder,
+        policy,
+        candidate_id,
+    ):
+        return real_builder(
+            request,
+            context_encoder=context_encoder,
+            policy=(
+                Lfm2CpcfFhvrMfPolicy()
+                if candidate_id == FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID
+                else policy
+            ),
+            candidate_id=candidate_id,
+        )
+
+    monkeypatch.setattr(
+        numerical_adapter_module,
+        "build_lfm2_cpcf_fhvr_mf_candidate",
+        tampered_builder,
+    )
+    with pytest.raises(
+        Lfm2CpcfShortConvV5NumericalAdapterError,
+        match="policy arm failed authentication, identity, or policy binding",
+    ):
+        Lfm2CpcfShortConvV5NumericalFrontierAdapter().generate(_request())
 
 
 def test_audited_basis_computes_once_and_reseals_exact_requested_report(
@@ -464,8 +651,113 @@ def test_audited_basis_computes_once_and_reseals_exact_requested_report(
     assert dict(actual.report) == dict(expected.report)
 
 
-def test_real_adapter_is_byte_deterministic_within_one_runtime() -> None:
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32, torch.bfloat16])
+@pytest.mark.parametrize("include_bias", [False, True])
+def test_all_channel_fir_design_is_byte_identical_to_scalar_reference(
+    dtype,
+    include_bias,
+) -> None:
+    generator = torch.Generator().manual_seed(20260719)
+    replay = SimpleNamespace(
+        b_history=torch.randn((3, 17, 13), generator=generator, dtype=dtype),
+        c_history=torch.randn((3, 17, 13), generator=generator, dtype=dtype),
+        x_history=torch.randn((3, 17, 13), generator=generator, dtype=dtype),
+    )
+    fir_length = 4
+
+    actual = numerical_adapter_module._all_channel_fir_design(
+        replay,
+        fir_length,
+        include_bias=include_bias,
+    )
+
+    expected_channels = []
+    for channel in range(int(replay.b_history.shape[-1])):
+        expected = numerical_adapter_module._lag_windows(
+            replay.b_history[..., channel] * replay.x_history[..., channel],
+            fir_length,
+        ) * replay.c_history[..., channel].unsqueeze(-1)
+        if include_bias:
+            expected = torch.cat(
+                (
+                    expected,
+                    replay.c_history[..., channel].unsqueeze(-1),
+                ),
+                dim=-1,
+            )
+        expected_channels.append(expected)
+    expected = torch.stack(expected_channels, dim=0).contiguous()
+
+    assert actual.is_contiguous()
+    assert torch.equal(actual, expected)
+
+
+def test_real_adapter_is_byte_deterministic_within_one_runtime(monkeypatch) -> None:
+    precomputed_design = numerical_adapter_module._all_channel_fir_design
+    single_cap_solve = (
+        numerical_adapter_module
+        .solve_condition_capped_equilibrated_prior_residual_ridge_candidate
+    )
+
+    def scalar_design(replay, fir_length, *, include_bias):
+        channel_designs = []
+        for channel in range(int(replay.b_history.shape[-1])):
+            design = numerical_adapter_module._lag_windows(
+                replay.b_history[..., channel] * replay.x_history[..., channel],
+                fir_length,
+            ) * replay.c_history[..., channel].unsqueeze(-1)
+            if include_bias:
+                design = torch.cat(
+                    (
+                        design,
+                        replay.c_history[..., channel].unsqueeze(-1),
+                    ),
+                    dim=-1,
+                )
+            channel_designs.append(design)
+        return torch.stack(channel_designs, dim=0).contiguous()
+
+    def frontier_solve(
+        cases,
+        *,
+        condition_cap,
+        prior_weight,
+        prior_bias,
+        fit_intercept=True,
+        policy=None,
+    ):
+        return (
+            numerical_adapter_module
+            .condition_capped_equilibrated_prior_residual_ridge_frontier(
+                cases,
+                prior_weight=prior_weight,
+                prior_bias=prior_bias,
+                fit_intercept=fit_intercept,
+                policy=policy,
+            )[numerical_adapter_module._cap_id(condition_cap)]
+        )
+
+    monkeypatch.setattr(
+        numerical_adapter_module,
+        "_all_channel_fir_design",
+        scalar_design,
+    )
+    monkeypatch.setattr(
+        numerical_adapter_module,
+        "solve_condition_capped_equilibrated_prior_residual_ridge_candidate",
+        frontier_solve,
+    )
     first = Lfm2CpcfShortConvV5NumericalFrontierAdapter().generate(_request())
+    monkeypatch.setattr(
+        numerical_adapter_module,
+        "_all_channel_fir_design",
+        precomputed_design,
+    )
+    monkeypatch.setattr(
+        numerical_adapter_module,
+        "solve_condition_capped_equilibrated_prior_residual_ridge_candidate",
+        single_cap_solve,
+    )
     second = Lfm2CpcfShortConvV5NumericalFrontierAdapter().generate(_request())
 
     assert first.report["report_sha256"] == second.report["report_sha256"]
@@ -473,7 +765,7 @@ def test_real_adapter_is_byte_deterministic_within_one_runtime() -> None:
         first.report["adapter_provenance"]["basis_report_sha256"]
         == second.report["adapter_provenance"]["basis_report_sha256"]
     )
-    assert len(first.raw_candidates) == len(second.raw_candidates) == 73
+    assert len(first.raw_candidates) == len(second.raw_candidates) == 76
     assert _sequence_sha256(
         [candidate.candidate_id for candidate in first.raw_candidates]
     ) == _sequence_sha256(
@@ -515,7 +807,12 @@ def test_projection_path_reuses_one_authenticated_replay_bank_per_state(
     # one for each of the six attempted phase candidates.  The same bank is
     # consumed by the solver and its before/after objective instead of
     # replaying the identical state three times.
-    assert len(calls) == 2 * (1 + 6) * len(request.cases)
+    writer_control_count = frontier.report["adapter_provenance"][
+        "fhvr_mf_hybrid_writer_control_fit_selection"
+    ]["eligible_candidate_count"]
+    assert len(calls) == (
+        2 * (1 + 6) + writer_control_count
+    ) * len(request.cases)
 
 
 def test_real_adapter_promotes_bfloat16_evidence_before_fp64_folding(

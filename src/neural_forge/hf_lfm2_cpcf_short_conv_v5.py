@@ -27,6 +27,9 @@ from typing import Any
 
 LFM2_CPCF_SHORT_CONV_V5_SCHEMA = "neural-forge-lfm2-cpcf-short-conv-v5"
 LFM2_CPCF_SHORT_CONV_V4_SCHEMA = "neural-forge-lfm2-cpcf-short-conv-v4"
+LFM2_CPCF_V5_BATCHED_FIR_RIDGE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-v5-batched-all-channel-fir-ridge-v1"
+)
 V5_PRIOR_CONTROL_SUFFIX = "--anchor-00-prior"
 V5_CONTEXT_EXCHANGE_BETA = 0.05
 V5_CONDITION_CAP_CANDIDATES = (1_000.0, 10_000.0)
@@ -846,6 +849,131 @@ class Lfm2CpcfV5RidgeResult:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfV5AllChannelFirRidgeCase:
+    """One fit case shared by every independent target FIR channel."""
+
+    case_id: str
+    split: str
+    design: Any
+    target: Any
+    valid_rows: Any | None = None
+    authentication_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        name = str(self.case_id).strip()
+        if not name:
+            raise Lfm2CpcfShortConvV5Error("case_id must be nonempty text.")
+        if str(self.split).strip().lower() != "fit":
+            raise Lfm2CpcfShortConvV5Error(
+                "Batched FIR ridge accepts fit evidence only."
+            )
+        design = _snapshot_tensor(
+            self.design,
+            f"{name}.all_channel_design",
+            dimensions=3,
+        )
+        target = _snapshot_tensor(
+            self.target,
+            f"{name}.all_channel_target",
+            dimensions=2,
+        )
+        if tuple(design.shape[:2]) != tuple(target.shape):
+            raise Lfm2CpcfShortConvV5Error(
+                f"{name} all-channel design and target shapes differ."
+            )
+        mask = _snapshot_mask(self.valid_rows, f"{name}.valid_rows")
+        if mask is not None and tuple(mask.shape) != (int(design.shape[1]),):
+            raise Lfm2CpcfShortConvV5Error(
+                f"{name}.valid_rows has the wrong shape."
+            )
+        object.__setattr__(self, "case_id", name)
+        object.__setattr__(self, "split", "fit")
+        object.__setattr__(self, "design", design)
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "valid_rows", mask)
+        expected = _sha256(self.authentication_body())
+        supplied = str(self.authentication_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise Lfm2CpcfShortConvV5Error(
+                "all-channel FIR case authentication_sha256 is incorrect."
+            )
+        object.__setattr__(self, "authentication_sha256", expected)
+
+    def authentication_body(self) -> dict[str, Any]:
+        tensors = {
+            "design": _tensor_sha256(
+                self.design,
+                f"{self.case_id}.all_channel_design",
+            ),
+            "target": _tensor_sha256(
+                self.target,
+                f"{self.case_id}.all_channel_target",
+            ),
+        }
+        if self.valid_rows is not None:
+            tensors["valid_rows"] = _tensor_sha256(
+                self.valid_rows,
+                f"{self.case_id}.valid_rows",
+            )
+        return {
+            "schema": LFM2_CPCF_V5_BATCHED_FIR_RIDGE_SCHEMA,
+            "kind": "all_channel_fir_ridge_case",
+            "case_id": self.case_id,
+            "split": "fit",
+            "mask_scope": "case_shared_all_channels",
+            "channel_count": int(self.design.shape[0]),
+            "row_count": int(self.design.shape[1]),
+            "feature_width": int(self.design.shape[2]),
+            "tensors": tensors,
+        }
+
+    def verify_authentication(self) -> bool:
+        return self.authentication_sha256 == _sha256(self.authentication_body())
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfV5BatchedFirRidgeResult:
+    """All target FIR channels plus one aggregate authenticated receipt."""
+
+    parameters: Any
+    diagnostics: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "parameters",
+            _snapshot_tensor(
+                self.parameters,
+                "batched_fir_ridge_result.parameters",
+                dimensions=2,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "diagnostics",
+            MappingProxyType(dict(self.diagnostics)),
+        )
+
+    def verify_authentication(self) -> bool:
+        return (
+            verify_lfm2_cpcf_short_conv_v5_report(self.diagnostics)
+            and self.diagnostics.get("schema")
+            == LFM2_CPCF_V5_BATCHED_FIR_RIDGE_SCHEMA
+            and self.diagnostics.get("kind")
+            == "condition_capped_batched_all_channel_fir_ridge"
+            and self.diagnostics.get("channel_count")
+            == int(self.parameters.shape[0])
+            and self.diagnostics.get("feature_width")
+            == int(self.parameters.shape[1])
+            and self.diagnostics.get("solution_parameters_sha256")
+            == _tensor_sha256(
+                self.parameters,
+                "batched_fir_ridge_result.parameters",
+            )
+        )
+
+
 def _canonical_ridge_rows(
     cases: Sequence[Lfm2CpcfV5RidgeCase],
 ) -> tuple[tuple[str, str, Any, Any], ...]:
@@ -1379,22 +1507,20 @@ def _solve_equilibrated_candidate(
     )
 
 
-def condition_capped_equilibrated_prior_residual_ridge_frontier(
+def _prepare_authenticated_equilibrated_ridge_request(
     cases: Sequence[Lfm2CpcfV5RidgeCase],
     *,
     prior_weight: Any,
     prior_bias: Any | None,
     fit_intercept: bool = True,
     policy: Lfm2CpcfV5RidgePolicy | None = None,
-) -> Mapping[str, Lfm2CpcfV5RidgeResult]:
-    """Return the frozen ``kappa=1e3`` and ``kappa=1e4`` fit candidates.
-
-    ``fit_intercept=False`` is the physical-parameter mode for FIR and B/C/x
-    designs that already encode every installable bias coordinate.  It solves
-    the uncentered system and returns ``bias=None`` under a sealed
-    absent/frozen-zero intercept contract.
-    """
-
+) -> tuple[
+    Lfm2CpcfV5RidgePolicy,
+    tuple[tuple[str, str, Any, Any], ...],
+    Any,
+    Any | None,
+    _EquilibratedRidgeSystem,
+]:
     ridge_policy = policy or Lfm2CpcfV5RidgePolicy()
     if not isinstance(ridge_policy, Lfm2CpcfV5RidgePolicy):
         raise TypeError("policy must be Lfm2CpcfV5RidgePolicy.")
@@ -1439,6 +1565,44 @@ def condition_capped_equilibrated_prior_residual_ridge_frontier(
         fit_intercept=fit_intercept,
         policy=ridge_policy,
     )
+    return (
+        ridge_policy,
+        rows,
+        prior_weight_value,
+        prior_bias_value,
+        shared_system,
+    )
+
+
+def condition_capped_equilibrated_prior_residual_ridge_frontier(
+    cases: Sequence[Lfm2CpcfV5RidgeCase],
+    *,
+    prior_weight: Any,
+    prior_bias: Any | None,
+    fit_intercept: bool = True,
+    policy: Lfm2CpcfV5RidgePolicy | None = None,
+) -> Mapping[str, Lfm2CpcfV5RidgeResult]:
+    """Return the frozen ``kappa=1e3`` and ``kappa=1e4`` fit candidates.
+
+    ``fit_intercept=False`` is the physical-parameter mode for FIR and B/C/x
+    designs that already encode every installable bias coordinate.  It solves
+    the uncentered system and returns ``bias=None`` under a sealed
+    absent/frozen-zero intercept contract.
+    """
+
+    (
+        ridge_policy,
+        rows,
+        prior_weight_value,
+        prior_bias_value,
+        shared_system,
+    ) = _prepare_authenticated_equilibrated_ridge_request(
+        cases,
+        prior_weight=prior_weight,
+        prior_bias=prior_bias,
+        fit_intercept=fit_intercept,
+        policy=policy,
+    )
     results = {
         f"kappa-{int(cap):05d}": _solve_equilibrated_candidate(
             rows=rows,
@@ -1452,6 +1616,816 @@ def condition_capped_equilibrated_prior_residual_ridge_frontier(
         for cap in ridge_policy.condition_caps
     }
     return MappingProxyType(results)
+
+
+def solve_condition_capped_equilibrated_prior_residual_ridge_candidate(
+    cases: Sequence[Lfm2CpcfV5RidgeCase],
+    *,
+    condition_cap: float,
+    prior_weight: Any,
+    prior_bias: Any | None,
+    fit_intercept: bool = True,
+    policy: Lfm2CpcfV5RidgePolicy | None = None,
+) -> Lfm2CpcfV5RidgeResult:
+    """Solve only one condition cap authenticated by the supplied policy."""
+
+    (
+        ridge_policy,
+        rows,
+        prior_weight_value,
+        prior_bias_value,
+        shared_system,
+    ) = _prepare_authenticated_equilibrated_ridge_request(
+        cases,
+        prior_weight=prior_weight,
+        prior_bias=prior_bias,
+        fit_intercept=fit_intercept,
+        policy=policy,
+    )
+    condition_cap_value = _finite_float(condition_cap, "condition_cap")
+    if condition_cap_value not in ridge_policy.condition_caps:
+        raise Lfm2CpcfShortConvV5Error(
+            "condition_cap must select a cap authenticated by the ridge policy."
+        )
+    return _solve_equilibrated_candidate(
+        rows=rows,
+        prior_weight=prior_weight_value,
+        prior_bias=prior_bias_value,
+        fit_intercept=fit_intercept,
+        condition_cap=condition_cap_value,
+        policy=ridge_policy,
+        shared_system=shared_system,
+    )
+
+
+def _canonical_all_channel_fir_rows(
+    cases: Sequence[Lfm2CpcfV5AllChannelFirRidgeCase],
+) -> tuple[tuple[str, str, Any, Any], ...]:
+    values = tuple(cases)
+    if not values:
+        raise Lfm2CpcfShortConvV5Error(
+            "Batched FIR ridge requires at least one fit case."
+        )
+    if any(
+        not isinstance(case, Lfm2CpcfV5AllChannelFirRidgeCase)
+        for case in values
+    ):
+        raise Lfm2CpcfShortConvV5Error(
+            "All batched FIR cases must be "
+            "Lfm2CpcfV5AllChannelFirRidgeCase values."
+        )
+    ordered = tuple(sorted(values, key=lambda case: case.case_id))
+    if len({case.case_id for case in ordered}) != len(ordered):
+        raise Lfm2CpcfShortConvV5Error(
+            "Batched FIR ridge case ids must be unique."
+        )
+    rows = []
+    channel_count = None
+    feature_width = None
+    for case in ordered:
+        if not case.verify_authentication():
+            raise Lfm2CpcfShortConvV5Error(
+                f"Batched FIR case {case.case_id!r} changed after authentication."
+            )
+        design = case.design
+        target = case.target
+        if case.valid_rows is not None:
+            design = design[:, case.valid_rows, :].contiguous()
+            target = target[:, case.valid_rows].contiguous()
+        if int(design.shape[1]) == 0:
+            raise Lfm2CpcfShortConvV5Error(
+                f"Batched FIR case {case.case_id!r} has no valid rows."
+            )
+        channel_count = (
+            int(design.shape[0])
+            if channel_count is None
+            else channel_count
+        )
+        feature_width = (
+            int(design.shape[2])
+            if feature_width is None
+            else feature_width
+        )
+        if (
+            int(design.shape[0]) != channel_count
+            or int(target.shape[0]) != channel_count
+            or int(design.shape[2]) != feature_width
+        ):
+            raise Lfm2CpcfShortConvV5Error(
+                "Batched FIR cases have inconsistent channel or feature widths."
+            )
+        rows.append(
+            (
+                case.case_id,
+                case.authentication_sha256,
+                design,
+                target,
+            )
+        )
+    return tuple(rows)
+
+
+def _batched_fir_audit_channel_indices(channel_count: int) -> tuple[int, ...]:
+    return tuple(
+        sorted(
+            {
+                0,
+                channel_count // 2,
+                channel_count - 1,
+            }
+        )
+    )
+
+
+def _batched_fir_threshold_ambiguity(
+    *,
+    column_rms: Any,
+    column_threshold: Any,
+    eigenvalues: Any,
+    rank_threshold: Any,
+    ridge_numerator: Any,
+    maximum_eigenvalue: Any,
+    minimum_eigenvalue: Any,
+    condition_cap: float,
+    raw_parameter_rms: Any,
+    parameter_limit: Any,
+    raw_effect_rms: Any,
+    effect_limit: Any,
+) -> Any:
+    """Identify channels whose scalar branch can change under FP64 reordering."""
+
+    torch = _torch()
+    ambiguity_relative_tolerance = (
+        4_096.0 * torch.finfo(torch.float64).eps
+    )
+
+    def close(left: Any, right: Any) -> Any:
+        scale = torch.maximum(
+            torch.maximum(left.abs(), right.abs()),
+            torch.ones_like(left),
+        )
+        return (
+            (left - right).abs()
+            <= ambiguity_relative_tolerance * scale
+        )
+
+    active_ambiguous = close(
+        column_rms,
+        column_threshold.unsqueeze(-1),
+    ).any(dim=1)
+    rank_ambiguous = close(
+        eigenvalues,
+        rank_threshold.unsqueeze(-1),
+    ).any(dim=1)
+    ridge_scale = torch.maximum(
+        torch.maximum(
+            maximum_eigenvalue.abs(),
+            condition_cap * minimum_eigenvalue.abs(),
+        ),
+        torch.ones_like(maximum_eigenvalue),
+    )
+    ridge_ambiguous = (
+        ridge_numerator.abs()
+        <= ambiguity_relative_tolerance * ridge_scale
+    )
+    parameter_ambiguous = close(
+        raw_parameter_rms,
+        parameter_limit,
+    )
+    effect_ambiguous = close(
+        raw_effect_rms,
+        effect_limit,
+    )
+    zero_parameter_ambiguous = (
+        raw_parameter_rms.abs() <= ambiguity_relative_tolerance
+    )
+    zero_effect_ambiguous = (
+        raw_effect_rms.abs() <= ambiguity_relative_tolerance
+    )
+    return (
+        active_ambiguous
+        | rank_ambiguous
+        | ridge_ambiguous
+        | parameter_ambiguous
+        | effect_ambiguous
+        | zero_parameter_ambiguous
+        | zero_effect_ambiguous
+    )
+
+
+def solve_condition_capped_batched_all_channel_fir_ridge_candidate(
+    cases: Sequence[Lfm2CpcfV5AllChannelFirRidgeCase],
+    *,
+    condition_cap: float,
+    prior_parameters: Any,
+    physical_bias_coordinate: bool,
+    policy: Lfm2CpcfV5RidgePolicy | None = None,
+) -> Lfm2CpcfV5BatchedFirRidgeResult:
+    """Solve every independent FIR channel in one authenticated FP64 batch."""
+
+    torch = _torch()
+    ridge_policy = policy or Lfm2CpcfV5RidgePolicy()
+    if not isinstance(ridge_policy, Lfm2CpcfV5RidgePolicy):
+        raise TypeError("policy must be Lfm2CpcfV5RidgePolicy.")
+    if not ridge_policy.verify_authentication():
+        raise Lfm2CpcfShortConvV5Error("Ridge policy failed authentication.")
+    if type(physical_bias_coordinate) is not bool:
+        raise TypeError("physical_bias_coordinate must be boolean.")
+    condition_cap_value = _finite_float(condition_cap, "condition_cap")
+    if condition_cap_value not in ridge_policy.condition_caps:
+        raise Lfm2CpcfShortConvV5Error(
+            "condition_cap must select a cap authenticated by the ridge policy."
+        )
+    rows = _canonical_all_channel_fir_rows(cases)
+    case_count = len(rows)
+    channel_count = int(rows[0][2].shape[0])
+    feature_width = int(rows[0][2].shape[2])
+    prior = _snapshot_tensor(
+        prior_parameters,
+        "batched_fir.prior_parameters",
+        dimensions=2,
+    )
+    if tuple(prior.shape) != (channel_count, feature_width):
+        raise Lfm2CpcfShortConvV5Error(
+            "prior_parameters must have shape [channels, features]."
+        )
+    fir_length = feature_width - int(physical_bias_coordinate)
+    if fir_length <= 0:
+        raise Lfm2CpcfShortConvV5Error(
+            "Batched FIR ridge requires at least one physical FIR lag."
+        )
+
+    balanced_design_parts = []
+    balanced_residual_parts = []
+    balanced_target_parts = []
+    case_receipts = []
+    for case_id, case_sha, design, target in rows:
+        row_count = int(design.shape[1])
+        case_scale = 1.0 / math.sqrt(case_count * row_count)
+        prior_effect = torch.bmm(
+            design,
+            prior.unsqueeze(-1),
+        ).squeeze(-1)
+        residual = target - prior_effect
+        balanced_design_parts.append(design * case_scale)
+        balanced_residual_parts.append(residual * case_scale)
+        balanced_target_parts.append(target * case_scale)
+        case_receipts.append(
+            {
+                "case_id": case_id,
+                "case_authentication_sha256": case_sha,
+                "valid_rows_per_channel": row_count,
+                "case_balance_scale": case_scale,
+                "all_channel_design_sha256": _tensor_sha256(
+                    design,
+                    f"{case_id}.all_channel_valid_design",
+                ),
+                "all_channel_target_sha256": _tensor_sha256(
+                    target,
+                    f"{case_id}.all_channel_valid_target",
+                ),
+                "all_channel_prior_residual_sha256": _tensor_sha256(
+                    residual,
+                    f"{case_id}.all_channel_prior_residual",
+                ),
+            }
+        )
+    solve_design = torch.cat(balanced_design_parts, dim=1).contiguous()
+    solve_residual = torch.cat(balanced_residual_parts, dim=1).contiguous()
+    balanced_target = torch.cat(balanced_target_parts, dim=1).contiguous()
+    total_valid_rows = int(solve_design.shape[1])
+
+    column_rms = solve_design.square().sum(dim=1).sqrt()
+    maximum_column_rms = column_rms.max(dim=1).values
+    column_threshold = torch.where(
+        maximum_column_rms > 0.0,
+        maximum_column_rms * ridge_policy.rank_relative_tolerance,
+        torch.full_like(
+            maximum_column_rms,
+            ridge_policy.rank_relative_tolerance,
+        ),
+    )
+    active_columns = column_rms > column_threshold.unsqueeze(-1)
+    equilibration_scale = torch.where(
+        active_columns,
+        column_rms,
+        torch.ones_like(column_rms),
+    )
+    equilibrated_design = (
+        solve_design / equilibration_scale.unsqueeze(1)
+    )
+    gram = torch.bmm(
+        equilibrated_design.transpose(1, 2),
+        equilibrated_design,
+    )
+    gram = 0.5 * (gram + gram.transpose(1, 2))
+    right = torch.bmm(
+        equilibrated_design.transpose(1, 2),
+        solve_residual.unsqueeze(-1),
+    )
+    eigenvalues, eigenvectors = torch.linalg.eigh(gram)
+    eigenvalues = eigenvalues.clamp(min=0.0)
+    maximum_eigenvalue = eigenvalues.max(dim=1).values
+    minimum_eigenvalue = eigenvalues.min(dim=1).values
+    ridge_numerator = (
+        maximum_eigenvalue
+        - condition_cap_value * minimum_eigenvalue
+    )
+    ridge = torch.where(
+        maximum_eigenvalue == 0.0,
+        torch.zeros_like(maximum_eigenvalue),
+        (ridge_numerator / (condition_cap_value - 1.0)).clamp(min=0.0),
+    )
+    rank_threshold = (
+        maximum_eigenvalue * ridge_policy.rank_relative_tolerance
+    )
+    identifiable = eigenvalues > rank_threshold.unsqueeze(-1)
+    inverse = torch.where(
+        identifiable,
+        1.0 / (eigenvalues + ridge.unsqueeze(-1)),
+        torch.zeros_like(eigenvalues),
+    )
+    eigen_right = torch.bmm(
+        eigenvectors.transpose(1, 2),
+        right,
+    ).squeeze(-1)
+    raw_eigen_delta = inverse * eigen_right
+    raw_equilibrated_delta = torch.bmm(
+        eigenvectors,
+        raw_eigen_delta.unsqueeze(-1),
+    ).squeeze(-1)
+    raw_parameter_delta = (
+        raw_equilibrated_delta / equilibration_scale
+    )
+    raw_parameter_delta = torch.where(
+        active_columns,
+        raw_parameter_delta,
+        torch.zeros_like(raw_parameter_delta),
+    )
+
+    raw_parameter_rms = raw_parameter_delta.square().mean(dim=1).sqrt()
+    parameter_reference_rms = torch.maximum(
+        prior.square().mean(dim=1).sqrt(),
+        torch.full(
+            (channel_count,),
+            ridge_policy.parameter_reference_floor,
+            dtype=torch.float64,
+        ),
+    )
+    parameter_limit = (
+        ridge_policy.parameter_trust_radius * parameter_reference_rms
+    )
+    parameter_scale = torch.where(
+        raw_parameter_rms == 0.0,
+        torch.ones_like(raw_parameter_rms),
+        torch.minimum(
+            torch.ones_like(raw_parameter_rms),
+            parameter_limit / raw_parameter_rms,
+        ),
+    )
+
+    raw_effect = torch.bmm(
+        solve_design,
+        raw_parameter_delta.unsqueeze(-1),
+    ).squeeze(-1)
+    prior_effect = torch.bmm(
+        solve_design,
+        prior.unsqueeze(-1),
+    ).squeeze(-1)
+    raw_effect_rms = raw_effect.square().mean(dim=1).sqrt()
+    prior_effect_rms = prior_effect.square().mean(dim=1).sqrt()
+    target_effect_rms = balanced_target.square().mean(dim=1).sqrt()
+    effect_reference_rms = torch.maximum(
+        torch.maximum(prior_effect_rms, target_effect_rms),
+        torch.full(
+            (channel_count,),
+            ridge_policy.effect_reference_floor,
+            dtype=torch.float64,
+        ),
+    )
+    effect_limit = ridge_policy.effect_trust_radius * effect_reference_rms
+    effect_scale = torch.where(
+        raw_effect_rms == 0.0,
+        torch.ones_like(raw_effect_rms),
+        torch.minimum(
+            torch.ones_like(raw_effect_rms),
+            effect_limit / raw_effect_rms,
+        ),
+    )
+    joint_scale = torch.minimum(
+        torch.minimum(torch.ones_like(parameter_scale), parameter_scale),
+        effect_scale,
+    )
+    accepted_eigen_delta = raw_eigen_delta * joint_scale.unsqueeze(-1)
+    batch_solution = (
+        prior + raw_parameter_delta * joint_scale.unsqueeze(-1)
+    ).contiguous()
+    regularized_condition = torch.where(
+        maximum_eigenvalue == 0.0,
+        torch.zeros_like(maximum_eigenvalue),
+        (maximum_eigenvalue + ridge) / (minimum_eigenvalue + ridge),
+    )
+    effective_rank = identifiable.sum(dim=1).to(dtype=torch.int64)
+
+    ambiguous = _batched_fir_threshold_ambiguity(
+        column_rms=column_rms,
+        column_threshold=column_threshold,
+        eigenvalues=eigenvalues,
+        rank_threshold=rank_threshold,
+        ridge_numerator=ridge_numerator,
+        maximum_eigenvalue=maximum_eigenvalue,
+        minimum_eigenvalue=minimum_eigenvalue,
+        condition_cap=condition_cap_value,
+        raw_parameter_rms=raw_parameter_rms,
+        parameter_limit=parameter_limit,
+        raw_effect_rms=raw_effect_rms,
+        effect_limit=effect_limit,
+    )
+    audit_indices = _batched_fir_audit_channel_indices(channel_count)
+    ambiguous_indices = tuple(
+        int(index)
+        for index in torch.nonzero(ambiguous, as_tuple=False)
+        .reshape(-1)
+        .tolist()
+    )
+    oracle_indices = tuple(sorted(set(audit_indices) | set(ambiguous_indices)))
+
+    solution = batch_solution.clone()
+    final_active_columns = active_columns.clone()
+    final_effective_rank = effective_rank.clone()
+    final_ridge = ridge.clone()
+    final_regularized_condition = regularized_condition.clone()
+    final_raw_parameter_rms = raw_parameter_rms.clone()
+    final_parameter_reference_rms = parameter_reference_rms.clone()
+    final_parameter_limit = parameter_limit.clone()
+    final_parameter_scale = parameter_scale.clone()
+    final_raw_effect_rms = raw_effect_rms.clone()
+    final_effect_reference_rms = effect_reference_rms.clone()
+    final_effect_limit = effect_limit.clone()
+    final_effect_scale = effect_scale.clone()
+    final_joint_scale = joint_scale.clone()
+    scalar_backend_mask = torch.zeros(
+        channel_count,
+        dtype=torch.bool,
+    )
+    scalar_oracle_receipts = []
+    audit_maximum_absolute_difference = 0.0
+    scalar_nullspace_preserved = True
+    for channel in oracle_indices:
+        scalar_cases = tuple(
+            Lfm2CpcfV5RidgeCase(
+                case_id=case_id,
+                split="fit",
+                design=design[channel],
+                target=target[channel].unsqueeze(-1),
+            )
+            for case_id, _case_sha, design, target in rows
+        )
+        scalar = (
+            solve_condition_capped_equilibrated_prior_residual_ridge_candidate(
+                scalar_cases,
+                condition_cap=condition_cap_value,
+                prior_weight=prior[channel].unsqueeze(-1),
+                prior_bias=None,
+                fit_intercept=False,
+                policy=ridge_policy,
+            )
+        )
+        if not scalar.verify_authentication():
+            raise Lfm2CpcfShortConvV5Error(
+                f"Scalar FIR oracle channel {channel} failed authentication."
+            )
+        scalar_parameters = scalar.weight[:, 0]
+        maximum_difference = float(
+            (batch_solution[channel] - scalar_parameters)
+            .abs()
+            .max()
+            .item()
+        )
+        audit_maximum_absolute_difference = max(
+            audit_maximum_absolute_difference,
+            maximum_difference,
+        )
+        scalar_scale = max(
+            1.0,
+            float(scalar_parameters.abs().max().item()),
+        )
+        if (
+            channel not in ambiguous_indices
+            and maximum_difference > 1e-10 * scalar_scale
+        ):
+            raise Lfm2CpcfShortConvV5Error(
+                f"Batched FIR audit channel {channel} differs from the "
+                "scalar oracle beyond tolerance."
+            )
+        scalar_diagnostics = scalar.diagnostics
+        solution[channel] = scalar_parameters
+        scalar_backend_mask[channel] = True
+        final_active_columns[channel] = False
+        final_active_columns[
+            channel,
+            scalar_diagnostics["active_column_indices"],
+        ] = True
+        final_effective_rank[channel] = scalar_diagnostics["effective_rank"]
+        final_ridge[channel] = scalar_diagnostics["effective_ridge"]
+        final_regularized_condition[channel] = scalar_diagnostics[
+            "regularized_condition"
+        ]
+        parameter_trust = scalar_diagnostics["parameter_space_trust"]
+        effect_trust = scalar_diagnostics["function_space_trust"]
+        final_raw_parameter_rms[channel] = parameter_trust[
+            "raw_correction_rms"
+        ]
+        final_parameter_reference_rms[channel] = parameter_trust[
+            "reference_rms"
+        ]
+        final_parameter_limit[channel] = parameter_trust[
+            "absolute_limit_rms"
+        ]
+        final_parameter_scale[channel] = parameter_trust["individual_scale"]
+        final_raw_effect_rms[channel] = effect_trust["raw_correction_rms"]
+        final_effect_reference_rms[channel] = effect_trust["reference_rms"]
+        final_effect_limit[channel] = effect_trust["absolute_limit_rms"]
+        final_effect_scale[channel] = effect_trust["individual_scale"]
+        final_joint_scale[channel] = scalar_diagnostics["joint_trust_scale"]
+        scalar_nullspace_preserved = (
+            scalar_nullspace_preserved
+            and scalar_diagnostics["nullspace_preserves_prior"] is True
+        )
+        reasons = []
+        if channel in audit_indices:
+            reasons.append("deterministic_audit_sample")
+        if channel in ambiguous_indices:
+            reasons.append("threshold_ambiguous")
+        scalar_oracle_receipts.append(
+            {
+                "channel_index": channel,
+                "reasons": reasons,
+                "maximum_absolute_batch_difference": maximum_difference,
+                "scalar_report_sha256": scalar_diagnostics["report_sha256"],
+                "scalar_solution_weight_sha256": scalar_diagnostics[
+                    "solution_weight_sha256"
+                ],
+            }
+        )
+
+    final_parameter_delta = solution - prior
+    final_effect = torch.bmm(
+        solve_design,
+        final_parameter_delta.unsqueeze(-1),
+    ).squeeze(-1)
+    accepted_parameter_rms = (
+        final_parameter_delta.square().mean(dim=1).sqrt()
+    )
+    accepted_effect_rms = final_effect.square().mean(dim=1).sqrt()
+    condition_cap_passed = (
+        final_regularized_condition
+        <= condition_cap_value * (1.0 + 1e-12)
+    )
+    parameter_trust_passed = (
+        accepted_parameter_rms
+        <= final_parameter_limit * (1.0 + 1e-12)
+    )
+    effect_trust_passed = (
+        accepted_effect_rms
+        <= final_effect_limit * (1.0 + 1e-12)
+    )
+    batch_null_coefficients = torch.where(
+        identifiable,
+        torch.zeros_like(accepted_eigen_delta),
+        accepted_eigen_delta,
+    )
+    batch_nullspace_maximum = float(
+        batch_null_coefficients.abs().max().item()
+    )
+    nullspace_preserved = (
+        batch_nullspace_maximum
+        <= 64.0 * torch.finfo(torch.float64).eps
+        and scalar_nullspace_preserved
+    )
+    if not bool(condition_cap_passed.all().item()):
+        raise Lfm2CpcfShortConvV5Error(
+            "Batched FIR ridge failed its declared condition cap."
+        )
+    if not bool(parameter_trust_passed.all().item()):
+        raise Lfm2CpcfShortConvV5Error(
+            "Batched FIR ridge failed parameter-space trust."
+        )
+    if not bool(effect_trust_passed.all().item()):
+        raise Lfm2CpcfShortConvV5Error(
+            "Batched FIR ridge failed function-space trust."
+        )
+    if not nullspace_preserved:
+        raise Lfm2CpcfShortConvV5Error(
+            "Batched FIR ridge changed a numerically null prior direction."
+        )
+
+    body = {
+        "schema": LFM2_CPCF_V5_BATCHED_FIR_RIDGE_SCHEMA,
+        "kind": "condition_capped_batched_all_channel_fir_ridge",
+        "policy_sha256": ridge_policy.authentication_sha256,
+        "required_split": "fit",
+        "fit_only": True,
+        "selection_cases_consumed": 0,
+        "validation_cases_consumed": 0,
+        "case_balanced": True,
+        "row_duplication_invariant_objective": True,
+        "case_count": case_count,
+        "case_receipts": case_receipts,
+        "mask_scope": "case_shared_all_channels",
+        "channel_count": channel_count,
+        "feature_width": feature_width,
+        "fir_length": fir_length,
+        "physical_bias_coordinate_present": physical_bias_coordinate,
+        "physical_bias_coordinate_index": (
+            feature_width - 1 if physical_bias_coordinate else None
+        ),
+        "fit_intercept": False,
+        "bias_contract": "physical_coordinate_or_absent_frozen_zero",
+        "separate_unpenalized_intercept": False,
+        "centering_applied": False,
+        "no_intercept_uses_uncentered_system": True,
+        "column_equilibrated": True,
+        "condition_cap": condition_cap_value,
+        "total_valid_rows_per_channel": total_valid_rows,
+        "prior_parameters_sha256": _tensor_sha256(
+            prior,
+            "batched_fir.prior_parameters",
+        ),
+        "case_balanced_design_sha256": _tensor_sha256(
+            solve_design,
+            "batched_fir.case_balanced_design",
+        ),
+        "case_balanced_prior_residual_sha256": _tensor_sha256(
+            solve_residual,
+            "batched_fir.case_balanced_prior_residual",
+        ),
+        "case_balanced_target_sha256": _tensor_sha256(
+            balanced_target,
+            "batched_fir.case_balanced_target",
+        ),
+        "column_rms_sha256": _tensor_sha256(
+            column_rms,
+            "batched_fir.column_rms",
+        ),
+        "active_columns_sha256": _tensor_sha256(
+            final_active_columns,
+            "batched_fir.active_columns",
+        ),
+        "equilibration_scale_sha256": _tensor_sha256(
+            equilibration_scale,
+            "batched_fir.equilibration_scale",
+        ),
+        "equilibrated_design_sha256": _tensor_sha256(
+            equilibrated_design,
+            "batched_fir.equilibrated_design",
+        ),
+        "equilibrated_gram_sha256": _tensor_sha256(
+            gram,
+            "batched_fir.equilibrated_gram",
+        ),
+        "equilibrated_right_hand_side_sha256": _tensor_sha256(
+            right,
+            "batched_fir.equilibrated_right_hand_side",
+        ),
+        "symmetric_factorization": "torch.linalg.eigh_batched_cpu_fp64",
+        "eigenvalues_sha256": _tensor_sha256(
+            eigenvalues,
+            "batched_fir.eigenvalues",
+        ),
+        "eigenvectors_sha256": _tensor_sha256(
+            eigenvectors,
+            "batched_fir.eigenvectors",
+        ),
+        "effective_rank_sha256": _tensor_sha256(
+            final_effective_rank,
+            "batched_fir.effective_rank",
+        ),
+        "effective_rank_minimum": int(final_effective_rank.min().item()),
+        "effective_rank_maximum": int(final_effective_rank.max().item()),
+        "effective_ridge_sha256": _tensor_sha256(
+            final_ridge,
+            "batched_fir.effective_ridge",
+        ),
+        "regularized_condition_sha256": _tensor_sha256(
+            final_regularized_condition,
+            "batched_fir.regularized_condition",
+        ),
+        "maximum_regularized_condition": float(
+            final_regularized_condition.max().item()
+        ),
+        "condition_cap_passed": True,
+        "raw_parameter_delta_sha256": _tensor_sha256(
+            raw_parameter_delta,
+            "batched_fir.raw_parameter_delta",
+        ),
+        "batched_solution_parameters_sha256": _tensor_sha256(
+            batch_solution,
+            "batched_fir.batch_solution_parameters",
+        ),
+        "solution_parameters_sha256": _tensor_sha256(
+            solution,
+            "batched_fir_ridge_result.parameters",
+        ),
+        "parameter_space_trust": {
+            "units": "coefficient_parameter_units_per_channel",
+            "reference": "transported_prior_parameters",
+            "reference_rms_sha256": _tensor_sha256(
+                final_parameter_reference_rms,
+                "batched_fir.parameter_reference_rms",
+            ),
+            "relative_radius": ridge_policy.parameter_trust_radius,
+            "absolute_limit_rms_sha256": _tensor_sha256(
+                final_parameter_limit,
+                "batched_fir.parameter_limit",
+            ),
+            "raw_correction_rms_sha256": _tensor_sha256(
+                final_raw_parameter_rms,
+                "batched_fir.raw_parameter_rms",
+            ),
+            "individual_scale_sha256": _tensor_sha256(
+                final_parameter_scale,
+                "batched_fir.parameter_scale",
+            ),
+            "accepted_correction_rms_sha256": _tensor_sha256(
+                accepted_parameter_rms,
+                "batched_fir.accepted_parameter_rms",
+            ),
+            "passed": True,
+        },
+        "function_space_trust": {
+            "units": "predicted_effect_units_per_channel",
+            "reference": "max(prior_effect,target_effect)",
+            "reference_rms_sha256": _tensor_sha256(
+                final_effect_reference_rms,
+                "batched_fir.effect_reference_rms",
+            ),
+            "relative_radius": ridge_policy.effect_trust_radius,
+            "absolute_limit_rms_sha256": _tensor_sha256(
+                final_effect_limit,
+                "batched_fir.effect_limit",
+            ),
+            "raw_correction_rms_sha256": _tensor_sha256(
+                final_raw_effect_rms,
+                "batched_fir.raw_effect_rms",
+            ),
+            "individual_scale_sha256": _tensor_sha256(
+                final_effect_scale,
+                "batched_fir.effect_scale",
+            ),
+            "accepted_correction_rms_sha256": _tensor_sha256(
+                accepted_effect_rms,
+                "batched_fir.accepted_effect_rms",
+            ),
+            "accepted_effect_sha256": _tensor_sha256(
+                final_effect,
+                "batched_fir.accepted_effect",
+            ),
+            "passed": True,
+        },
+        "joint_trust_scale_sha256": _tensor_sha256(
+            final_joint_scale,
+            "batched_fir.joint_trust_scale",
+        ),
+        "joint_trust_is_per_channel_intersection": True,
+        "nullspace_update_maximum_absolute": batch_nullspace_maximum,
+        "nullspace_preserves_prior": True,
+        "scalar_oracle_policy": {
+            "deterministic_indices": list(audit_indices),
+            "threshold_ambiguity_relative_tolerance": (
+                4_096.0 * torch.finfo(torch.float64).eps
+            ),
+            "threshold_ambiguous_indices": list(ambiguous_indices),
+            "oracle_channel_indices": list(oracle_indices),
+            "oracle_channel_count": len(oracle_indices),
+            "scalar_backend_mask_sha256": _tensor_sha256(
+                scalar_backend_mask,
+                "batched_fir.scalar_backend_mask",
+            ),
+            "receipts": scalar_oracle_receipts,
+            "maximum_absolute_batch_difference": (
+                audit_maximum_absolute_difference
+            ),
+            "oracle_results_installed": True,
+        },
+        "all_target_channels_covered": True,
+        "execution_device": "cpu",
+        "execution_dtype": "float64",
+        "execution": {
+            **_ZERO_TRAINING_EXECUTION,
+            "closed_form_batched_symmetric_eigendecomposition": True,
+            "scalar_oracle_channel_count": len(oracle_indices),
+        },
+    }
+    result = Lfm2CpcfV5BatchedFirRidgeResult(
+        parameters=solution.contiguous(),
+        diagnostics=_seal_report(body),
+    )
+    if not result.verify_authentication():
+        raise Lfm2CpcfShortConvV5Error(
+            "Batched FIR ridge result failed authentication."
+        )
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -2495,9 +3469,12 @@ def interpolate_every_lfm2_cpcf_v5_accepted_edge(
 
 __all__ = [
     "LFM2_CPCF_SHORT_CONV_V5_SCHEMA",
+    "LFM2_CPCF_V5_BATCHED_FIR_RIDGE_SCHEMA",
     "Lfm2CpcfShortConvV5Error",
     "Lfm2CpcfV5AcceptedEdgeFrontier",
     "Lfm2CpcfV5AcceptedPathState",
+    "Lfm2CpcfV5AllChannelFirRidgeCase",
+    "Lfm2CpcfV5BatchedFirRidgeResult",
     "Lfm2CpcfV5FirBasisCase",
     "Lfm2CpcfV5FirBasisPolicy",
     "Lfm2CpcfV5FirCommutingBasis",
@@ -2516,5 +3493,7 @@ __all__ = [
     "interpolate_every_lfm2_cpcf_v5_accepted_edge",
     "interpolate_lfm2_cpcf_v5_accepted_edge",
     "rescore_sealed_v4_short_conv_selection_frontier",
+    "solve_condition_capped_batched_all_channel_fir_ridge_candidate",
+    "solve_condition_capped_equilibrated_prior_residual_ridge_candidate",
     "verify_lfm2_cpcf_short_conv_v5_report",
 ]

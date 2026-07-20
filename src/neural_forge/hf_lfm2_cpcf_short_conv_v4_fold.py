@@ -1702,20 +1702,48 @@ class Lfm2CpcfShortConvV5CandidateFrontier:
         return _deep_thaw(self.report)
 
 
-def _macrocell_candidate_has_fhvr_mf_source(
+def _macrocell_candidate_fhvr_mf_source_arm_ids(
     candidate: Lfm2CpcfShortConvV5MacrocellCandidate,
-) -> bool:
+) -> frozenset[str]:
     # Local import avoids a module-initialization cycle: the standalone FHVR
     # producer consumes the public numerical request/candidate types above.
     from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
         FHVR_MF_CANDIDATE_KIND,
+        FHVR_MF_SELECTOR_ARM_CANDIDATE_IDS,
     )
 
     sources = candidate.fit_provenance.get("sources", ())
-    return any(
-        isinstance(source, Mapping)
-        and source.get("candidate_kind") == FHVR_MF_CANDIDATE_KIND
+    expected = frozenset(FHVR_MF_SELECTOR_ARM_CANDIDATE_IDS)
+    return frozenset(
+        str(source["candidate_id"])
         for source in sources
+        if isinstance(source, Mapping)
+        and source.get("candidate_kind") == FHVR_MF_CANDIDATE_KIND
+        and source.get("candidate_id") in expected
+    )
+
+
+def _macrocell_candidate_fhvr_mf_full_coverage_hybrid_source_arm_ids(
+    candidate: Lfm2CpcfShortConvV5MacrocellCandidate,
+) -> frozenset[str]:
+    # Local import avoids a module-initialization cycle: the standalone FHVR
+    # producer consumes the public numerical request/candidate types above.
+    from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+        FHVR_MF_FULL_COVERAGE_HYBRID_KIND,
+        FHVR_MF_FULL_COVERAGE_HYBRID_SELECTOR_ARM_CANDIDATE_IDS,
+    )
+
+    sources = candidate.fit_provenance.get("sources", ())
+    expected = frozenset(
+        FHVR_MF_FULL_COVERAGE_HYBRID_SELECTOR_ARM_CANDIDATE_IDS
+    )
+    return frozenset(
+        str(source["candidate_id"])
+        for source in sources
+        if isinstance(source, Mapping)
+        and source.get("candidate_kind")
+        == FHVR_MF_FULL_COVERAGE_HYBRID_KIND
+        and source.get("candidate_id") in expected
     )
 
 
@@ -1746,21 +1774,63 @@ def select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
         )
 
     selected = {endpoint_control}
-    fhvr_candidate_ids = frozenset(
-        candidate.candidate_id
-        for candidate in frontier.candidates
-        if _macrocell_candidate_has_fhvr_mf_source(candidate)
+    from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+        FHVR_MF_FULL_COVERAGE_HYBRID_SELECTOR_ARM_CANDIDATE_IDS,
+        FHVR_MF_SELECTOR_ARM_CANDIDATE_IDS,
     )
-    if candidate_budget >= 2 and fhvr_candidate_ids:
-        if endpoint_control in fhvr_candidate_ids:
-            reserved_fhvr_id = endpoint_control
-        else:
-            reserved_fhvr_id = next(
-                str(entry["candidate_id"])
-                for entry in frontier.default_ranking["ranking"]
-                if str(entry["candidate_id"]) in fhvr_candidate_ids
+
+    fhvr_arm_representative = {}
+    for candidate in frontier.candidates:
+        for arm_id in _macrocell_candidate_fhvr_mf_source_arm_ids(candidate):
+            prior = fhvr_arm_representative.setdefault(
+                arm_id,
+                candidate.candidate_id,
             )
-        selected.add(reserved_fhvr_id)
+            if prior != candidate.candidate_id:
+                raise Lfm2CpcfShortConvV4FoldError(
+                    "One authenticated FHVR-MF arm maps to multiple target-dtype "
+                    "macrocell representatives."
+                )
+    fhvr_candidate_ids = frozenset(fhvr_arm_representative.values())
+    if candidate_budget >= 2:
+        for arm_id in FHVR_MF_SELECTOR_ARM_CANDIDATE_IDS:
+            representative = fhvr_arm_representative.get(arm_id)
+            if representative is None or representative in selected:
+                continue
+            if len(selected) == candidate_budget:
+                break
+            selected.add(representative)
+    fhvr_hybrid_arm_representative = {}
+    for candidate in frontier.candidates:
+        for arm_id in (
+            _macrocell_candidate_fhvr_mf_full_coverage_hybrid_source_arm_ids(
+                candidate
+            )
+        ):
+            prior = fhvr_hybrid_arm_representative.setdefault(
+                arm_id,
+                candidate.candidate_id,
+            )
+            if prior != candidate.candidate_id:
+                raise Lfm2CpcfShortConvV4FoldError(
+                    "One authenticated FHVR full-coverage hybrid arm maps "
+                    "to multiple target-dtype macrocell representatives."
+                )
+    fhvr_hybrid_candidate_ids = frozenset(
+        fhvr_hybrid_arm_representative.values()
+    )
+    if candidate_budget >= 2:
+        for (
+            hybrid_arm_id
+        ) in FHVR_MF_FULL_COVERAGE_HYBRID_SELECTOR_ARM_CANDIDATE_IDS:
+            representative = fhvr_hybrid_arm_representative.get(
+                hybrid_arm_id
+            )
+            if representative is None or representative in selected:
+                continue
+            if len(selected) == candidate_budget:
+                break
+            selected.add(representative)
     anchor_pool = tuple(
         candidate_id
         for candidate_id in candidate_ids
@@ -1782,7 +1852,10 @@ def select_lfm2_cpcf_short_conv_v5_macrocell_candidate_ids(
         candidate_id = str(entry["candidate_id"])
         if len(selected) == candidate_budget:
             break
-        if candidate_id in fhvr_candidate_ids and candidate_id not in selected:
+        if (
+            candidate_id in fhvr_candidate_ids
+            or candidate_id in fhvr_hybrid_candidate_ids
+        ) and candidate_id not in selected:
             continue
         selected.add(candidate_id)
     if len(selected) != candidate_budget or not selected.issubset(candidate_ids):
@@ -3378,6 +3451,15 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
         ridge_results = MappingProxyType({})
         raw_candidates = list(numerical_frontier.raw_candidates)
 
+    full_coverage_hybrid_kind = None
+    if numerical_frontier is not None:
+        # Local import avoids a module-initialization cycle: the standalone
+        # FHVR producer consumes the public request/candidate types above.
+        from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+            FHVR_MF_FULL_COVERAGE_HYBRID_KIND,
+        )
+
+        full_coverage_hybrid_kind = FHVR_MF_FULL_COVERAGE_HYBRID_KIND
     deduplicated = {}
     for raw in raw_candidates:
         if numerical_frontier is None:
@@ -3424,19 +3506,32 @@ def compile_lfm2_cpcf_short_conv_v4_fold(
             }
             raw_candidate_id = raw.candidate_id
         target_state_sha = _state_sha256(materialized)
-        if target_state_sha in deduplicated:
-            deduplicated[target_state_sha]["sources"].append(source)
+        deduplication_key = target_state_sha
+        if numerical_frontier is not None:
+            # Full-coverage hybrids are independently authenticated
+            # experimental arms.  Preserve each arm through target-dtype
+            # materialization even if coarse dtypes make two states byte
+            # identical, so each receives its own FIT-only MLP fold and real
+            # selection replay.
+            if raw.candidate_kind == full_coverage_hybrid_kind:
+                deduplication_key = (
+                    f"{target_state_sha}:{raw.candidate_id}"
+                )
+        if deduplication_key in deduplicated:
+            deduplicated[deduplication_key]["sources"].append(source)
             continue
-        deduplicated[target_state_sha] = {
+        deduplicated[deduplication_key] = {
             "candidate_id": raw_candidate_id,
+            "target_state_sha256": target_state_sha,
             "state": materialized,
             "sources": [source],
         }
 
     candidate_states = {}
     candidate_fit_reports = {}
-    for target_state_sha, candidate_group in deduplicated.items():
+    for candidate_group in deduplicated.values():
         candidate_id = candidate_group["candidate_id"]
+        target_state_sha = candidate_group["target_state_sha256"]
         state = candidate_group["state"]
         sources = candidate_group["sources"]
         if numerical_frontier is None:

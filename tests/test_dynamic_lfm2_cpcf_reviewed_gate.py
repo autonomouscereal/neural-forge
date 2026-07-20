@@ -383,6 +383,14 @@ def _v5_semantic_layer_receipt() -> tuple[
         "source_channels_pruned": 0,
         "source_channels_quantized": 0,
         "source_fir_resized_before_basis": True,
+        "fir_solver_backend": (
+            "authenticated_cpu_fp64_batched_all_channel_ridge"
+        ),
+        "fir_solver_receipt_scope": "aggregate_all_target_fir_channels",
+        "fir_scalar_oracle_policy": (
+            "deterministic_first_middle_last_plus_"
+            "threshold_ambiguous_fallback"
+        ),
         "fit_only": True,
         "selection_cases_consumed": 0,
         "validation_cases_consumed": 0,

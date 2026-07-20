@@ -13,6 +13,7 @@ torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 
 import neural_forge.hf_lfm2_cpcf_layer_compiler as layer_compiler  # noqa: E402
+import neural_forge.hf_lfm2_sequence_effective_attention_fold as sequence_effective  # noqa: E402
 import neural_forge.hf_lfm2_structural_residual_attention_fold as structural_fold  # noqa: E402
 from neural_forge.hf_closed_form_causal_circuit_fold import (  # noqa: E402
     PredictiveBoundaryMap,
@@ -1459,6 +1460,9 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
     original_replay = layer_compiler.replay_lfm2_cpcf_phase_bank
     original_attention_cases = layer_compiler._attention_cases
     original_producer = layer_compiler.compile_lfm2_structural_attention_producer_fold
+    original_sequence_effective = (
+        layer_compiler.compile_lfm2_fixed_qk_sequence_effective_attention_fold
+    )
     original_score = (
         layer_compiler.evaluate_lfm2_compiled_attention_producer_score_preservation
     )
@@ -1512,6 +1516,10 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
         assert kwargs["cases"] is case_identity["fit"]
         return original_producer(**kwargs)
 
+    def sequence_effective_spy(**kwargs):
+        assert kwargs["fit_cases"] is case_identity["fit"]
+        return original_sequence_effective(**kwargs)
+
     def score_spy(producer, cases, **kwargs):
         assert cases is case_identity["selection"]
         score_case_identity["cases"] = cases
@@ -1551,7 +1559,7 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
             if event == "replay"
         )
         gc.collect()
-        assert len(candidate_replay_refs) == 2
+        assert len(candidate_replay_refs) == 3
         assert all(
             replay_ref() is None
             for replay_refs in candidate_replay_refs
@@ -1595,6 +1603,11 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
     )
     monkeypatch.setattr(
         layer_compiler,
+        "compile_lfm2_fixed_qk_sequence_effective_attention_fold",
+        sequence_effective_spy,
+    )
+    monkeypatch.setattr(
+        layer_compiler,
         "evaluate_lfm2_compiled_attention_producer_score_preservation",
         score_spy,
     )
@@ -1633,10 +1646,10 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
     ]
     assert score_case_identity["cases"] is case_identity["selection"]
     assert mlp_preparation_count == 1
-    assert mlp_compile_count == 2
+    assert mlp_compile_count == 3
     assert len(set(mlp_prepared_basis_identities)) == 1
     assert len(set(mlp_prepared_basis_sha256)) == 1
-    assert len(set(mlp_candidate_child_case_sha256)) == 2
+    assert len(set(mlp_candidate_child_case_sha256)) == 3
     assert all(artifact.prepared_basis_reused is True for artifact in mlp_artifacts)
     assert all(
         artifact.prepared_basis_sha256 == mlp_prepared_basis_sha256[0]
@@ -1656,15 +1669,25 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
     policy = result.report["solver_evidence_policy"]
     selection = policy["attention_candidate_selection"]
     evaluations = policy["attention_candidate_evaluations"]
+    assert selection["schema"] == (
+        layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_SELECTION_SCHEMA
+    )
+    assert selection["ranking_rule"][:2] == [
+        "minimum_final_causal_phase_post_layer_relative_rmse",
+        "minimum_maximum_consecutive_causal_phase_relative_rmse_drift",
+    ]
     assert selection["winner_frozen_before_validation"] is True
     assert selection["validation_phase_count_consumed_before_freeze"] == 0
     assert selection["report_sha256"] == _sha(
         {name: value for name, value in selection.items() if name != "report_sha256"}
     )
-    assert set(evaluations) == {
-        "direct_monolithic",
-        "residual_attention_split",
-    }
+    assert tuple(selection["candidate_ids"]) == (
+        layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS
+    )
+    assert selection["candidate_count"] == 3
+    assert set(evaluations) == set(
+        layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS
+    )
     expected_winner = min(
         evaluations,
         key=lambda name: tuple(evaluations[name]["selection_key"]),
@@ -1686,7 +1709,9 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
         assert set(candidate["selection_metrics"]) == {"selection"}
         assert candidate["live_operator_state_authenticated_before_fit_replay"] is True
         assert candidate["live_mlp_state_authenticated_before_selection_replay"] is True
-        assert candidate["selection_context_ranked_before_post_layer_endpoint"] is True
+        assert candidate["sequence_endpoint_ranked_before_context_reconstruction"] is True
+        assert candidate["maximum_consecutive_causal_phase_drift_ranked"] is True
+        assert candidate["selection_context_used_as_finite_safeguard"] is True
         assert candidate["selection_context_metrics"]["selection_split_only"] is True
         assert candidate["query_key_score_report"]["case_count"] == len(
             case_identity["selection"]
@@ -1719,18 +1744,38 @@ def test_residual_attention_candidate_is_split_isolated_and_macrocell_selected(
     assert split["report_sha256"] == _sha(
         {name: value for name, value in split.items() if name != "report_sha256"}
     )
+    sequence = evaluations[
+        sequence_effective.FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID
+    ]["operator_artifact"]
+    assert sequence["schema"] == (
+        sequence_effective.LFM2_FIXED_QK_SEQUENCE_EFFECTIVE_ATTENTION_SCHEMA
+    )
+    assert sequence["fit_only_compilation"] is True
+    assert sequence["compiled_from_splits"] == ["fit"]
+    assert sequence["selection_case_count_consumed"] == 0
+    assert sequence["validation_case_count_consumed"] == 0
+    assert sequence["fixed_query_key_state_reused_exactly"] is True
+    assert sequence["fixed_query_key_sha256"] == (
+        next(
+            candidate
+            for candidate in frozen_candidates
+            if candidate.candidate_id
+            == sequence_effective.FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID
+        ).operator_artifact.producer_artifact.score_state_sha256
+    )
     assert isinstance(
         result.operator_artifact,
         (
             layer_compiler.Lfm2CompiledStructuralAttentionFold,
             layer_compiler.Lfm2CompiledCpcfResidualAttentionSplitFold,
+            layer_compiler.Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
         ),
     )
 
 
 @pytest.mark.parametrize(
     "forced_candidate",
-    ("direct_monolithic", "residual_attention_split"),
+    layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS,
 )
 def test_attention_forced_winner_is_final_live_state_and_split_rejects_tamper(
     forced_candidate,
@@ -1798,6 +1843,23 @@ def test_attention_forced_winner_is_final_live_state_and_split_rejects_tamper(
         return
 
     artifact = result.operator_artifact
+    if forced_candidate == (
+        sequence_effective.FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID
+    ):
+        assert isinstance(
+            artifact,
+            sequence_effective.Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+        )
+        with pytest.raises(
+            sequence_effective.Lfm2SequenceEffectiveAttentionFoldError,
+            match="state authentication failed",
+        ):
+            replace(
+                artifact,
+                value_weight=torch.zeros_like(artifact.value_weight),
+            )
+        return
+
     assert isinstance(
         artifact,
         layer_compiler.Lfm2CompiledCpcfResidualAttentionSplitFold,
@@ -1822,6 +1884,40 @@ def test_attention_forced_winner_is_final_live_state_and_split_rejects_tamper(
             artifact,
             report=tampered_report,
         )
+
+
+@pytest.mark.parametrize(
+    "candidate_ids",
+    (
+        layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS[:-1],
+        (
+            layer_compiler.DIRECT_MONOLITHIC_ATTENTION_CANDIDATE_ID,
+            layer_compiler.RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID,
+            layer_compiler.RESIDUAL_ATTENTION_SPLIT_CANDIDATE_ID,
+        ),
+        (
+            *layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS[:-1],
+            "unknown_attention_arm",
+        ),
+    ),
+)
+def test_attention_winner_freeze_rejects_noncanonical_inventory(
+    candidate_ids,
+) -> None:
+    candidates = tuple(
+        SimpleNamespace(
+            candidate_id=candidate_id,
+            selection_key=(float(index), candidate_id),
+            report={"report_sha256": f"{index:064x}"},
+        )
+        for index, candidate_id in enumerate(candidate_ids, start=1)
+    )
+
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="exactly the authenticated three-arm",
+    ):
+        layer_compiler._freeze_attention_candidate_winner(candidates)
 
 
 def test_short_conv_v4_diverse_macrocell_winner_can_beat_endpoint_top4(
@@ -2425,6 +2521,93 @@ def test_layer_transaction_rolls_back_operator_when_mlp_compile_fails(
     assert torch.equal(layer.rotary_inv_freq, torch.tensor([2.0]))
 
 
+@pytest.mark.parametrize(
+    ("failure_point", "expected_stage"),
+    (
+        ("third_arm_compile", "operator_compile"),
+        ("third_arm_install", "operator_install"),
+        ("third_arm_mlp", "mlp_compile"),
+    ),
+)
+def test_sequence_effective_arm_failure_restores_exact_blank(
+    failure_point,
+    expected_stage,
+    monkeypatch,
+) -> None:
+    source, target, bank, charts = _fixture("full_attention")
+    layer = target.model.layers[0]
+    before = copy.deepcopy(layer.state_dict())
+    identities = {name: id(value) for name, value in layer.named_parameters()}
+
+    def mutate_target() -> None:
+        with torch.no_grad():
+            layer.self_attn.q_proj.weight.fill_(17.0)
+            layer.feed_forward.w1.weight.fill_(-19.0)
+
+    if failure_point == "third_arm_compile":
+
+        def fail_compile(**_kwargs):
+            mutate_target()
+            raise RuntimeError("forced sequence-effective compile failure")
+
+        monkeypatch.setattr(
+            layer_compiler,
+            "compile_lfm2_fixed_qk_sequence_effective_attention_fold",
+            fail_compile,
+        )
+    elif failure_point == "third_arm_install":
+        original_install = layer_compiler._install_cpcf_attention_artifact
+
+        def fail_install(**kwargs):
+            if isinstance(
+                kwargs["artifact"],
+                sequence_effective.Lfm2CompiledFixedQkSequenceEffectiveAttentionFold,
+            ):
+                mutate_target()
+                raise RuntimeError("forced sequence-effective install failure")
+            return original_install(**kwargs)
+
+        monkeypatch.setattr(
+            layer_compiler,
+            "_install_cpcf_attention_artifact",
+            fail_install,
+        )
+    else:
+        original_evaluate = layer_compiler._evaluate_installed_attention_candidate
+
+        def fail_mlp(**kwargs):
+            if kwargs["candidate_id"] == (
+                sequence_effective.FIXED_QK_SEQUENCE_EFFECTIVE_VO_ALS_CANDIDATE_ID
+            ):
+                mutate_target()
+                raise RuntimeError("forced sequence-effective MLP failure")
+            return original_evaluate(**kwargs)
+
+        monkeypatch.setattr(
+            layer_compiler,
+            "_evaluate_installed_attention_candidate",
+            fail_mlp,
+        )
+
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilationFailure,
+        match="forced sequence-effective",
+    ) as caught:
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+        )
+
+    assert caught.value.stage == expected_stage
+    assert caught.value.rollback_proof["exact_layer_rollback_proven"] is True
+    assert {name: id(value) for name, value in layer.named_parameters()} == identities
+    for name, value in layer.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
+
+
 def test_short_conv_gate_failure_preserves_nested_report_and_exact_rollback(
     monkeypatch,
 ) -> None:
@@ -2821,3 +3004,686 @@ def test_inverse_rope_and_full_key_recovery_are_functional() -> None:
         rtol=0,
         atol=0,
     )
+
+
+def _cpu_test_two_lane_runtime():
+    lanes = (
+        layer_compiler._Lfm2CpcfShortConvExecutionLane(
+            lane_index=0,
+            device=torch.device("cpu"),
+            device_index=0,
+            device_uuid="test-device-0",
+            device_receipt_sha256="1" * 64,
+            replica_receipt_sha256="2" * 64,
+            installed_state_fingerprint_sha256="3" * 64,
+        ),
+        layer_compiler._Lfm2CpcfShortConvExecutionLane(
+            lane_index=1,
+            device=torch.device("cpu"),
+            device_index=1,
+            device_uuid="test-device-1",
+            device_receipt_sha256="4" * 64,
+            replica_receipt_sha256="5" * 64,
+            installed_state_fingerprint_sha256="3" * 64,
+        ),
+    )
+    return layer_compiler._Lfm2CpcfShortConvTwoLaneRuntime(
+        lanes=lanes,
+        runtime_authentication_report=MappingProxyType({}),
+        runtime_authentication_report_sha256="6" * 64,
+        scheduler_policy_sha256="7" * 64,
+    )
+
+
+def test_two_lane_macrocell_is_serial_equal_bounded_and_completion_order_invariant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import gc
+    import threading
+    import weakref
+
+    from neural_forge.hf_lfm2_cpcf_candidate_replay import (
+        CpuReferenceLfm2CpcfCandidateReplayEvaluator,
+    )
+
+    policy = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-6,),
+        variable_projection_passes=2,
+        target_dtype="float32",
+    )
+    evaluator = CpuReferenceLfm2CpcfCandidateReplayEvaluator()
+    serial_source, serial_target, serial_bank, serial_charts = _fixture("short_conv")
+    serial = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        serial_source,
+        serial_target,
+        layer_index=0,
+        input_bank=serial_bank,
+        boundary_charts=serial_charts,
+        short_conv_v4_solver_policy=policy,
+        candidate_replay_evaluator=evaluator,
+    )
+
+    source, target, bank, charts = _fixture("short_conv")
+    canonical_layer = target.model.layers[0]
+    runtime = _cpu_test_two_lane_runtime()
+    monkeypatch.setattr(
+        layer_compiler,
+        "_authenticated_short_conv_two_lane_runtime",
+        lambda _evaluator: runtime,
+    )
+
+    replica_refs = []
+    replica_storage_sets = []
+    replica_topologies = []
+    original_replicas = layer_compiler._private_two_lane_replicas
+
+    def replica_spy(target_layer, runtime_value):
+        replicas = original_replicas(target_layer, runtime_value)
+        replica_refs.extend(weakref.ref(replica) for replica in replicas)
+        for replica in replicas:
+            replica_topologies.append(
+                {
+                    name: (tuple(value.shape), value.dtype)
+                    for name, value in replica.state_dict().items()
+                }
+            )
+            replica_storage_sets.append(
+                {
+                    int(value.untyped_storage().data_ptr())
+                    for value in replica.state_dict().values()
+                    if value.numel() != 0
+                }
+            )
+        return replicas
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "_private_two_lane_replicas",
+        replica_spy,
+    )
+
+    replay_refs = []
+    maximum_live_replay_refs = 0
+    replay_lock = threading.Lock()
+    original_replay = layer_compiler.replay_lfm2_cpcf_phase_bank
+
+    def replay_spy(*args, **kwargs):
+        nonlocal maximum_live_replay_refs
+        execution_layer = kwargs.get("execution_layer")
+        if execution_layer is not None:
+            assert execution_layer is not canonical_layer
+        replay = original_replay(*args, **kwargs)
+        if execution_layer is not None:
+            replay_ref = weakref.ref(
+                next(iter(replay.post_layer_bank.states.values()))
+            )
+            with replay_lock:
+                replay_refs.append(replay_ref)
+                maximum_live_replay_refs = max(
+                    maximum_live_replay_refs,
+                    sum(value() is not None for value in replay_refs),
+                )
+        return replay
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "replay_lfm2_cpcf_phase_bank",
+        replay_spy,
+    )
+
+    original_two_lane = (
+        layer_compiler._Lfm2CpcfShortConvMacrocellSelector._evaluate_two_lane
+    )
+
+    def two_lane_spy(self, **kwargs):
+        before = {
+            name: value.detach().clone()
+            for name, value in self.target_layer.state_dict().items()
+        }
+        identities = {
+            name: id(value) for name, value in self.target_layer.named_parameters()
+        }
+        result = original_two_lane(self, **kwargs)
+        assert {
+            name: id(value) for name, value in self.target_layer.named_parameters()
+        } == identities
+        for name, value in self.target_layer.state_dict().items():
+            torch.testing.assert_close(value, before[name], rtol=0, atol=0)
+        return result
+
+    monkeypatch.setattr(
+        layer_compiler._Lfm2CpcfShortConvMacrocellSelector,
+        "_evaluate_two_lane",
+        two_lane_spy,
+    )
+
+    original_candidate = (
+        layer_compiler._Lfm2CpcfShortConvMacrocellSelector._evaluate_two_lane_candidate
+    )
+    active = 0
+    maximum_active = 0
+    lane_counts = [0, 0]
+    candidate_counts = {}
+    candidate_lanes = {}
+    completion = []
+    activity_lock = threading.Lock()
+    lane_one_done = threading.Event()
+
+    def reverse_completion_spy(self, **kwargs):
+        nonlocal active, maximum_active
+        lane_index = kwargs["lane"].lane_index
+        with activity_lock:
+            active += 1
+            maximum_active = max(maximum_active, active)
+            lane_counts[lane_index] += 1
+            ordinal = lane_counts[lane_index]
+            candidate_id = kwargs["candidate"].candidate_id
+            candidate_counts[candidate_id] = candidate_counts.get(candidate_id, 0) + 1
+            candidate_lanes.setdefault(candidate_id, []).append(lane_index)
+        try:
+            value = original_candidate(self, **kwargs)
+            if lane_index == 1 and ordinal == 5:
+                with activity_lock:
+                    completion.append((lane_index, kwargs["candidate"].candidate_id))
+                lane_one_done.set()
+            elif lane_index == 0 and ordinal == 4:
+                assert lane_one_done.wait(timeout=60)
+                with activity_lock:
+                    completion.append((lane_index, kwargs["candidate"].candidate_id))
+            else:
+                with activity_lock:
+                    completion.append((lane_index, kwargs["candidate"].candidate_id))
+            return value
+        finally:
+            with activity_lock:
+                active -= 1
+
+    monkeypatch.setattr(
+        layer_compiler._Lfm2CpcfShortConvMacrocellSelector,
+        "_evaluate_two_lane_candidate",
+        reverse_completion_spy,
+    )
+
+    parallel = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+        source,
+        target,
+        layer_index=0,
+        input_bank=bank,
+        boundary_charts=charts,
+        short_conv_v4_solver_policy=policy,
+        candidate_replay_evaluator=evaluator,
+    )
+
+    serial_decision = serial.report["solver_evidence_policy"][
+        "short_conv_macrocell_selection"
+    ]
+    parallel_policy = parallel.report["solver_evidence_policy"]
+    parallel_decision = parallel_policy["short_conv_macrocell_selection"]
+    receipt = parallel_policy["short_conv_two_lane_macrocell_execution"]
+    assert parallel_decision["selected_candidate_id"] == (
+        serial_decision["selected_candidate_id"]
+    )
+    assert [
+        (value["rank"], value["candidate_id"], value["score"])
+        for value in parallel_decision["macrocell_ranking"]
+    ] == [
+        (value["rank"], value["candidate_id"], value["score"])
+        for value in serial_decision["macrocell_ranking"]
+    ]
+    assert list(parallel_decision["candidate_evaluations"]) == (
+        parallel_decision["evaluated_candidate_ids"]
+    )
+    assert receipt["canonical_candidate_result_order"] == (
+        parallel_decision["evaluated_candidate_ids"]
+    )
+    assert receipt["canonical_result_order_restored_after_parallel_completion"] is True
+    assert receipt["maximum_active_lanes_observed"] == 2
+    assert receipt["maximum_live_replay_tree_slots"] == 2
+    assert receipt["maximum_live_replay_trees_per_lane"] == 1
+    assert receipt["whole_model_clones"] == 0
+    assert receipt["shared_mlp_basis_preparation_count"] == 1
+    assert receipt["report_sha256"] == _sha(
+        {name: value for name, value in receipt.items() if name != "report_sha256"}
+    )
+    assert maximum_active == 2
+    assert active == 0
+    assert lane_counts == [4, 5]
+    evaluated_ids = parallel_decision["evaluated_candidate_ids"]
+    assert candidate_counts[evaluated_ids[0]] == 2
+    assert sorted(candidate_lanes[evaluated_ids[0]]) == [0, 1]
+    assert all(candidate_counts[candidate_id] == 1 for candidate_id in evaluated_ids[1:])
+    assert {
+        candidate_id: candidate_lanes[candidate_id][0]
+        for candidate_id in evaluated_ids[1:]
+    } == {
+        candidate_id: index % 2
+        for index, candidate_id in enumerate(evaluated_ids)
+        if index > 0
+    }
+    assert completion[-1][0] == 0
+    assert maximum_live_replay_refs <= 2
+    assert len(replay_refs) == 19
+    assert len(replica_refs) == 2
+    assert replica_topologies[0] == replica_topologies[1]
+    assert not replica_storage_sets[0].intersection(replica_storage_sets[1])
+
+    fit_replay_hashes = {
+        evaluation["fit_operator_replay_report"]["actual_report"][
+            "source_report_sha256"
+        ]
+        for evaluation in parallel_decision["candidate_evaluations"].values()
+    }
+    mlp_state_hashes = {
+        evaluation["fit_mlp_compiled_state_sha256"]
+        for evaluation in parallel_decision["candidate_evaluations"].values()
+    }
+    assert len(fit_replay_hashes) > 1
+    assert len(mlp_state_hashes) > 1
+    parity = receipt["cross_lane_semantic_parity_proof"]
+    assert parity["exact_semantic_parity_proven"] is True
+    assert parity["comparison_policy"] == "exact_canonical_json_byte_equality"
+    assert parity["numeric_tolerances_used"] is False
+    assert parity["relative_tolerance"] == 0.0
+    assert parity["absolute_tolerance"] == 0.0
+    assert parity["representative_evaluation_count"] == 2
+    assert parity["lane_zero_representative_result_reused"] is True
+    assert parity["lane_one_representative_result_discarded_after_parity"] is True
+    assert parity["lane_evaluation_report_sha256"][0] != (
+        parity["lane_evaluation_report_sha256"][1]
+    )
+    assert parity["report_sha256"] == _sha(
+        {name: value for name, value in parity.items() if name != "report_sha256"}
+    )
+    assert receipt["representative_candidate_id"] == evaluated_ids[0]
+    assert receipt["candidate_result_count"] == len(evaluated_ids)
+    assert receipt["candidate_compile_result_count"] == len(evaluated_ids)
+    assert receipt["candidate_compile_execution_count"] == len(evaluated_ids) + 1
+    assert receipt["duplicate_parity_compile_execution_count"] == 1
+    assert receipt["worker_future_count"] == 4
+    assert receipt["maximum_simultaneous_worker_future_count"] == 2
+    assert receipt["cross_lane_semantic_parity_completed_before_remaining_candidates"]
+    assert receipt["all_nonrepresentative_candidates_evaluated_exactly_once"] is True
+    for evaluation in parallel_decision["candidate_evaluations"].values():
+        actual = evaluation["fit_operator_replay_report"]["actual_report"]
+        assert actual["macrocell_execution_runtime_authentication_report_sha256"] == (
+            runtime.runtime_authentication_report_sha256
+        )
+        assert actual["fit_replay_released_before_selection_replay"] is True
+        assert actual["selection_replay_released_before_candidate_return"] is True
+
+    assert parallel.operator_artifact.report["compiled_state_sha256"] == (
+        serial.operator_artifact.report["compiled_state_sha256"]
+    )
+    assert parallel.mlp_artifact.compiled_state_sha256 == (
+        serial.mlp_artifact.compiled_state_sha256
+    )
+    assert parallel.split_metrics == serial.split_metrics
+    for name, value in target.model.layers[0].state_dict().items():
+        torch.testing.assert_close(
+            value,
+            serial_target.model.layers[0].state_dict()[name],
+            rtol=0,
+            atol=0,
+        )
+    gc.collect()
+    assert all(value() is None for value in replay_refs)
+    assert all(value() is None for value in replica_refs)
+
+
+def test_two_lane_failure_restores_canonical_and_both_replicas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import gc
+    import weakref
+
+    from neural_forge.hf_lfm2_cpcf_candidate_replay import (
+        CpuReferenceLfm2CpcfCandidateReplayEvaluator,
+    )
+
+    source, target, bank, charts = _fixture("short_conv")
+    canonical_layer = target.model.layers[0]
+    before = {
+        name: value.detach().clone()
+        for name, value in canonical_layer.state_dict().items()
+    }
+    identities = {
+        name: id(value) for name, value in canonical_layer.named_parameters()
+    }
+    runtime = _cpu_test_two_lane_runtime()
+    monkeypatch.setattr(
+        layer_compiler,
+        "_authenticated_short_conv_two_lane_runtime",
+        lambda _evaluator: runtime,
+    )
+    replica_refs = []
+    original_replicas = layer_compiler._private_two_lane_replicas
+
+    def replica_spy(target_layer, runtime_value):
+        replicas = original_replicas(target_layer, runtime_value)
+        replica_refs.extend(weakref.ref(replica) for replica in replicas)
+        return replicas
+
+    monkeypatch.setattr(
+        layer_compiler,
+        "_private_two_lane_replicas",
+        replica_spy,
+    )
+    original_candidate = (
+        layer_compiler._Lfm2CpcfShortConvMacrocellSelector._evaluate_two_lane_candidate
+    )
+    failed = False
+
+    def fail_one_lane(self, **kwargs):
+        nonlocal failed
+        if kwargs["lane"].lane_index == 1 and not failed:
+            failed = True
+            with torch.no_grad():
+                next(kwargs["execution_layer"].parameters()).fill_(91.0)
+            raise RuntimeError("forced two-lane candidate failure")
+        return original_candidate(self, **kwargs)
+
+    monkeypatch.setattr(
+        layer_compiler._Lfm2CpcfShortConvMacrocellSelector,
+        "_evaluate_two_lane_candidate",
+        fail_one_lane,
+    )
+    policy = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-6,),
+        variable_projection_passes=2,
+        target_dtype="float32",
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilationFailure,
+        match="forced two-lane candidate failure",
+    ) as caught:
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+            short_conv_v4_solver_policy=policy,
+            candidate_replay_evaluator=(
+                CpuReferenceLfm2CpcfCandidateReplayEvaluator()
+            ),
+        )
+
+    assert caught.value.rollback_proof["exact_layer_rollback_proven"] is True
+    assert {
+        name: id(value) for name, value in canonical_layer.named_parameters()
+    } == identities
+    for name, value in canonical_layer.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
+    del caught
+    gc.collect()
+    assert len(replica_refs) == 2
+    assert all(value() is None for value in replica_refs)
+
+
+def test_two_lane_semantic_parity_mismatch_fails_before_remaining_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from neural_forge.hf_lfm2_cpcf_candidate_replay import (
+        CpuReferenceLfm2CpcfCandidateReplayEvaluator,
+    )
+
+    source, target, bank, charts = _fixture("short_conv")
+    canonical_layer = target.model.layers[0]
+    before = {
+        name: value.detach().clone()
+        for name, value in canonical_layer.state_dict().items()
+    }
+    identities = {
+        name: id(value) for name, value in canonical_layer.named_parameters()
+    }
+    runtime = _cpu_test_two_lane_runtime()
+    monkeypatch.setattr(
+        layer_compiler,
+        "_authenticated_short_conv_two_lane_runtime",
+        lambda _evaluator: runtime,
+    )
+    original_candidate = (
+        layer_compiler._Lfm2CpcfShortConvMacrocellSelector._evaluate_two_lane_candidate
+    )
+    calls = []
+
+    def mismatch_lane_one(self, **kwargs):
+        value = original_candidate(self, **kwargs)
+        calls.append(
+            (
+                kwargs["lane"].lane_index,
+                kwargs["candidate"].candidate_id,
+            )
+        )
+        if kwargs["lane"].lane_index != 1:
+            return value
+        semantic_parity_sink = kwargs["semantic_parity_sink"]
+        assert len(semantic_parity_sink) == 1
+        signature = dict(semantic_parity_sink[0])
+        signature.pop("signature_sha256")
+        signature["selection_key"] = [
+            *signature["selection_key"][:-1],
+            "forced-semantic-mismatch",
+        ]
+        semantic_parity_sink[0] = MappingProxyType(
+            {
+                **signature,
+                "signature_sha256": _sha(signature),
+            }
+        )
+        return value
+
+    monkeypatch.setattr(
+        layer_compiler._Lfm2CpcfShortConvMacrocellSelector,
+        "_evaluate_two_lane_candidate",
+        mismatch_lane_one,
+    )
+    policy = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-6,),
+        variable_projection_passes=2,
+        target_dtype="float32",
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilationFailure,
+        match="semantic parity failed exact comparison",
+    ) as caught:
+        layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+            short_conv_v4_solver_policy=policy,
+            candidate_replay_evaluator=(
+                CpuReferenceLfm2CpcfCandidateReplayEvaluator()
+            ),
+        )
+
+    assert len(calls) == 2
+    assert sorted(lane for lane, _candidate_id in calls) == [0, 1]
+    assert len({candidate_id for _lane, candidate_id in calls}) == 1
+    assert caught.value.rollback_proof["exact_layer_rollback_proven"] is True
+    assert {
+        name: id(value) for name, value in canonical_layer.named_parameters()
+    } == identities
+    for name, value in canonical_layer.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
+
+
+def test_two_lane_semantic_result_is_repeatable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from neural_forge.hf_lfm2_cpcf_candidate_replay import (
+        CpuReferenceLfm2CpcfCandidateReplayEvaluator,
+    )
+
+    runtime = _cpu_test_two_lane_runtime()
+    monkeypatch.setattr(
+        layer_compiler,
+        "_authenticated_short_conv_two_lane_runtime",
+        lambda _evaluator: runtime,
+    )
+    policy = Lfm2CpcfShortConvV4SolverPolicy(
+        ridge_alphas=(1e-6,),
+        variable_projection_passes=2,
+        target_dtype="float32",
+    )
+    observed = []
+    for _iteration in range(2):
+        source, target, bank, charts = _fixture("short_conv")
+        artifact = layer_compiler.compile_and_install_lfm2_cpcf_layer(
+            source,
+            target,
+            layer_index=0,
+            input_bank=bank,
+            boundary_charts=charts,
+            short_conv_v4_solver_policy=policy,
+            candidate_replay_evaluator=(
+                CpuReferenceLfm2CpcfCandidateReplayEvaluator()
+            ),
+        )
+        solver_policy = artifact.report["solver_evidence_policy"]
+        decision = solver_policy["short_conv_macrocell_selection"]
+        receipt = solver_policy["short_conv_two_lane_macrocell_execution"]
+        parity = receipt["cross_lane_semantic_parity_proof"]
+        observed.append(
+            {
+                "selected_candidate_id": decision["selected_candidate_id"],
+                "ranking": [
+                    (
+                        value["rank"],
+                        value["candidate_id"],
+                        value["score"],
+                    )
+                    for value in decision["macrocell_ranking"]
+                ],
+                "operator_state_sha256": (
+                    artifact.operator_artifact.report["compiled_state_sha256"]
+                ),
+                "mlp_state_sha256": artifact.mlp_artifact.compiled_state_sha256,
+                "parity_semantic_signature_sha256": (
+                    parity["semantic_signature_sha256"]
+                ),
+                "parity_exact": parity["exact_semantic_parity_proven"],
+                "result_count": receipt["candidate_result_count"],
+                "compile_execution_count": (
+                    receipt["candidate_compile_execution_count"]
+                ),
+            }
+        )
+    assert observed[0] == observed[1]
+
+
+def test_two_lane_scheduler_receipts_are_fresh_explicit_and_tamper_evident() -> None:
+    from neural_forge.dynamic_replay_scheduler import (
+        CudaReplayDeviceReceipt,
+        DeterministicReplayScheduler,
+        InstalledReplayStateFingerprint,
+        ReplayReplicaReceipt,
+        ReplaySchedulerPolicy,
+    )
+    from neural_forge.hf_lfm2_cpcf_candidate_replay import (
+        AuthenticatedTwoGpuLfm2CpcfCandidateReplayEvaluator,
+        CpuReferenceLfm2CpcfCandidateReplayEvaluator,
+    )
+
+    assert layer_compiler._authenticated_short_conv_two_lane_runtime(None) is None
+    assert (
+        layer_compiler._authenticated_short_conv_two_lane_runtime(
+            CpuReferenceLfm2CpcfCandidateReplayEvaluator()
+        )
+        is None
+    )
+    installed = InstalledReplayStateFingerprint.create(
+        state_sha256="8" * 64,
+        tensor_count=1,
+        logical_bytes=4,
+    )
+
+    def device(index, uuid, bus):
+        return CudaReplayDeviceReceipt.create(
+            device_index=index,
+            device_uuid=uuid,
+            device_name="test-homogeneous-gpu",
+            pci_domain_id=0,
+            pci_bus_id=bus,
+            pci_device_id=0,
+            capability=(8, 6),
+            total_memory_bytes=24 << 30,
+            multiprocessor_count=82,
+            torch_version="2.test",
+            cuda_runtime_version="test",
+            cudnn_version=9000,
+            deterministic_algorithms_enabled=True,
+            deterministic_debug_mode=1,
+            cudnn_deterministic=True,
+            cudnn_benchmark=False,
+            cudnn_allow_tf32=False,
+            cuda_matmul_allow_tf32=False,
+            cuda_matmul_allow_bf16_reduced_precision_reduction=False,
+            cuda_matmul_allow_fp16_reduced_precision_reduction=False,
+            float32_matmul_precision="highest",
+            cublas_workspace_config=":4096:8",
+        )
+
+    replicas = (
+        ReplayReplicaReceipt.create(
+            device=device(2, "uuid-a", 2),
+            installed_state=installed,
+        ),
+        ReplayReplicaReceipt.create(
+            device=device(7, "uuid-b", 7),
+            installed_state=installed,
+        ),
+    )
+    policy = ReplaySchedulerPolicy(
+        expected_device_name="test-homogeneous-gpu",
+    )
+    runtime_body = {
+        "schema": "neural-forge-dynamic-replay-live-runtime-authentication-v1",
+        "replicas": [replica.as_dict() for replica in replicas],
+        "policy": policy.as_dict(),
+        "state_probe_contract": {},
+        "device_receipts_freshly_probed": True,
+        "installed_states_freshly_rehashed": True,
+        "bounded_pinned_host_factory_authenticated": True,
+    }
+    runtime_report = MappingProxyType(
+        {
+            **runtime_body,
+            "report_sha256": _sha(runtime_body),
+        }
+    )
+    scheduler = object.__new__(DeterministicReplayScheduler)
+    scheduler.policy = policy
+    scheduler.replicas = replicas
+    scheduler.authenticate_runtime = lambda: runtime_report
+    evaluator = object.__new__(AuthenticatedTwoGpuLfm2CpcfCandidateReplayEvaluator)
+    evaluator.scheduler = scheduler
+
+    runtime = layer_compiler._authenticated_short_conv_two_lane_runtime(evaluator)
+    assert runtime is not None
+    assert tuple(str(lane.device) for lane in runtime.lanes) == ("cuda:2", "cuda:7")
+    assert tuple(lane.device_receipt_sha256 for lane in runtime.lanes) == tuple(
+        replica.device.receipt_sha256 for replica in replicas
+    )
+    assert runtime.runtime_authentication_report_sha256 == (
+        runtime_report["report_sha256"]
+    )
+
+    forged_report = dict(runtime_report)
+    forged_report["device_receipts_freshly_probed"] = False
+    scheduler.authenticate_runtime = lambda: forged_report
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="authentication is incomplete",
+    ):
+        layer_compiler._authenticated_short_conv_two_lane_runtime(evaluator)
+
+    scheduler.authenticate_runtime = lambda: runtime_report
+    object.__setattr__(replicas[0].device, "device_uuid", "forged-uuid")
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="authentication is incomplete|identity or receipt",
+    ):
+        layer_compiler._authenticated_short_conv_two_lane_runtime(evaluator)

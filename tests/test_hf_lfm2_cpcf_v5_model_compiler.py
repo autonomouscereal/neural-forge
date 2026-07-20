@@ -50,8 +50,16 @@ def test_v5_has_distinct_compiler_resume_and_artifact_fingerprints() -> None:
         record["filename"] == "hf_lfm2_cpcf_short_conv_v5_fhvr_mf.py"
         for record in implementation["ordered_source_files"]
     )
+    assert any(
+        record["filename"] == "hf_lfm2_sequence_effective_attention_fold.py"
+        for record in implementation["ordered_source_files"]
+    )
+    assert any(
+        record["filename"] == "hf_lfm2_structural_residual_attention_fold.py"
+        for record in implementation["ordered_source_files"]
+    )
     assert numerical_adapter._ADAPTER_IMPLEMENTATION.endswith(
-        "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v4"
+        "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v6"
     )
     assert (
         v5._REAL_V5_NUMERICAL_ADAPTER_IMPLEMENTATION
@@ -254,6 +262,14 @@ def test_concrete_real_v5_layer_provenance_is_policy_bound() -> None:
         "source_channels_pruned": 0,
         "source_channels_quantized": 0,
         "source_fir_resized_before_basis": True,
+        "fir_solver_backend": (
+            "authenticated_cpu_fp64_batched_all_channel_ridge"
+        ),
+        "fir_solver_receipt_scope": "aggregate_all_target_fir_channels",
+        "fir_scalar_oracle_policy": (
+            "deterministic_first_middle_last_plus_"
+            "threshold_ambiguous_fallback"
+        ),
         "fit_only": True,
         "selection_cases_consumed": 0,
         "validation_cases_consumed": 0,
@@ -1352,6 +1368,18 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
     assert isinstance(short_conv["selection_changed_from_v4"], bool)
     assert "macrocell_candidate_selector_receipt" in short_conv
     assert short_conv["candidate_replay_backend"]["kind"] == ("injected_cpu_reference")
+    attention_policy = result.layer_results[1].report["solver_evidence_policy"]
+    attention_selection = attention_policy["attention_candidate_selection"]
+    attention_evaluations = attention_policy["attention_candidate_evaluations"]
+    assert attention_selection["candidate_count"] == 3
+    assert tuple(attention_selection["candidate_ids"]) == (
+        layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS
+    )
+    assert set(attention_evaluations) == set(
+        layer_compiler.LFM2_CPCF_ATTENTION_CANDIDATE_IDS
+    )
+    assert attention_selection["winner_frozen_before_validation"] is True
+    assert attention_selection["validation_phase_count_consumed_before_freeze"] == 0
     assert result.report["candidate_replay_backend_injected"] is True
     assert result.report["preinstall_candidate_selector_provided"] is True
     assert result.report["preinstall_candidate_selector_active"] is False
