@@ -2975,7 +2975,7 @@ def run_lfm2_semantic_postfold(
     """Execute the complete saved-child semantic postfold transaction."""
 
     output = _new_output_path(output_checkpoint_directory)
-    cache = open_lfm2_circuit_trace_cache(cache_directory, verify=False)
+    cache = open_lfm2_circuit_trace_cache(cache_directory, verify=True)
     if cache.cache_key != _digest(expected_cache_key, "expected cache key"):
         raise Lfm2SemanticPostfoldError("Complete causal cache identity changed.")
     bridge = load_strict_tokenizer_bridge_artifact(

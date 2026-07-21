@@ -443,9 +443,13 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     terminal = MappingProxyType(
         {**terminal_body, "result_sha256": canonical_sha256(terminal_body)}
     )
-    monkeypatch.setattr(
-        postfold, "open_lfm2_circuit_trace_cache", lambda *_a, **_k: cache
-    )
+    cache_open_calls = []
+
+    def open_cache(*_args, **kwargs):
+        cache_open_calls.append(kwargs.get("verify"))
+        return cache
+
+    monkeypatch.setattr(postfold, "open_lfm2_circuit_trace_cache", open_cache)
     monkeypatch.setattr(
         postfold,
         "load_strict_tokenizer_bridge_artifact",
@@ -550,6 +554,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         fused_terminal_compiler=terminal_compiler,
     )
 
+    assert cache_open_calls == [True]
     assert events == ["layer_stack", "terminal", "checkpoint"]
     assert result["claims"]["training_performed"] is False
     assert result["claims"]["attention_correction_installed"] is True
