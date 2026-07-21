@@ -59,48 +59,57 @@ def _teacher_outputs(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     batch, query_length, _hidden = query_inputs.shape
     key_length = key_inputs.shape[1]
-    query = (
-        (query_inputs @ query_weight.T)
-        .reshape(batch, query_length, 2, 4)
-        .permute(0, 2, 1, 3)
+    query = torch.nn.functional.linear(query_inputs, query_weight).view(
+        batch,
+        query_length,
+        2,
+        4,
     )
-    key = (
-        (key_inputs @ key_weight.T).reshape(batch, key_length, 1, 4).permute(0, 2, 1, 3)
+    key = torch.nn.functional.linear(key_inputs, key_weight).view(
+        batch,
+        key_length,
+        1,
+        4,
     )
-    value = (
-        (key_inputs @ value_weight.T)
-        .reshape(batch, key_length, 1, 4)
-        .permute(0, 2, 1, 3)
-        .repeat_interleave(2, dim=1)
-        .to(torch.float64)
+    value = torch.nn.functional.linear(key_inputs, value_weight).view(
+        batch,
+        key_length,
+        1,
+        4,
     )
-    query = _rmsnorm(query, norm_weight)
-    key = _rmsnorm(key, norm_weight)
+    query = _rmsnorm(query, norm_weight).transpose(1, 2)
+    key = _rmsnorm(key, norm_weight).transpose(1, 2)
+    value = value.transpose(1, 2).repeat_interleave(2, dim=1)
     query = query * query_cosine.unsqueeze(1) + _rotate_half(
         query
     ) * query_sine.unsqueeze(1)
     key = key * key_cosine.unsqueeze(1) + _rotate_half(key) * key_sine.unsqueeze(1)
     key = key.repeat_interleave(2, dim=1)
-    scores = torch.matmul(query, key.transpose(-2, -1)).float() / math.sqrt(4)
-    count = mask.sum(dim=-1, keepdim=True).clamp_min(1)
-    scores = torch.where(
-        mask,
-        scores - (scores * mask).sum(dim=-1, keepdim=True) / count,
-        torch.zeros_like(scores),
+    scores = torch.matmul(query, key.transpose(-2, -1))
+    scores = scores * float(4**-0.5)
+    additive_mask = torch.zeros_like(scores).masked_fill(
+        ~mask,
+        torch.finfo(scores.dtype).min,
     )
-    probabilities = torch.softmax(
-        scores.double().masked_fill(~mask, -torch.inf),
+    probabilities = torch.nn.functional.softmax(
+        scores + additive_mask,
         dim=-1,
-    )
-    probabilities = torch.where(
-        mask,
-        probabilities,
-        torch.zeros_like(probabilities),
-    )
+        dtype=torch.float32,
+    ).to(query.dtype)
     context = probabilities @ value
-    endpoint = (
-        context.permute(0, 2, 1, 3).reshape(batch, query_length, 8)
-        @ output_weight.double().T
+    concatenated = (
+        context.transpose(1, 2)
+        .contiguous()
+        .reshape(
+            batch,
+            query_length,
+            8,
+        )
+        .contiguous()
+    )
+    endpoint = torch.nn.functional.linear(
+        concatenated,
+        output_weight,
     )
     return probabilities, endpoint
 
@@ -199,6 +208,11 @@ def _make_fixture() -> dict[str, object]:
             key_cosine=cosine,
             key_sine=sine,
             mask=causal,
+        )
+        target_probabilities = target_probabilities.to(torch.float64)
+        target_probabilities = target_probabilities / target_probabilities.sum(
+            dim=-1,
+            keepdim=True,
         )
         parent_probabilities = _paired_parent_probabilities(target_probabilities)
         parent_mask = causal.repeat_interleave(2, dim=1)
@@ -836,7 +850,7 @@ def test_exact_bfloat16_endpoint_fold_proves_blank_independent_4x_qkvo() -> None
     )
 
     assert first.accepted and first.changed
-    assert first.status == "fit_check_accepted"
+    assert first.status == "deterministic_fit_proposal_published"
     assert first.seed.seed_sha256 == second.seed.seed_sha256
     assert torch.equal(first.query_weight, second.query_weight)
     assert torch.equal(first.key_weight, second.key_weight)
@@ -852,7 +866,12 @@ def test_exact_bfloat16_endpoint_fold_proves_blank_independent_4x_qkvo() -> None
     assert first.report["fit_check_endpoint_and_route_nonregressing"]
     assert first.report["heldout_metric_name_is_compatibility_alias_only"]
     assert first.report["fit_check_role"] == (
-        "reused_development_acceptance_gate_not_unbiased_validation"
+        "diagnostic_only_after_deterministic_fit_publication"
+    )
+    assert first.report["fit_check_can_accept_reject_or_rollback"] is False
+    assert first.report["numeric_metric_used_for_publication"] is False
+    assert first.report["publication_rule"] == (
+        "publish_authenticated_fit_only_proposal_if_bfloat16_state_changed"
     )
     assert first.report["unbiased_generalization_claimed"] is False
     assert first.report["fresh_whole_child_intelligence_validation_required"]
@@ -900,6 +919,156 @@ def test_exact_bfloat16_endpoint_fold_proves_blank_independent_4x_qkvo() -> None
     )
     assert probabilities.shape == (1, 2, 6, 6)
     assert endpoint.shape == (1, 6, 8)
+
+
+def test_nonblank_fit_check_regression_cannot_rollback_fit_publication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _make_fixture()
+    monkeypatch.setattr(endpoint_fold, "_all_nonregressing", lambda *_args: False)
+
+    result = compile_lfm2_cached_endpoint_qk_residual_fold(
+        seed=fixture["seed_a"],
+        fit_bank=fixture["fit_bank"],
+        fit_check_bank=fixture["fit_check_bank"],
+        policy=_policy(),
+    )
+
+    assert result.fit_proposal.changed is True
+    assert result.accepted is True
+    assert result.changed is True
+    assert result.status == "deterministic_fit_proposal_published"
+    assert result.report["fit_check_endpoint_and_route_nonregressing"] is False
+    assert result.report["fit_check_can_accept_reject_or_rollback"] is False
+    assert result.report["numeric_metric_used_for_publication"] is False
+    assert torch.equal(result.query_weight, result.fit_proposal.query_weight)
+    assert torch.equal(result.key_weight, result.fit_proposal.key_weight)
+    assert (
+        result.fit_check_metrics.as_dict()
+        == result.report["proposed_fit_check_metrics"]
+    )
+    assert result.verify() == result.report["report_sha256"]
+
+
+def test_cached_exact_replay_matches_live_lfm2_bfloat16_attention_helper() -> None:
+    transformers = pytest.importorskip("transformers")
+    import neural_forge.hf_lfm2_cpcf_macrocell_replay as macrocell_replay
+
+    config = transformers.Lfm2Config(
+        vocab_size=37,
+        hidden_size=8,
+        intermediate_size=13,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=4,
+        layer_types=["full_attention"],
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=False,
+    )
+    config._attn_implementation = "eager"
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(20260721)
+        model = transformers.Lfm2ForCausalLM(config)
+    model.to(dtype=torch.bfloat16)
+    model.eval()
+    layer = model.model.layers[0]
+    with torch.no_grad():
+        layer.self_attn.q_layernorm.weight.copy_(
+            torch.tensor((0.75, 0.9375, 1.125, 1.25), dtype=torch.bfloat16)
+        )
+        layer.self_attn.k_layernorm.weight.copy_(
+            torch.tensor((1.25, 1.0625, 0.875, 0.75), dtype=torch.bfloat16)
+        )
+        residual = model.model.embed_tokens(
+            torch.tensor(((1, 2, 3, 4, 5),), dtype=torch.long)
+        ).detach()
+        positions = torch.arange(5, dtype=torch.long).unsqueeze(0)
+        cosine, sine = model.model.rotary_emb(residual, position_ids=positions)
+    future = torch.triu(torch.ones(5, 5, dtype=torch.bool), diagonal=1)
+    additive_mask = torch.zeros(
+        (1, 1, 5, 5),
+        dtype=torch.bfloat16,
+    ).masked_fill(future, torch.finfo(torch.bfloat16).min)
+    live = macrocell_replay.replay_lfm2_cpcf_macrocell(
+        layer,
+        residual,
+        position_embeddings=(cosine, sine),
+        additive_causal_mask=additive_mask,
+    )
+
+    attention = layer.self_attn
+    query_weight = attention.q_proj.weight.detach().clone()
+    key_weight = attention.k_proj.weight.detach().clone()
+    value_weight = attention.v_proj.weight.detach().clone()
+    output_weight = attention.out_proj.weight.detach().clone()
+    generator = torch.Generator().manual_seed(20260722)
+    source_query = torch.randn((16, 16), generator=generator).to(torch.bfloat16)
+    source_key = torch.randn((8, 16), generator=generator).to(torch.bfloat16)
+    source_value = torch.randn((8, 16), generator=generator).to(torch.bfloat16)
+    source_output = torch.randn((16, 16), generator=generator).to(torch.bfloat16)
+    source_inventory = endpoint_fold.seal_lfm2_dense_qkvo_source_inventory(
+        source_query_weight=source_query,
+        source_key_weight=source_key,
+        source_value_weight=source_value,
+        source_output_weight=source_output,
+    )
+    seed = build_lfm2_endpoint_qkvo_seed(
+        query_weight=query_weight,
+        key_weight=key_weight,
+        value_weight=value_weight,
+        output_weight=output_weight,
+        query_norm_weight=attention.q_layernorm.weight.detach().clone(),
+        key_norm_weight=attention.k_layernorm.weight.detach().clone(),
+        norm_epsilon=float(attention.q_layernorm.variance_epsilon),
+        source_inventory=source_inventory,
+        source_artifact_sha256=source_inventory.inventory_sha256,
+        target_query_weight_template=torch.empty_like(query_weight),
+        target_key_weight_template=torch.empty_like(key_weight),
+        target_value_weight_template=torch.empty_like(value_weight),
+        target_output_weight_template=torch.empty_like(output_weight),
+    )
+    causal_mask = (~future).reshape(1, 1, 5, 5).expand(1, 2, 5, 5)
+    uniform_probabilities = causal_mask.to(torch.float64)
+    uniform_probabilities = uniform_probabilities / uniform_probabilities.sum(
+        dim=-1,
+        keepdim=True,
+    )
+    case = Lfm2EndpointQkResidualCase(
+        target_query_inputs=live.operator_input,
+        target_key_value_inputs=live.operator_input,
+        parent_probabilities=uniform_probabilities,
+        parent_causal_mask=causal_mask,
+        parent_endpoint_target=torch.zeros_like(live.operator_delta),
+        query_rope_cos=cosine,
+        query_rope_sin=sine,
+        key_rope_cos=cosine,
+        key_rope_sin=sine,
+        query_row_sqrt_weights=torch.ones((1, 5), dtype=torch.float64),
+        query_groups=((0,), (1,)),
+        query_group_weights=((1.0,), (1.0,)),
+        trajectory_sha256=_sha("live-bfloat16-attention-parity"),
+    )
+
+    probabilities, endpoint = replay_lfm2_endpoint_qkvo(case, seed)
+    assert probabilities.dtype == torch.bfloat16
+    assert endpoint.dtype == torch.bfloat16
+    assert torch.equal(endpoint, live.operator_delta)
+    assert (
+        macrocell_replay._tensor_sha256(probabilities)
+        == live.report["operator_detail_sha256"]["probabilities"]
+    )
+
+    value = torch.nn.functional.linear(live.operator_input, value_weight).view(
+        1,
+        5,
+        1,
+        4,
+    )
+    repeated_value = value.transpose(1, 2).repeat_interleave(2, dim=1)
+    context = torch.matmul(probabilities, repeated_value)
+    concatenated = context.transpose(1, 2).contiguous().reshape(1, 5, 8).contiguous()
+    assert torch.equal(concatenated, live.operator_output_input)
 
 
 def test_fit_and_fit_check_trajectory_overlap_is_rejected() -> None:
@@ -989,6 +1158,14 @@ def test_prepared_cases_share_fixed_cache_and_normal_transfers_once_per_shard() 
     assert len({id(case.fixed_cache) for case in cases}) == 1
     cache = cases[0].fixed_cache
     assert all(case.fixed_cache is cache for case in cases)
+    assert cache.output_weight_bfloat16.dtype == torch.bfloat16
+    fixed_receipt = endpoint_fold._fixed_device_cache_receipt(cache)
+    assert fixed_receipt["schema"].endswith("-v2")
+    assert "fixed_output_bfloat16_sha256" in fixed_receipt
+    assert "fixed_output_float64_sha256" not in fixed_receipt
+    assert fixed_receipt["shared_fixed_tensor_bytes"] == (
+        endpoint_fold._fixed_device_tensor_cache_bytes(cache)
+    )
 
     endpoint_fold._attach_replay(
         cases,
@@ -997,6 +1174,9 @@ def test_prepared_cases_share_fixed_cache_and_normal_transfers_once_per_shard() 
         seed.key_weight,
     )
     assert cache.replay_qk_shard_broadcasts == 1
+    assert all(case.probabilities.dtype == torch.bfloat16 for case in cases)
+    assert all(case.repeated_value.dtype == torch.bfloat16 for case in cases)
+    assert all(case.endpoint.dtype == torch.bfloat16 for case in cases)
     operator = endpoint_fold.Lfm2EndpointQkLinearOperator(
         seed=seed,
         prepared_cases=cases,

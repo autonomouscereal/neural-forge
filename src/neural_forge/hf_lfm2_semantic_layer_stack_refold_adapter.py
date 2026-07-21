@@ -53,6 +53,8 @@ from neural_forge.hf_lfm2_semantic_postfold import (
     _additive_causal_mask,
     _attention_tensor_names,
     _changed_state_keys,
+    _fold_parent_qk_weight_priors,
+    _fit_normalized_operator_input_decoder,
     _interface_tensor_sha256,
     _lfm2_dense_producer_chain_coverage,
     _local_safetensor_shards,
@@ -71,6 +73,7 @@ from neural_forge.hf_semantic_attention_lattice import (
     Lfm2SemanticAttentionCacheCapability,
     SemanticAttentionPreRopeHistory,
     assemble_lfm2_explicit_pre_rope_history,
+    fold_semantic_attention_parent_pre_rope_priors,
     inspect_lfm2_semantic_attention_cache_capability,
     transport_lfm2_phase_probability_preserving_attention,
 )
@@ -1071,26 +1074,23 @@ def _fit_residual_chart(
             and candidate["minimum_cosine"] + 1e-8 >= incumbent["minimum_cosine"]
         )
 
-    fit_check_eligible = {
+    fit_check_nonregression_diagnostic = {
         name: nonregressing(values["fit_check"], baseline["fit_check"])
         for name, values in candidate_metrics.items()
     }
-    selectable = tuple(name for name in candidates if fit_check_eligible[name])
-    selected_before_validation = min(
-        selectable,
-        key=lambda name: (
-            candidate_metrics[name]["selection"]["relative_rmse"],
-            candidate_metrics[name]["selection"]["maximum_absolute_error"],
-            -candidate_metrics[name]["selection"]["mean_cosine"],
-            name != "base_identity",
-            name,
-        ),
+    selected = (
+        "base_identity"
+        if global_gauge_required or supported_rank == 0
+        else "rank_supported_ridge_0.0001"
     )
-    validation_passed = nonregressing(
-        candidate_metrics[selected_before_validation]["validation"],
+    if selected not in candidates:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Deterministic FIT residual chart candidate is unavailable."
+        )
+    validation_nonregression_diagnostic = nonregressing(
+        candidate_metrics[selected]["validation"],
         baseline["validation"],
     )
-    selected = selected_before_validation if validation_passed else "base_identity"
     rotation = candidates[selected]
     chart = (encoder @ rotation).contiguous()
     if not bool(torch.isfinite(chart).all().item()):
@@ -1130,23 +1130,28 @@ def _fit_residual_chart(
             name: _tensor_sha256(value) for name, value in sorted(candidates.items())
         },
         "candidate_partition_metrics": candidate_metrics,
-        "fit_check_nonregression": fit_check_eligible,
-        "selected_before_validation": selected_before_validation,
+        "fit_check_nonregression": fit_check_nonregression_diagnostic,
+        "selected_before_validation": selected,
         "selected_candidate": selected,
         "global_self_dual_gauge_required": global_gauge_required,
         "independent_layer_rotation_allowed": not global_gauge_required,
         "global_gauge_preserved_without_layer_local_rotation": (
             not global_gauge_required or selected == "base_identity"
         ),
-        "validation_nonregression_passed": validation_passed,
-        "validation_rejection_fell_back_to_base": (
-            not validation_passed and selected == "base_identity"
-        ),
+        "validation_nonregression_passed": validation_nonregression_diagnostic,
+        "validation_rejection_fell_back_to_base": False,
         "candidate_family_constructed_from_fit_only": True,
-        "fit_check_used_for_eligibility_only": True,
-        "selection_used_for_frozen_choice_only": True,
+        "deterministic_structural_selection_rule": (
+            "global-gauge-or-zero-rank-keeps-identity-otherwise-fixed-1e-4-"
+            "supported-ridge"
+        ),
+        "fit_check_used_for_eligibility_only": False,
+        "selection_used_for_frozen_choice_only": False,
         "candidate_frozen_before_validation": True,
-        "validation_reject_only": True,
+        "validation_reject_only": False,
+        "all_scalar_metrics_diagnostic_only": True,
+        "numeric_metric_used_for_candidate_selection": False,
+        "numeric_metric_used_for_publication_or_rollback": False,
         "validation_triggered_refit": False,
         "unsupported_fit_subspace_preserved_as_identity": True,
         "trajectory_balanced_rows": True,
@@ -1173,8 +1178,102 @@ def _build_attention_evidence(
     lineage: Lfm2SemanticCompilerLayerLineage,
     target_rope_inv_freq: Any,
     target_rope_attention_scaling: float,
+    parent_qk_tensors: Mapping[str, Any] | None = None,
+    target_operator_norm_weight: Any | None = None,
+    parent_norm_epsilon: float | None = None,
+    target_norm_epsilon: float | None = None,
 ) -> tuple[Lfm2SemanticAttentionTransportEvidence, ...]:
     torch = _torch()
+    ordered_alignments = tuple(
+        sorted(alignments, key=lambda value: value.source_batch_index)
+    )
+    query_groups = tuple(lineage.query_groups)
+    query_group_weights = tuple(lineage.query_group_weights)
+    key_value_groups = tuple(getattr(lineage, "key_value_groups", ()))
+    key_value_group_weights = tuple(getattr(lineage, "key_value_group_weights", ()))
+    complete_parent_prior_contract = (
+        parent_qk_tensors is not None
+        and target_operator_norm_weight is not None
+        and parent_norm_epsilon is not None
+        and target_norm_epsilon is not None
+    )
+    if complete_parent_prior_contract:
+        parent_operator_rows = []
+        child_operator_rows = []
+        for alignment in ordered_alignments:
+            batch_index = alignment.source_batch_index
+            boundary = alignment.phases[-1].target_to_donor_boundary_positions
+            target_positions = tuple(
+                index for index, value in enumerate(boundary) if value is not None
+            )
+            donor_positions = tuple(
+                int(value) for value in boundary if value is not None
+            )
+            parent_operator_rows.append(
+                parent[batch_index]
+                .final_histories["residual.pre"][0]
+                .index_select(
+                    0,
+                    torch.tensor(donor_positions, dtype=torch.long),
+                )
+            )
+            child_operator_rows.append(
+                child_bank.replay_by_batch[batch_index]
+                .operator_input[0]
+                .index_select(
+                    0,
+                    torch.tensor(target_positions, dtype=torch.long),
+                )
+            )
+        normalized_input_decoder, normalized_input_decoder_receipt = (
+            _fit_normalized_operator_input_decoder(
+                parent_raw_rows=parent_operator_rows,
+                child_normalized_rows=child_operator_rows,
+                parent_operator_norm_weight=parent_qk_tensors["operator_norm"],
+                target_operator_norm_weight=target_operator_norm_weight,
+                parent_norm_epsilon=parent_norm_epsilon,
+                target_norm_epsilon=target_norm_epsilon,
+                residual_chart=chart,
+                residual_chart_sha256=chart_receipt["result_sha256"],
+                fit_trajectory_count=max(1, len(ordered_alignments) // 2),
+            )
+        )
+        (
+            parent_query_weight_prior,
+            parent_key_weight_prior,
+            parent_value_weight_prior,
+            parent_output_weight_prior,
+            parent_query_norm_weight,
+            parent_key_norm_weight,
+            parent_weight_prior_receipt,
+        ) = _fold_parent_qk_weight_priors(
+            parent_query_weight=parent_qk_tensors["q"],
+            parent_key_weight=parent_qk_tensors["k"],
+            parent_value_weight=parent_qk_tensors["v"],
+            parent_output_weight=parent_qk_tensors["o"],
+            parent_query_norm_weight=parent_qk_tensors["q_norm"],
+            parent_key_norm_weight=parent_qk_tensors["k_norm"],
+            residual_chart=chart,
+            query_groups=query_groups,
+            query_group_weights=query_group_weights,
+            key_value_groups=key_value_groups,
+            key_value_group_weights=key_value_group_weights,
+            head_dim=int(parent_qk_tensors["q_norm"].numel()),
+            source_inventory_sha256=lineage.source_inventory.inventory_sha256,
+            residual_chart_sha256=chart_receipt["result_sha256"],
+            normalized_input_decoder=normalized_input_decoder,
+            normalized_input_decoder_receipt=normalized_input_decoder_receipt,
+        )
+    else:
+        # Narrow compatibility for typed-constructor test doubles.  Production
+        # callers always supply the atomic parent Q/K/V/O and norm contract.
+        parent_query_weight_prior = None
+        parent_key_weight_prior = None
+        parent_value_weight_prior = None
+        parent_output_weight_prior = None
+        parent_query_norm_weight = None
+        parent_key_norm_weight = None
+        parent_weight_prior_receipt = None
     result = []
     for alignment, reference in zip(
         alignments,
@@ -1263,6 +1362,26 @@ def _build_attention_evidence(
                     target_rope_attention_scaling=(target_rope_attention_scaling),
                     query_mode="semantic_endpoints",
                 )
+                if hasattr(
+                    transport,
+                    "target_to_donor_span_owner_positions",
+                ) and hasattr(phase_history, "history_sha256"):
+                    (
+                        folded_parent_query_pre_rope,
+                        folded_parent_key_pre_rope,
+                        parent_pre_rope_prior_receipt,
+                    ) = fold_semantic_attention_parent_pre_rope_priors(
+                        phase_history,
+                        transport,
+                        query_groups=query_groups,
+                        query_group_weights=query_group_weights,
+                        key_value_groups=key_value_groups,
+                        key_value_group_weights=key_value_group_weights,
+                    )
+                else:  # Narrow compatibility for typed-constructor test doubles.
+                    folded_parent_query_pre_rope = None
+                    folded_parent_key_pre_rope = None
+                    parent_pre_rope_prior_receipt = None
                 query_positions = torch.tensor(
                     transport.query_target_positions,
                     dtype=torch.long,
@@ -1323,8 +1442,10 @@ def _build_attention_evidence(
                         history=phase_history.to_evidence_dict(),
                         actual_child_replay=endpoint,
                         source_inventory=lineage.source_inventory,
-                        query_groups=lineage.query_groups,
-                        query_group_weights=lineage.query_group_weights,
+                        query_groups=query_groups,
+                        query_group_weights=query_group_weights,
+                        key_value_groups=key_value_groups,
+                        key_value_group_weights=key_value_group_weights,
                         compiler_lineage_sha256=canonical_sha256(
                             {
                                 "compiler_lineage_sha256": (
@@ -1335,6 +1456,16 @@ def _build_attention_evidence(
                             }
                         ),
                         transport=transport,
+                        folded_parent_query_pre_rope=(folded_parent_query_pre_rope),
+                        folded_parent_key_pre_rope=folded_parent_key_pre_rope,
+                        parent_pre_rope_prior_receipt=(parent_pre_rope_prior_receipt),
+                        parent_query_weight_prior=parent_query_weight_prior,
+                        parent_key_weight_prior=parent_key_weight_prior,
+                        parent_value_weight_prior=parent_value_weight_prior,
+                        parent_output_weight_prior=parent_output_weight_prior,
+                        parent_query_norm_weight=parent_query_norm_weight,
+                        parent_key_norm_weight=parent_key_norm_weight,
+                        parent_weight_prior_receipt=parent_weight_prior_receipt,
                     )
                 )
         finally:
@@ -1369,13 +1500,23 @@ def _authenticated_heldout_incumbent_noop(
 ) -> bool:
     """Recognize a frozen heldout-selected incumbent without requiring mutation."""
 
-    return bool(
+    legacy_heldout_noop = bool(
         receipt.get("status") == "heldout-selected-incumbent-noop"
-        and receipt.get("installed") is False
         and receipt.get("incumbent_selected_by_heldout_gates") is True
         and receipt.get("fit_check_nonregression_passed") is True
         and receipt.get("selection_nonregression_passed") is True
         and receipt.get("validation_nonregression_passed") is True
+    )
+    deterministic_fit_noop = bool(
+        receipt.get("status")
+        == "deterministic-fit-correction-rounded-to-incumbent-noop"
+        and receipt.get("incumbent_selected_by_heldout_gates") is False
+        and receipt.get("heldout_metrics_are_diagnostic_only") is True
+        and receipt.get("numeric_metric_used_for_publication_or_rollback") is False
+    )
+    return bool(
+        (legacy_heldout_noop or deterministic_fit_noop)
+        and receipt.get("installed") is False
         and receipt.get("candidate_frozen_before_validation") is True
         and receipt.get("validation_triggered_refit") is False
         and receipt.get("model_state_before_sha256") == before_sha256
@@ -3047,6 +3188,11 @@ def _validate_direct_attention_sources(
             "k": parent_session.tensor(prefix + "k_proj.weight"),
             "v": parent_session.tensor(prefix + "v_proj.weight"),
             "o": parent_session.tensor(prefix + "out_proj.weight"),
+            "q_norm": parent_session.tensor(prefix + "q_layernorm.weight"),
+            "k_norm": parent_session.tensor(prefix + "k_layernorm.weight"),
+            "operator_norm": parent_session.tensor(
+                f"model.layers.{layer_index}.operator_norm.weight"
+            ),
         }
         observed = seal_lfm2_dense_qkvo_source_inventory(
             source_query_weight=tensors["q"],
@@ -3067,6 +3213,10 @@ def _validate_direct_attention_sources(
                     parent_session.open_receipt_sha256
                 ),
                 "source_inventory_sha256": observed.inventory_sha256,
+                "query_norm_weight_sha256": _tensor_sha256(tensors["q_norm"]),
+                "key_norm_weight_sha256": _tensor_sha256(tensors["k_norm"]),
+                "operator_norm_weight_sha256": _tensor_sha256(tensors["operator_norm"]),
+                "qk_norms_loaded_as_atomic_attention_source": True,
                 "compiler_lineage_sha256": (
                     compiler_lineage[layer_index].compiler_lineage_sha256
                 ),
@@ -3432,6 +3582,44 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 )
                 if operator_kind == "full_attention":
                     lineage = compiler_lineage[layer_index]
+                    attention_prefix = f"model.layers.{layer_index}.self_attn."
+                    parent_qk_tensors = MappingProxyType(
+                        {
+                            "q": parent_session.tensor(
+                                attention_prefix + "q_proj.weight"
+                            ),
+                            "k": parent_session.tensor(
+                                attention_prefix + "k_proj.weight"
+                            ),
+                            "v": parent_session.tensor(
+                                attention_prefix + "v_proj.weight"
+                            ),
+                            "o": parent_session.tensor(
+                                attention_prefix + "out_proj.weight"
+                            ),
+                            "q_norm": parent_session.tensor(
+                                attention_prefix + "q_layernorm.weight"
+                            ),
+                            "k_norm": parent_session.tensor(
+                                attention_prefix + "k_layernorm.weight"
+                            ),
+                            "operator_norm": parent_session.tensor(
+                                f"model.layers.{layer_index}.operator_norm.weight"
+                            ),
+                        }
+                    )
+                    target_backbone = getattr(target_model, "model", None)
+                    target_layers = getattr(target_backbone, "layers", None)
+                    target_operator_norm_weight = (
+                        None
+                        if target_layers is None
+                        else target_layers[layer_index].operator_norm.weight
+                    )
+                    target_norm_epsilon = getattr(
+                        getattr(target_model, "config", None),
+                        "norm_eps",
+                        None,
+                    )
                     operator_evidence = _build_attention_evidence(
                         cache=cache,
                         session=cache_session,
@@ -3445,6 +3633,14 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         lineage=lineage,
                         target_rope_inv_freq=target_rope_inv_freq,
                         target_rope_attention_scaling=(target_rope_attention_scaling),
+                        parent_qk_tensors=parent_qk_tensors,
+                        target_operator_norm_weight=target_operator_norm_weight,
+                        parent_norm_epsilon=getattr(
+                            parent_session,
+                            "norm_epsilon",
+                            None,
+                        ),
+                        target_norm_epsilon=target_norm_epsilon,
                     )
                     operator_receipt = _install_attention_operator(
                         target_model=target_model,

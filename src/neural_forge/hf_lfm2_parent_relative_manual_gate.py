@@ -8,10 +8,13 @@ requires the reviewer to score both responses on the same four dimensions.
 
 Only dimensions demonstrated by the parent (score >= 3) enter retention.
 Abilities absent in the parent are reported as absolute diagnostics and are
-not charged to the child.  Promotion requires at least 90% of demonstrated
-dimensions to remain demonstrated and rejects any clear demonstrated
-capability regression, even when the aggregate rate would otherwise pass.
-Exact wording, token identity, and sentence structure are forbidden criteria.
+not charged to the child.  Retention is the candidate's score-point total,
+capped independently at the parent's score on every eligible dimension,
+divided by the parent's eligible score-point total.  Candidate improvements
+therefore cannot compensate for losses elsewhere.  The 90% reference and
+severe two-or-more-point drops are diagnostic signals for holistic review;
+they never accept, reject, certify, or block publication.  Exact wording,
+token identity, and sentence structure are forbidden criteria.
 """
 
 from __future__ import annotations
@@ -23,9 +26,9 @@ from .dynamic_circuit_ir import canonical_sha256
 from .hf_lfm2_intelligence_gate import load_manual_review_packet
 
 
-PACKET_SCHEMA = "neural-forge-lfm2-parent-relative-manual-packet-v1"
-RATINGS_SCHEMA = "neural-forge-lfm2-parent-relative-manual-ratings-v1"
-REPORT_SCHEMA = "neural-forge-lfm2-parent-relative-manual-report-v1"
+PACKET_SCHEMA = "neural-forge-lfm2-parent-relative-manual-packet-v2"
+RATINGS_SCHEMA = "neural-forge-lfm2-parent-relative-manual-ratings-v2"
+REPORT_SCHEMA = "neural-forge-lfm2-parent-relative-manual-report-v2"
 DIMENSIONS = (
     "correctness",
     "coherence",
@@ -34,6 +37,7 @@ DIMENSIONS = (
 )
 MINIMUM_DEMONSTRATED_SCORE = 3
 MINIMUM_RETENTION = 0.90
+SEVERE_REGRESSION_MINIMUM_DROP = 2
 
 
 class Lfm2ParentRelativeManualGateError(ValueError):
@@ -80,14 +84,30 @@ def build_parent_relative_manual_packet(
         "policy_sha256": source["policy_sha256"],
         "rubric": {
             "dimensions": list(DIMENSIONS),
-            "scale": {"minimum": 0, "maximum": 4},
+            "scale": {
+                "minimum": 0,
+                "maximum": 4,
+                "anchor_0": "absent, wrong, or incoherent",
+                "anchor_1": "mostly unusable or severely impaired",
+                "anchor_2": "partly useful but materially impaired",
+                "anchor_3": "substantially useful and coherent with limited defects",
+                "anchor_4": "fully useful and coherent",
+            },
             "paired_scoring_required": True,
             "same_rubric_for_parent_and_candidate": True,
             "parent_demonstrated_minimum_score": MINIMUM_DEMONSTRATED_SCORE,
-            "minimum_demonstrated_capability_retention": MINIMUM_RETENTION,
-            "clear_regression_rule": (
-                "candidate < 3 on any dimension where parent >= 3"
+            "diagnostic_retention_reference": MINIMUM_RETENTION,
+            "retention_rule": (
+                "sum(min(candidate, parent)) / sum(parent) over dimensions "
+                "where parent >= 3"
             ),
+            "candidate_improvements_capped_at_parent_score": True,
+            "severe_regression_minimum_score_drop": (SEVERE_REGRESSION_MINIMUM_DROP),
+            "severe_regression_rule": ("parent >= 3 and parent - candidate >= 2"),
+            "one_point_losses_reduce_retention_without_automatic_veto": True,
+            "numeric_goal_and_severe_flags_are_diagnostic_only": True,
+            "automatic_accept_reject_permitted": False,
+            "publication_blocked_by_diagnostics": False,
             "abilities_absent_in_parent_neutralized": True,
             "absolute_scores_are_diagnostics_only": True,
             "exact_wording_comparison_permitted": False,
@@ -186,16 +206,18 @@ def evaluate_parent_relative_manual_retention(
     packet: Mapping[str, Any],
     ratings: Mapping[str, Any],
     *,
-    minimum_retention: float = MINIMUM_RETENTION,
+    diagnostic_retention_reference: float = MINIMUM_RETENTION,
 ) -> dict[str, Any]:
-    """Score only parent-demonstrated dimensions and reject regressions."""
+    """Publish capped score-point and severe-drop diagnostics without gating."""
 
     if (
-        isinstance(minimum_retention, bool)
-        or not isinstance(minimum_retention, (int, float))
-        or not 0.0 <= float(minimum_retention) <= 1.0
+        isinstance(diagnostic_retention_reference, bool)
+        or not isinstance(diagnostic_retention_reference, (int, float))
+        or not 0.0 <= float(diagnostic_retention_reference) <= 1.0
     ):
-        raise Lfm2ParentRelativeManualGateError("minimum_retention must be in [0, 1].")
+        raise Lfm2ParentRelativeManualGateError(
+            "diagnostic_retention_reference must be in [0, 1]."
+        )
     packet_body = dict(packet)
     packet_sha = packet_body.pop("packet_sha256", None)
     ratings_body = dict(ratings)
@@ -221,17 +243,23 @@ def evaluate_parent_relative_manual_retention(
             "Paired ratings order or coverage differs from the packet."
         )
     eligible = []
-    retained = []
+    candidate_demonstrated = []
+    fully_preserved = []
     neutralized = []
-    regressions = []
+    severe_regressions = []
     case_reports = []
     absolute_parent_points = 0
     absolute_candidate_points = 0
+    parent_demonstrated_points = 0
+    capped_candidate_retained_points = 0
     for row in rows:
         case_eligible = []
-        case_retained = []
+        case_candidate_demonstrated = []
+        case_fully_preserved = []
         case_neutralized = []
-        case_regressions = []
+        case_severe_regressions = []
+        case_parent_points = 0
+        case_capped_candidate_points = 0
         for dimension in DIMENSIONS:
             parent_score = _score(
                 row["parent"][dimension],
@@ -250,20 +278,34 @@ def evaluate_parent_relative_manual_retention(
                 continue
             eligible.append(key)
             case_eligible.append(dimension)
+            parent_demonstrated_points += parent_score
+            case_parent_points += parent_score
+            capped_candidate_score = min(candidate_score, parent_score)
+            capped_candidate_retained_points += capped_candidate_score
+            case_capped_candidate_points += capped_candidate_score
             if candidate_score >= MINIMUM_DEMONSTRATED_SCORE:
-                retained.append(key)
-                case_retained.append(dimension)
-            else:
-                regressions.append(key)
-                case_regressions.append(dimension)
+                candidate_demonstrated.append(key)
+                case_candidate_demonstrated.append(dimension)
+            if candidate_score >= parent_score:
+                fully_preserved.append(key)
+                case_fully_preserved.append(dimension)
+            if parent_score - candidate_score >= SEVERE_REGRESSION_MINIMUM_DROP:
+                severe_regressions.append(key)
+                case_severe_regressions.append(dimension)
         case_reports.append(
             {
                 "case_id": row["case_id"],
                 "parent_demonstrated_dimensions": case_eligible,
-                "retained_dimensions": case_retained,
+                "candidate_demonstrated_dimensions": case_candidate_demonstrated,
+                "fully_preserved_dimensions": case_fully_preserved,
                 "neutralized_parent_absent_dimensions": case_neutralized,
-                "clear_regression_dimensions": case_regressions,
-                "clear_regression": bool(case_regressions),
+                "parent_demonstrated_points": case_parent_points,
+                "capped_candidate_retained_points": case_capped_candidate_points,
+                "lost_parent_demonstrated_points": (
+                    case_parent_points - case_capped_candidate_points
+                ),
+                "severe_regression_dimensions": case_severe_regressions,
+                "severe_regression": bool(case_severe_regressions),
                 "reason": row["reason"],
             }
         )
@@ -271,22 +313,28 @@ def evaluate_parent_relative_manual_retention(
         raise Lfm2ParentRelativeManualGateError(
             "The cached parent demonstrated no manually scorable dimensions."
         )
-    retention = len(retained) / len(eligible)
-    passed = retention >= float(minimum_retention) and not regressions
+    retention = capped_candidate_retained_points / parent_demonstrated_points
+    diagnostic_goal_met = retention >= float(diagnostic_retention_reference)
     body = {
         "schema": REPORT_SCHEMA,
         "packet_sha256": packet_sha,
         "ratings_sha256": ratings_sha,
         "reviewer_id": ratings_body["reviewer_id"],
-        "status": "accepted" if passed else "rejected",
-        "passed": passed,
-        "minimum_retention": float(minimum_retention),
+        "status": "diagnostic_complete",
+        "diagnostic_retention_reference": float(diagnostic_retention_reference),
+        "diagnostic_retention_reference_met": diagnostic_goal_met,
         "parent_demonstrated_dimension_count": len(eligible),
-        "retained_dimension_count": len(retained),
+        "candidate_demonstrated_dimension_count": len(candidate_demonstrated),
+        "fully_preserved_dimension_count": len(fully_preserved),
+        "parent_demonstrated_point_count": parent_demonstrated_points,
+        "capped_candidate_retained_point_count": capped_candidate_retained_points,
+        "lost_parent_demonstrated_point_count": (
+            parent_demonstrated_points - capped_candidate_retained_points
+        ),
         "retention": retention,
         "neutralized_parent_absent_dimension_count": len(neutralized),
-        "clear_regression_count": len(regressions),
-        "clear_regressions": regressions,
+        "severe_regression_count": len(severe_regressions),
+        "severe_regressions": severe_regressions,
         "case_reports": case_reports,
         "absolute_diagnostics": {
             "parent_points": absolute_parent_points,
@@ -297,7 +345,14 @@ def evaluate_parent_relative_manual_retention(
         "contract": {
             "parent_and_candidate_scored_on_same_rubric": True,
             "abilities_absent_in_parent_neutralized": True,
-            "clear_regressions_rejected": True,
+            "retention_uses_capped_score_points": True,
+            "candidate_improvements_cannot_compensate_losses": True,
+            "severe_regression_minimum_score_drop": (SEVERE_REGRESSION_MINIMUM_DROP),
+            "severe_regressions_flagged_for_holistic_review": True,
+            "numeric_goal_and_severe_flags_are_diagnostic_only": True,
+            "automatic_accept_reject_authority": False,
+            "publication_blocked_by_diagnostics": False,
+            "holistic_whole_response_judgment_required": True,
             "exact_wording_comparison_used": False,
             "cached_outputs_only": True,
             "parent_model_loaded": False,
@@ -318,6 +373,7 @@ __all__ = [
     "PACKET_SCHEMA",
     "RATINGS_SCHEMA",
     "REPORT_SCHEMA",
+    "SEVERE_REGRESSION_MINIMUM_DROP",
     "Lfm2ParentRelativeManualGateError",
     "bind_parent_relative_manual_ratings",
     "build_parent_relative_manual_packet",

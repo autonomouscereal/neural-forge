@@ -168,9 +168,7 @@ def _integer_positions(value: Any, name: str, *, batch: int) -> Any:
         raise SemanticAttentionLatticeError(
             f"{name} must be nonnegative rank-two integer positions."
         )
-    result = (
-        value.detach().to(device="cpu", dtype=torch.long).contiguous().clone()
-    )
+    result = value.detach().to(device="cpu", dtype=torch.long).contiguous().clone()
     if int(result.shape[0]) == 1 and batch != 1:
         result = result.expand(batch, -1).contiguous()
     if int(result.shape[1]) > 1 and bool(
@@ -318,13 +316,9 @@ class Lfm2SemanticAttentionCacheCapability:
             "selected_route": self.selected_route,
             "prefill_captured_token_count": self.prefill_captured_token_count,
             "assembled_current_row_count": self.assembled_current_row_count,
-            "missing_enhanced_tensor_names": list(
-                self.missing_enhanced_tensor_names
-            ),
+            "missing_enhanced_tensor_names": list(self.missing_enhanced_tensor_names),
             "missing_legacy_tensor_names": list(self.missing_legacy_tensor_names),
-            "missing_donor_prefix_positions": list(
-                self.missing_donor_prefix_positions
-            ),
+            "missing_donor_prefix_positions": list(self.missing_donor_prefix_positions),
             "required_external_legacy_evidence": list(
                 self.required_external_legacy_evidence
             ),
@@ -360,9 +354,7 @@ def inspect_lfm2_semantic_attention_cache_capability(
             LFM2_PRE_ROPE_KEY_SUFFIX,
             LFM2_VALUE_SUFFIX,
         )
-    ) + (
-        _layer_tensor_name(phases[-1], layer, LFM2_VALUE_HISTORY_SUFFIX),
-    )
+    ) + (_layer_tensor_name(phases[-1], layer, LFM2_VALUE_HISTORY_SUFFIX),)
     legacy_names = tuple(
         _layer_tensor_name(phase, layer, suffix)
         for phase in phases
@@ -386,9 +378,7 @@ def inspect_lfm2_semantic_attention_cache_capability(
         route = "unavailable"
         query_suffix = (
             LFM2_PRE_ROPE_QUERY_SUFFIX
-            if _layer_tensor_name(
-                "prefill", layer, LFM2_PRE_ROPE_QUERY_SUFFIX
-            )
+            if _layer_tensor_name("prefill", layer, LFM2_PRE_ROPE_QUERY_SUFFIX)
             in tensors
             else LFM2_LEGACY_QUERY_LINEAR_SUFFIX
         )
@@ -656,7 +646,9 @@ def _target_rope_terms(
     positions = _integer_positions(
         position_ids,
         "target_position_ids",
-        batch=int(position_ids.shape[0]) if isinstance(position_ids, torch.Tensor) and position_ids.ndim == 2 else 1,
+        batch=int(position_ids.shape[0])
+        if isinstance(position_ids, torch.Tensor) and position_ids.ndim == 2
+        else 1,
     )
     frequencies = _finite_tensor(inv_freq, "target_rope_inv_freq", ndim=1)
     if int(frequencies.shape[0]) * 2 != head_dim:
@@ -678,13 +670,10 @@ def _target_rope_terms(
 def _causal_mask(position_ids: Any, *, query_indices: Any | None = None) -> Any:
     positions = position_ids
     query_positions = (
-        positions
-        if query_indices is None
-        else positions.index_select(1, query_indices)
+        positions if query_indices is None else positions.index_select(1, query_indices)
     )
     return (
-        positions[:, None, None, :]
-        <= query_positions[:, None, :, None]
+        positions[:, None, None, :] <= query_positions[:, None, :, None]
     ).contiguous()
 
 
@@ -749,7 +738,11 @@ class SemanticAttentionRephasedProjection:
             for name, value in tensors.items()
         }
         mask = self.causal_mask
-        if not isinstance(mask, torch.Tensor) or mask.dtype != torch.bool or mask.ndim != 4:
+        if (
+            not isinstance(mask, torch.Tensor)
+            or mask.dtype != torch.bool
+            or mask.ndim != 4
+        ):
             raise SemanticAttentionLatticeError(
                 "causal_mask must be a detached rank-four bool tensor."
             )
@@ -763,8 +756,10 @@ class SemanticAttentionRephasedProjection:
             or tuple(validated["key"].shape) != (batch, kv_heads, tokens, head_dim)
             or tuple(validated["value"].shape) != tuple(validated["key"].shape)
             or tuple(validated["scores"].shape) != (batch, query_heads, tokens, tokens)
-            or tuple(validated["probabilities"].shape) != tuple(validated["scores"].shape)
-            or tuple(validated["context"].shape) != (batch, query_heads, tokens, head_dim)
+            or tuple(validated["probabilities"].shape)
+            != tuple(validated["scores"].shape)
+            or tuple(validated["context"].shape)
+            != (batch, query_heads, tokens, head_dim)
             or tuple(validated["target_rope_cos"].shape) != (batch, tokens, head_dim)
             or tuple(validated["target_rope_sin"].shape) != (batch, tokens, head_dim)
             or tuple(mask.shape) != (batch, 1, tokens, tokens)
@@ -775,9 +770,7 @@ class SemanticAttentionRephasedProjection:
         expanded_mask = mask.expand_as(validated["probabilities"])
         if not torch.equal(
             validated["probabilities"].masked_select(~expanded_mask),
-            torch.zeros_like(
-                validated["probabilities"].masked_select(~expanded_mask)
-            ),
+            torch.zeros_like(validated["probabilities"].masked_select(~expanded_mask)),
         ):
             raise SemanticAttentionLatticeError(
                 "Rephased projection assigns probability outside causality."
@@ -883,7 +876,9 @@ def project_rephased_semantic_attention_lattice(
         attention_scaling=target_rope_attention_scaling,
     )
     with torch.inference_mode():
-        query = query_pre * cosine.unsqueeze(1) + _rotate_half(query_pre) * sine.unsqueeze(1)
+        query = query_pre * cosine.unsqueeze(1) + _rotate_half(
+            query_pre
+        ) * sine.unsqueeze(1)
         key = key_pre * cosine.unsqueeze(1) + _rotate_half(key_pre) * sine.unsqueeze(1)
         groups = int(query.shape[1]) // int(key.shape[1])
         repeated_key = key.repeat_interleave(groups, dim=1)
@@ -938,14 +933,21 @@ class SemanticAttentionExpansionTransport:
 
     def __post_init__(self) -> None:
         _digest(self.semantic_alignment_sha256, "semantic alignment SHA-256")
-        if self.query_mode not in {"semantic_endpoints", "owner_surrogate_full_lattice"}:
+        if self.query_mode not in {
+            "semantic_endpoints",
+            "owner_surrogate_full_lattice",
+        }:
             raise SemanticAttentionLatticeError("query_mode is unsupported.")
         torch = _torch()
         probability = _finite_tensor(self.probabilities, "probabilities", ndim=4)
         context = _finite_tensor(self.context, "context", ndim=4)
         value = _finite_tensor(self.expanded_value, "expanded_value", ndim=4)
         mask = self.causal_mask
-        if not isinstance(mask, torch.Tensor) or mask.dtype != torch.bool or mask.ndim != 4:
+        if (
+            not isinstance(mask, torch.Tensor)
+            or mask.dtype != torch.bool
+            or mask.ndim != 4
+        ):
             raise SemanticAttentionLatticeError("causal_mask must be rank-four bool.")
         mask = mask.detach().to(device="cpu").contiguous()
         batch, heads, queries, keys = map(int, probability.shape)
@@ -981,7 +983,9 @@ class SemanticAttentionExpansionTransport:
             or tuple(key_cos.shape[:2]) != (batch, keys)
             or int(query_cos.shape[-1]) != int(key_cos.shape[-1])
         ):
-            raise SemanticAttentionLatticeError("Expansion target RoPE geometry changed.")
+            raise SemanticAttentionLatticeError(
+                "Expansion target RoPE geometry changed."
+            )
         mass_error = float(self.maximum_probability_mass_error)
         context_error = float(self.maximum_context_absolute_error)
         if (
@@ -1076,6 +1080,181 @@ class SemanticAttentionExpansionTransport:
         return {**self._body(), "transport_sha256": self.transport_sha256}
 
 
+def fold_semantic_attention_parent_pre_rope_priors(
+    history: SemanticAttentionPreRopeHistory,
+    transport: SemanticAttentionExpansionTransport,
+    *,
+    query_groups: Sequence[Sequence[int]],
+    query_group_weights: Sequence[Sequence[float]],
+    key_value_groups: Sequence[Sequence[int]],
+    key_value_group_weights: Sequence[Sequence[float]],
+) -> tuple[Any, Any, Mapping[str, Any]]:
+    """Head-fold cached parent Q/K into explicit target-head pre-RoPE priors.
+
+    Query and KV lineage are independent authenticated inputs.  The query
+    prior is indexed by target query head; the key prior is indexed by target
+    KV head and owner-expanded onto the target token lattice.  In particular,
+    no query-head-indexed GQA approximation or implicit averaging is used.
+    No target-model value or synthetic coordinate is consulted.
+    """
+
+    if not isinstance(history, SemanticAttentionPreRopeHistory) or not isinstance(
+        transport,
+        SemanticAttentionExpansionTransport,
+    ):
+        raise TypeError("history and transport must be typed semantic evidence.")
+    torch = _torch()
+    query = history.query_normalized_pre_rope.to(torch.float64)
+    key = history.key_normalized_pre_rope.to(torch.float64)
+    batch, source_query_heads, donor_tokens, head_dim = map(int, query.shape)
+    key_batch, source_key_heads, key_tokens, key_head_dim = map(int, key.shape)
+
+    def _sealed_head_fold(
+        raw_groups: Sequence[Sequence[int]],
+        raw_weights: Sequence[Sequence[float]],
+        *,
+        source_head_count: int,
+        label: str,
+    ) -> tuple[tuple[tuple[int, ...], ...], tuple[tuple[float, ...], ...]]:
+        try:
+            groups = tuple(
+                tuple(int(member) for member in group) for group in raw_groups
+            )
+            weights = tuple(
+                tuple(float(weight) for weight in group) for group in raw_weights
+            )
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise SemanticAttentionLatticeError(
+                f"{label} head-fold lineage is malformed."
+            ) from exc
+        flattened = sorted(member for group in groups for member in group)
+        if (
+            not groups
+            or len(groups) != len(weights)
+            or flattened != list(range(source_head_count))
+            or any(
+                len(group) != len(group_weights)
+                or not group
+                or any(
+                    not math.isfinite(value) or value < 0.0 for value in group_weights
+                )
+                or not math.isclose(
+                    sum(group_weights),
+                    1.0,
+                    rel_tol=1e-8,
+                    abs_tol=1e-10,
+                )
+                for group, group_weights in zip(groups, weights, strict=True)
+            )
+        ):
+            raise SemanticAttentionLatticeError(
+                f"{label} head-fold lineage is not an exhaustive weighted partition."
+            )
+        return groups, weights
+
+    groups, weights = _sealed_head_fold(
+        query_groups,
+        query_group_weights,
+        source_head_count=source_query_heads,
+        label="Query",
+    )
+    kv_groups, kv_weights = _sealed_head_fold(
+        key_value_groups,
+        key_value_group_weights,
+        source_head_count=source_key_heads,
+        label="KV",
+    )
+    if key_batch != batch or key_tokens != donor_tokens or key_head_dim != head_dim:
+        raise SemanticAttentionLatticeError(
+            "Parent pre-RoPE history cannot follow the authenticated head fold."
+        )
+    query_indices = tuple(int(value) for value in transport.query_donor_positions)
+    key_indices = tuple(
+        int(value) for value in transport.target_to_donor_span_owner_positions
+    )
+    if (
+        not query_indices
+        or not key_indices
+        or min(query_indices) < 0
+        or max(query_indices) >= donor_tokens
+        or min(key_indices) < 0
+        or max(key_indices) >= donor_tokens
+    ):
+        raise SemanticAttentionLatticeError(
+            "Semantic transport positions exceed cached pre-RoPE history."
+        )
+    query_index = torch.tensor(query_indices, dtype=torch.long)
+    key_index = torch.tensor(key_indices, dtype=torch.long)
+    folded_query = []
+    for group, group_weights in zip(groups, weights, strict=True):
+        group_index = torch.tensor(group, dtype=torch.long)
+        coefficient = torch.tensor(group_weights, dtype=torch.float64).reshape(
+            1,
+            -1,
+            1,
+            1,
+        )
+        query_rows = query.index_select(1, group_index).index_select(2, query_index)
+        folded_query.append((query_rows * coefficient).sum(dim=1))
+    folded_key = []
+    for group, group_weights in zip(kv_groups, kv_weights, strict=True):
+        key_group_index = torch.tensor(group, dtype=torch.long)
+        coefficient = torch.tensor(group_weights, dtype=torch.float64).reshape(
+            1,
+            -1,
+            1,
+            1,
+        )
+        key_rows = key.index_select(1, key_group_index).index_select(2, key_index)
+        folded_key.append((key_rows * coefficient).sum(dim=1))
+    query_prior = torch.stack(folded_query, dim=1).contiguous()
+    key_prior = torch.stack(folded_key, dim=1).contiguous()
+    if not bool(torch.isfinite(query_prior).all().item()) or not bool(
+        torch.isfinite(key_prior).all().item()
+    ):
+        raise SemanticAttentionLatticeError(
+            "Head-folded parent pre-RoPE priors are nonfinite."
+        )
+    body = {
+        "schema": "neural-forge-semantic-attention-parent-pre-rope-prior-v1",
+        "source_history_sha256": history.history_sha256,
+        "transport_sha256": transport.transport_sha256,
+        "source_query_head_count": source_query_heads,
+        "source_key_value_head_count": source_key_heads,
+        "target_query_head_count": len(groups),
+        "target_key_value_head_count": len(kv_groups),
+        "head_dim": head_dim,
+        "query_groups": [list(group) for group in groups],
+        "query_group_weights": [list(group) for group in weights],
+        "key_value_groups": [list(group) for group in kv_groups],
+        "key_value_group_weights": [list(group) for group in kv_weights],
+        "head_fold_lineage_sha256": canonical_sha256(
+            {
+                "query_groups": [list(group) for group in groups],
+                "query_group_weights": [list(group) for group in weights],
+                "key_value_groups": [list(group) for group in kv_groups],
+                "key_value_group_weights": [list(group) for group in kv_weights],
+            }
+        ),
+        "query_donor_positions": list(query_indices),
+        "key_owner_donor_positions": list(key_indices),
+        "query_prior_sha256": _tensor_sha256(query_prior),
+        "key_prior_sha256": _tensor_sha256(key_prior),
+        "parent_activation_evidence_only": True,
+        "owner_mapped_key_prior": True,
+        "query_and_kv_lineage_explicit": True,
+        "key_prior_indexed_by_target_kv_head": True,
+        "randomness_used": False,
+        "training_steps": 0,
+        "model_operations": dict(_MODEL_OPERATION_AUDIT),
+    }
+    return (
+        query_prior,
+        key_prior,
+        MappingProxyType({**body, "prior_sha256": canonical_sha256(body)}),
+    )
+
+
 def transport_probability_preserving_attention_expansion(
     *,
     semantic_alignment_sha256: str,
@@ -1128,16 +1307,21 @@ def transport_probability_preserving_attention_expansion(
         )
     multiplicities = tuple(owner.count(index) for index in range(donor_tokens))
     expected_multiplicities = tuple(donor_span_multiplicities)
-    if multiplicities != expected_multiplicities or any(value <= 0 for value in multiplicities):
+    if multiplicities != expected_multiplicities or any(
+        value <= 0 for value in multiplicities
+    ):
         raise SemanticAttentionLatticeError(
             "Attention expansion requires every donor span exactly once or more; "
             "contraction is not a query-independent static K/V transport."
         )
-    exact_target = tuple(index for index, item in enumerate(boundary) if item is not None)
+    exact_target = tuple(
+        index for index, item in enumerate(boundary) if item is not None
+    )
     exact_donor = tuple(int(item) for item in boundary if item is not None)
     if exact_donor != tuple(range(donor_tokens)) or any(
         owner[target_index] != donor_index
-        or target_index != max(
+        or target_index
+        != max(
             index for index, candidate in enumerate(owner) if candidate == donor_index
         )
         for target_index, donor_index in zip(exact_target, exact_donor, strict=True)
@@ -1200,7 +1384,11 @@ def transport_probability_preserving_attention_expansion(
         for query_ordinal in range(len(query_targets)):
             for donor_index_value in range(donor_tokens):
                 keys = torch.tensor(
-                    [index for index, item in enumerate(owner) if item == donor_index_value],
+                    [
+                        index
+                        for index, item in enumerate(owner)
+                        if item == donor_index_value
+                    ],
                     dtype=torch.long,
                 )
                 available = visible[:, query_ordinal].index_select(1, keys).sum(dim=1)
@@ -1230,7 +1418,11 @@ def transport_probability_preserving_attention_expansion(
         owner_mass = torch.zeros_like(expected_probabilities)
         for donor_index_value in range(donor_tokens):
             keys = torch.tensor(
-                [index for index, item in enumerate(owner) if item == donor_index_value],
+                [
+                    index
+                    for index, item in enumerate(owner)
+                    if item == donor_index_value
+                ],
                 dtype=torch.long,
             )
             owner_mass[..., donor_index_value] = probabilities.index_select(
@@ -1280,9 +1472,7 @@ def project_lfm2_phase_rephased_semantic_attention(
     )
 
     if not isinstance(alignment, Lfm2SemanticSpanCpcfPhaseAlignment):
-        raise TypeError(
-            "alignment must be Lfm2SemanticSpanCpcfPhaseAlignment."
-        )
+        raise TypeError("alignment must be Lfm2SemanticSpanCpcfPhaseAlignment.")
     if history.token_count != alignment.donor_full_prefix_tokens:
         raise SemanticAttentionLatticeError(
             "Accumulated parent history does not cover the aligned donor prefix."
@@ -1317,9 +1507,7 @@ def transport_lfm2_phase_probability_preserving_attention(
     )
 
     if not isinstance(alignment, Lfm2SemanticSpanCpcfPhaseAlignment):
-        raise TypeError(
-            "alignment must be Lfm2SemanticSpanCpcfPhaseAlignment."
-        )
+        raise TypeError("alignment must be Lfm2SemanticSpanCpcfPhaseAlignment.")
     alignment.require_probability_preserving_attention_transport()
     owners = alignment.target_to_donor_span_owner_positions
     if any(value is None for value in owners):  # pragma: no cover - method proves it

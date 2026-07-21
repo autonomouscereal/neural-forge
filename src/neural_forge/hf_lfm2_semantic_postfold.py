@@ -111,6 +111,7 @@ from neural_forge.hf_semantic_attention_lattice import (
     SemanticAttentionExpansionTransport,
     SemanticAttentionPreRopeHistory,
     assemble_lfm2_explicit_pre_rope_history,
+    fold_semantic_attention_parent_pre_rope_priors,
     inspect_lfm2_semantic_attention_cache_capability,
     transport_lfm2_phase_probability_preserving_attention,
 )
@@ -1714,6 +1715,8 @@ class Lfm2SemanticCompilerLayerLineage:
     source_inventory: Lfm2DenseQkvoSourceInventory
     query_groups: tuple[tuple[int, ...], ...]
     query_group_weights: tuple[tuple[float, ...], ...]
+    key_value_groups: tuple[tuple[int, ...], ...]
+    key_value_group_weights: tuple[tuple[float, ...], ...]
     compiler_lineage_sha256: str
     report: Mapping[str, Any]
 
@@ -1734,6 +1737,13 @@ class Lfm2SemanticCompilerLayerLineage:
         weights = tuple(
             tuple(float(item) for item in group) for group in self.query_group_weights
         )
+        key_value_groups = tuple(
+            tuple(int(item) for item in group) for group in self.key_value_groups
+        )
+        key_value_weights = tuple(
+            tuple(float(item) for item in group)
+            for group in self.key_value_group_weights
+        )
         if (
             not groups
             or len(groups) != len(weights)
@@ -1747,9 +1757,30 @@ class Lfm2SemanticCompilerLayerLineage:
                 or any(not math.isfinite(value) or value <= 0.0 for value in weight)
                 for weight in weights
             )
+            or not key_value_groups
+            or len(key_value_groups) != len(key_value_weights)
+            or any(not group for group in key_value_groups)
+            or any(
+                len(group) != weight_count
+                for group, weight_count in zip(
+                    key_value_groups,
+                    map(len, key_value_weights),
+                    strict=True,
+                )
+            )
+            or any(
+                not math.isclose(
+                    math.fsum(weight),
+                    1.0,
+                    rel_tol=1e-8,
+                    abs_tol=1e-10,
+                )
+                or any(not math.isfinite(value) or value <= 0.0 for value in weight)
+                for weight in key_value_weights
+            )
         ):
             raise Lfm2SemanticPostfoldError(
-                "Compiler layer lineage has invalid query-head groups."
+                "Compiler layer lineage has invalid Q/KV head groups."
             )
         lineage = _digest(
             self.compiler_lineage_sha256,
@@ -1767,12 +1798,18 @@ class Lfm2SemanticCompilerLayerLineage:
             != self.source_inventory.inventory_sha256
             or report.get("query_groups") != [list(value) for value in groups]
             or report.get("query_group_weights") != [list(value) for value in weights]
+            or report.get("key_value_groups")
+            != [list(value) for value in key_value_groups]
+            or report.get("key_value_group_weights")
+            != [list(value) for value in key_value_weights]
         ):
             raise Lfm2SemanticPostfoldError(
                 "Normalized compiler layer lineage differs from its seal."
             )
         object.__setattr__(self, "query_groups", groups)
         object.__setattr__(self, "query_group_weights", weights)
+        object.__setattr__(self, "key_value_groups", key_value_groups)
+        object.__setattr__(self, "key_value_group_weights", key_value_weights)
         object.__setattr__(self, "compiler_lineage_sha256", lineage)
         object.__setattr__(self, "report", MappingProxyType(report))
 
@@ -1873,6 +1910,15 @@ def _load_lfm2_semantic_foundation_lineage(
             tuple(float(value) for value in group)
             for group in lineage.get("query_group_weights", ())
         )
+        key_value_groups = tuple(
+            tuple(int(value) for value in group)
+            for group in group_report.get("key_value_groups", ())
+        )
+        key_value_weights = tuple(
+            tuple(1.0 / len(group) for _ in group)
+            for group in key_value_groups
+            if group
+        )
         target_head_dim = topology.get("head_dim")
         target_query_heads = topology.get("query_heads")
         q_shape = inventory.tensor_receipts["q_proj.weight"]["shape"]
@@ -1894,6 +1940,8 @@ def _load_lfm2_semantic_foundation_lineage(
             or group_report.get("query_groups") != [list(value) for value in groups]
             or group_report.get("query_group_weights")
             != [list(value) for value in weights]
+            or group_report.get("key_value_groups")
+            != [list(value) for value in key_value_groups]
             or group_report.get("full_source_query_coverage") is not True
             or group_report.get("all_weights_positive") is not True
             or group_report.get("source_query_heads") != source_query_heads
@@ -1902,6 +1950,9 @@ def _load_lfm2_semantic_foundation_lineage(
             or len(groups) != target_query_heads
             or sorted(value for group in groups for value in group)
             != list(range(source_query_heads))
+            or sorted(value for group in key_value_groups for value in group)
+            != list(range(int(group_report.get("source_key_value_heads", -1))))
+            or len(key_value_groups) != topology.get("key_value_heads")
             or lineage.get("target_hidden_size") != topology.get("hidden_size")
             or lineage.get("target_query_heads") != target_query_heads
             or lineage.get("target_key_value_heads") != topology.get("key_value_heads")
@@ -1913,6 +1964,8 @@ def _load_lfm2_semantic_foundation_lineage(
             )
         report = {
             **lineage,
+            "key_value_groups": [list(value) for value in key_value_groups],
+            "key_value_group_weights": [list(value) for value in key_value_weights],
             "foundation_lineage_sha256": lineage["lineage_sha256"],
             "foundation_receipt_sha256": verified["receipt_sha256"],
             "foundation_receipt_file_sha256": receipt_file_sha256,
@@ -1928,6 +1981,8 @@ def _load_lfm2_semantic_foundation_lineage(
             source_inventory=inventory,
             query_groups=groups,
             query_group_weights=weights,
+            key_value_groups=key_value_groups,
+            key_value_group_weights=key_value_weights,
             compiler_lineage_sha256=report["lineage_sha256"],
             report=report,
         )
@@ -2047,6 +2102,14 @@ def load_lfm2_semantic_compiler_lineage(
             tuple(float(item) for item in group)
             for group in artifact.get("query_barycentric_weights", ())
         )
+        key_value_groups = tuple(
+            tuple(int(item) for item in group)
+            for group in artifact.get("key_value_groups", ())
+        )
+        key_value_weights = tuple(
+            tuple(float(item) for item in group)
+            for group in artifact.get("key_value_barycentric_weights", ())
+        )
         group_hash = canonical_sha256(
             {
                 "groups": [list(value) for value in groups],
@@ -2092,6 +2155,8 @@ def load_lfm2_semantic_compiler_lineage(
             "source_inventory_sha256": inventory.inventory_sha256,
             "query_groups": [list(value) for value in groups],
             "query_group_weights": [list(value) for value in weights],
+            "key_value_groups": [list(value) for value in key_value_groups],
+            "key_value_group_weights": [list(value) for value in key_value_weights],
             "query_groups_sha256": group_hash,
             "numeric_parent_child_weight_match_objective": False,
         }
@@ -2101,6 +2166,8 @@ def load_lfm2_semantic_compiler_lineage(
             source_inventory=inventory,
             query_groups=groups,
             query_group_weights=weights,
+            key_value_groups=key_value_groups,
+            key_value_group_weights=key_value_weights,
             compiler_lineage_sha256=report["lineage_sha256"],
             report=report,
         )
@@ -2111,13 +2178,13 @@ def load_lfm2_semantic_compiler_lineage(
     return MappingProxyType(normalized)
 
 
-def load_lfm2_parent_qkvo_inventory_from_local_safetensors(
+def _load_lfm2_parent_qkvo_from_local_safetensors(
     model_directory: str | os.PathLike[str],
     *,
     layer_index: int,
     expected_inventory: Lfm2DenseQkvoSourceInventory,
-) -> Lfm2DenseQkvoSourceInventory:
-    """Hash direct-local parent Q/K/V/O bytes and match c61's sealed inventory."""
+) -> tuple[Lfm2DenseQkvoSourceInventory, Mapping[str, Any]]:
+    """Load and authenticate one direct-local parent Q/K/V/O layer."""
 
     try:
         from safetensors import safe_open
@@ -2130,6 +2197,9 @@ def load_lfm2_parent_qkvo_inventory_from_local_safetensors(
         "k": prefix + "k_proj.weight",
         "v": prefix + "v_proj.weight",
         "o": prefix + "out_proj.weight",
+        "q_norm": prefix + "q_layernorm.weight",
+        "k_norm": prefix + "k_layernorm.weight",
+        "operator_norm": f"model.layers.{layer_index}.operator_norm.weight",
     }
     tensors: dict[str, Any] = {}
     for shard in _local_safetensor_shards(directory):
@@ -2158,7 +2228,567 @@ def load_lfm2_parent_qkvo_inventory_from_local_safetensors(
         raise Lfm2SemanticPostfoldError(
             f"Direct-local parent Q/K/V/O bytes changed for layer {layer_index}."
         )
+    return observed, MappingProxyType(
+        {
+            name: value.detach().to(device="cpu").contiguous()
+            for name, value in tensors.items()
+        }
+    )
+
+
+def _local_lfm2_norm_epsilon(model_directory: str | os.PathLike[str]) -> float:
+    directory = _ordinary_directory(model_directory, "parent model directory")
+    config_path = directory / "config.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise Lfm2SemanticPostfoldError(
+            "Direct-local parent config.json is unavailable or invalid."
+        ) from exc
+    epsilon = config.get("norm_eps") if isinstance(config, Mapping) else None
+    if (
+        isinstance(epsilon, bool)
+        or not isinstance(epsilon, (int, float))
+        or not math.isfinite(float(epsilon))
+        or float(epsilon) <= 0.0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Direct-local parent config has no finite positive norm_eps."
+        )
+    return float(epsilon)
+
+
+def load_lfm2_parent_qkvo_inventory_from_local_safetensors(
+    model_directory: str | os.PathLike[str],
+    *,
+    layer_index: int,
+    expected_inventory: Lfm2DenseQkvoSourceInventory,
+) -> Lfm2DenseQkvoSourceInventory:
+    """Hash direct-local parent Q/K/V/O bytes and match c61's sealed inventory."""
+
+    observed, _tensors = _load_lfm2_parent_qkvo_from_local_safetensors(
+        model_directory,
+        layer_index=layer_index,
+        expected_inventory=expected_inventory,
+    )
     return observed
+
+
+def _fold_parent_qk_weight_priors(
+    *,
+    parent_query_weight: Any,
+    parent_key_weight: Any,
+    parent_value_weight: Any,
+    parent_output_weight: Any,
+    parent_query_norm_weight: Any,
+    parent_key_norm_weight: Any,
+    residual_chart: Any,
+    query_groups: Sequence[Sequence[int]],
+    query_group_weights: Sequence[Sequence[float]],
+    key_value_groups: Sequence[Sequence[int]],
+    key_value_group_weights: Sequence[Sequence[float]],
+    head_dim: int,
+    source_inventory_sha256: str,
+    residual_chart_sha256: str,
+    normalized_input_decoder: Any | None = None,
+    normalized_input_decoder_receipt: Mapping[str, Any] | None = None,
+) -> tuple[Any, Any, Any, Any, Any, Any, Mapping[str, Any]]:
+    """Transport direct parent Q/K operators through sealed head/chart coordinates."""
+
+    torch = _torch()
+    chart = residual_chart.detach().to(device="cpu", dtype=torch.float64)
+    parent_query = parent_query_weight.detach().to(device="cpu", dtype=torch.float64)
+    parent_key = parent_key_weight.detach().to(device="cpu", dtype=torch.float64)
+    parent_value = parent_value_weight.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    )
+    parent_output = parent_output_weight.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    )
+    parent_query_norm = parent_query_norm_weight.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    )
+    parent_key_norm = parent_key_norm_weight.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    )
+    query_groups_value = tuple(
+        tuple(int(value) for value in group) for group in query_groups
+    )
+    query_weights_value = tuple(
+        tuple(float(value) for value in group) for group in query_group_weights
+    )
+    key_groups_value = tuple(
+        tuple(int(value) for value in group) for group in key_value_groups
+    )
+    key_weights_value = tuple(
+        tuple(float(value) for value in group) for group in key_value_group_weights
+    )
+    if (
+        chart.ndim != 2
+        or parent_query.ndim != 2
+        or parent_key.ndim != 2
+        or parent_value.ndim != 2
+        or parent_output.ndim != 2
+        or parent_query_norm.ndim != 1
+        or parent_key_norm.ndim != 1
+        or tuple(parent_query_norm.shape) != (head_dim,)
+        or tuple(parent_key_norm.shape) != (head_dim,)
+        or head_dim <= 0
+        or int(parent_query.shape[0]) % head_dim
+        or int(parent_key.shape[0]) % head_dim
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Direct parent Q/K weights cannot enter the semantic residual chart."
+        )
+    source_hidden, target_hidden = map(int, chart.shape)
+    if (
+        int(parent_query.shape[1]) != source_hidden
+        or int(parent_key.shape[1]) != source_hidden
+        or tuple(parent_value.shape) != tuple(parent_key.shape)
+        or tuple(parent_output.shape) != (source_hidden, int(parent_query.shape[0]))
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Direct parent Q/K/V/O weights disagree on source topology."
+        )
+    source_query_heads = int(parent_query.shape[0]) // head_dim
+    source_key_heads = int(parent_key.shape[0]) // head_dim
+
+    def validated_groups(
+        groups: tuple[tuple[int, ...], ...],
+        weights: tuple[tuple[float, ...], ...],
+        source_heads: int,
+        role: str,
+    ) -> tuple[tuple[tuple[int, ...], tuple[float, ...]], ...]:
+        if (
+            not groups
+            or len(groups) != len(weights)
+            or sorted(value for group in groups for value in group)
+            != list(range(source_heads))
+            or any(
+                len(group) != len(coefficients)
+                or not group
+                or any(
+                    value <= 0.0 or not math.isfinite(value) for value in coefficients
+                )
+                or not math.isclose(
+                    math.fsum(coefficients),
+                    1.0,
+                    rel_tol=1e-8,
+                    abs_tol=1e-10,
+                )
+                for group, coefficients in zip(groups, weights, strict=True)
+            )
+        ):
+            raise Lfm2SemanticPostfoldError(
+                f"Authenticated {role} head coordinates do not partition the parent."
+            )
+        return tuple(zip(groups, weights, strict=True))
+
+    query_coordinates = validated_groups(
+        query_groups_value,
+        query_weights_value,
+        source_query_heads,
+        "query",
+    )
+    key_coordinates = validated_groups(
+        key_groups_value,
+        key_weights_value,
+        source_key_heads,
+        "key/value",
+    )
+    singular = torch.linalg.svdvals(chart)
+    maximum_singular = float(singular.max().item())
+    rank_threshold = (
+        maximum_singular
+        * max(source_hidden, target_hidden)
+        * torch.finfo(torch.float64).eps
+    )
+    chart_rank = int((singular > rank_threshold).sum().item())
+    raw_chart_decoder = torch.linalg.pinv(
+        chart,
+        rtol=max(source_hidden, target_hidden) * torch.finfo(torch.float64).eps,
+    )
+    if normalized_input_decoder is None:
+        decoder = raw_chart_decoder
+        decoder_receipt_sha256 = None
+        decoder_method = "moore_penrose_pseudoinverse_raw_residual_fallback"
+    else:
+        decoder = (
+            normalized_input_decoder.detach()
+            .to(
+                device="cpu",
+                dtype=torch.float64,
+            )
+            .contiguous()
+        )
+        if (
+            tuple(decoder.shape) != (target_hidden, source_hidden)
+            or normalized_input_decoder_receipt is None
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Normalized operator-input decoder changed residual coordinates."
+            )
+        decoder_receipt = _verify_sealed(
+            normalized_input_decoder_receipt,
+            seal_name="decoder_sha256",
+            label="normalized operator-input decoder",
+        )
+        if decoder_receipt.get("published_decoder_sha256") != _tensor_sha256(decoder):
+            raise Lfm2SemanticPostfoldError(
+                "Normalized operator-input decoder changed after sealing."
+            )
+        decoder_receipt_sha256 = decoder_receipt["decoder_sha256"]
+        decoder_method = "prior_centered_cached_normalized_input_residual"
+
+    def fold(
+        parent_weight: Any,
+        coordinates: Sequence[tuple[Sequence[int], Sequence[float]]],
+    ) -> tuple[Any, Any]:
+        blocked = parent_weight.reshape(-1, head_dim, source_hidden)
+        folded = []
+        for members, coefficients in coordinates:
+            index = torch.tensor(tuple(members), dtype=torch.long)
+            alpha = torch.tensor(tuple(coefficients), dtype=torch.float64).reshape(
+                -1,
+                1,
+                1,
+            )
+            folded.append((blocked.index_select(0, index) * alpha).sum(dim=0))
+        source_operator = torch.stack(folded, dim=0).reshape(-1, source_hidden)
+        target_operator = (source_operator @ decoder.T).contiguous()
+        return source_operator, target_operator
+
+    folded_query_source, query_prior = fold(parent_query, query_coordinates)
+    folded_key_source, key_prior = fold(parent_key, key_coordinates)
+    folded_value_source, value_prior = fold(parent_value, key_coordinates)
+    query_head_fold = torch.zeros(
+        (len(query_coordinates) * head_dim, source_query_heads * head_dim),
+        dtype=torch.float64,
+    )
+    for target_head, (members, coefficients) in enumerate(query_coordinates):
+        for source_head, coefficient in zip(members, coefficients, strict=True):
+            for coordinate in range(head_dim):
+                query_head_fold[
+                    target_head * head_dim + coordinate,
+                    source_head * head_dim + coordinate,
+                ] = coefficient
+    context_decoder = torch.linalg.pinv(
+        query_head_fold.T,
+        rtol=max(map(int, query_head_fold.shape)) * torch.finfo(torch.float64).eps,
+    )
+    output_prior = (chart.T @ parent_output @ context_decoder.T).contiguous()
+    if not all(
+        bool(torch.isfinite(value).all().item())
+        for value in (query_prior, key_prior, value_prior, output_prior)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Parent-derived Q/K/V/O weight priors are nonfinite."
+        )
+
+    def replay_metrics(source_operator: Any, target_operator: Any) -> Mapping[str, Any]:
+        replay = chart @ target_operator.T
+        target = source_operator.T
+        difference = replay - target
+        denominator = target.square().mean().sqrt().clamp_min(1e-30)
+        return MappingProxyType(
+            {
+                "relative_rmse": float(
+                    (difference.square().mean().sqrt() / denominator).item()
+                ),
+                "maximum_absolute_error": float(difference.abs().max().item()),
+                "replay_sha256": _tensor_sha256(replay),
+                "source_operator_sha256": _tensor_sha256(source_operator),
+            }
+        )
+
+    body = {
+        "schema": "neural-forge-lfm2-parent-qk-weight-prior-v1",
+        "source_inventory_sha256": source_inventory_sha256,
+        "residual_chart_sha256": residual_chart_sha256,
+        "residual_chart_shape": [source_hidden, target_hidden],
+        "residual_chart_sha256_observed": _tensor_sha256(chart),
+        "residual_decoder_method": decoder_method,
+        "residual_decoder_sha256": _tensor_sha256(decoder),
+        "normalized_input_decoder_receipt_sha256": decoder_receipt_sha256,
+        "raw_residual_chart_decoder_sha256": _tensor_sha256(raw_chart_decoder),
+        "residual_chart_rank": chart_rank,
+        "residual_chart_rank_threshold": rank_threshold,
+        "residual_chart_singular_values_sha256": _tensor_sha256(singular),
+        "query_groups": [list(value) for value in query_groups_value],
+        "query_group_weights": [list(value) for value in query_weights_value],
+        "key_value_groups": [list(value) for value in key_groups_value],
+        "key_value_group_weights": [list(value) for value in key_weights_value],
+        "query_prior_sha256": _tensor_sha256(query_prior),
+        "key_prior_sha256": _tensor_sha256(key_prior),
+        "query_norm_weight_sha256": _tensor_sha256(parent_query_norm),
+        "key_norm_weight_sha256": _tensor_sha256(parent_key_norm),
+        "query_raw_chart_projection_diagnostic": dict(
+            replay_metrics(folded_query_source, query_prior)
+        ),
+        "key_raw_chart_projection_diagnostic": dict(
+            replay_metrics(folded_key_source, key_prior)
+        ),
+        "raw_chart_projection_is_not_normalized_input_replay": True,
+        "value_prior_sha256": _tensor_sha256(value_prior),
+        "output_prior_sha256": _tensor_sha256(output_prior),
+        "folded_value_source_sha256": _tensor_sha256(folded_value_source),
+        "query_context_head_fold_sha256": _tensor_sha256(query_head_fold),
+        "query_context_decoder_sha256": _tensor_sha256(context_decoder),
+        "value_prior_uses_normalized_input_decoder": True,
+        "output_prior_uses_residual_chart_and_context_decoder": True,
+        "direct_parent_weights_used": True,
+        "fit_rows_used": 0,
+        "gradients_used": False,
+        "training_steps": 0,
+    }
+    return (
+        query_prior,
+        key_prior,
+        value_prior,
+        output_prior,
+        parent_query_norm.contiguous(),
+        parent_key_norm.contiguous(),
+        MappingProxyType({**body, "prior_sha256": canonical_sha256(body)}),
+    )
+
+
+def _fit_normalized_operator_input_decoder(
+    *,
+    parent_raw_rows: Sequence[Any],
+    child_normalized_rows: Sequence[Any],
+    parent_operator_norm_weight: Any,
+    target_operator_norm_weight: Any,
+    parent_norm_epsilon: float,
+    target_norm_epsilon: float,
+    residual_chart: Any,
+    residual_chart_sha256: str,
+    fit_trajectory_count: int,
+    ridge: float = 1e-6,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Fit cached normalized-input residual around chart/gamma structural decoder."""
+
+    torch = _torch()
+    parent_gamma = parent_operator_norm_weight.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    )
+    target_gamma = target_operator_norm_weight.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    )
+    chart = residual_chart.detach().to(device="cpu", dtype=torch.float64)
+    parents = tuple(
+        value.detach().to(device="cpu", dtype=torch.float64)
+        for value in parent_raw_rows
+    )
+    children = tuple(
+        value.detach().to(device="cpu", dtype=torch.float64)
+        for value in child_normalized_rows
+    )
+    if (
+        chart.ndim != 2
+        or len(parents) != len(children)
+        or len(parents) < 2
+        or fit_trajectory_count <= 0
+        or fit_trajectory_count >= len(parents)
+        or tuple(parent_gamma.shape) != (int(chart.shape[0]),)
+        or tuple(target_gamma.shape) != (int(chart.shape[1]),)
+        or bool((target_gamma.abs() <= torch.finfo(torch.float64).eps).any().item())
+        or not math.isfinite(parent_norm_epsilon)
+        or parent_norm_epsilon <= 0.0
+        or not math.isfinite(target_norm_epsilon)
+        or target_norm_epsilon <= 0.0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Normalized operator-input decoder has incompatible chart/gamma evidence."
+        )
+
+    normalized_parent = []
+    normalized_child = []
+    for parent_raw, child_input in zip(parents, children, strict=True):
+        if (
+            parent_raw.ndim != 2
+            or child_input.ndim != 2
+            or int(parent_raw.shape[0]) != int(child_input.shape[0])
+            or int(parent_raw.shape[1]) != int(chart.shape[0])
+            or int(child_input.shape[1]) != int(chart.shape[1])
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Normalized operator-input trajectory rows are misaligned."
+            )
+        variance = parent_raw.square().mean(dim=-1, keepdim=True)
+        parent_input = (
+            parent_raw * torch.rsqrt(variance + parent_norm_epsilon)
+        ) * parent_gamma
+        normalized_parent.append(parent_input)
+        normalized_child.append(child_input)
+
+    raw_decoder = torch.linalg.pinv(
+        chart,
+        rtol=max(map(int, chart.shape)) * torch.finfo(torch.float64).eps,
+    )
+    unscaled_prior = (
+        torch.diag(target_gamma.reciprocal()) @ raw_decoder @ torch.diag(parent_gamma)
+    ).contiguous()
+    fit_parent = torch.cat(normalized_parent[:fit_trajectory_count], dim=0)
+    fit_child = torch.cat(normalized_child[:fit_trajectory_count], dim=0)
+    fit_source_moments = torch.tensor(
+        [
+            float(value.square().mean().item())
+            for value in parents[:fit_trajectory_count]
+        ],
+        dtype=torch.float64,
+    )
+    fit_projected_moments = torch.tensor(
+        [
+            float((value @ chart).square().mean().item())
+            for value in parents[:fit_trajectory_count]
+        ],
+        dtype=torch.float64,
+    )
+    source_moment = fit_source_moments.mean()
+    projected_moment = fit_projected_moments.mean()
+    covariance_scale = torch.sqrt(
+        (projected_moment + float(target_norm_epsilon))
+        / (source_moment + float(parent_norm_epsilon))
+    )
+    if (
+        not bool(torch.isfinite(covariance_scale).item())
+        or float(covariance_scale.item()) <= 0.0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Normalized operator-input structural covariance scale is invalid."
+        )
+    scale_body = {
+        "schema": "neural-forge-lfm2-normalized-input-covariance-scale-v1",
+        "formula": (
+            "sqrt((mean_fit_trajectory(mean((parent_raw@chart)^2))+"
+            "target_eps)/(mean_fit_trajectory(mean(parent_raw^2))+parent_eps))"
+        ),
+        "fit_trajectory_count": fit_trajectory_count,
+        "trajectory_balanced": True,
+        "fit_source_moment_sha256": _tensor_sha256(fit_source_moments),
+        "fit_projected_moment_sha256": _tensor_sha256(fit_projected_moments),
+        "mean_fit_source_element_energy": float(source_moment.item()),
+        "mean_fit_projected_element_energy": float(projected_moment.item()),
+        "parent_norm_epsilon": float(parent_norm_epsilon),
+        "target_norm_epsilon": float(target_norm_epsilon),
+        "covariance_scale": float(covariance_scale.item()),
+        "actual_child_rows_used_for_scale": 0,
+        "heldout_rows_used_for_scale": 0,
+        "fit_parent_raw_rows_only": True,
+    }
+    scale_receipt = MappingProxyType(
+        {**scale_body, "scale_sha256": canonical_sha256(scale_body)}
+    )
+    prior = (unscaled_prior * covariance_scale).contiguous()
+    fit_residual = fit_parent - fit_child @ prior
+    gram = fit_child @ fit_child.T
+    scale = float(gram.diagonal().mean().clamp_min(1.0).item())
+    effective_ridge = float(ridge) * scale
+    correction = fit_child.T @ torch.linalg.solve(
+        gram + effective_ridge * torch.eye(int(gram.shape[0]), dtype=torch.float64),
+        fit_residual,
+    )
+    decoder = (prior + correction).contiguous()
+    if not bool(torch.isfinite(decoder).all().item()):
+        raise Lfm2SemanticPostfoldError(
+            "Normalized operator-input decoder residual solve is nonfinite."
+        )
+    _left, singular, right_h = torch.linalg.svd(fit_child, full_matrices=True)
+    maximum_singular = (
+        0.0 if int(singular.numel()) == 0 else float(singular.max().item())
+    )
+    threshold = (
+        maximum_singular
+        * max(map(int, fit_child.shape))
+        * torch.finfo(torch.float64).eps
+    )
+    rank = int((singular > threshold).sum().item())
+    null_basis = right_h[rank:]
+    nullspace_change = (
+        torch.zeros((), dtype=torch.float64)
+        if int(null_basis.shape[0]) == 0
+        else (null_basis @ correction).abs().max()
+    )
+
+    def metrics(child_rows: Any, parent_rows: Any) -> Mapping[str, Any]:
+        difference = child_rows @ decoder - parent_rows
+        denominator = parent_rows.square().mean().sqrt().clamp_min(1e-30)
+        return MappingProxyType(
+            {
+                "row_count": int(child_rows.shape[0]),
+                "relative_rmse": float(
+                    (difference.square().mean().sqrt() / denominator).item()
+                ),
+                "maximum_absolute_error": float(difference.abs().max().item()),
+            }
+        )
+
+    heldout_parent = torch.cat(normalized_parent[fit_trajectory_count:], dim=0)
+    heldout_child = torch.cat(normalized_child[fit_trajectory_count:], dim=0)
+    heldout_rowwise_denominator_ratios = torch.cat(
+        tuple(
+            torch.sqrt(
+                ((value @ chart).square().mean(dim=-1) + float(target_norm_epsilon))
+                / (value.square().mean(dim=-1) + float(parent_norm_epsilon))
+            )
+            for value in parents[fit_trajectory_count:]
+        ),
+        dim=0,
+    )
+    body = {
+        "schema": "neural-forge-lfm2-normalized-operator-input-decoder-v1",
+        "residual_chart_sha256": residual_chart_sha256,
+        "residual_chart_observed_sha256": _tensor_sha256(chart),
+        "parent_operator_norm_weight_sha256": _tensor_sha256(parent_gamma),
+        "target_operator_norm_weight_sha256": _tensor_sha256(target_gamma),
+        "parent_norm_epsilon": float(parent_norm_epsilon),
+        "target_norm_epsilon": float(target_norm_epsilon),
+        "parent_raw_trajectory_sha256": [_tensor_sha256(value) for value in parents],
+        "child_normalized_trajectory_sha256": [
+            _tensor_sha256(value) for value in children
+        ],
+        "structural_prior": (
+            "alpha_cov@diag(target_gamma)^-1@pinv(residual_chart)@diag(parent_gamma)"
+        ),
+        "unscaled_structural_prior_sha256": _tensor_sha256(unscaled_prior),
+        "structural_covariance_scale": dict(scale_receipt),
+        "structural_prior_sha256": _tensor_sha256(prior),
+        "residual_correction_sha256": _tensor_sha256(correction),
+        "published_decoder_sha256": _tensor_sha256(decoder),
+        "fit_trajectory_count": fit_trajectory_count,
+        "heldout_trajectory_count": len(parents) - fit_trajectory_count,
+        "fit_metrics": dict(metrics(fit_child, fit_parent)),
+        "heldout_metrics": dict(metrics(heldout_child, heldout_parent)),
+        "heldout_rowwise_denominator_ratio_diagnostic": {
+            "row_count": int(heldout_rowwise_denominator_ratios.numel()),
+            "minimum": float(heldout_rowwise_denominator_ratios.min().item()),
+            "maximum": float(heldout_rowwise_denominator_ratios.max().item()),
+            "mean": float(heldout_rowwise_denominator_ratios.mean().item()),
+            "standard_deviation": float(
+                heldout_rowwise_denominator_ratios.std(unbiased=False).item()
+            ),
+            "ratio_sha256": _tensor_sha256(heldout_rowwise_denominator_ratios),
+            "diagnostic_only": True,
+        },
+        "fit_design_rank": rank,
+        "fit_design_width": int(fit_child.shape[1]),
+        "fit_design_nullity": int(null_basis.shape[0]),
+        "fit_nullspace_correction_maximum_absolute": float(nullspace_change.item()),
+        "prior_preserved_off_fit_design": True,
+        "ridge": float(ridge),
+        "effective_ridge": effective_ridge,
+        "fit_rows_only_used_for_residual": True,
+        "heldout_rows_used_for_fit": 0,
+        "gradients_used": False,
+        "training_steps": 0,
+    }
+    return decoder, MappingProxyType({**body, "decoder_sha256": canonical_sha256(body)})
 
 
 @dataclass(frozen=True, slots=True)
@@ -2184,8 +2814,60 @@ class Lfm2SemanticAttentionTransportEvidence:
     )
     query_groups: tuple[tuple[int, ...], ...]
     query_group_weights: tuple[tuple[float, ...], ...]
+    key_value_groups: tuple[tuple[int, ...], ...]
+    key_value_group_weights: tuple[tuple[float, ...], ...]
     compiler_lineage_sha256: str
     transport: SemanticAttentionExpansionTransport = field(
+        repr=False,
+        compare=False,
+    )
+    folded_parent_query_pre_rope: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    folded_parent_key_pre_rope: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    parent_pre_rope_prior_receipt: Mapping[str, Any] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    parent_query_weight_prior: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    parent_key_weight_prior: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    parent_value_weight_prior: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    parent_output_weight_prior: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    parent_query_norm_weight: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    parent_key_norm_weight: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    parent_weight_prior_receipt: Mapping[str, Any] | None = field(
+        default=None,
         repr=False,
         compare=False,
     )
@@ -2233,6 +2915,13 @@ class Lfm2SemanticAttentionTransportEvidence:
         weights = tuple(
             tuple(float(item) for item in group) for group in self.query_group_weights
         )
+        key_value_groups = tuple(
+            tuple(int(item) for item in group) for group in self.key_value_groups
+        )
+        key_value_weights = tuple(
+            tuple(float(item) for item in group)
+            for group in self.key_value_group_weights
+        )
         lineage = _digest(
             self.compiler_lineage_sha256,
             "compiler lineage SHA-256",
@@ -2246,15 +2935,253 @@ class Lfm2SemanticAttentionTransportEvidence:
             or self.source_inventory.verify() != self.source_inventory.inventory_sha256
             or not groups
             or len(groups) != len(weights)
+            or not key_value_groups
+            or len(key_value_groups) != len(key_value_weights)
         ):
             raise Lfm2SemanticPostfoldError(
                 "Semantic attention transport/replay/compiler lineage diverges."
             )
+        batch = int(self.transport.probabilities.shape[0])
+        target_query_heads = len(groups)
+        target_key_value_heads = len(key_value_groups)
+        query_tokens = len(self.transport.query_donor_positions)
+        key_tokens = len(self.transport.target_to_donor_span_owner_positions)
+        head_dim = int(self.transport.query_rope_cos.shape[-1])
+        prior_values = (
+            self.folded_parent_query_pre_rope,
+            self.folded_parent_key_pre_rope,
+            self.parent_pre_rope_prior_receipt,
+        )
+        prior_receipt: Mapping[str, Any] | None = None
+        if any(value is not None for value in prior_values):
+            torch = _torch()
+            query_prior = self.folded_parent_query_pre_rope
+            key_prior = self.folded_parent_key_pre_rope
+            if (
+                not isinstance(query_prior, torch.Tensor)
+                or not isinstance(key_prior, torch.Tensor)
+                or query_prior.ndim != 4
+                or key_prior.ndim != 4
+                or query_prior.layout != torch.strided
+                or key_prior.layout != torch.strided
+                or query_prior.device.type == "meta"
+                or key_prior.device.type == "meta"
+                or query_prior.requires_grad
+                or key_prior.requires_grad
+                or not torch.is_floating_point(query_prior)
+                or not torch.is_floating_point(key_prior)
+                or not bool(torch.isfinite(query_prior).all().item())
+                or not bool(torch.isfinite(key_prior).all().item())
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Folded parent pre-RoPE priors must be finite detached tensors."
+                )
+            query_prior = query_prior.detach().to(device="cpu").contiguous()
+            key_prior = key_prior.detach().to(device="cpu").contiguous()
+            if (
+                tuple(query_prior.shape)
+                != (batch, target_query_heads, query_tokens, head_dim)
+                or tuple(key_prior.shape)
+                != (batch, target_key_value_heads, key_tokens, head_dim)
+                or self.parent_pre_rope_prior_receipt is None
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Folded parent pre-RoPE priors changed semantic geometry."
+                )
+            prior_receipt = _verify_sealed(
+                self.parent_pre_rope_prior_receipt,
+                seal_name="prior_sha256",
+                label="parent pre-RoPE prior",
+            )
+            if (
+                prior_receipt.get("source_history_sha256") != history["history_sha256"]
+                or prior_receipt.get("transport_sha256")
+                != self.transport.transport_sha256
+                or prior_receipt.get("query_prior_sha256")
+                != _tensor_sha256(query_prior)
+                or prior_receipt.get("key_prior_sha256") != _tensor_sha256(key_prior)
+                or prior_receipt.get("query_groups")
+                != [list(group) for group in groups]
+                or prior_receipt.get("query_group_weights")
+                != [list(group) for group in weights]
+                or prior_receipt.get("key_value_groups")
+                != [list(group) for group in key_value_groups]
+                or prior_receipt.get("key_value_group_weights")
+                != [list(group) for group in key_value_weights]
+                or prior_receipt.get("parent_activation_evidence_only") is not True
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Folded parent pre-RoPE prior is not bound to its evidence."
+                )
+            object.__setattr__(self, "folded_parent_query_pre_rope", query_prior)
+            object.__setattr__(self, "folded_parent_key_pre_rope", key_prior)
+        elif not all(value is None for value in prior_values):
+            raise AssertionError("Internal parent pre-RoPE prior validation failed.")
+        weight_prior_values = (
+            self.parent_query_weight_prior,
+            self.parent_key_weight_prior,
+            self.parent_value_weight_prior,
+            self.parent_output_weight_prior,
+            self.parent_query_norm_weight,
+            self.parent_key_norm_weight,
+            self.parent_weight_prior_receipt,
+        )
+        weight_prior_receipt: Mapping[str, Any] | None = None
+        if any(value is not None for value in weight_prior_values):
+            torch = _torch()
+            query_weight_prior = self.parent_query_weight_prior
+            key_weight_prior = self.parent_key_weight_prior
+            value_weight_prior = self.parent_value_weight_prior
+            output_weight_prior = self.parent_output_weight_prior
+            query_norm_weight = self.parent_query_norm_weight
+            key_norm_weight = self.parent_key_norm_weight
+            if (
+                not isinstance(query_weight_prior, torch.Tensor)
+                or not isinstance(key_weight_prior, torch.Tensor)
+                or query_weight_prior.ndim != 2
+                or key_weight_prior.ndim != 2
+                or not isinstance(value_weight_prior, torch.Tensor)
+                or not isinstance(output_weight_prior, torch.Tensor)
+                or value_weight_prior.ndim != 2
+                or output_weight_prior.ndim != 2
+                or not isinstance(query_norm_weight, torch.Tensor)
+                or not isinstance(key_norm_weight, torch.Tensor)
+                or query_norm_weight.ndim != 1
+                or key_norm_weight.ndim != 1
+                or query_weight_prior.requires_grad
+                or key_weight_prior.requires_grad
+                or query_weight_prior.device.type == "meta"
+                or key_weight_prior.device.type == "meta"
+                or not bool(torch.isfinite(query_weight_prior).all().item())
+                or not bool(torch.isfinite(key_weight_prior).all().item())
+                or int(query_weight_prior.shape[0]) != target_query_heads * head_dim
+                or int(key_weight_prior.shape[0]) != target_key_value_heads * head_dim
+                or int(query_weight_prior.shape[1]) != int(key_weight_prior.shape[1])
+                or tuple(value_weight_prior.shape) != tuple(key_weight_prior.shape)
+                or tuple(output_weight_prior.shape)
+                != (
+                    int(query_weight_prior.shape[1]),
+                    int(query_weight_prior.shape[0]),
+                )
+                or tuple(query_norm_weight.shape) != (head_dim,)
+                or tuple(key_norm_weight.shape) != (head_dim,)
+                or not bool(torch.isfinite(query_norm_weight).all().item())
+                or not bool(torch.isfinite(key_norm_weight).all().item())
+                or self.parent_weight_prior_receipt is None
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Parent-derived Q/K weight priors changed target topology."
+                )
+            query_weight_prior = (
+                query_weight_prior.detach()
+                .to(
+                    device="cpu",
+                    dtype=torch.float64,
+                )
+                .contiguous()
+            )
+            key_weight_prior = (
+                key_weight_prior.detach()
+                .to(
+                    device="cpu",
+                    dtype=torch.float64,
+                )
+                .contiguous()
+            )
+            value_weight_prior = (
+                value_weight_prior.detach()
+                .to(
+                    device="cpu",
+                    dtype=torch.float64,
+                )
+                .contiguous()
+            )
+            output_weight_prior = (
+                output_weight_prior.detach()
+                .to(
+                    device="cpu",
+                    dtype=torch.float64,
+                )
+                .contiguous()
+            )
+            query_norm_weight = (
+                query_norm_weight.detach()
+                .to(
+                    device="cpu",
+                    dtype=torch.float64,
+                )
+                .contiguous()
+            )
+            key_norm_weight = (
+                key_norm_weight.detach()
+                .to(
+                    device="cpu",
+                    dtype=torch.float64,
+                )
+                .contiguous()
+            )
+            weight_prior_receipt = _verify_sealed(
+                self.parent_weight_prior_receipt,
+                seal_name="prior_sha256",
+                label="parent Q/K weight prior",
+            )
+            if (
+                weight_prior_receipt.get("source_inventory_sha256")
+                != self.source_inventory.inventory_sha256
+                or weight_prior_receipt.get("query_prior_sha256")
+                != _tensor_sha256(query_weight_prior)
+                or weight_prior_receipt.get("key_prior_sha256")
+                != _tensor_sha256(key_weight_prior)
+                or weight_prior_receipt.get("value_prior_sha256")
+                != _tensor_sha256(value_weight_prior)
+                or weight_prior_receipt.get("output_prior_sha256")
+                != _tensor_sha256(output_weight_prior)
+                or weight_prior_receipt.get("query_norm_weight_sha256")
+                != _tensor_sha256(query_norm_weight)
+                or weight_prior_receipt.get("key_norm_weight_sha256")
+                != _tensor_sha256(key_norm_weight)
+                or weight_prior_receipt.get("query_groups")
+                != [list(group) for group in groups]
+                or weight_prior_receipt.get("query_group_weights")
+                != [list(group) for group in weights]
+                or weight_prior_receipt.get("key_value_groups")
+                != [list(group) for group in key_value_groups]
+                or weight_prior_receipt.get("key_value_group_weights")
+                != [list(group) for group in key_value_weights]
+                or weight_prior_receipt.get("direct_parent_weights_used") is not True
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Parent-derived Q/K weight prior is not bound to its lineage."
+                )
+            object.__setattr__(self, "parent_query_weight_prior", query_weight_prior)
+            object.__setattr__(self, "parent_key_weight_prior", key_weight_prior)
+            object.__setattr__(self, "parent_value_weight_prior", value_weight_prior)
+            object.__setattr__(self, "parent_output_weight_prior", output_weight_prior)
+            object.__setattr__(self, "parent_query_norm_weight", query_norm_weight)
+            object.__setattr__(self, "parent_key_norm_weight", key_norm_weight)
+        elif not all(value is None for value in weight_prior_values):
+            raise AssertionError("Internal parent Q/K weight-prior validation failed.")
         object.__setattr__(self, "capability", MappingProxyType(capability))
         object.__setattr__(self, "history", MappingProxyType(history))
         object.__setattr__(self, "query_groups", groups)
         object.__setattr__(self, "query_group_weights", weights)
+        object.__setattr__(self, "key_value_groups", key_value_groups)
+        object.__setattr__(self, "key_value_group_weights", key_value_weights)
         object.__setattr__(self, "compiler_lineage_sha256", lineage)
+        object.__setattr__(
+            self,
+            "parent_pre_rope_prior_receipt",
+            None if prior_receipt is None else MappingProxyType(dict(prior_receipt)),
+        )
+        object.__setattr__(
+            self,
+            "parent_weight_prior_receipt",
+            (
+                None
+                if weight_prior_receipt is None
+                else MappingProxyType(dict(weight_prior_receipt))
+            ),
+        )
         object.__setattr__(self, "evidence_sha256", canonical_sha256(self._body()))
 
     def endpoint_residual_evidence(self) -> dict[str, Any]:
@@ -2278,7 +3205,29 @@ class Lfm2SemanticAttentionTransportEvidence:
                     "weights": [list(value) for value in self.query_group_weights],
                 }
             ),
+            "key_value_groups_sha256": canonical_sha256(
+                {
+                    "groups": [list(value) for value in self.key_value_groups],
+                    "weights": [list(value) for value in self.key_value_group_weights],
+                }
+            ),
             "compiler_lineage_sha256": self.compiler_lineage_sha256,
+            "parent_pre_rope_prior_available": (
+                self.parent_pre_rope_prior_receipt is not None
+            ),
+            "parent_pre_rope_prior_sha256": (
+                None
+                if self.parent_pre_rope_prior_receipt is None
+                else self.parent_pre_rope_prior_receipt["prior_sha256"]
+            ),
+            "parent_weight_prior_available": (
+                self.parent_weight_prior_receipt is not None
+            ),
+            "parent_weight_prior_sha256": (
+                None
+                if self.parent_weight_prior_receipt is None
+                else self.parent_weight_prior_receipt["prior_sha256"]
+            ),
             "direct_endpoint_case_suffix_compatible": (
                 self.transport.direct_endpoint_case_suffix_compatible
             ),
@@ -2891,6 +3840,8 @@ def _transport_evidence_for_layer(
     bridge: StrictTokenizerBridgeArtifact,
     interface: TiedCausalInterfaceFold,
     compiler_lineage: Lfm2SemanticCompilerLayerLineage,
+    parent_qk_tensors: Mapping[str, Any],
+    parent_norm_epsilon: float,
 ) -> tuple[Lfm2SemanticAttentionTransportEvidence, ...]:
     torch = _torch()
     parent_pre: dict[int, Any] = {}
@@ -2943,6 +3894,91 @@ def _transport_evidence_for_layer(
         child_replays=child_replays,
         producer_encoder=interface.producer_encoder,
         layer_index=layer_index,
+    )
+    ordered_alignments = tuple(
+        sorted(alignments, key=lambda value: value.source_batch_index)
+    )
+    parent_operator_rows = []
+    child_operator_rows = []
+    for alignment in ordered_alignments:
+        batch_index = alignment.source_batch_index
+        boundary = alignment.phases[-1].target_to_donor_boundary_positions
+        target_positions = tuple(
+            index for index, value in enumerate(boundary) if value is not None
+        )
+        donor_positions = tuple(int(value) for value in boundary if value is not None)
+        parent_operator_rows.append(
+            parent_pre[batch_index][0].index_select(
+                0,
+                torch.tensor(donor_positions, dtype=torch.long),
+            )
+        )
+        child_operator_rows.append(
+            child_replays[batch_index]
+            .operator_input[0]
+            .index_select(
+                0,
+                torch.tensor(target_positions, dtype=torch.long),
+            )
+        )
+    target_layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    target_operator_norm_weight = getattr(
+        getattr(target_layers[layer_index], "operator_norm", None),
+        "weight",
+        None,
+    )
+    target_norm_epsilon = getattr(
+        getattr(target_model, "config", None),
+        "norm_eps",
+        None,
+    )
+    if (
+        target_operator_norm_weight is None
+        or not isinstance(target_norm_epsilon, (int, float))
+        or not math.isfinite(float(target_norm_epsilon))
+        or float(target_norm_epsilon) <= 0.0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Target attention layer has no operator_norm weight or norm epsilon."
+        )
+    normalized_input_decoder, normalized_input_decoder_receipt = (
+        _fit_normalized_operator_input_decoder(
+            parent_raw_rows=parent_operator_rows,
+            child_normalized_rows=child_operator_rows,
+            parent_operator_norm_weight=parent_qk_tensors["operator_norm"],
+            target_operator_norm_weight=target_operator_norm_weight,
+            parent_norm_epsilon=parent_norm_epsilon,
+            target_norm_epsilon=float(target_norm_epsilon),
+            residual_chart=chart,
+            residual_chart_sha256=chart_report["chart_sha256"],
+            fit_trajectory_count=max(1, len(ordered_alignments) // 2),
+        )
+    )
+    (
+        parent_query_weight_prior,
+        parent_key_weight_prior,
+        parent_value_weight_prior,
+        parent_output_weight_prior,
+        parent_query_norm_weight,
+        parent_key_norm_weight,
+        parent_weight_prior_receipt,
+    ) = _fold_parent_qk_weight_priors(
+        parent_query_weight=parent_qk_tensors["q"],
+        parent_key_weight=parent_qk_tensors["k"],
+        parent_value_weight=parent_qk_tensors["v"],
+        parent_output_weight=parent_qk_tensors["o"],
+        parent_query_norm_weight=parent_qk_tensors["q_norm"],
+        parent_key_norm_weight=parent_qk_tensors["k_norm"],
+        residual_chart=chart,
+        query_groups=compiler_lineage.query_groups,
+        query_group_weights=compiler_lineage.query_group_weights,
+        key_value_groups=compiler_lineage.key_value_groups,
+        key_value_group_weights=compiler_lineage.key_value_group_weights,
+        head_dim=int(parent_qk_tensors["q_norm"].numel()),
+        source_inventory_sha256=compiler_lineage.source_inventory.inventory_sha256,
+        residual_chart_sha256=chart_report["chart_sha256"],
+        normalized_input_decoder=normalized_input_decoder,
+        normalized_input_decoder_receipt=normalized_input_decoder_receipt,
     )
     captured_state = fingerprint_lfm2_parent(target_model).identity_sha256
     result = []
@@ -3032,6 +4068,28 @@ def _transport_evidence_for_layer(
                     target_rope_attention_scaling=target_rope_attention_scaling,
                     query_mode="semantic_endpoints",
                 )
+                if hasattr(
+                    transport,
+                    "target_to_donor_span_owner_positions",
+                ) and hasattr(phase_history, "history_sha256"):
+                    (
+                        folded_parent_query_pre_rope,
+                        folded_parent_key_pre_rope,
+                        parent_pre_rope_prior_receipt,
+                    ) = fold_semantic_attention_parent_pre_rope_priors(
+                        phase_history,
+                        transport,
+                        query_groups=compiler_lineage.query_groups,
+                        query_group_weights=compiler_lineage.query_group_weights,
+                        key_value_groups=compiler_lineage.key_value_groups,
+                        key_value_group_weights=(
+                            compiler_lineage.key_value_group_weights
+                        ),
+                    )
+                else:  # Narrow compatibility for typed-constructor test doubles.
+                    folded_parent_query_pre_rope = None
+                    folded_parent_key_pre_rope = None
+                    parent_pre_rope_prior_receipt = None
                 query_positions = torch.tensor(
                     transport.query_target_positions,
                     dtype=torch.long,
@@ -3083,6 +4141,10 @@ def _transport_evidence_for_layer(
                         source_inventory=compiler_lineage.source_inventory,
                         query_groups=compiler_lineage.query_groups,
                         query_group_weights=(compiler_lineage.query_group_weights),
+                        key_value_groups=compiler_lineage.key_value_groups,
+                        key_value_group_weights=(
+                            compiler_lineage.key_value_group_weights
+                        ),
                         compiler_lineage_sha256=canonical_sha256(
                             {
                                 "compiler_lineage_sha256": (
@@ -3094,6 +4156,16 @@ def _transport_evidence_for_layer(
                             }
                         ),
                         transport=transport,
+                        folded_parent_query_pre_rope=(folded_parent_query_pre_rope),
+                        folded_parent_key_pre_rope=folded_parent_key_pre_rope,
+                        parent_pre_rope_prior_receipt=(parent_pre_rope_prior_receipt),
+                        parent_query_weight_prior=parent_query_weight_prior,
+                        parent_key_weight_prior=parent_key_weight_prior,
+                        parent_value_weight_prior=parent_value_weight_prior,
+                        parent_output_weight_prior=parent_output_weight_prior,
+                        parent_query_norm_weight=parent_query_norm_weight,
+                        parent_key_norm_weight=parent_key_norm_weight,
+                        parent_weight_prior_receipt=parent_weight_prior_receipt,
                     )
                 )
         finally:
@@ -3480,12 +4552,6 @@ def compile_install_lfm2_semantic_attention_stage(
         raise Lfm2SemanticPostfoldError(
             "c61 compiler lineage does not cover every child attention layer."
         )
-    for layer_index in layers:
-        load_lfm2_parent_qkvo_inventory_from_local_safetensors(
-            parent_model_directory,
-            layer_index=layer_index,
-            expected_inventory=compiler_lineage[layer_index].source_inventory,
-        )
     inv_freq, attention_scaling = _target_rope(target_model)
     installer = _resolve_attention_installer(attention_installer)
     blocked_report = None
@@ -3524,7 +4590,17 @@ def compile_install_lfm2_semantic_attention_stage(
                 ),
             }
         else:
+            parent_norm_epsilon = _local_lfm2_norm_epsilon(parent_model_directory)
             for layer_index in layers:
+                _observed_inventory, parent_qk_tensors = (
+                    _load_lfm2_parent_qkvo_from_local_safetensors(
+                        parent_model_directory,
+                        layer_index=layer_index,
+                        expected_inventory=(
+                            compiler_lineage[layer_index].source_inventory
+                        ),
+                    )
+                )
                 evidence = _transport_evidence_for_layer(
                     cache=cache,
                     session=session,
@@ -3536,6 +4612,8 @@ def compile_install_lfm2_semantic_attention_stage(
                     bridge=bridge,
                     interface=interface,
                     compiler_lineage=compiler_lineage[layer_index],
+                    parent_qk_tensors=parent_qk_tensors,
+                    parent_norm_epsilon=parent_norm_epsilon,
                 )
                 before_hashes = _state_tensor_hashes(target_model)
                 before = fingerprint_lfm2_parent(target_model).identity_sha256

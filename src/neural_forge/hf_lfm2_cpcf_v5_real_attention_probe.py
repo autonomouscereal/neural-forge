@@ -3678,7 +3678,7 @@ def _authenticate_h776_endpoint_device_execution(
         "one_local_accumulation_per_concurrent_static_cuda_shard_then_"
         "canonical_requested_device_reduction"
     )
-    expected_fixed_cache_bytes = 4_470_528
+    expected_fixed_cache_bytes = 1_490_688
     expected_static_shard_workspace_bytes = 11_919_360
     expected_solver_workspace_bytes = 47_677_440
     trajectories = tuple(expected_fit_trajectory_sha256s)
@@ -3886,7 +3886,7 @@ def _authenticate_h776_endpoint_device_execution(
             or static_entry.get("all_cases_share_fixed_cache_by_identity") is not True
             or fixed_cache != summary_fixed_cache
             or fixed_cache.get("schema")
-            != "neural-forge-lfm2-endpoint-fixed-device-cache-v1"
+            != "neural-forge-lfm2-endpoint-fixed-device-cache-v2"
             or fixed_cache.get("logical_device") != expected_device
             or fixed_cache.get("shared_fixed_tensor_bytes")
             != expected_fixed_cache_bytes
@@ -3940,7 +3940,7 @@ def _authenticate_h776_endpoint_device_execution(
             )
         for name in (
             "fixed_value_bfloat16_sha256",
-            "fixed_output_float64_sha256",
+            "fixed_output_bfloat16_sha256",
             "query_rms_bfloat16_sha256",
             "key_rms_bfloat16_sha256",
             "query_rms_float32_sha256",

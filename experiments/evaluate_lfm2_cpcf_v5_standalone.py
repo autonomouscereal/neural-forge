@@ -4,7 +4,7 @@
 ``capture`` performs one direct-local reload of an already-retained v5
 ``candidate`` directory, generates each built-in holdout case exactly once at
 that case's own generation limit, and stores the decoded responses and
-automatic semantic gate outside the child artifact.  It also authenticates
+automatic behavioral diagnostics outside the child artifact.  It also authenticates
 the dense child's unique-parameter count and records a parent/child ratio from
 an explicitly pinned expected parent count, without using checkpoint bytes,
 quantization, or pruning adjustments.  For a semantic-postfold child, optional
@@ -14,7 +14,7 @@ artifact metadata, model state, and tokenizer semantics before generation.
 ``finalize`` never loads either model.  It authenticates an independently
 pinned capture report, the stored candidate responses, cached parent envelope,
 paired parent/child semantic-review packet, and packet-bound ratings, then
-writes the final intelligence report.
+writes the final pinned-suite behavioral-retention report.
 
 Neither mode trains, prunes, quantizes, downloads, or executes the parent.
 """
@@ -84,8 +84,8 @@ from neural_forge.hf_lfm2_parent_relative_manual_gate import (  # noqa: E402
 )
 
 
-CAPTURE_REPORT_SCHEMA = "neural-forge-lfm2-cpcf-v5-standalone-intelligence-capture-v2"
-FINAL_REPORT_SCHEMA = "neural-forge-lfm2-cpcf-v5-standalone-intelligence-final-v2"
+CAPTURE_REPORT_SCHEMA = "neural-forge-lfm2-cpcf-v5-standalone-intelligence-capture-v3"
+FINAL_REPORT_SCHEMA = "neural-forge-lfm2-cpcf-v5-standalone-intelligence-final-v3"
 CHILD_OUTPUT_FILENAME = "standalone-child-outputs-64.json"
 AUTOMATIC_REPORT_FILENAME = "automatic-intelligence-report-64.json"
 MANUAL_PACKET_FILENAME = "manual-review-packet-64.json"
@@ -368,6 +368,136 @@ def _parameter_inventory(model: Any) -> dict[str, Any]:
 
 def _gradients_are_absent(model: Any) -> bool:
     return all(parameter.grad is None for parameter in model.parameters())
+
+
+def _build_all_case_parent_relative_manual_packet(
+    *,
+    automatic_gate_manual_packet: Mapping[str, Any],
+    baseline: Any,
+    candidates: Sequence[Any],
+    manifest: Any,
+) -> dict[str, Any]:
+    """Build the standalone evaluator's explicit all-case review packet."""
+
+    manifest_cases = tuple(getattr(manifest, "cases", ()))
+    parent_cases = tuple(getattr(baseline, "cases", ()))
+    candidate_cases = tuple(candidates)
+    if (
+        len(manifest_cases) != EXPECTED_CASE_COUNT
+        or len(parent_cases) != EXPECTED_CASE_COUNT
+        or len(candidate_cases) != EXPECTED_CASE_COUNT
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Whole-response review requires the exact 64-case manifest, parent, "
+            "and child outputs."
+        )
+
+    manifest_ids = tuple(str(value.case_id) for value in manifest_cases)
+    parent_map = {str(value.case_id): value for value in parent_cases}
+    candidate_map = {str(value.case_id): value for value in candidate_cases}
+    if (
+        len(set(manifest_ids)) != EXPECTED_CASE_COUNT
+        or len(parent_map) != EXPECTED_CASE_COUNT
+        or len(candidate_map) != EXPECTED_CASE_COUNT
+        or set(parent_map) != set(manifest_ids)
+        or set(candidate_map) != set(manifest_ids)
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Whole-response review case identities differ from the exact manifest."
+        )
+
+    rows = []
+    limit_rows = []
+    for spec in manifest_cases:
+        case_id = str(spec.case_id)
+        parent = parent_map[case_id]
+        candidate = candidate_map[case_id]
+        generation_limit = spec.generation_limit
+        if (
+            parent.prompt != spec.prompt
+            or parent.generation.generation_limit != generation_limit
+            or candidate.generation.generation_limit != generation_limit
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                f"Whole-response review evidence differs for {case_id}."
+            )
+        rows.append(
+            {
+                "case_id": case_id,
+                "prompt": spec.prompt,
+                "parent_response": parent.parent_output,
+                "candidate_response": candidate.output,
+                "generation_limit": generation_limit,
+            }
+        )
+        limit_rows.append(
+            {
+                "case_id": case_id,
+                "generation_limit": generation_limit,
+            }
+        )
+
+    generic_packet = build_parent_relative_manual_packet(automatic_gate_manual_packet)
+    generic_body = dict(generic_packet)
+    generic_body.pop("packet_sha256")
+    rubric = dict(generic_body["rubric"])
+    rubric.update(
+        {
+            "review_every_manifest_case": True,
+            "one_reason_per_case_required": True,
+            "full_parent_and_candidate_response_review_required": True,
+            "per_case_generation_limit_bound": True,
+            "scalar_scores_are_diagnostic_only": True,
+            "automatic_accept_reject_permitted": False,
+        }
+    )
+    body = {
+        **generic_body,
+        "review_scope": "exact_authenticated_manifest_all_cases",
+        "all_case_manual_review_mode": True,
+        "manifest_sha256": manifest.manifest_sha256,
+        "manifest_document_sha256": manifest.document_sha256,
+        "case_count": EXPECTED_CASE_COUNT,
+        "case_ids_sha256": canonical_sha256(list(manifest_ids)),
+        "generation_limit_rows_sha256": canonical_sha256(limit_rows),
+        "legacy_generic_manual_subset_case_count": len(
+            automatic_gate_manual_packet["cases"]
+        ),
+        "legacy_generic_manual_subset_is_diagnostic_only": True,
+        "rubric": rubric,
+        "cases": rows,
+    }
+    return {**body, "packet_sha256": canonical_sha256(body)}
+
+
+def _require_exact_all_case_manual_ratings(
+    ratings_document: Mapping[str, Any],
+    manifest: Any,
+) -> None:
+    """Fail closed unless ratings review every manifest response exactly once."""
+
+    expected_ids = tuple(str(value.case_id) for value in manifest.cases)
+    rows = ratings_document.get("ratings")
+    if not isinstance(rows, list) or len(rows) != EXPECTED_CASE_COUNT:
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Manual ratings must review all 64 whole responses exactly once."
+        )
+    if any(not isinstance(row, Mapping) for row in rows):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Manual ratings contain a malformed whole-response review."
+        )
+    actual_ids = tuple(str(row.get("case_id")) for row in rows)
+    if actual_ids != expected_ids or len(set(actual_ids)) != EXPECTED_CASE_COUNT:
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Manual ratings do not cover the exact 64-case manifest in order."
+        )
+    if any(
+        not isinstance(row.get("reason"), str) or not row["reason"].strip()
+        for row in rows
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Every whole-response review requires a concrete reason."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -838,7 +968,12 @@ def capture_standalone_intelligence(
         typed_outputs.candidates,
         policy,
     )
-    manual_packet = build_parent_relative_manual_packet(automatic_gate_manual_packet)
+    manual_packet = _build_all_case_parent_relative_manual_packet(
+        automatic_gate_manual_packet=automatic_gate_manual_packet,
+        baseline=baseline,
+        candidates=typed_outputs.candidates,
+        manifest=manifest,
+    )
     if (
         automatic_gate_document.get("manual_review", {}).get("status") != "pending"
         or automatic_gate_document.get("manual_review", {}).get("packet_sha256")
@@ -862,7 +997,7 @@ def capture_standalone_intelligence(
 
     report_core = {
         "schema": CAPTURE_REPORT_SCHEMA,
-        "status": "automatic_evaluation_complete_manual_review_pending",
+        "status": "automatic_diagnostics_complete_manual_review_pending",
         "manifest_sha256": manifest.manifest_sha256,
         "manifest_document_sha256": manifest.document_sha256,
         "case_count": len(manifest.cases),
@@ -879,10 +1014,16 @@ def capture_standalone_intelligence(
         "candidate_outputs_document_sha256": typed_outputs.document_sha256,
         "automatic_gate_report": automatic_gate_document,
         "automatic_gate_report_sha256": automatic_gate.report_sha256,
+        "automatic_gate_report_is_diagnostic_only": True,
         "automatic_gate_manual_packet_sha256": (
             automatic_gate_manual_packet["packet_sha256"]
         ),
         "manual_review_packet_sha256": manual_packet["packet_sha256"],
+        "manual_review_packet_case_count": len(manual_packet["cases"]),
+        "manual_review_scope": manual_packet["review_scope"],
+        "manual_review_generation_limit_rows_sha256": manual_packet[
+            "generation_limit_rows_sha256"
+        ],
         **(
             {"semantic_postfold_provenance": semantic_postfold_provenance}
             if semantic_postfold_provenance is not None
@@ -957,15 +1098,26 @@ def capture_standalone_intelligence(
                 semantic_postfold_provenance is not None
             ),
         },
-        "acceptance_semantics": {
+        "diagnostic_review_semantics": {
             "whole_response_intelligence": True,
             "exact_token_matching_used": False,
             "exact_wording_matching_used": False,
             "manual_review_required": True,
             "manual_review_is_parent_relative": True,
-            "minimum_parent_relative_manual_retention": 0.90,
+            "manual_review_case_count": len(manual_packet["cases"]),
+            "manual_review_exact_manifest_coverage": True,
+            "per_case_generation_limits_bound_to_manual_packet": True,
+            "diagnostic_parent_relative_retention_reference": 0.90,
             "automatic_metrics_are_behavioral_or_structural": True,
             "lexical_similarity_is_not_an_intelligence_metric": True,
+            "retention_result_terminology": "pinned_suite_behavioral_diagnostics",
+            "retention_scope": "pinned_64_case_holdout_only",
+            "numeric_thresholds_are_diagnostic_only": True,
+            "automatic_accept_reject_authority": False,
+            "publication_blocked_by_metrics": False,
+            "holistic_whole_response_judgment_required": True,
+            "statistical_confidence_bound_claimed": False,
+            "general_intelligence_retention_claimed": False,
             "semantic_postfold_checkpoint_and_receipt_pinned": (
                 semantic_postfold_provenance is not None
             ),
@@ -1104,7 +1256,12 @@ def finalize_standalone_intelligence(
         typed_outputs.candidates,
         policy,
     )
-    rebuilt_packet = build_parent_relative_manual_packet(automatic_gate_manual_packet)
+    rebuilt_packet = _build_all_case_parent_relative_manual_packet(
+        automatic_gate_manual_packet=automatic_gate_manual_packet,
+        baseline=baseline,
+        candidates=typed_outputs.candidates,
+        manifest=manifest,
+    )
     if (
         automatic_gate_manual_packet["packet_sha256"]
         != automatic["automatic_gate_manual_packet_sha256"]
@@ -1140,17 +1297,21 @@ def finalize_standalone_intelligence(
         ratings_document.get("ratings_sha256"),
         "manual ratings seal",
     )
+    _require_exact_all_case_manual_ratings(ratings_document, manifest)
     try:
         parent_relative_report = evaluate_parent_relative_manual_retention(
             stored_packet,
             ratings_document,
         )
+        ratings_by_id = {
+            str(row["case_id"]): row for row in ratings_document["ratings"]
+        }
         candidate_ratings = [
             {
-                "case_id": row["case_id"],
-                **dict(row["candidate"]),
+                "case_id": str(case["case_id"]),
+                **dict(ratings_by_id[str(case["case_id"])]["candidate"]),
             }
-            for row in ratings_document["ratings"]
+            for case in automatic_gate_manual_packet["cases"]
         ]
         gate_ratings = bind_manual_ratings(
             automatic_gate_manual_packet,
@@ -1173,29 +1334,66 @@ def finalize_standalone_intelligence(
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Bound manual ratings did not resolve manual review."
         )
-    promoted = bool(final_gate.promoted and parent_relative_report["passed"])
     retention_values = (
         final_gate.headline_lower_bound,
         parent_relative_report["retention"],
     )
-    certified_lower_bound = (
+    observed_behavioral_floor = (
         min(float(value) for value in retention_values if value is not None)
-        if promoted
+        if all(value is not None for value in retention_values)
         else None
+    )
+    diagnostic_reference = 0.90
+    diagnostic_reference_met = (
+        None
+        if observed_behavioral_floor is None
+        else observed_behavioral_floor >= diagnostic_reference
     )
 
     final_core = {
         "schema": FINAL_REPORT_SCHEMA,
-        "status": "promoted" if promoted else "rejected",
-        "promoted": promoted,
-        "intelligence_retention_claim": {
-            "status": (
-                "certified_conservative_lower_bound" if promoted else "rejected"
+        "status": "manual_intelligence_review_complete",
+        "manual_intelligence_review_complete": True,
+        "automatic_accept_reject_decision": None,
+        "publication_status": "authenticated_diagnostics_published",
+        "behavioral_retention_diagnostics": {
+            "status": "diagnostic_complete",
+            "observed_pinned_suite_behavioral_retention_floor": (
+                observed_behavioral_floor
             ),
-            "certified_lower_bound": certified_lower_bound,
             "parent_relative_manual_retention": (parent_relative_report["retention"]),
-            "minimum_required_retention": 0.90,
+            "diagnostic_retention_reference": diagnostic_reference,
+            "diagnostic_retention_reference_met": diagnostic_reference_met,
+            "parent_relative_diagnostic_reference_met": parent_relative_report[
+                "diagnostic_retention_reference_met"
+            ],
+            "severe_regression_flags": parent_relative_report["severe_regressions"],
+            "generic_automatic_policy_thresholds_met": final_gate.promoted,
+            "generic_automatic_report_is_diagnostic_only": True,
+            "numeric_thresholds_are_diagnostic_only": True,
+            "automatic_accept_reject_authority": False,
+            "publication_blocked_by_metrics": False,
+            "scope": "pinned_64_case_holdout_only",
+            "statistical_confidence_bound": False,
+            "general_intelligence_retention_claimed": False,
+            "intelligence_certified": False,
             "exact_output_matching_used": False,
+        },
+        "holistic_whole_response_judgment": {
+            "required_for_any_intelligence_conclusion": True,
+            "reviewer_id": ratings_document["reviewer_id"],
+            "paired_parent_and_child_responses_reviewed": True,
+            "reviewed_case_count": EXPECTED_CASE_COUNT,
+            "exact_manifest_case_coverage": True,
+            "per_case_generation_limits_bound": True,
+            "case_level_reasons_authenticated": True,
+            "scalar_scores_and_thresholds_are_diagnostic_only": True,
+            "automatic_accept_reject_decision_recorded": False,
+            "instruction": (
+                "A human or agent must judge whole-response correctness, coherence, "
+                "instruction following, and usefulness from the authenticated "
+                "responses and reasons; scalar metrics cannot decide the result."
+            ),
         },
         "manifest_sha256": manifest.manifest_sha256,
         "case_count": len(manifest.cases),
@@ -1215,6 +1413,11 @@ def finalize_standalone_intelligence(
         "parameter_compaction": automatic["parameter_compaction"],
         "holdout_prompt_binding": automatic["holdout_prompt_binding"],
         "manual_review_packet_sha256": stored_packet["packet_sha256"],
+        "manual_review_packet_case_count": len(stored_packet["cases"]),
+        "manual_review_scope": stored_packet["review_scope"],
+        "manual_review_generation_limit_rows_sha256": stored_packet[
+            "generation_limit_rows_sha256"
+        ],
         "manual_ratings_file_sha256": (config.expected_manual_ratings_file_sha256),
         "manual_ratings_sha256": ratings_sha256,
         "reviewer_id": ratings_document["reviewer_id"],
@@ -1222,9 +1425,11 @@ def finalize_standalone_intelligence(
         "parent_relative_manual_report_sha256": (
             parent_relative_report["report_sha256"]
         ),
-        "automatic_gate_bound_manual_ratings_sha256": (gate_ratings.ratings_sha256),
-        "final_gate_report": final_gate_document,
-        "final_gate_report_sha256": final_gate.report_sha256,
+        "automatic_diagnostic_bound_manual_ratings_sha256": (
+            gate_ratings.ratings_sha256
+        ),
+        "generic_automatic_diagnostic_report": final_gate_document,
+        "generic_automatic_diagnostic_report_sha256": final_gate.report_sha256,
         "operation_audit": {
             "child_model_loaded": False,
             "child_forward_passes": 0,
@@ -1247,14 +1452,25 @@ def finalize_standalone_intelligence(
             "cached_evidence_only": True,
             "candidate_artifact_zero_operation_fields_authenticated": True,
         },
-        "acceptance_semantics": {
+        "diagnostic_review_semantics": {
             "whole_response_intelligence": True,
             "exact_token_matching_used": False,
             "exact_wording_matching_used": False,
             "manual_ratings_packet_bound": True,
+            "manual_review_case_count": len(stored_packet["cases"]),
+            "manual_review_exact_manifest_coverage": True,
+            "per_case_generation_limits_bound_to_manual_packet": True,
             "parent_and_child_scored_on_same_semantic_rubric": True,
-            "minimum_parent_relative_manual_retention": 0.90,
+            "diagnostic_parent_relative_retention_reference": 0.90,
             "lexical_similarity_is_not_an_intelligence_metric": True,
+            "retention_result_terminology": "pinned_suite_behavioral_diagnostics",
+            "retention_scope": "pinned_64_case_holdout_only",
+            "numeric_thresholds_are_diagnostic_only": True,
+            "automatic_accept_reject_authority": False,
+            "publication_blocked_by_metrics": False,
+            "holistic_whole_response_judgment_required": True,
+            "statistical_confidence_bound_claimed": False,
+            "general_intelligence_retention_claimed": False,
             "semantic_postfold_checkpoint_and_receipt_pinned": (
                 "semantic_postfold_provenance" in automatic
             ),
@@ -1380,11 +1596,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = finalize_standalone_intelligence(FinalizeConfig(**values))
         summary = {
             "status": report["status"],
-            "promoted": report["promoted"],
-            "certified_lower_bound": report["intelligence_retention_claim"][
-                "certified_lower_bound"
+            "manual_intelligence_review_complete": report[
+                "manual_intelligence_review_complete"
             ],
-            "final_gate_report_sha256": report["final_gate_report_sha256"],
+            "observed_pinned_suite_behavioral_retention_floor": report[
+                "behavioral_retention_diagnostics"
+            ]["observed_pinned_suite_behavioral_retention_floor"],
+            "diagnostic_retention_reference_met": report[
+                "behavioral_retention_diagnostics"
+            ]["diagnostic_retention_reference_met"],
+            "generic_automatic_diagnostic_report_sha256": report[
+                "generic_automatic_diagnostic_report_sha256"
+            ],
             "final_report_sha256": report["final_report_sha256"],
         }
     print(json.dumps(summary, sort_keys=True))

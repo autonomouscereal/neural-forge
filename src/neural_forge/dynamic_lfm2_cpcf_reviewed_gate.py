@@ -2279,25 +2279,16 @@ def _verify_v5_compiled_model_fold_metadata(
             Mapping,
         ):
             raise Lfm2CpcfReviewedPromotionError(
-                "CPCF v5 admission-chain proof lacks compiler-bound "
-                "frontier context."
+                "CPCF v5 admission-chain proof lacks compiler-bound frontier context."
             )
         try:
-            physical_rss_policy_sha256 = (
-                build_lfm2_cpcf_v5_physical_rss_policy_sha256(
-                    full_phase_tree_logical_bytes=policy[
-                        "full_phase_tree_logical_bytes"
-                    ],
-                    minimum_reduction_fraction=policy[
-                        "minimum_physical_rss_reduction_fraction"
-                    ],
-                    maximum_increase_bytes=policy[
-                        "maximum_physical_rss_increase_bytes"
-                    ],
-                    maximum_process_rss_bytes=policy[
-                        "maximum_process_rss_bytes"
-                    ],
-                )
+            physical_rss_policy_sha256 = build_lfm2_cpcf_v5_physical_rss_policy_sha256(
+                full_phase_tree_logical_bytes=policy["full_phase_tree_logical_bytes"],
+                minimum_reduction_fraction=policy[
+                    "minimum_physical_rss_reduction_fraction"
+                ],
+                maximum_increase_bytes=policy["maximum_physical_rss_increase_bytes"],
+                maximum_process_rss_bytes=policy["maximum_process_rss_bytes"],
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise Lfm2CpcfReviewedPromotionError(
@@ -2305,16 +2296,14 @@ def _verify_v5_compiled_model_fold_metadata(
             ) from exc
         if (
             proof_frontier.get("expected_layer_count") != layer_count
-            or proof_frontier.get("ordered_phase_sha256")
-            != body.get("phase_sha256")
+            or proof_frontier.get("ordered_phase_sha256") != body.get("phase_sha256")
             or proof_context.get("selective_catalog_sha256")
             != body.get("selective_catalog_sha256")
             or proof_context.get("selective_source_sha256")
             != body.get("selective_source_sha256")
             or proof_context.get("selective_provider_sha256")
             != body.get("selective_provider_sha256")
-            or proof_context.get("runtime_policy_sha256")
-            != canonical_sha256(policy)
+            or proof_context.get("runtime_policy_sha256") != canonical_sha256(policy)
             or proof_context.get("physical_rss_policy_sha256")
             != physical_rss_policy_sha256
             or proof_context.get("compiler_implementation_sha256")
@@ -2367,20 +2356,15 @@ def _verify_v5_compiled_model_fold_metadata(
                 f"Cold CPCF v5 report unexpectedly populated {digest_field}."
             )
     input_proof_value = body.get("resume_input_admission_chain_proof")
-    input_proof_sha256_value = body.get(
-        "resume_input_admission_chain_proof_sha256"
-    )
+    input_proof_sha256_value = body.get("resume_input_admission_chain_proof_sha256")
     if resume_used:
         try:
             input_proof = dict(
-                authenticate_lfm2_cpcf_v5_admission_chain_proof(
-                    input_proof_value
-                )
+                authenticate_lfm2_cpcf_v5_admission_chain_proof(input_proof_value)
             )
         except Exception as exc:
             raise Lfm2CpcfReviewedPromotionError(
-                "CPCF v5 resumed input has no valid standalone "
-                "admission-chain proof."
+                "CPCF v5 resumed input has no valid standalone admission-chain proof."
             ) from exc
         input_proof_sha256 = _digest(
             input_proof_sha256_value,
@@ -2401,13 +2385,9 @@ def _verify_v5_compiled_model_fold_metadata(
                 "CPCF v5 resumed input differs from its standalone "
                 "admission-chain proof."
             )
-    elif (
-        input_proof_value is not None
-        or input_proof_sha256_value is not None
-    ):
+    elif input_proof_value is not None or input_proof_sha256_value is not None:
         raise Lfm2CpcfReviewedPromotionError(
-            "Cold CPCF v5 report unexpectedly carries an input "
-            "admission-chain proof."
+            "Cold CPCF v5 report unexpectedly carries an input admission-chain proof."
         )
     expected_admitted_indices = (
         list(
@@ -2474,8 +2454,7 @@ def _verify_v5_compiled_model_fold_metadata(
             or checkpoint_reference.artifact_kind != "checkpoint"
         ):
             raise Lfm2CpcfReviewedPromotionError(
-                "CPCF v5 admitted resume-prefix artifact reference kinds "
-                "are invalid."
+                "CPCF v5 admitted resume-prefix artifact reference kinds are invalid."
             )
         frontier_sha256 = _digest(
             record["frontier_sha256"],
@@ -2506,15 +2485,13 @@ def _verify_v5_compiled_model_fold_metadata(
             authenticate_admission_proof_compiler_binding(chain_proof)
             if (
                 chain_proof["proof_sha256"] != proof_sha256
-                or proof_pending.get("next_layer_index")
-                != record["next_layer_index"]
+                or proof_pending.get("next_layer_index") != record["next_layer_index"]
                 or proof_pending.get("frontier_reference")
                 != frontier_reference.as_dict()
                 or proof_pending.get("checkpoint_reference")
                 != checkpoint_reference.as_dict()
                 or proof_pending.get("frontier_sha256") != frontier_sha256
-                or proof_admission.get("admission_sha256")
-                != admission_sha256
+                or proof_admission.get("admission_sha256") != admission_sha256
             ):
                 raise Lfm2CpcfReviewedPromotionError(
                     "CPCF v5 admitted resume-prefix record differs from "
@@ -3293,7 +3270,7 @@ def build_cpcf_reviewed_promotion_report(
         )
     if (
         evidence.get("automatic_gate_ready_for_manual_completion") is not True
-        or evidence.get("parent_relative_manual_report_passed") is not True
+        or evidence.get("parent_relative_manual_diagnostics_complete") is not True
         or evidence.get("case_count") != HOLDOUT_CASE_COUNT
         or evidence.get("training_used") is not False
         or evidence.get("pruning_used") is not False
@@ -4127,15 +4104,24 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
         name="parent-relative manual report",
     )
     if (
-        parent_report_body.get("status") != "accepted"
-        or parent_report_body.get("passed") is not True
-        or parent_report_body.get("retention", 0.0) < 0.90
-        or parent_report_body.get("clear_regression_count") != 0
+        parent_report_body.get("status") != "diagnostic_complete"
+        or parent_report_body.get("contract", {}).get(
+            "numeric_goal_and_severe_flags_are_diagnostic_only"
+        )
+        is not True
+        or parent_report_body.get("contract", {}).get(
+            "automatic_accept_reject_authority"
+        )
+        is not False
+        or parent_report_body.get("contract", {}).get(
+            "publication_blocked_by_diagnostics"
+        )
+        is not False
         or parent_report_body.get("packet_sha256") != parent_packet_sha256
         or parent_report_body.get("ratings_sha256") != ratings_sha256
     ):
         raise Lfm2CpcfReviewedPromotionError(
-            "Parent-relative manual report is pending, rejected, or regressed."
+            "Parent-relative manual diagnostics are incomplete or authoritative."
         )
 
     reviewed_evidence = {
@@ -4230,8 +4216,15 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
         "parent_relative_manual_report_document_sha256": (
             artifacts.parent_relative_report.document_sha256
         ),
-        "parent_relative_manual_report_passed": True,
-        "parent_relative_manual_retention": parent_report_body["retention"],
+        "parent_relative_manual_diagnostics_complete": True,
+        "parent_relative_manual_retention_diagnostic": parent_report_body["retention"],
+        "parent_relative_manual_diagnostic_reference_met": parent_report_body[
+            "diagnostic_retention_reference_met"
+        ],
+        "parent_relative_manual_severe_regression_count": parent_report_body[
+            "severe_regression_count"
+        ],
+        "parent_relative_manual_metrics_are_diagnostic_only": True,
         "candidate_tokenizer_fingerprint": candidate_tokenizer,
         "target_tokenizer_semantics_sha256": tokenizer_semantics,
         "eos_token_ids": list(eos_token_ids),

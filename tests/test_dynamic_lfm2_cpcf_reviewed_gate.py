@@ -386,13 +386,10 @@ def _v5_semantic_layer_receipt() -> tuple[
         "source_channels_pruned": 0,
         "source_channels_quantized": 0,
         "source_fir_resized_before_basis": True,
-        "fir_solver_backend": (
-            "authenticated_cpu_fp64_batched_all_channel_ridge"
-        ),
+        "fir_solver_backend": ("authenticated_cpu_fp64_batched_all_channel_ridge"),
         "fir_solver_receipt_scope": "aggregate_all_target_fir_channels",
         "fir_scalar_oracle_policy": (
-            "deterministic_first_middle_last_plus_"
-            "threshold_ambiguous_fallback"
+            "deterministic_first_middle_last_plus_threshold_ambiguous_fallback"
         ),
         "fit_only": True,
         "selection_cases_consumed": 0,
@@ -1513,8 +1510,15 @@ def _fixture(
         "parent_relative_manual_report_document_sha256": canonical_sha256(
             parent_report
         ),
-        "parent_relative_manual_report_passed": True,
-        "parent_relative_manual_retention": parent_report["retention"],
+        "parent_relative_manual_diagnostics_complete": True,
+        "parent_relative_manual_retention_diagnostic": parent_report["retention"],
+        "parent_relative_manual_diagnostic_reference_met": parent_report[
+            "diagnostic_retention_reference_met"
+        ],
+        "parent_relative_manual_severe_regression_count": parent_report[
+            "severe_regression_count"
+        ],
+        "parent_relative_manual_metrics_are_diagnostic_only": True,
         "candidate_tokenizer_fingerprint": tokenizer_package,
         "target_tokenizer_semantics_sha256": tokenizer_semantics,
         "eos_token_ids": eos,
@@ -1853,9 +1857,7 @@ def test_reviewed_v5_rejects_self_resealed_blank_prefix_references(
             "frontier_sha256": canonical_sha256({"frontier": index}),
             "admission_sha256": canonical_sha256({"admission": index}),
             "admission_chain_proof": {},
-            "admission_chain_proof_sha256": canonical_sha256(
-                {"proof": index}
-            ),
+            "admission_chain_proof_sha256": canonical_sha256({"proof": index}),
         }
         for index in range(
             compiled["resume_start_layer_index"],
@@ -2499,9 +2501,7 @@ def test_compiled_model_fold_attention_transport_round_trips_typed() -> None:
         )
     )
 
-    observed = reviewed_gate_module._normalize_model_fold_policy(
-        expected.as_dict()
-    )
+    observed = reviewed_gate_module._normalize_model_fold_policy(expected.as_dict())
 
     assert observed == expected.as_dict()
     runtime = Lfm2CpcfV5RuntimePolicy(
@@ -2509,9 +2509,10 @@ def test_compiled_model_fold_attention_transport_round_trips_typed() -> None:
         maximum_resident_evidence_bytes=1,
         full_phase_tree_logical_bytes=1,
     )
-    assert reviewed_gate_module._normalize_v5_model_fold_policy(
-        runtime.as_dict()
-    ) == runtime.as_dict()
+    assert (
+        reviewed_gate_module._normalize_v5_model_fold_policy(runtime.as_dict())
+        == runtime.as_dict()
+    )
 
 
 def test_compiled_model_fold_v4_policy_rejects_authentication_drift() -> None:
@@ -2556,7 +2557,9 @@ def test_pending_or_rejected_composite_report_rejects(
         load_lfm2_cpcf_reviewed_promotion_evidence(artifacts)
 
 
-def test_rejected_parent_relative_report_rejects(tmp_path: Path) -> None:
+def test_low_parent_relative_metrics_remain_authenticated_diagnostics(
+    tmp_path: Path,
+) -> None:
     fixture = _fixture(tmp_path)
     packet = fixture["documents"]["parent_packet"]
     ratings = bind_parent_relative_manual_ratings(
@@ -2582,7 +2585,35 @@ def test_rejected_parent_relative_report_rejects(tmp_path: Path) -> None:
         ],
         reviewer_id="reviewer-2",
     )
-    rejected = evaluate_parent_relative_manual_retention(packet, ratings)
+    diagnostics = evaluate_parent_relative_manual_retention(packet, ratings)
+    evidence_manifest = copy.deepcopy(
+        fixture["documents"]["composite"]["reviewed_evidence"]
+    )
+    evidence_manifest.update(
+        {
+            "parent_relative_ratings_sha256": ratings["ratings_sha256"],
+            "parent_relative_ratings_document_sha256": canonical_sha256(ratings),
+            "parent_relative_manual_report_sha256": diagnostics["report_sha256"],
+            "parent_relative_manual_report_document_sha256": canonical_sha256(
+                diagnostics
+            ),
+            "parent_relative_manual_diagnostics_complete": True,
+            "parent_relative_manual_retention_diagnostic": diagnostics["retention"],
+            "parent_relative_manual_diagnostic_reference_met": diagnostics[
+                "diagnostic_retention_reference_met"
+            ],
+            "parent_relative_manual_severe_regression_count": diagnostics[
+                "severe_regression_count"
+            ],
+            "parent_relative_manual_metrics_are_diagnostic_only": True,
+        }
+    )
+    composite = build_cpcf_reviewed_promotion_report(
+        reviewed_evidence=evidence_manifest,
+        inference_execution_contract=(
+            BehaviorInferenceExecutionContract.top_level_forward()
+        ),
+    )
     artifacts = _replace_artifact(
         fixture["artifacts"],
         "parent_relative_ratings",
@@ -2591,14 +2622,22 @@ def test_rejected_parent_relative_report_rejects(tmp_path: Path) -> None:
     artifacts = _replace_artifact(
         artifacts,
         "parent_relative_report",
-        _artifact(rejected),
+        _artifact(diagnostics),
+    )
+    artifacts = _replace_artifact(
+        artifacts,
+        "composite_promotion_report",
+        _artifact(composite),
     )
 
-    with pytest.raises(
-        Lfm2CpcfReviewedPromotionError,
-        match="pending, rejected, or regressed",
-    ):
-        load_lfm2_cpcf_reviewed_promotion_evidence(artifacts)
+    loaded = load_lfm2_cpcf_reviewed_promotion_evidence(artifacts)
+    reviewed = loaded.reviewed_evidence
+    assert diagnostics["diagnostic_retention_reference_met"] is False
+    assert diagnostics["severe_regression_count"] == 24
+    assert reviewed["parent_relative_manual_retention_diagnostic"] == 0.0
+    assert reviewed["parent_relative_manual_diagnostic_reference_met"] is False
+    assert reviewed["parent_relative_manual_severe_regression_count"] == 24
+    assert reviewed["parent_relative_manual_metrics_are_diagnostic_only"] is True
 
 
 def test_exact_candidate_state_mismatch_rejects(tmp_path: Path) -> None:

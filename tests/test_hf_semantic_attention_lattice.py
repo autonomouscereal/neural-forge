@@ -24,6 +24,7 @@ from neural_forge.hf_semantic_attention_lattice import (  # noqa: E402
     SemanticAttentionLatticeError,
     SemanticAttentionPreRopeHistory,
     assemble_lfm2_explicit_pre_rope_history,
+    fold_semantic_attention_parent_pre_rope_priors,
     inspect_lfm2_semantic_attention_cache_capability,
     project_rephased_semantic_attention_lattice,
     reconstruct_lfm2_normalized_pre_rope_rows,
@@ -141,11 +142,15 @@ def _source_probabilities_and_context(
     scores = query.to(torch.float64) @ key.transpose(2, 3).to(torch.float64)
     scores = scores / math.sqrt(query.shape[-1])
     tokens = query.shape[2]
-    mask = torch.ones(tokens, tokens, dtype=torch.bool).tril().reshape(
-        1,
-        1,
-        tokens,
-        tokens,
+    mask = (
+        torch.ones(tokens, tokens, dtype=torch.bool)
+        .tril()
+        .reshape(
+            1,
+            1,
+            tokens,
+            tokens,
+        )
     )
     probabilities = torch.softmax(scores.masked_fill(~mask, -torch.inf), dim=-1)
     return probabilities, probabilities @ value.to(torch.float64)
@@ -164,9 +169,10 @@ def test_broad_enhanced_cache_has_exact_explicit_pre_rope_route() -> None:
     assert capability.exact_history_supported is True
     assert capability.missing_donor_prefix_positions == ()
     assert capability.blocking_reasons == ()
-    assert capability.to_evidence_dict()[
-        "rolling_key_value_cache_is_complete_history"
-    ] is False
+    assert (
+        capability.to_evidence_dict()["rolling_key_value_cache_is_complete_history"]
+        is False
+    )
 
 
 def test_legacy_long_horizon_truncated_prefill_fails_closed_by_row() -> None:
@@ -212,9 +218,9 @@ def test_explicit_history_assembles_phase_rows_and_authenticates_full_v() -> Non
     assert history.to_evidence_dict()["model_operations"]["model_forward_calls"] == 0
 
     tampered = dict(tensors)
-    tampered[_name("decode.000", 2, LFM2_VALUE_HISTORY_SUFFIX)] = (
-        tampered[_name("decode.000", 2, LFM2_VALUE_HISTORY_SUFFIX)].clone()
-    )
+    tampered[_name("decode.000", 2, LFM2_VALUE_HISTORY_SUFFIX)] = tampered[
+        _name("decode.000", 2, LFM2_VALUE_HISTORY_SUFFIX)
+    ].clone()
     tampered[_name("decode.000", 2, LFM2_VALUE_HISTORY_SUFFIX)][0, 0, 0, 0] += 1
     with pytest.raises(SemanticAttentionLatticeError, match="sealed full V history"):
         assemble_lfm2_explicit_pre_rope_history(
@@ -333,6 +339,100 @@ def test_split_token_transport_preserves_group_mass_and_context_at_endpoints() -
     assert transported.inserted_query_rows_are_semantically_exact is True
 
 
+def test_parent_pre_rope_priors_follow_head_fold_and_target_owner_map() -> None:
+    history = _history(donor_tokens=2)
+    transported = transport_probability_preserving_attention_expansion(
+        semantic_alignment_sha256="4" * 64,
+        target_to_donor_boundary_positions=(None, 0, None, None, 1),
+        target_to_donor_span_owner_positions=(0, 0, 1, 1, 1),
+        donor_span_multiplicities=(2, 3),
+        parent_query_post_rope=history.query_normalized_pre_rope,
+        parent_key_post_rope=history.key_normalized_pre_rope,
+        parent_value=history.value,
+        target_position_ids=torch.arange(5).reshape(1, -1),
+        target_rope_inv_freq=torch.tensor([0.25]),
+    )
+
+    query_prior, key_prior, receipt = fold_semantic_attention_parent_pre_rope_priors(
+        history,
+        transported,
+        query_groups=((0, 1), (2, 3)),
+        query_group_weights=((0.25, 0.75), (0.6, 0.4)),
+        key_value_groups=((0, 1),),
+        key_value_group_weights=((0.2, 0.8),),
+    )
+
+    expected_query_zero = (
+        history.query_normalized_pre_rope[:, 0] * 0.25
+        + history.query_normalized_pre_rope[:, 1] * 0.75
+    )
+    expected_query_one = (
+        history.query_normalized_pre_rope[:, 2] * 0.6
+        + history.query_normalized_pre_rope[:, 3] * 0.4
+    )
+    owner = torch.tensor([0, 0, 1, 1, 1], dtype=torch.long)
+    torch.testing.assert_close(query_prior[:, 0], expected_query_zero.to(torch.float64))
+    torch.testing.assert_close(query_prior[:, 1], expected_query_one.to(torch.float64))
+    expected_key = (
+        history.key_normalized_pre_rope[:, 0] * 0.2
+        + history.key_normalized_pre_rope[:, 1] * 0.8
+    )
+    assert key_prior.shape == (1, 1, 5, 2)
+    torch.testing.assert_close(
+        key_prior[:, 0],
+        expected_key.index_select(1, owner).to(torch.float64),
+    )
+    assert receipt["parent_activation_evidence_only"] is True
+    assert receipt["owner_mapped_key_prior"] is True
+    assert receipt["target_query_head_count"] == 2
+    assert receipt["target_key_value_head_count"] == 1
+    assert receipt["key_value_groups"] == [[0, 1]]
+    assert receipt["key_value_group_weights"] == [[0.2, 0.8]]
+    assert receipt["query_and_kv_lineage_explicit"] is True
+    assert receipt["key_prior_indexed_by_target_kv_head"] is True
+    assert len(receipt["head_fold_lineage_sha256"]) == 64
+    assert receipt["model_operations"]["training_steps"] == 0
+
+
+@pytest.mark.parametrize(
+    ("key_value_groups", "key_value_group_weights"),
+    (
+        (((0,),), ((1.0,),)),
+        (((0, 1),), ((0.4, 0.4),)),
+        (((0, 0), (1,)), ((0.5, 0.5), (1.0,))),
+    ),
+)
+def test_parent_pre_rope_prior_rejects_unsealed_kv_lineage(
+    key_value_groups: tuple[tuple[int, ...], ...],
+    key_value_group_weights: tuple[tuple[float, ...], ...],
+) -> None:
+    history = _history(donor_tokens=2)
+    transported = transport_probability_preserving_attention_expansion(
+        semantic_alignment_sha256="7" * 64,
+        target_to_donor_boundary_positions=(0, 1),
+        target_to_donor_span_owner_positions=(0, 1),
+        donor_span_multiplicities=(1, 1),
+        parent_query_post_rope=history.query_normalized_pre_rope,
+        parent_key_post_rope=history.key_normalized_pre_rope,
+        parent_value=history.value,
+        target_position_ids=torch.arange(2).reshape(1, -1),
+        target_rope_inv_freq=torch.tensor([0.25]),
+    )
+
+    with pytest.raises(
+        SemanticAttentionLatticeError,
+        match="KV head-fold lineage is not an exhaustive weighted partition",
+    ):
+        fold_semantic_attention_parent_pre_rope_priors(
+            history,
+            transported,
+            query_groups=((0, 1), (2, 3)),
+            query_group_weights=((0.5, 0.5), (0.5, 0.5)),
+            key_value_groups=key_value_groups,
+            key_value_group_weights=key_value_group_weights,
+        )
+
+
 def test_full_surrogate_uses_visible_copy_count_at_inserted_queries() -> None:
     query, key, value = _parent_attention()
     transported = transport_probability_preserving_attention_expansion(
@@ -415,9 +515,7 @@ def test_expansion_evidence_is_directly_accepted_by_endpoint_qk_case() -> None:
         query_groups=((0,), (1,)),
         query_group_weights=((1.0,), (1.0,)),
         trajectory_sha256="2" * 64,
-        parent_probability_provenance=evidence[
-            "parent_probability_provenance"
-        ],
+        parent_probability_provenance=evidence["parent_probability_provenance"],
     )
 
     assert case.parent_probabilities.shape == (1, 2, 1, 2)

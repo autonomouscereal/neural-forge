@@ -1015,6 +1015,145 @@ def test_attention_installation_receipt_requires_a_real_layer_local_change() -> 
     seal = body.pop("result_sha256")
     assert seal == canonical_sha256(body)
 
+
+def _normalized_decoder_fixture(
+    parent_rows: tuple[torch.Tensor, ...],
+    chart: torch.Tensor,
+    *,
+    parent_epsilon: float,
+    target_epsilon: float,
+) -> tuple[torch.Tensor, dict[str, object]]:
+    parent_gamma = torch.tensor(
+        [0.75, 1.25, 1.5, 0.5],
+        dtype=torch.float64,
+    )
+    target_gamma = torch.tensor([1.125, 0.625], dtype=torch.float64)
+    child_rows = tuple(
+        (
+            (row @ chart)
+            * torch.rsqrt(
+                (row @ chart).square().mean(dim=-1, keepdim=True) + target_epsilon
+            )
+        )
+        * target_gamma
+        for row in parent_rows
+    )
+    decoder, receipt = postfold._fit_normalized_operator_input_decoder(
+        parent_raw_rows=parent_rows,
+        child_normalized_rows=child_rows,
+        parent_operator_norm_weight=parent_gamma,
+        target_operator_norm_weight=target_gamma,
+        parent_norm_epsilon=parent_epsilon,
+        target_norm_epsilon=target_epsilon,
+        residual_chart=chart,
+        residual_chart_sha256=postfold._tensor_sha256(chart),
+        fit_trajectory_count=len(parent_rows) - 1,
+        ridge=1e-12,
+    )
+    return decoder, dict(receipt)
+
+
+def test_normalized_decoder_width_change_uses_fit_covariance_scale_and_epsilons() -> (
+    None
+):
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        dtype=torch.float64,
+    )
+    parent_rows = (
+        torch.tensor([[1.0, 2.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[2.0, -1.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[-1.0, -2.0, 0.0, 0.0]], dtype=torch.float64),
+    )
+    parent_epsilon = 1e-5
+    target_epsilon = 3e-5
+    decoder, receipt = _normalized_decoder_fixture(
+        parent_rows,
+        chart,
+        parent_epsilon=parent_epsilon,
+        target_epsilon=target_epsilon,
+    )
+    source_energy = parent_rows[0].square().mean()
+    projected_energy = (parent_rows[0] @ chart).square().mean()
+    expected_scale = torch.sqrt(
+        (projected_energy + target_epsilon) / (source_energy + parent_epsilon)
+    )
+    scale = receipt["structural_covariance_scale"]
+
+    assert scale["trajectory_balanced"] is True
+    assert scale["actual_child_rows_used_for_scale"] == 0
+    assert scale["heldout_rows_used_for_scale"] == 0
+    assert scale["target_norm_epsilon"] == target_epsilon
+    assert scale["covariance_scale"] == pytest.approx(
+        float(expected_scale.item()),
+        rel=1e-12,
+    )
+    assert scale["covariance_scale"] == pytest.approx(2.0**0.5, rel=2e-5)
+    parent_gamma = torch.tensor([0.75, 1.25, 1.5, 0.5], dtype=torch.float64)
+    target_gamma = torch.tensor([1.125, 0.625], dtype=torch.float64)
+    expected_decoder = (
+        expected_scale
+        * torch.diag(target_gamma.reciprocal())
+        @ torch.linalg.pinv(chart)
+        @ torch.diag(parent_gamma)
+    )
+    torch.testing.assert_close(decoder, expected_decoder, rtol=1e-10, atol=1e-10)
+    assert (
+        receipt["heldout_rowwise_denominator_ratio_diagnostic"]["diagnostic_only"]
+        is True
+    )
+
+
+def test_normalized_decoder_isotropic_projection_scale_is_one() -> None:
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        dtype=torch.float64,
+    )
+    basis = tuple(
+        torch.eye(4, dtype=torch.float64)[index : index + 1] for index in range(4)
+    )
+    _decoder, receipt = _normalized_decoder_fixture(
+        (*basis, torch.ones((1, 4), dtype=torch.float64)),
+        chart,
+        parent_epsilon=2e-5,
+        target_epsilon=2e-5,
+    )
+
+    assert receipt["structural_covariance_scale"]["covariance_scale"] == pytest.approx(
+        1.0, rel=1e-12, abs=1e-12
+    )
+
+
+def test_normalized_decoder_nonorthogonal_chart_uses_pseudoinverse_prior() -> None:
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.5, 1.0], [0.25, -0.5], [0.0, 0.75]],
+        dtype=torch.float64,
+    )
+    coefficients = (
+        torch.tensor([[1.0, 2.0]], dtype=torch.float64),
+        torch.tensor([[-1.0, -2.0]], dtype=torch.float64),
+        torch.tensor([[1.0, 2.0]], dtype=torch.float64),
+    )
+    parent_rows = tuple(value @ chart.T for value in coefficients)
+    decoder, receipt = _normalized_decoder_fixture(
+        parent_rows,
+        chart,
+        parent_epsilon=1e-5,
+        target_epsilon=1e-5,
+    )
+    scale = receipt["structural_covariance_scale"]["covariance_scale"]
+    parent_gamma = torch.tensor([0.75, 1.25, 1.5, 0.5], dtype=torch.float64)
+    target_gamma = torch.tensor([1.125, 0.625], dtype=torch.float64)
+    expected = (
+        scale
+        * torch.diag(target_gamma.reciprocal())
+        @ torch.linalg.pinv(chart)
+        @ torch.diag(parent_gamma)
+    )
+
+    torch.testing.assert_close(decoder, expected, rtol=1e-9, atol=1e-9)
+    assert receipt["fit_metrics"]["maximum_absolute_error"] < 1e-9
+
     with pytest.raises(
         postfold.Lfm2SemanticPostfoldError,
         match="must change model state",

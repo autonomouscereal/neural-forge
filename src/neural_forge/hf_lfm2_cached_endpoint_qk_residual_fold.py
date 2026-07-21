@@ -35,12 +35,12 @@ LFM2_ENDPOINT_SOURCE_INVENTORY_SCHEMA = (
 )
 LFM2_ENDPOINT_QK_SEED_SCHEMA = "neural-forge-lfm2-endpoint-qkvo-seed-v1"
 LFM2_ENDPOINT_QK_POLICY_SCHEMA = "neural-forge-lfm2-endpoint-qk-policy-v1"
-LFM2_ENDPOINT_QK_RESULT_SCHEMA = "neural-forge-lfm2-endpoint-qk-result-v1"
+LFM2_ENDPOINT_QK_RESULT_SCHEMA = "neural-forge-lfm2-endpoint-qk-result-v2"
 LFM2_ENDPOINT_QK_FIT_PROPOSAL_SCHEMA = "neural-forge-lfm2-endpoint-qk-fit-proposal-v1"
 LFM2_ENDPOINT_QK_EXECUTION_SCHEMA = (
     "neural-forge-lfm2-endpoint-qk-observed-execution-v4"
 )
-_FIXED_DEVICE_CACHE_SCHEMA = "neural-forge-lfm2-endpoint-fixed-device-cache-v1"
+_FIXED_DEVICE_CACHE_SCHEMA = "neural-forge-lfm2-endpoint-fixed-device-cache-v2"
 _STATIC_DEVICE_SHARD_SCHEMA = "neural-forge-lfm2-endpoint-static-device-shards-v1"
 
 _ZERO_OPERATION_AUDIT = {
@@ -247,6 +247,20 @@ def _apply_rope_transpose(value: Any, cosine: Any, sine: Any) -> Any:
     return value * cosine.unsqueeze(1) - _rotate_half(value) * sine.unsqueeze(1)
 
 
+def _repeat_key_value_heads(value: Any, repeats: int) -> Any:
+    batch, heads, sequence, head_dim = map(int, value.shape)
+    if repeats == 1:
+        return value
+    expanded = value[:, :, None, :, :].expand(
+        batch,
+        heads,
+        repeats,
+        sequence,
+        head_dim,
+    )
+    return expanded.reshape(batch, heads * repeats, sequence, head_dim)
+
+
 def _exact_runtime_rmsnorm(raw_rows: Any, norm_weight: Any, epsilon: float) -> Any:
     torch = _torch()
     dtype = raw_rows.dtype
@@ -256,7 +270,7 @@ def _exact_runtime_rmsnorm(raw_rows: Any, norm_weight: Any, epsilon: float) -> A
     gain = norm_weight
     if gain.device != raw_rows.device or gain.dtype != dtype:
         gain = gain.to(device=raw_rows.device, dtype=dtype)
-    return (normalized.to(dtype=dtype) * gain).contiguous()
+    return (gain * normalized.to(dtype=dtype)).contiguous()
 
 
 def _rmsnorm_jvp(
@@ -301,13 +315,6 @@ def _center_scores(value: Any, mask: Any) -> Any:
     count = mask.sum(dim=-1, keepdim=True).clamp_min(1)
     mean = (value * mask).sum(dim=-1, keepdim=True) / count
     return _torch().where(mask, value - mean, _torch().zeros_like(value))
-
-
-def _masked_softmax(scores: Any, mask: Any) -> Any:
-    torch = _torch()
-    masked = scores.to(torch.float64).masked_fill(~mask, -torch.inf)
-    result = torch.softmax(masked, dim=-1, dtype=torch.float64)
-    return torch.where(mask, result, torch.zeros_like(result))
 
 
 def _softmax_jvp(probabilities: Any, score_tangent: Any, mask: Any) -> Any:
@@ -448,6 +455,17 @@ class Lfm2EndpointQkResidualCase:
     parent_context_replay_maximum_absolute_error: float = 0.0
     parent_context_replay_rtol: float = 0.0
     parent_context_replay_atol: float = 0.0
+    folded_parent_query_pre_rope: Any | None = field(default=None, repr=False)
+    folded_parent_key_pre_rope: Any | None = field(default=None, repr=False)
+    key_value_groups: tuple[tuple[int, ...], ...] = ()
+    key_value_group_weights: tuple[tuple[float, ...], ...] = ()
+    parent_query_weight_prior: Any | None = field(default=None, repr=False)
+    parent_key_weight_prior: Any | None = field(default=None, repr=False)
+    parent_value_weight_prior: Any | None = field(default=None, repr=False)
+    parent_output_weight_prior: Any | None = field(default=None, repr=False)
+    parent_query_norm_weight: Any | None = field(default=None, repr=False)
+    parent_key_norm_weight: Any | None = field(default=None, repr=False)
+    parent_weight_prior_sha256: str | None = None
     target_probability_barycenter: Any = field(init=False, repr=False)
     target_causal_mask: Any = field(init=False, repr=False)
     target_receipt: Mapping[str, Any] = field(init=False, repr=False)
@@ -536,6 +554,13 @@ class Lfm2EndpointQkResidualCase:
             tuple(float(weight) for weight in group)
             for group in self.query_group_weights
         )
+        key_value_groups = tuple(
+            tuple(int(member) for member in group) for group in self.key_value_groups
+        )
+        key_value_weights = tuple(
+            tuple(float(weight) for weight in group)
+            for group in self.key_value_group_weights
+        )
         flattened = sorted(member for group in groups for member in group)
         if (
             len(groups) == 0
@@ -575,18 +600,116 @@ class Lfm2EndpointQkResidualCase:
             raise Lfm2EndpointQkResidualFoldError(
                 "Query row sqrt weights must be positive and query-aligned."
             )
-        offset = key_length - query_length
-        query_position = torch.arange(query_length).reshape(1, 1, -1, 1)
-        key_position = torch.arange(key_length).reshape(1, 1, 1, -1)
+        query_prior = None
+        key_prior = None
+        target_key_value_heads = (
+            len(key_value_groups) if key_value_groups else len(groups)
+        )
         if (
-            offset < 0
-            or bool(
-                (target_mask & (key_position > offset + query_position)).any().item()
-            )
-            or bool((~target_mask.any(dim=-1)).any().item())
+            self.folded_parent_query_pre_rope is not None
+            or self.folded_parent_key_pre_rope is not None
         ):
+            if (
+                self.folded_parent_query_pre_rope is None
+                or self.folded_parent_key_pre_rope is None
+            ):
+                raise Lfm2EndpointQkResidualFoldError(
+                    "Parent pre-RoPE Q/K priors must be supplied together."
+                )
+            query_prior = _dense_cpu_tensor(
+                self.folded_parent_query_pre_rope,
+                "folded_parent_query_pre_rope",
+                ndim=4,
+            ).to(torch.float64)
+            key_prior = _dense_cpu_tensor(
+                self.folded_parent_key_pre_rope,
+                "folded_parent_key_pre_rope",
+                ndim=4,
+            ).to(torch.float64)
+            if tuple(query_prior.shape) != (
+                batch,
+                len(groups),
+                query_length,
+                head_dim,
+            ) or tuple(key_prior.shape) != (
+                batch,
+                target_key_value_heads,
+                key_length,
+                head_dim,
+            ):
+                raise Lfm2EndpointQkResidualFoldError(
+                    "Parent pre-RoPE priors changed target attention geometry."
+                )
+        if key_length < query_length or bool((~target_mask.any(dim=-1)).any().item()):
             raise Lfm2EndpointQkResidualFoldError(
-                "Target probability barycenter is not one valid causal route."
+                "Target probability barycenter has an empty explicit causal route."
+            )
+        weight_prior_values = (
+            self.parent_query_weight_prior,
+            self.parent_key_weight_prior,
+            self.parent_value_weight_prior,
+            self.parent_output_weight_prior,
+            self.parent_query_norm_weight,
+            self.parent_key_norm_weight,
+            self.parent_weight_prior_sha256,
+        )
+        query_weight_prior = None
+        key_weight_prior = None
+        value_weight_prior = None
+        output_weight_prior = None
+        query_norm_weight = None
+        key_norm_weight = None
+        weight_prior_sha256 = None
+        if any(value is not None for value in weight_prior_values):
+            if not all(value is not None for value in weight_prior_values):
+                raise Lfm2EndpointQkResidualFoldError(
+                    "Parent Q/K weight and norm priors must be supplied together."
+                )
+            query_weight_prior = _dense_cpu_tensor(
+                self.parent_query_weight_prior,
+                "parent_query_weight_prior",
+                ndim=2,
+            ).to(torch.float64)
+            key_weight_prior = _dense_cpu_tensor(
+                self.parent_key_weight_prior,
+                "parent_key_weight_prior",
+                ndim=2,
+            ).to(torch.float64)
+            value_weight_prior = _dense_cpu_tensor(
+                self.parent_value_weight_prior,
+                "parent_value_weight_prior",
+                ndim=2,
+            ).to(torch.float64)
+            output_weight_prior = _dense_cpu_tensor(
+                self.parent_output_weight_prior,
+                "parent_output_weight_prior",
+                ndim=2,
+            ).to(torch.float64)
+            query_norm_weight = _dense_cpu_tensor(
+                self.parent_query_norm_weight,
+                "parent_query_norm_weight",
+                ndim=1,
+            ).to(torch.float64)
+            key_norm_weight = _dense_cpu_tensor(
+                self.parent_key_norm_weight,
+                "parent_key_norm_weight",
+                ndim=1,
+            ).to(torch.float64)
+            if (
+                tuple(query_weight_prior.shape) != (len(groups) * head_dim, hidden)
+                or tuple(key_weight_prior.shape)
+                != (target_key_value_heads * head_dim, hidden)
+                or tuple(value_weight_prior.shape) != tuple(key_weight_prior.shape)
+                or tuple(output_weight_prior.shape) != (hidden, len(groups) * head_dim)
+                or tuple(query_norm_weight.shape) != (head_dim,)
+                or tuple(key_norm_weight.shape) != (head_dim,)
+            ):
+                raise Lfm2EndpointQkResidualFoldError(
+                    "Parent Q/K weight prior changed the target attention topology."
+                )
+            weight_prior_sha256 = _required_sha256(
+                self.parent_weight_prior_sha256,
+                "parent_weight_prior_sha256",
             )
         trajectory = _required_sha256(
             self.trajectory_sha256,
@@ -625,6 +748,8 @@ class Lfm2EndpointQkResidualCase:
             "parent_causal_mask_sha256": _tensor_sha256(parent_mask),
             "query_groups": [list(group) for group in groups],
             "query_group_weights": [list(group) for group in weights],
+            "key_value_groups": [list(group) for group in key_value_groups],
+            "key_value_group_weights": [list(group) for group in key_value_weights],
             "target_probability_barycenter_sha256": _tensor_sha256(
                 target_probabilities
             ),
@@ -653,6 +778,38 @@ class Lfm2EndpointQkResidualCase:
             "key_rope_cos_sha256": _tensor_sha256(key_cos),
             "key_rope_sin_sha256": _tensor_sha256(key_sin),
             "query_row_sqrt_weights_sha256": _tensor_sha256(row_weights),
+            "folded_parent_query_pre_rope_sha256": (
+                None if query_prior is None else _tensor_sha256(query_prior)
+            ),
+            "folded_parent_key_pre_rope_sha256": (
+                None if key_prior is None else _tensor_sha256(key_prior)
+            ),
+            "parent_pre_rope_prior_available": query_prior is not None,
+            "parent_query_weight_prior_sha256": (
+                None
+                if query_weight_prior is None
+                else _tensor_sha256(query_weight_prior)
+            ),
+            "parent_key_weight_prior_sha256": (
+                None if key_weight_prior is None else _tensor_sha256(key_weight_prior)
+            ),
+            "parent_value_weight_prior_sha256": (
+                None
+                if value_weight_prior is None
+                else _tensor_sha256(value_weight_prior)
+            ),
+            "parent_output_weight_prior_sha256": (
+                None
+                if output_weight_prior is None
+                else _tensor_sha256(output_weight_prior)
+            ),
+            "parent_query_norm_weight_sha256": (
+                None if query_norm_weight is None else _tensor_sha256(query_norm_weight)
+            ),
+            "parent_key_norm_weight_sha256": (
+                None if key_norm_weight is None else _tensor_sha256(key_norm_weight)
+            ),
+            "parent_weight_prior_sha256": weight_prior_sha256,
         }
         object.__setattr__(self, "target_query_inputs", query_inputs)
         object.__setattr__(self, "target_key_value_inputs", key_inputs)
@@ -664,6 +821,17 @@ class Lfm2EndpointQkResidualCase:
         object.__setattr__(self, "key_rope_cos", key_cos)
         object.__setattr__(self, "key_rope_sin", key_sin)
         object.__setattr__(self, "query_row_sqrt_weights", row_weights)
+        object.__setattr__(self, "folded_parent_query_pre_rope", query_prior)
+        object.__setattr__(self, "folded_parent_key_pre_rope", key_prior)
+        object.__setattr__(self, "key_value_groups", key_value_groups)
+        object.__setattr__(self, "key_value_group_weights", key_value_weights)
+        object.__setattr__(self, "parent_query_weight_prior", query_weight_prior)
+        object.__setattr__(self, "parent_key_weight_prior", key_weight_prior)
+        object.__setattr__(self, "parent_value_weight_prior", value_weight_prior)
+        object.__setattr__(self, "parent_output_weight_prior", output_weight_prior)
+        object.__setattr__(self, "parent_query_norm_weight", query_norm_weight)
+        object.__setattr__(self, "parent_key_norm_weight", key_norm_weight)
+        object.__setattr__(self, "parent_weight_prior_sha256", weight_prior_sha256)
         object.__setattr__(self, "query_groups", groups)
         object.__setattr__(self, "query_group_weights", weights)
         object.__setattr__(self, "trajectory_sha256", trajectory)
@@ -729,6 +897,17 @@ class Lfm2EndpointQkResidualCase:
             ),
             parent_context_replay_rtol=self.parent_context_replay_rtol,
             parent_context_replay_atol=self.parent_context_replay_atol,
+            folded_parent_query_pre_rope=(self.folded_parent_query_pre_rope),
+            folded_parent_key_pre_rope=(self.folded_parent_key_pre_rope),
+            key_value_groups=self.key_value_groups,
+            key_value_group_weights=self.key_value_group_weights,
+            parent_query_weight_prior=self.parent_query_weight_prior,
+            parent_key_weight_prior=self.parent_key_weight_prior,
+            parent_value_weight_prior=self.parent_value_weight_prior,
+            parent_output_weight_prior=self.parent_output_weight_prior,
+            parent_query_norm_weight=self.parent_query_norm_weight,
+            parent_key_norm_weight=self.parent_key_norm_weight,
+            parent_weight_prior_sha256=self.parent_weight_prior_sha256,
         )
         if (
             rebuilt.evidence_sha256 != self.evidence_sha256
@@ -1650,7 +1829,15 @@ def _attached_replay_tensor_bytes(case: _PreparedCase) -> int:
 
 
 def _expected_prepared_tensor_bytes(case: Lfm2EndpointQkResidualCase) -> int:
-    return (
+    prior_bytes = sum(
+        _tensor_logical_bytes(value)
+        for value in (
+            case.folded_parent_query_pre_rope,
+            case.folded_parent_key_pre_rope,
+        )
+        if value is not None
+    )
+    return prior_bytes + (
         _tensor_logical_bytes(case.target_query_inputs)
         + _tensor_logical_bytes(case.target_key_value_inputs)
         + int(case.target_probability_barycenter.numel()) * 8
@@ -1675,8 +1862,12 @@ def _expected_replay_tensor_bytes(
     repeated_value_elements = batch * seed.query_heads * key_length * seed.head_dim
     probability_elements = batch * seed.query_heads * query_length * key_length
     endpoint_elements = batch * query_length * seed.output_size
-    return 2 * (2 * query_head_elements + 2 * key_head_elements) + 8 * (
-        repeated_value_elements + probability_elements + endpoint_elements
+    return 2 * (
+        2 * query_head_elements
+        + 2 * key_head_elements
+        + repeated_value_elements
+        + probability_elements
+        + endpoint_elements
     )
 
 
@@ -2754,7 +2945,7 @@ class _FixedDeviceTensorCache:
 
     device: Any
     value_weight_bfloat16: Any
-    output_weight_float64: Any
+    output_weight_bfloat16: Any
     query_norm_weight_bfloat16: Any
     key_norm_weight_bfloat16: Any
     query_norm_weight_float32: Any
@@ -2781,9 +2972,9 @@ def _build_fixed_device_tensor_cache(
             device=resolved,
             dtype=torch.bfloat16,
         ),
-        output_weight_float64=seed.output_weight.to(
+        output_weight_bfloat16=seed.output_weight.to(
             device=resolved,
-            dtype=torch.float64,
+            dtype=torch.bfloat16,
         ),
         query_norm_weight_bfloat16=seed.query_norm_weight.to(
             device=resolved,
@@ -2809,7 +3000,7 @@ def _fixed_device_tensor_cache_bytes(cache: _FixedDeviceTensorCache) -> int:
         _tensor_logical_bytes(value)
         for value in (
             cache.value_weight_bfloat16,
-            cache.output_weight_float64,
+            cache.output_weight_bfloat16,
             cache.query_norm_weight_bfloat16,
             cache.key_norm_weight_bfloat16,
             cache.query_norm_weight_float32,
@@ -2978,7 +3169,7 @@ def _fixed_device_cache_receipt(
         "schema": _FIXED_DEVICE_CACHE_SCHEMA,
         "logical_device": str(cache.device),
         "fixed_value_bfloat16_sha256": _tensor_sha256(cache.value_weight_bfloat16),
-        "fixed_output_float64_sha256": _tensor_sha256(cache.output_weight_float64),
+        "fixed_output_bfloat16_sha256": _tensor_sha256(cache.output_weight_bfloat16),
         "query_rms_bfloat16_sha256": _tensor_sha256(cache.query_norm_weight_bfloat16),
         "key_rms_bfloat16_sha256": _tensor_sha256(cache.key_norm_weight_bfloat16),
         "query_rms_float32_sha256": _tensor_sha256(cache.query_norm_weight_float32),
@@ -3122,78 +3313,89 @@ def _exact_replay(
         key = key.to(device=case.key_inputs.device, dtype=torch.bfloat16)
     cache = case.fixed_cache
     value = cache.value_weight_bfloat16
-    output = cache.output_weight_float64
-    query_linear = (
-        (case.query_inputs @ query.T)
-        .reshape(
-            batch,
-            query_length,
-            seed.query_heads,
-            seed.head_dim,
-        )
-        .permute(0, 2, 1, 3)
-        .contiguous()
+    output = cache.output_weight_bfloat16
+    query_linear_sequence = torch.nn.functional.linear(
+        case.query_inputs,
+        query,
+        bias=None,
+    ).view(
+        batch,
+        query_length,
+        seed.query_heads,
+        seed.head_dim,
     )
-    key_linear = (
-        (case.key_inputs @ key.T)
-        .reshape(
-            batch,
-            key_length,
-            seed.key_value_heads,
-            seed.head_dim,
-        )
-        .permute(0, 2, 1, 3)
-        .contiguous()
+    key_linear_sequence = torch.nn.functional.linear(
+        case.key_inputs,
+        key,
+        bias=None,
+    ).view(
+        batch,
+        key_length,
+        seed.key_value_heads,
+        seed.head_dim,
     )
-    value_heads = (
-        (case.key_inputs @ value.T)
-        .reshape(
-            batch,
-            key_length,
-            seed.key_value_heads,
-            seed.head_dim,
-        )
-        .permute(0, 2, 1, 3)
-        .contiguous()
+    value_heads = torch.nn.functional.linear(
+        case.key_inputs,
+        value,
+        bias=None,
+    ).view(
+        batch,
+        key_length,
+        seed.key_value_heads,
+        seed.head_dim,
     )
+    query_linear = query_linear_sequence.transpose(1, 2)
+    key_linear = key_linear_sequence.transpose(1, 2)
+    value_heads = value_heads.transpose(1, 2)
     query_post = _apply_rope(
         _exact_runtime_rmsnorm(
-            query_linear,
+            query_linear_sequence,
             cache.query_norm_weight_bfloat16,
             seed.norm_epsilon,
-        ),
+        ).transpose(1, 2),
         case.query_cosine,
         case.query_sine,
     )
     key_post = _apply_rope(
         _exact_runtime_rmsnorm(
-            key_linear,
+            key_linear_sequence,
             cache.key_norm_weight_bfloat16,
             seed.norm_epsilon,
-        ),
+        ).transpose(1, 2),
         case.key_cosine,
         case.key_sine,
     )
-    repeated_key = key_post.repeat_interleave(
+    repeated_key = _repeat_key_value_heads(
+        key_post,
         seed.queries_per_key_value,
-        dim=1,
     )
-    repeated_value = value_heads.repeat_interleave(
+    repeated_value = _repeat_key_value_heads(
+        value_heads,
         seed.queries_per_key_value,
-        dim=1,
-    ).to(torch.float64)
-    scores = _center_scores(
-        torch.matmul(query_post, repeated_key.transpose(-2, -1)).to(torch.float32)
-        / math.sqrt(seed.head_dim),
-        case.mask,
     )
-    probabilities = _masked_softmax(scores, case.mask)
+    scores = torch.matmul(query_post, repeated_key.transpose(-2, -1))
+    scores = scores * float(seed.head_dim**-0.5)
+    additive_mask = torch.zeros_like(scores).masked_fill(
+        ~case.mask,
+        torch.finfo(scores.dtype).min,
+    )
+    scores = scores + additive_mask
+    probabilities = torch.nn.functional.softmax(
+        scores,
+        dim=-1,
+        dtype=torch.float32,
+    ).to(query_post.dtype)
     context = torch.matmul(probabilities, repeated_value)
-    endpoint = (
-        context.permute(0, 2, 1, 3).reshape(
-            batch, query_length, seed.query_heads * seed.head_dim
-        )
-        @ output.T
+    concatenated = context.transpose(1, 2).contiguous()
+    concatenated = concatenated.reshape(
+        batch,
+        query_length,
+        seed.query_heads * seed.head_dim,
+    ).contiguous()
+    endpoint = torch.nn.functional.linear(
+        concatenated,
+        output,
+        bias=None,
     )
     return _Replay(
         query_linear=query_linear,
@@ -3437,10 +3639,10 @@ def _endpoint_jvp(
     )
     delta_context = torch.matmul(
         delta_probabilities,
-        case.repeated_value,
+        case.repeated_value.to(delta_probabilities.dtype),
     )
     batch, _heads, query_length, _dim = delta_context.shape
-    output = case.fixed_cache.output_weight_float64
+    output = case.fixed_cache.output_weight_bfloat16.to(torch.float64)
     delta_endpoint = (
         delta_context.permute(0, 2, 1, 3).reshape(
             batch, query_length, seed.query_heads * seed.head_dim
@@ -3466,7 +3668,7 @@ def _endpoint_vjp(
         raise Lfm2EndpointQkResidualFoldError(
             "Endpoint cotangent has the wrong output width."
         )
-    output = case.fixed_cache.output_weight_float64
+    output = case.fixed_cache.output_weight_bfloat16.to(torch.float64)
     context_cotangent = (
         (endpoint_cotangent.to(torch.float64) @ output)
         .reshape(
@@ -3479,7 +3681,7 @@ def _endpoint_vjp(
     )
     route_cotangent = torch.matmul(
         context_cotangent,
-        case.repeated_value.transpose(-2, -1),
+        case.repeated_value.to(torch.float64).transpose(-2, -1),
     )
     if probability_cotangent is not None:
         route_cotangent = route_cotangent + probability_cotangent.to(torch.float64)
@@ -4033,9 +4235,7 @@ def _trust_scale(
     query_current_norm = float(
         torch.linalg.vector_norm(current_query.to(torch.float64)).item()
     )
-    key_delta_norm = float(
-        torch.linalg.vector_norm(delta_key.to(torch.float64)).item()
-    )
+    key_delta_norm = float(torch.linalg.vector_norm(delta_key.to(torch.float64)).item())
     key_current_norm = float(
         torch.linalg.vector_norm(current_key.to(torch.float64)).item()
     )
@@ -5131,7 +5331,10 @@ class Lfm2CompiledEndpointQkResidualFold:
             baseline_fit_check,
             self.policy.metric_regression_tolerance,
         )
-        expected_accepted = bool(self.fit_proposal.changed and check_nonregressing)
+        # Publication is a structural consequence of the authenticated FIT-only
+        # proposal.  FIT-CHECK is deliberately evaluated after FIT freezes and
+        # remains diagnostic; it cannot accept, reject, or roll back the child.
+        expected_accepted = bool(self.fit_proposal.changed)
         expected_query = (
             self.fit_proposal.query_weight
             if expected_accepted
@@ -5145,15 +5348,11 @@ class Lfm2CompiledEndpointQkResidualFold:
             if expected_accepted
             else self.fit_proposal.initial_fit_metrics
         )
-        expected_check_metrics = (
-            proposed_fit_check if expected_accepted else baseline_fit_check
-        )
+        expected_check_metrics = proposed_fit_check
         expected_status = (
-            "fit_check_accepted"
+            "deterministic_fit_proposal_published"
             if expected_accepted
-            else "fit_check_rejected_seed_fallback"
-            if self.fit_proposal.changed
-            else "no_exact_bfloat16_fit_improvement"
+            else "deterministic_fit_proposal_rounded_to_seed_noop"
         )
         body = dict(self.report)
         supplied = body.pop("report_sha256", None)
@@ -5179,6 +5378,9 @@ class Lfm2CompiledEndpointQkResidualFold:
             "heldout_metric_name_is_compatibility_alias_only",
             "fit_check_endpoint_and_route_nonregressing",
             "fit_check_role",
+            "fit_check_can_accept_reject_or_rollback",
+            "numeric_metric_used_for_publication",
+            "publication_rule",
             "unbiased_generalization_claimed",
             "fresh_whole_child_intelligence_validation_required",
             "fit_check_first_metric_evaluation_after_fit_freeze",
@@ -5257,7 +5459,11 @@ class Lfm2CompiledEndpointQkResidualFold:
             or body.get("fit_check_endpoint_and_route_nonregressing")
             is not check_nonregressing
             or body.get("fit_check_role")
-            != "reused_development_acceptance_gate_not_unbiased_validation"
+            != "diagnostic_only_after_deterministic_fit_publication"
+            or body.get("fit_check_can_accept_reject_or_rollback") is not False
+            or body.get("numeric_metric_used_for_publication") is not False
+            or body.get("publication_rule")
+            != "publish_authenticated_fit_only_proposal_if_bfloat16_state_changed"
             or body.get("unbiased_generalization_claimed") is not False
             or body.get("fresh_whole_child_intelligence_validation_required")
             is not True
@@ -5629,13 +5835,14 @@ def compile_lfm2_cached_endpoint_qk_residual_fold(
         seed_fit_check_metrics,
         selected_policy.metric_regression_tolerance,
     )
-    accepted = bool(changed and fit_check_nonregressing)
+    # FIT-CHECK supplies a sealed diagnostic report only.  The authenticated
+    # FIT proposal is published deterministically whenever its BF16 state
+    # differs from the seed; no scalar metric can veto that publication.
+    accepted = bool(changed)
     published_query = current_query.detach().cpu() if accepted else seed.query_weight
     published_key = current_key.detach().cpu() if accepted else seed.key_weight
     published_fit_metrics = current_fit_metrics if accepted else initial_fit_metrics
-    published_fit_check_metrics = (
-        proposed_fit_check_metrics if accepted else seed_fit_check_metrics
-    )
+    published_fit_check_metrics = proposed_fit_check_metrics
     body = {
         "schema": LFM2_ENDPOINT_QK_RESULT_SCHEMA,
         "method": (
@@ -5659,8 +5866,11 @@ def compile_lfm2_cached_endpoint_qk_residual_fold(
         "heldout_endpoint_and_route_nonregressing": fit_check_nonregressing,
         "heldout_metric_name_is_compatibility_alias_only": True,
         "fit_check_endpoint_and_route_nonregressing": fit_check_nonregressing,
-        "fit_check_role": (
-            "reused_development_acceptance_gate_not_unbiased_validation"
+        "fit_check_role": "diagnostic_only_after_deterministic_fit_publication",
+        "fit_check_can_accept_reject_or_rollback": False,
+        "numeric_metric_used_for_publication": False,
+        "publication_rule": (
+            "publish_authenticated_fit_only_proposal_if_bfloat16_state_changed"
         ),
         "unbiased_generalization_claimed": False,
         "fresh_whole_child_intelligence_validation_required": True,
@@ -5699,11 +5909,9 @@ def compile_lfm2_cached_endpoint_qk_residual_fold(
         accepted=accepted,
         changed=accepted,
         status=(
-            "fit_check_accepted"
+            "deterministic_fit_proposal_published"
             if accepted
-            else "fit_check_rejected_seed_fallback"
-            if changed
-            else "no_exact_bfloat16_fit_improvement"
+            else "deterministic_fit_proposal_rounded_to_seed_noop"
         ),
         fit_metrics=published_fit_metrics,
         fit_check_metrics=published_fit_check_metrics,

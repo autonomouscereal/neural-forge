@@ -1126,7 +1126,7 @@ def _chart_inputs(*, reject_validation: bool):
     return tuple(alignments), parent, bank
 
 
-def test_residual_chart_preserves_unsupported_subspace_and_uses_four_gates() -> None:
+def test_residual_chart_preserves_unsupported_subspace_with_diagnostic_metrics() -> None:
     alignments, parent, bank = _chart_inputs(reject_validation=False)
 
     chart, receipt = stack._fit_residual_chart(
@@ -1142,6 +1142,9 @@ def test_residual_chart_preserves_unsupported_subspace_and_uses_four_gates() -> 
     assert receipt["candidate_family_constructed_from_fit_only"] is True
     assert receipt["candidate_frozen_before_validation"] is True
     assert receipt["validation_triggered_refit"] is False
+    assert receipt["all_scalar_metrics_diagnostic_only"] is True
+    assert receipt["numeric_metric_used_for_candidate_selection"] is False
+    assert receipt["numeric_metric_used_for_publication_or_rollback"] is False
     assert set(receipt["partition_batch_indices"]) == set(stack._PARTITIONS)
     torch.testing.assert_close(
         chart[1:],
@@ -1151,7 +1154,7 @@ def test_residual_chart_preserves_unsupported_subspace_and_uses_four_gates() -> 
     )
 
 
-def test_residual_chart_validation_can_only_reject_back_to_base() -> None:
+def test_residual_chart_validation_regression_cannot_rollback_fit_chart() -> None:
     alignments, parent, bank = _chart_inputs(reject_validation=True)
 
     chart, receipt = stack._fit_residual_chart(
@@ -1163,15 +1166,12 @@ def test_residual_chart_validation_can_only_reject_back_to_base() -> None:
     )
 
     assert receipt["selected_before_validation"] != "base_identity"
-    assert receipt["selected_candidate"] == "base_identity"
+    assert receipt["selected_candidate"] == "rank_supported_ridge_0.0001"
     assert receipt["validation_nonregression_passed"] is False
-    assert receipt["validation_rejection_fell_back_to_base"] is True
-    torch.testing.assert_close(
-        chart,
-        torch.eye(3, dtype=torch.float64),
-        rtol=0,
-        atol=0,
-    )
+    assert receipt["validation_rejection_fell_back_to_base"] is False
+    assert receipt["all_scalar_metrics_diagnostic_only"] is True
+    assert receipt["numeric_metric_used_for_publication_or_rollback"] is False
+    assert not torch.equal(chart, torch.eye(3, dtype=torch.float64))
 
 
 def test_self_dual_global_chart_forbids_independent_layer_rotation() -> None:

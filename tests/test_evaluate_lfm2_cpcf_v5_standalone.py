@@ -62,14 +62,60 @@ class _TinyTokenizer:
     pad_token_id = EOS_TOKEN_ID
 
 
-def _parent_envelope(tmp_path: Path) -> tuple[Path, str]:
+_PASSING_PYTHON = {
+    "holdout_is_even": "def holdout_is_even(value):\n    return value % 2 == 0",
+    "holdout_clamp": (
+        "def holdout_clamp(value, low, high):\n"
+        "    return low if value < low else high if value > high else value"
+    ),
+    "holdout_last": "def holdout_last(values):\n    return values[-1]",
+    "holdout_reverse": "def holdout_reverse(value):\n    return value[::-1]",
+    "holdout_between": (
+        "def holdout_between(value, low, high):\n    return low <= value <= high"
+    ),
+    "holdout_choose": (
+        "def holdout_choose(condition, first, second):\n"
+        "    return first if condition else second"
+    ),
+    "holdout_difference": (
+        "def holdout_difference(left, right):\n    return left - right"
+    ),
+    "holdout_join": "def holdout_join(left, right):\n    return left + right",
+}
+
+
+def _passing_output(spec: Any) -> str:
+    validator = spec.validator
+    if validator is None:
+        return f"A complete, coherent, and useful response for {spec.case_id}."
+    if validator.kind == "arithmetic_exact":
+        return str(validator.expected_numeric)
+    if validator.kind == "python_pure_function":
+        return _PASSING_PYTHON[str(validator.function_name)]
+    if validator.exact_word is not None:
+        return str(validator.exact_word)
+    words = []
+    for group in validator.required_groups:
+        words.extend(str(group[0]).split())
+    while len(words) < validator.minimum_words:
+        words.append("clear")
+    return " ".join(words)
+
+
+def _parent_envelope(
+    tmp_path: Path,
+    *,
+    passing_outputs: bool = False,
+) -> tuple[Path, str]:
     manifest = load_lfm2_intelligence_holdout_manifest()
     rows = [
         {
             "case_id": spec.case_id,
             "input_token_count": 8 + index,
             "output": (
-                f"The cached parent gives a coherent response for {spec.case_id}."
+                _passing_output(spec)
+                if passing_outputs
+                else f"The cached parent gives a coherent response for {spec.case_id}."
             ),
             "output_token_ids": [1000 + index, EOS_TOKEN_ID],
         }
@@ -95,11 +141,16 @@ def _capture_fixture(
     metadata_overrides: dict[str, Any] | None = None,
     use_real_artifact_metadata: bool = False,
     authenticate_semantic_postfold: bool = False,
+    passing_outputs: bool = False,
+    failing_candidate_outputs: bool = False,
 ) -> dict[str, Any]:
     candidate_directory = tmp_path / "quarantine" / "candidate"
     candidate_directory.mkdir(parents=True)
     output_directory = tmp_path / "evaluation"
-    parent_path, parent_file_sha = _parent_envelope(tmp_path)
+    parent_path, parent_file_sha = _parent_envelope(
+        tmp_path,
+        passing_outputs=passing_outputs,
+    )
 
     reference_model = _TinyChild()
     reference_model.requires_grad_(False)
@@ -268,7 +319,11 @@ def _capture_fixture(
         rows = []
         for index, spec in enumerate(manifest.cases):
             model(torch.ones((1, 2)))
-            text = f"Persisted decoded child response for {spec.case_id}."
+            text = (
+                _passing_output(spec)
+                if passing_outputs and not failing_candidate_outputs
+                else f"Persisted decoded child response for {spec.case_id}."
+            )
             generated_limits.append(spec.generation_limit)
             generated_text.append(text)
             rows.append(
@@ -407,9 +462,9 @@ def test_capture_persists_text_limits_and_strict_reload(
         ]
         is True
     )
-    assert automatic["acceptance_semantics"]["manual_review_is_parent_relative"]
+    assert automatic["diagnostic_review_semantics"]["manual_review_is_parent_relative"]
     assert (
-        automatic["acceptance_semantics"][
+        automatic["diagnostic_review_semantics"][
             "lexical_similarity_is_not_an_intelligence_metric"
         ]
         is True
@@ -419,7 +474,29 @@ def test_capture_persists_text_limits_and_strict_reload(
     assert packet["packet_sha256"] == automatic["manual_review_packet_sha256"]
     assert packet["rubric"]["paired_scoring_required"] is True
     assert packet["rubric"]["exact_wording_comparison_permitted"] is False
-    assert len(packet["cases"]) == 6
+    manifest = load_lfm2_intelligence_holdout_manifest()
+    assert packet["review_scope"] == "exact_authenticated_manifest_all_cases"
+    assert packet["all_case_manual_review_mode"] is True
+    assert len(packet["cases"]) == 64
+    assert [row["case_id"] for row in packet["cases"]] == [
+        spec.case_id for spec in manifest.cases
+    ]
+    assert [row["generation_limit"] for row in packet["cases"]] == [
+        spec.generation_limit for spec in manifest.cases
+    ]
+    assert all(
+        isinstance(row["parent_response"], str)
+        and isinstance(row["candidate_response"], str)
+        for row in packet["cases"]
+    )
+    assert automatic["manual_review_packet_case_count"] == 64
+    assert automatic["diagnostic_review_semantics"]["manual_review_case_count"] == 64
+    assert (
+        automatic["diagnostic_review_semantics"][
+            "per_case_generation_limits_bound_to_manual_packet"
+        ]
+        is True
+    )
 
     with pytest.raises(
         evaluator.Lfm2CpcfV5StandaloneEvaluationError,
@@ -508,7 +585,7 @@ def test_capture_accepts_semantic_postfold_artifact_contract_without_sidecars(
     )
     assert provenance["standalone_parent_free_reload_authenticated"] is True
     assert (
-        fixture["report"]["acceptance_semantics"][
+        fixture["report"]["diagnostic_review_semantics"][
             "semantic_postfold_checkpoint_and_receipt_pinned"
         ]
         is True
@@ -777,6 +854,25 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
         expected_semantic_postfold_receipt_sha256=fixture["semantic_receipt_sha"],
         expected_candidate_artifact_sha256=fixture["metadata"]["artifact_sha256"],
     )
+    incomplete = dict(ratings)
+    incomplete["ratings"] = ratings["ratings"][:6]
+    incomplete_core = dict(incomplete)
+    incomplete_core.pop("ratings_sha256")
+    incomplete["ratings_sha256"] = canonical_sha256(incomplete_core)
+    incomplete_path = tmp_path / "manual-ratings-incomplete.json"
+    _write_json(incomplete_path, incomplete)
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="review all 64 whole responses exactly once",
+    ):
+        evaluator.finalize_standalone_intelligence(
+            replace(
+                config,
+                manual_ratings=incomplete_path,
+                expected_manual_ratings_file_sha256=_file_sha(incomplete_path),
+                output_directory=tmp_path / "incomplete-final",
+            )
+        )
     with pytest.raises(
         evaluator.Lfm2CpcfV5StandaloneEvaluationError,
         match="independent seal",
@@ -806,14 +902,37 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
     assert stored == report
     assert report["manual_ratings_sha256"] == ratings["ratings_sha256"]
     assert report["reviewer_id"] == "manual-reviewer"
-    assert report["final_gate_report"]["manual_review"]["status"] == "accepted"
+    assert (
+        report["generic_automatic_diagnostic_report"]["manual_review"]["status"]
+        == "accepted"
+    )
     assert report["parent_relative_manual_report"]["retention"] == 1.0
-    assert report["intelligence_retention_claim"]["certified_lower_bound"] is None
-    assert report["promoted"] is False
+    assert (
+        report["behavioral_retention_diagnostics"][
+            "observed_pinned_suite_behavioral_retention_floor"
+        ]
+        is None
+    )
+    assert report["status"] == "manual_intelligence_review_complete"
+    assert report["manual_intelligence_review_complete"] is True
+    assert report["automatic_accept_reject_decision"] is None
+    assert report["manual_review_packet_case_count"] == 64
+    assert report["holistic_whole_response_judgment"]["reviewed_case_count"] == 64
+    assert (
+        report["holistic_whole_response_judgment"]["exact_manifest_case_coverage"]
+        is True
+    )
+    assert "promoted" not in report
+    assert (
+        report["behavioral_retention_diagnostics"][
+            "generic_automatic_report_is_diagnostic_only"
+        ]
+        is True
+    )
     assert report["parameter_compaction"][
         "recorded_parameter_compaction_ratio"
     ] == pytest.approx(4.0)
-    assert report["acceptance_semantics"]["exact_wording_matching_used"] is False
+    assert report["diagnostic_review_semantics"]["exact_wording_matching_used"] is False
     assert report["operation_audit"]["parent_forward_passes"] == 0
     assert report["operation_audit"]["child_model_loaded"] is False
     assert (
@@ -821,7 +940,7 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
         == fixture["report"]["semantic_postfold_provenance"]
     )
     assert (
-        report["acceptance_semantics"][
+        report["diagnostic_review_semantics"][
             "semantic_postfold_checkpoint_and_receipt_pinned"
         ]
         is True
@@ -876,3 +995,156 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
         match="exact stored review packet",
     ):
         evaluator.finalize_standalone_intelligence(bad_config)
+
+
+def test_high_metrics_publish_diagnostics_without_certifying_intelligence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+        passing_outputs=True,
+    )
+    capture_directory = fixture["output_directory"]
+    packet = json.loads(
+        (capture_directory / evaluator.MANUAL_PACKET_FILENAME).read_text()
+    )
+    dimensions = (
+        "correctness",
+        "coherence",
+        "instruction_following",
+        "capability_retention",
+    )
+    rating_rows = []
+    for index, row in enumerate(packet["cases"]):
+        candidate = {dimension: 4 for dimension in dimensions}
+        candidate[dimensions[index % len(dimensions)]] = 3
+        rating_rows.append(
+            {
+                "case_id": row["case_id"],
+                "parent": {dimension: 4 for dimension in dimensions},
+                "candidate": candidate,
+                "reason": "The child remains useful with one limited quality loss.",
+            }
+        )
+    ratings = bind_parent_relative_manual_ratings(
+        packet,
+        rating_rows,
+        reviewer_id="manual-reviewer",
+    )
+    ratings_path = tmp_path / "manual-ratings-graded.json"
+    _write_json(ratings_path, ratings)
+    automatic_path = capture_directory / evaluator.AUTOMATIC_REPORT_FILENAME
+    config = evaluator.FinalizeConfig(
+        capture_directory=capture_directory,
+        expected_capture_report_file_sha256=_file_sha(automatic_path),
+        expected_capture_report_sha256=fixture["report"]["capture_report_sha256"],
+        parent_envelope=fixture["parent_path"],
+        expected_parent_envelope_file_sha256=fixture["parent_file_sha"],
+        manual_ratings=ratings_path,
+        expected_manual_ratings_file_sha256=_file_sha(ratings_path),
+        output_directory=capture_directory,
+        expected_semantic_postfold_receipt_sha256=fixture["semantic_receipt_sha"],
+        expected_candidate_artifact_sha256=fixture["metadata"]["artifact_sha256"],
+    )
+    report = evaluator.finalize_standalone_intelligence(config)
+    observation = report["behavioral_retention_diagnostics"]
+    assert report["schema"] == evaluator.FINAL_REPORT_SCHEMA
+    assert evaluator.FINAL_REPORT_SCHEMA.endswith("-v3")
+    assert report["status"] == "manual_intelligence_review_complete"
+    assert report["manual_intelligence_review_complete"] is True
+    assert report["automatic_accept_reject_decision"] is None
+    assert "promoted" not in report
+    assert report["parent_relative_manual_report"]["retention"] == pytest.approx(0.9375)
+    assert report["parent_relative_manual_report"]["severe_regression_count"] == 0
+    assert observation["status"] == "diagnostic_complete"
+    assert observation["observed_pinned_suite_behavioral_retention_floor"] == (
+        pytest.approx(0.9375)
+    )
+    assert observation["scope"] == "pinned_64_case_holdout_only"
+    assert observation["diagnostic_retention_reference_met"] is True
+    assert observation["generic_automatic_policy_thresholds_met"] is True
+    assert observation["statistical_confidence_bound"] is False
+    assert observation["general_intelligence_retention_claimed"] is False
+    assert observation["intelligence_certified"] is False
+    assert (
+        report["holistic_whole_response_judgment"][
+            "required_for_any_intelligence_conclusion"
+        ]
+        is True
+    )
+    assert (
+        report["holistic_whole_response_judgment"][
+            "automatic_accept_reject_decision_recorded"
+        ]
+        is False
+    )
+    assert "intelligence_retention_claim" not in report
+
+
+def test_numeric_goal_miss_still_publishes_authenticated_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+        passing_outputs=True,
+        failing_candidate_outputs=True,
+    )
+    capture_directory = fixture["output_directory"]
+    packet = json.loads(
+        (capture_directory / evaluator.MANUAL_PACKET_FILENAME).read_text()
+    )
+    dimensions = (
+        "correctness",
+        "coherence",
+        "instruction_following",
+        "capability_retention",
+    )
+    ratings = bind_parent_relative_manual_ratings(
+        packet,
+        [
+            {
+                "case_id": row["case_id"],
+                "parent": {dimension: 4 for dimension in dimensions},
+                "candidate": {dimension: 2 for dimension in dimensions},
+                "reason": "The child response is materially impaired on every dimension.",
+            }
+            for row in packet["cases"]
+        ],
+        reviewer_id="manual-reviewer",
+    )
+    ratings_path = tmp_path / "manual-ratings-low-diagnostics.json"
+    _write_json(ratings_path, ratings)
+    automatic_path = capture_directory / evaluator.AUTOMATIC_REPORT_FILENAME
+    report = evaluator.finalize_standalone_intelligence(
+        evaluator.FinalizeConfig(
+            capture_directory=capture_directory,
+            expected_capture_report_file_sha256=_file_sha(automatic_path),
+            expected_capture_report_sha256=fixture["report"]["capture_report_sha256"],
+            parent_envelope=fixture["parent_path"],
+            expected_parent_envelope_file_sha256=fixture["parent_file_sha"],
+            manual_ratings=ratings_path,
+            expected_manual_ratings_file_sha256=_file_sha(ratings_path),
+            output_directory=capture_directory,
+            expected_semantic_postfold_receipt_sha256=fixture["semantic_receipt_sha"],
+            expected_candidate_artifact_sha256=fixture["metadata"]["artifact_sha256"],
+        )
+    )
+    diagnostics = report["behavioral_retention_diagnostics"]
+    assert report["status"] == "manual_intelligence_review_complete"
+    assert report["publication_status"] == "authenticated_diagnostics_published"
+    assert report["manual_intelligence_review_complete"] is True
+    assert report["automatic_accept_reject_decision"] is None
+    assert "promoted" not in report
+    assert diagnostics["observed_pinned_suite_behavioral_retention_floor"] == 0.0
+    assert diagnostics["diagnostic_retention_reference_met"] is False
+    assert diagnostics["parent_relative_diagnostic_reference_met"] is False
+    assert diagnostics["generic_automatic_policy_thresholds_met"] is False
+    assert diagnostics["publication_blocked_by_metrics"] is False
+    assert len(diagnostics["severe_regression_flags"]) == 256
+    assert (capture_directory / evaluator.FINAL_REPORT_FILENAME).is_file()

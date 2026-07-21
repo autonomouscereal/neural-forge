@@ -92,6 +92,82 @@ class _Evidence:
         self.source_inventory = source_inventory
         self.query_groups = ((0, 1), (2, 3))
         self.query_group_weights = ((0.5, 0.5), (0.5, 0.5))
+        self.key_value_groups = ((0, 1),)
+        self.key_value_group_weights = ((0.5, 0.5),)
+        batch, _source_heads, query_length, key_length = map(
+            int,
+            transport.probabilities.shape,
+        )
+        self.folded_parent_query_pre_rope = (
+            torch.arange(batch * 2 * query_length * 2, dtype=torch.float64)
+            .reshape(batch, 2, query_length, 2)
+            .add(1.0)
+            .mul(0.01)
+        )
+        self.folded_parent_key_pre_rope = (
+            torch.arange(batch * key_length * 2, dtype=torch.float64)
+            .reshape(batch, 1, key_length, 2)
+            .add(1.0)
+            .mul(0.015)
+        )
+        activation_prior_body = {
+            "schema": "test-parent-pre-rope-activation-prior-v1",
+            "query_prior_sha256": adapter._tensor_sha256(
+                self.folded_parent_query_pre_rope
+            ),
+            "key_prior_sha256": adapter._tensor_sha256(self.folded_parent_key_pre_rope),
+            "parent_activation_evidence_only": True,
+        }
+        self.parent_pre_rope_prior_receipt = {
+            **activation_prior_body,
+            "prior_sha256": canonical_sha256(activation_prior_body),
+        }
+        self.parent_query_weight_prior = torch.eye(4, dtype=torch.float64)
+        self.parent_key_weight_prior = torch.eye(4, dtype=torch.float64)[:2]
+        self.parent_value_weight_prior = torch.tensor(
+            [[0.5, -0.25, 0.75, 0.125], [-0.5, 0.25, 0.125, 0.75]],
+            dtype=torch.float64,
+        )
+        self.parent_output_weight_prior = torch.eye(4, dtype=torch.float64)
+        self.parent_query_norm_weight = torch.tensor(
+            [1.25, 0.75],
+            dtype=torch.float64,
+        )
+        self.parent_key_norm_weight = torch.tensor(
+            [0.875, 1.375],
+            dtype=torch.float64,
+        )
+        prior_body = {
+            "schema": "test-parent-qkvo-weight-prior-v1",
+            "source_inventory_sha256": source_inventory.inventory_sha256,
+            "query_groups": [list(value) for value in self.query_groups],
+            "query_group_weights": [list(value) for value in self.query_group_weights],
+            "key_value_groups": [list(value) for value in self.key_value_groups],
+            "key_value_group_weights": [
+                list(value) for value in self.key_value_group_weights
+            ],
+            "query_prior_sha256": adapter._tensor_sha256(
+                self.parent_query_weight_prior
+            ),
+            "key_prior_sha256": adapter._tensor_sha256(self.parent_key_weight_prior),
+            "value_prior_sha256": adapter._tensor_sha256(
+                self.parent_value_weight_prior
+            ),
+            "output_prior_sha256": adapter._tensor_sha256(
+                self.parent_output_weight_prior
+            ),
+            "query_norm_weight_sha256": adapter._tensor_sha256(
+                self.parent_query_norm_weight
+            ),
+            "key_norm_weight_sha256": adapter._tensor_sha256(
+                self.parent_key_norm_weight
+            ),
+            "direct_parent_weights_used": True,
+        }
+        self.parent_weight_prior_receipt = {
+            **prior_body,
+            "prior_sha256": canonical_sha256(prior_body),
+        }
         self.compiler_lineage_sha256 = "9" * 64
         capability_sha = canonical_sha256(
             {"batch": batch_index, "layer": 0, "kind": "capability"}
@@ -294,7 +370,7 @@ def _install_fake_noop_qk_compiler(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_closed_form_four_way_gate_installs_only_after_frozen_validation(
+def test_closed_form_fit_corrections_publish_with_heldout_metrics_diagnostic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = _Model()
@@ -311,34 +387,58 @@ def test_closed_form_four_way_gate_installs_only_after_frozen_validation(
     )
 
     assert receipt["schema"] == "neural-forge-lfm2-semantic-attention-installation-v1"
-    assert receipt["changed_state_keys"] == ["model.layers.0.self_attn.q_proj.weight"]
+    assert receipt["changed_state_keys"] == [
+        "model.layers.0.self_attn.out_proj.weight",
+        "model.layers.0.self_attn.q_proj.weight",
+    ]
     assert not torch.equal(model.model.layers[0].self_attn.q_proj.weight, before)
     report = receipt["analytic_refold"]
     assert report["candidate_frozen_before_validation"] is True
     assert report["validation_triggered_refit"] is False
     assert report["numeric_parent_child_weight_match_objective"] is False
-    assert report["analytically_refit_projection_roles"] == ["q_proj"]
+    assert report["analytically_refit_projection_roles"] == [
+        "q_proj",
+        "out_proj",
+    ]
     assert report["fixed_inherited_projection_roles"] == [
         "k_proj",
         "v_proj",
-        "out_proj",
     ]
     assert report["fresh_query_refit_performed"] is True
     assert report["fresh_key_refit_performed"] is False
     assert report["fresh_four_matrix_qkvo_refit_claimed"] is False
-    assert report["fresh_output_writer_refit_performed"] is False
-    assert report["output_writer"]["accepted"] is False
-    assert report["output_writer"]["rejection_partition"] in {
-        "fit",
-        "fit_check",
-        "selection",
-        "validation",
-    }
-    assert report["inserted_target_query_rows_parent_exact"] is False
+    assert report["fresh_output_writer_refit_performed"] is True
+    assert report["output_writer"]["accepted"] is True
+    assert report["output_writer"]["rejection_partition"] is None
+    assert report["output_writer"]["heldout_metrics_are_diagnostic_only"] is True
+    assert report["numeric_metric_used_for_publication_or_rollback"] is False
+    assert report["all_semantically_exact_endpoint_rows_used_for_attention_fit"] is True
+    assert report["terminal_endpoint_only_supervision"] is False
+    attention = model.model.layers[0].self_attn
+    assert report["frozen_attention_six_tensor_bundle_sha256"] == canonical_sha256(
+        {
+            "q_proj.weight": adapter._tensor_sha256(attention.q_proj.weight),
+            "k_proj.weight": adapter._tensor_sha256(attention.k_proj.weight),
+            "v_proj.weight": adapter._tensor_sha256(attention.v_proj.weight),
+            "out_proj.weight": adapter._tensor_sha256(attention.out_proj.weight),
+            "q_layernorm.weight": adapter._tensor_sha256(attention.q_layernorm.weight),
+            "k_layernorm.weight": adapter._tensor_sha256(attention.k_layernorm.weight),
+        }
+    )
+    assert (
+        report[
+            "analytic_fp64_target_construction_distinct_from_bfloat16_runtime_replay"
+        ]
+        is True
+    )
+    assert report["runtime_replay_numeric_contract"] == (
+        "bfloat16-linears-fp32-qk-softmax-bfloat16-probability-context"
+    )
+    assert report["cross_head_dimension_bridge_deferred"] is True
     assert report["refold_operation_audit"]["model_forward_calls"] == 0
 
 
-def test_validation_regression_prevents_any_parameter_mutation(
+def test_validation_regression_is_diagnostic_and_cannot_rollback_fit_fold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = _Model()
@@ -348,21 +448,23 @@ def test_validation_regression_prevents_any_parameter_mutation(
         name: value.detach().clone() for name, value in model.state_dict().items()
     }
 
-    with pytest.raises(
-        adapter.Lfm2SemanticAttentionRefoldError,
-        match="failed VALIDATION",
-    ):
-        adapter.compile_install_lfm2_semantic_attention_postfold(
-            target_model=model,
-            layer_index=0,
-            evidence=evidence,
-            cache_key="2" * 64,
-            bridge_artifact_sha256="3" * 64,
-        )
-
-    assert all(
-        torch.equal(value, before[name]) for name, value in model.state_dict().items()
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
     )
+
+    assert receipt["installed"] is True
+    assert not torch.equal(
+        model.model.layers[0].self_attn.q_proj.weight,
+        before["model.layers.0.self_attn.q_proj.weight"],
+    )
+    report = receipt["analytic_refold"]
+    assert report["validation_nonregression_diagnostic"] is False
+    assert report["heldout_metrics_are_diagnostic_only"] is True
+    assert report["numeric_metric_used_for_publication_or_rollback"] is False
 
 
 def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
@@ -427,7 +529,7 @@ def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
     assert report["complete_qkvo_bundle_installed_transactionally"] is True
 
 
-def test_accepted_joint_vo_is_installed_in_the_same_qkvo_transaction(
+def test_joint_vo_publication_is_rejected_before_any_parameter_transaction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = _Model()
@@ -467,31 +569,23 @@ def test_accepted_joint_vo_is_installed_in_the_same_qkvo_transaction(
         "_select_and_validate_vo_candidate",
         accept_joint_competition,
     )
-    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
-        target_model=model,
-        layer_index=0,
-        evidence=evidence,
-        cache_key="2" * 64,
-        bridge_artifact_sha256="3" * 64,
-    )
+    with pytest.raises(
+        adapter.Lfm2SemanticAttentionRefoldError,
+        match="joint low-rank V/O",
+    ):
+        adapter.compile_install_lfm2_semantic_attention_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            cache_key="2" * 64,
+            bridge_artifact_sha256="3" * 64,
+        )
 
-    assert not torch.equal(model.model.layers[0].self_attn.v_proj.weight, before_value)
-    assert not torch.equal(
-        model.model.layers[0].self_attn.out_proj.weight, before_output
-    )
-    assert "model.layers.0.self_attn.v_proj.weight" in receipt["changed_state_keys"]
-    assert "model.layers.0.self_attn.out_proj.weight" in receipt["changed_state_keys"]
-    report = receipt["analytic_refold"]
-    assert report["joint_value_output_candidate_published"] is True
-    assert report["fresh_joint_value_output_refit_performed"] is True
-    assert report["fresh_value_refit_performed"] is True
-    assert report["fresh_output_writer_refit_performed"] is False
-    assert report["fresh_output_projection_refit_performed"] is True
-    assert report["fresh_four_matrix_qkvo_refit_claimed"] is False
-    assert report["fixed_inherited_projection_roles"] == ["k_proj"]
+    assert torch.equal(model.model.layers[0].self_attn.v_proj.weight, before_value)
+    assert torch.equal(model.model.layers[0].self_attn.out_proj.weight, before_output)
 
 
-def test_qk_seed_fallback_can_publish_a_joint_v_o_improvement(
+def test_qk_seed_fallback_still_cannot_publish_joint_v_o_factorization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = _Model()
@@ -535,38 +629,22 @@ def test_qk_seed_fallback_can_publish_a_joint_v_o_improvement(
         "_select_and_validate_vo_candidate",
         accept_joint_competition,
     )
-    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
-        target_model=model,
-        layer_index=0,
-        evidence=evidence,
-        cache_key="2" * 64,
-        bridge_artifact_sha256="3" * 64,
-    )
+    with pytest.raises(
+        adapter.Lfm2SemanticAttentionRefoldError,
+        match="joint low-rank V/O",
+    ):
+        adapter.compile_install_lfm2_semantic_attention_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            cache_key="2" * 64,
+            bridge_artifact_sha256="3" * 64,
+        )
 
     assert reached_competition is True
-    assert receipt["changed_state_keys"] == [
-        "model.layers.0.self_attn.out_proj.weight",
-        "model.layers.0.self_attn.v_proj.weight",
-    ]
     assert all(
-        torch.equal(value, before[name])
-        for name, value in model.state_dict().items()
-        if name
-        not in {
-            "model.layers.0.self_attn.v_proj.weight",
-            "model.layers.0.self_attn.out_proj.weight",
-        }
+        torch.equal(value, before[name]) for name, value in model.state_dict().items()
     )
-    report = receipt["analytic_refold"]
-    assert report["qk_compiler_accepted"] is False
-    assert report["qk_compiler_changed"] is False
-    assert report["authenticated_qk_seed_fallback_entered_vo_competition"] is True
-    assert report["joint_value_output_candidate_published"] is True
-    assert report["analytically_refit_projection_roles"] == ["v_proj", "out_proj"]
-    assert report["fixed_inherited_projection_roles"] == [
-        "q_proj",
-        "k_proj",
-    ]
 
 
 def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
@@ -652,7 +730,9 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     )
 
     assert reached_competition is True
-    assert receipt["status"] == "heldout-selected-incumbent-noop"
+    assert receipt["status"] == (
+        "deterministic-fit-correction-rounded-to-incumbent-noop"
+    )
     assert receipt["installed"] is False
     assert receipt["install_count"] == 0
     assert receipt["changed_state_keys"] == []
@@ -666,10 +746,11 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     assert receipt["parameter_storage_preserved"] is True
     assert receipt["gradient_state_preserved"] is True
     assert receipt["exact_noop_state_proven"] is True
-    assert receipt["incumbent_selected_by_heldout_gates"] is True
-    assert receipt["fit_check_nonregression_passed"] is True
-    assert receipt["selection_nonregression_passed"] is True
-    assert receipt["validation_nonregression_passed"] is True
+    assert receipt["incumbent_selected_by_heldout_gates"] is False
+    assert receipt["fit_check_nonregression_passed"] is None
+    assert receipt["selection_nonregression_passed"] is None
+    assert receipt["validation_nonregression_passed"] is None
+    assert receipt["numeric_metric_used_for_publication_or_rollback"] is False
     report = receipt["analytic_refold"]
     assert "complete_attention_cold_start" not in report
     assert report["analytically_refit_projection_roles"] == []
@@ -809,8 +890,12 @@ def test_exact_zero_qk_is_evidence_planted_and_cannot_publish_as_a_noop(
     assert receipt["parameter_storage_preserved"] is True
     assert receipt["gradient_state_preserved"] is True
     assert receipt["changed_state_keys"] == [
+        "model.layers.0.self_attn.k_layernorm.weight",
         "model.layers.0.self_attn.k_proj.weight",
+        "model.layers.0.self_attn.out_proj.weight",
+        "model.layers.0.self_attn.q_layernorm.weight",
         "model.layers.0.self_attn.q_proj.weight",
+        "model.layers.0.self_attn.v_proj.weight",
     ]
     cold = receipt["analytic_refold"]["qk_cold_start"]
     assert cold["original_query_exact_zero"] is True
@@ -860,11 +945,25 @@ def test_all_zero_bfloat16_qkvo_is_compulsorily_planted_with_full_axis_coverage(
 
     assert receipt["installed"] is True
     assert receipt["changed_state_keys"] == [
+        "model.layers.0.self_attn.k_layernorm.weight",
         "model.layers.0.self_attn.k_proj.weight",
         "model.layers.0.self_attn.out_proj.weight",
+        "model.layers.0.self_attn.q_layernorm.weight",
         "model.layers.0.self_attn.q_proj.weight",
         "model.layers.0.self_attn.v_proj.weight",
     ]
+    torch.testing.assert_close(
+        attention.q_layernorm.weight,
+        evidence[0].parent_query_norm_weight.to(torch.bfloat16),
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        attention.k_layernorm.weight,
+        evidence[0].parent_key_norm_weight.to(torch.bfloat16),
+        rtol=0,
+        atol=0,
+    )
     assert sum(parameter.numel() for parameter in model.parameters()) == parameter_count
     assert tuple(id(parameter) for parameter in model.parameters()) == identities
     assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
@@ -1025,10 +1124,10 @@ def test_joint_only_cold_start_does_not_claim_a_rejected_output_writer(
     assert report["output_writer"]["accepted"] is False
     assert report["fresh_output_writer_refit_performed"] is False
     assert report["fresh_output_projection_refit_performed"] is True
-    assert report["joint_value_output_candidate_published"] is True
-    assert report["joint_value_output_component_contributed"] is True
+    assert report["joint_value_output_candidate_published"] is False
+    assert report["joint_value_output_component_contributed"] is False
     assert report["output_writer_source"] == (
-        "fit_only_joint_residual_composite_low_rank_factorization"
+        "authenticated_parent_derived_output_prior"
     )
 
 
@@ -1125,54 +1224,32 @@ def test_single_zero_attention_role_is_planted_without_blank_noop(
     assert cold["all_qkvo_roles_finite_and_structurally_covered"] is True
     assert int(torch.count_nonzero(getattr(attention, blank_role).weight).item()) > 0
     preserved_roles = (
-        {"q_proj", "k_proj", "v_proj", "out_proj"}.difference({blank_role})
-        if blank_role in {"q_proj", "k_proj"}
-        else {"q_proj", "k_proj"}
+        {"q_proj", "k_proj"} if blank_role in {"v_proj", "out_proj"} else set()
     )
     for role in preserved_roles:
         assert torch.equal(getattr(attention, role).weight, before[role])
 
 
-def test_unidentifiable_zero_value_role_fails_before_any_mutation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_zero_value_role_is_identifiable_from_the_direct_parent_prior() -> None:
     model = _Model()
     attention = model.model.layers[0].self_attn
     with torch.no_grad():
         attention.v_proj.weight.zero_()
     evidence = _evidence(model)
-    before = {
-        name: value.detach().clone() for name, value in model.state_dict().items()
-    }
-
-    def reject_joint(
-        _fit_cases: object,
-        incumbent_value_weight: torch.Tensor,
-        incumbent_output_weight: torch.Tensor,
-        **_kwargs: object,
-    ) -> SimpleNamespace:
-        return SimpleNamespace(
-            value_weight=incumbent_value_weight.detach().cpu().clone(),
-            output_weight=incumbent_output_weight.detach().cpu().clone(),
-            changed=False,
-        )
-
-    monkeypatch.setattr(adapter, "_compile_joint_vo", reject_joint)
-    with pytest.raises(
-        adapter.Lfm2SemanticAttentionRefoldError,
-        match="v_proj.weight has uncovered axes and no identifiable FIT linear system",
-    ):
-        adapter.compile_install_lfm2_semantic_attention_postfold(
-            target_model=model,
-            layer_index=0,
-            evidence=evidence,
-            cache_key="2" * 64,
-            bridge_artifact_sha256="3" * 64,
-        )
-
-    assert all(
-        torch.equal(value, before[name]) for name, value in model.state_dict().items()
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
     )
+
+    assert receipt["installed"] is True
+    assert int(torch.count_nonzero(attention.v_proj.weight).item()) > 0
+    cold = receipt["analytic_refold"]["complete_attention_cold_start"]
+    assert cold["exact_zero_roles_at_entry"] == ["v_proj.weight"]
+    assert cold["qk_cold_start"]["plant"]["query_ridge"] is None
+    assert cold["qk_cold_start"]["plant"]["key_ridge"] is None
 
 
 def test_fit_ridge_axis_completion_uses_real_coefficients_and_covers_every_axis() -> (
@@ -1214,6 +1291,260 @@ def test_fit_ridge_axis_completion_uses_real_coefficients_and_covers_every_axis(
         rtol=0,
         atol=0,
     )
+
+
+def test_parent_activation_priors_cover_all_endpoints_in_native_rope_basis() -> None:
+    model = _Model()
+    item = _evidence(model)[0]
+    source = adapter._normalized_case_source(
+        item,
+        layer_index=0,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+    case = adapter._case_from_source(
+        source,
+        layer_index=0,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+        trajectory_row_weight_scale=1.0,
+    )
+    seed = adapter._seed(
+        model,
+        layer_index=0,
+        source_inventory=item.source_inventory,
+        source_artifact_sha256="4" * 64,
+    )
+    prior_seed = adapter._copy_seed(
+        seed,
+        query_weight=case.parent_query_weight_prior.to(torch.bfloat16),
+        key_weight=case.parent_key_weight_prior.to(torch.bfloat16),
+        value_weight=case.parent_value_weight_prior.to(torch.bfloat16),
+        output_weight=case.parent_output_weight_prior.to(torch.bfloat16),
+        query_norm_weight=case.parent_query_norm_weight.to(torch.bfloat16),
+        key_norm_weight=case.parent_key_norm_weight.to(torch.bfloat16),
+    )
+
+    gauge, gauge_receipt = adapter._fit_pre_rope_dense_gauge(prior_seed, (case,))
+    query_runtime, key_runtime, route_receipt = adapter._cold_route_runtime_targets(
+        case,
+        prior_seed,
+        pre_rope_gauge=gauge,
+    )
+    query_raw = adapter._cold_projection_preimage(
+        query_runtime,
+        torch.zeros_like(query_runtime),
+        norm_weight=prior_seed.query_norm_weight,
+        norm_epsilon=prior_seed.norm_epsilon,
+        cosine=case.query_rope_cos,
+        sine=case.query_rope_sin,
+        role="query-production-contract",
+    )
+    replay_normalized = query_raw * torch.rsqrt(
+        query_raw.square().mean(dim=-1, keepdim=True) + prior_seed.norm_epsilon
+    )
+    replay_runtime = adapter._rope_forward_rows(
+        replay_normalized
+        * prior_seed.query_norm_weight.to(torch.float64).reshape(1, 1, 1, -1),
+        case.query_rope_cos.to(torch.float64).unsqueeze(1),
+        case.query_rope_sin.to(torch.float64).unsqueeze(1),
+    )
+
+    assert torch.equal(gauge, torch.eye(prior_seed.head_dim, dtype=torch.float64))
+    assert gauge_receipt["arbitrary_dense_householder_used"] is False
+    assert route_receipt["arbitrary_dense_pre_rope_gauge_used"] is False
+    assert route_receipt["folded_parent_query_activation_prior_consumed"] is True
+    assert route_receipt["folded_parent_key_value_activation_prior_consumed"] is True
+    assert route_receipt["causal_logit_residual_applied_after_activation_prior"] is True
+    assert route_receipt["query_length"] == int(
+        case.target_probability_barycenter.shape[2]
+    )
+    assert route_receipt["query_length"] > 1
+    assert route_receipt["explicit_causal_mask_consumed"] is True
+    assert route_receipt["silent_logit_clipping_used"] is False
+    assert query_runtime.shape[2] == route_receipt["query_length"]
+    assert key_runtime.shape[1] == prior_seed.key_value_heads
+    torch.testing.assert_close(replay_runtime, query_runtime, rtol=1e-12, atol=1e-12)
+    assert not torch.allclose(
+        query_raw,
+        torch.full_like(query_raw, 2.0**-0.5),
+        rtol=0,
+        atol=1e-12,
+    )
+
+
+def _obsolete_real_shaped_parent_bound_relative_rope_fixture() -> None:
+    head_dim = 64
+    query_heads = 8
+    key_value_heads = 2
+    queries_per_key_value = query_heads // key_value_heads
+    key_length = 9
+    generator = torch.Generator().manual_seed(101)
+    frequencies = torch.linspace(0.01, 0.25, head_dim // 2, dtype=torch.float64)
+    positions = torch.arange(key_length, dtype=torch.float64).reshape(-1, 1)
+    angles = positions * frequencies.reshape(1, -1)
+    key_cos = torch.cat((torch.cos(angles), torch.cos(angles)), dim=-1)
+    key_sin = torch.cat((torch.sin(angles), torch.sin(angles)), dim=-1)
+    query_cos = key_cos[-1:].reshape(1, 1, head_dim).to(torch.bfloat16)
+    query_sin = key_sin[-1:].reshape(1, 1, head_dim).to(torch.bfloat16)
+    key_cos = key_cos.reshape(1, key_length, head_dim).to(torch.bfloat16)
+    key_sin = key_sin.reshape(1, key_length, head_dim).to(torch.bfloat16)
+    head = torch.arange(1, query_heads + 1, dtype=torch.float64).reshape(1, -1, 1, 1)
+    token = torch.arange(1, key_length + 1, dtype=torch.float64).reshape(1, 1, 1, -1)
+    logits = 0.04 * torch.sin(head * token)
+    probabilities = torch.softmax(logits, dim=-1)
+    case = SimpleNamespace(
+        evidence_sha256="a" * 64,
+        target_probability_barycenter=probabilities,
+        target_causal_mask=torch.ones_like(probabilities, dtype=torch.bool),
+        query_rope_cos=query_cos,
+        query_rope_sin=query_sin,
+        key_rope_cos=key_cos,
+        key_rope_sin=key_sin,
+        folded_parent_query_pre_rope=torch.randn(
+            1,
+            query_heads,
+            1,
+            head_dim,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        folded_parent_key_pre_rope=torch.randn(
+            1,
+            query_heads,
+            key_length,
+            head_dim,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+    )
+    seed = SimpleNamespace(
+        head_dim=head_dim,
+        query_heads=query_heads,
+        key_value_heads=key_value_heads,
+        queries_per_key_value=queries_per_key_value,
+        query_norm_weight=torch.ones(head_dim, dtype=torch.bfloat16),
+        key_norm_weight=torch.ones(head_dim, dtype=torch.bfloat16),
+    )
+
+    gauge, gauge_receipt = adapter._fit_pre_rope_dense_gauge(seed, (case,))
+    query_runtime, key_runtime, route_receipt = adapter._cold_route_runtime_targets(
+        case,
+        seed,
+        pre_rope_gauge=gauge,
+    )
+    query_raw = adapter._cold_projection_preimage(
+        query_runtime,
+        torch.zeros_like(query_runtime),
+        norm_weight=torch.ones(head_dim, dtype=torch.bfloat16),
+        norm_epsilon=1e-5,
+        cosine=query_cos,
+        sine=query_sin,
+        role="query",
+    )
+    key_raw = adapter._cold_projection_preimage(
+        key_runtime,
+        torch.zeros_like(key_runtime),
+        norm_weight=torch.ones(head_dim, dtype=torch.bfloat16),
+        norm_epsilon=1e-5,
+        cosine=key_cos,
+        sine=key_sin,
+        role="key",
+    )
+    query_fit_input = torch.randn(
+        1,
+        512,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    key_fit_input = torch.randn(
+        key_length,
+        512,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    query_weight, _query_ridge = adapter._cold_ridge_projection(
+        query_fit_input,
+        query_raw.permute(0, 2, 1, 3).reshape(1, -1),
+        torch.ones(1, dtype=torch.float64),
+        role="q_proj.weight-real-shaped-parent-bound",
+    )
+    key_weight, _key_ridge = adapter._cold_ridge_projection(
+        key_fit_input,
+        key_raw.permute(0, 2, 1, 3).reshape(key_length, -1),
+        torch.ones(key_length, dtype=torch.float64),
+        role="k_proj.weight-real-shaped-parent-bound",
+    )
+    query_coverage = adapter._dense_axis_coverage(
+        query_weight,
+        role="q_proj.weight",
+    )
+    key_coverage = adapter._dense_axis_coverage(
+        key_weight,
+        role="k_proj.weight",
+    )
+
+    assert gauge_receipt["gauge_all_coefficients_nonzero"] is True
+    assert gauge_receipt["parent_query_prior_rows_used_for_selection"] > 0
+    assert route_receipt["parent_query_prior_used"] is True
+    assert route_receipt["parent_key_prior_used"] is True
+    assert route_receipt["relative_rope_key_residual_solve"] is True
+    assert route_receipt["parent_prior_nullspace_vectors"] > 0
+    assert route_receipt["clipped_key_route_vectors"] == 0
+    assert route_receipt["maximum_score_constraint_absolute_error"] < 1e-10
+    assert route_receipt["maximum_target_probability_absolute_error"] < 1e-10
+    assert bool(query_raw.ne(0.0).any(dim=(0, 2)).all().item())
+    assert bool(key_raw.ne(0.0).any(dim=(0, 2)).all().item())
+    assert query_weight.shape == (512, 512)
+    assert key_weight.shape == (128, 512)
+    assert query_coverage["structurally_nonzero"] is True
+    assert key_coverage["structurally_nonzero"] is True
+
+
+def test_real_shaped_rank_deficient_fit_uses_exact_nullspace_for_input_axes() -> None:
+    generator = torch.Generator().manual_seed(131)
+    hidden = 512
+    output = 512
+    rows = 12
+    inputs = torch.randn(rows, hidden, generator=generator, dtype=torch.float64)
+    inputs[:, -64:].zero_()
+    targets = torch.randn(rows, output, generator=generator, dtype=torch.float64)
+    weights = torch.ones(rows, dtype=torch.float64)
+    incumbent, _receipt = adapter._cold_ridge_projection(
+        inputs,
+        targets,
+        weights,
+        role="q_proj.weight-rank-deficient-fixture",
+        normalize_element_rms=False,
+    )
+    assert bool(incumbent[:, -64:].eq(0.0).all().item())
+
+    repaired, report = adapter._repair_dense_axis_coverage(
+        incumbent,
+        role="q_proj.weight",
+        fit_inputs=inputs,
+        fit_targets=targets,
+        fit_sqrt_weights=weights,
+    )
+
+    nullspace = report["fit_nullspace_completion"]
+    assert report["coverage_before"]["all_input_structural_units_covered"] is False
+    assert (
+        report["coverage_after_fit_ridge"]["all_input_structural_units_covered"]
+        is False
+    )
+    assert report["coverage_after"]["structurally_nonzero"] is True
+    assert nullspace is not None
+    assert nullspace["design_width"] == hidden
+    assert nullspace["numerical_rank"] <= rows
+    assert nullspace["nullity"] >= hidden - rows
+    assert nullspace["missing_input_axis_count"] == 64
+    assert nullspace["completion_lies_in_numerical_fit_design_nullspace"] is True
+    assert (
+        nullspace["fp64_weighted_fit_prediction_maximum_absolute_change"]
+        <= nullspace["fp64_nullspace_tolerance"]
+    )
+    assert bool(repaired[:, -64:].ne(0.0).all().item())
 
 
 def test_multi_projection_transaction_matches_wrapper_changed_key_order() -> None:
@@ -1545,6 +1876,101 @@ def test_seed_endpoint_equivalence_requires_exact_same_device_replay() -> None:
     assert accepted_body.pop("equivalence_sha256") == canonical_sha256(accepted_body)
 
 
+def test_joint_vo_prediction_matches_live_lfm2_bfloat16_macrocell() -> None:
+    transformers = pytest.importorskip("transformers")
+    import neural_forge.hf_lfm2_cpcf_macrocell_replay as macrocell_replay
+
+    config = transformers.Lfm2Config(
+        vocab_size=37,
+        hidden_size=8,
+        intermediate_size=13,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=4,
+        layer_types=["full_attention"],
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=False,
+    )
+    config._attn_implementation = "eager"
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(20260723)
+        model = transformers.Lfm2ForCausalLM(config)
+    model.to(dtype=torch.bfloat16)
+    model.eval()
+    layer = model.model.layers[0]
+    with torch.no_grad():
+        residual = model.model.embed_tokens(
+            torch.tensor(((1, 2, 3, 4, 5),), dtype=torch.long)
+        ).detach()
+        positions = torch.arange(5, dtype=torch.long).unsqueeze(0)
+        cosine, sine = model.model.rotary_emb(residual, position_ids=positions)
+    future = torch.triu(torch.ones(5, 5, dtype=torch.bool), diagonal=1)
+    additive_mask = torch.zeros(
+        (1, 1, 5, 5),
+        dtype=torch.bfloat16,
+    ).masked_fill(future, torch.finfo(torch.bfloat16).min)
+    live = macrocell_replay.replay_lfm2_cpcf_macrocell(
+        layer,
+        residual,
+        position_embeddings=(cosine, sine),
+        additive_causal_mask=additive_mask,
+    )
+    live_output, details, _topology = macrocell_replay._attention_replay(
+        layer,
+        live.operator_input,
+        position_embeddings=(cosine, sine),
+        additive_causal_mask=additive_mask,
+    )
+    assert torch.equal(live_output, live.operator_delta)
+
+    probabilities = details["probabilities"]
+    key_inputs = live.operator_input
+    head_features = (
+        torch.einsum(
+            "bhqk,bkf->bqhf",
+            probabilities.to(torch.float64),
+            key_inputs.to(torch.float64),
+        )
+        .detach()
+        .contiguous()
+    )
+    case = adapter._JointVoCase(
+        head_features=head_features,
+        probabilities=probabilities.detach().to(torch.float64),
+        key_value_inputs=key_inputs.detach(),
+        endpoint_target=live.operator_delta.detach().to(torch.float64),
+        row_weights=torch.ones((1, 5), dtype=torch.float64),
+        trajectory_sha256=canonical_sha256({"joint-vo": "live-macrocell"}),
+        seed_replay_equivalence=adapter._bfloat16_endpoint_equivalence(
+            live.operator_delta,
+            live.operator_delta,
+        ),
+    )
+    attention = layer.self_attn
+    predicted = adapter._joint_vo_prediction(
+        case,
+        attention.v_proj.weight,
+        attention.out_proj.weight,
+        head_dim=4,
+    )
+    assert predicted.dtype == torch.bfloat16
+    assert torch.equal(predicted, live.operator_delta)
+
+    seed = SimpleNamespace(
+        value_weight=attention.v_proj.weight.detach().clone(),
+        key_value_heads=1,
+        head_dim=4,
+        queries_per_key_value=2,
+        query_heads=2,
+    )
+    writer_case = adapter._writer_cases_from_joint((case,), seed)[0]
+    assert torch.equal(
+        writer_case.context.to(torch.bfloat16),
+        live.operator_output_input,
+    )
+
+
 def test_joint_vo_dual_fold_recovers_a_missing_value_subspace() -> None:
     generator = torch.Generator().manual_seed(29)
     features = torch.randint(
@@ -1591,6 +2017,11 @@ def test_joint_vo_dual_fold_recovers_a_missing_value_subspace() -> None:
     assert report["giant_primal_system_inverted"] is False
     assert report["dual_dimension"] == 24
     assert report["primal_feature_dimension"] == 8
+    assert report["diagnostic_only"] is True
+    assert report["publication_allowed"] is False
+    assert report["publication_lane"] == "fixed_v_prior_preserving_output_writer"
+    assert report["factorized_candidate_published_in_proposal"] is False
+    assert report["numeric_metric_used_for_publication"] is False
     factor = report["factorization_receipts"][0]
     assert factor["exact_topology_rank"] == 2
     assert "rank_truncation_performed" in factor
@@ -1725,7 +2156,7 @@ def test_output_writer_closed_form_fit_passes_all_frozen_heldout_gates() -> None
     assert gate_body.pop("gate_sha256") == canonical_sha256(gate_body)
 
 
-def test_output_writer_heldout_regression_explicitly_rejects_candidate() -> None:
+def test_output_writer_heldout_regression_is_diagnostic_only() -> None:
     incumbent = torch.zeros(4, 4, dtype=torch.bfloat16)
     target = torch.eye(4, dtype=torch.float64)
     fit = _writer_case(torch.eye(4, dtype=torch.float64), target, label="fit")
@@ -1747,11 +2178,14 @@ def test_output_writer_heldout_regression_explicitly_rejects_candidate() -> None
     )
 
     assert proposal.changed is True
-    assert gate["accepted"] is False
-    assert gate["rejection_partition"] == "fit_check"
-    assert gate["selection"] is None
-    assert gate["validation"] is None
-    assert torch.equal(published, incumbent)
+    assert gate["accepted"] is True
+    assert gate["rejection_partition"] is None
+    assert gate["fit_check"]["nonregressing"] is False
+    assert gate["fit_check"]["diagnostic_only"] is True
+    assert gate["selection"] is not None
+    assert gate["validation"] is not None
+    assert gate["numeric_metric_used_for_publication"] is False
+    assert torch.equal(published, proposal.output_weight)
 
 
 def test_execution_policy_excludes_visible_devices_without_native_bfloat16(
