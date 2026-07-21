@@ -208,12 +208,24 @@ def _validate_complete_manifest(
         "attention_complete_kv_history": True,
         "short_conv_exact_fir_state_and_response": True,
         "final_normalization_boundary": True,
-        "decode_trace_mode": CACHED_VERIFIED_TRACE_MODE,
     }
     if any(capture.get(name) != value for name, value in required.items()):
         raise Lfm2CompleteCausalEvidenceRecacheError(
             "Completed cache does not authenticate the full causal-circuit "
             "evidence contract."
+        )
+    # Older cached-verified manifests encode the default mode through these
+    # execution booleans and omit the redundant decode_trace_mode spelling.
+    # Full-prefix mode always writes its explicit non-default mode.
+    if (
+        capture.get("decode_trace_mode", CACHED_VERIFIED_TRACE_MODE)
+        != CACHED_VERIFIED_TRACE_MODE
+        or capture.get("cached_prefill_use_cache") is not True
+        or capture.get("forced_decode_use_cache") is not True
+        or capture.get("full_prefix_verification_use_cache") is not False
+    ):
+        raise Lfm2CompleteCausalEvidenceRecacheError(
+            "Completed cache is not the cached-verified causal trace mode."
         )
     if int(capture.get("sample_last_tokens", 0)) < maximum_full:
         raise Lfm2CompleteCausalEvidenceRecacheError(
