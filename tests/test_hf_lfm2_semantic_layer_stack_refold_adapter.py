@@ -48,7 +48,13 @@ def _state_identity(model: _TinyTarget) -> str:
     )
 
 
-def _patch_complete_transaction(monkeypatch, *, failing_layer: int | None = None):
+def _patch_complete_transaction(
+    monkeypatch,
+    *,
+    failing_layer: int | None = None,
+    noop_operator_layers: frozenset[int] = frozenset(),
+    noop_mlp_layers: frozenset[int] = frozenset(),
+):
     events: list[str] = []
 
     class Cache:
@@ -233,12 +239,21 @@ def _patch_complete_transaction(monkeypatch, *, failing_layer: int | None = None
     def mutate_operator(model, layer_index: int, kind: str):
         before = _state_identity(model)
         events.append(f"{layer_index}:install:{kind}")
-        with torch.no_grad():
-            model.mutable.add_(1.0)
+        installed = layer_index not in noop_operator_layers
+        if installed:
+            with torch.no_grad():
+                model.mutable.add_(1.0)
         if failing_layer == layer_index:
             raise RuntimeError("injected partial operator failure")
         after = _state_identity(model)
         return {
+            "status": (
+                "installed-analytic-candidate"
+                if installed
+                else "heldout-selected-incumbent-noop"
+            ),
+            "installed": installed,
+            "install_count": int(installed),
             "model_state_before_sha256": before,
             "model_state_after_sha256": after,
             "result_sha256": canonical_sha256(["operator", layer_index, after]),
@@ -288,11 +303,19 @@ def _patch_complete_transaction(monkeypatch, *, failing_layer: int | None = None
     def install_mlp(*, target_model, layer_index, **_kwargs):
         before = _state_identity(target_model)
         events.append(f"{layer_index}:install:mlp")
-        if layer_index < 13:
+        installed = layer_index < 13 and layer_index not in noop_mlp_layers
+        if installed:
             with torch.no_grad():
                 target_model.mutable.add_(1.0)
         after = _state_identity(target_model)
         receipt = {
+            "status": (
+                "installed-frozen-semantic-mlp-candidate"
+                if installed
+                else "heldout-selected-incumbent-noop"
+            ),
+            "installed": installed,
+            "install_count": int(installed),
             "model_state_before_sha256": before,
             "model_state_after_sha256": after,
             "result_sha256": canonical_sha256(["mlp", layer_index, after]),
@@ -328,7 +351,8 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
         attention_installer=lambda **_kwargs: None,
     )
 
-    assert result.receipt["complete_causal_layer_stack_installed"] is True
+    assert result.receipt["complete_causal_layer_stack_adjudicated"] is True
+    assert result.receipt["complete_causal_layer_stack_installed"] is False
     assert result.receipt["attention_operator_install_count"] == 6
     assert result.receipt["short_conv_operator_install_count"] == 8
     assert result.receipt["replay_fresh_mlp_evidence_compile_count"] == 14
@@ -356,6 +380,75 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
             f"{layer_index}:next",
         ]
         assert observed == expected
+
+
+def test_complete_transaction_truthfully_counts_mixed_incumbent_noops(
+    monkeypatch,
+) -> None:
+    target, cache, bridge, _events = _patch_complete_transaction(
+        monkeypatch,
+        noop_operator_layers=frozenset({0, 2}),
+        noop_mlp_layers=frozenset({1}),
+    )
+
+    result = stack.compile_install_lfm2_semantic_layer_stack_postfold(
+        cache=cache,
+        bridge=bridge,
+        target_model=target,
+        interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+        compiler_lineage={
+            index: object() for index in stack._EXPECTED_ATTENTION_INDICES
+        },
+        parent_model_directory="unused",
+        donor_tokenizer=object(),
+        target_tokenizer=object(),
+        attention_installer=lambda **_kwargs: None,
+    )
+
+    receipt = result.receipt
+    assert receipt["attention_operator_decision_count"] == 6
+    assert receipt["attention_operator_install_count"] == 5
+    assert receipt["attention_operator_incumbent_noop_count"] == 1
+    assert receipt["short_conv_operator_decision_count"] == 8
+    assert receipt["short_conv_operator_install_count"] == 7
+    assert receipt["short_conv_operator_incumbent_noop_count"] == 1
+    assert receipt["nonterminal_mlp_writer_decision_count"] == 13
+    assert receipt["nonterminal_mlp_writer_install_count"] == 12
+    assert receipt["nonterminal_mlp_writer_incumbent_noop_count"] == 1
+    assert receipt["complete_causal_layer_stack_adjudicated"] is True
+    assert receipt["complete_causal_layer_stack_installed"] is False
+    assert receipt["whole_stage_contains_meaningful_parameter_changes"] is True
+
+
+def test_complete_transaction_rejects_an_all_incumbent_noop_stack(
+    monkeypatch,
+) -> None:
+    target, cache, bridge, _events = _patch_complete_transaction(
+        monkeypatch,
+        noop_operator_layers=frozenset(range(14)),
+        noop_mlp_layers=frozenset(range(13)),
+    )
+    before = _state_identity(target)
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="exact entry bytes were restored",
+    ):
+        stack.compile_install_lfm2_semantic_layer_stack_postfold(
+            cache=cache,
+            bridge=bridge,
+            target_model=target,
+            interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+            compiler_lineage={
+                index: object() for index in stack._EXPECTED_ATTENTION_INDICES
+            },
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            attention_installer=lambda **_kwargs: None,
+        )
+
+    assert _state_identity(target) == before
 
 
 def test_partial_layer_failure_restores_exact_whole_model(monkeypatch) -> None:

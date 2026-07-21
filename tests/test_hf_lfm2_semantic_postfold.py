@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
@@ -11,6 +12,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
+import neural_forge.hf_lfm2_cpcf_terminal_action_residual as terminal_action  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 
 
@@ -47,6 +49,212 @@ def _terminal_evidence(split: str, tag: str):
         parent_final_norm_output=torch.ones((1, 2), dtype=torch.bfloat16),
         sample_weights=torch.ones((1,), dtype=torch.float64),
     )
+
+
+class _TerminalFeedForward(torch.nn.Module):
+    def __init__(self, weight):
+        super().__init__()
+        self.w2 = torch.nn.Linear(2, 2, bias=False, dtype=weight.dtype)
+        with torch.no_grad():
+            self.w2.weight.copy_(weight)
+
+
+class _TerminalLayer(torch.nn.Module):
+    def __init__(self, weight):
+        super().__init__()
+        self.feed_forward = _TerminalFeedForward(weight)
+
+
+class _TerminalBackbone(torch.nn.Module):
+    def __init__(self, weight):
+        super().__init__()
+        self.layers = torch.nn.ModuleList([_TerminalLayer(weight)])
+
+
+class _TerminalTarget(torch.nn.Module):
+    def __init__(self, weight):
+        super().__init__()
+        self.model = _TerminalBackbone(weight)
+        self.other = torch.nn.Parameter(torch.tensor([3.0], dtype=weight.dtype))
+
+
+def _terminal_target_state(model) -> str:
+    return canonical_sha256(postfold._state_tensor_hashes(model))
+
+
+def _terminal_result(
+    *,
+    incumbent,
+    selected,
+    published,
+    selected_candidate_id: str,
+    accepted: bool,
+    validation_passed: bool,
+    rollback_performed: bool,
+):
+    policy = terminal_action.Lfm2CpcfTerminalActionPolicy()
+    body = {
+        "policy_sha256": policy.authentication_sha256,
+        "selected_candidate_id": selected_candidate_id,
+        "accepted": accepted,
+        "selected_nonincumbent": selected_candidate_id != "incumbent",
+        "published_is_incumbent": torch.equal(published, incumbent),
+        "rollback_performed": rollback_performed,
+        "rollback_exact": True,
+        "source_seed_writer_unchanged": True,
+        "parameter_identity_or_topology_mutation": False,
+        "parameter_count_before": int(incumbent.numel()),
+        "parameter_count_after": int(published.numel()),
+        "validation": {"passed": validation_passed},
+        "output_state_sha256": {
+            "incumbent": terminal_action._tensor_sha256(incumbent),
+            "selected": terminal_action._tensor_sha256(selected),
+            "published": terminal_action._tensor_sha256(published),
+        },
+        "operation_audit": dict(terminal_action._ZERO_OPERATION_AUDIT),
+    }
+    result_sha256 = terminal_action._canonical_sha256(body)
+    return terminal_action.Lfm2CpcfTerminalActionResidualResult(
+        policy=policy,
+        incumbent_down_weight=incumbent,
+        selected_down_weight=selected,
+        published_down_weight=published,
+        selected_candidate_id=selected_candidate_id,
+        accepted=accepted,
+        report={**body, "result_sha256": result_sha256},
+        result_sha256=result_sha256,
+    )
+
+
+def test_final_w2_incumbent_retention_is_an_exact_zero_copy_decision(
+    monkeypatch,
+) -> None:
+    target = _TerminalTarget(torch.eye(2, dtype=torch.bfloat16))
+    parameter = target.model.layers[-1].feed_forward.w2.weight
+    parameter.grad = torch.full_like(parameter, 0.25)
+    target.other.grad = torch.full_like(target.other, 0.5)
+    before_state = _terminal_target_state(target)
+    before_parameter_id = id(parameter)
+    before_parameter_ptr = int(parameter.data_ptr())
+    before_gradient_id = id(parameter.grad)
+    before_gradient_ptr = int(parameter.grad.data_ptr())
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda model: SimpleNamespace(identity_sha256=_terminal_target_state(model)),
+    )
+
+    receipt = postfold._install_final_w2_once(
+        target,
+        published_down_weight=parameter.detach().cpu().clone(),
+    )
+
+    assert receipt["installed"] is False
+    assert receipt["install_count"] == 0
+    assert receipt["mutation_count"] == 0
+    assert receipt["incumbent_retention_count"] == 1
+    assert receipt["exact_zero_copy_noop"] is True
+    assert receipt["parameter_copy_calls"] == 0
+    assert receipt["model_state_before_sha256"] == before_state
+    assert receipt["model_state_after_sha256"] == before_state
+    assert receipt["changed_state_keys"] == []
+    assert receipt["parameter_topology_preserved"] is True
+    assert receipt["parameter_identities_preserved"] is True
+    assert receipt["parameter_storage_preserved"] is True
+    assert receipt["gradient_state_preserved"] is True
+    assert id(parameter) == before_parameter_id
+    assert int(parameter.data_ptr()) == before_parameter_ptr
+    assert id(parameter.grad) == before_gradient_id
+    assert int(parameter.grad.data_ptr()) == before_gradient_ptr
+
+
+def test_final_w2_changed_publication_mutates_only_the_writer(monkeypatch) -> None:
+    target = _TerminalTarget(torch.eye(2, dtype=torch.bfloat16))
+    parameter = target.model.layers[-1].feed_forward.w2.weight
+    target.other.grad = torch.full_like(target.other, 0.5)
+    before_other = target.other.detach().clone()
+    published = torch.full_like(parameter.detach().cpu(), 0.75)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda model: SimpleNamespace(identity_sha256=_terminal_target_state(model)),
+    )
+
+    receipt = postfold._install_final_w2_once(
+        target,
+        published_down_weight=published,
+    )
+
+    assert receipt["installed"] is True
+    assert receipt["install_count"] == 1
+    assert receipt["mutation_count"] == 1
+    assert receipt["incumbent_retention_count"] == 0
+    assert receipt["parameter_copy_calls"] == 1
+    assert receipt["changed_state_keys"] == [
+        "model.layers.0.feed_forward.w2.weight"
+    ]
+    assert receipt["model_state_before_sha256"] != receipt[
+        "model_state_after_sha256"
+    ]
+    torch.testing.assert_close(parameter.detach().cpu(), published, rtol=0, atol=0)
+    torch.testing.assert_close(target.other.detach(), before_other, rtol=0, atol=0)
+    assert receipt["parameter_topology_preserved"] is True
+    assert receipt["parameter_identities_preserved"] is True
+    assert receipt["parameter_storage_preserved"] is True
+    assert receipt["gradient_state_preserved"] is True
+
+
+def test_validation_rejected_selected_writer_publishes_only_incumbent() -> None:
+    incumbent = torch.zeros((2, 2), dtype=torch.bfloat16)
+    selected = torch.ones((2, 2), dtype=torch.bfloat16)
+    terminal = _terminal_result(
+        incumbent=incumbent,
+        selected=selected,
+        published=incumbent.clone(),
+        selected_candidate_id="gn-00-ridge-00-alpha-01",
+        accepted=False,
+        validation_passed=False,
+        rollback_performed=True,
+    )
+
+    published, decision = postfold._terminal_publication_decision(terminal)
+
+    assert torch.equal(published, incumbent)
+    assert not torch.equal(published, selected)
+    assert decision["publication_decision"] == (
+        "frozen-candidate-validation-rollback-to-incumbent"
+    )
+    assert decision["terminal_incumbent_retained"] is True
+    assert decision["terminal_nonincumbent_candidate_accepted"] is False
+
+
+def test_fused_terminal_never_gates_or_installs_the_private_selected_tensor() -> None:
+    source = inspect.getsource(
+        postfold.compile_install_lfm2_fused_semantic_terminal_refold
+    )
+
+    assert "terminal.selected_down_weight" not in source
+    assert "published_down_weight=published_down_weight" in source
+
+
+def test_heldout_selected_incumbent_is_a_valid_terminal_publication() -> None:
+    incumbent = torch.eye(2, dtype=torch.bfloat16)
+    terminal = _terminal_result(
+        incumbent=incumbent,
+        selected=incumbent.clone(),
+        published=incumbent.clone(),
+        selected_candidate_id="incumbent",
+        accepted=False,
+        validation_passed=True,
+        rollback_performed=False,
+    )
+
+    published, decision = postfold._terminal_publication_decision(terminal)
+
+    assert torch.equal(published, incumbent)
+    assert decision["publication_decision"] == "heldout-selected-incumbent"
+    assert decision["terminal_publication_decision_accepted"] is True
+    assert decision["terminal_writer_changed"] is False
 
 
 def test_reconstructs_saved_mean_preserving_interface_without_parent_model() -> None:
@@ -870,13 +1078,62 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         }
     )
     layer_body = {
-        "complete_causal_layer_stack_installed": True,
+        "complete_causal_layer_stack_adjudicated": True,
+        "complete_causal_layer_stack_installed": False,
+        "whole_stage_contains_meaningful_parameter_changes": True,
+        "model_state_before_sha256": "b" * 64,
+        "model_state_after_sha256": "d" * 64,
+        "changed_state_keys": ["model.layers.0.mutable"],
+        "attention_operator_decision_count": 6,
+        "attention_operator_install_count": 5,
+        "attention_operator_incumbent_noop_count": 1,
+        "short_conv_operator_decision_count": 8,
+        "short_conv_operator_install_count": 8,
+        "short_conv_operator_incumbent_noop_count": 0,
+        "replay_fresh_mlp_evidence_compile_count": 14,
+        "nonterminal_mlp_writer_decision_count": 13,
+        "nonterminal_mlp_writer_install_count": 12,
+        "nonterminal_mlp_writer_incumbent_noop_count": 1,
+        "final_mlp_producer_install_count": 0,
+        "final_mlp_producer_incumbent_noop_count": 1,
+        "operator_parameter_mutation_count": 13,
+        "mlp_parameter_mutation_count": 12,
     }
     layer_receipt = MappingProxyType(
         {**layer_body, "result_sha256": canonical_sha256(layer_body)}
     )
     layer_stack = SimpleNamespace(receipt=layer_receipt)
-    terminal_body = {"accepted": True}
+    terminal_installation = {
+        "decision_count": 1,
+        "installed": False,
+        "install_count": 0,
+        "mutation_count": 0,
+        "incumbent_retention_count": 1,
+        "exact_zero_copy_noop": True,
+        "parameter_copy_calls": 0,
+        "changed_state_keys": [],
+        "parameter_topology_preserved": True,
+        "parameter_identities_preserved": True,
+        "parameter_storage_preserved": True,
+        "gradient_state_preserved": True,
+        "parameter_count_changed": False,
+        "model_state_before_sha256": "d" * 64,
+        "model_state_after_sha256": "d" * 64,
+    }
+    terminal_body = {
+        "schema": postfold.LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA,
+        "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
+        "accepted": True,
+        "terminal_publication_decision_accepted": True,
+        "terminal_nonincumbent_candidate_accepted": False,
+        "terminal_incumbent_retained": True,
+        "terminal_writer_decision_count": 1,
+        "terminal_writer_install_count": 0,
+        "terminal_writer_mutation_count": 0,
+        "terminal_writer_incumbent_retention_count": 1,
+        "installation": terminal_installation,
+        "operation_audit": dict(postfold._ZERO_OPERATIONS),
+    }
     terminal = MappingProxyType(
         {**terminal_body, "result_sha256": canonical_sha256(terminal_body)}
     )
@@ -1003,6 +1260,10 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     )
     assert result["claims"]["training_performed"] is False
     assert result["claims"]["attention_correction_installed"] is True
+    assert result["claims"]["complete_causal_layer_stack_installed"] is False
+    assert result["claims"]["attention_correction_install_count"] == 5
+    assert result["claims"]["terminal_writer_install_count"] == 0
+    assert result["terminal_incumbent_retained"] is True
     body = dict(result)
     seal = body.pop("result_sha256")
     assert seal == canonical_sha256(body)

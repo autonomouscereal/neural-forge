@@ -373,8 +373,55 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
         "compiler_cache_key": "e" * 64,
         "result_sha256": "f" * 64,
     }
-    layer_stack = SimpleNamespace(receipt={"result_sha256": "1" * 64})
-    terminal = _seal({"accepted": True})
+    layer_stack = SimpleNamespace(
+        receipt={
+            "result_sha256": "1" * 64,
+            "complete_causal_layer_stack_installed": False,
+            "whole_stage_contains_meaningful_parameter_changes": True,
+            "model_state_before_sha256": "9" * 64,
+            "model_state_after_sha256": "7" * 64,
+            "attention_operator_decision_count": 6,
+            "attention_operator_install_count": 5,
+            "short_conv_operator_decision_count": 8,
+            "short_conv_operator_install_count": 7,
+            "replay_fresh_mlp_evidence_compile_count": 14,
+            "nonterminal_mlp_writer_decision_count": 13,
+            "nonterminal_mlp_writer_install_count": 12,
+            "final_mlp_producer_install_count": 0,
+        }
+    )
+    terminal = _seal(
+        {
+            "schema": postfold.LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA,
+            "semantic_layer_stack_result_sha256": "1" * 64,
+            "accepted": True,
+            "terminal_publication_decision_accepted": True,
+            "terminal_nonincumbent_candidate_accepted": False,
+            "terminal_incumbent_retained": True,
+            "terminal_writer_decision_count": 1,
+            "terminal_writer_install_count": 0,
+            "terminal_writer_mutation_count": 0,
+            "terminal_writer_incumbent_retention_count": 1,
+            "installation": {
+                "decision_count": 1,
+                "installed": False,
+                "install_count": 0,
+                "mutation_count": 0,
+                "incumbent_retention_count": 1,
+                "exact_zero_copy_noop": True,
+                "parameter_copy_calls": 0,
+                "changed_state_keys": [],
+                "parameter_topology_preserved": True,
+                "parameter_identities_preserved": True,
+                "parameter_storage_preserved": True,
+                "gradient_state_preserved": True,
+                "parameter_count_changed": False,
+                "model_state_before_sha256": "7" * 64,
+                "model_state_after_sha256": "7" * 64,
+            },
+            "operation_audit": dict(postfold._ZERO_OPERATIONS),
+        }
+    )
     ancestry_calls = []
 
     monkeypatch.setattr(postfold, "open_lfm2_circuit_trace_cache", lambda *_a, **_k: cache)

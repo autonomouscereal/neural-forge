@@ -64,6 +64,7 @@ from neural_forge.hf_lfm2_cpcf_selective_evidence import (
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
     Lfm2CpcfTerminalActionEvidence,
     Lfm2CpcfTerminalActionPolicy,
+    Lfm2CpcfTerminalActionResidualResult,
     Lfm2CpcfTerminalActionSeed,
     _all_passed,
     _evaluate_split,
@@ -291,6 +292,92 @@ def _changed_state_keys(
             "Analytic attention installation changed the child state topology."
         )
     return tuple(name for name in before if before[name] != after[name])
+
+
+def _parameter_runtime_snapshot(model: Any) -> Mapping[str, Any]:
+    """Capture topology, object/storage identity, and exact gradient state."""
+
+    snapshot: dict[str, Any] = {}
+    for name, parameter in model.named_parameters():
+        gradient = parameter.grad
+        snapshot[name] = {
+            "shape": tuple(int(size) for size in parameter.shape),
+            "dtype": str(parameter.dtype),
+            "device": str(parameter.device),
+            "parameter_id": id(parameter),
+            "storage_data_ptr": int(parameter.data_ptr()),
+            "requires_grad": bool(parameter.requires_grad),
+            "gradient": (
+                None
+                if gradient is None
+                else {
+                    "shape": tuple(int(size) for size in gradient.shape),
+                    "dtype": str(gradient.dtype),
+                    "device": str(gradient.device),
+                    "tensor_id": id(gradient),
+                    "storage_data_ptr": int(gradient.data_ptr()),
+                    "sha256": _tensor_sha256(gradient),
+                }
+            ),
+        }
+    return MappingProxyType(snapshot)
+
+
+def _parameter_runtime_proof(
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    before_names = tuple(sorted(before))
+    after_names = tuple(sorted(after))
+    topology_fields = ("shape", "dtype", "device")
+    topology_preserved = bool(
+        before_names == after_names
+        and all(
+            tuple(before[name][field] for field in topology_fields)
+            == tuple(after[name][field] for field in topology_fields)
+            for name in before_names
+        )
+    )
+    identities_preserved = bool(
+        topology_preserved
+        and all(
+            before[name]["parameter_id"] == after[name]["parameter_id"]
+            for name in before_names
+        )
+    )
+    storage_preserved = bool(
+        topology_preserved
+        and all(
+            before[name]["storage_data_ptr"] == after[name]["storage_data_ptr"]
+            for name in before_names
+        )
+    )
+    gradient_state_preserved = bool(
+        topology_preserved
+        and all(
+            before[name]["requires_grad"] == after[name]["requires_grad"]
+            and before[name]["gradient"] == after[name]["gradient"]
+            for name in before_names
+        )
+    )
+    topology_body = {
+        name: {field: before[name][field] for field in topology_fields}
+        for name in before_names
+    }
+    after_topology_body = {
+        name: {field: after[name][field] for field in topology_fields}
+        for name in after_names
+    }
+    return MappingProxyType(
+        {
+            "parameter_topology_sha256_before": canonical_sha256(topology_body),
+            "parameter_topology_sha256_after": canonical_sha256(after_topology_body),
+            "parameter_topology_preserved": topology_preserved,
+            "parameter_identities_preserved": identities_preserved,
+            "parameter_storage_preserved": storage_preserved,
+            "gradient_state_preserved": gradient_state_preserved,
+        }
+    )
 
 
 def _ordinary_directory(value: str | os.PathLike[str], name: str) -> Path:
@@ -2539,11 +2626,37 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     after = fingerprint_lfm2_parent(target_model).identity_sha256
     final_w2_after = _tensor_sha256(_final_w2_parameter(target_model))
     if (
-        verified.get("complete_causal_layer_stack_installed") is not True
-        or verified.get("all_attention_operators_installed") is not True
-        or verified.get("all_short_conv_operators_installed") is not True
+        verified.get("complete_causal_layer_stack_adjudicated") is not True
+        or verified.get("all_attention_operator_decisions_completed") is not True
+        or verified.get("attention_operator_decision_count") != 6
+        or verified.get("attention_operator_install_count", -1)
+        + verified.get("attention_operator_incumbent_noop_count", -1)
+        != 6
+        or verified.get("all_short_conv_operator_decisions_completed") is not True
+        or verified.get("short_conv_operator_decision_count") != 8
+        or verified.get("short_conv_operator_install_count", -1)
+        + verified.get("short_conv_operator_incumbent_noop_count", -1)
+        != 8
         or verified.get("all_replay_fresh_mlp_evidence_compiled") is not True
-        or verified.get("all_nonterminal_mlp_writers_installed") is not True
+        or verified.get("replay_fresh_mlp_evidence_compile_count") != 14
+        or verified.get("all_nonterminal_mlp_writer_decisions_completed") is not True
+        or verified.get("nonterminal_mlp_writer_decision_count") != 13
+        or verified.get("nonterminal_mlp_writer_install_count", -1)
+        + verified.get("nonterminal_mlp_writer_incumbent_noop_count", -1)
+        != 13
+        or verified.get("final_mlp_producer_install_count", -1)
+        + verified.get("final_mlp_producer_incumbent_noop_count", -1)
+        != 1
+        or verified.get("whole_stage_contains_meaningful_parameter_changes") is not True
+        or verified.get("operator_parameter_mutation_count", -1)
+        != verified.get("attention_operator_install_count", -2)
+        + verified.get("short_conv_operator_install_count", -2)
+        or verified.get("mlp_parameter_mutation_count", -1)
+        != verified.get("nonterminal_mlp_writer_install_count", -2)
+        + verified.get("final_mlp_producer_install_count", -2)
+        or verified.get("operator_parameter_mutation_count", 0)
+        + verified.get("mlp_parameter_mutation_count", 0)
+        <= 0
         or verified.get("final_layer_mlp_w2_deferred_to_fused_terminal") is not True
         or verified.get("final_layer_mlp_w2_install_count") != 0
         or verified.get("causal_install_order")
@@ -2551,6 +2664,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         or verified.get("model_state_before_sha256") != before
         or verified.get("model_state_after_sha256") != after
         or before == after
+        or not verified.get("changed_state_keys")
         or verified.get("parameter_element_count") != parameter_count
         or _parameter_count(target_model) != parameter_count
         or verified.get("parameter_count_changed") is not False
@@ -3079,10 +3193,105 @@ def _merge_terminal_evidence(
     )
 
 
+def _terminal_publication_decision(
+    terminal: Lfm2CpcfTerminalActionResidualResult,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Authenticate either a changed winner or the exact published incumbent."""
+
+    torch = _torch()
+    if not isinstance(terminal, Lfm2CpcfTerminalActionResidualResult):
+        raise TypeError("terminal must be a typed terminal-action result.")
+    if not terminal.verify_authentication():
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal result changed after authentication."
+        )
+    report = terminal.as_dict()
+    operation_audit = report.get("operation_audit")
+    if (
+        not isinstance(operation_audit, Mapping)
+        or not operation_audit
+        or any(type(value) is not int or value != 0 for value in operation_audit.values())
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal result does not prove a zero-operation compilation."
+        )
+    published = terminal.published_down_weight
+    incumbent = terminal.incumbent_down_weight
+    selected = terminal.selected_down_weight
+    published_is_incumbent = bool(torch.equal(published, incumbent))
+    published_is_selected = bool(torch.equal(published, selected))
+    validation = report.get("validation")
+    validation_passed = bool(
+        isinstance(validation, Mapping) and validation.get("passed") is True
+    )
+    common_valid = bool(
+        report.get("source_seed_writer_unchanged") is True
+        and report.get("parameter_identity_or_topology_mutation") is False
+        and report.get("parameter_count_before") == report.get("parameter_count_after")
+        and report.get("rollback_exact") is True
+    )
+    changed_winner = bool(
+        common_valid
+        and terminal.accepted
+        and terminal.changed
+        and terminal.selected_candidate_id != "incumbent"
+        and report.get("selected_nonincumbent") is True
+        and report.get("published_is_incumbent") is False
+        and report.get("rollback_performed") is False
+        and validation_passed
+        and published_is_selected
+        and not published_is_incumbent
+    )
+    incumbent_retained = bool(
+        common_valid
+        and not terminal.accepted
+        and not terminal.changed
+        and report.get("published_is_incumbent") is True
+        and published_is_incumbent
+    )
+    if incumbent_retained:
+        if terminal.selected_candidate_id == "incumbent":
+            incumbent_retained = bool(
+                report.get("selected_nonincumbent") is False
+                and validation_passed
+                and report.get("rollback_performed") is False
+            )
+            reason = "heldout-selected-incumbent"
+        else:
+            incumbent_retained = bool(
+                report.get("selected_nonincumbent") is True
+                and not validation_passed
+                and report.get("rollback_performed") is True
+            )
+            reason = "frozen-candidate-validation-rollback-to-incumbent"
+    else:
+        reason = ""
+    if not changed_winner and not incumbent_retained:
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal published neither an accepted changed winner nor an "
+            "authenticated exact incumbent."
+        )
+    if changed_winner:
+        reason = "accepted-nonincumbent-mutation"
+    decision = {
+        "publication_decision": reason,
+        "terminal_publication_decision_accepted": True,
+        "terminal_nonincumbent_candidate_accepted": changed_winner,
+        "terminal_incumbent_retained": incumbent_retained,
+        "terminal_writer_changed": changed_winner,
+        "published_w2_sha256": _tensor_sha256(published),
+        "selected_w2_sha256": _tensor_sha256(selected),
+        "incumbent_w2_sha256": _tensor_sha256(incumbent),
+        "published_is_selected": published_is_selected,
+        "published_is_incumbent": published_is_incumbent,
+    }
+    return published, MappingProxyType(decision)
+
+
 def _install_final_w2_once(
     target_model: Any,
     *,
-    selected_down_weight: Any,
+    published_down_weight: Any,
 ) -> Mapping[str, Any]:
     torch = _torch()
     layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
@@ -3093,45 +3302,115 @@ def _install_final_w2_once(
     )
     if not isinstance(parameter, torch.nn.Parameter):
         raise Lfm2SemanticPostfoldError("Child final W2 is not a Parameter.")
+    if (
+        not isinstance(published_down_weight, torch.Tensor)
+        or published_down_weight.layout != torch.strided
+        or published_down_weight.device.type == "meta"
+        or tuple(published_down_weight.shape) != tuple(parameter.shape)
+        or published_down_weight.requires_grad
+        or published_down_weight.grad_fn is not None
+        or not bool(torch.isfinite(published_down_weight).all().item())
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Published final W2 is not a finite detached dense topology match."
+        )
+    parameter_name = f"model.layers.{len(layers) - 1}.feed_forward.w2.weight"
     before_state = fingerprint_lfm2_parent(target_model).identity_sha256
+    before_hashes = _state_tensor_hashes(target_model)
     before_count = _parameter_count(target_model)
-    before_id = id(parameter)
-    before_ptr = int(parameter.data_ptr())
+    before_runtime = _parameter_runtime_snapshot(target_model)
     incumbent = parameter.detach().to(device="cpu").contiguous().clone()
+    published = published_down_weight.detach().to(
+        device=parameter.device,
+        dtype=parameter.dtype,
+    ).contiguous()
+    install = not torch.equal(parameter.detach(), published)
     try:
-        with torch.no_grad():
-            parameter.copy_(
-                selected_down_weight.to(
-                    device=parameter.device,
-                    dtype=parameter.dtype,
-                )
-            )
+        if install:
+            with torch.no_grad():
+                parameter.copy_(published)
         after_state = fingerprint_lfm2_parent(target_model).identity_sha256
+        after_hashes = _state_tensor_hashes(target_model)
+        after_runtime = _parameter_runtime_snapshot(target_model)
+        runtime_proof = _parameter_runtime_proof(before_runtime, after_runtime)
+        changed_state_keys = _changed_state_keys(before_hashes, after_hashes)
+        runtime_preserved = all(
+            runtime_proof[name] is True
+            for name in (
+                "parameter_topology_preserved",
+                "parameter_identities_preserved",
+                "parameter_storage_preserved",
+                "gradient_state_preserved",
+            )
+        )
+        mutation_valid = bool(
+            install
+            and after_state != before_state
+            and changed_state_keys == (parameter_name,)
+        )
+        noop_valid = bool(
+            not install
+            and after_state == before_state
+            and not changed_state_keys
+        )
         if (
-            id(parameter) != before_id
-            or int(parameter.data_ptr()) != before_ptr
+            not runtime_preserved
             or _parameter_count(target_model) != before_count
-            or after_state == before_state
+            or not torch.equal(parameter.detach(), published)
+            or not (mutation_valid or noop_valid)
         ):
             raise Lfm2SemanticPostfoldError(
-                "Fused terminal installation changed topology or no bytes."
+                "Fused terminal publication changed topology, identity, storage, "
+                "gradients, or unexpected state bytes."
             )
     except BaseException:
         with torch.no_grad():
             parameter.copy_(incumbent.to(device=parameter.device))
-        if fingerprint_lfm2_parent(target_model).identity_sha256 != before_state:
+        rollback_runtime = _parameter_runtime_proof(
+            before_runtime,
+            _parameter_runtime_snapshot(target_model),
+        )
+        if (
+            fingerprint_lfm2_parent(target_model).identity_sha256 != before_state
+            or _state_tensor_hashes(target_model) != before_hashes
+            or not all(
+                rollback_runtime[name] is True
+                for name in (
+                    "parameter_topology_preserved",
+                    "parameter_identities_preserved",
+                    "parameter_storage_preserved",
+                    "gradient_state_preserved",
+                )
+            )
+        ):
             raise Lfm2SemanticPostfoldError("Fused terminal rollback was not exact.")
         raise
     body = {
         "schema": "neural-forge-lfm2-fused-semantic-terminal-install-v1",
-        "parameter_name": f"model.layers.{len(layers) - 1}.feed_forward.w2.weight",
+        "status": (
+            "installed-accepted-terminal-writer"
+            if install
+            else "authenticated-published-incumbent-noop"
+        ),
+        "parameter_name": parameter_name,
         "model_state_before_sha256": before_state,
         "model_state_after_sha256": after_state,
         "incumbent_w2_sha256": _tensor_sha256(incumbent),
-        "installed_w2_sha256": _tensor_sha256(parameter),
-        "parameter_identity_preserved": True,
+        "published_w2_sha256": _tensor_sha256(parameter),
+        "installed_w2_sha256": _tensor_sha256(parameter) if install else None,
+        "changed_state_keys": list(changed_state_keys),
+        **dict(runtime_proof),
+        "parameter_identity_preserved": runtime_proof[
+            "parameter_identities_preserved"
+        ],
         "parameter_count_changed": False,
-        "install_count": 1,
+        "decision_count": 1,
+        "installed": install,
+        "install_count": int(install),
+        "mutation_count": int(install),
+        "incumbent_retention_count": int(not install),
+        "exact_zero_copy_noop": not install,
+        "parameter_copy_calls": int(install),
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
     return MappingProxyType(_sealed(body, "result_sha256"))
@@ -3174,9 +3453,14 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     if (
         layer_receipt.get("model_state_after_sha256") != current_state
         or layer_receipt.get("deferred_final_w2_sha256") != current_w2
+        or layer_receipt.get("whole_stage_contains_meaningful_parameter_changes")
+        is not True
+        or layer_receipt.get("model_state_before_sha256") == current_state
+        or not layer_receipt.get("changed_state_keys")
     ):
         raise Lfm2SemanticPostfoldError(
-            "Child changed after deferred final-MLP evidence was captured."
+            "Child changed after deferred final-MLP evidence was captured or the "
+            "layer stack proved no meaningful mutation."
         )
     selected_policy = policy or Lfm2CpcfTerminalActionPolicy()
     plan = split_plan or Lfm2LongHorizonTrajectorySplitPlan.deterministic_round_robin(
@@ -3339,25 +3623,36 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         validation_evidence=fused["validation"],
         policy=selected_policy,
     )
-    if (
-        not terminal.verify_authentication()
-        or not terminal.accepted
-        or not terminal.changed
-    ):
-        raise Lfm2SemanticPostfoldBlockedError(
-            "Fused parent/lexical terminal candidate was not accepted",
-            _sealed(
-                {
-                    "schema": LFM2_SEMANTIC_POSTFOLD_FAILURE_SCHEMA,
-                    "status": "blocked-no-checkpoint-published",
-                    "stage": "fused_semantic_terminal",
-                    "reason": "joint-closed-form-candidate-rejected",
-                    "terminal_result": terminal.as_dict(),
-                    "operation_audit": dict(_ZERO_OPERATIONS),
-                },
-                "failure_sha256",
-            ),
+    published_down_weight, publication_decision = _terminal_publication_decision(
+        terminal
+    )
+    fused_heldout_gates = {}
+    for split in ("selection", "validation"):
+        prepared = _prepare_split(fused[split], seed)
+        incumbent_metrics = _evaluate_split(
+            prepared,
+            seed,
+            seed.down_weight,
+            metric_chunk_rows=selected_policy.metric_chunk_rows,
         )
+        published_metrics = _evaluate_split(
+            prepared,
+            seed,
+            published_down_weight,
+            metric_chunk_rows=selected_policy.metric_chunk_rows,
+        )
+        gates = _metric_gates(
+            published_metrics,
+            incumbent_metrics,
+            selected_policy,
+            require_selection_improvement=False,
+        )
+        fused_heldout_gates[split] = {
+            "incumbent": incumbent_metrics.as_dict(),
+            "published": published_metrics.as_dict(),
+            "gates": gates,
+            "passed": _all_passed(gates),
+        }
     lane_gates = {}
     for lane_name, banks in (
         ("parent_endpoint", parent),
@@ -3373,26 +3668,29 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
                 seed.down_weight,
                 metric_chunk_rows=selected_policy.metric_chunk_rows,
             )
-            candidate_metrics = _evaluate_split(
+            published_metrics = _evaluate_split(
                 prepared,
                 seed,
-                terminal.selected_down_weight,
+                published_down_weight,
                 metric_chunk_rows=selected_policy.metric_chunk_rows,
             )
             gates = _metric_gates(
-                candidate_metrics,
+                published_metrics,
                 incumbent_metrics,
                 selected_policy,
                 require_selection_improvement=False,
             )
             lane_gates[lane_name][split] = {
                 "incumbent": incumbent_metrics.as_dict(),
-                "candidate": candidate_metrics.as_dict(),
+                "published": published_metrics.as_dict(),
                 "gates": gates,
                 "passed": _all_passed(gates),
             }
-    if not all(
-        value["passed"] for lane in lane_gates.values() for value in lane.values()
+    if not (
+        all(value["passed"] for value in fused_heldout_gates.values())
+        and all(
+            value["passed"] for lane in lane_gates.values() for value in lane.values()
+        )
     ):
         raise Lfm2SemanticPostfoldBlockedError(
             "Fused final W2 regressed a held-out evidence lane",
@@ -3402,6 +3700,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
                     "status": "blocked-no-checkpoint-published",
                     "stage": "fused_semantic_terminal",
                     "reason": "separate-heldout-lane-regression",
+                    "fused_heldout_gates": fused_heldout_gates,
                     "lane_gates": lane_gates,
                     "operation_audit": dict(_ZERO_OPERATIONS),
                 },
@@ -3419,7 +3718,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     )
     installation = _install_final_w2_once(
         target_model,
-        selected_down_weight=terminal.selected_down_weight,
+        published_down_weight=published_down_weight,
     )
     observed_counts = {value["inserted_continuation_rows"] for value in observed}
     decode_counts = {value["parent_decode_steps"] for value in observed}
@@ -3492,18 +3791,117 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "observed_trace_is_not_global_lexical_proof": True,
         "lexical_teacher": dict(teacher_report),
         "terminal_result": terminal.as_dict(),
+        "terminal_publication_decision": dict(publication_decision),
+        "fused_heldout_publication_gates": fused_heldout_gates,
         "separate_heldout_lane_gates": lane_gates,
         "installation": dict(installation),
-        "one_final_w2_candidate": True,
-        "one_final_w2_install": True,
-        "final_layer_mlp_parent_endpoint_and_lexical_rows_jointly_fitted": True,
+        "terminal_writer_decision_count": 1,
+        "terminal_writer_install_count": installation["install_count"],
+        "terminal_writer_mutation_count": installation["mutation_count"],
+        "terminal_writer_incumbent_retention_count": installation[
+            "incumbent_retention_count"
+        ],
+        "one_frozen_final_w2_publication_decision": True,
+        "one_final_w2_install": installation["install_count"] == 1,
+        "joint_terminal_evidence_compiled_and_heldout_adjudicated": True,
+        "final_layer_mlp_parent_endpoint_and_lexical_rows_jointly_fitted": (
+            publication_decision["terminal_nonincumbent_candidate_accepted"]
+        ),
         "prior_final_layer_mlp_w2_install_count": 0,
         "parent_trajectory_replay_receipts": list(parent_replays),
         "parent_attention_rope_materializations": parent_rope_calls,
         "accepted": True,
+        "terminal_publication_decision_accepted": True,
+        "terminal_nonincumbent_candidate_accepted": publication_decision[
+            "terminal_nonincumbent_candidate_accepted"
+        ],
+        "terminal_incumbent_retained": publication_decision[
+            "terminal_incumbent_retained"
+        ],
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
     return MappingProxyType(_sealed(body, "result_sha256"))
+
+
+def _validate_fused_semantic_terminal_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    layer_receipt: Mapping[str, Any],
+    current_model_state_sha256: str,
+) -> Mapping[str, Any]:
+    installation = receipt.get("installation")
+    if not isinstance(installation, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Fused semantic terminal returned no installation decision."
+        )
+    counts = {
+        "decision": receipt.get("terminal_writer_decision_count"),
+        "install": receipt.get("terminal_writer_install_count"),
+        "mutation": receipt.get("terminal_writer_mutation_count"),
+        "retention": receipt.get("terminal_writer_incumbent_retention_count"),
+    }
+    if any(type(value) is not int for value in counts.values()):
+        raise Lfm2SemanticPostfoldError(
+            "Fused semantic terminal decision counts are not exact integers."
+        )
+    operation_audit = receipt.get("operation_audit")
+    invalid = bool(
+        receipt.get("schema") != LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA
+        or receipt.get("semantic_layer_stack_result_sha256")
+        != layer_receipt.get("result_sha256")
+        or receipt.get("accepted") is not True
+        or receipt.get("terminal_publication_decision_accepted") is not True
+        or counts["decision"] != 1
+        or counts["install"] + counts["retention"] != 1
+        or counts["mutation"] != counts["install"]
+        or installation.get("decision_count") != 1
+        or installation.get("install_count") != counts["install"]
+        or installation.get("mutation_count") != counts["mutation"]
+        or installation.get("incumbent_retention_count") != counts["retention"]
+        or installation.get("parameter_topology_preserved") is not True
+        or installation.get("parameter_identities_preserved") is not True
+        or installation.get("parameter_storage_preserved") is not True
+        or installation.get("gradient_state_preserved") is not True
+        or installation.get("parameter_count_changed") is not False
+        or installation.get("model_state_before_sha256")
+        != layer_receipt.get("model_state_after_sha256")
+        or installation.get("model_state_after_sha256")
+        != current_model_state_sha256
+        or not isinstance(operation_audit, Mapping)
+        or operation_audit != dict(_ZERO_OPERATIONS)
+        or layer_receipt.get("whole_stage_contains_meaningful_parameter_changes")
+        is not True
+        or layer_receipt.get("model_state_before_sha256")
+        == current_model_state_sha256
+    )
+    if counts["install"] == 1:
+        invalid = bool(
+            invalid
+            or installation.get("installed") is not True
+            or installation.get("exact_zero_copy_noop") is not False
+            or not installation.get("changed_state_keys")
+            or installation.get("model_state_before_sha256")
+            == installation.get("model_state_after_sha256")
+            or receipt.get("terminal_nonincumbent_candidate_accepted") is not True
+            or receipt.get("terminal_incumbent_retained") is not False
+        )
+    else:
+        invalid = bool(
+            invalid
+            or installation.get("installed") is not False
+            or installation.get("exact_zero_copy_noop") is not True
+            or installation.get("parameter_copy_calls") != 0
+            or installation.get("changed_state_keys") != []
+            or installation.get("model_state_before_sha256")
+            != installation.get("model_state_after_sha256")
+            or receipt.get("terminal_nonincumbent_candidate_accepted") is not False
+            or receipt.get("terminal_incumbent_retained") is not True
+        )
+    if invalid:
+        raise Lfm2SemanticPostfoldError(
+            "Fused semantic terminal receipt is incomplete or internally false."
+        )
+    return MappingProxyType(dict(receipt))
 
 
 def _ffn_width(model: Any) -> int:
@@ -3792,10 +4190,14 @@ def run_lfm2_semantic_postfold(
         seal_name="result_sha256",
         label="fused semantic terminal",
     )
-    if terminal_receipt.get("accepted") is not True:
-        raise Lfm2SemanticPostfoldError(
-            "Fused semantic terminal compiler returned no accepted result."
+    state_after_terminal = fingerprint_lfm2_parent(target_model).identity_sha256
+    terminal_receipt = dict(
+        _validate_fused_semantic_terminal_receipt(
+            terminal_receipt,
+            layer_receipt=layer_stack.receipt,
+            current_model_state_sha256=state_after_terminal,
         )
+    )
     context_body = {
         "schema": "neural-forge-lfm2-semantic-postfold-context-v1",
         "input_artifact_sha256": input_metadata["artifact_sha256"],
@@ -3852,7 +4254,13 @@ def run_lfm2_semantic_postfold(
         },
         "semantic_layer_stack": dict(layer_stack.receipt),
         "fused_semantic_terminal": terminal_receipt,
-        "terminal_candidate_accepted": True,
+        "terminal_publication_decision_accepted": True,
+        "terminal_nonincumbent_candidate_accepted": terminal_receipt[
+            "terminal_nonincumbent_candidate_accepted"
+        ],
+        "terminal_incumbent_retained": terminal_receipt[
+            "terminal_incumbent_retained"
+        ],
         "checkpoint": dict(checkpoint),
         "fresh_reload_parent_free_state_sha256": state_after_reload,
         "context_binding": {**context_body, "context_sha256": context_sha},
@@ -3861,12 +4269,54 @@ def run_lfm2_semantic_postfold(
         ),
         "operation_audit": dict(_ZERO_OPERATIONS),
         "claims": {
-            "complete_causal_layer_stack_installed": True,
-            "attention_correction_installed": True,
-            "short_conv_correction_installed": True,
-            "replay_fresh_mlp_corrections_installed": True,
-            "fused_parent_endpoint_and_lexical_w2_installed_once": True,
-            "terminal_w2_considered_and_installed_only_if_accepted": True,
+            "complete_causal_layer_stack_adjudicated": True,
+            "complete_causal_layer_stack_installed": layer_stack.receipt[
+                "complete_causal_layer_stack_installed"
+            ],
+            "attention_operator_decision_count": layer_stack.receipt[
+                "attention_operator_decision_count"
+            ],
+            "attention_correction_install_count": layer_stack.receipt[
+                "attention_operator_install_count"
+            ],
+            "attention_correction_installed": (
+                layer_stack.receipt["attention_operator_install_count"] > 0
+            ),
+            "short_conv_operator_decision_count": layer_stack.receipt[
+                "short_conv_operator_decision_count"
+            ],
+            "short_conv_correction_install_count": layer_stack.receipt[
+                "short_conv_operator_install_count"
+            ],
+            "short_conv_correction_installed": (
+                layer_stack.receipt["short_conv_operator_install_count"] > 0
+            ),
+            "replay_fresh_mlp_evidence_compile_count": layer_stack.receipt[
+                "replay_fresh_mlp_evidence_compile_count"
+            ],
+            "nonterminal_mlp_writer_decision_count": layer_stack.receipt[
+                "nonterminal_mlp_writer_decision_count"
+            ],
+            "replay_fresh_mlp_correction_install_count": layer_stack.receipt[
+                "nonterminal_mlp_writer_install_count"
+            ],
+            "replay_fresh_mlp_corrections_installed": (
+                layer_stack.receipt["nonterminal_mlp_writer_install_count"] > 0
+            ),
+            "final_mlp_producer_install_count": layer_stack.receipt[
+                "final_mlp_producer_install_count"
+            ],
+            "terminal_writer_decision_count": terminal_receipt[
+                "terminal_writer_decision_count"
+            ],
+            "terminal_writer_install_count": terminal_receipt[
+                "terminal_writer_install_count"
+            ],
+            "fused_parent_endpoint_and_lexical_w2_installed_once": (
+                terminal_receipt["terminal_writer_install_count"] == 1
+            ),
+            "terminal_w2_heldout_adjudicated": True,
+            "overall_postfold_contains_meaningful_parameter_changes": True,
             "standalone_child": True,
             "parameter_count_compaction_changed_by_postfold": False,
             "training_performed": False,

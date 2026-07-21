@@ -2343,7 +2343,11 @@ def _layer_receipt(
             before_operator_replay.captured_child_model_state_sha256
         ),
         "before_operator_replay_bank_sha256": before_operator_replay.bank_sha256,
+        "operator_decision_sha256": operator_receipt["result_sha256"],
         "operator_installation_sha256": operator_receipt["result_sha256"],
+        "operator_decision_count": 1,
+        "operator_installed": operator_receipt.get("installed") is True,
+        "operator_install_count": int(operator_receipt.get("installed") is True),
         "model_state_after_operator_sha256": (
             after_operator_replay.captured_child_model_state_sha256
         ),
@@ -2355,7 +2359,11 @@ def _layer_receipt(
             operator_receipt.get("status") == "heldout-selected-incumbent-noop"
         ),
         "after_operator_replay_bank_sha256": after_operator_replay.bank_sha256,
+        "mlp_decision_sha256": mlp_receipt["result_sha256"],
         "mlp_installation_sha256": mlp_receipt["result_sha256"],
+        "mlp_decision_count": 1,
+        "mlp_installed": mlp_receipt.get("installed") is True,
+        "mlp_install_count": int(mlp_receipt.get("installed") is True),
         "mlp_source_functional_provenance_sha256": (
             mlp_source_provenance["result_sha256"]
         ),
@@ -2496,11 +2504,19 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             )
             residual_bank = _initial_residual_bank(target_model, alignments)
             layer_receipts = []
+            attention_decision_count = 0
             attention_install_count = 0
+            attention_incumbent_noop_count = 0
+            short_conv_decision_count = 0
             short_conv_install_count = 0
+            short_conv_incumbent_noop_count = 0
             operator_parameter_mutation_count = 0
             mlp_evidence_compile_count = 0
+            nonterminal_mlp_decision_count = 0
             nonterminal_mlp_install_count = 0
+            nonterminal_mlp_incumbent_noop_count = 0
+            final_mlp_producer_install_count = 0
+            final_mlp_producer_incumbent_noop_count = 0
             mlp_parameter_mutation_count = 0
             final_terminal_evidence: Mapping[str, Any] = MappingProxyType({})
             for layer_index, operator_kind in enumerate(kinds):
@@ -2550,7 +2566,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         installer=attention_installer,
                         parameter_count=parameter_count,
                     )
-                    attention_install_count += 1
+                    attention_decision_count += 1
+                    attention_install_count += int(
+                        operator_receipt.get("installed") is True
+                    )
+                    attention_incumbent_noop_count += int(
+                        operator_receipt.get("installed") is False
+                    )
                     attention_lineage = lineage
                 else:
                     attention_lineage = None
@@ -2586,7 +2608,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         installer=selected_short_installer,
                         parameter_count=parameter_count,
                     )
-                    short_conv_install_count += 1
+                    short_conv_decision_count += 1
+                    short_conv_install_count += int(
+                        operator_receipt.get("installed") is True
+                    )
+                    short_conv_incumbent_noop_count += int(
+                        operator_receipt.get("installed") is False
+                    )
                 operator_parameter_mutation_count += int(
                     operator_receipt["model_state_before_sha256"]
                     != operator_receipt["model_state_after_sha256"]
@@ -2642,9 +2670,21 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     parameter_count=parameter_count,
                 )
                 if layer_index < 13:
-                    nonterminal_mlp_install_count += 1
+                    nonterminal_mlp_decision_count += 1
+                    nonterminal_mlp_install_count += int(
+                        mlp_receipt.get("installed") is True
+                    )
+                    nonterminal_mlp_incumbent_noop_count += int(
+                        mlp_receipt.get("installed") is False
+                    )
                 else:
                     final_terminal_evidence = terminal_evidence
+                    final_mlp_producer_install_count = int(
+                        mlp_receipt.get("installed") is True
+                    )
+                    final_mlp_producer_incumbent_noop_count = int(
+                        mlp_receipt.get("installed") is False
+                    )
                 mlp_parameter_mutation_count += int(
                     mlp_receipt["model_state_before_sha256"]
                     != mlp_receipt["model_state_after_sha256"]
@@ -2696,10 +2736,24 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             for split, value in sorted(final_terminal_evidence.items())
         }
         if (
-            attention_install_count != 6
-            or short_conv_install_count != 8
+            attention_decision_count != 6
+            or attention_install_count + attention_incumbent_noop_count != 6
+            or short_conv_decision_count != 8
+            or short_conv_install_count + short_conv_incumbent_noop_count != 8
             or mlp_evidence_compile_count != 14
-            or nonterminal_mlp_install_count != 13
+            or nonterminal_mlp_decision_count != 13
+            or (
+                nonterminal_mlp_install_count
+                + nonterminal_mlp_incumbent_noop_count
+                != 13
+            )
+            or final_mlp_producer_install_count
+            + final_mlp_producer_incumbent_noop_count
+            != 1
+            or operator_parameter_mutation_count
+            != attention_install_count + short_conv_install_count
+            or mlp_parameter_mutation_count
+            != nonterminal_mlp_install_count + final_mlp_producer_install_count
             or set(final_terminal_evidence) != set(_PARTITIONS)
             or operator_parameter_mutation_count + mlp_parameter_mutation_count <= 0
             or not changed_keys
@@ -2720,7 +2774,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             )
         body = {
             "schema": LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA,
-            "status": "complete-causal-layer-stack-installed-final-w2-deferred",
+            "status": "complete-causal-layer-stack-adjudicated-final-w2-deferred",
             "cache_key": cache.cache_key,
             "cache_parent_fingerprint": cache.parent_fingerprint,
             "cache_layer_topology_sha256": cache.layer_topology_fingerprint,
@@ -2744,22 +2798,53 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             ],
             "layer_installations": [dict(value) for value in layer_receipts],
             "layer_count": 14,
+            "attention_operator_decision_count": attention_decision_count,
             "attention_operator_install_count": attention_install_count,
+            "attention_operator_incumbent_noop_count": (
+                attention_incumbent_noop_count
+            ),
+            "short_conv_operator_decision_count": short_conv_decision_count,
             "short_conv_operator_install_count": short_conv_install_count,
+            "short_conv_operator_incumbent_noop_count": (
+                short_conv_incumbent_noop_count
+            ),
             "operator_parameter_mutation_count": (operator_parameter_mutation_count),
             "replay_fresh_mlp_evidence_compile_count": (mlp_evidence_compile_count),
+            "nonterminal_mlp_writer_decision_count": nonterminal_mlp_decision_count,
             "nonterminal_mlp_writer_install_count": (nonterminal_mlp_install_count),
+            "nonterminal_mlp_writer_incumbent_noop_count": (
+                nonterminal_mlp_incumbent_noop_count
+            ),
+            "final_mlp_producer_install_count": final_mlp_producer_install_count,
+            "final_mlp_producer_incumbent_noop_count": (
+                final_mlp_producer_incumbent_noop_count
+            ),
             "mlp_parameter_mutation_count": mlp_parameter_mutation_count,
             "heldout_selected_incumbent_noop_count": sum(
                 int(value["operator_incumbent_noop_selected"])
                 + int(value["mlp_incumbent_noop_selected"])
                 for value in layer_receipts
             ),
-            "complete_causal_layer_stack_installed": True,
-            "all_attention_operators_installed": True,
-            "all_short_conv_operators_installed": True,
+            "complete_causal_layer_stack_adjudicated": True,
+            "complete_causal_layer_stack_installed": (
+                attention_install_count == attention_decision_count
+                and short_conv_install_count == short_conv_decision_count
+                and nonterminal_mlp_install_count == nonterminal_mlp_decision_count
+                and final_mlp_producer_install_count == 1
+            ),
+            "all_attention_operator_decisions_completed": True,
+            "all_attention_operators_installed": (
+                attention_install_count == attention_decision_count
+            ),
+            "all_short_conv_operator_decisions_completed": True,
+            "all_short_conv_operators_installed": (
+                short_conv_install_count == short_conv_decision_count
+            ),
             "all_replay_fresh_mlp_evidence_compiled": True,
-            "all_nonterminal_mlp_writers_installed": True,
+            "all_nonterminal_mlp_writer_decisions_completed": True,
+            "all_nonterminal_mlp_writers_installed": (
+                nonterminal_mlp_install_count == nonterminal_mlp_decision_count
+            ),
             "authenticated_incumbent_noop_layer_decisions_permitted": True,
             "whole_stage_contains_meaningful_parameter_changes": True,
             "final_layer_mlp_w2_deferred_to_fused_terminal": True,
