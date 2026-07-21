@@ -265,6 +265,34 @@ def _install_fake_compiler(
     )
 
 
+def _install_fake_noop_qk_compiler(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Compiled:
+        def __init__(self, seed: object) -> None:
+            self.query_weight = seed.query_weight.clone()
+            self.key_weight = seed.key_weight.clone()
+            self.accepted = False
+            self.changed = False
+            self.report = {"report_sha256": "5" * 64}
+
+        def verify(self) -> str:
+            return self.report["report_sha256"]
+
+    def compile_fake(**kwargs: object) -> _Compiled:
+        return _Compiled(kwargs["seed"])
+
+    monkeypatch.setattr(adapter, "Lfm2CompiledEndpointQkResidualFold", _Compiled)
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_cached_endpoint_qk_residual_fold",
+        compile_fake,
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_evaluate_bank",
+        lambda *_args, **_kwargs: _metrics(0.5),
+    )
+
+
 def test_closed_form_four_way_gate_installs_only_after_frozen_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -288,8 +316,14 @@ def test_closed_form_four_way_gate_installs_only_after_frozen_validation(
     assert report["candidate_frozen_before_validation"] is True
     assert report["validation_triggered_refit"] is False
     assert report["numeric_parent_child_weight_match_objective"] is False
-    assert report["analytically_refit_projection_roles"] == ["q_proj", "k_proj"]
-    assert report["fixed_inherited_projection_roles"] == ["v_proj", "out_proj"]
+    assert report["analytically_refit_projection_roles"] == ["q_proj"]
+    assert report["fixed_inherited_projection_roles"] == [
+        "k_proj",
+        "v_proj",
+        "out_proj",
+    ]
+    assert report["fresh_query_refit_performed"] is True
+    assert report["fresh_key_refit_performed"] is False
     assert report["fresh_four_matrix_qkvo_refit_claimed"] is False
     assert report["fresh_output_writer_refit_performed"] is False
     assert report["output_writer"]["accepted"] is False
@@ -385,10 +419,9 @@ def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
     assert report["fresh_output_writer_refit_performed"] is True
     assert report["analytically_refit_projection_roles"] == [
         "q_proj",
-        "k_proj",
         "out_proj",
     ]
-    assert report["fixed_inherited_projection_roles"] == ["v_proj"]
+    assert report["fixed_inherited_projection_roles"] == ["k_proj", "v_proj"]
     assert report["fresh_value_refit_performed"] is False
     assert report["complete_qkvo_bundle_installed_transactionally"] is True
 
@@ -452,8 +485,144 @@ def test_accepted_joint_vo_is_installed_in_the_same_qkvo_transaction(
     assert report["fresh_joint_value_output_refit_performed"] is True
     assert report["fresh_value_refit_performed"] is True
     assert report["fresh_output_writer_refit_performed"] is True
-    assert report["fresh_four_matrix_qkvo_refit_claimed"] is True
-    assert report["fixed_inherited_projection_roles"] == []
+    assert report["fresh_four_matrix_qkvo_refit_claimed"] is False
+    assert report["fixed_inherited_projection_roles"] == ["k_proj"]
+
+
+def test_qk_seed_fallback_can_publish_a_joint_v_o_improvement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    evidence = _evidence(model)
+    _install_fake_noop_qk_compiler(monkeypatch)
+    before = {
+        name: value.detach().clone() for name, value in model.state_dict().items()
+    }
+    reached_competition = False
+
+    def accept_joint_competition(
+        **kwargs: object,
+    ) -> tuple[torch.Tensor, torch.Tensor, object]:
+        nonlocal reached_competition
+        reached_competition = True
+        seed = kwargs["seed"]
+        value = seed.value_weight.clone()
+        output = seed.output_weight.clone()
+        value[0, 0] += 1.0
+        output[0, 0] += 1.0
+        return (
+            value,
+            output,
+            {
+                "published_candidate": "joint_value_output",
+                "candidate_reports": {
+                    "fixed_v_output_only": {
+                        "rejection_partition": "selection",
+                        "partitions": {
+                            "fit_check": {"nonregressing": True},
+                            "selection": {"nonregressing": True},
+                        },
+                    }
+                },
+                "validation": {"endpoint_nonregressing": True},
+            },
+        )
+
+    monkeypatch.setattr(
+        adapter,
+        "_select_and_validate_vo_candidate",
+        accept_joint_competition,
+    )
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+
+    assert reached_competition is True
+    assert receipt["changed_state_keys"] == [
+        "model.layers.0.self_attn.v_proj.weight",
+        "model.layers.0.self_attn.out_proj.weight",
+    ]
+    assert all(
+        torch.equal(value, before[name])
+        for name, value in model.state_dict().items()
+        if name
+        not in {
+            "model.layers.0.self_attn.v_proj.weight",
+            "model.layers.0.self_attn.out_proj.weight",
+        }
+    )
+    report = receipt["analytic_refold"]
+    assert report["qk_compiler_accepted"] is False
+    assert report["qk_compiler_changed"] is False
+    assert report["authenticated_qk_seed_fallback_entered_vo_competition"] is True
+    assert report["joint_value_output_candidate_published"] is True
+    assert report["analytically_refit_projection_roles"] == ["v_proj", "out_proj"]
+    assert report["fixed_inherited_projection_roles"] == [
+        "q_proj",
+        "k_proj",
+    ]
+
+
+def test_total_qkvo_noop_fails_without_mutating_the_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    evidence = _evidence(model)
+    _install_fake_noop_qk_compiler(monkeypatch)
+    before = {
+        name: value.detach().clone() for name, value in model.state_dict().items()
+    }
+    reached_competition = False
+
+    def retain_incumbent(
+        **kwargs: object,
+    ) -> tuple[torch.Tensor, torch.Tensor, object]:
+        nonlocal reached_competition
+        reached_competition = True
+        seed = kwargs["seed"]
+        return (
+            seed.value_weight,
+            seed.output_weight,
+            {
+                "published_candidate": "incumbent",
+                "candidate_reports": {
+                    "fixed_v_output_only": {
+                        "rejection_partition": "fit",
+                        "partitions": {
+                            "fit_check": {"nonregressing": True},
+                            "selection": {"nonregressing": True},
+                        },
+                    }
+                },
+                "validation": {"endpoint_nonregressing": True},
+            },
+        )
+
+    monkeypatch.setattr(
+        adapter,
+        "_select_and_validate_vo_candidate",
+        retain_incumbent,
+    )
+    with pytest.raises(
+        adapter.Lfm2SemanticAttentionRefoldError,
+        match="installed no correction",
+    ):
+        adapter.compile_install_lfm2_semantic_attention_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            cache_key="2" * 64,
+            bridge_artifact_sha256="3" * 64,
+        )
+
+    assert reached_competition is True
+    assert all(
+        torch.equal(value, before[name]) for name, value in model.state_dict().items()
+    )
 
 
 def test_incomplete_causal_history_fails_before_the_compiler(

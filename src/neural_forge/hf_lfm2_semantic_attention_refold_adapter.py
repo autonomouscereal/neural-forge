@@ -2617,11 +2617,9 @@ def compile_install_lfm2_semantic_attention_postfold(
     if (
         not isinstance(compiled, Lfm2CompiledEndpointQkResidualFold)
         or compiled.verify() != compiled.report["report_sha256"]
-        or not compiled.accepted
-        or not compiled.changed
     ):
         raise Lfm2SemanticAttentionRefoldError(
-            "FIT/FIT-CHECK produced no authenticated nonempty correction."
+            "FIT/FIT-CHECK produced no authenticated Q/K result."
         )
     baseline_selection = _evaluate_bank(
         selection_bank,
@@ -2648,6 +2646,14 @@ def compile_install_lfm2_semantic_attention_postfold(
         )
     frozen_query = compiled.query_weight.detach().cpu().clone()
     frozen_key = compiled.key_weight.detach().cpu().clone()
+    query_changed = not torch.equal(frozen_query, seed.query_weight)
+    key_changed = not torch.equal(frozen_key, seed.key_weight)
+    if compiled.changed != (query_changed or key_changed) or compiled.accepted != (
+        query_changed or key_changed
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Authenticated Q/K acceptance disagrees with its published tensors."
+        )
     frozen_qk_sha = canonical_sha256(
         {
             "q": _tensor_sha256(frozen_query),
@@ -2852,15 +2858,22 @@ def compile_install_lfm2_semantic_attention_postfold(
             "numeric_parent_child_weight_match_objective": False,
             "dense_existing_qkvo_topology_only": True,
             "analytically_refit_projection_roles": [
-                "q_proj",
-                "k_proj",
+                *(["q_proj"] if query_changed else []),
+                *(["k_proj"] if key_changed else []),
                 *(["v_proj"] if value_changed else []),
                 *(["out_proj"] if output_changed else []),
             ],
             "fixed_inherited_projection_roles": [
+                *([] if query_changed else ["q_proj"]),
+                *([] if key_changed else ["k_proj"]),
                 *([] if value_changed else ["v_proj"]),
                 *([] if output_changed else ["out_proj"]),
             ],
+            "qk_compiler_accepted": compiled.accepted,
+            "qk_compiler_changed": compiled.changed,
+            "authenticated_qk_seed_fallback_entered_vo_competition": (
+                not compiled.changed
+            ),
             "fixed_value_source": (
                 "fit_only_joint_residual_composite_low_rank_factorization"
                 if value_changed
@@ -2890,8 +2903,14 @@ def compile_install_lfm2_semantic_attention_postfold(
             ),
             "fresh_value_refit_performed": value_changed,
             "fresh_output_writer_refit_performed": output_changed,
+            "fresh_query_refit_performed": query_changed,
+            "fresh_key_refit_performed": key_changed,
             "fresh_four_matrix_qkvo_refit_claimed": (
-                joint_accepted and value_changed and output_changed
+                query_changed
+                and key_changed
+                and joint_accepted
+                and value_changed
+                and output_changed
             ),
             "complete_qkvo_bundle_installed_transactionally": True,
             "complete_causal_cache_only": True,
