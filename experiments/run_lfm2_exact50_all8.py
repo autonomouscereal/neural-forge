@@ -46,16 +46,15 @@ from neural_forge.hf_lfm2_intelligence_holdout import (
     load_lfm2_intelligence_holdout_parent_envelope,
     seal_lfm2_intelligence_holdout_candidate_outputs,
 )
-from neural_forge.hf_lfm2_parent_relative_manual_gate import (
-    build_parent_relative_manual_packet,
-)
 
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-RUNNER_SCHEMA = "neural-forge-lfm2-exact50-all8-run-v1"
-TARGET_REPORT_SCHEMA = "neural-forge-lfm2-exact50-all8-target-report-v1"
+LEGACY_RUNNER_SCHEMA = "neural-forge-lfm2-exact50-all8-run-v1"
+RUNNER_SCHEMA = "neural-forge-lfm2-exact50-all8-run-v2"
+LEGACY_TARGET_REPORT_SCHEMA = "neural-forge-lfm2-exact50-all8-target-report-v1"
+TARGET_REPORT_SCHEMA = "neural-forge-lfm2-exact50-all8-target-report-v2"
 
 
 class Lfm2Exact50All8RunnerError(RuntimeError):
@@ -72,9 +71,7 @@ def _digest(value: Any, name: str) -> str:
         or len(value) != 64
         or any(character not in "0123456789abcdef" for character in value)
     ):
-        raise Lfm2Exact50All8RunnerError(
-            f"{name} must be a lowercase SHA-256 digest."
-        )
+        raise Lfm2Exact50All8RunnerError(f"{name} must be a lowercase SHA-256 digest.")
     return value
 
 
@@ -151,9 +148,7 @@ class Exact50All8RunConfig:
         object.__setattr__(
             self,
             "parent_model_directory",
-            _local_directory(
-                self.parent_model_directory, "parent_model_directory"
-            ),
+            _local_directory(self.parent_model_directory, "parent_model_directory"),
         )
         object.__setattr__(
             self,
@@ -181,9 +176,7 @@ class Exact50All8RunConfig:
         ):
             _digest(getattr(self, name), name)
         if self.dtype not in {"float16", "bfloat16"}:
-            raise Lfm2Exact50All8RunnerError(
-                "dtype must be float16 or bfloat16."
-            )
+            raise Lfm2Exact50All8RunnerError("dtype must be float16 or bfloat16.")
         if (
             isinstance(self.group_size, bool)
             or not isinstance(self.group_size, int)
@@ -198,9 +191,7 @@ class Exact50All8RunConfig:
             or not isinstance(self.analysis_chunk_groups, int)
             or self.analysis_chunk_groups < 1
         ):
-            raise Lfm2Exact50All8RunnerError(
-                "analysis_chunk_groups must be positive."
-            )
+            raise Lfm2Exact50All8RunnerError("analysis_chunk_groups must be positive.")
 
 
 def run_lfm2_exact50_all8(config: Exact50All8RunConfig) -> dict[str, Any]:
@@ -214,19 +205,13 @@ def run_lfm2_exact50_all8(config: Exact50All8RunConfig) -> dict[str, Any]:
         raise Lfm2Exact50All8RunnerError(
             "Parent envelope file differs from its expected SHA-256."
         )
-    parent_document = json.loads(
-        config.parent_envelope.read_text(encoding="utf-8")
-    )
+    parent_document = json.loads(config.parent_envelope.read_text(encoding="utf-8"))
     envelope = load_lfm2_intelligence_holdout_parent_envelope(
         parent_document,
         expected_envelope_sha256=config.expected_parent_envelope_sha256,
         expected_manifest_sha256=config.expected_manifest_sha256,
-        expected_parent_state_fingerprint=(
-            config.expected_parent_state_fingerprint
-        ),
-        expected_parent_model_fingerprint=(
-            config.expected_parent_model_fingerprint
-        ),
+        expected_parent_state_fingerprint=(config.expected_parent_state_fingerprint),
+        expected_parent_model_fingerprint=(config.expected_parent_model_fingerprint),
         expected_tokenizer_fingerprint=config.expected_tokenizer_fingerprint,
     )
     tokenizer_fingerprint, _files = posthoc.fingerprint_bound_local_tokenizer(
@@ -356,9 +341,7 @@ def run_lfm2_exact50_all8(config: Exact50All8RunConfig) -> dict[str, Any]:
             expected_parent_envelope_file_sha256=(
                 config.expected_parent_envelope_file_sha256
             ),
-            expected_parent_envelope_sha256=(
-                config.expected_parent_envelope_sha256
-            ),
+            expected_parent_envelope_sha256=(config.expected_parent_envelope_sha256),
             expected_manifest_sha256=config.expected_manifest_sha256,
             expected_parent_state_fingerprint=(
                 config.expected_parent_state_fingerprint
@@ -367,9 +350,7 @@ def run_lfm2_exact50_all8(config: Exact50All8RunConfig) -> dict[str, Any]:
                 config.expected_parent_model_fingerprint
             ),
             tokenizer_directory=config.tokenizer_directory,
-            expected_tokenizer_fingerprint=(
-                config.expected_tokenizer_fingerprint
-            ),
+            expected_tokenizer_fingerprint=(config.expected_tokenizer_fingerprint),
             candidate_report=candidate_path,
             expected_candidate_report_sha256=candidate_file_sha,
             report_path=intelligence_path,
@@ -381,7 +362,11 @@ def run_lfm2_exact50_all8(config: Exact50All8RunConfig) -> dict[str, Any]:
         )
     )
     standard_packet = json.loads(manual_path.read_text(encoding="utf-8"))
-    parent_relative_packet = build_parent_relative_manual_packet(standard_packet)
+    parent_relative_packet = causal_runner._build_exact_all_case_parent_relative_packet(
+        standard_packet,
+        envelope,
+        candidate_rows,
+    )
     parent_relative_packet_path = (
         config.output_root / "parent_relative_manual_packet.json"
     )
@@ -389,7 +374,11 @@ def run_lfm2_exact50_all8(config: Exact50All8RunConfig) -> dict[str, Any]:
         parent_relative_packet_path,
         parent_relative_packet,
     )
-    decision = _parent_relative_decision(intelligence, None)
+    decision = _parent_relative_decision(
+        intelligence,
+        None,
+        parent_relative_packet,
+    )
     accounting = inspect_lfm2_exact50_all8(checkpoint)
     target_core = {
         "schema": TARGET_REPORT_SCHEMA,
@@ -408,32 +397,28 @@ def run_lfm2_exact50_all8(config: Exact50All8RunConfig) -> dict[str, Any]:
         "holdout": {
             "suite": "sealed-independent-64-case-lfm2-holdout",
             "case_count": len(candidate_rows),
-            "candidate_outputs_sha256": candidate_document[
-                "candidate_outputs_sha256"
-            ],
+            "candidate_outputs_sha256": candidate_document["candidate_outputs_sha256"],
             "candidate_output_file_sha256": candidate_file_sha,
-            "automatic_intelligence_report_sha256": intelligence[
-                "report_sha256"
-            ],
+            "automatic_intelligence_report_sha256": intelligence["report_sha256"],
             "automatic_status": intelligence["status"],
-            "standard_absolute_manual_status": intelligence["manual_review"][
-                "status"
-            ],
+            "standard_absolute_manual_status": intelligence["manual_review"]["status"],
             "standard_absolute_manual_promotion_eligible": False,
             "parent_relative_manual_packet_sha256": parent_relative_packet[
                 "packet_sha256"
+            ],
+            "parent_relative_manual_packet_case_count": parent_relative_packet[
+                "case_count"
+            ],
+            "parent_relative_manual_review_scope": parent_relative_packet[
+                "review_scope"
             ],
             "parent_relative_manual_report_sha256": None,
             "parent_model_loaded_during_scoring": False,
             "new_parent_responses": 0,
         },
         "parent_binding": {
-            "parent_state_fingerprint": (
-                config.expected_parent_state_fingerprint
-            ),
-            "parent_model_fingerprint": (
-                config.expected_parent_model_fingerprint
-            ),
+            "parent_state_fingerprint": (config.expected_parent_state_fingerprint),
+            "parent_model_fingerprint": (config.expected_parent_model_fingerprint),
             "parent_envelope_sha256": config.expected_parent_envelope_sha256,
             "tokenizer_fingerprint": config.expected_tokenizer_fingerprint,
             "parent_state_unchanged_by_export": True,
@@ -466,12 +451,8 @@ def run_lfm2_exact50_all8(config: Exact50All8RunConfig) -> dict[str, Any]:
         "target_report": target_report,
         "parent_binding": {
             "parent_envelope_sha256": config.expected_parent_envelope_sha256,
-            "parent_state_fingerprint": (
-                config.expected_parent_state_fingerprint
-            ),
-            "parent_model_fingerprint": (
-                config.expected_parent_model_fingerprint
-            ),
+            "parent_state_fingerprint": (config.expected_parent_state_fingerprint),
+            "parent_model_fingerprint": (config.expected_parent_model_fingerprint),
             "tokenizer_fingerprint": config.expected_tokenizer_fingerprint,
             "parent_state_unchanged_by_export": True,
             "new_parent_responses": 0,
@@ -502,9 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tokenizer-directory", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--parent-envelope", type=Path, required=True)
-    parser.add_argument(
-        "--expected-parent-envelope-file-sha256", required=True
-    )
+    parser.add_argument("--expected-parent-envelope-file-sha256", required=True)
     parser.add_argument("--expected-parent-envelope-sha256", required=True)
     parser.add_argument("--expected-manifest-sha256", required=True)
     parser.add_argument("--expected-parent-state-fingerprint", required=True)
@@ -522,9 +501,7 @@ def config_from_args(args: argparse.Namespace) -> Exact50All8RunConfig:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    report = run_lfm2_exact50_all8(
-        config_from_args(build_parser().parse_args(argv))
-    )
+    report = run_lfm2_exact50_all8(config_from_args(build_parser().parse_args(argv)))
     target = report["target_report"]
     print(
         json.dumps(

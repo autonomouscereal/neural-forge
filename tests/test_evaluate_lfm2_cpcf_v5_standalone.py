@@ -48,6 +48,78 @@ def _file_sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _holistic_review_args(
+    packet: dict[str, Any],
+    *,
+    conclusion: str = "credible_intelligent_compaction",
+    verdict: str = "different_but_equivalent",
+) -> dict[str, Any]:
+    material_ids = [
+        row["case_id"] for row in packet["cases"] if verdict == "material_regression"
+    ]
+    return {
+        "qualitative_case_reviews": [
+            {
+                "case_id": row["case_id"],
+                "verdict": verdict,
+                "failure_modes": (
+                    ["capability_loss"] if verdict == "material_regression" else []
+                ),
+                "reason": (
+                    f"Review {index} directly compares both complete responses and "
+                    "records the overall semantic judgment for this prompt."
+                ),
+                "full_parent_and_candidate_responses_reviewed": True,
+                "criterion_observations": {
+                    "correctness": (
+                        f"Review {index} checks factual and task correctness against "
+                        "this case's prompt and response content."
+                    ),
+                    "coherence": (
+                        f"Review {index} checks whether the candidate response remains "
+                        "internally coherent from beginning to end."
+                    ),
+                    "usefulness": (
+                        f"Review {index} checks whether the candidate gives a useful "
+                        "answer rather than merely related wording."
+                    ),
+                    "instruction_following": (
+                        f"Review {index} checks the concrete instructions in this "
+                        "prompt against both generated answers."
+                    ),
+                    "retained_capability_and_intelligence": (
+                        f"Review {index} compares the reasoning and capability shown "
+                        "by the parent and compressed child."
+                    ),
+                },
+                "truncation_consideration": {
+                    "parent_unfinished_at_generation_limit": row["parent_completion"][
+                        "unfinished_at_generation_limit"
+                    ],
+                    "candidate_unfinished_at_generation_limit": row[
+                        "candidate_completion"
+                    ]["unfinished_at_generation_limit"],
+                    "assessment": "none",
+                    "observation": (
+                        f"Review {index} explicitly considers the sealed completion "
+                        "flags before judging this response pair."
+                    ),
+                },
+            }
+            for index, row in enumerate(packet["cases"])
+        ],
+        "holistic_suite_conclusion": {
+            "conclusion": conclusion,
+            "reason": "This is the reviewer's explicit non-scalar suite judgment.",
+            "strengths": ["whole-response review"],
+            "limitations": (
+                ["material behavioral regressions"] if material_ids else []
+            ),
+            "material_regression_case_ids": material_ids,
+        },
+    }
+
+
 class _TinyChild(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -102,6 +174,24 @@ def _passing_output(spec: Any) -> str:
     return " ".join(words)
 
 
+def test_same_version_prequalitative_manual_ratings_are_rejected() -> None:
+    manifest = load_lfm2_intelligence_holdout_manifest()
+    stale = {
+        "ratings": [
+            {
+                "case_id": spec.case_id,
+                "reason": "Legacy scalar-only review.",
+            }
+            for spec in manifest.cases
+        ]
+    }
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="authoritative qualitative verdicts",
+    ):
+        evaluator._require_exact_all_case_manual_ratings(stale, manifest)
+
+
 def _parent_envelope(
     tmp_path: Path,
     *,
@@ -141,6 +231,7 @@ def _capture_fixture(
     metadata_overrides: dict[str, Any] | None = None,
     use_real_artifact_metadata: bool = False,
     authenticate_semantic_postfold: bool = False,
+    enhanced_semantic_artifact_purity: bool = True,
     passing_outputs: bool = False,
     failing_candidate_outputs: bool = False,
 ) -> dict[str, Any]:
@@ -194,12 +285,12 @@ def _capture_fixture(
     }
     metadata.update(metadata_overrides or {})
     metadata = {**metadata, "artifact_sha256": canonical_sha256(metadata)}
-    if use_real_artifact_metadata:
+    if use_real_artifact_metadata or authenticate_semantic_postfold:
         _write_json(
             candidate_directory / LFM2_CPCF_V5_ARTIFACT_METADATA,
             metadata,
         )
-    else:
+    if not use_real_artifact_metadata:
         monkeypatch.setattr(
             evaluator,
             "_read_artifact_metadata",
@@ -211,6 +302,36 @@ def _capture_fixture(
     semantic_receipt_sha = None
     fresh_reload_parent_free_state_sha = None
     if authenticate_semantic_postfold:
+        artifact_purity_contract: dict[str, Any] = {}
+        if enhanced_semantic_artifact_purity:
+            typed_inventory = evaluator.canonical_standalone_fold_artifact_inventory(
+                candidate_directory
+            )
+            artifact_tree = evaluator.scan_standalone_fold_artifact_tree(
+                candidate_directory,
+                expected_file_roles={
+                    value["path"]: value["artifact_role"] for value in typed_inventory
+                },
+            )
+            artifact_purity_contract = {
+                "artifact_tree": [dict(value) for value in artifact_tree],
+                "artifact_tree_sha256": canonical_sha256(artifact_tree),
+                "artifact_file_count": len(artifact_tree),
+                "artifact_total_bytes": sum(
+                    int(value["size_bytes"]) for value in artifact_tree
+                ),
+                "complete_artifact_tree_hashed": True,
+                "forbidden_named_or_referenced_sidecars_present": False,
+                "standalone_directory_purity_authenticated": True,
+                "artifact_inventory_schema": (
+                    evaluator.STANDALONE_FOLD_ARTIFACT_INVENTORY_SCHEMA
+                ),
+                "artifact_inventory": [dict(value) for value in typed_inventory],
+                "artifact_inventory_sha256": canonical_sha256(typed_inventory),
+                "canonical_typed_artifact_inventory_authenticated": True,
+                "staged_artifact_tree_purity_verified_before_publication": True,
+                "unallowlisted_artifact_files_present": False,
+            }
         zero_operations = {
             "parent_model_objects_constructed": 0,
             "parent_model_forward_calls": 0,
@@ -243,6 +364,7 @@ def _capture_fixture(
             "cache_required_for_reload": False,
             "network_access_performed": False,
             "operation_audit": zero_operations,
+            **artifact_purity_contract,
         }
         checkpoint = {
             **checkpoint_core,
@@ -487,8 +609,25 @@ def test_capture_persists_text_limits_and_strict_reload(
     assert all(
         isinstance(row["parent_response"], str)
         and isinstance(row["candidate_response"], str)
+        and set(row["parent_completion"])
+        == {
+            "generated_token_count",
+            "eos_observed",
+            "unfinished_at_generation_limit",
+        }
+        and set(row["candidate_completion"])
+        == {
+            "generated_token_count",
+            "eos_observed",
+            "unfinished_at_generation_limit",
+        }
         for row in packet["cases"]
     )
+    assert (
+        packet["completion_metadata_rows_sha256"]
+        == automatic["manual_review_completion_metadata_rows_sha256"]
+    )
+    assert packet["rubric"]["completion_metadata_is_diagnostic_context_only"]
     assert automatic["manual_review_packet_case_count"] == 64
     assert automatic["diagnostic_review_semantics"]["manual_review_case_count"] == 64
     assert (
@@ -546,7 +685,7 @@ def test_capture_rejects_nonzero_artifact_training_provenance(
         )
 
 
-def test_capture_accepts_semantic_postfold_artifact_contract_without_sidecars(
+def test_capture_accepts_enhanced_semantic_postfold_artifact_contract_without_sidecars(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -584,12 +723,195 @@ def test_capture_accepts_semantic_postfold_artifact_contract_without_sidecars(
         == fixture["fresh_reload_parent_free_state_sha"]
     )
     assert provenance["standalone_parent_free_reload_authenticated"] is True
+    assert provenance["complete_artifact_tree_purity_authenticated"] is True
+    assert provenance["canonical_typed_artifact_inventory_authenticated"] is True
+    assert provenance["artifact_purity_promotion_eligible"] is True
+    assert provenance["legacy_same_schema_artifact_purity_receipt_quarantined"] is False
+    assert fixture["report"]["semantic_postfold_artifact_purity_finalization_eligible"]
     assert (
         fixture["report"]["diagnostic_review_semantics"][
             "semantic_postfold_checkpoint_and_receipt_pinned"
         ]
         is True
     )
+
+
+@pytest.mark.parametrize("enhanced_inventory", (False, True))
+def test_semantic_provenance_authenticates_complete_tree_and_rejects_later_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    enhanced_inventory: bool,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        use_real_artifact_metadata=True,
+        authenticate_semantic_postfold=True,
+        enhanced_semantic_artifact_purity=False,
+    )
+    tree = evaluator.scan_standalone_fold_artifact_tree(fixture["candidate_directory"])
+    inventory = evaluator.canonical_standalone_fold_artifact_inventory(
+        fixture["candidate_directory"]
+    )
+    document = json.loads(fixture["semantic_receipt_path"].read_text())
+    receipt_core = dict(document)
+    receipt_core.pop("result_sha256")
+    checkpoint_core = dict(receipt_core["checkpoint"])
+    checkpoint_core.pop("result_sha256")
+    checkpoint_core.update(
+        {
+            "artifact_tree": [dict(value) for value in tree],
+            "artifact_tree_sha256": canonical_sha256(tree),
+            "artifact_file_count": len(tree),
+            "artifact_total_bytes": sum(int(value["size_bytes"]) for value in tree),
+            "complete_artifact_tree_hashed": True,
+            "forbidden_named_or_referenced_sidecars_present": False,
+            "standalone_directory_purity_authenticated": True,
+            **(
+                {
+                    "artifact_inventory_schema": (
+                        evaluator.STANDALONE_FOLD_ARTIFACT_INVENTORY_SCHEMA
+                    ),
+                    "artifact_inventory": [dict(value) for value in inventory],
+                    "artifact_inventory_sha256": canonical_sha256(inventory),
+                    "canonical_typed_artifact_inventory_authenticated": True,
+                    "staged_artifact_tree_purity_verified_before_publication": True,
+                    "unallowlisted_artifact_files_present": False,
+                }
+                if enhanced_inventory
+                else {}
+            ),
+        }
+    )
+    receipt_core["checkpoint"] = {
+        **checkpoint_core,
+        "result_sha256": canonical_sha256(checkpoint_core),
+    }
+    enhanced = {
+        **receipt_core,
+        "result_sha256": canonical_sha256(receipt_core),
+    }
+    path = tmp_path / "semantic-postfold-tree-receipt.json"
+    _write_json(path, enhanced)
+    config = replace(
+        fixture["config"],
+        semantic_postfold_receipt=path,
+        expected_semantic_postfold_receipt_file_sha256=_file_sha(path),
+        expected_semantic_postfold_receipt_sha256=enhanced["result_sha256"],
+    )
+
+    provenance = evaluator._authenticate_semantic_postfold_provenance(
+        config,
+        fixture["metadata"],
+    )
+    assert provenance["complete_artifact_tree_purity_authenticated"] is True
+    assert provenance["artifact_tree_sha256"] == canonical_sha256(tree)
+    assert provenance["canonical_typed_artifact_inventory_authenticated"] is (
+        enhanced_inventory
+    )
+    assert provenance["artifact_inventory_sha256"] == canonical_sha256(inventory)
+    assert provenance["artifact_purity_promotion_eligible"] is enhanced_inventory
+    assert provenance["legacy_same_schema_artifact_purity_receipt_quarantined"] is (
+        not enhanced_inventory
+    )
+
+    (fixture["candidate_directory"] / "parent-cache.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="failed purity scanning",
+    ):
+        evaluator._authenticate_semantic_postfold_provenance(
+            config,
+            fixture["metadata"],
+        )
+
+
+def test_legacy_semantic_receipt_is_live_scanned_but_quarantined_from_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+        enhanced_semantic_artifact_purity=False,
+    )
+    provenance = fixture["report"]["semantic_postfold_provenance"]
+    assert provenance["live_complete_artifact_tree_scan_authenticated"] is True
+    assert (
+        provenance["live_canonical_typed_artifact_inventory_scan_authenticated"] is True
+    )
+    assert provenance["complete_artifact_tree_purity_authenticated"] is False
+    assert provenance["canonical_typed_artifact_inventory_authenticated"] is False
+    assert provenance["artifact_purity_promotion_eligible"] is False
+    assert provenance["legacy_same_schema_artifact_purity_receipt_quarantined"] is True
+    assert (
+        provenance["artifact_purity_review_status"]
+        == "legacy_receipt_live_scan_only_quarantined"
+    )
+    assert (
+        fixture["report"]["status"]
+        == "automatic_diagnostics_complete_artifact_purity_quarantined"
+    )
+
+    ratings_path = tmp_path / "unused-legacy-ratings.json"
+    _write_json(ratings_path, {})
+    automatic_path = fixture["output_directory"] / evaluator.AUTOMATIC_REPORT_FILENAME
+    final_directory = tmp_path / "legacy-final"
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="final manual review publication is quarantined",
+    ):
+        evaluator.finalize_standalone_intelligence(
+            evaluator.FinalizeConfig(
+                capture_directory=fixture["output_directory"],
+                expected_capture_report_file_sha256=_file_sha(automatic_path),
+                expected_capture_report_sha256=fixture["report"][
+                    "capture_report_sha256"
+                ],
+                parent_envelope=fixture["parent_path"],
+                expected_parent_envelope_file_sha256=fixture["parent_file_sha"],
+                manual_ratings=ratings_path,
+                expected_manual_ratings_file_sha256=_file_sha(ratings_path),
+                output_directory=final_directory,
+                expected_semantic_postfold_receipt_sha256=fixture[
+                    "semantic_receipt_sha"
+                ],
+                expected_candidate_artifact_sha256=fixture["metadata"][
+                    "artifact_sha256"
+                ],
+            )
+        )
+    assert not final_directory.exists()
+
+
+@pytest.mark.parametrize("sidecar_name", ("parent-cache.json", "undeclared.bin"))
+def test_legacy_semantic_capture_rejects_preexisting_unallowlisted_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sidecar_name: str,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+        enhanced_semantic_artifact_purity=False,
+    )
+    (fixture["candidate_directory"] / sidecar_name).write_bytes(b"undeclared")
+    generated_before = len(fixture["generated_limits"])
+    retry_output = tmp_path / "legacy-sidecar-retry"
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="failed purity scanning",
+    ):
+        evaluator.capture_standalone_intelligence(
+            replace(fixture["config"], output_directory=retry_output)
+        )
+    assert len(fixture["generated_limits"]) == generated_before
+    assert not retry_output.exists()
 
 
 def test_semantic_capture_requires_complete_independent_pin_set(
@@ -802,6 +1124,106 @@ def test_semantic_capture_recomputes_fresh_parent_free_reload_identity(
     assert len(fixture["generated_limits"]) == generated_before
 
 
+@pytest.mark.parametrize(
+    "purity_flag",
+    (
+        "complete_artifact_tree_purity_authenticated",
+        "canonical_typed_artifact_inventory_authenticated",
+    ),
+)
+def test_finalize_refuses_semantic_capture_when_either_purity_flag_is_false(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    purity_flag: str,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+    )
+    automatic_path = fixture["output_directory"] / evaluator.AUTOMATIC_REPORT_FILENAME
+    automatic = json.loads(automatic_path.read_text())
+    provenance = dict(automatic["semantic_postfold_provenance"])
+    provenance[purity_flag] = False
+    automatic_core = dict(automatic)
+    automatic_core.pop("capture_report_sha256")
+    automatic_core["semantic_postfold_provenance"] = provenance
+    tampered = {
+        **automatic_core,
+        "capture_report_sha256": canonical_sha256(automatic_core),
+    }
+    _write_json(automatic_path, tampered)
+    ratings_path = tmp_path / f"unused-ratings-{purity_flag}.json"
+    _write_json(ratings_path, {})
+    final_directory = tmp_path / f"blocked-final-{purity_flag}"
+
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="final manual review publication is quarantined",
+    ):
+        evaluator.finalize_standalone_intelligence(
+            evaluator.FinalizeConfig(
+                capture_directory=fixture["output_directory"],
+                expected_capture_report_file_sha256=_file_sha(automatic_path),
+                expected_capture_report_sha256=tampered["capture_report_sha256"],
+                parent_envelope=fixture["parent_path"],
+                expected_parent_envelope_file_sha256=fixture["parent_file_sha"],
+                manual_ratings=ratings_path,
+                expected_manual_ratings_file_sha256=_file_sha(ratings_path),
+                output_directory=final_directory,
+                expected_semantic_postfold_receipt_sha256=fixture[
+                    "semantic_receipt_sha"
+                ],
+                expected_candidate_artifact_sha256=fixture["metadata"][
+                    "artifact_sha256"
+                ],
+            )
+        )
+    assert not final_directory.exists()
+
+
+def test_finalize_rejects_sidecar_added_after_enhanced_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+    )
+    (fixture["candidate_directory"] / "parent-cache.json").write_bytes(b"{}")
+    ratings_path = tmp_path / "unused-later-sidecar-ratings.json"
+    _write_json(ratings_path, {})
+    automatic_path = fixture["output_directory"] / evaluator.AUTOMATIC_REPORT_FILENAME
+    final_directory = tmp_path / "later-sidecar-final"
+
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="failed final purity scanning",
+    ):
+        evaluator.finalize_standalone_intelligence(
+            evaluator.FinalizeConfig(
+                capture_directory=fixture["output_directory"],
+                expected_capture_report_file_sha256=_file_sha(automatic_path),
+                expected_capture_report_sha256=fixture["report"][
+                    "capture_report_sha256"
+                ],
+                parent_envelope=fixture["parent_path"],
+                expected_parent_envelope_file_sha256=fixture["parent_file_sha"],
+                manual_ratings=ratings_path,
+                expected_manual_ratings_file_sha256=_file_sha(ratings_path),
+                output_directory=final_directory,
+                expected_semantic_postfold_receipt_sha256=fixture[
+                    "semantic_receipt_sha"
+                ],
+                expected_candidate_artifact_sha256=fixture["metadata"][
+                    "artifact_sha256"
+                ],
+            )
+        )
+    assert not final_directory.exists()
+
+
 def test_finalize_binds_manual_ratings_and_refuses_clobber(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -837,6 +1259,7 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
             for row in packet["cases"]
         ],
         reviewer_id="manual-reviewer",
+        **_holistic_review_args(packet),
     )
     ratings_path = tmp_path / "manual-ratings-64.json"
     _write_json(ratings_path, ratings)
@@ -917,6 +1340,10 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
     assert report["manual_intelligence_review_complete"] is True
     assert report["automatic_accept_reject_decision"] is None
     assert report["manual_review_packet_case_count"] == 64
+    assert (
+        report["manual_review_completion_metadata_rows_sha256"]
+        == packet["completion_metadata_rows_sha256"]
+    )
     assert report["holistic_whole_response_judgment"]["reviewed_case_count"] == 64
     assert (
         report["holistic_whole_response_judgment"]["exact_manifest_case_coverage"]
@@ -933,6 +1360,12 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
         "recorded_parameter_compaction_ratio"
     ] == pytest.approx(4.0)
     assert report["diagnostic_review_semantics"]["exact_wording_matching_used"] is False
+    assert report["diagnostic_review_semantics"][
+        "completion_and_truncation_flags_are_diagnostic_only"
+    ]
+    assert report["diagnostic_review_semantics"][
+        "criterion_specific_case_observations_required"
+    ]
     assert report["operation_audit"]["parent_forward_passes"] == 0
     assert report["operation_audit"]["child_model_loaded"] is False
     assert (
@@ -1033,6 +1466,7 @@ def test_high_metrics_publish_diagnostics_without_certifying_intelligence(
         packet,
         rating_rows,
         reviewer_id="manual-reviewer",
+        **_holistic_review_args(packet),
     )
     ratings_path = tmp_path / "manual-ratings-graded.json"
     _write_json(ratings_path, ratings)
@@ -1081,6 +1515,18 @@ def test_high_metrics_publish_diagnostics_without_certifying_intelligence(
         ]
         is False
     )
+    assert (
+        report["holistic_whole_response_judgment"]["authoritative_suite_conclusion"][
+            "conclusion"
+        ]
+        == "credible_intelligent_compaction"
+    )
+    assert (
+        report["holistic_whole_response_judgment"][
+            "qualitative_judgment_is_authoritative"
+        ]
+        is True
+    )
     assert "intelligence_retention_claim" not in report
 
 
@@ -1117,6 +1563,11 @@ def test_numeric_goal_miss_still_publishes_authenticated_diagnostics(
             for row in packet["cases"]
         ],
         reviewer_id="manual-reviewer",
+        **_holistic_review_args(
+            packet,
+            conclusion="not_yet_coherent_or_intelligent",
+            verdict="material_regression",
+        ),
     )
     ratings_path = tmp_path / "manual-ratings-low-diagnostics.json"
     _write_json(ratings_path, ratings)
@@ -1147,4 +1598,10 @@ def test_numeric_goal_miss_still_publishes_authenticated_diagnostics(
     assert diagnostics["generic_automatic_policy_thresholds_met"] is False
     assert diagnostics["publication_blocked_by_metrics"] is False
     assert len(diagnostics["severe_regression_flags"]) == 256
+    assert (
+        report["holistic_whole_response_judgment"]["authoritative_suite_conclusion"][
+            "conclusion"
+        ]
+        == "not_yet_coherent_or_intelligent"
+    )
     assert (capture_directory / evaluator.FINAL_REPORT_FILENAME).is_file()

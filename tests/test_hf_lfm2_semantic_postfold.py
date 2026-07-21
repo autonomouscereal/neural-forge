@@ -15,6 +15,7 @@ torch = pytest.importorskip("torch")
 import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
 import neural_forge.hf_lfm2_cpcf_terminal_action_residual as terminal_action  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.dynamic_fold_artifact import DynamicFoldArtifactError  # noqa: E402
 
 
 class _TiedModel:
@@ -570,6 +571,41 @@ def test_fused_terminal_never_gates_or_installs_the_private_selected_tensor() ->
 
     assert "terminal.selected_down_weight" not in source
     assert "published_down_weight=published_down_weight" in source
+
+
+def test_nonzero_heldout_regression_is_a_sealed_diagnostic_only(
+    monkeypatch,
+) -> None:
+    class Metrics:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def as_dict(self) -> dict[str, object]:
+            return {"name": self.name, "finite": True}
+
+    monkeypatch.setattr(
+        postfold,
+        "_metric_gates",
+        lambda *_args, **_kwargs: {"heldout_not_regressed": False},
+    )
+    report = postfold._terminal_heldout_diagnostic(
+        Metrics("published"),
+        Metrics("nonzero-incumbent"),
+        terminal_action.Lfm2CpcfTerminalActionPolicy(),
+    )
+
+    assert report["passed"] is False
+    assert report["role"] == (
+        "diagnostic-only-after-frozen-terminal-publication-decision"
+    )
+    assert report["publication_gate_applied"] is False
+    body = dict(report)
+    supplied = body.pop("diagnostic_sha256")
+    assert supplied == canonical_sha256(body)
+    source = inspect.getsource(
+        postfold.compile_install_lfm2_fused_semantic_terminal_refold
+    )
+    assert "separate-heldout-lane-regression" not in source
 
 
 def test_heldout_selected_incumbent_is_a_valid_terminal_publication() -> None:
@@ -1241,6 +1277,57 @@ def test_lexical_coordinates_cover_all_87_inserted_rows() -> None:
     assert len(set(row_ids)) == 87
 
 
+def test_lexical_teacher_uses_best_finite_witness_when_exact_top1_is_impossible() -> (
+    None
+):
+    tied = torch.tensor(
+        [
+            [1.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+        ],
+        dtype=torch.bfloat16,
+    )
+
+    teacher, report = postfold._lexical_teacher_rows(tied, (1, 2, 1))
+
+    winners = (teacher.to(torch.float64) @ tied.to(torch.float64).T).argmax(dim=1)
+    assert winners.tolist() == [0, 2, 0]
+    assert torch.isfinite(teacher).all()
+    assert report["all_teacher_rows_exact_target_top1"] is False
+    assert report["exact_unique_desired_token_count"] == 1
+    assert report["approximate_unique_desired_token_count"] == 1
+    assert report["exact_desired_row_count"] == 1
+    assert report["approximate_desired_row_count"] == 2
+    assert report["missing_exact_top1_token_ids"] == [1]
+    diagnostics = {
+        value["target_token_id"]: value
+        for value in report["selected_unique_token_diagnostics"]
+    }
+    assert diagnostics[1]["exact_target_top1"] is False
+    assert diagnostics[1]["winner_token_id"] == 0
+    assert diagnostics[1]["target_rank"] == 1
+    assert diagnostics[1]["target_margin_over_best_competitor"] == 0.0
+    body = dict(report)
+    supplied = body.pop("teacher_sha256")
+    assert supplied == canonical_sha256(body)
+
+
+def test_lexical_teacher_exact_frontier_reports_exactness_truthfully() -> None:
+    tied = torch.eye(3, dtype=torch.bfloat16)
+
+    teacher, report = postfold._lexical_teacher_rows(tied, (2, 0, 1, 2))
+
+    winners = (teacher.to(torch.float64) @ tied.to(torch.float64).T).argmax(dim=1)
+    assert winners.tolist() == [2, 0, 1, 2]
+    assert report["all_teacher_rows_exact_target_top1"] is True
+    assert report["exact_unique_desired_token_count"] == 3
+    assert report["approximate_unique_desired_token_count"] == 0
+    assert report["exact_desired_row_count"] == 4
+    assert report["approximate_desired_row_count"] == 0
+    assert report["missing_exact_top1_token_ids"] == []
+
+
 def test_semantic_alignment_wires_authenticated_selected_input_contract(
     monkeypatch,
 ) -> None:
@@ -1490,6 +1577,48 @@ def test_attention_stage_fails_closed_with_exact_missing_compiler(
     assert seal == canonical_sha256(body)
 
 
+def _write_minimal_postfold_artifact(
+    directory: Path,
+    *,
+    extra_name: str | None = None,
+) -> None:
+    config = directory / "config.json"
+    weight = directory / "model.safetensors"
+    tokenizer = directory / "tokenizer.json"
+    config.write_text("{}", encoding="utf-8")
+    weight.write_bytes(b"test")
+    tokenizer.write_text("{}", encoding="utf-8")
+    body = {
+        "schema": postfold.LFM2_CPCF_V5_QUARANTINE_ARTIFACT_SCHEMA,
+        "dense_safetensor_files": [
+            {
+                "path": weight.name,
+                "size_bytes": weight.stat().st_size,
+                "sha256": hashlib.sha256(weight.read_bytes()).hexdigest(),
+            }
+        ],
+        "tokenizer_package_files": [
+            {
+                "path": tokenizer.name,
+                "bytes": tokenizer.stat().st_size,
+                "sha256": hashlib.sha256(tokenizer.read_bytes()).hexdigest(),
+            }
+        ],
+        "dense_safetensors_only": True,
+        "target_tokenizer_saved_with_child": True,
+        "local_reload_only": True,
+        "network_access": False,
+        "hub_loader_used": False,
+    }
+    value = {**body, "artifact_sha256": canonical_sha256(body)}
+    (directory / postfold.LFM2_CPCF_V5_ARTIFACT_METADATA).write_text(
+        json.dumps(value),
+        encoding="utf-8",
+    )
+    if extra_name is not None:
+        (directory / extra_name).write_bytes(b"unlisted runtime material")
+
+
 def test_checkpoint_publication_is_staged_then_reloaded_after_atomic_move(
     tmp_path: Path,
     monkeypatch,
@@ -1507,19 +1636,7 @@ def test_checkpoint_publication_is_staged_then_reloaded_after_atomic_move(
 
         def __call__(self, _model, directory):
             events.append(("save", directory.name))
-            body = {
-                "schema": postfold.LFM2_CPCF_V5_QUARANTINE_ARTIFACT_SCHEMA,
-                "dense_safetensors_only": True,
-                "target_tokenizer_saved_with_child": True,
-                "local_reload_only": True,
-                "network_access": False,
-                "hub_loader_used": False,
-            }
-            value = {**body, "artifact_sha256": canonical_sha256(body)}
-            (directory / postfold.LFM2_CPCF_V5_ARTIFACT_METADATA).write_text(
-                json.dumps(value),
-                encoding="utf-8",
-            )
+            _write_minimal_postfold_artifact(directory)
 
     class Loader:
         def __init__(self, **_kwargs):
@@ -1562,7 +1679,78 @@ def test_checkpoint_publication_is_staged_then_reloaded_after_atomic_move(
     assert events[2] == ("load", "standalone-postfold")
     assert receipt["staged_reload_verified"] is True
     assert receipt["published_reload_verified"] is True
+    assert receipt["complete_artifact_tree_hashed"] is True
+    assert receipt["forbidden_named_or_referenced_sidecars_present"] is False
+    assert receipt["standalone_directory_purity_authenticated"] is True
+    assert receipt["artifact_file_count"] == 4
+    assert receipt["artifact_tree_sha256"] == canonical_sha256(receipt["artifact_tree"])
+    assert receipt["canonical_typed_artifact_inventory_authenticated"] is True
+    assert receipt["staged_artifact_tree_purity_verified_before_publication"] is True
+    assert receipt["unallowlisted_artifact_files_present"] is False
+    assert receipt["artifact_inventory_sha256"] == canonical_sha256(
+        receipt["artifact_inventory"]
+    )
+    assert {value["artifact_role"] for value in receipt["artifact_inventory"]} == {
+        "artifact_metadata",
+        "model_config",
+        "model_tensor",
+        "tokenizer_resource",
+    }
     assert receipt["operation_audit"]["optimizer_steps"] == 0
+
+
+@pytest.mark.parametrize("extra_name", ("auxiliary.dat", "payload.pkl"))
+def test_checkpoint_publication_rejects_unallowlisted_sidecar_and_removes_output(
+    tmp_path: Path,
+    monkeypatch,
+    extra_name: str,
+) -> None:
+    model = _TiedModel(torch.full((4, 2), 0.5, dtype=torch.bfloat16))
+
+    class Saver:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __call__(self, _model, directory):
+            _write_minimal_postfold_artifact(directory, extra_name=extra_name)
+
+    class Loader:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __call__(self, _directory):
+            return model
+
+    monkeypatch.setattr(postfold, "Lfm2CpcfV5QuarantineSaver", Saver)
+    monkeypatch.setattr(postfold, "Lfm2CpcfV5StrictLocalLoader", Loader)
+    monkeypatch.setattr(postfold, "fingerprint_model_state", lambda _model: "1" * 64)
+    monkeypatch.setattr(
+        postfold,
+        "independent_parameter_inventory",
+        lambda _model: {"inventory_sha256": "2" * 64},
+    )
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_hf_tokenizer_semantics",
+        lambda _tokenizer: "3" * 64,
+    )
+    monkeypatch.setattr(postfold, "_ffn_width", lambda _model: 7)
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 100)
+    output = tmp_path / "forbidden-sidecar-publication"
+
+    with pytest.raises(
+        DynamicFoldArtifactError,
+        match="canonical typed inventory",
+    ):
+        postfold.publish_lfm2_semantic_postfold_checkpoint(
+            target_model=model,
+            target_tokenizer=object(),
+            output_directory=output,
+            context_binding_sha256="4" * 64,
+            device="cpu",
+        )
+
+    assert not output.exists()
 
 
 def test_failed_post_move_reload_removes_only_new_publication(
@@ -1576,18 +1764,7 @@ def test_failed_post_move_reload_removes_only_new_publication(
             pass
 
         def __call__(self, _model, directory):
-            body = {
-                "schema": postfold.LFM2_CPCF_V5_QUARANTINE_ARTIFACT_SCHEMA,
-                "dense_safetensors_only": True,
-                "target_tokenizer_saved_with_child": True,
-                "local_reload_only": True,
-                "network_access": False,
-                "hub_loader_used": False,
-            }
-            (directory / postfold.LFM2_CPCF_V5_ARTIFACT_METADATA).write_text(
-                json.dumps({**body, "artifact_sha256": canonical_sha256(body)}),
-                encoding="utf-8",
-            )
+            _write_minimal_postfold_artifact(directory)
 
     class Loader:
         def __init__(self, **_kwargs):
@@ -1686,6 +1863,212 @@ def _minimal_postfold_run_arguments(tmp_path: Path) -> dict[str, object]:
         "expected_compiler_diagnostic_sha256": "4" * 64,
         "device": "cpu",
     }
+
+
+def _cached_fused_terminal_evidence() -> dict[str, object]:
+    cache_key = "1" * 64
+    manifest_sha256 = "2" * 64
+    completion_sha256 = "3" * 64
+    record_sha256 = "4" * 64
+    record_file_sha256 = "5" * 64
+
+    def auth(body: dict[str, object], seal: str) -> dict[str, object]:
+        return {**body, seal: canonical_sha256(body)}
+
+    phases = []
+    for phase, rows, disagreements, forced_sha in (
+        ("cached_prefill", 2, 0, None),
+        ("decode.000", 1, 1, "a" * 64),
+    ):
+        phase_body = {
+            "phase": phase,
+            "cached_logits_sha256": "6" * 64,
+            "full_prefix_logits_sha256": "7" * 64,
+            "row_count": rows,
+            "maximum_absolute_error": 0.125,
+            "numerically_close": True,
+            "top1_exact_agreement": disagreements == 0,
+            "top1_disagreement_count": disagreements,
+            "all_top1_disagreements_within_numeric_error_envelope": True,
+            "forced_token_sha256": forced_sha,
+        }
+        phases.append(auth(phase_body, "authentication_sha256"))
+    raw_body = {
+        "batch_index": 0,
+        "decode_trace_mode": "cached_verified",
+        "raw_cached_full_prefix_pair_count": 2,
+        "raw_logit_rows_verified": 3,
+        "phase_verification": phases,
+        "phase_authentication_sha256": [
+            value["authentication_sha256"] for value in phases
+        ],
+        "top1_disagreement_count": 1,
+        "all_logits_numerically_close": True,
+        "all_top1_disagreements_within_numeric_error_envelope": True,
+        "top1_exactness_is_diagnostic_only": True,
+    }
+    raw = auth(raw_body, "authentication_sha256")
+    batch_compatibility = {
+        "batch_index": 0,
+        "decode_trace_mode": "cached_verified",
+        "verification_phase_count": 2,
+        "verification_phase_order": ["cached_prefill", "decode.000"],
+        "top1_disagreement_count": 1,
+    }
+    compatibility_body = {
+        "schema": postfold.LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA,
+        "cache_key": cache_key,
+        "manifest_sha256": manifest_sha256,
+        "completion_sha256": completion_sha256,
+        "batch_count": 1,
+        "decode_trace_mode": "cached_verified",
+        "ordered_batch_record_sha256": [record_sha256],
+        "ordered_batch_record_file_sha256": [record_file_sha256],
+        "batch_compatibility": [batch_compatibility],
+        "all_cached_logits_numerically_verified": True,
+        "cached_top1_disagreement_count": 1,
+        "terminal_trajectory_compatibility_verified": True,
+        "forced_decode_tokens_are_caller_supplied": True,
+        "top1_exactness_is_diagnostic_only": True,
+        "top1_exactness_is_publication_gate": False,
+        "all_top1_disagreements_numeric_envelope_verified": True,
+        "full_prefix_recache_required": False,
+        "preflight_io_contract": {
+            "trace_file_sha256_passes": 0,
+            "trace_payload_bytes_read": 0,
+            "trace_tensor_payloads_materialized": 0,
+        },
+    }
+    compatibility = auth(compatibility_body, "authentication_sha256")
+    session_body = {
+        "cache_key": cache_key,
+        "manifest_sha256": manifest_sha256,
+        "completion_sha256": completion_sha256,
+        "ordered_authenticated_batches": [
+            {
+                "batch_index": 0,
+                "record_sha256": record_sha256,
+                "record_file_sha256": record_file_sha256,
+                "tensor_count": 2,
+                "logical_bytes": 128,
+            }
+        ],
+    }
+    session = auth(session_body, "session_sha256")
+    cache_authentication = {
+        "session": session,
+        "selected_payloads": [
+            {
+                "batch_index": 0,
+                "authenticated_tensor_count": 2,
+                "authenticated_logical_bytes": 128,
+                "selective_payload": {
+                    "selected_tensor_count": 2,
+                    "selected_logical_bytes": 128,
+                },
+            }
+        ],
+    }
+    payload_load_audit = postfold._summarize_terminal_cache_payload_loads(
+        cache_authentication
+    )
+    binding_body = {
+        "compatibility_authentication_sha256": compatibility["authentication_sha256"],
+        "payload_session_sha256": session["session_sha256"],
+        "manifest_completion_and_ordered_records_exact": True,
+        "large_trace_file_sha256_authenticated_once_by_consuming_session": True,
+    }
+    binding = auth(binding_body, "authentication_sha256")
+    io_body = {
+        "metadata_preflight_trace_file_sha256_passes": 0,
+        "metadata_preflight_trace_payload_bytes_read": 0,
+        "consuming_trace_file_sha256_passes_per_batch": 1,
+        "consuming_trace_file_sha256_passes_total": 1,
+        "same_consuming_session_reused_by_semantic_collector": True,
+        "same_consuming_session_reused_from_layer_stack": True,
+        "fused_terminal_selective_session_constructions": 0,
+        "end_to_end_selective_session_constructions": 1,
+        "additional_full_trace_file_sha256_passes_performed_by_fused_terminal": 0,
+        "selected_tensor_payload_loads_total": 1,
+        "selected_tensor_payload_logical_bytes_total": 128,
+        "full_tensor_inventory_payload_loads_per_batch": 1,
+        "full_tensor_inventory_payload_loads_total": 1,
+        "full_tensor_inventory_payload_logical_bytes_total": 128,
+    }
+    io_audit = auth(io_body, "result_sha256")
+    body = {
+        "cache_key": cache_key,
+        "terminal_cache_compatibility": compatibility,
+        "terminal_cache_compatibility_sha256": compatibility["authentication_sha256"],
+        "terminal_cache_payload_binding": binding,
+        "parent_cache_authentication": cache_authentication,
+        "terminal_cache_tensor_payload_load_audit": payload_load_audit,
+        "cached_full_prefix_payload_verification": [raw],
+        "cached_full_prefix_payload_verification_sha256": [
+            raw["authentication_sha256"]
+        ],
+        "terminal_cache_io_audit": io_audit,
+    }
+    return auth(body, "result_sha256")
+
+
+def _reseal(value: dict[str, object], seal: str) -> None:
+    value.pop(seal, None)
+    value[seal] = canonical_sha256(value)
+
+
+def test_fused_cache_evidence_rejects_fully_resealed_session_and_phase_drift():
+    valid = _cached_fused_terminal_evidence()
+    verified = postfold._verify_sealed(
+        valid,
+        seal_name="result_sha256",
+        label="synthetic fused terminal",
+    )
+    authentication = postfold._authenticate_fused_terminal_cache_evidence(verified)
+    assert authentication["every_raw_cached_full_prefix_row_rederived"] is True
+    assert authentication["raw_logit_rows_verified"] == 3
+    assert authentication["top1_disagreement_count"] == 1
+
+    session_drift = copy.deepcopy(valid)
+    binding = session_drift["terminal_cache_payload_binding"]
+    assert isinstance(binding, dict)
+    binding["payload_session_sha256"] = "f" * 64
+    _reseal(binding, "authentication_sha256")
+    _reseal(session_drift, "result_sha256")
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="compatibility/session binding is invalid",
+    ):
+        postfold._authenticate_fused_terminal_cache_evidence(
+            postfold._verify_sealed(
+                session_drift,
+                seal_name="result_sha256",
+                label="resealed session drift",
+            )
+        )
+
+    phase_drift = copy.deepcopy(valid)
+    raw = phase_drift["cached_full_prefix_payload_verification"][0]
+    phase = raw["phase_verification"][1]
+    phase["numerically_close"] = False
+    _reseal(phase, "authentication_sha256")
+    raw["phase_authentication_sha256"][1] = phase["authentication_sha256"]
+    _reseal(raw, "authentication_sha256")
+    phase_drift["cached_full_prefix_payload_verification_sha256"][0] = raw[
+        "authentication_sha256"
+    ]
+    _reseal(phase_drift, "result_sha256")
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="phase receipt is inconsistent",
+    ):
+        postfold._authenticate_fused_terminal_cache_evidence(
+            postfold._verify_sealed(
+                phase_drift,
+                seal_name="result_sha256",
+                label="resealed phase drift",
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -1797,6 +2180,155 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     def sealed(body):
         return {**body, "result_sha256": canonical_sha256(body)}
 
+    manifest_sha256 = "4" * 64
+    completion_sha256 = "5" * 64
+    record_sha256 = "6" * 64
+    record_file_sha256 = "7" * 64
+    session_batch = {
+        "batch_index": 0,
+        "record_sha256": record_sha256,
+        "record_file_sha256": record_file_sha256,
+        "tensor_count": 2,
+        "logical_bytes": 128,
+    }
+    session_body = {
+        "cache_key": cache.cache_key,
+        "manifest_sha256": manifest_sha256,
+        "completion_sha256": completion_sha256,
+        "ordered_authenticated_batches": [session_batch],
+    }
+    session_receipt = MappingProxyType(
+        {
+            **session_body,
+            "session_sha256": canonical_sha256(session_body),
+        }
+    )
+    cache_authentication = {
+        "session": dict(session_receipt),
+        "selected_payloads": [
+            {
+                "batch_index": 0,
+                "authenticated_tensor_count": 2,
+                "authenticated_logical_bytes": 128,
+                "selective_payload": {
+                    "selected_tensor_count": 2,
+                    "selected_logical_bytes": 128,
+                },
+            }
+        ],
+    }
+    payload_load_audit = postfold._summarize_terminal_cache_payload_loads(
+        cache_authentication
+    )
+    compatibility_batch = {
+        "batch_index": 0,
+        "decode_trace_mode": "full_prefix_canonical",
+        "verification_phase_count": 0,
+        "top1_disagreement_count": 0,
+    }
+    compatibility_body = {
+        "schema": postfold.LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA,
+        "cache_key": cache.cache_key,
+        "manifest_sha256": manifest_sha256,
+        "completion_sha256": completion_sha256,
+        "batch_count": 1,
+        "decode_trace_mode": "full_prefix_canonical",
+        "ordered_batch_record_sha256": [record_sha256],
+        "ordered_batch_record_file_sha256": [record_file_sha256],
+        "batch_compatibility": [compatibility_batch],
+        "all_cached_logits_numerically_verified": None,
+        "cached_top1_disagreement_count": 0,
+        "terminal_trajectory_compatibility_verified": True,
+        "forced_decode_tokens_are_caller_supplied": True,
+        "top1_exactness_is_diagnostic_only": True,
+        "top1_exactness_is_publication_gate": False,
+        "all_top1_disagreements_numeric_envelope_verified": True,
+        "full_prefix_recache_required": False,
+        "preflight_io_contract": {
+            "trace_file_sha256_passes": 0,
+            "trace_payload_bytes_read": 0,
+            "trace_tensor_payloads_materialized": 0,
+        },
+    }
+    terminal_cache_compatibility = MappingProxyType(
+        {
+            **compatibility_body,
+            "authentication_sha256": canonical_sha256(compatibility_body),
+        }
+    )
+    payload_binding_body = {
+        "compatibility_authentication_sha256": terminal_cache_compatibility[
+            "authentication_sha256"
+        ],
+        "payload_session_sha256": session_receipt["session_sha256"],
+        "manifest_completion_and_ordered_records_exact": True,
+        "large_trace_file_sha256_authenticated_once_by_consuming_session": True,
+    }
+    payload_binding = MappingProxyType(
+        {
+            **payload_binding_body,
+            "authentication_sha256": canonical_sha256(payload_binding_body),
+        }
+    )
+    raw_body = {
+        "batch_index": 0,
+        "decode_trace_mode": "full_prefix_canonical",
+        "raw_cached_full_prefix_pair_count": 0,
+        "raw_logit_rows_verified": 0,
+        "top1_disagreement_count": 0,
+        "all_logits_numerically_close": True,
+        "all_top1_disagreements_within_numeric_error_envelope": True,
+        "top1_exactness_is_diagnostic_only": True,
+    }
+    raw_receipt = MappingProxyType(
+        {
+            **raw_body,
+            "authentication_sha256": canonical_sha256(raw_body),
+        }
+    )
+    io_body = {
+        "metadata_preflight_trace_file_sha256_passes": 0,
+        "metadata_preflight_trace_payload_bytes_read": 0,
+        "consuming_trace_file_sha256_passes_per_batch": 1,
+        "consuming_trace_file_sha256_passes_total": 1,
+        "same_consuming_session_reused_by_semantic_collector": True,
+        "same_consuming_session_reused_from_layer_stack": True,
+        "fused_terminal_selective_session_constructions": 0,
+        "end_to_end_selective_session_constructions": 1,
+        "additional_full_trace_file_sha256_passes_performed_by_fused_terminal": 0,
+        "selected_tensor_payload_loads_total": 1,
+        "selected_tensor_payload_logical_bytes_total": 128,
+        "full_tensor_inventory_payload_loads_per_batch": 1,
+        "full_tensor_inventory_payload_loads_total": 1,
+        "full_tensor_inventory_payload_logical_bytes_total": 128,
+    }
+    terminal_cache_io = MappingProxyType(sealed(io_body))
+
+    selective_session_calls = []
+
+    class PipelineCacheSession:
+        def __enter__(self):
+            events.append("cache_session_open")
+            return self
+
+        def __exit__(self, *_args):
+            events.append("cache_session_close")
+            return None
+
+        def verify(self):
+            return self
+
+        def as_dict(self):
+            return session_receipt
+
+    pipeline_cache_session = PipelineCacheSession()
+
+    def selective_authenticated_session():
+        selective_session_calls.append("constructed")
+        return pipeline_cache_session
+
+    cache.selective_authenticated_session = selective_authenticated_session
+
     gauge_receipt = MappingProxyType(
         sealed(
             {
@@ -1831,6 +2363,18 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "structurally_nonzero": True,
     }
     published_coverage = sealed(published_coverage_body)
+    heldout_diagnostic_body = {
+        "incumbent": {"finite": True},
+        "published": {"finite": True},
+        "gates": {"diagnostic_threshold": False},
+        "passed": False,
+        "role": "diagnostic-only-after-frozen-terminal-publication-decision",
+        "publication_gate_applied": False,
+    }
+    heldout_diagnostic = {
+        **heldout_diagnostic_body,
+        "diagnostic_sha256": canonical_sha256(heldout_diagnostic_body),
+    }
     layer_body = {
         "complete_causal_layer_stack_adjudicated": True,
         "complete_causal_layer_stack_installed": False,
@@ -1868,6 +2412,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         ],
         "operator_parameter_mutation_count": 13,
         "mlp_parameter_mutation_count": 12,
+        "cache_selective_session_sha256": session_receipt["session_sha256"],
     }
     layer_receipt = MappingProxyType(
         {**layer_body, "result_sha256": canonical_sha256(layer_body)}
@@ -1909,6 +2454,32 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "final_mlp_producer_coverage_before_terminal": coverage_before,
         "final_mlp_full_coverage_after_terminal": coverage_after,
         "complete_nonzero_final_mlp_structural_coverage": True,
+        "cache_key": cache.cache_key,
+        "terminal_cache_compatibility": dict(terminal_cache_compatibility),
+        "terminal_cache_compatibility_sha256": terminal_cache_compatibility[
+            "authentication_sha256"
+        ],
+        "terminal_cache_payload_binding": dict(payload_binding),
+        "parent_cache_authentication": cache_authentication,
+        "terminal_cache_tensor_payload_load_audit": payload_load_audit,
+        "cached_full_prefix_payload_verification": [dict(raw_receipt)],
+        "cached_full_prefix_payload_verification_sha256": [
+            raw_receipt["authentication_sha256"]
+        ],
+        "terminal_cache_io_audit": dict(terminal_cache_io),
+        "fused_heldout_diagnostics": {
+            "selection": dict(heldout_diagnostic),
+            "validation": dict(heldout_diagnostic),
+        },
+        "separate_heldout_lane_diagnostics": {
+            lane: {
+                "selection": dict(heldout_diagnostic),
+                "validation": dict(heldout_diagnostic),
+            }
+            for lane in ("parent_endpoint", "lexical", "final_layer_mlp")
+        },
+        "terminal_heldout_metrics_diagnostic_only": True,
+        "terminal_heldout_publication_gate_applied": False,
         "operation_audit": dict(postfold._ZERO_OPERATIONS),
     }
     terminal = MappingProxyType(
@@ -1921,6 +2492,18 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         return cache
 
     monkeypatch.setattr(postfold, "open_lfm2_circuit_trace_cache", open_cache)
+    monkeypatch.setattr(
+        postfold,
+        "preflight_lfm2_long_horizon_terminal_cache",
+        lambda observed_cache: (
+            events.append("metadata_preflight")
+            or (
+                terminal_cache_compatibility
+                if observed_cache is cache
+                else pytest.fail("preflight received the wrong semantic cache")
+            )
+        ),
+    )
     monkeypatch.setattr(
         postfold,
         "load_strict_tokenizer_bridge_artifact",
@@ -1997,12 +2580,15 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         events.append("layer_stack")
         assert _kwargs["interface"] is self_dual_interface
         assert _kwargs["fold_compute_device"] == "cuda:1"
+        assert _kwargs["authenticated_cache_session"] is pipeline_cache_session
         return layer_stack
 
     def terminal_compiler(**_kwargs):
         events.append("terminal")
         assert _kwargs["layer_stack"] is layer_stack
         assert _kwargs["interface"] is self_dual_interface
+        assert _kwargs["terminal_cache_compatibility"] is (terminal_cache_compatibility)
+        assert _kwargs["authenticated_cache_session"] is pipeline_cache_session
         return terminal
 
     def publish(**_kwargs):
@@ -2013,6 +2599,21 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         postfold,
         "compile_install_lfm2_semantic_layer_stack_stage",
         layer_stack_compiler,
+    )
+    attention_authentication_body = {
+        "attention_receipt_count": 6,
+        "complete_six_tensor_bundle_count": 6,
+    }
+    attention_authentication = MappingProxyType(
+        {
+            **attention_authentication_body,
+            "result_sha256": canonical_sha256(attention_authentication_body),
+        }
+    )
+    monkeypatch.setattr(
+        postfold,
+        "authenticate_lfm2_semantic_layer_stack_attention_receipts",
+        lambda _receipt: attention_authentication,
     )
     monkeypatch.setattr(
         postfold,
@@ -2068,11 +2669,15 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         ),
     )
 
-    assert cache_open_calls == [True]
+    assert cache_open_calls == [False]
+    assert selective_session_calls == ["constructed"]
     assert events == [
+        "metadata_preflight",
+        "cache_session_open",
         "tied_residual_gauge",
         "layer_stack",
         "terminal",
+        "cache_session_close",
         "checkpoint",
     ]
     assert result["compiler_cache_key"] == "8" * 64
@@ -2095,6 +2700,22 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     )
     assert result["tied_residual_interface_gauge"] == dict(gauge_receipt)
     assert result["self_dual_tied_gauge"] == dict(gauge_receipt)
+    session_reuse = result["pipeline_cache_session_reuse"]
+    assert (
+        session_reuse["pipeline_cache_session_sha256"]
+        == session_receipt["session_sha256"]
+    )
+    assert (
+        session_reuse["same_pipeline_session_reused_by_layer_stack_and_terminal"]
+        is True
+    )
+    assert session_reuse["trace_file_sha256_passes_per_batch"] == 1
+    assert session_reuse["additional_full_trace_file_sha256_passes_in_pipeline"] == 0
+    assert session_reuse["terminal_full_tensor_inventory_payload_loads_total"] == 1
+    assert (
+        session_reuse["terminal_full_tensor_inventory_payload_logical_bytes_total"]
+        == 128
+    )
     if use_foundation_statistics:
         assert len(foundation_rehydration_calls) == 1
         assert foundation_rehydration_calls[0]["interface_statistics_directory"] == (

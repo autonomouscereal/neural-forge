@@ -34,9 +34,6 @@ from neural_forge.hf_lfm2_intelligence_holdout import (
     load_lfm2_intelligence_holdout_parent_envelope,
     seal_lfm2_intelligence_holdout_candidate_outputs,
 )
-from neural_forge.hf_lfm2_parent_relative_manual_gate import (
-    build_parent_relative_manual_packet,
-)
 from neural_forge.hf_lfm2_protected_weight_error_allocator import (
     inspect_lfm2_protected_weight_error_fold,
     load_lfm2_protected_weight_error_fold,
@@ -51,7 +48,8 @@ from neural_forge.hf_lfm2_value_fold_control import (
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-SCHEMA = "neural-forge-lfm2-packed-checkpoint-reevaluation-v1"
+LEGACY_SCHEMA = "neural-forge-lfm2-packed-checkpoint-reevaluation-v1"
+SCHEMA = "neural-forge-lfm2-packed-checkpoint-reevaluation-v2"
 
 
 class PackedCheckpointReevaluationError(RuntimeError):
@@ -181,10 +179,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         )
     loader, inspector = _loader_and_inspector(args.checkpoint_kind)
     accounting = inspector(checkpoint)
-    if (
-        accounting["manifest_sha256"]
-        != args.expected_checkpoint_manifest_sha256
-    ):
+    if accounting["manifest_sha256"] != args.expected_checkpoint_manifest_sha256:
         raise PackedCheckpointReevaluationError(
             "Checkpoint manifest differs from its expected seal."
         )
@@ -258,12 +253,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ),
             expected_parent_envelope_sha256=args.expected_parent_envelope_sha256,
             expected_manifest_sha256=args.expected_manifest_sha256,
-            expected_parent_state_fingerprint=(
-                args.expected_parent_state_fingerprint
-            ),
-            expected_parent_model_fingerprint=(
-                args.expected_parent_model_fingerprint
-            ),
+            expected_parent_state_fingerprint=(args.expected_parent_state_fingerprint),
+            expected_parent_model_fingerprint=(args.expected_parent_model_fingerprint),
             tokenizer_directory=tokenizer_directory,
             expected_tokenizer_fingerprint=args.expected_tokenizer_fingerprint,
             candidate_report=candidate_path,
@@ -277,12 +268,20 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         )
     )
     standard_packet = json.loads(manual_path.read_text(encoding="utf-8"))
-    parent_relative_packet = build_parent_relative_manual_packet(standard_packet)
+    parent_relative_packet = causal_runner._build_exact_all_case_parent_relative_packet(
+        standard_packet,
+        envelope,
+        candidate_rows,
+    )
     control_runner._write_new_json(
         output_root / "parent_relative_manual_packet.json",
         parent_relative_packet,
     )
-    decision = causal_runner._parent_relative_decision(intelligence, None)
+    decision = causal_runner._parent_relative_decision(
+        intelligence,
+        None,
+        parent_relative_packet,
+    )
     core = {
         "schema": SCHEMA,
         "status": decision["status"],
@@ -300,13 +299,17 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "probe_logits_bitwise_equal": True,
         },
         "holdout": {
-            "candidate_outputs_sha256": candidate_document[
-                "candidate_outputs_sha256"
-            ],
+            "candidate_outputs_sha256": candidate_document["candidate_outputs_sha256"],
             "candidate_output_file_sha256": candidate_file_sha,
             "intelligence_report_sha256": intelligence["report_sha256"],
             "parent_relative_manual_packet_sha256": parent_relative_packet[
                 "packet_sha256"
+            ],
+            "parent_relative_manual_packet_case_count": parent_relative_packet[
+                "case_count"
+            ],
+            "parent_relative_manual_review_scope": parent_relative_packet[
+                "review_scope"
             ],
             "new_parent_responses": 0,
         },

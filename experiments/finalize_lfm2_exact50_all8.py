@@ -28,7 +28,8 @@ from neural_forge.hf_lfm2_parent_relative_manual_gate import (
 )
 
 
-FINAL_SCHEMA = "neural-forge-lfm2-exact50-all8-final-report-v1"
+LEGACY_FINAL_SCHEMA = "neural-forge-lfm2-exact50-all8-final-report-v1"
+FINAL_SCHEMA = "neural-forge-lfm2-exact50-all8-final-report-v2"
 
 
 class Lfm2Exact50All8FinalizeError(RuntimeError):
@@ -53,9 +54,7 @@ def _read(
             f"{name} is not readable strict JSON."
         ) from exc
     if not isinstance(value, dict):
-        raise Lfm2Exact50All8FinalizeError(
-            f"{name} must contain a JSON object."
-        )
+        raise Lfm2Exact50All8FinalizeError(f"{name} must contain a JSON object.")
     return value
 
 
@@ -86,13 +85,12 @@ def finalize_lfm2_exact50_all8(
     )
     body = dict(preliminary)
     preliminary_seal = body.pop("report_sha256", None)
-    if (
-        body.get("schema") != runner.TARGET_REPORT_SCHEMA
-        or preliminary_seal != canonical_sha256(body)
-    ):
-        raise Lfm2Exact50All8FinalizeError(
-            "Preliminary all8 report seal is invalid."
-        )
+    preliminary_schema = body.get("schema")
+    if preliminary_schema not in {
+        runner.TARGET_REPORT_SCHEMA,
+        runner.LEGACY_TARGET_REPORT_SCHEMA,
+    } or preliminary_seal != canonical_sha256(body):
+        raise Lfm2Exact50All8FinalizeError("Preliminary all8 report seal is invalid.")
     try:
         packet = json.loads(packet_path.read_text(encoding="utf-8"))
         intelligence = json.loads(intelligence_path.read_text(encoding="utf-8"))
@@ -100,12 +98,17 @@ def finalize_lfm2_exact50_all8(
         raise Lfm2Exact50All8FinalizeError(
             "Cached packet or intelligence report is unreadable."
         ) from exc
+    try:
+        intelligence_seal = runner.causal_runner._authenticate_intelligence_report(
+            intelligence
+        )
+    except runner.causal_runner.Lfm2CausalValueRunnerError as exc:
+        raise Lfm2Exact50All8FinalizeError(str(exc)) from exc
     if (
         not isinstance(packet, Mapping)
-        or not isinstance(intelligence, Mapping)
         or packet.get("packet_sha256")
         != preliminary["holdout"]["parent_relative_manual_packet_sha256"]
-        or intelligence.get("report_sha256")
+        or intelligence_seal
         != preliminary["holdout"]["automatic_intelligence_report_sha256"]
     ):
         raise Lfm2Exact50All8FinalizeError(
@@ -117,7 +120,7 @@ def finalize_lfm2_exact50_all8(
         "parent_relative_manual_ratings",
     )
     manual = evaluate_parent_relative_manual_retention(packet, ratings)
-    decision = runner._parent_relative_decision(intelligence, manual)
+    decision = runner._parent_relative_decision(intelligence, manual, packet)
     manual_path = root / "parent_relative_manual_report.json"
     final_path = root / "final_report.json"
     if manual_path.exists() or final_path.exists():
@@ -127,17 +130,17 @@ def finalize_lfm2_exact50_all8(
     control_runner._write_new_json(manual_path, manual)
     final_body = {
         "schema": FINAL_SCHEMA,
-        "preliminary_report_sha256": preliminary_seal,
-        "preliminary_report_file_sha256": (
-            expected_preliminary_report_file_sha256
+        "preliminary_report_schema": preliminary_schema,
+        "legacy_v1_preliminary_explicitly_handled": (
+            preliminary_schema == runner.LEGACY_TARGET_REPORT_SCHEMA
         ),
+        "preliminary_report_sha256": preliminary_seal,
+        "preliminary_report_file_sha256": (expected_preliminary_report_file_sha256),
         "status": decision["status"],
         "promoted": decision["promoted"],
         "decision": decision,
         "checkpoint": dict(preliminary["checkpoint"]),
-        "fresh_reload_equivalence": dict(
-            preliminary["fresh_reload_equivalence"]
-        ),
+        "fresh_reload_equivalence": dict(preliminary["fresh_reload_equivalence"]),
         "holdout": {
             **dict(preliminary["holdout"]),
             "parent_relative_manual_report_sha256": manual["report_sha256"],
@@ -169,18 +172,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--output-root", type=Path, required=True)
-    parser.add_argument(
-        "--expected-preliminary-report-file-sha256", required=True
-    )
+    parser.add_argument("--expected-preliminary-report-file-sha256", required=True)
     parser.add_argument("--ratings-path", type=Path, required=True)
     parser.add_argument("--expected-ratings-file-sha256", required=True)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    report = finalize_lfm2_exact50_all8(
-        **vars(build_parser().parse_args(argv))
-    )
+    report = finalize_lfm2_exact50_all8(**vars(build_parser().parse_args(argv)))
     print(
         json.dumps(
             {

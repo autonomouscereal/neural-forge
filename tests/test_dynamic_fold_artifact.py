@@ -3,10 +3,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 from dataclasses import replace
 
 import pytest
 
+import neural_forge.dynamic_fold_artifact as artifact
 from neural_forge.dynamic_circuit_ir import canonical_json_bytes, canonical_sha256
 from neural_forge.dynamic_behavior_gate import (
     BehaviorInferenceExecutionContract,
@@ -15,8 +17,10 @@ from neural_forge.dynamic_fold_artifact import (
     DynamicFoldArtifactError,
     LEGACY_SCHEMA,
     _artifact_tree,
+    _declared_lfm2_file,
     load_dynamic_fold_artifact_certificate,
     publish_dynamic_fold_artifact,
+    scan_standalone_fold_artifact_tree,
 )
 from neural_forge.dynamic_fold_compiler import compile_loaded_models
 from neural_forge.dynamic_fold_executor import (
@@ -116,6 +120,104 @@ def test_artifact_tree_rejects_resume_cache_sidecar_filename(tmp_path) -> None:
         match="Forbidden sidecar-like artifact name",
     ):
         _artifact_tree(child)
+
+
+def test_public_standalone_tree_scanner_hashes_the_complete_clean_tree(
+    tmp_path,
+) -> None:
+    child = tmp_path / "child"
+    child.mkdir()
+    (child / "config.json").write_text("{}", encoding="utf-8")
+    (child / "model.safetensors").write_bytes(b"test")
+
+    tree = scan_standalone_fold_artifact_tree(
+        child,
+        expected_file_roles={
+            "config.json": "model_config",
+            "model.safetensors": "model_tensor",
+        },
+    )
+
+    assert [row["path"] for row in tree] == ["config.json", "model.safetensors"]
+    assert canonical_sha256(tree) == canonical_sha256([dict(row) for row in tree])
+
+
+@pytest.mark.parametrize("extra_name", ("auxiliary.dat", "payload.pkl"))
+def test_public_standalone_tree_scanner_rejects_neutrally_named_extra_files(
+    tmp_path,
+    extra_name: str,
+) -> None:
+    child = tmp_path / "child"
+    child.mkdir()
+    (child / "config.json").write_text("{}", encoding="utf-8")
+    (child / "model.safetensors").write_bytes(b"test")
+    (child / extra_name).write_bytes(b"unlisted runtime material")
+
+    with pytest.raises(
+        DynamicFoldArtifactError,
+        match="canonical typed inventory",
+    ):
+        scan_standalone_fold_artifact_tree(
+            child,
+            expected_file_roles={
+                "config.json": "model_config",
+                "model.safetensors": "model_tensor",
+            },
+        )
+
+
+def test_lfm2_declared_inventory_rejects_an_unhashable_path_cleanly(tmp_path) -> None:
+    with pytest.raises(
+        DynamicFoldArtifactError,
+        match="declared-file path is malformed",
+    ):
+        _declared_lfm2_file(
+            tmp_path,
+            {"path": [], "size_bytes": 0, "sha256": "0" * 64},
+            size_field="size_bytes",
+            role="model_tensor",
+        )
+
+
+def test_strict_standalone_scanner_rejects_oversized_structured_json(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    child = tmp_path / "child"
+    child.mkdir()
+    (child / "config.json").write_text("{}", encoding="utf-8")
+    (child / "model.safetensors").write_bytes(b"test")
+    monkeypatch.setattr(artifact, "_MAX_STRUCTURED_INVENTORY_BYTES", 1)
+
+    with pytest.raises(DynamicFoldArtifactError, match="JSON exceeds the scan limit"):
+        scan_standalone_fold_artifact_tree(
+            child,
+            expected_file_roles={
+                "config.json": "model_config",
+                "model.safetensors": "model_tensor",
+            },
+        )
+
+
+def test_strict_standalone_scanner_rejects_hardlinked_files(tmp_path) -> None:
+    child = tmp_path / "child"
+    child.mkdir()
+    source = tmp_path / "source.safetensors"
+    source.write_bytes(b"test")
+    try:
+        os.link(source, child / "model.safetensors")
+    except OSError as exc:  # pragma: no cover - filesystem capability
+        pytest.skip(f"hard links unavailable: {exc}")
+    (child / "config.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(DynamicFoldArtifactError, match="cannot be a hard link"):
+        scan_standalone_fold_artifact_tree(
+            child,
+            expected_file_roles={
+                "config.json": "model_config",
+                "model.safetensors": "model_tensor",
+            },
+        )
 
 
 @pytest.mark.parametrize(
@@ -238,9 +340,7 @@ def test_publication_is_atomic_exact_and_freshly_reloaded(tmp_path) -> None:
     assert certificate.fresh_reload_module_forward_calls > 0
     assert certificate.fresh_reload_root_forward_calls > 0
     assert certificate.fresh_reload_inference_entrypoint_calls > 0
-    assert certificate.body()["fresh_reload_source"] == (
-        "retained-final-destination"
-    )
+    assert certificate.body()["fresh_reload_source"] == ("retained-final-destination")
     assert certificate.body()["final_destination_reload_performed"] is True
     assert certificate.preparation_parent_module_forward_calls == 0
     assert certificate.publication_parent_module_forward_calls == 0
@@ -665,8 +765,8 @@ def test_fresh_reload_accepts_authenticated_wrapper_module_root(tmp_path) -> Non
         entrypoint="chat",
         required_module_path="model",
     )
-    gate_id, gate_version, baseline, fingerprint, manifest = (
-        _wrapper_behavior_manifest(contract)
+    gate_id, gate_version, baseline, fingerprint, manifest = _wrapper_behavior_manifest(
+        contract
     )
 
     certificate = publish_dynamic_fold_artifact(
@@ -702,8 +802,8 @@ def test_fresh_reload_wrapper_rejects_unrelated_descendant_execution(tmp_path) -
         entrypoint="chat",
         required_module_path="model",
     )
-    gate_id, gate_version, baseline, fingerprint, manifest = (
-        _wrapper_behavior_manifest(contract)
+    gate_id, gate_version, baseline, fingerprint, manifest = _wrapper_behavior_manifest(
+        contract
     )
 
     def unrelated_loader(source):

@@ -156,6 +156,68 @@ def _bind(packet: dict, ratings: list[dict]) -> dict:
     )
 
 
+def _qualitative_reviews(packet: dict) -> list[dict]:
+    rows = []
+    for index, value in enumerate(packet["cases"]):
+        parent_completion = value.get("parent_completion", {})
+        candidate_completion = value.get("candidate_completion", {})
+        rows.append(
+            {
+                "case_id": value["case_id"],
+                "verdict": (
+                    "parent_not_demonstrated"
+                    if value["case_id"] == "manual_00"
+                    else "different_but_equivalent"
+                ),
+                "failure_modes": [],
+                "reason": (
+                    f"Case observation {index} compares the complete semantic content "
+                    "of both responses for this prompt."
+                ),
+                "full_parent_and_candidate_responses_reviewed": True,
+                "criterion_observations": {
+                    "correctness": (
+                        f"Correctness observation {index} checks the response claims "
+                        "against the requested task."
+                    ),
+                    "coherence": (
+                        f"Coherence observation {index} checks whether the complete "
+                        "answer remains logically understandable."
+                    ),
+                    "usefulness": (
+                        f"Usefulness observation {index} checks whether the answer "
+                        "provides actionable semantic value."
+                    ),
+                    "instruction_following": (
+                        f"Instruction observation {index} checks each requested action "
+                        "against the produced response."
+                    ),
+                    "retained_capability_and_intelligence": (
+                        f"Capability observation {index} compares the reasoning shown "
+                        "by parent and child responses."
+                    ),
+                },
+                "truncation_consideration": {
+                    "parent_unfinished_at_generation_limit": parent_completion.get(
+                        "unfinished_at_generation_limit", False
+                    ),
+                    "candidate_unfinished_at_generation_limit": (
+                        candidate_completion.get(
+                            "unfinished_at_generation_limit",
+                            False,
+                        )
+                    ),
+                    "assessment": "none",
+                    "observation": (
+                        f"Truncation observation {index} explicitly considers whether "
+                        "either complete response ended at its token limit."
+                    ),
+                },
+            }
+        )
+    return rows
+
+
 def test_parent_absent_abilities_are_neutralized_and_severe_regression_is_flagged(
     monkeypatch,
 ) -> None:
@@ -298,4 +360,182 @@ def test_packet_and_rating_tampering_fail_closed(monkeypatch) -> None:
             _ratings(repaired_manual_05=True),
             reviewer_id="paired-reviewer",
             used_exact_wording_comparison=True,
+        )
+
+
+def test_qualitative_case_verdicts_and_suite_conclusion_are_authoritative(
+    monkeypatch,
+) -> None:
+    packet = _packet(monkeypatch)
+    rows = _ratings(repaired_manual_05=True)
+    qualitative = _qualitative_reviews(packet)
+    ratings = gate.bind_parent_relative_manual_ratings(
+        packet,
+        rows,
+        reviewer_id="holistic-reviewer",
+        qualitative_case_reviews=qualitative,
+        holistic_suite_conclusion={
+            "conclusion": "credible_intelligent_compaction",
+            "reason": "The reviewed responses remain coherent and useful.",
+            "strengths": ["coherence"],
+            "limitations": ["parent did not demonstrate every ability"],
+            "material_regression_case_ids": [],
+        },
+    )
+    report = gate.evaluate_parent_relative_manual_retention(packet, ratings)
+    holistic = report["holistic_review"]
+    assert holistic["status"] == "complete"
+    assert holistic["qualitative_judgment_is_authoritative"] is True
+    assert holistic["suite_conclusion"]["conclusion"] == (
+        gate.PROMOTION_ELIGIBLE_SUITE_CONCLUSION
+    )
+    assert report["contract"]["numeric_scores_and_thresholds_are_diagnostic_only"]
+
+    stale = copy.deepcopy(ratings)
+    stale.pop("qualitative_judgment_is_authoritative")
+    core = dict(stale)
+    core.pop("ratings_sha256")
+    stale["ratings_sha256"] = gate.canonical_sha256(core)
+    with pytest.raises(
+        gate.Lfm2ParentRelativeManualGateError,
+        match="qualitative-authority contract",
+    ):
+        gate.evaluate_parent_relative_manual_retention(packet, stale)
+
+
+def test_qualitative_review_rejects_missing_criterion_and_duplicate_boilerplate(
+    monkeypatch,
+) -> None:
+    packet = _packet(monkeypatch)
+    rows = _ratings(repaired_manual_05=True)
+    qualitative = _qualitative_reviews(packet)
+    missing = copy.deepcopy(qualitative)
+    missing[0]["criterion_observations"].pop("usefulness")
+    with pytest.raises(
+        gate.Lfm2ParentRelativeManualGateError,
+        match="criterion coverage",
+    ):
+        gate.bind_parent_relative_manual_ratings(
+            packet,
+            rows,
+            reviewer_id="holistic-reviewer",
+            qualitative_case_reviews=missing,
+            holistic_suite_conclusion={
+                "conclusion": "credible_intelligent_compaction",
+                "reason": "The suite was reviewed despite malformed case coverage.",
+                "strengths": ["coherence"],
+                "limitations": [],
+                "material_regression_case_ids": [],
+            },
+        )
+
+    duplicated = copy.deepcopy(qualitative)
+    duplicated[1]["criterion_observations"]["correctness"] = duplicated[0][
+        "criterion_observations"
+    ]["correctness"]
+    with pytest.raises(
+        gate.Lfm2ParentRelativeManualGateError,
+        match="duplicate boilerplate",
+    ):
+        gate.bind_parent_relative_manual_ratings(
+            packet,
+            rows,
+            reviewer_id="holistic-reviewer",
+            qualitative_case_reviews=duplicated,
+            holistic_suite_conclusion={
+                "conclusion": "credible_intelligent_compaction",
+                "reason": "The suite was reviewed despite duplicated observations.",
+                "strengths": ["coherence"],
+                "limitations": [],
+                "material_regression_case_ids": [],
+            },
+        )
+
+
+def test_all_case_completion_metadata_is_sealed_and_truncation_review_is_bound(
+    monkeypatch,
+) -> None:
+    source = _source_packet()
+    monkeypatch.setattr(
+        gate,
+        "load_manual_review_packet",
+        lambda value, expected_packet_sha256: value,
+    )
+    all_case_packet = gate.build_all_case_parent_relative_manual_packet(
+        source,
+        [
+            {
+                "case_id": value["case_id"],
+                "prompt": value["prompt"],
+                "parent_response": value["reference_response"],
+                "candidate_response": value["candidate_response"],
+                "generation_limit": 8,
+                "parent_completion": {
+                    "generated_token_count": 4,
+                    "eos_observed": True,
+                    "unfinished_at_generation_limit": False,
+                },
+                "candidate_completion": {
+                    "generated_token_count": 8 if index == 2 else 4,
+                    "eos_observed": index != 2,
+                    "unfinished_at_generation_limit": index == 2,
+                },
+            }
+            for index, value in enumerate(source["cases"])
+        ],
+        manifest_sha256="9" * 64,
+        manifest_document_sha256="a" * 64,
+    )
+    assert all_case_packet["completion_metadata_rows_sha256"]
+    assert all_case_packet["rubric"]["completion_metadata_is_diagnostic_context_only"]
+    assert (
+        all_case_packet["rubric"][
+            "completion_metadata_automatic_accept_reject_permitted"
+        ]
+        is False
+    )
+
+    qualitative = _qualitative_reviews(all_case_packet)
+    ratings = gate.bind_parent_relative_manual_ratings(
+        all_case_packet,
+        _ratings(repaired_manual_05=True),
+        reviewer_id="completion-reviewer",
+        qualitative_case_reviews=qualitative,
+        holistic_suite_conclusion={
+            "conclusion": "promising_but_incomplete",
+            "reason": "One response reached its limit and was assessed manually.",
+            "strengths": ["coherence"],
+            "limitations": ["one saturated continuation"],
+            "material_regression_case_ids": [],
+        },
+    )
+    report = gate.evaluate_parent_relative_manual_retention(all_case_packet, ratings)
+    assert report["holistic_review"]["status"] == "complete"
+    assert (
+        report["holistic_review"]["qualitative_case_reviews"][2][
+            "truncation_consideration"
+        ]["candidate_unfinished_at_generation_limit"]
+        is True
+    )
+
+    mismatched = _qualitative_reviews(all_case_packet)
+    mismatched[2]["truncation_consideration"][
+        "candidate_unfinished_at_generation_limit"
+    ] = False
+    with pytest.raises(
+        gate.Lfm2ParentRelativeManualGateError,
+        match="differs from sealed response completion metadata",
+    ):
+        gate.bind_parent_relative_manual_ratings(
+            all_case_packet,
+            _ratings(repaired_manual_05=True),
+            reviewer_id="completion-reviewer",
+            qualitative_case_reviews=mismatched,
+            holistic_suite_conclusion={
+                "conclusion": "promising_but_incomplete",
+                "reason": "One response reached its limit and was assessed manually.",
+                "strengths": ["coherence"],
+                "limitations": ["one saturated continuation"],
+                "material_regression_case_ids": [],
+            },
         )

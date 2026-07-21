@@ -8,6 +8,7 @@ torch = pytest.importorskip("torch")
 
 import neural_forge.hf_lfm2_semantic_attention_refold_adapter as adapter  # noqa: E402
 import neural_forge.hf_lfm2_semantic_layer_stack_refold_adapter as stack_adapter  # noqa: E402
+import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (  # noqa: E402
     Lfm2EndpointQkMetrics,
@@ -385,8 +386,13 @@ def test_closed_form_fit_corrections_publish_with_heldout_metrics_diagnostic(
         cache_key="2" * 64,
         bridge_artifact_sha256="3" * 64,
     )
+    authenticated = postfold._authenticate_lfm2_semantic_attention_operator_receipt(
+        receipt,
+        layer_index=0,
+    )
 
     assert receipt["schema"] == "neural-forge-lfm2-semantic-attention-installation-v1"
+    assert authenticated["numeric_behavior_gate_used"] is False
     assert receipt["changed_state_keys"] == [
         "model.layers.0.self_attn.out_proj.weight",
         "model.layers.0.self_attn.q_proj.weight",
@@ -415,15 +421,18 @@ def test_closed_form_fit_corrections_publish_with_heldout_metrics_diagnostic(
     assert report["all_semantically_exact_endpoint_rows_used_for_attention_fit"] is True
     assert report["terminal_endpoint_only_supervision"] is False
     attention = model.model.layers[0].self_attn
+    expected_bundle = {
+        "q_proj.weight": adapter._tensor_sha256(attention.q_proj.weight),
+        "k_proj.weight": adapter._tensor_sha256(attention.k_proj.weight),
+        "v_proj.weight": adapter._tensor_sha256(attention.v_proj.weight),
+        "out_proj.weight": adapter._tensor_sha256(attention.out_proj.weight),
+        "q_layernorm.weight": adapter._tensor_sha256(attention.q_layernorm.weight),
+        "k_layernorm.weight": adapter._tensor_sha256(attention.k_layernorm.weight),
+    }
+    assert report["frozen_attention_six_tensor_bundle"] == expected_bundle
+    assert report["frozen_attention_six_tensor_bundle_roles"] == list(expected_bundle)
     assert report["frozen_attention_six_tensor_bundle_sha256"] == canonical_sha256(
-        {
-            "q_proj.weight": adapter._tensor_sha256(attention.q_proj.weight),
-            "k_proj.weight": adapter._tensor_sha256(attention.k_proj.weight),
-            "v_proj.weight": adapter._tensor_sha256(attention.v_proj.weight),
-            "out_proj.weight": adapter._tensor_sha256(attention.out_proj.weight),
-            "q_layernorm.weight": adapter._tensor_sha256(attention.q_layernorm.weight),
-            "k_layernorm.weight": adapter._tensor_sha256(attention.k_layernorm.weight),
-        }
+        expected_bundle
     )
     assert (
         report[
@@ -455,8 +464,13 @@ def test_validation_regression_is_diagnostic_and_cannot_rollback_fit_fold(
         cache_key="2" * 64,
         bridge_artifact_sha256="3" * 64,
     )
+    authenticated = postfold._authenticate_lfm2_semantic_attention_operator_receipt(
+        receipt,
+        layer_index=0,
+    )
 
     assert receipt["installed"] is True
+    assert authenticated["numeric_behavior_gate_used"] is False
     assert not torch.equal(
         model.model.layers[0].self_attn.q_proj.weight,
         before["model.layers.0.self_attn.q_proj.weight"],
@@ -764,6 +778,10 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     assert report["complete_qkvo_bundle_transaction_verified"] is True
     assert report["authenticated_incumbent_qkvo_retained_without_installation"] is True
     assert report["projection_parameter_copy_calls"] == 0
+    assert len(report["frozen_attention_six_tensor_bundle"]) == 6
+    assert report["frozen_attention_six_tensor_bundle_sha256"] == canonical_sha256(
+        report["frozen_attention_six_tensor_bundle"]
+    )
     assert stack_adapter._authenticated_heldout_incumbent_noop(
         receipt,
         before_sha256=before_identity,
@@ -942,8 +960,13 @@ def test_all_zero_bfloat16_qkvo_is_compulsorily_planted_with_full_axis_coverage(
         cache_key="2" * 64,
         bridge_artifact_sha256="3" * 64,
     )
+    authenticated = postfold._authenticate_lfm2_semantic_attention_operator_receipt(
+        receipt,
+        layer_index=0,
+    )
 
     assert receipt["installed"] is True
+    assert authenticated["numeric_behavior_gate_used"] is False
     assert receipt["changed_state_keys"] == [
         "model.layers.0.self_attn.k_layernorm.weight",
         "model.layers.0.self_attn.k_proj.weight",

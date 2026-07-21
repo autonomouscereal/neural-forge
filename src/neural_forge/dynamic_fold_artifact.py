@@ -125,6 +125,36 @@ _JSON_LITERAL_CONTAINERS = frozenset(
     }
 )
 _MAX_STRUCTURED_INVENTORY_BYTES = 64 * 1024**2
+STANDALONE_FOLD_ARTIFACT_INVENTORY_SCHEMA = (
+    "neural-forge-standalone-fold-artifact-inventory-v1"
+)
+_LFM2_STANDALONE_ARTIFACT_METADATA = "neural_forge_lfm2_artifact.json"
+_LFM2_STANDALONE_ARTIFACT_SCHEMA = "neural-forge-lfm2-cpcf-v5-standalone-candidate-v1"
+_SAFETENSORS_SHARD = re.compile(r"model-\d{5}-of-\d{5}\.safetensors\Z")
+_CANONICAL_TOKENIZER_FILES = frozenset(
+    {
+        "added_tokens.json",
+        "chat_template.jinja",
+        "chat_template.json",
+        "merges.txt",
+        "sentencepiece.bpe.model",
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer.model",
+        "tokenizer_config.json",
+        "vocab.json",
+    }
+)
+_STANDALONE_FILE_ROLES = frozenset(
+    {
+        "artifact_metadata",
+        "generation_config",
+        "model_config",
+        "model_tensor",
+        "model_tensor_index",
+        "tokenizer_resource",
+    }
+)
 
 
 class DynamicFoldArtifactError(RuntimeError):
@@ -855,8 +885,7 @@ def _revalidate_dynamic_target_runtime(
         ) from exc
     if observed_audit != expected_audit:
         raise DynamicFoldArtifactError(
-            f"{name} structural-buffer audit differs from the exact synthesized "
-            "target."
+            f"{name} structural-buffer audit differs from the exact synthesized target."
         )
 
 
@@ -870,9 +899,7 @@ def _file_sha256(path: Path) -> str:
 
 def _reference_tokens(value: str) -> frozenset[str]:
     return frozenset(
-        token
-        for token in re.split(r"[^a-z0-9]+", value.casefold())
-        if token
+        token for token in re.split(r"[^a-z0-9]+", value.casefold()) if token
     )
 
 
@@ -905,10 +932,7 @@ def _forbidden_path_reference(value: str) -> bool:
     ):
         return False
     tokens = _reference_tokens(value)
-    return bool(
-        tokens.intersection(_FORBIDDEN_CONTENT_TOKENS)
-        or "cache" in tokens
-    )
+    return bool(tokens.intersection(_FORBIDDEN_CONTENT_TOKENS) or "cache" in tokens)
 
 
 def _json_forbidden_reference(
@@ -920,9 +944,7 @@ def _json_forbidden_reference(
         for raw_key, child in value.items():
             key = str(raw_key)
             child_path = f"{path}.{key}"
-            normalized_key = "_".join(
-                re.findall(r"[a-z0-9]+", key.casefold())
-            )
+            normalized_key = "_".join(re.findall(r"[a-z0-9]+", key.casefold()))
             if normalized_key in _JSON_LITERAL_CONTAINERS:
                 continue
             if _forbidden_content_label(key) and (
@@ -1078,6 +1100,274 @@ def _artifact_tree(root: Path) -> tuple[dict[str, Any], ...]:
     if not rows:
         raise DynamicFoldArtifactError("Model saver produced an empty artifact.")
     return tuple(rows)
+
+
+def _canonical_standalone_file_roles(
+    value: Mapping[str, str],
+) -> dict[str, str]:
+    if not isinstance(value, Mapping) or not value:
+        raise DynamicFoldArtifactError(
+            "Standalone folded-child file-role inventory must be nonempty."
+        )
+    roles: dict[str, str] = {}
+    casefolded: set[str] = set()
+    for raw_name, raw_role in value.items():
+        if (
+            not isinstance(raw_name, str)
+            or not raw_name
+            or raw_name in {".", ".."}
+            or "/" in raw_name
+            or "\\" in raw_name
+            or Path(raw_name).name != raw_name
+            or not isinstance(raw_role, str)
+            or raw_role not in _STANDALONE_FILE_ROLES
+        ):
+            raise DynamicFoldArtifactError(
+                "Standalone folded-child file-role inventory is not canonical."
+            )
+        folded = raw_name.casefold()
+        if folded in casefolded:
+            raise DynamicFoldArtifactError(
+                "Standalone folded-child inventory has a case-colliding path."
+            )
+        casefolded.add(folded)
+        if (
+            (
+                raw_role == "artifact_metadata"
+                and raw_name != _LFM2_STANDALONE_ARTIFACT_METADATA
+            )
+            or (raw_role == "model_config" and raw_name != "config.json")
+            or (
+                raw_role == "generation_config" and raw_name != "generation_config.json"
+            )
+            or (
+                raw_role == "model_tensor_index"
+                and raw_name != "model.safetensors.index.json"
+            )
+            or (
+                raw_role == "model_tensor"
+                and raw_name != "model.safetensors"
+                and _SAFETENSORS_SHARD.fullmatch(raw_name) is None
+            )
+            or (
+                raw_role == "tokenizer_resource"
+                and raw_name not in _CANONICAL_TOKENIZER_FILES
+            )
+        ):
+            raise DynamicFoldArtifactError(
+                f"Standalone folded-child role {raw_role!r} cannot authorize "
+                f"file {raw_name!r}."
+            )
+        roles[raw_name] = raw_role
+    return dict(sorted(roles.items()))
+
+
+def _declared_lfm2_file(
+    root: Path,
+    row: Any,
+    *,
+    size_field: str,
+    role: str,
+) -> tuple[str, str]:
+    if not isinstance(row, Mapping) or set(row) != {"path", size_field, "sha256"}:
+        raise DynamicFoldArtifactError(
+            "Standalone LFM2 artifact contains a malformed declared-file row."
+        )
+    name = row.get("path")
+    size = row.get(size_field)
+    digest = row.get("sha256")
+    if not isinstance(name, str):
+        raise DynamicFoldArtifactError(
+            "Standalone LFM2 artifact declared-file path is malformed."
+        )
+    role_row = _canonical_standalone_file_roles({name: role})
+    if (
+        isinstance(size, bool)
+        or not isinstance(size, int)
+        or size < 0
+        or not isinstance(digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+    ):
+        raise DynamicFoldArtifactError(
+            "Standalone LFM2 artifact declared-file identity is malformed."
+        )
+    path = root / name
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or path.stat().st_size != size
+        or _file_sha256(path) != digest
+    ):
+        raise DynamicFoldArtifactError(
+            f"Standalone LFM2 declared file identity changed: {name}."
+        )
+    return name, role_row[name]
+
+
+def canonical_standalone_fold_artifact_inventory(
+    root: str | os.PathLike[str],
+) -> tuple[dict[str, str], ...]:
+    """Derive the exact typed file allowlist from sealed LFM2 checkpoint metadata."""
+
+    raw_root = Path(root).expanduser().absolute()
+    if raw_root.is_symlink():
+        raise DynamicFoldArtifactError(
+            "Standalone folded-child directory cannot be a symbolic link."
+        )
+    try:
+        resolved = raw_root.resolve(strict=True)
+    except OSError as exc:
+        raise DynamicFoldArtifactError(
+            "Standalone folded-child directory is missing."
+        ) from exc
+    if not resolved.is_dir():
+        raise DynamicFoldArtifactError(
+            "Standalone folded-child artifact root must be a directory."
+        )
+    metadata_path = resolved / _LFM2_STANDALONE_ARTIFACT_METADATA
+    if metadata_path.is_symlink() or not metadata_path.is_file():
+        raise DynamicFoldArtifactError(
+            "Standalone LFM2 artifact metadata is missing or unsafe."
+        )
+    try:
+        document = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DynamicFoldArtifactError(
+            "Standalone LFM2 artifact metadata is invalid."
+        ) from exc
+    if not isinstance(document, Mapping):
+        raise DynamicFoldArtifactError(
+            "Standalone LFM2 artifact metadata must be one JSON object."
+        )
+    body = dict(document)
+    supplied = body.pop("artifact_sha256", None)
+    if body.get(
+        "schema"
+    ) != _LFM2_STANDALONE_ARTIFACT_SCHEMA or supplied != canonical_sha256(body):
+        raise DynamicFoldArtifactError(
+            "Standalone LFM2 artifact metadata seal is invalid."
+        )
+    dense = body.get("dense_safetensor_files")
+    tokenizer = body.get("tokenizer_package_files")
+    if not isinstance(dense, list) or not isinstance(tokenizer, list):
+        raise DynamicFoldArtifactError(
+            "Standalone LFM2 metadata omitted its typed checkpoint inventory."
+        )
+    roles = {
+        _LFM2_STANDALONE_ARTIFACT_METADATA: "artifact_metadata",
+    }
+    for name, role in (
+        ("config.json", "model_config"),
+        ("generation_config.json", "generation_config"),
+        ("model.safetensors.index.json", "model_tensor_index"),
+    ):
+        path = resolved / name
+        if path.is_symlink():
+            raise DynamicFoldArtifactError(
+                f"Standalone checkpoint file cannot be a symbolic link: {name}."
+            )
+        if path.is_file():
+            roles[name] = role
+    for row in dense:
+        name, role = _declared_lfm2_file(
+            resolved,
+            row,
+            size_field="size_bytes",
+            role="model_tensor",
+        )
+        if name in roles:
+            raise DynamicFoldArtifactError(
+                f"Standalone LFM2 inventory repeats file {name!r}."
+            )
+        roles[name] = role
+    for row in tokenizer:
+        name, role = _declared_lfm2_file(
+            resolved,
+            row,
+            size_field="bytes",
+            role="tokenizer_resource",
+        )
+        if name in roles:
+            raise DynamicFoldArtifactError(
+                f"Standalone LFM2 inventory repeats file {name!r}."
+            )
+        roles[name] = role
+    canonical = _canonical_standalone_file_roles(roles)
+    return tuple(
+        {"path": name, "artifact_role": role} for name, role in canonical.items()
+    )
+
+
+def scan_standalone_fold_artifact_tree(
+    root: str | os.PathLike[str],
+    *,
+    expected_file_roles: Mapping[str, str] | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Validate and hash one exact, typed standalone folded-child directory.
+
+    The no-argument LFM2 path derives its allowlist from the checkpoint's sealed
+    weight/tokenizer inventories.  Other family-specific publishers must supply
+    an equally explicit canonical file-role map.  Arbitrary extra files are
+    rejected even when their names contain no denylisted words.
+    """
+
+    raw_root = Path(root).expanduser().absolute()
+    if raw_root.is_symlink():
+        raise DynamicFoldArtifactError(
+            "Standalone folded-child directory cannot be a symbolic link."
+        )
+    try:
+        resolved = raw_root.resolve(strict=True)
+    except OSError as exc:
+        raise DynamicFoldArtifactError(
+            "Standalone folded-child directory is missing."
+        ) from exc
+    if not resolved.is_dir():
+        raise DynamicFoldArtifactError(
+            "Standalone folded-child artifact root must be a directory."
+        )
+    if expected_file_roles is None:
+        inventory = canonical_standalone_fold_artifact_inventory(resolved)
+        roles = {row["path"]: row["artifact_role"] for row in inventory}
+    else:
+        roles = _canonical_standalone_file_roles(expected_file_roles)
+    try:
+        entries = tuple(sorted(resolved.iterdir(), key=lambda path: path.name))
+    except OSError as exc:
+        raise DynamicFoldArtifactError(
+            "Cannot enumerate standalone folded-child directory."
+        ) from exc
+    for path in entries:
+        if path.is_symlink() or not path.is_file():
+            raise DynamicFoldArtifactError(
+                f"Standalone folded-child entry is not an ordinary file: {path.name}."
+            )
+        details = path.stat()
+        if getattr(details, "st_nlink", 1) != 1:
+            raise DynamicFoldArtifactError(
+                f"Standalone folded-child file cannot be a hard link: {path.name}."
+            )
+        if path.suffix.casefold() == ".json" and (
+            details.st_size > _MAX_STRUCTURED_INVENTORY_BYTES
+        ):
+            raise DynamicFoldArtifactError(
+                f"Standalone folded-child JSON exceeds the scan limit: {path.name}."
+            )
+    observed = {path.name for path in entries}
+    expected = set(roles)
+    unexpected = sorted(observed - expected)
+    missing = sorted(expected - observed)
+    if unexpected or missing:
+        raise DynamicFoldArtifactError(
+            "Standalone folded-child files differ from the canonical typed "
+            f"inventory; unexpected={unexpected}, missing={missing}."
+        )
+    tree = _artifact_tree(resolved)
+    if {row["path"] for row in tree} != expected:
+        raise DynamicFoldArtifactError(
+            "Standalone folded-child tree differs from its canonical inventory."
+        )
+    return tree
 
 
 def _decision(value: FoldDecision | bool) -> FoldDecision:
@@ -1280,8 +1570,7 @@ def _validate_target_provenance_semantics(
         != child_graph.get("tokenizer_fingerprint")
         or target_document.get("blank_state_fingerprint")
         != plan.get("child_state_fingerprint")
-        or blank.get("blank_state_fingerprint")
-        != plan.get("child_state_fingerprint")
+        or blank.get("blank_state_fingerprint") != plan.get("child_state_fingerprint")
         or blank.get("unique_parameter_element_count") != exact_parameters
     ):
         raise DynamicFoldArtifactError(
@@ -1327,13 +1616,9 @@ def _validate_target_provenance_semantics(
             "adapter_id": target_document.get("adapter_id"),
             "adapter_version": target_document.get("adapter_version"),
             "graph_fingerprint": child_fingerprint,
-            "parameter_layout_fingerprint": blank.get(
-                "parameter_layout_fingerprint"
-            ),
+            "parameter_layout_fingerprint": blank.get("parameter_layout_fingerprint"),
             "buffer_layout_fingerprint": blank.get("buffer_layout_fingerprint"),
-            "buffer_state_fingerprint": blank.get(
-                "buffer_state_fingerprint_after"
-            ),
+            "buffer_state_fingerprint": blank.get("buffer_state_fingerprint_after"),
         }
     )
     if target_document.get("topology_fingerprint") != expected_topology:
@@ -1472,9 +1757,7 @@ def _write_provenance_documents(
     provenance = root / _PROVENANCE_DIRECTORY
     provenance.mkdir()
     try:
-        target_document, target_present = _target_provenance_document(
-            dynamic_target
-        )
+        target_document, target_present = _target_provenance_document(dynamic_target)
         documents = {
             "plan": compilation.plan.as_dict(),
             "run": compilation.run.as_dict(),
@@ -1699,9 +1982,7 @@ def load_dynamic_fold_artifact_certificate(
         raise DynamicFoldArtifactError("Artifact certificate must be one JSON object.")
     certificate_schema = payload.get("schema")
     if certificate_schema not in {LEGACY_SCHEMA, SCHEMA}:
-        raise DynamicFoldArtifactError(
-            "Artifact certificate schema is unsupported."
-        )
+        raise DynamicFoldArtifactError("Artifact certificate schema is unsupported.")
     decision_payload = payload.get("fresh_reload_decision")
     if not isinstance(decision_payload, Mapping):
         raise DynamicFoldArtifactError(
@@ -1804,9 +2085,7 @@ def load_dynamic_fold_artifact_certificate(
                 "provenance_parent_graphs_fingerprint"
             ],
             provenance_target_sha256=payload["provenance_target_sha256"],
-            provenance_target_fingerprint=payload[
-                "provenance_target_fingerprint"
-            ],
+            provenance_target_fingerprint=payload["provenance_target_fingerprint"],
             dynamic_target_provenance_present=payload[
                 "dynamic_target_provenance_present"
             ],
@@ -2135,8 +2414,8 @@ def publish_dynamic_fold_artifact(
                 "from the declared gate."
             )
     try:
-        inference_execution_contract = (
-            inference_execution_contract_from_manifest(normalized_manifest)
+        inference_execution_contract = inference_execution_contract_from_manifest(
+            normalized_manifest
         )
     except DynamicBehaviorExecutionError as exc:
         raise DynamicFoldArtifactError(
@@ -2499,8 +2778,7 @@ def publish_dynamic_fold_artifact(
             )
         if (
             fingerprint_model_state(final_reloaded) != final_reloaded_state
-            or fingerprint_model_runtime_state(final_reloaded)
-            != final_reload_runtime
+            or fingerprint_model_runtime_state(final_reloaded) != final_reload_runtime
         ):
             raise DynamicFoldArtifactError(
                 "Final-destination evaluator mutated the retained child."
@@ -2586,9 +2864,7 @@ def publish_dynamic_fold_artifact(
         reload_decision = final_reload_decision
         reload_module_forward_calls = final_reload_module_forward_calls
         reload_root_forward_calls = final_reload_root_forward_calls
-        reload_inference_entrypoint_calls = (
-            final_reload_inference_entrypoint_calls
-        )
+        reload_inference_entrypoint_calls = final_reload_inference_entrypoint_calls
         provisional = DynamicFoldArtifactCertificate(
             path=str(destination_path),
             plan_fingerprint=compilation.plan.fingerprint,
@@ -2611,9 +2887,7 @@ def publish_dynamic_fold_artifact(
             fresh_reload_state_inventory=reloaded_inventory,
             fresh_reload_module_forward_calls=reload_module_forward_calls,
             fresh_reload_root_forward_calls=reload_root_forward_calls,
-            fresh_reload_inference_entrypoint_calls=(
-                reload_inference_entrypoint_calls
-            ),
+            fresh_reload_inference_entrypoint_calls=(reload_inference_entrypoint_calls),
             preparation_guard_applied=preparation_guard_applied,
             preparation_optimizer_constructions=(
                 preparation_counts["optimizer_constructions"]
@@ -2666,8 +2940,10 @@ def publish_dynamic_fold_artifact(
                 reload_guard.optimizer_constructions
                 + final_reload_guard.optimizer_constructions
             ),
-            optimizer_steps=reload_guard.optimizer_steps + final_reload_guard.optimizer_steps,
-            backward_calls=reload_guard.backward_calls + final_reload_guard.backward_calls,
+            optimizer_steps=reload_guard.optimizer_steps
+            + final_reload_guard.optimizer_steps,
+            backward_calls=reload_guard.backward_calls
+            + final_reload_guard.backward_calls,
             autograd_grad_calls=(
                 reload_guard.autograd_grad_calls
                 + final_reload_guard.autograd_grad_calls
@@ -2748,9 +3024,7 @@ def publish_dynamic_fold_artifact(
                 provisional.provenance_parent_graphs_fingerprint
             ),
             provenance_target_sha256=provisional.provenance_target_sha256,
-            provenance_target_fingerprint=(
-                provisional.provenance_target_fingerprint
-            ),
+            provenance_target_fingerprint=(provisional.provenance_target_fingerprint),
             dynamic_target_provenance_present=(
                 provisional.dynamic_target_provenance_present
             ),
@@ -2825,6 +3099,9 @@ __all__ = [
     "LEGACY_SCHEMA",
     "load_dynamic_fold_artifact_certificate",
     "remove_authenticated_dynamic_fold_artifact",
+    "canonical_standalone_fold_artifact_inventory",
+    "scan_standalone_fold_artifact_tree",
     "SCHEMA",
+    "STANDALONE_FOLD_ARTIFACT_INVENTORY_SCHEMA",
     "publish_dynamic_fold_artifact",
 ]

@@ -8,9 +8,9 @@ responses are loaded from their existing sealed envelope and the freshly
 reloaded candidate is the only model that generates during scoring.
 
 Open-ended cases use paired parent/candidate ratings.  Abilities absent in the
-parent are neutralized, absolute scores remain diagnostics, and promotion
-requires at least 90% demonstrated-capability retention with no clear manual
-regression.
+parent are neutralized and every scalar score remains diagnostic-only.  The
+reviewer's sealed qualitative case verdicts and holistic suite conclusion are
+the only intelligence judgment allowed to authorize promotion.
 """
 
 from __future__ import annotations
@@ -46,25 +46,224 @@ from neural_forge.hf_lfm2_causal_value_allocator import (
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import fingerprint_lfm2_parent
 from neural_forge.hf_lfm2_intelligence_holdout import (
+    baseline_from_lfm2_intelligence_holdout_envelope,
     load_lfm2_intelligence_holdout_parent_envelope,
     seal_lfm2_intelligence_holdout_candidate_outputs,
 )
 from neural_forge.hf_lfm2_parent_relative_manual_gate import (
     MINIMUM_RETENTION,
-    build_parent_relative_manual_packet,
+    PACKET_SCHEMA as PARENT_RELATIVE_PACKET_SCHEMA,
+    PROMOTION_ELIGIBLE_SUITE_CONCLUSION,
+    QUALITATIVE_CRITERIA,
+    build_all_case_parent_relative_manual_packet,
     evaluate_parent_relative_manual_retention,
+    normalize_parent_relative_completion_metadata,
 )
 
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-RUNNER_SCHEMA = "neural-forge-lfm2-causal-value-allocator-run-v1"
-TARGET_REPORT_SCHEMA = "neural-forge-lfm2-causal-value-target-report-v1"
+LEGACY_RUNNER_SCHEMA = "neural-forge-lfm2-causal-value-allocator-run-v1"
+RUNNER_SCHEMA = "neural-forge-lfm2-causal-value-allocator-run-v2"
+LEGACY_TARGET_REPORT_SCHEMA = "neural-forge-lfm2-causal-value-target-report-v1"
+TARGET_REPORT_SCHEMA = "neural-forge-lfm2-causal-value-target-report-v2"
+EXPECTED_HOLDOUT_CASE_COUNT = 64
 
 
 class Lfm2CausalValueRunnerError(RuntimeError):
     """A local identity, sealed input, or parent-relative gate failed."""
+
+
+def _build_exact_all_case_parent_relative_packet(
+    standard_packet: Mapping[str, Any],
+    envelope: Any,
+    candidate_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Bind whole parent/child responses for every authenticated holdout case."""
+
+    manifest = envelope.manifest
+    manifest_cases = tuple(manifest.cases)
+    baseline = baseline_from_lfm2_intelligence_holdout_envelope(envelope)
+    parent_cases = tuple(baseline.cases)
+    rows = tuple(candidate_rows)
+    if (
+        len(manifest_cases) != EXPECTED_HOLDOUT_CASE_COUNT
+        or len(parent_cases) != EXPECTED_HOLDOUT_CASE_COUNT
+        or len(rows) != EXPECTED_HOLDOUT_CASE_COUNT
+    ):
+        raise Lfm2CausalValueRunnerError(
+            "Parent-relative promotion requires the exact 64-case holdout."
+        )
+    manifest_ids = tuple(str(value.case_id) for value in manifest_cases)
+    parent_by_id = {str(value.case_id): value for value in parent_cases}
+    candidate_by_id = {
+        str(value.get("case_id")): value for value in rows if isinstance(value, Mapping)
+    }
+    if (
+        len(set(manifest_ids)) != EXPECTED_HOLDOUT_CASE_COUNT
+        or set(parent_by_id) != set(manifest_ids)
+        or set(candidate_by_id) != set(manifest_ids)
+    ):
+        raise Lfm2CausalValueRunnerError(
+            "Parent-relative review identities differ from the exact 64-case holdout."
+        )
+    eos_token_ids = frozenset(int(value) for value in envelope.eos_token_ids)
+    all_case_rows = []
+    for spec in manifest_cases:
+        case_id = str(spec.case_id)
+        parent = parent_by_id[case_id]
+        candidate = candidate_by_id[case_id]
+        if (
+            parent.prompt != spec.prompt
+            or candidate.get("generation_limit") != spec.generation_limit
+            or not isinstance(candidate.get("output"), str)
+            or not isinstance(candidate.get("output_token_ids"), list)
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in candidate.get("output_token_ids", ())
+            )
+            or len(candidate.get("output_token_ids", ())) > spec.generation_limit
+        ):
+            raise Lfm2CausalValueRunnerError(
+                f"Parent-relative review evidence differs for {case_id}."
+            )
+        candidate_token_ids = tuple(candidate["output_token_ids"])
+        candidate_eos_observed = bool(
+            candidate_token_ids and candidate_token_ids[-1] in eos_token_ids
+        )
+        all_case_rows.append(
+            {
+                "case_id": case_id,
+                "prompt": spec.prompt,
+                "parent_response": parent.parent_output,
+                "candidate_response": candidate["output"],
+                "generation_limit": spec.generation_limit,
+                "parent_completion": {
+                    "generated_token_count": parent.generation.generated_token_count,
+                    "eos_observed": parent.generation.eos_observed,
+                    "unfinished_at_generation_limit": (
+                        parent.generation.unfinished_at_generation_limit
+                    ),
+                },
+                "candidate_completion": {
+                    "generated_token_count": len(candidate_token_ids),
+                    "eos_observed": candidate_eos_observed,
+                    "unfinished_at_generation_limit": (
+                        len(candidate_token_ids) == spec.generation_limit
+                        and not candidate_eos_observed
+                    ),
+                },
+            }
+        )
+    return build_all_case_parent_relative_manual_packet(
+        standard_packet,
+        all_case_rows,
+        manifest_sha256=manifest.manifest_sha256,
+        manifest_document_sha256=manifest.document_sha256,
+    )
+
+
+def _exact_all_case_review_contract(
+    intelligence: Mapping[str, Any],
+    packet: Mapping[str, Any] | None,
+) -> bool:
+    """Return whether one packet is the sealed exact-manifest all-case review."""
+
+    if not isinstance(packet, Mapping):
+        return False
+    body = dict(packet)
+    packet_sha256 = body.pop("packet_sha256", None)
+    inputs = intelligence.get("inputs")
+    cases = body.get("cases")
+    rubric = body.get("rubric")
+    if (
+        not isinstance(packet_sha256, str)
+        or packet_sha256 != canonical_sha256(body)
+        or body.get("schema") != PARENT_RELATIVE_PACKET_SCHEMA
+        or body.get("review_scope") != "exact_authenticated_manifest_all_cases"
+        or body.get("all_case_manual_review_mode") is not True
+        or body.get("case_count") != EXPECTED_HOLDOUT_CASE_COUNT
+        or not isinstance(cases, list)
+        or len(cases) != EXPECTED_HOLDOUT_CASE_COUNT
+        or not isinstance(inputs, Mapping)
+        or inputs.get("case_count") != EXPECTED_HOLDOUT_CASE_COUNT
+        or body.get("manifest_sha256") != inputs.get("manifest_sha256")
+        or body.get("manifest_document_sha256")
+        != inputs.get("manifest_document_sha256")
+        or not isinstance(rubric, Mapping)
+        or rubric.get("review_every_manifest_case") is not True
+        or rubric.get("full_parent_and_candidate_response_review_required") is not True
+        or rubric.get("per_case_generation_limit_bound") is not True
+        or rubric.get("qualitative_case_verdicts_are_authoritative") is not True
+        or rubric.get("holistic_suite_conclusion_is_authoritative") is not True
+        or rubric.get("automatic_accept_reject_permitted") is not False
+        or body.get("legacy_generic_manual_subset_is_diagnostic_only") is not True
+    ):
+        return False
+    case_ids = [
+        str(value.get("case_id")) for value in cases if isinstance(value, Mapping)
+    ]
+    limit_rows = [
+        {
+            "case_id": str(value.get("case_id")),
+            "generation_limit": value.get("generation_limit"),
+        }
+        for value in cases
+        if isinstance(value, Mapping)
+    ]
+    completion_rows = [
+        {
+            "case_id": str(value.get("case_id")),
+            "parent_completion": value.get("parent_completion"),
+            "candidate_completion": value.get("candidate_completion"),
+        }
+        for value in cases
+        if isinstance(value, Mapping)
+    ]
+    completion_metadata_valid = len(completion_rows) == EXPECTED_HOLDOUT_CASE_COUNT
+    if completion_metadata_valid:
+        try:
+            for case, completion in zip(cases, completion_rows):
+                limit = case.get("generation_limit")
+                if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+                    completion_metadata_valid = False
+                    break
+                normalize_parent_relative_completion_metadata(
+                    completion["parent_completion"],
+                    generation_limit=limit,
+                    name=f"{completion['case_id']}.parent",
+                )
+                normalize_parent_relative_completion_metadata(
+                    completion["candidate_completion"],
+                    generation_limit=limit,
+                    name=f"{completion['case_id']}.candidate",
+                )
+        except (TypeError, ValueError):
+            completion_metadata_valid = False
+    return (
+        len(case_ids) == EXPECTED_HOLDOUT_CASE_COUNT
+        and len(set(case_ids)) == EXPECTED_HOLDOUT_CASE_COUNT
+        and len(limit_rows) == EXPECTED_HOLDOUT_CASE_COUNT
+        and completion_metadata_valid
+        and all(
+            isinstance(value["generation_limit"], int)
+            and not isinstance(value["generation_limit"], bool)
+            and value["generation_limit"] > 0
+            for value in limit_rows
+        )
+        and body.get("case_ids_sha256") == canonical_sha256(case_ids)
+        and body.get("generation_limit_rows_sha256") == canonical_sha256(limit_rows)
+        and body.get("completion_metadata_rows_sha256")
+        == canonical_sha256(completion_rows)
+        and rubric.get("qualitative_criteria") == list(QUALITATIVE_CRITERIA)
+        and rubric.get("parent_and_candidate_completion_metadata_bound") is True
+        and rubric.get("completion_metadata_is_diagnostic_context_only") is True
+        and rubric.get("completion_metadata_automatic_accept_reject_permitted") is False
+        and rubric.get("explicit_truncation_consideration_required") is True
+        and rubric.get("criterion_specific_observations_required") is True
+        and rubric.get("duplicate_boilerplate_observations_permitted") is False
+    )
 
 
 def _digest(value: Any, name: str) -> str:
@@ -75,6 +274,24 @@ def _digest(value: Any, name: str) -> str:
     ):
         raise Lfm2CausalValueRunnerError(f"{name} must be a lowercase SHA-256 digest.")
     return value
+
+
+def _authenticate_intelligence_report(document: Mapping[str, Any]) -> str:
+    """Recompute the cached holdout report seal and return its bound digest."""
+
+    if not isinstance(document, Mapping):
+        raise Lfm2CausalValueRunnerError(
+            "Intelligence report must contain a JSON object."
+        )
+    body = dict(document)
+    report_sha256 = body.pop("report_sha256", None)
+    if body.get("schema") != holdout_eval.RUNNER_SCHEMA or _digest(
+        report_sha256, "intelligence_report_sha256"
+    ) != canonical_sha256(body):
+        raise Lfm2CausalValueRunnerError(
+            "Intelligence report schema or content seal is invalid."
+        )
+    return report_sha256
 
 
 def _read_json(
@@ -137,6 +354,7 @@ def _probe(
 def _parent_relative_decision(
     intelligence: Mapping[str, Any],
     manual_report: Mapping[str, Any] | None,
+    manual_packet: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     gate = intelligence.get("core_intelligence_gate")
     policy = intelligence.get("policy")
@@ -163,74 +381,122 @@ def _parent_relative_decision(
         raise Lfm2CausalValueRunnerError(
             "Automatic intelligence report omits a required component."
         )
-    automatic_reasons = []
     headline_values = {}
     for name in required:
         component = by_name[name]
         retention = component.get("retention")
         if (
-            isinstance(retention, bool)
-            or not isinstance(retention, (int, float))
-            or not 0.0 <= float(retention) <= 1.0
+            not isinstance(retention, bool)
+            and isinstance(retention, (int, float))
+            and 0.0 <= float(retention) <= 1.0
         ):
-            automatic_reasons.append(f"{name}:missing_reliable_coverage")
-        else:
             headline_values[name] = float(retention)
-            if component.get("passed") is not True:
-                automatic_reasons.append(f"{name}:threshold_failed")
     task_absolute = intelligence.get("parent_relative_task_retention", {}).get(
         "absolute_accuracy_retention"
     )
     if isinstance(task_absolute, (int, float)) and not isinstance(task_absolute, bool):
         headline_values["task_absolute_accuracy_retention"] = float(task_absolute)
-    else:
-        automatic_reasons.append("task_absolute_accuracy:missing")
-    manual_pending = manual_report is None
-    manual_passed = bool(
-        manual_report is not None and manual_report.get("passed") is True
+    exact_all_case_review = _exact_all_case_review_contract(
+        intelligence,
+        manual_packet,
     )
+    manual_pending = manual_report is None
+    holistic_conclusion = None
     if manual_report is not None:
         retention = manual_report.get("retention")
         if (
-            isinstance(retention, bool)
-            or not isinstance(retention, (int, float))
-            or not 0.0 <= float(retention) <= 1.0
+            not isinstance(retention, bool)
+            and isinstance(retention, (int, float))
+            and 0.0 <= float(retention) <= 1.0
         ):
-            raise Lfm2CausalValueRunnerError(
-                "Parent-relative manual report retention is invalid."
+            headline_values["parent_relative_manual"] = float(retention)
+        holistic = manual_report.get("holistic_review")
+        suite = (
+            holistic.get("suite_conclusion") if isinstance(holistic, Mapping) else None
+        )
+        if (
+            exact_all_case_review
+            and isinstance(holistic, Mapping)
+            and holistic.get("status") == "complete"
+            and holistic.get("qualitative_judgment_is_authoritative") is True
+            and holistic.get("numeric_scores_and_thresholds_are_diagnostic_only")
+            is True
+            and holistic.get("automatic_scalar_accept_reject_permitted") is False
+            and isinstance(suite, Mapping)
+            and manual_report.get("packet_sha256")
+            == (
+                manual_packet.get("packet_sha256")
+                if isinstance(manual_packet, Mapping)
+                else None
             )
-        headline_values["parent_relative_manual"] = float(retention)
-    reasons = list(automatic_reasons)
-    if manual_pending:
-        reasons.append("parent_relative_manual:pending")
-    elif not manual_passed:
-        reasons.append("parent_relative_manual:threshold_or_regression_failed")
-    promoted = not reasons
-    lower_bound = min(headline_values.values()) if promoted else None
+            and isinstance(manual_report.get("case_reports"), list)
+            and len(manual_report["case_reports"]) == EXPECTED_HOLDOUT_CASE_COUNT
+            and isinstance(holistic.get("qualitative_case_reviews"), list)
+            and len(holistic["qualitative_case_reviews"]) == EXPECTED_HOLDOUT_CASE_COUNT
+            and tuple(
+                str(value.get("case_id"))
+                for value in holistic["qualitative_case_reviews"]
+                if isinstance(value, Mapping)
+            )
+            == tuple(
+                str(value.get("case_id"))
+                for value in manual_packet["cases"]
+                if isinstance(value, Mapping)
+            )
+        ):
+            holistic_conclusion = suite.get("conclusion")
+    reasons = []
+    if not exact_all_case_review:
+        reasons.append("authoritative_holistic_review:exact_64_case_packet_required")
+    elif manual_pending:
+        reasons.append("authoritative_holistic_review:pending")
+    elif holistic_conclusion is None:
+        reasons.append("authoritative_holistic_review:missing")
+    elif holistic_conclusion != PROMOTION_ELIGIBLE_SUITE_CONCLUSION:
+        reasons.append(f"authoritative_holistic_review:{holistic_conclusion}")
+    promoted = (
+        exact_all_case_review
+        and holistic_conclusion == PROMOTION_ELIGIBLE_SUITE_CONCLUSION
+    )
+    observed_diagnostic_floor = (
+        min(headline_values.values()) if headline_values else None
+    )
     return {
         "promoted": promoted,
         "status": (
             "promoted"
             if promoted
             else (
-                "pending_parent_relative_manual"
-                if manual_pending and not automatic_reasons
-                else "rejected"
+                "promotion_ineligible_incomplete_review_scope"
+                if not exact_all_case_review
+                else (
+                    "pending_parent_relative_manual"
+                    if manual_pending
+                    else "holistic_review_complete_not_promoted"
+                )
             )
         ),
         "reasons": reasons,
-        "certified_parent_relative_lower_bound": lower_bound,
+        "certified_parent_relative_lower_bound": None,
+        "observed_parent_relative_diagnostic_floor": observed_diagnostic_floor,
         "headline_inputs": headline_values,
-        "automatic_components_passed": not automatic_reasons,
-        "parent_relative_manual_status": (
-            "pending"
-            if manual_pending
-            else ("accepted" if manual_passed else "rejected")
+        "automatic_components_passed": all(
+            by_name[name].get("passed") is True for name in required
         ),
-        "minimum_component_retention": MINIMUM_RETENTION,
+        "automatic_component_pass_flags_are_diagnostic_only": True,
+        "parent_relative_manual_status": (
+            "ineligible_review_scope"
+            if not exact_all_case_review
+            else ("pending" if manual_pending else "holistic_review_complete")
+        ),
+        "exact_64_case_manual_review_contract_authenticated": exact_all_case_review,
+        "holistic_suite_conclusion": holistic_conclusion,
+        "required_holistic_suite_conclusion": (PROMOTION_ELIGIBLE_SUITE_CONCLUSION),
+        "minimum_component_retention_diagnostic_reference": MINIMUM_RETENTION,
+        "numeric_scores_and_thresholds_are_diagnostic_only": True,
         "absolute_manual_scores_are_diagnostics_only": True,
         "abilities_absent_in_parent_are_neutralized": True,
-        "clear_manual_regressions_are_rejected": True,
+        "qualitative_judgment_is_authoritative": True,
     }
 
 
@@ -516,7 +782,11 @@ def run_lfm2_causal_value_allocator(
         )
     )
     standard_packet = json.loads(standard_packet_path.read_text(encoding="utf-8"))
-    parent_relative_packet = build_parent_relative_manual_packet(standard_packet)
+    parent_relative_packet = _build_exact_all_case_parent_relative_packet(
+        standard_packet,
+        envelope,
+        candidate_rows,
+    )
     parent_relative_packet_path = (
         config.output_root / "parent_relative_manual_packet.json"
     )
@@ -534,7 +804,11 @@ def run_lfm2_causal_value_allocator(
             config.output_root / "parent_relative_manual_report.json",
             manual_report,
         )
-    decision = _parent_relative_decision(intelligence, manual_report)
+    decision = _parent_relative_decision(
+        intelligence,
+        manual_report,
+        parent_relative_packet,
+    )
     accounting = inspect_lfm2_causal_value_fold(checkpoint)
     core = {
         "schema": TARGET_REPORT_SCHEMA,
@@ -558,6 +832,12 @@ def run_lfm2_causal_value_allocator(
             "standard_absolute_manual_promotion_eligible": False,
             "parent_relative_manual_packet_sha256": parent_relative_packet[
                 "packet_sha256"
+            ],
+            "parent_relative_manual_packet_case_count": parent_relative_packet[
+                "case_count"
+            ],
+            "parent_relative_manual_review_scope": parent_relative_packet[
+                "review_scope"
             ],
             "parent_relative_manual_report_sha256": (
                 None if manual_report is None else manual_report["report_sha256"]

@@ -84,6 +84,9 @@ from .hf_lfm2_cpcf_candidate_replay import (
     replay_lfm2_cpcf_candidate_work_payload,
 )
 from .hf_lfm2_circuit_trace_cache import Lfm2CircuitTraceCache
+from .hf_lfm2_parent_relative_manual_gate import (
+    PROMOTION_ELIGIBLE_SUITE_CONCLUSION,
+)
 from .hf_lfm2_cpcf_model_fold import (
     LFM2_CPCF_MODEL_FOLD_SCHEMA,
     Lfm2CpcfCompiledModelFold,
@@ -2122,6 +2125,7 @@ def _strict_behavior_binding(
     if not isinstance(evidence, Lfm2CpcfReviewedPromotionEvidence):
         raise Lfm2CpcfCatalogError(f"{name} has no typed reviewed-promotion evidence.")
     reviewed = dict(evidence.reviewed_evidence)
+    suite_conclusion = reviewed.get("holistic_suite_conclusion")
     if (
         reviewed.get("case_count") != contract.independent_holdout_case_count
         or reviewed.get("manifest_sha256")
@@ -2130,7 +2134,24 @@ def _strict_behavior_binding(
         != contract.independent_parent_envelope_sha256
         or reviewed.get("parent_relative_manual_packet_sha256")
         != contract.parent_relative_manual_packet_sha256
-        or reviewed.get("parent_relative_manual_report_passed") is not True
+        or reviewed.get("parent_relative_manual_diagnostics_complete") is not True
+        or reviewed.get("parent_relative_manual_metrics_are_diagnostic_only")
+        is not True
+        or reviewed.get("qualitative_manual_review_complete") is not True
+        or reviewed.get("qualitative_manual_review_case_count")
+        != contract.independent_holdout_case_count
+        or not isinstance(reviewed.get("qualitative_case_reviews_sha256"), str)
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            reviewed["qualitative_case_reviews_sha256"],
+        )
+        is None
+        or not isinstance(suite_conclusion, Mapping)
+        or suite_conclusion.get("conclusion") != PROMOTION_ELIGIBLE_SUITE_CONCLUSION
+        or reviewed.get("holistic_suite_conclusion_sha256")
+        != canonical_sha256(suite_conclusion)
+        or reviewed.get("qualitative_judgment_is_authoritative") is not True
+        or reviewed.get("numeric_scores_and_thresholds_are_diagnostic_only") is not True
         or reviewed.get("automatic_gate_ready_for_manual_completion") is not True
     ):
         raise Lfm2CpcfCatalogError(
@@ -3519,9 +3540,7 @@ class Lfm2CpcfV5SelectiveStackResources:
             "resume_coordinator": resume_coordinator,
             "resume_state": resume_state,
             "resume_store": (
-                None
-                if resume_coordinator is None
-                else resume_coordinator.store
+                None if resume_coordinator is None else resume_coordinator.store
             ),
         }
         callback_sidecars = _resume_sidecar_paths_from_roots(
@@ -5412,21 +5431,17 @@ def _authenticate_v5_admission_proof_compiler_binding(
             "V5 admission-chain proof lacks compiler-bound frontier context."
         )
     try:
-        physical_rss_policy_sha256 = (
-            build_lfm2_cpcf_v5_physical_rss_policy_sha256(
-                full_phase_tree_logical_bytes=compiler_policy[
-                    "full_phase_tree_logical_bytes"
-                ],
-                minimum_reduction_fraction=compiler_policy[
-                    "minimum_physical_rss_reduction_fraction"
-                ],
-                maximum_increase_bytes=compiler_policy[
-                    "maximum_physical_rss_increase_bytes"
-                ],
-                maximum_process_rss_bytes=compiler_policy[
-                    "maximum_process_rss_bytes"
-                ],
-            )
+        physical_rss_policy_sha256 = build_lfm2_cpcf_v5_physical_rss_policy_sha256(
+            full_phase_tree_logical_bytes=compiler_policy[
+                "full_phase_tree_logical_bytes"
+            ],
+            minimum_reduction_fraction=compiler_policy[
+                "minimum_physical_rss_reduction_fraction"
+            ],
+            maximum_increase_bytes=compiler_policy[
+                "maximum_physical_rss_increase_bytes"
+            ],
+            maximum_process_rss_bytes=compiler_policy["maximum_process_rss_bytes"],
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise Lfm2CpcfCatalogError(
@@ -5444,8 +5459,7 @@ def _authenticate_v5_admission_proof_compiler_binding(
         != compiler_report.get("selective_provider_sha256")
         or proof_context.get("runtime_policy_sha256")
         != canonical_sha256(compiler_policy)
-        or proof_context.get("physical_rss_policy_sha256")
-        != physical_rss_policy_sha256
+        or proof_context.get("physical_rss_policy_sha256") != physical_rss_policy_sha256
         or proof_context.get("compiler_implementation_sha256")
         != implementation["implementation_sha256"]
         or proof_context.get("resume_implementation_sha256")
@@ -5551,18 +5565,14 @@ def _authenticate_v5_model_fold_report(
             raise Lfm2CpcfCatalogError(
                 f"Cold V5 report unexpectedly populated {digest_field}."
             )
-    input_proof_value = compiler_report.get(
-        "resume_input_admission_chain_proof"
-    )
+    input_proof_value = compiler_report.get("resume_input_admission_chain_proof")
     input_proof_sha256_value = compiler_report.get(
         "resume_input_admission_chain_proof_sha256"
     )
     if resume_used:
         try:
             input_proof = dict(
-                authenticate_lfm2_cpcf_v5_admission_chain_proof(
-                    input_proof_value
-                )
+                authenticate_lfm2_cpcf_v5_admission_chain_proof(input_proof_value)
             )
         except Exception as exc:
             raise Lfm2CpcfCatalogError(
@@ -5593,10 +5603,7 @@ def _authenticate_v5_model_fold_report(
                 "Resumed V5 compiler input differs from its standalone "
                 "admission-chain proof."
             )
-    elif (
-        input_proof_value is not None
-        or input_proof_sha256_value is not None
-    ):
+    elif input_proof_value is not None or input_proof_sha256_value is not None:
         raise Lfm2CpcfCatalogError(
             "Cold V5 compiler report unexpectedly carries an input "
             "admission-chain proof."
@@ -5687,8 +5694,7 @@ def _authenticate_v5_model_fold_report(
                 )
             except Exception as exc:
                 raise Lfm2CpcfCatalogError(
-                    "V5 admitted-prefix standalone admission-chain proof "
-                    "is invalid."
+                    "V5 admitted-prefix standalone admission-chain proof is invalid."
                 ) from exc
             proof_sha256 = _digest(
                 record["admission_chain_proof_sha256"],
@@ -5704,15 +5710,13 @@ def _authenticate_v5_model_fold_report(
             )
             if (
                 chain_proof["proof_sha256"] != proof_sha256
-                or proof_pending.get("next_layer_index")
-                != record["next_layer_index"]
+                or proof_pending.get("next_layer_index") != record["next_layer_index"]
                 or proof_pending.get("frontier_reference")
                 != frontier_reference.as_dict()
                 or proof_pending.get("checkpoint_reference")
                 != checkpoint_reference.as_dict()
                 or proof_pending.get("frontier_sha256") != frontier_sha256
-                or proof_admission.get("admission_sha256")
-                != admission_sha256
+                or proof_admission.get("admission_sha256") != admission_sha256
             ):
                 raise Lfm2CpcfCatalogError(
                     "V5 admitted-prefix record differs from its standalone "
@@ -5731,8 +5735,7 @@ def _authenticate_v5_model_fold_report(
                 or reopened.frontier_reference != frontier_reference
                 or reopened.checkpoint_reference != checkpoint_reference
                 or reopened.frontier.frontier_sha256 != frontier_sha256
-                or reopened.admission.get("admission_sha256")
-                != admission_sha256
+                or reopened.admission.get("admission_sha256") != admission_sha256
             ):
                 raise Lfm2CpcfCatalogError(
                     "V5 admitted-prefix record differs from the exact "
@@ -5744,9 +5747,7 @@ def _authenticate_v5_model_fold_report(
             "resume input admission SHA-256",
         )
         try:
-            reopened_input = resume_coordinator.open_admitted(
-                resume_admission_sha256
-            )
+            reopened_input = resume_coordinator.open_admitted(resume_admission_sha256)
         except Exception as exc:
             raise Lfm2CpcfCatalogError(
                 "V5 resumed input prefix did not reopen through its bound "
@@ -7523,9 +7524,7 @@ class Lfm2CpcfFoldStackAdapter:
                         "selective_cache": self.resources.backend.cache,
                         "tokenizer_trace_adapter": self.resources.trace_adapter,
                         "source_tied_table": self.resources.source_tied_table,
-                        "resume_coordinator": (
-                            self.resources.resume_coordinator
-                        ),
+                        "resume_coordinator": (self.resources.resume_coordinator),
                         "resume_state": self.resources.resume_state,
                         "resume_store": (
                             None
@@ -7534,9 +7533,7 @@ class Lfm2CpcfFoldStackAdapter:
                         ),
                     }
                 ),
-                v5_resource_fingerprint=(
-                    self.resources.resource_fingerprint
-                ),
+                v5_resource_fingerprint=(self.resources.resource_fingerprint),
             )
         return DynamicFoldSystemStack(
             operators=FoldOperatorRegistry(

@@ -364,6 +364,22 @@ def test_foundation_lineage_rejects_resealed_duplicate_head_coverage(tmp_path):
 
 def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp_path):
     cache = SimpleNamespace(cache_key="a" * 64, parent_fingerprint="b" * 64)
+    session_receipt = {"session_sha256": "0" * 64}
+
+    class PipelineCacheSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def verify(self):
+            return self
+
+        def as_dict(self):
+            return dict(session_receipt)
+
+    cache.selective_authenticated_session = PipelineCacheSession
     bridge = SimpleNamespace(artifact_sha256="c" * 64)
     tokenizer = object()
     interface = SimpleNamespace(report={"report_sha256": "d" * 64})
@@ -388,6 +404,7 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
             "nonterminal_mlp_writer_decision_count": 13,
             "nonterminal_mlp_writer_install_count": 12,
             "final_mlp_producer_install_count": 0,
+            "cache_selective_session_sha256": session_receipt["session_sha256"],
         }
     )
     terminal = _seal(
@@ -403,6 +420,9 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
             "terminal_writer_mutation_count": 0,
             "terminal_writer_incumbent_retention_count": 1,
             "complete_nonzero_final_mlp_structural_coverage": True,
+            "terminal_cache_payload_binding": {
+                "payload_session_sha256": session_receipt["session_sha256"],
+            },
             "installation": {
                 "decision_count": 1,
                 "installed": False,
@@ -427,6 +447,11 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
 
     monkeypatch.setattr(
         postfold, "open_lfm2_circuit_trace_cache", lambda *_a, **_k: cache
+    )
+    monkeypatch.setattr(
+        postfold,
+        "preflight_lfm2_long_horizon_terminal_cache",
+        lambda _cache: {"authentication_sha256": "a" * 64},
     )
     monkeypatch.setattr(
         postfold, "load_strict_tokenizer_bridge_artifact", lambda *_a, **_k: bridge
@@ -490,6 +515,15 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
         postfold,
         "compile_install_lfm2_semantic_layer_stack_stage",
         lambda **_k: layer_stack,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "authenticate_lfm2_semantic_layer_stack_attention_receipts",
+        lambda _receipt: {
+            "result_sha256": "1" * 64,
+            "attention_receipt_count": 0,
+            "complete_six_tensor_bundle_count": 0,
+        },
     )
     monkeypatch.setattr(
         postfold,

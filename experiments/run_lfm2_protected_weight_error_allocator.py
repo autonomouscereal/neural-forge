@@ -41,7 +41,6 @@ from neural_forge.hf_lfm2_intelligence_holdout import (
     seal_lfm2_intelligence_holdout_candidate_outputs,
 )
 from neural_forge.hf_lfm2_parent_relative_manual_gate import (
-    build_parent_relative_manual_packet,
     evaluate_parent_relative_manual_retention,
 )
 from neural_forge.hf_lfm2_protected_weight_error_allocator import (
@@ -56,8 +55,12 @@ from neural_forge.hf_lfm2_protected_weight_error_allocator import (
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-RUNNER_SCHEMA = "neural-forge-lfm2-protected-weight-error-run-v1"
-TARGET_REPORT_SCHEMA = "neural-forge-lfm2-protected-weight-error-target-report-v1"
+LEGACY_RUNNER_SCHEMA = "neural-forge-lfm2-protected-weight-error-run-v1"
+RUNNER_SCHEMA = "neural-forge-lfm2-protected-weight-error-run-v2"
+LEGACY_TARGET_REPORT_SCHEMA = (
+    "neural-forge-lfm2-protected-weight-error-target-report-v1"
+)
+TARGET_REPORT_SCHEMA = "neural-forge-lfm2-protected-weight-error-target-report-v2"
 
 
 class Lfm2ProtectedWeightErrorRunnerError(RuntimeError):
@@ -393,7 +396,11 @@ def run_lfm2_protected_weight_error_allocator(
         )
     )
     standard_packet = json.loads(standard_packet_path.read_text(encoding="utf-8"))
-    parent_relative_packet = build_parent_relative_manual_packet(standard_packet)
+    parent_relative_packet = shared_runner._build_exact_all_case_parent_relative_packet(
+        standard_packet,
+        envelope,
+        candidate_rows,
+    )
     parent_relative_packet_path = (
         config.output_root / "parent_relative_manual_packet.json"
     )
@@ -414,6 +421,7 @@ def run_lfm2_protected_weight_error_allocator(
     decision = shared_runner._parent_relative_decision(
         intelligence,
         manual_report,
+        parent_relative_packet,
     )
     accounting = inspect_lfm2_protected_weight_error_fold(checkpoint)
     core = {
@@ -438,6 +446,12 @@ def run_lfm2_protected_weight_error_allocator(
             "standard_absolute_manual_promotion_eligible": False,
             "parent_relative_manual_packet_sha256": parent_relative_packet[
                 "packet_sha256"
+            ],
+            "parent_relative_manual_packet_case_count": parent_relative_packet[
+                "case_count"
+            ],
+            "parent_relative_manual_review_scope": parent_relative_packet[
+                "review_scope"
             ],
             "parent_relative_manual_report_sha256": (
                 None if manual_report is None else manual_report["report_sha256"]

@@ -18,6 +18,10 @@ from neural_forge.hf_lfm2_semantic_mlp_refold_adapter import (  # noqa: E402
     Lfm2DirectLocalMlpSourceInventory,
     Lfm2SemanticMlpEndpointEvidence,
 )
+from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
+    Lfm2SemanticPostfoldError,
+    authenticate_lfm2_semantic_layer_stack_attention_receipts,
+)
 from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
     TiedCausalInterfaceFold,
 )
@@ -412,6 +416,186 @@ def test_dense_producer_coverage_authenticates_each_structural_axis_and_deferred
     assert full_mlp["all_required_roles_structurally_nonzero"] is True
 
 
+def _persistable_attention_operator_receipt(
+    *,
+    layer_index: int,
+    before: str,
+    after: str,
+    installed: bool,
+) -> dict[str, object]:
+    roles = (
+        "q_proj.weight",
+        "k_proj.weight",
+        "v_proj.weight",
+        "out_proj.weight",
+        "q_layernorm.weight",
+        "k_layernorm.weight",
+    )
+    bundle = {
+        role: canonical_sha256(["attention-role", layer_index, role, after])
+        for role in roles
+    }
+    output_proposal_body = {
+        "schema": "neural-forge-lfm2-semantic-output-writer-proposal-v1",
+        "output_weight_sha256": bundle["out_proj.weight"],
+        "value_weight_fixed": True,
+        "fit_improved_is_diagnostic_only": True,
+        "numeric_metric_used_for_step_size_selection": False,
+        "numeric_metric_used_for_publication": False,
+    }
+    output_proposal = {
+        **output_proposal_body,
+        "proposal_sha256": canonical_sha256(output_proposal_body),
+    }
+    output_writer_body = {
+        "accepted": False,
+        "proposal": output_proposal,
+        "heldout_metrics_are_diagnostic_only": True,
+        "numeric_metric_used_for_publication": False,
+    }
+    output_writer = {
+        **output_writer_body,
+        "gate_sha256": canonical_sha256(output_writer_body),
+    }
+    joint_body = {
+        "diagnostic_only": True,
+        "publication_allowed": False,
+        "numeric_metric_used_for_publication": False,
+    }
+    joint = {
+        **joint_body,
+        "proposal_sha256": canonical_sha256(joint_body),
+    }
+    partition_report = {
+        "diagnostic_only": True,
+        "used_for_publication": False,
+    }
+    candidate_reports = {
+        candidate: {
+            "structurally_publishable": candidate != "joint_value_output",
+            "partitions": {
+                partition: dict(partition_report)
+                for partition in ("fit", "fit_check", "selection", "validation")
+            },
+        }
+        for candidate in ("incumbent", "fixed_v_output_only", "joint_value_output")
+    }
+    value_output_gate_body = {
+        "schema": "neural-forge-lfm2-semantic-vo-candidate-gate-v1",
+        "candidate_reports": candidate_reports,
+        "selected_candidate": "incumbent",
+        "published_candidate": "incumbent",
+        "selected_candidate_frozen_before_validation": True,
+        "validation_triggered_refit_or_reselection": False,
+        "validation": {
+            "diagnostic_only": True,
+            "used_for_publication": False,
+        },
+        "selected_correction_rejected_on_validation": False,
+        "alternate_candidate_selected_after_validation": False,
+        "published_value_weight_sha256": bundle["v_proj.weight"],
+        "published_output_weight_sha256": bundle["out_proj.weight"],
+        "fit_only_analytic_solves": True,
+        "heldout_metrics_are_diagnostic_only": True,
+        "numeric_metric_used_for_candidate_selection": False,
+        "numeric_metric_used_for_publication_or_rollback": False,
+        "joint_value_output_publication_allowed": False,
+        "fixed_value_weight_preserved": True,
+        "operation_audit": {
+            **dict(stack._ZERO_OPERATIONS),
+            "model_forward_calls": 0,
+        },
+    }
+    value_output_gate = {
+        **value_output_gate_body,
+        "gate_sha256": canonical_sha256(value_output_gate_body),
+    }
+    changed = (
+        [f"model.layers.{layer_index}.self_attn.q_proj.weight"] if installed else []
+    )
+    analytic = {
+        "schema": "neural-forge-lfm2-semantic-attention-refold-v1",
+        "frozen_attention_six_tensor_bundle": bundle,
+        "frozen_attention_six_tensor_bundle_roles": list(roles),
+        "frozen_attention_six_tensor_bundle_sha256": canonical_sha256(bundle),
+        "frozen_qk_sha256": canonical_sha256(
+            {"q": bundle["q_proj.weight"], "k": bundle["k_proj.weight"]}
+        ),
+        "frozen_qkvo_sha256": canonical_sha256(
+            {
+                "q": bundle["q_proj.weight"],
+                "k": bundle["k_proj.weight"],
+                "v": bundle["v_proj.weight"],
+                "o": bundle["out_proj.weight"],
+            }
+        ),
+        "qk_compiler_accepted": installed,
+        "qk_compiler_changed": installed,
+        "fixed_value_source": "test-authenticated-fixed-value",
+        "output_writer_source": "test-authenticated-output-writer",
+        "output_writer": output_writer,
+        "joint_value_output": joint,
+        "value_output_candidate_gate": value_output_gate,
+        "heldout_metrics_are_diagnostic_only": True,
+        "numeric_metric_used_for_publication_or_rollback": False,
+        "joint_value_output_candidate_diagnostic_only": True,
+        "joint_value_output_publication_allowed": False,
+        "joint_value_output_candidate_published": False,
+        "complete_qkvo_bundle_installed_transactionally": installed,
+        "complete_qkvo_bundle_transaction_verified": True,
+        "authenticated_incumbent_qkvo_retained_without_installation": not installed,
+        "projection_parameter_copy_calls": len(changed),
+        "fresh_output_writer_refit_performed": False,
+        "all_semantically_exact_endpoint_rows_used_for_attention_fit": True,
+        "terminal_endpoint_only_supervision": False,
+        "analytic_fp64_target_construction_distinct_from_bfloat16_runtime_replay": (
+            True
+        ),
+        "runtime_replay_numeric_contract": (
+            "bfloat16-linears-fp32-qk-softmax-bfloat16-probability-context"
+        ),
+        "cross_head_dimension_bridge_deferred": True,
+        "refold_operation_audit": {
+            **dict(stack._ZERO_OPERATIONS),
+            "model_forward_calls": 0,
+        },
+    }
+    topology = canonical_sha256(["test-attention-topology", layer_index])
+    body = {
+        "schema": stack.LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA,
+        "status": (
+            "installed-frozen-semantic-attention-candidate"
+            if installed
+            else "heldout-selected-incumbent-noop"
+        ),
+        "layer_index": layer_index,
+        "installed": installed,
+        "install_count": int(installed),
+        "model_state_before_sha256": before,
+        "model_state_after_sha256": after,
+        "transport_evidence_sha256": [canonical_sha256(["attention", layer_index])],
+        "changed_state_keys": changed,
+        "parameter_element_count_before": 2,
+        "parameter_element_count_after": 2,
+        "parameter_count_changed": False,
+        "target_topology_sha256_before": topology,
+        "target_topology_sha256_after": topology,
+        "topology_changed": False,
+        "parameter_identities_preserved": True,
+        "parameter_storage_preserved": True,
+        "gradient_state_preserved": True,
+        "exact_noop_state_proven": not installed,
+        "heldout_metrics_are_diagnostic_only": True,
+        "numeric_metric_used_for_publication_or_rollback": False,
+        "candidate_frozen_before_validation": True,
+        "validation_triggered_refit": False,
+        "analytic_cached_evidence_only": True,
+        "operation_audit": dict(stack._ZERO_OPERATIONS),
+        "analytic_refold": analytic,
+    }
+    return {**body, "result_sha256": canonical_sha256(body)}
+
+
 def _patch_complete_transaction(
     monkeypatch,
     *,
@@ -517,6 +701,25 @@ def _patch_complete_transaction(
         lambda: (object, object, lambda **_kwargs: None),
     )
     monkeypatch.setattr(stack, "_final_w2_parameter", lambda model: model.final_w2)
+    synthetic_changed_state_keys = []
+    for layer_index in range(14):
+        if layer_index not in noop_operator_layers:
+            synthetic_changed_state_keys.append(
+                (
+                    f"model.layers.{layer_index}.self_attn.q_proj.weight"
+                    if layer_index in stack._EXPECTED_ATTENTION_INDICES
+                    else f"model.layers.{layer_index}.conv.in_proj.weight"
+                )
+            )
+        if layer_index < 13 and layer_index not in noop_mlp_layers:
+            synthetic_changed_state_keys.append(
+                f"model.layers.{layer_index}.feed_forward.w1.weight"
+            )
+    monkeypatch.setattr(
+        stack,
+        "_changed_state_keys",
+        lambda _before, _after: tuple(sorted(synthetic_changed_state_keys)),
+    )
     coverage_calls: dict[tuple[int, str], int] = {}
 
     def producer_coverage(
@@ -683,6 +886,13 @@ def _patch_complete_transaction(
             "model_state_after_sha256": after,
             "result_sha256": canonical_sha256(["operator", layer_index, after]),
         }
+        if kind == "full_attention":
+            receipt = _persistable_attention_operator_receipt(
+                layer_index=layer_index,
+                before=before,
+                after=after,
+                installed=installed,
+            )
         if kind == "short_conv" and fold_compute_device != "cpu":
             receipt.update(
                 {
@@ -822,6 +1032,24 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
     assert result.receipt["tokenizer_session_receipt_sha256"] == "8" * 64
     assert result.receipt["tokenizer_session"] == {"receipt_sha256": "8" * 64}
     assert result.receipt["authenticated_nonzero_folded_seed_retained_noop_count"] == 1
+    attention_authentication = (
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(result.receipt)
+    )
+    assert attention_authentication["attention_receipt_count"] == 6
+    assert attention_authentication["complete_six_tensor_bundle_count"] == 6
+    assert attention_authentication["attention_install_count"] == 6
+    for layer in result.receipt["layer_installations"]:
+        if layer["operator_kind"] != "full_attention":
+            assert "attention_operator_decision_receipt" not in layer
+            assert "attention_operator_installation_receipt" not in layer
+            continue
+        assert (
+            layer["attention_operator_decision_receipt"]
+            == layer["attention_operator_installation_receipt"]
+        )
+        analytic = layer["attention_operator_decision_receipt"]["analytic_refold"]
+        assert len(analytic["frozen_attention_six_tensor_bundle"]) == 6
+        assert analytic["joint_value_output_publication_allowed"] is False
     torch.testing.assert_close(target.final_w2, before_w2, rtol=0, atol=0)
     for layer_index in range(14):
         kind = (
@@ -891,6 +1119,262 @@ def test_complete_transaction_routes_and_authenticates_cuda_mlp_folding(
         and item["short_conv_writer_compute_execution_sha256"] == "b" * 64
         for item in short_conv_layers
     )
+
+
+def _complete_attention_receipt_document(monkeypatch) -> dict[str, object]:
+    target, cache, bridge, _events = _patch_complete_transaction(monkeypatch)
+    result = stack.compile_install_lfm2_semantic_layer_stack_postfold(
+        cache=cache,
+        bridge=bridge,
+        target_model=target,
+        interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+        compiler_lineage={
+            index: object() for index in stack._EXPECTED_ATTENTION_INDICES
+        },
+        parent_model_directory="unused",
+        donor_tokenizer=object(),
+        target_tokenizer=object(),
+        attention_installer=lambda **_kwargs: None,
+    )
+    return json.loads(json.dumps(dict(result.receipt)))
+
+
+def _reseal_attention_operator_in_stack(
+    document: dict[str, object],
+    *,
+    layer_index: int,
+    operator_body: dict[str, object],
+    update_layer_installation_binding: bool = True,
+) -> dict[str, object]:
+    resealed_operator = {
+        **operator_body,
+        "result_sha256": canonical_sha256(operator_body),
+    }
+    layer = dict(document["layer_installations"][layer_index])
+    layer.pop("result_sha256")
+    layer["attention_operator_decision_receipt"] = resealed_operator
+    layer["attention_operator_installation_receipt"] = resealed_operator
+    layer["operator_decision_sha256"] = resealed_operator["result_sha256"]
+    layer["operator_installation_sha256"] = resealed_operator["result_sha256"]
+    resealed_layer = {
+        **layer,
+        "result_sha256": canonical_sha256(layer),
+    }
+    document["layer_installations"][layer_index] = resealed_layer
+    if update_layer_installation_binding:
+        document["layer_installation_sha256"][layer_index] = resealed_layer[
+            "result_sha256"
+        ]
+    document.pop("result_sha256")
+    return {
+        **document,
+        "result_sha256": canonical_sha256(document),
+    }
+
+
+def _reseal_layer_transaction_in_stack(
+    document: dict[str, object],
+    *,
+    layer_index: int,
+    updates: dict[str, object],
+) -> dict[str, object]:
+    layer = dict(document["layer_installations"][layer_index])
+    layer.pop("result_sha256")
+    layer.update(updates)
+    resealed_layer = {
+        **layer,
+        "result_sha256": canonical_sha256(layer),
+    }
+    document["layer_installations"][layer_index] = resealed_layer
+    document["layer_installation_sha256"][layer_index] = resealed_layer["result_sha256"]
+    document.pop("result_sha256")
+    return {
+        **document,
+        "result_sha256": canonical_sha256(document),
+    }
+
+
+def test_attention_receipt_persistence_rejects_a_resealed_missing_six_tensor_bundle(
+    monkeypatch,
+) -> None:
+    document = _complete_attention_receipt_document(monkeypatch)
+    layer = document["layer_installations"][2]
+    operator = dict(layer["attention_operator_decision_receipt"])
+    operator.pop("result_sha256")
+    analytic = dict(operator["analytic_refold"])
+    analytic.pop("frozen_attention_six_tensor_bundle")
+    operator["analytic_refold"] = analytic
+    resealed_stack = _reseal_attention_operator_in_stack(
+        document,
+        layer_index=2,
+        operator_body=operator,
+    )
+
+    with pytest.raises(
+        Lfm2SemanticPostfoldError,
+        match="omitted its six-tensor bundle",
+    ):
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
+
+
+@pytest.mark.parametrize("layer_index", (0, 7))
+def test_attention_receipt_persistence_rejects_resealed_layer_state_chain_drift(
+    monkeypatch,
+    layer_index: int,
+) -> None:
+    document = _complete_attention_receipt_document(monkeypatch)
+    resealed_stack = _reseal_layer_transaction_in_stack(
+        document,
+        layer_index=layer_index,
+        updates={"model_state_before_operator_sha256": "f" * 64},
+    )
+
+    with pytest.raises(
+        Lfm2SemanticPostfoldError,
+        match=f"layer {layer_index} causal state chain changed",
+    ):
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
+
+
+def test_attention_receipt_persistence_rejects_resealed_terminal_state_chain_drift(
+    monkeypatch,
+) -> None:
+    document = _complete_attention_receipt_document(monkeypatch)
+    document.pop("result_sha256")
+    document["model_state_after_sha256"] = "f" * 64
+    resealed_stack = {
+        **document,
+        "result_sha256": canonical_sha256(document),
+    }
+
+    with pytest.raises(
+        Lfm2SemanticPostfoldError,
+        match="final causal state binding changed",
+    ):
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
+
+
+def test_attention_receipt_persistence_rejects_resealed_unowned_changed_state_key(
+    monkeypatch,
+) -> None:
+    document = _complete_attention_receipt_document(monkeypatch)
+    document.pop("result_sha256")
+    document["changed_state_keys"] = sorted(
+        [*document["changed_state_keys"], "model.layers.0.unowned.weight"]
+    )
+    resealed_stack = {
+        **document,
+        "result_sha256": canonical_sha256(document),
+    }
+
+    with pytest.raises(
+        Lfm2SemanticPostfoldError,
+        match="changed-key or parameter mutation bindings changed",
+    ):
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
+
+
+def test_attention_receipt_persistence_rejects_resealed_parameter_count_drift(
+    monkeypatch,
+) -> None:
+    document = _complete_attention_receipt_document(monkeypatch)
+    document.pop("result_sha256")
+    document["parameter_element_count"] += 1
+    resealed_stack = {
+        **document,
+        "result_sha256": canonical_sha256(document),
+    }
+
+    with pytest.raises(
+        Lfm2SemanticPostfoldError,
+        match="receipt bindings disagree",
+    ):
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("model_state_before_sha256", "f" * 64),
+        ("transport_evidence_sha256", ["f" * 64]),
+    ),
+)
+def test_attention_receipt_persistence_rejects_resealed_layer_cross_binding_drift(
+    monkeypatch,
+    field: str,
+    replacement: object,
+) -> None:
+    document = _complete_attention_receipt_document(monkeypatch)
+    operator = dict(
+        document["layer_installations"][2]["attention_operator_decision_receipt"]
+    )
+    operator.pop("result_sha256")
+    operator[field] = replacement
+    resealed_stack = _reseal_attention_operator_in_stack(
+        document,
+        layer_index=2,
+        operator_body=operator,
+    )
+
+    with pytest.raises(
+        Lfm2SemanticPostfoldError,
+        match="receipt bindings disagree",
+    ):
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
+
+
+def test_attention_receipt_persistence_rejects_resealed_layer_index_hash_drift(
+    monkeypatch,
+) -> None:
+    document = _complete_attention_receipt_document(monkeypatch)
+    layer = dict(document["layer_installations"][2])
+    layer.pop("result_sha256")
+    layer["operator_decision_count"] = 2
+    document["layer_installations"][2] = {
+        **layer,
+        "result_sha256": canonical_sha256(layer),
+    }
+    document.pop("result_sha256")
+    resealed_stack = {
+        **document,
+        "result_sha256": canonical_sha256(document),
+    }
+
+    with pytest.raises(
+        Lfm2SemanticPostfoldError,
+        match="transaction binding changed",
+    ):
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
+
+
+def test_attention_receipt_persistence_rejects_resealed_numeric_vo_publication(
+    monkeypatch,
+) -> None:
+    document = _complete_attention_receipt_document(monkeypatch)
+    operator = dict(
+        document["layer_installations"][2]["attention_operator_decision_receipt"]
+    )
+    operator.pop("result_sha256")
+    analytic = dict(operator["analytic_refold"])
+    value_output_gate = dict(analytic["value_output_candidate_gate"])
+    value_output_gate.pop("gate_sha256")
+    value_output_gate["numeric_metric_used_for_publication_or_rollback"] = True
+    analytic["value_output_candidate_gate"] = {
+        **value_output_gate,
+        "gate_sha256": canonical_sha256(value_output_gate),
+    }
+    operator["analytic_refold"] = analytic
+    resealed_stack = _reseal_attention_operator_in_stack(
+        document,
+        layer_index=2,
+        operator_body=operator,
+    )
+
+    with pytest.raises(
+        Lfm2SemanticPostfoldError,
+        match="V/O gate permits behavioral publication",
+    ):
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
 
 
 def test_closing_tokenizer_reauthentication_fails_before_model_mutation(
@@ -1126,7 +1610,9 @@ def _chart_inputs(*, reject_validation: bool):
     return tuple(alignments), parent, bank
 
 
-def test_residual_chart_preserves_unsupported_subspace_with_diagnostic_metrics() -> None:
+def test_residual_chart_preserves_unsupported_subspace_with_diagnostic_metrics() -> (
+    None
+):
     alignments, parent, bank = _chart_inputs(reject_validation=False)
 
     chart, receipt = stack._fit_residual_chart(

@@ -29,16 +29,26 @@ import math
 import os
 import re
 from collections.abc import Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
 
 from .hf_lfm2_circuit_trace_cache import (
+    BATCH_RECORD_FILENAME,
+    BATCH_SCHEMA,
     CACHED_VERIFIED_TRACE_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
+    Lfm2CircuitTraceBatch,
     Lfm2CircuitTraceCache,
+    TRACE_FILENAME,
+    _file_sha256 as _cache_file_sha256,
+    _fresh_verified_cache_state,
+    _path_file_identity as _cache_path_file_identity,
+    _read_canonical_json as _read_cache_canonical_json,
     _tensor_sha256 as _cache_tensor_sha256,
+    _verify_seal as _verify_cache_seal,
     fingerprint_lfm2_parent,
 )
 from .hf_lfm2_cpcf_macrocell_replay import replay_lfm2_cpcf_macrocell
@@ -84,6 +94,12 @@ LFM2_LONG_HORIZON_PARENT_FINAL_NORM_SCHEMA = (
 LFM2_LONG_HORIZON_SPLIT_PLAN_SCHEMA = "neural-forge-lfm2-long-horizon-split-plan-v1"
 LFM2_LONG_HORIZON_TERMINAL_REFOLD_SCHEMA = (
     "neural-forge-lfm2-long-horizon-terminal-refold-v2"
+)
+LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA = (
+    "neural-forge-lfm2-long-horizon-terminal-cache-compatibility-v1"
+)
+LFM2_LONG_HORIZON_TERMINAL_PAYLOAD_LOAD_AUDIT_SCHEMA = (
+    "neural-forge-lfm2-long-horizon-terminal-payload-load-audit-v1"
 )
 
 TerminalSplit = Literal["fit", "fit_check", "selection", "validation"]
@@ -779,6 +795,7 @@ class _CachedTrajectory:
     parent_final_norm_rows: Any
     horizon_indices: tuple[int, ...]
     selected_payload_sha256: str
+    cached_full_prefix_payload: Mapping[str, Any]
     parent_final_norm_endpoint: Mapping[str, Any]
     parent_action_projection: Mapping[str, Any]
 
@@ -1231,6 +1248,7 @@ def _cache_tensor_names(
     *,
     final_layer_index: int,
     decode_steps: int,
+    decode_trace_mode: str,
 ) -> tuple[str, ...]:
     inventory = set(reference.ordered_tensor_names)
     suffixes = (
@@ -1252,6 +1270,11 @@ def _cache_tensor_names(
         names.update(prefix + suffix for suffix in suffixes)
         if phase != "prefill":
             names.add(f"{phase}.forced_token_ids")
+    if decode_trace_mode == CACHED_VERIFIED_TRACE_MODE:
+        names.add("cached_prefill.logits")
+        names.update(
+            f"decode.{step:03d}.full_prefix_logits" for step in range(decode_steps)
+        )
     endpoint_names = {
         f"{phase}.output.{field}"
         for phase in phases
@@ -1276,13 +1299,1170 @@ def _cache_tensor_names(
     return tuple(sorted(names))
 
 
+def _nonnegative_finite_metadata_number(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"{name} must be a nonnegative finite metadata number."
+        )
+    result = float(value)
+    if not math.isfinite(result) or result < 0.0:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"{name} must be a nonnegative finite metadata number."
+        )
+    return result
+
+
+def _cached_verification_compatibility(
+    value: Mapping[str, Any],
+    *,
+    batch_index: int,
+    expected_phase: str,
+    expected_prefix_length: int,
+) -> dict[str, Any]:
+    """Authenticate one sealed cached/full-prefix comparison record.
+
+    The cache collector already compared the complete cached logit row against
+    a use-cache=False full-prefix execution.  The terminal fold consumes
+    caller-forced tokens, so an exact greedy winner is not a trajectory gate.
+    A winner disagreement is nevertheless accepted only when the sealed
+    collector record proves that *every* disagreement lies inside the numeric
+    error envelope.  Older exact-winner records remain compatible; older
+    disagreement records without the detailed envelope evidence fail closed.
+    """
+
+    if not isinstance(value, Mapping):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} has malformed full-prefix verification."
+        )
+    phase = value.get("phase")
+    prefix_length = value.get("prefix_length")
+    if phase != expected_phase or prefix_length != expected_prefix_length:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} full-prefix verification coverage is "
+            "missing, duplicated, or reordered."
+        )
+    if value.get("numerically_close") is not True:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} phase {expected_phase!r} has a material "
+            "cached/full-prefix logit disagreement."
+        )
+    maximum_absolute_error = _nonnegative_finite_metadata_number(
+        value.get("max_abs_error"),
+        f"cache batch {batch_index} phase {expected_phase} max_abs_error",
+    )
+    top1_agreement = value.get("top1_agreement")
+    if not isinstance(top1_agreement, bool):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} phase {expected_phase!r} has malformed "
+            "top-1 verification metadata."
+        )
+    if expected_phase.startswith("decode."):
+        _digest(
+            value.get("forced_token_sha256"),
+            (f"cache batch {batch_index} phase {expected_phase} forced_token_sha256"),
+        )
+
+    raw_count = value.get("top1_disagreement_count", 0 if top1_agreement else None)
+    if (
+        isinstance(raw_count, bool)
+        or not isinstance(raw_count, int)
+        or raw_count < 0
+        or (top1_agreement and raw_count != 0)
+        or (not top1_agreement and raw_count <= 0)
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} phase {expected_phase!r} has an invalid "
+            "top-1 disagreement count."
+        )
+    disagreement_count = int(raw_count)
+    first = value.get("first_top1_disagreement")
+    envelope_verified = value.get("top1_disagreement_within_numeric_error_envelope")
+    if top1_agreement:
+        if first is not None or envelope_verified not in {None, True}:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {expected_phase!r} has "
+                "contradictory exact top-1 metadata."
+            )
+    else:
+        # These fields were added specifically to distinguish a BF16/numeric
+        # near tie from a material action disagreement.  Do not infer a tie
+        # from allclose alone and do not accept a legacy disagreement that
+        # lacks this complete sealed coverage.
+        if envelope_verified is not True or not isinstance(first, Mapping):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {expected_phase!r} top-1 "
+                "disagreement is not authenticated as a numeric-envelope "
+                "near tie."
+            )
+        if first.get("within_numeric_error_envelope") is not True:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {expected_phase!r} first "
+                "top-1 disagreement lies outside the numeric error envelope."
+            )
+        for name in ("row_index", "cached_token_id", "full_prefix_token_id"):
+            item = first.get(name)
+            if isinstance(item, bool) or not isinstance(item, int) or item < 0:
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    f"Cache batch {batch_index} phase {expected_phase!r} has "
+                    f"malformed near-tie field {name!r}."
+                )
+        if first["cached_token_id"] == first["full_prefix_token_id"]:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {expected_phase!r} claims a "
+                "top-1 disagreement with identical token IDs."
+            )
+        numeric = {
+            name: _nonnegative_finite_metadata_number(
+                first.get(name),
+                f"cache batch {batch_index} phase {expected_phase} {name}",
+            )
+            for name in (
+                "cached_winner_margin",
+                "full_prefix_winner_margin",
+                "cached_preference_gap",
+                "full_prefix_preference_gap",
+                "row_max_abs_error",
+                "winner_pair_error_envelope",
+            )
+        }
+        envelope = numeric["winner_pair_error_envelope"] + 1e-12
+        if (
+            numeric["cached_preference_gap"] > envelope
+            or numeric["full_prefix_preference_gap"] > envelope
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {expected_phase!r} near-tie "
+                "gaps exceed the authenticated numeric error envelope."
+            )
+        for name in (
+            "maximum_cached_preference_gap_on_disagreement",
+            "maximum_full_prefix_preference_gap_on_disagreement",
+        ):
+            _nonnegative_finite_metadata_number(
+                value.get(name),
+                f"cache batch {batch_index} phase {expected_phase} {name}",
+            )
+        _digest(
+            value.get("cached_top1_sha256"),
+            f"cache batch {batch_index} phase {expected_phase} cached_top1_sha256",
+        )
+        _digest(
+            value.get("full_prefix_top1_sha256"),
+            (
+                f"cache batch {batch_index} phase {expected_phase} "
+                "full_prefix_top1_sha256"
+            ),
+        )
+
+    decision_verified = value.get("top1_decision_verified")
+    if decision_verified is not None and not isinstance(decision_verified, bool):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} phase {expected_phase!r} has malformed "
+            "top-1 decision metadata."
+        )
+    body = {
+        "phase": expected_phase,
+        "prefix_length": expected_prefix_length,
+        "numerically_close": True,
+        "maximum_absolute_error": maximum_absolute_error,
+        "top1_exact_agreement": top1_agreement,
+        "top1_exactness_is_diagnostic_only": True,
+        "top1_disagreement_count": disagreement_count,
+        "top1_disagreement_numeric_envelope_verified": (
+            top1_agreement or envelope_verified is True
+        ),
+        "collector_top1_decision_verified": decision_verified,
+    }
+    return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+
+def _terminal_cache_capture_compatibility(
+    capture: Mapping[str, Any],
+    *,
+    batch_index: int,
+    expected_decode_steps: int | None = None,
+) -> dict[str, Any]:
+    """Validate exact phase coverage from one authenticated batch record."""
+
+    if not isinstance(capture, Mapping):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} has no authenticated capture record."
+        )
+    decode_steps = capture.get("decode_steps")
+    if (
+        isinstance(decode_steps, bool)
+        or not isinstance(decode_steps, int)
+        or decode_steps <= 0
+        or (expected_decode_steps is not None and decode_steps != expected_decode_steps)
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} has incompatible forced-horizon metadata."
+        )
+    mode = capture.get("decode_trace_mode")
+    verifications = capture.get("cached_full_prefix_verifications")
+    if not isinstance(verifications, list):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} has malformed verification coverage."
+        )
+
+    if mode == FULL_PREFIX_CANONICAL_TRACE_MODE:
+        if (
+            verifications
+            or capture.get("all_cached_logits_verified") is not None
+            or capture.get("all_cached_top1_verified") is not None
+            or capture.get("all_cached_top1_decisions_verified") is not None
+            or capture.get("cached_logits_accepted") is not False
+            or capture.get("cached_forward_count") != 0
+            or capture.get("canonical_trace_source")
+            not in {
+                "use_cache_false_full_prefix",
+                "use_cache_false_full_trajectory_slices",
+            }
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} has contradictory canonical "
+                "full-prefix metadata."
+            )
+        body = {
+            "batch_index": batch_index,
+            "decode_trace_mode": mode,
+            "decode_steps": decode_steps,
+            "verification_phase_count": 0,
+            "cached_logits_numerically_verified": None,
+            "cached_top1_exact_for_all_phases": None,
+            "top1_exactness_is_diagnostic_only": True,
+            "top1_disagreement_count": 0,
+            "all_top1_disagreements_numeric_envelope_verified": True,
+            "forced_decode_trajectory_compatible": True,
+        }
+        return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+    if mode != CACHED_VERIFIED_TRACE_MODE:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} decode trace mode is unsupported."
+        )
+    expected_phases = ("cached_prefill",) + tuple(
+        f"decode.{step:03d}" for step in range(decode_steps)
+    )
+    if len(verifications) != len(expected_phases):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} cached/full-prefix verification "
+            "coverage is incomplete."
+        )
+    first_prefix = verifications[0].get("prefix_length") if verifications else None
+    if (
+        isinstance(first_prefix, bool)
+        or not isinstance(first_prefix, int)
+        or first_prefix <= 0
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} cached prefill prefix is malformed."
+        )
+    phase_receipts = tuple(
+        _cached_verification_compatibility(
+            value,
+            batch_index=batch_index,
+            expected_phase=phase,
+            expected_prefix_length=(
+                first_prefix if index == 0 else first_prefix + index
+            ),
+        )
+        for index, (phase, value) in enumerate(
+            zip(expected_phases, verifications, strict=True)
+        )
+    )
+    all_exact = all(value["top1_exact_agreement"] for value in phase_receipts)
+    if (
+        capture.get("all_cached_logits_verified") is not True
+        or capture.get("all_cached_top1_verified") is not all_exact
+        or capture.get("cached_logits_accepted") is not True
+        or capture.get("canonical_trace_source") != "verified_one_token_cache"
+        or capture.get("cached_forward_count") != len(expected_phases)
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} cached/full-prefix aggregate metadata "
+            "contradicts its complete phase records."
+        )
+    top1_decisions = capture.get("all_cached_top1_decisions_verified")
+    if top1_decisions is not None and not isinstance(top1_decisions, bool):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} has malformed aggregate top-1 metadata."
+        )
+    disagreement_count = sum(
+        int(value["top1_disagreement_count"]) for value in phase_receipts
+    )
+    body = {
+        "batch_index": batch_index,
+        "decode_trace_mode": mode,
+        "decode_steps": decode_steps,
+        "verification_phase_count": len(phase_receipts),
+        "verification_phase_order": list(expected_phases),
+        "verification_authentication_sha256": [
+            value["authentication_sha256"] for value in phase_receipts
+        ],
+        "cached_logits_numerically_verified": True,
+        "cached_top1_exact_for_all_phases": all_exact,
+        "collector_all_top1_decisions_verified": top1_decisions,
+        "top1_exactness_is_diagnostic_only": True,
+        "top1_disagreement_count": disagreement_count,
+        "all_top1_disagreements_numeric_envelope_verified": all(
+            value["top1_disagreement_numeric_envelope_verified"]
+            for value in phase_receipts
+        ),
+        "forced_decode_trajectory_compatible": True,
+    }
+    return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+
+def _terminal_cache_record_inventory_compatibility(
+    inventory: Mapping[str, Any],
+    compatibility: Mapping[str, Any],
+    *,
+    batch_index: int,
+    final_layer_index: int,
+) -> dict[str, Any]:
+    """Prove from descriptors that every later terminal payload is present."""
+
+    decode_steps = int(compatibility["decode_steps"])
+    mode = compatibility["decode_trace_mode"]
+    phases = ("prefill",) + tuple(f"decode.{step:03d}" for step in range(decode_steps))
+    required = {
+        "input.input_ids",
+        "input.attention_mask",
+        "input.forced_decode_ids",
+    }
+    for phase in phases:
+        required.add(f"{phase}.logits")
+        prefix = f"{phase}.layer.{final_layer_index:03d}."
+        required.update(
+            prefix + suffix
+            for suffix in (
+                "mlp.input",
+                "residual.post_operator",
+                "residual.post_layer",
+            )
+        )
+        if phase != "prefill":
+            required.add(f"{phase}.forced_token_ids")
+    if mode == CACHED_VERIFIED_TRACE_MODE:
+        required.add("cached_prefill.logits")
+        required.update(
+            f"decode.{step:03d}.full_prefix_logits" for step in range(decode_steps)
+        )
+    missing = sorted(required.difference(inventory))
+    if missing:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} record inventory omits required terminal "
+            f"evidence: {missing[:3]}."
+        )
+
+    def descriptor(name: str) -> tuple[str, tuple[int, ...]]:
+        value = inventory.get(name)
+        shape = value.get("shape") if isinstance(value, Mapping) else None
+        dtype = value.get("dtype") if isinstance(value, Mapping) else None
+        if (
+            not isinstance(value, Mapping)
+            or not isinstance(dtype, str)
+            or not dtype
+            or not isinstance(shape, list)
+            or not shape
+            or any(type(size) is not int or size <= 0 for size in shape)
+            or type(value.get("numel")) is not int
+            or value.get("numel") != math.prod(shape)
+            or type(value.get("size_bytes")) is not int
+            or value.get("size_bytes") <= 0
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} tensor descriptor {name!r} is malformed."
+            )
+        _digest(
+            value.get("sha256"),
+            f"cache batch {batch_index} tensor {name} sha256",
+        )
+        return dtype, tuple(shape)
+
+    integer_dtypes = {"int8", "int16", "int32", "int64", "uint8"}
+    prompt_dtype, prompt_shape = descriptor("input.input_ids")
+    mask_dtype, mask_shape = descriptor("input.attention_mask")
+    forced_dtype, forced_shape = descriptor("input.forced_decode_ids")
+    if (
+        prompt_dtype not in integer_dtypes
+        or mask_dtype not in integer_dtypes
+        or forced_dtype not in integer_dtypes
+        or len(prompt_shape) != 2
+        or prompt_shape[0] != 1
+        or mask_shape != prompt_shape
+        or forced_shape != (1, decode_steps)
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} input descriptor geometry is incompatible."
+        )
+    position = inventory.get("input.position_ids")
+    if position is not None:
+        position_dtype, position_shape = descriptor("input.position_ids")
+        if position_dtype not in integer_dtypes or position_shape != prompt_shape:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} position descriptor is incompatible."
+            )
+
+    for phase in phases:
+        logit_dtype, logit_shape = descriptor(f"{phase}.logits")
+        if (
+            logit_dtype not in {"float16", "bfloat16", "float32", "float64"}
+            or len(logit_shape) != 3
+            or logit_shape[0] != 1
+            or logit_shape[-1] < 2
+            or (phase != "prefill" and logit_shape[1] != 1)
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {phase!r} logit descriptor "
+                "is incompatible."
+            )
+        if mode == CACHED_VERIFIED_TRACE_MODE:
+            counterpart = (
+                "cached_prefill.logits"
+                if phase == "prefill"
+                else f"{phase}.full_prefix_logits"
+            )
+            counterpart_dtype, counterpart_shape = descriptor(counterpart)
+            if counterpart_dtype != logit_dtype or counterpart_shape != logit_shape:
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    f"Cache batch {batch_index} phase {phase!r} cached/full-prefix "
+                    "logit descriptors differ."
+                )
+        prefix = f"{phase}.layer.{final_layer_index:03d}."
+        endpoint_shapes = tuple(
+            descriptor(prefix + suffix)[1]
+            for suffix in (
+                "mlp.input",
+                "residual.post_operator",
+                "residual.post_layer",
+            )
+        )
+        if (
+            len(set(endpoint_shapes)) != 1
+            or len(endpoint_shapes[0]) != 3
+            or endpoint_shapes[0][0] != 1
+            or (phase != "prefill" and endpoint_shapes[0][1] != 1)
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {phase!r} final-layer "
+                "descriptors are incompatible."
+            )
+        if phase != "prefill":
+            forced_phase_dtype, forced_phase_shape = descriptor(
+                f"{phase}.forced_token_ids"
+            )
+            if forced_phase_dtype not in integer_dtypes or forced_phase_shape != (1, 1):
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    f"Cache batch {batch_index} phase {phase!r} forced-token "
+                    "descriptor is incompatible."
+                )
+
+    endpoint_names = {
+        f"{phase}.output.{field}"
+        for phase in phases
+        for field in ("final_norm_input", "final_norm_output", "lm_head_input")
+    }
+    present_endpoints = endpoint_names.intersection(inventory)
+    if present_endpoints and present_endpoints != endpoint_names:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Cache batch {batch_index} has partial final-normalization endpoint "
+            "descriptors."
+        )
+    for name in sorted(present_endpoints):
+        descriptor(name)
+    required_names = tuple(sorted(required.union(present_endpoints)))
+    body = {
+        "batch_index": batch_index,
+        "decode_trace_mode": mode,
+        "prompt_token_count": prompt_shape[1],
+        "required_tensor_count": len(required_names),
+        "required_tensor_names_sha256": _canonical_sha256(list(required_names)),
+        "raw_cached_full_prefix_pairs_present": (mode == CACHED_VERIFIED_TRACE_MODE),
+        "final_layer_terminal_endpoints_present": bool(present_endpoints),
+        "final_norm_endpoint_set_complete_if_present": True,
+    }
+    return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+
+def _authenticate_terminal_cache_compatibility(
+    cache: Lfm2CircuitTraceCache,
+    manifest: Mapping[str, Any],
+    completion: Mapping[str, Any],
+    entries: Sequence[Mapping[str, Any]],
+    records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Seal compatibility from small authenticated batch-record files."""
+
+    if (
+        len(entries) != cache.batch_count
+        or len(records) != cache.batch_count
+        or any(type(value.get("batch_index")) is not int for value in entries)
+        or tuple(int(value["batch_index"]) for value in entries)
+        != tuple(range(cache.batch_count))
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Authenticated cache batch-record coverage is incomplete or reordered."
+        )
+    # The v1 manifest omitted this field for its original/default cached mode;
+    # each sealed batch record still states the mode explicitly.  Only the
+    # later opt-in canonical mode writes it at manifest level.
+    expected_mode = manifest.get("capture", {}).get(
+        "decode_trace_mode",
+        CACHED_VERIFIED_TRACE_MODE,
+    )
+    if expected_mode not in {
+        CACHED_VERIFIED_TRACE_MODE,
+        FULL_PREFIX_CANONICAL_TRACE_MODE,
+    }:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Cache manifest has an unsupported terminal decode trace mode."
+        )
+    topology = manifest.get("layer_topology", {}).get("layers")
+    if not isinstance(topology, list) or not topology:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Cache manifest has no terminal-compatible layer topology."
+        )
+    final_layer_index = len(topology) - 1
+    batches = []
+    for entry, record in zip(entries, records, strict=True):
+        index = int(entry["batch_index"])
+        inventory = record.get("tensors")
+        if (
+            record.get("schema") != BATCH_SCHEMA
+            or record.get("cache_key") != cache.cache_key
+            or type(record.get("batch_index")) is not int
+            or record.get("batch_index") != index
+            or record.get("input_sha256") != entry["input_sha256"]
+            or record.get("record_sha256") != entry["record_sha256"]
+            or not isinstance(inventory, Mapping)
+            or not inventory
+            or type(record.get("tensor_count")) is not int
+            or record.get("tensor_count") != len(inventory)
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {index} tensor-free record binding is "
+                "incompatible with its authenticated completion entry."
+            )
+        compatibility = _terminal_cache_capture_compatibility(
+            record.get("capture"),
+            batch_index=index,
+        )
+        inventory_compatibility = _terminal_cache_record_inventory_compatibility(
+            inventory,
+            compatibility,
+            batch_index=index,
+            final_layer_index=final_layer_index,
+        )
+        capture = record.get("capture")
+        verifications = (
+            capture.get("cached_full_prefix_verifications")
+            if isinstance(capture, Mapping)
+            else None
+        )
+        if compatibility["decode_trace_mode"] == CACHED_VERIFIED_TRACE_MODE and (
+            not isinstance(verifications, list)
+            or not verifications
+            or verifications[0].get("prefix_length")
+            != inventory_compatibility["prompt_token_count"]
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {index} cached prefill verification prefix is not "
+                "bound to the sealed prompt descriptor."
+            )
+        if compatibility["decode_trace_mode"] != expected_mode:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {index} decode mode differs from the "
+                "authenticated cache manifest."
+            )
+        batches.append(
+            {
+                **compatibility,
+                "input_sha256": entry["input_sha256"],
+                "record_file_sha256": entry["record_file_sha256"],
+                "record_sha256": entry["record_sha256"],
+                "tensor_inventory_compatibility": inventory_compatibility,
+            }
+        )
+    disagreement_count = sum(int(value["top1_disagreement_count"]) for value in batches)
+    cached_batches = tuple(
+        value
+        for value in batches
+        if value["decode_trace_mode"] == CACHED_VERIFIED_TRACE_MODE
+    )
+    body = {
+        "schema": LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA,
+        "cache_key": cache.cache_key,
+        "cache_parent_fingerprint": cache.parent_fingerprint,
+        "cache_layer_topology_fingerprint": cache.layer_topology_fingerprint,
+        "manifest_sha256": manifest["manifest_sha256"],
+        "completion_sha256": completion["completion_sha256"],
+        "batch_count": cache.batch_count,
+        "decode_trace_mode": expected_mode,
+        "ordered_batch_record_sha256": [value["record_sha256"] for value in batches],
+        "ordered_batch_record_file_sha256": [
+            value["record_file_sha256"] for value in batches
+        ],
+        "batch_compatibility": batches,
+        "all_cached_logits_numerically_verified": (
+            all(
+                value["cached_logits_numerically_verified"] is True
+                for value in cached_batches
+            )
+            if cached_batches
+            else None
+        ),
+        "all_cached_top1_exact": (
+            all(
+                value["cached_top1_exact_for_all_phases"] is True
+                for value in cached_batches
+            )
+            if cached_batches
+            else None
+        ),
+        "cached_top1_disagreement_count": disagreement_count,
+        "all_top1_disagreements_numeric_envelope_verified": all(
+            value["all_top1_disagreements_numeric_envelope_verified"] is True
+            for value in batches
+        ),
+        "forced_decode_tokens_are_caller_supplied": True,
+        "top1_exactness_is_diagnostic_only": True,
+        "top1_exactness_is_publication_gate": False,
+        "terminal_trajectory_compatibility_verified": True,
+        "full_prefix_recache_required": False,
+        "full_prefix_recache_assessment": (
+            "not_required_for_this_forced_token_terminal_fold_when_every_cached_"
+            "logit_comparison_is_numerically_verified_and_every_top1_"
+            "disagreement_is_inside_the_authenticated_numeric_error_envelope"
+        ),
+        "preflight_io_contract": {
+            "authenticated_sealed_batch_record_metadata_used": True,
+            "manifest_file_reads": 1,
+            "completion_file_reads": 1,
+            "record_file_sha256_passes_per_batch": 1,
+            "record_file_sha256_passes_total": cache.batch_count,
+            "record_file_canonical_parse_reads_per_batch": 1,
+            "record_file_canonical_parse_reads_total": cache.batch_count,
+            "record_file_content_read_passes_total": 2 * cache.batch_count,
+            "trace_file_sha256_passes": 0,
+            "trace_file_regular_identity_stat_passes_per_batch": 1,
+            "trace_file_regular_identity_stat_passes_total": cache.batch_count,
+            "trace_payload_bytes_read": 0,
+            "trace_tensor_payloads_materialized": 0,
+            "large_trace_authentication_deferred_to_consuming_session": True,
+        },
+    }
+    return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+
+def _preflight_terminal_cache_compatibility(
+    cache: Lfm2CircuitTraceCache,
+) -> dict[str, Any]:
+    """Authenticate metadata/record files without reading trace payloads."""
+
+    fresh_manifest, entries = _fresh_verified_cache_state(cache)
+    completion = cache._completion
+    if (
+        fresh_manifest["manifest_sha256"] != cache.manifest["manifest_sha256"]
+        or completion.get("completion_sha256") != cache._completion["completion_sha256"]
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Cache metadata changed during terminal compatibility preflight."
+        )
+    records = []
+    for entry in entries:
+        index = int(entry["batch_index"])
+        batch_dir = cache.path / "batches" / f"batch-{index:06d}"
+        if (
+            not batch_dir.is_dir()
+            or batch_dir.is_symlink()
+            or {path.name for path in batch_dir.iterdir()}
+            != {TRACE_FILENAME, BATCH_RECORD_FILENAME}
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {index} layout is unsafe or incomplete."
+            )
+        record_path = batch_dir / BATCH_RECORD_FILENAME
+        _cache_path_file_identity(batch_dir / TRACE_FILENAME)
+        record_identity = _cache_path_file_identity(record_path)
+        if (
+            not record_path.is_file()
+            or record_path.is_symlink()
+            or _cache_file_sha256(record_path) != entry["record_file_sha256"]
+            or _cache_path_file_identity(record_path) != record_identity
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {index} record-file authentication failed."
+            )
+        record = _read_cache_canonical_json(record_path)
+        if _cache_path_file_identity(record_path) != record_identity:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {index} record changed during compatibility preflight."
+            )
+        _verify_cache_seal(
+            record,
+            "record_sha256",
+            f"cache batch {index} terminal compatibility record",
+        )
+        records.append(record)
+    return _authenticate_terminal_cache_compatibility(
+        cache,
+        fresh_manifest,
+        completion,
+        entries,
+        records,
+    )
+
+
+def preflight_lfm2_long_horizon_terminal_cache(
+    cache: Lfm2CircuitTraceCache,
+) -> dict[str, Any]:
+    """Public metadata-only terminal compatibility preflight.
+
+    Callers that perform upstream folding should invoke this before any target
+    surgery and pass the sealed result into the terminal compiler for a fresh
+    cheap revalidation/binding.  No safetensors trace payload is opened or
+    hashed here.
+    """
+
+    if not isinstance(cache, Lfm2CircuitTraceCache):
+        raise TypeError("cache must be Lfm2CircuitTraceCache.")
+    return _preflight_terminal_cache_compatibility(cache)
+
+
+def _bind_terminal_cache_compatibility_to_payload_session(
+    compatibility: Mapping[str, Any],
+    cache_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind the cheap snapshot to the later single file-SHA authentication pass."""
+
+    compatibility_body = dict(compatibility)
+    compatibility_seal = compatibility_body.pop("authentication_sha256", None)
+    if compatibility_seal != _canonical_sha256(compatibility_body):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal-cache compatibility receipt authentication failed."
+        )
+    session = cache_receipt.get("session")
+    if not isinstance(session, Mapping):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Consuming cache session receipt is missing."
+        )
+    batches = session.get(
+        "ordered_authenticated_batches",
+        session.get("ordered_verified_batches"),
+    )
+    if not isinstance(batches, list):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Consuming cache session has no ordered batch authentication."
+        )
+    if (
+        session.get("cache_key") != compatibility.get("cache_key")
+        or session.get("manifest_sha256") != compatibility.get("manifest_sha256")
+        or session.get("completion_sha256") != compatibility.get("completion_sha256")
+        or [value.get("record_sha256") for value in batches]
+        != compatibility.get("ordered_batch_record_sha256")
+        or [value.get("record_file_sha256") for value in batches]
+        != compatibility.get("ordered_batch_record_file_sha256")
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Consumed trace payloads do not bind to the terminal-cache "
+            "compatibility preflight."
+        )
+    body = {
+        "compatibility_authentication_sha256": compatibility_seal,
+        "payload_session_sha256": session["session_sha256"],
+        "manifest_completion_and_ordered_records_exact": True,
+        "large_trace_file_sha256_authenticated_once_by_consuming_session": True,
+    }
+    return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+
+def _summarize_terminal_cache_payload_loads(
+    cache_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Seal selected tensor I/O separately from the session's whole-file hashes."""
+
+    session = cache_receipt.get("session")
+    payloads = cache_receipt.get("selected_payloads")
+    batches = (
+        session.get(
+            "ordered_authenticated_batches",
+            session.get("ordered_verified_batches"),
+        )
+        if isinstance(session, Mapping)
+        else None
+    )
+    if not isinstance(batches, list) or not isinstance(payloads, list):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal cache receipt has no ordered tensor-payload inventory."
+        )
+    if len(payloads) != len(batches):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal tensor-payload loads do not cover every authenticated batch."
+        )
+    expected_by_index: dict[int, Mapping[str, Any]] = {}
+    for expected_index, batch in enumerate(batches):
+        if not isinstance(batch, Mapping):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal cache session batch inventory is malformed."
+            )
+        batch_index = batch.get("batch_index")
+        tensor_count = batch.get("tensor_count")
+        logical_bytes = batch.get("logical_bytes")
+        if (
+            type(batch_index) is not int
+            or batch_index != expected_index
+            or type(tensor_count) is not int
+            or tensor_count <= 0
+            or type(logical_bytes) is not int
+            or logical_bytes <= 0
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal cache session tensor inventory is invalid or reordered."
+            )
+        expected_by_index[batch_index] = batch
+
+    per_batch = []
+    for expected_index, payload_receipt in enumerate(payloads):
+        if not isinstance(payload_receipt, Mapping):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal selected tensor-payload receipt is malformed."
+            )
+        batch_index = payload_receipt.get("batch_index")
+        selected = payload_receipt.get("selective_payload", payload_receipt)
+        if (
+            type(batch_index) is not int
+            or batch_index != expected_index
+            or not isinstance(
+                selected,
+                Mapping,
+            )
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal selected tensor-payload receipt is invalid or reordered."
+            )
+        selected_count = selected.get("selected_tensor_count")
+        selected_bytes = selected.get("selected_logical_bytes")
+        expected = expected_by_index[batch_index]
+        expected_count = int(expected["tensor_count"])
+        expected_bytes = int(expected["logical_bytes"])
+        if (
+            type(selected_count) is not int
+            or selected_count <= 0
+            or selected_count > expected_count
+            or type(selected_bytes) is not int
+            or selected_bytes <= 0
+            or selected_bytes > expected_bytes
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal selected tensor-payload counts exceed the sealed inventory."
+            )
+        full_inventory = bool(
+            selected_count == expected_count and selected_bytes == expected_bytes
+        )
+        per_batch.append(
+            {
+                "batch_index": batch_index,
+                "selected_tensor_count": selected_count,
+                "selected_logical_bytes": selected_bytes,
+                "sealed_inventory_tensor_count": expected_count,
+                "sealed_inventory_logical_bytes": expected_bytes,
+                "full_tensor_inventory_payload_loaded": full_inventory,
+            }
+        )
+
+    full_inventory = [
+        value for value in per_batch if value["full_tensor_inventory_payload_loaded"]
+    ]
+    body = {
+        "schema": LFM2_LONG_HORIZON_TERMINAL_PAYLOAD_LOAD_AUDIT_SCHEMA,
+        "trace_file_sha256_passes_accounted_here": 0,
+        "selected_tensor_payload_load_count": len(per_batch),
+        "selected_tensor_count_total": sum(
+            int(value["selected_tensor_count"]) for value in per_batch
+        ),
+        "selected_tensor_payload_logical_bytes_total": sum(
+            int(value["selected_logical_bytes"]) for value in per_batch
+        ),
+        "full_tensor_inventory_payload_load_count": len(full_inventory),
+        "full_tensor_inventory_payload_logical_bytes_total": sum(
+            int(value["selected_logical_bytes"]) for value in full_inventory
+        ),
+        "every_batch_loaded_full_tensor_inventory_once": len(full_inventory)
+        == len(per_batch),
+        "per_batch": per_batch,
+    }
+    return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+
+def _verify_cached_full_prefix_payload_equivalence(
+    tensors: Mapping[str, Any],
+    capture: Mapping[str, Any],
+    *,
+    batch_index: int,
+    logit_rtol: float,
+    logit_atol: float,
+) -> dict[str, Any]:
+    """Recompute every cached/full-prefix near-tie from selected raw logits."""
+
+    torch = _torch()
+    compatibility = _terminal_cache_capture_compatibility(
+        capture,
+        batch_index=batch_index,
+    )
+    mode = compatibility["decode_trace_mode"]
+    if mode == FULL_PREFIX_CANONICAL_TRACE_MODE:
+        body = {
+            "batch_index": batch_index,
+            "decode_trace_mode": mode,
+            "raw_cached_full_prefix_pair_count": 0,
+            "raw_logit_rows_verified": 0,
+            "top1_disagreement_count": 0,
+            "all_logits_numerically_close": True,
+            "all_top1_disagreements_within_numeric_error_envelope": True,
+            "top1_exactness_is_diagnostic_only": True,
+        }
+        return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+    decode_steps = int(compatibility["decode_steps"])
+    verifications = capture["cached_full_prefix_verifications"]
+    pairs = (("cached_prefill", "cached_prefill.logits", "prefill.logits"),) + tuple(
+        (
+            f"decode.{step:03d}",
+            f"decode.{step:03d}.logits",
+            f"decode.{step:03d}.full_prefix_logits",
+        )
+        for step in range(decode_steps)
+    )
+    phase_receipts = []
+    total_rows = 0
+    total_disagreements = 0
+    for (phase, cached_name, full_name), sealed in zip(
+        pairs,
+        verifications,
+        strict=True,
+    ):
+        cached = tensors.get(cached_name)
+        full = tensors.get(full_name)
+        if (
+            not isinstance(cached, torch.Tensor)
+            or not isinstance(full, torch.Tensor)
+            or tuple(cached.shape) != tuple(full.shape)
+            or cached.ndim < 2
+            or int(cached.shape[-1]) < 2
+            or not torch.is_floating_point(cached)
+            or not torch.is_floating_point(full)
+            or not bool(torch.isfinite(cached).all().item())
+            or not bool(torch.isfinite(full).all().item())
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {phase!r} raw cached/full-prefix "
+                "logit pair is missing or malformed."
+            )
+        forced_token_sha256 = None
+        if phase.startswith("decode."):
+            forced_token = tensors.get(f"{phase}.forced_token_ids")
+            if not isinstance(forced_token, torch.Tensor):
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    f"Cache batch {batch_index} phase {phase!r} has no raw "
+                    "forced-token binding."
+                )
+            forced_token_sha256 = _cache_tensor_sha256(torch, forced_token)
+            if sealed.get("forced_token_sha256") != forced_token_sha256:
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    f"Cache batch {batch_index} phase {phase!r} sealed forced "
+                    "token digest differs from the raw trajectory."
+                )
+        cached64 = cached.to(device="cpu", dtype=torch.float64).reshape(
+            -1, int(cached.shape[-1])
+        )
+        full64 = full.to(device="cpu", dtype=torch.float64).reshape_as(cached64)
+        difference = cached64 - full64
+        maximum_error = float(difference.abs().max().item())
+        numerically_close = bool(
+            torch.allclose(
+                cached64,
+                full64,
+                rtol=logit_rtol,
+                atol=logit_atol,
+            )
+        )
+        if (
+            not numerically_close
+            or sealed.get("numerically_close") is not True
+            or not math.isclose(
+                maximum_error,
+                float(sealed.get("max_abs_error")),
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {phase!r} raw logits do not "
+                "reproduce the sealed numeric verification."
+            )
+        cached_top1 = cached64.argmax(dim=1)
+        full_top1 = full64.argmax(dim=1)
+        agreements = cached_top1 == full_top1
+        disagreement_indices = torch.nonzero(
+            ~agreements,
+            as_tuple=False,
+        ).reshape(-1)
+        disagreement_count = int(disagreement_indices.numel())
+        if bool(agreements.all().item()) is not sealed.get(
+            "top1_agreement"
+        ) or disagreement_count != int(
+            sealed.get("top1_disagreement_count", disagreement_count)
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {phase!r} raw top-1 decisions "
+                "do not reproduce the sealed verification."
+            )
+        for name, observed in (
+            ("cached_top1_sha256", cached_top1),
+            ("full_prefix_top1_sha256", full_top1),
+        ):
+            supplied = sealed.get(name)
+            if supplied is not None and supplied != _cache_tensor_sha256(
+                torch,
+                observed,
+            ):
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    f"Cache batch {batch_index} phase {phase!r} raw {name} "
+                    "differs from the sealed verification."
+                )
+
+        every_disagreement_within_envelope = True
+        first_disagreement = None
+        for raw_index in disagreement_indices.tolist():
+            row_index = int(raw_index)
+            cached_id = int(cached_top1[row_index].item())
+            full_id = int(full_top1[row_index].item())
+            row_difference = difference[row_index]
+            pair_envelope = float(
+                (row_difference[cached_id].abs() + row_difference[full_id].abs()).item()
+            )
+            cached_gap = float(
+                (cached64[row_index, cached_id] - cached64[row_index, full_id]).item()
+            )
+            full_gap = float(
+                (full64[row_index, full_id] - full64[row_index, cached_id]).item()
+            )
+            within = bool(
+                cached_gap <= pair_envelope + 1e-12
+                and full_gap <= pair_envelope + 1e-12
+            )
+            every_disagreement_within_envelope &= within
+            if first_disagreement is None:
+                cached_top2 = torch.topk(cached64[row_index], k=2).values
+                full_top2 = torch.topk(full64[row_index], k=2).values
+                first_disagreement = {
+                    "row_index": row_index,
+                    "cached_token_id": cached_id,
+                    "full_prefix_token_id": full_id,
+                    "cached_winner_margin": float(
+                        (cached_top2[0] - cached_top2[1]).item()
+                    ),
+                    "full_prefix_winner_margin": float(
+                        (full_top2[0] - full_top2[1]).item()
+                    ),
+                    "cached_preference_gap": cached_gap,
+                    "full_prefix_preference_gap": full_gap,
+                    "row_max_abs_error": float(row_difference.abs().max().item()),
+                    "winner_pair_error_envelope": pair_envelope,
+                    "within_numeric_error_envelope": within,
+                }
+        if (
+            not every_disagreement_within_envelope
+            or sealed.get(
+                "top1_disagreement_within_numeric_error_envelope",
+                every_disagreement_within_envelope,
+            )
+            is not every_disagreement_within_envelope
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {phase!r} contains a material "
+                "raw top-1 disagreement outside the numeric error envelope."
+            )
+        sealed_first = sealed.get("first_top1_disagreement")
+        if first_disagreement is None:
+            if sealed_first is not None:
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    f"Cache batch {batch_index} phase {phase!r} has a spurious "
+                    "sealed first disagreement."
+                )
+        elif not isinstance(sealed_first, Mapping):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch_index} phase {phase!r} lacks sealed raw "
+                "near-tie detail."
+            )
+        else:
+            for name, observed in first_disagreement.items():
+                supplied = sealed_first.get(name)
+                if isinstance(observed, float):
+                    if (
+                        isinstance(supplied, bool)
+                        or not isinstance(supplied, (int, float))
+                        or not math.isclose(
+                            float(supplied),
+                            observed,
+                            rel_tol=0.0,
+                            abs_tol=1e-12,
+                        )
+                    ):
+                        raise Lfm2LongHorizonTerminalRefoldError(
+                            f"Cache batch {batch_index} phase {phase!r} sealed "
+                            f"near-tie field {name!r} differs from raw logits."
+                        )
+                elif supplied != observed:
+                    raise Lfm2LongHorizonTerminalRefoldError(
+                        f"Cache batch {batch_index} phase {phase!r} sealed "
+                        f"near-tie field {name!r} differs from raw logits."
+                    )
+        total_rows += int(cached64.shape[0])
+        total_disagreements += disagreement_count
+        phase_body = {
+            "phase": phase,
+            "cached_logits_sha256": _tensor_sha256(cached),
+            "full_prefix_logits_sha256": _tensor_sha256(full),
+            "row_count": int(cached64.shape[0]),
+            "maximum_absolute_error": maximum_error,
+            "numerically_close": True,
+            "top1_exact_agreement": disagreement_count == 0,
+            "top1_disagreement_count": disagreement_count,
+            "all_top1_disagreements_within_numeric_error_envelope": True,
+            "forced_token_sha256": forced_token_sha256,
+        }
+        phase_receipts.append(
+            {**phase_body, "authentication_sha256": _canonical_sha256(phase_body)}
+        )
+    body = {
+        "batch_index": batch_index,
+        "decode_trace_mode": mode,
+        "raw_cached_full_prefix_pair_count": len(phase_receipts),
+        "raw_logit_rows_verified": total_rows,
+        "phase_verification": phase_receipts,
+        "phase_authentication_sha256": [
+            value["authentication_sha256"] for value in phase_receipts
+        ],
+        "top1_disagreement_count": total_disagreements,
+        "all_logits_numerically_close": True,
+        "all_top1_disagreements_within_numeric_error_envelope": True,
+        "top1_exactness_is_diagnostic_only": True,
+    }
+    return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+
 def _validate_cache_trajectory_geometry(
     tensors: Mapping[str, Any],
     record: Mapping[str, Any],
     *,
     final_layer_index: int,
     source_hidden_size: int,
-) -> Any:
+    logit_rtol: float,
+    logit_atol: float,
+) -> tuple[Any, dict[str, Any]]:
     torch = _torch()
     prompt = tensors["input.input_ids"]
     mask = tensors["input.attention_mask"]
@@ -1306,25 +2486,32 @@ def _validate_cache_trajectory_geometry(
         raise Lfm2LongHorizonTerminalRefoldError(
             "Cache record and forced-decode trajectory geometry differ."
         )
-    mode = capture.get("decode_trace_mode")
-    if mode not in {
-        CACHED_VERIFIED_TRACE_MODE,
-        FULL_PREFIX_CANONICAL_TRACE_MODE,
-    }:
+    batch_index = record.get("batch_index")
+    if isinstance(batch_index, bool) or not isinstance(batch_index, int):
         raise Lfm2LongHorizonTerminalRefoldError(
-            "Cache decode trace mode is unsupported."
+            "Cache record has an invalid batch index."
         )
-    if mode == CACHED_VERIFIED_TRACE_MODE and (
-        capture.get("all_cached_logits_verified") is not True
-        or not (
-            capture.get("all_cached_top1_decisions_verified") is True
-            or capture.get("all_cached_top1_verified") is True
-        )
+    _terminal_cache_capture_compatibility(
+        capture,
+        batch_index=batch_index,
+        expected_decode_steps=int(forced.shape[1]),
+    )
+    verifications = capture.get("cached_full_prefix_verifications")
+    if capture.get("decode_trace_mode") == CACHED_VERIFIED_TRACE_MODE and (
+        not isinstance(verifications, list)
+        or not verifications
+        or verifications[0].get("prefix_length") != int(prompt.shape[1])
     ):
         raise Lfm2LongHorizonTerminalRefoldError(
-            "Cached one-token decode was not authenticated against full-prefix "
-            "causal execution."
+            "Cached prefill verification prefix is not bound to the raw prompt."
         )
+    cached_full_prefix = _verify_cached_full_prefix_payload_equivalence(
+        tensors,
+        capture,
+        batch_index=batch_index,
+        logit_rtol=logit_rtol,
+        logit_atol=logit_atol,
+    )
 
     observed_decode = sorted(
         int(match.group(1))
@@ -1372,7 +2559,7 @@ def _validate_cache_trajectory_geometry(
                     f"Cache phase {phase!r} forced token binding changed."
                 )
         residual_rows.append(values[-1][:, -1, :].reshape(1, -1))
-    return torch.cat(residual_rows, dim=0).contiguous()
+    return torch.cat(residual_rows, dim=0).contiguous(), cached_full_prefix
 
 
 def _verify_parent_action_projection(
@@ -1493,6 +2680,7 @@ def _collect_cached_trajectories(
     parent_final_norm: Lfm2SealedParentFinalRmsNorm,
     source_selected_tied_table: Any,
     split_plan: Lfm2LongHorizonTrajectorySplitPlan,
+    authenticated_session: Any | None = None,
 ) -> tuple[
     tuple[_CachedTrajectory, ...],
     Lfm2StrictTokenizerBridgeTraceAdapter,
@@ -1511,7 +2699,12 @@ def _collect_cached_trajectories(
     parent_batches: list[dict[str, Any]] = []
     payload_receipts: list[dict[str, Any]] = []
 
-    with cache.selective_authenticated_session() as session:
+    session_context = (
+        cache.selective_authenticated_session()
+        if authenticated_session is None
+        else nullcontext(authenticated_session)
+    )
+    with session_context as session:
         references = session.batch_references
         if len(references) != cache.batch_count:
             raise Lfm2LongHorizonTerminalRefoldError(
@@ -1537,15 +2730,18 @@ def _collect_cached_trajectories(
                 reference,
                 final_layer_index=final_layer_index,
                 decode_steps=decode_steps,
+                decode_trace_mode=str(capture.get("decode_trace_mode")),
             )
             payload = session.load_selected_tensors(reference.index, names)
             try:
                 tensors = payload.tensors
-                residual = _validate_cache_trajectory_geometry(
+                residual, cached_full_prefix = _validate_cache_trajectory_geometry(
                     tensors,
                     record,
                     final_layer_index=final_layer_index,
                     source_hidden_size=parent_final_norm.source_hidden_size,
+                    logit_rtol=float(manifest["capture"]["logit_rtol"]),
+                    logit_atol=float(manifest["capture"]["logit_atol"]),
                 )
                 parent_rows, norm_endpoint = _verify_parent_final_norm_endpoint(
                     tensors,
@@ -1590,6 +2786,7 @@ def _collect_cached_trajectories(
                         parent_final_norm_rows=parent_rows,
                         horizon_indices=tuple(range(decode_steps + 1)),
                         selected_payload_sha256=payload.selection_sha256,
+                        cached_full_prefix_payload=MappingProxyType(cached_full_prefix),
                         parent_final_norm_endpoint=MappingProxyType(norm_endpoint),
                         parent_action_projection=MappingProxyType(parent_action),
                     )
@@ -1662,6 +2859,7 @@ def _collect_cached_semantic_trajectories(
     parent_final_norm: Lfm2SealedParentFinalRmsNorm,
     source_selected_tied_table: Any,
     split_plan: Lfm2LongHorizonTrajectorySplitPlan,
+    authenticated_session: Any | None = None,
 ) -> tuple[
     tuple[_CachedTrajectory, ...],
     tuple[Lfm2SemanticSpanPhaseBridge, ...],
@@ -1685,8 +2883,47 @@ def _collect_cached_semantic_trajectories(
     semantic_bridges: list[Lfm2SemanticSpanPhaseBridge] = []
     cached: list[_CachedTrajectory] = []
     payload_receipts: list[dict[str, Any]] = []
-    session = cache.authenticated_session()
-    for batch in session.iter_batches():
+    session = (
+        cache.authenticated_session()
+        if authenticated_session is None
+        else authenticated_session
+    )
+
+    def selected_batches() -> Any:
+        if authenticated_session is None:
+            for batch in session.iter_batches():
+                yield batch, None
+            return
+        references = session.batch_references
+        if len(references) != cache.batch_count or tuple(
+            value.index for value in references
+        ) != tuple(range(cache.batch_count)):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Selective semantic cache references are incomplete or reordered."
+            )
+        for reference in references:
+            payload = session.load_selected_tensors(
+                reference.index,
+                reference.ordered_tensor_names,
+            )
+            try:
+                tensors = MappingProxyType(dict(payload.tensors))
+                batch = Lfm2CircuitTraceBatch(
+                    index=reference.index,
+                    input_sha256=reference.input_sha256,
+                    _tensors=tensors,
+                    _record=MappingProxyType(reference.record),
+                )
+                receipt = {
+                    "selection_sha256": payload.selection_sha256,
+                    "selected_tensor_count": len(reference.ordered_tensor_names),
+                    "selected_logical_bytes": payload.logical_bytes,
+                }
+            finally:
+                session.release_selected_tensors(payload)
+            yield batch, receipt
+
+    for batch, selected_receipt in selected_batches():
         record = batch.record
         capture = record.get("capture")
         decode_steps = (
@@ -1701,11 +2938,13 @@ def _collect_cached_semantic_trajectories(
                 f"Cache batch {batch.index} has no forced horizon."
             )
         tensors = batch.tensors
-        residual = _validate_cache_trajectory_geometry(
+        residual, cached_full_prefix = _validate_cache_trajectory_geometry(
             tensors,
             record,
             final_layer_index=final_layer_index,
             source_hidden_size=parent_final_norm.source_hidden_size,
+            logit_rtol=float(manifest["capture"]["logit_rtol"]),
+            logit_atol=float(manifest["capture"]["logit_atol"]),
         )
         parent_rows, norm_endpoint = _verify_parent_final_norm_endpoint(
             tensors,
@@ -1760,6 +2999,7 @@ def _collect_cached_semantic_trajectories(
                 parent_final_norm_rows=parent_rows,
                 horizon_indices=tuple(range(decode_steps + 1)),
                 selected_payload_sha256=semantic.source_record_sha256,
+                cached_full_prefix_payload=MappingProxyType(cached_full_prefix),
                 parent_final_norm_endpoint=MappingProxyType(norm_endpoint),
                 parent_action_projection=MappingProxyType(parent_action),
             )
@@ -1772,6 +3012,7 @@ def _collect_cached_semantic_trajectories(
                 "semantic_bridge_sha256": semantic.bridge_sha256,
                 "authenticated_tensor_count": int(record["tensor_count"]),
                 "authenticated_logical_bytes": int(capture["capture_bytes"]),
+                "selective_payload": selected_receipt,
             }
         )
     session.verify()
@@ -2425,11 +3666,23 @@ def compile_install_lfm2_long_horizon_terminal_refold(
     tokenizer_replay_mode: TokenizerReplayMode = "strict_one_row",
     donor_tokenizer: Any | None = None,
     target_tokenizer: Any | None = None,
+    terminal_cache_compatibility: Mapping[str, Any] | None = None,
 ) -> Lfm2LongHorizonTerminalRefoldResult:
     """Compile and conditionally install one long-horizon terminal refold."""
 
     if not isinstance(cache, Lfm2CircuitTraceCache):
         raise TypeError("cache must be Lfm2CircuitTraceCache.")
+    current_terminal_cache_compatibility = preflight_lfm2_long_horizon_terminal_cache(
+        cache
+    )
+    if terminal_cache_compatibility is not None and (
+        not isinstance(terminal_cache_compatibility, Mapping)
+        or dict(terminal_cache_compatibility) != current_terminal_cache_compatibility
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Supplied early terminal-cache compatibility receipt does not "
+            "match the current sealed cache metadata."
+        )
     if isinstance(parent_final_norm, Lfm2LocalParentFinalRmsNormLoad):
         selected_parent_final_norm = parent_final_norm.final_norm
         parent_final_norm_source = parent_final_norm.as_dict()
@@ -2477,41 +3730,62 @@ def compile_install_lfm2_long_horizon_terminal_refold(
             "replay."
         )
 
-    seed, down_parameter, layers, target_norm_epsilon = _target_runtime_seed(
-        target_model,
-        interface,
-        source_selected_tied_table,
-    )
-    child_before = fingerprint_lfm2_parent(target_model)
-    parameter_count_before = _unique_parameter_count(target_model)
-    semantic_bridges: tuple[Lfm2SemanticSpanPhaseBridge, ...] = ()
-    if tokenizer_replay_mode == "strict_one_row":
-        inverse = _strict_inverse_mapping(bridge, seed.vocabulary_size)
-        cached, adapter, pair_receipts, cache_receipt = _collect_cached_trajectories(
-            cache,
-            bridge,
-            inverse,
-            selected_parent_final_norm,
+    # Authenticate every trace file with one whole-file SHA pass, after the cheap
+    # record-only preflight and before target seed/replay/solve.  Tensor payloads
+    # are then read through this same session; semantic replay deliberately loads
+    # each complete tensor inventory once and strict replay selects a subset.
+    with cache.selective_authenticated_session() as terminal_cache_session:
+        seed, down_parameter, layers, target_norm_epsilon = _target_runtime_seed(
+            target_model,
+            interface,
             source_selected_tied_table,
-            plan,
         )
-    else:
-        if bridge.target_vocabulary_size != seed.vocabulary_size:
-            raise Lfm2LongHorizonTerminalRefoldError(
-                "Semantic target tokenizer capacity differs from the installed "
-                "tied child interface."
+        child_before = fingerprint_lfm2_parent(target_model)
+        parameter_count_before = _unique_parameter_count(target_model)
+        semantic_bridges: tuple[Lfm2SemanticSpanPhaseBridge, ...] = ()
+        if tokenizer_replay_mode == "strict_one_row":
+            inverse = _strict_inverse_mapping(bridge, seed.vocabulary_size)
+            cached, adapter, pair_receipts, cache_receipt = (
+                _collect_cached_trajectories(
+                    cache,
+                    bridge,
+                    inverse,
+                    selected_parent_final_norm,
+                    source_selected_tied_table,
+                    plan,
+                    authenticated_session=terminal_cache_session,
+                )
             )
-        cached, semantic_bridges, cache_receipt = _collect_cached_semantic_trajectories(
-            cache,
-            bridge,
-            donor_tokenizer,
-            target_tokenizer,
-            selected_parent_final_norm,
-            source_selected_tied_table,
-            plan,
+        else:
+            if bridge.target_vocabulary_size != seed.vocabulary_size:
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    "Semantic target tokenizer capacity differs from the installed "
+                    "tied child interface."
+                )
+            cached, semantic_bridges, cache_receipt = (
+                _collect_cached_semantic_trajectories(
+                    cache,
+                    bridge,
+                    donor_tokenizer,
+                    target_tokenizer,
+                    selected_parent_final_norm,
+                    source_selected_tied_table,
+                    plan,
+                    authenticated_session=terminal_cache_session,
+                )
+            )
+            adapter = None
+            pair_receipts = ()
+        terminal_cache_session.verify()
+    terminal_cache_payload_binding = (
+        _bind_terminal_cache_compatibility_to_payload_session(
+            current_terminal_cache_compatibility,
+            cache_receipt,
         )
-        adapter = None
-        pair_receipts = ()
+    )
+    terminal_cache_tensor_payload_load_audit = _summarize_terminal_cache_payload_loads(
+        cache_receipt
+    )
     authenticated_norm_endpoints = all(
         value.parent_final_norm_endpoint.get("runtime_replay_to_cached_output_verified")
         is True
@@ -2597,6 +3871,21 @@ def compile_install_lfm2_long_horizon_terminal_refold(
         "cache_layer_topology_fingerprint": cache.layer_topology_fingerprint,
         "cache_authentication_sha256": cache_receipt["session"]["session_sha256"],
         "cache_authentication": cache_receipt,
+        "terminal_cache_compatibility": current_terminal_cache_compatibility,
+        "terminal_cache_compatibility_sha256": (
+            current_terminal_cache_compatibility["authentication_sha256"]
+        ),
+        "terminal_cache_payload_binding": terminal_cache_payload_binding,
+        "terminal_cache_tensor_payload_load_audit": (
+            terminal_cache_tensor_payload_load_audit
+        ),
+        "cached_full_prefix_payload_verification": [
+            dict(value.cached_full_prefix_payload) for value in cached
+        ],
+        "cached_full_prefix_payload_verification_sha256": [
+            value.cached_full_prefix_payload["authentication_sha256"]
+            for value in cached
+        ],
         "parent_final_norm": selected_parent_final_norm.as_dict(),
         "parent_final_norm_direct_local_source": parent_final_norm_source,
         "parent_final_norm_reconstruction": {
@@ -2687,11 +3976,32 @@ def compile_install_lfm2_long_horizon_terminal_refold(
             "parent_final_norm_module_calls": 0,
             "parent_cache_generation_calls": 0,
             "parent_trace_recaptures": 0,
-            "authenticated_cache_full_batch_loads": (
-                cache.batch_count if tokenizer_replay_mode == "semantic_span" else 0
+            "metadata_preflight_trace_file_sha256_passes": 0,
+            "metadata_preflight_trace_payload_bytes_read": 0,
+            "consuming_selective_session_constructions": 1,
+            "consuming_trace_file_sha256_passes_per_batch": 1,
+            "consuming_trace_file_sha256_passes_total": cache.batch_count,
+            "same_consuming_session_reused_by_collector": True,
+            "additional_full_trace_file_sha256_passes_performed_by_this_terminal_compiler": 0,
+            "selected_tensor_payload_loads_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "selected_tensor_payload_load_count"
+                ]
             ),
-            "authenticated_cache_selected_payload_loads": (
-                cache.batch_count if tokenizer_replay_mode == "strict_one_row" else 0
+            "selected_tensor_payload_logical_bytes_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "selected_tensor_payload_logical_bytes_total"
+                ]
+            ),
+            "full_tensor_inventory_payload_loads_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "full_tensor_inventory_payload_load_count"
+                ]
+            ),
+            "full_tensor_inventory_payload_logical_bytes_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "full_tensor_inventory_payload_logical_bytes_total"
+                ]
             ),
             "parent_cached_action_rows_authenticated": sum(
                 len(value.horizon_indices) for value in cached
@@ -2744,6 +4054,8 @@ def compile_install_lfm2_long_horizon_terminal_refold(
 __all__ = [
     "LFM2_LONG_HORIZON_PARENT_FINAL_NORM_SCHEMA",
     "LFM2_LONG_HORIZON_SPLIT_PLAN_SCHEMA",
+    "LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA",
+    "LFM2_LONG_HORIZON_TERMINAL_PAYLOAD_LOAD_AUDIT_SCHEMA",
     "LFM2_LONG_HORIZON_TERMINAL_REFOLD_SCHEMA",
     "Lfm2LongHorizonTerminalRefoldError",
     "Lfm2LongHorizonTerminalRefoldResult",
@@ -2753,4 +4065,5 @@ __all__ = [
     "TokenizerReplayMode",
     "compile_install_lfm2_long_horizon_terminal_refold",
     "load_lfm2_parent_final_rmsnorm_from_local_safetensors",
+    "preflight_lfm2_long_horizon_terminal_cache",
 ]

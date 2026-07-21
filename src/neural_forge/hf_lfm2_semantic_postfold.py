@@ -27,6 +27,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -38,6 +39,11 @@ from neural_forge import hf_lfm2_cpcf_model_compiler as cpcf_model_compiler
 from neural_forge import hf_lfm2_cpcf_model_fold as cpcf_model_fold
 from neural_forge import hf_lfm2_cpcf_v5_model_compiler as cpcf_v5_compiler
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
+from neural_forge.dynamic_fold_artifact import (
+    STANDALONE_FOLD_ARTIFACT_INVENTORY_SCHEMA,
+    canonical_standalone_fold_artifact_inventory,
+    scan_standalone_fold_artifact_tree,
+)
 from neural_forge.hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCache,
     fingerprint_lfm2_parent,
@@ -77,12 +83,16 @@ from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
     seal_lfm2_dense_qkvo_source_inventory,
 )
 from neural_forge.hf_lfm2_long_horizon_terminal_refold import (
+    LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA,
     Lfm2LongHorizonTrajectorySplitPlan,
     Lfm2LocalParentFinalRmsNormLoad,
     _build_split_evidence,
+    _bind_terminal_cache_compatibility_to_payload_session,
     _collect_cached_semantic_trajectories,
+    _summarize_terminal_cache_payload_loads,
     _target_runtime_seed,
     load_lfm2_parent_final_rmsnorm_from_local_safetensors,
+    preflight_lfm2_long_horizon_terminal_cache,
 )
 from neural_forge.hf_lfm2_semantic_attention_refold_adapter import (
     Lfm2SemanticAttentionReplayEndpoint,
@@ -192,6 +202,21 @@ _TERMINAL_ZERO_OPERATION_AUDIT = MappingProxyType(
 _TERMINAL_ACTION_RESULT_METHOD = (
     "closed_form_rmsnorm_gauss_newton_then_weighted_ridge_"
     "exact_bfloat16_terminal_writer_frontier"
+)
+_EXPECTED_SEMANTIC_ATTENTION_LAYERS = (2, 4, 6, 8, 10, 12)
+_ATTENTION_SIX_TENSOR_ROLES = (
+    "q_proj.weight",
+    "k_proj.weight",
+    "v_proj.weight",
+    "out_proj.weight",
+    "q_layernorm.weight",
+    "k_layernorm.weight",
+)
+_ATTENTION_REFOLD_ZERO_OPERATIONS = MappingProxyType(
+    {
+        **dict(_ZERO_OPERATIONS),
+        "model_forward_calls": 0,
+    }
 )
 
 
@@ -3377,6 +3402,632 @@ def _validate_attention_installation_receipt(
     return receipt
 
 
+def _authenticate_lfm2_semantic_attention_operator_receipt(
+    value: Mapping[str, Any],
+    *,
+    layer_index: int,
+) -> Mapping[str, Any]:
+    """Authenticate one persisted six-tensor attention transaction receipt."""
+
+    receipt = _verify_sealed(
+        value,
+        seal_name="result_sha256",
+        label=f"semantic attention layer {layer_index} operator receipt",
+    )
+    analytic_value = receipt.get("analytic_refold")
+    bundle_value = (
+        analytic_value.get("frozen_attention_six_tensor_bundle")
+        if isinstance(analytic_value, Mapping)
+        else None
+    )
+    output_writer_value = (
+        analytic_value.get("output_writer")
+        if isinstance(analytic_value, Mapping)
+        else None
+    )
+    joint_value = (
+        analytic_value.get("joint_value_output")
+        if isinstance(analytic_value, Mapping)
+        else None
+    )
+    value_output_gate_value = (
+        analytic_value.get("value_output_candidate_gate")
+        if isinstance(analytic_value, Mapping)
+        else None
+    )
+    if not isinstance(analytic_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            f"Attention layer {layer_index} omitted its analytic refold receipt."
+        )
+    analytic = dict(analytic_value)
+    if not isinstance(bundle_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            f"Attention layer {layer_index} omitted its six-tensor bundle."
+        )
+    bundle = dict(bundle_value)
+    if (
+        not isinstance(output_writer_value, Mapping)
+        or not isinstance(joint_value, Mapping)
+        or not isinstance(value_output_gate_value, Mapping)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Attention layer {layer_index} omitted its sealed V/O decisions."
+        )
+    output_writer = _verify_sealed(
+        output_writer_value,
+        seal_name="gate_sha256",
+        label=f"semantic attention layer {layer_index} output-writer gate",
+    )
+    joint = _verify_sealed(
+        joint_value,
+        seal_name="proposal_sha256",
+        label=f"semantic attention layer {layer_index} joint-V/O proposal",
+    )
+    output_proposal_value = output_writer.get("proposal")
+    if not isinstance(output_proposal_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            f"Attention layer {layer_index} output writer omitted its proposal."
+        )
+    output_proposal = _verify_sealed(
+        output_proposal_value,
+        seal_name="proposal_sha256",
+        label=f"semantic attention layer {layer_index} output-writer proposal",
+    )
+    value_output_gate = _verify_sealed(
+        value_output_gate_value,
+        seal_name="gate_sha256",
+        label=f"semantic attention layer {layer_index} value/output candidate gate",
+    )
+    changed_keys = receipt.get("changed_state_keys")
+    installed = receipt.get("installed")
+    before_sha256 = receipt.get("model_state_before_sha256")
+    after_sha256 = receipt.get("model_state_after_sha256")
+    transport_evidence = receipt.get("transport_evidence_sha256")
+    allowed_state_keys = {
+        f"model.layers.{layer_index}.self_attn.{role}"
+        for role in _ATTENTION_SIX_TENSOR_ROLES
+    }
+    expected_qk_sha = canonical_sha256(
+        {
+            "q": bundle.get("q_proj.weight"),
+            "k": bundle.get("k_proj.weight"),
+        }
+    )
+    expected_qkvo_sha = canonical_sha256(
+        {
+            "q": bundle.get("q_proj.weight"),
+            "k": bundle.get("k_proj.weight"),
+            "v": bundle.get("v_proj.weight"),
+            "o": bundle.get("out_proj.weight"),
+        }
+    )
+    candidate_reports = value_output_gate.get("candidate_reports")
+    validation_gate = value_output_gate.get("validation")
+    gate_schema = value_output_gate.get("schema")
+    if not isinstance(candidate_reports, Mapping) or not isinstance(
+        validation_gate,
+        Mapping,
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Attention layer {layer_index} omitted its V/O diagnostic partitions."
+        )
+    normal_gate = gate_schema == "neural-forge-lfm2-semantic-vo-candidate-gate-v1"
+    cold_gate = gate_schema == "neural-forge-lfm2-semantic-vo-cold-start-diagnostic-v1"
+    gate_invalid = bool(
+        (not normal_gate and not cold_gate)
+        or value_output_gate.get("published_value_weight_sha256")
+        != bundle.get("v_proj.weight")
+        or value_output_gate.get("published_output_weight_sha256")
+        != bundle.get("out_proj.weight")
+        or value_output_gate.get("numeric_metric_used_for_publication_or_rollback")
+        is not False
+        or value_output_gate.get("fit_only_analytic_solves") is not True
+        or value_output_gate.get("fixed_value_weight_preserved") is not True
+        or value_output_gate.get("selected_candidate_frozen_before_validation")
+        is not True
+        or value_output_gate.get("validation_triggered_refit_or_reselection")
+        is not False
+        or value_output_gate.get("alternate_candidate_selected_after_validation")
+        is not False
+        or value_output_gate.get("operation_audit")
+        != dict(_ATTENTION_REFOLD_ZERO_OPERATIONS)
+        or validation_gate.get("diagnostic_only") is not True
+    )
+    if normal_gate:
+        expected_candidates = {
+            "incumbent",
+            "fixed_v_output_only",
+            "joint_value_output",
+        }
+        published_candidate = value_output_gate.get("published_candidate")
+        gate_invalid = bool(
+            gate_invalid
+            or set(candidate_reports) != expected_candidates
+            or published_candidate not in {"incumbent", "fixed_v_output_only"}
+            or value_output_gate.get("selected_candidate") != published_candidate
+            or value_output_gate.get("numeric_metric_used_for_candidate_selection")
+            is not False
+            or value_output_gate.get("heldout_metrics_are_diagnostic_only") is not True
+            or value_output_gate.get("joint_value_output_publication_allowed")
+            is not False
+            or value_output_gate.get("selected_correction_rejected_on_validation")
+            is not False
+            or validation_gate.get("used_for_publication") is not False
+            or output_writer.get("accepted")
+            is not (published_candidate == "fixed_v_output_only")
+            or any(
+                not isinstance(report, Mapping)
+                or not isinstance(report.get("partitions"), Mapping)
+                or set(report["partitions"])
+                != {"fit", "fit_check", "selection", "validation"}
+                or any(
+                    not isinstance(partition, Mapping)
+                    or partition.get("diagnostic_only") is not True
+                    or partition.get("used_for_publication") is not False
+                    for partition in report["partitions"].values()
+                )
+                for report in candidate_reports.values()
+            )
+            or not isinstance(candidate_reports.get("joint_value_output"), Mapping)
+            or candidate_reports["joint_value_output"].get("structurally_publishable")
+            is not False
+        )
+    elif cold_gate:
+        expected_candidates = {
+            "fixed_v_prior_preserving_cold_start",
+            "fixed_v_output_only",
+            "joint_value_output",
+        }
+        gate_invalid = bool(
+            gate_invalid
+            or set(candidate_reports) != expected_candidates
+            or value_output_gate.get("selected_candidate")
+            != "fixed_v_prior_preserving_cold_start"
+            or value_output_gate.get("published_candidate")
+            != "fixed_v_prior_preserving_cold_start"
+            or value_output_gate.get(
+                "heldout_metrics_are_diagnostics_not_publication_gates"
+            )
+            is not True
+            or value_output_gate.get("joint_svd_refactor_used_for_publication")
+            is not False
+            or value_output_gate.get("zero_role_incumbent_candidate_eligible")
+            is not False
+            or any(
+                not isinstance(report, Mapping)
+                or not isinstance(report.get("partitions"), Mapping)
+                or set(report["partitions"])
+                != {"fit", "fit_check", "selection", "validation"}
+                or any(
+                    not isinstance(report["partitions"].get(partition), Mapping)
+                    or report["partitions"][partition].get("diagnostic_only")
+                    is not True
+                    or report["partitions"][partition].get(
+                        "used_for_plant_or_selection"
+                    )
+                    is not False
+                    for partition in ("fit_check", "selection", "validation")
+                )
+                for report in candidate_reports.values()
+            )
+            or not isinstance(candidate_reports.get("joint_value_output"), Mapping)
+            or candidate_reports["joint_value_output"].get("diagnostic_only")
+            is not True
+            or candidate_reports["joint_value_output"].get("publication_allowed")
+            is not False
+        )
+    if gate_invalid:
+        raise Lfm2SemanticPostfoldError(
+            f"Attention layer {layer_index} V/O gate permits behavioral publication."
+        )
+    invalid = bool(
+        receipt.get("schema") != LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA
+        or receipt.get("layer_index") != layer_index
+        or type(installed) is not bool
+        or not isinstance(before_sha256, str)
+        or not isinstance(after_sha256, str)
+        or _digest(before_sha256, "attention model state before") != before_sha256
+        or _digest(after_sha256, "attention model state after") != after_sha256
+        or (before_sha256 != after_sha256) is not installed
+        or not isinstance(transport_evidence, list)
+        or not transport_evidence
+        or any(
+            not isinstance(value, str)
+            or _digest(value, "attention transport evidence") != value
+            for value in transport_evidence
+        )
+        or receipt.get("install_count") != int(installed)
+        or not isinstance(changed_keys, list)
+        or any(not isinstance(name, str) for name in changed_keys)
+        or changed_keys != sorted(set(changed_keys))
+        or bool(changed_keys) != installed
+        or any(name not in allowed_state_keys for name in changed_keys)
+        or receipt.get("parameter_element_count_before")
+        != receipt.get("parameter_element_count_after")
+        or receipt.get("parameter_count_changed") is not False
+        or receipt.get("target_topology_sha256_before")
+        != receipt.get("target_topology_sha256_after")
+        or receipt.get("topology_changed") is not False
+        or receipt.get("parameter_identities_preserved") is not True
+        or receipt.get("parameter_storage_preserved") is not True
+        or receipt.get("gradient_state_preserved") is not True
+        or receipt.get("exact_noop_state_proven") is installed
+        or receipt.get("heldout_metrics_are_diagnostic_only") is not True
+        or receipt.get("numeric_metric_used_for_publication_or_rollback") is not False
+        or receipt.get("candidate_frozen_before_validation") is not True
+        or receipt.get("validation_triggered_refit") is not False
+        or receipt.get("analytic_cached_evidence_only") is not True
+        or receipt.get("operation_audit") != dict(_ZERO_OPERATIONS)
+        or analytic.get("schema") != "neural-forge-lfm2-semantic-attention-refold-v1"
+        or set(bundle) != set(_ATTENTION_SIX_TENSOR_ROLES)
+        or any(
+            not isinstance(bundle.get(role), str)
+            or len(str(bundle.get(role))) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in str(bundle.get(role))
+            )
+            for role in _ATTENTION_SIX_TENSOR_ROLES
+        )
+        or analytic.get("frozen_attention_six_tensor_bundle_roles")
+        != list(_ATTENTION_SIX_TENSOR_ROLES)
+        or analytic.get("frozen_attention_six_tensor_bundle_sha256")
+        != canonical_sha256(bundle)
+        or analytic.get("frozen_qk_sha256") != expected_qk_sha
+        or analytic.get("frozen_qkvo_sha256") != expected_qkvo_sha
+        or type(analytic.get("qk_compiler_accepted")) is not bool
+        or type(analytic.get("qk_compiler_changed")) is not bool
+        or not isinstance(analytic.get("fixed_value_source"), str)
+        or not analytic.get("fixed_value_source")
+        or not isinstance(analytic.get("output_writer_source"), str)
+        or not analytic.get("output_writer_source")
+        or analytic.get("heldout_metrics_are_diagnostic_only") is not True
+        or analytic.get("numeric_metric_used_for_publication_or_rollback") is not False
+        or analytic.get("joint_value_output_candidate_diagnostic_only") is not True
+        or analytic.get("joint_value_output_publication_allowed") is not False
+        or analytic.get("joint_value_output_candidate_published") is not False
+        or analytic.get("complete_qkvo_bundle_installed_transactionally")
+        is not installed
+        or analytic.get("complete_qkvo_bundle_transaction_verified") is not True
+        or analytic.get("authenticated_incumbent_qkvo_retained_without_installation")
+        is installed
+        or analytic.get("projection_parameter_copy_calls") != len(changed_keys)
+        or analytic.get("all_semantically_exact_endpoint_rows_used_for_attention_fit")
+        is not True
+        or analytic.get("terminal_endpoint_only_supervision") is not False
+        or analytic.get(
+            "analytic_fp64_target_construction_distinct_from_bfloat16_runtime_replay"
+        )
+        is not True
+        or analytic.get("runtime_replay_numeric_contract")
+        != "bfloat16-linears-fp32-qk-softmax-bfloat16-probability-context"
+        or analytic.get("cross_head_dimension_bridge_deferred") is not True
+        or analytic.get("refold_operation_audit")
+        != dict(_ATTENTION_REFOLD_ZERO_OPERATIONS)
+        or output_writer.get("heldout_metrics_are_diagnostic_only") is not True
+        or output_writer.get("numeric_metric_used_for_publication") is not False
+        or type(output_writer.get("accepted")) is not bool
+        or output_proposal.get("value_weight_fixed") is not True
+        or output_proposal.get("fit_improved_is_diagnostic_only") is not True
+        or output_proposal.get("numeric_metric_used_for_step_size_selection")
+        is not False
+        or output_proposal.get("numeric_metric_used_for_publication") is not False
+        or output_proposal.get("output_weight_sha256") != bundle.get("out_proj.weight")
+        or joint.get("diagnostic_only") is not True
+        or joint.get("publication_allowed") is not False
+        or joint.get("numeric_metric_used_for_publication") is not False
+        or type(analytic.get("fresh_output_writer_refit_performed")) is not bool
+        or output_writer.get("accepted")
+        is not analytic.get("fresh_output_writer_refit_performed")
+    )
+    if invalid:
+        raise Lfm2SemanticPostfoldError(
+            f"Attention layer {layer_index} persisted transaction is incomplete."
+        )
+    changed_projection = [
+        name
+        for name in changed_keys
+        if name.rsplit(".", 2)[-2] in {"q_proj", "k_proj", "v_proj", "out_proj"}
+    ]
+    changed_norm = [
+        name
+        for name in changed_keys
+        if name.rsplit(".", 2)[-2] in {"q_layernorm", "k_layernorm"}
+    ]
+    return MappingProxyType(
+        {
+            "layer_index": layer_index,
+            "operator_receipt_sha256": receipt["result_sha256"],
+            "model_state_before_sha256": before_sha256,
+            "model_state_after_sha256": after_sha256,
+            "transport_evidence_sha256": list(transport_evidence),
+            "parameter_element_count": receipt["parameter_element_count_before"],
+            "installed": installed,
+            "changed_state_keys": list(changed_keys),
+            "changed_projection_state_keys": changed_projection,
+            "changed_norm_state_keys": changed_norm,
+            "six_tensor_bundle": bundle,
+            "six_tensor_bundle_sha256": analytic[
+                "frozen_attention_six_tensor_bundle_sha256"
+            ],
+            "qk_bundle_sha256": analytic["frozen_qk_sha256"],
+            "qkvo_bundle_sha256": analytic["frozen_qkvo_sha256"],
+            "output_writer_gate_sha256": output_writer["gate_sha256"],
+            "joint_value_output_proposal_sha256": joint["proposal_sha256"],
+            "value_output_candidate_gate_sha256": value_output_gate["gate_sha256"],
+            "fit_only_publication_with_diagnostic_heldout_authenticated": True,
+            "numeric_behavior_gate_used": False,
+        }
+    )
+
+
+def authenticate_lfm2_semantic_layer_stack_attention_receipts(
+    value: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Authenticate all persisted attention decisions in a sealed layer stack."""
+
+    stack = _verify_sealed(
+        value,
+        seal_name="result_sha256",
+        label="semantic layer-stack receipt",
+    )
+    layers = stack.get("layer_installations")
+    layer_sha256 = stack.get("layer_installation_sha256")
+    if (
+        stack.get("schema") != "neural-forge-lfm2-semantic-layer-stack-refold-v1"
+        or stack.get("layer_count") != 14
+        or not isinstance(layers, list)
+        or len(layers) != 14
+        or not isinstance(layer_sha256, list)
+        or len(layer_sha256) != 14
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic layer stack omitted its fourteen layer transactions."
+        )
+    stack_before_sha256 = stack.get("model_state_before_sha256")
+    stack_after_sha256 = stack.get("model_state_after_sha256")
+    stack_changed_keys = stack.get("changed_state_keys")
+    parameter_element_count = stack.get("parameter_element_count")
+    if (
+        not isinstance(stack_before_sha256, str)
+        or not isinstance(stack_after_sha256, str)
+        or _digest(stack_before_sha256, "semantic layer-stack state before")
+        != stack_before_sha256
+        or _digest(stack_after_sha256, "semantic layer-stack state after")
+        != stack_after_sha256
+        or stack_before_sha256 == stack_after_sha256
+        or not isinstance(stack_changed_keys, list)
+        or not stack_changed_keys
+        or any(not isinstance(name, str) or not name for name in stack_changed_keys)
+        or stack_changed_keys != sorted(set(stack_changed_keys))
+        or type(parameter_element_count) is not int
+        or parameter_element_count <= 0
+        or stack.get("parameter_count_changed") is not False
+        or stack.get("parameter_topology_changed") is not False
+        or stack.get("whole_stage_contains_meaningful_parameter_changes") is not True
+        or stack.get("complete_causal_layer_stack_adjudicated") is not True
+        or stack.get("causal_install_order")
+        != "operator_then_replay_fresh_mlp_then_next_layer"
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic layer-stack state or parameter invariants changed."
+        )
+    authenticated = []
+    verified_layers: list[Mapping[str, Any]] = []
+    operator_installed_by_layer: list[bool] = []
+    mlp_installed_by_layer: list[bool] = []
+    expected_layer_before_sha256 = stack_before_sha256
+    for layer_index, layer_value in enumerate(layers):
+        layer = _verify_sealed(
+            layer_value,
+            seal_name="result_sha256",
+            label=f"semantic layer {layer_index} transaction",
+        )
+        if (
+            layer.get("schema") != "neural-forge-lfm2-semantic-layer-transaction-v1"
+            or layer.get("layer_index") != layer_index
+            or layer_sha256[layer_index] != layer["result_sha256"]
+        ):
+            raise Lfm2SemanticPostfoldError(
+                f"Semantic layer {layer_index} transaction binding changed."
+            )
+        is_attention = layer_index in _EXPECTED_SEMANTIC_ATTENTION_LAYERS
+        expected_operator_kind = "full_attention" if is_attention else "short_conv"
+        layer_before_sha256 = layer.get("model_state_before_operator_sha256")
+        layer_after_operator_sha256 = layer.get("model_state_after_operator_sha256")
+        layer_after_mlp_sha256 = layer.get("model_state_after_mlp_sha256")
+        operator_installed = layer.get("operator_installed")
+        mlp_installed = layer.get("mlp_installed")
+        if (
+            layer.get("operator_kind") != expected_operator_kind
+            or not isinstance(layer_before_sha256, str)
+            or not isinstance(layer_after_operator_sha256, str)
+            or not isinstance(layer_after_mlp_sha256, str)
+            or _digest(layer_before_sha256, "semantic layer state before operator")
+            != layer_before_sha256
+            or _digest(
+                layer_after_operator_sha256,
+                "semantic layer state after operator",
+            )
+            != layer_after_operator_sha256
+            or _digest(layer_after_mlp_sha256, "semantic layer state after MLP")
+            != layer_after_mlp_sha256
+            or layer_before_sha256 != expected_layer_before_sha256
+            or type(operator_installed) is not bool
+            or layer.get("operator_decision_count") != 1
+            or layer.get("operator_install_count") != int(operator_installed)
+            or layer.get("operator_parameter_bytes_changed") is not operator_installed
+            or (layer_before_sha256 != layer_after_operator_sha256)
+            is not operator_installed
+            or type(mlp_installed) is not bool
+            or layer.get("mlp_decision_count") != 1
+            or layer.get("mlp_install_count") != int(mlp_installed)
+            or layer.get("mlp_parameter_bytes_changed") is not mlp_installed
+            or (layer_after_operator_sha256 != layer_after_mlp_sha256)
+            is not mlp_installed
+        ):
+            raise Lfm2SemanticPostfoldError(
+                f"Semantic layer {layer_index} causal state chain changed."
+            )
+        operator_installed_by_layer.append(operator_installed)
+        mlp_installed_by_layer.append(mlp_installed)
+        expected_layer_before_sha256 = layer_after_mlp_sha256
+        verified_layers.append(layer)
+        decision_value = layer.get("attention_operator_decision_receipt")
+        installation_value = layer.get("attention_operator_installation_receipt")
+        if not is_attention:
+            if decision_value is not None or installation_value is not None:
+                raise Lfm2SemanticPostfoldError(
+                    f"Non-attention layer {layer_index} persisted attention data."
+                )
+            continue
+        if not isinstance(decision_value, Mapping) or not isinstance(
+            installation_value,
+            Mapping,
+        ):
+            raise Lfm2SemanticPostfoldError(
+                f"Attention layer {layer_index} omitted its full sealed receipts."
+            )
+        decision = _authenticate_lfm2_semantic_attention_operator_receipt(
+            decision_value,
+            layer_index=layer_index,
+        )
+        installation = _authenticate_lfm2_semantic_attention_operator_receipt(
+            installation_value,
+            layer_index=layer_index,
+        )
+        if (
+            dict(decision_value) != dict(installation_value)
+            or layer.get("operator_kind") != "full_attention"
+            or layer.get("operator_decision_sha256")
+            != decision["operator_receipt_sha256"]
+            or layer.get("operator_installation_sha256")
+            != installation["operator_receipt_sha256"]
+            or layer.get("operator_installed") is not decision["installed"]
+            or layer.get("operator_install_count") != int(decision["installed"])
+            or layer.get("operator_parameter_bytes_changed")
+            is not decision["installed"]
+            or layer.get("model_state_before_operator_sha256")
+            != decision["model_state_before_sha256"]
+            or layer.get("model_state_after_operator_sha256")
+            != decision["model_state_after_sha256"]
+            or layer.get("operator_evidence_sha256")
+            != decision["transport_evidence_sha256"]
+            or decision["parameter_element_count"] != parameter_element_count
+            or (
+                layer.get("model_state_before_operator_sha256")
+                != layer.get("model_state_after_operator_sha256")
+            )
+            is not decision["installed"]
+        ):
+            raise Lfm2SemanticPostfoldError(
+                f"Attention layer {layer_index} receipt bindings disagree."
+            )
+        authenticated.append(dict(decision))
+    if expected_layer_before_sha256 != stack_after_sha256:
+        raise Lfm2SemanticPostfoldError(
+            "Semantic layer-stack final causal state binding changed."
+        )
+    authenticated_by_layer = {item["layer_index"]: item for item in authenticated}
+    owned_changed_keys: set[str] = set()
+    changed_key_bindings_invalid = False
+    for layer_index, layer in enumerate(verified_layers):
+        is_attention = layer_index in _EXPECTED_SEMANTIC_ATTENTION_LAYERS
+        operator_prefix = (
+            f"model.layers.{layer_index}.self_attn."
+            if is_attention
+            else f"model.layers.{layer_index}.conv."
+        )
+        mlp_prefix = f"model.layers.{layer_index}.feed_forward."
+        operator_changed_keys = {
+            name for name in stack_changed_keys if name.startswith(operator_prefix)
+        }
+        mlp_changed_keys = {
+            name for name in stack_changed_keys if name.startswith(mlp_prefix)
+        }
+        if (
+            bool(operator_changed_keys) is not operator_installed_by_layer[layer_index]
+            or bool(mlp_changed_keys) is not mlp_installed_by_layer[layer_index]
+            or (
+                is_attention
+                and operator_changed_keys
+                != set(authenticated_by_layer[layer_index]["changed_state_keys"])
+            )
+        ):
+            changed_key_bindings_invalid = True
+        owned_changed_keys.update(operator_changed_keys)
+        owned_changed_keys.update(mlp_changed_keys)
+    short_conv_install_count = sum(
+        int(operator_installed_by_layer[index])
+        for index in range(14)
+        if index not in _EXPECTED_SEMANTIC_ATTENTION_LAYERS
+    )
+    if (
+        changed_key_bindings_invalid
+        or owned_changed_keys != set(stack_changed_keys)
+        or stack.get("short_conv_operator_decision_count") != 8
+        or stack.get("short_conv_operator_install_count") != short_conv_install_count
+        or stack.get("operator_parameter_mutation_count")
+        != sum(int(value) for value in operator_installed_by_layer)
+        or stack.get("replay_fresh_mlp_evidence_compile_count") != 14
+        or stack.get("nonterminal_mlp_writer_decision_count") != 13
+        or stack.get("nonterminal_mlp_writer_install_count")
+        != sum(int(value) for value in mlp_installed_by_layer[:13])
+        or stack.get("final_mlp_producer_install_count")
+        != int(mlp_installed_by_layer[13])
+        or stack.get("mlp_parameter_mutation_count")
+        != sum(int(value) for value in mlp_installed_by_layer)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic layer-stack changed-key or parameter mutation bindings changed."
+        )
+    if (
+        tuple(item["layer_index"] for item in authenticated)
+        != _EXPECTED_SEMANTIC_ATTENTION_LAYERS
+        or stack.get("attention_operator_decision_count") != len(authenticated)
+        or stack.get("attention_operator_install_count")
+        != sum(int(item["installed"]) for item in authenticated)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic layer-stack attention receipt coverage is incomplete."
+        )
+    changed_projection = [
+        name for item in authenticated for name in item["changed_projection_state_keys"]
+    ]
+    changed_norm = [
+        name for item in authenticated for name in item["changed_norm_state_keys"]
+    ]
+    body = {
+        "schema": "neural-forge-lfm2-semantic-attention-receipt-persistence-v1",
+        "semantic_layer_stack_result_sha256": stack["result_sha256"],
+        "model_state_before_sha256": stack_before_sha256,
+        "model_state_after_sha256": stack_after_sha256,
+        "layer_stack_changed_state_keys_sha256": canonical_sha256(stack_changed_keys),
+        "layer_stack_changed_state_key_count": len(stack_changed_keys),
+        "parameter_element_count": parameter_element_count,
+        "attention_layer_indices": list(_EXPECTED_SEMANTIC_ATTENTION_LAYERS),
+        "attention_receipt_count": len(authenticated),
+        "attention_install_count": sum(
+            int(item["installed"]) for item in authenticated
+        ),
+        "complete_six_tensor_bundle_count": len(authenticated),
+        "changed_projection_state_key_count": len(changed_projection),
+        "changed_norm_state_key_count": len(changed_norm),
+        "changed_projection_state_keys": changed_projection,
+        "changed_norm_state_keys": changed_norm,
+        "per_layer": authenticated,
+        "full_operator_receipts_embedded": True,
+        "full_installation_receipts_embedded": True,
+        "all_six_tensor_transactions_authenticated": True,
+        "causal_model_state_chain_authenticated": True,
+        "changed_state_keys_authenticated": True,
+        "parameter_invariants_authenticated": True,
+        "heldout_metrics_are_diagnostic_only": True,
+        "numeric_behavior_gate_used": False,
+    }
+    return MappingProxyType(_sealed(body, "result_sha256"))
+
+
 def _attention_layer_indices(
     cache: Lfm2CircuitTraceCache,
     target_model: Any,
@@ -4354,6 +5005,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     attention_installer: Callable[..., Mapping[str, Any]] | None = None,
     semantic_layer_stack_compiler: Callable[..., Any] | None = None,
     fold_compute_device: str = "cpu",
+    authenticated_cache_session: Any | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
@@ -4414,6 +5066,11 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         donor_tokenizer=donor_tokenizer,
         target_tokenizer=target_tokenizer,
         attention_installer=_resolve_attention_installer(attention_installer),
+        **(
+            {"authenticated_cache_session": authenticated_cache_session}
+            if authenticated_cache_session is not None
+            else {}
+        ),
         **(
             {"fold_compute_device": fold_compute_device}
             if fold_compute_device != "cpu"
@@ -4868,10 +5525,26 @@ def _lexical_teacher_rows(
     target_tied_weight: Any,
     desired_token_ids: Sequence[int],
 ) -> tuple[Any, Mapping[str, Any]]:
-    """Select exact-top1 hidden teachers from a fixed closed-form frontier."""
+    """Select the best finite hidden teacher from a fixed closed-form frontier."""
 
     torch = _torch()
+    if (
+        not isinstance(target_tied_weight, torch.Tensor)
+        or target_tied_weight.layout != torch.strided
+        or target_tied_weight.device.type == "meta"
+        or target_tied_weight.ndim != 2
+        or int(target_tied_weight.shape[0]) <= 0
+        or int(target_tied_weight.shape[1]) <= 0
+        or not torch.is_floating_point(target_tied_weight)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Lexical teacher selection requires a materialized floating tied table."
+        )
     table = target_tied_weight.detach().to(device="cpu", dtype=torch.float64)
+    if not bool(torch.isfinite(table).all().item()):
+        raise Lfm2SemanticPostfoldError(
+            "Lexical teacher selection refuses a nonfinite tied table."
+        )
     desired = tuple(int(value) for value in desired_token_ids)
     if not desired or min(desired) < 0 or max(desired) >= int(table.shape[0]):
         raise Lfm2SemanticPostfoldError(
@@ -4889,53 +5562,138 @@ def _lexical_teacher_rows(
             torch.eye(int(gram.shape[0]), dtype=torch.float64),
         )
         candidates.append((f"ridge_whitened_{ridge:.0e}", rows @ inverse))
-    selected: dict[int, Any] = {}
-    selected_method: dict[int, str] = {}
-    for method, candidate64 in candidates:
+    selected: dict[int, tuple[tuple[int, int, float, int], Any, str]] = {}
+    finite_frontier_counts: dict[str, int] = {}
+    vocabulary_size = int(table.shape[0])
+    for candidate_index, (method, candidate64) in enumerate(candidates):
         candidate = candidate64.to(torch.bfloat16)
+        finite_frontier_counts[method] = 0
         for start in range(0, len(unique), 32):
             stop = min(len(unique), start + 32)
             logits = candidate[start:stop].to(torch.float64) @ table.T
             winners = logits.argmax(dim=1)
-            for offset, winner in enumerate(winners.tolist(), start=start):
+            target_indices = torch.tensor(
+                unique[start:stop],
+                dtype=torch.long,
+            )
+            target_logits = logits.gather(1, target_indices[:, None]).squeeze(1)
+            ranks = 1 + (logits > target_logits[:, None]).sum(dim=1)
+            if vocabulary_size == 1:
+                margins = torch.zeros_like(target_logits)
+            else:
+                competing = logits.clone()
+                competing[
+                    torch.arange(stop - start, dtype=torch.long),
+                    target_indices,
+                ] = -torch.inf
+                margins = target_logits - competing.max(dim=1).values
+            finite_rows = torch.isfinite(candidate[start:stop]).all(
+                dim=1
+            ) & torch.isfinite(logits).all(dim=1)
+            finite_frontier_counts[method] += int(finite_rows.sum().item())
+            for relative, winner in enumerate(winners.tolist()):
+                if not bool(finite_rows[relative].item()):
+                    continue
+                offset = start + relative
                 token = unique[offset]
-                if token == winner and token not in selected:
-                    selected[token] = candidate[offset].clone()
-                    selected_method[token] = method
-    missing = tuple(token for token in unique if token not in selected)
-    if missing:
-        raise Lfm2SemanticPostfoldBlockedError(
-            "Closed-form lexical teacher frontier has no exact top-1 witness",
-            _sealed(
-                {
-                    "schema": LFM2_SEMANTIC_POSTFOLD_FAILURE_SCHEMA,
-                    "status": "blocked-no-checkpoint-published",
-                    "stage": "lexical_span_completion",
-                    "reason": "no-exact-top1-closed-form-teacher",
-                    "missing_token_ids": list(missing),
-                    "teacher_frontier": [name for name, _value in candidates],
-                    "operation_audit": dict(_ZERO_OPERATIONS),
-                },
-                "failure_sha256",
-            ),
+                exact = token == winner
+                rank = int(ranks[relative].item())
+                margin = float(margins[relative].item())
+                selection_key = (
+                    0 if exact else 1,
+                    rank,
+                    -margin,
+                    candidate_index,
+                )
+                incumbent = selected.get(token)
+                if incumbent is None or selection_key < incumbent[0]:
+                    selected[token] = (
+                        selection_key,
+                        candidate[offset].clone(),
+                        method,
+                    )
+    missing_finite = tuple(token for token in unique if token not in selected)
+    if missing_finite:
+        raise Lfm2SemanticPostfoldError(
+            "Closed-form lexical teacher frontier has no finite witness for "
+            f"token IDs {list(missing_finite)}."
         )
-    teacher = torch.stack(tuple(selected[value] for value in desired), dim=0)
-    winners = (teacher.to(torch.float64) @ table.T).argmax(dim=1)
-    if tuple(winners.tolist()) != desired:
-        raise AssertionError("Selected lexical teacher lost its exact winner.")
+    unique_teacher = torch.stack(tuple(selected[value][1] for value in unique), dim=0)
+    unique_logits = unique_teacher.to(torch.float64) @ table.T
+    if not bool(torch.isfinite(unique_teacher).all().item()) or not bool(
+        torch.isfinite(unique_logits).all().item()
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Selected lexical teacher frontier produced nonfinite output."
+        )
+    unique_indices = torch.tensor(unique, dtype=torch.long)
+    unique_winners = unique_logits.argmax(dim=1)
+    unique_targets = unique_logits.gather(1, unique_indices[:, None]).squeeze(1)
+    unique_ranks = 1 + (unique_logits > unique_targets[:, None]).sum(dim=1)
+    if vocabulary_size == 1:
+        unique_margins = torch.zeros_like(unique_targets)
+    else:
+        unique_competing = unique_logits.clone()
+        unique_competing[
+            torch.arange(len(unique), dtype=torch.long),
+            unique_indices,
+        ] = -torch.inf
+        unique_margins = unique_targets - unique_competing.max(dim=1).values
+    selected_method = {token: selected[token][2] for token in unique}
+    diagnostics = []
+    for index, token in enumerate(unique):
+        winner = int(unique_winners[index].item())
+        diagnostics.append(
+            {
+                "target_token_id": token,
+                "selected_method": selected_method[token],
+                "winner_token_id": winner,
+                "exact_target_top1": winner == token,
+                "target_rank": int(unique_ranks[index].item()),
+                "target_margin_over_best_competitor": float(
+                    unique_margins[index].item()
+                ),
+            }
+        )
+    approximate = tuple(
+        value["target_token_id"]
+        for value in diagnostics
+        if value["exact_target_top1"] is not True
+    )
+    exact = tuple(token for token in unique if token not in approximate)
+    teacher = torch.stack(tuple(selected[value][1] for value in desired), dim=0)
+    desired_exact_count = sum(value in exact for value in desired)
     methods = {
         name: sum(selected_method[value] == name for value in unique)
         for name, _candidate in candidates
     }
     body = {
         "schema": "neural-forge-lfm2-semantic-lexical-teacher-v1",
+        "selection_contract": (
+            "best-finite-closed-form-witness-exact-top1-preferred-v1"
+        ),
         "desired_token_ids_sha256": canonical_sha256(list(desired)),
         "desired_row_count": len(desired),
         "unique_desired_token_count": len(unique),
         "teacher_rows_sha256": _tensor_sha256(teacher),
         "frontier": [name for name, _candidate in candidates],
+        "finite_frontier_unique_token_counts": finite_frontier_counts,
         "selected_unique_token_counts": methods,
-        "all_teacher_rows_exact_target_top1": True,
+        "exact_unique_desired_token_count": len(exact),
+        "approximate_unique_desired_token_count": len(approximate),
+        "exact_desired_row_count": desired_exact_count,
+        "approximate_desired_row_count": len(desired) - desired_exact_count,
+        "exact_target_token_ids": list(exact),
+        "missing_exact_top1_token_ids": list(approximate),
+        "selected_unique_token_diagnostics": diagnostics,
+        "maximum_selected_target_rank": max(
+            int(value["target_rank"]) for value in diagnostics
+        ),
+        "minimum_selected_target_margin": min(
+            float(value["target_margin_over_best_competitor"]) for value in diagnostics
+        ),
+        "teacher_rows_all_finite": True,
+        "all_teacher_rows_exact_target_top1": not approximate,
         "gradient_search_used": False,
         "training_steps": 0,
     }
@@ -5773,6 +6531,30 @@ def _authenticate_fused_terminal_tied_interface(
     return MappingProxyType(_sealed(body, "result_sha256"))
 
 
+def _terminal_heldout_diagnostic(
+    published_metrics: Any,
+    incumbent_metrics: Any,
+    policy: Lfm2CpcfTerminalActionPolicy,
+) -> dict[str, Any]:
+    """Seal numerical heldout evidence without granting it publication authority."""
+
+    gates = _metric_gates(
+        published_metrics,
+        incumbent_metrics,
+        policy,
+        require_selection_improvement=False,
+    )
+    body = {
+        "incumbent": incumbent_metrics.as_dict(),
+        "published": published_metrics.as_dict(),
+        "gates": gates,
+        "passed": _all_passed(gates),
+        "role": "diagnostic-only-after-frozen-terminal-publication-decision",
+        "publication_gate_applied": False,
+    }
+    return _sealed(body, "diagnostic_sha256")
+
+
 def compile_install_lfm2_fused_semantic_terminal_refold(
     *,
     cache: Lfm2CircuitTraceCache,
@@ -5786,10 +6568,23 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     target_tokenizer: Any,
     split_plan: Lfm2LongHorizonTrajectorySplitPlan | None = None,
     policy: Lfm2CpcfTerminalActionPolicy | None = None,
+    terminal_cache_compatibility: Mapping[str, Any] | None = None,
+    authenticated_cache_session: Any | None = None,
 ) -> Mapping[str, Any]:
     """Jointly compile final-MLP, parent, and lexical lanes into one final W2."""
 
     torch = _torch()
+    current_terminal_cache_compatibility = preflight_lfm2_long_horizon_terminal_cache(
+        cache
+    )
+    if terminal_cache_compatibility is not None and (
+        not isinstance(terminal_cache_compatibility, Mapping)
+        or dict(terminal_cache_compatibility) != current_terminal_cache_compatibility
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Early terminal-cache compatibility receipt differs from the "
+            "current sealed cache records."
+        )
     if not isinstance(layer_stack, Lfm2SemanticLayerStackInstallation):
         raise TypeError("layer_stack must authenticate deferred final-MLP evidence.")
     if not isinstance(parent_final_norm, Lfm2LocalParentFinalRmsNormLoad):
@@ -5860,21 +6655,67 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         cache
     )
     plan.verify_for(cache)
-    seed_parent, _down, layers, _epsilon = _target_runtime_seed(
-        target_model,
-        interface,
-        source_selected_tied_table,
+    terminal_session_context = (
+        cache.selective_authenticated_session()
+        if authenticated_cache_session is None
+        else nullcontext(authenticated_cache_session)
     )
-    before_replay = fingerprint_lfm2_parent(target_model).identity_sha256
-    cached, semantic_bridges, cache_receipt = _collect_cached_semantic_trajectories(
-        cache,
-        bridge,
-        donor_tokenizer,
-        target_tokenizer,
-        parent_final_norm.final_norm,
-        source_selected_tied_table,
-        plan,
+    with terminal_session_context as terminal_cache_session:
+        seed_parent, _down, layers, _epsilon = _target_runtime_seed(
+            target_model,
+            interface,
+            source_selected_tied_table,
+        )
+        before_replay = fingerprint_lfm2_parent(target_model).identity_sha256
+        cached, semantic_bridges, cache_receipt = _collect_cached_semantic_trajectories(
+            cache,
+            bridge,
+            donor_tokenizer,
+            target_tokenizer,
+            parent_final_norm.final_norm,
+            source_selected_tied_table,
+            plan,
+            authenticated_session=terminal_cache_session,
+        )
+        terminal_cache_session.verify()
+    terminal_cache_payload_binding = (
+        _bind_terminal_cache_compatibility_to_payload_session(
+            current_terminal_cache_compatibility,
+            cache_receipt,
+        )
     )
+    terminal_cache_tensor_payload_load_audit = _summarize_terminal_cache_payload_loads(
+        cache_receipt
+    )
+    if (
+        terminal_cache_tensor_payload_load_audit.get(
+            "every_batch_loaded_full_tensor_inventory_once"
+        )
+        is not True
+        or terminal_cache_tensor_payload_load_audit.get(
+            "full_tensor_inventory_payload_load_count"
+        )
+        != cache.batch_count
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic terminal collection did not load each complete sealed tensor "
+            "inventory exactly once."
+        )
+    layer_stack_cache_session_sha256 = layer_receipt.get(
+        "cache_selective_session_sha256"
+    )
+    terminal_cache_session_sha256 = cache_receipt["session"]["session_sha256"]
+    same_layer_stack_terminal_cache_session = (
+        layer_stack_cache_session_sha256 == terminal_cache_session_sha256
+    )
+    if (
+        authenticated_cache_session is not None
+        and not same_layer_stack_terminal_cache_session
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Externally supplied terminal cache session is not the exact "
+            "session authenticated by the layer-stack receipt."
+        )
     if not all(
         value.parent_final_norm_endpoint.get("runtime_replay_to_cached_output_verified")
         is True
@@ -6039,25 +6880,11 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
             published_down_weight,
             metric_chunk_rows=selected_policy.metric_chunk_rows,
         )
-        gates = _metric_gates(
+        heldout_report = _terminal_heldout_diagnostic(
             published_metrics,
             incumbent_metrics,
             selected_policy,
-            require_selection_improvement=False,
         )
-        heldout_report = {
-            "incumbent": incumbent_metrics.as_dict(),
-            "published": published_metrics.as_dict(),
-            "gates": gates,
-            "passed": _all_passed(gates),
-        }
-        if exact_zero_cold_start:
-            heldout_report.update(
-                {
-                    "role": "diagnostic-only-after-frozen-fit-selection",
-                    "publication_gate_applied": False,
-                }
-            )
         fused_heldout_gates[split] = heldout_report
     lane_gates = {}
     for lane_name, banks in (
@@ -6080,47 +6907,12 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
                 published_down_weight,
                 metric_chunk_rows=selected_policy.metric_chunk_rows,
             )
-            gates = _metric_gates(
+            heldout_report = _terminal_heldout_diagnostic(
                 published_metrics,
                 incumbent_metrics,
                 selected_policy,
-                require_selection_improvement=False,
             )
-            heldout_report = {
-                "incumbent": incumbent_metrics.as_dict(),
-                "published": published_metrics.as_dict(),
-                "gates": gates,
-                "passed": _all_passed(gates),
-            }
-            if exact_zero_cold_start:
-                heldout_report.update(
-                    {
-                        "role": "diagnostic-only-after-frozen-fit-selection",
-                        "publication_gate_applied": False,
-                    }
-                )
             lane_gates[lane_name][split] = heldout_report
-    if not exact_zero_cold_start and not (
-        all(value["passed"] for value in fused_heldout_gates.values())
-        and all(
-            value["passed"] for lane in lane_gates.values() for value in lane.values()
-        )
-    ):
-        raise Lfm2SemanticPostfoldBlockedError(
-            "Fused final W2 regressed a held-out evidence lane",
-            _sealed(
-                {
-                    "schema": LFM2_SEMANTIC_POSTFOLD_FAILURE_SCHEMA,
-                    "status": "blocked-no-checkpoint-published",
-                    "stage": "fused_semantic_terminal",
-                    "reason": "separate-heldout-lane-regression",
-                    "fused_heldout_gates": fused_heldout_gates,
-                    "lane_gates": lane_gates,
-                    "operation_audit": dict(_ZERO_OPERATIONS),
-                },
-                "failure_sha256",
-            ),
-        )
     if fingerprint_lfm2_parent(target_model).identity_sha256 != before_replay:
         raise Lfm2SemanticPostfoldError(
             "Fused terminal evidence replay mutated the child before installation."
@@ -6159,6 +6951,47 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     maximum_multiplicity = max(
         value["maximum_donor_span_multiplicity"] for value in observed
     )
+    terminal_cache_io_audit = _sealed(
+        {
+            "metadata_preflight_trace_file_sha256_passes": 0,
+            "metadata_preflight_trace_payload_bytes_read": 0,
+            "fused_terminal_selective_session_constructions": (
+                0 if authenticated_cache_session is not None else 1
+            ),
+            "end_to_end_selective_session_constructions": (
+                1 if same_layer_stack_terminal_cache_session else 2
+            ),
+            "consuming_trace_file_sha256_passes_per_batch": 1,
+            "consuming_trace_file_sha256_passes_total": cache.batch_count,
+            "same_consuming_session_reused_by_semantic_collector": True,
+            "same_consuming_session_reused_from_layer_stack": (
+                same_layer_stack_terminal_cache_session
+            ),
+            "additional_full_trace_file_sha256_passes_performed_by_fused_terminal": 0,
+            "selected_tensor_payload_loads_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "selected_tensor_payload_load_count"
+                ]
+            ),
+            "selected_tensor_payload_logical_bytes_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "selected_tensor_payload_logical_bytes_total"
+                ]
+            ),
+            "full_tensor_inventory_payload_loads_per_batch": 1,
+            "full_tensor_inventory_payload_loads_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "full_tensor_inventory_payload_load_count"
+                ]
+            ),
+            "full_tensor_inventory_payload_logical_bytes_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "full_tensor_inventory_payload_logical_bytes_total"
+                ]
+            ),
+        },
+        "result_sha256",
+    )
     body = {
         "schema": LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA,
         "cache_key": cache.cache_key,
@@ -6171,6 +7004,22 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         ),
         "split_plan": plan.as_dict(),
         "parent_cache_authentication": cache_receipt,
+        "terminal_cache_compatibility": current_terminal_cache_compatibility,
+        "terminal_cache_compatibility_sha256": (
+            current_terminal_cache_compatibility["authentication_sha256"]
+        ),
+        "terminal_cache_payload_binding": terminal_cache_payload_binding,
+        "terminal_cache_tensor_payload_load_audit": (
+            terminal_cache_tensor_payload_load_audit
+        ),
+        "cached_full_prefix_payload_verification": [
+            dict(value.cached_full_prefix_payload) for value in cached
+        ],
+        "cached_full_prefix_payload_verification_sha256": [
+            value.cached_full_prefix_payload["authentication_sha256"]
+            for value in cached
+        ],
+        "terminal_cache_io_audit": terminal_cache_io_audit,
         "parent_final_norm_direct_local_source": parent_final_norm.as_dict(),
         "parent_final_norm_provenance": {
             "direct_local_full_state_identity_reconstructed": True,
@@ -6229,8 +7078,8 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "lexical_teacher": dict(teacher_report),
         "terminal_result": terminal.as_dict(),
         "terminal_publication_decision": dict(publication_decision),
-        "fused_heldout_publication_gates": fused_heldout_gates,
-        "separate_heldout_lane_gates": lane_gates,
+        "fused_heldout_diagnostics": fused_heldout_gates,
+        "separate_heldout_lane_diagnostics": lane_gates,
         "installation": dict(installation),
         "final_mlp_producer_coverage_before_terminal": dict(
             final_mlp_producer_coverage_before_terminal
@@ -6247,7 +7096,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         ],
         "one_frozen_final_w2_publication_decision": True,
         "one_final_w2_install": installation["install_count"] == 1,
-        "joint_terminal_evidence_compiled_and_heldout_adjudicated": True,
+        "joint_terminal_evidence_compiled_and_heldout_diagnosed": True,
         "final_layer_mlp_parent_endpoint_and_lexical_rows_jointly_fitted": (
             publication_decision["terminal_nonincumbent_candidate_accepted"]
         ),
@@ -6262,6 +7111,8 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "terminal_incumbent_retained": publication_decision[
             "terminal_incumbent_retained"
         ],
+        "terminal_heldout_metrics_diagnostic_only": True,
+        "terminal_heldout_publication_gate_applied": False,
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
     if exact_zero_cold_start:
@@ -6270,12 +7121,322 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
                 "terminal_exact_zero_cold_start": True,
                 "terminal_incumbent_noop_publication_forbidden": True,
                 "terminal_fit_only_selection_frozen_before_heldout_diagnostics": (True),
-                "terminal_heldout_metrics_diagnostic_only": True,
-                "terminal_heldout_publication_gate_applied": False,
                 "terminal_dense_structural_plant_installed_transactionally": True,
                 "zero_training_pruning_quantization": True,
             }
         )
+    return MappingProxyType(_sealed(body, "result_sha256"))
+
+
+def _authenticate_fused_terminal_cache_evidence(
+    receipt: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    compatibility_value = receipt.get("terminal_cache_compatibility")
+    binding_value = receipt.get("terminal_cache_payload_binding")
+    raw_values = receipt.get("cached_full_prefix_payload_verification")
+    raw_sha256 = receipt.get("cached_full_prefix_payload_verification_sha256")
+    cache_authentication = receipt.get("parent_cache_authentication")
+    io_value = receipt.get("terminal_cache_io_audit")
+    payload_load_value = receipt.get("terminal_cache_tensor_payload_load_audit")
+    if (
+        not all(
+            isinstance(value, Mapping)
+            for value in (
+                compatibility_value,
+                binding_value,
+                cache_authentication,
+                io_value,
+                payload_load_value,
+            )
+        )
+        or not isinstance(raw_values, list)
+        or not isinstance(raw_sha256, list)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal omitted cache compatibility or raw-logit evidence."
+        )
+    compatibility = _verify_sealed(
+        compatibility_value,
+        seal_name="authentication_sha256",
+        label="fused terminal cache compatibility",
+    )
+    binding = _verify_sealed(
+        binding_value,
+        seal_name="authentication_sha256",
+        label="fused terminal cache payload binding",
+    )
+    io_audit = _verify_sealed(
+        io_value,
+        seal_name="result_sha256",
+        label="fused terminal cache I/O audit",
+    )
+    payload_load_audit = _verify_sealed(
+        payload_load_value,
+        seal_name="authentication_sha256",
+        label="fused terminal tensor-payload load audit",
+    )
+    try:
+        recomputed_payload_load_audit = _summarize_terminal_cache_payload_loads(
+            cache_authentication
+        )
+    except (TypeError, ValueError) as exc:
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal tensor-payload load audit could not be rederived."
+        ) from exc
+    session_value = cache_authentication.get("session")
+    if not isinstance(session_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal cache authentication has no session receipt."
+        )
+    session = _verify_sealed(
+        session_value,
+        seal_name="session_sha256",
+        label="fused terminal selective cache session",
+    )
+    batch_count = compatibility.get("batch_count")
+    batch_compatibility = compatibility.get("batch_compatibility")
+    session_batches = session.get("ordered_authenticated_batches")
+    preflight_io = compatibility.get("preflight_io_contract")
+    cached_mode = compatibility.get("decode_trace_mode") == "cached_verified"
+    same_pipeline_session = io_audit.get(
+        "same_consuming_session_reused_from_layer_stack"
+    )
+    if (
+        compatibility.get("schema")
+        != LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA
+        or compatibility.get("cache_key") != receipt.get("cache_key")
+        or receipt.get("terminal_cache_compatibility_sha256")
+        != compatibility.get("authentication_sha256")
+        or type(batch_count) is not int
+        or batch_count <= 0
+        or not isinstance(batch_compatibility, list)
+        or len(batch_compatibility) != batch_count
+        or len(raw_values) != batch_count
+        or len(raw_sha256) != batch_count
+        or compatibility.get("terminal_trajectory_compatibility_verified") is not True
+        or compatibility.get("forced_decode_tokens_are_caller_supplied") is not True
+        or compatibility.get("top1_exactness_is_diagnostic_only") is not True
+        or compatibility.get("top1_exactness_is_publication_gate") is not False
+        or compatibility.get("all_top1_disagreements_numeric_envelope_verified")
+        is not True
+        or compatibility.get("full_prefix_recache_required") is not False
+        or (
+            cached_mode
+            and compatibility.get("all_cached_logits_numerically_verified") is not True
+        )
+        or not isinstance(preflight_io, Mapping)
+        or preflight_io.get("trace_file_sha256_passes") != 0
+        or preflight_io.get("trace_payload_bytes_read") != 0
+        or preflight_io.get("trace_tensor_payloads_materialized") != 0
+        or not isinstance(session_batches, list)
+        or len(session_batches) != batch_count
+        or session.get("manifest_sha256") != compatibility.get("manifest_sha256")
+        or session.get("completion_sha256") != compatibility.get("completion_sha256")
+        or [value.get("record_sha256") for value in session_batches]
+        != compatibility.get("ordered_batch_record_sha256")
+        or [value.get("record_file_sha256") for value in session_batches]
+        != compatibility.get("ordered_batch_record_file_sha256")
+        or binding.get("compatibility_authentication_sha256")
+        != compatibility.get("authentication_sha256")
+        or binding.get("payload_session_sha256") != session.get("session_sha256")
+        or binding.get("manifest_completion_and_ordered_records_exact") is not True
+        or binding.get(
+            "large_trace_file_sha256_authenticated_once_by_consuming_session"
+        )
+        is not True
+        or io_audit.get("metadata_preflight_trace_file_sha256_passes") != 0
+        or io_audit.get("metadata_preflight_trace_payload_bytes_read") != 0
+        or io_audit.get("consuming_trace_file_sha256_passes_per_batch") != 1
+        or io_audit.get("consuming_trace_file_sha256_passes_total") != batch_count
+        or io_audit.get("same_consuming_session_reused_by_semantic_collector")
+        is not True
+        or type(same_pipeline_session) is not bool
+        or io_audit.get("fused_terminal_selective_session_constructions")
+        != (0 if same_pipeline_session else 1)
+        or io_audit.get("end_to_end_selective_session_constructions")
+        != (1 if same_pipeline_session else 2)
+        or io_audit.get(
+            "additional_full_trace_file_sha256_passes_performed_by_fused_terminal"
+        )
+        != 0
+        or dict(payload_load_audit) != recomputed_payload_load_audit
+        or payload_load_audit.get("selected_tensor_payload_load_count") != batch_count
+        or payload_load_audit.get("full_tensor_inventory_payload_load_count")
+        != batch_count
+        or payload_load_audit.get("every_batch_loaded_full_tensor_inventory_once")
+        is not True
+        or io_audit.get("selected_tensor_payload_loads_total") != batch_count
+        or io_audit.get("selected_tensor_payload_logical_bytes_total")
+        != payload_load_audit.get("selected_tensor_payload_logical_bytes_total")
+        or io_audit.get("full_tensor_inventory_payload_loads_per_batch") != 1
+        or io_audit.get("full_tensor_inventory_payload_loads_total") != batch_count
+        or io_audit.get("full_tensor_inventory_payload_logical_bytes_total")
+        != payload_load_audit.get("full_tensor_inventory_payload_logical_bytes_total")
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal cache compatibility/session binding is invalid."
+        )
+    authenticated_raw = []
+    total_raw_pairs = 0
+    total_raw_rows = 0
+    total_raw_disagreements = 0
+    for index, (raw_value, expected_sha, expected_batch) in enumerate(
+        zip(raw_values, raw_sha256, batch_compatibility, strict=True)
+    ):
+        if not isinstance(raw_value, Mapping) or not isinstance(
+            expected_batch,
+            Mapping,
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Fused terminal raw-logit batch evidence is malformed."
+            )
+        raw = _verify_sealed(
+            raw_value,
+            seal_name="authentication_sha256",
+            label=f"fused terminal raw-logit batch {index}",
+        )
+        raw_pair_count = raw.get("raw_cached_full_prefix_pair_count")
+        raw_row_count = raw.get("raw_logit_rows_verified")
+        raw_disagreement_count = raw.get("top1_disagreement_count")
+        if (
+            raw.get("authentication_sha256") != expected_sha
+            or raw.get("batch_index") != index
+            or expected_batch.get("batch_index") != index
+            or raw.get("decode_trace_mode") != expected_batch.get("decode_trace_mode")
+            or raw_disagreement_count != expected_batch.get("top1_disagreement_count")
+            or type(raw_pair_count) is not int
+            or raw_pair_count < 0
+            or type(raw_row_count) is not int
+            or raw_row_count < 0
+            or type(raw_disagreement_count) is not int
+            or raw_disagreement_count < 0
+            or raw.get("all_logits_numerically_close") is not True
+            or raw.get("all_top1_disagreements_within_numeric_error_envelope")
+            is not True
+            or raw.get("top1_exactness_is_diagnostic_only") is not True
+        ):
+            raise Lfm2SemanticPostfoldError(
+                f"Fused terminal raw-logit batch {index} contradicts its sealed "
+                "metadata preflight."
+            )
+        phase_values = raw.get("phase_verification")
+        phase_sha256 = raw.get("phase_authentication_sha256")
+        if raw.get("decode_trace_mode") == "cached_verified":
+            expected_phase_count = expected_batch.get("verification_phase_count")
+            expected_phase_order = expected_batch.get("verification_phase_order")
+            if (
+                type(expected_phase_count) is not int
+                or expected_phase_count <= 0
+                or not isinstance(expected_phase_order, list)
+                or len(expected_phase_order) != expected_phase_count
+                or not isinstance(phase_values, list)
+                or not isinstance(phase_sha256, list)
+                or len(phase_values) != expected_phase_count
+                or len(phase_sha256) != len(phase_values)
+                or raw_pair_count != len(phase_values)
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    f"Fused terminal raw-logit batch {index} omitted phase "
+                    "verification receipts."
+                )
+            observed_disagreements = 0
+            observed_rows = 0
+            for phase_index, (phase_value, phase_sha) in enumerate(
+                zip(phase_values, phase_sha256, strict=True)
+            ):
+                if not isinstance(phase_value, Mapping):
+                    raise Lfm2SemanticPostfoldError(
+                        "Fused terminal raw-logit phase receipt is malformed."
+                    )
+                phase = _verify_sealed(
+                    phase_value,
+                    seal_name="authentication_sha256",
+                    label=(
+                        f"fused terminal raw-logit batch {index} phase {phase_index}"
+                    ),
+                )
+                forced_sha = phase.get("forced_token_sha256")
+                phase_name = phase.get("phase")
+                phase_rows = phase.get("row_count")
+                phase_disagreements = phase.get("top1_disagreement_count")
+                phase_exact = phase.get("top1_exact_agreement")
+                maximum_error = phase.get("maximum_absolute_error")
+                if (
+                    phase.get("authentication_sha256") != phase_sha
+                    or phase_name != expected_phase_order[phase_index]
+                    or type(phase_rows) is not int
+                    or phase_rows <= 0
+                    or type(phase_disagreements) is not int
+                    or phase_disagreements < 0
+                    or type(phase_exact) is not bool
+                    or phase_exact is not (phase_disagreements == 0)
+                    or isinstance(maximum_error, bool)
+                    or not isinstance(maximum_error, (int, float))
+                    or not math.isfinite(float(maximum_error))
+                    or float(maximum_error) < 0.0
+                    or phase.get("numerically_close") is not True
+                    or phase.get("all_top1_disagreements_within_numeric_error_envelope")
+                    is not True
+                    or (phase_index == 0 and forced_sha is not None)
+                    or (
+                        phase_index > 0
+                        and (not isinstance(forced_sha, str) or len(forced_sha) != 64)
+                    )
+                ):
+                    raise Lfm2SemanticPostfoldError(
+                        "Fused terminal raw-logit phase receipt is inconsistent."
+                    )
+                _digest(
+                    phase.get("cached_logits_sha256"),
+                    "fused terminal cached-logit phase SHA-256",
+                )
+                _digest(
+                    phase.get("full_prefix_logits_sha256"),
+                    "fused terminal full-prefix-logit phase SHA-256",
+                )
+                observed_rows += phase_rows
+                observed_disagreements += phase_disagreements
+            if (
+                observed_rows != raw_row_count
+                or observed_disagreements != raw_disagreement_count
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Fused terminal raw-logit phase row or disagreement counts drifted."
+                )
+        elif (
+            raw_pair_count != 0
+            or raw_row_count != 0
+            or raw_disagreement_count != 0
+            or phase_values is not None
+            or phase_sha256 is not None
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Canonical terminal cache receipt claims cached logit pairs."
+            )
+        total_raw_pairs += raw_pair_count
+        total_raw_rows += raw_row_count
+        total_raw_disagreements += raw_disagreement_count
+        authenticated_raw.append(raw["authentication_sha256"])
+    if total_raw_disagreements != compatibility.get("cached_top1_disagreement_count"):
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal raw-logit disagreements contradict the cache "
+            "compatibility aggregate."
+        )
+    body = {
+        "terminal_cache_compatibility_sha256": compatibility["authentication_sha256"],
+        "terminal_cache_payload_binding_sha256": binding["authentication_sha256"],
+        "terminal_cache_session_sha256": session["session_sha256"],
+        "terminal_cache_io_audit_sha256": io_audit["result_sha256"],
+        "terminal_cache_tensor_payload_load_audit_sha256": payload_load_audit[
+            "authentication_sha256"
+        ],
+        "raw_logit_batch_authentication_sha256": authenticated_raw,
+        "batch_count": batch_count,
+        "raw_cached_full_prefix_pair_count": total_raw_pairs,
+        "raw_logit_rows_verified": total_raw_rows,
+        "top1_disagreement_count": total_raw_disagreements,
+        "every_raw_cached_full_prefix_row_rederived": True,
+    }
     return MappingProxyType(_sealed(body, "result_sha256"))
 
 
@@ -6285,6 +7446,7 @@ def _validate_fused_semantic_terminal_receipt(
     layer_receipt: Mapping[str, Any],
     current_model_state_sha256: str,
 ) -> Mapping[str, Any]:
+    _authenticate_fused_terminal_cache_evidence(receipt)
     installation = receipt.get("installation")
     if not isinstance(installation, Mapping):
         raise Lfm2SemanticPostfoldError(
@@ -6346,8 +7508,37 @@ def _validate_fused_semantic_terminal_receipt(
     installation_exact_zero = installation.get("exact_zero_cold_start") is True
     terminal_result_value = receipt.get("terminal_result")
     terminal_decision = receipt.get("terminal_publication_decision")
-    fused_heldout = receipt.get("fused_heldout_publication_gates")
-    separate_heldout = receipt.get("separate_heldout_lane_gates")
+    fused_heldout = receipt.get("fused_heldout_diagnostics")
+    separate_heldout = receipt.get("separate_heldout_lane_diagnostics")
+    heldout_rows = (
+        list(fused_heldout.values()) if isinstance(fused_heldout, Mapping) else []
+    )
+    if isinstance(separate_heldout, Mapping):
+        heldout_rows.extend(
+            value
+            for lane in separate_heldout.values()
+            if isinstance(lane, Mapping)
+            for value in lane.values()
+        )
+    heldout_diagnostics_invalid = len(heldout_rows) != 8
+    if not heldout_diagnostics_invalid:
+        for index, value in enumerate(heldout_rows):
+            if not isinstance(value, Mapping):
+                heldout_diagnostics_invalid = True
+                break
+            diagnostic = _verify_sealed(
+                value,
+                seal_name="diagnostic_sha256",
+                label=f"terminal heldout diagnostic {index}",
+            )
+            if (
+                diagnostic.get("role")
+                != "diagnostic-only-after-frozen-terminal-publication-decision"
+                or diagnostic.get("publication_gate_applied") is not False
+                or type(diagnostic.get("passed")) is not bool
+            ):
+                heldout_diagnostics_invalid = True
+                break
     cold_receipt_invalid = False
     if installation_exact_zero:
         if isinstance(terminal_result_value, Mapping):
@@ -6360,16 +7551,6 @@ def _validate_fused_semantic_terminal_receipt(
             terminal_result = {}
         terminal_validation = terminal_result.get("validation")
         terminal_operations = terminal_result.get("operation_audit")
-        heldout_rows = (
-            list(fused_heldout.values()) if isinstance(fused_heldout, Mapping) else []
-        )
-        if isinstance(separate_heldout, Mapping):
-            heldout_rows.extend(
-                value
-                for lane in separate_heldout.values()
-                if isinstance(lane, Mapping)
-                for value in lane.values()
-            )
         cold_receipt_invalid = bool(
             receipt.get("terminal_exact_zero_cold_start") is not True
             or receipt.get("terminal_incumbent_noop_publication_forbidden") is not True
@@ -6415,13 +7596,6 @@ def _validate_fused_semantic_terminal_receipt(
             or installation.get("published_w2_all_output_units_covered") is not True
             or installation.get("published_w2_all_input_units_covered") is not True
             or installation.get("transactional_dense_cold_start_plant") is not True
-            or len(heldout_rows) != 8
-            or any(
-                not isinstance(value, Mapping)
-                or value.get("role") != "diagnostic-only-after-frozen-fit-selection"
-                or value.get("publication_gate_applied") is not False
-                for value in heldout_rows
-            )
         )
     else:
         cold_receipt_invalid = bool(
@@ -6441,6 +7615,9 @@ def _validate_fused_semantic_terminal_receipt(
         != layer_receipt.get("result_sha256")
         or receipt.get("accepted") is not True
         or receipt.get("terminal_publication_decision_accepted") is not True
+        or receipt.get("terminal_heldout_metrics_diagnostic_only") is not True
+        or receipt.get("terminal_heldout_publication_gate_applied") is not False
+        or heldout_diagnostics_invalid
         or counts["decision"] != 1
         or counts["install"] + counts["retention"] != 1
         or counts["mutation"] != counts["install"]
@@ -6615,6 +7792,21 @@ def publish_lfm2_semantic_postfold_checkpoint(
             raise Lfm2SemanticPostfoldError(
                 "Staged checkpoint reload differs from the postfold child."
             )
+        staged_metadata = _input_artifact_metadata(
+            staging,
+            expected_artifact_sha256=_read_json(
+                staging / LFM2_CPCF_V5_ARTIFACT_METADATA,
+                "staged artifact metadata",
+            )["artifact_sha256"],
+        )
+        staged_inventory = canonical_standalone_fold_artifact_inventory(staging)
+        staged_file_roles = {
+            value["path"]: value["artifact_role"] for value in staged_inventory
+        }
+        staged_artifact_tree = scan_standalone_fold_artifact_tree(
+            staging,
+            expected_file_roles=staged_file_roles,
+        )
         os.replace(staging, output)
         publication_moved = True
         reloaded = loader(output)
@@ -6624,19 +7816,37 @@ def publish_lfm2_semantic_postfold_checkpoint(
             raise Lfm2SemanticPostfoldError(
                 "Published checkpoint reload differs from the postfold child."
             )
+        metadata = _input_artifact_metadata(
+            output,
+            expected_artifact_sha256=_read_json(
+                output / LFM2_CPCF_V5_ARTIFACT_METADATA,
+                "published artifact metadata",
+            )["artifact_sha256"],
+        )
+        artifact_inventory = canonical_standalone_fold_artifact_inventory(output)
+        artifact_file_roles = {
+            value["path"]: value["artifact_role"] for value in artifact_inventory
+        }
+        artifact_tree = scan_standalone_fold_artifact_tree(
+            output,
+            expected_file_roles=artifact_file_roles,
+        )
+        if (
+            metadata != staged_metadata
+            or artifact_inventory != staged_inventory
+            or artifact_tree != staged_artifact_tree
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Published checkpoint inventory differs from the staged child."
+            )
     except BaseException:
         if staging.exists():
             _safe_remove_staging(staging, output.parent)
         if publication_moved and output.exists():
             _safe_remove_failed_publication(output, output)
         raise
-    metadata = _input_artifact_metadata(
-        output,
-        expected_artifact_sha256=_read_json(
-            output / LFM2_CPCF_V5_ARTIFACT_METADATA,
-            "published artifact metadata",
-        )["artifact_sha256"],
-    )
+    artifact_tree_sha256 = canonical_sha256(artifact_tree)
+    artifact_inventory_sha256 = canonical_sha256(artifact_inventory)
     body = {
         "schema": LFM2_SEMANTIC_POSTFOLD_CHECKPOINT_SCHEMA,
         "output_directory": str(output),
@@ -6653,6 +7863,21 @@ def publish_lfm2_semantic_postfold_checkpoint(
         "parent_model_required_for_reload": False,
         "cache_required_for_reload": False,
         "network_access_performed": False,
+        "artifact_tree": [dict(value) for value in artifact_tree],
+        "artifact_tree_sha256": artifact_tree_sha256,
+        "artifact_file_count": len(artifact_tree),
+        "artifact_total_bytes": sum(
+            int(value["size_bytes"]) for value in artifact_tree
+        ),
+        "complete_artifact_tree_hashed": True,
+        "artifact_inventory_schema": STANDALONE_FOLD_ARTIFACT_INVENTORY_SCHEMA,
+        "artifact_inventory": [dict(value) for value in artifact_inventory],
+        "artifact_inventory_sha256": artifact_inventory_sha256,
+        "canonical_typed_artifact_inventory_authenticated": True,
+        "staged_artifact_tree_purity_verified_before_publication": True,
+        "unallowlisted_artifact_files_present": False,
+        "forbidden_named_or_referenced_sidecars_present": False,
+        "standalone_directory_purity_authenticated": True,
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
     return reloaded, MappingProxyType(_sealed(body, "result_sha256"))
@@ -6711,9 +7936,13 @@ def run_lfm2_semantic_postfold(
             "semantic-foundation ancestry."
         )
     output = _new_output_path(output_checkpoint_directory)
-    cache = open_lfm2_circuit_trace_cache(cache_directory, verify=True)
+    # Record compatibility is authenticated before any child is loaded or
+    # mutated.  Each trace file receives one whole-file SHA pass when the pipeline
+    # selective session opens immediately before the first target mutation.
+    cache = open_lfm2_circuit_trace_cache(cache_directory, verify=False)
     if cache.cache_key != _digest(expected_cache_key, "expected cache key"):
         raise Lfm2SemanticPostfoldError("Complete causal cache identity changed.")
+    terminal_cache_compatibility = preflight_lfm2_long_horizon_terminal_cache(cache)
     bridge = load_strict_tokenizer_bridge_artifact(
         bridge_directory,
         donor_tokenizer=donor_tokenizer,
@@ -6854,52 +8083,118 @@ def run_lfm2_semantic_postfold(
             }
         )
     rehydrated_interface_report = dict(interface.report)
-    interface, tied_residual_interface_gauge = (
-        install_lfm2_tied_residual_congruence_gauge(
-            target_model,
-            interface,
-            source_table,
-            mode=tied_interface_mode,
+    # The single whole-file SHA authentication pass happens before the first
+    # target mutation (the tied residual gauge).  This exact session remains open
+    # while the layer stack reads selected tensors and the terminal collector
+    # later reads every tensor payload in each sealed batch inventory.
+    with cache.selective_authenticated_session() as pipeline_cache_session:
+        interface, tied_residual_interface_gauge = (
+            install_lfm2_tied_residual_congruence_gauge(
+                target_model,
+                interface,
+                source_table,
+                mode=tied_interface_mode,
+            )
         )
-    )
-    layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
-        cache=cache,
-        bridge=bridge,
-        target_model=target_model,
-        interface=interface,
-        compiler_lineage=lineage,
-        parent_model_directory=parent_model_directory,
-        donor_tokenizer=donor_tokenizer,
-        target_tokenizer=target_tokenizer,
-        attention_installer=attention_installer,
-        semantic_layer_stack_compiler=semantic_layer_stack_compiler,
-        fold_compute_device=fold_compute_device,
-    )
-    terminal = fused_terminal_compiler(
-        cache=cache,
-        bridge=bridge,
-        target_model=target_model,
-        layer_stack=layer_stack,
-        interface=interface,
-        source_selected_tied_table=source_table,
-        parent_final_norm=parent_norm,
-        split_plan=split_plan,
-        donor_tokenizer=donor_tokenizer,
-        target_tokenizer=target_tokenizer,
-    )
-    terminal_receipt = _verify_sealed(
-        terminal,
-        seal_name="result_sha256",
-        label="fused semantic terminal",
-    )
-    state_after_terminal = fingerprint_lfm2_parent(target_model).identity_sha256
-    terminal_receipt = dict(
-        _validate_fused_semantic_terminal_receipt(
-            terminal_receipt,
-            layer_receipt=layer_stack.receipt,
-            current_model_state_sha256=state_after_terminal,
+        layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
+            cache=cache,
+            bridge=bridge,
+            target_model=target_model,
+            interface=interface,
+            compiler_lineage=lineage,
+            parent_model_directory=parent_model_directory,
+            donor_tokenizer=donor_tokenizer,
+            target_tokenizer=target_tokenizer,
+            attention_installer=attention_installer,
+            semantic_layer_stack_compiler=semantic_layer_stack_compiler,
+            fold_compute_device=fold_compute_device,
+            authenticated_cache_session=pipeline_cache_session,
         )
-    )
+        attention_receipt_authentication = (
+            authenticate_lfm2_semantic_layer_stack_attention_receipts(
+                layer_stack.receipt
+            )
+        )
+        terminal = fused_terminal_compiler(
+            cache=cache,
+            bridge=bridge,
+            target_model=target_model,
+            layer_stack=layer_stack,
+            interface=interface,
+            source_selected_tied_table=source_table,
+            parent_final_norm=parent_norm,
+            split_plan=split_plan,
+            donor_tokenizer=donor_tokenizer,
+            target_tokenizer=target_tokenizer,
+            terminal_cache_compatibility=terminal_cache_compatibility,
+            authenticated_cache_session=pipeline_cache_session,
+        )
+        terminal_receipt = _verify_sealed(
+            terminal,
+            seal_name="result_sha256",
+            label="fused semantic terminal",
+        )
+        state_after_terminal = fingerprint_lfm2_parent(target_model).identity_sha256
+        terminal_receipt = dict(
+            _validate_fused_semantic_terminal_receipt(
+                terminal_receipt,
+                layer_receipt=layer_stack.receipt,
+                current_model_state_sha256=state_after_terminal,
+            )
+        )
+        pipeline_cache_session.verify()
+        pipeline_cache_session_receipt = pipeline_cache_session.as_dict()
+        terminal_payload_binding = terminal_receipt.get(
+            "terminal_cache_payload_binding"
+        )
+        if (
+            layer_stack.receipt.get("cache_selective_session_sha256")
+            != pipeline_cache_session_receipt["session_sha256"]
+            or not isinstance(terminal_payload_binding, Mapping)
+            or terminal_payload_binding.get("payload_session_sha256")
+            != pipeline_cache_session_receipt["session_sha256"]
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Layer stack and fused terminal did not reuse the same "
+                "authenticated pipeline cache session."
+            )
+        terminal_tensor_payload_audit = terminal_receipt.get(
+            "terminal_cache_tensor_payload_load_audit"
+        )
+        if not isinstance(terminal_tensor_payload_audit, Mapping):
+            terminal_tensor_payload_audit = {}
+        pipeline_cache_session_reuse = _sealed(
+            {
+                "pipeline_cache_session_sha256": (
+                    pipeline_cache_session_receipt["session_sha256"]
+                ),
+                "layer_stack_cache_session_sha256": layer_stack.receipt[
+                    "cache_selective_session_sha256"
+                ],
+                "terminal_payload_session_sha256": terminal_payload_binding[
+                    "payload_session_sha256"
+                ],
+                "same_pipeline_session_reused_by_layer_stack_and_terminal": True,
+                "cache_open_verify_payload_scan_performed": False,
+                "metadata_preflight_preceded_pipeline_session": True,
+                "pipeline_session_opened_before_first_target_mutation": True,
+                "trace_file_sha256_passes_per_batch": 1,
+                "additional_full_trace_file_sha256_passes_in_pipeline": 0,
+                "terminal_full_tensor_inventory_payload_loads_total": (
+                    terminal_tensor_payload_audit.get(
+                        "full_tensor_inventory_payload_load_count",
+                        0,
+                    )
+                ),
+                "terminal_full_tensor_inventory_payload_logical_bytes_total": (
+                    terminal_tensor_payload_audit.get(
+                        "full_tensor_inventory_payload_logical_bytes_total",
+                        0,
+                    )
+                ),
+            },
+            "result_sha256",
+        )
     context_body = {
         "schema": "neural-forge-lfm2-semantic-postfold-context-v1",
         "input_artifact_sha256": input_metadata["artifact_sha256"],
@@ -6910,6 +8205,12 @@ def run_lfm2_semantic_postfold(
         ),
         "compiler_cache_key": interface_rehydration["compiler_cache_key"],
         "semantic_evidence_cache_key": cache.cache_key,
+        "terminal_cache_compatibility_sha256": terminal_cache_compatibility[
+            "authentication_sha256"
+        ],
+        "pipeline_cache_session_reuse_sha256": pipeline_cache_session_reuse[
+            "result_sha256"
+        ],
         "fold_compute_device": fold_compute_device,
         "common_parent_fingerprint": cache.parent_fingerprint,
         "compiler_and_semantic_cache_identities_bound_separately": True,
@@ -6930,6 +8231,9 @@ def run_lfm2_semantic_postfold(
             "expected compiler diagnostic SHA-256",
         ),
         "semantic_layer_stack_stage_sha256": layer_stack.receipt["result_sha256"],
+        "attention_receipt_authentication_sha256": (
+            attention_receipt_authentication["result_sha256"]
+        ),
         "fused_semantic_terminal_refold_sha256": terminal_receipt["result_sha256"],
         "complete_nonzero_structural_producer_coverage": layer_stack.receipt[
             "complete_nonzero_structural_producer_coverage"
@@ -6966,6 +8270,8 @@ def run_lfm2_semantic_postfold(
         "compiler_ancestry_schema": context_body["compiler_ancestry_schema"],
         "compiler_cache_key": interface_rehydration["compiler_cache_key"],
         "semantic_evidence_cache_key": cache.cache_key,
+        "terminal_cache_compatibility": dict(terminal_cache_compatibility),
+        "pipeline_cache_session_reuse": dict(pipeline_cache_session_reuse),
         "cache_parent_fingerprint": cache.parent_fingerprint,
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "mapped_parent_tied_table": dict(source_table_report),
@@ -6984,6 +8290,7 @@ def run_lfm2_semantic_postfold(
             str(index): dict(value.report) for index, value in lineage.items()
         },
         "semantic_layer_stack": dict(layer_stack.receipt),
+        "attention_receipt_authentication": dict(attention_receipt_authentication),
         "fused_semantic_terminal": terminal_receipt,
         "terminal_publication_decision_accepted": True,
         "terminal_nonincumbent_candidate_accepted": terminal_receipt[
@@ -7020,6 +8327,13 @@ def run_lfm2_semantic_postfold(
             "attention_correction_installed": (
                 layer_stack.receipt["attention_operator_install_count"] > 0
             ),
+            "attention_full_receipt_persistence_authenticated": True,
+            "attention_full_receipt_count": attention_receipt_authentication[
+                "attention_receipt_count"
+            ],
+            "attention_complete_six_tensor_bundle_count": (
+                attention_receipt_authentication["complete_six_tensor_bundle_count"]
+            ),
             "short_conv_operator_decision_count": layer_stack.receipt[
                 "short_conv_operator_decision_count"
             ],
@@ -7053,7 +8367,7 @@ def run_lfm2_semantic_postfold(
             "fused_parent_endpoint_and_lexical_w2_installed_once": (
                 terminal_receipt["terminal_writer_install_count"] == 1
             ),
-            "terminal_w2_heldout_adjudicated": True,
+            "terminal_w2_heldout_diagnosed_without_publication_gate": True,
             "overall_postfold_contains_meaningful_parameter_changes": True,
             "standalone_child": True,
             "parameter_count_compaction_changed_by_postfold": False,
@@ -7066,6 +8380,7 @@ def run_lfm2_semantic_postfold(
 
 
 __all__ = [
+    "authenticate_lfm2_semantic_layer_stack_attention_receipts",
     "LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_STAGE_SCHEMA",
     "LFM2_SEMANTIC_COMPILER_LINEAGE_SCHEMA",

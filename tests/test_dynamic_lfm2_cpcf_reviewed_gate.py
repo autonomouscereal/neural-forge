@@ -100,7 +100,7 @@ from neural_forge.hf_lfm2_cpcf_v5_model_compiler import (
 )
 from neural_forge.hf_lfm2_parent_relative_manual_gate import (
     bind_parent_relative_manual_ratings,
-    build_parent_relative_manual_packet,
+    build_all_case_parent_relative_manual_packet,
     evaluate_parent_relative_manual_retention,
 )
 from neural_forge.hf_tokenizer_bridge import fingerprint_hf_tokenizer_semantics
@@ -108,6 +108,60 @@ from neural_forge.hf_tokenizer_bridge import fingerprint_hf_tokenizer_semantics
 
 def _word_count(value: str) -> int:
     return len(value.replace(",", " ").replace(".", " ").split())
+
+
+def _qualitative_review_rows(
+    packet: dict[str, Any],
+    *,
+    narrative: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "case_id": value["case_id"],
+            "verdict": "different_but_equivalent",
+            "failure_modes": [],
+            "reason": (
+                f"Case {index} received a direct whole-response comparison; {narrative}"
+            ),
+            "full_parent_and_candidate_responses_reviewed": True,
+            "criterion_observations": {
+                "correctness": (
+                    f"Case {index} correctness was checked against the specific "
+                    "prompt and factual task requirements."
+                ),
+                "coherence": (
+                    f"Case {index} coherence was checked across the complete "
+                    "candidate continuation and its reasoning."
+                ),
+                "usefulness": (
+                    f"Case {index} usefulness was checked for a practical answer "
+                    "rather than superficial topical overlap."
+                ),
+                "instruction_following": (
+                    f"Case {index} instruction following was checked against every "
+                    "explicit request in the prompt."
+                ),
+                "retained_capability_and_intelligence": (
+                    f"Case {index} retained capability was compared through the "
+                    "reasoning demonstrated by parent and child."
+                ),
+            },
+            "truncation_consideration": {
+                "parent_unfinished_at_generation_limit": value["parent_completion"][
+                    "unfinished_at_generation_limit"
+                ],
+                "candidate_unfinished_at_generation_limit": value[
+                    "candidate_completion"
+                ]["unfinished_at_generation_limit"],
+                "assessment": "none",
+                "observation": (
+                    f"Case {index} completion flags were explicitly considered "
+                    "before reaching the semantic judgment."
+                ),
+            },
+        }
+        for index, value in enumerate(packet["cases"])
+    ]
 
 
 _CODE_BODIES = {
@@ -1409,7 +1463,45 @@ def _fixture(
         loaded_candidate.candidates,
         policy,
     )
-    parent_packet = build_parent_relative_manual_packet(manual)
+    baseline_by_id = {value.case_id: value for value in baseline.cases}
+    candidate_by_id = {value.case_id: value for value in loaded_candidate.candidates}
+    parent_packet = build_all_case_parent_relative_manual_packet(
+        manual,
+        [
+            {
+                "case_id": spec.case_id,
+                "prompt": spec.prompt,
+                "parent_response": baseline_by_id[spec.case_id].parent_output,
+                "candidate_response": candidate_by_id[spec.case_id].output,
+                "generation_limit": spec.generation_limit,
+                "parent_completion": {
+                    "generated_token_count": baseline_by_id[
+                        spec.case_id
+                    ].generation.generated_token_count,
+                    "eos_observed": baseline_by_id[
+                        spec.case_id
+                    ].generation.eos_observed,
+                    "unfinished_at_generation_limit": baseline_by_id[
+                        spec.case_id
+                    ].generation.unfinished_at_generation_limit,
+                },
+                "candidate_completion": {
+                    "generated_token_count": candidate_by_id[
+                        spec.case_id
+                    ].generation.generated_token_count,
+                    "eos_observed": candidate_by_id[
+                        spec.case_id
+                    ].generation.eos_observed,
+                    "unfinished_at_generation_limit": candidate_by_id[
+                        spec.case_id
+                    ].generation.unfinished_at_generation_limit,
+                },
+            }
+            for spec in manifest.cases
+        ],
+        manifest_sha256=manifest.manifest_sha256,
+        manifest_document_sha256=manifest.document_sha256,
+    )
     ratings = bind_parent_relative_manual_ratings(
         parent_packet,
         [
@@ -1432,6 +1524,20 @@ def _fixture(
             for value in parent_packet["cases"]
         ],
         reviewer_id="reviewer-1",
+        qualitative_case_reviews=_qualitative_review_rows(
+            parent_packet,
+            narrative=(
+                "the child is coherent, useful, and semantically equivalent for "
+                "this specific case."
+            ),
+        ),
+        holistic_suite_conclusion={
+            "conclusion": "credible_intelligent_compaction",
+            "reason": "The complete suite remains coherent and useful.",
+            "strengths": ["coherence", "instruction following"],
+            "limitations": [],
+            "material_regression_case_ids": [],
+        },
     )
     parent_report = evaluate_parent_relative_manual_retention(
         parent_packet,
@@ -1519,6 +1625,19 @@ def _fixture(
             "severe_regression_count"
         ],
         "parent_relative_manual_metrics_are_diagnostic_only": True,
+        "qualitative_manual_review_complete": True,
+        "qualitative_manual_review_case_count": 64,
+        "qualitative_case_reviews_sha256": canonical_sha256(
+            parent_report["holistic_review"]["qualitative_case_reviews"]
+        ),
+        "holistic_suite_conclusion": parent_report["holistic_review"][
+            "suite_conclusion"
+        ],
+        "holistic_suite_conclusion_sha256": canonical_sha256(
+            parent_report["holistic_review"]["suite_conclusion"]
+        ),
+        "qualitative_judgment_is_authoritative": True,
+        "numeric_scores_and_thresholds_are_diagnostic_only": True,
         "candidate_tokenizer_fingerprint": tokenizer_package,
         "target_tokenizer_semantics_sha256": tokenizer_semantics,
         "eos_token_ids": eos,
@@ -2557,6 +2676,85 @@ def test_pending_or_rejected_composite_report_rejects(
         load_lfm2_cpcf_reviewed_promotion_evidence(artifacts)
 
 
+def test_automatic_metric_failures_do_not_block_qualitative_review_readiness(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    automatic = copy.deepcopy(fixture["documents"]["automatic"])
+    automatic["components"][0]["passed"] = False
+    automatic["promoted"] = False
+    automatic["reasons"] = [
+        "task_correctness:threshold_failed",
+        "manual_review:pending",
+        "headline_lower_bound:withheld_until_all_components",
+    ]
+    assert reviewed_gate_module._automatic_gate_ready(automatic) is True
+    assert (
+        fixture["documents"]["composite"]["reviewed_evidence"][
+            "holistic_suite_conclusion"
+        ]["conclusion"]
+        == "credible_intelligent_compaction"
+    )
+
+
+def test_passing_metrics_cannot_override_noncredible_suite_conclusion(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    reviewed = copy.deepcopy(fixture["documents"]["composite"]["reviewed_evidence"])
+    reviewed["holistic_suite_conclusion"] = {
+        "conclusion": "not_yet_coherent_or_intelligent",
+        "reason": "The reviewer found material whole-response collapse.",
+        "strengths": [],
+        "limitations": ["incoherent continuations"],
+        "material_regression_case_ids": [
+            reviewed_gate_module.load_lfm2_intelligence_holdout_manifest()
+            .cases[0]
+            .case_id
+        ],
+    }
+    reviewed["holistic_suite_conclusion_sha256"] = canonical_sha256(
+        reviewed["holistic_suite_conclusion"]
+    )
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="not eligible for composite promotion",
+    ):
+        build_cpcf_reviewed_promotion_report(
+            reviewed_evidence=reviewed,
+            inference_execution_contract=(
+                BehaviorInferenceExecutionContract.top_level_forward()
+            ),
+        )
+
+
+def test_same_version_prequalitative_composite_evidence_is_rejected(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    reviewed = copy.deepcopy(fixture["documents"]["composite"]["reviewed_evidence"])
+    for field in (
+        "qualitative_manual_review_complete",
+        "qualitative_manual_review_case_count",
+        "qualitative_case_reviews_sha256",
+        "holistic_suite_conclusion",
+        "holistic_suite_conclusion_sha256",
+        "qualitative_judgment_is_authoritative",
+        "numeric_scores_and_thresholds_are_diagnostic_only",
+    ):
+        reviewed.pop(field)
+    with pytest.raises(
+        Lfm2CpcfReviewedPromotionError,
+        match="not eligible for composite promotion",
+    ):
+        build_cpcf_reviewed_promotion_report(
+            reviewed_evidence=reviewed,
+            inference_execution_contract=(
+                BehaviorInferenceExecutionContract.top_level_forward()
+            ),
+        )
+
+
 def test_low_parent_relative_metrics_remain_authenticated_diagnostics(
     tmp_path: Path,
 ) -> None:
@@ -2584,6 +2782,20 @@ def test_low_parent_relative_metrics_remain_authenticated_diagnostics(
             for value in packet["cases"]
         ],
         reviewer_id="reviewer-2",
+        qualitative_case_reviews=_qualitative_review_rows(
+            packet,
+            narrative=(
+                "the authoritative review finds a coherent and useful semantic "
+                "answer despite deliberately low diagnostics."
+            ),
+        ),
+        holistic_suite_conclusion={
+            "conclusion": "credible_intelligent_compaction",
+            "reason": "Qualitative whole-response review remains favorable.",
+            "strengths": ["coherence"],
+            "limitations": ["scalar diagnostics disagree"],
+            "material_regression_case_ids": [],
+        },
     )
     diagnostics = evaluate_parent_relative_manual_retention(packet, ratings)
     evidence_manifest = copy.deepcopy(
@@ -2606,6 +2818,19 @@ def test_low_parent_relative_metrics_remain_authenticated_diagnostics(
                 "severe_regression_count"
             ],
             "parent_relative_manual_metrics_are_diagnostic_only": True,
+            "qualitative_manual_review_complete": True,
+            "qualitative_manual_review_case_count": 64,
+            "qualitative_case_reviews_sha256": canonical_sha256(
+                diagnostics["holistic_review"]["qualitative_case_reviews"]
+            ),
+            "holistic_suite_conclusion": diagnostics["holistic_review"][
+                "suite_conclusion"
+            ],
+            "holistic_suite_conclusion_sha256": canonical_sha256(
+                diagnostics["holistic_review"]["suite_conclusion"]
+            ),
+            "qualitative_judgment_is_authoritative": True,
+            "numeric_scores_and_thresholds_are_diagnostic_only": True,
         }
     )
     composite = build_cpcf_reviewed_promotion_report(
@@ -2633,10 +2858,10 @@ def test_low_parent_relative_metrics_remain_authenticated_diagnostics(
     loaded = load_lfm2_cpcf_reviewed_promotion_evidence(artifacts)
     reviewed = loaded.reviewed_evidence
     assert diagnostics["diagnostic_retention_reference_met"] is False
-    assert diagnostics["severe_regression_count"] == 24
+    assert diagnostics["severe_regression_count"] == 256
     assert reviewed["parent_relative_manual_retention_diagnostic"] == 0.0
     assert reviewed["parent_relative_manual_diagnostic_reference_met"] is False
-    assert reviewed["parent_relative_manual_severe_regression_count"] == 24
+    assert reviewed["parent_relative_manual_severe_regression_count"] == 256
     assert reviewed["parent_relative_manual_metrics_are_diagnostic_only"] is True
 
 

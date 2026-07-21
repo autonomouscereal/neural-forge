@@ -13,6 +13,7 @@ transformers = pytest.importorskip("transformers")
 from safetensors.torch import save_file  # noqa: E402
 
 import neural_forge.hf_lfm2_long_horizon_terminal_refold as refold  # noqa: E402
+import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     Lfm2CircuitTraceCaptureConfig,
     build_lfm2_circuit_trace_cache,
@@ -435,6 +436,60 @@ def _accepted_terminal(seed, policy) -> Lfm2CpcfTerminalActionResidualResult:
     )
 
 
+def _near_tie_cached_payload() -> tuple[dict[str, Any], dict[str, Any]]:
+    cached = torch.tensor([[[13.3750, 13.3750, 9.0]]])
+    full = torch.tensor([[[13.2500, 13.3125, 9.0]]])
+    forced = torch.tensor([[2]], dtype=torch.long)
+    config = Lfm2CircuitTraceCaptureConfig(
+        logit_rtol=0.0,
+        logit_atol=0.25,
+        require_top1_agreement=True,
+        allow_top1_disagreement_within_numeric_error_envelope=True,
+    )
+    prefill = {
+        "phase": "cached_prefill",
+        "prefix_length": 3,
+        **trace_cache._compare_logits(
+            torch,
+            cached,
+            full,
+            config=config,
+            name="cached prefill",
+        ),
+    }
+    decode = {
+        "phase": "decode.000",
+        "prefix_length": 4,
+        "forced_token_sha256": trace_cache._tensor_sha256(torch, forced),
+        **trace_cache._compare_logits(
+            torch,
+            cached,
+            full,
+            config=config,
+            name="decode.000",
+        ),
+    }
+    tensors = {
+        "cached_prefill.logits": cached,
+        "prefill.logits": full,
+        "decode.000.logits": cached.clone(),
+        "decode.000.full_prefix_logits": full.clone(),
+        "decode.000.forced_token_ids": forced,
+    }
+    capture = {
+        "decode_steps": 1,
+        "cached_full_prefix_verifications": [prefill, decode],
+        "all_cached_logits_verified": True,
+        "all_cached_top1_verified": False,
+        "all_cached_top1_decisions_verified": True,
+        "decode_trace_mode": trace_cache.CACHED_VERIFIED_TRACE_MODE,
+        "canonical_trace_source": "verified_one_token_cache",
+        "cached_logits_accepted": True,
+        "cached_forward_count": 2,
+    }
+    return tensors, capture
+
+
 def test_replays_each_complete_trajectory_once_and_installs_only_accepted_w2(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -506,6 +561,206 @@ def test_replays_each_complete_trajectory_once_and_installs_only_accepted_w2(
         value["macrocell_replay_calls"] == 2
         for value in report["trajectory_replay_receipts"]
     )
+    compatibility = report["terminal_cache_compatibility"]
+    assert compatibility["terminal_trajectory_compatibility_verified"] is True
+    assert compatibility["top1_exactness_is_publication_gate"] is False
+    assert compatibility["full_prefix_recache_required"] is False
+    assert compatibility["preflight_io_contract"]["trace_file_sha256_passes"] == 0
+    assert compatibility["preflight_io_contract"]["trace_payload_bytes_read"] == 0
+    assert audit["consuming_selective_session_constructions"] == 1
+    assert audit["consuming_trace_file_sha256_passes_per_batch"] == 1
+    assert (
+        audit[
+            "additional_full_trace_file_sha256_passes_performed_by_this_terminal_compiler"
+        ]
+        == 0
+    )
+    payload_audit = report["terminal_cache_tensor_payload_load_audit"]
+    assert payload_audit["trace_file_sha256_passes_accounted_here"] == 0
+    assert payload_audit["selected_tensor_payload_load_count"] == 4
+    assert audit["selected_tensor_payload_loads_total"] == 4
+    assert (
+        audit["selected_tensor_payload_logical_bytes_total"]
+        == payload_audit["selected_tensor_payload_logical_bytes_total"]
+    )
+    assert all(
+        value["all_logits_numerically_close"] is True
+        and value["all_top1_disagreements_within_numeric_error_envelope"] is True
+        for value in report["cached_full_prefix_payload_verification"]
+    )
+
+
+def test_metadata_preflight_reads_only_records_and_seals_zero_trace_io(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _fixture(tmp_path)
+    observed = []
+    original = refold._cache_file_sha256
+
+    def record_hash_only(path):
+        observed.append(Path(path).name)
+        assert Path(path).name == trace_cache.BATCH_RECORD_FILENAME
+        return original(path)
+
+    monkeypatch.setattr(refold, "_cache_file_sha256", record_hash_only)
+    receipt = refold.preflight_lfm2_long_horizon_terminal_cache(values["cache"])
+
+    assert observed == [trace_cache.BATCH_RECORD_FILENAME] * 4
+    io = receipt["preflight_io_contract"]
+    assert io["record_file_sha256_passes_total"] == 4
+    assert io["trace_file_sha256_passes"] == 0
+    assert io["trace_payload_bytes_read"] == 0
+    body = dict(receipt)
+    supplied = body.pop("authentication_sha256")
+    assert supplied == refold._canonical_sha256(body)
+
+
+def test_forced_cached_near_ties_are_raw_rederived_not_exact_top1_gated() -> None:
+    tensors, capture = _near_tie_cached_payload()
+
+    metadata = refold._terminal_cache_capture_compatibility(
+        capture,
+        batch_index=0,
+    )
+    raw = refold._verify_cached_full_prefix_payload_equivalence(
+        tensors,
+        capture,
+        batch_index=0,
+        logit_rtol=0.0,
+        logit_atol=0.25,
+    )
+
+    assert metadata["cached_top1_exact_for_all_phases"] is False
+    assert metadata["top1_exactness_is_diagnostic_only"] is True
+    assert metadata["top1_disagreement_count"] == 2
+    assert raw["top1_disagreement_count"] == 2
+    assert raw["all_logits_numerically_close"] is True
+    assert raw["all_top1_disagreements_within_numeric_error_envelope"] is True
+    assert all(
+        value["forced_token_sha256"] is not None
+        for value in raw["phase_verification"][1:]
+    )
+
+
+def test_cached_trace_fails_closed_on_material_or_incomplete_verification() -> None:
+    tensors, capture = _near_tie_cached_payload()
+    material = json.loads(json.dumps(capture))
+    material["cached_full_prefix_verifications"][0][
+        "top1_disagreement_within_numeric_error_envelope"
+    ] = False
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="not authenticated as a numeric-envelope near tie",
+    ):
+        refold._terminal_cache_capture_compatibility(material, batch_index=0)
+
+    incomplete = json.loads(json.dumps(capture))
+    incomplete["cached_full_prefix_verifications"].pop()
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="coverage is incomplete",
+    ):
+        refold._terminal_cache_capture_compatibility(incomplete, batch_index=0)
+
+    wrong_raw = dict(tensors)
+    wrong_raw["decode.000.full_prefix_logits"] = torch.tensor([[[20.0, -5.0, 9.0]]])
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="do not reproduce the sealed numeric verification",
+    ):
+        refold._verify_cached_full_prefix_payload_equivalence(
+            wrong_raw,
+            capture,
+            batch_index=0,
+            logit_rtol=0.0,
+            logit_atol=0.25,
+        )
+
+    wrong_forced = json.loads(json.dumps(capture))
+    wrong_forced["cached_full_prefix_verifications"][1]["forced_token_sha256"] = (
+        "0" * 64
+    )
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="sealed forced token digest differs",
+    ):
+        refold._verify_cached_full_prefix_payload_equivalence(
+            tensors,
+            wrong_forced,
+            batch_index=0,
+            logit_rtol=0.0,
+            logit_atol=0.25,
+        )
+
+
+def test_record_inventory_missing_raw_counterpart_fails_early(tmp_path: Path) -> None:
+    values = _fixture(tmp_path)
+    batch = values["cache"].load_batch(0)
+    record = batch.record
+    inventory = dict(record["tensors"])
+    inventory.pop("decode.000.full_prefix_logits")
+    compatibility = refold._terminal_cache_capture_compatibility(
+        record["capture"],
+        batch_index=0,
+    )
+
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="omits required terminal evidence",
+    ):
+        refold._terminal_cache_record_inventory_compatibility(
+            inventory,
+            compatibility,
+            batch_index=0,
+            final_layer_index=1,
+        )
+
+
+def test_metadata_preflight_failure_precedes_target_seed_replay_and_solve(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _fixture(tmp_path)
+    events = []
+
+    def fail_preflight(_cache):
+        events.append("metadata_preflight")
+        raise refold.Lfm2LongHorizonTerminalRefoldError("synthetic incompatibility")
+
+    def forbidden(name):
+        def call(*_args, **_kwargs):
+            events.append(name)
+            raise AssertionError(f"{name} ran after incompatible preflight")
+
+        return call
+
+    monkeypatch.setattr(
+        refold,
+        "preflight_lfm2_long_horizon_terminal_cache",
+        fail_preflight,
+    )
+    monkeypatch.setattr(refold, "_target_runtime_seed", forbidden("target_seed"))
+    monkeypatch.setattr(refold, "_build_split_evidence", forbidden("child_replay"))
+    monkeypatch.setattr(
+        refold,
+        "compile_lfm2_cpcf_terminal_action_residual",
+        forbidden("closed_form_solve"),
+    )
+
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="synthetic incompatibility",
+    ):
+        refold.compile_install_lfm2_long_horizon_terminal_refold(
+            cache=values["cache"],
+            bridge=values["bridge"],
+            target_model=values["child"],
+            interface=values["interface"],
+            source_selected_tied_table=values["source_table"],
+            parent_final_norm=values["parent_final_norm"],
+        )
+    assert events == ["metadata_preflight"]
 
 
 def test_real_closed_form_selection_never_mutates_w2_when_rejected(
@@ -595,6 +850,21 @@ def test_semantic_span_replays_expansion_contraction_and_suffix_rewrite(
     assert report["operation_audit"]["child_macrocell_replay_calls"] == 16
     assert len(report["parent_action_projection_sha256"]) == 4
     assert report["operation_audit"]["training_steps"] == 0
+    payload_audit = report["terminal_cache_tensor_payload_load_audit"]
+    session_batches = report["cache_authentication"]["session"][
+        "ordered_authenticated_batches"
+    ]
+    expected_bytes = sum(value["logical_bytes"] for value in session_batches)
+    assert payload_audit["selected_tensor_payload_load_count"] == 4
+    assert payload_audit["full_tensor_inventory_payload_load_count"] == 4
+    assert payload_audit["every_batch_loaded_full_tensor_inventory_once"] is True
+    assert payload_audit["full_tensor_inventory_payload_logical_bytes_total"] == (
+        expected_bytes
+    )
+    assert (
+        report["operation_audit"]["full_tensor_inventory_payload_logical_bytes_total"]
+        == expected_bytes
+    )
 
 
 def test_semantic_span_populates_real_32_plus_horizon_bucket(

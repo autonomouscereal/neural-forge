@@ -113,9 +113,10 @@ from .hf_lfm2_cpcf_v5_model_compiler import (
     lfm2_cpcf_v5_compiler_implementation,
 )
 from .hf_lfm2_parent_relative_manual_gate import (
+    PROMOTION_ELIGIBLE_SUITE_CONCLUSION,
     REPORT_SCHEMA as PARENT_RELATIVE_REPORT_SCHEMA,
     RATINGS_SCHEMA as PARENT_RELATIVE_RATINGS_SCHEMA,
-    build_parent_relative_manual_packet,
+    build_all_case_parent_relative_manual_packet,
     evaluate_parent_relative_manual_retention,
 )
 from .hf_tokenizer_bridge import (
@@ -3198,6 +3199,8 @@ def _automatic_report_document(
 
 
 def _automatic_gate_ready(report: Mapping[str, Any]) -> bool:
+    """Authenticate review readiness without turning diagnostics into a gate."""
+
     components = report.get("components")
     manual = report.get("manual_review")
     reasons = report.get("reasons")
@@ -3205,19 +3208,18 @@ def _automatic_gate_ready(report: Mapping[str, Any]) -> bool:
         not isinstance(components, list)
         or not components
         or any(
-            not isinstance(value, Mapping) or value.get("passed") is not True
+            not isinstance(value, Mapping)
+            or not isinstance(value.get("name"), str)
+            or not isinstance(value.get("passed"), bool)
             for value in components
         )
+        or len({str(value["name"]) for value in components}) != len(components)
         or not isinstance(manual, Mapping)
         or not isinstance(reasons, list)
+        or report.get("promoted") is not False
     ):
         return False
-    if report.get("promoted") is True:
-        return manual.get("status") == "accepted" and not reasons
-    return manual.get("status") == "pending" and set(reasons) == {
-        "manual_review:pending",
-        "headline_lower_bound:withheld_until_all_components",
-    }
+    return manual.get("status") == "pending"
 
 
 def _parent_relative_ratings_sha256(
@@ -3268,9 +3270,27 @@ def build_cpcf_reviewed_promotion_report(
         raise Lfm2CpcfReviewedPromotionError(
             "LFM2 CPCF promotion requires observed top-level model forward execution."
         )
+    holistic_suite_conclusion = evidence.get("holistic_suite_conclusion")
+    qualitative_case_reviews_sha256 = evidence.get("qualitative_case_reviews_sha256")
     if (
         evidence.get("automatic_gate_ready_for_manual_completion") is not True
         or evidence.get("parent_relative_manual_diagnostics_complete") is not True
+        or evidence.get("parent_relative_manual_metrics_are_diagnostic_only")
+        is not True
+        or evidence.get("qualitative_manual_review_complete") is not True
+        or evidence.get("qualitative_manual_review_case_count") != HOLDOUT_CASE_COUNT
+        or not isinstance(qualitative_case_reviews_sha256, str)
+        or len(qualitative_case_reviews_sha256) != 64
+        or any(
+            value not in "0123456789abcdef" for value in qualitative_case_reviews_sha256
+        )
+        or evidence.get("qualitative_judgment_is_authoritative") is not True
+        or evidence.get("numeric_scores_and_thresholds_are_diagnostic_only") is not True
+        or not isinstance(holistic_suite_conclusion, Mapping)
+        or holistic_suite_conclusion.get("conclusion")
+        != PROMOTION_ELIGIBLE_SUITE_CONCLUSION
+        or evidence.get("holistic_suite_conclusion_sha256")
+        != canonical_sha256(holistic_suite_conclusion)
         or evidence.get("case_count") != HOLDOUT_CASE_COUNT
         or evidence.get("training_used") is not False
         or evidence.get("pruning_used") is not False
@@ -3294,6 +3314,11 @@ def build_cpcf_reviewed_promotion_report(
             "in_memory_and_fresh_reload_required": True,
             "sealed_reviewed_output_digest_required": True,
             "parent_relative_semantic_review_required": True,
+            "qualitative_suite_conclusion_required": (
+                PROMOTION_ELIGIBLE_SUITE_CONCLUSION
+            ),
+            "qualitative_judgment_is_authoritative": True,
+            "numeric_metrics_are_diagnostic_only": True,
             "exact_parent_wording_criterion": False,
             "exact_parent_token_criterion": False,
             "local_tokenizer_only": True,
@@ -4067,7 +4092,42 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
     parent_packet_document = artifacts.parent_relative_manual_packet.load(
         "parent-relative manual packet"
     )
-    recomputed_parent_packet = build_parent_relative_manual_packet(manual_packet)
+    baseline_by_id = {value.case_id: value for value in baseline.cases}
+    candidate_by_id = {value.case_id: value for value in candidate.candidates}
+    all_case_rows = [
+        {
+            "case_id": spec.case_id,
+            "prompt": spec.prompt,
+            "parent_response": baseline_by_id[spec.case_id].parent_output,
+            "candidate_response": candidate_by_id[spec.case_id].output,
+            "generation_limit": spec.generation_limit,
+            "parent_completion": {
+                "generated_token_count": baseline_by_id[
+                    spec.case_id
+                ].generation.generated_token_count,
+                "eos_observed": baseline_by_id[spec.case_id].generation.eos_observed,
+                "unfinished_at_generation_limit": baseline_by_id[
+                    spec.case_id
+                ].generation.unfinished_at_generation_limit,
+            },
+            "candidate_completion": {
+                "generated_token_count": candidate_by_id[
+                    spec.case_id
+                ].generation.generated_token_count,
+                "eos_observed": candidate_by_id[spec.case_id].generation.eos_observed,
+                "unfinished_at_generation_limit": candidate_by_id[
+                    spec.case_id
+                ].generation.unfinished_at_generation_limit,
+            },
+        }
+        for spec in manifest.cases
+    ]
+    recomputed_parent_packet = build_all_case_parent_relative_manual_packet(
+        manual_packet,
+        all_case_rows,
+        manifest_sha256=manifest.manifest_sha256,
+        manifest_document_sha256=manifest.document_sha256,
+    )
     if canonical_json_bytes(parent_packet_document) != canonical_json_bytes(
         recomputed_parent_packet
     ):
@@ -4122,6 +4182,28 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
     ):
         raise Lfm2CpcfReviewedPromotionError(
             "Parent-relative manual diagnostics are incomplete or authoritative."
+        )
+    holistic_review = parent_report_body.get("holistic_review")
+    if (
+        not isinstance(holistic_review, Mapping)
+        or holistic_review.get("status") != "complete"
+        or holistic_review.get("qualitative_judgment_is_authoritative") is not True
+        or holistic_review.get("numeric_scores_and_thresholds_are_diagnostic_only")
+        is not True
+        or holistic_review.get("automatic_scalar_accept_reject_permitted") is not False
+        or not isinstance(holistic_review.get("qualitative_case_reviews"), list)
+        or len(holistic_review["qualitative_case_reviews"]) != HOLDOUT_CASE_COUNT
+        or tuple(
+            str(value.get("case_id"))
+            for value in holistic_review["qualitative_case_reviews"]
+            if isinstance(value, Mapping)
+        )
+        != tuple(spec.case_id for spec in manifest.cases)
+        or not isinstance(holistic_review.get("suite_conclusion"), Mapping)
+    ):
+        raise Lfm2CpcfReviewedPromotionError(
+            "Parent-relative manual evidence lacks its authoritative qualitative "
+            "review and suite conclusion."
         )
 
     reviewed_evidence = {
@@ -4225,6 +4307,19 @@ def load_lfm2_cpcf_reviewed_promotion_evidence(
             "severe_regression_count"
         ],
         "parent_relative_manual_metrics_are_diagnostic_only": True,
+        "qualitative_manual_review_complete": True,
+        "qualitative_manual_review_case_count": len(
+            holistic_review["qualitative_case_reviews"]
+        ),
+        "qualitative_case_reviews_sha256": canonical_sha256(
+            holistic_review["qualitative_case_reviews"]
+        ),
+        "holistic_suite_conclusion": holistic_review["suite_conclusion"],
+        "holistic_suite_conclusion_sha256": canonical_sha256(
+            holistic_review["suite_conclusion"]
+        ),
+        "qualitative_judgment_is_authoritative": True,
+        "numeric_scores_and_thresholds_are_diagnostic_only": True,
         "candidate_tokenizer_fingerprint": candidate_tokenizer,
         "target_tokenizer_semantics_sha256": tokenizer_semantics,
         "eos_token_ids": list(eos_token_ids),
@@ -4604,8 +4699,11 @@ class Lfm2CpcfReviewedPromotionGate(metaclass=_ImmutableReviewedGateMeta):
             gate_version=BEHAVIOR_GATE_VERSION,
             baseline_fingerprint=(evidence.full_reviewed_evidence_fingerprint),
             threshold_config={
-                "minimum_parent_relative_intelligence_retention": 0.90,
-                "clear_manual_regressions_allowed": 0,
+                "authoritative_holistic_suite_conclusion": (
+                    PROMOTION_ELIGIBLE_SUITE_CONCLUSION
+                ),
+                "qualitative_judgment_is_authoritative": True,
+                "numeric_scores_and_thresholds_are_diagnostic_only": True,
                 "exact_reviewed_output_digest_required": (
                     evidence.candidate_outputs_sha256
                 ),

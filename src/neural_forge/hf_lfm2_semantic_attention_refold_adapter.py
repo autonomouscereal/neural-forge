@@ -4501,6 +4501,7 @@ def _compile_complete_attention_cold_start(
             "validation": partition_diagnostics["validation"],
             "candidate_frozen_across_heldout_gates": True,
             "heldout_metrics_are_diagnostics_not_publication_gates": True,
+            "heldout_metrics_are_diagnostic_only": True,
             "numeric_metric_used_for_publication": False,
         }
     )
@@ -4864,15 +4865,16 @@ def _publish_complete_attention_cold_start_unprotected(
             "o": _tensor_sha256(published_output),
         }
     )
+    frozen_attention_parameter_bundle = {
+        "q_proj.weight": _tensor_sha256(frozen_query),
+        "k_proj.weight": _tensor_sha256(frozen_key),
+        "v_proj.weight": _tensor_sha256(published_value),
+        "out_proj.weight": _tensor_sha256(published_output),
+        "q_layernorm.weight": _tensor_sha256(cold["seed"].query_norm_weight),
+        "k_layernorm.weight": _tensor_sha256(cold["seed"].key_norm_weight),
+    }
     frozen_attention_parameter_bundle_sha = canonical_sha256(
-        {
-            "q_proj.weight": _tensor_sha256(frozen_query),
-            "k_proj.weight": _tensor_sha256(frozen_key),
-            "v_proj.weight": _tensor_sha256(published_value),
-            "out_proj.weight": _tensor_sha256(published_output),
-            "q_layernorm.weight": _tensor_sha256(cold["seed"].query_norm_weight),
-            "k_layernorm.weight": _tensor_sha256(cold["seed"].key_norm_weight),
-        }
+        frozen_attention_parameter_bundle
     )
     heldout_nonregression = {
         partition: bool(
@@ -4937,20 +4939,22 @@ def _publish_complete_attention_cold_start_unprotected(
             "frozen_attention_six_tensor_bundle_sha256": (
                 frozen_attention_parameter_bundle_sha
             ),
-            "frozen_attention_six_tensor_bundle_roles": [
-                "q_proj.weight",
-                "k_proj.weight",
-                "v_proj.weight",
-                "out_proj.weight",
-                "q_layernorm.weight",
-                "k_layernorm.weight",
-            ],
+            "frozen_attention_six_tensor_bundle": dict(
+                frozen_attention_parameter_bundle
+            ),
+            "frozen_attention_six_tensor_bundle_roles": list(
+                frozen_attention_parameter_bundle
+            ),
             "candidate_frozen_before_validation": True,
             "qk_candidate_frozen_before_validation": True,
             "output_writer_candidate_frozen_before_validation": True,
             "joint_value_output_candidate_frozen_before_validation": True,
             "validation_triggered_refit": False,
             "heldout_metrics_are_diagnostics_not_publication_gates": True,
+            "heldout_metrics_are_diagnostic_only": True,
+            "numeric_metric_used_for_publication_or_rollback": False,
+            "joint_value_output_candidate_diagnostic_only": True,
+            "joint_value_output_publication_allowed": False,
             "numeric_parent_child_weight_match_objective": False,
             "dense_existing_qkvo_topology_only": True,
             "analytically_refit_projection_roles": [
@@ -5557,15 +5561,16 @@ def compile_install_lfm2_semantic_attention_postfold(
             "o": _tensor_sha256(published_output),
         }
     )
+    frozen_attention_parameter_bundle = {
+        "q_proj.weight": _tensor_sha256(frozen_query),
+        "k_proj.weight": _tensor_sha256(frozen_key),
+        "v_proj.weight": _tensor_sha256(published_value),
+        "out_proj.weight": _tensor_sha256(published_output),
+        "q_layernorm.weight": _tensor_sha256(seed.query_norm_weight),
+        "k_layernorm.weight": _tensor_sha256(seed.key_norm_weight),
+    }
     frozen_attention_parameter_bundle_sha = canonical_sha256(
-        {
-            "q_proj.weight": _tensor_sha256(frozen_query),
-            "k_proj.weight": _tensor_sha256(frozen_key),
-            "v_proj.weight": _tensor_sha256(published_value),
-            "out_proj.weight": _tensor_sha256(published_output),
-            "q_layernorm.weight": _tensor_sha256(seed.query_norm_weight),
-            "k_layernorm.weight": _tensor_sha256(seed.key_norm_weight),
-        }
+        frozen_attention_parameter_bundle
     )
     state = {
         "q_proj.weight": frozen_query,
@@ -5636,14 +5641,12 @@ def compile_install_lfm2_semantic_attention_postfold(
             "frozen_attention_six_tensor_bundle_sha256": (
                 frozen_attention_parameter_bundle_sha
             ),
-            "frozen_attention_six_tensor_bundle_roles": [
-                "q_proj.weight",
-                "k_proj.weight",
-                "v_proj.weight",
-                "out_proj.weight",
-                "q_layernorm.weight",
-                "k_layernorm.weight",
-            ],
+            "frozen_attention_six_tensor_bundle": dict(
+                frozen_attention_parameter_bundle
+            ),
+            "frozen_attention_six_tensor_bundle_roles": list(
+                frozen_attention_parameter_bundle
+            ),
             "candidate_frozen_before_validation": True,
             "qk_candidate_frozen_before_validation": True,
             "output_writer_candidate_frozen_before_validation": (

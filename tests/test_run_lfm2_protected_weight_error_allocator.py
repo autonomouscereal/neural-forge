@@ -89,6 +89,18 @@ def test_cli_has_no_frontier_or_causal_selection_argument() -> None:
     )
 
 
+def test_ablation_uses_exact_all_case_packet_and_versioned_reports() -> None:
+    run_source = inspect.getsource(runner)
+    finalizer_source = inspect.getsource(finalizer)
+    assert "_build_exact_all_case_parent_relative_packet" in run_source
+    assert "build_parent_relative_manual_packet(" not in run_source
+    assert "_authenticate_intelligence_report" in finalizer_source
+    assert runner.LEGACY_TARGET_REPORT_SCHEMA.endswith("-v1")
+    assert runner.TARGET_REPORT_SCHEMA.endswith("-v2")
+    assert finalizer.LEGACY_FINAL_SCHEMA.endswith("-v1")
+    assert finalizer.FINAL_SCHEMA.endswith("-v2")
+
+
 @pytest.mark.parametrize("module", [runner, finalizer])
 def test_ablation_runners_have_no_hub_training_optimizer_or_backward_call(
     module,

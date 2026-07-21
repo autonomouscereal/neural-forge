@@ -22,7 +22,7 @@ import json
 import math
 import os
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -52,6 +52,7 @@ from neural_forge.hf_lfm2_semantic_postfold import (
     _ZERO_OPERATIONS,
     _additive_causal_mask,
     _attention_tensor_names,
+    _authenticate_lfm2_semantic_attention_operator_receipt,
     _changed_state_keys,
     _fold_parent_qk_weight_priors,
     _fit_normalized_operator_input_decoder,
@@ -3268,6 +3269,19 @@ def _layer_receipt(
             f"Layer {layer_index} MLP did not prove the requested CUDA fold backend."
         )
     short_conv_compute_fields: dict[str, Any] = {}
+    attention_receipt_fields: dict[str, Any] = {}
+    if operator_kind == "full_attention":
+        _authenticate_lfm2_semantic_attention_operator_receipt(
+            operator_receipt,
+            layer_index=layer_index,
+        )
+        # The attention adapter's sealed operator result is also its atomic
+        # installation receipt.  Persist both bindings explicitly so neither
+        # side becomes an opaque hash after the folding process exits.
+        attention_receipt_fields = {
+            "attention_operator_decision_receipt": dict(operator_receipt),
+            "attention_operator_installation_receipt": dict(operator_receipt),
+        }
     if fold_compute_device != "cpu" and operator_kind == "short_conv":
         structural_execution = operator_receipt.get(
             "structural_cluster_compute_execution"
@@ -3305,6 +3319,7 @@ def _layer_receipt(
         "before_operator_replay_bank_sha256": before_operator_replay.bank_sha256,
         "operator_decision_sha256": operator_receipt["result_sha256"],
         "operator_installation_sha256": operator_receipt["result_sha256"],
+        **attention_receipt_fields,
         "operator_producer_coverage_decision_sha256": (
             operator_coverage_decision["result_sha256"]
         ),
@@ -3433,6 +3448,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     short_conv_installer: Callable[..., Mapping[str, Any]] | None = None,
     mlp_installer: Callable[..., Any] | None = None,
     fold_compute_device: str = "cpu",
+    authenticated_cache_session: Any | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete fourteen-layer child transaction.
 
@@ -3493,8 +3509,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     result: Lfm2SemanticLayerStackInstallation | None = None
     try:
         target_rope_inv_freq, target_rope_attention_scaling = _target_rope(target_model)
+        cache_session_context = (
+            cache.selective_authenticated_session()
+            if authenticated_cache_session is None
+            else nullcontext(authenticated_cache_session)
+        )
         with (
-            cache.selective_authenticated_session() as cache_session,
+            cache_session_context as cache_session,
             _DirectParentSafetensorsSession(
                 parent_model_directory,
                 expected_parent_identity_sha256=cache.parent_fingerprint,
@@ -4109,6 +4130,12 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "parameter_topology_changed": False,
             "deferred_final_w2_sha256": final_w2_before,
             "one_selective_cache_session_for_complete_stack": True,
+            "selective_cache_session_owned_by_layer_stack": (
+                authenticated_cache_session is None
+            ),
+            "selective_cache_session_reused_from_pipeline": (
+                authenticated_cache_session is not None
+            ),
             "one_parent_checkpoint_hash_and_open_session": True,
             "parent_model_objects_constructed": 0,
             "parent_model_forward_calls": 0,

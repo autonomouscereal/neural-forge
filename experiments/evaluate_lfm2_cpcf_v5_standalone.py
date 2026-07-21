@@ -52,6 +52,12 @@ from neural_forge.dynamic_circuit_ir import (  # noqa: E402
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
     fingerprint_model_state,
 )
+from neural_forge.dynamic_fold_artifact import (  # noqa: E402
+    DynamicFoldArtifactError,
+    STANDALONE_FOLD_ARTIFACT_INVENTORY_SCHEMA,
+    canonical_standalone_fold_artifact_inventory,
+    scan_standalone_fold_artifact_tree,
+)
 from neural_forge.hf_lfm2_cpcf_model_fold import (  # noqa: E402
     independent_parameter_inventory,
 )
@@ -79,8 +85,13 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_parent_relative_manual_gate import (  # noqa: E402
     Lfm2ParentRelativeManualGateError,
-    build_parent_relative_manual_packet,
+    QUALITATIVE_CRITERIA,
+    build_all_case_parent_relative_manual_packet,
     evaluate_parent_relative_manual_retention,
+)
+from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
+    Lfm2SemanticPostfoldError,
+    authenticate_lfm2_semantic_layer_stack_attention_receipts,
 )
 
 
@@ -407,7 +418,6 @@ def _build_all_case_parent_relative_manual_packet(
         )
 
     rows = []
-    limit_rows = []
     for spec in manifest_cases:
         case_id = str(spec.case_id)
         parent = parent_map[case_id]
@@ -428,46 +438,30 @@ def _build_all_case_parent_relative_manual_packet(
                 "parent_response": parent.parent_output,
                 "candidate_response": candidate.output,
                 "generation_limit": generation_limit,
+                "parent_completion": {
+                    "generated_token_count": parent.generation.generated_token_count,
+                    "eos_observed": parent.generation.eos_observed,
+                    "unfinished_at_generation_limit": (
+                        parent.generation.unfinished_at_generation_limit
+                    ),
+                },
+                "candidate_completion": {
+                    "generated_token_count": (
+                        candidate.generation.generated_token_count
+                    ),
+                    "eos_observed": candidate.generation.eos_observed,
+                    "unfinished_at_generation_limit": (
+                        candidate.generation.unfinished_at_generation_limit
+                    ),
+                },
             }
         )
-        limit_rows.append(
-            {
-                "case_id": case_id,
-                "generation_limit": generation_limit,
-            }
-        )
-
-    generic_packet = build_parent_relative_manual_packet(automatic_gate_manual_packet)
-    generic_body = dict(generic_packet)
-    generic_body.pop("packet_sha256")
-    rubric = dict(generic_body["rubric"])
-    rubric.update(
-        {
-            "review_every_manifest_case": True,
-            "one_reason_per_case_required": True,
-            "full_parent_and_candidate_response_review_required": True,
-            "per_case_generation_limit_bound": True,
-            "scalar_scores_are_diagnostic_only": True,
-            "automatic_accept_reject_permitted": False,
-        }
+    return build_all_case_parent_relative_manual_packet(
+        automatic_gate_manual_packet,
+        rows,
+        manifest_sha256=manifest.manifest_sha256,
+        manifest_document_sha256=manifest.document_sha256,
     )
-    body = {
-        **generic_body,
-        "review_scope": "exact_authenticated_manifest_all_cases",
-        "all_case_manual_review_mode": True,
-        "manifest_sha256": manifest.manifest_sha256,
-        "manifest_document_sha256": manifest.document_sha256,
-        "case_count": EXPECTED_CASE_COUNT,
-        "case_ids_sha256": canonical_sha256(list(manifest_ids)),
-        "generation_limit_rows_sha256": canonical_sha256(limit_rows),
-        "legacy_generic_manual_subset_case_count": len(
-            automatic_gate_manual_packet["cases"]
-        ),
-        "legacy_generic_manual_subset_is_diagnostic_only": True,
-        "rubric": rubric,
-        "cases": rows,
-    }
-    return {**body, "packet_sha256": canonical_sha256(body)}
 
 
 def _require_exact_all_case_manual_ratings(
@@ -497,6 +491,23 @@ def _require_exact_all_case_manual_ratings(
     ):
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Every whole-response review requires a concrete reason."
+        )
+    qualitative = ratings_document.get("qualitative_case_reviews")
+    suite = ratings_document.get("holistic_suite_conclusion")
+    if (
+        not isinstance(qualitative, list)
+        or len(qualitative) != EXPECTED_CASE_COUNT
+        or any(not isinstance(row, Mapping) for row in qualitative)
+        or tuple(str(row.get("case_id")) for row in qualitative) != expected_ids
+        or not isinstance(suite, Mapping)
+        or ratings_document.get("qualitative_judgment_is_authoritative") is not True
+        or ratings_document.get("numeric_scores_and_thresholds_are_diagnostic_only")
+        is not True
+        or ratings_document.get("automatic_scalar_accept_reject_permitted") is not False
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Manual ratings require authoritative qualitative verdicts for all "
+            "64 cases plus one explicit holistic suite conclusion."
         )
 
 
@@ -680,6 +691,143 @@ def _authenticate_semantic_postfold_provenance(
     operation_audit = receipt.get("operation_audit")
     checkpoint_audit = checkpoint.get("operation_audit")
     parameter_inventory = metadata.get("parameter_inventory")
+    attention_layer_stack = receipt.get("semantic_layer_stack")
+    attention_authentication = receipt.get("attention_receipt_authentication")
+    context_attention_sha256 = (
+        context.get("attention_receipt_authentication_sha256")
+        if isinstance(context, Mapping)
+        else None
+    )
+    attention_contract_values = (
+        attention_layer_stack,
+        attention_authentication,
+        context_attention_sha256,
+    )
+    attention_contract_present = any(
+        value is not None for value in attention_contract_values
+    )
+    if attention_contract_present and not all(
+        value is not None for value in attention_contract_values
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold attention persistence contract is partial."
+        )
+    authenticated_attention = None
+    if attention_contract_present:
+        if not isinstance(attention_layer_stack, Mapping) or not isinstance(
+            attention_authentication,
+            Mapping,
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Semantic-postfold attention persistence contract is malformed."
+            )
+        try:
+            authenticated_attention = (
+                authenticate_lfm2_semantic_layer_stack_attention_receipts(
+                    attention_layer_stack
+                )
+            )
+        except (Lfm2SemanticPostfoldError, TypeError, ValueError) as exc:
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Semantic-postfold attention receipts failed authentication."
+            ) from exc
+        if (
+            dict(authenticated_attention) != dict(attention_authentication)
+            or authenticated_attention.get("result_sha256") != context_attention_sha256
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Semantic-postfold attention receipt persistence changed."
+            )
+    artifact_tree_fields = (
+        "artifact_tree",
+        "artifact_tree_sha256",
+        "artifact_file_count",
+        "artifact_total_bytes",
+        "complete_artifact_tree_hashed",
+        "forbidden_named_or_referenced_sidecars_present",
+        "standalone_directory_purity_authenticated",
+    )
+    artifact_tree_contract_present = any(
+        checkpoint.get(name) is not None for name in artifact_tree_fields
+    )
+    if artifact_tree_contract_present and any(
+        checkpoint.get(name) is None for name in artifact_tree_fields
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold artifact-tree purity contract is partial."
+        )
+    enhanced_artifact_inventory_fields = (
+        "artifact_inventory_schema",
+        "artifact_inventory",
+        "artifact_inventory_sha256",
+        "canonical_typed_artifact_inventory_authenticated",
+        "staged_artifact_tree_purity_verified_before_publication",
+        "unallowlisted_artifact_files_present",
+    )
+    enhanced_artifact_inventory_present = any(
+        checkpoint.get(name) is not None for name in enhanced_artifact_inventory_fields
+    )
+    if enhanced_artifact_inventory_present and (
+        not artifact_tree_contract_present
+        or any(
+            checkpoint.get(name) is None for name in enhanced_artifact_inventory_fields
+        )
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold typed artifact inventory contract is partial."
+        )
+    try:
+        authenticated_artifact_inventory = canonical_standalone_fold_artifact_inventory(
+            config.candidate_directory
+        )
+        artifact_file_roles = {
+            value["path"]: value["artifact_role"]
+            for value in authenticated_artifact_inventory
+        }
+        authenticated_artifact_tree = scan_standalone_fold_artifact_tree(
+            config.candidate_directory,
+            expected_file_roles=artifact_file_roles,
+        )
+    except DynamicFoldArtifactError as exc:
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold standalone artifact tree failed purity scanning."
+        ) from exc
+    if artifact_tree_contract_present:
+        if (
+            checkpoint.get("artifact_tree")
+            != [dict(value) for value in authenticated_artifact_tree]
+            or checkpoint.get("artifact_tree_sha256")
+            != canonical_sha256(authenticated_artifact_tree)
+            or checkpoint.get("artifact_file_count") != len(authenticated_artifact_tree)
+            or checkpoint.get("artifact_total_bytes")
+            != sum(int(value["size_bytes"]) for value in authenticated_artifact_tree)
+            or checkpoint.get("complete_artifact_tree_hashed") is not True
+            or checkpoint.get("forbidden_named_or_referenced_sidecars_present")
+            is not False
+            or checkpoint.get("standalone_directory_purity_authenticated") is not True
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Semantic-postfold standalone artifact-tree identity changed."
+            )
+        if enhanced_artifact_inventory_present and (
+            checkpoint.get("artifact_inventory_schema")
+            != STANDALONE_FOLD_ARTIFACT_INVENTORY_SCHEMA
+            or checkpoint.get("artifact_inventory")
+            != [dict(value) for value in authenticated_artifact_inventory]
+            or checkpoint.get("artifact_inventory_sha256")
+            != canonical_sha256(authenticated_artifact_inventory)
+            or checkpoint.get("canonical_typed_artifact_inventory_authenticated")
+            is not True
+            or checkpoint.get("staged_artifact_tree_purity_verified_before_publication")
+            is not True
+            or checkpoint.get("unallowlisted_artifact_files_present") is not False
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Semantic-postfold typed artifact inventory identity changed."
+            )
+    artifact_purity_promotion_eligible = bool(
+        artifact_tree_contract_present and enhanced_artifact_inventory_present
+    )
     if not isinstance(context, Mapping):
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Semantic-postfold receipt has no context binding."
@@ -759,6 +907,31 @@ def _authenticate_semantic_postfold_provenance(
         "directory_binding_mode": "content_identity_not_absolute_path",
         "receipt_and_checkpoint_seals_authenticated": True,
         "artifact_metadata_matches_checkpoint_receipt": True,
+        "attention_receipt_persistence_authenticated": (
+            authenticated_attention is not None
+        ),
+        "attention_receipt_authentication_sha256": (
+            None
+            if authenticated_attention is None
+            else authenticated_attention["result_sha256"]
+        ),
+        "complete_artifact_tree_purity_authenticated": (artifact_tree_contract_present),
+        "artifact_tree_sha256": canonical_sha256(authenticated_artifact_tree),
+        "canonical_typed_artifact_inventory_authenticated": (
+            enhanced_artifact_inventory_present
+        ),
+        "artifact_inventory_sha256": canonical_sha256(authenticated_artifact_inventory),
+        "live_complete_artifact_tree_scan_authenticated": True,
+        "live_canonical_typed_artifact_inventory_scan_authenticated": True,
+        "artifact_purity_promotion_eligible": artifact_purity_promotion_eligible,
+        "legacy_same_schema_artifact_purity_receipt_quarantined": (
+            not artifact_purity_promotion_eligible
+        ),
+        "artifact_purity_review_status": (
+            "enhanced_publisher_tree_and_typed_inventory_authenticated"
+            if artifact_purity_promotion_eligible
+            else "legacy_receipt_live_scan_only_quarantined"
+        ),
         "standalone_parent_free_reload_authenticated": False,
         "zero_training_pruning_quantization_authenticated": True,
     }
@@ -994,10 +1167,20 @@ def capture_standalone_intelligence(
             "Cached parent prompts differ from the child holdout prompts."
         )
     realized_compaction_ratio = parent_unique_parameters / child_unique_parameters
+    semantic_artifact_purity_finalization_eligible = (
+        None
+        if semantic_postfold_provenance is None
+        else semantic_postfold_provenance["artifact_purity_promotion_eligible"]
+    )
+    capture_status = (
+        "automatic_diagnostics_complete_artifact_purity_quarantined"
+        if semantic_artifact_purity_finalization_eligible is False
+        else "automatic_diagnostics_complete_manual_review_pending"
+    )
 
     report_core = {
         "schema": CAPTURE_REPORT_SCHEMA,
-        "status": "automatic_diagnostics_complete_manual_review_pending",
+        "status": capture_status,
         "manifest_sha256": manifest.manifest_sha256,
         "manifest_document_sha256": manifest.document_sha256,
         "case_count": len(manifest.cases),
@@ -1024,6 +1207,12 @@ def capture_standalone_intelligence(
         "manual_review_generation_limit_rows_sha256": manual_packet[
             "generation_limit_rows_sha256"
         ],
+        "manual_review_completion_metadata_rows_sha256": manual_packet[
+            "completion_metadata_rows_sha256"
+        ],
+        "semantic_postfold_artifact_purity_finalization_eligible": (
+            semantic_artifact_purity_finalization_eligible
+        ),
         **(
             {"semantic_postfold_provenance": semantic_postfold_provenance}
             if semantic_postfold_provenance is not None
@@ -1107,6 +1296,11 @@ def capture_standalone_intelligence(
             "manual_review_case_count": len(manual_packet["cases"]),
             "manual_review_exact_manifest_coverage": True,
             "per_case_generation_limits_bound_to_manual_packet": True,
+            "parent_and_child_completion_metadata_bound": True,
+            "completion_and_truncation_flags_are_diagnostic_only": True,
+            "qualitative_review_criteria": list(QUALITATIVE_CRITERIA),
+            "criterion_specific_case_observations_required": True,
+            "duplicate_boilerplate_case_observations_permitted": False,
             "diagnostic_parent_relative_retention_reference": 0.90,
             "automatic_metrics_are_behavioral_or_structural": True,
             "lexical_similarity_is_not_an_intelligence_metric": True,
@@ -1120,6 +1314,12 @@ def capture_standalone_intelligence(
             "general_intelligence_retention_claimed": False,
             "semantic_postfold_checkpoint_and_receipt_pinned": (
                 semantic_postfold_provenance is not None
+            ),
+            "semantic_postfold_artifact_purity_finalization_eligible": (
+                semantic_artifact_purity_finalization_eligible
+            ),
+            "legacy_semantic_artifact_purity_is_diagnostic_only": (
+                semantic_artifact_purity_finalization_eligible is False
             ),
         },
     }
@@ -1171,19 +1371,48 @@ def finalize_standalone_intelligence(
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Automatic intelligence report differs from its independent seal."
         )
-    if config.expected_semantic_postfold_receipt_sha256 is not None:
-        provenance = automatic.get("semantic_postfold_provenance")
+    semantic_provenance = automatic.get("semantic_postfold_provenance")
+    if "semantic_postfold_provenance" in automatic:
         if (
-            not isinstance(provenance, Mapping)
-            or provenance.get("semantic_postfold_receipt_sha256")
-            != config.expected_semantic_postfold_receipt_sha256
-            or provenance.get("candidate_artifact_sha256")
-            != config.expected_candidate_artifact_sha256
-            or provenance.get("receipt_and_checkpoint_seals_authenticated") is not True
-            or provenance.get("artifact_metadata_matches_checkpoint_receipt")
+            not isinstance(semantic_provenance, Mapping)
+            or semantic_provenance.get("complete_artifact_tree_purity_authenticated")
             is not True
-            or provenance.get("standalone_parent_free_reload_authenticated") is not True
-            or provenance.get("zero_training_pruning_quantization_authenticated")
+            or semantic_provenance.get(
+                "canonical_typed_artifact_inventory_authenticated"
+            )
+            is not True
+            or semantic_provenance.get("live_complete_artifact_tree_scan_authenticated")
+            is not True
+            or semantic_provenance.get(
+                "live_canonical_typed_artifact_inventory_scan_authenticated"
+            )
+            is not True
+            or semantic_provenance.get("artifact_purity_promotion_eligible") is not True
+            or semantic_provenance.get(
+                "legacy_same_schema_artifact_purity_receipt_quarantined"
+            )
+            is not False
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Semantic-postfold artifact purity is legacy or unauthenticated; "
+                "final manual review publication is quarantined."
+            )
+    if config.expected_semantic_postfold_receipt_sha256 is not None:
+        if (
+            not isinstance(semantic_provenance, Mapping)
+            or semantic_provenance.get("semantic_postfold_receipt_sha256")
+            != config.expected_semantic_postfold_receipt_sha256
+            or semantic_provenance.get("candidate_artifact_sha256")
+            != config.expected_candidate_artifact_sha256
+            or semantic_provenance.get("receipt_and_checkpoint_seals_authenticated")
+            is not True
+            or semantic_provenance.get("artifact_metadata_matches_checkpoint_receipt")
+            is not True
+            or semantic_provenance.get("standalone_parent_free_reload_authenticated")
+            is not True
+            or semantic_provenance.get(
+                "zero_training_pruning_quantization_authenticated"
+            )
             is not True
         ):
             raise Lfm2CpcfV5StandaloneEvaluationError(
@@ -1201,6 +1430,31 @@ def finalize_standalone_intelligence(
             "Automatic report lost its standalone child directory binding."
         )
     candidate_directory = Path(candidate_path_value).resolve(strict=False)
+    if isinstance(semantic_provenance, Mapping):
+        try:
+            live_artifact_inventory = canonical_standalone_fold_artifact_inventory(
+                candidate_directory
+            )
+            live_artifact_tree = scan_standalone_fold_artifact_tree(
+                candidate_directory,
+                expected_file_roles={
+                    value["path"]: value["artifact_role"]
+                    for value in live_artifact_inventory
+                },
+            )
+        except DynamicFoldArtifactError as exc:
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Semantic-postfold standalone artifact tree failed final purity "
+                "scanning."
+            ) from exc
+        if canonical_sha256(live_artifact_tree) != semantic_provenance.get(
+            "artifact_tree_sha256"
+        ) or canonical_sha256(live_artifact_inventory) != semantic_provenance.get(
+            "artifact_inventory_sha256"
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Semantic-postfold standalone artifact purity changed after capture."
+            )
     prospective_output = config.output_directory.resolve(strict=False)
     if _paths_overlap(prospective_output, candidate_directory):
         raise Lfm2CpcfV5StandaloneEvaluationError(
@@ -1266,6 +1520,8 @@ def finalize_standalone_intelligence(
         automatic_gate_manual_packet["packet_sha256"]
         != automatic["automatic_gate_manual_packet_sha256"]
         or rebuilt_packet["packet_sha256"] != automatic["manual_review_packet_sha256"]
+        or rebuilt_packet["completion_metadata_rows_sha256"]
+        != automatic["manual_review_completion_metadata_rows_sha256"]
         or canonical_json_bytes(packet_document) != canonical_json_bytes(rebuilt_packet)
     ):
         raise Lfm2CpcfV5StandaloneEvaluationError(
@@ -1303,6 +1559,19 @@ def finalize_standalone_intelligence(
             stored_packet,
             ratings_document,
         )
+        holistic_review = parent_relative_report.get("holistic_review")
+        if (
+            not isinstance(holistic_review, Mapping)
+            or holistic_review.get("status") != "complete"
+            or holistic_review.get("qualitative_judgment_is_authoritative") is not True
+            or holistic_review.get("numeric_scores_and_thresholds_are_diagnostic_only")
+            is not True
+            or holistic_review.get("automatic_scalar_accept_reject_permitted")
+            is not False
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Manual ratings lack an authoritative holistic review."
+            )
         ratings_by_id = {
             str(row["case_id"]): row for row in ratings_document["ratings"]
         }
@@ -1381,12 +1650,19 @@ def finalize_standalone_intelligence(
         },
         "holistic_whole_response_judgment": {
             "required_for_any_intelligence_conclusion": True,
+            "status": "complete",
             "reviewer_id": ratings_document["reviewer_id"],
             "paired_parent_and_child_responses_reviewed": True,
             "reviewed_case_count": EXPECTED_CASE_COUNT,
             "exact_manifest_case_coverage": True,
             "per_case_generation_limits_bound": True,
             "case_level_reasons_authenticated": True,
+            "qualitative_case_verdicts_authenticated": True,
+            "qualitative_case_verdicts_sha256": canonical_sha256(
+                holistic_review["qualitative_case_reviews"]
+            ),
+            "authoritative_suite_conclusion": holistic_review["suite_conclusion"],
+            "qualitative_judgment_is_authoritative": True,
             "scalar_scores_and_thresholds_are_diagnostic_only": True,
             "automatic_accept_reject_decision_recorded": False,
             "instruction": (
@@ -1417,6 +1693,9 @@ def finalize_standalone_intelligence(
         "manual_review_scope": stored_packet["review_scope"],
         "manual_review_generation_limit_rows_sha256": stored_packet[
             "generation_limit_rows_sha256"
+        ],
+        "manual_review_completion_metadata_rows_sha256": stored_packet[
+            "completion_metadata_rows_sha256"
         ],
         "manual_ratings_file_sha256": (config.expected_manual_ratings_file_sha256),
         "manual_ratings_sha256": ratings_sha256,
@@ -1460,6 +1739,11 @@ def finalize_standalone_intelligence(
             "manual_review_case_count": len(stored_packet["cases"]),
             "manual_review_exact_manifest_coverage": True,
             "per_case_generation_limits_bound_to_manual_packet": True,
+            "parent_and_child_completion_metadata_bound": True,
+            "completion_and_truncation_flags_are_diagnostic_only": True,
+            "qualitative_review_criteria": list(QUALITATIVE_CRITERIA),
+            "criterion_specific_case_observations_required": True,
+            "duplicate_boilerplate_case_observations_permitted": False,
             "parent_and_child_scored_on_same_semantic_rubric": True,
             "diagnostic_parent_relative_retention_reference": 0.90,
             "lexical_similarity_is_not_an_intelligence_metric": True,

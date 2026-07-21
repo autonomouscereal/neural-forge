@@ -27,7 +27,8 @@ from neural_forge.hf_lfm2_parent_relative_manual_gate import (
 )
 
 
-FINAL_SCHEMA = "neural-forge-lfm2-causal-value-final-report-v1"
+LEGACY_FINAL_SCHEMA = "neural-forge-lfm2-causal-value-final-report-v1"
+FINAL_SCHEMA = "neural-forge-lfm2-causal-value-final-report-v2"
 
 
 class Lfm2CausalValueFinalizeError(RuntimeError):
@@ -70,22 +71,25 @@ def finalize_lfm2_causal_value_allocator(
     )
     preliminary_body = dict(preliminary)
     preliminary_seal = preliminary_body.pop("report_sha256", None)
-    if preliminary_body.get(
-        "schema"
-    ) != runner.TARGET_REPORT_SCHEMA or preliminary_seal != canonical_sha256(
-        preliminary_body
-    ):
+    preliminary_schema = preliminary_body.get("schema")
+    if preliminary_schema not in {
+        runner.TARGET_REPORT_SCHEMA,
+        runner.LEGACY_TARGET_REPORT_SCHEMA,
+    } or preliminary_seal != canonical_sha256(preliminary_body):
         raise Lfm2CausalValueFinalizeError(
             "Preliminary causal-value report seal is invalid."
         )
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
     intelligence = json.loads(intelligence_path.read_text(encoding="utf-8"))
+    try:
+        intelligence_seal = runner._authenticate_intelligence_report(intelligence)
+    except runner.Lfm2CausalValueRunnerError as exc:
+        raise Lfm2CausalValueFinalizeError(str(exc)) from exc
     if (
         not isinstance(packet, Mapping)
-        or not isinstance(intelligence, Mapping)
         or packet.get("packet_sha256")
         != preliminary["holdout"]["parent_relative_manual_packet_sha256"]
-        or intelligence.get("report_sha256")
+        or intelligence_seal
         != preliminary["holdout"]["automatic_intelligence_report_sha256"]
     ):
         raise Lfm2CausalValueFinalizeError(
@@ -97,7 +101,7 @@ def finalize_lfm2_causal_value_allocator(
         "parent_relative_manual_ratings",
     )
     manual = evaluate_parent_relative_manual_retention(packet, ratings)
-    decision = runner._parent_relative_decision(intelligence, manual)
+    decision = runner._parent_relative_decision(intelligence, manual, packet)
     manual_path = root / "parent_relative_manual_report.json"
     final_path = root / "final_report.json"
     if manual_path.exists() or final_path.exists():
@@ -107,6 +111,10 @@ def finalize_lfm2_causal_value_allocator(
     control_runner._write_new_json(manual_path, manual)
     body = {
         "schema": FINAL_SCHEMA,
+        "preliminary_report_schema": preliminary_schema,
+        "legacy_v1_preliminary_explicitly_handled": (
+            preliminary_schema == runner.LEGACY_TARGET_REPORT_SCHEMA
+        ),
         "preliminary_report_sha256": preliminary_seal,
         "preliminary_report_file_sha256": (expected_preliminary_report_file_sha256),
         "status": decision["status"],

@@ -28,9 +28,7 @@ class _CandidateOnlyModel(torch.nn.Module):
 
     def generate(self, *, input_ids, **_kwargs):
         self.generate_calls += 1
-        continuation = torch.tensor(
-            [[7, 2]], dtype=torch.long, device=input_ids.device
-        )
+        continuation = torch.tensor([[7, 2]], dtype=torch.long, device=input_ids.device)
         return torch.cat((input_ids, continuation), dim=1)
 
 
@@ -55,9 +53,7 @@ def test_all8_candidate_generator_covers_independent64_without_parent() -> None:
     rows = runner._generate_candidate_rows(model, _Tokenizer(), manifest)
     assert len(rows) == 64
     assert model.generate_calls == 64
-    assert [row["case_id"] for row in rows] == [
-        spec.case_id for spec in manifest.cases
-    ]
+    assert [row["case_id"] for row in rows] == [spec.case_id for spec in manifest.cases]
     assert all(row["output_token_ids"] == [7, 2] for row in rows)
 
 
@@ -111,9 +107,7 @@ def test_all8_run_config_is_exact50_local_and_immutable(tmp_path: Path) -> None:
     assert config.group_size == 256
     assert config.analysis_chunk_groups == 4096
     assert not config.output_root.exists()
-    with pytest.raises(
-        runner.Lfm2Exact50All8RunnerError, match="multiple of eight"
-    ):
+    with pytest.raises(runner.Lfm2Exact50All8RunnerError, match="multiple of eight"):
         runner.Exact50All8RunConfig(
             parent_model_directory=parent,
             tokenizer_directory=tokenizer,
@@ -149,3 +143,15 @@ def test_all8_finalizer_is_cached_output_only() -> None:
     assert not {"generate", "forward", "backward"}.intersection(called_attributes)
     assert "evaluate_parent_relative_manual_retention" in called_names
     assert "postflight_cached_outputs_only" in source
+
+
+def test_all8_review_transition_is_exact_all_case_and_versioned() -> None:
+    run_source = inspect.getsource(runner)
+    finalizer_source = inspect.getsource(finalizer)
+    assert "_build_exact_all_case_parent_relative_packet" in run_source
+    assert "build_parent_relative_manual_packet(" not in run_source
+    assert "_authenticate_intelligence_report" in finalizer_source
+    assert runner.LEGACY_TARGET_REPORT_SCHEMA.endswith("-v1")
+    assert runner.TARGET_REPORT_SCHEMA.endswith("-v2")
+    assert finalizer.LEGACY_FINAL_SCHEMA.endswith("-v1")
+    assert finalizer.FINAL_SCHEMA.endswith("-v2")

@@ -555,8 +555,7 @@ class Lfm2CircuitTraceCaptureConfig:
             bool,
         ):
             raise TypeError(
-                "allow_top1_disagreement_within_numeric_error_envelope "
-                "must be bool."
+                "allow_top1_disagreement_within_numeric_error_envelope must be bool."
             )
         if not isinstance(self.capture_causal_circuit_evidence, bool):
             raise TypeError("capture_causal_circuit_evidence must be bool.")
@@ -1246,8 +1245,8 @@ class _Lfm2TraceHooks:
                     )
                 self._register_pre(
                     attention.out_proj,
-                    lambda module, args, kwargs, i=index: (
-                        self._attention_context_pre(i, args, kwargs)
+                    lambda module, args, kwargs, i=index: self._attention_context_pre(
+                        i, args, kwargs
                     ),
                 )
                 self._register_post(
@@ -1291,14 +1290,12 @@ class _Lfm2TraceHooks:
                 if self.config.capture_causal_circuit_evidence:
                     self._register_post(
                         operator.in_proj,
-                        lambda module, args, kwargs, output, i=index: (
-                            self._post_output(
-                                i,
-                                "short_conv_bcx_history",
-                                output,
-                                "short-conv B/C/x projection history",
-                                retain_full_sequence=True,
-                            )
+                        lambda module, args, kwargs, output, i=index: self._post_output(
+                            i,
+                            "short_conv_bcx_history",
+                            output,
+                            "short-conv B/C/x projection history",
+                            retain_full_sequence=True,
                         ),
                     )
 
@@ -1356,9 +1353,7 @@ class _Lfm2TraceHooks:
         )
         self.raw = {index: {} for index in self.selected_layer_indices}
         self.global_raw = {}
-        self.execution_raw = {
-            index: {} for index in self.selected_layer_indices
-        }
+        self.execution_raw = {index: {} for index in self.selected_layer_indices}
 
     def _ensure_inference(self) -> None:
         if self.active_phase is not None and self.torch.is_grad_enabled():
@@ -1430,8 +1425,7 @@ class _Lfm2TraceHooks:
         target = self.execution_raw[layer_index]
         if name in target:
             raise Lfm2CircuitTraceCaptureError(
-                f"Layer {layer_index} emitted duplicate execution endpoint "
-                f"{name!r}."
+                f"Layer {layer_index} emitted duplicate execution endpoint {name!r}."
             )
         retained = value.detach()
         if clone:
@@ -1674,14 +1668,8 @@ class _Lfm2TraceHooks:
             sequence,
             int(self.active_sample_last_tokens or self.config.sample_last_tokens),
         )
-        q_rotary = (
-            q_normalized * cos
-            + _rotate_half(torch, q_normalized) * sin
-        )
-        k_rotary = (
-            k_normalized * cos
-            + _rotate_half(torch, k_normalized) * sin
-        )
+        q_rotary = q_normalized * cos + _rotate_half(torch, q_normalized) * sin
+        k_rotary = k_normalized * cos + _rotate_half(torch, k_normalized) * sin
         query = q_rotary.transpose(1, 2).contiguous()
         current_key = k_rotary.transpose(1, 2).contiguous()
         current_value = v_linear.view(
@@ -1787,10 +1775,7 @@ class _Lfm2TraceHooks:
         args: Sequence[Any],
         kwargs: Mapping[str, Any],
     ) -> None:
-        if (
-            self.active_phase is None
-            or not self.config.capture_causal_circuit_evidence
-        ):
+        if self.active_phase is None or not self.config.capture_causal_circuit_evidence:
             return
         cache_layer = self._cache_layer(kwargs.get("past_key_values"), layer_index)
         if cache_layer is None:
@@ -1819,10 +1804,7 @@ class _Lfm2TraceHooks:
             if self.config.capture_causal_circuit_evidence:
                 output_tensors, output_diagnostics = self._finalize_output_boundary()
                 tensors.update(
-                    {
-                        f"{phase}.{name}": value
-                        for name, value in output_tensors.items()
-                    }
+                    {f"{phase}.{name}": value for name, value in output_tensors.items()}
                 )
                 diagnostics["output"] = output_diagnostics
             return tensors, diagnostics
@@ -1859,9 +1841,7 @@ class _Lfm2TraceHooks:
             )
         return (
             {
-                "output.final_norm_input": self.global_raw[
-                    "output_final_norm_input"
-                ],
+                "output.final_norm_input": self.global_raw["output_final_norm_input"],
                 "output.final_norm_output": final_output,
                 "output.lm_head_input": head_input,
             },
@@ -2065,14 +2045,8 @@ class _Lfm2TraceHooks:
         else:
             cos = raw["attention_cos"].unsqueeze(2)
             sin = raw["attention_sin"].unsqueeze(2)
-            q_rotary = (
-                q_normalized * cos
-                + _rotate_half(torch, q_normalized) * sin
-            )
-            k_rotary = (
-                k_normalized * cos
-                + _rotate_half(torch, k_normalized) * sin
-            )
+            q_rotary = q_normalized * cos + _rotate_half(torch, q_normalized) * sin
+            k_rotary = k_normalized * cos + _rotate_half(torch, k_normalized) * sin
         context = raw["attention_context"].view(
             batch,
             sample_count,
@@ -2085,21 +2059,15 @@ class _Lfm2TraceHooks:
         q_sample = q_rotary[:, -sample_count:, :, :]
         k_sample = k_rotary[:, -sample_count:, :, :]
         result = {
-            "attention.q_linear": q_linear.view(
-                batch, sample_count, q_heads, head_dim
-            )
+            "attention.q_linear": q_linear.view(batch, sample_count, q_heads, head_dim)
             .transpose(1, 2)
             .contiguous(),
             "attention.q": q_sample.transpose(1, 2).contiguous(),
-            "attention.k_linear": k_linear.view(
-                batch, sample_count, kv_heads, head_dim
-            )
+            "attention.k_linear": k_linear.view(batch, sample_count, kv_heads, head_dim)
             .transpose(1, 2)
             .contiguous(),
             "attention.k": k_sample.transpose(1, 2).contiguous(),
-            "attention.v": v_linear.view(
-                batch, sample_count, kv_heads, head_dim
-            )
+            "attention.v": v_linear.view(batch, sample_count, kv_heads, head_dim)
             .transpose(1, 2)
             .contiguous(),
             "attention.context": context.transpose(1, 2).contiguous(),
@@ -2121,9 +2089,7 @@ class _Lfm2TraceHooks:
         qk_scores = raw["attention_execution_qk_scores"]
         sampled_mask = raw["attention_execution_sampled_mask"]
         probabilities = raw["attention_execution_probabilities"]
-        reconstructed_context = raw[
-            "attention_execution_reconstructed_context"
-        ]
+        reconstructed_context = raw["attention_execution_reconstructed_context"]
         captured_context = context.transpose(1, 2)
         serialized_maximum_error = float(
             (
@@ -2145,9 +2111,7 @@ class _Lfm2TraceHooks:
                 "changed during CPU serialization "
                 f"(max error {serialized_maximum_error:.6g})."
             )
-        maximum_error = float(
-            raw["attention_execution_reconstruction_max_abs_error"]
-        )
+        maximum_error = float(raw["attention_execution_reconstruction_max_abs_error"])
         if raw["attention_execution_reconstruction_verified"] is not True:
             raise Lfm2CircuitTraceCaptureError(
                 f"Attention layer {index} lacks a successful execution-device "
@@ -2248,9 +2212,10 @@ class _Lfm2TraceHooks:
         fir_length = operator.fir_length
         conv_module = getattr(getattr(self.layers[index], "conv", None), "conv", None)
         kernel_value = getattr(conv_module, "weight", None)
-        if (
-            not torch.is_tensor(kernel_value)
-            or tuple(kernel_value.shape) != (hidden, 1, fir_length)
+        if not torch.is_tensor(kernel_value) or tuple(kernel_value.shape) != (
+            hidden,
+            1,
+            fir_length,
         ):
             raise Lfm2CircuitTraceCaptureError(
                 f"Short-conv layer {index} FIR kernel shape changed."
@@ -2291,10 +2256,7 @@ class _Lfm2TraceHooks:
                 groups=hidden,
             )[..., :sequence]
         else:
-            if (
-                tuple(pre_state.shape) != (batch, hidden, fir_length)
-                or sequence != 1
-            ):
+            if tuple(pre_state.shape) != (batch, hidden, fir_length) or sequence != 1:
                 raise Lfm2CircuitTraceCaptureError(
                     f"Short-conv layer {index} pre-update state shape changed."
                 )
@@ -2426,18 +2388,12 @@ def _compare_logits(
         )
     difference = cached_cpu.to(torch.float64) - full_cpu.to(torch.float64)
     max_abs_error = float(difference.abs().max().item())
-    cached_rows = cached_cpu.to(torch.float64).reshape(
-        -1, int(cached_cpu.shape[-1])
-    )
-    full_rows = full_cpu.to(torch.float64).reshape(
-        -1, int(full_cpu.shape[-1])
-    )
+    cached_rows = cached_cpu.to(torch.float64).reshape(-1, int(cached_cpu.shape[-1]))
+    full_rows = full_cpu.to(torch.float64).reshape(-1, int(full_cpu.shape[-1]))
     cached_top1 = torch.argmax(cached_rows, dim=-1)
     full_top1 = torch.argmax(full_rows, dim=-1)
     agreements = cached_top1 == full_top1
-    disagreement_indices = torch.nonzero(
-        ~agreements, as_tuple=False
-    ).reshape(-1)
+    disagreement_indices = torch.nonzero(~agreements, as_tuple=False).reshape(-1)
     cached_top2 = torch.topk(cached_rows, k=2, dim=-1).values
     full_top2 = torch.topk(full_rows, k=2, dim=-1).values
     cached_margins = cached_top2[:, 0] - cached_top2[:, 1]
@@ -2453,47 +2409,28 @@ def _compare_logits(
         row_difference = difference.reshape_as(cached_rows)[row_index]
         row_error = float(row_difference.abs().max().item())
         pair_error_envelope = float(
-            (
-                row_difference[cached_id].abs()
-                + row_difference[full_id].abs()
-            ).item()
+            (row_difference[cached_id].abs() + row_difference[full_id].abs()).item()
         )
         cached_gap = float(
-            (
-                cached_rows[row_index, cached_id]
-                - cached_rows[row_index, full_id]
-            ).item()
+            (cached_rows[row_index, cached_id] - cached_rows[row_index, full_id]).item()
         )
         full_gap = float(
-            (
-                full_rows[row_index, full_id]
-                - full_rows[row_index, cached_id]
-            ).item()
+            (full_rows[row_index, full_id] - full_rows[row_index, cached_id]).item()
         )
-        maximum_cached_preference_gap = max(
-            maximum_cached_preference_gap, cached_gap
-        )
-        maximum_full_preference_gap = max(
-            maximum_full_preference_gap, full_gap
-        )
+        maximum_cached_preference_gap = max(maximum_cached_preference_gap, cached_gap)
+        maximum_full_preference_gap = max(maximum_full_preference_gap, full_gap)
         within_envelope = (
             cached_gap <= pair_error_envelope + 1e-12
             and full_gap <= pair_error_envelope + 1e-12
         )
-        error_envelope_verified = (
-            error_envelope_verified and within_envelope
-        )
+        error_envelope_verified = error_envelope_verified and within_envelope
         if first_disagreement is None:
             first_disagreement = {
                 "row_index": row_index,
                 "cached_token_id": cached_id,
                 "full_prefix_token_id": full_id,
-                "cached_winner_margin": float(
-                    cached_margins[row_index].item()
-                ),
-                "full_prefix_winner_margin": float(
-                    full_margins[row_index].item()
-                ),
+                "cached_winner_margin": float(cached_margins[row_index].item()),
+                "full_prefix_winner_margin": float(full_margins[row_index].item()),
                 "cached_preference_gap": cached_gap,
                 "full_prefix_preference_gap": full_gap,
                 "row_max_abs_error": row_error,
@@ -2508,15 +2445,10 @@ def _compare_logits(
             atol=config.logit_atol,
         )
     )
-    top1_agreement = bool(
-        bool(agreements.all().item())
-    )
-    top1_decision_verified = (
-        top1_agreement
-        or (
-            config.allow_top1_disagreement_within_numeric_error_envelope
-            and error_envelope_verified
-        )
+    top1_agreement = bool(bool(agreements.all().item()))
+    top1_decision_verified = top1_agreement or (
+        config.allow_top1_disagreement_within_numeric_error_envelope
+        and error_envelope_verified
     )
     if not numerically_close:
         raise Lfm2CircuitTraceCaptureError(
@@ -2540,16 +2472,12 @@ def _compare_logits(
         "numerically_close": numerically_close,
         "top1_agreement": top1_agreement,
         "top1_decision_verified": top1_decision_verified,
-        "top1_exact_or_numeric_tie_required": (
-            config.require_top1_agreement
-        ),
+        "top1_exact_or_numeric_tie_required": (config.require_top1_agreement),
         "numeric_top1_tie_acceptance_enabled": (
             config.allow_top1_disagreement_within_numeric_error_envelope
         ),
         "top1_disagreement_count": int(disagreement_indices.numel()),
-        "top1_disagreement_within_numeric_error_envelope": (
-            error_envelope_verified
-        ),
+        "top1_disagreement_within_numeric_error_envelope": (error_envelope_verified),
         "maximum_cached_preference_gap_on_disagreement": (
             maximum_cached_preference_gap
         ),
@@ -2956,10 +2884,7 @@ def _capture_batch(
         "all_cached_top1_decisions_verified": (
             None
             if full_prefix_only
-            else all(
-                bool(value["top1_decision_verified"])
-                for value in verifications
-            )
+            else all(bool(value["top1_decision_verified"]) for value in verifications)
         ),
         "decode_trace_mode": config.decode_trace_mode,
         "canonical_trace_source": (
@@ -3322,9 +3247,7 @@ def _verify_cache_layout(cache_path: Path, batch_count: int) -> None:
         raise Lfm2CircuitTraceCorruptionError(
             "Cache batches directory is missing or unsafe."
         )
-    expected_batches = {
-        f"batch-{index:06d}" for index in range(batch_count)
-    }
+    expected_batches = {f"batch-{index:06d}" for index in range(batch_count)}
     if {path.name for path in batches_path.iterdir()} != expected_batches:
         raise Lfm2CircuitTraceCorruptionError(
             "Cache batch directory set is incomplete or modified."
@@ -3337,14 +3260,11 @@ def _fresh_verified_cache_state(
     """Reauthenticate cache metadata and layout against an opened handle."""
 
     fresh_manifest = _read_canonical_json(cache.path / MANIFEST_FILENAME)
-    fresh_completion = _read_canonical_json(
-        cache.path / COMPLETION_FILENAME
-    )
+    fresh_completion = _read_canonical_json(cache.path / COMPLETION_FILENAME)
     _validate_manifest(fresh_manifest)
     entries = _validate_completion(fresh_completion, fresh_manifest)
     if (
-        fresh_manifest["manifest_sha256"]
-        != cache._manifest["manifest_sha256"]
+        fresh_manifest["manifest_sha256"] != cache._manifest["manifest_sha256"]
         or fresh_completion["completion_sha256"]
         != cache._completion["completion_sha256"]
     ):
@@ -3728,7 +3648,7 @@ class Lfm2CircuitTraceCache:
     def selective_authenticated_session(
         self,
     ) -> Lfm2CircuitTraceSelectiveAuthenticatedSession:
-        """Authenticate files once and permit bounded selected tensor reads."""
+        """Hash-authenticate each file once, then permit selected tensor reads."""
 
         return Lfm2CircuitTraceSelectiveAuthenticatedSession(self)
 
@@ -3823,9 +3743,7 @@ class Lfm2CircuitTraceAuthenticatedSession:
         return self.batch_count
 
     def _completion_entries(self) -> tuple[Mapping[str, Any], ...]:
-        fresh_completion = _read_canonical_json(
-            self.path / COMPLETION_FILENAME
-        )
+        fresh_completion = _read_canonical_json(self.path / COMPLETION_FILENAME)
         entries = _validate_completion(
             fresh_completion,
             self._cache._manifest,
@@ -3900,22 +3818,15 @@ class Lfm2CircuitTraceAuthenticatedSession:
             dict(entry) for entry in self._entries
         ):
             raise Lfm2CircuitTraceCorruptionError(
-                "Cache completion entries changed during authenticated "
-                "consumption."
+                "Cache completion entries changed during authenticated consumption."
             )
         body = {
             "schema": AUTHENTICATED_SESSION_SCHEMA,
             "cache_key": self.cache_key,
-            "manifest_sha256": str(
-                self._cache._manifest["manifest_sha256"]
-            ),
-            "completion_sha256": str(
-                self._cache._completion["completion_sha256"]
-            ),
+            "manifest_sha256": str(self._cache._manifest["manifest_sha256"]),
+            "completion_sha256": str(self._cache._completion["completion_sha256"]),
             "batch_count": self.batch_count,
-            "ordered_verified_batches": list(
-                self._ordered_verified_batches
-            ),
+            "ordered_verified_batches": list(self._ordered_verified_batches),
             "authentication_contract": {
                 "manifest_verified_before_payload_consumption": True,
                 "completion_verified_before_each_payload": True,
@@ -4166,8 +4077,7 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                 descriptor = inventory[name]
                 if not isinstance(descriptor, Mapping):
                     raise Lfm2CircuitTraceCorruptionError(
-                        f"Cache batch {index} tensor descriptor {name!r} "
-                        "is invalid."
+                        f"Cache batch {index} tensor descriptor {name!r} is invalid."
                     )
                 size_bytes = descriptor.get("size_bytes")
                 if (
@@ -4176,8 +4086,7 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                     or size_bytes <= 0
                 ):
                     raise Lfm2CircuitTraceCorruptionError(
-                        f"Cache batch {index} tensor {name!r} has invalid "
-                        "bytes."
+                        f"Cache batch {index} tensor {name!r} has invalid bytes."
                     )
                 logical_bytes += size_bytes
         except BaseException:
@@ -4260,23 +4169,15 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
         body = {
             "schema": SELECTIVE_AUTHENTICATED_SESSION_SCHEMA,
             "cache_key": self.cache_key,
-            "manifest_sha256": str(
-                self._cache._manifest["manifest_sha256"]
-            ),
-            "completion_sha256": str(
-                self._cache._completion["completion_sha256"]
-            ),
+            "manifest_sha256": str(self._cache._manifest["manifest_sha256"]),
+            "completion_sha256": str(self._cache._completion["completion_sha256"]),
             "batch_count": self.batch_count,
             "ordered_authenticated_batches": [
                 {
                     "batch_index": state.reference.index,
                     "input_sha256": state.reference.input_sha256,
-                    "trace_file_sha256": str(
-                        state.entry["trace_file_sha256"]
-                    ),
-                    "record_file_sha256": str(
-                        state.entry["record_file_sha256"]
-                    ),
+                    "trace_file_sha256": str(state.entry["trace_file_sha256"]),
+                    "record_file_sha256": str(state.entry["record_file_sha256"]),
                     "record_sha256": state.reference.record_sha256,
                     "tensor_count": state.reference.tensor_count,
                     "logical_bytes": state.reference.logical_bytes,
@@ -4373,8 +4274,7 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                         "input_sha256": state.reference.input_sha256,
                     }:
                         raise Lfm2CircuitTraceCorruptionError(
-                            f"Cache batch {index} safetensors metadata "
-                            "changed."
+                            f"Cache batch {index} safetensors metadata changed."
                         )
                     if (
                         tuple(sorted(handle.keys()))
@@ -4390,13 +4290,9 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                             handle.get_tensor(name),
                             f"cache batch {index} selected tensor {name}",
                         )
-                        if (
-                            _tensor_descriptor(torch, tensor)
-                            != inventory[name]
-                        ):
+                        if _tensor_descriptor(torch, tensor) != inventory[name]:
                             raise Lfm2CircuitTraceCorruptionError(
-                                f"Cache batch {index} selected tensor "
-                                f"{name!r} changed."
+                                f"Cache batch {index} selected tensor {name!r} changed."
                             )
                         tensors[name] = tensor
                 self._verify_batch_identity(state)
@@ -4404,12 +4300,9 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                 tensors.clear()
                 raise
             logical_bytes = sum(
-                int(value.numel() * value.element_size())
-                for value in tensors.values()
+                int(value.numel() * value.element_size()) for value in tensors.values()
             )
-            expected_bytes = sum(
-                int(inventory[name]["size_bytes"]) for name in names
-            )
+            expected_bytes = sum(int(inventory[name]["size_bytes"]) for name in names)
             if logical_bytes != expected_bytes:
                 tensors.clear()
                 raise Lfm2CircuitTraceCorruptionError(
@@ -4423,9 +4316,7 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
                 "input_sha256": state.reference.input_sha256,
                 "record_sha256": state.reference.record_sha256,
                 "ordered_tensor_names": list(names),
-                "ordered_tensor_descriptors": [
-                    dict(inventory[name]) for name in names
-                ],
+                "ordered_tensor_descriptors": [dict(inventory[name]) for name in names],
                 "logical_bytes": logical_bytes,
             }
             return Lfm2CircuitTraceSelectedBatchPayload(
@@ -4443,9 +4334,7 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
         payload: Lfm2CircuitTraceSelectedBatchPayload,
     ) -> None:
         if not isinstance(payload, Lfm2CircuitTraceSelectedBatchPayload):
-            raise TypeError(
-                "payload must be Lfm2CircuitTraceSelectedBatchPayload."
-            )
+            raise TypeError("payload must be Lfm2CircuitTraceSelectedBatchPayload.")
         if payload.session_sha256 != self.evidence_sha256:
             raise Lfm2CircuitTraceCacheError(
                 "Selected payload belongs to another authenticated session."
@@ -4673,9 +4562,7 @@ def _single_pass_causal_contract(
     torch = _torch()
     autocast_enabled = bool(torch.is_autocast_enabled())
     try:
-        autocast_enabled = autocast_enabled or bool(
-            torch.is_autocast_enabled("cpu")
-        )
+        autocast_enabled = autocast_enabled or bool(torch.is_autocast_enabled("cpu"))
     except TypeError:  # pragma: no cover - older supported PyTorch surface
         pass
     if autocast_enabled:
@@ -4700,9 +4587,7 @@ def _single_pass_causal_contract(
             if parameter.is_floating_point()
         }
     )
-    if not floating_dtypes or not set(floating_dtypes).issubset(
-        {"float32", "float64"}
-    ):
+    if not floating_dtypes or not set(floating_dtypes).issubset({"float32", "float64"}):
         raise Lfm2CircuitTraceCaptureError(
             "Single-pass child replay has not certified low-precision model "
             f"dtypes {floating_dtypes}; use prefix_by_prefix_canonical."
@@ -4734,9 +4619,7 @@ def _single_pass_causal_contract(
             if contract.kind == "full_attention"
             else modeling_lfm2.Lfm2ShortConv
         )
-        operator = (
-            layer.self_attn if contract.kind == "full_attention" else layer.conv
-        )
+        operator = layer.self_attn if contract.kind == "full_attention" else layer.conv
         if (
             type(layer) is not modeling_lfm2.Lfm2DecoderLayer
             or type(operator) is not expected_operator_type
@@ -4745,9 +4628,10 @@ def _single_pass_causal_contract(
                 "Single-pass child replay requires exact canonical LFM2 "
                 "decoder/operator runtime classes."
             )
-        if contract.kind == "full_attention" and getattr(
-            operator, "is_causal", None
-        ) is not True:
+        if (
+            contract.kind == "full_attention"
+            and getattr(operator, "is_causal", None) is not True
+        ):
             raise Lfm2CircuitTraceCaptureError(
                 "Single-pass child replay requires every attention operator "
                 "to certify is_causal=True."
@@ -4793,16 +4677,14 @@ def _single_pass_causal_contract(
         )
         if trajectory_length > max_positions:
             raise Lfm2CircuitTraceCaptureError(
-                "Single-pass child replay trajectory exceeds the model context "
-                "limit."
+                "Single-pass child replay trajectory exceeds the model context limit."
             )
         if batch.position_ids is not None:
             last_position = int(batch.position_ids[:, -1:].max().item())
             last_position += int(batch.forced_decode_ids.shape[1])
             if last_position >= max_positions:
                 raise Lfm2CircuitTraceCaptureError(
-                    "Single-pass child replay positions exceed the model "
-                    "context limit."
+                    "Single-pass child replay positions exceed the model context limit."
                 )
     runtime_path = Path(modeling_lfm2.__file__).resolve()
     masking_path = Path(masking_utils.__file__).resolve()
@@ -4983,18 +4865,14 @@ def _single_pass_peak_capture_bytes(
             query_width = operator.query_heads * operator.head_dim
             key_value_width = operator.key_value_heads * operator.head_dim
             # Q-linear, Q-rotary, context; K-linear, K-rotary, V; O.
-            per_token_elements += (
-                3 * query_width + 3 * key_value_width + hidden_size
-            )
+            per_token_elements += 3 * query_width + 3 * key_value_width + hidden_size
         else:
             # B, C, x, B*x, pre-O context, O.
             per_token_elements += 6 * hidden_size
 
     embeddings = model.get_input_embeddings()
     element_size = int(embeddings.weight.element_size())
-    trajectory_tokens = int(
-        batch.input_ids.shape[1] + batch.forced_decode_ids.shape[1]
-    )
+    trajectory_tokens = int(batch.input_ids.shape[1] + batch.forced_decode_ids.shape[1])
     retained_tokens = min(
         int(batch.input_ids.shape[1]),
         config.sample_last_tokens,
@@ -5007,9 +4885,7 @@ def _single_pass_peak_capture_bytes(
     ]
     if batch.position_ids is not None:
         input_tensors.append(batch.position_ids)
-    peak += sum(
-        int(value.numel() * value.element_size()) for value in input_tensors
-    )
+    peak += sum(int(value.numel() * value.element_size()) for value in input_tensors)
     if peak <= 0 or peak > torch.iinfo(torch.int64).max:
         raise Lfm2CircuitTraceCaptureError(
             "Single-pass trace memory estimate is invalid."
@@ -5045,10 +4921,7 @@ def _capture_child_batch_single_pass(
         _trajectory_inputs(torch, batch, device)
     )
     vocabulary_size = int(getattr(getattr(model, "config", None), "vocab_size", 0))
-    if (
-        vocabulary_size <= 0
-        or bool((trajectory_ids >= vocabulary_size).any().item())
-    ):
+    if vocabulary_size <= 0 or bool((trajectory_ids >= vocabulary_size).any().item()):
         raise Lfm2CircuitTraceCaptureError(
             f"Batch {batch.index} trajectory contains out-of-vocabulary tokens."
         )
