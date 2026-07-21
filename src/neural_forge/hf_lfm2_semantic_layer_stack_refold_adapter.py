@@ -1231,6 +1231,22 @@ def _build_attention_evidence(
     return tuple(result)
 
 
+def _is_zero_operation_audit(value: Any) -> bool:
+    """Accept adapter-specific zero-operation supersets, never missing/nonzero data."""
+
+    return bool(
+        isinstance(value, Mapping)
+        and all(value.get(name) == expected for name, expected in _ZERO_OPERATIONS.items())
+        and all(
+            isinstance(name, str)
+            and isinstance(count, int)
+            and not isinstance(count, bool)
+            and count == 0
+            for name, count in value.items()
+        )
+    )
+
+
 def _authenticated_heldout_incumbent_noop(
     receipt: Mapping[str, Any],
     *,
@@ -1259,11 +1275,16 @@ def _authenticated_heldout_incumbent_noop(
         == []
         and not changed_state_keys
         and receipt.get("parameter_count_changed") is False
+        and receipt.get("topology_changed") is False
+        and receipt.get("parameter_identities_preserved") is True
+        and receipt.get("parameter_storage_preserved") is True
+        and receipt.get("gradient_state_preserved") is True
+        and receipt.get("exact_noop_state_proven") is True
         and (
             receipt.get("analytic_cached_evidence_only") is True
             or receipt.get("analytic_linear_and_cluster_solves_only") is True
         )
-        and receipt.get("operation_audit") == dict(_ZERO_OPERATIONS)
+        and _is_zero_operation_audit(receipt.get("operation_audit"))
     )
 
 
@@ -1303,14 +1324,31 @@ def _install_attention_operator(
         after_sha256=after,
         changed_state_keys=changed,
     ):
+        analytic = raw_receipt.get("analytic_refold", {})
         if (
             raw_receipt.get("schema") != LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA
             or raw_receipt.get("layer_index") != layer_index
+            or raw_receipt.get("install_count") != 0
             or raw_receipt.get("transport_evidence_sha256")
             != [item.evidence_sha256 for item in evidence]
             or raw_receipt.get("changed_state_keys") != []
             or raw_receipt.get("parameter_element_count_before") != parameter_count
             or raw_receipt.get("parameter_element_count_after") != parameter_count
+            or raw_receipt.get("target_topology_sha256_before")
+            != raw_receipt.get("target_topology_sha256_after")
+            or analytic.get("cache_key") != cache_key
+            or analytic.get("bridge_artifact_sha256") != bridge_artifact_sha256
+            or analytic.get("analytically_refit_projection_roles") != []
+            or analytic.get("fixed_inherited_projection_roles")
+            != ["q_proj", "k_proj", "v_proj", "out_proj"]
+            or analytic.get("complete_qkvo_bundle_installed_transactionally")
+            is not False
+            or analytic.get("complete_qkvo_bundle_transaction_verified") is not True
+            or analytic.get(
+                "authenticated_incumbent_qkvo_retained_without_installation"
+            )
+            is not True
+            or analytic.get("projection_parameter_copy_calls") != 0
         ):
             raise Lfm2SemanticLayerStackRefoldError(
                 "Attention incumbent no-op receipt is stale or incomplete."

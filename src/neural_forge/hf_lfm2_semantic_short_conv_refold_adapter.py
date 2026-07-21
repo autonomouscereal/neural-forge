@@ -1572,7 +1572,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "status": (
             "installed-frozen-semantic-short-conv-candidate"
             if changed
-            else "retained-authenticated-incumbent"
+            else "heldout-selected-incumbent-noop"
         ),
         "installed": bool(changed),
         "install_count": int(bool(changed)),
@@ -1651,6 +1651,18 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "validation_used_only_for_acceptance_or_incumbent_fallback": True,
         "incumbent_noop_candidate_competed": True,
         "incumbent_noop_fallback_used": chosen.name == "incumbent-noop",
+        "incumbent_selected_by_heldout_gates": chosen.name == "incumbent-noop",
+        "fit_check_nonregression_passed": bool(
+            reports[chosen.name]["partition_nonregression"]["fit_check"]
+        ),
+        "selection_nonregression_passed": bool(
+            reports[chosen.name]["partition_nonregression"]["selection"]
+        ),
+        "validation_nonregression_passed": _nonregressing(
+            validation,
+            baseline_validation,
+            tolerance=tolerance,
+        ),
         "complete_parent_bcx_history_consumed": True,
         "parent_bcx_exact_only_at_semantic_span_boundaries": True,
         "inserted_target_bcx_rows_are_owner_expanded_proxies": True,

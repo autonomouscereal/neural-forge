@@ -801,6 +801,11 @@ def test_heldout_selected_incumbent_noop_contract_is_strict() -> None:
         "model_state_after_sha256": state,
         "changed_state_keys": [],
         "parameter_count_changed": False,
+        "topology_changed": False,
+        "parameter_identities_preserved": True,
+        "parameter_storage_preserved": True,
+        "gradient_state_preserved": True,
+        "exact_noop_state_proven": True,
         "analytic_cached_evidence_only": True,
         "operation_audit": dict(stack._ZERO_OPERATIONS),
     }
@@ -811,8 +816,33 @@ def test_heldout_selected_incumbent_noop_contract_is_strict() -> None:
         after_sha256=state,
         changed_state_keys=(),
     )
+    assert stack._authenticated_heldout_incumbent_noop(
+        {
+            **receipt,
+            "operation_audit": {
+                **receipt["operation_audit"],
+                "parameters_sparsified": 0,
+                "parameter_aliases_created": 0,
+            },
+        },
+        before_sha256=state,
+        after_sha256=state,
+        changed_state_keys=(),
+    )
     assert not stack._authenticated_heldout_incumbent_noop(
         {**receipt, "validation_nonregression_passed": False},
+        before_sha256=state,
+        after_sha256=state,
+        changed_state_keys=(),
+    )
+    assert not stack._authenticated_heldout_incumbent_noop(
+        {
+            **receipt,
+            "operation_audit": {
+                **receipt["operation_audit"],
+                "parameters_sparsified": 1,
+            },
+        },
         before_sha256=state,
         after_sha256=state,
         changed_state_keys=(),

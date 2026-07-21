@@ -7,6 +7,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 import neural_forge.hf_lfm2_semantic_attention_refold_adapter as adapter  # noqa: E402
+import neural_forge.hf_lfm2_semantic_layer_stack_refold_adapter as stack_adapter  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (  # noqa: E402
     Lfm2EndpointQkMetrics,
@@ -567,15 +568,21 @@ def test_qk_seed_fallback_can_publish_a_joint_v_o_improvement(
     ]
 
 
-def test_total_qkvo_noop_fails_without_mutating_the_model(
+def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = _Model()
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
     evidence = _evidence(model)
     _install_fake_noop_qk_compiler(monkeypatch)
+    before_identity = fingerprint_lfm2_parent(model).identity_sha256
     before = {
         name: value.detach().clone() for name, value in model.state_dict().items()
     }
+    identities = tuple(id(parameter) for parameter in model.parameters())
+    pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
+    gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
     reached_competition = False
 
     def retain_incumbent(
@@ -590,6 +597,14 @@ def test_total_qkvo_noop_fails_without_mutating_the_model(
             {
                 "published_candidate": "incumbent",
                 "candidate_reports": {
+                    "incumbent": {
+                        "eligible_after_fit_fit_check_selection": True,
+                        "partitions": {
+                            "fit": {"nonregressing": True},
+                            "fit_check": {"nonregressing": True},
+                            "selection": {"nonregressing": True},
+                        },
+                    },
                     "fixed_v_output_only": {
                         "rejection_partition": "fit",
                         "partitions": {
@@ -598,7 +613,13 @@ def test_total_qkvo_noop_fails_without_mutating_the_model(
                         },
                     }
                 },
-                "validation": {"endpoint_nonregressing": True},
+                "selected_candidate": "incumbent",
+                "selected_candidate_frozen_before_validation": True,
+                "validation_triggered_refit_or_reselection": False,
+                "validation": {
+                    "endpoint_nonregressing": True,
+                    "route_nonregressing": True,
+                },
             },
         )
 
@@ -607,22 +628,124 @@ def test_total_qkvo_noop_fails_without_mutating_the_model(
         "_select_and_validate_vo_candidate",
         retain_incumbent,
     )
-    with pytest.raises(
-        adapter.Lfm2SemanticAttentionRefoldError,
-        match="installed no correction",
-    ):
-        adapter.compile_install_lfm2_semantic_attention_postfold(
-            target_model=model,
-            layer_index=0,
-            evidence=evidence,
-            cache_key="2" * 64,
-            bridge_artifact_sha256="3" * 64,
-        )
+    monkeypatch.setattr(
+        adapter,
+        "_copy_candidate",
+        lambda *_args, **_kwargs: pytest.fail(
+            "The authenticated total-incumbent path must not copy Parameters."
+        ),
+    )
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
 
     assert reached_competition is True
+    assert receipt["status"] == "heldout-selected-incumbent-noop"
+    assert receipt["installed"] is False
+    assert receipt["install_count"] == 0
+    assert receipt["changed_state_keys"] == []
+    assert receipt["model_state_before_sha256"] == before_identity
+    assert receipt["model_state_after_sha256"] == before_identity
+    assert receipt["target_topology_sha256_before"] == receipt[
+        "target_topology_sha256_after"
+    ]
+    assert receipt["parameter_identities_preserved"] is True
+    assert receipt["parameter_storage_preserved"] is True
+    assert receipt["gradient_state_preserved"] is True
+    assert receipt["exact_noop_state_proven"] is True
+    assert receipt["incumbent_selected_by_heldout_gates"] is True
+    assert receipt["fit_check_nonregression_passed"] is True
+    assert receipt["selection_nonregression_passed"] is True
+    assert receipt["validation_nonregression_passed"] is True
+    report = receipt["analytic_refold"]
+    assert report["analytically_refit_projection_roles"] == []
+    assert report["fixed_inherited_projection_roles"] == [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "out_proj",
+    ]
+    assert report["complete_qkvo_bundle_installed_transactionally"] is False
+    assert report["complete_qkvo_bundle_transaction_verified"] is True
+    assert report["authenticated_incumbent_qkvo_retained_without_installation"] is True
+    assert report["projection_parameter_copy_calls"] == 0
+    assert stack_adapter._authenticated_heldout_incumbent_noop(
+        receipt,
+        before_sha256=before_identity,
+        after_sha256=before_identity,
+        changed_state_keys=(),
+    )
+    validated = stack_adapter._install_attention_operator(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+        installer=lambda **_kwargs: receipt,
+        parameter_count=sum(parameter.numel() for parameter in model.parameters()),
+    )
+    assert validated["result_sha256"] == receipt["result_sha256"]
+    sealed = dict(receipt)
+    digest = sealed.pop("result_sha256")
+    assert canonical_sha256(sealed) == digest
     assert all(
         torch.equal(value, before[name]) for name, value in model.state_dict().items()
     )
+    assert tuple(id(parameter) for parameter in model.parameters()) == identities
+    assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
+    assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+
+
+def test_changed_qkvo_transaction_rolls_back_partial_copy_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    attention = model.model.layers[0].self_attn
+    state = {
+        "q_proj.weight": attention.q_proj.weight.detach().cpu().clone() + 1,
+        "k_proj.weight": attention.k_proj.weight.detach().cpu().clone() + 1,
+        "v_proj.weight": attention.v_proj.weight.detach().cpu().clone(),
+        "out_proj.weight": attention.out_proj.weight.detach().cpu().clone(),
+    }
+    before_identity = fingerprint_lfm2_parent(model).identity_sha256
+    before = {
+        name: value.detach().clone() for name, value in model.state_dict().items()
+    }
+    identities = tuple(id(parameter) for parameter in model.parameters())
+    pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
+    gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
+    original_copy = adapter._copy_candidate
+    copy_calls = 0
+
+    def fail_second_copy(parameter: object, candidate: object) -> None:
+        nonlocal copy_calls
+        copy_calls += 1
+        if copy_calls == 2:
+            raise RuntimeError("injected-second-copy-failure")
+        original_copy(parameter, candidate)
+
+    monkeypatch.setattr(adapter, "_copy_candidate", fail_second_copy)
+    with pytest.raises(RuntimeError, match="injected-second-copy-failure"):
+        adapter._install_qkvo_transaction(
+            model,
+            layer_index=0,
+            state=state,
+        )
+
+    assert copy_calls == 2
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before_identity
+    assert all(
+        torch.equal(value, before[name]) for name, value in model.state_dict().items()
+    )
+    assert tuple(id(parameter) for parameter in model.parameters()) == identities
+    assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
+    assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
 
 
 def test_incomplete_causal_history_fails_before_the_compiler(

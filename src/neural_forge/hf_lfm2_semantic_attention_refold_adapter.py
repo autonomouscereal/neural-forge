@@ -169,6 +169,26 @@ def _parameter_count(model: Any) -> int:
     return total
 
 
+def _topology_sha256(model: Any) -> str:
+    aliases: dict[int, int] = {}
+    records = []
+    for name, parameter in model.named_parameters(remove_duplicate=False):
+        alias = aliases.setdefault(id(parameter), len(aliases))
+        records.append(
+            {
+                "name": name,
+                "alias_group": alias,
+                "shape": [int(size) for size in parameter.shape],
+                "dtype": str(parameter.dtype).removeprefix("torch."),
+                "layout": str(parameter.layout).removeprefix("torch."),
+                "requires_grad": bool(parameter.requires_grad),
+            }
+        )
+    if not records:
+        raise Lfm2SemanticAttentionRefoldError("Target model has no Parameters.")
+    return canonical_sha256(records)
+
+
 def _installation_receipt_body(
     *,
     layer_index: int,
@@ -177,6 +197,8 @@ def _installation_receipt_body(
     model_state_after_sha256: str,
     changed_state_keys: Sequence[str],
     parameter_element_count: int,
+    target_topology_sha256_before: str,
+    target_topology_sha256_after: str,
 ) -> dict[str, Any]:
     evidence = tuple(
         _digest(value, "transport evidence SHA-256") for value in evidence_sha256
@@ -184,25 +206,40 @@ def _installation_receipt_body(
     changed = tuple(changed_state_keys)
     before = _digest(model_state_before_sha256, "model state before")
     after = _digest(model_state_after_sha256, "model state after")
+    topology_before = _digest(
+        target_topology_sha256_before,
+        "target topology before",
+    )
+    topology_after = _digest(
+        target_topology_sha256_after,
+        "target topology after",
+    )
     if (
         isinstance(layer_index, bool)
         or not isinstance(layer_index, int)
         or layer_index < 0
         or not evidence
-        or not changed
         or any(not isinstance(value, str) or not value for value in changed)
         or isinstance(parameter_element_count, bool)
         or not isinstance(parameter_element_count, int)
         or parameter_element_count <= 0
-        or before == after
+        or bool(changed) != (before != after)
+        or topology_before != topology_after
     ):
         raise Lfm2SemanticAttentionRefoldError(
             "Attention installation receipt inputs are incomplete."
         )
+    installed = bool(changed)
     return {
         "schema": _INSTALLATION_SCHEMA,
+        "status": (
+            "installed-frozen-semantic-attention-candidate"
+            if installed
+            else "heldout-selected-incumbent-noop"
+        ),
         "layer_index": layer_index,
-        "installed": True,
+        "installed": installed,
+        "install_count": int(installed),
         "transport_evidence_sha256": list(evidence),
         "model_state_before_sha256": before,
         "model_state_after_sha256": after,
@@ -210,6 +247,19 @@ def _installation_receipt_body(
         "parameter_element_count_before": parameter_element_count,
         "parameter_element_count_after": parameter_element_count,
         "parameter_count_changed": False,
+        "target_topology_sha256_before": topology_before,
+        "target_topology_sha256_after": topology_after,
+        "topology_changed": False,
+        "parameter_identities_preserved": True,
+        "parameter_storage_preserved": True,
+        "gradient_state_preserved": True,
+        "exact_noop_state_proven": not installed,
+        "incumbent_selected_by_heldout_gates": not installed,
+        "fit_check_nonregression_passed": True,
+        "selection_nonregression_passed": True,
+        "validation_nonregression_passed": True,
+        "candidate_frozen_before_validation": True,
+        "validation_triggered_refit": False,
         "analytic_cached_evidence_only": True,
         "operation_audit": dict(_INSTALLATION_ZERO_OPERATIONS),
     }
@@ -2393,6 +2443,12 @@ def _parameter_bundle(target_model: Any, layer_index: int) -> Mapping[str, Any]:
     return MappingProxyType(values)
 
 
+def _copy_candidate(parameter: Any, candidate: Any) -> None:
+    """Single observable mutation point; authenticated total no-ops bypass it."""
+
+    parameter.copy_(candidate.to(device=parameter.device))
+
+
 def _install_qkvo_transaction(
     target_model: Any,
     *,
@@ -2413,7 +2469,18 @@ def _install_qkvo_transaction(
         name: value.detach().to(device="cpu").contiguous().clone()
         for name, value in parameters.items()
     }
+    topology = _topology_sha256(target_model)
     parameter_ids = {name: id(value) for name, value in parameters.items()}
+    parameter_pointers = {
+        name: int(value.data_ptr()) for name, value in parameters.items()
+    }
+    parameter_shapes = {
+        name: tuple(value.shape) for name, value in parameters.items()
+    }
+    parameter_dtypes = {name: value.dtype for name, value in parameters.items()}
+    parameter_requires_grad = {
+        name: bool(value.requires_grad) for name, value in parameters.items()
+    }
     gradient_ids = {
         name: None if value.grad is None else id(value.grad)
         for name, value in parameters.items()
@@ -2423,32 +2490,77 @@ def _install_qkvo_transaction(
         for name, value in parameters.items()
     }
     prefix = f"model.layers.{layer_index}.self_attn."
-    try:
-        with torch.no_grad():
-            for name, parameter in parameters.items():
-                candidate = suffix_state[name.removeprefix(prefix)]
-                if (
-                    tuple(candidate.shape) != tuple(parameter.shape)
-                    or candidate.dtype != parameter.dtype
-                ):
-                    raise Lfm2SemanticAttentionRefoldError(
-                        f"Compiled state changed the topology of {name}."
-                    )
-                parameter.copy_(candidate.to(device=parameter.device))
-        if (
-            _parameter_count(target_model) != count
-            or any(id(parameters[name]) != parameter_ids[name] for name in parameters)
-            or any(
-                (None if parameters[name].grad is None else id(parameters[name].grad))
-                != gradient_ids[name]
+
+    def integrity_preserved() -> bool:
+        return bool(
+            _parameter_count(target_model) == count
+            and _topology_sha256(target_model) == topology
+            and all(id(parameters[name]) == parameter_ids[name] for name in parameters)
+            and all(
+                int(parameters[name].data_ptr()) == parameter_pointers[name]
                 for name in parameters
             )
+            and all(
+                tuple(parameters[name].shape) == parameter_shapes[name]
+                for name in parameters
+            )
+            and all(
+                parameters[name].dtype == parameter_dtypes[name] for name in parameters
+            )
+            and all(
+                bool(parameters[name].requires_grad)
+                == parameter_requires_grad[name]
+                for name in parameters
+            )
+            and all(
+                (None if parameters[name].grad is None else id(parameters[name].grad))
+                == gradient_ids[name]
+                for name in parameters
+            )
+            and all(
+                parameters[name].grad is None
+                or _tensor_sha256(parameters[name].grad) == gradient_hashes[name]
+                for name in parameters
+            )
+        )
+
+    candidates = {}
+    for name, parameter in parameters.items():
+        candidate = suffix_state[name.removeprefix(prefix)]
+        if (
+            not isinstance(candidate, torch.Tensor)
+            or tuple(candidate.shape) != tuple(parameter.shape)
+            or candidate.dtype != parameter.dtype
+            or candidate.requires_grad
+            or candidate.grad_fn is not None
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                f"Compiled state changed the topology or gradient state of {name}."
+            )
+        candidates[name] = candidate.detach().to(device="cpu").contiguous()
+    expected_changed = tuple(
+        name
+        for name in parameters
+        if not torch.equal(candidates[name], snapshots[name])
+    )
+    if not expected_changed:
+        if (
+            fingerprint_lfm2_parent(target_model).identity_sha256 != before_model
+            or not integrity_preserved()
             or any(
-                parameters[name].grad is not None
-                and _tensor_sha256(parameters[name].grad) != gradient_hashes[name]
+                not torch.equal(parameters[name].detach().cpu(), snapshots[name])
                 for name in parameters
             )
         ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Authenticated attention incumbent no-op did not preserve exact state."
+            )
+        return before_model, before_model, (), count
+    try:
+        with torch.no_grad():
+            for name in expected_changed:
+                _copy_candidate(parameters[name], candidates[name])
+        if not integrity_preserved():
             raise Lfm2SemanticAttentionRefoldError(
                 "Attention installation changed topology, identities, or gradients."
             )
@@ -2458,9 +2570,9 @@ def _install_qkvo_transaction(
             if not torch.equal(parameter.detach().cpu(), snapshots[name])
         )
         after_model = fingerprint_lfm2_parent(target_model).identity_sha256
-        if not changed or after_model == before_model:
+        if changed != expected_changed or after_model == before_model:
             raise Lfm2SemanticAttentionRefoldError(
-                "Frozen semantic attention candidate installed no correction."
+                "Frozen semantic attention candidate did not install exactly its correction."
             )
         return before_model, after_model, changed, count
     except BaseException:
@@ -2474,7 +2586,11 @@ def _install_qkvo_transaction(
                 )
         if (
             fingerprint_lfm2_parent(target_model).identity_sha256 != before_model
-            or _parameter_count(target_model) != count
+            or not integrity_preserved()
+            or any(
+                not torch.equal(parameters[name].detach().cpu(), snapshots[name])
+                for name in parameters
+            )
         ):
             raise Lfm2SemanticAttentionRefoldError(
                 "Attention installation failed and exact rollback was not proven."
@@ -2747,6 +2863,14 @@ def compile_install_lfm2_semantic_attention_postfold(
         compute_devices=policy.compute_devices,
     )
     published_vo_kind = str(vo_gate["published_candidate"])
+    if published_vo_kind not in {
+        "incumbent",
+        "fixed_v_output_only",
+        "joint_value_output",
+    }:
+        raise Lfm2SemanticAttentionRefoldError(
+            "V/O candidate gate published an unknown candidate role."
+        )
     writer_accepted = published_vo_kind == "fixed_v_output_only"
     joint_accepted = published_vo_kind == "joint_value_output"
     value_changed = not torch.equal(published_value, seed.value_weight)
@@ -2763,6 +2887,33 @@ def compile_install_lfm2_semantic_attention_postfold(
         raise Lfm2SemanticAttentionRefoldError(
             "V/O candidate gate acceptance disagrees with its published state."
         )
+    total_incumbent_noop = not (
+        query_changed or key_changed or value_changed or output_changed
+    )
+    if total_incumbent_noop:
+        incumbent_report = vo_gate.get("candidate_reports", {}).get("incumbent", {})
+        incumbent_partitions = incumbent_report.get("partitions", {})
+        validation_report = vo_gate.get("validation", {})
+        if (
+            compiled.accepted
+            or compiled.changed
+            or published_vo_kind != "incumbent"
+            or incumbent_report.get(
+                "eligible_after_fit_fit_check_selection"
+            )
+            is not True
+            or any(
+                incumbent_partitions.get(name, {}).get("nonregressing") is not True
+                for name in ("fit_check", "selection")
+            )
+            or vo_gate.get("selected_candidate_frozen_before_validation") is not True
+            or vo_gate.get("validation_triggered_refit_or_reselection") is not False
+            or validation_report.get("endpoint_nonregressing") is not True
+            or validation_report.get("route_nonregressing") is not True
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Total attention no-op lacks authenticated held-out incumbent gates."
+            )
     output_report = vo_gate["candidate_reports"]["fixed_v_output_only"]
     writer_gate = _seal_writer_gate(
         {
@@ -2799,11 +2950,13 @@ def compile_install_lfm2_semantic_attention_postfold(
         "v_proj.weight": published_value,
         "out_proj.weight": published_output,
     }
+    topology_before = _topology_sha256(target_model)
     before, after, changed, parameter_count = _install_qkvo_transaction(
         target_model,
         layer_index=layer_index,
         state=state,
     )
+    topology_after = _topology_sha256(target_model)
     base = _installation_receipt_body(
         layer_index=layer_index,
         evidence_sha256=[item.evidence_sha256 for item in raw],
@@ -2811,6 +2964,8 @@ def compile_install_lfm2_semantic_attention_postfold(
         model_state_after_sha256=after,
         changed_state_keys=changed,
         parameter_element_count=parameter_count,
+        target_topology_sha256_before=topology_before,
+        target_topology_sha256_after=topology_after,
     )
     body = {
         **base,
@@ -2912,7 +3067,12 @@ def compile_install_lfm2_semantic_attention_postfold(
                 and value_changed
                 and output_changed
             ),
-            "complete_qkvo_bundle_installed_transactionally": True,
+            "complete_qkvo_bundle_installed_transactionally": bool(changed),
+            "complete_qkvo_bundle_transaction_verified": True,
+            "authenticated_incumbent_qkvo_retained_without_installation": (
+                not changed
+            ),
+            "projection_parameter_copy_calls": len(changed),
             "complete_causal_cache_only": True,
             "contractions_supported": False,
             "query_supervision_mode": (

@@ -1501,7 +1501,7 @@ def install_lfm2_prepared_semantic_mlp_postfold(
             "status": (
                 "prepared-final-w2-deferred"
                 if defer_down_weight
-                else "retained-authenticated-incumbent"
+                else "heldout-selected-incumbent-noop"
             ),
             "installed": False,
             "layer_index": prepared.layer_index,
@@ -1525,6 +1525,24 @@ def install_lfm2_prepared_semantic_mlp_postfold(
             "changed_parameter_roles": [],
             "selected_install_roles_identical_to_live_state": True,
             "incumbent_noop_fallback_used": prepared.selected_role == "incumbent",
+            "incumbent_selected_by_heldout_gates": (
+                prepared.selected_role == "incumbent"
+            ),
+            "fit_check_nonregression_passed": bool(
+                prepared.selection_receipt["heldout_nonregression"][
+                    prepared.selected_role
+                ]["fit_check"]
+            ),
+            "selection_nonregression_passed": bool(
+                prepared.selection_receipt["heldout_nonregression"][
+                    prepared.selected_role
+                ]["selection"]
+            ),
+            "validation_nonregression_passed": bool(
+                prepared.selection_receipt["heldout_nonregression"][
+                    prepared.selected_role
+                ]["validation"]
+            ),
             "final_layer_mlp_w2_deferred_to_fused_terminal": defer_down_weight,
             "downstream_terminal_replay_and_validation_required": defer_down_weight,
             "terminal_action_evidence_sha256": {

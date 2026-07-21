@@ -9,6 +9,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 import neural_forge.hf_lfm2_semantic_mlp_refold_adapter as adapter  # noqa: E402
+import neural_forge.hf_lfm2_semantic_layer_stack_refold_adapter as stack_adapter  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     fingerprint_lfm2_parent,
 )
@@ -487,7 +488,17 @@ def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
     receipt = dict(result.receipt)
     seal = receipt.pop("result_sha256")
     assert adapter.canonical_sha256(receipt) == seal
-    assert receipt["status"] == "retained-authenticated-incumbent"
+    assert receipt["status"] == "heldout-selected-incumbent-noop"
+    assert receipt["incumbent_selected_by_heldout_gates"] is True
+    assert receipt["fit_check_nonregression_passed"] is True
+    assert receipt["selection_nonregression_passed"] is True
+    assert receipt["validation_nonregression_passed"] is True
+    assert stack_adapter._authenticated_heldout_incumbent_noop(
+        receipt,
+        before_sha256=receipt["model_state_before_sha256"],
+        after_sha256=receipt["model_state_after_sha256"],
+        changed_state_keys=receipt["changed_parameter_roles"],
+    )
     assert receipt["installed"] is False
     assert receipt["install_count"] == 0
     assert receipt["changed_parameter_roles"] == []
