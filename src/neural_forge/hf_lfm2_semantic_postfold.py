@@ -113,7 +113,11 @@ from neural_forge.hf_semantic_attention_lattice import (
     inspect_lfm2_semantic_attention_cache_capability,
     transport_lfm2_phase_probability_preserving_attention,
 )
-from neural_forge.hf_tied_causal_interface_fold import TiedCausalInterfaceFold
+from neural_forge.hf_tied_causal_interface_fold import (
+    TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA,
+    TiedCausalInterfaceFold,
+    whiten_tied_causal_interface,
+)
 from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     fingerprint_hf_tokenizer_semantics,
@@ -343,9 +347,7 @@ def _dense_weight_structural_coverage(
     covered_output_units = int(
         nonzero.reshape(output_units, -1).any(dim=1).sum().item()
     )
-    covered_input_units = int(
-        nonzero.reshape(-1, input_units).any(dim=0).sum().item()
-    )
+    covered_input_units = int(nonzero.reshape(-1, input_units).any(dim=0).sum().item())
     body = {
         "schema": "neural-forge-dense-weight-structural-coverage-v1",
         "parameter_name": parameter_name,
@@ -362,9 +364,7 @@ def _dense_weight_structural_coverage(
         "covered_output_structural_unit_count": covered_output_units,
         "input_structural_unit_count": input_units,
         "covered_input_structural_unit_count": covered_input_units,
-        "all_output_structural_units_covered": (
-            covered_output_units == output_units
-        ),
+        "all_output_structural_units_covered": (covered_output_units == output_units),
         "all_input_structural_units_covered": covered_input_units == input_units,
         "structurally_nonzero": bool(
             finite
@@ -401,9 +401,7 @@ def _lfm2_dense_producer_chain_coverage(
             "Dense producer-chain coverage request is invalid."
         )
     roles = tuple(_DENSE_PRODUCER_WEIGHT_ROLES[producer_kind])
-    deferred_roles = (
-        ("feed_forward.w2.weight",) if defer_down_weight else ()
-    )
+    deferred_roles = ("feed_forward.w2.weight",) if defer_down_weight else ()
     required_roles = tuple(role for role in roles if role not in deferred_roles)
     named_rows = list(target_model.named_parameters(remove_duplicate=False))
     named: dict[str, Any] = {}
@@ -423,9 +421,7 @@ def _lfm2_dense_producer_chain_coverage(
             named[parameter_name],
             parameter_name=parameter_name,
         )
-    role_hashes = {
-        role: receipts[role]["tensor_sha256"] for role in roles
-    }
+    role_hashes = {role: receipts[role]["tensor_sha256"] for role in roles}
     body = {
         "schema": "neural-forge-lfm2-dense-producer-chain-coverage-v1",
         "layer_index": layer_index,
@@ -439,12 +435,10 @@ def _lfm2_dense_producer_chain_coverage(
         "all_role_state_sha256": canonical_sha256(role_hashes),
         "required_role_count": len(required_roles),
         "structurally_nonzero_required_role_count": sum(
-            int(receipts[role]["structurally_nonzero"])
-            for role in required_roles
+            int(receipts[role]["structurally_nonzero"]) for role in required_roles
         ),
         "blank_or_partially_blank_required_role_count": sum(
-            int(not receipts[role]["structurally_nonzero"])
-            for role in required_roles
+            int(not receipts[role]["structurally_nonzero"]) for role in required_roles
         ),
         "all_required_roles_structurally_nonzero": all(
             receipts[role]["structurally_nonzero"] for role in required_roles
@@ -551,6 +545,173 @@ def _parameter_runtime_proof(
             "gradient_state_preserved": gradient_state_preserved,
         }
     )
+
+
+def install_lfm2_self_dual_tied_interface_gauge(
+    target_model: Any,
+    interface: TiedCausalInterfaceFold,
+) -> tuple[TiedCausalInterfaceFold, Mapping[str, Any]]:
+    """Whiten and transactionally install one global tied/residual gauge."""
+
+    torch = _torch()
+    self_dual = whiten_tied_causal_interface(interface)
+    if self_dual.report.get("schema") != TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA:
+        raise Lfm2SemanticPostfoldError(
+            "Tied-interface whitening returned an unsupported gauge."
+        )
+    input_module = target_model.get_input_embeddings()
+    output_module = target_model.get_output_embeddings()
+    input_weight = getattr(input_module, "weight", None)
+    output_weight = getattr(output_module, "weight", None)
+    if (
+        not isinstance(input_weight, torch.nn.Parameter)
+        or output_weight is not input_weight
+        or tuple(input_weight.shape) != tuple(self_dual.target_weight.shape)
+        or getattr(output_module, "bias", None) is not None
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Child has no unbiased native tied table matching the self-dual interface."
+        )
+    before_state = fingerprint_lfm2_parent(target_model).identity_sha256
+    before_hashes = _state_tensor_hashes(target_model)
+    before_runtime = _parameter_runtime_snapshot(target_model)
+    before_count = _parameter_count(target_model)
+    incumbent = input_weight.detach().to(device="cpu").contiguous().clone()
+    tied_pointer = int(input_weight.untyped_storage().data_ptr())
+    tied_state_names = tuple(
+        sorted(
+            name
+            for name, value in target_model.state_dict(keep_vars=True).items()
+            if isinstance(value, torch.Tensor)
+            and int(value.untyped_storage().data_ptr()) == tied_pointer
+        )
+    )
+    if not tied_state_names:
+        raise Lfm2SemanticPostfoldError(
+            "Native tied table has no authenticated state-dict aliases."
+        )
+    materialized = self_dual.target_weight.to(
+        device=input_weight.device,
+        dtype=input_weight.dtype,
+    )
+    try:
+        with torch.no_grad():
+            input_weight.copy_(materialized)
+        after_state = fingerprint_lfm2_parent(target_model).identity_sha256
+        after_hashes = _state_tensor_hashes(target_model)
+        runtime_proof = _parameter_runtime_proof(
+            before_runtime,
+            _parameter_runtime_snapshot(target_model),
+        )
+        changed_state_keys = _changed_state_keys(before_hashes, after_hashes)
+        source_operator = (
+            interface.producer_encoder.to(torch.float64)
+            @ interface.target_weight.to(torch.float64).T
+        )
+        materialized_operator = (
+            self_dual.producer_encoder.to(torch.float64)
+            @ input_weight.detach().to(device="cpu", dtype=torch.float64).T
+        )
+        operator_residual = materialized_operator - source_operator
+        materialized_relative_error = float(
+            torch.linalg.vector_norm(operator_residual).item()
+            / max(
+                float(torch.linalg.vector_norm(source_operator).item()),
+                torch.finfo(torch.float64).tiny,
+            )
+        )
+        materialized_maximum_error = float(operator_residual.abs().max().item())
+        runtime_preserved = all(
+            runtime_proof[name] is True
+            for name in (
+                "parameter_topology_preserved",
+                "parameter_identities_preserved",
+                "parameter_storage_preserved",
+                "gradient_state_preserved",
+            )
+        )
+        if (
+            not runtime_preserved
+            or _parameter_count(target_model) != before_count
+            or target_model.get_input_embeddings().weight
+            is not target_model.get_output_embeddings().weight
+            or not torch.equal(input_weight.detach(), materialized)
+            or tuple(changed_state_keys) != tied_state_names
+            or after_state == before_state
+            or not math.isfinite(materialized_relative_error)
+            or materialized_relative_error > 0.01
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Self-dual gauge installation changed topology/aliases or lost "
+                "the tied source-to-vocabulary operator."
+            )
+    except BaseException:
+        with torch.no_grad():
+            input_weight.copy_(incumbent.to(device=input_weight.device))
+        rollback_runtime = _parameter_runtime_proof(
+            before_runtime,
+            _parameter_runtime_snapshot(target_model),
+        )
+        if (
+            fingerprint_lfm2_parent(target_model).identity_sha256 != before_state
+            or _state_tensor_hashes(target_model) != before_hashes
+            or not all(
+                rollback_runtime[name] is True
+                for name in (
+                    "parameter_topology_preserved",
+                    "parameter_identities_preserved",
+                    "parameter_storage_preserved",
+                    "gradient_state_preserved",
+                )
+            )
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Self-dual tied-interface rollback was not exact."
+            )
+        raise
+    body = {
+        "schema": "neural-forge-lfm2-self-dual-tied-gauge-install-v1",
+        "source_interface_report_sha256": interface.report["report_sha256"],
+        "self_dual_interface_report_sha256": self_dual.report["report_sha256"],
+        "model_state_before_sha256": before_state,
+        "model_state_after_sha256": after_state,
+        "changed_state_keys": list(changed_state_keys),
+        "native_tied_state_aliases": list(tied_state_names),
+        "source_target_weight_sha256": _interface_tensor_sha256(
+            interface.target_weight
+        ),
+        "self_dual_target_weight_sha256": _interface_tensor_sha256(
+            self_dual.target_weight
+        ),
+        "installed_target_weight_sha256": _interface_tensor_sha256(input_weight),
+        "self_dual_producer_encoder_sha256": _interface_tensor_sha256(
+            self_dual.producer_encoder
+        ),
+        "materialized_source_to_vocabulary_operator_relative_error": (
+            materialized_relative_error
+        ),
+        "materialized_source_to_vocabulary_operator_maximum_absolute_error": (
+            materialized_maximum_error
+        ),
+        "native_tie_preserved": True,
+        "parameter_topology_preserved": True,
+        "parameter_identities_preserved": True,
+        "parameter_storage_preserved": True,
+        "gradient_state_preserved": True,
+        "unique_parameter_count_preserved": True,
+        "full_vocabulary_rows_used": int(input_weight.shape[0]),
+        "target_width": int(input_weight.shape[1]),
+        "global_residual_gauge_frozen": True,
+        "independent_per_layer_gauge_rotation_allowed": False,
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    return self_dual, MappingProxyType(_sealed(body, "result_sha256"))
 
 
 def _ordinary_directory(value: str | os.PathLike[str], name: str) -> Path:
@@ -1401,15 +1562,13 @@ def _load_lfm2_semantic_foundation_lineage(
     """Normalize the fast foundation's direct-local attention ancestry."""
 
     try:
-        verified, receipt_file_sha256 = (
-            authenticate_lfm2_semantic_foundation_receipt(
-                foundation_receipt_json,
-                expected_receipt_sha256=expected_foundation_receipt_sha256,
-                semantic_cache=cache,
-                bridge=bridge,
-                input_metadata=input_metadata,
-                parent_model_directory=parent_model_directory,
-            )
+        verified, receipt_file_sha256 = authenticate_lfm2_semantic_foundation_receipt(
+            foundation_receipt_json,
+            expected_receipt_sha256=expected_foundation_receipt_sha256,
+            semantic_cache=cache,
+            bridge=bridge,
+            input_metadata=input_metadata,
+            parent_model_directory=parent_model_directory,
         )
     except Lfm2SemanticFoundationError as exc:
         raise Lfm2SemanticPostfoldError(
@@ -1424,8 +1583,7 @@ def _load_lfm2_semantic_foundation_lineage(
         or not isinstance(topology, Mapping)
         or not isinstance(context, Mapping)
         or not isinstance(parent_inventory, Mapping)
-        or context.get("attention_lineage_sha256")
-        != canonical_sha256(raw_lineages)
+        or context.get("attention_lineage_sha256") != canonical_sha256(raw_lineages)
     ):
         raise Lfm2SemanticPostfoldError(
             "Semantic-foundation receipt lacks bound attention lineage."
@@ -1433,7 +1591,10 @@ def _load_lfm2_semantic_foundation_lineage(
     expected_layers = topology.get("attention_layer_indices")
     if (
         not isinstance(expected_layers, list)
-        or any(isinstance(value, bool) or not isinstance(value, int) for value in expected_layers)
+        or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in expected_layers
+        )
         or set(raw_lineages) != {str(value) for value in expected_layers}
     ):
         raise Lfm2SemanticPostfoldError(
@@ -1477,12 +1638,9 @@ def _load_lfm2_semantic_foundation_lineage(
             or lineage.get("layer_index") != layer_index
             or lineage.get("parent_inventory_sha256")
             != parent_inventory.get("result_sha256")
-            or lineage.get("source_inventory_sha256")
-            != inventory.inventory_sha256
-            or lineage.get("head_group_report_sha256")
-            != group_report["result_sha256"]
-            or group_report.get("query_groups")
-            != [list(value) for value in groups]
+            or lineage.get("source_inventory_sha256") != inventory.inventory_sha256
+            or lineage.get("head_group_report_sha256") != group_report["result_sha256"]
+            or group_report.get("query_groups") != [list(value) for value in groups]
             or group_report.get("query_group_weights")
             != [list(value) for value in weights]
             or group_report.get("full_source_query_coverage") is not True
@@ -1495,8 +1653,7 @@ def _load_lfm2_semantic_foundation_lineage(
             != list(range(source_query_heads))
             or lineage.get("target_hidden_size") != topology.get("hidden_size")
             or lineage.get("target_query_heads") != target_query_heads
-            or lineage.get("target_key_value_heads")
-            != topology.get("key_value_heads")
+            or lineage.get("target_key_value_heads") != topology.get("key_value_heads")
             or lineage.get("target_head_dim") != topology.get("head_dim")
             or lineage.get("legacy_layer_compiler_calls") != 0
         ):
@@ -2089,9 +2246,7 @@ def _input_tensor_names(reference: Any) -> tuple[str, ...]:
     inventory = set(reference.ordered_tensor_names)
     record = reference.record
     capture = record.get("capture") if isinstance(record, Mapping) else None
-    decode_steps = (
-        capture.get("decode_steps") if isinstance(capture, Mapping) else None
-    )
+    decode_steps = capture.get("decode_steps") if isinstance(capture, Mapping) else None
     if (
         isinstance(decode_steps, bool)
         or not isinstance(decode_steps, int)
@@ -2808,15 +2963,11 @@ def _validate_live_layer_stack_producer_coverage(
                 seal_name="result_sha256",
                 label=f"layer {layer_index} {lane} post-decision coverage",
             )
-            installed = decision.get(
-                "installed_complete_structurally_nonzero_chain"
-            )
+            installed = decision.get("installed_complete_structurally_nonzero_chain")
             retained = decision.get(
                 "authenticated_nonzero_folded_seed_retained_by_noop"
             )
-            expected_deferred = (
-                ["feed_forward.w2.weight"] if defer_down_weight else []
-            )
+            expected_deferred = ["feed_forward.w2.weight"] if defer_down_weight else []
             if (
                 decision.get("layer_index") != layer_index
                 or decision.get("producer_kind") != producer_kind
@@ -2836,13 +2987,14 @@ def _validate_live_layer_stack_producer_coverage(
                 or type(installed) is not bool
                 or type(retained) is not bool
                 or installed == retained
-                or (decision.get("cold_start_or_partial_seed_at_entry") and not installed)
+                or (
+                    decision.get("cold_start_or_partial_seed_at_entry")
+                    and not installed
+                )
                 or (
                     retained
                     and (
-                        before_coverage.get(
-                            "all_required_roles_structurally_nonzero"
-                        )
+                        before_coverage.get("all_required_roles_structurally_nonzero")
                         is not True
                         or before_coverage.get("required_role_state_sha256")
                         != after_coverage.get("required_role_state_sha256")
@@ -2972,8 +3124,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         or verified.get("final_mlp_producer_install_count", -1)
         + verified.get("final_mlp_producer_incumbent_noop_count", -1)
         != 1
-        or verified.get("complete_nonzero_structural_producer_coverage")
-        is not True
+        or verified.get("complete_nonzero_structural_producer_coverage") is not True
         or verified.get("all_producer_chains_installed_or_retained_nonzero_seed")
         is not True
         or verified.get("attention_producer_structural_coverage_count") != 6
@@ -2982,13 +3133,9 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         or verified.get("final_mlp_producer_structural_coverage_count") != 1
         or verified.get("blank_or_partially_blank_producer_chain_count") != 0
         or verified.get("installed_complete_producer_chain_count", -1)
-        + verified.get(
-            "authenticated_nonzero_folded_seed_retained_noop_count", -1
-        )
+        + verified.get("authenticated_nonzero_folded_seed_retained_noop_count", -1)
         != 28
-        or verified.get(
-            "authenticated_nonzero_folded_seed_retained_noop_count", -1
-        )
+        or verified.get("authenticated_nonzero_folded_seed_retained_noop_count", -1)
         != (
             verified.get("attention_operator_incumbent_noop_count", -2)
             + verified.get("short_conv_operator_incumbent_noop_count", -2)
@@ -3564,7 +3711,9 @@ def _terminal_publication_decision(
     if (
         not isinstance(operation_audit, Mapping)
         or not operation_audit
-        or any(type(value) is not int or value != 0 for value in operation_audit.values())
+        or any(
+            type(value) is not int or value != 0 for value in operation_audit.values()
+        )
     ):
         raise Lfm2SemanticPostfoldError(
             "Fused terminal result does not prove a zero-operation compilation."
@@ -3674,10 +3823,14 @@ def _install_final_w2_once(
     before_count = _parameter_count(target_model)
     before_runtime = _parameter_runtime_snapshot(target_model)
     incumbent = parameter.detach().to(device="cpu").contiguous().clone()
-    published = published_down_weight.detach().to(
-        device=parameter.device,
-        dtype=parameter.dtype,
-    ).contiguous()
+    published = (
+        published_down_weight.detach()
+        .to(
+            device=parameter.device,
+            dtype=parameter.dtype,
+        )
+        .contiguous()
+    )
     published_coverage = _dense_weight_structural_coverage(
         published,
         parameter_name=parameter_name,
@@ -3712,9 +3865,7 @@ def _install_final_w2_once(
             and changed_state_keys == (parameter_name,)
         )
         noop_valid = bool(
-            not install
-            and after_state == before_state
-            and not changed_state_keys
+            not install and after_state == before_state and not changed_state_keys
         )
         if (
             not runtime_preserved
@@ -3761,16 +3912,12 @@ def _install_final_w2_once(
         "incumbent_w2_sha256": _tensor_sha256(incumbent),
         "published_w2_sha256": _tensor_sha256(parameter),
         "published_w2_structural_coverage": dict(published_coverage),
-        "published_w2_structural_coverage_sha256": published_coverage[
-            "result_sha256"
-        ],
+        "published_w2_structural_coverage_sha256": published_coverage["result_sha256"],
         "published_w2_structurally_nonzero": True,
         "installed_w2_sha256": _tensor_sha256(parameter) if install else None,
         "changed_state_keys": list(changed_state_keys),
         **dict(runtime_proof),
-        "parameter_identity_preserved": runtime_proof[
-            "parameter_identities_preserved"
-        ],
+        "parameter_identity_preserved": runtime_proof["parameter_identities_preserved"],
         "parameter_count_changed": False,
         "decision_count": 1,
         "installed": install,
@@ -3818,13 +3965,11 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     layer_receipt = layer_stack.receipt
     current_state = fingerprint_lfm2_parent(target_model).identity_sha256
     current_w2 = _tensor_sha256(_final_w2_parameter(target_model))
-    final_mlp_producer_coverage_before_terminal = (
-        _lfm2_dense_producer_chain_coverage(
-            target_model,
-            layer_index=13,
-            producer_kind="mlp",
-            defer_down_weight=True,
-        )
+    final_mlp_producer_coverage_before_terminal = _lfm2_dense_producer_chain_coverage(
+        target_model,
+        layer_index=13,
+        producer_kind="mlp",
+        defer_down_weight=True,
     )
     layer_installations = layer_receipt.get("layer_installations")
     final_layer_installation = (
@@ -4260,13 +4405,9 @@ def _validate_fused_semantic_terminal_receipt(
         raise Lfm2SemanticPostfoldError(
             "Fused semantic terminal returned no installation decision."
         )
-    coverage_before_value = receipt.get(
-        "final_mlp_producer_coverage_before_terminal"
-    )
+    coverage_before_value = receipt.get("final_mlp_producer_coverage_before_terminal")
     coverage_after_value = receipt.get("final_mlp_full_coverage_after_terminal")
-    published_coverage_value = installation.get(
-        "published_w2_structural_coverage"
-    )
+    published_coverage_value = installation.get("published_w2_structural_coverage")
     if not all(
         isinstance(value, Mapping)
         for value in (
@@ -4341,21 +4482,16 @@ def _validate_fused_semantic_terminal_receipt(
         or published_coverage.get("structurally_nonzero") is not True
         or published_coverage.get("tensor_sha256")
         != installation.get("published_w2_sha256")
-        or receipt.get("complete_nonzero_final_mlp_structural_coverage")
-        is not True
+        or receipt.get("complete_nonzero_final_mlp_structural_coverage") is not True
         or coverage_before.get("producer_kind") != "mlp"
         or coverage_before.get("layer_index") != 13
-        or coverage_before.get("deferred_roles")
-        != ["feed_forward.w2.weight"]
-        or coverage_before.get("all_required_roles_structurally_nonzero")
-        is not True
+        or coverage_before.get("deferred_roles") != ["feed_forward.w2.weight"]
+        or coverage_before.get("all_required_roles_structurally_nonzero") is not True
         or coverage_after.get("producer_kind") != "mlp"
         or coverage_after.get("layer_index") != 13
         or coverage_after.get("deferred_roles") != []
-        or coverage_after.get("all_required_roles_structurally_nonzero")
-        is not True
-        or coverage_after.get("blank_or_partially_blank_required_role_count")
-        != 0
+        or coverage_after.get("all_required_roles_structurally_nonzero") is not True
+        or coverage_after.get("blank_or_partially_blank_required_role_count") != 0
         or not w1_w3_unchanged
         or not isinstance(after_roles, Mapping)
         or not isinstance(after_roles.get("feed_forward.w2.weight"), Mapping)
@@ -4363,14 +4499,12 @@ def _validate_fused_semantic_terminal_receipt(
         != published_coverage.get("tensor_sha256")
         or installation.get("model_state_before_sha256")
         != layer_receipt.get("model_state_after_sha256")
-        or installation.get("model_state_after_sha256")
-        != current_model_state_sha256
+        or installation.get("model_state_after_sha256") != current_model_state_sha256
         or not isinstance(operation_audit, Mapping)
         or operation_audit != dict(_ZERO_OPERATIONS)
         or layer_receipt.get("whole_stage_contains_meaningful_parameter_changes")
         is not True
-        or layer_receipt.get("model_state_before_sha256")
-        == current_model_state_sha256
+        or layer_receipt.get("model_state_before_sha256") == current_model_state_sha256
     )
     if counts["install"] == 1:
         invalid = bool(
@@ -4611,9 +4745,7 @@ def run_lfm2_semantic_postfold(
             tensor_key=parent_tied_tensor_key,
         )
     )
-    foundation_ancestry = _claims_semantic_foundation_schema(
-        compiler_diagnostic_json
-    )
+    foundation_ancestry = _claims_semantic_foundation_schema(compiler_diagnostic_json)
     lineage = load_lfm2_semantic_compiler_lineage(
         compiler_diagnostic_json,
         expected_diagnostic_sha256=expected_compiler_diagnostic_sha256,
@@ -4655,10 +4787,12 @@ def run_lfm2_semantic_postfold(
             bridge=bridge,
             target_tokenizer=target_tokenizer,
             compiler_diagnostic_json=compiler_diagnostic_json,
-            expected_compiler_diagnostic_sha256=(
-                expected_compiler_diagnostic_sha256
-            ),
+            expected_compiler_diagnostic_sha256=(expected_compiler_diagnostic_sha256),
         )
+    interface, self_dual_tied_gauge = install_lfm2_self_dual_tied_interface_gauge(
+        target_model,
+        interface,
+    )
     layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
         cache=cache,
         bridge=bridge,
@@ -4712,6 +4846,7 @@ def run_lfm2_semantic_postfold(
         "mapped_parent_tied_table_sha256": source_table_report["result_sha256"],
         "rehydrated_interface_report_sha256": interface.report["report_sha256"],
         "interface_rehydration_sha256": interface_rehydration["result_sha256"],
+        "self_dual_tied_gauge_sha256": self_dual_tied_gauge["result_sha256"],
         "compiler_diagnostic_sha256": _digest(
             expected_compiler_diagnostic_sha256,
             "expected compiler diagnostic SHA-256",
@@ -4753,6 +4888,7 @@ def run_lfm2_semantic_postfold(
         "mapped_parent_tied_table": dict(source_table_report),
         "rehydrated_interface": dict(interface.report),
         "interface_rehydration": dict(interface_rehydration),
+        "self_dual_tied_gauge": dict(self_dual_tied_gauge),
         "compiler_lineage": {
             str(index): dict(value.report) for index, value in lineage.items()
         },
@@ -4762,9 +4898,7 @@ def run_lfm2_semantic_postfold(
         "terminal_nonincumbent_candidate_accepted": terminal_receipt[
             "terminal_nonincumbent_candidate_accepted"
         ],
-        "terminal_incumbent_retained": terminal_receipt[
-            "terminal_incumbent_retained"
-        ],
+        "terminal_incumbent_retained": terminal_receipt["terminal_incumbent_retained"],
         "checkpoint": dict(checkpoint),
         "fresh_reload_parent_free_state_sha256": state_after_reload,
         "context_binding": {**context_body, "context_sha256": context_sha},
@@ -4775,19 +4909,13 @@ def run_lfm2_semantic_postfold(
         "claims": {
             "complete_causal_layer_stack_adjudicated": True,
             "complete_nonzero_structural_producer_coverage": (
-                layer_stack.receipt[
-                    "complete_nonzero_structural_producer_coverage"
-                ]
+                layer_stack.receipt["complete_nonzero_structural_producer_coverage"]
             ),
             "blank_or_partially_blank_producer_chain_count": (
-                layer_stack.receipt[
-                    "blank_or_partially_blank_producer_chain_count"
-                ]
+                layer_stack.receipt["blank_or_partially_blank_producer_chain_count"]
             ),
             "complete_nonzero_final_mlp_structural_coverage": (
-                terminal_receipt[
-                    "complete_nonzero_final_mlp_structural_coverage"
-                ]
+                terminal_receipt["complete_nonzero_final_mlp_structural_coverage"]
             ),
             "complete_causal_layer_stack_installed": layer_stack.receipt[
                 "complete_causal_layer_stack_installed"
@@ -4865,6 +4993,7 @@ __all__ = [
     "compile_install_lfm2_semantic_attention_stage",
     "compile_install_lfm2_fused_semantic_terminal_refold",
     "compile_install_lfm2_semantic_layer_stack_stage",
+    "install_lfm2_self_dual_tied_interface_gauge",
     "load_lfm2_cpcf_v5_standalone_child",
     "load_lfm2_mapped_parent_tied_table_from_local_safetensors",
     "load_lfm2_parent_qkvo_inventory_from_local_safetensors",

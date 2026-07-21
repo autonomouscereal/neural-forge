@@ -29,6 +29,9 @@ from typing import Any
 
 
 _SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
+TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA = (
+    "neural-forge-tied-causal-interface-self-dual-gauge-v1"
+)
 
 
 class TiedCausalInterfaceFoldError(ValueError):
@@ -64,14 +67,10 @@ def _matrix(value: Any, name: str, *, width: int | None = None) -> Any:
             f"{name} must be a nonempty dense real floating matrix."
         )
     if width is not None and int(value.shape[1]) != width:
-        raise TiedCausalInterfaceFoldError(
-            f"{name} width must equal {width}."
-        )
+        raise TiedCausalInterfaceFoldError(f"{name} width must equal {width}.")
     result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
     if not bool(torch.isfinite(result).all().item()):
-        raise TiedCausalInterfaceFoldError(
-            f"{name} contains NaN or infinity."
-        )
+        raise TiedCausalInterfaceFoldError(f"{name} contains NaN or infinity.")
     return result
 
 
@@ -92,9 +91,8 @@ def _weights(value: Any | None, rows: int, name: str) -> Any:
             f"{name} must contain one positive floating value per row."
         )
     result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
-    if (
-        not bool(torch.isfinite(result).all().item())
-        or bool((result <= 0.0).any().item())
+    if not bool(torch.isfinite(result).all().item()) or bool(
+        (result <= 0.0).any().item()
     ):
         raise TiedCausalInterfaceFoldError(
             f"{name} must contain finite positive values."
@@ -104,9 +102,7 @@ def _weights(value: Any | None, rows: int, name: str) -> Any:
 
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise TiedCausalInterfaceFoldError(
-            f"{name} must be a positive integer."
-        )
+        raise TiedCausalInterfaceFoldError(f"{name} must be a positive integer.")
     return value
 
 
@@ -167,9 +163,7 @@ def _canonicalize_columns(value: Any) -> Any:
 
 
 def _rms_normalize(value: Any, epsilon: float) -> Any:
-    return value * (
-        value.square().mean(dim=-1, keepdim=True) + epsilon
-    ).rsqrt()
+    return value * (value.square().mean(dim=-1, keepdim=True) + epsilon).rsqrt()
 
 
 def _metric_report(
@@ -197,14 +191,10 @@ def _metric_report(
         parent = source @ source_table.T
         coordinates = source @ producer_encoder
         raw = coordinates @ target_table.T
-        normalized = (
-            _rms_normalize(coordinates, target_norm_epsilon) @ target_table.T
-        )
+        normalized = _rms_normalize(coordinates, target_norm_epsilon) @ target_table.T
         parent_centered = parent - parent.mean(dim=1, keepdim=True)
         raw_centered = raw - raw.mean(dim=1, keepdim=True)
-        normalized_centered = normalized - normalized.mean(
-            dim=1, keepdim=True
-        )
+        normalized_centered = normalized - normalized.mean(dim=1, keepdim=True)
         parent_centered_square += float(
             (weights * parent_centered.square()).sum().item()
         )
@@ -212,18 +202,11 @@ def _metric_report(
             (weights * (raw_centered - parent_centered).square()).sum().item()
         )
         normalized_error_square += float(
-            (
-                weights
-                * (normalized_centered - parent_centered).square()
-            )
-            .sum()
-            .item()
+            (weights * (normalized_centered - parent_centered).square()).sum().item()
         )
         parent_winner = parent.argmax(dim=1)
         raw_top1 += int((raw.argmax(dim=1) == parent_winner).sum().item())
-        normalized_top1 += int(
-            (normalized.argmax(dim=1) == parent_winner).sum().item()
-        )
+        normalized_top1 += int((normalized.argmax(dim=1) == parent_winner).sum().item())
     denominator = max(
         parent_centered_square,
         torch.finfo(torch.float64).tiny,
@@ -232,12 +215,8 @@ def _metric_report(
         "rows": rows,
         "vocabulary_size": vocabulary,
         "centered_parent_logit_energy": parent_centered_square,
-        "raw_centered_relative_rmse": math.sqrt(
-            raw_error_square / denominator
-        ),
-        "raw_centered_retained_energy_fraction": (
-            1.0 - raw_error_square / denominator
-        ),
+        "raw_centered_relative_rmse": math.sqrt(raw_error_square / denominator),
+        "raw_centered_retained_energy_fraction": (1.0 - raw_error_square / denominator),
         "raw_parent_top1_agreement": raw_top1 / rows,
         "rmsnorm_centered_relative_rmse": math.sqrt(
             normalized_error_square / denominator
@@ -313,6 +292,170 @@ class TiedCausalInterfaceFold:
         return dict(self.report)
 
 
+def whiten_tied_causal_interface(
+    interface: TiedCausalInterfaceFold,
+) -> TiedCausalInterfaceFold:
+    """Move a tied fold into one orthonormal, input/output-consistent gauge.
+
+    For target table ``T`` and source-to-child encoder ``E``, any invertible
+    target-coordinate transform can be applied reciprocally without changing
+    the represented source-to-vocabulary operator.  With the thin singular
+    value decomposition ``E = U diag(s) V.T``, this routine chooses the unique
+    full-column-rank polar decomposition::
+
+        B = U @ V.T
+        R = V @ diag(s) @ V.T
+        T_self_dual = T @ R
+
+    so ``E = B @ R``, ``B.T @ B = I``, and
+    ``B @ T_self_dual.T = E @ T.T``.  Computing the polar factors directly
+    from the thin SVD avoids squaring the encoder's condition number through
+    ``E.T @ E``.  The same full-rank basis can therefore serve the child's
+    input embeddings, residual-state encoder, and tied output head without
+    discarding the reciprocal scaling that made the original output
+    factorization valid.
+    """
+
+    torch = _torch()
+    if not isinstance(interface, TiedCausalInterfaceFold):
+        raise TypeError("interface must be TiedCausalInterfaceFold.")
+    target = _matrix(interface.target_weight, "interface.target_weight")
+    encoder = _matrix(interface.producer_encoder, "interface.producer_encoder")
+    source_report = dict(interface.report)
+    source_report_body = dict(source_report)
+    source_report_sha256 = source_report_body.pop("report_sha256", None)
+    if (
+        not isinstance(source_report_sha256, str)
+        or len(source_report_sha256) != 64
+        or _canonical_sha256(source_report_body) != source_report_sha256
+    ):
+        raise TiedCausalInterfaceFoldError(
+            "Source tied interface report is not canonically authenticated."
+        )
+
+    with torch.no_grad():
+        polar_left, singular_values, polar_right_h = torch.linalg.svd(
+            encoder,
+            full_matrices=False,
+        )
+        maximum = float(singular_values.max().item())
+        rank_tolerance = (
+            max(maximum, 1.0)
+            * torch.finfo(torch.float64).eps
+            * max(int(encoder.shape[0]), int(encoder.shape[1]))
+        )
+        if maximum <= 0.0 or bool((singular_values <= rank_tolerance).any().item()):
+            raise TiedCausalInterfaceFoldError(
+                "Self-dual whitening requires a full-column-rank producer encoder."
+            )
+        self_dual_encoder = (polar_left @ polar_right_h).contiguous()
+        right_stretch = (
+            polar_right_h.T @ torch.diag(singular_values) @ polar_right_h
+        ).contiguous()
+        self_dual_target = (target @ right_stretch).contiguous()
+        identity = torch.eye(int(encoder.shape[1]), dtype=torch.float64)
+        orthogonality_error = float(
+            torch.linalg.matrix_norm(
+                self_dual_encoder.T @ self_dual_encoder - identity,
+                ord=2,
+            ).item()
+        )
+        source_operator = encoder @ target.T
+        self_dual_operator = self_dual_encoder @ self_dual_target.T
+        operator_residual = self_dual_operator - source_operator
+        reconstructed_encoder = self_dual_encoder @ right_stretch
+        reconstruction_relative_error = float(
+            torch.linalg.vector_norm(reconstructed_encoder - encoder).item()
+            / max(
+                float(torch.linalg.vector_norm(encoder).item()),
+                torch.finfo(torch.float64).tiny,
+            )
+        )
+        operator_relative_error = float(
+            torch.linalg.vector_norm(operator_residual).item()
+            / max(
+                float(torch.linalg.vector_norm(source_operator).item()),
+                torch.finfo(torch.float64).tiny,
+            )
+        )
+        operator_maximum_error = float(operator_residual.abs().max().item())
+        source_mean_operator = encoder @ target.mean(dim=0)
+        self_dual_mean_operator = self_dual_encoder @ self_dual_target.mean(dim=0)
+        mean_operator_maximum_error = float(
+            (self_dual_mean_operator - source_mean_operator).abs().max().item()
+        )
+        condition_number = float((singular_values.max() / singular_values.min()).item())
+    numerical_tolerance = max(
+        1e-10,
+        100.0
+        * torch.finfo(torch.float64).eps
+        * max(int(encoder.shape[0]), int(encoder.shape[1]))
+        * max(1.0, condition_number),
+    )
+    if (
+        not bool(torch.isfinite(self_dual_encoder).all().item())
+        or not bool(torch.isfinite(self_dual_target).all().item())
+        or orthogonality_error > numerical_tolerance
+        or reconstruction_relative_error > numerical_tolerance
+        or operator_relative_error > numerical_tolerance
+        or mean_operator_maximum_error
+        > numerical_tolerance
+        * max(
+            float(source_mean_operator.abs().max().item()),
+            torch.finfo(torch.float64).tiny,
+        )
+    ):
+        raise TiedCausalInterfaceFoldError(
+            "Self-dual tied-interface whitening failed its orthogonality or "
+            "operator-preservation invariant."
+        )
+
+    body = {
+        **source_report_body,
+        "schema": TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA,
+        "method": "thin_svd_polar_self_dual_tied_interface_gauge",
+        "source_interface_schema": source_report.get("schema"),
+        "source_interface_report_sha256": source_report_sha256,
+        "source_target_weight_sha256": _tensor_sha256(target),
+        "source_producer_encoder_sha256": _tensor_sha256(encoder),
+        "target_weight_sha256": _tensor_sha256(self_dual_target),
+        "producer_encoder_sha256": _tensor_sha256(self_dual_encoder),
+        "producer_encoder_singular_values_sha256": _tensor_sha256(singular_values),
+        "producer_encoder_right_stretch_sha256": _tensor_sha256(right_stretch),
+        "producer_encoder_numerical_rank": int(singular_values.numel()),
+        "producer_encoder_rank_tolerance": rank_tolerance,
+        "encoder_condition_number": condition_number,
+        "encoder_polar_reconstruction_relative_error": (reconstruction_relative_error),
+        "self_dual_encoder_orthogonality_error": orthogonality_error,
+        "source_to_vocabulary_operator_relative_error": operator_relative_error,
+        "source_to_vocabulary_operator_maximum_absolute_error": (
+            operator_maximum_error
+        ),
+        "vocabulary_mean_operator_maximum_absolute_error": (
+            mean_operator_maximum_error
+        ),
+        "source_to_vocabulary_operator_preserved": True,
+        "full_vocabulary_rows_preserved": True,
+        "full_target_width_preserved": True,
+        "vocabulary_mean_subspace_preserved": True,
+        "vocabulary_mean_coordinate_may_mix": True,
+        "one_global_residual_gauge_available": True,
+        "parent_forward_calls": 0,
+        "child_forward_calls": 0,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+        "quantization_used": False,
+        "pruning_used": False,
+    }
+    report = {**body, "report_sha256": _canonical_sha256(body)}
+    return TiedCausalInterfaceFold(
+        target_weight=self_dual_target,
+        producer_encoder=self_dual_encoder,
+        report=report,
+    )
+
+
 def fit_tied_causal_interface(
     source_tied_table: Any,
     fit_producer_rows: Any,
@@ -362,13 +505,8 @@ def fit_tied_causal_interface(
             "target_width cannot exceed the target vocabulary size."
         )
     if not isinstance(preserve_vocabulary_mean, bool):
-        raise TiedCausalInterfaceFoldError(
-            "preserve_vocabulary_mean must be boolean."
-        )
-    if (
-        not math.isfinite(target_norm_epsilon)
-        or target_norm_epsilon <= 0.0
-    ):
+        raise TiedCausalInterfaceFoldError("preserve_vocabulary_mean must be boolean.")
+    if not math.isfinite(target_norm_epsilon) or target_norm_epsilon <= 0.0:
         raise TiedCausalInterfaceFoldError(
             "target_norm_epsilon must be positive and finite."
         )
@@ -425,9 +563,7 @@ def fit_tied_causal_interface(
         )
     selected_vectors = vectors[:, :predictive_rank]
     singular = torch.sqrt(values[:predictive_rank])
-    vocabulary_vectors = (
-        compact.T @ selected_vectors
-    ) / singular.unsqueeze(0)
+    vocabulary_vectors = (compact.T @ selected_vectors) / singular.unsqueeze(0)
     vocabulary_vectors = _canonicalize_columns(vocabulary_vectors)
     orthogonality_error = float(
         torch.linalg.matrix_norm(
@@ -442,9 +578,7 @@ def fit_tied_causal_interface(
 
     component_rms = float(torch.sqrt(table.square().mean()).item())
     if component_rms <= 0.0:
-        raise TiedCausalInterfaceFoldError(
-            "The source tied table has zero energy."
-        )
+        raise TiedCausalInterfaceFoldError("The source tied table has zero energy.")
     column_scale = component_rms * math.sqrt(vocabulary)
     target_parts = []
     encoder_parts = []
@@ -458,9 +592,7 @@ def fit_tied_causal_interface(
         )
         encoder_parts.append((mean / component_rms).unsqueeze(1))
     target_parts.append(vocabulary_vectors * column_scale)
-    encoder_parts.append(
-        centered.T @ vocabulary_vectors / column_scale
-    )
+    encoder_parts.append(centered.T @ vocabulary_vectors / column_scale)
     target = torch.cat(target_parts, dim=1).contiguous()
     encoder = torch.cat(encoder_parts, dim=1).contiguous()
     if (
@@ -491,9 +623,7 @@ def fit_tied_causal_interface(
         chunk_rows=metric_chunk_rows,
         target_norm_epsilon=target_norm_epsilon,
     )
-    observed_top1 = float(
-        validation_metrics["rmsnorm_parent_top1_agreement"]
-    )
+    observed_top1 = float(validation_metrics["rmsnorm_parent_top1_agreement"])
     if observed_top1 + 1e-12 < required_top1:
         raise TiedCausalInterfaceCapacityError(
             "Target tied-interface width retains only "
@@ -557,8 +687,10 @@ def fit_tied_causal_interface(
 
 
 __all__ = [
+    "TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA",
     "TiedCausalInterfaceCapacityError",
     "TiedCausalInterfaceFold",
     "TiedCausalInterfaceFoldError",
     "fit_tied_causal_interface",
+    "whiten_tied_causal_interface",
 ]

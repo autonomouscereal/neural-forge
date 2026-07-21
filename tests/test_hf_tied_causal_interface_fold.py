@@ -5,10 +5,14 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+import neural_forge.hf_tied_causal_interface_fold as interface_module  # noqa: E402
 from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
+    TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA,
     TiedCausalInterfaceCapacityError,
+    TiedCausalInterfaceFold,
     TiedCausalInterfaceFoldError,
     fit_tied_causal_interface,
+    whiten_tied_causal_interface,
 )
 
 
@@ -108,17 +112,93 @@ def test_severe_width_reports_real_parameter_contraction_without_training():
 
     assert folded.target_weight.numel() == 69
     assert table.numel() == 230
-    assert folded.report["interface_parameter_reduction_fraction"] == pytest.approx(
-        0.7
-    )
-    assert 0.0 <= folded.report["validation"][
-        "rmsnorm_parent_top1_agreement"
-    ] <= 1.0
+    assert folded.report["interface_parameter_reduction_fraction"] == pytest.approx(0.7)
+    assert 0.0 <= folded.report["validation"]["rmsnorm_parent_top1_agreement"] <= 1.0
     assert folded.report["training_steps"] == 0
     assert folded.report["optimizer_steps"] == 0
     assert folded.report["backward_calls"] == 0
     assert folded.report["quantization_used"] is False
     assert folded.report["pruning_used"] is False
+
+
+def test_self_dual_whitening_preserves_operator_and_orthonormalizes_encoder():
+    table, fit, validation = _affine_low_rank_fixture()
+    folded = fit_tied_causal_interface(
+        table,
+        fit,
+        target_width=5,
+        validation_producer_rows=validation,
+    )
+    scales = torch.diag(torch.tensor([1e-3, 0.05, 1.0, 20.0, 1e3], dtype=torch.float64))
+    scaled_encoder = folded.producer_encoder @ scales
+    scaled_target = folded.target_weight @ torch.linalg.inv(scales).T
+    scaled_body = dict(folded.report)
+    scaled_body.pop("report_sha256")
+    scaled_body["producer_encoder_sha256"] = interface_module._tensor_sha256(
+        scaled_encoder
+    )
+    scaled_body["target_weight_sha256"] = interface_module._tensor_sha256(scaled_target)
+    scaled = TiedCausalInterfaceFold(
+        target_weight=scaled_target,
+        producer_encoder=scaled_encoder,
+        report={
+            **scaled_body,
+            "report_sha256": interface_module._canonical_sha256(scaled_body),
+        },
+    )
+
+    self_dual = whiten_tied_causal_interface(scaled)
+
+    torch.testing.assert_close(
+        self_dual.producer_encoder.T @ self_dual.producer_encoder,
+        torch.eye(5, dtype=torch.float64),
+        rtol=1e-8,
+        atol=1e-8,
+    )
+    torch.testing.assert_close(
+        self_dual.producer_encoder @ self_dual.target_weight.T,
+        scaled.producer_encoder @ scaled.target_weight.T,
+        rtol=1e-8,
+        atol=1e-8,
+    )
+    assert self_dual.report["schema"] == TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA
+    assert (
+        self_dual.report["source_interface_report_sha256"]
+        == (scaled.report["report_sha256"])
+    )
+    assert self_dual.report["source_to_vocabulary_operator_preserved"] is True
+    assert self_dual.report["full_vocabulary_rows_preserved"] is True
+    assert self_dual.report["one_global_residual_gauge_available"] is True
+    assert self_dual.report["training_steps"] == 0
+    assert self_dual.report["optimizer_steps"] == 0
+    assert self_dual.report["backward_calls"] == 0
+    assert self_dual.report["quantization_used"] is False
+    assert self_dual.report["pruning_used"] is False
+
+
+def test_self_dual_whitening_rejects_rank_deficient_encoder():
+    table, fit, validation = _affine_low_rank_fixture()
+    folded = fit_tied_causal_interface(
+        table,
+        fit,
+        target_width=5,
+        validation_producer_rows=validation,
+    )
+    encoder = folded.producer_encoder.clone()
+    encoder[:, -1] = encoder[:, 0]
+    body = dict(folded.report)
+    body.pop("report_sha256")
+    body["producer_encoder_sha256"] = interface_module._tensor_sha256(encoder)
+    broken = TiedCausalInterfaceFold(
+        target_weight=folded.target_weight,
+        producer_encoder=encoder,
+        report={**body, "report_sha256": interface_module._canonical_sha256(body)},
+    )
+    with pytest.raises(
+        TiedCausalInterfaceFoldError,
+        match="full-column-rank",
+    ):
+        whiten_tied_causal_interface(broken)
 
 
 def test_validation_gate_and_disjoint_evidence_fail_closed():

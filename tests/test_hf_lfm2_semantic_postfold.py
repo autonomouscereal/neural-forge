@@ -40,6 +40,74 @@ class _TiedModel:
         return {"model.embed_tokens.weight": self.weight}
 
 
+class _GaugeTiedModel(torch.nn.Module):
+    def __init__(self, weight):
+        super().__init__()
+        self.weight = torch.nn.Parameter(weight.clone())
+
+    def get_input_embeddings(self):
+        return SimpleNamespace(weight=self.weight)
+
+    def get_output_embeddings(self):
+        return SimpleNamespace(weight=self.weight)
+
+
+def test_self_dual_tied_gauge_install_preserves_operator_and_runtime(monkeypatch):
+    generator = torch.Generator().manual_seed(1701)
+    target = torch.randn((7, 3), generator=generator, dtype=torch.float64)
+    encoder = torch.randn((5, 3), generator=generator, dtype=torch.float64)
+    source_body = {
+        "schema": "synthetic-tied-interface-v1",
+        "target_weight_sha256": postfold._interface_tensor_sha256(target),
+        "producer_encoder_sha256": postfold._interface_tensor_sha256(encoder),
+    }
+    interface = postfold.TiedCausalInterfaceFold(
+        target_weight=target,
+        producer_encoder=encoder,
+        report={
+            **source_body,
+            "report_sha256": canonical_sha256(source_body),
+        },
+    )
+    model = _GaugeTiedModel(target.to(torch.bfloat16))
+    model.weight.grad = torch.full_like(model.weight, 0.25)
+    parameter_id = id(model.weight)
+    storage_pointer = int(model.weight.data_ptr())
+    gradient_id = id(model.weight.grad)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda value: SimpleNamespace(
+            identity_sha256=canonical_sha256(postfold._state_tensor_hashes(value))
+        ),
+    )
+
+    self_dual, receipt = postfold.install_lfm2_self_dual_tied_interface_gauge(
+        model,
+        interface,
+    )
+
+    torch.testing.assert_close(
+        self_dual.producer_encoder.T @ self_dual.producer_encoder,
+        torch.eye(3, dtype=torch.float64),
+        rtol=1e-8,
+        atol=1e-8,
+    )
+    assert torch.equal(
+        model.weight.detach(),
+        self_dual.target_weight.to(torch.bfloat16),
+    )
+    assert receipt["global_residual_gauge_frozen"] is True
+    assert receipt["independent_per_layer_gauge_rotation_allowed"] is False
+    assert receipt["materialized_source_to_vocabulary_operator_relative_error"] < (0.01)
+    assert receipt["training_steps"] == 0
+    assert receipt["optimizer_steps"] == 0
+    assert receipt["backward_calls"] == 0
+    assert id(model.weight) == parameter_id
+    assert int(model.weight.data_ptr()) == storage_pointer
+    assert id(model.weight.grad) == gradient_id
+
+
 def _terminal_evidence(split: str, tag: str):
     return postfold.Lfm2CpcfTerminalActionEvidence(
         split=split,
@@ -192,12 +260,8 @@ def test_final_w2_changed_publication_mutates_only_the_writer(monkeypatch) -> No
     assert receipt["mutation_count"] == 1
     assert receipt["incumbent_retention_count"] == 0
     assert receipt["parameter_copy_calls"] == 1
-    assert receipt["changed_state_keys"] == [
-        "model.layers.0.feed_forward.w2.weight"
-    ]
-    assert receipt["model_state_before_sha256"] != receipt[
-        "model_state_after_sha256"
-    ]
+    assert receipt["changed_state_keys"] == ["model.layers.0.feed_forward.w2.weight"]
+    assert receipt["model_state_before_sha256"] != receipt["model_state_after_sha256"]
     torch.testing.assert_close(parameter.detach().cpu(), published, rtol=0, atol=0)
     torch.testing.assert_close(target.other.detach(), before_other, rtol=0, atol=0)
     assert receipt["parameter_topology_preserved"] is True
@@ -1245,6 +1309,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     parent_norm = object()
     source_table = torch.ones((2, 2), dtype=torch.bfloat16)
     interface = SimpleNamespace(report={"report_sha256": "6" * 64})
+    self_dual_interface = SimpleNamespace(report={"report_sha256": "f" * 64})
     interface_rehydration = MappingProxyType(
         {
             "compiler_cache_key": "8" * 64,
@@ -1258,6 +1323,15 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
 
     def sealed(body):
         return {**body, "result_sha256": canonical_sha256(body)}
+
+    gauge_receipt = MappingProxyType(
+        sealed(
+            {
+                "schema": "neural-forge-lfm2-self-dual-tied-gauge-install-v1",
+                "global_residual_gauge_frozen": True,
+            }
+        )
+    )
 
     coverage_before_body = {
         "schema": "neural-forge-lfm2-dense-producer-chain-coverage-v1",
@@ -1345,9 +1419,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "published_w2_sha256": w2_sha,
         "published_w2_structurally_nonzero": True,
         "published_w2_structural_coverage": published_coverage,
-        "published_w2_structural_coverage_sha256": published_coverage[
-            "result_sha256"
-        ],
+        "published_w2_structural_coverage_sha256": published_coverage["result_sha256"],
     }
     terminal_body = {
         "schema": postfold.LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA,
@@ -1424,13 +1496,26 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         lambda *_a, **_k: MappingProxyType({}),
     )
 
+    def install_gauge(_model, source_interface):
+        events.append("self_dual_gauge")
+        assert source_interface is interface
+        return self_dual_interface, gauge_receipt
+
+    monkeypatch.setattr(
+        postfold,
+        "install_lfm2_self_dual_tied_interface_gauge",
+        install_gauge,
+    )
+
     def layer_stack_compiler(**_kwargs):
         events.append("layer_stack")
+        assert _kwargs["interface"] is self_dual_interface
         return layer_stack
 
     def terminal_compiler(**_kwargs):
         events.append("terminal")
         assert _kwargs["layer_stack"] is layer_stack
+        assert _kwargs["interface"] is self_dual_interface
         return terminal
 
     def publish(**_kwargs):
@@ -1481,7 +1566,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     )
 
     assert cache_open_calls == [True]
-    assert events == ["layer_stack", "terminal", "checkpoint"]
+    assert events == ["self_dual_gauge", "layer_stack", "terminal", "checkpoint"]
     assert result["compiler_cache_key"] == "8" * 64
     assert result["semantic_evidence_cache_key"] == cache.cache_key
     assert (
@@ -1496,6 +1581,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     assert result["claims"]["attention_correction_install_count"] == 5
     assert result["claims"]["terminal_writer_install_count"] == 0
     assert result["terminal_incumbent_retained"] is True
+    assert result["self_dual_tied_gauge"] == dict(gauge_receipt)
     body = dict(result)
     seal = body.pop("result_sha256")
     assert seal == canonical_sha256(body)

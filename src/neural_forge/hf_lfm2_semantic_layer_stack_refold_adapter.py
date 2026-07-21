@@ -77,7 +77,10 @@ from neural_forge.hf_semantic_attention_lattice import (
 from neural_forge.hf_tied_causal_interface_anchor_fold import (
     TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
 )
-from neural_forge.hf_tied_causal_interface_fold import TiedCausalInterfaceFold
+from neural_forge.hf_tied_causal_interface_fold import (
+    TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA,
+    TiedCausalInterfaceFold,
+)
 from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     fingerprint_hf_tokenizer_semantics,
@@ -897,6 +900,7 @@ def _fit_residual_chart(
     child_bank: _LayerReplayBank,
     producer_encoder: Any,
     layer_index: int,
+    global_gauge_required: bool = False,
 ) -> tuple[Any, Mapping[str, Any]]:
     torch = _torch()
     ordered = tuple(sorted(alignments, key=lambda value: value.source_batch_index))
@@ -978,7 +982,9 @@ def _fit_residual_chart(
     supported = singular > threshold
     supported_rank = int(supported.sum().item())
     candidates: dict[str, Any] = {"base_identity": identity}
-    if supported_rank:
+    if not isinstance(global_gauge_required, bool):
+        raise TypeError("global_gauge_required must be boolean.")
+    if supported_rank and not global_gauge_required:
         supported_right = design_right_h[supported]
         support_projector = supported_right.T @ supported_right
         cross_left, _cross_singular, cross_right_h = torch.linalg.svd(
@@ -1120,6 +1126,11 @@ def _fit_residual_chart(
         "fit_check_nonregression": fit_check_eligible,
         "selected_before_validation": selected_before_validation,
         "selected_candidate": selected,
+        "global_self_dual_gauge_required": global_gauge_required,
+        "independent_layer_rotation_allowed": not global_gauge_required,
+        "global_gauge_preserved_without_layer_local_rotation": (
+            not global_gauge_required or selected == "base_identity"
+        ),
         "validation_nonregression_passed": validation_passed,
         "validation_rejection_fell_back_to_base": (
             not validation_passed and selected == "base_identity"
@@ -2700,7 +2711,10 @@ def _validated_interface_lineage(
     report_body = dict(report)
     report_sha = report_body.pop("report_sha256", None)
     report_schema = report.get("schema")
-    if report_schema == _TIED_CAUSAL_INTERFACE_FOLD_SCHEMA:
+    if report_schema in {
+        _TIED_CAUSAL_INTERFACE_FOLD_SCHEMA,
+        TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA,
+    }:
         tensor_sha256 = _interface_tensor_sha256
         tensor_seal_schema = "dtype-nul-shape-nul-raw-v1"
     elif report_schema == TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA:
@@ -2723,6 +2737,14 @@ def _validated_interface_lineage(
         or report_sha != canonical_sha256(report_body)
         or report.get("producer_encoder_sha256") != producer_sha
         or report.get("target_weight_sha256") != target_sha
+        or (
+            report_schema == TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA
+            and (
+                report.get("source_to_vocabulary_operator_preserved") is not True
+                or report.get("full_vocabulary_rows_preserved") is not True
+                or report.get("one_global_residual_gauge_available") is not True
+            )
+        )
     ):
         raise Lfm2SemanticLayerStackRefoldError(
             "Passed tied-interface coordinates lack exact authenticated child lineage."
@@ -3066,6 +3088,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     child_bank=before_operator_replay,
                     producer_encoder=interface.producer_encoder,
                     layer_index=layer_index,
+                    global_gauge_required=(
+                        interface_lineage.get("interface_report_schema")
+                        == TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA
+                    ),
                 )
                 fir_receipt = None
                 operator_coverage_before = _lfm2_dense_producer_chain_coverage(

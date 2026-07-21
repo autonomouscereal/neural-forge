@@ -967,6 +967,26 @@ def test_residual_chart_validation_can_only_reject_back_to_base() -> None:
     )
 
 
+def test_self_dual_global_chart_forbids_independent_layer_rotation() -> None:
+    alignments, parent, bank = _chart_inputs(reject_validation=False)
+    encoder = torch.eye(3, dtype=torch.float64)
+
+    chart, receipt = stack._fit_residual_chart(
+        alignments=alignments,
+        parent=parent,
+        child_bank=bank,
+        producer_encoder=encoder,
+        layer_index=0,
+        global_gauge_required=True,
+    )
+
+    torch.testing.assert_close(chart, encoder, rtol=0, atol=0)
+    assert receipt["selected_candidate"] == "base_identity"
+    assert receipt["global_self_dual_gauge_required"] is True
+    assert receipt["independent_layer_rotation_allowed"] is False
+    assert receipt["global_gauge_preserved_without_layer_local_rotation"] is True
+
+
 def test_attention_decode_uses_reconstructed_history_not_suffix_rows(
     monkeypatch,
 ) -> None:
