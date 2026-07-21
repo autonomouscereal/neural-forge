@@ -12,6 +12,9 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     Lfm2CpcfTerminalActionEvidence,
 )
+from neural_forge.hf_lfm2_semantic_mlp_refold_adapter import (  # noqa: E402
+    Lfm2DirectLocalMlpSourceInventory,
+)
 
 
 def _terminal_banks():
@@ -213,9 +216,7 @@ def _patch_complete_transaction(monkeypatch, *, failing_layer: int | None = None
 
     def evidence(label: str, layer_index: int):
         return (
-            SimpleNamespace(
-                evidence_sha256=canonical_sha256([label, layer_index])
-            ),
+            SimpleNamespace(evidence_sha256=canonical_sha256([label, layer_index])),
         )
 
     def build_attention(*, layer_index, **_kwargs):
@@ -267,7 +268,14 @@ def _patch_complete_transaction(monkeypatch, *, failing_layer: int | None = None
 
     def inventory(*, layer_index, **_kwargs):
         events.append(f"{layer_index}:inventory")
-        return object()
+        body = {
+            "layer_index": layer_index,
+            "direct_parent_tensors_functionally_bound_to_cache": True,
+        }
+        return object(), {
+            **body,
+            "result_sha256": canonical_sha256(body),
+        }
 
     monkeypatch.setattr(stack, "_direct_mlp_inventory", inventory)
 
@@ -355,7 +363,9 @@ def test_partial_layer_failure_restores_exact_whole_model(monkeypatch) -> None:
         monkeypatch,
         failing_layer=3,
     )
-    before = {name: value.detach().clone() for name, value in target.state_dict().items()}
+    before = {
+        name: value.detach().clone() for name, value in target.state_dict().items()
+    }
     before_identity = _state_identity(target)
 
     with pytest.raises(
@@ -389,17 +399,13 @@ def _chart_inputs(*, reject_validation: bool):
         phase = SimpleNamespace(
             target_to_donor_boundary_positions=(0, 1),
         )
-        alignments.append(
-            SimpleNamespace(source_batch_index=batch, phases=(phase,))
-        )
+        alignments.append(SimpleNamespace(source_batch_index=batch, phases=(phase,)))
         source = torch.tensor(
             [[[batch + 1.0, 0.0, 0.0], [batch + 2.0, 0.0, 0.0]]],
             dtype=torch.float64,
         )
         factor = -2.0 if reject_validation and batch >= 6 else 2.0
-        parent[batch] = SimpleNamespace(
-            final_histories={"residual.pre": source}
-        )
+        parent[batch] = SimpleNamespace(final_histories={"residual.pre": source})
         child[batch] = source * factor
     bank = SimpleNamespace(
         captured_child_model_state_sha256="8" * 64,
@@ -456,7 +462,9 @@ def test_residual_chart_validation_can_only_reject_back_to_base() -> None:
     )
 
 
-def test_attention_decode_uses_reconstructed_history_not_suffix_rows(monkeypatch) -> None:
+def test_attention_decode_uses_reconstructed_history_not_suffix_rows(
+    monkeypatch,
+) -> None:
     phases = (
         SimpleNamespace(
             phase="prefill",
@@ -634,6 +642,180 @@ def test_attention_decode_uses_reconstructed_history_not_suffix_rows(monkeypatch
         full_post.index_select(1, torch.tensor((0, 2))).to(torch.float32),
         rtol=0,
         atol=0,
+    )
+
+
+def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
+    torch.manual_seed(913)
+    hidden = 4
+    intermediate = 6
+    residual = torch.randn((1, 1, hidden), dtype=torch.bfloat16)
+    norm = torch.randn((hidden,), dtype=torch.bfloat16)
+    gate = torch.randn((intermediate, hidden), dtype=torch.bfloat16)
+    up = torch.randn((intermediate, hidden), dtype=torch.bfloat16)
+    down = torch.randn((hidden, intermediate), dtype=torch.bfloat16)
+    epsilon = 1e-5
+    residual_float = residual.to(torch.float32)
+    mlp_input = norm * (
+        residual_float
+        * torch.rsqrt(residual_float.square().mean(dim=-1, keepdim=True) + epsilon)
+    ).to(torch.bfloat16)
+    expected_gate = torch.nn.functional.linear(mlp_input, gate)
+    expected_up = torch.nn.functional.linear(mlp_input, up)
+    expected_post = torch.nn.functional.silu(expected_gate) * expected_up
+    expected_layer = residual + torch.nn.functional.linear(expected_post, down)
+    phase = SimpleNamespace(
+        phase="prefill",
+        semantic_phase_sha256="a" * 64,
+    )
+    alignment = SimpleNamespace(
+        source_batch_index=0,
+        phases=(phase,),
+    )
+    trajectory = SimpleNamespace(
+        evidence_sha256="b" * 64,
+        phase_rows={
+            "prefill": {
+                "residual.post_operator": residual,
+                "mlp.gate": expected_gate,
+                "mlp.up": expected_up,
+                "mlp.post_swiglu": expected_post,
+                "residual.post_layer": expected_layer,
+            }
+        },
+    )
+    direct_down = down.clone()
+    if corrupt_down:
+        direct_down[0, 0] += torch.tensor(1.0, dtype=torch.bfloat16)
+    tensors = {
+        "model.layers.0.feed_forward.w1.weight": gate,
+        "model.layers.0.feed_forward.w3.weight": up,
+        "model.layers.0.feed_forward.w2.weight": direct_down,
+        "model.layers.0.ffn_norm.weight": norm,
+    }
+
+    class ParentSession:
+        manifest_sha256 = "c" * 64
+        open_receipt_sha256 = "d" * 64
+        config_file_sha256 = "e" * 64
+        norm_epsilon = epsilon
+
+        def tensor(self, key):
+            return tensors[key].detach().cpu().contiguous().clone()
+
+    class Layer(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.marker = torch.nn.Parameter(torch.ones((1,), dtype=torch.bfloat16))
+
+    target = SimpleNamespace(
+        model=SimpleNamespace(layers=(Layer(),)),
+    )
+    cache = SimpleNamespace(
+        cache_key="f" * 64,
+        parent_fingerprint="0" * 64,
+        layer_topology_fingerprint="1" * 64,
+        manifest={"manifest_sha256": "2" * 64},
+    )
+    bridge = SimpleNamespace(artifact_sha256="3" * 64)
+    chart_body = {"schema": "chart"}
+    chart_receipt = {
+        **chart_body,
+        "result_sha256": canonical_sha256(chart_body),
+    }
+    return (
+        target,
+        cache,
+        bridge,
+        ParentSession(),
+        (alignment,),
+        {0: trajectory},
+        chart_receipt,
+    )
+
+
+def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints() -> (
+    None
+):
+    target, cache, bridge, session, alignments, parent, chart = (
+        _parent_mlp_provenance_fixture()
+    )
+
+    inventory, receipt = stack._direct_mlp_inventory(
+        inventory_type=Lfm2DirectLocalMlpSourceInventory,
+        parent_session=session,
+        cache=cache,
+        bridge=bridge,
+        layer_index=0,
+        operator_kind="short_conv",
+        chart_receipt=chart,
+        attention_lineage=None,
+        alignments=alignments,
+        parent=parent,
+        target_model=target,
+    )
+
+    assert receipt["all_cached_endpoints_bit_exact"] is True
+    assert receipt["direct_parent_tensors_functionally_bound_to_cache"] is True
+    assert receipt["semantic_endpoint_rows"] == 1
+    assert inventory.direct_local_loader_receipt_sha256 == receipt["result_sha256"]
+    assert inventory.verify() is True
+
+
+def test_direct_parent_mlp_inventory_rejects_self_labeled_wrong_w2() -> None:
+    target, cache, bridge, session, alignments, parent, chart = (
+        _parent_mlp_provenance_fixture(corrupt_down=True)
+    )
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="do not exactly reproduce cached BF16",
+    ):
+        stack._direct_mlp_inventory(
+            inventory_type=Lfm2DirectLocalMlpSourceInventory,
+            parent_session=session,
+            cache=cache,
+            bridge=bridge,
+            layer_index=0,
+            operator_kind="short_conv",
+            chart_receipt=chart,
+            attention_lineage=None,
+            alignments=alignments,
+            parent=parent,
+            target_model=target,
+        )
+
+
+def test_heldout_selected_incumbent_noop_contract_is_strict() -> None:
+    state = "4" * 64
+    receipt = {
+        "status": "heldout-selected-incumbent-noop",
+        "installed": False,
+        "incumbent_selected_by_heldout_gates": True,
+        "fit_check_nonregression_passed": True,
+        "selection_nonregression_passed": True,
+        "validation_nonregression_passed": True,
+        "candidate_frozen_before_validation": True,
+        "validation_triggered_refit": False,
+        "model_state_before_sha256": state,
+        "model_state_after_sha256": state,
+        "changed_state_keys": [],
+        "parameter_count_changed": False,
+        "analytic_cached_evidence_only": True,
+        "operation_audit": dict(stack._ZERO_OPERATIONS),
+    }
+
+    assert stack._authenticated_heldout_incumbent_noop(
+        receipt,
+        before_sha256=state,
+        after_sha256=state,
+        changed_state_keys=(),
+    )
+    assert not stack._authenticated_heldout_incumbent_noop(
+        {**receipt, "validation_nonregression_passed": False},
+        before_sha256=state,
+        after_sha256=state,
+        changed_state_keys=(),
     )
 
 

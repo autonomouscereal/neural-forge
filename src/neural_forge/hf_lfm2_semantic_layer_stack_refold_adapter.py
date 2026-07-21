@@ -86,6 +86,10 @@ LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA = (
 _EXPECTED_ATTENTION_INDICES = (2, 4, 6, 8, 10, 12)
 _EXPECTED_SHORT_CONV_INDICES = (0, 1, 3, 5, 7, 9, 11, 13)
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
+_SHORT_CONV_INSTALLATION_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-installation-v1"
+)
+_MLP_INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-mlp-installation-v1"
 
 
 class Lfm2SemanticLayerStackRefoldError(RuntimeError):
@@ -193,9 +197,7 @@ class _WholeModelSnapshot:
             )
         with torch.no_grad():
             for name, value in current.items():
-                value.copy_(
-                    self.state[name].to(device=value.device, dtype=value.dtype)
-                )
+                value.copy_(self.state[name].to(device=value.device, dtype=value.dtype))
             parameters = dict(model.named_parameters())
             if set(parameters) != set(self.gradients):
                 raise Lfm2SemanticLayerStackRefoldError(
@@ -251,7 +253,9 @@ def _gradient_state_matches_snapshot(
         observed = parameter.grad
         if (expected is None) != (observed is None):
             return False
-        if expected is not None and _tensor_sha256(expected) != _tensor_sha256(observed):
+        if expected is not None and _tensor_sha256(expected) != _tensor_sha256(
+            observed
+        ):
             return False
     return True
 
@@ -293,7 +297,10 @@ def _initial_residual_bank(
 ) -> Mapping[int, Any]:
     torch = _torch()
     embedding = getattr(target_model.get_input_embeddings(), "weight", None)
-    if not isinstance(embedding, torch.nn.Parameter) or embedding.dtype != torch.bfloat16:
+    if (
+        not isinstance(embedding, torch.nn.Parameter)
+        or embedding.dtype != torch.bfloat16
+    ):
         raise Lfm2SemanticLayerStackRefoldError(
             "Saved child has no materialized BF16 input table."
         )
@@ -420,6 +427,8 @@ class _DirectParentSafetensorsSession:
         self._handles: tuple[Any, ...] = ()
         self._keys: Mapping[str, int] = MappingProxyType({})
         self._loaded: dict[str, str] = {}
+        self.config_file_sha256 = ""
+        self.norm_epsilon = 0.0
         self.manifest_sha256 = ""
         self.open_receipt_sha256 = ""
 
@@ -447,10 +456,22 @@ class _DirectParentSafetensorsSession:
             raise Lfm2SemanticLayerStackRefoldError(
                 "Parent config.json is invalid."
             ) from exc
-        if not isinstance(config_value, Mapping) or config_value.get("model_type") != "lfm2":
+        norm_epsilon = (
+            config_value.get("norm_eps") if isinstance(config_value, Mapping) else None
+        )
+        if (
+            not isinstance(config_value, Mapping)
+            or config_value.get("model_type") != "lfm2"
+            or isinstance(norm_epsilon, bool)
+            or not isinstance(norm_epsilon, (int, float))
+            or not math.isfinite(float(norm_epsilon))
+            or float(norm_epsilon) <= 0.0
+        ):
             raise Lfm2SemanticLayerStackRefoldError(
-                "Direct parent checkpoint is not LFM2."
+                "Direct parent checkpoint is not LFM2 or has no finite norm_eps."
             )
+        self.config_file_sha256 = _file_sha256(config)
+        self.norm_epsilon = float(norm_epsilon)
         shards = _local_safetensor_shards(self.directory)
         shard_records = [
             {
@@ -475,7 +496,8 @@ class _DirectParentSafetensorsSession:
         manifest = {
             "schema": "neural-forge-direct-parent-checkpoint-manifest-v1",
             "parent_model_identity_sha256": self.parent_identity_sha256,
-            "config_file_sha256": _file_sha256(config),
+            "config_file_sha256": self.config_file_sha256,
+            "norm_epsilon": self.norm_epsilon,
             "index": index_record,
             "shards": shard_records,
         }
@@ -540,6 +562,8 @@ class _DirectParentSafetensorsSession:
             "parent_model_identity_sha256": self.parent_identity_sha256,
             "checkpoint_manifest_sha256": self.manifest_sha256,
             "open_receipt_sha256": self.open_receipt_sha256,
+            "config_file_sha256": self.config_file_sha256,
+            "norm_epsilon": self.norm_epsilon,
             "loaded_tensor_sha256": dict(sorted(self._loaded.items())),
             "shards_hashed_once": True,
             "shards_opened_once": True,
@@ -547,9 +571,7 @@ class _DirectParentSafetensorsSession:
             "parent_forward_calls": 0,
             "network_access_performed": False,
         }
-        return MappingProxyType(
-            {**body, "session_sha256": canonical_sha256(body)}
-        )
+        return MappingProxyType({**body, "session_sha256": canonical_sha256(body)})
 
     def __exit__(self, *_args: Any) -> None:
         if self._stack is not None:
@@ -648,14 +670,13 @@ def _parent_layer_tensor_names(
             )
         )
     names_set = {
-            f"{phase.phase}.layer.{layer_index:03d}.{field}"
-            for phase in alignment.phases
-            for field in fields
+        f"{phase.phase}.layer.{layer_index:03d}.{field}"
+        for phase in alignment.phases
+        for field in fields
     }
     if include_final_norm:
         names_set.update(
-            f"{phase.phase}.output.final_norm_output"
-            for phase in alignment.phases
+            f"{phase.phase}.output.final_norm_output" for phase in alignment.phases
         )
     names = tuple(sorted(names_set))
     missing = tuple(sorted(set(names).difference(reference.ordered_tensor_names)))
@@ -882,12 +903,8 @@ def _fit_residual_chart(
         scale = max(largest * largest, 1e-30)
         for ratio in (1e-6, 1e-4, 1e-2, 1e-1, 1.0):
             ridge = ratio * scale
-            coefficients = supported_singular / (
-                supported_singular.square() + ridge
-            )
-            delta = supported_right.T @ (
-                coefficients.unsqueeze(1) * projected_residual
-            )
+            coefficients = supported_singular / (supported_singular.square() + ridge)
+            delta = supported_right.T @ (coefficients.unsqueeze(1) * projected_residual)
             candidates[f"rank_supported_ridge_{ratio:g}"] = (
                 identity + delta
             ).contiguous()
@@ -927,15 +944,14 @@ def _fit_residual_chart(
         }
 
     candidate_metrics = {
-        name: {
-            partition: metrics(rotation, partition)
-            for partition in _PARTITIONS
-        }
+        name: {partition: metrics(rotation, partition) for partition in _PARTITIONS}
         for name, rotation in candidates.items()
     }
     baseline = candidate_metrics["base_identity"]
 
-    def nonregressing(candidate: Mapping[str, Any], incumbent: Mapping[str, Any]) -> bool:
+    def nonregressing(
+        candidate: Mapping[str, Any], incumbent: Mapping[str, Any]
+    ) -> bool:
         rmse_tolerance = max(1e-12, 1e-6 * max(incumbent["rmse"], 1e-12))
         maximum_tolerance = max(
             1e-12,
@@ -972,9 +988,7 @@ def _fit_residual_chart(
     rotation = candidates[selected]
     chart = (encoder @ rotation).contiguous()
     if not bool(torch.isfinite(chart).all().item()):
-        raise Lfm2SemanticLayerStackRefoldError(
-            "Selected residual chart is nonfinite."
-        )
+        raise Lfm2SemanticLayerStackRefoldError("Selected residual chart is nonfinite.")
     unsupported_identity_error = 0.0
     if supported_rank < int(design_right_h.shape[0]):
         unsupported = design_right_h[~supported]
@@ -1135,9 +1149,7 @@ def _build_attention_evidence(
                     parent_key_post_rope=parent_key[:, :, :donor_tokens],
                     parent_value=history.value[:, :, :donor_tokens],
                     target_rope_inv_freq=target_rope_inv_freq,
-                    target_rope_attention_scaling=(
-                        target_rope_attention_scaling
-                    ),
+                    target_rope_attention_scaling=(target_rope_attention_scaling),
                     query_mode="semantic_endpoints",
                 )
                 query_positions = torch.tensor(
@@ -1207,9 +1219,7 @@ def _build_attention_evidence(
                                 "compiler_lineage_sha256": (
                                     lineage.compiler_lineage_sha256
                                 ),
-                                "residual_chart_sha256": chart_receipt[
-                                    "result_sha256"
-                                ],
+                                "residual_chart_sha256": chart_receipt["result_sha256"],
                                 "replay_bank_sha256": child_bank.bank_sha256,
                             }
                         ),
@@ -1219,6 +1229,42 @@ def _build_attention_evidence(
         finally:
             session.release_selected_tensors(payload)
     return tuple(result)
+
+
+def _authenticated_heldout_incumbent_noop(
+    receipt: Mapping[str, Any],
+    *,
+    before_sha256: str,
+    after_sha256: str,
+    changed_state_keys: Sequence[str],
+) -> bool:
+    """Recognize a frozen heldout-selected incumbent without requiring mutation."""
+
+    return bool(
+        receipt.get("status") == "heldout-selected-incumbent-noop"
+        and receipt.get("installed") is False
+        and receipt.get("incumbent_selected_by_heldout_gates") is True
+        and receipt.get("fit_check_nonregression_passed") is True
+        and receipt.get("selection_nonregression_passed") is True
+        and receipt.get("validation_nonregression_passed") is True
+        and receipt.get("candidate_frozen_before_validation") is True
+        and receipt.get("validation_triggered_refit") is False
+        and receipt.get("model_state_before_sha256") == before_sha256
+        and receipt.get("model_state_after_sha256") == after_sha256
+        and before_sha256 == after_sha256
+        and receipt.get(
+            "changed_state_keys",
+            receipt.get("changed_parameter_roles"),
+        )
+        == []
+        and not changed_state_keys
+        and receipt.get("parameter_count_changed") is False
+        and (
+            receipt.get("analytic_cached_evidence_only") is True
+            or receipt.get("analytic_linear_and_cluster_solves_only") is True
+        )
+        and receipt.get("operation_audit") == dict(_ZERO_OPERATIONS)
+    )
 
 
 def _install_attention_operator(
@@ -1250,15 +1296,36 @@ def _install_attention_operator(
     after_hashes = _state_tensor_hashes(target_model)
     after = fingerprint_lfm2_parent(target_model).identity_sha256
     changed = _changed_state_keys(before_hashes, after_hashes)
-    receipt = _validate_attention_installation_receipt(
-        candidate,
-        layer_index=layer_index,
-        evidence=evidence,
+    raw_receipt = _verify_sealed(candidate, "semantic attention")
+    if _authenticated_heldout_incumbent_noop(
+        raw_receipt,
         before_sha256=before,
         after_sha256=after,
-        changed_keys=changed,
-        parameter_count=parameter_count,
-    )
+        changed_state_keys=changed,
+    ):
+        if (
+            raw_receipt.get("schema") != LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA
+            or raw_receipt.get("layer_index") != layer_index
+            or raw_receipt.get("transport_evidence_sha256")
+            != [item.evidence_sha256 for item in evidence]
+            or raw_receipt.get("changed_state_keys") != []
+            or raw_receipt.get("parameter_element_count_before") != parameter_count
+            or raw_receipt.get("parameter_element_count_after") != parameter_count
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Attention incumbent no-op receipt is stale or incomplete."
+            )
+        receipt = raw_receipt
+    else:
+        receipt = _validate_attention_installation_receipt(
+            candidate,
+            layer_index=layer_index,
+            evidence=evidence,
+            before_sha256=before,
+            after_sha256=after,
+            changed_keys=changed,
+            parameter_count=parameter_count,
+        )
     if receipt.get("schema") != LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA:
         raise Lfm2SemanticLayerStackRefoldError(
             "Attention operator returned the wrong receipt schema."
@@ -1270,9 +1337,7 @@ def _semantic_terminal_target_position(phase: Any) -> int:
     donor_terminal = phase.donor_full_prefix_tokens - 1
     positions = tuple(
         index
-        for index, value in enumerate(
-            phase.target_to_donor_boundary_positions
-        )
+        for index, value in enumerate(phase.target_to_donor_boundary_positions)
         if value == donor_terminal
     )
     if len(positions) != 1 or positions[0] != phase.target_full_prefix_tokens - 1:
@@ -1339,9 +1404,7 @@ def _validate_cached_fir(
         "phase_comparison_sha256": comparisons,
         "all_cached_phases_exact": True,
     }
-    return MappingProxyType(
-        {**body, "result_sha256": canonical_sha256(body)}
-    )
+    return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
 
 
 def _resolve_short_conv_adapter() -> tuple[type[Any], Callable[..., Mapping[str, Any]]]:
@@ -1392,22 +1455,15 @@ def _build_short_conv_evidence(
             rows = trajectory.phase_rows[phase.phase]
             histories = trajectory.phase_histories[phase.phase]
             parent_post = (
-                rows["residual.post_operator"][:, -1:, :].to(torch.float64)
-                @ chart
+                rows["residual.post_operator"][:, -1:, :].to(torch.float64) @ chart
             ).to(torch.bfloat16)
             history_receipt = canonical_sha256(
                 {
                     "batch_index": batch,
                     "phase_index": phase_index,
-                    "b_sha256": _tensor_sha256(
-                        histories["short_conv.b_history"]
-                    ),
-                    "c_sha256": _tensor_sha256(
-                        histories["short_conv.c_history"]
-                    ),
-                    "x_sha256": _tensor_sha256(
-                        histories["short_conv.x_history"]
-                    ),
+                    "b_sha256": _tensor_sha256(histories["short_conv.b_history"]),
+                    "c_sha256": _tensor_sha256(histories["short_conv.c_history"]),
+                    "x_sha256": _tensor_sha256(histories["short_conv.x_history"]),
                     "owner_mapping_sha256": canonical_sha256(
                         list(phase.target_to_donor_span_owner_positions)
                     ),
@@ -1417,9 +1473,7 @@ def _build_short_conv_evidence(
             )
             capability = canonical_sha256(
                 {
-                    "cache_manifest_sha256": cache.manifest[
-                        "manifest_sha256"
-                    ],
+                    "cache_manifest_sha256": cache.manifest["manifest_sha256"],
                     "parent_trajectory_sha256": trajectory.evidence_sha256,
                     "complete_parent_bcx_history": True,
                     "pure_expansion": (
@@ -1449,9 +1503,7 @@ def _build_short_conv_evidence(
                     actual_child_operator_input_history=(
                         replay.operator_input[:, :target_tokens]
                     ),
-                    actual_child_pre_operator_residual_history=(
-                        pre[:, :target_tokens]
-                    ),
+                    actual_child_pre_operator_residual_history=(pre[:, :target_tokens]),
                     parent_b_history=histories["short_conv.b_history"],
                     parent_c_history=histories["short_conv.c_history"],
                     parent_x_history=histories["short_conv.x_history"],
@@ -1478,6 +1530,7 @@ def _install_short_conv_operator(
     installer: Callable[..., Mapping[str, Any]],
     parameter_count: int,
 ) -> Mapping[str, Any]:
+    before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
     if any(item.captured_child_model_state_sha256 != before for item in evidence):
         raise Lfm2SemanticLayerStackRefoldError(
@@ -1494,27 +1547,51 @@ def _install_short_conv_operator(
         source_model_identity_sha256=cache.parent_fingerprint,
     )
     receipt = _verify_sealed(candidate, "short-conv operator")
+    after_hashes = _state_tensor_hashes(target_model)
     after = fingerprint_lfm2_parent(target_model).identity_sha256
+    changed = _changed_state_keys(before_hashes, after_hashes)
     prefix = f"model.layers.{layer_index}.conv."
+    if _authenticated_heldout_incumbent_noop(
+        receipt,
+        before_sha256=before,
+        after_sha256=after,
+        changed_state_keys=changed,
+    ):
+        if (
+            receipt.get("schema") != _SHORT_CONV_INSTALLATION_SCHEMA
+            or receipt.get("layer_index") != layer_index
+            or receipt.get("cache_key") != cache.cache_key
+            or receipt.get("bridge_artifact_sha256") != bridge.artifact_sha256
+            or receipt.get("source_model_identity_sha256") != cache.parent_fingerprint
+            or receipt.get("transport_evidence_sha256")
+            != [item.evidence_sha256 for item in evidence]
+            or receipt.get("changed_state_keys") != []
+            or receipt.get("parameter_element_count") != parameter_count
+            or _parameter_count(target_model) != parameter_count
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Short-conv incumbent no-op receipt is stale or incomplete."
+            )
+        return MappingProxyType(receipt)
     if (
-        receipt.get("installed") is not True
+        receipt.get("schema") != _SHORT_CONV_INSTALLATION_SCHEMA
+        or receipt.get("installed") is not True
         or receipt.get("layer_index") != layer_index
         or receipt.get("cache_key") != cache.cache_key
         or receipt.get("bridge_artifact_sha256") != bridge.artifact_sha256
-        or receipt.get("source_model_identity_sha256")
-        != cache.parent_fingerprint
+        or receipt.get("source_model_identity_sha256") != cache.parent_fingerprint
         or receipt.get("model_state_before_sha256") != before
         or receipt.get("model_state_after_sha256") != after
         or before == after
         or receipt.get("parameter_element_count") != parameter_count
         or receipt.get("parameter_count_changed") is not False
-        or not receipt.get("changed_state_keys")
+        or receipt.get("changed_state_keys") != list(changed)
+        or not changed
         or any(
             not str(name).startswith(prefix)
             for name in receipt.get("changed_state_keys", ())
         )
-        or receipt.get("parent_bcx_exact_only_at_semantic_span_boundaries")
-        is not True
+        or receipt.get("parent_bcx_exact_only_at_semantic_span_boundaries") is not True
         or receipt.get("inserted_target_bcx_rows_are_owner_expanded_proxies")
         is not True
         or receipt.get("inserted_target_rows_parent_exact") is not False
@@ -1565,11 +1642,224 @@ def _mlp_lineage_sha256(
                 if attention_lineage is None
                 else attention_lineage.compiler_lineage_sha256
             ),
-            "fit_only_residual_assignment_sha256": chart_receipt[
-                "result_sha256"
-            ],
+            "fit_only_residual_assignment_sha256": chart_receipt["result_sha256"],
         }
     )
+
+
+def _strict_parent_bf16_matrix(value: Any, name: str, *, columns: int) -> Any:
+    torch = _torch()
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 2
+        or int(value.shape[0]) <= 0
+        or int(value.shape[1]) != columns
+        or value.dtype != torch.bfloat16
+        or value.requires_grad
+        or not bool(torch.isfinite(value).all().item())
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{name} must be one detached finite BF16 matrix with width {columns}."
+        )
+    return value.detach().to(device="cpu").contiguous().clone()
+
+
+def _replay_parent_mlp_functional_provenance(
+    *,
+    cache: Lfm2CircuitTraceCache,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    parent: Mapping[int, _ParentLayerTrajectory],
+    parent_session: _DirectParentSafetensorsSession,
+    layer_index: int,
+    gate_weight: Any,
+    up_weight: Any,
+    down_weight: Any,
+    ffn_norm_weight: Any,
+    execution_device: Any,
+) -> Mapping[str, Any]:
+    """Prove direct FFN tensors reproduce cached parent endpoints bit-for-bit."""
+
+    torch = _torch()
+    source_intermediate, source_hidden = map(int, gate_weight.shape)
+    gate = _strict_parent_bf16_matrix(
+        gate_weight,
+        "direct parent W1",
+        columns=source_hidden,
+    )
+    up = _strict_parent_bf16_matrix(
+        up_weight,
+        "direct parent W3",
+        columns=source_hidden,
+    )
+    down = _strict_parent_bf16_matrix(
+        down_weight,
+        "direct parent W2",
+        columns=source_intermediate,
+    )
+    norm = _strict_parent_bf16_matrix(
+        ffn_norm_weight.reshape(1, -1),
+        "direct parent FFN RMSNorm weight",
+        columns=source_hidden,
+    )[0]
+    if (
+        tuple(up.shape) != tuple(gate.shape)
+        or tuple(down.shape) != (source_hidden, source_intermediate)
+        or tuple(norm.shape) != (source_hidden,)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Direct parent FFN tensors do not form one compatible LFM2 layer."
+        )
+    epsilon = parent_session.norm_epsilon
+    if (
+        isinstance(epsilon, bool)
+        or not isinstance(epsilon, (int, float))
+        or not math.isfinite(float(epsilon))
+        or float(epsilon) <= 0.0
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Direct parent FFN provenance has no authenticated norm epsilon."
+        )
+
+    residual_rows = []
+    expected: dict[str, list[Any]] = {
+        "mlp.gate": [],
+        "mlp.up": [],
+        "mlp.post_swiglu": [],
+        "residual.post_layer": [],
+    }
+    row_ids = []
+    for alignment in sorted(
+        alignments,
+        key=lambda value: value.source_batch_index,
+    ):
+        trajectory = parent[alignment.source_batch_index]
+        for phase_index, phase in enumerate(alignment.phases):
+            rows = trajectory.phase_rows[phase.phase]
+            residual = rows["residual.post_operator"][:, -1:, :].reshape(
+                1,
+                -1,
+            )
+            residual_rows.append(
+                _strict_parent_bf16_matrix(
+                    residual,
+                    "cached parent post-operator residual endpoint",
+                    columns=source_hidden,
+                )
+            )
+            for field_name, columns in (
+                ("mlp.gate", source_intermediate),
+                ("mlp.up", source_intermediate),
+                ("mlp.post_swiglu", source_intermediate),
+                ("residual.post_layer", source_hidden),
+            ):
+                expected[field_name].append(
+                    _strict_parent_bf16_matrix(
+                        rows[field_name][:, -1:, :].reshape(1, -1),
+                        f"cached parent {field_name} endpoint",
+                        columns=columns,
+                    )
+                )
+            row_ids.append(
+                {
+                    "batch_index": alignment.source_batch_index,
+                    "phase_index": phase_index,
+                    "phase": phase.phase,
+                    "semantic_phase_sha256": phase.semantic_phase_sha256,
+                    "parent_trajectory_sha256": trajectory.evidence_sha256,
+                }
+            )
+    if not residual_rows:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Direct parent FFN provenance has no semantic endpoint rows."
+        )
+    residual = torch.cat(tuple(residual_rows), dim=0)
+    cached = {
+        field: torch.cat(tuple(values), dim=0) for field, values in expected.items()
+    }
+    device = torch.device(execution_device)
+    with torch.no_grad():
+        replay_residual = residual.to(device=device, dtype=torch.bfloat16)
+        replay_norm = norm.to(device=device, dtype=torch.bfloat16)
+        residual_float = replay_residual.to(torch.float32)
+        variance = residual_float.square().mean(dim=-1, keepdim=True)
+        mlp_input = replay_norm * (
+            residual_float * torch.rsqrt(variance + float(epsilon))
+        ).to(torch.bfloat16)
+        replay_gate = torch.nn.functional.linear(
+            mlp_input,
+            gate.to(device=device, dtype=torch.bfloat16),
+        )
+        replay_up = torch.nn.functional.linear(
+            mlp_input,
+            up.to(device=device, dtype=torch.bfloat16),
+        )
+        replay_post = torch.nn.functional.silu(replay_gate) * replay_up
+        replay_down = torch.nn.functional.linear(
+            replay_post,
+            down.to(device=device, dtype=torch.bfloat16),
+        )
+        replay_layer = replay_residual + replay_down
+    replayed = {
+        "mlp.gate": replay_gate.detach().to(device="cpu").contiguous(),
+        "mlp.up": replay_up.detach().to(device="cpu").contiguous(),
+        "mlp.post_swiglu": replay_post.detach().to(device="cpu").contiguous(),
+        "residual.post_layer": replay_layer.detach().to(device="cpu").contiguous(),
+    }
+    mismatched = tuple(
+        field for field in replayed if not torch.equal(replayed[field], cached[field])
+    )
+    if mismatched:
+        maximum_errors = {
+            field: float(
+                (replayed[field].to(torch.float32) - cached[field].to(torch.float32))
+                .abs()
+                .max()
+                .item()
+            )
+            for field in mismatched
+        }
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Direct parent FFN tensors do not exactly reproduce cached BF16 "
+            f"semantic endpoints at layer {layer_index}: {maximum_errors}."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v1",
+        "cache_key": cache.cache_key,
+        "cache_parent_fingerprint": cache.parent_fingerprint,
+        "cache_manifest_sha256": cache.manifest["manifest_sha256"],
+        "layer_index": layer_index,
+        "parent_checkpoint_manifest_sha256": parent_session.manifest_sha256,
+        "parent_session_open_receipt_sha256": parent_session.open_receipt_sha256,
+        "parent_config_file_sha256": parent_session.config_file_sha256,
+        "parent_norm_epsilon": float(epsilon),
+        "direct_tensor_sha256": {
+            "ffn_norm.weight": _tensor_sha256(norm),
+            "feed_forward.w1.weight": _tensor_sha256(gate),
+            "feed_forward.w3.weight": _tensor_sha256(up),
+            "feed_forward.w2.weight": _tensor_sha256(down),
+        },
+        "cached_endpoint_sha256": {
+            field: _tensor_sha256(value) for field, value in sorted(cached.items())
+        },
+        "replayed_endpoint_sha256": {
+            field: _tensor_sha256(value) for field, value in sorted(replayed.items())
+        },
+        "semantic_endpoint_rows": len(row_ids),
+        "semantic_endpoint_row_ids_sha256": canonical_sha256(row_ids),
+        "execution_device": str(device),
+        "rms_norm_formula": (
+            "weight*(x.float()*rsqrt(mean(x.float()^2)+norm_eps)).to(bfloat16)"
+        ),
+        "mlp_formula": "W2*(silu(W1*rmsnorm(x))*(W3*rmsnorm(x)))+x",
+        "all_cached_endpoints_bit_exact": True,
+        "direct_parent_tensors_functionally_bound_to_cache": True,
+        "numeric_parent_child_weight_match_objective": False,
+        "parent_model_forward_calls": 0,
+        "training_steps": 0,
+    }
+    return _sealed(body)
 
 
 def _direct_mlp_inventory(
@@ -1582,11 +1872,15 @@ def _direct_mlp_inventory(
     operator_kind: str,
     chart_receipt: Mapping[str, Any],
     attention_lineage: Lfm2SemanticCompilerLayerLineage | None,
-) -> Any:
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    parent: Mapping[int, _ParentLayerTrajectory],
+    target_model: Any,
+) -> tuple[Any, Mapping[str, Any]]:
     prefix = f"model.layers.{layer_index}.feed_forward."
     gate = parent_session.tensor(prefix + "w1.weight")
     up = parent_session.tensor(prefix + "w3.weight")
     down = parent_session.tensor(prefix + "w2.weight")
+    ffn_norm = parent_session.tensor(f"model.layers.{layer_index}.ffn_norm.weight")
     lineage = _mlp_lineage_sha256(
         cache=cache,
         bridge=bridge,
@@ -1595,31 +1889,36 @@ def _direct_mlp_inventory(
         chart_receipt=chart_receipt,
         attention_lineage=attention_lineage,
     )
-    loader_receipt = canonical_sha256(
-        {
-            "schema": "neural-forge-lfm2-direct-parent-mlp-load-v1",
-            "parent_session_open_receipt_sha256": (
-                parent_session.open_receipt_sha256
-            ),
-            "layer_index": layer_index,
-            "tensor_sha256": {
-                "w1.weight": _tensor_sha256(gate),
-                "w3.weight": _tensor_sha256(up),
-                "w2.weight": _tensor_sha256(down),
-            },
-        }
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    if layer_index >= len(layers):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"Child has no layer {layer_index} for parent FFN provenance replay."
+        )
+    execution_device, _execution_dtype = _layer_runtime(layers[layer_index])
+    functional_provenance = _replay_parent_mlp_functional_provenance(
+        cache=cache,
+        alignments=alignments,
+        parent=parent,
+        parent_session=parent_session,
+        layer_index=layer_index,
+        gate_weight=gate,
+        up_weight=up,
+        down_weight=down,
+        ffn_norm_weight=ffn_norm,
+        execution_device=execution_device,
     )
-    return inventory_type(
+    inventory = inventory_type(
         layer_index=layer_index,
         parent_model_identity_sha256=cache.parent_fingerprint,
         parent_checkpoint_manifest_sha256=parent_session.manifest_sha256,
-        direct_local_loader_receipt_sha256=loader_receipt,
+        direct_local_loader_receipt_sha256=functional_provenance["result_sha256"],
         residual_assignment_sha256=chart_receipt["result_sha256"],
         compiler_lineage_sha256=lineage,
         gate_weight=gate,
         up_weight=up,
         down_weight=down,
     )
+    return inventory, functional_provenance
 
 
 def _build_mlp_evidence(
@@ -1655,8 +1954,7 @@ def _build_mlp_evidence(
             index = torch.tensor((target_position,), dtype=torch.long)
             rows = trajectory.phase_rows[phase.phase]
             parent_post_layer = (
-                rows["residual.post_layer"][:, -1:, :].to(torch.float64)
-                @ chart
+                rows["residual.post_layer"][:, -1:, :].to(torch.float64) @ chart
             ).to(torch.bfloat16)[0]
             terminal = None
             if final_layer:
@@ -1666,8 +1964,7 @@ def _build_mlp_evidence(
                         "Final-layer MLP evidence lacks cached parent final norm."
                     )
                 terminal = (
-                    parent_final_norm[:, -1:, :].to(torch.float64)
-                    @ base_encoder
+                    parent_final_norm[:, -1:, :].to(torch.float64) @ base_encoder
                 ).to(torch.bfloat16)[0]
             result.append(
                 evidence_type(
@@ -1686,12 +1983,8 @@ def _build_mlp_evidence(
                     source_inventory=source_inventory,
                     parent_gate=rows["mlp.gate"][:, -1:, :][0],
                     parent_up=rows["mlp.up"][:, -1:, :][0],
-                    parent_post_swiglu=(
-                        rows["mlp.post_swiglu"][:, -1:, :][0]
-                    ),
-                    actual_child_mlp_input=(
-                        replay.mlp_input.index_select(1, index)[0]
-                    ),
+                    parent_post_swiglu=(rows["mlp.post_swiglu"][:, -1:, :][0]),
+                    actual_child_mlp_input=(replay.mlp_input.index_select(1, index)[0]),
                     actual_child_pre_mlp_residual=(
                         replay.post_operator_residual.index_select(1, index)[0]
                     ),
@@ -1716,6 +2009,7 @@ def _install_mlp(
     final_layer: bool,
     parameter_count: int,
 ) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
     if any(item.captured_child_model_state_sha256 != before for item in evidence):
         raise Lfm2SemanticLayerStackRefoldError(
@@ -1738,18 +2032,19 @@ def _install_mlp(
         defer_down_weight=final_layer,
     )
     receipt_value = getattr(result, "receipt", None)
-    terminal_evidence = dict(
-        getattr(result, "final_layer_mlp_evidence", {})
-    )
+    terminal_evidence = dict(getattr(result, "final_layer_mlp_evidence", {}))
     if not isinstance(receipt_value, Mapping):
         raise Lfm2SemanticLayerStackRefoldError(
             "MLP installer returned no authenticated receipt."
         )
     receipt = _verify_sealed(receipt_value, "semantic MLP")
+    after_hashes = _state_tensor_hashes(target_model)
     after = fingerprint_lfm2_parent(target_model).identity_sha256
+    changed = _changed_state_keys(before_hashes, after_hashes)
     w2_after = _tensor_sha256(w2)
     common_invalid = (
-        receipt.get("layer_index") != layer_index
+        receipt.get("schema") != _MLP_INSTALLATION_SCHEMA
+        or receipt.get("layer_index") != layer_index
         or receipt.get("model_state_before_sha256") != before
         or receipt.get("model_state_after_sha256") != after
         or receipt.get("parameter_count_before") != parameter_count
@@ -1768,8 +2063,7 @@ def _install_mlp(
             for split, value in sorted(terminal_evidence.items())
         }
         if (
-            receipt.get("final_layer_mlp_w2_deferred_to_fused_terminal")
-            is not True
+            receipt.get("final_layer_mlp_w2_deferred_to_fused_terminal") is not True
             or receipt.get("install_count") not in (0, 1)
             or set(terminal_evidence) != set(_PARTITIONS)
             or any(
@@ -1781,20 +2075,34 @@ def _install_mlp(
             or (receipt.get("install_count") == 0 and after != before)
             or (
                 receipt.get("install_count") == 1
-                and (
-                    receipt.get("installed") is not True
-                    or after == before
-                )
+                and (receipt.get("installed") is not True or after == before)
             )
         ):
             raise Lfm2SemanticLayerStackRefoldError(
                 "Final MLP did not defer W2 with four authenticated banks."
             )
+    elif _authenticated_heldout_incumbent_noop(
+        receipt,
+        before_sha256=before,
+        after_sha256=after,
+        changed_state_keys=changed,
+    ):
+        if (
+            receipt.get("install_count") != 0
+            or receipt.get("final_layer_mlp_w2_deferred_to_fused_terminal") is not False
+            or receipt.get("cache_key") != cache.cache_key
+            or receipt.get("bridge_artifact_sha256") != bridge.artifact_sha256
+            or receipt.get("evidence_endpoint_count") != len(evidence)
+            or terminal_evidence
+            or w2_after != w2_before
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Nonterminal MLP incumbent no-op receipt is stale or incomplete."
+            )
     elif (
         receipt.get("installed") is not True
         or receipt.get("install_count") != 1
-        or receipt.get("final_layer_mlp_w2_deferred_to_fused_terminal")
-        is not False
+        or receipt.get("final_layer_mlp_w2_deferred_to_fused_terminal") is not False
         or after == before
         or terminal_evidence
     ):
@@ -1845,7 +2153,9 @@ def _validated_operator_topology(
             "Cache does not have the authenticated 6-attention/8-short-conv "
             "LFM2 topology."
         )
-    child_types = tuple(getattr(getattr(target_model, "config", None), "layer_types", ()))
+    child_types = tuple(
+        getattr(getattr(target_model, "config", None), "layer_types", ())
+    )
     if child_types:
         normalized = tuple(
             "short_conv" if value in {"conv", "short_conv"} else str(value)
@@ -1979,6 +2289,7 @@ def _layer_receipt(
     operator_receipt: Mapping[str, Any],
     after_operator_replay: _LayerReplayBank,
     mlp_receipt: Mapping[str, Any],
+    mlp_source_provenance: Mapping[str, Any],
     propagation_replay: _LayerReplayBank,
     chart_receipt: Mapping[str, Any],
     parent: Mapping[int, _ParentLayerTrajectory],
@@ -1998,10 +2309,30 @@ def _layer_receipt(
         "model_state_after_operator_sha256": (
             after_operator_replay.captured_child_model_state_sha256
         ),
+        "operator_parameter_bytes_changed": (
+            before_operator_replay.captured_child_model_state_sha256
+            != after_operator_replay.captured_child_model_state_sha256
+        ),
+        "operator_incumbent_noop_selected": (
+            operator_receipt.get("status") == "heldout-selected-incumbent-noop"
+        ),
         "after_operator_replay_bank_sha256": after_operator_replay.bank_sha256,
         "mlp_installation_sha256": mlp_receipt["result_sha256"],
+        "mlp_source_functional_provenance_sha256": (
+            mlp_source_provenance["result_sha256"]
+        ),
+        "mlp_source_direct_tensors_functionally_bound_to_cache": (
+            mlp_source_provenance["direct_parent_tensors_functionally_bound_to_cache"]
+        ),
         "model_state_after_mlp_sha256": (
             propagation_replay.captured_child_model_state_sha256
+        ),
+        "mlp_parameter_bytes_changed": (
+            after_operator_replay.captured_child_model_state_sha256
+            != propagation_replay.captured_child_model_state_sha256
+        ),
+        "mlp_incumbent_noop_selected": (
+            mlp_receipt.get("status") == "heldout-selected-incumbent-noop"
         ),
         "propagation_replay_bank_sha256": propagation_replay.bank_sha256,
         "fit_only_residual_chart_sha256": chart_receipt["result_sha256"],
@@ -2093,9 +2424,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     }
     result: Lfm2SemanticLayerStackInstallation | None = None
     try:
-        target_rope_inv_freq, target_rope_attention_scaling = _target_rope(
-            target_model
-        )
+        target_rope_inv_freq, target_rope_attention_scaling = _target_rope(target_model)
         with (
             cache.selective_authenticated_session() as cache_session,
             _DirectParentSafetensorsSession(
@@ -2131,8 +2460,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             layer_receipts = []
             attention_install_count = 0
             short_conv_install_count = 0
+            operator_parameter_mutation_count = 0
             mlp_evidence_compile_count = 0
             nonterminal_mlp_install_count = 0
+            mlp_parameter_mutation_count = 0
             final_terminal_evidence: Mapping[str, Any] = MappingProxyType({})
             for layer_index, operator_kind in enumerate(kinds):
                 before_operator_replay = _replay_current_layer(
@@ -2170,9 +2501,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         layer_index=layer_index,
                         lineage=lineage,
                         target_rope_inv_freq=target_rope_inv_freq,
-                        target_rope_attention_scaling=(
-                            target_rope_attention_scaling
-                        ),
+                        target_rope_attention_scaling=(target_rope_attention_scaling),
                     )
                     operator_receipt = _install_attention_operator(
                         target_model=target_model,
@@ -2220,6 +2549,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         parameter_count=parameter_count,
                     )
                     short_conv_install_count += 1
+                operator_parameter_mutation_count += int(
+                    operator_receipt["model_state_before_sha256"]
+                    != operator_receipt["model_state_after_sha256"]
+                )
                 after_operator_replay = _replay_current_layer(
                     target_model,
                     alignments=alignments,
@@ -2233,7 +2566,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     raise Lfm2SemanticLayerStackRefoldError(
                         f"Layer {layer_index} operator replay is not fresh."
                     )
-                source_inventory = _direct_mlp_inventory(
+                source_inventory, mlp_source_provenance = _direct_mlp_inventory(
                     inventory_type=mlp_inventory_type,
                     parent_session=parent_session,
                     cache=cache,
@@ -2242,6 +2575,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     operator_kind=operator_kind,
                     chart_receipt=chart_receipt,
                     attention_lineage=attention_lineage,
+                    alignments=alignments,
+                    parent=parent,
+                    target_model=target_model,
                 )
                 mlp_evidence = _build_mlp_evidence(
                     evidence_type=mlp_evidence_type,
@@ -2271,6 +2607,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     nonterminal_mlp_install_count += 1
                 else:
                     final_terminal_evidence = terminal_evidence
+                mlp_parameter_mutation_count += int(
+                    mlp_receipt["model_state_before_sha256"]
+                    != mlp_receipt["model_state_after_sha256"]
+                )
                 propagation_replay = _replay_current_layer(
                     target_model,
                     alignments=alignments,
@@ -2292,6 +2632,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         operator_receipt=operator_receipt,
                         after_operator_replay=after_operator_replay,
                         mlp_receipt=mlp_receipt,
+                        mlp_source_provenance=mlp_source_provenance,
                         propagation_replay=propagation_replay,
                         chart_receipt=chart_receipt,
                         parent=parent,
@@ -2322,6 +2663,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             or mlp_evidence_compile_count != 14
             or nonterminal_mlp_install_count != 13
             or set(final_terminal_evidence) != set(_PARTITIONS)
+            or operator_parameter_mutation_count + mlp_parameter_mutation_count <= 0
             or not changed_keys
             or final_state == snapshot.fingerprint
             or _parameter_count(target_model) != parameter_count
@@ -2344,9 +2686,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "cache_key": cache.cache_key,
             "cache_parent_fingerprint": cache.parent_fingerprint,
             "cache_layer_topology_sha256": cache.layer_topology_fingerprint,
-            "cache_selective_session_sha256": cache_session_receipt[
-                "session_sha256"
-            ],
+            "cache_selective_session_sha256": cache_session_receipt["session_sha256"],
             "parent_checkpoint_session_sha256": parent_session_receipt[
                 "session_sha256"
             ],
@@ -2368,23 +2708,26 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "layer_count": 14,
             "attention_operator_install_count": attention_install_count,
             "short_conv_operator_install_count": short_conv_install_count,
-            "replay_fresh_mlp_evidence_compile_count": (
-                mlp_evidence_compile_count
-            ),
-            "nonterminal_mlp_writer_install_count": (
-                nonterminal_mlp_install_count
+            "operator_parameter_mutation_count": (operator_parameter_mutation_count),
+            "replay_fresh_mlp_evidence_compile_count": (mlp_evidence_compile_count),
+            "nonterminal_mlp_writer_install_count": (nonterminal_mlp_install_count),
+            "mlp_parameter_mutation_count": mlp_parameter_mutation_count,
+            "heldout_selected_incumbent_noop_count": sum(
+                int(value["operator_incumbent_noop_selected"])
+                + int(value["mlp_incumbent_noop_selected"])
+                for value in layer_receipts
             ),
             "complete_causal_layer_stack_installed": True,
             "all_attention_operators_installed": True,
             "all_short_conv_operators_installed": True,
             "all_replay_fresh_mlp_evidence_compiled": True,
             "all_nonterminal_mlp_writers_installed": True,
+            "authenticated_incumbent_noop_layer_decisions_permitted": True,
+            "whole_stage_contains_meaningful_parameter_changes": True,
             "final_layer_mlp_w2_deferred_to_fused_terminal": True,
             "final_layer_mlp_w2_install_count": 0,
             "final_layer_mlp_evidence_sha256": terminal_evidence_sha,
-            "causal_install_order": (
-                "operator_then_replay_fresh_mlp_then_next_layer"
-            ),
+            "causal_install_order": ("operator_then_replay_fresh_mlp_then_next_layer"),
             "model_state_before_sha256": snapshot.fingerprint,
             "model_state_after_sha256": final_state,
             "changed_state_keys": list(changed_keys),
