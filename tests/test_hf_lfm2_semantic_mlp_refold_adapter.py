@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -130,10 +131,56 @@ def _source() -> adapter.Lfm2DirectLocalMlpSourceInventory:
         direct_local_loader_receipt_sha256=_sha("loader"),
         residual_assignment_sha256=_sha("residual-chart"),
         compiler_lineage_sha256=_sha("compiler-lineage"),
+        residual_chart=torch.eye(4, dtype=torch.float64),
         gate_weight=gate,
         up_weight=up,
         down_weight=down,
     )
+
+
+def test_source_inventory_authenticates_dense_residual_chart_transport() -> None:
+    source = _source()
+    body = source.authentication_body()
+
+    assert source.verify() is True
+    assert source.target_hidden_size == 4
+    assert body["schema"] == adapter.LFM2_SEMANTIC_MLP_SOURCE_SCHEMA
+    assert body["residual_chart_shape"] == [4, 4]
+    assert body["residual_chart_sha256"] == adapter._tensor_sha256(
+        source.residual_chart
+    )
+    assert body["residual_chart_receipt_sha256"] == source.residual_assignment_sha256
+    assert body["residual_chart_and_receipt_jointly_hashed"] is True
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="source-hidden-to-target-hidden",
+    ):
+        replace(source, residual_chart=torch.ones((3, 4), dtype=torch.float64))
+    nonfinite_chart = torch.eye(4, dtype=torch.float64)
+    nonfinite_chart[0, 0] = float("nan")
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="detached finite rank-2",
+    ):
+        replace(source, residual_chart=nonfinite_chart)
+
+    source.residual_chart[0, 0] += 1.0
+    assert source.verify() is False
+
+
+def test_endpoint_rejects_residual_chart_with_wrong_target_width() -> None:
+    model = _Target()
+    valid = _evidence(model)[0]
+    wrong_width = replace(
+        valid.source_inventory,
+        residual_chart=torch.ones((4, 3), dtype=torch.float64),
+    )
+    assert wrong_width.verify()
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="compatible endpoint",
+    ):
+        replace(valid, source_inventory=wrong_width)
 
 
 def _evidence(
@@ -477,32 +524,59 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
         "effective_full_structural_maximum_delta_ratio": None,
         "relative_incumbent_trust_cap_applied": False,
         "authenticated_full_source_structural_solve_used": True,
+        "authenticated_residual_chart_used": True,
+        "coupled_real_medoid_gate_up_used": True,
+        "every_source_multi_anchor_consumer_used": True,
+        "materialized_target_dtype_producers_used_for_w2": True,
         "random_initialization_used": False,
         "gradient_training_used": False,
     }
     assert prepared.selection_receipt["cold_start_escape"] == cold
     planting = prepared.full_candidate.solver_receipt["source_derived_planting"]
-    assert planting == {
-        "source_inventory_sha256": _source().inventory_sha256,
-        "compiler_lineage_sha256": _sha("compiler-lineage"),
-        "residual_assignment_sha256": _sha("residual-chart"),
-        "full_source_coverage": True,
-        "planted_roles": ["w1.weight", "w3.weight", "w2.weight"],
-        "all_dense_w1_w3_w2_roles_planted": True,
-        "fit_partition_only_used_for_solve": True,
-    }
+    solver = prepared.full_candidate.solver_receipt
+    assert planting["source_inventory_sha256"] == _source().inventory_sha256
+    assert planting["compiler_lineage_sha256"] == _sha("compiler-lineage")
+    assert planting["residual_assignment_sha256"] == _sha("residual-chart")
+    assert planting["residual_chart_sha256"] == adapter._tensor_sha256(
+        _source().residual_chart
+    )
+    assert planting["multi_anchor_plan_sha256"] == solver["multi_anchor_plan_sha256"]
+    assert planting["producer_prior_sha256"] == solver["producer_prior_sha256"]
+    assert planting["consumer_prior_sha256"] == solver["consumer_prior_sha256"]
+    assert planting["full_source_coverage"] is True
+    assert planting["producer_averaging"] is False
+    assert planting["source_neurons_dropped"] == 0
+    assert planting["fit_case_weight_sum"] == 8.0
+    assert planting["fit_row_weight_sum"] == 8.0
+    assert planting["fit_row_weights_sha256"] == solver["fit_row_weights_sha256"]
+    assert planting["heldout_rows_used_by_solver"] == 0
+    assert planting["planted_roles"] == ["w1.weight", "w3.weight", "w2.weight"]
+    assert planting["all_dense_w1_w3_w2_roles_planted"] is True
+    assert planting["fit_partition_only_used_for_solve"] is True
     assert prepared.selection_receipt["source_derived_planting"] == planting
-    corrections = prepared.full_candidate.solver_receipt["prior_correction_reports"]
+    corrections = solver["prior_correction_reports"]
     assert {report["role"] for report in corrections} == {
-        "mlp_gate",
-        "mlp_up",
-        "mlp_down",
+        "mlp_real_medoid_gate",
+        "mlp_real_medoid_up",
+        "mlp_multi_anchor_down",
     }
-    assert all(report["prior_norm"] == 0.0 for report in corrections)
+    assert all(report["prior_norm"] > 0.0 for report in corrections)
     assert all(report["update_scale"] == 1.0 for report in corrections)
-    assert set(prepared.full_candidate.solver_receipt["operation_audit"].values()) == {
-        0
-    }
+    assert solver["producer_plan"] == "sparse_multi_anchor_real_medoid"
+    assert solver["producer_averaging"] is False
+    assert solver["full_source_coverage"] is True
+    assert solver["source_neurons_dropped"] == 0
+    assert solver["endpoint_feature_source"] == (
+        "materialized_target_dtype_w1_w3_cast_back_to_fp64"
+    )
+    assert solver["plan_evidence_scope"] == "supplied_fit_cases_only"
+    assert solver["heldout_rows_used_for_plan"] == 0
+    assert solver["heldout_rows_used_by_solver"] == 0
+    assert solver["multi_anchor_plan"]["calibration_provenance"] == (
+        "cached_fit_rows_only"
+    )
+    assert solver["multi_anchor_plan"]["invariants"]["all_hold"] is True
+    assert set(solver["operation_audit"].values()) == {0}
 
     result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
         target_model=model,
@@ -514,6 +588,86 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
     assert all(
         int(torch.count_nonzero(parameter).item()) > 0 for parameter in mlp.parameters()
     )
+
+
+def test_blank_dispatch_uses_only_weighted_fit_chart_multi_anchor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Target()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].feed_forward.parameters():
+            parameter.zero_()
+    evidence = tuple(
+        replace(item, sample_weight=(index + 1) / 32.0)
+        for index, item in enumerate(_cold_start_parent_endpoint_evidence(model))
+    )
+    fit = adapter._split_evidence(evidence)["fit"]
+    observed = []
+    real_compile = adapter.compile_lfm2_real_medoid_structural_residual_mlp_fold
+
+    def recording_compile(**kwargs):
+        observed.append(kwargs)
+        return real_compile(**kwargs)
+
+    def forbidden_legacy(**_kwargs):
+        raise AssertionError("Blank child reached the legacy barycentric compiler.")
+
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_real_medoid_structural_residual_mlp_fold",
+        recording_compile,
+    )
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_structural_residual_mlp_fold",
+        forbidden_legacy,
+    )
+    prepared = _prepare(model, evidence)
+
+    assert prepared.selected_role == "full-w1-w3-w2"
+    assert len(observed) == 1
+    call = observed[0]
+    assert call["case_sample_weights"] == tuple(item.sample_weight for item in fit)
+    assert len(call["cases"]) == len(fit)
+    assert call["residual_chart_sha256"] == adapter._tensor_sha256(
+        fit[0].source_inventory.residual_chart
+    )
+    assert prepared.full_candidate.solver_receipt["fit_case_weight_sum"] == (
+        pytest.approx(sum(item.sample_weight for item in fit))
+    )
+    assert prepared.full_candidate.solver_receipt["heldout_rows_used_for_plan"] == 0
+    assert prepared.full_candidate.solver_receipt["heldout_rows_used_by_solver"] == 0
+
+
+def test_mutated_source_chart_is_rejected_before_compile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Target()
+    evidence = _evidence(model)
+    before = fingerprint_lfm2_parent(model).identity_sha256
+    compile_called = False
+
+    def forbidden_compile(**_kwargs):
+        nonlocal compile_called
+        compile_called = True
+        raise AssertionError("Unauthenticated source reached the compiler.")
+
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_structural_residual_mlp_fold",
+        forbidden_compile,
+    )
+    evidence[0].source_inventory.residual_chart[0, 0] += 0.5
+    assert evidence[0].verify() is True
+    assert evidence[0].source_inventory.verify() is False
+
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="authenticated typed endpoint evidence",
+    ):
+        _prepare(model, evidence)
+    assert compile_called is False
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before
 
 
 def test_blank_multi_weight_plant_matches_canonical_layer_stack_diff() -> None:
@@ -530,19 +684,14 @@ def test_blank_multi_weight_plant_matches_canonical_layer_stack_diff() -> None:
     evidence = _cold_start_parent_endpoint_evidence(model)
     before_hashes = stack_adapter._state_tensor_hashes(model)
     before_state = {
-        name: value.detach().cpu().clone()
-        for name, value in model.state_dict().items()
+        name: value.detach().cpu().clone() for name, value in model.state_dict().items()
     }
-    identities = {
-        name: id(parameter) for name, parameter in model.named_parameters()
-    }
+    identities = {name: id(parameter) for name, parameter in model.named_parameters()}
     pointers = {
-        name: parameter.data_ptr()
-        for name, parameter in model.named_parameters()
+        name: parameter.data_ptr() for name, parameter in model.named_parameters()
     }
     gradient_ids = {
-        name: id(parameter.grad)
-        for name, parameter in model.named_parameters()
+        name: id(parameter.grad) for name, parameter in model.named_parameters()
     }
     gradient_state = {
         name: parameter.grad.detach().cpu().clone()
@@ -590,20 +739,17 @@ def test_blank_multi_weight_plant_matches_canonical_layer_stack_diff() -> None:
         name: id(parameter) for name, parameter in model.named_parameters()
     } == identities
     assert {
-        name: parameter.data_ptr()
-        for name, parameter in model.named_parameters()
+        name: parameter.data_ptr() for name, parameter in model.named_parameters()
     } == pointers
     assert {
-        name: id(parameter.grad)
-        for name, parameter in model.named_parameters()
+        name: id(parameter.grad) for name, parameter in model.named_parameters()
     } == gradient_ids
     assert all(
         torch.equal(parameter.grad.detach().cpu(), gradient_state[name])
         for name, parameter in model.named_parameters()
     )
     assert all(
-        int(torch.count_nonzero(parameter).item()) > 0
-        for parameter in mlp.parameters()
+        int(torch.count_nonzero(parameter).item()) > 0 for parameter in mlp.parameters()
     )
 
 
@@ -631,7 +777,7 @@ def test_exact_zero_incumbent_fails_closed_when_no_full_plant_passes() -> None:
     assert report["candidate_nonzero_roles"] == {
         "incumbent": [],
         "incumbent-producer-w2": [],
-        "full-w1-w3-w2": ["w1.weight", "w3.weight"],
+        "full-w1-w3-w2": ["w1.weight", "w3.weight", "w2.weight"],
     }
     diagnostics = report["selection_diagnostics"]
     assert set(diagnostics["endpoint_metrics"]) == {
@@ -642,9 +788,9 @@ def test_exact_zero_incumbent_fails_closed_when_no_full_plant_passes() -> None:
     for role_metrics in diagnostics["endpoint_metrics"].values():
         assert set(role_metrics) == {"fit", "fit_check", "selection", "validation"}
         assert all(metrics["endpoint_rows"] > 0 for metrics in role_metrics.values())
-    assert diagnostics["heldout_selection_improvement"][
-        "incumbent-producer-w2"
-    ] is False
+    assert (
+        diagnostics["heldout_selection_improvement"]["incumbent-producer-w2"] is False
+    )
     assert diagnostics["selected_role"] == "incumbent"
     assert report["partition_batch_indices"] == {
         "fit": [0],
@@ -673,6 +819,15 @@ def test_nonzero_incumbent_preserves_requested_relative_trust_cap(
         adapter,
         "compile_lfm2_structural_residual_mlp_fold",
         recording_compile,
+    )
+
+    def forbidden_blank_compile(**_kwargs):
+        raise AssertionError("Nonzero child reached the blank-start compiler.")
+
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_real_medoid_structural_residual_mlp_fold",
+        forbidden_blank_compile,
     )
     prepared = _prepare(model, _evidence(model))
 
@@ -755,7 +910,9 @@ def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
     gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
 
     def regressing_writer(_fit, incumbent, **_policy):
-        state = {name: value.detach().cpu().clone() for name, value in incumbent.items()}
+        state = {
+            name: value.detach().cpu().clone() for name, value in incumbent.items()
+        }
         state["w2.weight"] = torch.full_like(state["w2.weight"], 64.0)
         return state, {
             "solver": "test-regressing-writer",
@@ -764,8 +921,7 @@ def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
 
     def regressing_full(_fit, _inventory, incumbent, **_policy):
         state = {
-            name: torch.full_like(value, -64.0)
-            for name, value in incumbent.items()
+            name: torch.full_like(value, -64.0) for name, value in incumbent.items()
         }
         return state, {
             "solver": "test-regressing-full",
@@ -777,9 +933,12 @@ def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
     prepared = _prepare(model, evidence)
     assert prepared.selected_role == "incumbent"
     assert prepared.selection_receipt["incumbent_noop_fallback_used"] is True
-    assert prepared.selection_receipt["heldout_nonregression"][
-        "incumbent-producer-w2"
-    ]["selection"] is False
+    assert (
+        prepared.selection_receipt["heldout_nonregression"]["incumbent-producer-w2"][
+            "selection"
+        ]
+        is False
+    )
 
     result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
         target_model=model,
@@ -806,10 +965,14 @@ def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
     assert receipt["parameter_identities_preserved"] is True
     assert receipt["parameter_storage_preserved"] is True
     assert receipt["gradient_state_preserved"] is True
-    assert receipt["source_inventory_sha256"] == evidence[0].source_inventory.inventory_sha256
-    assert receipt["compiler_lineage_sha256"] == evidence[
-        0
-    ].source_inventory.compiler_lineage_sha256
+    assert (
+        receipt["source_inventory_sha256"]
+        == evidence[0].source_inventory.inventory_sha256
+    )
+    assert (
+        receipt["compiler_lineage_sha256"]
+        == evidence[0].source_inventory.compiler_lineage_sha256
+    )
     assert receipt["cache_key"] == _sha("cache")
     assert receipt["cache_manifest_sha256"] == _sha("cache-manifest")
     assert receipt["bridge_artifact_sha256"] == _sha("bridge")

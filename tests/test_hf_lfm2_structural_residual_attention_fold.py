@@ -26,6 +26,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
     cached_mlp_case_from_lfm2_trace,
     cached_short_conv_case_from_lfm2_trace,
     compose_lfm2_structural_layer_fold,
+    compile_lfm2_real_medoid_structural_residual_mlp_fold,
     compile_lfm2_structural_attention_producer_fold,
     compile_lfm2_structural_residual_attention_fold,
     compile_lfm2_structural_residual_mlp_fold,
@@ -1902,6 +1903,276 @@ def test_structural_swiglu_allows_preserved_neuron_count_when_hidden_width_shrin
     assert compiled.removed_logical_parameters == 48
     assert compiled.parameter_reduction_fraction == pytest.approx(0.5)
     assert compiled.residual_endpoint_relative_rmse < 1e-10
+
+
+def _real_medoid_chart_mlp_fixture(*, dtype=torch.float64):
+    source_gate = torch.tensor(
+        [[1.125, 7.25], [2.375, -3.5], [-1.75, 4.125], [0.625, -6.75]],
+        dtype=torch.float64,
+    )
+    source_up = torch.tensor(
+        [[0.375, -2.25], [-0.875, 5.5], [2.25, 3.125], [-1.5, -4.25]],
+        dtype=torch.float64,
+    )
+    source_down = torch.tensor(
+        [[1.0, 2.0, 3.0, 4.0], [-1.0, 0.5, 2.0, -3.0]],
+        dtype=torch.float64,
+    )
+    target_input = torch.tensor([[1.0, 0.0]], dtype=torch.float64)
+    parent_gate = target_input @ source_gate.T
+    parent_up = target_input @ source_up.T
+    parent_post = torch.nn.functional.silu(parent_gate) * parent_up
+    contribution = parent_post.abs() + torch.tensor(
+        [[0.1, 0.2, 0.3, 0.4]], dtype=torch.float64
+    )
+    target_residual = torch.tensor([[0.2, -0.1]], dtype=torch.float64)
+    endpoint = target_residual + torch.tensor([[0.75, -0.35]], dtype=torch.float64)
+    case = Lfm2CachedMlpFoldCase(
+        target_input=target_input,
+        parent_gate=parent_gate,
+        parent_up=parent_up,
+        parent_post_swiglu=parent_post,
+        parent_post_mlp_residual_target_space=endpoint,
+        target_pre_mlp_residual=target_residual,
+        parent_contribution=contribution,
+    )
+    target = _ToyMlp(hidden_size=2, intermediate_size=2, dtype=dtype)
+    chart = torch.eye(2, dtype=torch.float64)
+    common = {
+        "source_gate_weight": source_gate,
+        "source_up_weight": source_up,
+        "source_down_weight": source_down,
+        "target_gate_weight_template": target.w1.weight,
+        "target_up_weight_template": target.w3.weight,
+        "target_down_weight_template": target.w2.weight,
+        "residual_chart": chart,
+        "residual_chart_sha256": fold_module.lfm2_authenticated_tensor_sha256(chart),
+        "cases": (case,),
+        "anchors_per_source": 2,
+        "max_candidate_targets": 2,
+        "ridge": 0.0,
+        "cluster_ridge": 1e-8,
+    }
+    return common, case
+
+
+def test_real_medoid_chart_fold_plants_coupled_producers_and_fit_nullspace() -> None:
+    common, case = _real_medoid_chart_mlp_fixture()
+    compiled = compile_lfm2_real_medoid_structural_residual_mlp_fold(**common)
+    medoids = torch.tensor(
+        compiled.cluster_plan.medoid_source_neurons, dtype=torch.long
+    )
+    expected_gate = common["source_gate_weight"].index_select(0, medoids)
+    expected_up = common["source_up_weight"].index_select(0, medoids)
+
+    # The single FIT row observes only input coordinate zero.  The chart prior
+    # therefore supplies coordinate one, and gate/up remain the same coupled
+    # real source pair instead of two independently averaged producers.
+    assert torch.equal(compiled.gate_weight, expected_gate)
+    assert torch.equal(compiled.up_weight, expected_up)
+    assert torch.equal(compiled.gate_weight[:, 1], expected_gate[:, 1])
+    assert torch.equal(compiled.up_weight[:, 1], expected_up[:, 1])
+    reports = {value.role: value for value in compiled.prior_correction_reports}
+    assert reports["mlp_real_medoid_gate"].underdetermined is True
+    assert reports["mlp_real_medoid_gate"].prior_provided is True
+    assert reports["mlp_real_medoid_up"].underdetermined is True
+
+    for target_index, group in enumerate(compiled.neuron_groups):
+        if len(group) <= 1:
+            continue
+        group_indices = torch.tensor(group, dtype=torch.long)
+        independent_gate_mean = (
+            common["source_gate_weight"].index_select(0, group_indices).mean(dim=0)
+        )
+        independent_up_mean = (
+            common["source_up_weight"].index_select(0, group_indices).mean(dim=0)
+        )
+        assert not (
+            torch.equal(compiled.gate_weight[target_index], independent_gate_mean)
+            and torch.equal(compiled.up_weight[target_index], independent_up_mean)
+        )
+        break
+    else:  # pragma: no cover - impossible for four sources and two targets
+        raise AssertionError("Expected at least one multi-source primary group.")
+
+    medoid_post = case.parent_post_swiglu.index_select(1, medoids)
+    actual_post = torch.nn.functional.silu(
+        case.target_input @ compiled.gate_weight.T
+    ) * (case.target_input @ compiled.up_weight.T)
+    assert torch.equal(actual_post, medoid_post)
+    receipt = compiled.as_dict()
+    assert receipt["producer_averaging"] is False
+    assert receipt["producer_plan"] == "sparse_multi_anchor_real_medoid"
+    assert receipt["source_neurons_dropped"] == 0
+    assert receipt["full_source_coverage"] is True
+    assert receipt["plan_evidence_scope"] == "supplied_fit_cases_only"
+    assert receipt["heldout_rows_used_for_plan"] == 0
+    assert receipt["training_steps"] == 0
+
+
+def test_real_medoid_chart_fold_authenticates_chart_and_every_source_consumer() -> None:
+    common, _ = _real_medoid_chart_mlp_fixture()
+    compiled = compile_lfm2_real_medoid_structural_residual_mlp_fold(**common)
+    expected_prior = common["residual_chart"].T @ (
+        compiled.cluster_plan.aggregate_down_consumer(
+            common["source_down_weight"], axis=1
+        )
+    )
+    assert compiled.consumer_prior_sha256 == fold_module._tensor_sha256(expected_prior)
+    assert sorted(
+        source for group in compiled.neuron_groups for source in group
+    ) == list(range(common["source_down_weight"].shape[1]))
+    assert len(compiled.cluster_plan.source_anchor_offsets) == (
+        common["source_down_weight"].shape[1] + 1
+    )
+
+    # Chart orientation is explicitly source-hidden by target-hidden.  A
+    # non-square valid chart compiles, while its authenticated transpose does
+    # not silently receive the opposite interpretation.
+    cross_hidden = dict(common)
+    cross_hidden["source_gate_weight"] = torch.column_stack(
+        (common["source_gate_weight"], torch.tensor([0.2, -0.3, 0.4, -0.5]))
+    )
+    cross_hidden["source_up_weight"] = torch.column_stack(
+        (common["source_up_weight"], torch.tensor([-0.6, 0.7, -0.8, 0.9]))
+    )
+    cross_hidden["source_down_weight"] = torch.row_stack(
+        (common["source_down_weight"], torch.tensor([0.1, 0.2, -0.4, 0.8]))
+    )
+    cross_hidden_chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.25, -0.5]], dtype=torch.float64
+    )
+    cross_hidden["residual_chart"] = cross_hidden_chart
+    cross_hidden["residual_chart_sha256"] = (
+        fold_module.lfm2_authenticated_tensor_sha256(cross_hidden_chart)
+    )
+    cross_hidden_compiled = compile_lfm2_real_medoid_structural_residual_mlp_fold(
+        **cross_hidden
+    )
+    assert cross_hidden_compiled.source_hidden_size == 3
+    assert cross_hidden_compiled.target_hidden_size == 2
+    wrong_orientation = dict(cross_hidden)
+    wrong_orientation["residual_chart"] = cross_hidden_chart.T.contiguous()
+    wrong_orientation["residual_chart_sha256"] = (
+        fold_module.lfm2_authenticated_tensor_sha256(
+            wrong_orientation["residual_chart"]
+        )
+    )
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match=r"\[source_hidden, target_hidden\]",
+    ):
+        compile_lfm2_real_medoid_structural_residual_mlp_fold(**wrong_orientation)
+
+    nonmedoid = next(
+        source
+        for source in range(common["source_down_weight"].shape[1])
+        if source not in compiled.cluster_plan.medoid_source_neurons
+    )
+    start, stop = compiled.cluster_plan.source_anchor_offsets[nonmedoid : nonmedoid + 2]
+    assert any(
+        value != 0.0 for value in compiled.cluster_plan.anchor_coefficients[start:stop]
+    )
+    changed = dict(common)
+    changed_down = common["source_down_weight"].clone()
+    changed_down[:, nonmedoid] += torch.tensor([0.75, -0.5])
+    changed["source_down_weight"] = changed_down
+    changed_compiled = compile_lfm2_real_medoid_structural_residual_mlp_fold(**changed)
+    assert changed_compiled.consumer_prior_sha256 != compiled.consumer_prior_sha256
+
+    corrupt_chart = dict(common)
+    corrupt_chart["residual_chart"] = common["residual_chart"].clone()
+    corrupt_chart["residual_chart"][0, 0] += 0.25
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match="authentication failed",
+    ):
+        compile_lfm2_real_medoid_structural_residual_mlp_fold(**corrupt_chart)
+
+
+def test_real_medoid_chart_w2_uses_materialized_bf16_producer_features() -> None:
+    common, case = _real_medoid_chart_mlp_fixture(dtype=torch.bfloat16)
+    first = compile_lfm2_real_medoid_structural_residual_mlp_fold(**common)
+    second = compile_lfm2_real_medoid_structural_residual_mlp_fold(**common)
+    assert first.compiled_state_sha256 == second.compiled_state_sha256
+    assert first.as_dict()["endpoint_feature_source"] == (
+        "materialized_target_dtype_w1_w3_cast_back_to_fp64"
+    )
+    assert first.gate_weight.dtype == torch.bfloat16
+    assert first.up_weight.dtype == torch.bfloat16
+    materialized_post = torch.nn.functional.silu(
+        case.target_input @ first.gate_weight.to(torch.float64).T
+    ) * (case.target_input @ first.up_weight.to(torch.float64).T)
+    endpoint_target = (
+        case.parent_post_mlp_residual_target_space - case.target_pre_mlp_residual
+    )
+    down_prior = common["residual_chart"].T @ (
+        first.cluster_plan.aggregate_down_consumer(common["source_down_weight"], axis=1)
+    )
+    expected_down, _ = fold_module._fit_linear(
+        materialized_post,
+        endpoint_target,
+        role="oracle_materialized_down",
+        ridge=0.0,
+        prior=down_prior,
+        max_prior_delta_ratio=None,
+    )
+    assert torch.equal(first.down_weight, expected_down.to(torch.bfloat16))
+
+
+def test_real_medoid_chart_applies_authenticated_fit_case_weights() -> None:
+    common, first_case = _real_medoid_chart_mlp_fixture()
+    second_gate = first_case.parent_gate + torch.tensor(
+        [[1.0, -0.5, 0.75, -1.25]], dtype=torch.float64
+    )
+    second_up = first_case.parent_up + torch.tensor(
+        [[-0.25, 0.75, -0.5, 1.0]], dtype=torch.float64
+    )
+    second_case = replace(
+        first_case,
+        parent_gate=second_gate,
+        parent_up=second_up,
+        parent_post_swiglu=torch.nn.functional.silu(second_gate) * second_up,
+        parent_post_mlp_residual_target_space=(
+            first_case.parent_post_mlp_residual_target_space
+            + torch.tensor([[0.4, -0.2]], dtype=torch.float64)
+        ),
+    )
+    weighted_common = dict(common)
+    weighted_common["cases"] = (first_case, second_case)
+    uniform = compile_lfm2_real_medoid_structural_residual_mlp_fold(
+        **weighted_common,
+        case_sample_weights=(1.0, 1.0),
+    )
+    imbalanced = compile_lfm2_real_medoid_structural_residual_mlp_fold(
+        **weighted_common,
+        case_sample_weights=(100.0, 1.0),
+    )
+    assert uniform.compiled_state_sha256 != imbalanced.compiled_state_sha256
+    receipt = imbalanced.as_dict()
+    assert receipt["fit_weighting"] == ("sqrt_case_weight_repeated_per_case_row")
+    assert receipt["fit_case_weight_sum"] == 101.0
+    assert receipt["fit_row_weight_sum"] == 101.0
+    assert receipt["fit_row_weight_minimum"] == 1.0
+    assert receipt["fit_row_weight_maximum"] == 100.0
+    assert receipt["fit_row_weights_sha256"] == (
+        fold_module.lfm2_authenticated_tensor_sha256(
+            torch.tensor([100.0, 1.0], dtype=torch.float64)
+        )
+    )
+    assert receipt["heldout_rows_used_for_plan"] == 0
+    assert receipt["heldout_rows_used_by_solver"] == 0
+    assert receipt["multi_anchor_plan"]["calibration_provenance"] == (
+        "cached_fit_rows_only"
+    )
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match="positive finite",
+    ):
+        compile_lfm2_real_medoid_structural_residual_mlp_fold(
+            **weighted_common,
+            case_sample_weights=(1.0, 0.0),
+        )
 
 
 def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> None:

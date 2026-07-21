@@ -10,8 +10,11 @@ Two candidates compete with the incumbent dense SwiGLU:
 * a conservative producer/writer candidate keeps incumbent W1/W3 and solves
   only W2 from actual child post-SwiGLU contexts to mapped parent residual
   writes; and
-* the existing structural residual MLP compiler clusters every parent neuron
-  and solves dense W1/W3/W2 with the incumbent child state as its prior.
+* the full candidate plants an exact-zero child from coupled real parent
+  gate/up medoids, represents every parent neuron through a sparse multi-anchor
+  consumer plan, transports that plan through the authenticated residual chart,
+  and applies FIT-only closed-form W1/W3/W2 corrections.  Nonzero incumbents
+  retain the established full-source structural compiler and trust cap.
 
 The authenticated incumbent is a valid no-op result: analytic candidates must
 materially improve held-out selection evidence without regression, and a
@@ -41,13 +44,16 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
 )
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (
     Lfm2CachedMlpFoldCase,
+    Lfm2CompiledRealMedoidStructuralMlpFold,
     Lfm2CompiledStructuralMlpFold,
+    compile_lfm2_real_medoid_structural_residual_mlp_fold,
     compile_lfm2_structural_residual_mlp_fold,
+    lfm2_authenticated_tensor_sha256,
 )
 
 
 LFM2_SEMANTIC_MLP_SOURCE_SCHEMA = (
-    "neural-forge-lfm2-direct-local-semantic-mlp-source-v1"
+    "neural-forge-lfm2-direct-local-semantic-mlp-source-v2"
 )
 LFM2_SEMANTIC_MLP_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-semantic-mlp-endpoint-evidence-v1"
@@ -208,6 +214,7 @@ class Lfm2DirectLocalMlpSourceInventory:
     direct_local_loader_receipt_sha256: str
     residual_assignment_sha256: str
     compiler_lineage_sha256: str
+    residual_chart: Any = field(repr=False, compare=False)
     gate_weight: Any = field(repr=False, compare=False)
     up_weight: Any = field(repr=False, compare=False)
     down_weight: Any = field(repr=False, compare=False)
@@ -231,14 +238,23 @@ class Lfm2DirectLocalMlpSourceInventory:
         gate = _finite_tensor(self.gate_weight, "parent W1", ndim=2)
         up = _finite_tensor(self.up_weight, "parent W3", ndim=2)
         down = _finite_tensor(self.down_weight, "parent W2", ndim=2)
+        chart = _finite_tensor(
+            self.residual_chart,
+            "source-to-target residual chart",
+            ndim=2,
+        )
         source_intermediate, source_hidden = map(int, gate.shape)
-        if tuple(up.shape) != tuple(gate.shape) or tuple(down.shape) != (
-            source_hidden,
-            source_intermediate,
+        if (
+            tuple(up.shape) != tuple(gate.shape)
+            or tuple(down.shape) != (source_hidden, source_intermediate)
+            or int(chart.shape[0]) != source_hidden
+            or int(chart.shape[1]) <= 0
         ):
             raise Lfm2SemanticMlpRefoldError(
-                "Direct-local source tensors are not one dense SwiGLU bundle."
+                "Direct-local source tensors and residual chart do not form one "
+                "dense source-hidden-to-target-hidden SwiGLU transport bundle."
             )
+        object.__setattr__(self, "residual_chart", chart)
         object.__setattr__(self, "gate_weight", gate)
         object.__setattr__(self, "up_weight", up)
         object.__setattr__(self, "down_weight", down)
@@ -256,6 +272,10 @@ class Lfm2DirectLocalMlpSourceInventory:
     def source_intermediate_size(self) -> int:
         return int(self.gate_weight.shape[0])
 
+    @property
+    def target_hidden_size(self) -> int:
+        return int(self.residual_chart.shape[1])
+
     def authentication_body(self) -> dict[str, Any]:
         return {
             "schema": LFM2_SEMANTIC_MLP_SOURCE_SCHEMA,
@@ -268,9 +288,16 @@ class Lfm2DirectLocalMlpSourceInventory:
                 self.direct_local_loader_receipt_sha256
             ),
             "residual_assignment_sha256": self.residual_assignment_sha256,
+            "residual_chart_receipt_sha256": self.residual_assignment_sha256,
             "compiler_lineage_sha256": self.compiler_lineage_sha256,
             "source_hidden_size": self.source_hidden_size,
             "source_intermediate_size": self.source_intermediate_size,
+            "target_hidden_size": self.target_hidden_size,
+            "residual_chart_sha256": _tensor_sha256(self.residual_chart),
+            "residual_chart_shape": [
+                self.source_hidden_size,
+                self.target_hidden_size,
+            ],
             "weight_sha256": {
                 "w1.weight": _tensor_sha256(self.gate_weight),
                 "w3.weight": _tensor_sha256(self.up_weight),
@@ -283,6 +310,15 @@ class Lfm2DirectLocalMlpSourceInventory:
                     "w2.weight": self.down_weight,
                 }
             ),
+            "transport_bundle_sha256": _state_sha256(
+                {
+                    "residual_chart": self.residual_chart,
+                    "w1.weight": self.gate_weight,
+                    "w3.weight": self.up_weight,
+                    "w2.weight": self.down_weight,
+                }
+            ),
+            "residual_chart_and_receipt_jointly_hashed": True,
             "loader_mode": "direct-local-safetensors",
             "auto_model_loader_used": False,
             "from_pretrained_used": False,
@@ -414,6 +450,7 @@ class Lfm2SemanticMlpEndpointEvidence:
             or tuple(parent_post.shape) != tuple(parent_gate.shape)
             or tuple(child_pre.shape) != (1, target_hidden)
             or tuple(parent_endpoint.shape) != tuple(child_pre.shape)
+            or self.source_inventory.target_hidden_size != target_hidden
             or (
                 terminal is not None and tuple(terminal.shape) != tuple(child_pre.shape)
             )
@@ -1051,6 +1088,7 @@ def _full_candidate_state(
     inventory: Lfm2DirectLocalMlpSourceInventory,
     incumbent: Mapping[str, Any],
     *,
+    exact_zero_incumbent: bool,
     ridge: float,
     maximum_delta_ratio: float | None,
     cluster_ridge: float,
@@ -1070,27 +1108,64 @@ def _full_candidate_state(
         )
         for item in fit
     )
-    compiled = compile_lfm2_structural_residual_mlp_fold(
-        source_gate_weight=inventory.gate_weight,
-        source_up_weight=inventory.up_weight,
-        source_down_weight=inventory.down_weight,
-        target_gate_weight_template=incumbent["w1.weight"],
-        target_up_weight_template=incumbent["w3.weight"],
-        target_down_weight_template=incumbent["w2.weight"],
-        cases=cases,
-        gate_weight_prior=incumbent["w1.weight"],
-        up_weight_prior=incumbent["w3.weight"],
-        down_weight_prior=incumbent["w2.weight"],
-        residual_assignment_sha256=inventory.residual_assignment_sha256,
-        ridge=ridge,
-        max_prior_delta_ratio=maximum_delta_ratio,
-        cluster_ridge=cluster_ridge,
-        cluster_max_iterations=cluster_max_iterations,
-        cluster_distance_chunk_size=cluster_distance_chunk_size,
-    )
+    if exact_zero_incumbent:
+        compiled = compile_lfm2_real_medoid_structural_residual_mlp_fold(
+            source_gate_weight=inventory.gate_weight,
+            source_up_weight=inventory.up_weight,
+            source_down_weight=inventory.down_weight,
+            target_gate_weight_template=incumbent["w1.weight"],
+            target_up_weight_template=incumbent["w3.weight"],
+            target_down_weight_template=incumbent["w2.weight"],
+            residual_chart=inventory.residual_chart,
+            residual_chart_sha256=lfm2_authenticated_tensor_sha256(
+                inventory.residual_chart
+            ),
+            cases=cases,
+            case_sample_weights=tuple(item.sample_weight for item in fit),
+            ridge=ridge,
+            max_prior_delta_ratio=maximum_delta_ratio,
+            cluster_ridge=cluster_ridge,
+            cluster_max_iterations=cluster_max_iterations,
+            cluster_distance_chunk_size=cluster_distance_chunk_size,
+        )
+        if not isinstance(compiled, Lfm2CompiledRealMedoidStructuralMlpFold):
+            raise Lfm2SemanticMlpRefoldError(
+                "Exact-zero MLP dispatch did not return the chart-aware "
+                "multi-anchor compiler result."
+            )
+        solver = (
+            "fit-only-authenticated-chart-real-medoid-multi-anchor-plus-"
+            "three-closed-form-linear-solves"
+        )
+        incumbent_priors_used = False
+    else:
+        compiled = compile_lfm2_structural_residual_mlp_fold(
+            source_gate_weight=inventory.gate_weight,
+            source_up_weight=inventory.up_weight,
+            source_down_weight=inventory.down_weight,
+            target_gate_weight_template=incumbent["w1.weight"],
+            target_up_weight_template=incumbent["w3.weight"],
+            target_down_weight_template=incumbent["w2.weight"],
+            cases=cases,
+            gate_weight_prior=incumbent["w1.weight"],
+            up_weight_prior=incumbent["w3.weight"],
+            down_weight_prior=incumbent["w2.weight"],
+            residual_assignment_sha256=inventory.residual_assignment_sha256,
+            ridge=ridge,
+            max_prior_delta_ratio=maximum_delta_ratio,
+            cluster_ridge=cluster_ridge,
+            cluster_max_iterations=cluster_max_iterations,
+            cluster_distance_chunk_size=cluster_distance_chunk_size,
+        )
+        if not isinstance(compiled, Lfm2CompiledStructuralMlpFold):
+            raise Lfm2SemanticMlpRefoldError(
+                "Nonzero MLP dispatch did not return the legacy structural "
+                "compiler result."
+            )
+        solver = "fit-only-full-source-cluster-plus-three-closed-form-linear-solves"
+        incumbent_priors_used = True
     if (
-        not isinstance(compiled, Lfm2CompiledStructuralMlpFold)
-        or not compiled.full_source_coverage
+        not compiled.full_source_coverage
         or compiled.source_state_sha256_before != compiled.source_state_sha256_after
     ):
         raise Lfm2SemanticMlpRefoldError(
@@ -1098,12 +1173,17 @@ def _full_candidate_state(
         )
     receipt = {
         **compiled.as_dict(),
-        "solver": "fit-only-full-source-cluster-plus-three-closed-form-linear-solves",
+        "solver": solver,
         "fit_rows": len(fit),
         "heldout_rows_used_by_solver": 0,
         "analytic_linear_solve": True,
         "cluster_solve": True,
-        "current_dense_c61_w1_w3_w2_used_as_priors": True,
+        "current_dense_c61_w1_w3_w2_used_as_priors": incumbent_priors_used,
+        **(
+            {"authenticated_chart_multi_anchor_source_priors_used": True}
+            if exact_zero_incumbent
+            else {}
+        ),
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
     return compiled.state_dict(), MappingProxyType(receipt)
@@ -1220,7 +1300,9 @@ def prepare_lfm2_semantic_mlp_postfold(
         raise Lfm2SemanticMlpRefoldError("Semantic MLP solver policy is invalid.")
     raw = tuple(evidence)
     if not raw or not all(
-        isinstance(item, Lfm2SemanticMlpEndpointEvidence) and item.verify()
+        isinstance(item, Lfm2SemanticMlpEndpointEvidence)
+        and item.verify()
+        and item.source_inventory.verify()
         for item in raw
     ):
         raise Lfm2SemanticMlpRefoldError(
@@ -1252,6 +1334,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         != (target_intermediate, target_hidden)
         or tuple(incumbent_state["w2.weight"].shape)
         != (target_hidden, target_intermediate)
+        or inventory.target_hidden_size != target_hidden
         or any(item.target_hidden_size != target_hidden for item in raw)
     ):
         raise Lfm2SemanticMlpRefoldError(
@@ -1273,6 +1356,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         partitions["fit"],
         inventory,
         incumbent_state,
+        exact_zero_incumbent=exact_zero_incumbent,
         ridge=float(ridge),
         maximum_delta_ratio=(
             None if exact_zero_incumbent else requested_maximum_delta_ratio
@@ -1282,23 +1366,80 @@ def prepare_lfm2_semantic_mlp_postfold(
         cluster_distance_chunk_size=int(cluster_distance_chunk_size),
     )
     if exact_zero_incumbent:
+        torch = _torch()
         correction_reports = full_solver.get("prior_correction_reports")
+        multi_anchor_plan = full_solver.get("multi_anchor_plan")
+        fit_weights = tuple(item.sample_weight for item in partitions["fit"])
+        fit_row_weights = torch.tensor(fit_weights, dtype=torch.float64)
+        expected_chart_sha256 = lfm2_authenticated_tensor_sha256(
+            inventory.residual_chart
+        )
+        expected_weight_sha256 = lfm2_authenticated_tensor_sha256(fit_row_weights)
         planted_roles = _nonzero_swiglu_roles(full_state)
         if (
             not isinstance(correction_reports, list)
             or len(correction_reports) != 3
             or {report.get("role") for report in correction_reports}
-            != {"mlp_gate", "mlp_up", "mlp_down"}
+            != {
+                "mlp_real_medoid_gate",
+                "mlp_real_medoid_up",
+                "mlp_multi_anchor_down",
+            }
             or any(
                 report.get("prior_provided") is not True
-                or report.get("prior_norm") != 0.0
+                or not isinstance(report.get("prior_norm"), (int, float))
+                or not math.isfinite(float(report["prior_norm"]))
+                or float(report["prior_norm"]) <= 0.0
                 or report.get("update_scale") != 1.0
                 for report in correction_reports
+            )
+            or full_solver.get("schema")
+            != "neural-forge-lfm2-real-medoid-chart-structural-mlp-fold-v1"
+            or full_solver.get("residual_chart_sha256") != expected_chart_sha256
+            or full_solver.get("producer_plan") != "sparse_multi_anchor_real_medoid"
+            or full_solver.get("producer_averaging") is not False
+            or full_solver.get("full_source_coverage") is not True
+            or full_solver.get("full_source_assignment_fraction") != 1.0
+            or full_solver.get("source_neurons_dropped") != 0
+            or full_solver.get("plan_evidence_scope") != "supplied_fit_cases_only"
+            or full_solver.get("heldout_rows_used_for_plan") != 0
+            or full_solver.get("heldout_rows_used_by_solver") != 0
+            or full_solver.get("endpoint_feature_source")
+            != "materialized_target_dtype_w1_w3_cast_back_to_fp64"
+            or full_solver.get("current_dense_c61_w1_w3_w2_used_as_priors") is not False
+            or full_solver.get("authenticated_chart_multi_anchor_source_priors_used")
+            is not True
+            or not isinstance(multi_anchor_plan, Mapping)
+            or multi_anchor_plan.get("calibration_provenance") != "cached_fit_rows_only"
+            or not isinstance(multi_anchor_plan.get("invariants"), Mapping)
+            or multi_anchor_plan["invariants"].get("all_hold") is not True
+            or full_solver.get("multi_anchor_plan_sha256")
+            != canonical_sha256(multi_anchor_plan)
+            or full_solver.get("fit_case_weight_sum") != math.fsum(fit_weights)
+            or not math.isclose(
+                float(full_solver.get("fit_row_weight_sum", float("nan"))),
+                float(fit_row_weights.sum().item()),
+                rel_tol=1e-15,
+                abs_tol=1e-15,
+            )
+            or full_solver.get("fit_row_weight_minimum")
+            != float(fit_row_weights.min().item())
+            or full_solver.get("fit_row_weight_maximum")
+            != float(fit_row_weights.max().item())
+            or full_solver.get("fit_row_weights_sha256") != expected_weight_sha256
+            or not all(
+                isinstance(full_solver.get(name), str)
+                and len(full_solver[name]) == 64
+                and all(
+                    character in "0123456789abcdef" for character in full_solver[name]
+                )
+                for name in ("producer_prior_sha256", "consumer_prior_sha256")
             )
         ):
             raise Lfm2SemanticMlpRefoldError(
                 "Exact-zero cold-start structural solve did not prove an "
-                "unclipped complete W1/W3/W2 projection."
+                "unclipped, chart-authenticated, weighted multi-anchor "
+                "W1/W3/W2 projection."
             )
         full_solver = MappingProxyType(
             {
@@ -1309,6 +1450,10 @@ def prepare_lfm2_semantic_mlp_postfold(
                     "effective_full_structural_maximum_delta_ratio": None,
                     "relative_incumbent_trust_cap_applied": False,
                     "authenticated_full_source_structural_solve_used": True,
+                    "authenticated_residual_chart_used": True,
+                    "coupled_real_medoid_gate_up_used": True,
+                    "every_source_multi_anchor_consumer_used": True,
+                    "materialized_target_dtype_producers_used_for_w2": True,
                     "random_initialization_used": False,
                     "gradient_training_used": False,
                 },
@@ -1318,9 +1463,21 @@ def prepare_lfm2_semantic_mlp_postfold(
                     "residual_assignment_sha256": (
                         inventory.residual_assignment_sha256
                     ),
+                    "residual_chart_sha256": expected_chart_sha256,
+                    "multi_anchor_plan_sha256": (
+                        full_solver["multi_anchor_plan_sha256"]
+                    ),
+                    "producer_prior_sha256": full_solver["producer_prior_sha256"],
+                    "consumer_prior_sha256": full_solver["consumer_prior_sha256"],
                     "full_source_coverage": (
                         full_solver.get("full_source_coverage") is True
                     ),
+                    "producer_averaging": False,
+                    "source_neurons_dropped": 0,
+                    "fit_case_weight_sum": full_solver["fit_case_weight_sum"],
+                    "fit_row_weight_sum": full_solver["fit_row_weight_sum"],
+                    "fit_row_weights_sha256": full_solver["fit_row_weights_sha256"],
+                    "heldout_rows_used_by_solver": 0,
                     "planted_roles": list(planted_roles),
                     "all_dense_w1_w3_w2_roles_planted": (
                         planted_roles == ("w1.weight", "w3.weight", "w2.weight")
@@ -1390,12 +1547,14 @@ def prepare_lfm2_semantic_mlp_postfold(
         rmse_relative_tolerance=float(rmse_relative_tolerance),
         cosine_tolerance=float(cosine_tolerance),
     )
-    writer_prevalidation = all(
-        eligibility[writer.role][name] for name in ("fit_check", "selection")
-    ) and selection_improvement[writer.role]
-    full_prevalidation = all(
-        eligibility[full.role][name] for name in ("fit_check", "selection")
-    ) and selection_improvement[full.role]
+    writer_prevalidation = (
+        all(eligibility[writer.role][name] for name in ("fit_check", "selection"))
+        and selection_improvement[writer.role]
+    )
+    full_prevalidation = (
+        all(eligibility[full.role][name] for name in ("fit_check", "selection"))
+        and selection_improvement[full.role]
+    )
     if (
         writer_changed
         and writer_prevalidation
@@ -1657,9 +1816,7 @@ def install_lfm2_prepared_semantic_mlp_postfold(
             "layer_index": prepared.layer_index,
             "preparation_sha256": prepared.preparation_sha256,
             "selected_role": prepared.selected_role,
-            "selected_candidate_sha256": (
-                prepared.selected_candidate.candidate_sha256
-            ),
+            "selected_candidate_sha256": (prepared.selected_candidate.candidate_sha256),
             "model_state_before_sha256": current,
             "model_state_after_sha256": current,
             "target_topology_sha256": prepared.target_topology_sha256,

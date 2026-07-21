@@ -1764,7 +1764,7 @@ def _mlp_lineage_sha256(
 ) -> str:
     return canonical_sha256(
         {
-            "schema": "neural-forge-lfm2-semantic-mlp-layer-lineage-v1",
+            "schema": "neural-forge-lfm2-semantic-mlp-layer-lineage-v2",
             "cache_key": cache.cache_key,
             "cache_parent_fingerprint": cache.parent_fingerprint,
             "cache_layer_topology_sha256": cache.layer_topology_fingerprint,
@@ -1777,6 +1777,7 @@ def _mlp_lineage_sha256(
                 else attention_lineage.compiler_lineage_sha256
             ),
             "fit_only_residual_assignment_sha256": chart_receipt["result_sha256"],
+            "selected_residual_chart_sha256": chart_receipt["chart_sha256"],
         }
     )
 
@@ -2130,6 +2131,7 @@ def _direct_mlp_inventory(
     bridge: StrictTokenizerBridgeArtifact,
     layer_index: int,
     operator_kind: str,
+    residual_chart: Any,
     chart_receipt: Mapping[str, Any],
     attention_lineage: Lfm2SemanticCompilerLayerLineage | None,
     alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
@@ -2141,12 +2143,39 @@ def _direct_mlp_inventory(
     up = parent_session.tensor(prefix + "w3.weight")
     down = parent_session.tensor(prefix + "w2.weight")
     ffn_norm = parent_session.tensor(f"model.layers.{layer_index}.ffn_norm.weight")
+    torch = _torch()
+    if (
+        not isinstance(residual_chart, torch.Tensor)
+        or residual_chart.layout != torch.strided
+        or residual_chart.device.type == "meta"
+        or residual_chart.ndim != 2
+        or residual_chart.numel() == 0
+        or not torch.is_floating_point(residual_chart)
+        or torch.is_complex(residual_chart)
+        or residual_chart.requires_grad
+        or not bool(torch.isfinite(residual_chart).all().item())
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Selected MLP residual chart must be one detached finite dense matrix."
+        )
+    selected_chart = residual_chart.detach().to(device="cpu").contiguous().clone()
+    verified_chart_receipt = _verify_sealed(chart_receipt, "residual chart")
+    if (
+        verified_chart_receipt.get("schema")
+        != "neural-forge-lfm2-layer-stack-residual-chart-v1"
+        or verified_chart_receipt.get("layer_index") != layer_index
+        or verified_chart_receipt.get("chart_sha256")
+        != _tensor_sha256(selected_chart)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Residual-chart receipt does not authenticate the selected MLP chart."
+        )
     lineage = _mlp_lineage_sha256(
         cache=cache,
         bridge=bridge,
         layer_index=layer_index,
         operator_kind=operator_kind,
-        chart_receipt=chart_receipt,
+        chart_receipt=verified_chart_receipt,
         attention_lineage=attention_lineage,
     )
     layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
@@ -2172,12 +2201,27 @@ def _direct_mlp_inventory(
         parent_model_identity_sha256=cache.parent_fingerprint,
         parent_checkpoint_manifest_sha256=parent_session.manifest_sha256,
         direct_local_loader_receipt_sha256=functional_provenance["result_sha256"],
-        residual_assignment_sha256=chart_receipt["result_sha256"],
+        residual_assignment_sha256=verified_chart_receipt["result_sha256"],
         compiler_lineage_sha256=lineage,
+        residual_chart=selected_chart,
         gate_weight=gate,
         up_weight=up,
         down_weight=down,
     )
+    inventory_body = inventory.authentication_body()
+    if (
+        not inventory.verify()
+        or inventory.residual_assignment_sha256
+        != verified_chart_receipt["result_sha256"]
+        or inventory.compiler_lineage_sha256 != lineage
+        or inventory_body.get("residual_chart_sha256")
+        != verified_chart_receipt["chart_sha256"]
+        or inventory_body.get("residual_chart_receipt_sha256")
+        != verified_chart_receipt["result_sha256"]
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Direct-local MLP inventory lost residual-chart receipt or lineage binding."
+        )
     return inventory, functional_provenance
 
 
@@ -3059,6 +3103,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     bridge=bridge,
                     layer_index=layer_index,
                     operator_kind=operator_kind,
+                    residual_chart=chart,
                     chart_receipt=chart_receipt,
                     attention_lineage=attention_lineage,
                     alignments=alignments,

@@ -1288,6 +1288,10 @@ def test_mlp_evidence_expands_exact_boundaries_and_skips_insertions() -> None:
             )
         },
     )
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.5, -0.5]],
+        dtype=torch.float64,
+    )
     inventory = Lfm2DirectLocalMlpSourceInventory(
         layer_index=0,
         parent_model_identity_sha256="a" * 64,
@@ -1295,13 +1299,10 @@ def test_mlp_evidence_expands_exact_boundaries_and_skips_insertions() -> None:
         direct_local_loader_receipt_sha256="c" * 64,
         residual_assignment_sha256="d" * 64,
         compiler_lineage_sha256="e" * 64,
+        residual_chart=chart,
         gate_weight=torch.ones((4, 3), dtype=torch.bfloat16),
         up_weight=torch.ones((4, 3), dtype=torch.bfloat16),
         down_weight=torch.ones((3, 4), dtype=torch.bfloat16),
-    )
-    chart = torch.tensor(
-        [[1.0, 0.0], [0.0, 1.0], [0.5, -0.5]],
-        dtype=torch.float64,
     )
     result = stack._build_mlp_evidence(
         evidence_type=Lfm2SemanticMlpEndpointEvidence,
@@ -1433,7 +1434,12 @@ def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
         manifest={"manifest_sha256": "2" * 64},
     )
     bridge = SimpleNamespace(artifact_sha256="3" * 64)
-    chart_body = {"schema": "chart"}
+    chart = torch.eye(hidden, dtype=torch.float64)
+    chart_body = {
+        "schema": "neural-forge-lfm2-layer-stack-residual-chart-v1",
+        "layer_index": 0,
+        "chart_sha256": stack._tensor_sha256(chart),
+    }
     chart_receipt = {
         **chart_body,
         "result_sha256": canonical_sha256(chart_body),
@@ -1445,6 +1451,7 @@ def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
         ParentSession(),
         (alignment,),
         {0: trajectory},
+        chart,
         chart_receipt,
     )
 
@@ -1452,7 +1459,7 @@ def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
 def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints() -> (
     None
 ):
-    target, cache, bridge, session, alignments, parent, chart = (
+    target, cache, bridge, session, alignments, parent, chart, chart_receipt = (
         _parent_mlp_provenance_fixture()
     )
 
@@ -1463,7 +1470,8 @@ def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints()
         bridge=bridge,
         layer_index=0,
         operator_kind="short_conv",
-        chart_receipt=chart,
+        residual_chart=chart,
+        chart_receipt=chart_receipt,
         attention_lineage=None,
         alignments=alignments,
         parent=parent,
@@ -1490,11 +1498,58 @@ def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints()
     assert receipt["expected_per_tensor_digest_comparison_performed"] is False
     assert receipt["semantic_endpoint_rows"] == 1
     assert inventory.direct_local_loader_receipt_sha256 == receipt["result_sha256"]
+    assert inventory.residual_assignment_sha256 == chart_receipt["result_sha256"]
+    assert inventory.authentication_body()["residual_chart_sha256"] == (
+        chart_receipt["chart_sha256"]
+    )
+    assert inventory.compiler_lineage_sha256 == stack._mlp_lineage_sha256(
+        cache=cache,
+        bridge=bridge,
+        layer_index=0,
+        operator_kind="short_conv",
+        chart_receipt=chart_receipt,
+        attention_lineage=None,
+    )
+    torch.testing.assert_close(inventory.residual_chart, chart, rtol=0, atol=0)
     assert inventory.verify() is True
 
 
+def test_direct_parent_mlp_inventory_rejects_mismatched_residual_chart_receipt() -> (
+    None
+):
+    target, cache, bridge, session, alignments, parent, chart, chart_receipt = (
+        _parent_mlp_provenance_fixture()
+    )
+    mismatched_body = dict(chart_receipt)
+    mismatched_body.pop("result_sha256")
+    mismatched_body["chart_sha256"] = "9" * 64
+    mismatched_receipt = {
+        **mismatched_body,
+        "result_sha256": canonical_sha256(mismatched_body),
+    }
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="does not authenticate the selected MLP chart",
+    ):
+        stack._direct_mlp_inventory(
+            inventory_type=Lfm2DirectLocalMlpSourceInventory,
+            parent_session=session,
+            cache=cache,
+            bridge=bridge,
+            layer_index=0,
+            operator_kind="short_conv",
+            residual_chart=chart,
+            chart_receipt=mismatched_receipt,
+            attention_lineage=None,
+            alignments=alignments,
+            parent=parent,
+            target_model=target,
+        )
+
+
 def test_parent_mlp_functional_provenance_accepts_bf16_backend_rounding_drift() -> None:
-    target, cache, bridge, session, alignments, parent, chart = (
+    target, cache, bridge, session, alignments, parent, chart, chart_receipt = (
         _parent_mlp_provenance_fixture()
     )
     phase_rows = parent[0].phase_rows["prefill"]
@@ -1515,7 +1570,8 @@ def test_parent_mlp_functional_provenance_accepts_bf16_backend_rounding_drift() 
         bridge=bridge,
         layer_index=0,
         operator_kind="short_conv",
-        chart_receipt=chart,
+        residual_chart=chart,
+        chart_receipt=chart_receipt,
         attention_lineage=None,
         alignments=alignments,
         parent=parent,
@@ -1528,7 +1584,7 @@ def test_parent_mlp_functional_provenance_accepts_bf16_backend_rounding_drift() 
 
 
 def test_direct_parent_mlp_inventory_rejects_self_labeled_wrong_w2() -> None:
-    target, cache, bridge, session, alignments, parent, chart = (
+    target, cache, bridge, session, alignments, parent, chart, chart_receipt = (
         _parent_mlp_provenance_fixture(corrupt_down=True)
     )
 
@@ -1543,7 +1599,8 @@ def test_direct_parent_mlp_inventory_rejects_self_labeled_wrong_w2() -> None:
             bridge=bridge,
             layer_index=0,
             operator_kind="short_conv",
-            chart_receipt=chart,
+            residual_chart=chart,
+            chart_receipt=chart_receipt,
             attention_lineage=None,
             alignments=alignments,
             parent=parent,
