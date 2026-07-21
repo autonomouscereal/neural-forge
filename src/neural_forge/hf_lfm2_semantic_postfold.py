@@ -4,7 +4,8 @@ This module resumes from a *saved standalone* CPCF-v5 LFM2 child.  It never
 constructs or executes the parent model.  Instead it:
 
 * authenticates the dense child artifact and the complete causal trace cache;
-* authenticates c61 compiler ancestry and direct-local parent Q/K/V/O bytes;
+* authenticates legacy c61 or fast semantic-foundation ancestry and
+  direct-local parent Q/K/V/O bytes;
 * builds per-phase donor/target semantic-span attention evidence;
 * requires causal attention/short-conv/replay-fresh-MLP installation in order;
 * defers the shared final-layer W2 writer;
@@ -84,6 +85,13 @@ from neural_forge.hf_lfm2_long_horizon_terminal_refold import (
 )
 from neural_forge.hf_lfm2_semantic_attention_refold_adapter import (
     Lfm2SemanticAttentionReplayEndpoint,
+)
+from neural_forge.hf_lfm2_semantic_foundation import (
+    LFM2_SEMANTIC_FOUNDATION_LINEAGE_SCHEMA,
+    LFM2_SEMANTIC_FOUNDATION_SCHEMA,
+    Lfm2SemanticFoundationError,
+    authenticate_lfm2_semantic_foundation_receipt,
+    rehydrate_lfm2_semantic_foundation_interface,
 )
 from neural_forge.hf_lfm2_semantic_span_cpcf_alignment import (
     Lfm2SemanticSpanCpcfAlignment,
@@ -385,6 +393,22 @@ def _authenticated_c61_diagnostic(
             "c61 compiler diagnostic differs from its externally pinned receipt."
         )
     return MappingProxyType(verified), file_sha256
+
+
+def _claims_semantic_foundation_schema(
+    ancestry_json: str | os.PathLike[str],
+) -> bool:
+    """Peek only for dispatch; the selected authenticator remains authoritative."""
+
+    try:
+        path = Path(ancestry_json).expanduser().resolve()
+        value = json.loads(path.read_text(encoding="ascii"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return (
+        isinstance(value, Mapping)
+        and value.get("schema") == LFM2_SEMANTIC_FOUNDATION_SCHEMA
+    )
 
 
 def _input_artifact_metadata(
@@ -1105,6 +1129,147 @@ def _typed_qkvo_inventory(value: Any) -> Lfm2DenseQkvoSourceInventory:
     return inventory
 
 
+def _load_lfm2_semantic_foundation_lineage(
+    foundation_receipt_json: str | os.PathLike[str],
+    *,
+    expected_foundation_receipt_sha256: str,
+    cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    input_metadata: Mapping[str, Any],
+    parent_model_directory: str | os.PathLike[str],
+) -> Mapping[int, Lfm2SemanticCompilerLayerLineage]:
+    """Normalize the fast foundation's direct-local attention ancestry."""
+
+    try:
+        verified, receipt_file_sha256 = (
+            authenticate_lfm2_semantic_foundation_receipt(
+                foundation_receipt_json,
+                expected_receipt_sha256=expected_foundation_receipt_sha256,
+                semantic_cache=cache,
+                bridge=bridge,
+                input_metadata=input_metadata,
+                parent_model_directory=parent_model_directory,
+            )
+        )
+    except Lfm2SemanticFoundationError as exc:
+        raise Lfm2SemanticPostfoldError(
+            "Semantic-foundation ancestry authentication failed."
+        ) from exc
+    raw_lineages = verified.get("attention_lineage")
+    topology = verified.get("target_topology")
+    context = verified.get("foundation_context")
+    parent_inventory = verified.get("parent_source_inventory")
+    if (
+        not isinstance(raw_lineages, Mapping)
+        or not isinstance(topology, Mapping)
+        or not isinstance(context, Mapping)
+        or not isinstance(parent_inventory, Mapping)
+        or context.get("attention_lineage_sha256")
+        != canonical_sha256(raw_lineages)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic-foundation receipt lacks bound attention lineage."
+        )
+    expected_layers = topology.get("attention_layer_indices")
+    if (
+        not isinstance(expected_layers, list)
+        or any(isinstance(value, bool) or not isinstance(value, int) for value in expected_layers)
+        or set(raw_lineages) != {str(value) for value in expected_layers}
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic-foundation attention lineage differs from target topology."
+        )
+    normalized: dict[int, Lfm2SemanticCompilerLayerLineage] = {}
+    for layer_text, raw in sorted(raw_lineages.items(), key=lambda item: int(item[0])):
+        layer_index = int(layer_text)
+        lineage = _verify_sealed(
+            raw,
+            seal_name="lineage_sha256",
+            label=f"semantic-foundation layer {layer_index} lineage",
+        )
+        group_report = _verify_sealed(
+            lineage.get("head_group_report"),
+            seal_name="result_sha256",
+            label=f"semantic-foundation layer {layer_index} head groups",
+        )
+        inventory = _typed_qkvo_inventory(lineage.get("source_inventory"))
+        groups = tuple(
+            tuple(int(value) for value in group)
+            for group in lineage.get("query_groups", ())
+        )
+        weights = tuple(
+            tuple(float(value) for value in group)
+            for group in lineage.get("query_group_weights", ())
+        )
+        target_head_dim = topology.get("head_dim")
+        target_query_heads = topology.get("query_heads")
+        q_shape = inventory.tensor_receipts["q_proj.weight"]["shape"]
+        source_query_heads = (
+            0
+            if isinstance(target_head_dim, bool)
+            or not isinstance(target_head_dim, int)
+            or target_head_dim <= 0
+            or int(q_shape[0]) % target_head_dim
+            else int(q_shape[0]) // target_head_dim
+        )
+        if (
+            lineage.get("schema") != LFM2_SEMANTIC_FOUNDATION_LINEAGE_SCHEMA
+            or lineage.get("layer_index") != layer_index
+            or lineage.get("parent_inventory_sha256")
+            != parent_inventory.get("result_sha256")
+            or lineage.get("source_inventory_sha256")
+            != inventory.inventory_sha256
+            or lineage.get("head_group_report_sha256")
+            != group_report["result_sha256"]
+            or group_report.get("query_groups")
+            != [list(value) for value in groups]
+            or group_report.get("query_group_weights")
+            != [list(value) for value in weights]
+            or group_report.get("full_source_query_coverage") is not True
+            or group_report.get("all_weights_positive") is not True
+            or group_report.get("source_query_heads") != source_query_heads
+            or group_report.get("target_query_heads") != target_query_heads
+            or source_query_heads <= 0
+            or len(groups) != target_query_heads
+            or sorted(value for group in groups for value in group)
+            != list(range(source_query_heads))
+            or lineage.get("target_hidden_size") != topology.get("hidden_size")
+            or lineage.get("target_query_heads") != target_query_heads
+            or lineage.get("target_key_value_heads")
+            != topology.get("key_value_heads")
+            or lineage.get("target_head_dim") != topology.get("head_dim")
+            or lineage.get("legacy_layer_compiler_calls") != 0
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Semantic-foundation layer lineage is internally inconsistent."
+            )
+        report = {
+            **lineage,
+            "foundation_lineage_sha256": lineage["lineage_sha256"],
+            "foundation_receipt_sha256": verified["receipt_sha256"],
+            "foundation_receipt_file_sha256": receipt_file_sha256,
+            "compiler_cache_key": verified["compiler_cache_key"],
+            "semantic_evidence_cache_key": cache.cache_key,
+            "common_parent_fingerprint": cache.parent_fingerprint,
+            "compiler_and_semantic_cache_identities_bound_separately": True,
+        }
+        report.pop("lineage_sha256")
+        report = _sealed(report, "lineage_sha256")
+        normalized[layer_index] = Lfm2SemanticCompilerLayerLineage(
+            layer_index=layer_index,
+            source_inventory=inventory,
+            query_groups=groups,
+            query_group_weights=weights,
+            compiler_lineage_sha256=report["lineage_sha256"],
+            report=report,
+        )
+    if set(normalized) != set(expected_layers):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic-foundation attention lineage is incomplete."
+        )
+    return MappingProxyType(normalized)
+
+
 def load_lfm2_semantic_compiler_lineage(
     diagnostic_json: str | os.PathLike[str],
     *,
@@ -1112,8 +1277,23 @@ def load_lfm2_semantic_compiler_lineage(
     cache: Lfm2CircuitTraceCache,
     bridge: StrictTokenizerBridgeArtifact,
     input_metadata: Mapping[str, Any],
+    parent_model_directory: str | os.PathLike[str] | None = None,
 ) -> Mapping[int, Lfm2SemanticCompilerLayerLineage]:
-    """Reduce the giant c61 diagnostic to the exact attention ancestry used."""
+    """Load legacy c61 or fast-foundation attention ancestry."""
+
+    if _claims_semantic_foundation_schema(diagnostic_json):
+        if parent_model_directory is None:
+            raise Lfm2SemanticPostfoldError(
+                "Semantic-foundation ancestry requires the direct-local parent."
+            )
+        return _load_lfm2_semantic_foundation_lineage(
+            diagnostic_json,
+            expected_foundation_receipt_sha256=expected_diagnostic_sha256,
+            cache=cache,
+            bridge=bridge,
+            input_metadata=input_metadata,
+            parent_model_directory=parent_model_directory,
+        )
 
     verified, diagnostic_file_sha256 = _authenticated_c61_diagnostic(
         diagnostic_json,
@@ -3535,22 +3715,54 @@ def run_lfm2_semantic_postfold(
             tensor_key=parent_tied_tensor_key,
         )
     )
+    foundation_ancestry = _claims_semantic_foundation_schema(
+        compiler_diagnostic_json
+    )
     lineage = load_lfm2_semantic_compiler_lineage(
         compiler_diagnostic_json,
         expected_diagnostic_sha256=expected_compiler_diagnostic_sha256,
         cache=cache,
         bridge=bridge,
         input_metadata=input_metadata,
+        **(
+            {"parent_model_directory": parent_model_directory}
+            if foundation_ancestry
+            else {}
+        ),
     )
-    interface, interface_rehydration = rehydrate_lfm2_c61_tied_interface(
-        target_model,
-        source_table,
-        semantic_cache=cache,
-        bridge=bridge,
-        target_tokenizer=target_tokenizer,
-        compiler_diagnostic_json=compiler_diagnostic_json,
-        expected_compiler_diagnostic_sha256=(expected_compiler_diagnostic_sha256),
-    )
+    if foundation_ancestry:
+        try:
+            interface, interface_rehydration = (
+                rehydrate_lfm2_semantic_foundation_interface(
+                    target_model,
+                    source_table,
+                    semantic_cache=cache,
+                    bridge=bridge,
+                    target_tokenizer=target_tokenizer,
+                    parent_model_directory=parent_model_directory,
+                    input_metadata=input_metadata,
+                    foundation_receipt_json=compiler_diagnostic_json,
+                    expected_foundation_receipt_sha256=(
+                        expected_compiler_diagnostic_sha256
+                    ),
+                )
+            )
+        except Lfm2SemanticFoundationError as exc:
+            raise Lfm2SemanticPostfoldError(
+                "Semantic-foundation interface rehydration failed."
+            ) from exc
+    else:
+        interface, interface_rehydration = rehydrate_lfm2_c61_tied_interface(
+            target_model,
+            source_table,
+            semantic_cache=cache,
+            bridge=bridge,
+            target_tokenizer=target_tokenizer,
+            compiler_diagnostic_json=compiler_diagnostic_json,
+            expected_compiler_diagnostic_sha256=(
+                expected_compiler_diagnostic_sha256
+            ),
+        )
     layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
         cache=cache,
         bridge=bridge,
@@ -3587,6 +3799,11 @@ def run_lfm2_semantic_postfold(
     context_body = {
         "schema": "neural-forge-lfm2-semantic-postfold-context-v1",
         "input_artifact_sha256": input_metadata["artifact_sha256"],
+        "compiler_ancestry_schema": (
+            LFM2_SEMANTIC_FOUNDATION_SCHEMA
+            if foundation_ancestry
+            else "neural-forge-lfm2-cpcf-v5-selective-blank-fold-run-v1"
+        ),
         "compiler_cache_key": interface_rehydration["compiler_cache_key"],
         "semantic_evidence_cache_key": cache.cache_key,
         "common_parent_fingerprint": cache.parent_fingerprint,
@@ -3622,6 +3839,7 @@ def run_lfm2_semantic_postfold(
             "artifact_sha256": input_metadata["artifact_sha256"],
             "model_state_sha256": input_metadata["model_state_sha256"],
         },
+        "compiler_ancestry_schema": context_body["compiler_ancestry_schema"],
         "compiler_cache_key": interface_rehydration["compiler_cache_key"],
         "semantic_evidence_cache_key": cache.cache_key,
         "cache_parent_fingerprint": cache.parent_fingerprint,
