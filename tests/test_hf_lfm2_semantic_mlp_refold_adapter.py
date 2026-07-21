@@ -760,12 +760,40 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
     assert solver["endpoint_feature_source"] == (
         "materialized_target_dtype_w1_w3_cast_back_to_fp64"
     )
-    assert solver["plan_evidence_scope"] == "supplied_fit_cases_only"
+    assert solver["plan_evidence_scope"] == (
+        "all_source_w1_w3_w2_weights_in_global_residual_basis"
+    )
+    assert solver["fit_cases_used_for_plan_diagnostics_only"] is True
     assert solver["heldout_rows_used_for_plan"] == 0
     assert solver["heldout_rows_used_by_solver"] == 0
     assert solver["multi_anchor_plan"]["calibration_provenance"] == (
-        "cached_fit_rows_only"
+        "cached_fit_rows_diagnostics_only"
     )
+    assert solver["weight_complete_signature_used_for_structural_selection"] is True
+    assert solver["cached_activation_rows_used_for_structural_selection"] is False
+    assert solver["cached_activation_rows_used_for_sparse_anchor_fit"] is False
+    assert solver["multi_anchor_plan"]["planning_signature_source"] == (
+        "full-weight-complete-structural-signature"
+    )
+    assert (
+        solver["multi_anchor_plan"]["planning_signature_sha256"]
+        == solver["weight_complete_signature_sha256"]
+    )
+    assert (
+        solver["multi_anchor_plan"]["planning_signature_provenance"]
+        == solver["weight_complete_signature_report_sha256"]
+    )
+    assert (
+        planting["weight_complete_signature_sha256"]
+        == (solver["weight_complete_signature_sha256"])
+    )
+    assert (
+        planting["weight_complete_signature_report_sha256"]
+        == (solver["weight_complete_signature_report_sha256"])
+    )
+    assert planting["weight_complete_signature_used_for_structural_selection"] is True
+    assert planting["cached_activation_rows_used_for_structural_selection"] is False
+    assert planting["cached_activation_rows_used_for_sparse_anchor_fit"] is False
     assert solver["multi_anchor_plan"]["invariants"]["all_hold"] is True
     assert set(solver["operation_audit"].values()) == {0}
 
@@ -955,33 +983,20 @@ def test_blank_multi_weight_plant_matches_canonical_layer_stack_diff() -> None:
     )
 
 
-def test_exact_zero_incumbent_fails_closed_when_no_full_plant_passes() -> None:
+def test_exact_zero_incumbent_continues_complete_plant_past_local_quality_gates() -> (
+    None
+):
     model = _Target()
     with torch.no_grad():
         for parameter in model.model.layers[0].feed_forward.parameters():
             parameter.zero_()
     before = fingerprint_lfm2_parent(model).identity_sha256
 
-    with pytest.raises(
-        adapter.Lfm2SemanticMlpColdStartRejectionError,
-        match="no fully planted nonzero structural W1/W3/W2 candidate",
-    ) as caught:
-        _prepare(model, _evidence(model))
+    prepared = _prepare(model, _evidence(model))
 
-    report = dict(caught.value.report)
-    assert report["schema"] == adapter.LFM2_SEMANTIC_MLP_COLD_START_REJECTION_SCHEMA
-    assert report["status"] == (
-        "rejected-no-complete-heldout-accepted-cold-start-candidate"
-    )
-    assert report["layer_index"] == 0
-    assert report["model_mutated"] is False
-    assert report["candidate_metrics_retained"] is True
-    assert report["candidate_nonzero_roles"] == {
-        "incumbent": [],
-        "incumbent-producer-w2": [],
-        "full-w1-w3-w2": ["w1.weight", "w3.weight", "w2.weight"],
-    }
-    diagnostics = report["selection_diagnostics"]
+    assert prepared.verify()
+    assert prepared.selected_role == "full-w1-w3-w2"
+    diagnostics = dict(prepared.selection_receipt)
     assert set(diagnostics["endpoint_metrics"]) == {
         "incumbent",
         "incumbent-producer-w2",
@@ -993,16 +1008,36 @@ def test_exact_zero_incumbent_fails_closed_when_no_full_plant_passes() -> None:
     assert (
         diagnostics["heldout_selection_improvement"]["incumbent-producer-w2"] is False
     )
-    assert diagnostics["selected_role"] == "incumbent"
-    assert report["partition_batch_indices"] == {
-        "fit": [0],
-        "fit_check": [1],
-        "selection": [2],
-        "validation": [3],
+    assert diagnostics["heldout_nonregression"]["full-w1-w3-w2"] == {
+        "fit_check": False,
+        "selection": False,
+        "validation": False,
     }
-    report_sha256 = report.pop("report_sha256")
-    assert report_sha256 == adapter.canonical_sha256(report)
-    assert f'"report_sha256":"{report_sha256}"' in str(caught.value)
+    assert diagnostics["selected_role"] == "full-w1-w3-w2"
+    assert diagnostics["component_quality_gates_block_installation"] is False
+    assert diagnostics["blank_target_requires_complete_structural_plant"] is True
+    assert diagnostics["blank_target_continues_to_whole_response_evaluation"] is True
+    assert diagnostics["heldout_quality_retained_as_diagnostics"] is True
+    assert diagnostics["incumbent_noop_fallback_used"] is False
+    assert diagnostics["validation_used_for_candidate_choice"] is False
+    assert (
+        diagnostics["validation_used_only_for_acceptance_or_incumbent_fallback"]
+        is False
+    )
+    assert diagnostics["rationale"] == (
+        "blank-target-complete-structural-plant-continues-to-whole-response-evaluation"
+    )
+    assert prepared.partition_batch_indices == {
+        "fit": (0,),
+        "fit_check": (1,),
+        "selection": (2,),
+        "validation": (3,),
+    }
+    assert adapter._nonzero_swiglu_roles(prepared.selected_candidate.state_dict()) == (
+        "w1.weight",
+        "w3.weight",
+        "w2.weight",
+    )
     assert fingerprint_lfm2_parent(model).identity_sha256 == before
 
 

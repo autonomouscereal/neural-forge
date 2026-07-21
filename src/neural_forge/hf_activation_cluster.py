@@ -328,6 +328,8 @@ class GatedMLPActivationClusterReport:
     near_zero_post_swiglu_medoid_count: int
     maximum_absolute_consumer_coefficient: float
     negative_consumer_coefficient_count: int
+    medoid_selection_signature_source: str
+    medoid_selection_signature_width: int
     invariants: GatedMLPActivationClusterInvariants
 
     @property
@@ -362,12 +364,22 @@ class GatedMLPActivationClusterReport:
             "negative_consumer_coefficient_count": (
                 self.negative_consumer_coefficient_count
             ),
-            "signature_modalities": [
-                "gate",
-                "up",
-                "post_swiglu",
-                "contribution",
-            ],
+            "signature_modalities": (
+                [
+                    "gate",
+                    "up",
+                    "post_swiglu",
+                    "contribution",
+                ]
+                if self.medoid_selection_signature_source
+                == "cached-activation-modalities"
+                else ["caller-supplied-source-major-structural-signature"]
+            ),
+            "medoid_selection_signature_source": (
+                self.medoid_selection_signature_source
+            ),
+            "medoid_selection_signature_width": (self.medoid_selection_signature_width),
+            "consumer_coefficients_fit_from_post_swiglu": True,
             "producer_selection": "copy-real-source-neuron-row",
             "producer_aggregation": "none",
             "consumer_aggregation": "post-swiglu-least-squares-index-add",
@@ -1459,9 +1471,7 @@ def build_gqa_activation_cluster_plan(
                 (
                     grouped_query.permute(1, 0, 2).reshape(source_offsets, -1),
                     grouped_context.permute(1, 0, 2).reshape(source_offsets, -1),
-                    grouped_contribution.permute(1, 0, 2).reshape(
-                        source_offsets, -1
-                    ),
+                    grouped_contribution.permute(1, 0, 2).reshape(source_offsets, -1),
                 ),
             )
             offset_clusters = _deterministic_medoid_cluster(
@@ -1602,6 +1612,7 @@ def build_gated_mlp_activation_cluster_plan(
     target_neurons: int,
     *,
     source_neurons: int | None = None,
+    medoid_selection_signatures: Any | None = None,
     ridge: float = 1e-8,
     max_iterations: int = 16,
     distance_chunk_size: int = 512,
@@ -1610,9 +1621,12 @@ def build_gated_mlp_activation_cluster_plan(
 
     Gate, up, and post-SwiGLU tensors have shape ``[rows, source_neurons]``.
     Contribution rows have shape ``[rows, source_neurons, ...]`` (a rank-two
-    scalar contribution matrix is also valid).  Clustering uses all four
-    modalities.  Consumer coefficients solve each source post-SwiGLU trace
-    against its selected medoid trace and never divide by gate values.
+    scalar contribution matrix is also valid).  By default clustering uses
+    all four activation modalities.  ``medoid_selection_signatures`` may
+    instead supply one source-neuron-major, prompt-independent structural
+    feature matrix; post-SwiGLU rows remain the only input to the diagnostic
+    one-anchor consumer-coefficient fit.  Consumer coefficients never divide
+    by gate values.
     """
 
     torch = _require_torch()
@@ -1643,15 +1657,27 @@ def build_gated_mlp_activation_cluster_plan(
         gate_signatures = gate.T.contiguous()
         up_signatures = up.T.contiguous()
         post_signatures = post.T.contiguous()
-        features = _combine_modalities(
-            torch,
-            (
-                gate_signatures,
-                up_signatures,
-                post_signatures,
-                contribution_signatures,
-            ),
-        )
+        if medoid_selection_signatures is None:
+            features = _combine_modalities(
+                torch,
+                (
+                    gate_signatures,
+                    up_signatures,
+                    post_signatures,
+                    contribution_signatures,
+                ),
+            )
+            medoid_selection_signature_source = "cached-activation-modalities"
+        else:
+            features = _signature_matrix(
+                torch,
+                medoid_selection_signatures,
+                "medoid_selection_signatures",
+                unit_count=inferred_neurons,
+            )
+            medoid_selection_signature_source = (
+                "caller-supplied-source-major-structural-signature"
+            )
         clusters = _deterministic_medoid_cluster(
             torch,
             features,
@@ -1720,6 +1746,8 @@ def build_gated_mlp_activation_cluster_plan(
         negative_consumer_coefficient_count=(
             coefficient_fit.negative_coefficient_count
         ),
+        medoid_selection_signature_source=medoid_selection_signature_source,
+        medoid_selection_signature_width=int(features.shape[1]),
         invariants=invariants,
     )
     return GatedMLPActivationClusterPlan(

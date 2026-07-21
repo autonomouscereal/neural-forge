@@ -2335,6 +2335,118 @@ def test_normalized_input_real_medoid_bridge_generalizes_raw_scale_mismatch() ->
     assert receipt["training_steps"] == 0
 
 
+def test_normalized_input_decoder_preserves_mixed_gamma_anisotropy() -> None:
+    parent_gamma = torch.tensor([12.0, 0.08, 3.5], dtype=torch.float64)
+    target_gamma = torch.tensor([0.25, 5.0], dtype=torch.float64)
+    seed = torch.tensor(
+        [[1.0, 0.4], [0.7, -1.2], [0.3, 0.9]],
+        dtype=torch.float64,
+    )
+    residual_chart = torch.linalg.qr(seed, mode="reduced").Q.contiguous()
+    normalized_chart = (
+        residual_chart
+        * parent_gamma.reciprocal().unsqueeze(1)
+        * target_gamma.unsqueeze(0)
+    )
+    expected_decoder = (
+        target_gamma.reciprocal().unsqueeze(1)
+        * residual_chart.T
+        * parent_gamma.unsqueeze(0)
+    )
+    source_gate = torch.tensor(
+        [
+            [1.0, 0.25, -0.5],
+            [-0.75, 1.5, 0.4],
+            [0.3, -2.0, 1.25],
+            [1.75, 0.6, -0.8],
+        ],
+        dtype=torch.float64,
+    )
+    source_up = torch.tensor(
+        [
+            [0.5, -1.0, 0.75],
+            [1.25, 0.4, -0.6],
+            [-0.2, 1.1, 1.5],
+            [0.9, -0.7, 0.3],
+        ],
+        dtype=torch.float64,
+    )
+    source_down = torch.tensor(
+        [
+            [1.0, -0.5, 0.25, 0.75],
+            [0.4, 1.25, -0.8, 0.2],
+            [-0.3, 0.6, 1.1, -1.0],
+        ],
+        dtype=torch.float64,
+    )
+    target_input = torch.tensor([[1.0, 0.0], [-1.5, 0.0]], dtype=torch.float64)
+    parent_input = target_input @ expected_decoder
+    parent_gate = parent_input @ source_gate.T
+    parent_up = parent_input @ source_up.T
+    parent_post = torch.nn.functional.silu(parent_gate) * parent_up
+    target_residual = torch.tensor([[0.1, -0.2], [0.3, 0.15]], dtype=torch.float64)
+    endpoint = target_residual + (parent_post @ source_down.T) @ residual_chart
+    case = Lfm2CachedNormalizedInputMlpFoldCase(
+        target_input=target_input,
+        parent_normalized_input=parent_input,
+        parent_gate=parent_gate,
+        parent_up=parent_up,
+        parent_post_swiglu=parent_post,
+        parent_post_mlp_residual_target_space=endpoint,
+        target_pre_mlp_residual=target_residual,
+        parent_contribution=parent_post.abs() + 0.125,
+    )
+    target = _ToyMlp(hidden_size=2, intermediate_size=2, dtype=torch.float64)
+    compiled = compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
+        source_gate_weight=source_gate,
+        source_up_weight=source_up,
+        source_down_weight=source_down,
+        target_gate_weight_template=target.w1.weight,
+        target_up_weight_template=target.w3.weight,
+        target_down_weight_template=target.w2.weight,
+        residual_chart=residual_chart,
+        residual_chart_sha256=fold_module.lfm2_authenticated_tensor_sha256(
+            residual_chart
+        ),
+        parent_ffn_norm_weight=parent_gamma,
+        parent_ffn_norm_weight_sha256=(
+            fold_module.lfm2_authenticated_tensor_sha256(parent_gamma)
+        ),
+        target_ffn_norm_weight=target_gamma,
+        target_ffn_norm_weight_sha256=(
+            fold_module.lfm2_authenticated_tensor_sha256(target_gamma)
+        ),
+        cases=(case,),
+        anchors_per_source=2,
+        max_candidate_targets=2,
+        normalized_decoder_ridge=1e-8,
+        ridge=0.0,
+        cluster_ridge=1e-8,
+    )
+
+    # FIT identifies only child coordinate zero.  The exact gamma-conjugated
+    # structural inverse must therefore carry unseen coordinate one; a polar
+    # decoder has discarded that anisotropy and cannot do so.
+    heldout_target_input = torch.tensor([[0.0, 1.0]], dtype=torch.float64)
+    expected_heldout = heldout_target_input @ expected_decoder
+    actual_heldout = heldout_target_input @ compiled.normalized_input_decoder
+    polar_u, _, polar_vh = torch.linalg.svd(normalized_chart, full_matrices=False)
+    polar_decoder = (polar_u @ polar_vh).T
+    polar_fit = target_input @ polar_decoder
+    polar_gain = float(
+        (polar_fit * parent_input).sum().item() / polar_fit.square().sum().item()
+    )
+    polar_heldout = heldout_target_input @ (polar_decoder * polar_gain)
+    torch.testing.assert_close(actual_heldout, expected_heldout, rtol=1e-10, atol=1e-10)
+    assert torch.linalg.vector_norm(polar_heldout - expected_heldout) > 1.0
+    producer = compiled.as_dict()["producer_bridge"]
+    assert producer["structural_decoder_prior_rank"] == 2
+    assert producer["structural_decoder_prior_operator_norm"] > 0.0
+    assert producer["structural_decoder_left_inverse_error"] < 1e-10
+    assert "structural_decoder_prior_sha256" in producer
+    assert "thin_polar_diagnostic_sha256" in producer
+
+
 def test_normalized_input_decoder_caps_supported_correction_and_authenticates_gamma():
     common, case, normalized_polar = _normalized_input_real_medoid_fixture()
     changed_parent_input = case.parent_normalized_input.clone()

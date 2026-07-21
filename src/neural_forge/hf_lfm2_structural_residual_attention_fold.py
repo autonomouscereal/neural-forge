@@ -36,6 +36,11 @@ from neural_forge.hf_multi_anchor_cluster import (
     GatedMLPMultiAnchorPlan,
     build_gated_mlp_multi_anchor_cluster_plan,
 )
+from neural_forge.hf_gated_mlp_weight_signature import (
+    GatedMlpWeightCompleteSignature,
+    build_gated_mlp_weight_complete_signature,
+    gated_mlp_weight_signature_tensor_sha256,
+)
 
 
 _SCHEMA = "neural-forge-lfm2-structural-residual-attention-fold-v1"
@@ -2971,6 +2976,7 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
     """
 
     cluster_plan: GatedMLPMultiAnchorPlan
+    weight_complete_signature: GatedMlpWeightCompleteSignature
     gate_weight: Any
     up_weight: Any
     down_weight: Any
@@ -2990,6 +2996,7 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
     target_ffn_norm_weight_sha256: str
     normalized_chart_sha256: str
     normalized_polar_sha256: str
+    normalized_structural_decoder_prior_sha256: str
     normalized_input_decoder_sha256: str
     normalized_input_correction_sha256: str
     normalized_input_rowspace_projector_sha256: str
@@ -3002,6 +3009,9 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
     normalized_chart_rank: int
     normalized_input_fit_rank: int
     normalized_input_decoder_rank: int
+    normalized_structural_decoder_prior_rank: int
+    normalized_structural_decoder_prior_operator_norm: float
+    normalized_structural_decoder_left_inverse_error: float
     normalized_input_global_gain: float
     normalized_input_ridge_policy_value: float
     normalized_input_scaled_ridge: float
@@ -3061,6 +3071,16 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
             "multi_anchor_plan_sha256": canonical_sha256(
                 self.cluster_plan.report.as_dict()
             ),
+            "weight_complete_signature": self.weight_complete_signature.as_dict(),
+            "weight_complete_signature_sha256": (
+                self.weight_complete_signature.signature_sha256
+            ),
+            "weight_complete_signature_report_sha256": (
+                self.weight_complete_signature.report["report_sha256"]
+            ),
+            "weight_complete_signature_used_for_structural_selection": True,
+            "cached_activation_rows_used_for_structural_selection": False,
+            "cached_activation_rows_used_for_sparse_anchor_fit": False,
             "neuron_groups": [list(value) for value in self.neuron_groups],
             "full_source_coverage": self.full_source_coverage,
             "full_source_assignment_fraction": 1.0,
@@ -3073,11 +3093,15 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
             "producer_bridge": {
                 "role": "normalized_mlp_input_target_to_parent",
                 "construction": (
-                    "positive_gain_thin_polar_plus_fit_rowspace_correction_"
-                    "with_bounded_polar_null_completion"
+                    "positive_gain_gamma_aware_raw_chart_left_inverse_plus_"
+                    "fit_rowspace_correction_with_bounded_structural_null_"
+                    "completion"
                 ),
                 "normalized_chart_sha256": self.normalized_chart_sha256,
-                "thin_polar_sha256": self.normalized_polar_sha256,
+                "thin_polar_diagnostic_sha256": self.normalized_polar_sha256,
+                "structural_decoder_prior_sha256": (
+                    self.normalized_structural_decoder_prior_sha256
+                ),
                 "decoder_sha256": self.normalized_input_decoder_sha256,
                 "correction_sha256": self.normalized_input_correction_sha256,
                 "rowspace_projector_sha256": (
@@ -3086,6 +3110,15 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
                 "normalized_chart_rank": self.normalized_chart_rank,
                 "fit_rank": self.normalized_input_fit_rank,
                 "decoder_rank": self.normalized_input_decoder_rank,
+                "structural_decoder_prior_rank": (
+                    self.normalized_structural_decoder_prior_rank
+                ),
+                "structural_decoder_prior_operator_norm": (
+                    self.normalized_structural_decoder_prior_operator_norm
+                ),
+                "structural_decoder_left_inverse_error": (
+                    self.normalized_structural_decoder_left_inverse_error
+                ),
                 "positive_global_gain": self.normalized_input_global_gain,
                 "ridge_policy_value": self.normalized_input_ridge_policy_value,
                 "scaled_ridge": self.normalized_input_scaled_ridge,
@@ -3142,13 +3175,17 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
                 "materialized_target_dtype_w1_w3_cast_back_to_fp64"
             ),
             "null_completion_policy": (
-                "fit_orthogonal_subspace_equals_positive_gain_thin_polar_"
-                "completion_with_operator_norm_at_most_global_gain"
+                "fit_orthogonal_subspace_equals_positive_gain_unit_norm_"
+                "gamma_aware_structural_inverse_with_operator_norm_at_most_"
+                "global_gain"
             ),
             "producer_averaging": False,
             "producer_per_neuron_interpolation": False,
             "producer_shared_decoder": True,
-            "plan_evidence_scope": "supplied_fit_cases_only",
+            "plan_evidence_scope": (
+                "all_source_w1_w3_w2_weights_in_global_residual_basis"
+            ),
+            "fit_cases_used_for_plan_diagnostics_only": True,
             "heldout_rows_used_for_plan": 0,
             "heldout_rows_used_by_solver": 0,
             "blank_target_values_read": False,
@@ -4158,12 +4195,16 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
 
         A = diag(gamma_parent)^-1 @ residual_chart @ diag(gamma_target)
 
-    A thin polar factor supplies a bounded target-to-parent completion.  One
-    strictly positive gain and one shared FIT-rowspace correction are solved
-    from ``target_input -> parent_normalized_input``.  The correction is
+    The raw chart pseudoinverse is conjugated by the two RMSNorm gamma
+    vectors, yielding the exact normalized-coordinate left inverse before
+    rowwise RMS scale.  Its unit-operator-norm form supplies the bounded
+    target-to-parent completion.  One strictly positive gain and one shared
+    FIT-rowspace correction are solved from
+    ``target_input -> parent_normalized_input``.  The correction is
     ridge-scaled by FIT design energy and capped to rho=1 relative to the
-    supported polar prior.  The orthogonal FIT nullspace remains exactly the
-    gain-scaled polar completion, whose operator norm is bounded by the gain.
+    supported structural prior.  The orthogonal FIT nullspace remains exactly
+    that gain-scaled gamma-aware completion, whose operator norm is bounded by
+    the gain.
 
     Coupled real source W1/W3 medoids are transported by that one decoder;
     neither producer receives a per-neuron interpolation or independent fit.
@@ -4333,9 +4374,38 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         )
 
     with torch.no_grad():
+        raw_chart_u, _, raw_chart_vh = torch.linalg.svd(
+            chart,
+            full_matrices=False,
+        )
+        weight_signature_basis = (raw_chart_u @ raw_chart_vh).contiguous()
+    weight_signature = build_gated_mlp_weight_complete_signature(
+        gate_weight=source_gate,
+        up_weight=source_up,
+        down_weight=source_down,
+        residual_basis=weight_signature_basis,
+        expected_input_sha256={
+            "w1.weight": gated_mlp_weight_signature_tensor_sha256(source_gate),
+            "w3.weight": gated_mlp_weight_signature_tensor_sha256(source_up),
+            "w2.weight": gated_mlp_weight_signature_tensor_sha256(source_down),
+            "residual_basis": gated_mlp_weight_signature_tensor_sha256(
+                weight_signature_basis
+            ),
+        },
+    )
+    if (
+        weight_signature.source_neurons != source_intermediate
+        or weight_signature.source_hidden_size != source_hidden
+        or weight_signature.target_hidden_size != target_hidden
+        or weight_signature.verify()["accepted"] is not True
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Weight-complete MLP signature does not match the source/target topology."
+        )
+
+    with torch.no_grad():
         # A maps parent normalized coordinates into child normalized
-        # coordinates.  Its thin polar factor removes raw residual scaling
-        # while retaining the chart's cross-width orientation.
+        # coordinates up to the unavoidable positive rowwise RMS ratio.
         normalized_chart = (
             chart * parent_gamma.reciprocal().unsqueeze(1) * target_gamma.unsqueeze(0)
         ).contiguous()
@@ -4357,6 +4427,46 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
                 ord=2,
             ).item()
         )
+        # The polar factor is a useful orientation diagnostic, but it is not
+        # the decoder: polarizing A discards the nonuniform gamma scaling.
+        # Conjugating the raw chart pseudoinverse instead gives an exact left
+        # inverse of A for every full-column-rank chart.
+        raw_chart_decoder = torch.linalg.pinv(chart).contiguous()
+        gamma_aware_structural_decoder = (
+            target_gamma.reciprocal().unsqueeze(1)
+            * raw_chart_decoder
+            * parent_gamma.unsqueeze(0)
+        ).contiguous()
+        structural_decoder_prior_rank = int(
+            torch.linalg.matrix_rank(gamma_aware_structural_decoder).item()
+        )
+        structural_decoder_prior_operator_norm = float(
+            torch.linalg.matrix_norm(
+                gamma_aware_structural_decoder,
+                ord=2,
+            ).item()
+        )
+        structural_decoder_left_inverse_error = float(
+            torch.linalg.matrix_norm(
+                gamma_aware_structural_decoder @ normalized_chart
+                - torch.eye(target_hidden, dtype=torch.float64),
+                ord=2,
+            ).item()
+        )
+        if (
+            structural_decoder_prior_rank != target_hidden
+            or not math.isfinite(structural_decoder_prior_operator_norm)
+            or structural_decoder_prior_operator_norm <= torch.finfo(torch.float64).tiny
+            or not math.isfinite(structural_decoder_left_inverse_error)
+            or structural_decoder_left_inverse_error > 1e-8
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Gamma-aware normalized-input structural decoder is not a "
+                "finite full-rank left inverse of the normalized chart."
+            )
+        unit_structural_decoder = (
+            gamma_aware_structural_decoder / structural_decoder_prior_operator_norm
+        ).contiguous()
 
         mapped_source_down = (chart.T @ source_down).contiguous()
         normalized: list[dict[str, Any]] = []
@@ -4458,14 +4568,13 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         weighted_target_input = target_input_rows * sqrt_row_weights
         weighted_parent_input = parent_input_rows * sqrt_row_weights
 
-        # Q0.T is a target-to-parent partial isometry.  The only scalar degree
-        # of freedom is fitted once from all FIT rows and must retain positive
-        # orientation.
-        unit_polar_decoder = normalized_polar.T.contiguous()
-        unit_polar_prediction = weighted_target_input @ unit_polar_decoder
-        gain_denominator = float(unit_polar_prediction.square().sum().item())
+        # The gamma-aware structural inverse is normalized once so the only
+        # remaining scalar degree of freedom is fitted from all FIT rows and
+        # must retain positive orientation.
+        unit_structural_prediction = weighted_target_input @ unit_structural_decoder
+        gain_denominator = float(unit_structural_prediction.square().sum().item())
         gain_numerator = float(
-            (unit_polar_prediction * weighted_parent_input).sum().item()
+            (unit_structural_prediction * weighted_parent_input).sum().item()
         )
         if (
             not math.isfinite(gain_numerator)
@@ -4475,10 +4584,10 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         ):
             raise Lfm2StructuralResidualAttentionFoldError(
                 "FIT rows do not identify one strictly positive normalized-input "
-                "polar gain."
+                "structural gain."
             )
         global_gain = gain_numerator / gain_denominator
-        polar_decoder = (unit_polar_decoder * global_gain).contiguous()
+        structural_decoder = (unit_structural_decoder * global_gain).contiguous()
 
         design_u, design_s, design_vh = torch.linalg.svd(
             weighted_target_input, full_matrices=False
@@ -4503,7 +4612,7 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         rowspace_projector = (supported_vh.T @ supported_vh).contiguous()
         design_energy_scale = float((supported_s.square().sum() / fit_rank).item())
         scaled_decoder_ridge = normalized_decoder_ridge * design_energy_scale
-        residual = weighted_parent_input - weighted_target_input @ polar_decoder
+        residual = weighted_parent_input - weighted_target_input @ structural_decoder
         spectral_filter = supported_s / (supported_s.square() + scaled_decoder_ridge)
         correction = supported_vh.T @ (
             spectral_filter.unsqueeze(1) * (supported_u.T @ residual)
@@ -4512,7 +4621,7 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         # rho=1 is fixed rather than tuned: the FIT-supported correction may
         # be no larger than the polar prior already supported by those rows.
         supported_relative_cap = 1.0
-        supported_prior = rowspace_projector @ polar_decoder
+        supported_prior = rowspace_projector @ structural_decoder
         supported_prior_norm = float(torch.linalg.vector_norm(supported_prior).item())
         correction_norm = float(torch.linalg.vector_norm(correction).item())
         allowed_correction_norm = supported_relative_cap * supported_prior_norm
@@ -4523,7 +4632,7 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
             )
             correction = correction * correction_scale
         correction = correction.contiguous()
-        normalized_input_decoder = (polar_decoder + correction).contiguous()
+        normalized_input_decoder = (structural_decoder + correction).contiguous()
 
         identity = torch.eye(target_hidden, dtype=torch.float64)
         null_projector = identity - rowspace_projector
@@ -4531,7 +4640,7 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
             torch.linalg.vector_norm(null_projector @ correction).item()
         )
         null_completion = null_projector @ normalized_input_decoder
-        expected_null_completion = null_projector @ polar_decoder
+        expected_null_completion = null_projector @ structural_decoder
         null_completion_error = float(
             torch.linalg.vector_norm(null_completion - expected_null_completion).item()
         )
@@ -4593,7 +4702,10 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
             max_projection_fits=max_projection_fits,
             max_sparse_entries=max_sparse_entries,
             max_workspace_elements=max_workspace_elements,
-            calibration_provenance="cached_fit_rows_only",
+            structural_selection_signatures=weight_signature.selection_signature,
+            structural_selection_signature_sha256=(weight_signature.signature_sha256),
+            structural_selection_provenance=(weight_signature.report["report_sha256"]),
+            calibration_provenance="cached_fit_rows_diagnostics_only",
         )
         if not plan.full_source_coverage:
             raise Lfm2StructuralResidualAttentionFoldError(
@@ -4675,6 +4787,7 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
     )
     return Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold(
         cluster_plan=plan,
+        weight_complete_signature=weight_signature,
         gate_weight=compiled["w1.weight"],
         up_weight=compiled["w3.weight"],
         down_weight=compiled["w2.weight"],
@@ -4696,6 +4809,9 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         target_ffn_norm_weight_sha256=target_ffn_norm_weight_sha256,
         normalized_chart_sha256=lfm2_authenticated_tensor_sha256(normalized_chart),
         normalized_polar_sha256=lfm2_authenticated_tensor_sha256(normalized_polar),
+        normalized_structural_decoder_prior_sha256=(
+            lfm2_authenticated_tensor_sha256(gamma_aware_structural_decoder)
+        ),
         normalized_input_decoder_sha256=lfm2_authenticated_tensor_sha256(
             normalized_input_decoder
         ),
@@ -4714,6 +4830,13 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         normalized_chart_rank=normalized_chart_rank,
         normalized_input_fit_rank=fit_rank,
         normalized_input_decoder_rank=decoder_rank,
+        normalized_structural_decoder_prior_rank=(structural_decoder_prior_rank),
+        normalized_structural_decoder_prior_operator_norm=(
+            structural_decoder_prior_operator_norm
+        ),
+        normalized_structural_decoder_left_inverse_error=(
+            structural_decoder_left_inverse_error
+        ),
         normalized_input_global_gain=global_gain,
         normalized_input_ridge_policy_value=normalized_decoder_ridge,
         normalized_input_scaled_ridge=scaled_decoder_ridge,

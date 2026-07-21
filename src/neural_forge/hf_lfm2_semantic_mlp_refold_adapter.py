@@ -1629,6 +1629,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         producer_bridge = full_solver.get("producer_bridge")
         consumer_bridge = full_solver.get("consumer_bridge")
         multi_anchor_plan = full_solver.get("multi_anchor_plan")
+        weight_complete_signature = full_solver.get("weight_complete_signature")
         fit_weights = tuple(item.sample_weight for item in partitions["fit"])
         fit_row_weights = torch.tensor(fit_weights, dtype=torch.float64)
         expected_chart_sha256 = lfm2_authenticated_tensor_sha256(
@@ -1667,6 +1668,35 @@ def prepare_lfm2_semantic_mlp_postfold(
             fit_weights,
         )
         expected_weight_sha256 = lfm2_authenticated_tensor_sha256(fit_row_weights)
+        weight_signature_report_body = (
+            dict(weight_complete_signature)
+            if isinstance(weight_complete_signature, Mapping)
+            else {}
+        )
+        weight_signature_report_sha256 = weight_signature_report_body.pop(
+            "report_sha256",
+            None,
+        )
+        with torch.no_grad():
+            chart_u, _, chart_vh = torch.linalg.svd(
+                inventory.residual_chart.to(torch.float64),
+                full_matrices=False,
+            )
+            expected_signature_basis = (chart_u @ chart_vh).contiguous()
+        expected_signature_input_sha256 = {
+            "w1.weight": lfm2_authenticated_tensor_sha256(
+                inventory.gate_weight.to(torch.float64)
+            ),
+            "w3.weight": lfm2_authenticated_tensor_sha256(
+                inventory.up_weight.to(torch.float64)
+            ),
+            "w2.weight": lfm2_authenticated_tensor_sha256(
+                inventory.down_weight.to(torch.float64)
+            ),
+            "residual_basis": lfm2_authenticated_tensor_sha256(
+                expected_signature_basis
+            ),
+        }
         planted_roles = _nonzero_swiglu_roles(full_state)
         if (
             not isinstance(consumer_correction, Mapping)
@@ -1691,6 +1721,25 @@ def prepare_lfm2_semantic_mlp_postfold(
             or isinstance(producer_bridge.get("decoder_rank"), bool)
             or not isinstance(producer_bridge.get("decoder_rank"), int)
             or producer_bridge.get("decoder_rank") != target_hidden
+            or isinstance(producer_bridge.get("structural_decoder_prior_rank"), bool)
+            or not isinstance(producer_bridge.get("structural_decoder_prior_rank"), int)
+            or producer_bridge.get("structural_decoder_prior_rank") != target_hidden
+            or not isinstance(
+                producer_bridge.get("structural_decoder_prior_operator_norm"),
+                (int, float),
+            )
+            or not math.isfinite(
+                float(producer_bridge["structural_decoder_prior_operator_norm"])
+            )
+            or float(producer_bridge["structural_decoder_prior_operator_norm"]) <= 0.0
+            or not isinstance(
+                producer_bridge.get("structural_decoder_left_inverse_error"),
+                (int, float),
+            )
+            or not math.isfinite(
+                float(producer_bridge["structural_decoder_left_inverse_error"])
+            )
+            or float(producer_bridge["structural_decoder_left_inverse_error"]) > 1e-8
             or not isinstance(
                 producer_bridge.get("positive_global_gain"),
                 (int, float),
@@ -1746,7 +1795,9 @@ def prepare_lfm2_semantic_mlp_postfold(
             or full_solver.get("full_source_coverage") is not True
             or full_solver.get("full_source_assignment_fraction") != 1.0
             or full_solver.get("source_neurons_dropped") != 0
-            or full_solver.get("plan_evidence_scope") != "supplied_fit_cases_only"
+            or full_solver.get("plan_evidence_scope")
+            != "all_source_w1_w3_w2_weights_in_global_residual_basis"
+            or full_solver.get("fit_cases_used_for_plan_diagnostics_only") is not True
             or full_solver.get("heldout_rows_used_for_plan") != 0
             or full_solver.get("heldout_rows_used_by_solver") != 0
             or full_solver.get("endpoint_feature_source")
@@ -1758,8 +1809,49 @@ def prepare_lfm2_semantic_mlp_postfold(
             is not True
             or full_solver.get("authenticated_raw_residual_consumer_chart_used")
             is not True
+            or not isinstance(weight_complete_signature, Mapping)
+            or weight_complete_signature.get("schema")
+            != "neural-forge-gated-mlp-weight-complete-signature-v1"
+            or weight_complete_signature.get("source_neurons")
+            != inventory.source_intermediate_size
+            or weight_complete_signature.get("source_hidden_size")
+            != inventory.source_hidden_size
+            or weight_complete_signature.get("target_hidden_size")
+            != inventory.target_hidden_size
+            or weight_complete_signature.get("input_sha256")
+            != expected_signature_input_sha256
+            or not isinstance(weight_complete_signature.get("invariants"), Mapping)
+            or weight_complete_signature["invariants"].get("all_hold") is not True
+            or not isinstance(weight_signature_report_sha256, str)
+            or weight_signature_report_sha256
+            != canonical_sha256(weight_signature_report_body)
+            or full_solver.get("weight_complete_signature_report_sha256")
+            != weight_signature_report_sha256
+            or full_solver.get("weight_complete_signature_sha256")
+            != weight_complete_signature.get("signature_sha256")
+            or full_solver.get(
+                "weight_complete_signature_used_for_structural_selection"
+            )
+            is not True
+            or full_solver.get("cached_activation_rows_used_for_structural_selection")
+            is not False
+            or full_solver.get("cached_activation_rows_used_for_sparse_anchor_fit")
+            is not False
             or not isinstance(multi_anchor_plan, Mapping)
-            or multi_anchor_plan.get("calibration_provenance") != "cached_fit_rows_only"
+            or multi_anchor_plan.get("calibration_provenance")
+            != "cached_fit_rows_diagnostics_only"
+            or multi_anchor_plan.get("planning_signature_source")
+            != "full-weight-complete-structural-signature"
+            or multi_anchor_plan.get("planning_signature_sha256")
+            != weight_complete_signature.get("signature_sha256")
+            or multi_anchor_plan.get("planning_signature_provenance")
+            != weight_signature_report_sha256
+            or multi_anchor_plan.get("cached_activation_rows_used_for_medoid_selection")
+            is not False
+            or multi_anchor_plan.get(
+                "cached_activation_rows_used_for_sparse_anchor_fit"
+            )
+            is not False
             or not isinstance(multi_anchor_plan.get("invariants"), Mapping)
             or multi_anchor_plan["invariants"].get("all_hold") is not True
             or full_solver.get("multi_anchor_plan_sha256")
@@ -1794,7 +1886,8 @@ def prepare_lfm2_semantic_mlp_postfold(
                 )
                 for name in (
                     "normalized_chart_sha256",
-                    "thin_polar_sha256",
+                    "thin_polar_diagnostic_sha256",
+                    "structural_decoder_prior_sha256",
                     "decoder_sha256",
                     "correction_sha256",
                     "rowspace_projector_sha256",
@@ -1844,6 +1937,15 @@ def prepare_lfm2_semantic_mlp_postfold(
                     "multi_anchor_plan_sha256": (
                         full_solver["multi_anchor_plan_sha256"]
                     ),
+                    "weight_complete_signature_sha256": (
+                        full_solver["weight_complete_signature_sha256"]
+                    ),
+                    "weight_complete_signature_report_sha256": (
+                        full_solver["weight_complete_signature_report_sha256"]
+                    ),
+                    "weight_complete_signature_used_for_structural_selection": (True),
+                    "cached_activation_rows_used_for_structural_selection": False,
+                    "cached_activation_rows_used_for_sparse_anchor_fit": False,
                     "producer_prior_sha256": full_solver["producer_prior_sha256"],
                     "consumer_prior_sha256": full_solver["consumer_prior_sha256"],
                     "full_source_coverage": (
@@ -1934,7 +2036,13 @@ def prepare_lfm2_semantic_mlp_postfold(
         all(eligibility[full.role][name] for name in ("fit_check", "selection"))
         and selection_improvement[full.role]
     )
-    if (
+    if exact_zero_incumbent:
+        selected = full
+        rationale = (
+            "blank-target-complete-structural-plant-continues-to-whole-response-"
+            "evaluation"
+        )
+    elif (
         writer_changed
         and writer_prevalidation
         and (not full_prevalidation or writer_selection_vs_full)
@@ -1949,7 +2057,11 @@ def prepare_lfm2_semantic_mlp_postfold(
         rationale = "retained-incumbent-no-analytic-candidate-passed-heldout-gates"
     prevalidation_selected_role = selected.role
     validation_rejected_role: CandidateRole | None = None
-    if selected.role != "incumbent" and not eligibility[selected.role]["validation"]:
+    if (
+        not exact_zero_incumbent
+        and selected.role != "incumbent"
+        and not eligibility[selected.role]["validation"]
+    ):
         validation_rejected_role = selected.role
         selected = incumbent
         rationale = "retained-incumbent-after-frozen-analytic-validation-rejection"
@@ -1965,12 +2077,18 @@ def prepare_lfm2_semantic_mlp_postfold(
         "writer_selection_nonregressing_versus_full": writer_selection_vs_full,
         "incumbent_noop_candidate_competed": True,
         "incumbent_noop_fallback_used": selected.role == "incumbent",
+        "component_quality_gates_block_installation": not exact_zero_incumbent,
+        "blank_target_requires_complete_structural_plant": exact_zero_incumbent,
+        "blank_target_continues_to_whole_response_evaluation": (exact_zero_incumbent),
         "candidate_frozen_before_fit_check": True,
         "candidate_frozen_before_selection": True,
         "candidate_frozen_before_validation": True,
         "validation_triggered_refit": False,
-        "validation_used_for_candidate_choice": (validation_rejected_role is not None),
-        "validation_used_only_for_acceptance_or_incumbent_fallback": True,
+        "validation_used_for_candidate_choice": validation_rejected_role is not None,
+        "validation_used_only_for_acceptance_or_incumbent_fallback": (
+            not exact_zero_incumbent
+        ),
+        "heldout_quality_retained_as_diagnostics": True,
         "fit_partition_only_used_for_solves": True,
         "heldout_partitions_used_for_solves": False,
         "endpoint_metrics": {
@@ -1996,49 +2114,9 @@ def prepare_lfm2_semantic_mlp_postfold(
         or _nonzero_swiglu_roles(selected.state_dict())
         != ("w1.weight", "w3.weight", "w2.weight")
     ):
-        rejection_body = {
-            "schema": LFM2_SEMANTIC_MLP_COLD_START_REJECTION_SCHEMA,
-            "status": "rejected-no-complete-heldout-accepted-cold-start-candidate",
-            "reason": "no-fully-planted-nonzero-structural-candidate-passed-all-gates",
-            "layer_index": layer_index,
-            "cache_key": cache,
-            "cache_manifest_sha256": manifest,
-            "bridge_artifact_sha256": bridge,
-            "captured_child_model_state_sha256": current_state,
-            "source_inventory_sha256": inventory.inventory_sha256,
-            "compiler_lineage_sha256": inventory.compiler_lineage_sha256,
-            "partition_batch_indices": {
-                name: sorted({item.batch_index for item in partitions[name]})
-                for name in _PARTITIONS
-            },
-            "solver_policy": {
-                "ridge": float(ridge),
-                "requested_maximum_delta_ratio": requested_maximum_delta_ratio,
-                "effective_full_structural_maximum_delta_ratio": None,
-                "cluster_ridge": float(cluster_ridge),
-                "cluster_max_iterations": int(cluster_max_iterations),
-                "cluster_distance_chunk_size": int(cluster_distance_chunk_size),
-                "rmse_relative_tolerance": float(rmse_relative_tolerance),
-                "cosine_tolerance": float(cosine_tolerance),
-            },
-            "candidate_sha256": {
-                candidate.role: candidate.candidate_sha256
-                for candidate in (incumbent, writer, full)
-            },
-            "candidate_nonzero_roles": {
-                candidate.role: list(_nonzero_swiglu_roles(candidate.state_dict()))
-                for candidate in (incumbent, writer, full)
-            },
-            "selection_diagnostics": selection_body,
-            "candidate_metrics_retained": True,
-            "model_mutated": False,
-            "operation_audit": dict(_ZERO_OPERATIONS),
-        }
-        rejection_body["report_sha256"] = canonical_sha256(rejection_body)
-        raise Lfm2SemanticMlpColdStartRejectionError(
-            "Exact-zero cold start has no fully planted nonzero structural "
-            "W1/W3/W2 candidate that passed every held-out gate.",
-            rejection_body,
+        raise Lfm2SemanticMlpRefoldError(
+            "Exact-zero cold start did not produce one complete nonzero "
+            "structural W1/W3/W2 plant."
         )
     if not eligibility["incumbent"]["validation"]:
         raise Lfm2SemanticMlpRefoldError(

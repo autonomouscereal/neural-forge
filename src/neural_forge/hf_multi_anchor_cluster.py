@@ -26,6 +26,9 @@ from .hf_activation_cluster import (
     GatedMLPActivationClusterReport,
     build_gated_mlp_activation_cluster_plan,
 )
+from .hf_gated_mlp_weight_signature import (
+    gated_mlp_weight_signature_tensor_sha256,
+)
 
 
 _HARD_MAX_ANCHORS_PER_SOURCE = 32
@@ -75,9 +78,7 @@ def _positive_int(value: Any, name: str) -> int:
 
 def _positive_float(value: Any, name: str) -> float:
     if isinstance(value, bool):
-        raise MultiAnchorClusterShapeError(
-            f"{name} must be a finite positive number."
-        )
+        raise MultiAnchorClusterShapeError(f"{name} must be a finite positive number.")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -85,9 +86,7 @@ def _positive_float(value: Any, name: str) -> float:
             f"{name} must be a finite positive number."
         ) from exc
     if not math.isfinite(result) or result <= 0.0:
-        raise MultiAnchorClusterShapeError(
-            f"{name} must be a finite positive number."
-        )
+        raise MultiAnchorClusterShapeError(f"{name} must be a finite positive number.")
     return result
 
 
@@ -301,6 +300,10 @@ class GatedMLPMultiAnchorReport:
     heldout_diagnostics: MultiAnchorReconstructionDiagnostics | None
     calibration_provenance: str | None
     heldout_provenance: str | None
+    planning_signature_source: str
+    planning_signature_width: int
+    planning_signature_sha256: str
+    planning_signature_provenance: str | None
     similarity_products: int
     similarity_multiply_adds: int
     worst_case_similarity_products: int
@@ -363,9 +366,7 @@ class GatedMLPMultiAnchorReport:
             "mean_coefficient_l1": self.mean_coefficient_l1,
             "maximum_coefficient_l1": self.maximum_coefficient_l1,
             "effective_ridge": self.effective_ridge,
-            "post_swiglu_fit_relative_error": (
-                self.post_swiglu_fit_relative_error
-            ),
+            "post_swiglu_fit_relative_error": (self.post_swiglu_fit_relative_error),
             "consumer_weighted_fit_relative_error": (
                 self.consumer_weighted_fit_relative_error
             ),
@@ -380,12 +381,20 @@ class GatedMLPMultiAnchorReport:
             ),
             "calibration_provenance": self.calibration_provenance,
             "heldout_provenance": self.heldout_provenance,
+            "planning_signature_source": self.planning_signature_source,
+            "planning_signature_width": self.planning_signature_width,
+            "planning_signature_sha256": self.planning_signature_sha256,
+            "planning_signature_provenance": (self.planning_signature_provenance),
+            "cached_activation_rows_used_for_medoid_selection": (
+                self.planning_signature_source == "cached-post-swiglu"
+            ),
+            "cached_activation_rows_used_for_sparse_anchor_fit": (
+                self.planning_signature_source == "cached-post-swiglu"
+            ),
             "heldout_ready": self.heldout_ready,
             "similarity_products": self.similarity_products,
             "similarity_multiply_adds": self.similarity_multiply_adds,
-            "worst_case_similarity_products": (
-                self.worst_case_similarity_products
-            ),
+            "worst_case_similarity_products": (self.worst_case_similarity_products),
             "projection_fit_count": self.projection_fit_count,
             "projection_solve_cubic_work": self.projection_solve_cubic_work,
             "peak_similarity_elements": self.peak_similarity_elements,
@@ -430,16 +439,15 @@ class GatedMLPMultiAnchorPlan:
     def __post_init__(self) -> None:
         source = _positive_int(self.source_neurons, "source_neurons")
         target = _positive_int(self.target_neurons, "target_neurons")
-        anchor_limit = _positive_int(
-            self.anchors_per_source, "anchors_per_source"
-        )
+        anchor_limit = _positive_int(self.anchors_per_source, "anchors_per_source")
         if target > source:
             raise MultiAnchorClusterInvariantError(
                 "A multi-anchor plan cannot expand neurons."
             )
-        if len(self.medoid_source_neurons) != target or len(
-            set(self.medoid_source_neurons)
-        ) != target:
+        if (
+            len(self.medoid_source_neurons) != target
+            or len(set(self.medoid_source_neurons)) != target
+        ):
             raise MultiAnchorClusterInvariantError(
                 "The plan must contain one unique real source medoid per target."
             )
@@ -543,8 +551,7 @@ class GatedMLPMultiAnchorPlan:
 
         source = self._validated_source_index(source_index)
         medoid_lookup = {
-            medoid: target
-            for target, medoid in enumerate(self.medoid_source_neurons)
+            medoid: target for target, medoid in enumerate(self.medoid_source_neurons)
         }
         if source in medoid_lookup:
             return (medoid_lookup[source],)
@@ -601,8 +608,7 @@ class GatedMLPMultiAnchorPlan:
             normalized = _normalized_axis(source.ndim, axis, "down consumer")
             if int(source.shape[normalized]) != self.source_neurons:
                 raise MultiAnchorClusterShapeError(
-                    "down consumer axis must have width "
-                    f"{self.source_neurons}."
+                    f"down consumer axis must have width {self.source_neurons}."
                 )
             moved = source.movedim(normalized, 0)
             edge_sources = torch.repeat_interleave(
@@ -716,13 +722,10 @@ def _candidate_target_pool(
         radius += 1
 
     seed = (
-        (source + 1) * 2_654_435_761
-        + (primary_target + 1) * 2_246_822_519
+        (source + 1) * 2_654_435_761 + (primary_target + 1) * 2_246_822_519
     ) % target_count
     stride = (
-        (source + 1) * 1_103_515_245
-        + (primary_target + 1) * 12_345
-        + 1
+        (source + 1) * 1_103_515_245 + (primary_target + 1) * 12_345 + 1
     ) % target_count
     if stride == 0:
         stride = 1
@@ -832,9 +835,7 @@ def _fit_source_path(
     for anchor_count in range(1, anchors_per_source + 1):
         indices = torch.tensor(selected, dtype=torch.long)
         design = medoid_signatures.index_select(0, indices).T.contiguous()
-        if anchor_count == 1 and bool(
-            torch.equal(signal, design[:, 0])
-        ):
+        if anchor_count == 1 and bool(torch.equal(signal, design[:, 0])):
             coefficients = torch.ones(1, dtype=torch.float64)
         else:
             coefficients = _ridge_coefficients(
@@ -893,9 +894,7 @@ def _fit_source_path(
         raise MultiAnchorClusterInvariantError(
             "Every source path must have at least one bounded sparse fit."
         )
-    coefficient_tuple = tuple(
-        float(value) for value in accepted_coefficients.tolist()
-    )
+    coefficient_tuple = tuple(float(value) for value in accepted_coefficients.tolist())
     accepted_count = len(coefficient_tuple)
     return _SparseSourceFit(
         targets=tuple(selected[:accepted_count]),
@@ -947,18 +946,14 @@ def _reconstruction_diagnostics(
     relative_l2 = math.sqrt(residual_square_sum) / max(
         math.sqrt(source_square_sum), epsilon
     )
-    root_mean_square_error = math.sqrt(
-        residual_square_sum / int(post.numel())
-    )
+    root_mean_square_error = math.sqrt(residual_square_sum / int(post.numel()))
     consumer_relative: float | None = None
     if consumer_source_major is not None:
         if int(consumer_source_major.shape[0]) != source_neurons:
             raise MultiAnchorClusterShapeError(
                 "consumer directions do not cover every source neuron."
             )
-        edge_sources = torch.tensor(
-            _edge_source_indices(offsets), dtype=torch.long
-        )
+        edge_sources = torch.tensor(_edge_source_indices(offsets), dtype=torch.long)
         edge_targets = torch.tensor(anchor_targets, dtype=torch.long)
         edge_values = torch.tensor(coefficients, dtype=torch.float64)
         edge_consumer = consumer_source_major.index_select(0, edge_sources)
@@ -980,9 +975,7 @@ def _reconstruction_diagnostics(
         observation_rows=int(post.shape[0]),
         post_swiglu_relative_l2=relative_l2,
         post_swiglu_root_mean_square_error=root_mean_square_error,
-        mean_source_relative_l2=(
-            sum(source_relative_errors) / source_neurons
-        ),
+        mean_source_relative_l2=(sum(source_relative_errors) / source_neurons),
         maximum_source_relative_l2=max(source_relative_errors),
         zero_signal_source_count=zero_signal_count,
         consumer_output_relative_l2=consumer_relative,
@@ -1026,6 +1019,9 @@ def build_gated_mlp_multi_anchor_cluster_plan(
     max_workspace_elements: int = 16_000_000,
     heldout_post_swiglu_rows: Any | None = None,
     validation_post_swiglu_rows: Any | None = None,
+    structural_selection_signatures: Any | None = None,
+    structural_selection_signature_sha256: str | None = None,
+    structural_selection_provenance: str | None = None,
     calibration_provenance: str | None = None,
     heldout_provenance: str | None = None,
 ) -> GatedMLPMultiAnchorPlan:
@@ -1040,9 +1036,11 @@ def build_gated_mlp_multi_anchor_cluster_plan(
     Every target producer is copied from a real source medoid.  Every source
     owns at least one CSR edge to a target, each medoid owns exactly its one
     self-edge, and non-medoid paths use at most ``anchors_per_source`` targets.
-    Additional anchors are searched only inside a deterministic pool of at
-    most ``max_candidate_targets`` (hard-capped at 64), with the primary
-    cluster target always included first.
+    ``structural_selection_signatures`` may replace cached post-SwiGLU rows for
+    both medoid selection and sparse-anchor projection; cached rows then remain
+    diagnostic only.  Additional anchors are searched only inside a
+    deterministic pool of at most ``max_candidate_targets`` (hard-capped at
+    64), with the primary cluster target always included first.
     """
 
     torch = _require_torch()
@@ -1057,43 +1055,30 @@ def build_gated_mlp_multi_anchor_cluster_plan(
             "anchors_per_source exceeds the hard cap of "
             f"{_HARD_MAX_ANCHORS_PER_SOURCE}."
         )
-    candidate_limit = _positive_int(
-        max_candidate_targets, "max_candidate_targets"
-    )
+    candidate_limit = _positive_int(max_candidate_targets, "max_candidate_targets")
     if candidate_limit > _HARD_MAX_CANDIDATE_TARGETS:
         raise MultiAnchorClusterShapeError(
             "max_candidate_targets exceeds the hard cap of "
             f"{_HARD_MAX_CANDIDATE_TARGETS}."
         )
     ridge_value = _positive_float(ridge, "ridge")
-    coefficient_l1_limit = _positive_float(
-        max_coefficient_l1, "max_coefficient_l1"
-    )
+    coefficient_l1_limit = _positive_float(max_coefficient_l1, "max_coefficient_l1")
     iteration_limit = _positive_int(max_iterations, "max_iterations")
     distance_chunk = _positive_int(distance_chunk_size, "distance_chunk_size")
-    similarity_chunk = _positive_int(
-        similarity_chunk_size, "similarity_chunk_size"
-    )
-    similarity_limit = _positive_int(
-        max_similarity_products, "max_similarity_products"
-    )
-    projection_limit = _positive_int(
-        max_projection_fits, "max_projection_fits"
-    )
+    similarity_chunk = _positive_int(similarity_chunk_size, "similarity_chunk_size")
+    similarity_limit = _positive_int(max_similarity_products, "max_similarity_products")
+    projection_limit = _positive_int(max_projection_fits, "max_projection_fits")
     sparse_limit = _positive_int(max_sparse_entries, "max_sparse_entries")
-    workspace_limit = _positive_int(
-        max_workspace_elements, "max_workspace_elements"
-    )
+    workspace_limit = _positive_int(max_workspace_elements, "max_workspace_elements")
     calibration_source = _optional_provenance(
         calibration_provenance, "calibration_provenance"
     )
-    heldout_source = _optional_provenance(
-        heldout_provenance, "heldout_provenance"
+    heldout_source = _optional_provenance(heldout_provenance, "heldout_provenance")
+    structural_source = _optional_provenance(
+        structural_selection_provenance,
+        "structural_selection_provenance",
     )
-    if (
-        heldout_post_swiglu_rows is not None
-        and validation_post_swiglu_rows is not None
-    ):
+    if heldout_post_swiglu_rows is not None and validation_post_swiglu_rows is not None:
         raise MultiAnchorClusterShapeError(
             "Supply only one of heldout_post_swiglu_rows and "
             "validation_post_swiglu_rows."
@@ -1105,28 +1090,72 @@ def build_gated_mlp_multi_anchor_cluster_plan(
     )
 
     with torch.no_grad():
-        gate, up, post, observation_rows, inferred_source = (
-            _aligned_activation_rows(
-                torch,
-                gate_rows,
-                up_rows,
-                post_swiglu_rows,
-                source_neurons,
-            )
+        gate, up, post, observation_rows, inferred_source = _aligned_activation_rows(
+            torch,
+            gate_rows,
+            up_rows,
+            post_swiglu_rows,
+            source_neurons,
         )
         if target > inferred_source:
             raise MultiAnchorClusterShapeError(
                 "target_neurons cannot exceed source_neurons."
             )
+        if structural_selection_signatures is None:
+            if (
+                structural_selection_signature_sha256 is not None
+                or structural_source is not None
+            ):
+                raise MultiAnchorClusterShapeError(
+                    "Structural signature identity/provenance requires structural "
+                    "selection signatures."
+                )
+            planning_signatures = post.T.contiguous()
+            planning_signature_source = "cached-post-swiglu"
+            planning_signature_sha256 = gated_mlp_weight_signature_tensor_sha256(
+                planning_signatures
+            )
+        else:
+            if (
+                not isinstance(structural_selection_signature_sha256, str)
+                or len(structural_selection_signature_sha256) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in structural_selection_signature_sha256
+                )
+            ):
+                raise MultiAnchorClusterShapeError(
+                    "structural_selection_signature_sha256 must authenticate the "
+                    "supplied structural signatures."
+                )
+            planning_signatures = _planning_tensor(
+                torch,
+                structural_selection_signatures,
+                "structural_selection_signatures",
+            )
+            if (
+                planning_signatures.ndim != 2
+                or int(planning_signatures.shape[0]) != inferred_source
+            ):
+                raise MultiAnchorClusterShapeError(
+                    "structural_selection_signatures must have shape "
+                    "[source_neurons, structural_features]."
+                )
+            observed_structural_sha256 = gated_mlp_weight_signature_tensor_sha256(
+                planning_signatures
+            )
+            if observed_structural_sha256 != structural_selection_signature_sha256:
+                raise MultiAnchorClusterShapeError(
+                    "Supplied structural selection signature failed authentication."
+                )
+            planning_signature_source = "full-weight-complete-structural-signature"
+            planning_signature_sha256 = observed_structural_sha256
+        planning_feature_width = int(planning_signatures.shape[1])
         candidate_pool_size = min(candidate_limit, target)
-        effective_anchor_limit = min(
-            anchor_limit, target, candidate_pool_size
-        )
+        effective_anchor_limit = min(anchor_limit, target, candidate_pool_size)
         nonmedoid_count = inferred_source - target
         worst_similarity_products = (
-            nonmedoid_count
-            * max(0, effective_anchor_limit - 1)
-            * candidate_pool_size
+            nonmedoid_count * max(0, effective_anchor_limit - 1) * candidate_pool_size
         )
         worst_projection_fits = nonmedoid_count * effective_anchor_limit
         worst_sparse_entries = target + nonmedoid_count * effective_anchor_limit
@@ -1180,8 +1209,8 @@ def build_gated_mlp_multi_anchor_cluster_plan(
         peak_cluster_distance_elements = cluster_chunk * target
         peak_similarity_elements = min(similarity_chunk, candidate_pool_size)
         peak_fit_workspace = (
-            target * observation_rows
-            + observation_rows * effective_anchor_limit
+            target * planning_feature_width
+            + planning_feature_width * effective_anchor_limit
             + effective_anchor_limit * effective_anchor_limit
             + peak_similarity_elements
             + peak_cluster_distance_elements
@@ -1198,27 +1227,27 @@ def build_gated_mlp_multi_anchor_cluster_plan(
             contribution,
             target_neurons=target,
             source_neurons=inferred_source,
+            medoid_selection_signatures=(
+                planning_signatures
+                if structural_selection_signatures is not None
+                else None
+            ),
             ridge=ridge_value,
             max_iterations=iteration_limit,
             distance_chunk_size=cluster_chunk,
         )
-        post_signatures = post.T.contiguous()
         medoid_tensor = torch.tensor(
             medoid_plan.medoid_source_neurons, dtype=torch.long
         )
-        medoid_signatures = post_signatures.index_select(0, medoid_tensor)
-        mean_medoid_energy = float(
-            medoid_signatures.square().sum(dim=1).mean().item()
-        )
+        medoid_signatures = planning_signatures.index_select(0, medoid_tensor)
+        mean_medoid_energy = float(medoid_signatures.square().sum(dim=1).mean().item())
         effective_ridge = max(
             ridge_value * max(mean_medoid_energy, torch.finfo(torch.float64).tiny),
             torch.finfo(torch.float64).tiny,
         )
         medoid_lookup = {
             source: target_index
-            for target_index, source in enumerate(
-                medoid_plan.medoid_source_neurons
-            )
+            for target_index, source in enumerate(medoid_plan.medoid_source_neurons)
         }
         offsets = [0]
         anchor_targets: list[int] = []
@@ -1244,7 +1273,7 @@ def build_gated_mlp_multi_anchor_cluster_plan(
                 )
                 fit = _fit_source_path(
                     torch,
-                    post_signatures[source],
+                    planning_signatures[source],
                     medoid_signatures,
                     primary_target=medoid_plan.source_to_target[source],
                     candidate_targets=candidate_targets,
@@ -1281,8 +1310,7 @@ def build_gated_mlp_multi_anchor_cluster_plan(
             )
             if heldout_post.ndim != 2 or int(heldout_post.shape[1]) != inferred_source:
                 raise MultiAnchorClusterShapeError(
-                    "heldout_post_swiglu_rows must have shape "
-                    "[rows, source_neurons]."
+                    "heldout_post_swiglu_rows must have shape [rows, source_neurons]."
                 )
             heldout = _reconstruction_diagnostics(
                 torch,
@@ -1302,9 +1330,7 @@ def build_gated_mlp_multi_anchor_cluster_plan(
         for start, stop in zip(offset_tuple, offset_tuple[1:])
     )
     total_l1 = sum(coefficient_l1)
-    finite_diagnostics = calibration.finite and (
-        heldout is None or heldout.finite
-    )
+    finite_diagnostics = calibration.finite and (heldout is None or heldout.finite)
     medoids_self_map = all(
         offset_tuple[source + 1] - offset_tuple[source] == 1
         and target_tuple[offset_tuple[source]] == target_index
@@ -1346,8 +1372,7 @@ def build_gated_mlp_multi_anchor_cluster_plan(
             and projection_fit_count <= projection_limit
         ),
         hard_memory_bounds_respected=(
-            len(target_tuple) <= sparse_limit
-            and peak_fit_workspace <= workspace_limit
+            len(target_tuple) <= sparse_limit and peak_fit_workspace <= workspace_limit
         ),
         zero_gradient=True,
         deterministic=True,
@@ -1380,8 +1405,12 @@ def build_gated_mlp_multi_anchor_cluster_plan(
         heldout_diagnostics=heldout,
         calibration_provenance=calibration_source,
         heldout_provenance=heldout_source,
+        planning_signature_source=planning_signature_source,
+        planning_signature_width=planning_feature_width,
+        planning_signature_sha256=planning_signature_sha256,
+        planning_signature_provenance=structural_source,
         similarity_products=similarity_products,
-        similarity_multiply_adds=similarity_products * observation_rows,
+        similarity_multiply_adds=similarity_products * planning_feature_width,
         worst_case_similarity_products=worst_similarity_products,
         projection_fit_count=projection_fit_count,
         projection_solve_cubic_work=solve_cubic_work,
