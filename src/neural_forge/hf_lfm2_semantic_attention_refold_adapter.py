@@ -995,7 +995,7 @@ class _OutputWriterProposal:
 
 
 def _bfloat16_endpoint_equivalence(actual: Any, expected: Any) -> Mapping[str, Any]:
-    """Seal a strict one-BF16-ULP numerical replay envelope."""
+    """Seal exact same-device replay identity for the inherited V/O seed."""
 
     torch = _torch()
     observed = _finite_cpu_tensor(
@@ -1035,19 +1035,14 @@ def _bfloat16_endpoint_equivalence(actual: Any, expected: Any) -> Mapping[str, A
     ).clamp(-1.0, 1.0)
     mean_cosine = float(cosine.mean().item())
     worst_cosine = float(cosine.min().item())
-    unit_roundoff = float(torch.finfo(torch.bfloat16).eps)
-    normalized_rmse = rmse / max(reference_rms, 1.0)
-    normalized_maximum = maximum / max(reference_maximum, 1.0)
-    minimum_mean_cosine = 1.0 - 2.0 * unit_roundoff**2
-    minimum_worst_cosine = 1.0 - 8.0 * unit_roundoff**2
-    equivalent = (
-        normalized_rmse <= unit_roundoff
-        and normalized_maximum <= unit_roundoff
-        and mean_cosine >= minimum_mean_cosine
-        and worst_cosine >= minimum_worst_cosine
+    normalized_rmse = rmse / max(reference_rms, torch.finfo(torch.float64).tiny)
+    normalized_maximum = maximum / max(
+        reference_maximum,
+        torch.finfo(torch.float64).tiny,
     )
+    bitwise_equal = torch.equal(observed, reference)
     body = {
-        "schema": "neural-forge-lfm2-semantic-bfloat16-endpoint-equivalence-v1",
+        "schema": "neural-forge-lfm2-semantic-same-device-endpoint-identity-v1",
         "actual_sha256": _tensor_sha256(observed),
         "expected_sha256": _tensor_sha256(reference),
         "rmse": rmse,
@@ -1056,13 +1051,14 @@ def _bfloat16_endpoint_equivalence(actual: Any, expected: Any) -> Mapping[str, A
         "normalized_maximum_absolute_error": normalized_maximum,
         "mean_cosine_similarity": mean_cosine,
         "worst_cosine_similarity": worst_cosine,
-        "bfloat16_unit_roundoff": unit_roundoff,
-        "maximum_normalized_rmse": unit_roundoff,
-        "maximum_normalized_absolute_error": unit_roundoff,
-        "minimum_mean_cosine_similarity": minimum_mean_cosine,
-        "minimum_worst_cosine_similarity": minimum_worst_cosine,
-        "equivalent": equivalent,
-        "bitwise_cross_backend_identity_required": False,
+        "maximum_normalized_rmse": 0.0,
+        "maximum_normalized_absolute_error": 0.0,
+        "minimum_mean_cosine_similarity": 1.0,
+        "minimum_worst_cosine_similarity": 1.0,
+        "equivalent": bitwise_equal,
+        "same_execution_device": True,
+        "same_operation_order": True,
+        "bitwise_identity_required": True,
     }
     return MappingProxyType({**body, "equivalence_sha256": canonical_sha256(body)})
 

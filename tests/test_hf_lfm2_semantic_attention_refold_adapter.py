@@ -605,19 +605,15 @@ def _joint_case_from_factors(
     )
 
 
-def test_seed_endpoint_equivalence_accepts_one_bfloat16_ulp_but_not_loose_drift() -> (
-    None
-):
+def test_seed_endpoint_equivalence_requires_exact_same_device_replay() -> None:
     expected = torch.tensor([[[1.0, 2.0, 3.0, 4.0]]], dtype=torch.float64)
+    accepted = adapter._bfloat16_endpoint_equivalence(expected.clone(), expected)
     one_ulp = expected.clone()
     one_ulp[0, 0, 0] += torch.finfo(torch.bfloat16).eps
-    accepted = adapter._bfloat16_endpoint_equivalence(one_ulp, expected)
-    drifted = expected.clone()
-    drifted[0, 0, 0] += 0.25
-    rejected = adapter._bfloat16_endpoint_equivalence(drifted, expected)
+    rejected = adapter._bfloat16_endpoint_equivalence(one_ulp, expected)
 
     assert accepted["equivalent"] is True
-    assert accepted["bitwise_cross_backend_identity_required"] is False
+    assert accepted["bitwise_identity_required"] is True
     assert rejected["equivalent"] is False
     accepted_body = dict(accepted)
     assert accepted_body.pop("equivalence_sha256") == canonical_sha256(accepted_body)
