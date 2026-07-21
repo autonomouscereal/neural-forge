@@ -102,6 +102,9 @@ _SHORT_CONV_INSTALLATION_SCHEMA = (
     "neural-forge-lfm2-semantic-short-conv-installation-v1"
 )
 _MLP_INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-mlp-installation-v1"
+_MLP_FUNCTIONAL_PROVENANCE_SCHEMA = (
+    "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v2"
+)
 
 
 class Lfm2SemanticLayerStackRefoldError(RuntimeError):
@@ -2226,6 +2229,128 @@ def _replay_parent_mlp_functional_provenance(
     return _sealed(body)
 
 
+def _validated_mlp_source_functional_provenance(
+    value: Mapping[str, Any],
+    *,
+    layer_index: int,
+) -> Mapping[str, Any]:
+    """Authenticate the deliberately narrow v2 direct-parent FFN claim."""
+
+    receipt = _verify_sealed(value, "direct parent MLP functional provenance")
+    direct_tensor_names = {
+        "ffn_norm.weight",
+        "feed_forward.w1.weight",
+        "feed_forward.w3.weight",
+        "feed_forward.w2.weight",
+    }
+    endpoint_names = {
+        "mlp.input",
+        "mlp.gate",
+        "mlp.up",
+        "mlp.post_swiglu",
+        "residual.post_layer",
+    }
+    direct_digests = receipt.get("direct_tensor_sha256")
+    cached_digests = receipt.get("cached_endpoint_sha256")
+    replayed_digests = receipt.get("replayed_endpoint_sha256")
+    metrics = receipt.get("endpoint_equivalence_metrics")
+    policy = receipt.get("cross_kernel_equivalence_policy")
+    policy_valid = False
+    policy_sha256 = None
+    if isinstance(policy, Mapping):
+        policy_body = dict(policy)
+        policy_sha256 = policy_body.pop("policy_sha256", None)
+        policy_valid = bool(
+            policy.get("schema")
+            == "neural-forge-bf16-cross-kernel-equivalence-policy-v1"
+            and policy.get("authentication_only") is True
+            and policy.get("fold_selection_or_quality_objective") is False
+            and isinstance(policy_sha256, str)
+            and policy_sha256 == canonical_sha256(policy_body)
+        )
+
+    def is_digest(candidate: Any) -> bool:
+        return bool(
+            isinstance(candidate, str)
+            and len(candidate) == 64
+            and all(character in "0123456789abcdef" for character in candidate)
+        )
+
+    def exact_digest_mapping(candidate: Any, names: set[str]) -> bool:
+        return bool(
+            isinstance(candidate, Mapping)
+            and set(candidate) == names
+            and all(is_digest(digest) for digest in candidate.values())
+        )
+
+    if (
+        receipt.get("schema") != _MLP_FUNCTIONAL_PROVENANCE_SCHEMA
+        or receipt.get("layer_index") != layer_index
+        or any(
+            not is_digest(receipt.get(name))
+            for name in (
+                "cache_key",
+                "cache_parent_fingerprint",
+                "cache_manifest_sha256",
+                "parent_checkpoint_manifest_sha256",
+                "parent_session_open_receipt_sha256",
+                "parent_config_file_sha256",
+                "reconstructed_normalized_mlp_input_sha256",
+                "cached_normalized_mlp_input_sha256",
+                "semantic_endpoint_row_ids_sha256",
+            )
+        )
+        or not exact_digest_mapping(direct_digests, direct_tensor_names)
+        or not exact_digest_mapping(cached_digests, endpoint_names)
+        or not exact_digest_mapping(replayed_digests, endpoint_names)
+        or not isinstance(metrics, Mapping)
+        or set(metrics) != endpoint_names
+        or any(
+            not isinstance(metrics[name], Mapping)
+            or metrics[name].get("field") != name
+            or metrics[name].get("accepted") is not True
+            for name in endpoint_names
+        )
+        or policy_valid is not True
+        or not isinstance(receipt.get("execution_device"), str)
+        or not receipt["execution_device"]
+        or isinstance(receipt.get("parent_norm_epsilon"), bool)
+        or not isinstance(receipt.get("parent_norm_epsilon"), (int, float))
+        or not math.isfinite(float(receipt["parent_norm_epsilon"]))
+        or float(receipt["parent_norm_epsilon"]) <= 0.0
+        or not isinstance(receipt.get("all_cached_endpoints_bit_exact"), bool)
+        or receipt.get("all_cached_endpoints_within_authenticated_bf16_envelope")
+        is not True
+        or receipt.get(
+            "direct_parent_tensors_numerically_consistent_on_cached_endpoints"
+        )
+        is not True
+        or receipt.get("cached_mlp_input_is_normalized_evidence_source_of_truth")
+        is not True
+        or receipt.get("reconstructed_mlp_input_is_authentication_check_only")
+        is not True
+        or receipt.get("semantic_endpoint_scope_is_complete_tensor_identity_proof")
+        is not False
+        or receipt.get("cryptographic_parent_tensor_identity_proven_by_this_receipt")
+        is not False
+        or receipt.get("parent_checkpoint_files_hashed_by_session") is not True
+        or receipt.get("direct_tensor_digests_recorded") is not True
+        or receipt.get("expected_per_tensor_digest_comparison_performed") is not False
+        or receipt.get("numerical_equivalence_is_provenance_only") is not True
+        or receipt.get("numeric_parent_child_weight_match_objective") is not False
+        or receipt.get("parent_model_forward_calls") != 0
+        or receipt.get("training_steps") != 0
+        or isinstance(receipt.get("semantic_endpoint_rows"), bool)
+        or not isinstance(receipt.get("semantic_endpoint_rows"), int)
+        or receipt["semantic_endpoint_rows"] <= 0
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Direct parent MLP functional provenance does not satisfy the "
+            "authenticated cached-endpoint-only v2 contract."
+        )
+    return MappingProxyType(receipt)
+
+
 def _direct_mlp_inventory(
     *,
     inventory_type: type[Any],
@@ -2286,18 +2411,47 @@ def _direct_mlp_inventory(
             f"Child has no layer {layer_index} for parent FFN provenance replay."
         )
     execution_device, _execution_dtype = _layer_runtime(layers[layer_index])
-    functional_provenance = _replay_parent_mlp_functional_provenance(
-        cache=cache,
-        alignments=alignments,
-        parent=parent,
-        parent_session=parent_session,
+    functional_provenance = _validated_mlp_source_functional_provenance(
+        _replay_parent_mlp_functional_provenance(
+            cache=cache,
+            alignments=alignments,
+            parent=parent,
+            parent_session=parent_session,
+            layer_index=layer_index,
+            gate_weight=gate,
+            up_weight=up,
+            down_weight=down,
+            ffn_norm_weight=ffn_norm,
+            execution_device=execution_device,
+        ),
         layer_index=layer_index,
-        gate_weight=gate,
-        up_weight=up,
-        down_weight=down,
-        ffn_norm_weight=ffn_norm,
-        execution_device=execution_device,
     )
+    expected_direct_digests = {
+        "ffn_norm.weight": _tensor_sha256(ffn_norm),
+        "feed_forward.w1.weight": _tensor_sha256(gate),
+        "feed_forward.w3.weight": _tensor_sha256(up),
+        "feed_forward.w2.weight": _tensor_sha256(down),
+    }
+    if (
+        functional_provenance.get("cache_key") != cache.cache_key
+        or functional_provenance.get("cache_parent_fingerprint")
+        != cache.parent_fingerprint
+        or functional_provenance.get("cache_manifest_sha256")
+        != cache.manifest["manifest_sha256"]
+        or functional_provenance.get("parent_checkpoint_manifest_sha256")
+        != parent_session.manifest_sha256
+        or functional_provenance.get("parent_session_open_receipt_sha256")
+        != parent_session.open_receipt_sha256
+        or functional_provenance.get("parent_config_file_sha256")
+        != parent_session.config_file_sha256
+        or functional_provenance.get("parent_norm_epsilon")
+        != parent_session.norm_epsilon
+        or functional_provenance.get("direct_tensor_sha256") != expected_direct_digests
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Direct parent MLP functional provenance is not bound to the "
+            "selected cache and local checkpoint session."
+        )
     inventory = inventory_type(
         layer_index=layer_index,
         parent_model_identity_sha256=cache.parent_fingerprint,
@@ -2942,6 +3096,10 @@ def _layer_receipt(
     fir_receipt: Mapping[str, Any] | None,
     fold_compute_device: str,
 ) -> Mapping[str, Any]:
+    verified_mlp_source_provenance = _validated_mlp_source_functional_provenance(
+        mlp_source_provenance,
+        layer_index=layer_index,
+    )
     planting = mlp_receipt.get("source_derived_planting")
     execution = (
         planting.get("weight_complete_signature_compute_execution")
@@ -3025,10 +3183,52 @@ def _layer_receipt(
         "mlp_installed": mlp_receipt.get("installed") is True,
         "mlp_install_count": int(mlp_receipt.get("installed") is True),
         "mlp_source_functional_provenance_sha256": (
-            mlp_source_provenance["result_sha256"]
+            verified_mlp_source_provenance["result_sha256"]
         ),
-        "mlp_source_direct_tensors_functionally_bound_to_cache": (
-            mlp_source_provenance["direct_parent_tensors_functionally_bound_to_cache"]
+        "mlp_source_functional_provenance_schema": (
+            verified_mlp_source_provenance["schema"]
+        ),
+        "mlp_source_direct_tensors_numerically_consistent_on_cached_endpoints": (
+            verified_mlp_source_provenance[
+                "direct_parent_tensors_numerically_consistent_on_cached_endpoints"
+            ]
+        ),
+        "mlp_source_all_cached_endpoints_bit_exact": (
+            verified_mlp_source_provenance["all_cached_endpoints_bit_exact"]
+        ),
+        "mlp_source_all_cached_endpoints_within_authenticated_bf16_envelope": (
+            verified_mlp_source_provenance[
+                "all_cached_endpoints_within_authenticated_bf16_envelope"
+            ]
+        ),
+        "mlp_source_cross_kernel_equivalence_policy_sha256": (
+            verified_mlp_source_provenance["cross_kernel_equivalence_policy"][
+                "policy_sha256"
+            ]
+        ),
+        "mlp_source_semantic_endpoint_scope_is_complete_tensor_identity_proof": (
+            verified_mlp_source_provenance[
+                "semantic_endpoint_scope_is_complete_tensor_identity_proof"
+            ]
+        ),
+        "mlp_source_cryptographic_parent_tensor_identity_proven_by_this_receipt": (
+            verified_mlp_source_provenance[
+                "cryptographic_parent_tensor_identity_proven_by_this_receipt"
+            ]
+        ),
+        "mlp_source_parent_checkpoint_files_hashed_by_session": (
+            verified_mlp_source_provenance["parent_checkpoint_files_hashed_by_session"]
+        ),
+        "mlp_source_direct_tensor_digests_recorded": (
+            verified_mlp_source_provenance["direct_tensor_digests_recorded"]
+        ),
+        "mlp_source_expected_per_tensor_digest_comparison_performed": (
+            verified_mlp_source_provenance[
+                "expected_per_tensor_digest_comparison_performed"
+            ]
+        ),
+        "mlp_source_numerical_equivalence_is_provenance_only": (
+            verified_mlp_source_provenance["numerical_equivalence_is_provenance_only"]
         ),
         "model_state_after_mlp_sha256": (
             propagation_replay.captured_child_model_state_sha256
