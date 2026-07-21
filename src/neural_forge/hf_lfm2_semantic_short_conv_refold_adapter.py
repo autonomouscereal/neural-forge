@@ -255,8 +255,7 @@ class Lfm2SemanticShortConvReplayEvidence:
             or owners[0] != 0
             or owners[-1] != parent_length - 1
             or any(
-                right - left not in (0, 1)
-                for left, right in zip(owners, owners[1:])
+                right - left not in (0, 1) for left, right in zip(owners, owners[1:])
             )
             or sorted(set(owners)) != list(range(parent_length))
             or not endpoints
@@ -396,15 +395,9 @@ class Lfm2SemanticShortConvEndpointMetrics:
             "row_count": self.row_count,
             "endpoint_rmse": self.endpoint_rmse,
             "endpoint_relative_rmse": self.endpoint_relative_rmse,
-            "endpoint_maximum_absolute_error": (
-                self.endpoint_maximum_absolute_error
-            ),
-            "endpoint_cosine_similarity_mean": (
-                self.endpoint_cosine_similarity_mean
-            ),
-            "endpoint_cosine_similarity_worst": (
-                self.endpoint_cosine_similarity_worst
-            ),
+            "endpoint_maximum_absolute_error": (self.endpoint_maximum_absolute_error),
+            "endpoint_cosine_similarity_mean": (self.endpoint_cosine_similarity_mean),
+            "endpoint_cosine_similarity_worst": (self.endpoint_cosine_similarity_worst),
         }
 
 
@@ -421,11 +414,9 @@ class _BalancedCase:
             "balanced endpoint row weights",
             ndim=2,
         ).to(torch.float64)
-        if (
-            tuple(weights.shape)
-            != tuple(self.evidence.endpoint_row_sqrt_weights.shape)
-            or bool((weights <= 0.0).any().item())
-        ):
+        if tuple(weights.shape) != tuple(
+            self.evidence.endpoint_row_sqrt_weights.shape
+        ) or bool((weights <= 0.0).any().item()):
             raise Lfm2SemanticShortConvRefoldError(
                 "Balanced endpoint weights must remain positive and row aligned."
             )
@@ -559,7 +550,10 @@ def _suffix_state(parameters: Mapping[str, Any], layer_index: int) -> Mapping[st
     prefix = f"model.layers.{layer_index}.conv."
     return MappingProxyType(
         {
-            name.removeprefix(prefix): value.detach().to(device="cpu").contiguous().clone()
+            name.removeprefix(prefix): value.detach()
+            .to(device="cpu")
+            .contiguous()
+            .clone()
             for name, value in parameters.items()
         }
     )
@@ -659,9 +653,7 @@ def _balance_partition(
         ],
         "longer_trajectories_receive_more_total_weight": False,
     }
-    return cases, MappingProxyType(
-        {**body, "balance_sha256": canonical_sha256(body)}
-    )
+    return cases, MappingProxyType({**body, "balance_sha256": canonical_sha256(body)})
 
 
 def _apply_affine(inputs: Any, weight: Any, bias: Any | None) -> Any:
@@ -791,8 +783,7 @@ def _nonregressing(
     tolerance: float,
 ) -> bool:
     return (
-        candidate.endpoint_relative_rmse
-        <= baseline.endpoint_relative_rmse + tolerance
+        candidate.endpoint_relative_rmse <= baseline.endpoint_relative_rmse + tolerance
         and candidate.endpoint_maximum_absolute_error
         <= baseline.endpoint_maximum_absolute_error + tolerance
         and candidate.endpoint_cosine_similarity_mean + tolerance
@@ -1011,14 +1002,12 @@ def _compile_writer_candidate(
                 .contiguous()
             )
         if all(
-            torch.equal(state[name], incumbent_state[name])
-            for name in incumbent_state
+            torch.equal(state[name], incumbent_state[name]) for name in incumbent_state
         ):
             continue
         metrics = _endpoint_metrics(fit_cases, state)
         if (
-            metrics.endpoint_relative_rmse
-            < baseline.endpoint_relative_rmse - 1e-8
+            metrics.endpoint_relative_rmse < baseline.endpoint_relative_rmse - 1e-8
             and _nonregressing(metrics, baseline, tolerance=1e-8)
         ):
             frontier.append((metrics.endpoint_relative_rmse, alpha, state, metrics))
@@ -1043,7 +1032,9 @@ def _compile_writer_candidate(
                 "selected_alpha": None,
             }
         )
-    _score, alpha, state, metrics = min(frontier, key=lambda value: (value[0], value[1]))
+    _score, alpha, state, metrics = min(
+        frontier, key=lambda value: (value[0], value[1])
+    )
     report = {
         **base_report,
         "status": "fit-proposal",
@@ -1084,9 +1075,7 @@ def _candidate_report(
         "candidate_state_sha256": candidate.state_sha256,
         "provenance": dict(candidate.provenance),
         "fit_improved": fit_improved,
-        "partition_metrics": {
-            name: metrics[name].as_dict() for name in metrics
-        },
+        "partition_metrics": {name: metrics[name].as_dict() for name in metrics},
         "partition_nonregression": checks,
         "eligible_before_validation": fit_improved and all(checks.values()),
         "validation_inspected": False,

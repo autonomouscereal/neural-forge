@@ -51,13 +51,9 @@ class _ToyShortConv(torch.nn.Module):
         with torch.no_grad():
             self.in_proj.weight.zero_()
             self.in_proj.bias.zero_()
-            self.in_proj.weight[:2].copy_(
-                torch.eye(2, dtype=torch.bfloat16)
-            )
+            self.in_proj.weight[:2].copy_(torch.eye(2, dtype=torch.bfloat16))
             self.in_proj.bias[2:4].fill_(1.0)
-            self.in_proj.weight[4:].copy_(
-                torch.eye(2, dtype=torch.bfloat16)
-            )
+            self.in_proj.weight[4:].copy_(torch.eye(2, dtype=torch.bfloat16))
             self.conv.weight.copy_(
                 torch.tensor(
                     [[[0.25, 0.75]], [[-0.125, 0.625]]],
@@ -107,9 +103,9 @@ def _patch_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _operator_context(model: _ToyModel, inputs: torch.Tensor) -> torch.Tensor:
     operator = model.model.layers[0].conv
-    projected = inputs.to(torch.float64) @ operator.in_proj.weight.detach().to(
-        torch.float64
-    ).T
+    projected = (
+        inputs.to(torch.float64) @ operator.in_proj.weight.detach().to(torch.float64).T
+    )
     projected = projected + operator.in_proj.bias.detach().to(torch.float64)
     b_value, c_value, x_value = projected.chunk(3, dim=-1)
     gated = (b_value * x_value).transpose(1, 2)
@@ -166,10 +162,9 @@ def _evidence_bank(
         parent_post = pre[:, -1:, :].to(torch.float64) + branch
         generator = torch.Generator().manual_seed(1000 + batch_index)
         parent_b = torch.randn((1, 3, 4), generator=generator).to(torch.bfloat16)
-        parent_c = (
-            0.75
-            + 0.1 * torch.randn((1, 3, 4), generator=generator)
-        ).to(torch.bfloat16)
+        parent_c = (0.75 + 0.1 * torch.randn((1, 3, 4), generator=generator)).to(
+            torch.bfloat16
+        )
         parent_x = torch.randn((1, 3, 4), generator=generator).to(torch.bfloat16)
         result.append(
             Lfm2SemanticShortConvReplayEvidence(
@@ -255,7 +250,9 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
     reports = receipt["candidate_reports_before_validation"]
     assert "full-source-structural" in reports
     assert reports["full-source-structural"]["provenance"]["full_source_coverage"]
-    assert reports["full-source-structural"]["provenance"]["source_channels_dropped"] == 0
+    assert (
+        reports["full-source-structural"]["provenance"]["source_channels_dropped"] == 0
+    )
     assert receipt["inserted_target_rows_parent_exact"] is False
     assert receipt["inserted_target_rows_used_for_endpoint_fit"] is False
     assert receipt["inserted_target_row_count"] == len(evidence)
@@ -274,9 +271,9 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
         writer_selection = reports["incumbent-producer-output-writer"][
             "partition_metrics"
         ]["selection"]
-        structural_selection = reports["full-source-structural"][
-            "partition_metrics"
-        ]["selection"]
+        structural_selection = reports["full-source-structural"]["partition_metrics"][
+            "selection"
+        ]
         assert (
             writer_selection["endpoint_relative_rmse"]
             <= structural_selection["endpoint_relative_rmse"] + 1e-8
@@ -317,8 +314,7 @@ def test_validation_can_only_reject_frozen_candidate_without_mutation() -> None:
     model = _ToyModel()
     evidence = _evidence_bank(model, validation_matches_incumbent=True)
     before = {
-        name: parameter.detach().clone()
-        for name, parameter in model.named_parameters()
+        name: parameter.detach().clone() for name, parameter in model.named_parameters()
     }
 
     with pytest.raises(
@@ -340,8 +336,7 @@ def test_stale_or_mutated_evidence_fails_before_install() -> None:
     with torch.no_grad():
         model.model.layers[0].conv.out_proj.bias.add_(1.0)
     changed = {
-        name: parameter.detach().clone()
-        for name, parameter in model.named_parameters()
+        name: parameter.detach().clone() for name, parameter in model.named_parameters()
     }
 
     with pytest.raises(
@@ -373,8 +368,7 @@ def test_transaction_restores_exact_bytes_after_partial_copy_failure() -> None:
     )
     state["conv.weight"] = state["conv.weight"][:, :, :1]
     before = {
-        name: parameter.detach().clone()
-        for name, parameter in model.named_parameters()
+        name: parameter.detach().clone() for name, parameter in model.named_parameters()
     }
 
     with pytest.raises(
@@ -408,9 +402,7 @@ def test_evidence_rejects_contraction_and_clones_caller_tensors() -> None:
         source_capability_sha256=evidence.source_capability_sha256,
         source_history_sha256=evidence.source_history_sha256,
         compiler_lineage_sha256=evidence.compiler_lineage_sha256,
-        captured_child_model_state_sha256=(
-            evidence.captured_child_model_state_sha256
-        ),
+        captured_child_model_state_sha256=(evidence.captured_child_model_state_sha256),
         target_to_parent_span_owner_positions=(0, 1, 1, 2),
         endpoint_target_positions=(3,),
         actual_child_operator_input_history=(
