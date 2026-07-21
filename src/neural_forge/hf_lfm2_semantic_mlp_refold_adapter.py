@@ -473,6 +473,8 @@ class Lfm2SemanticMlpEndpointMetrics:
     endpoint_rows: int
     endpoint_rmse: float
     endpoint_relative_rmse: float
+    endpoint_maximum_absolute_error: float
+    endpoint_target_maximum_absolute_value: float
     mean_endpoint_cosine: float
     minimum_endpoint_cosine: float
 
@@ -481,6 +483,10 @@ class Lfm2SemanticMlpEndpointMetrics:
             "endpoint_rows": self.endpoint_rows,
             "endpoint_rmse": self.endpoint_rmse,
             "endpoint_relative_rmse": self.endpoint_relative_rmse,
+            "endpoint_maximum_absolute_error": (self.endpoint_maximum_absolute_error),
+            "endpoint_target_maximum_absolute_value": (
+                self.endpoint_target_maximum_absolute_value
+            ),
             "mean_endpoint_cosine": self.mean_endpoint_cosine,
             "minimum_endpoint_cosine": self.minimum_endpoint_cosine,
         }
@@ -855,6 +861,10 @@ def _metrics(
         endpoint_rows=len(evidence),
         endpoint_rmse=rmse,
         endpoint_relative_rmse=rmse / max(target_rms, 1e-300),
+        endpoint_maximum_absolute_error=float(
+            (predictions - targets).abs().max().item()
+        ),
+        endpoint_target_maximum_absolute_value=float(targets.abs().max().item()),
         mean_endpoint_cosine=float((cosine * weights).sum().item()),
         minimum_endpoint_cosine=float(cosine.min().item()),
     )
@@ -880,8 +890,14 @@ def _nonregressing(
         1e-12,
         rmse_relative_tolerance * max(baseline.endpoint_rmse, 1e-12),
     )
+    maximum_absolute_error_limit = baseline.endpoint_maximum_absolute_error + max(
+        1e-12,
+        rmse_relative_tolerance
+        * max(baseline.endpoint_target_maximum_absolute_value, 1e-12),
+    )
     return (
         candidate.endpoint_rmse <= rmse_limit
+        and candidate.endpoint_maximum_absolute_error <= maximum_absolute_error_limit
         and candidate.mean_endpoint_cosine + cosine_tolerance
         >= baseline.mean_endpoint_cosine
         and candidate.minimum_endpoint_cosine + cosine_tolerance
@@ -1237,12 +1253,13 @@ def prepare_lfm2_semantic_mlp_postfold(
     full_prevalidation = all(
         eligibility[full.role][name] for name in ("fit_check", "selection")
     )
-    if writer_changed and writer_prevalidation:
+    if (
+        writer_changed
+        and writer_prevalidation
+        and (not full_prevalidation or writer_selection_vs_full)
+    ):
         selected = writer
-        rationale = (
-            "simplest-w2-only-candidate-nonregressing-versus-incumbent;"
-            "full-candidate-heldout-comparison-recorded"
-        )
+        rationale = "simplest-w2-only-candidate-nonregressing-versus-incumbent-and-full"
     elif full_changed and full_prevalidation:
         selected = full
         rationale = "full-fold-selection-quality-exceeded-conservative-writer"

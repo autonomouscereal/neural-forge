@@ -231,6 +231,95 @@ def _prepare(
     )
 
 
+def _material_full_win_case(model: _Target):
+    """Build repeated heldouts where W2 helps but changed producers help more."""
+
+    source = _source()
+    state_sha = fingerprint_lfm2_parent(model).identity_sha256
+    mlp = model.model.layers[0].feed_forward
+    desired = {
+        "w1.weight": (
+            mlp.w1.weight.detach().to(torch.float32)
+            + torch.tensor(
+                [
+                    [0.12, -0.08, 0.06, 0.04],
+                    [-0.05, 0.10, 0.03, -0.07],
+                    [0.08, 0.02, -0.09, 0.11],
+                ]
+            )
+        ).to(torch.bfloat16),
+        "w3.weight": (
+            mlp.w3.weight.detach().to(torch.float32)
+            + torch.tensor(
+                [
+                    [-0.07, 0.09, 0.04, -0.05],
+                    [0.08, 0.03, -0.06, 0.10],
+                    [-0.04, 0.07, 0.12, -0.08],
+                ]
+            )
+        ).to(torch.bfloat16),
+        "w2.weight": (
+            mlp.w2.weight.detach().to(torch.float32)
+            + torch.tensor(
+                [
+                    [0.03, -0.02, 0.01],
+                    [-0.01, 0.02, 0.03],
+                    [0.02, 0.01, -0.025],
+                    [0.01, -0.03, 0.02],
+                ]
+            )
+        ).to(torch.bfloat16),
+    }
+    inputs = (
+        torch.tensor([[0.75, -0.50, 0.25, 1.00]], dtype=torch.bfloat16),
+        torch.tensor([[-0.40, 0.80, 0.50, -0.20]], dtype=torch.bfloat16),
+        torch.tensor([[0.30, 0.20, -0.90, 0.70]], dtype=torch.bfloat16),
+        torch.tensor([[1.00, 0.40, 0.10, -0.60]], dtype=torch.bfloat16),
+    )
+    child_pre = torch.tensor([[0.20, -0.10, 0.30, 0.05]], dtype=torch.bfloat16)
+    values = []
+    for batch_index in range(8):
+        child_input = inputs[batch_index % len(inputs)]
+        input64 = child_input.to(torch.float64)
+        desired_post = torch.nn.functional.silu(
+            input64 @ desired["w1.weight"].to(torch.float64).T
+        ) * (input64 @ desired["w3.weight"].to(torch.float64).T)
+        endpoint = (
+            child_pre.to(torch.float64)
+            + desired_post @ desired["w2.weight"].to(torch.float64).T
+        ).to(torch.bfloat16)
+        parent_gate = (input64 @ source.gate_weight.to(torch.float64).T).to(
+            torch.bfloat16
+        )
+        parent_up = (input64 @ source.up_weight.to(torch.float64).T).to(torch.bfloat16)
+        parent_post = (
+            torch.nn.functional.silu(parent_gate.to(torch.float64))
+            * parent_up.to(torch.float64)
+        ).to(torch.bfloat16)
+        values.append(
+            adapter.Lfm2SemanticMlpEndpointEvidence(
+                batch_index=batch_index,
+                trajectory_sha256=_sha(f"full-win-trajectory:{batch_index}"),
+                phase_index=0,
+                phase_sha256=_sha(f"full-win-phase:{batch_index}"),
+                layer_index=0,
+                alignment_sha256=_sha(f"full-win-alignment:{batch_index}"),
+                cache_key=_sha("cache"),
+                cache_manifest_sha256=_sha("cache-manifest"),
+                bridge_artifact_sha256=_sha("bridge"),
+                captured_child_model_state_sha256=state_sha,
+                source_inventory=source,
+                parent_gate=parent_gate,
+                parent_up=parent_up,
+                parent_post_swiglu=parent_post,
+                actual_child_mlp_input=child_input,
+                actual_child_pre_mlp_residual=child_pre,
+                parent_post_mlp_residual_target_space=endpoint,
+            )
+        )
+    return tuple(values), desired
+
+
 def test_typed_source_and_endpoint_seals_reject_inserted_rows() -> None:
     model = _Target()
     source = _source()
@@ -280,6 +369,7 @@ def test_prepare_freezes_two_fit_only_candidates_and_prefers_writer() -> None:
         for partition in ("fit", "fit_check", "selection", "validation"):
             assert metrics[role][partition]["endpoint_rows"] > 0
             assert "endpoint_rmse" in metrics[role][partition]
+            assert "endpoint_maximum_absolute_error" in metrics[role][partition]
             assert "mean_endpoint_cosine" in metrics[role][partition]
     heldout = prepared.selection_receipt["heldout_nonregression"][
         "incumbent-producer-w2"
@@ -289,6 +379,37 @@ def test_prepare_freezes_two_fit_only_candidates_and_prefers_writer() -> None:
         "selection": True,
         "validation": True,
     }
+
+
+def test_materially_better_full_candidate_wins_after_frozen_selection(
+    monkeypatch,
+) -> None:
+    model = _Target()
+    evidence, desired = _material_full_win_case(model)
+
+    def exact_full_candidate(*_args, **_kwargs):
+        return desired, {
+            "solver": "test-authenticated-exact-full-candidate",
+            "cluster_solve": True,
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    monkeypatch.setattr(adapter, "_full_candidate_state", exact_full_candidate)
+    prepared = _prepare(model, evidence)
+    gates = prepared.selection_receipt
+    assert gates["heldout_nonregression"]["incumbent-producer-w2"] == {
+        "fit_check": True,
+        "selection": True,
+        "validation": True,
+    }
+    assert gates["writer_selection_nonregressing_versus_full"] is False
+    assert prepared.selected_role == "full-w1-w3-w2"
+    assert (
+        prepared.full_candidate.metrics["selection"].endpoint_maximum_absolute_error
+        < prepared.writer_candidate.metrics["selection"].endpoint_maximum_absolute_error
+    )
+    assert gates["candidate_frozen_before_validation"] is True
+    assert gates["validation_triggered_refit"] is False
 
 
 def test_transactional_install_preserves_topology_identity_and_gradients() -> None:
