@@ -847,8 +847,17 @@ def _load_parent_layer_trajectories(
                     row_values["short_conv.fir_has_bias"] = fir[2]
                 if include_final_norm:
                     output_key = f"{phase.phase}.output.final_norm_output"
+                    final_norm = raw[output_key]
+                    final_norm_history = _extend_parent_history(
+                        histories.get("output.final_norm_output"),
+                        final_norm,
+                        expected_full_tokens=phase.donor_full_prefix_tokens,
+                        field_name=output_key,
+                    )
+                    histories["output.final_norm_output"] = final_norm_history
+                    history_values["output.final_norm_output"] = final_norm_history
                     row_values["output.final_norm_output"] = (
-                        raw[output_key].contiguous().clone()
+                        final_norm.contiguous().clone()
                     )
                 phase_rows[phase.phase] = MappingProxyType(row_values)
                 phase_histories[phase.phase] = MappingProxyType(history_values)
@@ -2200,51 +2209,151 @@ def _build_mlp_evidence(
         batch = alignment.source_batch_index
         replay = child_bank.replay_by_batch[batch]
         trajectory = parent[batch]
-        for phase_index, phase in enumerate(alignment.phases):
-            target_position = _semantic_terminal_target_position(phase)
-            index = torch.tensor((target_position,), dtype=torch.long)
-            rows = trajectory.phase_rows[phase.phase]
+        prior_target_tokens = 0
+        prior_donor_tokens = 0
+        evidence_ordinal = 0
+        phase_count = len(alignment.phases)
+        if phase_count <= 0:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Semantic MLP trajectory {batch} has no causal phases."
+            )
+        for source_phase_index, phase in enumerate(alignment.phases):
+            target_tokens = int(phase.target_full_prefix_tokens)
+            donor_tokens = int(phase.donor_full_prefix_tokens)
+            boundary = tuple(phase.target_to_donor_boundary_positions)
+            prior_boundary_changed = bool(
+                source_phase_index > 0
+                and boundary[:prior_target_tokens]
+                != tuple(
+                    alignment.phases[
+                        source_phase_index - 1
+                    ].target_to_donor_boundary_positions
+                )
+            )
+            if (
+                target_tokens <= prior_target_tokens
+                or donor_tokens <= prior_donor_tokens
+                or len(boundary) != target_tokens
+                or prior_boundary_changed
+            ):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Semantic MLP phase {batch}:{phase.phase} is not one "
+                    "append-only causal prefix."
+                )
+            target_positions = tuple(
+                position
+                for position in range(prior_target_tokens, target_tokens)
+                if boundary[position] is not None
+            )
+            donor_positions = tuple(
+                int(boundary[position]) for position in target_positions
+            )
+            expected_donor_positions = tuple(range(prior_donor_tokens, donor_tokens))
+            if donor_positions != expected_donor_positions:
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Semantic MLP phase {batch}:{phase.phase} does not expose "
+                    "every newly introduced parent-exact causal boundary once."
+                )
+            # The terminal check independently proves that the newest cached
+            # parent state and the newest child prefix end at the same exact
+            # byte boundary.  Inserted target rows never enter the evidence.
+            if target_positions[-1] != _semantic_terminal_target_position(phase):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Semantic MLP phase {batch}:{phase.phase} lacks an exact "
+                    "terminal row in its newly introduced causal suffix."
+                )
+
+            histories = trajectory.phase_histories[phase.phase]
+            required_histories = (
+                "mlp.gate",
+                "mlp.up",
+                "mlp.post_swiglu",
+                "residual.post_layer",
+            )
+            if any(name not in histories for name in required_histories):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Semantic MLP phase {batch}:{phase.phase} lacks complete "
+                    "cached causal histories."
+                )
+            donor_index = torch.tensor(donor_positions, dtype=torch.long)
+            target_index = torch.tensor(target_positions, dtype=torch.long)
+            parent_gate = histories["mlp.gate"].index_select(1, donor_index)[0]
+            parent_up = histories["mlp.up"].index_select(1, donor_index)[0]
+            parent_post = histories["mlp.post_swiglu"].index_select(1, donor_index)[0]
             parent_post_layer = (
-                rows["residual.post_layer"][:, -1:, :].to(torch.float64) @ chart
+                histories["residual.post_layer"]
+                .index_select(1, donor_index)
+                .to(torch.float64)
+                @ chart
             ).to(torch.bfloat16)[0]
-            terminal = None
+            child_input = replay.mlp_input.index_select(1, target_index)[0]
+            child_pre = replay.post_operator_residual.index_select(1, target_index)[0]
+            terminal_rows = None
             if final_layer:
-                parent_final_norm = rows.get("output.final_norm_output")
+                parent_final_norm = histories.get("output.final_norm_output")
                 if parent_final_norm is None:
                     raise Lfm2SemanticLayerStackRefoldError(
-                        "Final-layer MLP evidence lacks cached parent final norm."
+                        "Final-layer MLP evidence lacks cached parent final-norm "
+                        "history."
                     )
-                terminal = (
-                    parent_final_norm[:, -1:, :].to(torch.float64) @ base_encoder
+                terminal_rows = (
+                    parent_final_norm.index_select(1, donor_index).to(torch.float64)
+                    @ base_encoder
                 ).to(torch.bfloat16)[0]
-            result.append(
-                evidence_type(
-                    batch_index=batch,
-                    trajectory_sha256=alignment.alignment_sha256,
-                    phase_index=phase_index,
-                    phase_sha256=phase.semantic_phase_sha256,
-                    layer_index=layer_index,
-                    alignment_sha256=phase.alignment_sha256,
-                    cache_key=cache.cache_key,
-                    cache_manifest_sha256=manifest_sha,
-                    bridge_artifact_sha256=bridge.artifact_sha256,
-                    captured_child_model_state_sha256=(
-                        child_bank.captured_child_model_state_sha256
-                    ),
-                    source_inventory=source_inventory,
-                    parent_gate=rows["mlp.gate"][:, -1:, :][0],
-                    parent_up=rows["mlp.up"][:, -1:, :][0],
-                    parent_post_swiglu=(rows["mlp.post_swiglu"][:, -1:, :][0]),
-                    actual_child_mlp_input=(replay.mlp_input.index_select(1, index)[0]),
-                    actual_child_pre_mlp_residual=(
-                        replay.post_operator_residual.index_select(1, index)[0]
-                    ),
-                    parent_post_mlp_residual_target_space=parent_post_layer,
-                    parent_final_norm_output_target_space=terminal,
-                    sample_weight=1.0 / len(alignment.phases),
-                    parent_exact_semantic_endpoint=True,
-                    inserted_target_row=False,
+
+            row_count = len(target_positions)
+            row_weight = 1.0 / (phase_count * row_count)
+            for row_offset, (target_position, donor_position) in enumerate(
+                zip(target_positions, donor_positions, strict=True)
+            ):
+                row_phase_sha256 = canonical_sha256(
+                    {
+                        "schema": (
+                            "neural-forge-lfm2-semantic-mlp-causal-boundary-row-v1"
+                        ),
+                        "source_semantic_phase_sha256": (phase.semantic_phase_sha256),
+                        "source_phase_index": source_phase_index,
+                        "target_position": target_position,
+                        "donor_position": donor_position,
+                    }
                 )
+                row = slice(row_offset, row_offset + 1)
+                result.append(
+                    evidence_type(
+                        batch_index=batch,
+                        trajectory_sha256=alignment.alignment_sha256,
+                        phase_index=evidence_ordinal,
+                        phase_sha256=row_phase_sha256,
+                        layer_index=layer_index,
+                        alignment_sha256=phase.alignment_sha256,
+                        cache_key=cache.cache_key,
+                        cache_manifest_sha256=manifest_sha,
+                        bridge_artifact_sha256=bridge.artifact_sha256,
+                        captured_child_model_state_sha256=(
+                            child_bank.captured_child_model_state_sha256
+                        ),
+                        source_inventory=source_inventory,
+                        parent_gate=parent_gate[row],
+                        parent_up=parent_up[row],
+                        parent_post_swiglu=parent_post[row],
+                        actual_child_mlp_input=child_input[row],
+                        actual_child_pre_mlp_residual=child_pre[row],
+                        parent_post_mlp_residual_target_space=(parent_post_layer[row]),
+                        parent_final_norm_output_target_space=(
+                            None if terminal_rows is None else terminal_rows[row]
+                        ),
+                        sample_weight=row_weight,
+                        parent_exact_semantic_endpoint=True,
+                        inserted_target_row=False,
+                    )
+                )
+                evidence_ordinal += 1
+            prior_target_tokens = target_tokens
+            prior_donor_tokens = donor_tokens
+        if evidence_ordinal != prior_donor_tokens:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Semantic MLP trajectory {batch} emitted {evidence_ordinal} exact "
+                f"rows for {prior_donor_tokens} cached parent states."
             )
     return tuple(result)
 

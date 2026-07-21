@@ -16,6 +16,7 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_semantic_mlp_refold_adapter import (  # noqa: E402
     Lfm2DirectLocalMlpSourceInventory,
+    Lfm2SemanticMlpEndpointEvidence,
 )
 from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
     TiedCausalInterfaceFold,
@@ -1155,6 +1156,208 @@ def test_attention_decode_uses_reconstructed_history_not_suffix_rows(
         rtol=0,
         atol=0,
     )
+
+
+def test_parent_loader_reconstructs_complete_final_norm_history() -> None:
+    phases = (
+        SimpleNamespace(
+            phase="prefill",
+            donor_full_prefix_tokens=2,
+            target_full_prefix_tokens=2,
+            alignment_sha256="1" * 64,
+        ),
+        SimpleNamespace(
+            phase="decode.000",
+            donor_full_prefix_tokens=3,
+            target_full_prefix_tokens=3,
+            alignment_sha256="2" * 64,
+        ),
+    )
+    alignment = SimpleNamespace(
+        source_batch_index=0,
+        alignment_sha256="3" * 64,
+        phases=phases,
+    )
+    names = {
+        f"{phase.phase}.layer.000.{field}"
+        for phase in phases
+        for field in stack._COMMON_PARENT_FIELDS
+    }
+    names.update(f"{phase.phase}.output.final_norm_output" for phase in phases)
+    tensors = {}
+    for field_index, field in enumerate(stack._COMMON_PARENT_FIELDS):
+        full = torch.arange(6, dtype=torch.bfloat16).reshape(1, 3, 2) + 10 * field_index
+        tensors[f"prefill.layer.000.{field}"] = full[:, :2]
+        tensors[f"decode.000.layer.000.{field}"] = full[:, 2:]
+    final_norm = torch.tensor(
+        [[[101.0, 102.0], [103.0, 104.0], [105.0, 106.0]]],
+        dtype=torch.bfloat16,
+    )
+    tensors["prefill.output.final_norm_output"] = final_norm[:, :2]
+    tensors["decode.000.output.final_norm_output"] = final_norm[:, 2:]
+
+    class Session:
+        batch_references = (
+            SimpleNamespace(index=0, ordered_tensor_names=tuple(sorted(names))),
+        )
+
+        def load_selected_tensors(self, *_args):
+            return SimpleNamespace(tensors=tensors)
+
+        def release_selected_tensors(self, _payload):
+            pass
+
+    result = stack._load_parent_layer_trajectories(
+        Session(),
+        alignments=(alignment,),
+        layer_index=0,
+        operator_kind="full_attention",
+        include_final_norm=True,
+    )[0]
+
+    torch.testing.assert_close(
+        result.phase_histories["decode.000"]["output.final_norm_output"],
+        final_norm,
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        result.final_histories["output.final_norm_output"],
+        final_norm,
+        rtol=0,
+        atol=0,
+    )
+
+
+def test_mlp_evidence_expands_exact_boundaries_and_skips_insertions() -> None:
+    phases = (
+        SimpleNamespace(
+            phase="prefill",
+            donor_full_prefix_tokens=3,
+            target_full_prefix_tokens=4,
+            target_to_donor_boundary_positions=(0, None, 1, 2),
+            semantic_phase_sha256="4" * 64,
+            alignment_sha256="5" * 64,
+        ),
+        SimpleNamespace(
+            phase="decode.000",
+            donor_full_prefix_tokens=4,
+            target_full_prefix_tokens=6,
+            target_to_donor_boundary_positions=(0, None, 1, 2, None, 3),
+            semantic_phase_sha256="6" * 64,
+            alignment_sha256="7" * 64,
+        ),
+    )
+    alignment = SimpleNamespace(
+        source_batch_index=0,
+        alignment_sha256="8" * 64,
+        phases=phases,
+    )
+    parent_gate = torch.arange(16, dtype=torch.bfloat16).reshape(1, 4, 4)
+    parent_up = parent_gate + 20
+    parent_post = parent_gate + 40
+    parent_layer = torch.arange(12, dtype=torch.bfloat16).reshape(1, 4, 3)
+    parent_norm = parent_layer + 60
+
+    def histories(tokens: int):
+        return {
+            "mlp.gate": parent_gate[:, :tokens],
+            "mlp.up": parent_up[:, :tokens],
+            "mlp.post_swiglu": parent_post[:, :tokens],
+            "residual.post_layer": parent_layer[:, :tokens],
+            "output.final_norm_output": parent_norm[:, :tokens],
+        }
+
+    trajectory = SimpleNamespace(
+        phase_histories={
+            "prefill": histories(3),
+            "decode.000": histories(4),
+        }
+    )
+    child_input = torch.tensor(
+        [[[10.0 + row, 20.0 + row] for row in range(6)]],
+        dtype=torch.bfloat16,
+    )
+    child_pre = child_input + 100
+    child_bank = SimpleNamespace(
+        captured_child_model_state_sha256="9" * 64,
+        replay_by_batch={
+            0: SimpleNamespace(
+                mlp_input=child_input,
+                post_operator_residual=child_pre,
+            )
+        },
+    )
+    inventory = Lfm2DirectLocalMlpSourceInventory(
+        layer_index=0,
+        parent_model_identity_sha256="a" * 64,
+        parent_checkpoint_manifest_sha256="b" * 64,
+        direct_local_loader_receipt_sha256="c" * 64,
+        residual_assignment_sha256="d" * 64,
+        compiler_lineage_sha256="e" * 64,
+        gate_weight=torch.ones((4, 3), dtype=torch.bfloat16),
+        up_weight=torch.ones((4, 3), dtype=torch.bfloat16),
+        down_weight=torch.ones((3, 4), dtype=torch.bfloat16),
+    )
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.5, -0.5]],
+        dtype=torch.float64,
+    )
+    result = stack._build_mlp_evidence(
+        evidence_type=Lfm2SemanticMlpEndpointEvidence,
+        cache=SimpleNamespace(
+            cache_key="f" * 64,
+            manifest={"manifest_sha256": "0" * 64},
+        ),
+        bridge=SimpleNamespace(artifact_sha256="1" * 64),
+        interface=SimpleNamespace(producer_encoder=chart),
+        alignments=(alignment,),
+        parent={0: trajectory},
+        child_bank=child_bank,
+        chart=chart,
+        source_inventory=inventory,
+        layer_index=0,
+        final_layer=True,
+    )
+
+    assert len(result) == 4
+    assert [item.batch_index for item in result] == [0, 0, 0, 0]
+    assert [item.phase_index for item in result] == [0, 1, 2, 3]
+    assert len({item.phase_sha256 for item in result}) == 4
+    assert [item.sample_weight for item in result] == pytest.approx(
+        [1.0 / 6.0, 1.0 / 6.0, 1.0 / 6.0, 1.0 / 2.0]
+    )
+    assert sum(item.sample_weight for item in result) == pytest.approx(1.0)
+    expected_target_positions = torch.tensor((0, 2, 3, 5), dtype=torch.long)
+    torch.testing.assert_close(
+        torch.cat([item.actual_child_mlp_input for item in result]),
+        child_input[0].index_select(0, expected_target_positions),
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        torch.cat([item.parent_gate for item in result]),
+        parent_gate[0],
+        rtol=0,
+        atol=0,
+    )
+    expected_parent_layer = (parent_layer.to(torch.float64) @ chart).to(torch.bfloat16)[
+        0
+    ]
+    torch.testing.assert_close(
+        torch.cat([item.parent_post_mlp_residual_target_space for item in result]),
+        expected_parent_layer,
+        rtol=0,
+        atol=0,
+    )
+    expected_parent_norm = (parent_norm.to(torch.float64) @ chart).to(torch.bfloat16)[0]
+    torch.testing.assert_close(
+        torch.cat([item.parent_final_norm_output_target_space for item in result]),
+        expected_parent_norm,
+        rtol=0,
+        atol=0,
+    )
+    assert all(item.verify() for item in result)
 
 
 def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):

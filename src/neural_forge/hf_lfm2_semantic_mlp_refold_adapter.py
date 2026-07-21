@@ -27,6 +27,7 @@ authenticated ``Lfm2CpcfTerminalActionEvidence`` banks.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -56,6 +57,9 @@ LFM2_SEMANTIC_MLP_CANDIDATE_SCHEMA = (
 )
 LFM2_SEMANTIC_MLP_PREPARATION_SCHEMA = "neural-forge-lfm2-semantic-mlp-preparation-v1"
 LFM2_SEMANTIC_MLP_INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-mlp-installation-v1"
+LFM2_SEMANTIC_MLP_COLD_START_REJECTION_SCHEMA = (
+    "neural-forge-lfm2-semantic-mlp-cold-start-rejection-v1"
+)
 
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
 _ZERO_OPERATIONS = MappingProxyType(
@@ -81,6 +85,23 @@ _ZERO_OPERATIONS = MappingProxyType(
 
 class Lfm2SemanticMlpRefoldError(RuntimeError):
     """Semantic MLP evidence, analytic selection, or installation failed."""
+
+
+class Lfm2SemanticMlpColdStartRejectionError(Lfm2SemanticMlpRefoldError):
+    """A blank dense MLP had no complete candidate accepted by held-out gates."""
+
+    def __init__(self, message: str, report: Mapping[str, Any]) -> None:
+        frozen = MappingProxyType(dict(report))
+        self.report = frozen
+        super().__init__(
+            f"{message} rejection_report="
+            + json.dumps(
+                dict(frozen),
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
 
 
 def _torch() -> Any:
@@ -1394,27 +1415,6 @@ def prepare_lfm2_semantic_mlp_postfold(
         validation_rejected_role = selected.role
         selected = incumbent
         rationale = "retained-incumbent-after-frozen-analytic-validation-rejection"
-    if exact_zero_incumbent and (
-        selected.role != "full-w1-w3-w2"
-        or _nonzero_swiglu_roles(selected.state_dict())
-        != ("w1.weight", "w3.weight", "w2.weight")
-    ):
-        raise Lfm2SemanticMlpRefoldError(
-            "Exact-zero cold start has no fully planted nonzero structural "
-            "W1/W3/W2 candidate that passed every held-out gate."
-        )
-    if not eligibility["incumbent"]["validation"]:
-        raise Lfm2SemanticMlpRefoldError(
-            "The authenticated incumbent did not exactly replay VALIDATION."
-        )
-    if fingerprint_lfm2_parent(target_model).identity_sha256 != current_state:
-        raise Lfm2SemanticMlpRefoldError(
-            "Candidate preparation mutated the live child."
-        )
-    terminal = _terminal_banks(
-        partitions,
-        required=require_terminal_action_evidence,
-    )
     selection_body = {
         "selected_role": selected.role,
         "prevalidation_selected_role": prevalidation_selected_role,
@@ -1449,6 +1449,67 @@ def prepare_lfm2_semantic_mlp_postfold(
         selection_body["source_derived_planting"] = dict(
             full.solver_receipt["source_derived_planting"]
         )
+    if fingerprint_lfm2_parent(target_model).identity_sha256 != current_state:
+        raise Lfm2SemanticMlpRefoldError(
+            "Candidate preparation mutated the live child."
+        )
+    if exact_zero_incumbent and (
+        selected.role != "full-w1-w3-w2"
+        or _nonzero_swiglu_roles(selected.state_dict())
+        != ("w1.weight", "w3.weight", "w2.weight")
+    ):
+        rejection_body = {
+            "schema": LFM2_SEMANTIC_MLP_COLD_START_REJECTION_SCHEMA,
+            "status": "rejected-no-complete-heldout-accepted-cold-start-candidate",
+            "reason": "no-fully-planted-nonzero-structural-candidate-passed-all-gates",
+            "layer_index": layer_index,
+            "cache_key": cache,
+            "cache_manifest_sha256": manifest,
+            "bridge_artifact_sha256": bridge,
+            "captured_child_model_state_sha256": current_state,
+            "source_inventory_sha256": inventory.inventory_sha256,
+            "compiler_lineage_sha256": inventory.compiler_lineage_sha256,
+            "partition_batch_indices": {
+                name: sorted({item.batch_index for item in partitions[name]})
+                for name in _PARTITIONS
+            },
+            "solver_policy": {
+                "ridge": float(ridge),
+                "requested_maximum_delta_ratio": requested_maximum_delta_ratio,
+                "effective_full_structural_maximum_delta_ratio": None,
+                "cluster_ridge": float(cluster_ridge),
+                "cluster_max_iterations": int(cluster_max_iterations),
+                "cluster_distance_chunk_size": int(cluster_distance_chunk_size),
+                "rmse_relative_tolerance": float(rmse_relative_tolerance),
+                "cosine_tolerance": float(cosine_tolerance),
+            },
+            "candidate_sha256": {
+                candidate.role: candidate.candidate_sha256
+                for candidate in (incumbent, writer, full)
+            },
+            "candidate_nonzero_roles": {
+                candidate.role: list(_nonzero_swiglu_roles(candidate.state_dict()))
+                for candidate in (incumbent, writer, full)
+            },
+            "selection_diagnostics": selection_body,
+            "candidate_metrics_retained": True,
+            "model_mutated": False,
+            "operation_audit": dict(_ZERO_OPERATIONS),
+        }
+        rejection_body["report_sha256"] = canonical_sha256(rejection_body)
+        raise Lfm2SemanticMlpColdStartRejectionError(
+            "Exact-zero cold start has no fully planted nonzero structural "
+            "W1/W3/W2 candidate that passed every held-out gate.",
+            rejection_body,
+        )
+    if not eligibility["incumbent"]["validation"]:
+        raise Lfm2SemanticMlpRefoldError(
+            "The authenticated incumbent did not exactly replay VALIDATION."
+        )
+    terminal = _terminal_banks(
+        partitions,
+        required=require_terminal_action_evidence,
+    )
     selection = MappingProxyType(selection_body)
     return Lfm2PreparedSemanticMlpRefold(
         layer_index=layer_index,
@@ -1878,6 +1939,7 @@ def compile_install_lfm2_semantic_mlp_postfold(
 
 __all__ = [
     "LFM2_SEMANTIC_MLP_CANDIDATE_SCHEMA",
+    "LFM2_SEMANTIC_MLP_COLD_START_REJECTION_SCHEMA",
     "LFM2_SEMANTIC_MLP_EVIDENCE_SCHEMA",
     "LFM2_SEMANTIC_MLP_INSTALLATION_SCHEMA",
     "LFM2_SEMANTIC_MLP_PREPARATION_SCHEMA",
@@ -1887,6 +1949,7 @@ __all__ = [
     "Lfm2PreparedSemanticMlpRefold",
     "Lfm2SemanticMlpEndpointEvidence",
     "Lfm2SemanticMlpEndpointMetrics",
+    "Lfm2SemanticMlpColdStartRejectionError",
     "Lfm2SemanticMlpPostfoldResult",
     "Lfm2SemanticMlpRefoldError",
     "compile_install_lfm2_semantic_mlp_postfold",

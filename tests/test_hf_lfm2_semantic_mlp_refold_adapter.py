@@ -612,12 +612,50 @@ def test_exact_zero_incumbent_fails_closed_when_no_full_plant_passes() -> None:
     with torch.no_grad():
         for parameter in model.model.layers[0].feed_forward.parameters():
             parameter.zero_()
+    before = fingerprint_lfm2_parent(model).identity_sha256
 
     with pytest.raises(
-        adapter.Lfm2SemanticMlpRefoldError,
+        adapter.Lfm2SemanticMlpColdStartRejectionError,
         match="no fully planted nonzero structural W1/W3/W2 candidate",
-    ):
+    ) as caught:
         _prepare(model, _evidence(model))
+
+    report = dict(caught.value.report)
+    assert report["schema"] == adapter.LFM2_SEMANTIC_MLP_COLD_START_REJECTION_SCHEMA
+    assert report["status"] == (
+        "rejected-no-complete-heldout-accepted-cold-start-candidate"
+    )
+    assert report["layer_index"] == 0
+    assert report["model_mutated"] is False
+    assert report["candidate_metrics_retained"] is True
+    assert report["candidate_nonzero_roles"] == {
+        "incumbent": [],
+        "incumbent-producer-w2": [],
+        "full-w1-w3-w2": ["w1.weight", "w3.weight"],
+    }
+    diagnostics = report["selection_diagnostics"]
+    assert set(diagnostics["endpoint_metrics"]) == {
+        "incumbent",
+        "incumbent-producer-w2",
+        "full-w1-w3-w2",
+    }
+    for role_metrics in diagnostics["endpoint_metrics"].values():
+        assert set(role_metrics) == {"fit", "fit_check", "selection", "validation"}
+        assert all(metrics["endpoint_rows"] > 0 for metrics in role_metrics.values())
+    assert diagnostics["heldout_selection_improvement"][
+        "incumbent-producer-w2"
+    ] is False
+    assert diagnostics["selected_role"] == "incumbent"
+    assert report["partition_batch_indices"] == {
+        "fit": [0],
+        "fit_check": [1],
+        "selection": [2],
+        "validation": [3],
+    }
+    report_sha256 = report.pop("report_sha256")
+    assert report_sha256 == adapter.canonical_sha256(report)
+    assert f'"report_sha256":"{report_sha256}"' in str(caught.value)
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before
 
 
 def test_nonzero_incumbent_preserves_requested_relative_trust_cap(
