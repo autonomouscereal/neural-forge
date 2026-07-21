@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import math
+import pickle
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -78,6 +80,10 @@ class _Mlp(torch.nn.Module):
 class _Layer(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
+        self.ffn_norm = torch.nn.Module()
+        self.ffn_norm.weight = torch.nn.Parameter(
+            torch.tensor([1.0, 1.0, 1.0, 1.0], dtype=torch.bfloat16)
+        )
         self.feed_forward = _Mlp()
 
 
@@ -132,10 +138,40 @@ def _source() -> adapter.Lfm2DirectLocalMlpSourceInventory:
         residual_assignment_sha256=_sha("residual-chart"),
         compiler_lineage_sha256=_sha("compiler-lineage"),
         residual_chart=torch.eye(4, dtype=torch.float64),
+        ffn_norm_weight=torch.tensor(
+            [1.0, 0.9, 1.1, 0.8],
+            dtype=torch.bfloat16,
+        ),
+        norm_epsilon=1e-5,
         gate_weight=gate,
         up_weight=up,
         down_weight=down,
     )
+
+
+def _parent_normalized(
+    source: adapter.Lfm2DirectLocalMlpSourceInventory,
+    parent_pre_mlp_residual: torch.Tensor,
+) -> torch.Tensor:
+    return adapter._reconstruct_parent_rmsnorm_bf16(
+        parent_pre_mlp_residual,
+        norm_weight=source.ffn_norm_weight,
+        norm_epsilon=source.norm_epsilon,
+    )
+
+
+def _parent_pair_for_desired_normalized(
+    source: adapter.Lfm2DirectLocalMlpSourceInventory,
+    desired_normalized: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    quotient = desired_normalized.to(torch.float64) / source.ffn_norm_weight.to(
+        torch.float64
+    )
+    mean_square = float(quotient.square().mean().item())
+    assert mean_square < 1.0
+    scale = math.sqrt(source.norm_epsilon / (1.0 - mean_square))
+    parent_pre = (quotient * scale).to(torch.bfloat16)
+    return parent_pre, _parent_normalized(source, parent_pre)
 
 
 def test_source_inventory_authenticates_dense_residual_chart_transport() -> None:
@@ -151,6 +187,12 @@ def test_source_inventory_authenticates_dense_residual_chart_transport() -> None
     )
     assert body["residual_chart_receipt_sha256"] == source.residual_assignment_sha256
     assert body["residual_chart_and_receipt_jointly_hashed"] is True
+    assert body["ffn_norm_weight_sha256"] == adapter._tensor_sha256(
+        source.ffn_norm_weight
+    )
+    assert body["norm_epsilon"] == pytest.approx(1e-5)
+    assert body["normalization_lineage_sha256"] == (source.normalization_lineage_sha256)
+    assert body["normalization_and_loader_lineage_jointly_hashed"] is True
     with pytest.raises(
         adapter.Lfm2SemanticMlpRefoldError,
         match="source-hidden-to-target-hidden",
@@ -166,6 +208,97 @@ def test_source_inventory_authenticates_dense_residual_chart_transport() -> None
 
     source.residual_chart[0, 0] += 1.0
     assert source.verify() is False
+
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="cannot be serialized with Python pickle",
+    ):
+        pickle.dumps(_source())
+
+
+def test_source_inventory_rejects_or_detects_normalization_tampering() -> None:
+    source = _source()
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="positive norm epsilon",
+    ):
+        replace(source, norm_epsilon=0.0)
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="positive norm epsilon",
+    ):
+        replace(
+            source,
+            ffn_norm_weight=torch.ones((3,), dtype=torch.bfloat16),
+        )
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="source-hidden-to-target-hidden",
+    ):
+        replace(
+            source,
+            ffn_norm_weight=torch.tensor(
+                [1.0, 0.0, 1.0, 1.0],
+                dtype=torch.bfloat16,
+            ),
+        )
+
+    source.ffn_norm_weight[0] += torch.tensor(0.25, dtype=torch.bfloat16)
+    assert source.verify() is False
+
+
+def test_endpoint_authenticates_parent_normalized_mlp_input() -> None:
+    valid = _evidence(_Target())[0]
+    body = valid.authentication_body()
+    assert body["tensor_sha256"]["parent_normalized_mlp_input"] == (
+        adapter._tensor_sha256(valid.parent_normalized_mlp_input)
+    )
+    assert body["normalization_lineage_sha256"] == (
+        valid.source_inventory.normalization_lineage_sha256
+    )
+    assert body["parent_normalized_mlp_input_is_exact_cached_mlp_input"] is True
+    assert (
+        body["parent_normalized_mlp_input_reconstruction_independently_verified"]
+        is True
+    )
+    assert body["parent_model_forward_calls_for_normalized_mlp_input"] == 0
+    assert body["tensor_sha256"]["parent_pre_mlp_residual"] == (
+        adapter._tensor_sha256(valid.parent_pre_mlp_residual)
+    )
+    assert len(body["normalization_reconstruction_sha256"]) == 64
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="compatible endpoint",
+    ):
+        replace(
+            valid,
+            parent_normalized_mlp_input=torch.ones(
+                (1, 3),
+                dtype=torch.bfloat16,
+            ),
+        )
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="independently reconstructed",
+    ):
+        replace(
+            valid,
+            parent_normalized_mlp_input=torch.zeros_like(
+                valid.parent_normalized_mlp_input
+            ),
+        )
+
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="cannot be serialized with Python pickle",
+    ):
+        pickle.dumps(valid)
+
+    valid.parent_normalized_mlp_input[0, 0] += torch.tensor(
+        0.25,
+        dtype=torch.bfloat16,
+    )
+    assert valid.verify() is False
 
 
 def test_endpoint_rejects_residual_chart_with_wrong_target_width() -> None:
@@ -211,7 +344,14 @@ def _evidence(
     desired_endpoint = (child_pre.to(torch.float64) + child_post @ desired_down.T).to(
         torch.bfloat16
     )
-    parent_input = torch.tensor([[0.40, -0.20, 0.60, 0.10]], dtype=torch.bfloat16)
+    desired_parent_input = torch.tensor(
+        [[0.40, -0.20, 0.60, 0.10]],
+        dtype=torch.bfloat16,
+    )
+    parent_pre, parent_input = _parent_pair_for_desired_normalized(
+        source,
+        desired_parent_input,
+    )
     parent_gate = (
         parent_input.to(torch.float64) @ source.gate_weight.to(torch.float64).T
     ).to(torch.bfloat16)
@@ -247,6 +387,8 @@ def _evidence(
                     parent_gate=parent_gate,
                     parent_up=parent_up,
                     parent_post_swiglu=parent_post,
+                    parent_pre_mlp_residual=parent_pre,
+                    parent_normalized_mlp_input=parent_input,
                     actual_child_mlp_input=child_input,
                     actual_child_pre_mlp_residual=child_pre,
                     parent_post_mlp_residual_target_space=desired_endpoint,
@@ -278,6 +420,17 @@ def _prepare(
         cosine_tolerance=1e-5,
         require_terminal_action_evidence=terminal,
     )
+
+
+def test_prepare_rejects_zero_child_ffn_norm_coordinate() -> None:
+    model = _Target()
+    with torch.no_grad():
+        model.model.layers[0].ffn_norm.weight[0] = 0.0
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="FFN RMSNorm Parameter",
+    ):
+        _prepare(model, _evidence(model))
 
 
 def _material_full_win_case(model: _Target):
@@ -329,6 +482,10 @@ def _material_full_win_case(model: _Target):
     values = []
     for batch_index in range(8):
         child_input = inputs[batch_index % len(inputs)]
+        parent_pre, parent_input = _parent_pair_for_desired_normalized(
+            source,
+            child_input,
+        )
         input64 = child_input.to(torch.float64)
         desired_post = torch.nn.functional.silu(
             input64 @ desired["w1.weight"].to(torch.float64).T
@@ -337,10 +494,13 @@ def _material_full_win_case(model: _Target):
             child_pre.to(torch.float64)
             + desired_post @ desired["w2.weight"].to(torch.float64).T
         ).to(torch.bfloat16)
-        parent_gate = (input64 @ source.gate_weight.to(torch.float64).T).to(
+        parent_input64 = parent_input.to(torch.float64)
+        parent_gate = (parent_input64 @ source.gate_weight.to(torch.float64).T).to(
             torch.bfloat16
         )
-        parent_up = (input64 @ source.up_weight.to(torch.float64).T).to(torch.bfloat16)
+        parent_up = (parent_input64 @ source.up_weight.to(torch.float64).T).to(
+            torch.bfloat16
+        )
         parent_post = (
             torch.nn.functional.silu(parent_gate.to(torch.float64))
             * parent_up.to(torch.float64)
@@ -361,6 +521,8 @@ def _material_full_win_case(model: _Target):
                 parent_gate=parent_gate,
                 parent_up=parent_up,
                 parent_post_swiglu=parent_post,
+                parent_pre_mlp_residual=parent_pre,
+                parent_normalized_mlp_input=parent_input,
                 actual_child_mlp_input=child_input,
                 actual_child_pre_mlp_residual=child_pre,
                 parent_post_mlp_residual_target_space=endpoint,
@@ -395,9 +557,13 @@ def _cold_start_parent_endpoint_evidence(
     for batch_index in range(4):
         for phase_index, input_row in enumerate(inputs):
             child_input = input_row.unsqueeze(0)
-            input64 = child_input.to(torch.float64)
-            parent_gate = input64 @ source.gate_weight.to(torch.float64).T
-            parent_up = input64 @ source.up_weight.to(torch.float64).T
+            parent_pre, parent_input = _parent_pair_for_desired_normalized(
+                source,
+                child_input,
+            )
+            parent_input64 = parent_input.to(torch.float64)
+            parent_gate = parent_input64 @ source.gate_weight.to(torch.float64).T
+            parent_up = parent_input64 @ source.up_weight.to(torch.float64).T
             parent_post = torch.nn.functional.silu(parent_gate) * parent_up
             parent_endpoint = (
                 child_pre.to(torch.float64)
@@ -421,6 +587,8 @@ def _cold_start_parent_endpoint_evidence(
                     parent_gate=parent_gate.to(torch.bfloat16),
                     parent_up=parent_up.to(torch.bfloat16),
                     parent_post_swiglu=parent_post.to(torch.bfloat16),
+                    parent_pre_mlp_residual=parent_pre,
+                    parent_normalized_mlp_input=parent_input,
                     actual_child_mlp_input=child_input,
                     actual_child_pre_mlp_residual=child_pre,
                     parent_post_mlp_residual_target_space=(
@@ -455,6 +623,8 @@ def test_typed_source_and_endpoint_seals_reject_inserted_rows() -> None:
             parent_gate=valid.parent_gate,
             parent_up=valid.parent_up,
             parent_post_swiglu=valid.parent_post_swiglu,
+            parent_pre_mlp_residual=valid.parent_pre_mlp_residual,
+            parent_normalized_mlp_input=valid.parent_normalized_mlp_input,
             actual_child_mlp_input=valid.actual_child_mlp_input,
             actual_child_pre_mlp_residual=valid.actual_child_pre_mlp_residual,
             parent_post_mlp_residual_target_space=(
@@ -524,8 +694,12 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
         "effective_full_structural_maximum_delta_ratio": None,
         "relative_incumbent_trust_cap_applied": False,
         "authenticated_full_source_structural_solve_used": True,
-        "authenticated_residual_chart_used": True,
+        "authenticated_normalized_input_bridge_used_for_w1_w3": True,
+        "authenticated_raw_residual_chart_used_only_for_w2": True,
+        "producer_consumer_bridge_fields_separate": True,
         "coupled_real_medoid_gate_up_used": True,
+        "shared_normalized_input_decoder_used": True,
+        "per_neuron_producer_interpolation_used": False,
         "every_source_multi_anchor_consumer_used": True,
         "materialized_target_dtype_producers_used_for_w2": True,
         "random_initialization_used": False,
@@ -537,14 +711,29 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
     assert planting["source_inventory_sha256"] == _source().inventory_sha256
     assert planting["compiler_lineage_sha256"] == _sha("compiler-lineage")
     assert planting["residual_assignment_sha256"] == _sha("residual-chart")
+    assert planting["normalization_lineage_sha256"] == (
+        _source().normalization_lineage_sha256
+    )
     assert planting["residual_chart_sha256"] == adapter._tensor_sha256(
         _source().residual_chart
+    )
+    assert planting["parent_ffn_norm_weight_sha256"] == adapter._tensor_sha256(
+        _source().ffn_norm_weight
+    )
+    assert planting["target_ffn_norm_weight_sha256"] == adapter._tensor_sha256(
+        model.model.layers[0].ffn_norm.weight
+    )
+    assert (
+        planting["normalized_input_decoder_sha256"]
+        == solver["producer_bridge"]["decoder_sha256"]
     )
     assert planting["multi_anchor_plan_sha256"] == solver["multi_anchor_plan_sha256"]
     assert planting["producer_prior_sha256"] == solver["producer_prior_sha256"]
     assert planting["consumer_prior_sha256"] == solver["consumer_prior_sha256"]
     assert planting["full_source_coverage"] is True
     assert planting["producer_averaging"] is False
+    assert planting["producer_per_neuron_interpolation"] is False
+    assert planting["producer_shared_decoder"] is True
     assert planting["source_neurons_dropped"] == 0
     assert planting["fit_case_weight_sum"] == 8.0
     assert planting["fit_row_weight_sum"] == 8.0
@@ -554,15 +743,17 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
     assert planting["all_dense_w1_w3_w2_roles_planted"] is True
     assert planting["fit_partition_only_used_for_solve"] is True
     assert prepared.selection_receipt["source_derived_planting"] == planting
-    corrections = solver["prior_correction_reports"]
-    assert {report["role"] for report in corrections} == {
-        "mlp_real_medoid_gate",
-        "mlp_real_medoid_up",
-        "mlp_multi_anchor_down",
-    }
-    assert all(report["prior_norm"] > 0.0 for report in corrections)
-    assert all(report["update_scale"] == 1.0 for report in corrections)
-    assert solver["producer_plan"] == "sparse_multi_anchor_real_medoid"
+    correction = solver["consumer_correction_report"]
+    assert correction["role"] == "mlp_normalized_bridge_multi_anchor_down"
+    assert correction["prior_norm"] > 0.0
+    assert correction["update_scale"] == 1.0
+    assert solver["producer_bridge"]["role"] == (
+        "normalized_mlp_input_target_to_parent"
+    )
+    assert solver["consumer_bridge"]["role"] == "raw_residual_source_to_target"
+    assert solver["producer_consumer_bridge_fields_separate"] is True
+    assert solver["producer_shared_decoder"] is True
+    assert solver["producer_per_neuron_interpolation"] is False
     assert solver["producer_averaging"] is False
     assert solver["full_source_coverage"] is True
     assert solver["source_neurons_dropped"] == 0
@@ -603,7 +794,7 @@ def test_blank_dispatch_uses_only_weighted_fit_chart_multi_anchor(
     )
     fit = adapter._split_evidence(evidence)["fit"]
     observed = []
-    real_compile = adapter.compile_lfm2_real_medoid_structural_residual_mlp_fold
+    real_compile = adapter.compile_lfm2_normalized_input_real_medoid_structural_mlp_fold
 
     def recording_compile(**kwargs):
         observed.append(kwargs)
@@ -614,7 +805,7 @@ def test_blank_dispatch_uses_only_weighted_fit_chart_multi_anchor(
 
     monkeypatch.setattr(
         adapter,
-        "compile_lfm2_real_medoid_structural_residual_mlp_fold",
+        "compile_lfm2_normalized_input_real_medoid_structural_mlp_fold",
         recording_compile,
     )
     monkeypatch.setattr(
@@ -629,9 +820,20 @@ def test_blank_dispatch_uses_only_weighted_fit_chart_multi_anchor(
     call = observed[0]
     assert call["case_sample_weights"] == tuple(item.sample_weight for item in fit)
     assert len(call["cases"]) == len(fit)
+    assert all(
+        torch.equal(case.parent_normalized_input, item.parent_normalized_mlp_input)
+        for case, item in zip(call["cases"], fit, strict=True)
+    )
     assert call["residual_chart_sha256"] == adapter._tensor_sha256(
         fit[0].source_inventory.residual_chart
     )
+    assert call["parent_ffn_norm_weight_sha256"] == adapter._tensor_sha256(
+        fit[0].source_inventory.ffn_norm_weight
+    )
+    assert call["target_ffn_norm_weight_sha256"] == adapter._tensor_sha256(
+        model.model.layers[0].ffn_norm.weight
+    )
+    assert call["normalized_decoder_ridge"] == adapter._NORMALIZED_DECODER_RIDGE
     assert prepared.full_candidate.solver_receipt["fit_case_weight_sum"] == (
         pytest.approx(sum(item.sample_weight for item in fit))
     )
@@ -826,7 +1028,7 @@ def test_nonzero_incumbent_preserves_requested_relative_trust_cap(
 
     monkeypatch.setattr(
         adapter,
-        "compile_lfm2_real_medoid_structural_residual_mlp_fold",
+        "compile_lfm2_normalized_input_real_medoid_structural_mlp_fold",
         forbidden_blank_compile,
     )
     prepared = _prepare(model, _evidence(model))

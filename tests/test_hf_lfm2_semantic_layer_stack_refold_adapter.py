@@ -114,12 +114,12 @@ def test_validated_interface_lineage_accepts_anchor_active_tensor_seals() -> Non
 
     assert receipt["interface_report_schema"] == _ANCHOR_INTERFACE_SCHEMA
     assert (
-        receipt["interface_tensor_seal_schema"]
-        == "canonical-descriptor-prefix-raw-v1"
+        receipt["interface_tensor_seal_schema"] == "canonical-descriptor-prefix-raw-v1"
     )
-    assert receipt["producer_encoder_sha256"] == interface.report[
-        "producer_encoder_sha256"
-    ]
+    assert (
+        receipt["producer_encoder_sha256"]
+        == interface.report["producer_encoder_sha256"]
+    )
 
 
 def test_validated_interface_lineage_preserves_base_interface_tensor_seals() -> None:
@@ -129,9 +129,7 @@ def test_validated_interface_lineage_preserves_base_interface_tensor_seals() -> 
 
     assert receipt["interface_report_schema"] == _BASE_INTERFACE_SCHEMA
     assert receipt["interface_tensor_seal_schema"] == "dtype-nul-shape-nul-raw-v1"
-    assert receipt["target_weight_sha256"] == interface.report[
-        "target_weight_sha256"
-    ]
+    assert receipt["target_weight_sha256"] == interface.report["target_weight_sha256"]
 
 
 @pytest.mark.parametrize(
@@ -220,8 +218,9 @@ def _state_identity(model: _TinyTarget) -> str:
     )
 
 
-def test_dense_producer_coverage_authenticates_each_structural_axis_and_deferred_w2(
-) -> None:
+def test_dense_producer_coverage_authenticates_each_structural_axis_and_deferred_w2() -> (
+    None
+):
     target = _DenseCoverageTarget()
     layer = target.model.layers[0]
 
@@ -430,9 +429,7 @@ def _patch_complete_transaction(
             "schema": "neural-forge-lfm2-dense-producer-chain-coverage-v1",
             "layer_index": layer_index,
             "producer_kind": producer_kind,
-            "deferred_roles": (
-                ["feed_forward.w2.weight"] if defer_down_weight else []
-            ),
+            "deferred_roles": (["feed_forward.w2.weight"] if defer_down_weight else []),
             "required_role_state_sha256": state_sha,
             "model_state_tensor_hashes_sha256": _state_identity(model),
             "all_required_roles_structurally_nonzero": complete,
@@ -663,12 +660,7 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
     assert result.receipt["installed_complete_producer_chain_count"] == 27
     assert result.receipt["tokenizer_session_receipt_sha256"] == "8" * 64
     assert result.receipt["tokenizer_session"] == {"receipt_sha256": "8" * 64}
-    assert (
-        result.receipt[
-            "authenticated_nonzero_folded_seed_retained_noop_count"
-        ]
-        == 1
-    )
+    assert result.receipt["authenticated_nonzero_folded_seed_retained_noop_count"] == 1
     torch.testing.assert_close(target.final_w2, before_w2, rtol=0, atol=0)
     for layer_index in range(14):
         kind = (
@@ -1258,9 +1250,27 @@ def test_mlp_evidence_expands_exact_boundaries_and_skips_insertions() -> None:
     parent_post = parent_gate + 40
     parent_layer = torch.arange(12, dtype=torch.bfloat16).reshape(1, 4, 3)
     parent_norm = parent_layer + 60
+    parent_post_operator = parent_layer + 80
+    ffn_norm_weight = torch.tensor(
+        [1.0, 0.5, 1.5],
+        dtype=torch.bfloat16,
+    )
+    norm_epsilon = 1e-5
+    residual_float = parent_post_operator.to(torch.float32)
+    reconstructed_parent_input = ffn_norm_weight * (
+        residual_float
+        * torch.rsqrt(residual_float.square().mean(dim=-1, keepdim=True) + norm_epsilon)
+    ).to(torch.bfloat16)
+    cached_parent_input = reconstructed_parent_input.clone()
+    cached_parent_input[0, 0, 0] += torch.tensor(
+        torch.finfo(torch.bfloat16).eps,
+        dtype=torch.bfloat16,
+    )
 
     def histories(tokens: int):
         return {
+            "residual.post_operator": parent_post_operator[:, :tokens],
+            "mlp.input": cached_parent_input[:, :tokens],
             "mlp.gate": parent_gate[:, :tokens],
             "mlp.up": parent_up[:, :tokens],
             "mlp.post_swiglu": parent_post[:, :tokens],
@@ -1300,6 +1310,8 @@ def test_mlp_evidence_expands_exact_boundaries_and_skips_insertions() -> None:
         residual_assignment_sha256="d" * 64,
         compiler_lineage_sha256="e" * 64,
         residual_chart=chart,
+        ffn_norm_weight=ffn_norm_weight,
+        norm_epsilon=norm_epsilon,
         gate_weight=torch.ones((4, 3), dtype=torch.bfloat16),
         up_weight=torch.ones((4, 3), dtype=torch.bfloat16),
         down_weight=torch.ones((3, 4), dtype=torch.bfloat16),
@@ -1319,6 +1331,7 @@ def test_mlp_evidence_expands_exact_boundaries_and_skips_insertions() -> None:
         source_inventory=inventory,
         layer_index=0,
         final_layer=True,
+        execution_device="cpu",
     )
 
     assert len(result) == 4
@@ -1342,6 +1355,13 @@ def test_mlp_evidence_expands_exact_boundaries_and_skips_insertions() -> None:
         rtol=0,
         atol=0,
     )
+    torch.testing.assert_close(
+        torch.cat([item.parent_normalized_mlp_input for item in result]),
+        cached_parent_input[0],
+        rtol=0,
+        atol=0,
+    )
+    assert not torch.equal(cached_parent_input, reconstructed_parent_input)
     expected_parent_layer = (parent_layer.to(torch.float64) @ chart).to(torch.bfloat16)[
         0
     ]
@@ -1393,6 +1413,7 @@ def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
         phase_rows={
             "prefill": {
                 "residual.post_operator": residual,
+                "mlp.input": mlp_input,
                 "mlp.gate": expected_gate,
                 "mlp.up": expected_up,
                 "mlp.post_swiglu": expected_post,
@@ -1497,10 +1518,25 @@ def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints()
     )
     assert receipt["expected_per_tensor_digest_comparison_performed"] is False
     assert receipt["semantic_endpoint_rows"] == 1
+    assert receipt["endpoint_equivalence_metrics"]["mlp.input"]["accepted"] is True
+    assert receipt["cached_endpoint_sha256"]["mlp.input"] == stack._tensor_sha256(
+        parent[0].phase_rows["prefill"]["mlp.input"].reshape(1, -1)
+    )
+    assert (
+        receipt["cached_normalized_mlp_input_sha256"]
+        == (receipt["cached_endpoint_sha256"]["mlp.input"])
+    )
+    assert (
+        receipt["replayed_endpoint_sha256"]["mlp.input"]
+        == (receipt["reconstructed_normalized_mlp_input_sha256"])
+    )
+    assert receipt["cached_mlp_input_is_normalized_evidence_source_of_truth"] is True
+    assert receipt["reconstructed_mlp_input_is_authentication_check_only"] is True
     assert inventory.direct_local_loader_receipt_sha256 == receipt["result_sha256"]
     assert inventory.residual_assignment_sha256 == chart_receipt["result_sha256"]
-    assert inventory.authentication_body()["residual_chart_sha256"] == (
-        chart_receipt["chart_sha256"]
+    assert (
+        inventory.authentication_body()["residual_chart_sha256"]
+        == (chart_receipt["chart_sha256"])
     )
     assert inventory.compiler_lineage_sha256 == stack._mlp_lineage_sha256(
         cache=cache,

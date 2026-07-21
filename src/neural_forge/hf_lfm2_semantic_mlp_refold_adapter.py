@@ -44,19 +44,21 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
 )
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (
     Lfm2CachedMlpFoldCase,
-    Lfm2CompiledRealMedoidStructuralMlpFold,
+    Lfm2CachedNormalizedInputMlpFoldCase,
+    Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold,
     Lfm2CompiledStructuralMlpFold,
-    compile_lfm2_real_medoid_structural_residual_mlp_fold,
+    compile_lfm2_normalized_input_real_medoid_structural_mlp_fold,
     compile_lfm2_structural_residual_mlp_fold,
     lfm2_authenticated_tensor_sha256,
+    lfm2_normalized_input_mlp_fit_evidence_sha256,
 )
 
 
 LFM2_SEMANTIC_MLP_SOURCE_SCHEMA = (
-    "neural-forge-lfm2-direct-local-semantic-mlp-source-v2"
+    "neural-forge-lfm2-direct-local-semantic-mlp-source-v3"
 )
 LFM2_SEMANTIC_MLP_EVIDENCE_SCHEMA = (
-    "neural-forge-lfm2-semantic-mlp-endpoint-evidence-v1"
+    "neural-forge-lfm2-semantic-mlp-endpoint-evidence-v3"
 )
 LFM2_SEMANTIC_MLP_CANDIDATE_SCHEMA = (
     "neural-forge-lfm2-semantic-mlp-frozen-candidate-v1"
@@ -68,6 +70,7 @@ LFM2_SEMANTIC_MLP_COLD_START_REJECTION_SCHEMA = (
 )
 
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
+_NORMALIZED_DECODER_RIDGE = 1e-8
 _ZERO_OPERATIONS = MappingProxyType(
     {
         "parent_model_objects_constructed": 0,
@@ -155,6 +158,59 @@ def _finite_tensor(
     return value.detach().to(device="cpu").contiguous().clone()
 
 
+def _reconstruct_parent_rmsnorm_bf16(
+    residual: Any,
+    *,
+    norm_weight: Any,
+    norm_epsilon: float,
+) -> Any:
+    """Reconstruct cached LFM2 FFN RMSNorm bytes without a model forward."""
+
+    torch = _torch()
+    residual_bf16 = residual.to(device="cpu", dtype=torch.bfloat16)
+    norm_bf16 = norm_weight.to(device="cpu", dtype=torch.bfloat16)
+    with torch.no_grad():
+        residual_float = residual_bf16.to(torch.float32)
+        variance = residual_float.square().mean(dim=-1, keepdim=True)
+        normalized = norm_bf16 * (
+            residual_float * torch.rsqrt(variance + float(norm_epsilon))
+        ).to(torch.bfloat16)
+    return normalized.detach().to(device="cpu").contiguous()
+
+
+def _bf16_reconstruction_metrics(replayed: Any, cached: Any) -> dict[str, Any]:
+    """Apply the fixed BF16 cross-kernel envelope used for cache authentication."""
+
+    torch = _torch()
+    replayed_float = replayed.to(torch.float32)
+    cached_float = cached.to(torch.float32)
+    residual = replayed_float - cached_float
+    error_rms = float(torch.sqrt(residual.square().mean()).item())
+    cached_rms = float(torch.sqrt(cached_float.square().mean()).item())
+    machine_epsilon = float(torch.finfo(torch.bfloat16).eps)
+    unit_roundoff = machine_epsilon / 2.0
+    relative_rmse = error_rms / max(
+        cached_rms,
+        float(torch.finfo(torch.float32).tiny),
+    )
+    elementwise_close = bool(
+        torch.allclose(
+            replayed_float,
+            cached_float,
+            rtol=machine_epsilon,
+            atol=unit_roundoff,
+        )
+    )
+    return {
+        "policy_schema": "neural-forge-bf16-cross-kernel-equivalence-policy-v1",
+        "maximum_absolute_error": float(residual.abs().max().item()),
+        "rmse": error_rms,
+        "relative_rmse": relative_rmse,
+        "elementwise_close": elementwise_close,
+        "accepted": elementwise_close and relative_rmse <= machine_epsilon,
+    }
+
+
 def _tensor_sha256(value: Any) -> str:
     torch = _torch()
     tensor = value.detach().to(device="cpu").contiguous()
@@ -206,7 +262,7 @@ def _topology_sha256(model: Any) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Lfm2DirectLocalMlpSourceInventory:
-    """Authenticated direct-local parent W1/W3/W2 bundle for one layer."""
+    """Authenticated direct-local parent RMSNorm/W1/W3/W2 bundle for one layer."""
 
     layer_index: int
     parent_model_identity_sha256: str
@@ -215,9 +271,12 @@ class Lfm2DirectLocalMlpSourceInventory:
     residual_assignment_sha256: str
     compiler_lineage_sha256: str
     residual_chart: Any = field(repr=False, compare=False)
+    ffn_norm_weight: Any = field(repr=False, compare=False)
+    norm_epsilon: float
     gate_weight: Any = field(repr=False, compare=False)
     up_weight: Any = field(repr=False, compare=False)
     down_weight: Any = field(repr=False, compare=False)
+    normalization_lineage_sha256: str = field(init=False)
     inventory_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -238,26 +297,62 @@ class Lfm2DirectLocalMlpSourceInventory:
         gate = _finite_tensor(self.gate_weight, "parent W1", ndim=2)
         up = _finite_tensor(self.up_weight, "parent W3", ndim=2)
         down = _finite_tensor(self.down_weight, "parent W2", ndim=2)
+        norm = _finite_tensor(
+            self.ffn_norm_weight,
+            "parent FFN RMSNorm weight",
+            ndim=1,
+        )
         chart = _finite_tensor(
             self.residual_chart,
             "source-to-target residual chart",
             ndim=2,
         )
+        epsilon = self.norm_epsilon
         source_intermediate, source_hidden = map(int, gate.shape)
         if (
             tuple(up.shape) != tuple(gate.shape)
             or tuple(down.shape) != (source_hidden, source_intermediate)
+            or tuple(norm.shape) != (source_hidden,)
+            or bool((norm == 0).any().item())
             or int(chart.shape[0]) != source_hidden
             or int(chart.shape[1]) <= 0
+            or isinstance(epsilon, bool)
+            or not isinstance(epsilon, (int, float))
+            or not math.isfinite(float(epsilon))
+            or float(epsilon) <= 0.0
         ):
             raise Lfm2SemanticMlpRefoldError(
-                "Direct-local source tensors and residual chart do not form one "
-                "dense source-hidden-to-target-hidden SwiGLU transport bundle."
+                "Direct-local source tensors, positive norm epsilon, and residual "
+                "chart do not form one dense source-hidden-to-target-hidden "
+                "RMSNorm/SwiGLU transport bundle."
             )
         object.__setattr__(self, "residual_chart", chart)
+        object.__setattr__(self, "ffn_norm_weight", norm)
+        object.__setattr__(self, "norm_epsilon", float(epsilon))
         object.__setattr__(self, "gate_weight", gate)
         object.__setattr__(self, "up_weight", up)
         object.__setattr__(self, "down_weight", down)
+        normalization_lineage = canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-direct-parent-mlp-normalization-v1",
+                "layer_index": self.layer_index,
+                "parent_model_identity_sha256": self.parent_model_identity_sha256,
+                "parent_checkpoint_manifest_sha256": (
+                    self.parent_checkpoint_manifest_sha256
+                ),
+                "direct_local_loader_receipt_sha256": (
+                    self.direct_local_loader_receipt_sha256
+                ),
+                "compiler_lineage_sha256": self.compiler_lineage_sha256,
+                "ffn_norm_weight_sha256": _tensor_sha256(norm),
+                "norm_epsilon": float(epsilon),
+            }
+        )
+        object.__setattr__(
+            self,
+            "normalization_lineage_sha256",
+            normalization_lineage,
+        )
         object.__setattr__(
             self,
             "inventory_sha256",
@@ -290,6 +385,7 @@ class Lfm2DirectLocalMlpSourceInventory:
             "residual_assignment_sha256": self.residual_assignment_sha256,
             "residual_chart_receipt_sha256": self.residual_assignment_sha256,
             "compiler_lineage_sha256": self.compiler_lineage_sha256,
+            "normalization_lineage_sha256": self.normalization_lineage_sha256,
             "source_hidden_size": self.source_hidden_size,
             "source_intermediate_size": self.source_intermediate_size,
             "target_hidden_size": self.target_hidden_size,
@@ -298,13 +394,18 @@ class Lfm2DirectLocalMlpSourceInventory:
                 self.source_hidden_size,
                 self.target_hidden_size,
             ],
+            "ffn_norm_weight_sha256": _tensor_sha256(self.ffn_norm_weight),
+            "ffn_norm_weight_shape": [self.source_hidden_size],
+            "norm_epsilon": self.norm_epsilon,
             "weight_sha256": {
+                "ffn_norm.weight": _tensor_sha256(self.ffn_norm_weight),
                 "w1.weight": _tensor_sha256(self.gate_weight),
                 "w3.weight": _tensor_sha256(self.up_weight),
                 "w2.weight": _tensor_sha256(self.down_weight),
             },
             "weight_bundle_sha256": _state_sha256(
                 {
+                    "ffn_norm.weight": self.ffn_norm_weight,
                     "w1.weight": self.gate_weight,
                     "w3.weight": self.up_weight,
                     "w2.weight": self.down_weight,
@@ -313,12 +414,21 @@ class Lfm2DirectLocalMlpSourceInventory:
             "transport_bundle_sha256": _state_sha256(
                 {
                     "residual_chart": self.residual_chart,
+                    "ffn_norm.weight": self.ffn_norm_weight,
                     "w1.weight": self.gate_weight,
                     "w3.weight": self.up_weight,
                     "w2.weight": self.down_weight,
                 }
             ),
+            "normalization_bundle_sha256": canonical_sha256(
+                {
+                    "ffn_norm_weight_sha256": _tensor_sha256(self.ffn_norm_weight),
+                    "norm_epsilon": self.norm_epsilon,
+                    "normalization_lineage_sha256": (self.normalization_lineage_sha256),
+                }
+            ),
             "residual_chart_and_receipt_jointly_hashed": True,
+            "normalization_and_loader_lineage_jointly_hashed": True,
             "loader_mode": "direct-local-safetensors",
             "auto_model_loader_used": False,
             "from_pretrained_used": False,
@@ -328,6 +438,18 @@ class Lfm2DirectLocalMlpSourceInventory:
 
     def verify(self) -> bool:
         return self.inventory_sha256 == canonical_sha256(self.authentication_body())
+
+    def __getstate__(self) -> Any:
+        raise Lfm2SemanticMlpRefoldError(
+            "Direct-local MLP source inventories are authenticated in-memory "
+            "objects and cannot be serialized with Python pickle."
+        )
+
+    def __setstate__(self, state: Any) -> None:
+        del state
+        raise Lfm2SemanticMlpRefoldError(
+            "Legacy pickled MLP source inventories are rejected fail-closed."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -351,6 +473,8 @@ class Lfm2SemanticMlpEndpointEvidence:
     parent_gate: Any = field(repr=False, compare=False)
     parent_up: Any = field(repr=False, compare=False)
     parent_post_swiglu: Any = field(repr=False, compare=False)
+    parent_pre_mlp_residual: Any = field(repr=False, compare=False)
+    parent_normalized_mlp_input: Any = field(repr=False, compare=False)
     actual_child_mlp_input: Any = field(repr=False, compare=False)
     actual_child_pre_mlp_residual: Any = field(repr=False, compare=False)
     parent_post_mlp_residual_target_space: Any = field(repr=False, compare=False)
@@ -362,6 +486,7 @@ class Lfm2SemanticMlpEndpointEvidence:
     sample_weight: float = 1.0
     parent_exact_semantic_endpoint: bool = True
     inserted_target_row: bool = False
+    normalization_reconstruction_sha256: str = field(init=False)
     evidence_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -413,6 +538,18 @@ class Lfm2SemanticMlpEndpointEvidence:
             ndim=2,
             exact_dtype=torch.bfloat16,
         )
+        parent_pre = _finite_tensor(
+            self.parent_pre_mlp_residual,
+            "parent pre-MLP residual",
+            ndim=2,
+            exact_dtype=torch.bfloat16,
+        )
+        parent_normalized = _finite_tensor(
+            self.parent_normalized_mlp_input,
+            "parent normalized MLP input",
+            ndim=2,
+            exact_dtype=torch.bfloat16,
+        )
         child_input = _finite_tensor(
             self.actual_child_mlp_input,
             "actual child MLP input",
@@ -448,6 +585,9 @@ class Lfm2SemanticMlpEndpointEvidence:
             or tuple(parent_gate.shape) != (1, source_intermediate)
             or tuple(parent_up.shape) != tuple(parent_gate.shape)
             or tuple(parent_post.shape) != tuple(parent_gate.shape)
+            or tuple(parent_pre.shape) != (1, self.source_inventory.source_hidden_size)
+            or tuple(parent_normalized.shape)
+            != (1, self.source_inventory.source_hidden_size)
             or tuple(child_pre.shape) != (1, target_hidden)
             or tuple(parent_endpoint.shape) != tuple(child_pre.shape)
             or self.source_inventory.target_hidden_size != target_hidden
@@ -462,9 +602,30 @@ class Lfm2SemanticMlpEndpointEvidence:
             raise Lfm2SemanticMlpRefoldError(
                 "Semantic MLP evidence must contain exactly one compatible endpoint row."
             )
+        reconstructed_normalized = _reconstruct_parent_rmsnorm_bf16(
+            parent_pre,
+            norm_weight=self.source_inventory.ffn_norm_weight,
+            norm_epsilon=self.source_inventory.norm_epsilon,
+        )
+        reconstruction_metrics = _bf16_reconstruction_metrics(
+            reconstructed_normalized,
+            parent_normalized,
+        )
+        if reconstruction_metrics["accepted"] is not True:
+            raise Lfm2SemanticMlpRefoldError(
+                "Cached parent normalized MLP input was not independently "
+                "reconstructed from the authenticated pre-MLP residual and "
+                "direct-local RMSNorm state."
+            )
         object.__setattr__(self, "parent_gate", parent_gate)
         object.__setattr__(self, "parent_up", parent_up)
         object.__setattr__(self, "parent_post_swiglu", parent_post)
+        object.__setattr__(self, "parent_pre_mlp_residual", parent_pre)
+        object.__setattr__(
+            self,
+            "parent_normalized_mlp_input",
+            parent_normalized,
+        )
         object.__setattr__(self, "actual_child_mlp_input", child_input)
         object.__setattr__(self, "actual_child_pre_mlp_residual", child_pre)
         object.__setattr__(
@@ -474,6 +635,17 @@ class Lfm2SemanticMlpEndpointEvidence:
         )
         object.__setattr__(self, "parent_final_norm_output_target_space", terminal)
         object.__setattr__(self, "sample_weight", float(self.sample_weight))
+        object.__setattr__(
+            self,
+            "normalization_reconstruction_sha256",
+            canonical_sha256(
+                {
+                    **reconstruction_metrics,
+                    "cached_sha256": _tensor_sha256(parent_normalized),
+                    "reconstructed_sha256": _tensor_sha256(reconstructed_normalized),
+                }
+            ),
+        )
         object.__setattr__(
             self,
             "evidence_sha256",
@@ -489,6 +661,8 @@ class Lfm2SemanticMlpEndpointEvidence:
             "parent_gate": self.parent_gate,
             "parent_up": self.parent_up,
             "parent_post_swiglu": self.parent_post_swiglu,
+            "parent_pre_mlp_residual": self.parent_pre_mlp_residual,
+            "parent_normalized_mlp_input": self.parent_normalized_mlp_input,
             "actual_child_mlp_input": self.actual_child_mlp_input,
             "actual_child_pre_mlp_residual": self.actual_child_pre_mlp_residual,
             "parent_post_mlp_residual_target_space": (
@@ -511,6 +685,9 @@ class Lfm2SemanticMlpEndpointEvidence:
             ),
             "source_inventory_sha256": self.source_inventory.inventory_sha256,
             "compiler_lineage_sha256": (self.source_inventory.compiler_lineage_sha256),
+            "normalization_lineage_sha256": (
+                self.source_inventory.normalization_lineage_sha256
+            ),
             "tensor_sha256": {
                 name: _tensor_sha256(value) for name, value in sorted(tensors.items())
             },
@@ -523,11 +700,29 @@ class Lfm2SemanticMlpEndpointEvidence:
             "parent_exact_semantic_endpoint": True,
             "inserted_target_row": False,
             "complete_causal_cache_endpoint": True,
+            "parent_normalized_mlp_input_is_exact_cached_mlp_input": True,
+            "parent_normalized_mlp_input_reconstruction_independently_verified": (True),
+            "normalization_reconstruction_sha256": (
+                self.normalization_reconstruction_sha256
+            ),
+            "parent_model_forward_calls_for_normalized_mlp_input": 0,
             "actual_child_replay_freshness_bound": True,
         }
 
     def verify(self) -> bool:
         return self.evidence_sha256 == canonical_sha256(self.authentication_body())
+
+    def __getstate__(self) -> Any:
+        raise Lfm2SemanticMlpRefoldError(
+            "Semantic MLP evidence is authenticated in memory and cannot be "
+            "serialized with Python pickle."
+        )
+
+    def __setstate__(self, state: Any) -> None:
+        del state
+        raise Lfm2SemanticMlpRefoldError(
+            "Legacy pickled semantic MLP evidence is rejected fail-closed."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -794,6 +989,34 @@ def _mlp_module(target_model: Any, layer_index: int) -> Any:
             f"Layer {layer_index} has no ordinary dense LFM2 SwiGLU."
         )
     return mlp
+
+
+def _ffn_norm_weight(target_model: Any, layer_index: int) -> Any:
+    """Return one authenticated live child FFN RMSNorm weight."""
+
+    torch = _torch()
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    if layer_index < 0 or layer_index >= len(layers):
+        raise Lfm2SemanticMlpRefoldError(f"Target model has no layer {layer_index}.")
+    norm = getattr(layers[layer_index], "ffn_norm", None)
+    weight = getattr(norm, "weight", None)
+    name = f"model.layers.{layer_index}.ffn_norm.weight"
+    named = dict(target_model.named_parameters())
+    if (
+        not isinstance(weight, torch.nn.Parameter)
+        or named.get(name) is not weight
+        or weight.ndim != 1
+        or weight.numel() == 0
+        or not torch.is_floating_point(weight)
+        or weight.layout != torch.strided
+        or weight.device.type == "meta"
+        or not bool(torch.isfinite(weight).all().item())
+        or bool((weight == 0).any().item())
+    ):
+        raise Lfm2SemanticMlpRefoldError(
+            f"Target FFN RMSNorm Parameter {name!r} is missing or invalid."
+        )
+    return weight.detach().to(device="cpu").contiguous().clone()
 
 
 def _parameter_bundle(target_model: Any, layer_index: int) -> Mapping[str, Any]:
@@ -1088,6 +1311,7 @@ def _full_candidate_state(
     inventory: Lfm2DirectLocalMlpSourceInventory,
     incumbent: Mapping[str, Any],
     *,
+    target_ffn_norm_weight: Any,
     exact_zero_incumbent: bool,
     ridge: float,
     maximum_delta_ratio: float | None,
@@ -1109,7 +1333,21 @@ def _full_candidate_state(
         for item in fit
     )
     if exact_zero_incumbent:
-        compiled = compile_lfm2_real_medoid_structural_residual_mlp_fold(
+        normalized_cases = tuple(
+            Lfm2CachedNormalizedInputMlpFoldCase(
+                target_input=item.actual_child_mlp_input,
+                parent_normalized_input=item.parent_normalized_mlp_input,
+                parent_gate=item.parent_gate,
+                parent_up=item.parent_up,
+                parent_post_swiglu=item.parent_post_swiglu,
+                parent_post_mlp_residual_target_space=(
+                    item.parent_post_mlp_residual_target_space
+                ),
+                target_pre_mlp_residual=item.actual_child_pre_mlp_residual,
+            )
+            for item in fit
+        )
+        compiled = compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
             source_gate_weight=inventory.gate_weight,
             source_up_weight=inventory.up_weight,
             source_down_weight=inventory.down_weight,
@@ -1120,22 +1358,34 @@ def _full_candidate_state(
             residual_chart_sha256=lfm2_authenticated_tensor_sha256(
                 inventory.residual_chart
             ),
-            cases=cases,
+            parent_ffn_norm_weight=inventory.ffn_norm_weight,
+            parent_ffn_norm_weight_sha256=lfm2_authenticated_tensor_sha256(
+                inventory.ffn_norm_weight
+            ),
+            target_ffn_norm_weight=target_ffn_norm_weight,
+            target_ffn_norm_weight_sha256=lfm2_authenticated_tensor_sha256(
+                target_ffn_norm_weight
+            ),
+            cases=normalized_cases,
             case_sample_weights=tuple(item.sample_weight for item in fit),
+            normalized_decoder_ridge=_NORMALIZED_DECODER_RIDGE,
             ridge=ridge,
             max_prior_delta_ratio=maximum_delta_ratio,
             cluster_ridge=cluster_ridge,
             cluster_max_iterations=cluster_max_iterations,
             cluster_distance_chunk_size=cluster_distance_chunk_size,
         )
-        if not isinstance(compiled, Lfm2CompiledRealMedoidStructuralMlpFold):
+        if not isinstance(
+            compiled,
+            Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold,
+        ):
             raise Lfm2SemanticMlpRefoldError(
-                "Exact-zero MLP dispatch did not return the chart-aware "
+                "Exact-zero MLP dispatch did not return the normalized-input "
                 "multi-anchor compiler result."
             )
         solver = (
-            "fit-only-authenticated-chart-real-medoid-multi-anchor-plus-"
-            "three-closed-form-linear-solves"
+            "fit-only-authenticated-normalized-input-real-medoid-multi-anchor-"
+            "plus-shared-decoder-and-w2-closed-form-solve"
         )
         incumbent_priors_used = False
     else:
@@ -1180,7 +1430,12 @@ def _full_candidate_state(
         "cluster_solve": True,
         "current_dense_c61_w1_w3_w2_used_as_priors": incumbent_priors_used,
         **(
-            {"authenticated_chart_multi_anchor_source_priors_used": True}
+            {
+                "authenticated_normalized_input_multi_anchor_source_priors_used": (
+                    True
+                ),
+                "authenticated_raw_residual_consumer_chart_used": True,
+            }
             if exact_zero_incumbent
             else {}
         ),
@@ -1328,12 +1583,14 @@ def prepare_lfm2_semantic_mlp_postfold(
         )
     parameters = _parameter_bundle(target_model, layer_index)
     incumbent_state = _suffix_state(parameters, layer_index)
+    target_ffn_norm_weight = _ffn_norm_weight(target_model, layer_index)
     target_intermediate, target_hidden = map(int, incumbent_state["w1.weight"].shape)
     if (
         tuple(incumbent_state["w3.weight"].shape)
         != (target_intermediate, target_hidden)
         or tuple(incumbent_state["w2.weight"].shape)
         != (target_hidden, target_intermediate)
+        or tuple(target_ffn_norm_weight.shape) != (target_hidden,)
         or inventory.target_hidden_size != target_hidden
         or any(item.target_hidden_size != target_hidden for item in raw)
     ):
@@ -1356,6 +1613,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         partitions["fit"],
         inventory,
         incumbent_state,
+        target_ffn_norm_weight=target_ffn_norm_weight,
         exact_zero_incumbent=exact_zero_incumbent,
         ridge=float(ridge),
         maximum_delta_ratio=(
@@ -1367,37 +1625,124 @@ def prepare_lfm2_semantic_mlp_postfold(
     )
     if exact_zero_incumbent:
         torch = _torch()
-        correction_reports = full_solver.get("prior_correction_reports")
+        consumer_correction = full_solver.get("consumer_correction_report")
+        producer_bridge = full_solver.get("producer_bridge")
+        consumer_bridge = full_solver.get("consumer_bridge")
         multi_anchor_plan = full_solver.get("multi_anchor_plan")
         fit_weights = tuple(item.sample_weight for item in partitions["fit"])
         fit_row_weights = torch.tensor(fit_weights, dtype=torch.float64)
         expected_chart_sha256 = lfm2_authenticated_tensor_sha256(
             inventory.residual_chart
         )
+        expected_parent_norm_sha256 = lfm2_authenticated_tensor_sha256(
+            inventory.ffn_norm_weight
+        )
+        expected_target_norm_sha256 = lfm2_authenticated_tensor_sha256(
+            target_ffn_norm_weight
+        )
+        normalized_chart = (
+            inventory.residual_chart.to(torch.float64)
+            * inventory.ffn_norm_weight.to(torch.float64).reciprocal().unsqueeze(1)
+            * target_ffn_norm_weight.to(torch.float64).unsqueeze(0)
+        ).contiguous()
+        expected_normalized_chart_sha256 = lfm2_authenticated_tensor_sha256(
+            normalized_chart
+        )
+        normalized_fit_cases = tuple(
+            Lfm2CachedNormalizedInputMlpFoldCase(
+                target_input=item.actual_child_mlp_input,
+                parent_normalized_input=item.parent_normalized_mlp_input,
+                parent_gate=item.parent_gate,
+                parent_up=item.parent_up,
+                parent_post_swiglu=item.parent_post_swiglu,
+                parent_post_mlp_residual_target_space=(
+                    item.parent_post_mlp_residual_target_space
+                ),
+                target_pre_mlp_residual=item.actual_child_pre_mlp_residual,
+            )
+            for item in partitions["fit"]
+        )
+        expected_fit_evidence_sha256 = lfm2_normalized_input_mlp_fit_evidence_sha256(
+            normalized_fit_cases,
+            fit_weights,
+        )
         expected_weight_sha256 = lfm2_authenticated_tensor_sha256(fit_row_weights)
         planted_roles = _nonzero_swiglu_roles(full_state)
         if (
-            not isinstance(correction_reports, list)
-            or len(correction_reports) != 3
-            or {report.get("role") for report in correction_reports}
-            != {
-                "mlp_real_medoid_gate",
-                "mlp_real_medoid_up",
-                "mlp_multi_anchor_down",
-            }
-            or any(
-                report.get("prior_provided") is not True
-                or not isinstance(report.get("prior_norm"), (int, float))
-                or not math.isfinite(float(report["prior_norm"]))
-                or float(report["prior_norm"]) <= 0.0
-                or report.get("update_scale") != 1.0
-                for report in correction_reports
-            )
+            not isinstance(consumer_correction, Mapping)
+            or consumer_correction.get("role")
+            != "mlp_normalized_bridge_multi_anchor_down"
+            or consumer_correction.get("prior_provided") is not True
+            or not isinstance(consumer_correction.get("prior_norm"), (int, float))
+            or not math.isfinite(float(consumer_correction["prior_norm"]))
+            or float(consumer_correction["prior_norm"]) <= 0.0
+            or consumer_correction.get("update_scale") != 1.0
             or full_solver.get("schema")
-            != "neural-forge-lfm2-real-medoid-chart-structural-mlp-fold-v1"
-            or full_solver.get("residual_chart_sha256") != expected_chart_sha256
-            or full_solver.get("producer_plan") != "sparse_multi_anchor_real_medoid"
+            != "neural-forge-lfm2-normalized-input-real-medoid-mlp-fold-v1"
+            or full_solver.get("parent_ffn_norm_weight_sha256")
+            != expected_parent_norm_sha256
+            or full_solver.get("target_ffn_norm_weight_sha256")
+            != expected_target_norm_sha256
+            or not isinstance(producer_bridge, Mapping)
+            or producer_bridge.get("role") != "normalized_mlp_input_target_to_parent"
+            or isinstance(producer_bridge.get("fit_rank"), bool)
+            or not isinstance(producer_bridge.get("fit_rank"), int)
+            or not 0 < producer_bridge["fit_rank"] <= target_hidden
+            or isinstance(producer_bridge.get("decoder_rank"), bool)
+            or not isinstance(producer_bridge.get("decoder_rank"), int)
+            or producer_bridge.get("decoder_rank") != target_hidden
+            or not isinstance(
+                producer_bridge.get("positive_global_gain"),
+                (int, float),
+            )
+            or not math.isfinite(float(producer_bridge["positive_global_gain"]))
+            or float(producer_bridge["positive_global_gain"]) <= 0.0
+            or producer_bridge.get("ridge_policy_value") != _NORMALIZED_DECODER_RIDGE
+            or producer_bridge.get("supported_relative_cap_rho") != 1.0
+            or not isinstance(
+                producer_bridge.get("correction_rowspace_leakage"),
+                (int, float),
+            )
+            or not math.isfinite(float(producer_bridge["correction_rowspace_leakage"]))
+            or float(producer_bridge["correction_rowspace_leakage"]) > 1e-8
+            or not isinstance(
+                producer_bridge.get("null_completion_error"), (int, float)
+            )
+            or not math.isfinite(float(producer_bridge["null_completion_error"]))
+            or float(producer_bridge["null_completion_error"]) > 1e-8
+            or not isinstance(
+                producer_bridge.get("null_completion_operator_norm"),
+                (int, float),
+            )
+            or not isinstance(
+                producer_bridge.get("null_completion_operator_norm_bound"),
+                (int, float),
+            )
+            or not math.isfinite(
+                float(producer_bridge["null_completion_operator_norm"])
+            )
+            or not math.isfinite(
+                float(producer_bridge["null_completion_operator_norm_bound"])
+            )
+            or float(producer_bridge["null_completion_operator_norm"]) < 0.0
+            or float(producer_bridge["null_completion_operator_norm_bound"]) < 0.0
+            or float(producer_bridge["null_completion_operator_norm"])
+            > float(producer_bridge["null_completion_operator_norm_bound"]) + 1e-8
+            or full_solver.get("normalized_chart_sha256")
+            != expected_normalized_chart_sha256
+            or producer_bridge.get("normalized_chart_sha256")
+            != full_solver.get("normalized_chart_sha256")
+            or producer_bridge.get("decoder_sha256")
+            != full_solver.get("normalized_input_decoder_sha256")
+            or not isinstance(consumer_bridge, Mapping)
+            or consumer_bridge.get("role") != "raw_residual_source_to_target"
+            or consumer_bridge.get("residual_chart_sha256") != expected_chart_sha256
+            or consumer_bridge.get("consumer_prior_sha256")
+            != full_solver.get("consumer_prior_sha256")
+            or full_solver.get("producer_consumer_bridge_fields_separate") is not True
             or full_solver.get("producer_averaging") is not False
+            or full_solver.get("producer_per_neuron_interpolation") is not False
+            or full_solver.get("producer_shared_decoder") is not True
             or full_solver.get("full_source_coverage") is not True
             or full_solver.get("full_source_assignment_fraction") != 1.0
             or full_solver.get("source_neurons_dropped") != 0
@@ -1407,7 +1752,11 @@ def prepare_lfm2_semantic_mlp_postfold(
             or full_solver.get("endpoint_feature_source")
             != "materialized_target_dtype_w1_w3_cast_back_to_fp64"
             or full_solver.get("current_dense_c61_w1_w3_w2_used_as_priors") is not False
-            or full_solver.get("authenticated_chart_multi_anchor_source_priors_used")
+            or full_solver.get(
+                "authenticated_normalized_input_multi_anchor_source_priors_used"
+            )
+            is not True
+            or full_solver.get("authenticated_raw_residual_consumer_chart_used")
             is not True
             or not isinstance(multi_anchor_plan, Mapping)
             or multi_anchor_plan.get("calibration_provenance") != "cached_fit_rows_only"
@@ -1427,6 +1776,7 @@ def prepare_lfm2_semantic_mlp_postfold(
             or full_solver.get("fit_row_weight_maximum")
             != float(fit_row_weights.max().item())
             or full_solver.get("fit_row_weights_sha256") != expected_weight_sha256
+            or full_solver.get("fit_evidence_sha256") != expected_fit_evidence_sha256
             or not all(
                 isinstance(full_solver.get(name), str)
                 and len(full_solver[name]) == 64
@@ -1435,11 +1785,26 @@ def prepare_lfm2_semantic_mlp_postfold(
                 )
                 for name in ("producer_prior_sha256", "consumer_prior_sha256")
             )
+            or not all(
+                isinstance(producer_bridge.get(name), str)
+                and len(producer_bridge[name]) == 64
+                and all(
+                    character in "0123456789abcdef"
+                    for character in producer_bridge[name]
+                )
+                for name in (
+                    "normalized_chart_sha256",
+                    "thin_polar_sha256",
+                    "decoder_sha256",
+                    "correction_sha256",
+                    "rowspace_projector_sha256",
+                )
+            )
         ):
             raise Lfm2SemanticMlpRefoldError(
                 "Exact-zero cold-start structural solve did not prove an "
-                "unclipped, chart-authenticated, weighted multi-anchor "
-                "W1/W3/W2 projection."
+                "authenticated normalized-input W1/W3 bridge, separate raw "
+                "residual W2 bridge, and weighted full-source projection."
             )
         full_solver = MappingProxyType(
             {
@@ -1450,8 +1815,12 @@ def prepare_lfm2_semantic_mlp_postfold(
                     "effective_full_structural_maximum_delta_ratio": None,
                     "relative_incumbent_trust_cap_applied": False,
                     "authenticated_full_source_structural_solve_used": True,
-                    "authenticated_residual_chart_used": True,
+                    "authenticated_normalized_input_bridge_used_for_w1_w3": True,
+                    "authenticated_raw_residual_chart_used_only_for_w2": True,
+                    "producer_consumer_bridge_fields_separate": True,
                     "coupled_real_medoid_gate_up_used": True,
+                    "shared_normalized_input_decoder_used": True,
+                    "per_neuron_producer_interpolation_used": False,
                     "every_source_multi_anchor_consumer_used": True,
                     "materialized_target_dtype_producers_used_for_w2": True,
                     "random_initialization_used": False,
@@ -1463,7 +1832,15 @@ def prepare_lfm2_semantic_mlp_postfold(
                     "residual_assignment_sha256": (
                         inventory.residual_assignment_sha256
                     ),
+                    "normalization_lineage_sha256": (
+                        inventory.normalization_lineage_sha256
+                    ),
                     "residual_chart_sha256": expected_chart_sha256,
+                    "parent_ffn_norm_weight_sha256": (expected_parent_norm_sha256),
+                    "target_ffn_norm_weight_sha256": (expected_target_norm_sha256),
+                    "normalized_input_decoder_sha256": (
+                        producer_bridge["decoder_sha256"]
+                    ),
                     "multi_anchor_plan_sha256": (
                         full_solver["multi_anchor_plan_sha256"]
                     ),
@@ -1473,6 +1850,8 @@ def prepare_lfm2_semantic_mlp_postfold(
                         full_solver.get("full_source_coverage") is True
                     ),
                     "producer_averaging": False,
+                    "producer_per_neuron_interpolation": False,
+                    "producer_shared_decoder": True,
                     "source_neurons_dropped": 0,
                     "fit_case_weight_sum": full_solver["fit_case_weight_sum"],
                     "fit_row_weight_sum": full_solver["fit_row_weight_sum"],

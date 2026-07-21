@@ -87,9 +87,7 @@ from neural_forge.hf_tokenizer_bridge import (
 LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA = (
     "neural-forge-lfm2-semantic-layer-stack-refold-v1"
 )
-_TIED_CAUSAL_INTERFACE_FOLD_SCHEMA = (
-    "neural-forge-tied-causal-interface-fold-v1"
-)
+_TIED_CAUSAL_INTERFACE_FOLD_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
 _EXPECTED_ATTENTION_INDICES = (2, 4, 6, 8, 10, 12)
 _EXPECTED_SHORT_CONV_INDICES = (0, 1, 3, 5, 7, 9, 11, 13)
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
@@ -183,9 +181,7 @@ def _validate_producer_coverage_decision(
         and not model_state_changed
         and not role_state_changed
     )
-    installed_complete_chain = bool(
-        installed and model_state_changed
-    )
+    installed_complete_chain = bool(installed and model_state_changed)
     if common_invalid or not (installed_complete_chain or retained_nonzero_seed):
         if cold_start and not installed_complete_chain:
             reason = "blank-or-partial-producer-chain-was-not-densely-planted"
@@ -671,6 +667,7 @@ class _DirectParentSafetensorsSession:
 _COMMON_PARENT_FIELDS = (
     "residual.pre",
     "residual.post_operator",
+    "mlp.input",
     "mlp.gate",
     "mlp.up",
     "mlp.post_swiglu",
@@ -1332,7 +1329,9 @@ def _is_zero_operation_audit(value: Any) -> bool:
 
     return bool(
         isinstance(value, Mapping)
-        and all(value.get(name) == expected for name, expected in _ZERO_OPERATIONS.items())
+        and all(
+            value.get(name) == expected for name, expected in _ZERO_OPERATIONS.items()
+        )
         and all(
             isinstance(name, str)
             and isinstance(count, int)
@@ -1801,6 +1800,57 @@ def _strict_parent_bf16_matrix(value: Any, name: str, *, columns: int) -> Any:
     return value.detach().to(device="cpu").contiguous().clone()
 
 
+def _reconstruct_parent_normalized_mlp_input(
+    residual: Any,
+    *,
+    ffn_norm_weight: Any,
+    norm_epsilon: float,
+    execution_device: Any = "cpu",
+) -> Any:
+    """Reconstruct parent RMSNorm output from cached residual bytes, no forward."""
+
+    torch = _torch()
+    if (
+        not isinstance(residual, torch.Tensor)
+        or residual.ndim != 2
+        or int(residual.shape[0]) <= 0
+        or int(residual.shape[1]) <= 0
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Cached parent post-operator residual must be one nonempty matrix."
+        )
+    source_hidden = int(residual.shape[1])
+    replay_residual = _strict_parent_bf16_matrix(
+        residual,
+        "cached parent post-operator residual",
+        columns=source_hidden,
+    )
+    replay_norm = _strict_parent_bf16_matrix(
+        ffn_norm_weight.reshape(1, -1),
+        "direct parent FFN RMSNorm weight",
+        columns=source_hidden,
+    )[0]
+    if (
+        isinstance(norm_epsilon, bool)
+        or not isinstance(norm_epsilon, (int, float))
+        or not math.isfinite(float(norm_epsilon))
+        or float(norm_epsilon) <= 0.0
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Direct parent FFN normalization has no authenticated positive epsilon."
+        )
+    device = torch.device(execution_device)
+    with torch.no_grad():
+        residual_bf16 = replay_residual.to(device=device, dtype=torch.bfloat16)
+        norm_bf16 = replay_norm.to(device=device, dtype=torch.bfloat16)
+        residual_float = residual_bf16.to(torch.float32)
+        variance = residual_float.square().mean(dim=-1, keepdim=True)
+        normalized = norm_bf16 * (
+            residual_float * torch.rsqrt(variance + float(norm_epsilon))
+        ).to(torch.bfloat16)
+    return normalized.detach().to(device="cpu").contiguous()
+
+
 def _bf16_cross_kernel_equivalence_policy() -> Mapping[str, Any]:
     """Return the fixed arithmetic envelope used only for provenance replay."""
 
@@ -1964,6 +2014,7 @@ def _replay_parent_mlp_functional_provenance(
 
     residual_rows = []
     expected: dict[str, list[Any]] = {
+        "mlp.input": [],
         "mlp.gate": [],
         "mlp.up": [],
         "mlp.post_swiglu": [],
@@ -1989,6 +2040,7 @@ def _replay_parent_mlp_functional_provenance(
                 )
             )
             for field_name, columns in (
+                ("mlp.input", source_hidden),
                 ("mlp.gate", source_intermediate),
                 ("mlp.up", source_intermediate),
                 ("mlp.post_swiglu", source_intermediate),
@@ -2019,14 +2071,15 @@ def _replay_parent_mlp_functional_provenance(
         field: torch.cat(tuple(values), dim=0) for field, values in expected.items()
     }
     device = torch.device(execution_device)
+    normalized_mlp_input = _reconstruct_parent_normalized_mlp_input(
+        residual,
+        ffn_norm_weight=norm,
+        norm_epsilon=float(epsilon),
+        execution_device=device,
+    )
     with torch.no_grad():
         replay_residual = residual.to(device=device, dtype=torch.bfloat16)
-        replay_norm = norm.to(device=device, dtype=torch.bfloat16)
-        residual_float = replay_residual.to(torch.float32)
-        variance = residual_float.square().mean(dim=-1, keepdim=True)
-        mlp_input = replay_norm * (
-            residual_float * torch.rsqrt(variance + float(epsilon))
-        ).to(torch.bfloat16)
+        mlp_input = normalized_mlp_input.to(device=device, dtype=torch.bfloat16)
         replay_gate = torch.nn.functional.linear(
             mlp_input,
             gate.to(device=device, dtype=torch.bfloat16),
@@ -2042,6 +2095,7 @@ def _replay_parent_mlp_functional_provenance(
         )
         replay_layer = replay_residual + replay_down
     replayed = {
+        "mlp.input": normalized_mlp_input,
         "mlp.gate": replay_gate.detach().to(device="cpu").contiguous(),
         "mlp.up": replay_up.detach().to(device="cpu").contiguous(),
         "mlp.post_swiglu": replay_post.detach().to(device="cpu").contiguous(),
@@ -2094,6 +2148,10 @@ def _replay_parent_mlp_functional_provenance(
         "replayed_endpoint_sha256": {
             field: _tensor_sha256(value) for field, value in sorted(replayed.items())
         },
+        "reconstructed_normalized_mlp_input_sha256": _tensor_sha256(
+            normalized_mlp_input
+        ),
+        "cached_normalized_mlp_input_sha256": _tensor_sha256(cached["mlp.input"]),
         "semantic_endpoint_rows": len(row_ids),
         "semantic_endpoint_row_ids_sha256": canonical_sha256(row_ids),
         "execution_device": str(device),
@@ -2109,6 +2167,8 @@ def _replay_parent_mlp_functional_provenance(
             metrics["bit_exact"] is True for metrics in endpoint_metrics.values()
         ),
         "all_cached_endpoints_within_authenticated_bf16_envelope": True,
+        "cached_mlp_input_is_normalized_evidence_source_of_truth": True,
+        "reconstructed_mlp_input_is_authentication_check_only": True,
         "direct_parent_tensors_numerically_consistent_on_cached_endpoints": True,
         "semantic_endpoint_scope_is_complete_tensor_identity_proof": False,
         "cryptographic_parent_tensor_identity_proven_by_this_receipt": False,
@@ -2164,8 +2224,7 @@ def _direct_mlp_inventory(
         verified_chart_receipt.get("schema")
         != "neural-forge-lfm2-layer-stack-residual-chart-v1"
         or verified_chart_receipt.get("layer_index") != layer_index
-        or verified_chart_receipt.get("chart_sha256")
-        != _tensor_sha256(selected_chart)
+        or verified_chart_receipt.get("chart_sha256") != _tensor_sha256(selected_chart)
     ):
         raise Lfm2SemanticLayerStackRefoldError(
             "Residual-chart receipt does not authenticate the selected MLP chart."
@@ -2204,6 +2263,8 @@ def _direct_mlp_inventory(
         residual_assignment_sha256=verified_chart_receipt["result_sha256"],
         compiler_lineage_sha256=lineage,
         residual_chart=selected_chart,
+        ffn_norm_weight=ffn_norm,
+        norm_epsilon=parent_session.norm_epsilon,
         gate_weight=gate,
         up_weight=up,
         down_weight=down,
@@ -2218,9 +2279,14 @@ def _direct_mlp_inventory(
         != verified_chart_receipt["chart_sha256"]
         or inventory_body.get("residual_chart_receipt_sha256")
         != verified_chart_receipt["result_sha256"]
+        or inventory_body.get("ffn_norm_weight_sha256") != _tensor_sha256(ffn_norm)
+        or inventory_body.get("norm_epsilon") != parent_session.norm_epsilon
+        or inventory_body.get("normalization_and_loader_lineage_jointly_hashed")
+        is not True
     ):
         raise Lfm2SemanticLayerStackRefoldError(
-            "Direct-local MLP inventory lost residual-chart receipt or lineage binding."
+            "Direct-local MLP inventory lost residual-chart or normalization "
+            "lineage binding."
         )
     return inventory, functional_provenance
 
@@ -2238,6 +2304,7 @@ def _build_mlp_evidence(
     source_inventory: Any,
     layer_index: int,
     final_layer: bool,
+    execution_device: Any,
 ) -> tuple[Any, ...]:
     torch = _torch()
     manifest_sha = _digest(
@@ -2248,6 +2315,7 @@ def _build_mlp_evidence(
         device="cpu",
         dtype=torch.float64,
     )
+    equivalence_policy = _bf16_cross_kernel_equivalence_policy()
     result = []
     for alignment in alignments:
         batch = alignment.source_batch_index
@@ -2309,6 +2377,8 @@ def _build_mlp_evidence(
 
             histories = trajectory.phase_histories[phase.phase]
             required_histories = (
+                "residual.post_operator",
+                "mlp.input",
                 "mlp.gate",
                 "mlp.up",
                 "mlp.post_swiglu",
@@ -2321,6 +2391,39 @@ def _build_mlp_evidence(
                 )
             donor_index = torch.tensor(donor_positions, dtype=torch.long)
             target_index = torch.tensor(target_positions, dtype=torch.long)
+            parent_post_operator = histories["residual.post_operator"].index_select(
+                1,
+                donor_index,
+            )[0]
+            parent_normalized_input = _reconstruct_parent_normalized_mlp_input(
+                parent_post_operator,
+                ffn_norm_weight=source_inventory.ffn_norm_weight,
+                norm_epsilon=source_inventory.norm_epsilon,
+                execution_device=execution_device,
+            )
+            cached_parent_normalized_input = (
+                histories["mlp.input"]
+                .index_select(
+                    1,
+                    donor_index,
+                )[0]
+                .detach()
+                .to(device="cpu")
+                .contiguous()
+                .clone()
+            )
+            normalized_input_metrics = _bf16_cross_kernel_equivalence_metrics(
+                replayed=parent_normalized_input,
+                cached=cached_parent_normalized_input,
+                policy=equivalence_policy,
+                field_name="mlp.input",
+            )
+            if normalized_input_metrics["accepted"] is not True:
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Cached parent mlp.input falls outside the authenticated "
+                    "BF16 reconstruction envelope at layer "
+                    f"{layer_index}, batch {batch}, phase {phase.phase}."
+                )
             parent_gate = histories["mlp.gate"].index_select(1, donor_index)[0]
             parent_up = histories["mlp.up"].index_select(1, donor_index)[0]
             parent_post = histories["mlp.post_swiglu"].index_select(1, donor_index)[0]
@@ -2380,6 +2483,10 @@ def _build_mlp_evidence(
                         parent_gate=parent_gate[row],
                         parent_up=parent_up[row],
                         parent_post_swiglu=parent_post[row],
+                        parent_pre_mlp_residual=parent_post_operator[row],
+                        parent_normalized_mlp_input=(
+                            cached_parent_normalized_input[row]
+                        ),
                         actual_child_mlp_input=child_input[row],
                         actual_child_pre_mlp_residual=child_pre[row],
                         parent_post_mlp_residual_target_space=(parent_post_layer[row]),
@@ -3055,13 +3162,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 attention_producer_coverage_count += int(
                     operator_kind == "full_attention"
                 )
-                short_conv_producer_coverage_count += int(
-                    operator_kind == "short_conv"
-                )
+                short_conv_producer_coverage_count += int(operator_kind == "short_conv")
                 cold_start_producer_chain_count += int(
-                    operator_coverage_decision[
-                        "cold_start_or_partial_seed_at_entry"
-                    ]
+                    operator_coverage_decision["cold_start_or_partial_seed_at_entry"]
                 )
                 installed_complete_producer_chain_count += int(
                     operator_coverage_decision[
@@ -3122,6 +3225,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     source_inventory=source_inventory,
                     layer_index=layer_index,
                     final_layer=layer_index == 13,
+                    execution_device=mlp_source_provenance.get(
+                        "execution_device",
+                        "cpu",
+                    ),
                 )
                 mlp_evidence_compile_count += 1
                 mlp_coverage_before = _lfm2_dense_producer_chain_coverage(
@@ -3251,8 +3358,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             or mlp_evidence_compile_count != 14
             or nonterminal_mlp_decision_count != 13
             or (
-                nonterminal_mlp_install_count
-                + nonterminal_mlp_incumbent_noop_count
+                nonterminal_mlp_install_count + nonterminal_mlp_incumbent_noop_count
                 != 13
             )
             or final_mlp_producer_install_count
@@ -3273,8 +3379,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 + nonterminal_mlp_incumbent_noop_count
                 + final_mlp_producer_incumbent_noop_count
             )
-            or cold_start_producer_chain_count
-            > installed_complete_producer_chain_count
+            or cold_start_producer_chain_count > installed_complete_producer_chain_count
             or operator_parameter_mutation_count
             != attention_install_count + short_conv_install_count
             or mlp_parameter_mutation_count
@@ -3329,9 +3434,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "layer_count": 14,
             "attention_operator_decision_count": attention_decision_count,
             "attention_operator_install_count": attention_install_count,
-            "attention_operator_incumbent_noop_count": (
-                attention_incumbent_noop_count
-            ),
+            "attention_operator_incumbent_noop_count": (attention_incumbent_noop_count),
             "short_conv_operator_decision_count": short_conv_decision_count,
             "short_conv_operator_install_count": short_conv_install_count,
             "short_conv_operator_incumbent_noop_count": (

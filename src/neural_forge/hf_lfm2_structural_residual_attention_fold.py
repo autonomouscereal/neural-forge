@@ -2406,6 +2406,20 @@ class Lfm2CachedMlpFoldCase:
     parent_contribution: Any | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2CachedNormalizedInputMlpFoldCase:
+    """FIT-only MLP evidence including the parent's normalized input rows."""
+
+    target_input: Any
+    parent_normalized_input: Any
+    parent_gate: Any
+    parent_up: Any
+    parent_post_swiglu: Any
+    parent_post_mlp_residual_target_space: Any
+    target_pre_mlp_residual: Any
+    parent_contribution: Any | None = None
+
+
 def _raw_mlp_parent_case_sha256(
     case: Lfm2CachedMlpFoldCase,
     *,
@@ -2435,6 +2449,43 @@ def _raw_mlp_parent_case_sha256(
             else _tensor_sha256(case.parent_contribution)
         ),
     }
+    return _metadata_sha256(body)
+
+
+def lfm2_normalized_input_mlp_fit_evidence_sha256(
+    cases: Sequence[Lfm2CachedNormalizedInputMlpFoldCase],
+    case_sample_weights: Sequence[float],
+) -> str:
+    body = []
+    for case_index, (case, sample_weight) in enumerate(
+        zip(cases, case_sample_weights, strict=True)
+    ):
+        tensors = {
+            "target_input": case.target_input,
+            "parent_normalized_input": case.parent_normalized_input,
+            "parent_gate": case.parent_gate,
+            "parent_up": case.parent_up,
+            "parent_post_swiglu": case.parent_post_swiglu,
+            "parent_post_mlp_residual_target_space": (
+                case.parent_post_mlp_residual_target_space
+            ),
+            "target_pre_mlp_residual": case.target_pre_mlp_residual,
+        }
+        body.append(
+            {
+                "case_index": case_index,
+                "sample_weight": float(sample_weight),
+                "tensor_sha256": {
+                    name: _tensor_sha256(value)
+                    for name, value in sorted(tensors.items())
+                },
+                "parent_contribution_sha256": (
+                    None
+                    if case.parent_contribution is None
+                    else _tensor_sha256(case.parent_contribution)
+                ),
+            }
+        )
     return _metadata_sha256(body)
 
 
@@ -2899,6 +2950,207 @@ class Lfm2CompiledRealMedoidStructuralMlpFold:
             "heldout_rows_used_for_plan": 0,
             "heldout_rows_used_by_solver": 0,
             "producer_averaging": False,
+            "blank_target_values_read": False,
+            "dense_floating_state": True,
+            "source_parameters_pruned": 0,
+            "model_forward_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
+    """Dense MLP state planted through separate producer/consumer charts.
+
+    The producer chart acts between the *normalized* MLP input spaces.  The
+    consumer chart remains the authenticated raw residual chart.  Keeping the
+    two operators separate prevents RMSNorm gamma and scale from leaking into
+    the uncached producer nullspace.
+    """
+
+    cluster_plan: GatedMLPMultiAnchorPlan
+    gate_weight: Any
+    up_weight: Any
+    down_weight: Any
+    normalized_input_decoder: Any
+    neuron_groups: tuple[tuple[int, ...], ...]
+    source_hidden_size: int
+    target_hidden_size: int
+    source_intermediate_size: int
+    target_intermediate_size: int
+    source_logical_parameters: int
+    target_logical_parameters: int
+    source_state_sha256_before: str
+    source_state_sha256_after: str
+    target_template_sha256: str
+    residual_chart_sha256: str
+    parent_ffn_norm_weight_sha256: str
+    target_ffn_norm_weight_sha256: str
+    normalized_chart_sha256: str
+    normalized_polar_sha256: str
+    normalized_input_decoder_sha256: str
+    normalized_input_correction_sha256: str
+    normalized_input_rowspace_projector_sha256: str
+    producer_prior_sha256: str
+    consumer_prior_sha256: str
+    fit_evidence_sha256: str
+    fit_row_weights_sha256: str
+    compiled_state_sha256: str
+    residual_chart_rank: int
+    normalized_chart_rank: int
+    normalized_input_fit_rank: int
+    normalized_input_decoder_rank: int
+    normalized_input_global_gain: float
+    normalized_input_ridge_policy_value: float
+    normalized_input_scaled_ridge: float
+    normalized_input_supported_relative_cap: float
+    normalized_input_correction_scale: float
+    normalized_input_fit_relative_rmse: float
+    normalized_input_polar_orthogonality_error: float
+    normalized_input_correction_rowspace_leakage: float
+    normalized_input_null_completion_error: float
+    normalized_input_null_completion_operator_norm: float
+    normalized_input_null_completion_operator_norm_bound: float
+    fit_case_weight_sum: float
+    fit_row_weight_sum: float
+    fit_row_weight_minimum: float
+    fit_row_weight_maximum: float
+    residual_endpoint_relative_rmse: float
+    consumer_correction_report: Lfm2PriorCorrectionReport
+
+    @property
+    def removed_logical_parameters(self) -> int:
+        return self.source_logical_parameters - self.target_logical_parameters
+
+    @property
+    def parameter_reduction_fraction(self) -> float:
+        return self.removed_logical_parameters / self.source_logical_parameters
+
+    @property
+    def full_source_coverage(self) -> bool:
+        return sorted(
+            source for group in self.neuron_groups for source in group
+        ) == list(range(self.source_intermediate_size))
+
+    def state_dict(self) -> Mapping[str, Any]:
+        return MappingProxyType(
+            {
+                "w1.weight": self.gate_weight.detach().cpu().clone(),
+                "w3.weight": self.up_weight.detach().cpu().clone(),
+                "w2.weight": self.down_weight.detach().cpu().clone(),
+            }
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": ("neural-forge-lfm2-normalized-input-real-medoid-mlp-fold-v1"),
+            "source_hidden_size": self.source_hidden_size,
+            "target_hidden_size": self.target_hidden_size,
+            "source_intermediate_size": self.source_intermediate_size,
+            "target_intermediate_size": self.target_intermediate_size,
+            "source_logical_parameters": self.source_logical_parameters,
+            "target_logical_parameters": self.target_logical_parameters,
+            "removed_logical_parameters": self.removed_logical_parameters,
+            "parameter_reduction_fraction": self.parameter_reduction_fraction,
+            "medoid_source_neurons": list(self.cluster_plan.medoid_source_neurons),
+            "anchors_per_source": self.cluster_plan.anchors_per_source,
+            "total_sparse_consumer_edges": len(self.cluster_plan.anchor_coefficients),
+            "multi_anchor_plan": self.cluster_plan.report.as_dict(),
+            "multi_anchor_plan_sha256": canonical_sha256(
+                self.cluster_plan.report.as_dict()
+            ),
+            "neuron_groups": [list(value) for value in self.neuron_groups],
+            "full_source_coverage": self.full_source_coverage,
+            "full_source_assignment_fraction": 1.0,
+            "source_neurons_dropped": 0,
+            "source_state_sha256_before": self.source_state_sha256_before,
+            "source_state_sha256_after": self.source_state_sha256_after,
+            "target_template_sha256": self.target_template_sha256,
+            "parent_ffn_norm_weight_sha256": (self.parent_ffn_norm_weight_sha256),
+            "target_ffn_norm_weight_sha256": (self.target_ffn_norm_weight_sha256),
+            "producer_bridge": {
+                "role": "normalized_mlp_input_target_to_parent",
+                "construction": (
+                    "positive_gain_thin_polar_plus_fit_rowspace_correction_"
+                    "with_bounded_polar_null_completion"
+                ),
+                "normalized_chart_sha256": self.normalized_chart_sha256,
+                "thin_polar_sha256": self.normalized_polar_sha256,
+                "decoder_sha256": self.normalized_input_decoder_sha256,
+                "correction_sha256": self.normalized_input_correction_sha256,
+                "rowspace_projector_sha256": (
+                    self.normalized_input_rowspace_projector_sha256
+                ),
+                "normalized_chart_rank": self.normalized_chart_rank,
+                "fit_rank": self.normalized_input_fit_rank,
+                "decoder_rank": self.normalized_input_decoder_rank,
+                "positive_global_gain": self.normalized_input_global_gain,
+                "ridge_policy_value": self.normalized_input_ridge_policy_value,
+                "scaled_ridge": self.normalized_input_scaled_ridge,
+                "supported_relative_cap_rho": (
+                    self.normalized_input_supported_relative_cap
+                ),
+                "correction_scale": self.normalized_input_correction_scale,
+                "fit_relative_rmse": self.normalized_input_fit_relative_rmse,
+                "polar_orthogonality_error": (
+                    self.normalized_input_polar_orthogonality_error
+                ),
+                "correction_rowspace_leakage": (
+                    self.normalized_input_correction_rowspace_leakage
+                ),
+                "null_completion_error": (self.normalized_input_null_completion_error),
+                "null_completion_operator_norm": (
+                    self.normalized_input_null_completion_operator_norm
+                ),
+                "null_completion_operator_norm_bound": (
+                    self.normalized_input_null_completion_operator_norm_bound
+                ),
+            },
+            "consumer_bridge": {
+                "role": "raw_residual_source_to_target",
+                "residual_chart_sha256": self.residual_chart_sha256,
+                "residual_chart_rank": self.residual_chart_rank,
+                "consumer_prior_sha256": self.consumer_prior_sha256,
+            },
+            "producer_consumer_bridge_fields_separate": True,
+            "normalized_chart_sha256": self.normalized_chart_sha256,
+            "normalized_input_decoder_sha256": (self.normalized_input_decoder_sha256),
+            "producer_prior_sha256": self.producer_prior_sha256,
+            "consumer_prior_sha256": self.consumer_prior_sha256,
+            "fit_evidence_sha256": self.fit_evidence_sha256,
+            "fit_weighting": "sqrt_case_weight_repeated_per_case_row",
+            "fit_case_weight_sum": self.fit_case_weight_sum,
+            "fit_row_weight_sum": self.fit_row_weight_sum,
+            "fit_row_weight_minimum": self.fit_row_weight_minimum,
+            "fit_row_weight_maximum": self.fit_row_weight_maximum,
+            "fit_row_weights_sha256": self.fit_row_weights_sha256,
+            "compiled_state_sha256": self.compiled_state_sha256,
+            "residual_endpoint_relative_rmse": (self.residual_endpoint_relative_rmse),
+            "consumer_correction_report": self.consumer_correction_report.as_dict(),
+            "producer_transport": (
+                "coupled_real_source_gate_up_medoids_through_one_shared_"
+                "normalized_input_decoder"
+            ),
+            "consumer_transport": (
+                "every_source_w2_column_through_sparse_multi_anchor_"
+                "aggregation_then_raw_residual_chart_and_closed_form_endpoint_"
+                "correction"
+            ),
+            "endpoint_feature_source": (
+                "materialized_target_dtype_w1_w3_cast_back_to_fp64"
+            ),
+            "null_completion_policy": (
+                "fit_orthogonal_subspace_equals_positive_gain_thin_polar_"
+                "completion_with_operator_norm_at_most_global_gain"
+            ),
+            "producer_averaging": False,
+            "producer_per_neuron_interpolation": False,
+            "producer_shared_decoder": True,
+            "plan_evidence_scope": "supplied_fit_cases_only",
+            "heldout_rows_used_for_plan": 0,
+            "heldout_rows_used_by_solver": 0,
             "blank_target_values_read": False,
             "dense_floating_state": True,
             "source_parameters_pruned": 0,
@@ -3864,6 +4116,621 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
         fit_row_weights_sha256=lfm2_authenticated_tensor_sha256(row_weights),
         residual_endpoint_relative_rmse=endpoint_error,
         prior_correction_reports=(gate_fit, up_fit, down_fit),
+    )
+
+
+def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
+    *,
+    source_gate_weight: Any,
+    source_up_weight: Any,
+    source_down_weight: Any,
+    target_gate_weight_template: Any,
+    target_up_weight_template: Any,
+    target_down_weight_template: Any,
+    residual_chart: Any,
+    residual_chart_sha256: str,
+    parent_ffn_norm_weight: Any,
+    parent_ffn_norm_weight_sha256: str,
+    target_ffn_norm_weight: Any,
+    target_ffn_norm_weight_sha256: str,
+    cases: Sequence[Lfm2CachedNormalizedInputMlpFoldCase],
+    case_sample_weights: Sequence[float] | None = None,
+    normalized_decoder_ridge: float = 1e-8,
+    ridge: float = 0.0,
+    max_prior_delta_ratio: float | None = None,
+    anchors_per_source: int = 4,
+    max_candidate_targets: int = 64,
+    cluster_ridge: float = 1e-8,
+    max_coefficient_l1: float = 64.0,
+    cluster_max_iterations: int = 16,
+    cluster_distance_chunk_size: int = 512,
+    similarity_chunk_size: int = 512,
+    max_similarity_products: int = 64_000_000,
+    max_projection_fits: int = 1_000_000,
+    max_sparse_entries: int = 1_000_000,
+    max_workspace_elements: int = 16_000_000,
+) -> Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
+    """Plant a smaller dense SwiGLU through separate normalized/raw charts.
+
+    ``residual_chart`` has the established source-by-target orientation.  It
+    is converted to a normalized-input chart with the authenticated parent
+    and target RMSNorm gamma vectors::
+
+        A = diag(gamma_parent)^-1 @ residual_chart @ diag(gamma_target)
+
+    A thin polar factor supplies a bounded target-to-parent completion.  One
+    strictly positive gain and one shared FIT-rowspace correction are solved
+    from ``target_input -> parent_normalized_input``.  The correction is
+    ridge-scaled by FIT design energy and capped to rho=1 relative to the
+    supported polar prior.  The orthogonal FIT nullspace remains exactly the
+    gain-scaled polar completion, whose operator norm is bounded by the gain.
+
+    Coupled real source W1/W3 medoids are transported by that one decoder;
+    neither producer receives a per-neuron interpolation or independent fit.
+    Every source W2 column is still represented by the sparse multi-anchor
+    consumer plan and transported through the raw residual chart.  The final
+    W2 solve uses the actual materialized target-dtype W1/W3 bytes.  No model
+    forward, backward, optimizer, heldout row, or target-template value is
+    used.
+    """
+
+    torch = _torch()
+    if not cases or not all(
+        isinstance(value, Lfm2CachedNormalizedInputMlpFoldCase) for value in cases
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "cases must contain at least one Lfm2CachedNormalizedInputMlpFoldCase."
+        )
+    normalized_decoder_ridge = _nonnegative_float(
+        normalized_decoder_ridge, "normalized_decoder_ridge"
+    )
+    ridge = _nonnegative_float(ridge, "ridge")
+    if max_prior_delta_ratio is not None:
+        max_prior_delta_ratio = _nonnegative_float(
+            max_prior_delta_ratio, "max_prior_delta_ratio"
+        )
+
+    authenticated_inputs = (
+        (residual_chart, residual_chart_sha256, "residual_chart"),
+        (
+            parent_ffn_norm_weight,
+            parent_ffn_norm_weight_sha256,
+            "parent_ffn_norm_weight",
+        ),
+        (
+            target_ffn_norm_weight,
+            target_ffn_norm_weight_sha256,
+            "target_ffn_norm_weight",
+        ),
+    )
+    for tensor, expected_sha256, name in authenticated_inputs:
+        if not _valid_sha256_text(expected_sha256):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                f"{name}_sha256 must be a lowercase SHA-256 digest."
+            )
+        try:
+            actual_sha256 = lfm2_authenticated_tensor_sha256(tensor)
+        except (TypeError, RuntimeError) as exc:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                f"{name} must be an authenticated materialized tensor."
+            ) from exc
+        if actual_sha256 != expected_sha256:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                f"{name} tensor authentication failed."
+            )
+
+    if case_sample_weights is None:
+        normalized_case_weights = tuple(1.0 for _ in cases)
+    else:
+        if isinstance(case_sample_weights, (str, bytes)) or len(
+            case_sample_weights
+        ) != len(cases):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "case_sample_weights must contain one value per FIT case."
+            )
+        parsed_weights = []
+        for case_index, value in enumerate(case_sample_weights):
+            if isinstance(value, bool):
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    "case_sample_weights must contain positive finite values."
+                )
+            try:
+                weight = float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    f"case_sample_weights[{case_index}] is not finite."
+                ) from exc
+            if not math.isfinite(weight) or weight <= 0.0:
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    "case_sample_weights must contain positive finite values."
+                )
+            parsed_weights.append(weight)
+        normalized_case_weights = tuple(parsed_weights)
+
+    source_values = {
+        "w1.weight": source_gate_weight,
+        "w3.weight": source_up_weight,
+        "w2.weight": source_down_weight,
+    }
+    source_before = _state_sha256(source_values)
+    source_gate = _float_tensor(source_gate_weight, "source_gate_weight", ndim=2)
+    source_up = _float_tensor(source_up_weight, "source_up_weight", ndim=2)
+    source_down = _float_tensor(source_down_weight, "source_down_weight", ndim=2)
+    source_intermediate, source_hidden = map(int, source_gate.shape)
+    if tuple(source_up.shape) != tuple(source_gate.shape) or tuple(
+        source_down.shape
+    ) != (source_hidden, source_intermediate):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Source gate/up/down tensors do not form one standard LFM2 SwiGLU."
+        )
+
+    target_templates = {
+        "w1.weight": target_gate_weight_template,
+        "w3.weight": target_up_weight_template,
+        "w2.weight": target_down_weight_template,
+    }
+    template_dtypes: dict[str, Any] = {}
+    template_shapes: dict[str, tuple[int, ...]] = {}
+    template_spec: dict[str, tuple[tuple[int, ...], str]] = {}
+    for name, value in target_templates.items():
+        dtype, shape = _dense_template(value, f"target_{name}")
+        template_dtypes[name] = dtype
+        template_shapes[name] = shape
+        template_spec[name] = (shape, str(dtype))
+    target_intermediate, target_hidden = template_shapes["w1.weight"]
+    if template_shapes != {
+        "w1.weight": (target_intermediate, target_hidden),
+        "w3.weight": (target_intermediate, target_hidden),
+        "w2.weight": (target_hidden, target_intermediate),
+    }:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Target templates are not one standard atomic LFM2 SwiGLU set."
+        )
+    if target_hidden > source_hidden or target_intermediate > source_intermediate:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The structural target cannot expand hidden or intermediate width."
+        )
+    if target_hidden == source_hidden and target_intermediate == source_intermediate:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The structural target must reduce hidden or intermediate width."
+        )
+    if not all(
+        int(target_templates[name].numel()) < int(source_values[name].numel())
+        for name in ("w1.weight", "w3.weight", "w2.weight")
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Every materialized target MLP tensor must be smaller than its source."
+        )
+
+    chart = _float_tensor(residual_chart, "residual_chart", ndim=2)
+    parent_gamma = _float_tensor(
+        parent_ffn_norm_weight, "parent_ffn_norm_weight", ndim=1
+    )
+    target_gamma = _float_tensor(
+        target_ffn_norm_weight, "target_ffn_norm_weight", ndim=1
+    )
+    if tuple(chart.shape) != (source_hidden, target_hidden):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "residual_chart must have shape [source_hidden, target_hidden]."
+        )
+    if tuple(parent_gamma.shape) != (source_hidden,) or tuple(target_gamma.shape) != (
+        target_hidden,
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Authenticated parent/target ffn_norm weights do not match the "
+            "source/target hidden widths."
+        )
+    if bool((parent_gamma == 0.0).any().item()) or bool(
+        (target_gamma == 0.0).any().item()
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Normalized-input chart construction requires nonzero ffn_norm weights."
+        )
+    chart_rank = int(torch.linalg.matrix_rank(chart).item())
+    if chart_rank != target_hidden:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "residual_chart must have full target-column rank."
+        )
+
+    with torch.no_grad():
+        # A maps parent normalized coordinates into child normalized
+        # coordinates.  Its thin polar factor removes raw residual scaling
+        # while retaining the chart's cross-width orientation.
+        normalized_chart = (
+            chart * parent_gamma.reciprocal().unsqueeze(1) * target_gamma.unsqueeze(0)
+        ).contiguous()
+        if not bool(torch.isfinite(normalized_chart).all().item()):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Normalized-input chart contains non-finite coefficients."
+            )
+        normalized_chart_rank = int(torch.linalg.matrix_rank(normalized_chart).item())
+        if normalized_chart_rank != target_hidden:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Normalized-input chart must have full target-column rank."
+            )
+        polar_u, _, polar_vh = torch.linalg.svd(normalized_chart, full_matrices=False)
+        normalized_polar = (polar_u @ polar_vh).contiguous()
+        polar_orthogonality_error = float(
+            torch.linalg.matrix_norm(
+                normalized_polar.T @ normalized_polar
+                - torch.eye(target_hidden, dtype=torch.float64),
+                ord=2,
+            ).item()
+        )
+
+        mapped_source_down = (chart.T @ source_down).contiguous()
+        normalized: list[dict[str, Any]] = []
+        for case_index, case in enumerate(cases):
+            prefix = f"cases[{case_index}]"
+            target_input = _float_tensor(
+                case.target_input, f"{prefix}.target_input", ndim=2
+            )
+            parent_input = _float_tensor(
+                case.parent_normalized_input,
+                f"{prefix}.parent_normalized_input",
+                ndim=2,
+            )
+            gate = _float_tensor(case.parent_gate, f"{prefix}.parent_gate", ndim=2)
+            up = _float_tensor(case.parent_up, f"{prefix}.parent_up", ndim=2)
+            post = _float_tensor(
+                case.parent_post_swiglu,
+                f"{prefix}.parent_post_swiglu",
+                ndim=2,
+            )
+            endpoint = _float_tensor(
+                case.parent_post_mlp_residual_target_space,
+                f"{prefix}.parent_post_mlp_residual_target_space",
+                ndim=2,
+            )
+            target_residual = _float_tensor(
+                case.target_pre_mlp_residual,
+                f"{prefix}.target_pre_mlp_residual",
+                ndim=2,
+            )
+            rows = int(target_input.shape[0])
+            if (
+                tuple(target_input.shape) != (rows, target_hidden)
+                or tuple(parent_input.shape) != (rows, source_hidden)
+                or tuple(gate.shape) != (rows, source_intermediate)
+                or tuple(up.shape) != tuple(gate.shape)
+                or tuple(post.shape) != tuple(gate.shape)
+                or tuple(endpoint.shape) != (rows, target_hidden)
+                or tuple(target_residual.shape) != tuple(endpoint.shape)
+            ):
+                raise Lfm2StructuralResidualAttentionFoldError(
+                    f"{prefix} tensor shapes do not match source/target topology."
+                )
+            if case.parent_contribution is None:
+                contribution = post * torch.linalg.vector_norm(
+                    mapped_source_down, dim=0
+                ).unsqueeze(0)
+            else:
+                raw = case.parent_contribution
+                ndim = getattr(raw, "ndim", None)
+                if ndim not in {2, 3}:
+                    raise Lfm2StructuralResidualAttentionFoldError(
+                        f"{prefix}.parent_contribution must have rank 2 or 3."
+                    )
+                contribution = _float_tensor(
+                    raw, f"{prefix}.parent_contribution", ndim=int(ndim)
+                )
+                if tuple(contribution.shape[:2]) != (
+                    rows,
+                    source_intermediate,
+                ):
+                    raise Lfm2StructuralResidualAttentionFoldError(
+                        f"{prefix}.parent_contribution has incompatible axes."
+                    )
+                if contribution.ndim == 3:
+                    contribution = torch.linalg.vector_norm(contribution, dim=-1)
+            normalized.append(
+                {
+                    "target_input": target_input,
+                    "parent_input": parent_input,
+                    "gate": gate,
+                    "up": up,
+                    "post": post,
+                    "contribution": contribution,
+                    "endpoint": endpoint,
+                    "target_residual": target_residual,
+                    "sample_weight": normalized_case_weights[case_index],
+                }
+            )
+
+        row_weights = torch.cat(
+            [
+                torch.full(
+                    (int(value["target_input"].shape[0]),),
+                    float(value["sample_weight"]),
+                    dtype=torch.float64,
+                )
+                for value in normalized
+            ],
+            dim=0,
+        )
+        sqrt_row_weights = torch.sqrt(row_weights).unsqueeze(1)
+        target_input_rows = torch.cat(
+            [value["target_input"] for value in normalized], dim=0
+        )
+        parent_input_rows = torch.cat(
+            [value["parent_input"] for value in normalized], dim=0
+        )
+        weighted_target_input = target_input_rows * sqrt_row_weights
+        weighted_parent_input = parent_input_rows * sqrt_row_weights
+
+        # Q0.T is a target-to-parent partial isometry.  The only scalar degree
+        # of freedom is fitted once from all FIT rows and must retain positive
+        # orientation.
+        unit_polar_decoder = normalized_polar.T.contiguous()
+        unit_polar_prediction = weighted_target_input @ unit_polar_decoder
+        gain_denominator = float(unit_polar_prediction.square().sum().item())
+        gain_numerator = float(
+            (unit_polar_prediction * weighted_parent_input).sum().item()
+        )
+        if (
+            not math.isfinite(gain_numerator)
+            or not math.isfinite(gain_denominator)
+            or gain_denominator <= torch.finfo(torch.float64).tiny
+            or gain_numerator <= 0.0
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "FIT rows do not identify one strictly positive normalized-input "
+                "polar gain."
+            )
+        global_gain = gain_numerator / gain_denominator
+        polar_decoder = (unit_polar_decoder * global_gain).contiguous()
+
+        design_u, design_s, design_vh = torch.linalg.svd(
+            weighted_target_input, full_matrices=False
+        )
+        if int(design_s.numel()) == 0 or float(design_s.max().item()) <= 0.0:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "FIT normalized child inputs have zero rank."
+            )
+        design_tolerance = (
+            max(weighted_target_input.shape)
+            * torch.finfo(torch.float64).eps
+            * float(design_s.max().item())
+        )
+        fit_rank = int((design_s > design_tolerance).sum().item())
+        if fit_rank <= 0:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "FIT normalized child inputs have zero numerical rank."
+            )
+        supported_u = design_u[:, :fit_rank]
+        supported_s = design_s[:fit_rank]
+        supported_vh = design_vh[:fit_rank]
+        rowspace_projector = (supported_vh.T @ supported_vh).contiguous()
+        design_energy_scale = float((supported_s.square().sum() / fit_rank).item())
+        scaled_decoder_ridge = normalized_decoder_ridge * design_energy_scale
+        residual = weighted_parent_input - weighted_target_input @ polar_decoder
+        spectral_filter = supported_s / (supported_s.square() + scaled_decoder_ridge)
+        correction = supported_vh.T @ (
+            spectral_filter.unsqueeze(1) * (supported_u.T @ residual)
+        )
+
+        # rho=1 is fixed rather than tuned: the FIT-supported correction may
+        # be no larger than the polar prior already supported by those rows.
+        supported_relative_cap = 1.0
+        supported_prior = rowspace_projector @ polar_decoder
+        supported_prior_norm = float(torch.linalg.vector_norm(supported_prior).item())
+        correction_norm = float(torch.linalg.vector_norm(correction).item())
+        allowed_correction_norm = supported_relative_cap * supported_prior_norm
+        correction_scale = 1.0
+        if correction_norm > allowed_correction_norm:
+            correction_scale = allowed_correction_norm / max(
+                correction_norm, torch.finfo(torch.float64).tiny
+            )
+            correction = correction * correction_scale
+        correction = correction.contiguous()
+        normalized_input_decoder = (polar_decoder + correction).contiguous()
+
+        identity = torch.eye(target_hidden, dtype=torch.float64)
+        null_projector = identity - rowspace_projector
+        correction_rowspace_leakage = float(
+            torch.linalg.vector_norm(null_projector @ correction).item()
+        )
+        null_completion = null_projector @ normalized_input_decoder
+        expected_null_completion = null_projector @ polar_decoder
+        null_completion_error = float(
+            torch.linalg.vector_norm(null_completion - expected_null_completion).item()
+        )
+        null_completion_operator_norm = float(
+            torch.linalg.matrix_norm(null_completion, ord=2).item()
+        )
+        decoder_rank = int(torch.linalg.matrix_rank(normalized_input_decoder).item())
+        decoder_prediction = target_input_rows @ normalized_input_decoder
+        normalized_input_fit_error = _relative_rmse(
+            decoder_prediction * sqrt_row_weights,
+            parent_input_rows * sqrt_row_weights,
+        )
+
+        numerical_scale = max(
+            float(torch.linalg.vector_norm(normalized_input_decoder).item()),
+            global_gain,
+            1.0,
+        )
+        numerical_tolerance = 1e-10 * numerical_scale
+        if (
+            decoder_rank != target_hidden
+            or polar_orthogonality_error > 1e-10 * max(1.0, math.sqrt(target_hidden))
+            or correction_rowspace_leakage > numerical_tolerance
+            or null_completion_error > numerical_tolerance
+            or null_completion_operator_norm > global_gain + numerical_tolerance
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Normalized-input decoder failed rank, polar, rowspace, or "
+                "bounded-null-completion invariants."
+            )
+
+        all_gate_unweighted = torch.cat([value["gate"] for value in normalized], dim=0)
+        all_up_unweighted = torch.cat([value["up"] for value in normalized], dim=0)
+        all_post_unweighted = torch.cat([value["post"] for value in normalized], dim=0)
+        all_gate = all_gate_unweighted * sqrt_row_weights
+        all_up = all_up_unweighted * sqrt_row_weights
+        all_post = all_post_unweighted * sqrt_row_weights
+        all_contribution = (
+            torch.cat([value["contribution"] for value in normalized], dim=0)
+            * sqrt_row_weights
+        )
+        plan = build_gated_mlp_multi_anchor_cluster_plan(
+            all_gate,
+            all_up,
+            all_post,
+            all_contribution,
+            target_neurons=target_intermediate,
+            consumer_directions=mapped_source_down,
+            consumer_axis=1,
+            source_neurons=source_intermediate,
+            anchors_per_source=anchors_per_source,
+            max_candidate_targets=max_candidate_targets,
+            ridge=cluster_ridge,
+            max_coefficient_l1=max_coefficient_l1,
+            max_iterations=cluster_max_iterations,
+            distance_chunk_size=cluster_distance_chunk_size,
+            similarity_chunk_size=similarity_chunk_size,
+            max_similarity_products=max_similarity_products,
+            max_projection_fits=max_projection_fits,
+            max_sparse_entries=max_sparse_entries,
+            max_workspace_elements=max_workspace_elements,
+            calibration_provenance="cached_fit_rows_only",
+        )
+        if not plan.full_source_coverage:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Multi-anchor MLP plan did not prove full source coverage."
+            )
+
+        selected_gate = plan.select_gate_producer(source_gate, axis=0).to(torch.float64)
+        selected_up = plan.select_up_producer(source_up, axis=0).to(torch.float64)
+        gate_prior = (selected_gate @ normalized_input_decoder.T).contiguous()
+        up_prior = (selected_up @ normalized_input_decoder.T).contiguous()
+        aggregated_down = plan.aggregate_down_consumer(source_down, axis=1).to(
+            torch.float64
+        )
+        down_prior = (chart.T @ aggregated_down).contiguous()
+
+        # W1 and W3 are planted directly from the same decoder.  Only W2 gets
+        # an endpoint correction, after target-dtype producer materialization.
+        materialized_gate = gate_prior.to(
+            device="cpu", dtype=template_dtypes["w1.weight"]
+        ).contiguous()
+        materialized_up = up_prior.to(
+            device="cpu", dtype=template_dtypes["w3.weight"]
+        ).contiguous()
+        materialized_post = torch.nn.functional.silu(
+            target_input_rows @ materialized_gate.to(torch.float64).T
+        ) * (target_input_rows @ materialized_up.to(torch.float64).T)
+        endpoint_target = torch.cat(
+            [value["endpoint"] - value["target_residual"] for value in normalized],
+            dim=0,
+        )
+        down_weight_fp64, down_fit = _fit_linear(
+            materialized_post * sqrt_row_weights,
+            endpoint_target * sqrt_row_weights,
+            role="mlp_normalized_bridge_multi_anchor_down",
+            ridge=ridge,
+            prior=down_prior,
+            max_prior_delta_ratio=max_prior_delta_ratio,
+        )
+        materialized_down = down_weight_fp64.to(
+            device="cpu", dtype=template_dtypes["w2.weight"]
+        ).contiguous()
+        compiled = {
+            "w1.weight": materialized_gate.clone(),
+            "w3.weight": materialized_up.clone(),
+            "w2.weight": materialized_down.clone(),
+        }
+        endpoint_prediction = materialized_post @ materialized_down.to(torch.float64).T
+        endpoint_error = _relative_rmse(
+            endpoint_prediction * sqrt_row_weights,
+            endpoint_target * sqrt_row_weights,
+        )
+
+    neuron_groups_lists: list[list[int]] = [[] for _ in range(target_intermediate)]
+    for source_index, target_index in enumerate(plan.source_to_target):
+        neuron_groups_lists[target_index].append(source_index)
+    neuron_groups = tuple(tuple(value) for value in neuron_groups_lists)
+    source_after = _state_sha256(source_values)
+    source_logical = sum(int(value.numel()) for value in source_values.values())
+    target_logical = sum(math.prod(shape) for shape in template_shapes.values())
+    if (
+        source_after != source_before
+        or not plan.report.invariants.all_hold
+        or sorted(source for group in neuron_groups for source in group)
+        != list(range(source_intermediate))
+        or target_logical >= source_logical
+        or any(
+            tuple(compiled[name].shape) != template_shapes[name]
+            or compiled[name].requires_grad
+            or compiled[name].grad_fn is not None
+            or not bool(torch.isfinite(compiled[name]).all().item())
+            for name in ("w1.weight", "w3.weight", "w2.weight")
+        )
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The normalized-input real-medoid MLP compile failed its invariants."
+        )
+    fit_evidence_sha256 = lfm2_normalized_input_mlp_fit_evidence_sha256(
+        cases, normalized_case_weights
+    )
+    return Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold(
+        cluster_plan=plan,
+        gate_weight=compiled["w1.weight"],
+        up_weight=compiled["w3.weight"],
+        down_weight=compiled["w2.weight"],
+        normalized_input_decoder=(
+            normalized_input_decoder.detach().cpu().contiguous().clone()
+        ),
+        neuron_groups=neuron_groups,
+        source_hidden_size=source_hidden,
+        target_hidden_size=target_hidden,
+        source_intermediate_size=source_intermediate,
+        target_intermediate_size=target_intermediate,
+        source_logical_parameters=source_logical,
+        target_logical_parameters=target_logical,
+        source_state_sha256_before=source_before,
+        source_state_sha256_after=source_after,
+        target_template_sha256=_template_sha256(template_spec),
+        residual_chart_sha256=residual_chart_sha256,
+        parent_ffn_norm_weight_sha256=parent_ffn_norm_weight_sha256,
+        target_ffn_norm_weight_sha256=target_ffn_norm_weight_sha256,
+        normalized_chart_sha256=lfm2_authenticated_tensor_sha256(normalized_chart),
+        normalized_polar_sha256=lfm2_authenticated_tensor_sha256(normalized_polar),
+        normalized_input_decoder_sha256=lfm2_authenticated_tensor_sha256(
+            normalized_input_decoder
+        ),
+        normalized_input_correction_sha256=lfm2_authenticated_tensor_sha256(correction),
+        normalized_input_rowspace_projector_sha256=(
+            lfm2_authenticated_tensor_sha256(rowspace_projector)
+        ),
+        producer_prior_sha256=_state_sha256(
+            {"w1.weight": gate_prior, "w3.weight": up_prior}
+        ),
+        consumer_prior_sha256=_tensor_sha256(down_prior),
+        fit_evidence_sha256=fit_evidence_sha256,
+        fit_row_weights_sha256=lfm2_authenticated_tensor_sha256(row_weights),
+        compiled_state_sha256=_state_sha256(compiled),
+        residual_chart_rank=chart_rank,
+        normalized_chart_rank=normalized_chart_rank,
+        normalized_input_fit_rank=fit_rank,
+        normalized_input_decoder_rank=decoder_rank,
+        normalized_input_global_gain=global_gain,
+        normalized_input_ridge_policy_value=normalized_decoder_ridge,
+        normalized_input_scaled_ridge=scaled_decoder_ridge,
+        normalized_input_supported_relative_cap=supported_relative_cap,
+        normalized_input_correction_scale=correction_scale,
+        normalized_input_fit_relative_rmse=normalized_input_fit_error,
+        normalized_input_polar_orthogonality_error=polar_orthogonality_error,
+        normalized_input_correction_rowspace_leakage=(correction_rowspace_leakage),
+        normalized_input_null_completion_error=null_completion_error,
+        normalized_input_null_completion_operator_norm=(null_completion_operator_norm),
+        normalized_input_null_completion_operator_norm_bound=global_gain,
+        fit_case_weight_sum=math.fsum(normalized_case_weights),
+        fit_row_weight_sum=float(row_weights.sum().item()),
+        fit_row_weight_minimum=float(row_weights.min().item()),
+        fit_row_weight_maximum=float(row_weights.max().item()),
+        residual_endpoint_relative_rmse=endpoint_error,
+        consumer_correction_report=down_fit,
     )
 
 
@@ -9186,6 +10053,7 @@ __all__ = [
     "Lfm2AttentionScorePreservationThresholds",
     "Lfm2CachedAttentionFoldCase",
     "Lfm2CachedMlpFoldCase",
+    "Lfm2CachedNormalizedInputMlpFoldCase",
     "Lfm2CachedShortConvFoldCase",
     "Lfm2CompiledStructuralAttentionConsumerFold",
     "Lfm2CompiledStructuralAttentionFold",
@@ -9193,6 +10061,7 @@ __all__ = [
     "Lfm2CompiledStructuralLayerFold",
     "Lfm2CompiledStructuralMlpFold",
     "Lfm2CompiledRealMedoidStructuralMlpFold",
+    "Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold",
     "Lfm2PreparedStructuralMlpFoldBasis",
     "Lfm2CompiledStructuralShortConvConsumerFold",
     "Lfm2CompiledStructuralShortConvFold",
@@ -9216,6 +10085,7 @@ __all__ = [
     "compile_lfm2_structural_attention_consumer_fold",
     "compile_lfm2_structural_attention_producer_fold",
     "compile_lfm2_structural_residual_attention_fold",
+    "compile_lfm2_normalized_input_real_medoid_structural_mlp_fold",
     "compile_lfm2_real_medoid_structural_residual_mlp_fold",
     "compile_lfm2_structural_residual_mlp_fold",
     "compile_lfm2_structural_residual_short_conv_fold",

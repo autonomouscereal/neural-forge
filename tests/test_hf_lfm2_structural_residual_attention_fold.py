@@ -17,6 +17,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
     Lfm2AttentionScorePreservationThresholds,
     Lfm2CachedAttentionFoldCase,
     Lfm2CachedMlpFoldCase,
+    Lfm2CachedNormalizedInputMlpFoldCase,
     Lfm2CachedShortConvFoldCase,
     Lfm2PreparedStructuralMlpFoldBasis,
     Lfm2SparseResidualAssignment,
@@ -26,6 +27,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
     cached_mlp_case_from_lfm2_trace,
     cached_short_conv_case_from_lfm2_trace,
     compose_lfm2_structural_layer_fold,
+    compile_lfm2_normalized_input_real_medoid_structural_mlp_fold,
     compile_lfm2_real_medoid_structural_residual_mlp_fold,
     compile_lfm2_structural_attention_producer_fold,
     compile_lfm2_structural_residual_attention_fold,
@@ -36,6 +38,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
     install_lfm2_structural_attention_fold,
     install_lfm2_structural_layer_fold,
     install_lfm2_structural_short_conv_fold,
+    lfm2_normalized_input_mlp_fit_evidence_sha256,
     prepare_lfm2_structural_residual_mlp_fold_basis,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
@@ -2173,6 +2176,236 @@ def test_real_medoid_chart_applies_authenticated_fit_case_weights() -> None:
             **weighted_common,
             case_sample_weights=(1.0, 0.0),
         )
+
+
+def _normalized_input_real_medoid_fixture(*, dtype=torch.float64):
+    parent_gamma = torch.tensor([10.0, 0.1, 5.0], dtype=torch.float64)
+    target_gamma = torch.tensor([0.2, 4.0], dtype=torch.float64)
+    normalized_polar = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0]], dtype=torch.float64
+    )
+    residual_chart = (
+        parent_gamma.unsqueeze(1)
+        * normalized_polar
+        * target_gamma.reciprocal().unsqueeze(0)
+    ).contiguous()
+    source_gate = torch.tensor(
+        [
+            [1.0, 0.25, -0.5],
+            [-0.75, 1.5, 0.4],
+            [0.3, -2.0, 1.25],
+            [1.75, 0.6, -0.8],
+        ],
+        dtype=torch.float64,
+    )
+    source_up = torch.tensor(
+        [
+            [0.5, -1.0, 0.75],
+            [1.25, 0.4, -0.6],
+            [-0.2, 1.1, 1.5],
+            [0.9, -0.7, 0.3],
+        ],
+        dtype=torch.float64,
+    )
+    source_down = torch.tensor(
+        [
+            [1.0, -0.5, 0.25, 0.75],
+            [0.4, 1.25, -0.8, 0.2],
+            [-0.3, 0.6, 1.1, -1.0],
+        ],
+        dtype=torch.float64,
+    )
+    target_input = torch.tensor([[1.0, 0.0], [-2.0, 0.0]], dtype=torch.float64)
+    parent_input = target_input @ normalized_polar.T
+    parent_gate = parent_input @ source_gate.T
+    parent_up = parent_input @ source_up.T
+    parent_post = torch.nn.functional.silu(parent_gate) * parent_up
+    target_residual = torch.tensor([[0.1, -0.2], [0.3, 0.15]], dtype=torch.float64)
+    parent_delta = parent_post @ source_down.T
+    endpoint = target_residual + parent_delta @ residual_chart
+    case = Lfm2CachedNormalizedInputMlpFoldCase(
+        target_input=target_input,
+        parent_normalized_input=parent_input,
+        parent_gate=parent_gate,
+        parent_up=parent_up,
+        parent_post_swiglu=parent_post,
+        parent_post_mlp_residual_target_space=endpoint,
+        target_pre_mlp_residual=target_residual,
+        parent_contribution=parent_post.abs() + 0.125,
+    )
+    target = _ToyMlp(hidden_size=2, intermediate_size=2, dtype=dtype)
+    common = {
+        "source_gate_weight": source_gate,
+        "source_up_weight": source_up,
+        "source_down_weight": source_down,
+        "target_gate_weight_template": target.w1.weight,
+        "target_up_weight_template": target.w3.weight,
+        "target_down_weight_template": target.w2.weight,
+        "residual_chart": residual_chart,
+        "residual_chart_sha256": fold_module.lfm2_authenticated_tensor_sha256(
+            residual_chart
+        ),
+        "parent_ffn_norm_weight": parent_gamma,
+        "parent_ffn_norm_weight_sha256": (
+            fold_module.lfm2_authenticated_tensor_sha256(parent_gamma)
+        ),
+        "target_ffn_norm_weight": target_gamma,
+        "target_ffn_norm_weight_sha256": (
+            fold_module.lfm2_authenticated_tensor_sha256(target_gamma)
+        ),
+        "cases": (case,),
+        "anchors_per_source": 2,
+        "max_candidate_targets": 2,
+        "normalized_decoder_ridge": 1e-8,
+        "ridge": 0.0,
+        "cluster_ridge": 1e-8,
+    }
+    return common, case, normalized_polar
+
+
+def test_normalized_input_real_medoid_bridge_generalizes_raw_scale_mismatch() -> None:
+    common, case, normalized_polar = _normalized_input_real_medoid_fixture()
+    compiled = compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(**common)
+
+    # FIT sees only child coordinate zero.  The gamma-aware polar completion
+    # preserves unseen coordinate one, whereas a raw chart pseudoinverse is
+    # wrong by forty-fold under this deliberately severe normalization scale.
+    heldout_target_input = torch.tensor([[0.0, 1.0]], dtype=torch.float64)
+    expected_parent_input = heldout_target_input @ normalized_polar.T
+    normalized_prediction = heldout_target_input @ compiled.normalized_input_decoder
+    raw_prediction = heldout_target_input @ torch.linalg.pinv(common["residual_chart"])
+    assert torch.allclose(normalized_prediction, expected_parent_input, atol=1e-12)
+    assert torch.linalg.vector_norm(raw_prediction - expected_parent_input) > 30.0
+
+    medoids = torch.tensor(
+        compiled.cluster_plan.medoid_source_neurons, dtype=torch.long
+    )
+    selected_gate = common["source_gate_weight"].index_select(0, medoids)
+    selected_up = common["source_up_weight"].index_select(0, medoids)
+    assert torch.allclose(
+        compiled.gate_weight,
+        selected_gate @ compiled.normalized_input_decoder.T,
+        atol=1e-12,
+    )
+    assert torch.allclose(
+        compiled.up_weight,
+        selected_up @ compiled.normalized_input_decoder.T,
+        atol=1e-12,
+    )
+    actual_fit_post = torch.nn.functional.silu(
+        case.target_input @ compiled.gate_weight.T
+    ) * (case.target_input @ compiled.up_weight.T)
+    expected_fit_post = case.parent_post_swiglu.index_select(1, medoids)
+    assert torch.allclose(actual_fit_post, expected_fit_post, atol=1e-12)
+
+    receipt = compiled.as_dict()
+    producer = receipt["producer_bridge"]
+    consumer = receipt["consumer_bridge"]
+    assert producer["role"] == "normalized_mlp_input_target_to_parent"
+    assert consumer["role"] == "raw_residual_source_to_target"
+    assert receipt["producer_consumer_bridge_fields_separate"] is True
+    assert producer["fit_rank"] == 1
+    assert producer["decoder_rank"] == 2
+    assert producer["positive_global_gain"] == pytest.approx(1.0)
+    assert producer["ridge_policy_value"] == pytest.approx(
+        common["normalized_decoder_ridge"]
+    )
+    assert producer["supported_relative_cap_rho"] == 1.0
+    assert producer["correction_rowspace_leakage"] < 1e-12
+    assert producer["null_completion_error"] < 1e-12
+    assert producer["null_completion_operator_norm"] <= (
+        producer["null_completion_operator_norm_bound"] + 1e-12
+    )
+    assert receipt["producer_per_neuron_interpolation"] is False
+    assert receipt["producer_shared_decoder"] is True
+    assert receipt["normalized_chart_sha256"] == producer["normalized_chart_sha256"]
+    assert receipt["normalized_input_decoder_sha256"] == producer["decoder_sha256"]
+    assert receipt["consumer_prior_sha256"] == consumer["consumer_prior_sha256"]
+    assert receipt["fit_evidence_sha256"] == (
+        lfm2_normalized_input_mlp_fit_evidence_sha256(
+            common["cases"],
+            (1.0,),
+        )
+    )
+    assert receipt["source_neurons_dropped"] == 0
+    assert receipt["heldout_rows_used_by_solver"] == 0
+    assert receipt["model_forward_calls"] == 0
+    assert receipt["backward_calls"] == 0
+    assert receipt["optimizer_steps"] == 0
+    assert receipt["training_steps"] == 0
+
+
+def test_normalized_input_decoder_caps_supported_correction_and_authenticates_gamma():
+    common, case, normalized_polar = _normalized_input_real_medoid_fixture()
+    changed_parent_input = case.parent_normalized_input.clone()
+    changed_parent_input[:, 2] = 8.0 * case.target_input[:, 0]
+    changed_gate = changed_parent_input @ common["source_gate_weight"].T
+    changed_up = changed_parent_input @ common["source_up_weight"].T
+    changed_post = torch.nn.functional.silu(changed_gate) * changed_up
+    changed_case = replace(
+        case,
+        parent_normalized_input=changed_parent_input,
+        parent_gate=changed_gate,
+        parent_up=changed_up,
+        parent_post_swiglu=changed_post,
+        parent_post_mlp_residual_target_space=(
+            case.target_pre_mlp_residual
+            + (changed_post @ common["source_down_weight"].T) @ common["residual_chart"]
+        ),
+        parent_contribution=changed_post.abs() + 0.125,
+    )
+    changed = dict(common)
+    changed["cases"] = (changed_case,)
+    compiled = compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(**changed)
+    polar_decoder = normalized_polar.T * compiled.normalized_input_global_gain
+    correction = compiled.normalized_input_decoder - polar_decoder
+    supported_projector = torch.diag(torch.tensor([1.0, 0.0], dtype=torch.float64))
+    assert torch.linalg.vector_norm(correction) <= (
+        torch.linalg.vector_norm(supported_projector @ polar_decoder) + 1e-12
+    )
+    assert compiled.normalized_input_correction_scale < 1.0
+    assert (
+        torch.linalg.vector_norm(
+            (torch.eye(2, dtype=torch.float64) - supported_projector) @ correction
+        )
+        < 1e-12
+    )
+
+    corrupt = dict(common)
+    corrupt["parent_ffn_norm_weight"] = common["parent_ffn_norm_weight"] + 0.25
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match="parent_ffn_norm_weight tensor authentication failed",
+    ):
+        compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(**corrupt)
+
+
+def test_normalized_input_w2_solve_uses_materialized_bf16_producers() -> None:
+    common, case, _ = _normalized_input_real_medoid_fixture(dtype=torch.bfloat16)
+    compiled = compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(**common)
+    assert compiled.gate_weight.dtype == torch.bfloat16
+    assert compiled.up_weight.dtype == torch.bfloat16
+    assert compiled.down_weight.dtype == torch.bfloat16
+    materialized_post = torch.nn.functional.silu(
+        case.target_input @ compiled.gate_weight.to(torch.float64).T
+    ) * (case.target_input @ compiled.up_weight.to(torch.float64).T)
+    endpoint_target = (
+        case.parent_post_mlp_residual_target_space - case.target_pre_mlp_residual
+    )
+    down_prior = common["residual_chart"].T @ (
+        compiled.cluster_plan.aggregate_down_consumer(
+            common["source_down_weight"], axis=1
+        )
+    )
+    expected_down, _ = fold_module._fit_linear(
+        materialized_post,
+        endpoint_target,
+        role="oracle_normalized_bridge_materialized_down",
+        ridge=0.0,
+        prior=down_prior,
+        max_prior_delta_ratio=None,
+    )
+    assert torch.equal(compiled.down_weight, expected_down.to(torch.bfloat16))
 
 
 def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> None:
