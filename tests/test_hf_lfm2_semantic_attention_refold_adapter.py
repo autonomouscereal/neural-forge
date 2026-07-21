@@ -566,3 +566,33 @@ def test_output_writer_heldout_regression_explicitly_rejects_candidate() -> None
     assert gate["selection"] is None
     assert gate["validation"] is None
     assert torch.equal(published, incumbent)
+
+
+def test_execution_policy_excludes_visible_devices_without_native_bfloat16(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 4)
+    monkeypatch.setattr(
+        torch.cuda,
+        "is_bf16_supported",
+        lambda index: index in {0, 3},
+    )
+
+    policy = adapter._execution_policy(8)
+
+    assert policy.solver_device == "cuda:0"
+    assert policy.compute_devices == ("cuda:0", "cuda:3")
+
+
+def test_execution_policy_falls_back_to_cpu_without_native_bfloat16(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 3)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda _index: False)
+
+    policy = adapter._execution_policy(8)
+
+    assert policy.solver_device == "cpu"
+    assert policy.compute_devices == ("cpu",)

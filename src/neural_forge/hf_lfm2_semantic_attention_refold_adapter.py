@@ -763,7 +763,11 @@ def _seed(
 def _execution_policy(case_count: int) -> Lfm2EndpointQkResidualFoldPolicy:
     torch = _torch()
     devices = (
-        tuple(f"cuda:{index}" for index in range(torch.cuda.device_count()))
+        tuple(
+            f"cuda:{index}"
+            for index in range(torch.cuda.device_count())
+            if torch.cuda.is_bf16_supported(index)
+        )
         if torch.cuda.is_available()
         else ()
     )
