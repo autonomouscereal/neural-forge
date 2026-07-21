@@ -39,7 +39,6 @@ from neural_forge import hf_lfm2_cpcf_model_fold as cpcf_model_fold
 from neural_forge import hf_lfm2_cpcf_v5_model_compiler as cpcf_v5_compiler
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
 from neural_forge.hf_lfm2_circuit_trace_cache import (
-    Lfm2CircuitTraceBatch,
     Lfm2CircuitTraceCache,
     fingerprint_lfm2_parent,
     open_lfm2_circuit_trace_cache,
@@ -103,6 +102,7 @@ from neural_forge.hf_lfm2_semantic_span_cpcf_alignment import (
 from neural_forge.hf_lfm2_semantic_span_phase_bridge import (
     _decode_exact,
     _encode_exact,
+    build_lfm2_semantic_span_selected_input_evidence,
     build_lfm2_semantic_span_phase_bridge,
 )
 from neural_forge.hf_semantic_attention_lattice import (
@@ -1914,10 +1914,24 @@ def _target_rope(target_model: Any) -> tuple[Any, float]:
 
 def _input_tensor_names(reference: Any) -> tuple[str, ...]:
     inventory = set(reference.ordered_tensor_names)
+    record = reference.record
+    capture = record.get("capture") if isinstance(record, Mapping) else None
+    decode_steps = (
+        capture.get("decode_steps") if isinstance(capture, Mapping) else None
+    )
+    if (
+        isinstance(decode_steps, bool)
+        or not isinstance(decode_steps, int)
+        or decode_steps <= 0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Complete cache input evidence has no forced decode horizon."
+        )
     names = {
         "input.input_ids",
         "input.attention_mask",
         "input.forced_decode_ids",
+        *(f"decode.{step:03d}.forced_token_ids" for step in range(decode_steps)),
     }
     if "input.position_ids" in inventory:
         names.add("input.position_ids")
@@ -1943,6 +1957,7 @@ def _semantic_alignments_from_session(
     )
     donor_sha = fingerprint_hf_tokenizer_semantics(donor_tokenizer)
     target_sha = fingerprint_hf_tokenizer_semantics(target_tokenizer)
+    session_receipt = session.as_dict()
     alignments = []
     for reference in session.batch_references:
         payload = session.load_selected_tensors(
@@ -1950,14 +1965,14 @@ def _semantic_alignments_from_session(
             _input_tensor_names(reference),
         )
         try:
-            batch = Lfm2CircuitTraceBatch(
-                index=reference.index,
-                input_sha256=reference.input_sha256,
-                _tensors=MappingProxyType(dict(payload.tensors)),
-                _record=MappingProxyType(reference.record),
+            selected_input = build_lfm2_semantic_span_selected_input_evidence(
+                reference,
+                payload,
+                session_receipt,
+                expected_cache_key=cache.cache_key,
             )
             semantic = build_lfm2_semantic_span_phase_bridge(
-                batch,
+                selected_input,
                 manifest,
                 donor_tokenizer,
                 target_tokenizer,

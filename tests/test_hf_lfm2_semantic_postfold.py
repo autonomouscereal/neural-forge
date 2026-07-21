@@ -767,6 +767,109 @@ def test_lexical_coordinates_cover_all_87_inserted_rows() -> None:
     assert len(set(row_ids)) == 87
 
 
+def test_semantic_alignment_wires_authenticated_selected_input_contract(
+    monkeypatch,
+) -> None:
+    reference = SimpleNamespace(
+        index=0,
+        input_sha256="1" * 64,
+        ordered_tensor_names=(
+            "decode.000.forced_token_ids",
+            "input.attention_mask",
+            "input.forced_decode_ids",
+            "input.input_ids",
+        ),
+        record={"capture": {"decode_steps": 1}},
+    )
+    payload = object()
+    session_receipt = {"session_sha256": "2" * 64}
+    released = []
+
+    class Session:
+        batch_references = (reference,)
+
+        def as_dict(self):
+            return session_receipt
+
+        def load_selected_tensors(self, index, names):
+            assert index == 0
+            assert names == reference.ordered_tensor_names
+            return payload
+
+        def release_selected_tensors(self, value):
+            released.append(value)
+
+    cache = SimpleNamespace(
+        cache_key="3" * 64,
+        batch_count=1,
+        manifest={"manifest_sha256": "4" * 64},
+    )
+    selected_input = object()
+    semantic = SimpleNamespace(
+        source_prompt_token_ids=(1, 2),
+        phase_order=("prefill", "decode.000"),
+    )
+    alignment = object()
+    calls = []
+
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_hf_tokenizer_semantics",
+        lambda value: "5" * 64 if value == "donor" else "6" * 64,
+    )
+
+    def build_selected(observed_reference, observed_payload, receipt, **kwargs):
+        calls.append("selected")
+        assert observed_reference is reference
+        assert observed_payload is payload
+        assert receipt is session_receipt
+        assert kwargs == {"expected_cache_key": cache.cache_key}
+        return selected_input
+
+    def build_semantic(source, manifest, donor, target, **kwargs):
+        calls.append("semantic")
+        assert source is selected_input
+        assert manifest is cache.manifest
+        assert donor == "donor" and target == "target"
+        assert kwargs["expected_source_input_sha256"] == reference.input_sha256
+        return semantic
+
+    def build_alignment(observed, donor, target, **kwargs):
+        calls.append("alignment")
+        assert observed is semantic
+        assert donor == "donor" and target == "target"
+        assert kwargs["parent_sampled_suffix_tokens"] == {
+            "prefill": 2,
+            "decode.000": 1,
+        }
+        return alignment
+
+    monkeypatch.setattr(
+        postfold,
+        "build_lfm2_semantic_span_selected_input_evidence",
+        build_selected,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "build_lfm2_semantic_span_phase_bridge",
+        build_semantic,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "build_lfm2_semantic_span_cpcf_alignment",
+        build_alignment,
+    )
+
+    assert postfold._semantic_alignments_from_session(
+        cache=cache,
+        session=Session(),
+        donor_tokenizer="donor",
+        target_tokenizer="target",
+    ) == (alignment,)
+    assert calls == ["selected", "semantic", "alignment"]
+    assert released == [payload]
+
+
 def test_attention_stage_fails_closed_with_exact_missing_compiler(
     monkeypatch,
 ) -> None:

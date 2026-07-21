@@ -29,7 +29,11 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_lfm2_circuit_trace_cache import (
     BATCH_SCHEMA,
     CACHE_SCHEMA,
+    SELECTIVE_AUTHENTICATED_SESSION_SCHEMA,
+    SELECTIVE_BATCH_PAYLOAD_SCHEMA,
     Lfm2CircuitTraceBatch,
+    Lfm2CircuitTraceSelectedBatchPayload,
+    Lfm2CircuitTraceSelectiveBatchReference,
     _tensor_descriptor as _cache_tensor_descriptor,
 )
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
@@ -44,6 +48,9 @@ from neural_forge.hf_tokenizer_bridge import (
 SEMANTIC_SPAN_PHASE_BRIDGE_SCHEMA = "neural-forge-lfm2-semantic-span-phase-bridge-v1"
 SEMANTIC_SPAN_PHASE_SCHEMA = "neural-forge-lfm2-semantic-span-phase-v1"
 SEMANTIC_SPAN_EXPANSION_SCHEMA = "neural-forge-lfm2-semantic-span-expansion-report-v1"
+SEMANTIC_SPAN_SELECTED_INPUT_SCHEMA = (
+    "neural-forge-lfm2-semantic-span-selected-input-v1"
+)
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _DECODE_PHASE = re.compile(r"decode\.(\d{3,})\Z")
@@ -126,6 +133,468 @@ def _text_sha256(value: str) -> str:
             "text": value,
         }
     )
+
+
+def _selected_input_tensor_names_from_record(
+    record: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Return the bounded tensor set needed to authenticate a semantic schedule.
+
+    Phase logits remain authenticated by the selective session's complete
+    trace-file hash and full record inventory.  Each tiny forced-token row is
+    selected so its value can still be checked against the aggregate decode
+    IDs without making the thousands of logits and activations resident.
+    """
+
+    if not isinstance(record, Mapping):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selected semantic input record must be a mapping."
+        )
+    inventory = record.get("tensors")
+    capture = record.get("capture")
+    if not isinstance(inventory, Mapping) or not isinstance(capture, Mapping):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selected semantic input record has no tensor inventory or capture."
+        )
+    decode_steps = capture.get("decode_steps")
+    if (
+        isinstance(decode_steps, bool)
+        or not isinstance(decode_steps, int)
+        or decode_steps <= 0
+    ):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selected semantic input record has no forced decode horizon."
+        )
+    phase_order = (
+        "prefill",
+        *(f"decode.{step:03d}" for step in range(decode_steps)),
+    )
+    diagnostics = capture.get("phase_diagnostics")
+    if not isinstance(diagnostics, Mapping) or set(diagnostics) != set(phase_order):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selected semantic input phase diagnostics are incomplete."
+        )
+    phase_names = {f"{phase}.logits" for phase in phase_order}
+    phase_names.update(f"{phase}.forced_token_ids" for phase in phase_order[1:])
+    if any(
+        name not in inventory or not isinstance(inventory[name], Mapping)
+        for name in phase_names
+    ):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selected semantic input record lacks authenticated phase evidence."
+        )
+    names = set(_INPUT_NAMES)
+    names.update(f"{phase}.forced_token_ids" for phase in phase_order[1:])
+    if "input.position_ids" in inventory:
+        names.add("input.position_ids")
+    if any(name not in inventory for name in names):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selected semantic input record lacks a required input tensor."
+        )
+    return tuple(sorted(names))
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SemanticSpanSelectedInputEvidence:
+    """Sealed bounded input view rooted in one full-cache session receipt."""
+
+    source_cache_key: str
+    source_manifest_sha256: str
+    source_completion_sha256: str
+    source_trace_file_sha256: str
+    source_record_file_sha256: str
+    source_batch_index: int
+    source_input_sha256: str
+    source_record_sha256: str
+    selective_session_sha256: str
+    selected_payload_sha256: str
+    ordered_tensor_names: tuple[str, ...]
+    ordered_tensor_descriptors: tuple[Mapping[str, Any], ...]
+    logical_bytes: int
+    full_record_tensor_count: int
+    _record: Mapping[str, Any] = field(repr=False, compare=False)
+    _tensors: Mapping[str, Any] = field(repr=False, compare=False)
+    evidence_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        for name in (
+            "source_cache_key",
+            "source_manifest_sha256",
+            "source_completion_sha256",
+            "source_trace_file_sha256",
+            "source_record_file_sha256",
+            "source_input_sha256",
+            "source_record_sha256",
+            "selective_session_sha256",
+            "selected_payload_sha256",
+        ):
+            object.__setattr__(self, name, _digest(getattr(self, name), name))
+        object.__setattr__(
+            self,
+            "source_batch_index",
+            _nonnegative_int(self.source_batch_index, "source batch index"),
+        )
+        names = tuple(self.ordered_tensor_names)
+        if names != tuple(sorted(set(names))) or any(
+            not isinstance(name, str) or not name for name in names
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input tensor names are not canonical."
+            )
+        descriptors = tuple(
+            MappingProxyType(dict(value)) if isinstance(value, Mapping) else value
+            for value in self.ordered_tensor_descriptors
+        )
+        if len(descriptors) != len(names) or any(
+            not isinstance(value, Mapping) for value in descriptors
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input tensor descriptors are invalid."
+            )
+        for name in ("logical_bytes", "full_record_tensor_count"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise Lfm2SemanticSpanPhaseBridgeError(
+                    f"Selected semantic input {name} must be positive."
+                )
+        if not isinstance(self._record, Mapping) or not isinstance(
+            self._tensors, Mapping
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input record and tensors must be mappings."
+            )
+        object.__setattr__(self, "ordered_tensor_names", names)
+        object.__setattr__(self, "ordered_tensor_descriptors", descriptors)
+        object.__setattr__(self, "_record", MappingProxyType(dict(self._record)))
+        object.__setattr__(self, "_tensors", MappingProxyType(dict(self._tensors)))
+        self.verify()
+        object.__setattr__(self, "evidence_sha256", canonical_sha256(self._body()))
+
+    @property
+    def index(self) -> int:
+        return self.source_batch_index
+
+    @property
+    def input_sha256(self) -> str:
+        return self.source_input_sha256
+
+    @property
+    def tensors(self) -> Mapping[str, Any]:
+        return self._tensors
+
+    @property
+    def record(self) -> dict[str, Any]:
+        return dict(self._record)
+
+    def _body(self) -> dict[str, Any]:
+        return {
+            "schema": SEMANTIC_SPAN_SELECTED_INPUT_SCHEMA,
+            "source_cache_key": self.source_cache_key,
+            "source_manifest_sha256": self.source_manifest_sha256,
+            "source_completion_sha256": self.source_completion_sha256,
+            "source_trace_file_sha256": self.source_trace_file_sha256,
+            "source_record_file_sha256": self.source_record_file_sha256,
+            "source_batch_index": self.source_batch_index,
+            "source_input_sha256": self.source_input_sha256,
+            "source_record_sha256": self.source_record_sha256,
+            "selective_session_sha256": self.selective_session_sha256,
+            "selected_payload_sha256": self.selected_payload_sha256,
+            "ordered_tensor_names": list(self.ordered_tensor_names),
+            "ordered_tensor_descriptors": [
+                dict(value) for value in self.ordered_tensor_descriptors
+            ],
+            "logical_bytes": self.logical_bytes,
+            "full_record_tensor_count": self.full_record_tensor_count,
+            "full_record_fabricated": False,
+            "unselected_tensor_payloads_loaded": False,
+            "parent_forward_calls": 0,
+            "training_steps": 0,
+        }
+
+    def verify(
+        self,
+        *,
+        expected_cache_key: str | None = None,
+        expected_manifest_sha256: str | None = None,
+        expected_input_sha256: str | None = None,
+    ) -> Lfm2SemanticSpanSelectedInputEvidence:
+        torch = _torch()
+        if expected_cache_key is not None and self.source_cache_key != _digest(
+            expected_cache_key,
+            "expected selected-input cache key",
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input differs from the expected cache."
+            )
+        if (
+            expected_manifest_sha256 is not None
+            and self.source_manifest_sha256
+            != _digest(
+                expected_manifest_sha256,
+                "expected selected-input manifest",
+            )
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input differs from the expected manifest."
+            )
+        if expected_input_sha256 is not None and self.source_input_sha256 != _digest(
+            expected_input_sha256,
+            "expected selected-input identity",
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input differs from the expected input."
+            )
+        record = self.record
+        record_sha = _digest(record.get("record_sha256"), "selected source record")
+        record_body = dict(record)
+        record_body.pop("record_sha256", None)
+        inventory = record.get("tensors")
+        if (
+            canonical_sha256(record_body) != record_sha
+            or record_sha != self.source_record_sha256
+            or record.get("schema") != BATCH_SCHEMA
+            or record.get("cache_key") != self.source_cache_key
+            or record.get("batch_index") != self.source_batch_index
+            or record.get("input_sha256") != self.source_input_sha256
+            or not isinstance(inventory, Mapping)
+            or record.get("tensor_count") != len(inventory)
+            or len(inventory) != self.full_record_tensor_count
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input full-record binding is invalid."
+            )
+        required = _selected_input_tensor_names_from_record(record)
+        if (
+            required != self.ordered_tensor_names
+            or tuple(sorted(self._tensors)) != required
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input payload is incomplete or over-broad."
+            )
+        descriptors = tuple(dict(inventory[name]) for name in required)
+        if descriptors != tuple(
+            dict(value) for value in self.ordered_tensor_descriptors
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input descriptors differ from the full record."
+            )
+        for name, descriptor in zip(required, descriptors, strict=True):
+            value = self._tensors[name]
+            if _cache_tensor_descriptor(torch, value) != descriptor:
+                raise Lfm2SemanticSpanPhaseBridgeError(
+                    f"Selected semantic input tensor {name!r} changed."
+                )
+        logical_bytes = sum(
+            int(value.numel() * value.element_size())
+            for value in self._tensors.values()
+        )
+        selection_body = {
+            "schema": SELECTIVE_BATCH_PAYLOAD_SCHEMA,
+            "session_sha256": self.selective_session_sha256,
+            "cache_key": self.source_cache_key,
+            "batch_index": self.source_batch_index,
+            "input_sha256": self.source_input_sha256,
+            "record_sha256": self.source_record_sha256,
+            "ordered_tensor_names": list(required),
+            "ordered_tensor_descriptors": descriptors,
+            "logical_bytes": logical_bytes,
+        }
+        if (
+            logical_bytes != self.logical_bytes
+            or canonical_sha256(selection_body) != self.selected_payload_sha256
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input payload authentication is invalid."
+            )
+        input_ids = self._tensors["input.input_ids"]
+        attention_mask = self._tensors["input.attention_mask"]
+        forced_ids = self._tensors["input.forced_decode_ids"]
+        position_ids = self._tensors.get("input.position_ids")
+        if (
+            _cache_input_sha256(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                forced_decode_ids=forced_ids,
+                position_ids=position_ids,
+            )
+            != self.source_input_sha256
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input tensors differ from their input hash."
+            )
+        decode_steps = record["capture"]["decode_steps"]
+        if int(forced_ids.shape[1]) != decode_steps:
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input forced decode horizon is invalid."
+            )
+        for step in range(decode_steps):
+            name = f"decode.{step:03d}.forced_token_ids"
+            if not torch.equal(
+                self._tensors[name].detach().to(device="cpu", dtype=torch.long),
+                forced_ids[:, step : step + 1]
+                .detach()
+                .to(device="cpu", dtype=torch.long),
+            ):
+                raise Lfm2SemanticSpanPhaseBridgeError(
+                    f"Selected parent phase decode.{step:03d} lost its "
+                    "forced-token identity."
+                )
+        if (
+            hasattr(self, "evidence_sha256")
+            and canonical_sha256(self._body()) != self.evidence_sha256
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected semantic input evidence seal is invalid."
+            )
+        return self
+
+
+def build_lfm2_semantic_span_selected_input_evidence(
+    reference: Lfm2CircuitTraceSelectiveBatchReference,
+    payload: Lfm2CircuitTraceSelectedBatchPayload,
+    selective_session_receipt: Mapping[str, Any],
+    *,
+    expected_cache_key: str,
+) -> Lfm2SemanticSpanSelectedInputEvidence:
+    """Bind selected input tensors to a complete authenticated cache session."""
+
+    if not isinstance(reference, Lfm2CircuitTraceSelectiveBatchReference):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "reference must be an authenticated selective batch reference."
+        )
+    if not isinstance(payload, Lfm2CircuitTraceSelectedBatchPayload):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "payload must be an authenticated selected batch payload."
+        )
+    if payload.released:
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selected semantic input payload was already released."
+        )
+    if not isinstance(selective_session_receipt, Mapping):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selective session receipt must be a mapping."
+        )
+    session = dict(selective_session_receipt)
+    session_sha = _digest(session.get("session_sha256"), "selective session")
+    session_body = dict(session)
+    session_body.pop("session_sha256", None)
+    cache_key = _digest(expected_cache_key, "expected source cache key")
+    manifest_sha = _digest(
+        session.get("manifest_sha256"),
+        "selective session manifest",
+    )
+    completion_sha = _digest(
+        session.get("completion_sha256"),
+        "selective session completion",
+    )
+    authentication = session.get("authentication_contract")
+    ordered = session.get("ordered_authenticated_batches")
+    if (
+        canonical_sha256(session_body) != session_sha
+        or session.get("schema") != SELECTIVE_AUTHENTICATED_SESSION_SCHEMA
+        or session.get("cache_key") != cache_key
+        or not isinstance(ordered, list)
+        or session.get("batch_count") != len(ordered)
+        or not isinstance(authentication, Mapping)
+        or authentication.get("committed_local_cache_only") is not True
+        or authentication.get("manifest_completion_and_layout_verified") is not True
+        or authentication.get("record_self_hash_verified") is not True
+        or authentication.get("safetensors_metadata_verified") is not True
+        or authentication.get("complete_tensor_key_inventory_verified") is not True
+        or authentication.get("selected_tensor_descriptors_verified_per_load")
+        is not True
+        or authentication.get("stable_file_identity_checked_before_and_after_load")
+        is not True
+        or authentication.get("authenticated_trace_guard_held_open") is not True
+        or authentication.get("safetensors_mapping_held_open") is not False
+        or authentication.get("safetensors_mapping_opened_per_selection_and_closed")
+        is not True
+        or authentication.get("trace_file_sha256_passes_per_session") != 1
+        or authentication.get("record_file_sha256_passes_per_session") != 1
+        or authentication.get("unselected_tensor_payloads_loaded") is not False
+        or authentication.get("parent_forward_calls") != 0
+        or authentication.get("training_steps") != 0
+    ):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selective semantic input session authentication is incomplete."
+        )
+    for ordinal, entry in enumerate(ordered):
+        if (
+            not isinstance(entry, Mapping)
+            or entry.get("batch_index") != ordinal
+            or isinstance(entry.get("tensor_count"), bool)
+            or not isinstance(entry.get("tensor_count"), int)
+            or entry["tensor_count"] <= 0
+            or isinstance(entry.get("logical_bytes"), bool)
+            or not isinstance(entry.get("logical_bytes"), int)
+            or entry["logical_bytes"] <= 0
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selective semantic input ordered session inventory is invalid."
+            )
+        for field_name in (
+            "input_sha256",
+            "trace_file_sha256",
+            "record_file_sha256",
+            "record_sha256",
+        ):
+            _digest(
+                entry.get(field_name),
+                f"selective session batch {ordinal} {field_name}",
+            )
+    if reference.index >= len(ordered):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selective semantic input reference is outside the session."
+        )
+    authenticated_batch = ordered[reference.index]
+    trace_file_sha = _digest(
+        authenticated_batch.get("trace_file_sha256"),
+        "selected batch trace file",
+    )
+    record_file_sha = _digest(
+        authenticated_batch.get("record_file_sha256"),
+        "selected batch record file",
+    )
+    if (
+        not isinstance(authenticated_batch, Mapping)
+        or authenticated_batch.get("batch_index") != reference.index
+        or authenticated_batch.get("input_sha256") != reference.input_sha256
+        or authenticated_batch.get("record_sha256") != reference.record_sha256
+        or authenticated_batch.get("tensor_count") != reference.tensor_count
+        or authenticated_batch.get("logical_bytes") != reference.logical_bytes
+        or payload.batch_index != reference.index
+        or payload.input_sha256 != reference.input_sha256
+        or payload.session_sha256 != session_sha
+    ):
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selected semantic input batch differs from its session receipt."
+        )
+    record = reference.record
+    names = _selected_input_tensor_names_from_record(record)
+    inventory = record["tensors"]
+    if tuple(payload.ordered_tensor_names) != names:
+        raise Lfm2SemanticSpanPhaseBridgeError(
+            "Selected semantic input payload used the wrong tensor set."
+        )
+    result = Lfm2SemanticSpanSelectedInputEvidence(
+        source_cache_key=cache_key,
+        source_manifest_sha256=manifest_sha,
+        source_completion_sha256=completion_sha,
+        source_trace_file_sha256=trace_file_sha,
+        source_record_file_sha256=record_file_sha,
+        source_batch_index=reference.index,
+        source_input_sha256=reference.input_sha256,
+        source_record_sha256=reference.record_sha256,
+        selective_session_sha256=session_sha,
+        selected_payload_sha256=payload.selection_sha256,
+        ordered_tensor_names=names,
+        ordered_tensor_descriptors=tuple(dict(inventory[name]) for name in names),
+        logical_bytes=payload.logical_bytes,
+        full_record_tensor_count=reference.tensor_count,
+        _record=record,
+        _tensors=payload.tensors,
+    )
+    return result.verify(expected_cache_key=cache_key)
 
 
 def _decode_exact(tokenizer: Any, token_ids: Sequence[int], name: str) -> str:
@@ -231,7 +700,7 @@ def _longest_common_prefix(left: Sequence[int], right: Sequence[int]) -> int:
 
 def _validate_source_manifest(
     manifest: Mapping[str, Any],
-    batch: Lfm2CircuitTraceBatch,
+    batch: Lfm2CircuitTraceBatch | Lfm2SemanticSpanSelectedInputEvidence,
     *,
     expected_cache_key: str,
     expected_manifest_sha256: str,
@@ -318,6 +787,12 @@ def _validate_source_manifest(
         raise Lfm2SemanticSpanPhaseBridgeError(
             "Source batch differs from the expected input hash."
         )
+    if isinstance(batch, Lfm2SemanticSpanSelectedInputEvidence):
+        batch.verify(
+            expected_cache_key=cache_key,
+            expected_manifest_sha256=seal,
+            expected_input_sha256=input_sha256,
+        )
     corpus = sections["corpus"]
     ordered = corpus.get("ordered_batch_input_sha256")
     if (
@@ -334,14 +809,23 @@ def _validate_source_manifest(
 
 
 def _validated_source_batch(
-    batch: Lfm2CircuitTraceBatch,
+    batch: Lfm2CircuitTraceBatch | Lfm2SemanticSpanSelectedInputEvidence,
     *,
     cache_key: str,
     expected_input_sha256: str,
 ) -> tuple[Any, Any, Any, Any | None, str]:
-    if not isinstance(batch, Lfm2CircuitTraceBatch):
+    if not isinstance(
+        batch,
+        (Lfm2CircuitTraceBatch, Lfm2SemanticSpanSelectedInputEvidence),
+    ):
         raise Lfm2SemanticSpanPhaseBridgeError(
-            "source_batch must be an authenticated Lfm2CircuitTraceBatch."
+            "source_batch must be an authenticated full or selected cache batch."
+        )
+    selected = isinstance(batch, Lfm2SemanticSpanSelectedInputEvidence)
+    if selected:
+        batch.verify(
+            expected_cache_key=cache_key,
+            expected_input_sha256=expected_input_sha256,
         )
     torch = _torch()
     tensors = batch.tensors
@@ -450,7 +934,9 @@ def _validated_source_batch(
         raise Lfm2SemanticSpanPhaseBridgeError(
             "Source cache tensor inventory is invalid."
         )
-    if record.get("tensor_count") != len(inventory) or len(inventory) != len(tensors):
+    if record.get("tensor_count") != len(inventory) or (
+        not selected and len(inventory) != len(tensors)
+    ):
         raise Lfm2SemanticSpanPhaseBridgeError(
             "Source cache tensor count differs from its authenticated inventory."
         )
@@ -481,8 +967,12 @@ def _validated_source_batch(
     for phase_index, phase in enumerate(phase_order):
         logits_name = f"{phase}.logits"
         logits = tensors.get(logits_name)
-        if logits is None or inventory.get(logits_name) != _cache_tensor_descriptor(
-            torch, logits
+        if not isinstance(inventory.get(logits_name), Mapping) or (
+            not selected
+            and (
+                logits is None
+                or inventory.get(logits_name) != _cache_tensor_descriptor(torch, logits)
+            )
         ):
             raise Lfm2SemanticSpanPhaseBridgeError(
                 f"Source parent phase {phase!r} lacks authenticated logits."
@@ -492,7 +982,8 @@ def _validated_source_batch(
         forced_name = f"{phase}.forced_token_ids"
         forced_token = tensors.get(forced_name)
         if (
-            forced_token is None
+            not isinstance(inventory.get(forced_name), Mapping)
+            or forced_token is None
             or inventory.get(forced_name)
             != _cache_tensor_descriptor(torch, forced_token)
             or not torch.equal(
@@ -847,6 +1338,9 @@ class Lfm2SemanticSpanPhaseBridge:
     source_forced_decode_token_ids: tuple[int, ...]
     target_position_origin: int
     phases: tuple[Lfm2SemanticSpanPhase, ...]
+    source_selected_input_evidence_sha256: str | None = None
+    source_selective_session_sha256: str | None = None
+    source_selected_payload_sha256: str | None = None
     bridge_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -882,6 +1376,24 @@ class Lfm2SemanticSpanPhaseBridge:
             "target_position_origin",
             _nonnegative_int(self.target_position_origin, "target position origin"),
         )
+        selected_provenance = (
+            self.source_selected_input_evidence_sha256,
+            self.source_selective_session_sha256,
+            self.source_selected_payload_sha256,
+        )
+        if any(value is None for value in selected_provenance) != all(
+            value is None for value in selected_provenance
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Selected-input provenance must be wholly present or absent."
+            )
+        if selected_provenance[0] is not None:
+            for name in (
+                "source_selected_input_evidence_sha256",
+                "source_selective_session_sha256",
+                "source_selected_payload_sha256",
+            ):
+                object.__setattr__(self, name, _digest(getattr(self, name), name))
         phases = tuple(self.phases)
         expected = (
             "prefill",
@@ -924,15 +1436,24 @@ class Lfm2SemanticSpanPhaseBridge:
         raise KeyError(phase)
 
     def _body(self) -> dict[str, Any]:
+        source_cache = {
+            "cache_key": self.source_cache_key,
+            "manifest_sha256": self.source_manifest_sha256,
+            "batch_index": self.source_batch_index,
+            "input_sha256": self.source_input_sha256,
+            "record_sha256": self.source_record_sha256,
+        }
+        if self.source_selected_input_evidence_sha256 is not None:
+            source_cache["selected_input_authentication"] = {
+                "evidence_sha256": self.source_selected_input_evidence_sha256,
+                "selective_session_sha256": self.source_selective_session_sha256,
+                "selected_payload_sha256": self.source_selected_payload_sha256,
+                "full_record_fabricated": False,
+                "unselected_tensor_payloads_loaded": False,
+            }
         return {
             "schema": SEMANTIC_SPAN_PHASE_BRIDGE_SCHEMA,
-            "source_cache": {
-                "cache_key": self.source_cache_key,
-                "manifest_sha256": self.source_manifest_sha256,
-                "batch_index": self.source_batch_index,
-                "input_sha256": self.source_input_sha256,
-                "record_sha256": self.source_record_sha256,
-            },
+            "source_cache": source_cache,
             "tokenizers": {
                 "donor_tokenizer_semantics_sha256": (
                     self.donor_tokenizer_semantics_sha256
@@ -1008,7 +1529,7 @@ class Lfm2SemanticSpanPhaseBridge:
 
 
 def build_lfm2_semantic_span_phase_bridge(
-    source_batch: Lfm2CircuitTraceBatch,
+    source_batch: Lfm2CircuitTraceBatch | Lfm2SemanticSpanSelectedInputEvidence,
     source_cache_manifest: Mapping[str, Any],
     donor_tokenizer: Any,
     target_tokenizer: Any,
@@ -1027,9 +1548,12 @@ def build_lfm2_semantic_span_phase_bridge(
     returned.
     """
 
-    if not isinstance(source_batch, Lfm2CircuitTraceBatch):
+    if not isinstance(
+        source_batch,
+        (Lfm2CircuitTraceBatch, Lfm2SemanticSpanSelectedInputEvidence),
+    ):
         raise Lfm2SemanticSpanPhaseBridgeError(
-            "source_batch must be an authenticated Lfm2CircuitTraceBatch."
+            "source_batch must be an authenticated full or selected cache batch."
         )
     cache_key, manifest_sha256, input_sha256 = _validate_source_manifest(
         source_cache_manifest,
@@ -1082,6 +1606,21 @@ def build_lfm2_semantic_span_phase_bridge(
             donor_tokenizer=donor_tokenizer,
             target_tokenizer=target_tokenizer,
         ),
+        source_selected_input_evidence_sha256=(
+            source_batch.evidence_sha256
+            if isinstance(source_batch, Lfm2SemanticSpanSelectedInputEvidence)
+            else None
+        ),
+        source_selective_session_sha256=(
+            source_batch.selective_session_sha256
+            if isinstance(source_batch, Lfm2SemanticSpanSelectedInputEvidence)
+            else None
+        ),
+        source_selected_payload_sha256=(
+            source_batch.selected_payload_sha256
+            if isinstance(source_batch, Lfm2SemanticSpanSelectedInputEvidence)
+            else None
+        ),
     )
     return result.verify(donor_tokenizer, target_tokenizer)
 
@@ -1090,8 +1629,11 @@ __all__ = [
     "Lfm2SemanticSpanPhase",
     "Lfm2SemanticSpanPhaseBridge",
     "Lfm2SemanticSpanPhaseBridgeError",
+    "Lfm2SemanticSpanSelectedInputEvidence",
     "SEMANTIC_SPAN_EXPANSION_SCHEMA",
     "SEMANTIC_SPAN_PHASE_BRIDGE_SCHEMA",
     "SEMANTIC_SPAN_PHASE_SCHEMA",
+    "SEMANTIC_SPAN_SELECTED_INPUT_SCHEMA",
+    "build_lfm2_semantic_span_selected_input_evidence",
     "build_lfm2_semantic_span_phase_bridge",
 ]

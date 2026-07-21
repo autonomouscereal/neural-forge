@@ -12,12 +12,17 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     BATCH_SCHEMA,
     CACHE_SCHEMA,
+    SELECTIVE_AUTHENTICATED_SESSION_SCHEMA,
+    SELECTIVE_BATCH_PAYLOAD_SCHEMA,
     Lfm2CircuitTraceBatch,
+    Lfm2CircuitTraceSelectedBatchPayload,
+    Lfm2CircuitTraceSelectiveBatchReference,
     _tensor_descriptor,
 )
 from neural_forge.hf_lfm2_semantic_span_phase_bridge import (  # noqa: E402
     Lfm2SemanticSpanPhaseBridgeError,
     build_lfm2_semantic_span_phase_bridge,
+    build_lfm2_semantic_span_selected_input_evidence,
 )
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
     _cache_input_sha256,
@@ -83,9 +88,11 @@ def _fixture(
     forced_token_ids: list[int] | None = None,
     *,
     position_origin: int | None = None,
+    prompt_token_ids: list[int] | None = None,
 ) -> tuple[Lfm2CircuitTraceBatch, dict[str, Any]]:
     forced = [2, 3, 4] if forced_token_ids is None else forced_token_ids
-    input_ids = torch.tensor([[0, 1]], dtype=torch.long)
+    prompt = [0, 1] if prompt_token_ids is None else prompt_token_ids
+    input_ids = torch.tensor([prompt], dtype=torch.long)
     attention_mask = torch.ones_like(input_ids)
     forced_ids = torch.tensor([forced], dtype=torch.long)
     tensors: dict[str, Any] = {
@@ -102,10 +109,11 @@ def _fixture(
         phase_diagnostics[phase] = {}
     position_ids = None
     if position_origin is not None:
-        position_ids = torch.tensor(
-            [[position_origin, position_origin + 1]],
+        position_ids = torch.arange(
+            position_origin,
+            position_origin + len(prompt),
             dtype=torch.long,
-        )
+        ).unsqueeze(0)
         tensors["input.position_ids"] = position_ids
     input_sha256 = _cache_input_sha256(
         input_ids=input_ids,
@@ -117,7 +125,7 @@ def _fixture(
         "schema": "neural-forge-lfm2-circuit-corpus-v1",
         "batch_count": 1,
         "ordered_batch_input_sha256": [input_sha256],
-        "prompt_token_counts": [2],
+        "prompt_token_counts": [len(prompt)],
         "forced_decode_token_counts": [len(forced)],
     }
     corpus = {**corpus_body, "corpus_sha256": canonical_sha256(corpus_body)}
@@ -197,6 +205,143 @@ def _fixture(
     )
 
 
+def _selected_fixture(
+    *,
+    full_tensor_count: int = 4_122,
+    first_phase_forced_token_id: int | None = None,
+    completion_sha256: str | None = None,
+    trace_file_sha256: str | None = None,
+) -> tuple[Any, dict[str, Any], Lfm2CircuitTraceSelectedBatchPayload]:
+    batch, manifest = _fixture(
+        [2] * 58,
+        prompt_token_ids=[0, *([1] * 18)],
+    )
+    if first_phase_forced_token_id is not None:
+        batch.tensors["decode.000.forced_token_ids"][0, 0] = first_phase_forced_token_id
+    record = batch.record
+    inventory = dict(record["tensors"])
+    if first_phase_forced_token_id is not None:
+        inventory["decode.000.forced_token_ids"] = _tensor_descriptor(
+            torch,
+            batch.tensors["decode.000.forced_token_ids"],
+        )
+    dummy_descriptor = _tensor_descriptor(
+        torch,
+        torch.zeros((1,), dtype=torch.bfloat16),
+    )
+    while len(inventory) < full_tensor_count:
+        name = f"sealed.unselected.{len(inventory):06d}"
+        inventory[name] = dict(dummy_descriptor)
+    record = _sealed(
+        {
+            **{
+                name: value for name, value in record.items() if name != "record_sha256"
+            },
+            "tensor_count": len(inventory),
+            "tensors": inventory,
+        },
+        "record_sha256",
+    )
+    logical_bytes = sum(int(value["size_bytes"]) for value in inventory.values())
+    reference = Lfm2CircuitTraceSelectiveBatchReference(
+        index=0,
+        input_sha256=batch.input_sha256,
+        record_sha256=record["record_sha256"],
+        tensor_count=len(inventory),
+        ordered_tensor_names=tuple(sorted(inventory)),
+        logical_bytes=logical_bytes,
+        _record=MappingProxyType(record),
+    )
+    selected_names = tuple(
+        sorted(
+            (
+                "input.attention_mask",
+                "input.forced_decode_ids",
+                "input.input_ids",
+                *(f"decode.{step:03d}.forced_token_ids" for step in range(58)),
+            )
+        )
+    )
+    selected = {name: batch.tensors[name].clone() for name in selected_names}
+    selected_bytes = sum(
+        int(value.numel() * value.element_size()) for value in selected.values()
+    )
+    session_body = {
+        "schema": SELECTIVE_AUTHENTICATED_SESSION_SCHEMA,
+        "cache_key": manifest["cache_key"],
+        "manifest_sha256": manifest["manifest_sha256"],
+        "completion_sha256": (
+            canonical_sha256({"fixture": "completion"})
+            if completion_sha256 is None
+            else completion_sha256
+        ),
+        "batch_count": 1,
+        "ordered_authenticated_batches": [
+            {
+                "batch_index": 0,
+                "input_sha256": batch.input_sha256,
+                "trace_file_sha256": (
+                    canonical_sha256({"fixture": "trace"})
+                    if trace_file_sha256 is None
+                    else trace_file_sha256
+                ),
+                "record_file_sha256": canonical_sha256({"fixture": "record"}),
+                "record_sha256": record["record_sha256"],
+                "tensor_count": len(inventory),
+                "logical_bytes": logical_bytes,
+            }
+        ],
+        "authentication_contract": {
+            "committed_local_cache_only": True,
+            "manifest_completion_and_layout_verified": True,
+            "trace_file_sha256_passes_per_session": 1,
+            "record_file_sha256_passes_per_session": 1,
+            "record_self_hash_verified": True,
+            "safetensors_metadata_verified": True,
+            "complete_tensor_key_inventory_verified": True,
+            "selected_tensor_descriptors_verified_per_load": True,
+            "stable_file_identity_checked_before_and_after_load": True,
+            "authenticated_trace_guard_held_open": True,
+            "safetensors_mapping_held_open": False,
+            "safetensors_mapping_opened_per_selection_and_closed": True,
+            "unselected_tensor_payloads_loaded": False,
+            "parent_forward_calls": 0,
+            "training_steps": 0,
+            "toctou_boundary": "fixture",
+        },
+    }
+    session = {**session_body, "session_sha256": canonical_sha256(session_body)}
+    selection_body = {
+        "schema": SELECTIVE_BATCH_PAYLOAD_SCHEMA,
+        "session_sha256": session["session_sha256"],
+        "cache_key": manifest["cache_key"],
+        "batch_index": 0,
+        "input_sha256": batch.input_sha256,
+        "record_sha256": record["record_sha256"],
+        "ordered_tensor_names": list(selected_names),
+        "ordered_tensor_descriptors": [
+            dict(inventory[name]) for name in selected_names
+        ],
+        "logical_bytes": selected_bytes,
+    }
+    payload = Lfm2CircuitTraceSelectedBatchPayload(
+        batch_index=0,
+        input_sha256=batch.input_sha256,
+        ordered_tensor_names=selected_names,
+        logical_bytes=selected_bytes,
+        session_sha256=session["session_sha256"],
+        selection_sha256=canonical_sha256(selection_body),
+        tensors=selected,
+    )
+    evidence = build_lfm2_semantic_span_selected_input_evidence(
+        reference,
+        payload,
+        session,
+        expected_cache_key=manifest["cache_key"],
+    )
+    return evidence, manifest, payload
+
+
 def _tokenizers() -> tuple[_GreedyTokenizer, _GreedyTokenizer]:
     donor = _GreedyTokenizer(["<B>", "a", "b", " c", "!", "z"])
     target = _GreedyTokenizer(["<B>", "a", "ab", " ", "c", "!", "z", "b"])
@@ -204,7 +349,7 @@ def _tokenizers() -> tuple[_GreedyTokenizer, _GreedyTokenizer]:
 
 
 def _build(
-    batch: Lfm2CircuitTraceBatch,
+    batch: Any,
     manifest: dict[str, Any],
     donor: Any,
     target: Any,
@@ -229,6 +374,85 @@ def _build(
         target,
         **values,
     )
+
+
+def test_selected_input_contract_handles_real_4122_tensor_inventory() -> None:
+    evidence, manifest, payload = _selected_fixture()
+    donor, target = _tokenizers()
+
+    legacy_partial_batch = Lfm2CircuitTraceBatch(
+        index=evidence.index,
+        input_sha256=evidence.input_sha256,
+        _tensors=MappingProxyType(dict(evidence.tensors)),
+        _record=MappingProxyType(evidence.record),
+    )
+    with pytest.raises(
+        Lfm2SemanticSpanPhaseBridgeError,
+        match="tensor count differs",
+    ):
+        _build(legacy_partial_batch, manifest, donor, target)
+
+    bridge = _build(evidence, manifest, donor, target)
+    selected = bridge.to_evidence_dict()["source_cache"][
+        "selected_input_authentication"
+    ]
+    assert evidence.full_record_tensor_count == 4_122
+    assert len(evidence.tensors) == 61
+    assert evidence.ordered_tensor_names == tuple(
+        sorted(
+            (
+                "input.attention_mask",
+                "input.forced_decode_ids",
+                "input.input_ids",
+                *(f"decode.{step:03d}.forced_token_ids" for step in range(58)),
+            )
+        )
+    )
+    assert bridge.parent_decode_phase_count == 58
+    assert selected == {
+        "evidence_sha256": evidence.evidence_sha256,
+        "selective_session_sha256": evidence.selective_session_sha256,
+        "selected_payload_sha256": evidence.selected_payload_sha256,
+        "full_record_fabricated": False,
+        "unselected_tensor_payloads_loaded": False,
+    }
+    payload._release()
+    evidence.verify()
+    bridge.verify(donor, target)
+
+
+def test_selected_input_contract_rejects_post_selection_tensor_tampering() -> None:
+    evidence, _manifest, payload = _selected_fixture()
+    payload.tensors["input.input_ids"][0, 0] = 1
+
+    with pytest.raises(
+        Lfm2SemanticSpanPhaseBridgeError,
+        match="tensor .* changed",
+    ):
+        evidence.verify()
+
+
+def test_selected_input_contract_rejects_authenticated_forced_token_mismatch() -> None:
+    with pytest.raises(
+        Lfm2SemanticSpanPhaseBridgeError,
+        match="forced-token identity",
+    ):
+        _selected_fixture(first_phase_forced_token_id=3)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"completion_sha256": "not-a-digest"}, "session completion"),
+        ({"trace_file_sha256": "not-a-digest"}, "trace_file_sha256"),
+    ],
+)
+def test_selected_input_contract_rejects_malformed_session_file_digests(
+    overrides: dict[str, str],
+    message: str,
+) -> None:
+    with pytest.raises(Lfm2SemanticSpanPhaseBridgeError, match=message):
+        _selected_fixture(**overrides)
 
 
 def test_builds_exact_variable_span_schedule_and_preserves_parent_phases() -> None:
