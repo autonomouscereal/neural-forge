@@ -2303,6 +2303,10 @@ def test_normalized_input_real_medoid_bridge_generalizes_raw_scale_mismatch() ->
     consumer = receipt["consumer_bridge"]
     assert producer["role"] == "normalized_mlp_input_target_to_parent"
     assert consumer["role"] == "raw_residual_source_to_target"
+    assert consumer["orthonormal_columns"] is False
+    assert consumer["decoder_method"] == ("single_authenticated_thin_svd_pseudoinverse")
+    assert consumer["residual_chart_svd_calls"] == 1
+    assert consumer["residual_chart_pseudoinverse_calls"] == 0
     assert receipt["producer_consumer_bridge_fields_separate"] is True
     assert producer["fit_rank"] == 1
     assert producer["decoder_rank"] == 2
@@ -2440,11 +2444,17 @@ def test_normalized_input_decoder_preserves_mixed_gamma_anisotropy() -> None:
     torch.testing.assert_close(actual_heldout, expected_heldout, rtol=1e-10, atol=1e-10)
     assert torch.linalg.vector_norm(polar_heldout - expected_heldout) > 1.0
     producer = compiled.as_dict()["producer_bridge"]
+    consumer = compiled.as_dict()["consumer_bridge"]
     assert producer["structural_decoder_prior_rank"] == 2
     assert producer["structural_decoder_prior_operator_norm"] > 0.0
     assert producer["structural_decoder_left_inverse_error"] < 1e-10
     assert "structural_decoder_prior_sha256" in producer
     assert "thin_polar_diagnostic_sha256" in producer
+    assert consumer["orthonormal_columns"] is True
+    assert consumer["orthogonality_maximum_absolute_error"] < 1e-12
+    assert consumer["decoder_method"] == ("authenticated_orthonormal_chart_transpose")
+    assert consumer["residual_chart_svd_calls"] == 0
+    assert consumer["residual_chart_pseudoinverse_calls"] == 0
 
 
 def test_normalized_input_decoder_caps_supported_correction_and_authenticates_gamma():

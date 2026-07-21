@@ -3030,6 +3030,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     target_tokenizer: Any,
     attention_installer: Callable[..., Mapping[str, Any]] | None = None,
     semantic_layer_stack_compiler: Callable[..., Any] | None = None,
+    fold_compute_device: str = "cpu",
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
@@ -3090,6 +3091,11 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         donor_tokenizer=donor_tokenizer,
         target_tokenizer=target_tokenizer,
         attention_installer=_resolve_attention_installer(attention_installer),
+        **(
+            {"fold_compute_device": fold_compute_device}
+            if fold_compute_device != "cpu"
+            else {}
+        ),
     )
     if not isinstance(result, Lfm2SemanticLayerStackInstallation):
         raise Lfm2SemanticPostfoldError(
@@ -3104,6 +3110,14 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     final_w2_after = _tensor_sha256(_final_w2_parameter(target_model))
     if (
         verified.get("complete_causal_layer_stack_adjudicated") is not True
+        or (
+            fold_compute_device != "cpu"
+            and (
+                verified.get("fold_compute_device") != fold_compute_device
+                or verified.get("all_mlp_layers_proved_requested_fold_compute_device")
+                is not True
+            )
+        )
         or verified.get("all_attention_operator_decisions_completed") is not True
         or verified.get("attention_operator_decision_count") != 6
         or verified.get("attention_operator_install_count", -1)
@@ -4696,6 +4710,7 @@ def run_lfm2_semantic_postfold(
     expected_compiler_diagnostic_sha256: str,
     device: str,
     dtype: str = "bfloat16",
+    fold_compute_device: str = "cpu",
     parent_final_norm_tensor_key: str = "model.embedding_norm.weight",
     parent_norm_epsilon_config_key: str = "norm_eps",
     parent_tied_tensor_key: str = "model.embed_tokens.weight",
@@ -4804,6 +4819,7 @@ def run_lfm2_semantic_postfold(
         target_tokenizer=target_tokenizer,
         attention_installer=attention_installer,
         semantic_layer_stack_compiler=semantic_layer_stack_compiler,
+        fold_compute_device=fold_compute_device,
     )
     terminal = fused_terminal_compiler(
         cache=cache,
@@ -4840,6 +4856,7 @@ def run_lfm2_semantic_postfold(
         ),
         "compiler_cache_key": interface_rehydration["compiler_cache_key"],
         "semantic_evidence_cache_key": cache.cache_key,
+        "fold_compute_device": fold_compute_device,
         "common_parent_fingerprint": cache.parent_fingerprint,
         "compiler_and_semantic_cache_identities_bound_separately": True,
         "bridge_artifact_sha256": bridge.artifact_sha256,

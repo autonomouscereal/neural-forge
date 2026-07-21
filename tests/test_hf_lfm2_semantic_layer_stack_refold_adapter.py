@@ -606,7 +606,21 @@ def _patch_complete_transaction(
             with torch.no_grad():
                 target_model.mutable.add_(1.0)
         after = _state_identity(target_model)
-        receipt = {
+        fold_compute_device = _kwargs.get("fold_compute_device", "cpu")
+        source_derived_planting = {
+            "fold_compute_device": fold_compute_device,
+            "weight_complete_signature_compute_execution": (
+                None
+                if fold_compute_device == "cpu"
+                else {
+                    "backend": "cuda",
+                    "requested_device": fold_compute_device,
+                    "compute_dtype": "float64",
+                    "execution_sha256": "9" * 64,
+                }
+            ),
+        }
+        receipt_body = {
             "status": (
                 "installed-frozen-semantic-mlp-candidate"
                 if installed
@@ -616,7 +630,11 @@ def _patch_complete_transaction(
             "install_count": int(installed),
             "model_state_before_sha256": before,
             "model_state_after_sha256": after,
-            "result_sha256": canonical_sha256(["mlp", layer_index, after]),
+            "source_derived_planting": source_derived_planting,
+        }
+        receipt = {
+            **receipt_body,
+            "result_sha256": canonical_sha256(receipt_body),
         }
         return receipt, (_terminal_banks() if layer_index == 13 else {})
 
@@ -684,6 +702,38 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
             f"{layer_index}:next",
         ]
         assert observed == expected
+
+
+def test_complete_transaction_routes_and_authenticates_cuda_mlp_folding(
+    monkeypatch,
+) -> None:
+    target, cache, bridge, _events = _patch_complete_transaction(monkeypatch)
+
+    result = stack.compile_install_lfm2_semantic_layer_stack_postfold(
+        cache=cache,
+        bridge=bridge,
+        target_model=target,
+        interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+        compiler_lineage={
+            index: object() for index in stack._EXPECTED_ATTENTION_INDICES
+        },
+        parent_model_directory="unused",
+        donor_tokenizer=object(),
+        target_tokenizer=object(),
+        attention_installer=lambda **_kwargs: None,
+        fold_compute_device="cuda:1",
+    )
+
+    assert result.receipt["stack_compute_device_router_present"] is True
+    assert result.receipt["fold_compute_device"] == "cuda:1"
+    assert (
+        result.receipt["all_mlp_layers_proved_requested_fold_compute_device"] is True
+    )
+    assert all(
+        item["mlp_fold_compute_device"] == "cuda:1"
+        and item["mlp_weight_signature_compute_execution_sha256"] == "9" * 64
+        for item in result.receipt["layer_installations"]
+    )
 
 
 def test_closing_tokenizer_reauthentication_fails_before_model_mutation(

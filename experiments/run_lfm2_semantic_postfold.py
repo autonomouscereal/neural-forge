@@ -122,6 +122,14 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--fold-compute-device",
+        default="cpu",
+        help=(
+            "Closed-form folding backend. Use cpu or an explicitly indexed "
+            "CUDA device such as cuda:0; arithmetic remains float64."
+        ),
+    )
     parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")
     parser.add_argument(
         "--parent-final-norm-tensor-key",
@@ -177,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
             device=args.device,
             dtype=args.dtype,
+            fold_compute_device=args.fold_compute_device,
             parent_final_norm_tensor_key=(args.parent_final_norm_tensor_key),
             parent_norm_epsilon_config_key=(args.parent_norm_epsilon_config_key),
             parent_tied_tensor_key=args.parent_tied_tensor_key,

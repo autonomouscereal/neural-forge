@@ -1510,6 +1510,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     def layer_stack_compiler(**_kwargs):
         events.append("layer_stack")
         assert _kwargs["interface"] is self_dual_interface
+        assert _kwargs["fold_compute_device"] == "cuda:1"
         return layer_stack
 
     def terminal_compiler(**_kwargs):
@@ -1562,6 +1563,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         compiler_diagnostic_json=compiler_diagnostic,
         expected_compiler_diagnostic_sha256="e" * 64,
         device="cpu",
+        fold_compute_device="cuda:1",
         fused_terminal_compiler=terminal_compiler,
     )
 
@@ -1569,6 +1571,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     assert events == ["self_dual_gauge", "layer_stack", "terminal", "checkpoint"]
     assert result["compiler_cache_key"] == "8" * 64
     assert result["semantic_evidence_cache_key"] == cache.cache_key
+    assert result["context_binding"]["fold_compute_device"] == "cuda:1"
     assert (
         result["context_binding"][
             "compiler_and_semantic_cache_identities_bound_separately"

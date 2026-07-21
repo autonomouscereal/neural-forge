@@ -2530,6 +2530,7 @@ def _install_mlp(
     installer: Callable[..., Any],
     final_layer: bool,
     parameter_count: int,
+    fold_compute_device: str = "cpu",
 ) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
@@ -2552,6 +2553,11 @@ def _install_mlp(
         cache_manifest_sha256=cache.manifest["manifest_sha256"],
         bridge_artifact_sha256=bridge.artifact_sha256,
         defer_down_weight=final_layer,
+        **(
+            {"fold_compute_device": fold_compute_device}
+            if fold_compute_device != "cpu"
+            else {}
+        ),
     )
     receipt_value = getattr(result, "receipt", None)
     terminal_evidence = dict(getattr(result, "final_layer_mlp_evidence", {}))
@@ -2866,7 +2872,25 @@ def _layer_receipt(
     operator_evidence_sha256: Sequence[str],
     mlp_evidence_sha256: Sequence[str],
     fir_receipt: Mapping[str, Any] | None,
+    fold_compute_device: str,
 ) -> Mapping[str, Any]:
+    planting = mlp_receipt.get("source_derived_planting")
+    execution = (
+        planting.get("weight_complete_signature_compute_execution")
+        if isinstance(planting, Mapping)
+        else None
+    )
+    if fold_compute_device != "cpu" and (
+        not isinstance(planting, Mapping)
+        or planting.get("fold_compute_device") != fold_compute_device
+        or not isinstance(execution, Mapping)
+        or execution.get("requested_device") != fold_compute_device
+        or execution.get("backend") != "cuda"
+        or execution.get("compute_dtype") != "float64"
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"Layer {layer_index} MLP did not prove the requested CUDA fold backend."
+        )
     body = {
         "schema": "neural-forge-lfm2-semantic-layer-transaction-v1",
         "layer_index": layer_index,
@@ -2927,6 +2951,16 @@ def _layer_receipt(
         ],
         "operator_evidence_sha256": list(operator_evidence_sha256),
         "mlp_evidence_sha256": list(mlp_evidence_sha256),
+        "mlp_fold_compute_device": (
+            planting.get("fold_compute_device", "cpu")
+            if isinstance(planting, Mapping)
+            else "cpu"
+        ),
+        "mlp_weight_signature_compute_execution_sha256": (
+            execution.get("execution_sha256")
+            if isinstance(execution, Mapping)
+            else None
+        ),
         "fir_equivalence_sha256": (
             None if fir_receipt is None else fir_receipt["result_sha256"]
         ),
@@ -2951,6 +2985,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     attention_installer: Callable[..., Mapping[str, Any]] | None,
     short_conv_installer: Callable[..., Mapping[str, Any]] | None = None,
     mlp_installer: Callable[..., Any] | None = None,
+    fold_compute_device: str = "cpu",
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete fourteen-layer child transaction.
 
@@ -3272,6 +3307,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     installer=selected_mlp_installer,
                     final_layer=layer_index == 13,
                     parameter_count=parameter_count,
+                    fold_compute_device=fold_compute_device,
                 )
                 mlp_coverage_after = _lfm2_dense_producer_chain_coverage(
                     target_model,
@@ -3362,6 +3398,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                             item.evidence_sha256 for item in mlp_evidence
                         ),
                         fir_receipt=fir_receipt,
+                        fold_compute_device=fold_compute_device,
                     )
                 )
                 residual_bank = _next_residual_bank(propagation_replay)
@@ -3424,6 +3461,20 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 for name, module in target_model.named_modules()
             )
             != snapshot.modes
+            or any(
+                value.get("mlp_fold_compute_device") != fold_compute_device
+                for value in layer_receipts
+            )
+            or (
+                fold_compute_device != "cpu"
+                and any(
+                    not isinstance(
+                        value.get("mlp_weight_signature_compute_execution_sha256"),
+                        str,
+                    )
+                    for value in layer_receipts
+                )
+            )
         ):
             raise Lfm2SemanticLayerStackRefoldError(
                 "Complete layer-stack postconditions were not satisfied."
@@ -3548,7 +3599,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "parent_model_forward_calls": 0,
             "child_model_forward_calls": 0,
             "child_macrocell_replay_only": True,
-            "stack_compute_device_router_present": False,
+            "stack_compute_device_router_present": True,
+            "fold_compute_device": fold_compute_device,
+            "all_mlp_layers_proved_requested_fold_compute_device": True,
             "attention_solver_device_policy_delegated_to_attention_adapter": True,
             "final_norm_target_uses_unrotated_authenticated_interface": True,
             "short_conv_inserted_owner_rows_are_proxies_only": True,

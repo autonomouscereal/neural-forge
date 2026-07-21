@@ -1318,6 +1318,7 @@ def _full_candidate_state(
     cluster_ridge: float,
     cluster_max_iterations: int,
     cluster_distance_chunk_size: int,
+    fold_compute_device: str,
 ) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     cases = tuple(
         Lfm2CachedMlpFoldCase(
@@ -1374,6 +1375,7 @@ def _full_candidate_state(
             cluster_ridge=cluster_ridge,
             cluster_max_iterations=cluster_max_iterations,
             cluster_distance_chunk_size=cluster_distance_chunk_size,
+            fold_compute_device=fold_compute_device,
         )
         if not isinstance(
             compiled,
@@ -1529,6 +1531,7 @@ def prepare_lfm2_semantic_mlp_postfold(
     rmse_relative_tolerance: float = 1e-6,
     cosine_tolerance: float = 1e-8,
     require_terminal_action_evidence: bool = False,
+    fold_compute_device: str = "cpu",
 ) -> Lfm2PreparedSemanticMlpRefold:
     """Compile and freeze both FIT-only candidates without mutating the child."""
 
@@ -1622,6 +1625,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         cluster_ridge=float(cluster_ridge),
         cluster_max_iterations=int(cluster_max_iterations),
         cluster_distance_chunk_size=int(cluster_distance_chunk_size),
+        fold_compute_device=fold_compute_device,
     )
     if exact_zero_incumbent:
         torch = _torch()
@@ -1630,6 +1634,31 @@ def prepare_lfm2_semantic_mlp_postfold(
         consumer_bridge = full_solver.get("consumer_bridge")
         multi_anchor_plan = full_solver.get("multi_anchor_plan")
         weight_complete_signature = full_solver.get("weight_complete_signature")
+        weight_signature_compute_execution = (
+            weight_complete_signature.get("compute_execution")
+            if isinstance(weight_complete_signature, Mapping)
+            else None
+        )
+        if fold_compute_device == "cpu":
+            weight_signature_compute_execution_valid = (
+                weight_signature_compute_execution is None
+            )
+        elif isinstance(weight_signature_compute_execution, Mapping):
+            compute_execution_body = dict(weight_signature_compute_execution)
+            compute_execution_sha256 = compute_execution_body.pop(
+                "execution_sha256",
+                None,
+            )
+            weight_signature_compute_execution_valid = bool(
+                weight_signature_compute_execution.get("backend") == "cuda"
+                and weight_signature_compute_execution.get("requested_device")
+                == fold_compute_device
+                and weight_signature_compute_execution.get("compute_dtype") == "float64"
+                and isinstance(compute_execution_sha256, str)
+                and canonical_sha256(compute_execution_body) == compute_execution_sha256
+            )
+        else:
+            weight_signature_compute_execution_valid = False
         fit_weights = tuple(item.sample_weight for item in partitions["fit"])
         fit_row_weights = torch.tensor(fit_weights, dtype=torch.float64)
         expected_chart_sha256 = lfm2_authenticated_tensor_sha256(
@@ -1678,11 +1707,21 @@ def prepare_lfm2_semantic_mlp_postfold(
             None,
         )
         with torch.no_grad():
-            chart_u, _, chart_vh = torch.linalg.svd(
-                inventory.residual_chart.to(torch.float64),
-                full_matrices=False,
-            )
-            expected_signature_basis = (chart_u @ chart_vh).contiguous()
+            chart64 = inventory.residual_chart.to(torch.float64)
+            chart_identity = torch.eye(target_hidden, dtype=torch.float64)
+            if torch.allclose(
+                chart64.T @ chart64,
+                chart_identity,
+                rtol=1e-8,
+                atol=1e-8,
+            ):
+                expected_signature_basis = chart64.contiguous().clone()
+            else:
+                chart_u, _, chart_vh = torch.linalg.svd(
+                    chart64,
+                    full_matrices=False,
+                )
+                expected_signature_basis = (chart_u @ chart_vh).contiguous()
         expected_signature_input_sha256 = {
             "w1.weight": lfm2_authenticated_tensor_sha256(
                 inventory.gate_weight.to(torch.float64)
@@ -1827,6 +1866,7 @@ def prepare_lfm2_semantic_mlp_postfold(
             != canonical_sha256(weight_signature_report_body)
             or full_solver.get("weight_complete_signature_report_sha256")
             != weight_signature_report_sha256
+            or weight_signature_compute_execution_valid is not True
             or full_solver.get("weight_complete_signature_sha256")
             != weight_complete_signature.get("signature_sha256")
             or full_solver.get(
@@ -1942,6 +1982,12 @@ def prepare_lfm2_semantic_mlp_postfold(
                     ),
                     "weight_complete_signature_report_sha256": (
                         full_solver["weight_complete_signature_report_sha256"]
+                    ),
+                    "fold_compute_device": fold_compute_device,
+                    "weight_complete_signature_compute_execution": (
+                        None
+                        if weight_signature_compute_execution is None
+                        else dict(weight_signature_compute_execution)
                     ),
                     "weight_complete_signature_used_for_structural_selection": (True),
                     "cached_activation_rows_used_for_structural_selection": False,

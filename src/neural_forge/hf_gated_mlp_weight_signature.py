@@ -15,10 +15,12 @@ is source-neuron-major and can therefore be supplied directly to a real-medoid
 or sparse multi-anchor planner without selecting prompts, traces, activations,
 or a subset of neurons.
 
-Construction is deterministic CPU/float64 under one numerical thread.  Inputs
-are cryptographically pinned, never mutated, and detached before arithmetic.
-There is no model execution, autograd, optimizer, training, pruning, or
-quantization path in this module.
+Construction defaults to deterministic CPU/float64 under one numerical thread.
+Callers may instead select one explicitly indexed CUDA device for only the
+three projection GEMMs; inputs and results remain canonically authenticated on
+CPU and arithmetic remains float64.  Inputs are never mutated and are detached
+before arithmetic.  There is no model execution, autograd, optimizer,
+training, pruning, or quantization path in this module.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -101,6 +104,103 @@ def _torch() -> Any:
             "PyTorch is required for gated-MLP weight signatures."
         ) from exc
     return torch
+
+
+@dataclass(frozen=True, slots=True)
+class _SignatureComputePolicy:
+    requested_device: str
+    backend: str
+    device_index: int | None
+    dtype_name: str
+
+
+def _compute_policy(
+    torch: Any,
+    *,
+    compute_device: Any,
+    compute_dtype: Any,
+) -> _SignatureComputePolicy:
+    if compute_dtype != "float64":
+        raise GatedMlpWeightSignatureShapeError(
+            "compute_dtype must be exactly 'float64'; reduced-precision "
+            "signature construction is forbidden."
+        )
+    if compute_device == "cpu":
+        return _SignatureComputePolicy(
+            requested_device="cpu",
+            backend="cpu",
+            device_index=None,
+            dtype_name="float64",
+        )
+    if not isinstance(compute_device, str):
+        raise GatedMlpWeightSignatureShapeError(
+            "compute_device must be 'cpu' or an explicitly indexed CUDA device."
+        )
+    prefix, separator, index_text = compute_device.partition(":")
+    if (
+        prefix != "cuda"
+        or separator != ":"
+        or not index_text.isdecimal()
+        or int(index_text) < 0
+    ):
+        raise GatedMlpWeightSignatureShapeError(
+            "CUDA compute_device must be explicitly indexed as 'cuda:N'."
+        )
+    device_index = int(index_text)
+    if not torch.cuda.is_available():
+        raise GatedMlpWeightSignatureInvariantError(
+            "An indexed CUDA signature backend was requested, but CUDA is unavailable."
+        )
+    if device_index >= int(torch.cuda.device_count()):
+        raise GatedMlpWeightSignatureInvariantError(
+            f"CUDA compute_device index {device_index} is unavailable."
+        )
+    return _SignatureComputePolicy(
+        requested_device=compute_device,
+        backend="cuda",
+        device_index=device_index,
+        dtype_name="float64",
+    )
+
+
+def _cuda_backend_state(torch: Any) -> dict[str, bool]:
+    return {
+        "deterministic_algorithms": bool(torch.are_deterministic_algorithms_enabled()),
+        "deterministic_warn_only": bool(
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        "cuda_matmul_allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
+        "cudnn_allow_tf32": bool(torch.backends.cudnn.allow_tf32),
+        "cuda_matmul_allow_fp16_reduced_precision_reduction": bool(
+            torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction
+        ),
+        "cuda_matmul_allow_bf16_reduced_precision_reduction": bool(
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
+        ),
+    }
+
+
+def _enable_deterministic_cuda_float64(torch: Any) -> None:
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
+    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
+
+
+def _restore_cuda_backend_state(torch: Any, state: Mapping[str, bool]) -> None:
+    torch.backends.cuda.matmul.allow_tf32 = state["cuda_matmul_allow_tf32"]
+    torch.backends.cudnn.allow_tf32 = state["cudnn_allow_tf32"]
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = state[
+        "cuda_matmul_allow_fp16_reduced_precision_reduction"
+    ]
+    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = state[
+        "cuda_matmul_allow_bf16_reduced_precision_reduction"
+    ]
+    torch.use_deterministic_algorithms(
+        state["deterministic_algorithms"],
+        warn_only=state["deterministic_warn_only"],
+    )
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -346,16 +446,25 @@ def build_gated_mlp_weight_complete_signature(
     expected_input_sha256: Mapping[str, str],
     basis_orthogonality_atol: float = 1e-8,
     basis_orthogonality_rtol: float = 1e-8,
+    compute_device: str = "cpu",
+    compute_dtype: str = "float64",
 ) -> GatedMlpWeightCompleteSignature:
     """Build and authenticate ``[W1 B, W3 B, (B.T W2).T]``.
 
     Input pins use :func:`gated_mlp_weight_signature_tensor_sha256`, which is
     byte-compatible with the public semantic-LFM2 tensor digest.  Every source
     neuron participates in every role; no row, prompt, activation, or trace is
-    accepted by this API.
+    accepted by this API.  ``compute_device`` may be ``"cpu"`` or one
+    explicitly indexed CUDA device such as ``"cuda:0"``.  The only supported
+    compute dtype is float64; CUDA changes execution placement, not precision.
     """
 
     torch = _torch()
+    compute = _compute_policy(
+        torch,
+        compute_device=compute_device,
+        compute_dtype=compute_dtype,
+    )
     atol = _nonnegative_float(basis_orthogonality_atol, "basis_orthogonality_atol")
     rtol = _nonnegative_float(basis_orthogonality_rtol, "basis_orthogonality_rtol")
     expected = _expected_hashes(expected_input_sha256)
@@ -406,8 +515,9 @@ def build_gated_mlp_weight_complete_signature(
             "The residual basis cannot expand source hidden width."
         )
 
-    original_threads = torch.get_num_threads()
+    cuda_execution: dict[str, Any] | None = None
     with _NUMERICAL_LOCK:
+        original_threads = torch.get_num_threads()
         try:
             torch.set_num_threads(1)
             with torch.no_grad():
@@ -434,11 +544,122 @@ def build_gated_mlp_weight_complete_signature(
                         "B must have authenticated orthonormal columns."
                     )
 
-                raw_blocks = {
-                    GATE_INPUT_ROLE: (gate_fp64 @ basis_fp64).contiguous(),
-                    UP_INPUT_ROLE: (up_fp64 @ basis_fp64).contiguous(),
-                    DOWN_OUTPUT_ROLE: ((basis_fp64.T @ down_fp64).T.contiguous()),
-                }
+                if compute.backend == "cpu":
+                    raw_blocks = {
+                        GATE_INPUT_ROLE: (gate_fp64 @ basis_fp64).contiguous(),
+                        UP_INPUT_ROLE: (up_fp64 @ basis_fp64).contiguous(),
+                        DOWN_OUTPUT_ROLE: ((basis_fp64.T @ down_fp64).T.contiguous()),
+                    }
+                else:
+                    workspace_config = os.environ.get(
+                        "CUBLAS_WORKSPACE_CONFIG",
+                        "",
+                    )
+                    if workspace_config not in {":4096:8", ":16:8"}:
+                        raise GatedMlpWeightSignatureInvariantError(
+                            "Deterministic CUDA signature GEMMs require "
+                            "CUBLAS_WORKSPACE_CONFIG=:4096:8 or :16:8 before "
+                            "CUDA initialization."
+                        )
+                    if compute.device_index is None:  # pragma: no cover - guarded
+                        raise AssertionError("Indexed CUDA policy lost its index.")
+                    device = torch.device("cuda", compute.device_index)
+                    backend_before = _cuda_backend_state(torch)
+                    backend_during: dict[str, bool] | None = None
+                    properties = torch.cuda.get_device_properties(device)
+                    try:
+                        _enable_deterministic_cuda_float64(torch)
+                        backend_during = _cuda_backend_state(torch)
+                        with torch.cuda.device(device):
+                            basis_cuda = basis_fp64.to(
+                                device=device,
+                                dtype=torch.float64,
+                            )
+                            gate_cuda = gate_fp64.to(
+                                device=device,
+                                dtype=torch.float64,
+                            )
+                            gate_block = (gate_cuda @ basis_cuda).to(
+                                device="cpu",
+                                dtype=torch.float64,
+                            )
+                            del gate_cuda
+                            up_cuda = up_fp64.to(
+                                device=device,
+                                dtype=torch.float64,
+                            )
+                            up_block = (up_cuda @ basis_cuda).to(
+                                device="cpu",
+                                dtype=torch.float64,
+                            )
+                            del up_cuda
+                            down_cuda = down_fp64.to(
+                                device=device,
+                                dtype=torch.float64,
+                            )
+                            down_block = (basis_cuda.T @ down_cuda).T.to(
+                                device="cpu",
+                                dtype=torch.float64,
+                            )
+                            del down_cuda, basis_cuda
+                            torch.cuda.synchronize(device)
+                        raw_blocks = {
+                            GATE_INPUT_ROLE: gate_block.contiguous(),
+                            UP_INPUT_ROLE: up_block.contiguous(),
+                            DOWN_OUTPUT_ROLE: down_block.contiguous(),
+                        }
+                    finally:
+                        _restore_cuda_backend_state(torch, backend_before)
+                    backend_after = _cuda_backend_state(torch)
+                    if backend_after != backend_before:
+                        raise GatedMlpWeightSignatureInvariantError(
+                            "CUDA signature construction did not restore global "
+                            "backend state exactly."
+                        )
+                    if backend_during != {
+                        "deterministic_algorithms": True,
+                        "deterministic_warn_only": False,
+                        "cuda_matmul_allow_tf32": False,
+                        "cudnn_allow_tf32": False,
+                        "cuda_matmul_allow_fp16_reduced_precision_reduction": False,
+                        "cuda_matmul_allow_bf16_reduced_precision_reduction": False,
+                    }:
+                        raise GatedMlpWeightSignatureInvariantError(
+                            "CUDA signature construction did not hold the required "
+                            "deterministic float64 backend policy."
+                        )
+                    cuda_execution = {
+                        "schema": (
+                            "neural-forge-gated-mlp-signature-cuda-execution-v1"
+                        ),
+                        "backend": "cuda",
+                        "requested_device": compute.requested_device,
+                        "resolved_device": str(device),
+                        "device_index": compute.device_index,
+                        "device_name": str(properties.name),
+                        "compute_capability": [
+                            int(properties.major),
+                            int(properties.minor),
+                        ],
+                        "compute_dtype": compute.dtype_name,
+                        "cublas_workspace_config": workspace_config,
+                        "deterministic_backend_state_during_compute": (backend_during),
+                        "global_backend_state_restored": True,
+                        "canonical_input_authentication_device": "cpu",
+                        "canonical_result_materialization_device": "cpu",
+                        "projection_gemm_calls": 3,
+                        "cuda_synchronize_calls": 1,
+                        "cuda_tensor_stage_count": 4,
+                        "cpu_result_materialization_count": 3,
+                        "parent_trace_rows_staged": 0,
+                        "parent_model_objects_constructed": 0,
+                        "parent_model_forward_calls": 0,
+                        "child_model_forward_calls": 0,
+                        "autograd_grad_calls": 0,
+                        "backward_calls": 0,
+                        "optimizer_steps": 0,
+                        "training_steps": 0,
+                    }
                 raw_rms = {
                     role: _rms(torch, block) for role, block in raw_blocks.items()
                 }
@@ -535,8 +756,38 @@ def build_gated_mlp_weight_complete_signature(
         "no_trace_rows_used": True,
         "model_forward_calls_zero": True,
         "training_operations_zero": True,
-        "deterministic_cpu_float64_single_thread": True,
     }
+    if compute.backend == "cpu":
+        # Keep the default report byte-compatible with the original
+        # deterministic CPU-only implementation.
+        invariants["deterministic_cpu_float64_single_thread"] = True
+    else:
+        invariants.update(
+            {
+                "deterministic_cuda_float64_explicit_device": (
+                    cuda_execution is not None
+                    and cuda_execution["requested_device"].startswith("cuda:")
+                    and cuda_execution["compute_dtype"] == "float64"
+                ),
+                "canonical_cpu_input_authentication": True,
+                "canonical_cpu_result_materialization": all(
+                    block.device.type == "cpu" and block.dtype == torch.float64
+                    for block in raw_blocks.values()
+                ),
+                "cuda_backend_state_restored": (
+                    cuda_execution is not None
+                    and cuda_execution["global_backend_state_restored"] is True
+                ),
+                "cuda_projection_scope_exactly_three_gemms": (
+                    cuda_execution is not None
+                    and cuda_execution["projection_gemm_calls"] == 3
+                ),
+                "cuda_parent_trace_rows_staged_zero": (
+                    cuda_execution is not None
+                    and cuda_execution["parent_trace_rows_staged"] == 0
+                ),
+            }
+        )
     invariants["all_hold"] = all(invariants.values())
     if invariants["all_hold"] is not True:
         raise GatedMlpWeightSignatureInvariantError(
@@ -551,6 +802,27 @@ def build_gated_mlp_weight_complete_signature(
             "order": "ascending-source-neuron-index",
         }
     )
+    operation_audit = dict(_ZERO_OPERATIONS)
+    if cuda_execution is not None:
+        cuda_execution = {
+            **cuda_execution,
+            "input_sha256": observed_before,
+            "raw_result_sha256": raw_role_sha256,
+        }
+        cuda_execution = {
+            **cuda_execution,
+            "execution_sha256": canonical_sha256(cuda_execution),
+        }
+        operation_audit.update(
+            {
+                "signature_projection_gemm_calls": 3,
+                "cpu_signature_projection_gemm_calls": 0,
+                "cuda_signature_projection_gemm_calls": 3,
+                "cuda_synchronize_calls": 1,
+                "cuda_tensor_stage_count": 4,
+                "cpu_result_materialization_count": 3,
+            }
+        )
     body = {
         "schema": GATED_MLP_WEIGHT_SIGNATURE_SCHEMA,
         "method": "full-weight-coupled-gated-mlp-three-role-rms-signature",
@@ -609,8 +881,10 @@ def build_gated_mlp_weight_complete_signature(
         "invariants": invariants,
         "trace_rows_used": 0,
         "prompt_rows_used": 0,
-        "operation_audit": dict(_ZERO_OPERATIONS),
+        "operation_audit": operation_audit,
     }
+    if cuda_execution is not None:
+        body["compute_execution"] = cuda_execution
     report = {**body, "report_sha256": canonical_sha256(body)}
     return GatedMlpWeightCompleteSignature(
         signature=signature,

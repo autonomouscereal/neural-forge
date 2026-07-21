@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
+from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_gated_mlp_weight_signature import (
     DOWN_OUTPUT_ROLE,
     GATED_MLP_WEIGHT_SIGNATURE_ROLES,
@@ -66,10 +67,11 @@ def _pins(values: dict[str, torch.Tensor]) -> dict[str, str]:
     }
 
 
-def _build(values: dict[str, torch.Tensor]):
+def _build(values: dict[str, torch.Tensor], **policy):
     return build_gated_mlp_weight_complete_signature(
         **values,
         expected_input_sha256=_pins(values),
+        **policy,
     )
 
 
@@ -166,6 +168,120 @@ def test_signature_and_report_are_exact_across_caller_thread_counts() -> None:
     assert torch.equal(first.signature, second.signature)
     assert first.signature_sha256 == second.signature_sha256
     assert first.as_dict() == second.as_dict()
+
+
+def test_explicit_cpu_float64_policy_preserves_default_bytes_and_report() -> None:
+    values = _case(source_neurons=31, source_hidden=12, target_hidden=7)
+
+    implicit = _build(values)
+    explicit = _build(
+        values,
+        compute_device="cpu",
+        compute_dtype="float64",
+    )
+
+    assert torch.equal(explicit.signature, implicit.signature)
+    assert explicit.signature_sha256 == implicit.signature_sha256
+    assert explicit.as_dict() == implicit.as_dict()
+    assert "compute_execution" not in explicit.report
+    assert explicit.report["operation_audit"] == implicit.report["operation_audit"]
+
+
+@pytest.mark.parametrize(
+    ("policy", "message"),
+    [
+        ({"compute_device": "cuda"}, "explicitly indexed"),
+        ({"compute_device": "cuda:-1"}, "explicitly indexed"),
+        ({"compute_device": "cpu:0"}, "explicitly indexed"),
+        ({"compute_dtype": "float32"}, "exactly 'float64'"),
+    ],
+)
+def test_invalid_compute_policy_fails_closed(policy, message: str) -> None:
+    with pytest.raises(GatedMlpWeightSignatureShapeError, match=message):
+        _build(_case(), **policy)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_indexed_cuda_float64_gemms_are_deterministic_and_transactional(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    values = _case(source_neurons=31, source_hidden=12, target_hidden=7)
+    originals = {name: value.clone() for name, value in values.items()}
+    backend_before = {
+        "deterministic_algorithms": (torch.are_deterministic_algorithms_enabled()),
+        "deterministic_warn_only": (
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        "cuda_matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32,
+        "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
+        "cuda_matmul_allow_fp16_reduced_precision_reduction": (
+            torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction
+        ),
+        "cuda_matmul_allow_bf16_reduced_precision_reduction": (
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
+        ),
+    }
+
+    first = _build(
+        values,
+        compute_device="cuda:0",
+        compute_dtype="float64",
+    )
+    second = _build(
+        values,
+        compute_device="cuda:0",
+        compute_dtype="float64",
+    )
+
+    assert torch.equal(first.signature, second.signature)
+    assert first.signature_sha256 == second.signature_sha256
+    assert first.as_dict() == second.as_dict()
+    raw = {
+        GATE_INPUT_ROLE: values["gate_weight"] @ values["residual_basis"],
+        UP_INPUT_ROLE: values["up_weight"] @ values["residual_basis"],
+        DOWN_OUTPUT_ROLE: (values["residual_basis"].T @ values["down_weight"]).T,
+    }
+    expected = torch.cat(
+        tuple(raw[role] / _rms(raw[role]) for role in GATED_MLP_WEIGHT_SIGNATURE_ROLES),
+        dim=1,
+    )
+    torch.testing.assert_close(first.signature, expected, rtol=1e-14, atol=1e-14)
+    execution = first.report["compute_execution"]
+    execution_body = dict(execution)
+    execution_sha256 = execution_body.pop("execution_sha256")
+    assert canonical_sha256(execution_body) == execution_sha256
+    assert execution["backend"] == "cuda"
+    assert execution["requested_device"] == "cuda:0"
+    assert execution["resolved_device"] == "cuda:0"
+    assert execution["compute_dtype"] == "float64"
+    assert execution["projection_gemm_calls"] == 3
+    assert execution["parent_trace_rows_staged"] == 0
+    assert execution["canonical_input_authentication_device"] == "cpu"
+    assert execution["canonical_result_materialization_device"] == "cpu"
+    assert first.report["operation_audit"]["cuda_signature_projection_gemm_calls"] == 3
+    assert (
+        first.report["invariants"]["deterministic_cuda_float64_explicit_device"] is True
+    )
+    assert first.report["invariants"]["all_hold"] is True
+    for name, original in originals.items():
+        assert values[name].device.type == "cpu"
+        torch.testing.assert_close(values[name], original, rtol=0, atol=0)
+    backend_after = {
+        "deterministic_algorithms": (torch.are_deterministic_algorithms_enabled()),
+        "deterministic_warn_only": (
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        "cuda_matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32,
+        "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
+        "cuda_matmul_allow_fp16_reduced_precision_reduction": (
+            torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction
+        ),
+        "cuda_matmul_allow_bf16_reduced_precision_reduction": (
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
+        ),
+    }
+    assert backend_after == backend_before
 
 
 def test_one_global_orthogonal_gauge_preserves_structural_selection_geometry() -> None:

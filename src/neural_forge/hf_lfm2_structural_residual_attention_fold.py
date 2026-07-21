@@ -3029,6 +3029,11 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
     fit_row_weight_maximum: float
     residual_endpoint_relative_rmse: float
     consumer_correction_report: Lfm2PriorCorrectionReport
+    residual_chart_decoder_method: str
+    residual_chart_orthonormal_columns: bool
+    residual_chart_orthogonality_maximum_absolute_error: float
+    residual_chart_svd_calls: int
+    residual_chart_pseudoinverse_calls: int
 
     @property
     def removed_logical_parameters(self) -> int:
@@ -3146,6 +3151,15 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
                 "residual_chart_sha256": self.residual_chart_sha256,
                 "residual_chart_rank": self.residual_chart_rank,
                 "consumer_prior_sha256": self.consumer_prior_sha256,
+                "decoder_method": self.residual_chart_decoder_method,
+                "orthonormal_columns": (self.residual_chart_orthonormal_columns),
+                "orthogonality_maximum_absolute_error": (
+                    self.residual_chart_orthogonality_maximum_absolute_error
+                ),
+                "residual_chart_svd_calls": self.residual_chart_svd_calls,
+                "residual_chart_pseudoinverse_calls": (
+                    self.residual_chart_pseudoinverse_calls
+                ),
             },
             "producer_consumer_bridge_fields_separate": True,
             "normalized_chart_sha256": self.normalized_chart_sha256,
@@ -4186,6 +4200,7 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
     max_projection_fits: int = 1_000_000,
     max_sparse_entries: int = 1_000_000,
     max_workspace_elements: int = 16_000_000,
+    fold_compute_device: str = "cpu",
 ) -> Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
     """Plant a smaller dense SwiGLU through separate normalized/raw charts.
 
@@ -4367,18 +4382,54 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         raise Lfm2StructuralResidualAttentionFoldError(
             "Normalized-input chart construction requires nonzero ffn_norm weights."
         )
-    chart_rank = int(torch.linalg.matrix_rank(chart).item())
+    with torch.no_grad():
+        chart_identity = torch.eye(target_hidden, dtype=torch.float64)
+        chart_gram = (chart.T @ chart).contiguous()
+        chart_orthogonality_error = float(
+            (chart_gram - chart_identity).abs().max().item()
+        )
+        chart_is_orthonormal = bool(
+            torch.allclose(
+                chart_gram,
+                chart_identity,
+                rtol=1e-8,
+                atol=1e-8,
+            )
+        )
+        if chart_is_orthonormal:
+            chart_rank = target_hidden
+            weight_signature_basis = chart.contiguous().clone()
+            raw_chart_decoder = chart.T.contiguous()
+            raw_chart_decoder_method = "authenticated_orthonormal_chart_transpose"
+            raw_chart_svd_calls = 0
+            raw_chart_pseudoinverse_calls = 0
+        else:
+            raw_chart_u, raw_chart_singular, raw_chart_vh = torch.linalg.svd(
+                chart,
+                full_matrices=False,
+            )
+            singular_threshold = (
+                max(source_hidden, target_hidden)
+                * torch.finfo(torch.float64).eps
+                * raw_chart_singular.max()
+            )
+            supported_singular = raw_chart_singular > singular_threshold
+            chart_rank = int(supported_singular.sum().item())
+            weight_signature_basis = (raw_chart_u @ raw_chart_vh).contiguous()
+            raw_chart_decoder = (
+                (
+                    raw_chart_vh.T[:, supported_singular]
+                    * raw_chart_singular[supported_singular].reciprocal().unsqueeze(0)
+                )
+                @ raw_chart_u[:, supported_singular].T
+            ).contiguous()
+            raw_chart_decoder_method = "single_authenticated_thin_svd_pseudoinverse"
+            raw_chart_svd_calls = 1
+            raw_chart_pseudoinverse_calls = 0
     if chart_rank != target_hidden:
         raise Lfm2StructuralResidualAttentionFoldError(
             "residual_chart must have full target-column rank."
         )
-
-    with torch.no_grad():
-        raw_chart_u, _, raw_chart_vh = torch.linalg.svd(
-            chart,
-            full_matrices=False,
-        )
-        weight_signature_basis = (raw_chart_u @ raw_chart_vh).contiguous()
     weight_signature = build_gated_mlp_weight_complete_signature(
         gate_weight=source_gate,
         up_weight=source_up,
@@ -4392,6 +4443,8 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
                 weight_signature_basis
             ),
         },
+        compute_device=fold_compute_device,
+        compute_dtype="float64",
     )
     if (
         weight_signature.source_neurons != source_intermediate
@@ -4429,9 +4482,10 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         )
         # The polar factor is a useful orientation diagnostic, but it is not
         # the decoder: polarizing A discards the nonuniform gamma scaling.
-        # Conjugating the raw chart pseudoinverse instead gives an exact left
-        # inverse of A for every full-column-rank chart.
-        raw_chart_decoder = torch.linalg.pinv(chart).contiguous()
+        # Conjugating the raw chart left inverse instead gives an exact inverse
+        # of A on child coordinates.  A self-dual chart uses its authenticated
+        # transpose directly; a generic full-column chart reuses exactly one
+        # thin SVD shared with the structural signature basis.
         gamma_aware_structural_decoder = (
             target_gamma.reciprocal().unsqueeze(1)
             * raw_chart_decoder
@@ -4854,6 +4908,11 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         fit_row_weight_maximum=float(row_weights.max().item()),
         residual_endpoint_relative_rmse=endpoint_error,
         consumer_correction_report=down_fit,
+        residual_chart_decoder_method=raw_chart_decoder_method,
+        residual_chart_orthonormal_columns=chart_is_orthonormal,
+        residual_chart_orthogonality_maximum_absolute_error=(chart_orthogonality_error),
+        residual_chart_svd_calls=raw_chart_svd_calls,
+        residual_chart_pseudoinverse_calls=raw_chart_pseudoinverse_calls,
     )
 
 
