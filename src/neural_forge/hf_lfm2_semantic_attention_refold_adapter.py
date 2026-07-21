@@ -3008,10 +3008,17 @@ def _install_qkvo_transaction(
                 f"Compiled state changed the topology or gradient state of {name}."
             )
         candidates[name] = candidate.detach().to(device="cpu").contiguous()
+    # Installation receipts are consumed alongside state-dict diffs, whose
+    # keys are canonicalized lexically by the layer-stack transaction.  Keep
+    # this local mutation inventory in the same deterministic order so a
+    # multi-projection Q/K/V/O install cannot be rejected solely because the
+    # module registration order differs from the state-dict audit order.
     expected_changed = tuple(
-        name
-        for name in parameters
-        if not torch.equal(candidates[name], snapshots[name])
+        sorted(
+            name
+            for name in parameters
+            if not torch.equal(candidates[name], snapshots[name])
+        )
     )
     if not expected_changed:
         if (
@@ -3035,9 +3042,11 @@ def _install_qkvo_transaction(
                 "Attention installation changed topology, identities, or gradients."
             )
         changed = tuple(
-            name
-            for name, parameter in parameters.items()
-            if not torch.equal(parameter.detach().cpu(), snapshots[name])
+            sorted(
+                name
+                for name, parameter in parameters.items()
+                if not torch.equal(parameter.detach().cpu(), snapshots[name])
+            )
         )
         after_model = fingerprint_lfm2_parent(target_model).identity_sha256
         if changed != expected_changed or after_model == before_model:

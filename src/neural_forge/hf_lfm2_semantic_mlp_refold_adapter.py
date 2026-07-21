@@ -1531,12 +1531,18 @@ def install_lfm2_prepared_semantic_mlp_postfold(
             "w2.weight",
         )
     )
+    # The layer-stack transaction computes live state diffs from a lexically
+    # canonicalized state dict.  Match that ordering here so a full blank
+    # W1/W3/W2 plant cannot publish a semantically identical but differently
+    # ordered mutation inventory.
     expected_changed = tuple(
-        role
-        for role in install_roles
-        if not torch.equal(
-            state[role],
-            incumbent[prefix + role],
+        sorted(
+            role
+            for role in install_roles
+            if not torch.equal(
+                state[role],
+                incumbent[prefix + role],
+            )
         )
     )
     if not expected_changed:
@@ -1695,9 +1701,11 @@ def install_lfm2_prepared_semantic_mlp_postfold(
                 _copy_candidate(parameter, candidate)
         after = fingerprint_lfm2_parent(target_model).identity_sha256
         changed = tuple(
-            name.removeprefix(prefix)
-            for name, parameter in parameters.items()
-            if not torch.equal(parameter.detach().cpu(), incumbent[name])
+            sorted(
+                name.removeprefix(prefix)
+                for name, parameter in parameters.items()
+                if not torch.equal(parameter.detach().cpu(), incumbent[name])
+            )
         )
         if (
             tuple(changed) != expected_changed

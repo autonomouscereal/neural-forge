@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -100,6 +101,7 @@ def _fingerprint(model: _ToyModel) -> SimpleNamespace:
 @pytest.fixture(autouse=True)
 def _patch_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(adapter, "fingerprint_lfm2_parent", _fingerprint)
+    monkeypatch.setattr(stack_adapter, "fingerprint_lfm2_parent", _fingerprint)
 
 
 def _operator_context(model: _ToyModel, inputs: torch.Tensor) -> torch.Tensor:
@@ -293,6 +295,58 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
             writer_selection["endpoint_cosine_similarity_worst"] + 1e-8
             >= structural_selection["endpoint_cosine_similarity_worst"]
         )
+
+
+def test_blank_multi_weight_plant_emits_live_canonical_layer_stack_diff() -> None:
+    source_model = _ToyModel()
+    source_evidence = _evidence_bank(source_model)
+    model = _ToyModel()
+    operator = model.model.layers[0].conv
+    with torch.no_grad():
+        for parameter in operator.parameters():
+            parameter.zero_()
+    assert all(
+        int(torch.count_nonzero(parameter).item()) == 0
+        for parameter in operator.parameters()
+    )
+    captured = _fingerprint(model).identity_sha256
+    evidence = tuple(
+        replace(item, captured_child_model_state_sha256=captured)
+        for item in source_evidence
+    )
+    source_weight, source_bias = _source_fir()
+    before = stack_adapter._state_tensor_hashes(model)
+
+    receipt = stack_adapter._install_short_conv_operator(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        source_fir_weight=source_weight,
+        source_fir_bias=source_bias,
+        cache=SimpleNamespace(
+            cache_key=_CACHE,
+            parent_fingerprint=_SOURCE_MODEL,
+        ),
+        bridge=SimpleNamespace(artifact_sha256=_BRIDGE),
+        installer=compile_install_lfm2_semantic_short_conv_postfold,
+        parameter_count=stack_adapter._parameter_count(model),
+    )
+
+    live_changed = list(
+        stack_adapter._changed_state_keys(
+            before,
+            stack_adapter._state_tensor_hashes(model),
+        )
+    )
+    assert receipt["installed"] is True
+    assert receipt["selected_candidate"] == "full-source-structural"
+    assert len(live_changed) > 1
+    assert receipt["changed_state_keys"] == live_changed
+    assert live_changed == sorted(live_changed)
+    assert all(
+        int(torch.count_nonzero(parameter).item()) > 0
+        for parameter in operator.parameters()
+    )
 
 
 def test_four_partitions_are_trajectory_isolated_and_unit_balanced() -> None:

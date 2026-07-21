@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -512,6 +513,97 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
     assert result.receipt["source_derived_planting"] == planting
     assert all(
         int(torch.count_nonzero(parameter).item()) > 0 for parameter in mlp.parameters()
+    )
+
+
+def test_blank_multi_weight_plant_matches_canonical_layer_stack_diff() -> None:
+    model = _Target()
+    model.untouched = torch.nn.Parameter(
+        torch.tensor([1.25], dtype=torch.bfloat16),
+    )
+    mlp = model.model.layers[0].feed_forward
+    with torch.no_grad():
+        for parameter in mlp.parameters():
+            parameter.zero_()
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    evidence = _cold_start_parent_endpoint_evidence(model)
+    before_hashes = stack_adapter._state_tensor_hashes(model)
+    before_state = {
+        name: value.detach().cpu().clone()
+        for name, value in model.state_dict().items()
+    }
+    identities = {
+        name: id(parameter) for name, parameter in model.named_parameters()
+    }
+    pointers = {
+        name: parameter.data_ptr()
+        for name, parameter in model.named_parameters()
+    }
+    gradient_ids = {
+        name: id(parameter.grad)
+        for name, parameter in model.named_parameters()
+    }
+    gradient_state = {
+        name: parameter.grad.detach().cpu().clone()
+        for name, parameter in model.named_parameters()
+    }
+
+    receipt, terminal_evidence = stack_adapter._install_mlp(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache=SimpleNamespace(
+            cache_key=_sha("cache"),
+            manifest={"manifest_sha256": _sha("cache-manifest")},
+        ),
+        bridge=SimpleNamespace(artifact_sha256=_sha("bridge")),
+        installer=adapter.compile_install_lfm2_semantic_mlp_postfold,
+        final_layer=False,
+        parameter_count=stack_adapter._parameter_count(model),
+    )
+
+    live_changed = stack_adapter._changed_state_keys(
+        before_hashes,
+        stack_adapter._state_tensor_hashes(model),
+    )
+    prefix = "model.layers.0.feed_forward."
+    assert receipt["installed"] is True
+    assert receipt["selected_role"] == "full-w1-w3-w2"
+    assert receipt["changed_parameter_roles"] == [
+        name.removeprefix(prefix) for name in live_changed
+    ]
+    assert receipt["changed_parameter_roles"] == [
+        "w1.weight",
+        "w2.weight",
+        "w3.weight",
+    ]
+    assert live_changed == tuple(sorted(live_changed))
+    assert terminal_evidence == {}
+    assert torch.equal(model.untouched.detach().cpu(), before_state["untouched"])
+    assert all(
+        torch.equal(value.detach().cpu(), before_state[name])
+        for name, value in model.state_dict().items()
+        if name not in live_changed
+    )
+    assert {
+        name: id(parameter) for name, parameter in model.named_parameters()
+    } == identities
+    assert {
+        name: parameter.data_ptr()
+        for name, parameter in model.named_parameters()
+    } == pointers
+    assert {
+        name: id(parameter.grad)
+        for name, parameter in model.named_parameters()
+    } == gradient_ids
+    assert all(
+        torch.equal(parameter.grad.detach().cpu(), gradient_state[name])
+        for name, parameter in model.named_parameters()
+    )
+    assert all(
+        int(torch.count_nonzero(parameter).item()) > 0
+        for parameter in mlp.parameters()
     )
 
 

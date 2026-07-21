@@ -1253,9 +1253,11 @@ def _install_state_transaction(
                 f"Candidate changed the topology or dtype of {name}."
             )
     expected_changed = tuple(
-        name
-        for name, parameter in parameters.items()
-        if not torch.equal(candidates[name], parameter.detach().cpu())
+        sorted(
+            name
+            for name, parameter in parameters.items()
+            if not torch.equal(candidates[name], parameter.detach().cpu())
+        )
     )
     try:
         with torch.no_grad():
@@ -1264,9 +1266,11 @@ def _install_state_transaction(
                 parameter.copy_(candidates[name].to(device=parameter.device))
         after_model = fingerprint_lfm2_parent(target_model).identity_sha256
         changed = tuple(
-            name
-            for name, parameter in parameters.items()
-            if not torch.equal(parameter.detach().cpu(), snapshots[name])
+            sorted(
+                name
+                for name, parameter in parameters.items()
+                if not torch.equal(parameter.detach().cpu(), snapshots[name])
+            )
         )
         if (
             _parameter_count(target_model) != count

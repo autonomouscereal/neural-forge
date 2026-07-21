@@ -409,8 +409,8 @@ def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
     )
 
     assert receipt["changed_state_keys"] == [
-        "model.layers.0.self_attn.q_proj.weight",
         "model.layers.0.self_attn.out_proj.weight",
+        "model.layers.0.self_attn.q_proj.weight",
     ]
     assert not torch.equal(model.model.layers[0].self_attn.q_proj.weight, before_query)
     assert not torch.equal(
@@ -544,8 +544,8 @@ def test_qk_seed_fallback_can_publish_a_joint_v_o_improvement(
 
     assert reached_competition is True
     assert receipt["changed_state_keys"] == [
-        "model.layers.0.self_attn.v_proj.weight",
         "model.layers.0.self_attn.out_proj.weight",
+        "model.layers.0.self_attn.v_proj.weight",
     ]
     assert all(
         torch.equal(value, before[name])
@@ -794,8 +794,8 @@ def test_exact_zero_qk_is_evidence_planted_and_cannot_publish_as_a_noop(
     assert int(torch.count_nonzero(attention.k_proj.weight).item()) > 0
     assert receipt["installed"] is True
     assert receipt["changed_state_keys"] == [
-        "model.layers.0.self_attn.q_proj.weight",
         "model.layers.0.self_attn.k_proj.weight",
+        "model.layers.0.self_attn.q_proj.weight",
     ]
     cold = receipt["analytic_refold"]["qk_cold_start"]
     assert cold["original_query_exact_zero"] is True
@@ -812,6 +812,77 @@ def test_exact_zero_qk_is_evidence_planted_and_cannot_publish_as_a_noop(
     sealed = dict(receipt)
     digest = sealed.pop("result_sha256")
     assert canonical_sha256(sealed) == digest
+
+
+def test_multi_projection_transaction_matches_wrapper_changed_key_order() -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        for projection in (
+            attention.q_proj,
+            attention.k_proj,
+            attention.v_proj,
+            attention.out_proj,
+        ):
+            projection.weight.zero_()
+    evidence = _evidence(model)
+    state = {
+        "q_proj.weight": torch.ones_like(attention.q_proj.weight),
+        "k_proj.weight": torch.ones_like(attention.k_proj.weight),
+        "v_proj.weight": torch.ones_like(attention.v_proj.weight),
+        "out_proj.weight": torch.ones_like(attention.out_proj.weight),
+    }
+
+    def install(**kwargs: object) -> dict[str, object]:
+        target_model = kwargs["target_model"]
+        layer_index = int(kwargs["layer_index"])
+        topology = adapter._topology_sha256(target_model)
+        before, after, changed, parameter_count = adapter._install_qkvo_transaction(
+            target_model,
+            layer_index=layer_index,
+            state=state,
+        )
+        body = adapter._installation_receipt_body(
+            layer_index=layer_index,
+            evidence_sha256=[item.evidence_sha256 for item in evidence],
+            model_state_before_sha256=before,
+            model_state_after_sha256=after,
+            changed_state_keys=changed,
+            parameter_element_count=parameter_count,
+            target_topology_sha256_before=topology,
+            target_topology_sha256_after=adapter._topology_sha256(target_model),
+        )
+        return {**body, "result_sha256": canonical_sha256(body)}
+
+    receipt = stack_adapter._install_attention_operator(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+        installer=install,
+        parameter_count=sum(parameter.numel() for parameter in model.parameters()),
+    )
+
+    assert receipt["changed_state_keys"] == [
+        "model.layers.0.self_attn.k_proj.weight",
+        "model.layers.0.self_attn.out_proj.weight",
+        "model.layers.0.self_attn.q_proj.weight",
+        "model.layers.0.self_attn.v_proj.weight",
+    ]
+    assert receipt["changed_state_keys"] == sorted(receipt["changed_state_keys"])
+    for projection in (
+        attention.q_proj,
+        attention.k_proj,
+        attention.v_proj,
+        attention.out_proj,
+    ):
+        torch.testing.assert_close(
+            projection.weight,
+            torch.ones_like(projection.weight),
+            rtol=0,
+            atol=0,
+        )
 
 
 def test_changed_qkvo_transaction_rolls_back_partial_copy_exactly(
