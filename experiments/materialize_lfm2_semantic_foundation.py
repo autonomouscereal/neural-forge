@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--parent-name", default="LiquidAI-LFM2.5-230M")
     parser.add_argument(
         "--child-name",
-        default="lfm2-semantic-foundation-c61-4x",
+        default="lfm2-cpcf-v5-4x",
     )
     parser.add_argument("--model-device", default="cuda:0")
     parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")

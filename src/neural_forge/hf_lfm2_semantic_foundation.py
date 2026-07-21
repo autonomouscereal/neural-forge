@@ -911,7 +911,7 @@ def materialize_lfm2_semantic_foundation(
     expected_parent_identity_sha256: str,
     expected_target_plan_fingerprint: str,
     expected_selected_candidate_fingerprint: str,
-    child_name: str = "lfm2-semantic-foundation-c61-4x",
+    child_name: str = "lfm2-cpcf-v5-4x",
     device: str = "cuda:0",
     dtype: str = "bfloat16",
 ) -> Mapping[str, Any]:
