@@ -322,8 +322,9 @@ def test_named_target_vocabulary_compiler_emits_sealed_bridge(
         donor,
         tmp_path / "compiled-target",
         target_vocab_size=262,
-        calibration_texts=("abc abc",),
+        calibration_texts=("xy",),
         donor_row_capacity=512,
+        required_donor_token_ids=(donor.get_vocab()["abc"],),
     )
 
     assert len(result.tokenizer) == 262
@@ -331,6 +332,13 @@ def test_named_target_vocabulary_compiler_emits_sealed_bridge(
     assert result.transport_profile.donor_row_capacity == 512
     assert result.transport_profile.target_row_capacity == 262
     assert result.transport_profile.target_to_donor_row_indices == (
+        result.selected_donor_token_ids
+    )
+    assert result.required_donor_token_ids == (donor.get_vocab()["abc"],)
+    assert {
+        donor.get_vocab()[token] for token in ("a", "b", "c", "ab", "abc")
+    } == set(result.required_donor_token_dependency_ids)
+    assert set(result.mandatory_donor_token_ids).issubset(
         result.selected_donor_token_ids
     )
     assert result.tokenizer_fingerprint == (

@@ -264,6 +264,9 @@ class CompiledTargetTokenizerBridge:
     output_dir: Path
     target_vocab_size: int
     selected_donor_token_ids: tuple[int, ...]
+    required_donor_token_ids: tuple[int, ...]
+    required_donor_token_dependency_ids: tuple[int, ...]
+    mandatory_donor_token_ids: tuple[int, ...]
     retained_merges: tuple[tuple[str, str], ...]
     artifact: StrictTokenizerBridgeArtifact
 
@@ -623,6 +626,7 @@ def compile_hf_target_tokenizer_bridge(
     target_vocab_size: int,
     calibration_texts: Sequence[str] | None = None,
     donor_row_capacity: int | None = None,
+    required_donor_token_ids: Sequence[int] | None = None,
 ) -> CompiledTargetTokenizerBridge:
     """Compile a smaller ByteLevel-BPE target vocabulary and seal its bridge.
 
@@ -636,6 +640,7 @@ def compile_hf_target_tokenizer_bridge(
         output_dir,
         target_vocab_size=target_vocab_size,
         calibration_texts=calibration_texts,
+        required_donor_token_ids=required_donor_token_ids,
     )
     artifact = seal_strict_tokenizer_bridge_artifact(
         donor_tokenizer,
@@ -656,6 +661,11 @@ def compile_hf_target_tokenizer_bridge(
         output_dir=compilation.output_dir,
         target_vocab_size=compilation.target_vocab_size,
         selected_donor_token_ids=compilation.selected_donor_token_ids,
+        required_donor_token_ids=compilation.required_donor_token_ids,
+        required_donor_token_dependency_ids=(
+            compilation.required_donor_token_dependency_ids
+        ),
+        mandatory_donor_token_ids=compilation.mandatory_donor_token_ids,
         retained_merges=compilation.retained_merges,
         artifact=artifact,
     )

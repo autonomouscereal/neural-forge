@@ -104,10 +104,94 @@ def test_artifacts_and_selection_are_deterministic(tmp_path: Path) -> None:
         tmp_path / "second",
         target_vocab_size=261,
     )
+    explicit_empty = prune_hf_tokenizer(
+        _donor_tokenizer(),
+        tmp_path / "explicit-empty",
+        target_vocab_size=261,
+        required_donor_token_ids=(),
+    )
 
     assert first.selected_donor_token_ids == second.selected_donor_token_ids
+    assert first.selected_donor_token_ids == explicit_empty.selected_donor_token_ids
     assert first.transport_fingerprint == second.transport_fingerprint
     assert _artifact_bytes(tmp_path / "first") == _artifact_bytes(tmp_path / "second")
+    assert _artifact_bytes(tmp_path / "first") == _artifact_bytes(
+        tmp_path / "explicit-empty"
+    )
+
+
+def test_required_donor_ids_and_complete_merge_closure_are_mandatory(
+    tmp_path: Path,
+) -> None:
+    donor = _donor_tokenizer()
+    donor_vocab = donor.get_vocab()
+
+    result = prune_hf_tokenizer(
+        donor,
+        tmp_path / "target",
+        target_vocab_size=262,
+        calibration_texts=("xy",),
+        required_donor_token_ids=(donor_vocab["abc"],),
+    )
+
+    expected_closure = {
+        donor_vocab["a"],
+        donor_vocab["b"],
+        donor_vocab["c"],
+        donor_vocab["ab"],
+        donor_vocab["abc"],
+    }
+    assert result.required_donor_token_ids == (donor_vocab["abc"],)
+    assert set(result.required_donor_token_dependency_ids) == expected_closure
+    assert expected_closure.issubset(result.selected_donor_token_ids)
+    assert set(result.mandatory_donor_token_ids).issubset(
+        result.selected_donor_token_ids
+    )
+    assert len(result.mandatory_donor_token_ids) == 262
+    assert donor_vocab["xy"] not in result.selected_donor_token_ids
+
+
+def test_required_donor_ids_overflow_exact_budget_fails_closed(
+    tmp_path: Path,
+) -> None:
+    donor = _donor_tokenizer()
+
+    with pytest.raises(
+        HFTokenizerPruneError,
+        match=(
+            "required donor token IDs, and BPE merge dependencies require "
+            "at least 262 rows"
+        ),
+    ):
+        prune_hf_tokenizer(
+            donor,
+            tmp_path / "target",
+            target_vocab_size=261,
+            required_donor_token_ids=(donor.get_vocab()["abc"],),
+        )
+
+
+@pytest.mark.parametrize(
+    "required_ids, message",
+    (
+        ((True,), "only integers"),
+        ((-1,), "outside donor vocabulary"),
+        ((10_000,), "outside donor vocabulary"),
+        ((1, 1), "duplicated"),
+    ),
+)
+def test_required_donor_ids_are_strictly_validated(
+    tmp_path: Path,
+    required_ids: tuple[object, ...],
+    message: str,
+) -> None:
+    with pytest.raises(HFTokenizerPruneError, match=message):
+        prune_hf_tokenizer(
+            _donor_tokenizer(),
+            tmp_path / "target",
+            target_vocab_size=261,
+            required_donor_token_ids=required_ids,
+        )
 
 
 def test_roundtrip_and_emitted_ids_fit_target_capacity(tmp_path: Path) -> None:

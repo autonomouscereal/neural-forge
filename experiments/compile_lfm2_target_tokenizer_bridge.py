@@ -25,6 +25,9 @@ os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 RECEIPT_SCHEMA = "neural-forge-lfm2-target-tokenizer-compilation-v1"
+REQUIRED_DONOR_TOKEN_IDS_SCHEMA = (
+    "neural-forge-required-donor-token-ids-v1"
+)
 
 
 class Lfm2TargetTokenizerCompilationError(ValueError):
@@ -80,6 +83,18 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_digest(value: Any, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise Lfm2TargetTokenizerCompilationError(
+            f"{name} must be one lowercase SHA-256 digest."
+        )
+    return value
+
+
 def _regular_local_file(path: Path, name: str) -> Path:
     resolved = path.expanduser().resolve(strict=True)
     if resolved.is_symlink() or not resolved.is_file():
@@ -87,6 +102,119 @@ def _regular_local_file(path: Path, name: str) -> Path:
             f"{name} must be a regular local file."
         )
     return resolved
+
+
+def _required_donor_token_ids(value: Any) -> tuple[int, ...]:
+    if not isinstance(value, list):
+        raise Lfm2TargetTokenizerCompilationError(
+            "required donor token IDs must be a JSON list."
+        )
+    result: list[int] = []
+    seen: set[int] = set()
+    for raw_token_id in value:
+        if (
+            isinstance(raw_token_id, bool)
+            or not isinstance(raw_token_id, int)
+            or raw_token_id < 0
+        ):
+            raise Lfm2TargetTokenizerCompilationError(
+                "required donor token IDs must be nonnegative integers."
+            )
+        if raw_token_id in seen:
+            raise Lfm2TargetTokenizerCompilationError(
+                f"required donor token ID {raw_token_id} is duplicated."
+            )
+        seen.add(raw_token_id)
+        result.append(raw_token_id)
+    return tuple(sorted(result))
+
+
+def load_required_donor_token_ids(
+    path: Path | None,
+    *,
+    expected_file_sha256: str | None,
+) -> tuple[tuple[int, ...], dict[str, Any]]:
+    """Load one externally hash-bound JSON list or sealed provenance manifest."""
+
+    if path is None:
+        if expected_file_sha256 is not None:
+            raise Lfm2TargetTokenizerCompilationError(
+                "required donor token ID SHA-256 was supplied without its JSON file."
+            )
+        ids: tuple[int, ...] = ()
+        return ids, {
+            "schema": REQUIRED_DONOR_TOKEN_IDS_SCHEMA,
+            "provided": False,
+            "required_donor_token_ids": [],
+            "required_donor_token_count": 0,
+            "required_donor_token_ids_sha256": _canonical_sha256([]),
+        }
+    if expected_file_sha256 is None:
+        raise Lfm2TargetTokenizerCompilationError(
+            "required donor token ID JSON requires an expected file SHA-256."
+        )
+    expected = _sha256_digest(
+        expected_file_sha256,
+        "expected_required_donor_token_ids_sha256",
+    )
+    source = _regular_local_file(Path(path), "required donor token ID JSON")
+    observed = _file_sha256(source)
+    if observed != expected:
+        raise Lfm2TargetTokenizerCompilationError(
+            "required donor token ID JSON differs from its expected SHA-256."
+        )
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Lfm2TargetTokenizerCompilationError(
+            "required donor token ID JSON is unreadable or invalid."
+        ) from exc
+    payload_schema = "json-list"
+    if isinstance(payload, Mapping):
+        payload_schema = payload.get("schema")
+        if payload_schema != REQUIRED_DONOR_TOKEN_IDS_SCHEMA:
+            raise Lfm2TargetTokenizerCompilationError(
+                "required donor token ID manifest schema is unsupported."
+            )
+        manifest_sha256 = payload.get("manifest_sha256")
+        body = dict(payload)
+        body.pop("manifest_sha256", None)
+        if (
+            _sha256_digest(manifest_sha256, "manifest_sha256")
+            != _canonical_sha256(body)
+        ):
+            raise Lfm2TargetTokenizerCompilationError(
+                "required donor token ID manifest seal is invalid."
+            )
+        raw_ids = payload.get("required_donor_token_ids")
+    else:
+        raw_ids = payload
+    ids = _required_donor_token_ids(raw_ids)
+    ids_sha256 = _canonical_sha256(list(ids))
+    if isinstance(payload, Mapping):
+        if list(ids) != raw_ids:
+            raise Lfm2TargetTokenizerCompilationError(
+                "required donor token ID manifest IDs must be sorted and unique."
+            )
+        if (
+            payload.get("required_donor_token_count") != len(ids)
+            or payload.get("required_donor_token_ids_sha256") != ids_sha256
+        ):
+            raise Lfm2TargetTokenizerCompilationError(
+                "required donor token ID manifest count or ID seal is invalid."
+            )
+    return ids, {
+        "schema": REQUIRED_DONOR_TOKEN_IDS_SCHEMA,
+        "provided": True,
+        "path": str(source),
+        "size_bytes": source.stat().st_size,
+        "file_sha256": observed,
+        "payload_schema": payload_schema,
+        "normalized_order": "ascending",
+        "required_donor_token_ids": list(ids),
+        "required_donor_token_count": len(ids),
+        "required_donor_token_ids_sha256": ids_sha256,
+    }
 
 
 def resolve_donor_row_capacity(
@@ -339,6 +467,8 @@ def compile_target_tokenizer(
     parquet_paths: Sequence[Path],
     maximum_texts: int,
     maximum_characters: int,
+    required_donor_token_ids_json: Path | None = None,
+    expected_required_donor_token_ids_sha256: str | None = None,
 ) -> dict[str, Any]:
     from neural_forge.hf_tokenizer_bridge import (
         compile_hf_target_tokenizer_bridge,
@@ -358,6 +488,14 @@ def compile_target_tokenizer(
         )
     output.parent.mkdir(parents=True, exist_ok=True)
     target_size = _positive_int(target_vocab_size, "target_vocab_size")
+    required_donor_token_ids, required_ids_input = (
+        load_required_donor_token_ids(
+            required_donor_token_ids_json,
+            expected_file_sha256=(
+                expected_required_donor_token_ids_sha256
+            ),
+        )
+    )
     texts, corpus_report = collect_calibration_texts(
         jsonl_paths=jsonl_paths,
         parquet_paths=parquet_paths,
@@ -388,7 +526,29 @@ def compile_target_tokenizer(
             target_vocab_size=target_size,
             calibration_texts=texts,
             donor_row_capacity=physical_donor_rows,
+            required_donor_token_ids=required_donor_token_ids,
         )
+        selected_ids = set(result.selected_donor_token_ids)
+        required_closure_ids = set(
+            result.required_donor_token_dependency_ids
+        )
+        mandatory_ids = set(result.mandatory_donor_token_ids)
+        if len(result.tokenizer) != target_size:
+            raise Lfm2TargetTokenizerCompilationError(
+                "target tokenizer did not preserve the exact requested size."
+            )
+        if not set(required_donor_token_ids).issubset(selected_ids):
+            raise Lfm2TargetTokenizerCompilationError(
+                "target tokenizer omitted an explicitly required donor row."
+            )
+        if not required_closure_ids.issubset(selected_ids):
+            raise Lfm2TargetTokenizerCompilationError(
+                "target tokenizer omitted a required BPE dependency row."
+            )
+        if not mandatory_ids.issubset(selected_ids):
+            raise Lfm2TargetTokenizerCompilationError(
+                "target tokenizer omitted a mandatory structural row."
+            )
         result.artifact.verify_live_tokenizers(donor, result.tokenizer)
         staging.replace(output)
         target = _load_local_tokenizer(output)
@@ -418,6 +578,45 @@ def compile_target_tokenizer(
                 set(artifact.transport_profile.target_to_donor_row_indices)
             ),
             "retained_merge_count": len(result.retained_merges),
+            "required_donor_token_ids_input": required_ids_input,
+            "mandatory_donor_token_selection": {
+                "exact_target_vocabulary_size": True,
+                "target_vocabulary_size_requested": target_size,
+                "target_vocabulary_size_observed": len(target),
+                "required_donor_token_ids": list(
+                    result.required_donor_token_ids
+                ),
+                "required_donor_token_count": len(
+                    result.required_donor_token_ids
+                ),
+                "required_donor_token_ids_sha256": _canonical_sha256(
+                    list(result.required_donor_token_ids)
+                ),
+                "required_donor_bpe_closure_ids": list(
+                    result.required_donor_token_dependency_ids
+                ),
+                "required_donor_bpe_closure_count": len(
+                    result.required_donor_token_dependency_ids
+                ),
+                "required_donor_bpe_closure_sha256": _canonical_sha256(
+                    list(result.required_donor_token_dependency_ids)
+                ),
+                "mandatory_donor_token_ids": list(
+                    result.mandatory_donor_token_ids
+                ),
+                "mandatory_donor_token_count": len(
+                    result.mandatory_donor_token_ids
+                ),
+                "mandatory_donor_token_ids_sha256": _canonical_sha256(
+                    list(result.mandatory_donor_token_ids)
+                ),
+                "discretionary_target_rows": (
+                    target_size - len(result.mandatory_donor_token_ids)
+                ),
+                "required_ids_all_selected": True,
+                "required_bpe_closure_all_selected": True,
+                "mandatory_ids_all_selected": True,
+            },
             "calibration_corpus": corpus_report,
             "tokenization_diagnostics": diagnostics,
             "model_loaded": False,
@@ -477,6 +676,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--parquet", action="append", default=[], type=Path)
     parser.add_argument("--maximum-texts", type=int, default=100_000)
     parser.add_argument("--maximum-characters", type=int, default=32_000_000)
+    parser.add_argument(
+        "--required-donor-token-ids-json",
+        type=Path,
+        help=(
+            "Local JSON list or sealed required-ID manifest. The exact file "
+            "must be authenticated with --required-donor-token-ids-sha256."
+        ),
+    )
+    parser.add_argument(
+        "--required-donor-token-ids-sha256",
+        help="Expected lowercase SHA-256 of the required-ID JSON file.",
+    )
     return parser
 
 
@@ -493,6 +704,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             parquet_paths=args.parquet,
             maximum_texts=args.maximum_texts,
             maximum_characters=args.maximum_characters,
+            required_donor_token_ids_json=(
+                args.required_donor_token_ids_json
+            ),
+            expected_required_donor_token_ids_sha256=(
+                args.required_donor_token_ids_sha256
+            ),
         )
     except Exception as exc:
         print(

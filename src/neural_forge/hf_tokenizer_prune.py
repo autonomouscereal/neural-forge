@@ -23,6 +23,9 @@ class HFTokenizerPruneResult:
     output_dir: Path
     target_vocab_size: int
     selected_donor_token_ids: tuple[int, ...]
+    required_donor_token_ids: tuple[int, ...]
+    required_donor_token_dependency_ids: tuple[int, ...]
+    mandatory_donor_token_ids: tuple[int, ...]
     retained_merges: tuple[tuple[str, str], ...]
     transport_profile: StrictTokenTransportProfile
 
@@ -87,13 +90,15 @@ def prune_hf_tokenizer(
     *,
     target_vocab_size: int,
     calibration_texts: Sequence[str] | None = None,
+    required_donor_token_ids: Sequence[int] | None = None,
 ) -> HFTokenizerPruneResult:
     """Build and save a deterministic strict-transport BPE tokenizer subset.
 
     The target vocabulary size includes added special tokens. Selection keeps
     the complete ByteLevel alphabet, every semantic special token, and complete
-    BPE merge dependency chains. Calibration token counts are considered before
-    the donor's original token-ID order.
+    BPE merge dependency chains. Explicit required donor rows and their complete
+    merge dependency closures are selected before calibration frequency and the
+    donor's original token-ID order.
     """
 
     target_size = _positive_int(target_vocab_size, "target_vocab_size")
@@ -130,6 +135,10 @@ def prune_hf_tokenizer(
         raise HFTokenizerPruneError(
             f"target_vocab_size {target_size} exceeds donor size {len(donor_tokenizer)}"
         )
+    forced_ids = _normalized_required_donor_token_ids(
+        required_donor_token_ids,
+        donor_vocab_size=len(donor_tokenizer),
+    )
 
     merges = _parse_merges(model.get("merges", ()), vocabulary)
     producer = _producer_map(merges)
@@ -138,6 +147,25 @@ def prune_hf_tokenizer(
         tokenizer_data,
         vocabulary,
     )
+    forced_dependency_ids = _merge_dependency_closure(
+        forced_ids,
+        vocabulary,
+        producer,
+    )
+    mandatory_ids = _merge_dependency_closure(
+        required_ids.union(forced_ids),
+        vocabulary,
+        producer,
+    )
+    if forced_ids:
+        if len(mandatory_ids) > target_size:
+            raise HFTokenizerPruneError(
+                f"target_vocab_size {target_size} is too small; byte coverage, "
+                "special tokens, required donor token IDs, and BPE merge "
+                "dependencies require at least "
+                f"{len(mandatory_ids)} rows"
+            )
+        required_ids.update(forced_ids)
     selected_ids = _select_token_ids(
         donor_tokenizer,
         target_size,
@@ -205,6 +233,11 @@ def prune_hf_tokenizer(
         output_dir=destination,
         target_vocab_size=target_size,
         selected_donor_token_ids=selected_tuple,
+        required_donor_token_ids=forced_ids,
+        required_donor_token_dependency_ids=tuple(
+            sorted(forced_dependency_ids)
+        ),
+        mandatory_donor_token_ids=tuple(sorted(mandatory_ids)),
         retained_merges=tuple((merge.left, merge.right) for merge in retained_merges),
         transport_profile=saved_profile,
     )
@@ -231,6 +264,50 @@ def _calibration_texts(texts: Sequence[str] | None) -> tuple[str, ...]:
     if any(not isinstance(text, str) for text in result):
         raise HFTokenizerPruneError("calibration_texts must contain only strings")
     return result
+
+
+def _normalized_required_donor_token_ids(
+    values: Sequence[int] | None,
+    *,
+    donor_vocab_size: int,
+) -> tuple[int, ...]:
+    if values is None:
+        return ()
+    if isinstance(values, (str, bytes, bytearray)):
+        raise HFTokenizerPruneError(
+            "required_donor_token_ids must be a sequence of integers"
+        )
+    try:
+        supplied = tuple(values)
+    except TypeError as exc:
+        raise HFTokenizerPruneError(
+            "required_donor_token_ids must be a sequence of integers"
+        ) from exc
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for raw_value in supplied:
+        if isinstance(raw_value, bool):
+            raise HFTokenizerPruneError(
+                "required_donor_token_ids must contain only integers"
+            )
+        try:
+            token_id = operator.index(raw_value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise HFTokenizerPruneError(
+                "required_donor_token_ids must contain only integers"
+            ) from exc
+        if token_id < 0 or token_id >= donor_vocab_size:
+            raise HFTokenizerPruneError(
+                f"required donor token ID {token_id} is outside donor vocabulary "
+                f"[0, {donor_vocab_size})"
+            )
+        if token_id in seen:
+            raise HFTokenizerPruneError(
+                f"required donor token ID {token_id} is duplicated"
+            )
+        seen.add(token_id)
+        normalized.append(token_id)
+    return tuple(sorted(normalized))
 
 
 def _contains_component(component: Any, component_type: str) -> bool:
@@ -361,6 +438,40 @@ def _post_processor_token_ids(component: Any) -> set[int]:
     elif isinstance(component, list):
         for value in component:
             result.update(_post_processor_token_ids(value))
+    return result
+
+
+def _merge_dependency_closure(
+    token_ids: Sequence[int] | set[int],
+    vocabulary: Mapping[str, int],
+    producer: Mapping[str, _Merge],
+) -> set[int]:
+    token_by_id = {token_id: token for token, token_id in vocabulary.items()}
+    closure_cache: dict[int, frozenset[int]] = {}
+
+    def closure(
+        token_id: int,
+        active: frozenset[int] = frozenset(),
+    ) -> frozenset[int]:
+        if token_id in closure_cache:
+            return closure_cache[token_id]
+        if token_id in active:
+            raise HFTokenizerPruneError("BPE merge dependencies contain a cycle")
+        token = token_by_id.get(token_id)
+        merge = producer.get(token) if token is not None else None
+        if merge is None:
+            result = frozenset((token_id,))
+        else:
+            next_active = active | {token_id}
+            result = frozenset((token_id,))
+            result |= closure(vocabulary[merge.left], next_active)
+            result |= closure(vocabulary[merge.right], next_active)
+        closure_cache[token_id] = result
+        return result
+
+    result: set[int] = set()
+    for token_id in sorted(token_ids):
+        result.update(closure(token_id))
     return result
 
 
