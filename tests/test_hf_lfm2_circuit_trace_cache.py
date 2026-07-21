@@ -640,6 +640,7 @@ def test_cache_reuses_without_parent_forward_and_identity_changes_split_paths(
         "02fc790bc0d5f447bb39f3484a1c318ff28850b4e60843d9a21daac54691af31",
         "93da3605e25482b092ee2a23ee7d45cadf26b1a86dcd56db8b2046aee7450eaa",
         "71e99ee9b1c22ae893b76df90a3de93341e1b894ea7c39606f98d62e18aa13bf",
+        "2c3fc8a337da325564369976f056337de197e3c573203a250cfd5fe626daf349",
     ),
 )
 def test_audited_collector_revision_reuses_sealed_cache_without_forward(

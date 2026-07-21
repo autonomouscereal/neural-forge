@@ -94,6 +94,13 @@ _COMPATIBLE_COLLECTOR_SOURCE_SHA256 = frozenset(
         # it does not alter capture, tensor inventory, record construction,
         # parent execution, canonical LFM2 contracts, or runtime algebra.
         "71e99ee9b1c22ae893b76df90a3de93341e1b894ea7c39606f98d62e18aa13bf",
+        # Exact collector source used to create the current 16-batch complete
+        # causal evidence cache and by the authenticated 9f18ad1 postfold run.
+        # The successor revision changes only source formatting and read-only
+        # cache-consumption wording; `git diff -w` leaves the capture/runtime
+        # algebra, tensor inventory, batch records, and manifest construction
+        # unchanged.
+        "2c3fc8a337da325564369976f056337de197e3c573203a250cfd5fe626daf349",
     }
 )
 _ALLOWED_BATCH_FIELDS = frozenset(
