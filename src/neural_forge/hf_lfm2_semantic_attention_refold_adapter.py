@@ -3,9 +3,10 @@
 The semantic lattice is a teacher, not a weight-matching target.  This module
 turns its probability/context evidence and an authenticated actual-child
 macrocell replay into endpoint cases for the existing matrix-free Q/K
-compiler.  FIT, FIT-CHECK, SELECTION, and VALIDATION remain disjoint.  The
-candidate is frozen before VALIDATION and dense Q/K/V/O is copied into the
-existing child topology only after every held-out gate passes.
+compiler, then solves an analytic residual output writer while holding V
+fixed.  FIT, FIT-CHECK, SELECTION, and VALIDATION remain disjoint.  Candidates
+are frozen before VALIDATION and dense Q/K/V/O is copied into the existing
+child topology only after every applicable held-out gate passes.
 
 No model is executed here.  There are no gradients, optimizers, training
 steps, pruning operations, quantization operations, or numerical parent/child
@@ -33,6 +34,7 @@ from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
     build_lfm2_endpoint_qkvo_seed,
     compile_lfm2_cached_endpoint_qk_residual_fold,
     evaluate_lfm2_endpoint_qkvo_bank,
+    replay_lfm2_endpoint_qkvo,
     seal_lfm2_endpoint_qk_fit_bank,
     seal_lfm2_endpoint_qk_fit_check_bank,
 )
@@ -46,13 +48,29 @@ from neural_forge.hf_semantic_attention_lattice import (
 )
 
 
-LFM2_SEMANTIC_ATTENTION_REFOLD_SCHEMA = (
-    "neural-forge-lfm2-semantic-attention-refold-v1"
-)
+LFM2_SEMANTIC_ATTENTION_REFOLD_SCHEMA = "neural-forge-lfm2-semantic-attention-refold-v1"
 LFM2_SEMANTIC_ATTENTION_REPLAY_ENDPOINT_SCHEMA = (
     "neural-forge-lfm2-semantic-attention-replay-endpoint-v1"
 )
+_INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-attention-installation-v1"
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
+_INSTALLATION_ZERO_OPERATIONS = MappingProxyType(
+    {
+        "parent_model_objects_constructed": 0,
+        "parent_model_forward_calls": 0,
+        "parent_model_generate_calls": 0,
+        "parent_trace_recaptures": 0,
+        "child_model_forward_calls": 0,
+        "child_model_generate_calls": 0,
+        "autograd_grad_calls": 0,
+        "backward_calls": 0,
+        "optimizer_constructions": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+)
 _ZERO_REFOLD_OPERATIONS = MappingProxyType(
     {
         "parent_model_objects_constructed": 0,
@@ -146,6 +164,52 @@ def _parameter_count(model: Any) -> int:
         seen.add(id(parameter))
         total += int(parameter.numel())
     return total
+
+
+def _installation_receipt_body(
+    *,
+    layer_index: int,
+    evidence_sha256: Sequence[str],
+    model_state_before_sha256: str,
+    model_state_after_sha256: str,
+    changed_state_keys: Sequence[str],
+    parameter_element_count: int,
+) -> dict[str, Any]:
+    evidence = tuple(
+        _digest(value, "transport evidence SHA-256") for value in evidence_sha256
+    )
+    changed = tuple(changed_state_keys)
+    before = _digest(model_state_before_sha256, "model state before")
+    after = _digest(model_state_after_sha256, "model state after")
+    if (
+        isinstance(layer_index, bool)
+        or not isinstance(layer_index, int)
+        or layer_index < 0
+        or not evidence
+        or not changed
+        or any(not isinstance(value, str) or not value for value in changed)
+        or isinstance(parameter_element_count, bool)
+        or not isinstance(parameter_element_count, int)
+        or parameter_element_count <= 0
+        or before == after
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Attention installation receipt inputs are incomplete."
+        )
+    return {
+        "schema": _INSTALLATION_SCHEMA,
+        "layer_index": layer_index,
+        "installed": True,
+        "transport_evidence_sha256": list(evidence),
+        "model_state_before_sha256": before,
+        "model_state_after_sha256": after,
+        "changed_state_keys": list(changed),
+        "parameter_element_count_before": parameter_element_count,
+        "parameter_element_count_after": parameter_element_count,
+        "parameter_count_changed": False,
+        "analytic_cached_evidence_only": True,
+        "operation_audit": dict(_INSTALLATION_ZERO_OPERATIONS),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,7 +362,9 @@ def _attention_module(target_model: Any, layer_index: int) -> Any:
         )
     attention = getattr(layers[layer_index], "self_attn", None)
     required = ("q_proj", "k_proj", "v_proj", "out_proj", "q_layernorm", "k_layernorm")
-    if attention is None or any(getattr(attention, name, None) is None for name in required):
+    if attention is None or any(
+        getattr(attention, name, None) is None for name in required
+    ):
         raise Lfm2SemanticAttentionRefoldError(
             f"Layer {layer_index} is not one ordinary dense LFM2 attention module."
         )
@@ -436,8 +502,12 @@ def _normalized_case_source(
             raise Lfm2SemanticAttentionRefoldError(
                 "Rephased endpoint evidence must cover one complete causal lattice."
             )
+    replay_query_length = int(replay.target_query_inputs.shape[1])
+    allowed_query_lengths = {query_length, key_length}
+    if isinstance(transport, SemanticAttentionExpansionTransport):
+        allowed_query_lengths.add(len(transport.query_target_positions))
     if (
-        int(replay.target_query_inputs.shape[1]) != query_length
+        replay_query_length not in allowed_query_lengths
         or int(replay.target_key_value_inputs.shape[1]) != key_length
     ):
         raise Lfm2SemanticAttentionRefoldError(
@@ -506,7 +576,15 @@ def _case_from_source(
     layer_index: int,
     cache_key: str,
     bridge_artifact_sha256: str,
+    trajectory_row_weight_scale: float,
 ) -> Lfm2EndpointQkResidualCase:
+    if (
+        not math.isfinite(trajectory_row_weight_scale)
+        or trajectory_row_weight_scale <= 0.0
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Trajectory row-weight scale must be finite and positive."
+        )
     raw_evidence = source.transport.endpoint_residual_evidence()
     # One terminal query is a valid suffix case even when earlier exact donor
     # endpoints are scattered among inserted target subtokens.
@@ -529,30 +607,106 @@ def _case_from_source(
             "transport_evidence_sha256": source.evidence_sha256,
             "actual_child_replay_sha256": source.replay.replay_sha256,
             "compiler_lineage_sha256": source.compiler_lineage_sha256,
+            "trajectory_row_weight_scale": trajectory_row_weight_scale,
         }
     )
     return Lfm2EndpointQkResidualCase(
-        target_query_inputs=source.replay.target_query_inputs,
+        target_query_inputs=source.replay.target_query_inputs[:, -1:, :],
         target_key_value_inputs=source.replay.target_key_value_inputs,
         parent_probabilities=evidence["parent_probabilities"],
         parent_causal_mask=evidence["parent_causal_mask"],
-        parent_endpoint_target=source.replay.parent_endpoint_target,
+        parent_endpoint_target=source.replay.parent_endpoint_target[:, -1:, :],
         query_rope_cos=evidence["query_rope_cos"],
         query_rope_sin=evidence["query_rope_sin"],
         key_rope_cos=evidence["key_rope_cos"],
         key_rope_sin=evidence["key_rope_sin"],
-        query_row_sqrt_weights=source.replay.query_row_sqrt_weights,
+        query_row_sqrt_weights=(
+            source.replay.query_row_sqrt_weights[:, -1:] * trajectory_row_weight_scale
+        ),
         query_groups=source.query_groups,
         query_group_weights=source.query_group_weights,
         trajectory_sha256=trajectory,
-        parent_probability_provenance=evidence[
-            "parent_probability_provenance"
-        ],
+        parent_probability_provenance=evidence["parent_probability_provenance"],
         parent_context_replay_relative_rmse=0.0,
         parent_context_replay_maximum_absolute_error=0.0,
         parent_context_replay_rtol=0.0,
         parent_context_replay_atol=0.0,
     )
+
+
+def _balanced_endpoint_cases(
+    sources: Sequence[_CaseSource],
+    *,
+    layer_index: int,
+    cache_key: str,
+    bridge_artifact_sha256: str,
+) -> tuple[tuple[Lfm2EndpointQkResidualCase, ...], Mapping[str, Any]]:
+    torch = _torch()
+    selected = tuple(sources)
+    if not selected:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Trajectory balancing requires at least one semantic phase."
+        )
+    raw_mass: dict[int, float] = {}
+    phase_counts: dict[int, int] = {}
+    source_weight_sha256: dict[int, list[str]] = {}
+    for source in selected:
+        terminal = source.replay.query_row_sqrt_weights[:, -1:].to(torch.float64)
+        mass = float(terminal.square().sum().item())
+        if not math.isfinite(mass) or mass <= 0.0:
+            raise Lfm2SemanticAttentionRefoldError(
+                "Replay-provided terminal row weights have no positive mass."
+            )
+        raw_mass[source.batch_index] = raw_mass.get(source.batch_index, 0.0) + mass
+        phase_counts[source.batch_index] = phase_counts.get(source.batch_index, 0) + 1
+        source_weight_sha256.setdefault(source.batch_index, []).append(
+            _tensor_sha256(terminal)
+        )
+    scales = {
+        batch_index: 1.0 / math.sqrt(mass) for batch_index, mass in raw_mass.items()
+    }
+    cases = tuple(
+        _case_from_source(
+            source,
+            layer_index=layer_index,
+            cache_key=cache_key,
+            bridge_artifact_sha256=bridge_artifact_sha256,
+            trajectory_row_weight_scale=scales[source.batch_index],
+        )
+        for source in selected
+    )
+    normalized_mass = {batch_index: 0.0 for batch_index in raw_mass}
+    for source, case in zip(selected, cases, strict=True):
+        normalized_mass[source.batch_index] += float(
+            case.query_row_sqrt_weights.square().sum().item()
+        )
+    if any(
+        not math.isclose(value, 1.0, rel_tol=1e-10, abs_tol=1e-12)
+        for value in normalized_mass.values()
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Whole-trajectory row-weight balancing did not conserve unit mass."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-semantic-trajectory-row-balance-v1",
+        "rule": (
+            "preserve_replay_phase_ratios_and_normalize_each_trajectory_to_unit_mass"
+        ),
+        "groups": [
+            {
+                "batch_index": batch_index,
+                "phase_count": phase_counts[batch_index],
+                "raw_squared_row_weight_mass": raw_mass[batch_index],
+                "sqrt_weight_scale": scales[batch_index],
+                "normalized_squared_row_weight_mass": normalized_mass[batch_index],
+                "source_terminal_row_weight_sha256": source_weight_sha256[batch_index],
+            }
+            for batch_index in sorted(raw_mass)
+        ],
+        "longer_trajectories_receive_more_total_weight": False,
+        "relative_replay_phase_weights_preserved": True,
+    }
+    return cases, MappingProxyType({**body, "balance_sha256": canonical_sha256(body)})
 
 
 def _seed(
@@ -576,8 +730,7 @@ def _seed(
         )
     }
     if any(
-        not isinstance(value, torch.nn.Parameter)
-        or value.dtype != torch.bfloat16
+        not isinstance(value, torch.nn.Parameter) or value.dtype != torch.bfloat16
         for value in tensors.values()
     ):
         raise Lfm2SemanticAttentionRefoldError(
@@ -585,10 +738,11 @@ def _seed(
         )
     epsilon = getattr(getattr(target_model, "config", None), "norm_eps", None)
     if not isinstance(epsilon, (int, float)) or not math.isfinite(float(epsilon)):
-        raise Lfm2SemanticAttentionRefoldError(
-            "Target model has no finite norm_eps."
-        )
-    cpu = {name: value.detach().to(device="cpu").contiguous().clone() for name, value in tensors.items()}
+        raise Lfm2SemanticAttentionRefoldError("Target model has no finite norm_eps.")
+    cpu = {
+        name: value.detach().to(device="cpu").contiguous().clone()
+        for name, value in tensors.items()
+    }
     return build_lfm2_endpoint_qkvo_seed(
         query_weight=cpu["query"],
         key_weight=cpu["key"],
@@ -645,8 +799,7 @@ def _metrics_nonregressing(
     tolerance: float,
 ) -> bool:
     return (
-        candidate.endpoint_relative_rmse
-        <= baseline.endpoint_relative_rmse + tolerance
+        candidate.endpoint_relative_rmse <= baseline.endpoint_relative_rmse + tolerance
         and candidate.probability_relative_rmse
         <= baseline.probability_relative_rmse + tolerance
         and candidate.js_divergence_mean <= baseline.js_divergence_mean + tolerance
@@ -655,6 +808,530 @@ def _metrics_nonregressing(
         >= baseline.top1_route_agreement_fraction
         and candidate.maximum_causal_probability_leakage == 0.0
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _WriterCase:
+    context: Any = field(repr=False, compare=False)
+    endpoint_target: Any = field(repr=False, compare=False)
+    row_weights: Any = field(repr=False, compare=False)
+    trajectory_sha256: str
+    case_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        context = _finite_cpu_tensor(
+            self.context,
+            "output-writer context",
+            ndim=3,
+            dtype=torch.float64,
+        )
+        endpoint = _finite_cpu_tensor(
+            self.endpoint_target,
+            "output-writer endpoint target",
+            ndim=3,
+            dtype=torch.float64,
+        )
+        weights = _finite_cpu_tensor(
+            self.row_weights,
+            "output-writer row weights",
+            ndim=2,
+            dtype=torch.float64,
+        )
+        if (
+            tuple(context.shape[:2]) != tuple(endpoint.shape[:2])
+            or tuple(weights.shape) != tuple(context.shape[:2])
+            or bool((weights <= 0.0).any().item())
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Output-writer case tensors are not row aligned and positive."
+            )
+        object.__setattr__(self, "context", context)
+        object.__setattr__(self, "endpoint_target", endpoint)
+        object.__setattr__(self, "row_weights", weights)
+        object.__setattr__(
+            self,
+            "trajectory_sha256",
+            _digest(self.trajectory_sha256, "writer trajectory SHA-256"),
+        )
+        object.__setattr__(
+            self,
+            "case_sha256",
+            canonical_sha256(
+                {
+                    "schema": "neural-forge-lfm2-semantic-output-writer-case-v1",
+                    "trajectory_sha256": self.trajectory_sha256,
+                    "context_sha256": _tensor_sha256(context),
+                    "endpoint_target_sha256": _tensor_sha256(endpoint),
+                    "row_weights_sha256": _tensor_sha256(weights),
+                }
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _WriterMetrics:
+    case_count: int
+    row_count: int
+    endpoint_rmse: float
+    endpoint_relative_rmse: float
+    endpoint_maximum_absolute_error: float
+    endpoint_cosine_similarity_mean: float
+    endpoint_cosine_similarity_worst: float
+
+    def __post_init__(self) -> None:
+        values = (
+            self.endpoint_rmse,
+            self.endpoint_relative_rmse,
+            self.endpoint_maximum_absolute_error,
+            self.endpoint_cosine_similarity_mean,
+            self.endpoint_cosine_similarity_worst,
+        )
+        if (
+            self.case_count <= 0
+            or self.row_count <= 0
+            or any(not math.isfinite(value) for value in values)
+            or any(value < 0.0 for value in values[:3])
+            or any(value < -1.0 or value > 1.0 for value in values[3:])
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Output-writer metrics must be finite nonnegative measurements."
+            )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "case_count": self.case_count,
+            "row_count": self.row_count,
+            "endpoint_rmse": self.endpoint_rmse,
+            "endpoint_relative_rmse": self.endpoint_relative_rmse,
+            "endpoint_maximum_absolute_error": (self.endpoint_maximum_absolute_error),
+            "endpoint_cosine_similarity_mean": self.endpoint_cosine_similarity_mean,
+            "endpoint_cosine_similarity_worst": (self.endpoint_cosine_similarity_worst),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class _OutputWriterProposal:
+    output_weight: Any = field(repr=False, compare=False)
+    changed: bool
+    fit_improved: bool
+    selected_alpha: float | None
+    baseline_fit_metrics: _WriterMetrics
+    candidate_fit_metrics: _WriterMetrics
+    ridge: float
+    effective_ridge: float
+    fit_context_sha256: str
+    proposal_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        output = _finite_cpu_tensor(
+            self.output_weight,
+            "output writer proposal",
+            ndim=2,
+            dtype=torch.bfloat16,
+        )
+        if (
+            not math.isfinite(self.ridge)
+            or self.ridge <= 0.0
+            or not math.isfinite(self.effective_ridge)
+            or self.effective_ridge <= 0.0
+            or (self.selected_alpha is None) != (not self.changed)
+            or self.fit_improved != self.changed
+            or (
+                self.changed
+                and (
+                    self.selected_alpha not in (0.125, 0.25, 0.5, 0.75, 1.0)
+                    or self.candidate_fit_metrics.endpoint_relative_rmse
+                    >= self.baseline_fit_metrics.endpoint_relative_rmse
+                )
+            )
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Output-writer proposal metadata is inconsistent."
+            )
+        _digest(self.fit_context_sha256, "FIT context SHA-256")
+        object.__setattr__(self, "output_weight", output)
+        object.__setattr__(
+            self,
+            "proposal_sha256",
+            canonical_sha256(self._body()),
+        )
+
+    def _body(self) -> dict[str, Any]:
+        return {
+            "schema": "neural-forge-lfm2-semantic-output-writer-proposal-v1",
+            "output_weight_sha256": _tensor_sha256(self.output_weight),
+            "changed": self.changed,
+            "fit_improved": self.fit_improved,
+            "selected_alpha": self.selected_alpha,
+            "baseline_fit_metrics": self.baseline_fit_metrics.as_dict(),
+            "candidate_fit_metrics": self.candidate_fit_metrics.as_dict(),
+            "ridge": self.ridge,
+            "effective_ridge": self.effective_ridge,
+            "fit_context_sha256": self.fit_context_sha256,
+            "solver": "closed_form_weighted_residual_ridge_plus_bfloat16_frontier",
+            "value_weight_fixed": True,
+            "fit_only": True,
+            "numeric_parent_child_weight_match_objective": False,
+            "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        return {**self._body(), "proposal_sha256": self.proposal_sha256}
+
+
+def _writer_cases(
+    bank: Lfm2EndpointQkResidualEvidenceBank,
+    seed: Lfm2EndpointQkvoSeed,
+    *,
+    query_weight: Any,
+    key_weight: Any,
+    policy: Lfm2EndpointQkResidualFoldPolicy,
+) -> tuple[_WriterCase, ...]:
+    torch = _torch()
+    devices = policy.compute_devices or ("cpu",)
+    result = []
+    for case_index, case in enumerate(bank.cases):
+        device = devices[case_index % len(devices)]
+        probabilities, replayed_endpoint = replay_lfm2_endpoint_qkvo(
+            case,
+            seed,
+            query_weight=query_weight,
+            key_weight=key_weight,
+            device=device,
+        )
+        resolved = torch.device(device)
+        key_inputs = case.target_key_value_inputs.to(device=resolved)
+        batch, key_length, _hidden = map(int, key_inputs.shape)
+        query_length = int(case.target_query_inputs.shape[1])
+        with torch.inference_mode():
+            value_heads = (
+                (key_inputs @ seed.value_weight.to(device=resolved).T)
+                .reshape(
+                    batch,
+                    key_length,
+                    seed.key_value_heads,
+                    seed.head_dim,
+                )
+                .permute(0, 2, 1, 3)
+                .contiguous()
+            )
+            repeated_value = value_heads.repeat_interleave(
+                seed.queries_per_key_value,
+                dim=1,
+            ).to(torch.float64)
+            context_on_device = (
+                probabilities.to(device=resolved, dtype=torch.float64)
+                .matmul(repeated_value)
+                .permute(0, 2, 1, 3)
+                .reshape(
+                    batch,
+                    query_length,
+                    seed.query_heads * seed.head_dim,
+                )
+                .contiguous()
+            )
+            reconstructed_endpoint = (
+                context_on_device
+                @ seed.output_weight.to(device=resolved, dtype=torch.float64).T
+            ).cpu()
+            context = context_on_device.cpu()
+        if (
+            tuple(context.shape[-1:]) != tuple(seed.output_weight.shape[1:])
+            or tuple(case.parent_endpoint_target.shape[-1:])
+            != tuple(seed.output_weight.shape[:1])
+            or not torch.allclose(
+                reconstructed_endpoint,
+                replayed_endpoint.to(torch.float64),
+                rtol=1e-12,
+                atol=1e-12,
+            )
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Inherited-V context reconstruction does not reproduce exact replay."
+            )
+        result.append(
+            _WriterCase(
+                context=context,
+                endpoint_target=case.parent_endpoint_target.to(torch.float64),
+                row_weights=case.query_row_sqrt_weights.to(torch.float64).square(),
+                trajectory_sha256=case.trajectory_sha256,
+            )
+        )
+    return tuple(result)
+
+
+def _writer_metrics(
+    cases: Sequence[_WriterCase],
+    output_weight: Any,
+) -> _WriterMetrics:
+    torch = _torch()
+    selected = tuple(cases)
+    if not selected:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Output-writer metrics require at least one case."
+        )
+    output = output_weight.detach().to(device="cpu", dtype=torch.float64)
+    squared_error = torch.zeros((), dtype=torch.float64)
+    squared_target = torch.zeros((), dtype=torch.float64)
+    weighted_elements = torch.zeros((), dtype=torch.float64)
+    weighted_cosine = torch.zeros((), dtype=torch.float64)
+    cosine_weight = torch.zeros((), dtype=torch.float64)
+    maximum = 0.0
+    worst_cosine = 1.0
+    rows = 0
+    for case in selected:
+        prediction = case.context @ output.T
+        difference = prediction - case.endpoint_target
+        weights = case.row_weights.unsqueeze(-1)
+        squared_error += (difference.square() * weights).sum()
+        squared_target += (case.endpoint_target.square() * weights).sum()
+        weighted_elements += weights.sum() * int(case.endpoint_target.shape[-1])
+        maximum = max(maximum, float(difference.abs().max().item()))
+        prediction_norm = torch.linalg.vector_norm(prediction, dim=-1)
+        target_norm = torch.linalg.vector_norm(case.endpoint_target, dim=-1)
+        cosine_denominator = prediction_norm * target_norm
+        both_zero = (prediction_norm == 0.0) & (target_norm == 0.0)
+        cosine = torch.where(
+            both_zero,
+            torch.ones_like(cosine_denominator),
+            torch.where(
+                cosine_denominator > torch.finfo(torch.float64).tiny,
+                (prediction * case.endpoint_target).sum(dim=-1)
+                / cosine_denominator.clamp_min(torch.finfo(torch.float64).tiny),
+                torch.zeros_like(cosine_denominator),
+            ),
+        ).clamp(-1.0, 1.0)
+        weighted_cosine += (cosine * case.row_weights).sum()
+        cosine_weight += case.row_weights.sum()
+        worst_cosine = min(worst_cosine, float(cosine.min().item()))
+        rows += int(case.row_weights.numel())
+    denominator = weighted_elements.clamp_min(torch.finfo(torch.float64).tiny)
+    rmse = torch.sqrt(squared_error / denominator)
+    target_scale = torch.sqrt(squared_target / denominator).clamp_min(
+        torch.finfo(torch.float64).tiny
+    )
+    return _WriterMetrics(
+        case_count=len(selected),
+        row_count=rows,
+        endpoint_rmse=float(rmse.item()),
+        endpoint_relative_rmse=float((rmse / target_scale).item()),
+        endpoint_maximum_absolute_error=maximum,
+        endpoint_cosine_similarity_mean=float((weighted_cosine / cosine_weight).item()),
+        endpoint_cosine_similarity_worst=worst_cosine,
+    )
+
+
+def _compile_output_writer(
+    fit_cases: Sequence[_WriterCase],
+    incumbent_output_weight: Any,
+    *,
+    solver_device: str,
+    ridge: float = 1e-4,
+) -> _OutputWriterProposal:
+    torch = _torch()
+    selected = tuple(fit_cases)
+    if not selected:
+        raise Lfm2SemanticAttentionRefoldError("Output-writer FIT bank is empty.")
+    incumbent = incumbent_output_weight.detach().to(
+        device="cpu",
+        dtype=torch.bfloat16,
+    )
+    baseline = _writer_metrics(selected, incumbent)
+    contexts = torch.cat(
+        tuple(case.context.reshape(-1, case.context.shape[-1]) for case in selected),
+        dim=0,
+    )
+    targets = torch.cat(
+        tuple(
+            case.endpoint_target.reshape(-1, case.endpoint_target.shape[-1])
+            for case in selected
+        ),
+        dim=0,
+    )
+    weights = torch.cat(
+        tuple(case.row_weights.reshape(-1) for case in selected),
+        dim=0,
+    )
+    context_sha = canonical_sha256(
+        {
+            "case_sha256": [case.case_sha256 for case in selected],
+        }
+    )
+    device = torch.device(solver_device)
+    x = contexts.to(device=device, dtype=torch.float64)
+    y = targets.to(device=device, dtype=torch.float64)
+    root = torch.sqrt(weights.to(device=device, dtype=torch.float64)).unsqueeze(1)
+    incumbent_transpose = incumbent.T.to(device=device, dtype=torch.float64)
+    weighted_x = x * root
+    residual = (y - x @ incumbent_transpose) * root
+    gram = weighted_x.T @ weighted_x
+    scale = float(gram.diagonal().mean().clamp_min(1.0).item())
+    effective_ridge = float(ridge) * scale
+    identity = torch.eye(int(gram.shape[0]), dtype=torch.float64, device=device)
+    with torch.inference_mode():
+        delta = torch.linalg.solve(
+            gram + effective_ridge * identity,
+            weighted_x.T @ residual,
+        )
+    if not bool(torch.isfinite(delta).all().item()):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Closed-form output-writer ridge solve produced nonfinite values."
+        )
+    candidates = []
+    for alpha in (0.125, 0.25, 0.5, 0.75, 1.0):
+        candidate = (
+            (incumbent_transpose + alpha * delta)
+            .T.to(device="cpu", dtype=torch.bfloat16)
+            .contiguous()
+        )
+        if torch.equal(candidate, incumbent):
+            continue
+        metrics = _writer_metrics(selected, candidate)
+        candidates.append((metrics.endpoint_relative_rmse, alpha, candidate, metrics))
+    if not candidates:
+        return _OutputWriterProposal(
+            output_weight=incumbent,
+            changed=False,
+            fit_improved=False,
+            selected_alpha=None,
+            baseline_fit_metrics=baseline,
+            candidate_fit_metrics=baseline,
+            ridge=float(ridge),
+            effective_ridge=effective_ridge,
+            fit_context_sha256=context_sha,
+        )
+    _score, alpha, candidate, candidate_metrics = min(
+        candidates,
+        key=lambda value: (value[0], value[1]),
+    )
+    improvement = (
+        baseline.endpoint_relative_rmse - candidate_metrics.endpoint_relative_rmse
+    )
+    if improvement <= 1e-8:
+        return _OutputWriterProposal(
+            output_weight=incumbent,
+            changed=False,
+            fit_improved=False,
+            selected_alpha=None,
+            baseline_fit_metrics=baseline,
+            candidate_fit_metrics=baseline,
+            ridge=float(ridge),
+            effective_ridge=effective_ridge,
+            fit_context_sha256=context_sha,
+        )
+    return _OutputWriterProposal(
+        output_weight=candidate,
+        changed=True,
+        fit_improved=True,
+        selected_alpha=alpha,
+        baseline_fit_metrics=baseline,
+        candidate_fit_metrics=candidate_metrics,
+        ridge=float(ridge),
+        effective_ridge=effective_ridge,
+        fit_context_sha256=context_sha,
+    )
+
+
+def _writer_nonregressing(
+    candidate: _WriterMetrics,
+    baseline: _WriterMetrics,
+    *,
+    tolerance: float,
+) -> bool:
+    return (
+        candidate.endpoint_relative_rmse <= baseline.endpoint_relative_rmse + tolerance
+        and candidate.endpoint_maximum_absolute_error
+        <= baseline.endpoint_maximum_absolute_error + tolerance
+        and candidate.endpoint_cosine_similarity_mean + tolerance
+        >= baseline.endpoint_cosine_similarity_mean
+        and candidate.endpoint_cosine_similarity_worst + tolerance
+        >= baseline.endpoint_cosine_similarity_worst
+    )
+
+
+def _seal_writer_gate(body: Mapping[str, Any]) -> Mapping[str, Any]:
+    normalized = dict(body)
+    return MappingProxyType(
+        {
+            **normalized,
+            "gate_sha256": canonical_sha256(normalized),
+        }
+    )
+
+
+def _gate_output_writer(
+    proposal: _OutputWriterProposal,
+    *,
+    fit_check_cases: Sequence[_WriterCase],
+    selection_cases: Sequence[_WriterCase],
+    validation_cases: Sequence[_WriterCase],
+    incumbent_output_weight: Any,
+    tolerance: float,
+) -> tuple[Any, Mapping[str, Any]]:
+    incumbent = incumbent_output_weight.detach().to(device="cpu").contiguous()
+    frozen_candidate_sha256 = _tensor_sha256(proposal.output_weight)
+    if not proposal.changed:
+        body = {
+            "status": "rejected-no-bfloat16-fit-improvement",
+            "accepted": False,
+            "proposal": proposal.as_dict(),
+            "rejection_partition": "fit",
+            "fit_check": None,
+            "selection": None,
+            "validation": None,
+        }
+        return incumbent, _seal_writer_gate(body)
+    reports: dict[str, Any] = {}
+    for name, cases in (
+        ("fit_check", fit_check_cases),
+        ("selection", selection_cases),
+        ("validation", validation_cases),
+    ):
+        baseline = _writer_metrics(cases, incumbent)
+        candidate = _writer_metrics(cases, proposal.output_weight)
+        if _tensor_sha256(
+            proposal.output_weight
+        ) != frozen_candidate_sha256 or proposal.proposal_sha256 != canonical_sha256(
+            proposal._body()
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Output-writer candidate changed while traversing held-out gates."
+            )
+        nonregressing = _writer_nonregressing(
+            candidate,
+            baseline,
+            tolerance=tolerance,
+        )
+        reports[name] = {
+            "case_sha256": [case.case_sha256 for case in cases],
+            "baseline": baseline.as_dict(),
+            "candidate": candidate.as_dict(),
+            "nonregressing": nonregressing,
+        }
+        if not nonregressing:
+            body = {
+                "status": f"rejected-{name}-regression",
+                "accepted": False,
+                "proposal": proposal.as_dict(),
+                "rejection_partition": name,
+                "fit_check": reports.get("fit_check"),
+                "selection": reports.get("selection"),
+                "validation": reports.get("validation"),
+            }
+            return incumbent, _seal_writer_gate(body)
+    body = {
+        "status": "accepted-after-frozen-validation",
+        "accepted": True,
+        "proposal": proposal.as_dict(),
+        "rejection_partition": None,
+        "fit_check": reports["fit_check"],
+        "selection": reports["selection"],
+        "validation": reports["validation"],
+        "candidate_frozen_across_heldout_gates": True,
+    }
+    return proposal.output_weight, _seal_writer_gate(body)
 
 
 def _parameter_bundle(target_model: Any, layer_index: int) -> Mapping[str, Any]:
@@ -711,7 +1388,10 @@ def _install_qkvo_transaction(
         with torch.no_grad():
             for name, parameter in parameters.items():
                 candidate = suffix_state[name.removeprefix(prefix)]
-                if tuple(candidate.shape) != tuple(parameter.shape) or candidate.dtype != parameter.dtype:
+                if (
+                    tuple(candidate.shape) != tuple(parameter.shape)
+                    or candidate.dtype != parameter.dtype
+                ):
                     raise Lfm2SemanticAttentionRefoldError(
                         f"Compiled state changed the topology of {name}."
                     )
@@ -773,6 +1453,7 @@ def compile_install_lfm2_semantic_attention_postfold(
 ) -> Mapping[str, Any]:
     """Compile and atomically install one semantic long-horizon Q/K/V/O fold."""
 
+    torch = _torch()
     cache = _digest(cache_key, "cache key")
     bridge = _digest(bridge_artifact_sha256, "bridge artifact SHA-256")
     raw = tuple(evidence)
@@ -799,8 +1480,7 @@ def compile_install_lfm2_semantic_attention_postfold(
         )
     inventory, groups, weights, lineage = _source_contract(raw[0])
     if any(
-        _source_contract(item)
-        != (inventory, groups, weights, lineage)
+        _source_contract(item) != (inventory, groups, weights, lineage)
         for item in raw[1:]
     ):
         raise Lfm2SemanticAttentionRefoldError(
@@ -815,7 +1495,10 @@ def compile_install_lfm2_semantic_attention_postfold(
         or len(groups) != target_query_heads
         or sorted(member for group in groups for member in group)
         != list(range(source_query_heads))
-        or any(len(group) != len(group_weights) for group, group_weights in zip(groups, weights, strict=True))
+        or any(
+            len(group) != len(group_weights)
+            for group, group_weights in zip(groups, weights, strict=True)
+        )
         or any(
             not math.isclose(math.fsum(group_weights), 1.0, rel_tol=1e-8, abs_tol=1e-10)
             or any(value <= 0.0 or not math.isfinite(value) for value in group_weights)
@@ -826,18 +1509,17 @@ def compile_install_lfm2_semantic_attention_postfold(
             "Original query-head barycentric lineage does not cover this topology."
         )
     partitions = _split_sources(normalized)
-    cases = {
-        name: tuple(
-            _case_from_source(
-                item,
-                layer_index=layer_index,
-                cache_key=cache,
-                bridge_artifact_sha256=bridge,
-            )
-            for item in partitions[name]
+    balanced = {
+        name: _balanced_endpoint_cases(
+            partitions[name],
+            layer_index=layer_index,
+            cache_key=cache,
+            bridge_artifact_sha256=bridge,
         )
         for name in _PARTITIONS
     }
+    cases = {name: balanced[name][0] for name in _PARTITIONS}
+    balance_receipts = {name: balanced[name][1] for name in _PARTITIONS}
     split_sha = canonical_sha256(
         {
             "schema": "neural-forge-lfm2-semantic-attention-four-way-split-v1",
@@ -927,12 +1609,10 @@ def compile_install_lfm2_semantic_attention_postfold(
         )
     frozen_query = compiled.query_weight.detach().cpu().clone()
     frozen_key = compiled.key_weight.detach().cpu().clone()
-    frozen_sha = canonical_sha256(
+    frozen_qk_sha = canonical_sha256(
         {
             "q": _tensor_sha256(frozen_query),
             "k": _tensor_sha256(frozen_key),
-            "v": _tensor_sha256(seed.value_weight),
-            "o": _tensor_sha256(seed.output_weight),
         }
     )
     baseline_validation = _evaluate_bank(
@@ -961,32 +1641,81 @@ def compile_install_lfm2_semantic_attention_postfold(
         raise Lfm2SemanticAttentionRefoldError(
             "Frozen candidate failed VALIDATION or changed after selection freeze."
         )
+    writer_banks = {
+        "fit": _writer_cases(
+            fit_bank,
+            seed,
+            query_weight=frozen_query,
+            key_weight=frozen_key,
+            policy=policy,
+        ),
+        "fit_check": _writer_cases(
+            fit_check_bank,
+            seed,
+            query_weight=frozen_query,
+            key_weight=frozen_key,
+            policy=policy,
+        ),
+        "selection": _writer_cases(
+            selection_bank,
+            seed,
+            query_weight=frozen_query,
+            key_weight=frozen_key,
+            policy=policy,
+        ),
+        "validation": _writer_cases(
+            validation_bank,
+            seed,
+            query_weight=frozen_query,
+            key_weight=frozen_key,
+            policy=policy,
+        ),
+    }
+    writer_proposal = _compile_output_writer(
+        writer_banks["fit"],
+        seed.output_weight,
+        solver_device=policy.solver_device,
+    )
+    published_output, writer_gate = _gate_output_writer(
+        writer_proposal,
+        fit_check_cases=writer_banks["fit_check"],
+        selection_cases=writer_banks["selection"],
+        validation_cases=writer_banks["validation"],
+        incumbent_output_weight=seed.output_weight,
+        tolerance=tolerance,
+    )
+    writer_accepted = bool(writer_gate["accepted"])
+    if writer_accepted != (not torch.equal(published_output, seed.output_weight)):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Output-writer gate acceptance disagrees with its published state."
+        )
+    frozen_qkvo_sha = canonical_sha256(
+        {
+            "q": _tensor_sha256(frozen_query),
+            "k": _tensor_sha256(frozen_key),
+            "v": _tensor_sha256(seed.value_weight),
+            "o": _tensor_sha256(published_output),
+        }
+    )
     state = {
         "q_proj.weight": frozen_query,
         "k_proj.weight": frozen_key,
         "v_proj.weight": seed.value_weight,
-        "out_proj.weight": seed.output_weight,
+        "out_proj.weight": published_output,
     }
     before, after, changed, parameter_count = _install_qkvo_transaction(
         target_model,
         layer_index=layer_index,
         state=state,
     )
-    from neural_forge.hf_lfm2_semantic_postfold import (
-        seal_lfm2_semantic_attention_installation_receipt,
+    base = _installation_receipt_body(
+        layer_index=layer_index,
+        evidence_sha256=[item.evidence_sha256 for item in raw],
+        model_state_before_sha256=before,
+        model_state_after_sha256=after,
+        changed_state_keys=changed,
+        parameter_element_count=parameter_count,
     )
-
-    base = dict(
-        seal_lfm2_semantic_attention_installation_receipt(
-            layer_index=layer_index,
-            transport_evidence_sha256=[item.evidence_sha256 for item in raw],
-            model_state_before_sha256=before,
-            model_state_after_sha256=after,
-            changed_state_keys=changed,
-            parameter_element_count=parameter_count,
-        )
-    )
-    base.pop("result_sha256")
     body = {
         **base,
         "analytic_refold": {
@@ -1000,6 +1729,9 @@ def compile_install_lfm2_semantic_attention_postfold(
                 name: sorted({item.batch_index for item in partitions[name]})
                 for name in _PARTITIONS
             },
+            "trajectory_row_weight_balance": {
+                name: dict(balance_receipts[name]) for name in _PARTITIONS
+            },
             "fit_evidence_sha256": fit_bank.evidence_sha256,
             "fit_check_evidence_sha256": fit_check_bank.evidence_sha256,
             "selection_evidence_sha256": selection_bank.evidence_sha256,
@@ -1009,17 +1741,43 @@ def compile_install_lfm2_semantic_attention_postfold(
             "selection_candidate": candidate_selection.as_dict(),
             "validation_baseline": baseline_validation.as_dict(),
             "validation_candidate": candidate_validation.as_dict(),
-            "frozen_qkvo_sha256": frozen_sha,
+            "frozen_qk_sha256": frozen_qk_sha,
+            "frozen_qkvo_sha256": frozen_qkvo_sha,
             "candidate_frozen_before_validation": True,
+            "qk_candidate_frozen_before_validation": True,
+            "output_writer_candidate_frozen_before_validation": (
+                writer_proposal.changed
+            ),
             "validation_triggered_refit": False,
             "numeric_parent_child_weight_match_objective": False,
             "dense_existing_qkvo_topology_only": True,
-            "analytically_refit_projection_roles": ["q_proj", "k_proj"],
-            "fixed_inherited_projection_roles": ["v_proj", "out_proj"],
-            "fixed_value_output_source": (
+            "analytically_refit_projection_roles": [
+                "q_proj",
+                "k_proj",
+                *(["out_proj"] if writer_accepted else []),
+            ],
+            "fixed_inherited_projection_roles": [
+                "v_proj",
+                *([] if writer_accepted else ["out_proj"]),
+            ],
+            "fixed_value_source": (
                 "authenticated_live_c61_dense_seed_already_folded_on_broad_cache"
             ),
-            "fresh_value_output_refit_performed": False,
+            "output_writer_source": (
+                "fit_only_closed_form_weighted_residual_ridge"
+                if writer_accepted
+                else "authenticated_live_c61_seed_after_explicit_analytic_rejection"
+            ),
+            "output_writer": dict(writer_gate),
+            "output_writer_cached_qk_probability_replay_calls": sum(
+                len(bank) for bank in writer_banks.values()
+            ),
+            "output_writer_model_forward_calls": 0,
+            "output_writer_fit_partition_only_used_for_solve": True,
+            "output_writer_heldout_partitions_never_used_for_solve": True,
+            "fresh_joint_value_output_refit_performed": False,
+            "fresh_value_refit_performed": False,
+            "fresh_output_writer_refit_performed": writer_accepted,
             "fresh_four_matrix_qkvo_refit_claimed": False,
             "complete_qkvo_bundle_installed_transactionally": True,
             "complete_causal_cache_only": True,
