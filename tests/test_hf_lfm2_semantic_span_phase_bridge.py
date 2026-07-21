@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
@@ -8,6 +10,9 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from neural_forge import (  # noqa: E402
+    hf_lfm2_semantic_span_phase_bridge as phase_bridge_module,
+)
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     BATCH_SCHEMA,
@@ -29,6 +34,7 @@ from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
 )
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
     fingerprint_hf_tokenizer_semantics,
+    seal_strict_tokenizer_bridge_artifact,
 )
 
 
@@ -348,6 +354,24 @@ def _tokenizers() -> tuple[_GreedyTokenizer, _GreedyTokenizer]:
     return donor, target
 
 
+def _strict_auth_tokenizers() -> tuple[_GreedyTokenizer, _GreedyTokenizer]:
+    donor = _GreedyTokenizer(["<B>", "a", "b", " c", "!", "z", "ab", " ", "c"])
+    target = _GreedyTokenizer(["<B>", "a", "ab", " ", "c", "!", "z", "b"])
+    return donor, target
+
+
+def _strict_auth_artifact(
+    tmp_path: Path,
+    donor: _GreedyTokenizer,
+    target: _GreedyTokenizer,
+) -> Any:
+    root = tmp_path / "target-tokenizer"
+    root.mkdir()
+    (root / "tokenizer.json").write_text("{}", encoding="utf-8")
+    (root / "tokenizer_config.json").write_text("{}", encoding="utf-8")
+    return seal_strict_tokenizer_bridge_artifact(donor, target, root)
+
+
 def _build(
     batch: Any,
     manifest: dict[str, Any],
@@ -589,3 +613,58 @@ def test_verify_detects_live_tokenizer_drift() -> None:
         match="Live tokenizer semantics differ",
     ):
         bridge.verify(donor, changed_target)
+
+
+def test_live_session_preserves_bridge_bytes_without_refingerprinting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch, manifest = _fixture()
+    donor, target = _strict_auth_tokenizers()
+    artifact = _strict_auth_artifact(tmp_path, donor, target)
+    legacy = _build(batch, manifest, donor, target)
+    expected = legacy.to_evidence_dict()
+
+    def reject_full_fingerprint(*_args: Any, **_kwargs: Any) -> str:
+        raise AssertionError("authenticated path performed a full fingerprint")
+
+    with artifact.authenticated_live_session(
+        donor,
+        target,
+        selective_session_sha256="9" * 64,
+    ) as tokenizer_session:
+        monkeypatch.setattr(
+            phase_bridge_module,
+            "_live_tokenizer_fingerprint",
+            reject_full_fingerprint,
+        )
+        authenticated = _build(
+            batch,
+            manifest,
+            donor,
+            target,
+            tokenizer_session=tokenizer_session,
+        )
+        assert authenticated.to_evidence_dict() == expected
+        assert authenticated.bridge_sha256 == legacy.bridge_sha256
+        assert json.dumps(
+            authenticated.to_evidence_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+        ) == json.dumps(expected, sort_keys=True, separators=(",", ":"))
+        authenticated.verify(
+            donor,
+            target,
+            tokenizer_session=tokenizer_session,
+        )
+
+        wrong_donor, _wrong_target = _strict_auth_tokenizers()
+        with pytest.raises(
+            Lfm2SemanticSpanPhaseBridgeError,
+            match="Live tokenizer semantics differ",
+        ):
+            authenticated.verify(
+                wrong_donor,
+                target,
+                tokenizer_session=tokenizer_session,
+            )

@@ -459,7 +459,10 @@ def _patch_complete_transaction(
     monkeypatch.setattr(
         stack,
         "_semantic_alignments_from_session",
-        lambda **_kwargs: alignments,
+        lambda **_kwargs: (
+            alignments,
+            {"receipt_sha256": "8" * 64},
+        ),
     )
     monkeypatch.setattr(
         stack,
@@ -657,6 +660,8 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
     assert result.receipt["complete_nonzero_structural_producer_coverage"] is True
     assert result.receipt["blank_or_partially_blank_producer_chain_count"] == 0
     assert result.receipt["installed_complete_producer_chain_count"] == 27
+    assert result.receipt["tokenizer_session_receipt_sha256"] == "8" * 64
+    assert result.receipt["tokenizer_session"] == {"receipt_sha256": "8" * 64}
     assert (
         result.receipt[
             "authenticated_nonzero_folded_seed_retained_noop_count"
@@ -686,6 +691,50 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
             f"{layer_index}:next",
         ]
         assert observed == expected
+
+
+def test_closing_tokenizer_reauthentication_fails_before_model_mutation(
+    monkeypatch,
+) -> None:
+    target, cache, bridge, events = _patch_complete_transaction(monkeypatch)
+    before = {
+        name: value.detach().clone() for name, value in target.state_dict().items()
+    }
+    before_identity = _state_identity(target)
+
+    def fail_closing_authentication(**_kwargs):
+        raise RuntimeError("closing tokenizer reauthentication failed")
+
+    monkeypatch.setattr(
+        stack,
+        "_semantic_alignments_from_session",
+        fail_closing_authentication,
+    )
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="exact entry bytes were restored",
+    ) as captured:
+        stack.compile_install_lfm2_semantic_layer_stack_postfold(
+            cache=cache,
+            bridge=bridge,
+            target_model=target,
+            interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+            compiler_lineage={
+                index: object() for index in stack._EXPECTED_ATTENTION_INDICES
+            },
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            attention_installer=lambda **_kwargs: None,
+        )
+
+    assert isinstance(captured.value.__cause__, RuntimeError)
+    assert "closing tokenizer reauthentication failed" in str(captured.value.__cause__)
+    assert events == []
+    assert _state_identity(target) == before_identity
+    for name, value in target.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
 
 
 def test_complete_transaction_truthfully_counts_mixed_incumbent_noops(
@@ -1219,10 +1268,60 @@ def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints()
     )
 
     assert receipt["all_cached_endpoints_bit_exact"] is True
-    assert receipt["direct_parent_tensors_functionally_bound_to_cache"] is True
+    assert receipt["all_cached_endpoints_within_authenticated_bf16_envelope"] is True
+    assert receipt["numerical_equivalence_is_provenance_only"] is True
+    assert (
+        receipt["cross_kernel_equivalence_policy"][
+            "fold_selection_or_quality_objective"
+        ]
+        is False
+    )
+    assert (
+        receipt["direct_parent_tensors_numerically_consistent_on_cached_endpoints"]
+        is True
+    )
+    assert receipt["semantic_endpoint_scope_is_complete_tensor_identity_proof"] is False
+    assert (
+        receipt["cryptographic_parent_tensor_identity_proven_by_this_receipt"] is False
+    )
+    assert receipt["expected_per_tensor_digest_comparison_performed"] is False
     assert receipt["semantic_endpoint_rows"] == 1
     assert inventory.direct_local_loader_receipt_sha256 == receipt["result_sha256"]
     assert inventory.verify() is True
+
+
+def test_parent_mlp_functional_provenance_accepts_bf16_backend_rounding_drift() -> None:
+    target, cache, bridge, session, alignments, parent, chart = (
+        _parent_mlp_provenance_fixture()
+    )
+    phase_rows = parent[0].phase_rows["prefill"]
+    gate = phase_rows["mlp.gate"].clone()
+    gate.view(-1)[0] = (
+        gate.view(-1)[0].to(torch.float32)
+        + torch.tensor(
+            torch.finfo(torch.bfloat16).eps / 2.0,
+            dtype=torch.float32,
+        )
+    ).to(torch.bfloat16)
+    phase_rows["mlp.gate"] = gate
+
+    _inventory, receipt = stack._direct_mlp_inventory(
+        inventory_type=Lfm2DirectLocalMlpSourceInventory,
+        parent_session=session,
+        cache=cache,
+        bridge=bridge,
+        layer_index=0,
+        operator_kind="short_conv",
+        chart_receipt=chart,
+        attention_lineage=None,
+        alignments=alignments,
+        parent=parent,
+        target_model=target,
+    )
+
+    assert receipt["all_cached_endpoints_bit_exact"] is False
+    assert receipt["all_cached_endpoints_within_authenticated_bf16_envelope"] is True
+    assert receipt["endpoint_equivalence_metrics"]["mlp.gate"]["accepted"] is True
 
 
 def test_direct_parent_mlp_inventory_rejects_self_labeled_wrong_w2() -> None:
@@ -1232,7 +1331,7 @@ def test_direct_parent_mlp_inventory_rejects_self_labeled_wrong_w2() -> None:
 
     with pytest.raises(
         stack.Lfm2SemanticLayerStackRefoldError,
-        match="do not exactly reproduce cached BF16",
+        match="outside the authenticated BF16 cross-kernel numerical envelope",
     ):
         stack._direct_mlp_inventory(
             inventory_type=Lfm2DirectLocalMlpSourceInventory,

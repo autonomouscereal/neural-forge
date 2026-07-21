@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -24,6 +25,7 @@ from neural_forge.hf_lfm2_semantic_span_phase_bridge import (  # noqa: E402
 )
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
     fingerprint_hf_tokenizer_semantics,
+    seal_strict_tokenizer_bridge_artifact,
 )
 
 
@@ -100,6 +102,24 @@ def _tokenizers() -> tuple[_GreedyTokenizer, _GreedyTokenizer]:
     donor = _GreedyTokenizer(["<B>", "a", "b", " c", "!", "z"])
     target = _GreedyTokenizer(["<B>", "a", "ab", " ", "c", "!", "z", "b"])
     return donor, target
+
+
+def _strict_auth_tokenizers() -> tuple[_GreedyTokenizer, _GreedyTokenizer]:
+    donor = _GreedyTokenizer(["<B>", "a", "b", " c", "!", "z", "ab", " ", "c"])
+    target = _GreedyTokenizer(["<B>", "a", "ab", " ", "c", "!", "z", "b"])
+    return donor, target
+
+
+def _strict_auth_artifact(
+    tmp_path: Path,
+    donor: _GreedyTokenizer,
+    target: _GreedyTokenizer,
+) -> Any:
+    root = tmp_path / "target-tokenizer"
+    root.mkdir()
+    (root / "tokenizer.json").write_text("{}", encoding="utf-8")
+    (root / "tokenizer_config.json").write_text("{}", encoding="utf-8")
+    return seal_strict_tokenizer_bridge_artifact(donor, target, root)
 
 
 def _alignment() -> tuple[Any, _GreedyTokenizer, _GreedyTokenizer]:
@@ -322,6 +342,52 @@ def test_cached_multiplicities_preserve_legacy_evidence_bytes_and_seals() -> Non
     legacy_seal = legacy_body.pop("alignment_sha256")
     assert canonical_sha256(legacy_body) == legacy_seal
     assert legacy_seal == alignment.alignment_sha256
+
+
+def test_live_session_preserves_alignment_evidence_and_seals(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    donor, target = _strict_auth_tokenizers()
+    bridge = _bridge(donor, target)
+    suffixes = {"prefill": 2, "decode.000": 1, "decode.001": 1}
+    legacy = build_lfm2_semantic_span_cpcf_alignment(
+        bridge,
+        donor,
+        target,
+        parent_sampled_suffix_tokens=suffixes,
+    )
+    expected = legacy.to_evidence_dict()
+    artifact = _strict_auth_artifact(tmp_path, donor, target)
+
+    def reject_full_fingerprint(*_args: Any, **_kwargs: Any) -> str:
+        raise AssertionError("authenticated path performed a full fingerprint")
+
+    with artifact.authenticated_live_session(
+        donor,
+        target,
+        selective_session_sha256="9" * 64,
+    ) as tokenizer_session:
+        monkeypatch.setattr(
+            "neural_forge.hf_lfm2_semantic_span_phase_bridge."
+            "_live_tokenizer_fingerprint",
+            reject_full_fingerprint,
+        )
+        authenticated = build_lfm2_semantic_span_cpcf_alignment(
+            bridge,
+            donor,
+            target,
+            parent_sampled_suffix_tokens=suffixes,
+            tokenizer_session=tokenizer_session,
+        )
+
+    assert authenticated.to_evidence_dict() == expected
+    assert authenticated.alignment_sha256 == legacy.alignment_sha256
+    assert json.dumps(
+        authenticated.to_evidence_dict(),
+        sort_keys=True,
+        separators=(",", ":"),
+    ) == json.dumps(expected, sort_keys=True, separators=(",", ":"))
 
 
 def test_multiplicities_are_computed_once_per_frozen_phase(

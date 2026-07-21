@@ -15,6 +15,7 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any, Protocol
 
 from neural_forge.hf_token_align import (
@@ -29,6 +30,10 @@ from neural_forge.hf_transport_math import CoordinateMap, encode_coordinates
 
 STRICT_TOKENIZER_BRIDGE_FILENAME = "neural_forge_strict_tokenizer_bridge.json"
 STRICT_TOKENIZER_BRIDGE_SCHEMA = "neural-forge-strict-tokenizer-bridge-v1"
+STRICT_TOKENIZER_LIVE_SESSION_SCHEMA = "neural-forge-strict-tokenizer-live-session-v1"
+_STRICT_TOKENIZER_LIVE_SESSION_OPENING_SCHEMA = (
+    "neural-forge-strict-tokenizer-live-session-opening-v1"
+)
 _STRICT_TOKENIZER_BRIDGE_KIND = "sealed-strict-target-tokenizer"
 TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY = "_neural_forge_tokenizer_bridge_artifact_sha256"
 TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY = "_neural_forge_tokenizer_transport_profile_sha256"
@@ -222,6 +227,372 @@ class StrictTokenizerBridgeArtifact:
             raise StrictTokenizerBridgeError(
                 "Live tokenizer row mapping differs from the sealed profile."
             )
+
+    def authenticated_live_session(
+        self,
+        donor_tokenizer: Any,
+        target_tokenizer: Any,
+        *,
+        selective_session_sha256: str,
+    ) -> StrictTokenizerLiveSession:
+        """Return a context-managed, session-bound live-tokenizer attestation."""
+
+        return StrictTokenizerLiveSession(
+            self,
+            donor_tokenizer,
+            target_tokenizer,
+            selective_session_sha256=selective_session_sha256,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _TokenizerLiveShape:
+    tokenizer_class: str
+    tokenizer_length: int
+    special_roles: tuple[tuple[str, int | None], ...]
+    all_special_ids: tuple[int, ...]
+    backend_attribute: str | None
+    backend_class: str | None
+    get_vocab_callable: bool
+    decode_callable: bool
+    id_converter_callable: bool
+    backend_serializer_callable: bool
+    _backend: Any = None
+
+    def body(self) -> dict[str, Any]:
+        return {
+            "tokenizer_class": self.tokenizer_class,
+            "tokenizer_length": self.tokenizer_length,
+            "special_roles": dict(self.special_roles),
+            "all_special_ids": list(self.all_special_ids),
+            "backend_present": self.backend_attribute is not None,
+            "backend_attribute": self.backend_attribute,
+            "backend_class": self.backend_class,
+            "get_vocab_callable": self.get_vocab_callable,
+            "decode_callable": self.decode_callable,
+            "id_converter_callable": self.id_converter_callable,
+            "backend_serializer_callable": self.backend_serializer_callable,
+        }
+
+    def matches(self, other: _TokenizerLiveShape) -> bool:
+        return self.body() == other.body() and self._backend is other._backend
+
+
+def _qualified_class(value: Any) -> str:
+    return f"{type(value).__module__}.{type(value).__qualname__}"
+
+
+def _live_tokenizer_backend(tokenizer: Any) -> tuple[str | None, Any | None]:
+    for name in ("backend_tokenizer", "_tokenizer"):
+        try:
+            backend = getattr(tokenizer, name, None)
+        except Exception as exc:
+            raise StrictTokenizerBridgeError(
+                f"Live tokenizer backend attribute {name!r} is unreadable."
+            ) from exc
+        if backend is not None:
+            return name, backend
+    return None, None
+
+
+def _live_tokenizer_shape(tokenizer: Any, name: str) -> _TokenizerLiveShape:
+    try:
+        length = int(len(tokenizer))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise StrictTokenizerBridgeError(
+            f"{name} tokenizer length must be a positive integer."
+        ) from exc
+    if length <= 0:
+        raise StrictTokenizerBridgeError(
+            f"{name} tokenizer length must be a positive integer."
+        )
+    roles = []
+    for role in ("bos_token_id", "eos_token_id", "pad_token_id", "unk_token_id"):
+        value = getattr(tokenizer, role, None)
+        if value is None:
+            roles.append((role, None))
+            continue
+        token_id = _nonnegative_int(value, f"{name} {role}")
+        if token_id >= length:
+            raise StrictTokenizerBridgeError(
+                f"{name} {role} is outside tokenizer capacity."
+            )
+        roles.append((role, token_id))
+    raw_special_ids = getattr(tokenizer, "all_special_ids", ())
+    if isinstance(raw_special_ids, (str, bytes)) or not isinstance(
+        raw_special_ids,
+        Sequence,
+    ):
+        raise StrictTokenizerBridgeError(
+            f"{name} tokenizer all_special_ids must be a sequence."
+        )
+    special_ids = tuple(
+        sorted(
+            {
+                _nonnegative_int(value, f"{name} special token ID")
+                for value in raw_special_ids
+            }
+        )
+    )
+    if special_ids and special_ids[-1] >= length:
+        raise StrictTokenizerBridgeError(
+            f"{name} tokenizer special token ID is outside tokenizer capacity."
+        )
+    backend_attribute, backend = _live_tokenizer_backend(tokenizer)
+    return _TokenizerLiveShape(
+        tokenizer_class=_qualified_class(tokenizer),
+        tokenizer_length=length,
+        special_roles=tuple(roles),
+        all_special_ids=special_ids,
+        backend_attribute=backend_attribute,
+        backend_class=None if backend is None else _qualified_class(backend),
+        get_vocab_callable=callable(getattr(tokenizer, "get_vocab", None)),
+        decode_callable=callable(getattr(tokenizer, "decode", None)),
+        id_converter_callable=callable(
+            getattr(tokenizer, "convert_ids_to_tokens", None)
+        ),
+        backend_serializer_callable=(
+            False if backend is None else callable(getattr(backend, "to_str", None))
+        ),
+        _backend=backend,
+    )
+
+
+class StrictTokenizerLiveSession:
+    """One full entry/exit authentication with cheap bound inner checks."""
+
+    __slots__ = (
+        "_artifact",
+        "_closing_shape",
+        "_donor_shape",
+        "_donor_tokenizer",
+        "_opening_attestation_sha256",
+        "_receipt",
+        "_selective_session_sha256",
+        "_state",
+        "_target_shape",
+        "_target_tokenizer",
+    )
+
+    def __init__(
+        self,
+        artifact: StrictTokenizerBridgeArtifact,
+        donor_tokenizer: Any,
+        target_tokenizer: Any,
+        *,
+        selective_session_sha256: str,
+    ) -> None:
+        if not isinstance(artifact, StrictTokenizerBridgeArtifact):
+            raise TypeError("artifact must be StrictTokenizerBridgeArtifact.")
+        self._artifact = artifact
+        self._donor_tokenizer = donor_tokenizer
+        self._target_tokenizer = target_tokenizer
+        self._selective_session_sha256 = _sha256(
+            selective_session_sha256,
+            "selective_session_sha256",
+        )
+        self._state = "new"
+        self._donor_shape: _TokenizerLiveShape | None = None
+        self._target_shape: _TokenizerLiveShape | None = None
+        self._closing_shape: (
+            tuple[
+                _TokenizerLiveShape,
+                _TokenizerLiveShape,
+            ]
+            | None
+        ) = None
+        self._opening_attestation_sha256: str | None = None
+        self._receipt: Mapping[str, Any] | None = None
+
+    @property
+    def selective_session_sha256(self) -> str:
+        return self._selective_session_sha256
+
+    @property
+    def donor_tokenizer_semantics_sha256(self) -> str:
+        return self._artifact.donor_tokenizer_semantics_sha256
+
+    @property
+    def target_tokenizer_semantics_sha256(self) -> str:
+        return self._artifact.target_tokenizer_semantics_sha256
+
+    @property
+    def opening_attestation_sha256(self) -> str:
+        if self._opening_attestation_sha256 is None:
+            raise StrictTokenizerBridgeError(
+                "Live tokenizer session has not completed opening authentication."
+            )
+        return self._opening_attestation_sha256
+
+    def _opening_body(self) -> dict[str, Any]:
+        if self._donor_shape is None or self._target_shape is None:
+            raise StrictTokenizerBridgeError(
+                "Live tokenizer opening shapes are unavailable."
+            )
+        return {
+            "schema": _STRICT_TOKENIZER_LIVE_SESSION_OPENING_SCHEMA,
+            "selective_session_sha256": self.selective_session_sha256,
+            "bridge_artifact_sha256": self._artifact.artifact_sha256,
+            "bridge_profile_fingerprint": self._artifact.profile_fingerprint,
+            "donor_tokenizer_semantics_sha256": (self.donor_tokenizer_semantics_sha256),
+            "target_tokenizer_semantics_sha256": (
+                self.target_tokenizer_semantics_sha256
+            ),
+            "donor_runtime_shape": self._donor_shape.body(),
+            "target_runtime_shape": self._target_shape.body(),
+            "bridge_files_profile_and_semantics_fully_verified": True,
+            "live_object_identity_retained_runtime_only": True,
+            "raw_object_ids_serialized": False,
+        }
+
+    def __enter__(self) -> StrictTokenizerLiveSession:
+        if self._state != "new":
+            raise StrictTokenizerBridgeError(
+                "Live tokenizer session cannot be entered more than once."
+            )
+        try:
+            self._artifact.verify_live_tokenizers(
+                self._donor_tokenizer,
+                self._target_tokenizer,
+            )
+            self._donor_shape = _live_tokenizer_shape(
+                self._donor_tokenizer,
+                "donor",
+            )
+            self._target_shape = _live_tokenizer_shape(
+                self._target_tokenizer,
+                "target",
+            )
+            self._opening_attestation_sha256 = _canonical_sha256(self._opening_body())
+        except BaseException:
+            self._state = "closed"
+            raise
+        self._state = "open"
+        return self
+
+    def verify_bound(
+        self,
+        donor_tokenizer: Any,
+        target_tokenizer: Any,
+        *,
+        expected_donor_sha256: str,
+        expected_target_sha256: str,
+    ) -> None:
+        """Cheaply verify the exact open objects without semantic rescanning."""
+
+        if self._state != "open":
+            raise StrictTokenizerBridgeError("Live tokenizer session is not open.")
+        if (
+            donor_tokenizer is not self._donor_tokenizer
+            or target_tokenizer is not self._target_tokenizer
+        ):
+            raise StrictTokenizerBridgeError(
+                "Live tokenizer session received a different tokenizer object."
+            )
+        if (
+            _sha256(
+                expected_donor_sha256,
+                "expected_donor_sha256",
+            )
+            != self.donor_tokenizer_semantics_sha256
+            or _sha256(
+                expected_target_sha256,
+                "expected_target_sha256",
+            )
+            != self.target_tokenizer_semantics_sha256
+        ):
+            raise StrictTokenizerBridgeError(
+                "Expected tokenizer semantics differ from the live session."
+            )
+        donor_shape = _live_tokenizer_shape(donor_tokenizer, "donor")
+        target_shape = _live_tokenizer_shape(target_tokenizer, "target")
+        if (
+            self._donor_shape is None
+            or self._target_shape is None
+            or not self._donor_shape.matches(donor_shape)
+            or not self._target_shape.matches(target_shape)
+        ):
+            raise StrictTokenizerBridgeError(
+                "Live tokenizer class, length, backend, or special IDs changed."
+            )
+
+    def _close(self) -> None:
+        if self._state != "open":
+            raise StrictTokenizerBridgeError("Live tokenizer session is not open.")
+        try:
+            self.verify_bound(
+                self._donor_tokenizer,
+                self._target_tokenizer,
+                expected_donor_sha256=self.donor_tokenizer_semantics_sha256,
+                expected_target_sha256=self.target_tokenizer_semantics_sha256,
+            )
+            self._artifact.verify_live_tokenizers(
+                self._donor_tokenizer,
+                self._target_tokenizer,
+            )
+            donor_shape = _live_tokenizer_shape(self._donor_tokenizer, "donor")
+            target_shape = _live_tokenizer_shape(self._target_tokenizer, "target")
+            if (
+                self._donor_shape is None
+                or self._target_shape is None
+                or not self._donor_shape.matches(donor_shape)
+                or not self._target_shape.matches(target_shape)
+            ):
+                raise StrictTokenizerBridgeError(
+                    "Live tokenizer changed during closing authentication."
+                )
+            self._closing_shape = (donor_shape, target_shape)
+            body = {
+                "schema": STRICT_TOKENIZER_LIVE_SESSION_SCHEMA,
+                "selective_session_sha256": self.selective_session_sha256,
+                "bridge_artifact_sha256": self._artifact.artifact_sha256,
+                "bridge_profile_fingerprint": self._artifact.profile_fingerprint,
+                "donor_tokenizer_semantics_sha256": (
+                    self.donor_tokenizer_semantics_sha256
+                ),
+                "target_tokenizer_semantics_sha256": (
+                    self.target_tokenizer_semantics_sha256
+                ),
+                "opening_attestation_sha256": self.opening_attestation_sha256,
+                "opening_runtime_shape": {
+                    "donor": self._donor_shape.body(),
+                    "target": self._target_shape.body(),
+                },
+                "closing_runtime_shape": {
+                    "donor": donor_shape.body(),
+                    "target": target_shape.body(),
+                },
+                "verification_contract": {
+                    "bridge_files_verified_at_entry_and_exit": True,
+                    "strict_transport_profile_verified_at_entry_and_exit": True,
+                    "full_semantic_fingerprints_verified_at_entry_and_exit": True,
+                    "inner_verification_full_fingerprint_calls": 0,
+                    "exact_live_object_identity_required": True,
+                    "strong_live_object_references_retained": True,
+                    "class_length_backend_and_special_ids_checked_per_inner_use": True,
+                    "raw_object_ids_serialized": False,
+                },
+            }
+            self._receipt = MappingProxyType(
+                {**body, "receipt_sha256": _canonical_sha256(body)}
+            )
+        finally:
+            self._state = "closed"
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _traceback: Any,
+    ) -> None:
+        self._close()
+
+    def as_dict(self) -> dict[str, Any]:
+        if self._state != "closed" or self._receipt is None:
+            raise StrictTokenizerBridgeError(
+                "Live tokenizer receipt requires a successful closed session."
+            )
+        return json.loads(_canonical_json(dict(self._receipt)))
 
 
 def strict_tokenizer_bridge_target_package_fingerprint(
@@ -1201,8 +1572,10 @@ __all__ = [
     "PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY",
     "STRICT_TOKENIZER_BRIDGE_FILENAME",
     "STRICT_TOKENIZER_BRIDGE_SCHEMA",
+    "STRICT_TOKENIZER_LIVE_SESSION_SCHEMA",
     "StrictTokenizerBridgeArtifact",
     "StrictTokenizerBridgeError",
+    "StrictTokenizerLiveSession",
     "StrictVocabularyOperatorTransportResult",
     "TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY",
     "TOKENIZER_BRIDGE_CONFIG_KEYS",

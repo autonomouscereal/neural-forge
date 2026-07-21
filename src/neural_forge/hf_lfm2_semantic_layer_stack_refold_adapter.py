@@ -1791,6 +1791,111 @@ def _strict_parent_bf16_matrix(value: Any, name: str, *, columns: int) -> Any:
     return value.detach().to(device="cpu").contiguous().clone()
 
 
+def _bf16_cross_kernel_equivalence_policy() -> Mapping[str, Any]:
+    """Return the fixed arithmetic envelope used only for provenance replay."""
+
+    torch = _torch()
+    machine_epsilon = float(torch.finfo(torch.bfloat16).eps)
+    unit_roundoff = machine_epsilon / 2.0
+    body = {
+        "schema": "neural-forge-bf16-cross-kernel-equivalence-policy-v1",
+        "arithmetic_dtype": "bfloat16",
+        "machine_epsilon": machine_epsilon,
+        "unit_roundoff": unit_roundoff,
+        "elementwise_rtol": machine_epsilon,
+        "elementwise_atol": unit_roundoff,
+        "maximum_relative_rmse": machine_epsilon,
+        "relative_rmse_reference": "cached_endpoint_rms",
+        "near_zero_ulp_distance_used": False,
+        "authentication_only": True,
+        "fold_selection_or_quality_objective": False,
+    }
+    return MappingProxyType(
+        {
+            **body,
+            "policy_sha256": canonical_sha256(body),
+        }
+    )
+
+
+def _bf16_cross_kernel_equivalence_metrics(
+    *,
+    replayed: Any,
+    cached: Any,
+    policy: Mapping[str, Any],
+    field_name: str,
+) -> Mapping[str, Any]:
+    """Measure backend drift without treating numeric equality as folding."""
+
+    torch = _torch()
+    if (
+        not isinstance(replayed, torch.Tensor)
+        or not isinstance(cached, torch.Tensor)
+        or replayed.layout != torch.strided
+        or cached.layout != torch.strided
+        or replayed.device.type != "cpu"
+        or cached.device.type != "cpu"
+        or replayed.dtype != torch.bfloat16
+        or cached.dtype != torch.bfloat16
+        or replayed.shape != cached.shape
+        or int(replayed.numel()) <= 0
+        or not bool(torch.isfinite(replayed).all().item())
+        or not bool(torch.isfinite(cached).all().item())
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{field_name} cross-kernel provenance tensors must be compatible "
+            "finite CPU BF16 tensors."
+        )
+    replayed_float = replayed.to(torch.float32)
+    cached_float = cached.to(torch.float32)
+    residual = replayed_float - cached_float
+    absolute = residual.abs()
+    error_rms = float(torch.sqrt(residual.square().mean()).item())
+    cached_rms = float(torch.sqrt(cached_float.square().mean()).item())
+    relative_rmse = error_rms / max(
+        cached_rms,
+        float(torch.finfo(torch.float32).tiny),
+    )
+    elementwise_close = bool(
+        torch.allclose(
+            replayed_float,
+            cached_float,
+            rtol=float(policy["elementwise_rtol"]),
+            atol=float(policy["elementwise_atol"]),
+        )
+    )
+    relative_rmse_close = bool(
+        math.isfinite(relative_rmse)
+        and relative_rmse <= float(policy["maximum_relative_rmse"])
+    )
+    exact_element_count = int(torch.eq(replayed, cached).sum().item())
+    element_count = int(replayed.numel())
+    cached_maximum_absolute_value = float(cached_float.abs().max().item())
+    body = {
+        "field": field_name,
+        "shape": [int(size) for size in replayed.shape],
+        "element_count": element_count,
+        "exact_element_count": exact_element_count,
+        "mismatched_element_count": element_count - exact_element_count,
+        "exact_element_fraction": exact_element_count / element_count,
+        "maximum_absolute_error": float(absolute.max().item()),
+        "mean_absolute_error": float(absolute.mean().item()),
+        "error_rms": error_rms,
+        "cached_endpoint_rms": cached_rms,
+        "relative_rmse": relative_rmse,
+        "cached_maximum_absolute_value": cached_maximum_absolute_value,
+        "maximum_elementwise_tolerance_at_cached_maximum": (
+            float(policy["elementwise_atol"])
+            + float(policy["elementwise_rtol"]) * cached_maximum_absolute_value
+        ),
+        "elementwise_envelope_passed": elementwise_close,
+        "relative_rmse_envelope_passed": relative_rmse_close,
+        "bit_exact": exact_element_count == element_count,
+        "accepted": bool(elementwise_close and relative_rmse_close),
+    }
+    return MappingProxyType(body)
+
+
 def _replay_parent_mlp_functional_provenance(
     *,
     cache: Lfm2CircuitTraceCache,
@@ -1804,7 +1909,7 @@ def _replay_parent_mlp_functional_provenance(
     ffn_norm_weight: Any,
     execution_device: Any,
 ) -> Mapping[str, Any]:
-    """Prove direct FFN tensors reproduce cached parent endpoints bit-for-bit."""
+    """Check direct FFN consistency on cached rows across equivalent BF16 kernels."""
 
     torch = _torch()
     source_intermediate, source_hidden = map(int, gate_weight.shape)
@@ -1932,25 +2037,33 @@ def _replay_parent_mlp_functional_provenance(
         "mlp.post_swiglu": replay_post.detach().to(device="cpu").contiguous(),
         "residual.post_layer": replay_layer.detach().to(device="cpu").contiguous(),
     }
-    mismatched = tuple(
-        field for field in replayed if not torch.equal(replayed[field], cached[field])
-    )
-    if mismatched:
-        maximum_errors = {
-            field: float(
-                (replayed[field].to(torch.float32) - cached[field].to(torch.float32))
-                .abs()
-                .max()
-                .item()
-            )
-            for field in mismatched
+    equivalence_policy = _bf16_cross_kernel_equivalence_policy()
+    endpoint_metrics = {
+        field: _bf16_cross_kernel_equivalence_metrics(
+            replayed=replayed[field],
+            cached=cached[field],
+            policy=equivalence_policy,
+            field_name=field,
+        )
+        for field in replayed
+    }
+    rejected = {
+        field: {
+            "maximum_absolute_error": metrics["maximum_absolute_error"],
+            "relative_rmse": metrics["relative_rmse"],
+            "elementwise_envelope_passed": metrics["elementwise_envelope_passed"],
+            "relative_rmse_envelope_passed": metrics["relative_rmse_envelope_passed"],
         }
+        for field, metrics in endpoint_metrics.items()
+        if metrics["accepted"] is not True
+    }
+    if rejected:
         raise Lfm2SemanticLayerStackRefoldError(
-            "Direct parent FFN tensors do not exactly reproduce cached BF16 "
-            f"semantic endpoints at layer {layer_index}: {maximum_errors}."
+            "Direct parent FFN tensors fall outside the authenticated BF16 "
+            f"cross-kernel numerical envelope at layer {layer_index}: {rejected}."
         )
     body = {
-        "schema": "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v1",
+        "schema": "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v2",
         "cache_key": cache.cache_key,
         "cache_parent_fingerprint": cache.parent_fingerprint,
         "cache_manifest_sha256": cache.manifest["manifest_sha256"],
@@ -1978,8 +2091,21 @@ def _replay_parent_mlp_functional_provenance(
             "weight*(x.float()*rsqrt(mean(x.float()^2)+norm_eps)).to(bfloat16)"
         ),
         "mlp_formula": "W2*(silu(W1*rmsnorm(x))*(W3*rmsnorm(x)))+x",
-        "all_cached_endpoints_bit_exact": True,
-        "direct_parent_tensors_functionally_bound_to_cache": True,
+        "cross_kernel_equivalence_policy": dict(equivalence_policy),
+        "endpoint_equivalence_metrics": {
+            field: dict(metrics) for field, metrics in sorted(endpoint_metrics.items())
+        },
+        "all_cached_endpoints_bit_exact": all(
+            metrics["bit_exact"] is True for metrics in endpoint_metrics.values()
+        ),
+        "all_cached_endpoints_within_authenticated_bf16_envelope": True,
+        "direct_parent_tensors_numerically_consistent_on_cached_endpoints": True,
+        "semantic_endpoint_scope_is_complete_tensor_identity_proof": False,
+        "cryptographic_parent_tensor_identity_proven_by_this_receipt": False,
+        "parent_checkpoint_files_hashed_by_session": True,
+        "direct_tensor_digests_recorded": True,
+        "expected_per_tensor_digest_comparison_performed": False,
+        "numerical_equivalence_is_provenance_only": True,
         "numeric_parent_child_weight_match_objective": False,
         "parent_model_forward_calls": 0,
         "training_steps": 0,
@@ -2562,13 +2688,12 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         raise Lfm2SemanticLayerStackRefoldError(
             "The complete stack requires the analytic attention installer."
         )
-    bridge.verify_live_tokenizers(donor_tokenizer, target_tokenizer)
     saved_tokenizer = getattr(
         target_model,
         "_neural_forge_quarantine_tokenizer",
         target_tokenizer,
     )
-    if fingerprint_hf_tokenizer_semantics(
+    if saved_tokenizer is not target_tokenizer and fingerprint_hf_tokenizer_semantics(
         saved_tokenizer
     ) != fingerprint_hf_tokenizer_semantics(target_tokenizer):
         raise Lfm2SemanticLayerStackRefoldError(
@@ -2611,9 +2736,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 expected_parent_identity_sha256=cache.parent_fingerprint,
             ) as parent_session,
         ):
-            alignments = _semantic_alignments_from_session(
+            alignments, tokenizer_session_receipt = _semantic_alignments_from_session(
                 cache=cache,
                 session=cache_session,
+                bridge=bridge,
                 donor_tokenizer=donor_tokenizer,
                 target_tokenizer=target_tokenizer,
             )
@@ -3024,6 +3150,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "cache_parent_fingerprint": cache.parent_fingerprint,
             "cache_layer_topology_sha256": cache.layer_topology_fingerprint,
             "cache_selective_session_sha256": cache_session_receipt["session_sha256"],
+            "tokenizer_session_receipt_sha256": tokenizer_session_receipt[
+                "receipt_sha256"
+            ],
+            "tokenizer_session": dict(tokenizer_session_receipt),
             "parent_checkpoint_session_sha256": parent_session_receipt[
                 "session_sha256"
             ],

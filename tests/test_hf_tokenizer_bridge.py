@@ -10,10 +10,13 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from neural_forge import hf_tokenizer_bridge as tokenizer_bridge_module  # noqa: E402
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
     LOCAL_TOKENIZER_PACKAGE_SCHEMA,
     STRICT_TOKENIZER_BRIDGE_FILENAME,
+    STRICT_TOKENIZER_LIVE_SESSION_SCHEMA,
     StrictTokenizerBridgeError,
+    StrictTokenizerLiveSession,
     compile_hf_target_tokenizer_bridge,
     compile_strict_vocabulary_operators,
     fingerprint_hf_tokenizer_semantics,
@@ -290,6 +293,214 @@ def test_semantic_fingerprint_is_path_independent_and_row_sensitive() -> None:
     assert fingerprint_hf_tokenizer_semantics(
         first
     ) != fingerprint_hf_tokenizer_semantics(changed)
+
+
+def test_live_session_caches_inner_checks_and_seals_deterministic_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    donor = _Tokenizer(["zero", "one", "two", "three"])
+    target = _Tokenizer(["three", "one"])
+    root = tmp_path / "target"
+    _target_files(root)
+    artifact = seal_strict_tokenizer_bridge_artifact(donor, target, root)
+    selective_session_sha256 = "a" * 64
+    full_fingerprint_calls: list[Any] = []
+    original = tokenizer_bridge_module.fingerprint_hf_tokenizer_semantics
+
+    def counted(tokenizer: Any) -> str:
+        full_fingerprint_calls.append(tokenizer)
+        return original(tokenizer)
+
+    monkeypatch.setattr(
+        tokenizer_bridge_module,
+        "fingerprint_hf_tokenizer_semantics",
+        counted,
+    )
+    session = artifact.authenticated_live_session(
+        donor,
+        target,
+        selective_session_sha256=selective_session_sha256,
+    )
+    assert isinstance(session, StrictTokenizerLiveSession)
+    with pytest.raises(StrictTokenizerBridgeError, match="successful closed"):
+        session.as_dict()
+    with session as live:
+        assert live is session
+        assert full_fingerprint_calls == [donor, target]
+        assert live.selective_session_sha256 == selective_session_sha256
+        assert (
+            live.donor_tokenizer_semantics_sha256
+            == artifact.donor_tokenizer_semantics_sha256
+        )
+        assert (
+            live.target_tokenizer_semantics_sha256
+            == artifact.target_tokenizer_semantics_sha256
+        )
+        assert len(live.opening_attestation_sha256) == 64
+        # Production builds four semantic authenticity checks for each of the
+        # sixteen cache batches.  They must all remain on the cheap bound path.
+        for _ in range(16 * 4):
+            live.verify_bound(
+                donor,
+                target,
+                expected_donor_sha256=artifact.donor_tokenizer_semantics_sha256,
+                expected_target_sha256=artifact.target_tokenizer_semantics_sha256,
+            )
+        assert full_fingerprint_calls == [donor, target]
+
+    assert full_fingerprint_calls == [donor, target, donor, target]
+    assert full_fingerprint_calls.count(donor) == 2
+    assert full_fingerprint_calls.count(target) == 2
+    receipt = session.as_dict()
+    body = dict(receipt)
+    supplied = body.pop("receipt_sha256")
+    assert supplied == canonical_sha256(body)
+    assert receipt["schema"] == STRICT_TOKENIZER_LIVE_SESSION_SCHEMA
+    assert receipt["selective_session_sha256"] == selective_session_sha256
+    assert receipt["opening_runtime_shape"] == receipt["closing_runtime_shape"]
+    assert receipt["verification_contract"] == {
+        "bridge_files_verified_at_entry_and_exit": True,
+        "strict_transport_profile_verified_at_entry_and_exit": True,
+        "full_semantic_fingerprints_verified_at_entry_and_exit": True,
+        "inner_verification_full_fingerprint_calls": 0,
+        "exact_live_object_identity_required": True,
+        "strong_live_object_references_retained": True,
+        "class_length_backend_and_special_ids_checked_per_inner_use": True,
+        "raw_object_ids_serialized": False,
+    }
+
+    second = artifact.authenticated_live_session(
+        donor,
+        target,
+        selective_session_sha256=selective_session_sha256,
+    )
+    with second:
+        pass
+    assert second.as_dict() == receipt
+
+
+def test_live_session_rejects_wrong_objects_expected_hashes_and_closed_use(
+    tmp_path: Path,
+) -> None:
+    donor = _Tokenizer(["zero", "one", "two"])
+    target = _Tokenizer(["two", "zero"])
+    identical_donor = _Tokenizer(["zero", "one", "two"])
+    root = tmp_path / "target"
+    _target_files(root)
+    artifact = seal_strict_tokenizer_bridge_artifact(donor, target, root)
+    session = artifact.authenticated_live_session(
+        donor,
+        target,
+        selective_session_sha256="b" * 64,
+    )
+
+    with session:
+        with pytest.raises(
+            StrictTokenizerBridgeError, match="different tokenizer object"
+        ):
+            session.verify_bound(
+                identical_donor,
+                target,
+                expected_donor_sha256=artifact.donor_tokenizer_semantics_sha256,
+                expected_target_sha256=artifact.target_tokenizer_semantics_sha256,
+            )
+        with pytest.raises(StrictTokenizerBridgeError, match="Expected tokenizer"):
+            session.verify_bound(
+                donor,
+                target,
+                expected_donor_sha256="c" * 64,
+                expected_target_sha256=artifact.target_tokenizer_semantics_sha256,
+            )
+
+    with pytest.raises(StrictTokenizerBridgeError, match="not open"):
+        session.verify_bound(
+            donor,
+            target,
+            expected_donor_sha256=artifact.donor_tokenizer_semantics_sha256,
+            expected_target_sha256=artifact.target_tokenizer_semantics_sha256,
+        )
+
+
+def test_live_session_cheap_checks_detect_shape_backend_and_special_drift(
+    tmp_path: Path,
+) -> None:
+    donor = _Tokenizer(["zero", "one", "two"])
+    target = _Tokenizer(["two", "zero"])
+    root = tmp_path / "target"
+    _target_files(root)
+    artifact = seal_strict_tokenizer_bridge_artifact(donor, target, root)
+    session = artifact.authenticated_live_session(
+        donor,
+        target,
+        selective_session_sha256="d" * 64,
+    )
+
+    with session:
+        target.all_special_ids = [0]
+        with pytest.raises(StrictTokenizerBridgeError, match="special IDs changed"):
+            session.verify_bound(
+                donor,
+                target,
+                expected_donor_sha256=artifact.donor_tokenizer_semantics_sha256,
+                expected_target_sha256=artifact.target_tokenizer_semantics_sha256,
+            )
+        target.all_special_ids = []
+        target._tokenizer = object()
+        with pytest.raises(StrictTokenizerBridgeError, match="backend"):
+            session.verify_bound(
+                donor,
+                target,
+                expected_donor_sha256=artifact.donor_tokenizer_semantics_sha256,
+                expected_target_sha256=artifact.target_tokenizer_semantics_sha256,
+            )
+        del target._tokenizer
+        target.surfaces.append("new")
+        with pytest.raises(StrictTokenizerBridgeError, match="length"):
+            session.verify_bound(
+                donor,
+                target,
+                expected_donor_sha256=artifact.donor_tokenizer_semantics_sha256,
+                expected_target_sha256=artifact.target_tokenizer_semantics_sha256,
+            )
+        target.surfaces.pop()
+
+
+def test_live_session_exit_rejects_persistent_semantic_or_file_mutation(
+    tmp_path: Path,
+) -> None:
+    donor = _Tokenizer(["zero", "one", "two"])
+    target = _Tokenizer(["two", "zero"])
+    semantic_root = tmp_path / "semantic-target"
+    _target_files(semantic_root)
+    semantic_artifact = seal_strict_tokenizer_bridge_artifact(
+        donor,
+        target,
+        semantic_root,
+    )
+    semantic_session = semantic_artifact.authenticated_live_session(
+        donor,
+        target,
+        selective_session_sha256="e" * 64,
+    )
+    with pytest.raises(StrictTokenizerBridgeError, match="target tokenizer differs"):
+        with semantic_session:
+            target.surfaces[1] = "changed"
+    with pytest.raises(StrictTokenizerBridgeError, match="successful closed"):
+        semantic_session.as_dict()
+
+    target = _Tokenizer(["two", "zero"])
+    file_root = tmp_path / "file-target"
+    _target_files(file_root)
+    file_artifact = seal_strict_tokenizer_bridge_artifact(donor, target, file_root)
+    file_session = file_artifact.authenticated_live_session(
+        donor,
+        target,
+        selective_session_sha256="f" * 64,
+    )
+    with pytest.raises(StrictTokenizerBridgeError, match="files differ"):
+        with file_session:
+            (file_root / "tokenizer.json").write_text("tampered", encoding="utf-8")
 
 
 def test_named_target_vocabulary_compiler_emits_sealed_bridge(

@@ -848,12 +848,36 @@ def test_semantic_alignment_wires_authenticated_selected_input_contract(
     )
     alignment = object()
     calls = []
+    tokenizer_receipt = {"receipt_sha256": "7" * 64}
 
-    monkeypatch.setattr(
-        postfold,
-        "fingerprint_hf_tokenizer_semantics",
-        lambda value: "5" * 64 if value == "donor" else "6" * 64,
-    )
+    class TokenizerSession:
+        donor_tokenizer_semantics_sha256 = "5" * 64
+        target_tokenizer_semantics_sha256 = "6" * 64
+
+        def __enter__(self):
+            calls.append("tokenizer-open")
+            return self
+
+        def __exit__(self, *_args):
+            calls.append("tokenizer-close")
+            return None
+
+        def as_dict(self):
+            return tokenizer_receipt
+
+    tokenizer_session = TokenizerSession()
+
+    class Bridge:
+        def authenticated_live_session(
+            self,
+            donor,
+            target,
+            *,
+            selective_session_sha256,
+        ):
+            assert donor == "donor" and target == "target"
+            assert selective_session_sha256 == session_receipt["session_sha256"]
+            return tokenizer_session
 
     def build_selected(observed_reference, observed_payload, receipt, **kwargs):
         calls.append("selected")
@@ -869,6 +893,7 @@ def test_semantic_alignment_wires_authenticated_selected_input_contract(
         assert manifest is cache.manifest
         assert donor == "donor" and target == "target"
         assert kwargs["expected_source_input_sha256"] == reference.input_sha256
+        assert kwargs["tokenizer_session"] is tokenizer_session
         return semantic
 
     def build_alignment(observed, donor, target, **kwargs):
@@ -879,6 +904,7 @@ def test_semantic_alignment_wires_authenticated_selected_input_contract(
             "prefill": 2,
             "decode.000": 1,
         }
+        assert kwargs["tokenizer_session"] is tokenizer_session
         return alignment
 
     monkeypatch.setattr(
@@ -897,13 +923,22 @@ def test_semantic_alignment_wires_authenticated_selected_input_contract(
         build_alignment,
     )
 
-    assert postfold._semantic_alignments_from_session(
+    observed_alignments, observed_receipt = postfold._semantic_alignments_from_session(
         cache=cache,
         session=Session(),
+        bridge=Bridge(),
         donor_tokenizer="donor",
         target_tokenizer="target",
-    ) == (alignment,)
-    assert calls == ["selected", "semantic", "alignment"]
+    )
+    assert observed_alignments == (alignment,)
+    assert dict(observed_receipt) == tokenizer_receipt
+    assert calls == [
+        "tokenizer-open",
+        "selected",
+        "semantic",
+        "alignment",
+        "tokenizer-close",
+    ]
     assert released == [payload]
 
 
@@ -966,7 +1001,7 @@ def test_attention_stage_fails_closed_with_exact_missing_compiler(
     monkeypatch.setattr(
         postfold,
         "_semantic_alignments_from_session",
-        lambda **_kwargs: (alignment,),
+        lambda **_kwargs: ((alignment,), {"receipt_sha256": "8" * 64}),
     )
     monkeypatch.setattr(
         postfold,

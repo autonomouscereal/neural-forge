@@ -38,6 +38,7 @@ from neural_forge.hf_lfm2_semantic_span_phase_bridge import (
     Lfm2SemanticSpanPhaseBridge,
     _decode_exact,
 )
+from neural_forge.hf_tokenizer_bridge import StrictTokenizerLiveSession
 
 
 SEMANTIC_SPAN_CPCF_ALIGNMENT_SCHEMA = (
@@ -1016,12 +1017,17 @@ def build_lfm2_semantic_span_cpcf_alignment(
     *,
     parent_sampled_suffix_tokens: Mapping[str, int],
     parent_history_suffix_tokens: Mapping[str, int] | None = None,
+    tokenizer_session: StrictTokenizerLiveSession | None = None,
 ) -> Lfm2SemanticSpanCpcfAlignment:
     """Build a target-native row map from one authenticated semantic bridge."""
 
     if not isinstance(semantic_bridge, Lfm2SemanticSpanPhaseBridge):
         raise TypeError("semantic_bridge must be Lfm2SemanticSpanPhaseBridge.")
-    semantic_bridge.verify(donor_tokenizer, target_tokenizer)
+    semantic_bridge.verify(
+        donor_tokenizer,
+        target_tokenizer,
+        tokenizer_session=tokenizer_session,
+    )
     if not isinstance(parent_sampled_suffix_tokens, Mapping) or set(
         parent_sampled_suffix_tokens
     ) != set(semantic_bridge.phase_order):
@@ -1083,7 +1089,11 @@ def build_lfm2_semantic_span_cpcf_alignment(
         source_batch_index=semantic_bridge.source_batch_index,
         phases=tuple(phases),
     )
-    semantic_bridge.verify(donor_tokenizer, target_tokenizer)
+    semantic_bridge.verify(
+        donor_tokenizer,
+        target_tokenizer,
+        tokenizer_session=tokenizer_session,
+    )
     return result
 
 

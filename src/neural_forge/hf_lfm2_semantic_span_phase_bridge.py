@@ -41,6 +41,7 @@ from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
 )
 from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeError,
+    StrictTokenizerLiveSession,
     fingerprint_hf_tokenizer_semantics,
 )
 
@@ -1498,16 +1499,35 @@ class Lfm2SemanticSpanPhaseBridge:
         self,
         donor_tokenizer: Any,
         target_tokenizer: Any,
+        *,
+        tokenizer_session: StrictTokenizerLiveSession | None = None,
     ) -> Lfm2SemanticSpanPhaseBridge:
-        if (
-            _live_tokenizer_fingerprint(donor_tokenizer, "donor")
-            != self.donor_tokenizer_semantics_sha256
-            or _live_tokenizer_fingerprint(target_tokenizer, "target")
-            != self.target_tokenizer_semantics_sha256
-        ):
-            raise Lfm2SemanticSpanPhaseBridgeError(
-                "Live tokenizer semantics differ from the authenticated bridge."
-            )
+        if tokenizer_session is None:
+            if (
+                _live_tokenizer_fingerprint(donor_tokenizer, "donor")
+                != self.donor_tokenizer_semantics_sha256
+                or _live_tokenizer_fingerprint(target_tokenizer, "target")
+                != self.target_tokenizer_semantics_sha256
+            ):
+                raise Lfm2SemanticSpanPhaseBridgeError(
+                    "Live tokenizer semantics differ from the authenticated bridge."
+                )
+        else:
+            if not isinstance(tokenizer_session, StrictTokenizerLiveSession):
+                raise Lfm2SemanticSpanPhaseBridgeError(
+                    "tokenizer_session must be an active StrictTokenizerLiveSession."
+                )
+            try:
+                tokenizer_session.verify_bound(
+                    donor_tokenizer,
+                    target_tokenizer,
+                    expected_donor_sha256=(self.donor_tokenizer_semantics_sha256),
+                    expected_target_sha256=(self.target_tokenizer_semantics_sha256),
+                )
+            except StrictTokenizerBridgeError as exc:
+                raise Lfm2SemanticSpanPhaseBridgeError(
+                    "Live tokenizer semantics differ from the authenticated bridge."
+                ) from exc
         rebuilt = _build_phases(
             prompt_ids=self.source_prompt_token_ids,
             forced_ids=self.source_forced_decode_token_ids,
@@ -1539,6 +1559,7 @@ def build_lfm2_semantic_span_phase_bridge(
     expected_source_input_sha256: str,
     expected_donor_tokenizer_fingerprint: str,
     expected_target_tokenizer_fingerprint: str,
+    tokenizer_session: StrictTokenizerLiveSession | None = None,
 ) -> Lfm2SemanticSpanPhaseBridge:
     """Build a sealed target schedule without executing either model.
 
@@ -1567,22 +1588,57 @@ def build_lfm2_semantic_span_phase_bridge(
         cache_key=cache_key,
         expected_input_sha256=input_sha256,
     )
-    donor_fingerprint = _live_tokenizer_fingerprint(donor_tokenizer, "donor")
-    target_fingerprint = _live_tokenizer_fingerprint(target_tokenizer, "target")
-    if donor_fingerprint != _digest(
-        expected_donor_tokenizer_fingerprint,
-        "expected donor tokenizer fingerprint",
-    ):
-        raise Lfm2SemanticSpanPhaseBridgeError(
-            "Donor tokenizer differs from its expected fingerprint."
+    if tokenizer_session is None:
+        donor_fingerprint = _live_tokenizer_fingerprint(donor_tokenizer, "donor")
+        target_fingerprint = _live_tokenizer_fingerprint(target_tokenizer, "target")
+        if donor_fingerprint != _digest(
+            expected_donor_tokenizer_fingerprint,
+            "expected donor tokenizer fingerprint",
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Donor tokenizer differs from its expected fingerprint."
+            )
+        if target_fingerprint != _digest(
+            expected_target_tokenizer_fingerprint,
+            "expected target tokenizer fingerprint",
+        ):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Target tokenizer differs from its expected fingerprint."
+            )
+    else:
+        if not isinstance(tokenizer_session, StrictTokenizerLiveSession):
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "tokenizer_session must be an active StrictTokenizerLiveSession."
+            )
+        expected_donor_fingerprint = _digest(
+            expected_donor_tokenizer_fingerprint,
+            "expected donor tokenizer fingerprint",
         )
-    if target_fingerprint != _digest(
-        expected_target_tokenizer_fingerprint,
-        "expected target tokenizer fingerprint",
-    ):
-        raise Lfm2SemanticSpanPhaseBridgeError(
-            "Target tokenizer differs from its expected fingerprint."
+        expected_target_fingerprint = _digest(
+            expected_target_tokenizer_fingerprint,
+            "expected target tokenizer fingerprint",
         )
+        donor_fingerprint = tokenizer_session.donor_tokenizer_semantics_sha256
+        target_fingerprint = tokenizer_session.target_tokenizer_semantics_sha256
+        if donor_fingerprint != expected_donor_fingerprint:
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Donor tokenizer differs from its expected fingerprint."
+            )
+        if target_fingerprint != expected_target_fingerprint:
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Target tokenizer differs from its expected fingerprint."
+            )
+        try:
+            tokenizer_session.verify_bound(
+                donor_tokenizer,
+                target_tokenizer,
+                expected_donor_sha256=expected_donor_fingerprint,
+                expected_target_sha256=expected_target_fingerprint,
+            )
+        except StrictTokenizerBridgeError as exc:
+            raise Lfm2SemanticSpanPhaseBridgeError(
+                "Live tokenizer semantics differ from the authenticated bridge."
+            ) from exc
     prompt_tuple = tuple(int(value) for value in input_ids.reshape(-1).tolist())
     forced_tuple = tuple(int(value) for value in forced_ids.reshape(-1).tolist())
     position_origin = (
@@ -1622,7 +1678,11 @@ def build_lfm2_semantic_span_phase_bridge(
             else None
         ),
     )
-    return result.verify(donor_tokenizer, target_tokenizer)
+    return result.verify(
+        donor_tokenizer,
+        target_tokenizer,
+        tokenizer_session=tokenizer_session,
+    )
 
 
 __all__ = [

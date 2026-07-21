@@ -2120,58 +2120,72 @@ def _semantic_alignments_from_session(
     *,
     cache: Lfm2CircuitTraceCache,
     session: Any,
+    bridge: StrictTokenizerBridgeArtifact,
     donor_tokenizer: Any,
     target_tokenizer: Any,
-) -> tuple[Lfm2SemanticSpanCpcfAlignment, ...]:
+) -> tuple[
+    tuple[Lfm2SemanticSpanCpcfAlignment, ...],
+    Mapping[str, Any],
+]:
     manifest = cache.manifest
     manifest_sha256 = _digest(
         manifest.get("manifest_sha256"),
         "cache manifest SHA-256",
     )
-    donor_sha = fingerprint_hf_tokenizer_semantics(donor_tokenizer)
-    target_sha = fingerprint_hf_tokenizer_semantics(target_tokenizer)
     session_receipt = session.as_dict()
     alignments = []
-    for reference in session.batch_references:
-        payload = session.load_selected_tensors(
-            reference.index,
-            _input_tensor_names(reference),
-        )
-        try:
-            selected_input = build_lfm2_semantic_span_selected_input_evidence(
-                reference,
-                payload,
-                session_receipt,
-                expected_cache_key=cache.cache_key,
+    with bridge.authenticated_live_session(
+        donor_tokenizer,
+        target_tokenizer,
+        selective_session_sha256=_digest(
+            session_receipt.get("session_sha256"),
+            "selective cache session SHA-256",
+        ),
+    ) as tokenizer_session:
+        donor_sha = tokenizer_session.donor_tokenizer_semantics_sha256
+        target_sha = tokenizer_session.target_tokenizer_semantics_sha256
+        for reference in session.batch_references:
+            payload = session.load_selected_tensors(
+                reference.index,
+                _input_tensor_names(reference),
             )
-            semantic = build_lfm2_semantic_span_phase_bridge(
-                selected_input,
-                manifest,
-                donor_tokenizer,
-                target_tokenizer,
-                expected_source_cache_key=cache.cache_key,
-                expected_source_manifest_sha256=manifest_sha256,
-                expected_source_input_sha256=reference.input_sha256,
-                expected_donor_tokenizer_fingerprint=donor_sha,
-                expected_target_tokenizer_fingerprint=target_sha,
-            )
-            prompt = len(semantic.source_prompt_token_ids)
-            suffix_counts = {
-                phase: prompt if phase == "prefill" else 1
-                for phase in semantic.phase_order
-            }
-            alignments.append(
-                build_lfm2_semantic_span_cpcf_alignment(
-                    semantic,
+            try:
+                selected_input = build_lfm2_semantic_span_selected_input_evidence(
+                    reference,
+                    payload,
+                    session_receipt,
+                    expected_cache_key=cache.cache_key,
+                )
+                semantic = build_lfm2_semantic_span_phase_bridge(
+                    selected_input,
+                    manifest,
                     donor_tokenizer,
                     target_tokenizer,
-                    parent_sampled_suffix_tokens=suffix_counts,
-                    parent_history_suffix_tokens=suffix_counts,
+                    expected_source_cache_key=cache.cache_key,
+                    expected_source_manifest_sha256=manifest_sha256,
+                    expected_source_input_sha256=reference.input_sha256,
+                    expected_donor_tokenizer_fingerprint=donor_sha,
+                    expected_target_tokenizer_fingerprint=target_sha,
+                    tokenizer_session=tokenizer_session,
                 )
-            )
-        finally:
-            session.release_selected_tensors(payload)
-    return tuple(alignments)
+                prompt = len(semantic.source_prompt_token_ids)
+                suffix_counts = {
+                    phase: prompt if phase == "prefill" else 1
+                    for phase in semantic.phase_order
+                }
+                alignments.append(
+                    build_lfm2_semantic_span_cpcf_alignment(
+                        semantic,
+                        donor_tokenizer,
+                        target_tokenizer,
+                        parent_sampled_suffix_tokens=suffix_counts,
+                        parent_history_suffix_tokens=suffix_counts,
+                        tokenizer_session=tokenizer_session,
+                    )
+                )
+            finally:
+                session.release_selected_tensors(payload)
+    return tuple(alignments), MappingProxyType(tokenizer_session.as_dict())
 
 
 def _attention_tensor_names(
@@ -3034,12 +3048,14 @@ def compile_install_lfm2_semantic_attention_stage(
         raise TypeError("cache must be Lfm2CircuitTraceCache.")
     if not isinstance(bridge, StrictTokenizerBridgeArtifact):
         raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
-    bridge.verify_live_tokenizers(donor_tokenizer, target_tokenizer)
-    if fingerprint_hf_tokenizer_semantics(
-        target_tokenizer
-    ) != fingerprint_hf_tokenizer_semantics(
-        getattr(target_model, "_neural_forge_quarantine_tokenizer", target_tokenizer)
-    ):
+    saved_tokenizer = getattr(
+        target_model,
+        "_neural_forge_quarantine_tokenizer",
+        target_tokenizer,
+    )
+    if saved_tokenizer is not target_tokenizer and fingerprint_hf_tokenizer_semantics(
+        saved_tokenizer
+    ) != fingerprint_hf_tokenizer_semantics(target_tokenizer):
         raise Lfm2SemanticPostfoldError(
             "Saved child tokenizer differs from the semantic target tokenizer."
         )
@@ -3061,9 +3077,10 @@ def compile_install_lfm2_semantic_attention_stage(
     state_before = fingerprint_lfm2_parent(target_model).identity_sha256
     parameter_count = _parameter_count(target_model)
     with cache.selective_authenticated_session() as session:
-        alignments = _semantic_alignments_from_session(
+        alignments, tokenizer_session_receipt = _semantic_alignments_from_session(
             cache=cache,
             session=session,
+            bridge=bridge,
             donor_tokenizer=donor_tokenizer,
             target_tokenizer=target_tokenizer,
         )
@@ -3144,6 +3161,8 @@ def compile_install_lfm2_semantic_attention_stage(
         "cache_key": cache.cache_key,
         "cache_parent_fingerprint": cache.parent_fingerprint,
         "cache_selective_session_sha256": session_receipt["session_sha256"],
+        "tokenizer_session_receipt_sha256": tokenizer_session_receipt["receipt_sha256"],
+        "tokenizer_session": dict(tokenizer_session_receipt),
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "attention_layer_indices": list(layers),
         "semantic_alignment_sha256": [value.alignment_sha256 for value in alignments],
