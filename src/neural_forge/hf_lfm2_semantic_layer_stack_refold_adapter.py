@@ -81,6 +81,10 @@ from neural_forge.hf_tied_causal_interface_fold import (
     TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA,
     TiedCausalInterfaceFold,
 )
+from neural_forge.hf_tied_residual_congruence import (
+    TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+    authenticate_tied_residual_congruence_interface,
+)
 from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     fingerprint_hf_tokenizer_semantics,
@@ -1673,6 +1677,7 @@ def _install_short_conv_operator(
     bridge: StrictTokenizerBridgeArtifact,
     installer: Callable[..., Mapping[str, Any]],
     parameter_count: int,
+    fold_compute_device: str = "cpu",
 ) -> Mapping[str, Any]:
     before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
@@ -1689,8 +1694,35 @@ def _install_short_conv_operator(
         cache_key=cache.cache_key,
         bridge_artifact_sha256=bridge.artifact_sha256,
         source_model_identity_sha256=cache.parent_fingerprint,
+        **(
+            {"fold_compute_device": fold_compute_device}
+            if fold_compute_device != "cpu"
+            else {}
+        ),
     )
     receipt = _verify_sealed(candidate, "short-conv operator")
+    if fold_compute_device != "cpu":
+        structural_execution = receipt.get("structural_cluster_compute_execution")
+        writer_execution = receipt.get("writer_compute_execution")
+        if (
+            receipt.get("fold_compute_device") != fold_compute_device
+            or receipt.get("requested_cuda_short_conv_routes_proved") is not True
+            or not isinstance(structural_execution, Mapping)
+            or not isinstance(writer_execution, Mapping)
+            or structural_execution.get("requested_device") != fold_compute_device
+            or writer_execution.get("requested_device") != fold_compute_device
+            or structural_execution.get("backend") != "cuda"
+            or writer_execution.get("backend") != "cuda"
+            or structural_execution.get("compute_dtype") != "float64"
+            or writer_execution.get("compute_dtype") != "float64"
+            or receipt.get("structural_cluster_compute_execution_sha256")
+            != structural_execution.get("execution_sha256")
+            or receipt.get("writer_compute_execution_sha256")
+            != writer_execution.get("execution_sha256")
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Short-conv installer did not prove the requested CUDA fold backend."
+            )
     after_hashes = _state_tensor_hashes(target_model)
     after = fingerprint_lfm2_parent(target_model).identity_sha256
     changed = _changed_state_keys(before_hashes, after_hashes)
@@ -2720,6 +2752,7 @@ def _validated_interface_lineage(
     if report_schema in {
         _TIED_CAUSAL_INTERFACE_FOLD_SCHEMA,
         TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA,
+        TIED_RESIDUAL_CONGRUENCE_SCHEMA,
     }:
         tensor_sha256 = _interface_tensor_sha256
         tensor_seal_schema = "dtype-nul-shape-nul-raw-v1"
@@ -2732,6 +2765,16 @@ def _validated_interface_lineage(
         )
     producer_sha = tensor_sha256(interface.producer_encoder)
     target_sha = tensor_sha256(interface.target_weight)
+    congruence_authentication = None
+    if report_schema == TIED_RESIDUAL_CONGRUENCE_SCHEMA:
+        try:
+            congruence_authentication = authenticate_tied_residual_congruence_interface(
+                interface
+            )
+        except (TypeError, ValueError) as exc:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Passed tied residual-congruence lineage is invalid."
+            ) from exc
     if (
         not isinstance(input_weight, torch.nn.Parameter)
         or output_weight is not input_weight
@@ -2751,6 +2794,18 @@ def _validated_interface_lineage(
                 or report.get("one_global_residual_gauge_available") is not True
             )
         )
+        or (
+            report_schema == TIED_RESIDUAL_CONGRUENCE_SCHEMA
+            and (
+                not isinstance(congruence_authentication, Mapping)
+                or congruence_authentication.get(
+                    "producer_basis_orthogonality_authenticated"
+                )
+                is not True
+                or congruence_authentication.get("interface_report_sha256")
+                != report_sha
+            )
+        )
     ):
         raise Lfm2SemanticLayerStackRefoldError(
             "Passed tied-interface coordinates lack exact authenticated child lineage."
@@ -2765,6 +2820,19 @@ def _validated_interface_lineage(
             "target_weight_matches_live_tied_child": True,
             "producer_encoder_taken_from_authenticated_compiler_lineage": True,
             "producer_encoder_inferred_from_repaired_target_table": False,
+            "global_residual_gauge_required": report_schema
+            in {
+                TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA,
+                TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+            },
+            "tied_residual_congruence_authenticated": (
+                report_schema == TIED_RESIDUAL_CONGRUENCE_SCHEMA
+            ),
+            "tied_residual_congruence_authentication_sha256": (
+                None
+                if congruence_authentication is None
+                else congruence_authentication["result_sha256"]
+            ),
         }
     )
 
@@ -2891,6 +2959,34 @@ def _layer_receipt(
         raise Lfm2SemanticLayerStackRefoldError(
             f"Layer {layer_index} MLP did not prove the requested CUDA fold backend."
         )
+    short_conv_compute_fields: dict[str, Any] = {}
+    if fold_compute_device != "cpu" and operator_kind == "short_conv":
+        structural_execution = operator_receipt.get(
+            "structural_cluster_compute_execution"
+        )
+        writer_execution = operator_receipt.get("writer_compute_execution")
+        if (
+            operator_receipt.get("fold_compute_device") != fold_compute_device
+            or operator_receipt.get("requested_cuda_short_conv_routes_proved")
+            is not True
+            or not isinstance(structural_execution, Mapping)
+            or not isinstance(writer_execution, Mapping)
+            or structural_execution.get("requested_device") != fold_compute_device
+            or writer_execution.get("requested_device") != fold_compute_device
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Layer {layer_index} short-conv did not prove the requested "
+                "CUDA fold backend."
+            )
+        short_conv_compute_fields = {
+            "short_conv_fold_compute_device": fold_compute_device,
+            "short_conv_structural_cluster_compute_execution_sha256": (
+                structural_execution.get("execution_sha256")
+            ),
+            "short_conv_writer_compute_execution_sha256": (
+                writer_execution.get("execution_sha256")
+            ),
+        }
     body = {
         "schema": "neural-forge-lfm2-semantic-layer-transaction-v1",
         "layer_index": layer_index,
@@ -2961,6 +3057,7 @@ def _layer_receipt(
             if isinstance(execution, Mapping)
             else None
         ),
+        **short_conv_compute_fields,
         "fir_equivalence_sha256": (
             None if fir_receipt is None else fir_receipt["result_sha256"]
         ),
@@ -3124,8 +3221,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     producer_encoder=interface.producer_encoder,
                     layer_index=layer_index,
                     global_gauge_required=(
-                        interface_lineage.get("interface_report_schema")
-                        == TIED_CAUSAL_INTERFACE_SELF_DUAL_SCHEMA
+                        interface_lineage.get("global_residual_gauge_required") is True
                     ),
                 )
                 fir_receipt = None
@@ -3200,6 +3296,11 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         bridge=bridge,
                         installer=selected_short_installer,
                         parameter_count=parameter_count,
+                        **(
+                            {"fold_compute_device": fold_compute_device}
+                            if fold_compute_device != "cpu"
+                            else {}
+                        ),
                     )
                     short_conv_decision_count += 1
                     short_conv_install_count += int(
@@ -3475,6 +3576,24 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     for value in layer_receipts
                 )
             )
+            or (
+                fold_compute_device != "cpu"
+                and any(
+                    value.get("short_conv_fold_compute_device") != fold_compute_device
+                    or not isinstance(
+                        value.get(
+                            "short_conv_structural_cluster_compute_execution_sha256"
+                        ),
+                        str,
+                    )
+                    or not isinstance(
+                        value.get("short_conv_writer_compute_execution_sha256"),
+                        str,
+                    )
+                    for value in layer_receipts
+                    if value.get("operator_kind") == "short_conv"
+                )
+            )
         ):
             raise Lfm2SemanticLayerStackRefoldError(
                 "Complete layer-stack postconditions were not satisfied."
@@ -3602,6 +3721,11 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "stack_compute_device_router_present": True,
             "fold_compute_device": fold_compute_device,
             "all_mlp_layers_proved_requested_fold_compute_device": True,
+            **(
+                {"all_short_conv_layers_proved_requested_fold_compute_device": True}
+                if fold_compute_device != "cpu"
+                else {}
+            ),
             "attention_solver_device_policy_delegated_to_attention_adapter": True,
             "final_norm_target_uses_unrotated_authenticated_interface": True,
             "short_conv_inserted_owner_rows_are_proxies_only": True,

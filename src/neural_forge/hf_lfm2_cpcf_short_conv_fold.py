@@ -7,9 +7,10 @@ prefix to fit and warm the target B/C/x producer and depthwise FIR, then uses
 only the authenticated residual suffix to fit the target output writer.
 
 Every source channel is assigned to exactly one target channel.  No source
-channel is selected, dropped, zeroed, pruned, or quantized.  All fitting is
-deterministic CPU float64 linear algebra under ``torch.no_grad()``; the target
-templates contribute only topology and dtype, never initial values.
+channel is selected, dropped, zeroed, pruned, or quantized.  Fitting uses
+deterministic float64 tensor algebra under ``torch.no_grad()``; an explicitly
+indexed CUDA device may accelerate only the exact farthest-first seed search.
+The target templates contribute only topology and dtype, never initial values.
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -24,6 +27,7 @@ from typing import Any
 
 
 LFM2_CPCF_SHORT_CONV_FOLD_SCHEMA = "neural-forge-lfm2-cpcf-short-conv-fold-v1"
+_SHORT_CONV_TORCH_STATE_LOCK = threading.RLock()
 
 
 class Lfm2CpcfShortConvFoldError(ValueError):
@@ -46,6 +50,90 @@ def _torch() -> Any:
             "PyTorch is required for LFM2 CPCF short-convolution folding."
         ) from exc
     return torch
+
+
+@dataclass(frozen=True, slots=True)
+class _ShortConvComputePolicy:
+    requested_device: str
+    backend: str
+    device_index: int | None
+
+
+def _compute_policy(torch: Any, compute_device: Any) -> _ShortConvComputePolicy:
+    if compute_device == "cpu":
+        return _ShortConvComputePolicy(
+            requested_device="cpu",
+            backend="cpu",
+            device_index=None,
+        )
+    if not isinstance(compute_device, str):
+        raise Lfm2CpcfShortConvFoldError(
+            "compute_device must be 'cpu' or an explicitly indexed CUDA device."
+        )
+    prefix, separator, index_text = compute_device.partition(":")
+    if (
+        prefix != "cuda"
+        or separator != ":"
+        or not index_text.isdecimal()
+        or int(index_text) < 0
+    ):
+        raise Lfm2CpcfShortConvFoldError(
+            "CUDA compute_device must be explicitly indexed as 'cuda:N'."
+        )
+    device_index = int(index_text)
+    if not torch.cuda.is_available():
+        raise Lfm2CpcfShortConvFoldError(
+            "An indexed CUDA short-conv backend was requested, but CUDA is unavailable."
+        )
+    if device_index >= int(torch.cuda.device_count()):
+        raise Lfm2CpcfShortConvFoldError(
+            f"CUDA compute_device index {device_index} is unavailable."
+        )
+    return _ShortConvComputePolicy(
+        requested_device=compute_device,
+        backend="cuda",
+        device_index=device_index,
+    )
+
+
+def _cuda_backend_state(torch: Any) -> dict[str, bool]:
+    return {
+        "deterministic_algorithms": bool(torch.are_deterministic_algorithms_enabled()),
+        "deterministic_warn_only": bool(
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        "cuda_matmul_allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
+        "cudnn_allow_tf32": bool(torch.backends.cudnn.allow_tf32),
+        "cuda_matmul_allow_fp16_reduced_precision_reduction": bool(
+            torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction
+        ),
+        "cuda_matmul_allow_bf16_reduced_precision_reduction": bool(
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
+        ),
+    }
+
+
+def _enable_deterministic_cuda_float64(torch: Any) -> None:
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
+    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
+
+
+def _restore_cuda_backend_state(torch: Any, state: Mapping[str, bool]) -> None:
+    torch.backends.cuda.matmul.allow_tf32 = state["cuda_matmul_allow_tf32"]
+    torch.backends.cudnn.allow_tf32 = state["cudnn_allow_tf32"]
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = state[
+        "cuda_matmul_allow_fp16_reduced_precision_reduction"
+    ]
+    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = state[
+        "cuda_matmul_allow_bf16_reduced_precision_reduction"
+    ]
+    torch.use_deterministic_algorithms(
+        state["deterministic_algorithms"],
+        warn_only=state["deterministic_warn_only"],
+    )
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -612,20 +700,206 @@ def _history_statistics(value: Any) -> Any:
     )
 
 
+def _running_nearest_work_counts(
+    source_hidden: int,
+    target_hidden: int,
+) -> tuple[int, int]:
+    legacy = sum(
+        (source_hidden - seed_count) * seed_count
+        for seed_count in range(1, target_hidden)
+    )
+    running = source_hidden * (target_hidden - 1)
+    return legacy, running
+
+
+def _cuda_running_nearest_seeds(
+    *,
+    standardized: Any,
+    importance: Any,
+    target_hidden: int,
+    compute: _ShortConvComputePolicy,
+) -> tuple[list[int], Mapping[str, Any]]:
+    """Select the existing farthest-first seeds without quadratic recomputation."""
+
+    torch = _torch()
+    source_hidden, feature_width = map(int, standardized.shape)
+    if compute.backend != "cuda" or compute.device_index is None:
+        raise AssertionError("CUDA seed selection requires an indexed CUDA policy.")
+    workspace_config = os.environ.get("CUBLAS_WORKSPACE_CONFIG", "")
+    if workspace_config not in {":4096:8", ":16:8"}:
+        raise Lfm2CpcfShortConvFoldError(
+            "Deterministic CUDA short-conv folding requires "
+            "CUBLAS_WORKSPACE_CONFIG=:4096:8 or :16:8 before CUDA initialization."
+        )
+    remaining_cpu = set(range(source_hidden))
+    first = max(
+        remaining_cpu,
+        key=lambda index: (float(importance[index].item()), -index),
+    )
+    seeds = [first]
+    remaining_cpu.remove(first)
+    device = torch.device("cuda", compute.device_index)
+    properties = torch.cuda.get_device_properties(device)
+    backend_during: dict[str, bool] | None = None
+    with _SHORT_CONV_TORCH_STATE_LOCK:
+        backend_before = _cuda_backend_state(torch)
+        try:
+            _enable_deterministic_cuda_float64(torch)
+            backend_during = _cuda_backend_state(torch)
+            with torch.cuda.device(device), torch.no_grad():
+                if target_hidden > 1:
+                    standardized_cuda = standardized.to(
+                        device=device,
+                        dtype=torch.float64,
+                    )
+                    importance_cuda = importance.to(
+                        device=device,
+                        dtype=torch.float64,
+                    )
+                    nearest = torch.full(
+                        (source_hidden,),
+                        float("inf"),
+                        dtype=torch.float64,
+                        device=device,
+                    )
+                    remaining = torch.ones(
+                        (source_hidden,),
+                        dtype=torch.bool,
+                        device=device,
+                    )
+                    remaining[first] = False
+                    indices = torch.arange(
+                        source_hidden,
+                        device=device,
+                        dtype=torch.long,
+                    )
+                    while len(seeds) < target_hidden:
+                        distance = (
+                            (standardized_cuda - standardized_cuda[seeds[-1]])
+                            .square()
+                            .sum(dim=1)
+                        )
+                        nearest = torch.minimum(nearest, distance)
+                        available = nearest.masked_fill(~remaining, float("-inf"))
+                        best_distance = available.max()
+                        distance_ties = remaining & (nearest == best_distance)
+                        tied_importance = importance_cuda.masked_fill(
+                            ~distance_ties,
+                            float("-inf"),
+                        )
+                        best_importance = tied_importance.max()
+                        finalists = distance_ties & (importance_cuda == best_importance)
+                        next_seed = int(
+                            indices.masked_fill(~finalists, source_hidden).min().item()
+                        )
+                        if next_seed >= source_hidden:
+                            raise Lfm2CpcfShortConvFoldError(
+                                "CUDA farthest-first selection produced no next seed."
+                            )
+                        seeds.append(next_seed)
+                        remaining[next_seed] = False
+                    torch.cuda.synchronize(device)
+                    del (
+                        standardized_cuda,
+                        importance_cuda,
+                        nearest,
+                        remaining,
+                        indices,
+                    )
+        finally:
+            _restore_cuda_backend_state(torch, backend_before)
+    backend_after = _cuda_backend_state(torch)
+    if backend_after != backend_before:
+        raise Lfm2CpcfShortConvFoldError(
+            "CUDA short-conv clustering did not restore global backend state."
+        )
+    expected_backend = {
+        "deterministic_algorithms": True,
+        "deterministic_warn_only": False,
+        "cuda_matmul_allow_tf32": False,
+        "cudnn_allow_tf32": False,
+        "cuda_matmul_allow_fp16_reduced_precision_reduction": False,
+        "cuda_matmul_allow_bf16_reduced_precision_reduction": False,
+    }
+    if backend_during != expected_backend:
+        raise Lfm2CpcfShortConvFoldError(
+            "CUDA short-conv clustering did not hold its deterministic FP64 policy."
+        )
+    legacy_evaluations, running_evaluations = _running_nearest_work_counts(
+        source_hidden,
+        target_hidden,
+    )
+    reduction_ratio_applicable = running_evaluations > 0
+    reduction_ratio = (
+        legacy_evaluations / running_evaluations if reduction_ratio_applicable else 1.0
+    )
+    body = {
+        "schema": "neural-forge-lfm2-short-conv-running-nearest-cuda-v1",
+        "backend": "cuda",
+        "requested_device": compute.requested_device,
+        "resolved_device": str(device),
+        "device_index": compute.device_index,
+        "device_name": str(properties.name),
+        "compute_capability": [int(properties.major), int(properties.minor)],
+        "compute_dtype": "float64",
+        "cublas_workspace_config": workspace_config,
+        "deterministic_backend_state_during_compute": backend_during,
+        "global_backend_state_restored": True,
+        "algorithm": "running_nearest_farthest_first_exact_objective",
+        "tie_break": "distance_desc_importance_desc_source_index_asc",
+        "source_hidden_size": source_hidden,
+        "target_hidden_size": target_hidden,
+        "feature_width": feature_width,
+        "distance_vector_update_count": target_hidden - 1,
+        "source_distance_row_evaluation_count": running_evaluations,
+        "legacy_recomputed_distance_evaluation_count": legacy_evaluations,
+        "legacy_to_running_distance_evaluation_ratio": reduction_ratio,
+        "distance_evaluation_reduction_ratio_applicable": (reduction_ratio_applicable),
+        "distance_work_status": (
+            "running-nearest-distance-updates-executed"
+            if reduction_ratio_applicable
+            else "not-applicable-single-target-first-seed-only"
+        ),
+        "cuda_distance_compute_executed": reduction_ratio_applicable,
+        "standardized_feature_sha256": _tensor_sha256(
+            standardized,
+            "standardized_channel_features",
+        ),
+        "source_importance_sha256": _tensor_sha256(
+            importance,
+            "source_channel_importance",
+        ),
+        "selected_seed_sha256": _sha256(seeds),
+        "canonical_input_authentication_device": "cpu",
+        "canonical_result_materialization_device": "cpu",
+        "parent_model_forward_calls": 0,
+        "target_model_forward_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    return seeds, MappingProxyType({**body, "execution_sha256": _sha256(body)})
+
+
 def _cluster_all_source_channels(
     *,
     histories: Sequence[Mapping[str, Any]],
     parent_contexts: Sequence[Any],
     source_kernel: Any,
     target_hidden: int,
+    compute_device: str = "cpu",
 ) -> tuple[
     tuple[int, ...],
     tuple[tuple[int, ...], ...],
     tuple[tuple[float, ...], ...],
     Any,
     Any,
+    Mapping[str, Any] | None,
 ]:
     torch = _torch()
+    compute = _compute_policy(torch, compute_device)
     source_hidden = int(source_kernel.shape[0])
     if target_hidden > source_hidden:
         raise Lfm2CpcfShortConvFoldError(
@@ -665,31 +939,42 @@ def _cluster_all_source_channels(
         min=torch.finfo(torch.float64).eps,
     )
 
-    remaining = set(range(source_hidden))
-    first = max(
-        remaining,
-        key=lambda index: (float(importance[index].item()), -index),
-    )
-    seeds = [first]
-    remaining.remove(first)
-    while len(seeds) < target_hidden:
-        next_seed = max(
+    compute_execution: Mapping[str, Any] | None = None
+    if compute.backend == "cpu":
+        # Preserve the original default algorithm and every resulting report byte.
+        remaining = set(range(source_hidden))
+        first = max(
             remaining,
-            key=lambda index: (
-                min(
-                    float(
-                        torch.sum(
-                            (standardized[index] - standardized[seed]).square()
-                        ).item()
-                    )
-                    for seed in seeds
-                ),
-                float(importance[index].item()),
-                -index,
-            ),
+            key=lambda index: (float(importance[index].item()), -index),
         )
-        seeds.append(next_seed)
-        remaining.remove(next_seed)
+        seeds = [first]
+        remaining.remove(first)
+        while len(seeds) < target_hidden:
+            next_seed = max(
+                remaining,
+                key=lambda index: (
+                    min(
+                        float(
+                            torch.sum(
+                                (standardized[index] - standardized[seed]).square()
+                            ).item()
+                        )
+                        for seed in seeds
+                    ),
+                    float(importance[index].item()),
+                    -index,
+                ),
+            )
+            seeds.append(next_seed)
+            remaining.remove(next_seed)
+    else:
+        seeds, compute_execution = _cuda_running_nearest_seeds(
+            standardized=standardized,
+            importance=importance,
+            target_hidden=target_hidden,
+            compute=compute,
+        )
+        remaining = set(range(source_hidden)).difference(seeds)
 
     groups: list[list[int]] = [[seed] for seed in seeds]
     assignment = [-1] * source_hidden
@@ -738,6 +1023,7 @@ def _cluster_all_source_channels(
         tuple(weights),
         importance,
         standardized,
+        compute_execution,
     )
 
 
@@ -1080,6 +1366,7 @@ def compile_lfm2_cpcf_short_conv_fold(
     target_out_proj_bias_template: Any | None = None,
     ridge: float = 1e-8,
     gate_policy: Lfm2CpcfShortConvGatePolicy | None = None,
+    compute_device: str = "cpu",
 ) -> Lfm2CompiledCpcfShortConvFold:
     """Compile a smaller target-native short-conv from cached causal evidence.
 
@@ -1230,11 +1517,13 @@ def compile_lfm2_cpcf_short_conv_fold(
             channel_weights,
             channel_importance,
             channel_features,
+            channel_compute_execution,
         ) = _cluster_all_source_channels(
             histories=fit_cases,
             parent_contexts=fit_parent_contexts,
             source_kernel=source_kernel,
             target_hidden=target_hidden,
+            compute_device=compute_device,
         )
 
         desired_bcx = [
@@ -1606,6 +1895,11 @@ def compile_lfm2_cpcf_short_conv_fold(
             "training_steps": 0,
             "parameters_pruned": 0,
             "parameters_quantized": 0,
+            **(
+                {"compute_execution": dict(channel_compute_execution)}
+                if channel_compute_execution is not None
+                else {}
+            ),
         },
         "compiled_state_sha256": _tensor_bundle_sha256(compiled_state),
     }

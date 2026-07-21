@@ -33,6 +33,8 @@ from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
     Lfm2SemanticPostfoldBlockedError,
     SEMANTIC_ATTENTION_INSTALLER_CALLABLE,
     SEMANTIC_LAYER_STACK_INSTALLER_CALLABLE,
+    TIED_RESIDUAL_CONGRUENCE_MODES,
+    TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
     run_lfm2_semantic_postfold,
 )
 
@@ -121,6 +123,20 @@ def _parser() -> argparse.ArgumentParser:
         "--expected-compiler-diagnostic-sha256",
         required=True,
     )
+    parser.add_argument(
+        "--interface-statistics-directory",
+        help=(
+            "Optional authenticated compact interface-statistics artifact for "
+            "semantic-foundation ancestry. Must be paired with its SHA-256 pin."
+        ),
+    )
+    parser.add_argument(
+        "--expected-interface-statistics-sha256",
+        help=(
+            "External artifact identity pin paired with "
+            "--interface-statistics-directory."
+        ),
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--fold-compute-device",
@@ -139,6 +155,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--parent-tied-tensor-key",
         default="model.embed_tokens.weight",
+    )
+    parser.add_argument(
+        "--tied-interface-mode",
+        choices=TIED_RESIDUAL_CONGRUENCE_MODES,
+        default=TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+        help=(
+            "Select the historical self-dual output-factor control or install "
+            "the strong mapped-parent input/residual/output congruence."
+        ),
     )
     parser.add_argument(
         "--attention-installer-module",
@@ -161,6 +186,12 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    statistics_requested = args.interface_statistics_directory is not None
+    if statistics_requested != (args.expected_interface_statistics_sha256 is not None):
+        raise ValueError(
+            "--interface-statistics-directory and "
+            "--expected-interface-statistics-sha256 must be supplied together."
+        )
     receipt = _new_file(args.receipt_json, "receipt JSON")
     output = Path(args.output_checkpoint).expanduser().resolve()
     if output.exists() or output.is_symlink():
@@ -189,6 +220,19 @@ def main(argv: list[str] | None = None) -> int:
             parent_final_norm_tensor_key=(args.parent_final_norm_tensor_key),
             parent_norm_epsilon_config_key=(args.parent_norm_epsilon_config_key),
             parent_tied_tensor_key=args.parent_tied_tensor_key,
+            tied_interface_mode=args.tied_interface_mode,
+            **(
+                {
+                    "interface_statistics_directory": (
+                        args.interface_statistics_directory
+                    ),
+                    "expected_interface_statistics_sha256": (
+                        args.expected_interface_statistics_sha256
+                    ),
+                }
+                if statistics_requested
+                else {}
+            ),
             attention_installer=_installer(
                 args.attention_installer_module,
                 SEMANTIC_ATTENTION_INSTALLER_CALLABLE,

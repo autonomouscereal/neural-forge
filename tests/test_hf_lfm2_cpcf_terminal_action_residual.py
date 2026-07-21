@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import replace
 
 import pytest
@@ -40,6 +41,29 @@ def test_non_power_of_two_normalized_weights_do_not_escape_probability_bounds() 
 
     assert metrics.top1_agreement_fraction == 1.0
     assert metrics.reference_winner_positive_margin_fraction == 1.0
+
+
+def test_cold_start_structural_coverage_allows_individual_zero_coefficients() -> None:
+    covered = terminal._terminal_writer_structural_coverage(
+        torch.tensor(
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 1.0]],
+            dtype=torch.bfloat16,
+        )
+    )
+    missing_source = terminal._terminal_writer_structural_coverage(
+        torch.tensor(
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            dtype=torch.bfloat16,
+        )
+    )
+
+    assert covered["all_elements_finite"] is True
+    assert covered["all_elements_nonzero"] is False
+    assert covered["all_target_outputs_covered"] is True
+    assert covered["all_source_features_covered"] is True
+    assert covered["complete_dense_writer_coverage"] is True
+    assert missing_source["all_source_features_covered"] is False
+    assert missing_source["complete_dense_writer_coverage"] is False
 
 
 def test_rmsnorm_woodbury_gauss_newton_matches_explicit_jacobian() -> None:
@@ -235,6 +259,33 @@ def _compile(seed, evidence_banks):
     )
 
 
+def _zero_terminal_seed(seed):
+    return Lfm2CpcfTerminalActionSeed(
+        gate_weight=seed.gate_weight,
+        up_weight=seed.up_weight,
+        down_weight=torch.zeros_like(seed.down_weight),
+        final_norm_weight=seed.final_norm_weight,
+        producer_encoder=seed.producer_encoder,
+        target_tied_weight=seed.target_tied_weight,
+        source_tied_table=seed.source_tied_table,
+        norm_epsilon=seed.norm_epsilon,
+    )
+
+
+def _evidence_for_zero_writer(evidence, seed):
+    pre_mlp = evidence.pre_mlp_residual.to(torch.float64)
+    target = (
+        pre_mlp
+        * seed.final_norm_weight.to(torch.float64)
+        / (pre_mlp.square().mean(dim=1, keepdim=True) + seed.norm_epsilon).sqrt()
+    )
+    return replace(
+        evidence,
+        parent_final_norm_output=target.to(torch.bfloat16),
+        authentication_sha256="",
+    )
+
+
 def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None:
     seed, evidence_banks, _ = _synthetic_terminal_problem()
     original = seed.down_weight.clone()
@@ -282,6 +333,7 @@ def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None
     assert report["source_seed_writer_unchanged"] is True
     assert report["parameter_count_before"] == report["parameter_count_after"]
     assert set(report["operation_audit"].values()) == {0}
+    assert "exact_zero_cold_start" not in report
 
     for split in ("fit", "fit_check", "selection"):
         incumbent_rmse = report["incumbent_metrics"][split]["oracle"][
@@ -297,6 +349,153 @@ def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None
             "centered_logit_relative_rmse"
         ]
     )
+
+
+def test_exact_zero_writer_forces_fit_only_dense_plant_before_heldout_diagnostics(
+    monkeypatch,
+):
+    source_seed, evidence_banks, _ = _synthetic_terminal_problem()
+    seed = _zero_terminal_seed(source_seed)
+    fit_reference = _compile(seed, evidence_banks)
+    heldout_rejecting = {
+        **evidence_banks,
+        **{
+            split: _evidence_for_zero_writer(evidence_banks[split], seed)
+            for split in ("fit_check", "selection", "validation")
+        },
+    }
+    evaluated_splits = []
+    original_evaluate_split = terminal._evaluate_split
+
+    def observe_split(prepared, *args, **kwargs):
+        evaluated_splits.append(prepared.evidence.split)
+        return original_evaluate_split(prepared, *args, **kwargs)
+
+    monkeypatch.setattr(terminal, "_evaluate_split", observe_split)
+
+    result = _compile(seed, heldout_rejecting)
+    report = result.as_dict()
+    coverage = report["selected_writer_structural_coverage"]
+    prepared_fit = terminal._prepare_split(heldout_rejecting["fit"], seed)
+    fitted_branch_output = (
+        prepared_fit.features @ result.published_down_weight.to(torch.float64).T
+    )
+
+    assert torch.count_nonzero(seed.down_weight).item() == 0
+    assert result.accepted is True
+    assert result.changed is True
+    assert result.selected_candidate_id != "incumbent"
+    assert result.selected_candidate_id == fit_reference.selected_candidate_id
+    assert torch.equal(result.selected_down_weight, fit_reference.selected_down_weight)
+    assert torch.equal(result.published_down_weight, result.selected_down_weight)
+    assert not torch.equal(result.published_down_weight, result.incumbent_down_weight)
+    assert report["exact_zero_cold_start"] is True
+    assert report["incumbent_noop_publication_forbidden"] is True
+    assert report["published_is_incumbent"] is False
+    assert report["candidate_selection_evidence_scope"] == "fit-only"
+    assert report["relative_to_zero_weight_delta_gate_applied"] is False
+    assert report["selected_before_any_heldout_publication_diagnostic"] is True
+    first_heldout = next(
+        index for index, split in enumerate(evaluated_splits) if split != "fit"
+    )
+    assert set(evaluated_splits[:first_heldout]) == {"fit"}
+    assert "fit" not in evaluated_splits[first_heldout:]
+    assert evaluated_splits.count("fit_check") == 2
+    assert evaluated_splits.count("selection") == 2
+    assert evaluated_splits.count("validation") == 2
+    assert report["heldout_candidate_evaluation_count_before_fit_freeze"] == 0
+    assert report["heldout_candidate_evaluation_count_after_fit_freeze"] == 6
+    assert report["heldout_candidate_count_evaluated_after_fit_freeze"] == 2
+    assert report["validation"]["passed"] is False
+    assert report["validation"]["heldout_diagnostic_only"] is True
+    assert report["validation"]["publication_gate_applied"] is False
+    assert coverage["all_elements_finite"] is True
+    assert coverage["all_target_outputs_covered"] is True
+    assert coverage["all_source_features_covered"] is True
+    assert coverage["complete_dense_writer_coverage"] is True
+    assert coverage["nonzero_element_count"] > 0
+    assert torch.isfinite(fitted_branch_output).all().item() is True
+    assert torch.count_nonzero(fitted_branch_output).item() > 0
+    assert fitted_branch_output.ne(0).any(dim=0).all().item() is True
+    assert (
+        report["selected_metrics_before_validation"]["fit"]["oracle"][
+            "centered_logit_relative_rmse"
+        ]
+        < report["incumbent_metrics"]["fit"]["oracle"]["centered_logit_relative_rmse"]
+    )
+    assert report["parameter_count_before"] == report["parameter_count_after"]
+    assert report["parameter_identity_or_topology_mutation"] is False
+    assert report["zero_training_pruning_quantization"] is True
+    assert set(report["operation_audit"].values()) == {0}
+    assert result.verify_authentication() is True
+    selected_id = result.selected_candidate_id
+    for candidate in report["frontier"]:
+        if candidate["candidate_id"] in {"incumbent", selected_id}:
+            continue
+        assert candidate["fit_check_metrics"] is None
+        assert candidate["selection_metrics"] is None
+        assert candidate["fit_check_gates"] == {
+            "not_evaluated_before_fit_selection_freeze": True
+        }
+        assert candidate["selection_gates"] == {
+            "not_evaluated_before_fit_selection_freeze": True
+        }
+
+
+def test_exact_zero_result_rejects_self_sealed_caller_forgery() -> None:
+    source_seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(_zero_terminal_seed(source_seed), evidence_banks)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="compiler-issued",
+    ):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.published_down_weight,
+            selected_candidate_id=result.selected_candidate_id,
+            accepted=result.accepted,
+            report=result.as_dict(),
+            result_sha256=result.result_sha256,
+        )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    (
+        lambda body: body.__setitem__("schema", "caller-forged"),
+        lambda body: body.__setitem__("selected_nonincumbent", False),
+        lambda body: body["operation_audit"].pop("training_steps"),
+        lambda body: next(
+            value
+            for value in body["frontier"]
+            if value["candidate_id"] == body["selected_candidate_id"]
+        ).__setitem__("state_sha256", "0" * 64),
+    ),
+)
+def test_exact_zero_result_rejects_resealed_internal_lineage_tamper(tamper) -> None:
+    source_seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(_zero_terminal_seed(source_seed), evidence_banks)
+    body = copy.deepcopy(result.as_dict())
+    body.pop("result_sha256")
+    tamper(body)
+    forged_sha256 = terminal._canonical_sha256(body)
+
+    with pytest.raises(Lfm2CpcfTerminalActionAuthenticationError):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.published_down_weight,
+            selected_candidate_id=result.selected_candidate_id,
+            accepted=result.accepted,
+            report={**body, "result_sha256": forged_sha256},
+            result_sha256=forged_sha256,
+            _compiler_input_binding=result._compiler_input_binding,
+            _compiler_issuer=terminal._TERMINAL_RESULT_COMPILER_ISSUER,
+        )
 
 
 def test_validation_cannot_reselect_and_rejection_rolls_back_exactly() -> None:

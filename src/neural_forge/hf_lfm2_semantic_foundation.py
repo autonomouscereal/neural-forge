@@ -59,11 +59,23 @@ from neural_forge.hf_lfm2_cpcf_v5_quarantine import (
     Lfm2CpcfV5QuarantineSaver,
     Lfm2CpcfV5StrictLocalLoader,
 )
+from neural_forge.hf_lfm2_semantic_foundation_statistics import (
+    Lfm2SemanticFoundationInterfaceStatisticsArtifact,
+    Lfm2SemanticFoundationStatisticsError,
+    open_lfm2_semantic_foundation_interface_statistics,
+    replay_lfm2_semantic_foundation_interface_statistics,
+    write_lfm2_semantic_foundation_interface_statistics,
+)
 from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
     Lfm2DenseQkvoSourceInventory,
     seal_lfm2_dense_qkvo_source_inventory,
 )
-from neural_forge.hf_tied_causal_interface_fold import TiedCausalInterfaceFold
+from neural_forge.hf_tied_causal_interface_fold import (
+    TiedCausalInterfaceFold,
+    TiedCausalInterfaceSufficientStatistics,
+    whiten_tied_causal_interface,
+)
+from neural_forge.hf_tied_causal_interface_anchor_fold import TiedCausalAnchorSplit
 from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     fingerprint_hf_tokenizer_semantics,
@@ -71,9 +83,7 @@ from neural_forge.hf_tokenizer_bridge import (
 
 
 LFM2_SEMANTIC_FOUNDATION_SCHEMA = "neural-forge-lfm2-semantic-foundation-v1"
-LFM2_SEMANTIC_FOUNDATION_STATUS = (
-    "standalone-semantic-foundation-saved-and-reloaded"
-)
+LFM2_SEMANTIC_FOUNDATION_STATUS = "standalone-semantic-foundation-saved-and-reloaded"
 LFM2_SEMANTIC_FOUNDATION_INTERFACE_SCHEMA = (
     "neural-forge-lfm2-semantic-foundation-interface-v1"
 )
@@ -165,9 +175,7 @@ def _digest(value: Any, name: str) -> str:
         or len(value) != 64
         or any(character not in "0123456789abcdef" for character in value)
     ):
-        raise Lfm2SemanticFoundationError(
-            f"{name} must be a lowercase SHA-256 digest."
-        )
+        raise Lfm2SemanticFoundationError(f"{name} must be a lowercase SHA-256 digest.")
     return value
 
 
@@ -518,6 +526,14 @@ def read_lfm2_semantic_foundation_catalog_preparation(
 class Lfm2SemanticFoundationInterfaceSolve:
     interface: TiedCausalInterfaceFold
     report: Mapping[str, Any]
+    base_statistics: TiedCausalInterfaceSufficientStatistics | None = None
+    anchor_splits: Mapping[str, TiedCausalAnchorSplit] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SemanticFoundationInterfaceStatisticsBackfill:
+    artifact: Lfm2SemanticFoundationInterfaceStatisticsArtifact
+    report: Mapping[str, Any]
 
 
 def fit_lfm2_semantic_foundation_interface(
@@ -537,11 +553,9 @@ def fit_lfm2_semantic_foundation_interface(
         field="preparation_receipt_sha256",
         label="selective-catalog preparation",
     )
-    if (
-        preparation.get("cache_key") != compiler_cache.cache_key
-        or preparation.get("trace_cache_directory")
-        != str(Path(compiler_cache.path).expanduser().resolve())
-    ):
+    if preparation.get("cache_key") != compiler_cache.cache_key or preparation.get(
+        "trace_cache_directory"
+    ) != str(Path(compiler_cache.path).expanduser().resolve()):
         raise Lfm2SemanticFoundationError(
             "Interface catalog and compiler cache identities diverged."
         )
@@ -630,12 +644,8 @@ def fit_lfm2_semantic_foundation_interface(
             "preparation_receipt_sha256"
         ],
         "selective_catalog_binding_sha256": preparation["binding_sha256"],
-        "selective_catalog_manifest_sha256": preparation[
-            "artifact_manifest_sha256"
-        ],
-        "selective_catalog_artifact_sha256": preparation[
-            "artifact_catalog_sha256"
-        ],
+        "selective_catalog_manifest_sha256": preparation["artifact_manifest_sha256"],
+        "selective_catalog_artifact_sha256": preparation["artifact_catalog_sha256"],
         "final_norm_authentication_sha256": final_authentication,
         "target_hidden_width": int(target_model.config.hidden_size),
         "target_norm_epsilon": cpcf_model_fold._final_norm_epsilon(target_model),
@@ -659,10 +669,14 @@ def fit_lfm2_semantic_foundation_interface(
     return Lfm2SemanticFoundationInterfaceSolve(
         interface=interface,
         report=MappingProxyType(_sealed(body)),
+        base_statistics=boundary_compiler.base_statistics,
+        anchor_splits=boundary_compiler.anchor_splits,
     )
 
 
-def _balanced_partition(values: Sequence[int], count: int) -> tuple[tuple[int, ...], ...]:
+def _balanced_partition(
+    values: Sequence[int], count: int
+) -> tuple[tuple[int, ...], ...]:
     selected = tuple(int(value) for value in values)
     if count <= 0 or count > len(selected):
         raise Lfm2SemanticFoundationError(
@@ -686,7 +700,9 @@ def build_lfm2_semantic_foundation_head_groups(
     source_key_value_heads: int,
     target_query_heads: int,
     target_key_value_heads: int,
-) -> tuple[tuple[tuple[int, ...], ...], tuple[tuple[float, ...], ...], Mapping[str, Any]]:
+) -> tuple[
+    tuple[tuple[int, ...], ...], tuple[tuple[float, ...], ...], Mapping[str, Any]
+]:
     """Build deterministic full-coverage groups while preserving GQA ownership."""
 
     values = (
@@ -695,7 +711,10 @@ def build_lfm2_semantic_foundation_head_groups(
         target_query_heads,
         target_key_value_heads,
     )
-    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in values):
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        for value in values
+    ):
         raise Lfm2SemanticFoundationError("Head counts must be positive integers.")
     if (
         source_query_heads % source_key_value_heads
@@ -707,7 +726,9 @@ def build_lfm2_semantic_foundation_head_groups(
         )
     source_q_per_kv = source_query_heads // source_key_value_heads
     target_q_per_kv = target_query_heads // target_key_value_heads
-    kv_groups = _balanced_partition(range(source_key_value_heads), target_key_value_heads)
+    kv_groups = _balanced_partition(
+        range(source_key_value_heads), target_key_value_heads
+    )
     query_groups = []
     for kv_group in kv_groups:
         owned_queries = tuple(
@@ -718,11 +739,9 @@ def build_lfm2_semantic_foundation_head_groups(
         query_groups.extend(_balanced_partition(owned_queries, target_q_per_kv))
     groups = tuple(query_groups)
     weights = tuple(tuple(1.0 / len(group) for _ in group) for group in groups)
-    if (
-        len(groups) != target_query_heads
-        or sorted(member for group in groups for member in group)
-        != list(range(source_query_heads))
-    ):
+    if len(groups) != target_query_heads or sorted(
+        member for group in groups for member in group
+    ) != list(range(source_query_heads)):
         raise Lfm2SemanticFoundationError(
             "Topology-only GQA grouping did not preserve every source query head."
         )
@@ -765,7 +784,9 @@ def build_lfm2_semantic_foundation_attention_lineage(
     target_kv = int(config.num_key_value_heads)
     target_head_dim = int(config.head_dim)
     lineages = {}
-    for layer_text, raw_inventory in sorted(attention.items(), key=lambda item: int(item[0])):
+    for layer_text, raw_inventory in sorted(
+        attention.items(), key=lambda item: int(item[0])
+    ):
         layer_index = int(layer_text)
         inventory = Lfm2DenseQkvoSourceInventory(
             tensor_receipts=raw_inventory.get("tensor_receipts", {}),
@@ -838,13 +859,17 @@ def _target_topology(model: Any) -> Mapping[str, Any]:
             "key_value_heads": int(config.num_key_value_heads),
             "head_dim": int(config.head_dim),
             "attention_layer_indices": [
-                index for index, kind in enumerate(layer_types) if kind == "full_attention"
+                index
+                for index, kind in enumerate(layer_types)
+                if kind == "full_attention"
             ],
         }
     )
 
 
-def _mapped_parent_tied_table(parent_model: Any, bridge: StrictTokenizerBridgeArtifact) -> Any:
+def _mapped_parent_tied_table(
+    parent_model: Any, bridge: StrictTokenizerBridgeArtifact
+) -> Any:
     try:
         import torch
     except ImportError as exc:  # pragma: no cover
@@ -958,16 +983,12 @@ def materialize_lfm2_semantic_foundation(
         blank = plan_and_synthesize_lfm2_cpcf_blank(
             parent_model,
             parent_name=parent_name,
-            parent_tokenizer_fingerprint=(
-                bridge.donor_tokenizer_semantics_sha256
-            ),
+            parent_tokenizer_fingerprint=(bridge.donor_tokenizer_semantics_sha256),
             evidence_fingerprint=compiler_cache.cache_key,
             child_name=child_name,
             compression_ratio="4",
             target_vocabulary_size=bridge.transport_profile.target_row_capacity,
-            child_tokenizer_fingerprint=(
-                bridge.target_tokenizer_semantics_sha256
-            ),
+            child_tokenizer_fingerprint=(bridge.target_tokenizer_semantics_sha256),
             tokenizer_bridge_artifact=bridge,
             minimum_hidden_size=32,
             maximum_candidates=8,
@@ -988,10 +1009,7 @@ def materialize_lfm2_semantic_foundation(
     blank_state = fingerprint_model_state(target)
     topology = dict(_target_topology(target))
     exact_topology = dict(EXACT_C61_TOPOLOGY)
-    observed_exact = {
-        name: topology[name]
-        for name in exact_topology
-    }
+    observed_exact = {name: topology[name] for name in exact_topology}
     if (
         blank.plan.fingerprint != expected_plan
         or blank_report.get("selected_candidate_fingerprint") != expected_candidate
@@ -1026,8 +1044,7 @@ def materialize_lfm2_semantic_foundation(
         )
     forbidden_counts = {
         "optimizer_constructions": (
-            plan_guard.optimizer_constructions
-            + install_guard.optimizer_constructions
+            plan_guard.optimizer_constructions + install_guard.optimizer_constructions
         ),
         "optimizer_steps": plan_guard.optimizer_steps + install_guard.optimizer_steps,
         "backward_calls": plan_guard.backward_calls + install_guard.backward_calls,
@@ -1038,8 +1055,7 @@ def materialize_lfm2_semantic_foundation(
             plan_guard.pruning_operations + install_guard.pruning_operations
         ),
         "quantization_operations": (
-            plan_guard.quantization_operations
-            + install_guard.quantization_operations
+            plan_guard.quantization_operations + install_guard.quantization_operations
         ),
     }
     if any(forbidden_counts.values()):
@@ -1103,9 +1119,7 @@ def materialize_lfm2_semantic_foundation(
         expected_ffn_width=EXACT_C61_TOPOLOGY["intermediate_size"],
         expected_model_state_sha256=installed_state,
         expected_parameter_inventory_sha256=installed_inventory["inventory_sha256"],
-        expected_tokenizer_semantics_sha256=(
-            bridge.target_tokenizer_semantics_sha256
-        ),
+        expected_tokenizer_semantics_sha256=(bridge.target_tokenizer_semantics_sha256),
     )
     loader = Lfm2CpcfV5StrictLocalLoader(
         context_binding_sha256=context_sha,
@@ -1114,9 +1128,7 @@ def materialize_lfm2_semantic_foundation(
         expected_ffn_width=EXACT_C61_TOPOLOGY["intermediate_size"],
         expected_model_state_sha256=installed_state,
         expected_parameter_inventory_sha256=installed_inventory["inventory_sha256"],
-        expected_tokenizer_semantics_sha256=(
-            bridge.target_tokenizer_semantics_sha256
-        ),
+        expected_tokenizer_semantics_sha256=(bridge.target_tokenizer_semantics_sha256),
     )
     output = Path(output_checkpoint_directory).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1176,7 +1188,9 @@ def materialize_lfm2_semantic_foundation(
         "cache_parent_fingerprint": compiler_cache.parent_fingerprint,
         "cache_manifest_sha256": compiler_cache.manifest["manifest_sha256"],
         "bridge_artifact_sha256": bridge.artifact_sha256,
-        "trajectory_corpus": str(_ordinary_file(trajectory_corpus, "trajectory corpus")),
+        "trajectory_corpus": str(
+            _ordinary_file(trajectory_corpus, "trajectory corpus")
+        ),
         "catalog_preparation": dict(catalog_preparation),
         "target_plan_fingerprint": blank.plan.fingerprint,
         "selected_candidate_fingerprint": expected_candidate,
@@ -1200,9 +1214,7 @@ def materialize_lfm2_semantic_foundation(
             "artifact_metadata": metadata,
             "artifact_sha256": metadata["artifact_sha256"],
             "model_state_sha256": metadata["model_state_sha256"],
-            "parameter_inventory_sha256": metadata[
-                "parameter_inventory_sha256"
-            ],
+            "parameter_inventory_sha256": metadata["parameter_inventory_sha256"],
             "staged_reload_verified": True,
             "published_reload_verified": True,
         },
@@ -1316,9 +1328,7 @@ def authenticate_lfm2_semantic_foundation_receipt(
     blank_inventory = receipt.get("blank_parameter_inventory")
     installed_inventory = receipt.get("installed_parameter_inventory")
     artifact_metadata = (
-        artifact.get("artifact_metadata")
-        if isinstance(artifact, Mapping)
-        else None
+        artifact.get("artifact_metadata") if isinstance(artifact, Mapping) else None
     )
     artifact_metadata_verified = _verify_sealed(
         artifact_metadata,
@@ -1350,7 +1360,8 @@ def authenticate_lfm2_semantic_foundation_receipt(
         or receipt.get("bridge_artifact_sha256") != bridge.artifact_sha256
         or not isinstance(artifact, Mapping)
         or artifact.get("artifact_sha256") != input_metadata.get("artifact_sha256")
-        or artifact.get("model_state_sha256") != input_metadata.get("model_state_sha256")
+        or artifact.get("model_state_sha256")
+        != input_metadata.get("model_state_sha256")
         or artifact.get("parameter_inventory_sha256")
         != input_metadata.get("parameter_inventory_sha256")
         or receipt.get("installed_model_state_sha256")
@@ -1364,8 +1375,7 @@ def authenticate_lfm2_semantic_foundation_receipt(
         or context.get("parent_identity_sha256") != semantic_cache.parent_fingerprint
         or context.get("parent_inventory_sha256") != parent_inventory["result_sha256"]
         or context.get("compiler_cache_key") != receipt.get("compiler_cache_key")
-        or context.get("cache_manifest_sha256")
-        != receipt.get("cache_manifest_sha256")
+        or context.get("cache_manifest_sha256") != receipt.get("cache_manifest_sha256")
         or context.get("bridge_artifact_sha256") != bridge.artifact_sha256
         or context.get("catalog_preparation_receipt_sha256")
         != preparation["preparation_receipt_sha256"]
@@ -1374,14 +1384,10 @@ def authenticate_lfm2_semantic_foundation_receipt(
         or context.get("selected_candidate_fingerprint")
         != receipt.get("selected_candidate_fingerprint")
         or context.get("blank_report_sha256") != blank["report_sha256"]
-        or context.get("blank_state_sha256")
-        != receipt.get("blank_model_state_sha256")
-        or context.get("interface_solve_sha256")
-        != interface_solve["result_sha256"]
-        or context.get("interface_install_sha256")
-        != interface_install["report_sha256"]
-        or context.get("neutral_norm_install_sha256")
-        != norm_install["report_sha256"]
+        or context.get("blank_state_sha256") != receipt.get("blank_model_state_sha256")
+        or context.get("interface_solve_sha256") != interface_solve["result_sha256"]
+        or context.get("interface_install_sha256") != interface_install["report_sha256"]
+        or context.get("neutral_norm_install_sha256") != norm_install["report_sha256"]
         or not isinstance(attention_lineage, Mapping)
         or context.get("attention_lineage_sha256")
         != canonical_sha256(attention_lineage)
@@ -1409,22 +1415,24 @@ def authenticate_lfm2_semantic_foundation_receipt(
         or blank_inventory_sha != canonical_sha256(blank_inventory_body)
         or installed_inventory_sha != canonical_sha256(installed_inventory_body)
         or blank_inventory.get("unique_parameters") != EXACT_C61_TARGET_PARAMETERS
-        or installed_inventory.get("unique_parameters")
-        != EXACT_C61_TARGET_PARAMETERS
+        or installed_inventory.get("unique_parameters") != EXACT_C61_TARGET_PARAMETERS
         or blank_inventory != installed_inventory
         or interface_solve.get("legacy_layer_compiler_calls") != 0
         or interface_solve.get("training_steps") != 0
         or interface_install.get("accepted") is not True
         or norm_install.get("accepted") is not True
         or guard.get("all_forbidden_operation_counts_zero") is not True
-        or any(guard.get(name) != 0 for name in (
-            "optimizer_constructions",
-            "optimizer_steps",
-            "backward_calls",
-            "autograd_grad_calls",
-            "pruning_operations",
-            "quantization_operations",
-        ))
+        or any(
+            guard.get(name) != 0
+            for name in (
+                "optimizer_constructions",
+                "optimizer_steps",
+                "backward_calls",
+                "autograd_grad_calls",
+                "pruning_operations",
+                "quantization_operations",
+            )
+        )
         or any(
             not isinstance(guard.get(name), Mapping)
             or any(value != 0 for value in guard[name].values())
@@ -1433,7 +1441,10 @@ def authenticate_lfm2_semantic_foundation_receipt(
         or receipt.get("blank_seed") != EXACT_C61_BLANK_SEED
         or receipt.get("legacy_cpcf_layer_compiler_executed") is not False
         or not isinstance(operation, Mapping)
-        or any(operation.get(name) != value for name, value in _ZERO_FOLD_OPERATIONS.items())
+        or any(
+            operation.get(name) != value
+            for name, value in _ZERO_FOLD_OPERATIONS.items()
+        )
         or artifact_metadata_verified.get("artifact_sha256")
         != artifact.get("artifact_sha256")
         or artifact_metadata_verified.get("model_state_sha256")
@@ -1451,6 +1462,174 @@ def authenticate_lfm2_semantic_foundation_receipt(
     return receipt, file_sha256
 
 
+def backfill_lfm2_semantic_foundation_interface_statistics(
+    target_model: Any,
+    source_selected_tied_table: Any,
+    *,
+    semantic_cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    target_tokenizer: Any,
+    parent_model_directory: str | os.PathLike[str],
+    input_metadata: Mapping[str, Any],
+    foundation_receipt_json: str | os.PathLike[str],
+    expected_foundation_receipt_sha256: str,
+    artifact_store_directory: str | os.PathLike[str],
+) -> Lfm2SemanticFoundationInterfaceStatisticsBackfill:
+    """Run the authenticated legacy oracle once and publish its compact replay."""
+
+    receipt, file_sha256 = authenticate_lfm2_semantic_foundation_receipt(
+        foundation_receipt_json,
+        expected_receipt_sha256=expected_foundation_receipt_sha256,
+        semantic_cache=semantic_cache,
+        bridge=bridge,
+        input_metadata=input_metadata,
+        parent_model_directory=parent_model_directory,
+    )
+    compiler_cache_directory = _ordinary_directory(
+        receipt.get("compiler_cache_directory"),
+        "foundation compiler cache",
+    )
+    from neural_forge.hf_lfm2_circuit_trace_cache import (
+        open_lfm2_circuit_trace_cache,
+    )
+
+    compiler_cache = open_lfm2_circuit_trace_cache(
+        compiler_cache_directory,
+        verify=True,
+    )
+    if (
+        compiler_cache.cache_key != receipt.get("compiler_cache_key")
+        or compiler_cache.parent_fingerprint != semantic_cache.parent_fingerprint
+    ):
+        raise Lfm2SemanticFoundationError(
+            "Foundation compiler cache differs from its receipt."
+        )
+    solve = fit_lfm2_semantic_foundation_interface(
+        compiler_cache=compiler_cache,
+        bridge=bridge,
+        target_tokenizer=target_tokenizer,
+        trajectory_corpus=receipt.get("trajectory_corpus"),
+        catalog_preparation=receipt.get("catalog_preparation"),
+        source_selected_tied_table=source_selected_tied_table,
+        target_model=target_model,
+    )
+    expected_solve = _verify_sealed(
+        receipt.get("interface_solve"),
+        field="result_sha256",
+        label="foundation interface solve",
+    )
+    target = target_model.get_input_embeddings().weight
+    output = target_model.get_output_embeddings().weight
+    expected_target = solve.interface.target_weight.to(
+        device=target.device,
+        dtype=target.dtype,
+    )
+    if (
+        dict(solve.report) != expected_solve
+        or output is not target
+        or not bool((target == expected_target).all().item())
+        or receipt.get("source_selected_tied_table_sha256")
+        != _tensor_sha256(source_selected_tied_table)
+        or solve.base_statistics is None
+        or not isinstance(solve.anchor_splits, Mapping)
+    ):
+        raise Lfm2SemanticFoundationError(
+            "Legacy oracle differs from the saved child, source, or receipt."
+        )
+    try:
+        artifact = write_lfm2_semantic_foundation_interface_statistics(
+            artifact_store_directory,
+            base_statistics=solve.base_statistics,
+            anchor_splits=solve.anchor_splits,
+            foundation_receipt=receipt,
+            foundation_receipt_file_sha256=file_sha256,
+        )
+        replay = replay_lfm2_semantic_foundation_interface_statistics(
+            artifact,
+            source_selected_tied_table,
+            foundation_receipt=receipt,
+            foundation_receipt_file_sha256=file_sha256,
+        )
+    except Lfm2SemanticFoundationStatisticsError as exc:
+        raise Lfm2SemanticFoundationError(
+            "Compact foundation-interface statistics failed authentication."
+        ) from exc
+    full_self_dual = whiten_tied_causal_interface(solve.interface)
+    replay_self_dual = whiten_tied_causal_interface(replay.interface)
+    if (
+        not bool(
+            (replay.interface.target_weight == solve.interface.target_weight)
+            .all()
+            .item()
+        )
+        or not bool(
+            (replay.interface.producer_encoder == solve.interface.producer_encoder)
+            .all()
+            .item()
+        )
+        or dict(replay.solve_report) != expected_solve
+        or dict(replay.interface.report) != dict(solve.interface.report)
+        or not bool(
+            (replay_self_dual.target_weight == full_self_dual.target_weight)
+            .all()
+            .item()
+        )
+        or not bool(
+            (replay_self_dual.producer_encoder == full_self_dual.producer_encoder)
+            .all()
+            .item()
+        )
+        or dict(replay_self_dual.report) != dict(full_self_dual.report)
+    ):
+        raise Lfm2SemanticFoundationError(
+            "Compact statistics did not reproduce the legacy interface and gauge."
+        )
+    body = {
+        "schema": (
+            "neural-forge-lfm2-semantic-foundation-interface-statistics-backfill-v1"
+        ),
+        "status": "compact-interface-statistics-published",
+        "foundation_receipt_sha256": receipt["receipt_sha256"],
+        "foundation_receipt_file_sha256": file_sha256,
+        "compiler_cache_key": compiler_cache.cache_key,
+        "cache_parent_fingerprint": compiler_cache.parent_fingerprint,
+        "interface_solve_sha256": solve.report["result_sha256"],
+        "statistics_artifact_directory": str(artifact.path),
+        "statistics_artifact_sha256": artifact.artifact_sha256,
+        "statistics_manifest_file_sha256": artifact.manifest_file_sha256,
+        "statistics_payload_file_sha256": artifact.manifest["payload_file_sha256"],
+        "statistics_payload_file_bytes": artifact.manifest["payload_file_bytes"],
+        "base_statistics_sha256": solve.base_statistics.statistics_sha256,
+        "anchor_split_sha256": {
+            name: solve.anchor_splits[name].split_sha256
+            for name in ("selection", "fit", "validation")
+        },
+        "active_target_weight_sha256": _tensor_sha256(replay.interface.target_weight),
+        "producer_encoder_sha256": _tensor_sha256(replay.interface.producer_encoder),
+        "self_dual_target_weight_sha256": full_self_dual.report["target_weight_sha256"],
+        "self_dual_producer_encoder_sha256": full_self_dual.report[
+            "producer_encoder_sha256"
+        ],
+        "self_dual_report_sha256": full_self_dual.report["report_sha256"],
+        "full_cache_oracle_open_calls": 1,
+        "compact_replay_compiler_cache_open_calls": 0,
+        "compact_replay_trace_safetensor_open_calls": 0,
+        "compact_replay_selective_provider_open_calls": 0,
+        "full_cache_solve_report_reproduced_exactly": True,
+        "self_dual_gauge_reproduced_exactly": True,
+        "legacy_foundation_receipt_modified": False,
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+    }
+    return Lfm2SemanticFoundationInterfaceStatisticsBackfill(
+        artifact=artifact,
+        report=MappingProxyType(_sealed(body)),
+    )
+
+
 def rehydrate_lfm2_semantic_foundation_interface(
     target_model: Any,
     source_selected_tied_table: Any,
@@ -1462,6 +1641,8 @@ def rehydrate_lfm2_semantic_foundation_interface(
     input_metadata: Mapping[str, Any],
     foundation_receipt_json: str | os.PathLike[str],
     expected_foundation_receipt_sha256: str,
+    interface_statistics_directory: str | os.PathLike[str] | None = None,
+    expected_interface_statistics_sha256: str | None = None,
 ) -> tuple[TiedCausalInterfaceFold, Mapping[str, Any]]:
     """Recompute and authenticate the foundation's analytical producer map."""
 
@@ -1473,6 +1654,83 @@ def rehydrate_lfm2_semantic_foundation_interface(
         input_metadata=input_metadata,
         parent_model_directory=parent_model_directory,
     )
+    statistics_requested = interface_statistics_directory is not None
+    if statistics_requested != (expected_interface_statistics_sha256 is not None):
+        raise Lfm2SemanticFoundationError(
+            "Statistics directory and external SHA-256 pin must be supplied together."
+        )
+    if statistics_requested:
+        try:
+            artifact = open_lfm2_semantic_foundation_interface_statistics(
+                interface_statistics_directory,
+                expected_artifact_sha256=expected_interface_statistics_sha256,
+            )
+            replay = replay_lfm2_semantic_foundation_interface_statistics(
+                artifact,
+                source_selected_tied_table,
+                foundation_receipt=receipt,
+                foundation_receipt_file_sha256=file_sha256,
+            )
+        except Lfm2SemanticFoundationStatisticsError as exc:
+            raise Lfm2SemanticFoundationError(
+                "Compact foundation-interface statistics failed authentication."
+            ) from exc
+        target = target_model.get_input_embeddings().weight
+        output = target_model.get_output_embeddings().weight
+        expected_target = replay.interface.target_weight.to(
+            device=target.device,
+            dtype=target.dtype,
+        )
+        if (
+            artifact.bindings.get("cache_parent_fingerprint")
+            != semantic_cache.parent_fingerprint
+            or artifact.bindings.get("bridge_artifact_sha256") != bridge.artifact_sha256
+            or output is not target
+            or not bool((target == expected_target).all().item())
+            or receipt.get("source_selected_tied_table_sha256")
+            != _tensor_sha256(source_selected_tied_table)
+        ):
+            raise Lfm2SemanticFoundationError(
+                "Compact interface replay differs from saved child or ancestry."
+            )
+        body = {
+            "schema": (
+                "neural-forge-lfm2-semantic-foundation-interface-rehydration-v2"
+            ),
+            "foundation_receipt_sha256": receipt["receipt_sha256"],
+            "foundation_receipt_file_sha256": file_sha256,
+            "compiler_cache_key": artifact.bindings["compiler_cache_key"],
+            "semantic_evidence_cache_key": semantic_cache.cache_key,
+            "common_parent_fingerprint": semantic_cache.parent_fingerprint,
+            "bridge_artifact_sha256": bridge.artifact_sha256,
+            "interface_solve_sha256": replay.solve_report["result_sha256"],
+            "active_interface_report_sha256": replay.interface.report["report_sha256"],
+            "saved_target_weight_sha256": _tensor_sha256(target),
+            "producer_encoder_sha256": _tensor_sha256(
+                replay.interface.producer_encoder
+            ),
+            "interface_statistics_artifact_sha256": artifact.artifact_sha256,
+            "interface_statistics_manifest_file_sha256": (
+                artifact.manifest_file_sha256
+            ),
+            "interface_statistics_replay_sha256": replay.replay_report["result_sha256"],
+            "compiler_and_semantic_cache_identities_bound_separately": True,
+            "producer_encoder_recomputed_from_authenticated_final_norm_evidence": (
+                False
+            ),
+            "producer_encoder_recomputed_from_authenticated_sufficient_statistics": (
+                True
+            ),
+            "compiler_cache_open_calls": 0,
+            "trace_safetensor_open_calls": 0,
+            "selective_provider_open_calls": 0,
+            "legacy_cpcf_layer_compiler_calls": 0,
+            "parent_model_objects_constructed": 0,
+            "parent_model_forward_calls": 0,
+            "child_model_forward_calls": 0,
+            "training_steps": 0,
+        }
+        return replay.interface, MappingProxyType(_sealed(body))
     compiler_cache_directory = _ordinary_directory(
         receipt.get("compiler_cache_directory"),
         "foundation compiler cache",
@@ -1556,7 +1814,9 @@ __all__ = [
     "LFM2_SEMANTIC_FOUNDATION_STATUS",
     "Lfm2SemanticFoundationError",
     "Lfm2SemanticFoundationInterfaceSolve",
+    "Lfm2SemanticFoundationInterfaceStatisticsBackfill",
     "authenticate_lfm2_semantic_foundation_receipt",
+    "backfill_lfm2_semantic_foundation_interface_statistics",
     "build_lfm2_semantic_foundation_attention_lineage",
     "build_lfm2_semantic_foundation_head_groups",
     "fit_lfm2_semantic_foundation_interface",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -8,6 +9,7 @@ import pytest
 import torch
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge import hf_lfm2_cpcf_short_conv_fold as short_conv_fold
 from neural_forge import hf_lfm2_semantic_short_conv_refold_adapter as adapter
 from neural_forge import hf_lfm2_semantic_layer_stack_refold_adapter as stack_adapter
 from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
@@ -23,17 +25,41 @@ _SOURCE_MODEL = hashlib.sha256(b"direct-local-parent").hexdigest()
 _LINEAGE = hashlib.sha256(b"short-conv-compiler-lineage").hexdigest()
 
 
+def test_compiler_and_writer_share_one_reentrant_torch_state_lock() -> None:
+    lock = short_conv_fold._SHORT_CONV_TORCH_STATE_LOCK
+    assert adapter._SHORT_CONV_TORCH_STATE_LOCK is lock
+
+    assert lock.acquire(blocking=False) is True
+    try:
+        assert lock.acquire(blocking=False) is True
+        lock.release()
+        acquired_from_other_thread: list[bool] = []
+
+        def try_acquire() -> None:
+            acquired = lock.acquire(blocking=False)
+            acquired_from_other_thread.append(acquired)
+            if acquired:
+                lock.release()
+
+        worker = threading.Thread(target=try_acquire)
+        worker.start()
+        worker.join()
+        assert acquired_from_other_thread == [False]
+    finally:
+        lock.release()
+
+
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class _ToyShortConv(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, bias: bool = True) -> None:
         super().__init__()
         self.in_proj = torch.nn.Linear(
             2,
             6,
-            bias=True,
+            bias=bias,
             dtype=torch.bfloat16,
         )
         self.conv = torch.nn.Conv1d(
@@ -41,48 +67,51 @@ class _ToyShortConv(torch.nn.Module):
             2,
             kernel_size=2,
             groups=2,
-            bias=True,
+            bias=bias,
             dtype=torch.bfloat16,
         )
         self.out_proj = torch.nn.Linear(
             2,
             2,
-            bias=True,
+            bias=bias,
             dtype=torch.bfloat16,
         )
         with torch.no_grad():
             self.in_proj.weight.zero_()
-            self.in_proj.bias.zero_()
             self.in_proj.weight[:2].copy_(torch.eye(2, dtype=torch.bfloat16))
-            self.in_proj.bias[2:4].fill_(1.0)
             self.in_proj.weight[4:].copy_(torch.eye(2, dtype=torch.bfloat16))
+            if self.in_proj.bias is not None:
+                self.in_proj.bias.zero_()
+                self.in_proj.bias[2:4].fill_(1.0)
             self.conv.weight.copy_(
                 torch.tensor(
                     [[[0.25, 0.75]], [[-0.125, 0.625]]],
                     dtype=torch.bfloat16,
                 )
             )
-            self.conv.bias.zero_()
+            if self.conv.bias is not None:
+                self.conv.bias.zero_()
             self.out_proj.weight.zero_()
-            self.out_proj.bias.zero_()
+            if self.out_proj.bias is not None:
+                self.out_proj.bias.zero_()
 
 
 class _ToyLayer(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, bias: bool = True) -> None:
         super().__init__()
-        self.conv = _ToyShortConv()
+        self.conv = _ToyShortConv(bias=bias)
 
 
 class _ToyBackbone(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, bias: bool = True) -> None:
         super().__init__()
-        self.layers = torch.nn.ModuleList([_ToyLayer()])
+        self.layers = torch.nn.ModuleList([_ToyLayer(bias=bias)])
 
 
 class _ToyModel(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, bias: bool = True) -> None:
         super().__init__()
-        self.model = _ToyBackbone()
+        self.model = _ToyBackbone(bias=bias)
         self.forward_calls = 0
 
     def forward(self, *_args: object, **_kwargs: object) -> object:
@@ -109,14 +138,19 @@ def _operator_context(model: _ToyModel, inputs: torch.Tensor) -> torch.Tensor:
     projected = (
         inputs.to(torch.float64) @ operator.in_proj.weight.detach().to(torch.float64).T
     )
-    projected = projected + operator.in_proj.bias.detach().to(torch.float64)
+    if operator.in_proj.bias is not None:
+        projected = projected + operator.in_proj.bias.detach().to(torch.float64)
     b_value, c_value, x_value = projected.chunk(3, dim=-1)
     gated = (b_value * x_value).transpose(1, 2)
     history = torch.nn.functional.pad(gated, (1, 0))
     filtered = torch.nn.functional.conv1d(
         history,
         operator.conv.weight.detach().to(torch.float64),
-        bias=operator.conv.bias.detach().to(torch.float64),
+        bias=(
+            operator.conv.bias.detach().to(torch.float64)
+            if operator.conv.bias is not None
+            else None
+        ),
         groups=2,
     )
     return c_value * filtered.transpose(1, 2)
@@ -217,6 +251,8 @@ def _source_fir() -> tuple[torch.Tensor, torch.Tensor]:
 def _compile(
     model: _ToyModel,
     evidence: tuple[Lfm2SemanticShortConvReplayEvidence, ...],
+    *,
+    fold_compute_device: str | None = None,
 ) -> dict[str, object]:
     weight, bias = _source_fir()
     return dict(
@@ -229,6 +265,11 @@ def _compile(
             cache_key=_CACHE,
             bridge_artifact_sha256=_BRIDGE,
             source_model_identity_sha256=_SOURCE_MODEL,
+            **(
+                {"fold_compute_device": fold_compute_device}
+                if fold_compute_device is not None
+                else {}
+            ),
         )
     )
 
@@ -297,6 +338,67 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
         )
 
 
+def test_explicit_cpu_fold_device_preserves_default_receipt_and_state_bytes() -> None:
+    implicit_model = _ToyModel()
+    explicit_model = _ToyModel()
+
+    implicit = _compile(implicit_model, _evidence_bank(implicit_model))
+    explicit = _compile(
+        explicit_model,
+        _evidence_bank(explicit_model),
+        fold_compute_device="cpu",
+    )
+
+    assert implicit == explicit
+    assert "fold_compute_device" not in explicit
+    assert "structural_cluster_compute_execution" not in explicit
+    assert "writer_compute_execution" not in explicit
+    assert all(
+        torch.equal(value, explicit_model.state_dict()[name])
+        for name, value in implicit_model.state_dict().items()
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_indexed_cuda_routes_structural_cluster_and_writer_with_sealed_proofs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    first_model = _ToyModel()
+    second_model = _ToyModel()
+
+    first = _compile(
+        first_model,
+        _evidence_bank(first_model),
+        fold_compute_device="cuda:0",
+    )
+    second = _compile(
+        second_model,
+        _evidence_bank(second_model),
+        fold_compute_device="cuda:0",
+    )
+
+    assert first == second
+    assert first["fold_compute_device"] == "cuda:0"
+    assert first["requested_cuda_short_conv_routes_proved"] is True
+    for key in (
+        "structural_cluster_compute_execution",
+        "writer_compute_execution",
+    ):
+        execution = first[key]
+        body = dict(execution)
+        seal = body.pop("execution_sha256")
+        assert canonical_sha256(body) == seal
+        assert execution["backend"] == "cuda"
+        assert execution["requested_device"] == "cuda:0"
+        assert execution["compute_dtype"] == "float64"
+        assert execution["training_steps"] == 0
+    assert all(
+        torch.equal(value, second_model.state_dict()[name])
+        for name, value in first_model.state_dict().items()
+    )
+
+
 def test_blank_multi_weight_plant_emits_live_canonical_layer_stack_diff() -> None:
     source_model = _ToyModel()
     source_evidence = _evidence_bank(source_model)
@@ -340,9 +442,217 @@ def test_blank_multi_weight_plant_emits_live_canonical_layer_stack_diff() -> Non
     )
     assert receipt["installed"] is True
     assert receipt["selected_candidate"] == "full-source-structural"
+    assert receipt["exact_zero_incumbent_at_entry"] is True
+    assert receipt["cold_start_compulsory_full_source_structural_plant"] is True
+    assert receipt["cold_start_heldout_metrics_diagnostic_only"] is True
+    assert receipt["cold_start_blank_noop_forbidden"] is True
+    assert receipt["cold_start_all_required_operator_weights_finite_nonzero"] is True
+    assert receipt["cold_start_optional_biases_finite"] is True
+    assert receipt["cold_start_all_required_operator_axes_covered"] is True
+    coverage = dict(receipt["cold_start_structural_axis_coverage"])
+    coverage_sha256 = coverage.pop("result_sha256")
+    assert canonical_sha256(coverage) == coverage_sha256
+    assert coverage_sha256 == receipt["cold_start_structural_axis_coverage_sha256"]
+    assert coverage["every_output_row_and_input_or_lag_axis_covered"] is True
+    assert coverage["blank_or_partially_blank_required_weight_count"] == 0
+    assert all(
+        role["structurally_nonzero"] is True
+        and role["all_output_structural_units_covered"] is True
+        and role["all_input_structural_units_covered"] is True
+        for role in coverage["role_receipts"].values()
+    )
+    assert receipt["cold_start_structural_axis_repair_applied"] is False
+    assert receipt["operation_audit"]["training_steps"] == 0
+    assert (
+        receipt["candidate_reports_before_validation"]["full-source-structural"][
+            "provenance"
+        ]["full_source_coverage"]
+        is True
+    )
     assert len(live_changed) > 1
     assert receipt["changed_state_keys"] == live_changed
     assert live_changed == sorted(live_changed)
+    assert all(
+        int(torch.count_nonzero(parameter).item()) > 0
+        for parameter in operator.parameters()
+    )
+
+
+def test_blank_biasless_topology_compulsorily_installs_required_weights() -> None:
+    source_model = _ToyModel(bias=False)
+    source_evidence = _evidence_bank(source_model)
+    model = _ToyModel(bias=False)
+    operator = model.model.layers[0].conv
+    with torch.no_grad():
+        for parameter in operator.parameters():
+            parameter.zero_()
+    captured = _fingerprint(model).identity_sha256
+    evidence = tuple(
+        replace(item, captured_child_model_state_sha256=captured)
+        for item in source_evidence
+    )
+
+    receipt = _compile(model, evidence)
+
+    assert receipt["selected_candidate"] == "full-source-structural"
+    assert receipt["installed"] is True
+    assert receipt["cold_start_compulsory_full_source_structural_plant"] is True
+    assert receipt["cold_start_all_required_operator_weights_finite_nonzero"] is True
+    assert receipt["cold_start_optional_biases_finite"] is True
+    assert receipt["cold_start_all_required_operator_axes_covered"] is True
+    assert set(receipt["changed_parameter_roles"]) == {
+        "conv.weight",
+        "in_proj.weight",
+        "out_proj.weight",
+    }
+    assert all(
+        module.bias is None
+        for module in (operator.in_proj, operator.conv, operator.out_proj)
+    )
+    assert all(
+        bool(torch.isfinite(parameter).all().item())
+        and int(torch.count_nonzero(parameter).item()) > 0
+        for parameter in operator.parameters()
+    )
+
+
+def test_cold_start_validator_allows_finite_zero_optional_biases() -> None:
+    candidate = adapter._Candidate(
+        name="full-source-structural",
+        state={
+            "in_proj.weight": torch.ones((6, 2), dtype=torch.bfloat16),
+            "in_proj.bias": torch.zeros(6, dtype=torch.bfloat16),
+            "conv.weight": torch.ones((2, 1, 2), dtype=torch.bfloat16),
+            "conv.bias": torch.zeros(2, dtype=torch.bfloat16),
+            "out_proj.weight": torch.eye(2, dtype=torch.bfloat16),
+            "out_proj.bias": torch.zeros(2, dtype=torch.bfloat16),
+        },
+        provenance={
+            "full_source_coverage": True,
+            "source_channels_dropped": 0,
+            "structural_compiler_report": {
+                "execution": {
+                    "training_steps": 0,
+                    "parameters_pruned": 0,
+                    "parameters_quantized": 0,
+                }
+            },
+        },
+    )
+
+    coverage = adapter._validate_cold_start_structural_plant(candidate)
+
+    assert coverage["every_output_row_and_input_or_lag_axis_covered"] is True
+    assert coverage["blank_or_partially_blank_required_weight_count"] == 0
+
+
+def test_nonzero_but_axis_uncovered_cold_start_fails_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_model = _ToyModel()
+    source_evidence = _evidence_bank(source_model)
+    model = _ToyModel()
+    operator = model.model.layers[0].conv
+    with torch.no_grad():
+        for parameter in operator.parameters():
+            parameter.zero_()
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    captured = _fingerprint(model).identity_sha256
+    evidence = tuple(
+        replace(item, captured_child_model_state_sha256=captured)
+        for item in source_evidence
+    )
+    bad_in_proj = torch.ones_like(operator.in_proj.weight)
+    bad_in_proj[0].zero_()
+    candidate = adapter._Candidate(
+        name="full-source-structural",
+        state={
+            "in_proj.weight": bad_in_proj,
+            "in_proj.bias": torch.zeros_like(operator.in_proj.bias),
+            "conv.weight": torch.ones_like(operator.conv.weight),
+            "conv.bias": torch.zeros_like(operator.conv.bias),
+            "out_proj.weight": torch.eye(2, dtype=torch.bfloat16),
+            "out_proj.bias": torch.zeros_like(operator.out_proj.bias),
+        },
+        provenance={
+            "full_source_coverage": True,
+            "source_channels_dropped": 0,
+            "structural_compiler_report": {
+                "execution": {
+                    "training_steps": 0,
+                    "parameters_pruned": 0,
+                    "parameters_quantized": 0,
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_compile_structural_candidate",
+        lambda **_kwargs: candidate,
+    )
+    before = {
+        name: parameter.detach().clone() for name, parameter in model.named_parameters()
+    }
+    identities = tuple(id(parameter) for parameter in model.parameters())
+    pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
+    gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
+    gradients = tuple(
+        parameter.grad.detach().clone() for parameter in model.parameters()
+    )
+
+    with pytest.raises(
+        Lfm2SemanticShortConvRefoldError,
+        match="leaves a required output row, input axis, or FIR lag axis disconnected",
+    ):
+        _compile(model, evidence)
+
+    assert all(
+        torch.equal(parameter, before[name])
+        for name, parameter in model.named_parameters()
+    )
+    assert tuple(id(parameter) for parameter in model.parameters()) == identities
+    assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
+    assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+    assert all(
+        torch.equal(parameter.grad, gradient)
+        for parameter, gradient in zip(model.parameters(), gradients)
+    )
+
+
+def test_blank_incumbent_cannot_win_even_when_validation_prefers_blank_noop() -> None:
+    evidence_source = _ToyModel()
+    source_evidence = _evidence_bank(
+        evidence_source,
+        validation_matches_incumbent=True,
+    )
+    model = _ToyModel()
+    operator = model.model.layers[0].conv
+    with torch.no_grad():
+        for parameter in operator.parameters():
+            parameter.zero_()
+    captured = _fingerprint(model).identity_sha256
+    evidence = tuple(
+        replace(item, captured_child_model_state_sha256=captured)
+        for item in source_evidence
+    )
+
+    receipt = _compile(model, evidence)
+
+    assert receipt["selected_candidate"] == "full-source-structural"
+    assert receipt["installed"] is True
+    assert receipt["validation_rejected_candidate"] is None
+    assert receipt["cold_start_heldout_metrics_diagnostic_only"] is True
+    assert receipt["cold_start_fit_structural_candidate_forced_before_heldout"] is True
+    assert receipt["cold_start_fit_check_used_for_publication_gate"] is False
+    assert receipt["cold_start_selection_used_for_publication_gate"] is False
+    assert receipt["cold_start_validation_used_for_publication_gate"] is False
+    assert receipt["selection_used_for_candidate_choice"] is False
+    assert receipt["validation_used_for_candidate_choice"] is False
+    assert receipt["validation_used_only_for_acceptance_or_incumbent_fallback"] is False
+    assert receipt["incumbent_noop_candidate_competed"] is False
+    assert receipt["incumbent_noop_fallback_used"] is False
     assert all(
         int(torch.count_nonzero(parameter).item()) > 0
         for parameter in operator.parameters()
@@ -404,11 +714,14 @@ def test_validation_rejection_falls_back_to_authenticated_incumbent_noop() -> No
         "incumbent-producer-output-writer",
     }
     assert receipt["incumbent_noop_fallback_used"] is True
+    assert "exact_zero_incumbent_at_entry" not in receipt
+    assert "cold_start_compulsory_full_source_structural_plant" not in receipt
     assert receipt["exact_noop_state_proven"] is True
     assert receipt["model_state_before_sha256"] == receipt["model_state_after_sha256"]
-    assert receipt["target_topology_sha256_before"] == receipt[
-        "target_topology_sha256_after"
-    ]
+    assert (
+        receipt["target_topology_sha256_before"]
+        == receipt["target_topology_sha256_after"]
+    )
     assert receipt["parameter_identities_preserved"] is True
     assert receipt["parameter_storage_preserved"] is True
     assert receipt["gradient_state_preserved"] is True
@@ -466,12 +779,18 @@ def test_identical_analytic_candidate_resolves_to_sealed_noop(
     assert receipt["selected_candidate"] == "incumbent-noop"
     assert receipt["prevalidation_selected_candidate"] == "incumbent-noop"
     assert receipt["validation_rejected_candidate"] is None
-    assert receipt["candidate_reports_before_validation"][
-        "full-source-structural"
-    ]["fit_improved"] is False
-    assert receipt["candidate_reports_before_validation"][
-        "full-source-structural"
-    ]["heldout_selection_improved"] is False
+    assert (
+        receipt["candidate_reports_before_validation"]["full-source-structural"][
+            "fit_improved"
+        ]
+        is False
+    )
+    assert (
+        receipt["candidate_reports_before_validation"]["full-source-structural"][
+            "heldout_selection_improved"
+        ]
+        is False
+    )
     assert receipt["selected_candidate_state_identical_to_incumbent"] is True
     assert receipt["transport_evidence_sha256"] == [
         item.evidence_sha256 for item in evidence

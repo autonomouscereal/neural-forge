@@ -221,7 +221,11 @@ def test_existing_attention_profile_hashes_remain_byte_stable() -> None:
             "c2ae580fafb3c76b97ba858e50154503e7e8a648e840c5ecc8cfd47c8051af62"
         ),
         MODULE.V5EndpointTerminalActionRunnerProfile: (
-            "9ff4adb2c26daaaee4a4843efc438d410642dc23aaa1acf1aab263d1adc999b5"
+            # The terminal policy source is an authenticated profile field.
+            # Its exact-zero compiler/publication hardening intentionally
+            # advances this pin while the three attention-only profiles stay
+            # byte-stable.
+            "9e2e734f1ae4c4efc04a4b8b90de022eefe4f7f97b3ff37f5085d3e6b2f568b4"
         ),
     }
 

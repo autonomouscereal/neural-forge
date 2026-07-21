@@ -70,6 +70,10 @@ from .hf_lfm2_tokenizer_bridge_trace_adapter import (
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
 )
 from .hf_tied_causal_interface_fold import TiedCausalInterfaceFold
+from .hf_tied_residual_congruence import (
+    TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+    authenticate_tied_residual_congruence_interface,
+)
 from .hf_tokenizer_bridge import StrictTokenizerBridgeArtifact
 from .hf_tokenizer_bridge import StrictTokenizerBridgeError
 
@@ -642,8 +646,7 @@ def load_lfm2_parent_final_rmsnorm_from_local_safetensors(
         "epsilon_config_key": epsilon_config_key,
         "epsilon": epsilon,
         "checkpoint_floating_dtypes": sorted(
-            str(value).removeprefix("torch.")
-            for value in checkpoint_floating_dtypes
+            str(value).removeprefix("torch.") for value in checkpoint_floating_dtypes
         ),
         "runtime_buffer_dtype": (
             None
@@ -874,9 +877,14 @@ def _verify_interface_report(
         )
     expected_target = report.get("target_weight_sha256")
     expected_encoder = report.get("producer_encoder_sha256")
-    expected_source = report.get(
-        "source_table_sha256",
-        report.get("source_tied_table_sha256"),
+    report_schema = report.get("schema")
+    expected_source = (
+        report.get("mapped_parent_tied_table_sha256")
+        if report_schema == TIED_RESIDUAL_CONGRUENCE_SCHEMA
+        else report.get(
+            "source_table_sha256",
+            report.get("source_tied_table_sha256"),
+        )
     )
     source = source_selected_tied_table
     if (
@@ -898,6 +906,21 @@ def _verify_interface_report(
             "Tied interface/source selected-table tensors differ from their "
             "authenticated lineage."
         )
+    if report_schema == TIED_RESIDUAL_CONGRUENCE_SCHEMA:
+        try:
+            authentication = authenticate_tied_residual_congruence_interface(
+                interface,
+                mapped_parent_tied_table=source,
+            )
+        except (TypeError, ValueError) as exc:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Tied residual-congruence interface authentication failed."
+            ) from exc
+        if authentication.get("interface_report_sha256") != supplied:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Tied residual-congruence report identity changed during "
+                "authentication."
+            )
     return {**report, "report_sha256": supplied}
 
 

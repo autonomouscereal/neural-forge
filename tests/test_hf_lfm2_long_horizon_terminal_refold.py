@@ -23,6 +23,10 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
 from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
     fit_tied_causal_interface,
 )
+from neural_forge.hf_tied_residual_congruence import (  # noqa: E402
+    TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+    compile_tied_residual_congruence_candidate,
+)
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
     seal_strict_tokenizer_bridge_artifact,
 )
@@ -259,14 +263,54 @@ def _fixture(
     }
 
 
+def test_interface_report_accepts_exact_tied_residual_congruence_and_rejects_source_tamper():
+    generator = torch.Generator().manual_seed(1_711)
+    source_table = torch.randn(
+        (13, 7),
+        generator=generator,
+        dtype=torch.float32,
+    ).to(torch.bfloat16)
+    base = fit_tied_causal_interface(
+        source_table,
+        torch.randn((31, 7), generator=generator, dtype=torch.float64),
+        target_width=4,
+        validation_producer_rows=torch.randn(
+            (17, 7),
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        metric_chunk_rows=7,
+    )
+    candidate = compile_tied_residual_congruence_candidate(
+        base,
+        source_table,
+        mode=TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+    )
+
+    verified = refold._verify_interface_report(candidate.interface, source_table)
+
+    assert verified == dict(candidate.interface.report)
+    assert (
+        verified["mapped_parent_tied_table_sha256"]
+        == (candidate.report["mapped_parent_tied_table_sha256"])
+    )
+
+    tampered = source_table.clone()
+    tampered[0, 0] += 1.0
+    assert not torch.equal(tampered, source_table)
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="differ from their authenticated lineage",
+    ):
+        refold._verify_interface_report(candidate.interface, tampered)
+
+
 def _semantic_fixture(
     tmp_path: Path,
     *,
     long_horizon: bool = False,
 ) -> dict[str, Any]:
-    donor = _GreedyTokenizer(
-        ["<B>", "a", "b", "ab", " ", "c", " c", "!", "z", "x"]
-    )
+    donor = _GreedyTokenizer(["<B>", "a", "b", "ab", " ", "c", " c", "!", "z", "x"])
     target = _GreedyTokenizer(["<B>", "a", "b", "ab", " ", "c", "!", "z"])
     parent = _model(
         vocabulary=len(donor),
@@ -540,14 +584,11 @@ def test_semantic_span_replays_expansion_contraction_and_suffix_rewrite(
     ]
     assert semantic["phases"][1]["target_replaced_suffix_token_count"] == 1
     assert semantic["phases"][2]["target_span_token_count"] == 2
-    assert semantic["expansion"]["full_horizon"][
-        "retokenized_suffix_phase_count"
-    ] == 1
+    assert semantic["expansion"]["full_horizon"]["retokenized_suffix_phase_count"] == 1
     receipts = report["trajectory_replay_receipts"]
     assert all(value["full_prefix_replay_calls"] == 2 for value in receipts)
     assert all(
-        value["replay_strategy"]
-        == "semantic-maximal-target-prefix-branch-cover-v1"
+        value["replay_strategy"] == "semantic-maximal-target-prefix-branch-cover-v1"
         for value in receipts
     )
     assert report["operation_audit"]["child_embedding_seed_lookups"] == 8
@@ -587,9 +628,7 @@ def test_semantic_span_populates_real_32_plus_horizon_bucket(
     assert bucket["available"] is True
     assert bucket["rows"] == 2
     selection_bridge = report["semantic_span_bridges"][2]
-    assert selection_bridge["expansion"]["horizon_buckets"][2][
-        "phase_count"
-    ] == 1
+    assert selection_bridge["expansion"]["horizon_buckets"][2]["phase_count"] == 1
 
 
 def test_semantic_span_is_explicit_and_strict_path_still_fails_unmapped_rows(

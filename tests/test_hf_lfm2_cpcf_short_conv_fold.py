@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -7,12 +9,17 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_short_conv_fold import (  # noqa: E402
     LFM2_CPCF_SHORT_CONV_FOLD_SCHEMA,
     Lfm2CpcfShortConvFoldCase,
     Lfm2CpcfShortConvFoldError,
     Lfm2CpcfShortConvGatePolicy,
     Lfm2CpcfShortConvValidationError,
+    _ShortConvComputePolicy,
+    _cluster_all_source_channels,
+    _cuda_running_nearest_seeds,
+    _running_nearest_work_counts,
     compile_lfm2_cpcf_short_conv_fold,
 )
 
@@ -169,6 +176,7 @@ def _compile(
     *,
     templates: dict[str, Any] | None = None,
     policy: Lfm2CpcfShortConvGatePolicy | None = None,
+    compute_device: str | None = None,
 ) -> Any:
     weight, bias = _source_fir()
     weight.requires_grad_(True)
@@ -178,8 +186,126 @@ def _compile(
         cases=cases,
         ridge=0.0,
         gate_policy=_strict_policy() if policy is None else policy,
+        **({"compute_device": compute_device} if compute_device is not None else {}),
         **(_templates(seed=9127) if templates is None else templates),
     )
+
+
+def _compute_backend_state() -> dict[str, bool]:
+    return {
+        "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+        "deterministic_warn_only": (
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        "cuda_matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32,
+        "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
+        "cuda_matmul_allow_fp16_reduced_precision_reduction": (
+            torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction
+        ),
+        "cuda_matmul_allow_bf16_reduced_precision_reduction": (
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
+        ),
+    }
+
+
+def test_real_four_x_geometry_eliminates_quadratic_distance_recomputation() -> None:
+    legacy, running = _running_nearest_work_counts(1024, 776)
+
+    assert legacy == 152_454_900
+    assert running == 793_600
+    assert legacy / running == pytest.approx(192.10546875)
+
+
+def test_single_target_cpu_clustering_covers_every_source_without_distance_work() -> (
+    None
+):
+    generator = torch.Generator().manual_seed(20_260_721)
+    source_hidden = 5
+    histories = (
+        {
+            "parent_b": torch.randn(
+                (1, 4, source_hidden), generator=generator, dtype=torch.float64
+            ),
+            "parent_c": torch.randn(
+                (1, 4, source_hidden), generator=generator, dtype=torch.float64
+            ),
+            "parent_x": torch.randn(
+                (1, 4, source_hidden), generator=generator, dtype=torch.float64
+            ),
+        },
+    )
+    contexts = (
+        torch.randn((1, 4, source_hidden), generator=generator, dtype=torch.float64),
+    )
+    source_kernel = torch.randn(
+        (source_hidden, 3), generator=generator, dtype=torch.float64
+    )
+
+    assignment, groups, weights, _importance, _features, execution = (
+        _cluster_all_source_channels(
+            histories=histories,
+            parent_contexts=contexts,
+            source_kernel=source_kernel,
+            target_hidden=1,
+        )
+    )
+
+    assert assignment == (0,) * source_hidden
+    assert groups == (tuple(range(source_hidden)),)
+    assert sum(weights[0]) == pytest.approx(1.0)
+    assert execution is None
+    assert _running_nearest_work_counts(source_hidden, 1) == (0, 0)
+
+
+def test_single_target_cuda_receipt_reports_zero_distance_work_without_division(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_properties",
+        lambda _device: SimpleNamespace(name="mock-cuda", major=8, minor=6),
+    )
+    monkeypatch.setattr(torch.cuda, "device", lambda _device: nullcontext())
+    monkeypatch.setattr(
+        torch.cuda,
+        "synchronize",
+        lambda _device: (_ for _ in ()).throw(
+            AssertionError("single-target CUDA folding has no distance work")
+        ),
+    )
+    standardized = torch.tensor(
+        [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]],
+        dtype=torch.float64,
+    )
+    importance = torch.tensor([1.0, 7.0, 3.0], dtype=torch.float64)
+    backend_before = _compute_backend_state()
+
+    seeds, execution = _cuda_running_nearest_seeds(
+        standardized=standardized,
+        importance=importance,
+        target_hidden=1,
+        compute=_ShortConvComputePolicy(
+            requested_device="cuda:0",
+            backend="cuda",
+            device_index=0,
+        ),
+    )
+
+    body = dict(execution)
+    seal = body.pop("execution_sha256")
+    assert canonical_sha256(body) == seal
+    assert seeds == [1]
+    assert execution["distance_vector_update_count"] == 0
+    assert execution["source_distance_row_evaluation_count"] == 0
+    assert execution["legacy_recomputed_distance_evaluation_count"] == 0
+    assert execution["legacy_to_running_distance_evaluation_ratio"] == 1.0
+    assert execution["distance_evaluation_reduction_ratio_applicable"] is False
+    assert execution["distance_work_status"] == (
+        "not-applicable-single-target-first-seed-only"
+    )
+    assert execution["cuda_distance_compute_executed"] is False
+    assert _compute_backend_state() == backend_before
 
 
 def test_full_prefix_fir_warmup_suffix_writer_and_full_source_coverage() -> None:
@@ -276,6 +402,112 @@ def test_full_prefix_fir_warmup_suffix_writer_and_full_source_coverage() -> None
     for name, value in templates.items():
         assert torch.equal(value.detach(), template_snapshots[name])
         assert value.grad is None
+
+
+def test_explicit_cpu_compute_policy_preserves_default_state_and_report_bytes() -> None:
+    cases = (
+        _case(
+            case_id="fit-cpu-byte-compatibility",
+            split="fit",
+            batch=2,
+            sequence=9,
+            suffix=4,
+            seed=1501,
+        ),
+        _case(
+            case_id="validation-cpu-byte-compatibility",
+            split="validation",
+            batch=1,
+            sequence=10,
+            suffix=4,
+            seed=1502,
+        ),
+    )
+
+    implicit = _compile(cases)
+    explicit = _compile(cases, compute_device="cpu")
+
+    assert implicit.as_dict() == explicit.as_dict()
+    assert "compute_execution" not in explicit.report["execution"]
+    assert all(
+        torch.equal(value, explicit.state_dict()[name])
+        for name, value in implicit.state_dict().items()
+    )
+
+
+@pytest.mark.parametrize("compute_device", ("cuda", "cuda:-1", "cpu:0"))
+def test_invalid_compute_device_fails_closed(compute_device: str) -> None:
+    cases = (
+        _case(
+            case_id="fit-invalid-device",
+            split="fit",
+            batch=1,
+            sequence=7,
+            suffix=3,
+            seed=1601,
+        ),
+        _case(
+            case_id="validation-invalid-device",
+            split="validation",
+            batch=1,
+            sequence=7,
+            suffix=3,
+            seed=1602,
+        ),
+    )
+    with pytest.raises(Lfm2CpcfShortConvFoldError, match="explicitly indexed"):
+        _compile(cases, compute_device=compute_device)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_indexed_cuda_running_nearest_is_repeatedly_deterministic_and_sealed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    cases = (
+        _case(
+            case_id="fit-cuda-determinism",
+            split="fit",
+            batch=2,
+            sequence=9,
+            suffix=4,
+            seed=1701,
+        ),
+        _case(
+            case_id="validation-cuda-determinism",
+            split="validation",
+            batch=1,
+            sequence=10,
+            suffix=4,
+            seed=1702,
+        ),
+    )
+    backend_before = _compute_backend_state()
+
+    first = _compile(cases, compute_device="cuda:0")
+    second = _compile(cases, compute_device="cuda:0")
+
+    assert first.as_dict() == second.as_dict()
+    assert first.source_to_target == second.source_to_target
+    assert first.channel_groups == second.channel_groups
+    assert first.channel_barycentric_weights == second.channel_barycentric_weights
+    assert all(
+        torch.equal(value, second.state_dict()[name])
+        for name, value in first.state_dict().items()
+    )
+    execution = first.report["execution"]["compute_execution"]
+    execution_body = dict(execution)
+    execution_sha256 = execution_body.pop("execution_sha256")
+    assert canonical_sha256(execution_body) == execution_sha256
+    assert execution["backend"] == "cuda"
+    assert execution["requested_device"] == "cuda:0"
+    assert execution["compute_dtype"] == "float64"
+    assert execution["distance_vector_update_count"] == _TARGET_HIDDEN - 1
+    assert execution["source_distance_row_evaluation_count"] == (
+        _SOURCE_HIDDEN * (_TARGET_HIDDEN - 1)
+    )
+    assert execution["training_steps"] == 0
+    assert _compute_backend_state() == backend_before
 
 
 def test_blank_template_values_are_ignored_and_validation_is_held_out() -> None:

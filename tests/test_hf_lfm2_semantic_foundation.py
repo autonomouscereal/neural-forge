@@ -34,7 +34,9 @@ def _write_parent(directory: Path, *, changed_q: bool = False):
         encoding="utf-8",
     )
     tensors = {
-        "model.embed_tokens.weight": torch.arange(16, dtype=torch.float32).reshape(4, 4),
+        "model.embed_tokens.weight": torch.arange(16, dtype=torch.float32).reshape(
+            4, 4
+        ),
         "model.embedding_norm.weight": torch.ones(4, dtype=torch.float32),
     }
     for layer_index, kind in enumerate(layer_types):
@@ -136,9 +138,7 @@ def _foundation_fixture_receipt(parent_directory, parent_inventory, attention_li
         "compiler_cache_key": cache_key,
         "cache_manifest_sha256": "2" * 64,
         "bridge_artifact_sha256": bridge_sha,
-        "catalog_preparation_receipt_sha256": preparation[
-            "preparation_receipt_sha256"
-        ],
+        "catalog_preparation_receipt_sha256": preparation["preparation_receipt_sha256"],
         "target_plan_fingerprint": target_plan,
         "selected_candidate_fingerprint": candidate,
         "blank_report_sha256": blank["report_sha256"],
@@ -339,9 +339,7 @@ def test_foundation_lineage_rejects_resealed_duplicate_head_coverage(tmp_path):
     group_report.pop("result_sha256")
     group_report["query_groups"] = groups
     forged["head_group_report"] = _seal(group_report)
-    forged["head_group_report_sha256"] = forged["head_group_report"][
-        "result_sha256"
-    ]
+    forged["head_group_report_sha256"] = forged["head_group_report"]["result_sha256"]
     lineages["2"] = _seal(forged, "lineage_sha256")
     receipt, metadata, cache, bridge = _foundation_fixture_receipt(
         parent,
@@ -377,6 +375,8 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
         receipt={
             "result_sha256": "1" * 64,
             "complete_causal_layer_stack_installed": False,
+            "complete_nonzero_structural_producer_coverage": True,
+            "blank_or_partially_blank_producer_chain_count": 0,
             "whole_stage_contains_meaningful_parameter_changes": True,
             "model_state_before_sha256": "9" * 64,
             "model_state_after_sha256": "7" * 64,
@@ -402,6 +402,7 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
             "terminal_writer_install_count": 0,
             "terminal_writer_mutation_count": 0,
             "terminal_writer_incumbent_retention_count": 1,
+            "complete_nonzero_final_mlp_structural_coverage": True,
             "installation": {
                 "decision_count": 1,
                 "installed": False,
@@ -424,8 +425,12 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
     )
     ancestry_calls = []
 
-    monkeypatch.setattr(postfold, "open_lfm2_circuit_trace_cache", lambda *_a, **_k: cache)
-    monkeypatch.setattr(postfold, "load_strict_tokenizer_bridge_artifact", lambda *_a, **_k: bridge)
+    monkeypatch.setattr(
+        postfold, "open_lfm2_circuit_trace_cache", lambda *_a, **_k: cache
+    )
+    monkeypatch.setattr(
+        postfold, "load_strict_tokenizer_bridge_artifact", lambda *_a, **_k: bridge
+    )
     monkeypatch.setattr(
         postfold,
         "load_lfm2_cpcf_v5_standalone_child",
@@ -435,7 +440,9 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
             {"artifact_sha256": "2" * 64, "model_state_sha256": "3" * 64},
         ),
     )
-    monkeypatch.setattr(postfold, "fingerprint_hf_tokenizer_semantics", lambda _v: "4" * 64)
+    monkeypatch.setattr(
+        postfold, "fingerprint_hf_tokenizer_semantics", lambda _v: "4" * 64
+    )
     monkeypatch.setattr(
         postfold,
         "load_lfm2_parent_final_rmsnorm_from_local_safetensors",
@@ -468,8 +475,26 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
     )
     monkeypatch.setattr(
         postfold,
+        "install_lfm2_tied_residual_congruence_gauge",
+        lambda _model, source_interface, _table, *, mode: (
+            source_interface,
+            MappingProxyType(
+                {
+                    "mode": mode,
+                    "result_sha256": "9" * 64,
+                }
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        postfold,
         "compile_install_lfm2_semantic_layer_stack_stage",
         lambda **_k: layer_stack,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_validate_fused_semantic_terminal_receipt",
+        lambda receipt, **_kwargs: MappingProxyType(dict(receipt)),
     )
     monkeypatch.setattr(
         postfold,
@@ -506,7 +531,9 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
     )
     assert [name for name, _path in ancestry_calls] == ["lineage", "foundation"]
     assert all(path == tmp_path / "parent" for _name, path in ancestry_calls)
-    assert result["compiler_ancestry_schema"] == foundation.LFM2_SEMANTIC_FOUNDATION_SCHEMA
+    assert (
+        result["compiler_ancestry_schema"] == foundation.LFM2_SEMANTIC_FOUNDATION_SCHEMA
+    )
 
 
 class _TinyLfm2(torch.nn.Module):
@@ -573,7 +600,9 @@ def test_materializer_saves_and_freshly_reloads_twice(monkeypatch, tmp_path):
             }
             return _seal(body, "report_sha256")
 
-    monkeypatch.setattr(foundation, "plan_and_synthesize_lfm2_cpcf_blank", lambda *_a, **_k: Blank())
+    monkeypatch.setattr(
+        foundation, "plan_and_synthesize_lfm2_cpcf_blank", lambda *_a, **_k: Blank()
+    )
     monkeypatch.setattr(
         foundation,
         "fingerprint_lfm2_parent",
@@ -602,14 +631,18 @@ def test_materializer_saves_and_freshly_reloads_twice(monkeypatch, tmp_path):
             )
         ),
     )
-    monkeypatch.setattr(foundation, "fit_lfm2_semantic_foundation_interface", lambda **_k: solve)
+    monkeypatch.setattr(
+        foundation, "fit_lfm2_semantic_foundation_interface", lambda **_k: solve
+    )
 
     def install_interface(model, folded):
         with torch.no_grad():
             model.weight.copy_(folded.target_weight)
         return _seal({"accepted": True}, "report_sha256")
 
-    monkeypatch.setattr(foundation, "install_lfm2_cpcf_tied_interface", install_interface)
+    monkeypatch.setattr(
+        foundation, "install_lfm2_cpcf_tied_interface", install_interface
+    )
     monkeypatch.setattr(
         foundation,
         "install_lfm2_cpcf_neutral_norms",

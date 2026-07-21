@@ -19,7 +19,11 @@ it into the model compiler:
 
 No model is executed or mutated.  There is no autograd graph, backward pass,
 optimizer, trace capture, parent call, new parameter, pruning, or quantization.
-Rejected validation returns an exact clone of the incumbent BF16 writer.
+Rejected validation returns an exact clone of a functional incumbent BF16
+writer.  An exact-zero incumbent is instead an authenticated cold start: the
+incumbent/noop is ineligible, the relative-to-incumbent weight cap is undefined,
+and one finite fully dense FIT-selected writer is frozen before the other
+splits are evaluated diagnostically.
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -42,6 +46,14 @@ LFM2_CPCF_TERMINAL_ACTION_POLICY_SCHEMA = (
 )
 LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA = (
     "neural-forge-lfm2-cpcf-terminal-action-result-v1"
+)
+_LFM2_CPCF_TERMINAL_ACTION_COMPILER_BINDING_SCHEMA = (
+    "neural-forge-lfm2-cpcf-terminal-action-compiler-binding-v1"
+)
+_TERMINAL_RESULT_COMPILER_ISSUER = object()
+_TERMINAL_ACTION_RESULT_METHOD = (
+    "closed_form_rmsnorm_gauss_newton_then_weighted_ridge_"
+    "exact_bfloat16_terminal_writer_frontier"
 )
 
 TerminalActionSplit = Literal["fit", "fit_check", "selection", "validation"]
@@ -1204,6 +1216,64 @@ def _weight_delta_rms_ratio(
     return numerator / denominator
 
 
+def _terminal_writer_structural_coverage(candidate: Any) -> Mapping[str, Any]:
+    """Seal complete dense W2 coverage for an exact-zero cold start.
+
+    A zero writer has no meaningful incumbent-relative scale.  Cold-start
+    publication therefore uses an exact structural predicate: every BF16
+    coefficient must be finite, the matrix must contain signal, and every
+    target-output row and source-feature column must participate.  Individual
+    zero coefficients remain valid dense topology.  This does not impose a
+    magnitude threshold or compare parent and child weight values.
+    """
+
+    torch = _torch()
+    if (
+        not isinstance(candidate, torch.Tensor)
+        or candidate.layout != torch.strided
+        or candidate.device.type == "meta"
+        or candidate.ndim != 2
+        or candidate.dtype != torch.bfloat16
+        or candidate.numel() <= 0
+    ):
+        raise Lfm2CpcfTerminalActionResidualError(
+            "Cold-start terminal W2 must be a materialized dense BF16 matrix."
+        )
+    value = candidate.detach().to(device="cpu").contiguous()
+    finite = torch.isfinite(value)
+    nonzero = value.ne(0)
+    finite_count = int(finite.sum().item())
+    nonzero_count = int(nonzero.sum().item())
+    output_width, source_feature_width = map(int, value.shape)
+    covered_outputs = int(nonzero.any(dim=1).sum().item())
+    covered_sources = int(nonzero.any(dim=0).sum().item())
+    body = {
+        "schema": "neural-forge-lfm2-terminal-w2-cold-start-coverage-v1",
+        "tensor_sha256": _tensor_sha256(value, "cold_start_terminal_w2"),
+        "shape": [output_width, source_feature_width],
+        "dtype": "bfloat16",
+        "element_count": int(value.numel()),
+        "finite_element_count": finite_count,
+        "nonzero_element_count": nonzero_count,
+        "all_elements_finite": finite_count == int(value.numel()),
+        "all_elements_nonzero": nonzero_count == int(value.numel()),
+        "target_output_axis_size": output_width,
+        "covered_target_output_count": covered_outputs,
+        "all_target_outputs_covered": covered_outputs == output_width,
+        "source_feature_axis_size": source_feature_width,
+        "covered_source_feature_count": covered_sources,
+        "all_source_features_covered": covered_sources == source_feature_width,
+        "complete_dense_writer_coverage": bool(
+            finite_count == int(value.numel())
+            and nonzero_count > 0
+            and covered_outputs == output_width
+            and covered_sources == source_feature_width
+        ),
+        "numeric_parent_child_weight_equality_required": False,
+    }
+    return MappingProxyType({**body, "coverage_sha256": _canonical_sha256(body)})
+
+
 def _metric_gates(
     candidate: Lfm2CpcfTerminalActionSplitMetrics,
     incumbent: Lfm2CpcfTerminalActionSplitMetrics,
@@ -1395,6 +1465,294 @@ def _ridge_delta(
     return solution.T.contiguous()
 
 
+def _terminal_compiler_input_binding(
+    *,
+    seed: Lfm2CpcfTerminalActionSeed,
+    evidence: Sequence[Lfm2CpcfTerminalActionEvidence],
+    policy: Lfm2CpcfTerminalActionPolicy,
+    incumbent: Any,
+) -> Mapping[str, Any]:
+    """Bind a result to the exact authenticated compiler inputs that issued it."""
+
+    body = {
+        "schema": _LFM2_CPCF_TERMINAL_ACTION_COMPILER_BINDING_SCHEMA,
+        "seed_sha256": seed.authentication_sha256,
+        "incumbent_seed_writer_sha256": _tensor_sha256(
+            incumbent,
+            "compiler_binding.incumbent",
+        ),
+        "policy_sha256": policy.authentication_sha256,
+        "split_evidence_sha256": {
+            value.split: value.authentication_sha256 for value in evidence
+        },
+        "split_rows": {value.split: value.rows for value in evidence},
+        "split_row_ids_sha256": {
+            value.split: _canonical_sha256(list(value.row_ids)) for value in evidence
+        },
+    }
+    return MappingProxyType({**body, "binding_sha256": _canonical_sha256(body)})
+
+
+def _reported_frontier_selection_key(record: Mapping[str, Any]) -> list[Any]:
+    """Reconstruct one reported FIT key instead of trusting its serialized copy."""
+
+    metrics = record.get("fit_metrics")
+    oracle = metrics.get("oracle") if isinstance(metrics, Mapping) else None
+    mapped_parent = (
+        metrics.get("mapped_parent") if isinstance(metrics, Mapping) else None
+    )
+    if not isinstance(oracle, Mapping) or not isinstance(mapped_parent, Mapping):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Cold-start frontier omitted authenticated FIT metrics."
+        )
+
+    def number(container: Mapping[str, Any], name: str) -> float:
+        value = container.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Cold-start frontier metric {name!r} is not numeric."
+            )
+        result = float(value)
+        if not math.isfinite(result):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Cold-start frontier metric {name!r} is nonfinite."
+            )
+        return result
+
+    state_sha256 = _required_sha256(
+        record.get("state_sha256"),
+        "cold-start frontier state_sha256",
+    )
+    alpha = number(record, "alpha")
+    damping = number(record, "gauss_newton_damping")
+    ridge = number(record, "ridge")
+    return [
+        number(oracle, "centered_logit_relative_rmse"),
+        -number(oracle, "top1_agreement_fraction"),
+        number(mapped_parent, "centered_logit_relative_rmse"),
+        -number(mapped_parent, "top1_agreement_fraction"),
+        -number(mapped_parent, "reference_winner_positive_margin_fraction"),
+        number(metrics, "maximum_post_layer_rms_ratio_to_incumbent"),
+        alpha,
+        damping,
+        ridge,
+        state_sha256,
+    ]
+
+
+def _authenticate_exact_zero_compiled_result(
+    *,
+    body: Mapping[str, Any],
+    incumbent: Any,
+    selected: Any,
+    published: Any,
+    policy: Lfm2CpcfTerminalActionPolicy,
+    compiler_input_binding: Mapping[str, Any] | None,
+    compiler_issued: bool,
+) -> Mapping[str, Any]:
+    """Fail closed unless a cold result is the internally issued FIT frontier."""
+
+    torch = _torch()
+    if not compiler_issued or not isinstance(compiler_input_binding, Mapping):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Accepted exact-zero terminal results must be compiler-issued."
+        )
+    binding = dict(compiler_input_binding)
+    binding_sha256 = binding.pop("binding_sha256", None)
+    if (
+        binding.get("schema") != _LFM2_CPCF_TERMINAL_ACTION_COMPILER_BINDING_SCHEMA
+        or binding_sha256 != _canonical_sha256(binding)
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Exact-zero terminal compiler-input binding is invalid."
+        )
+    expected_output_hashes = {
+        "incumbent": _tensor_sha256(incumbent, "incumbent"),
+        "selected": _tensor_sha256(selected, "selected"),
+        "published": _tensor_sha256(published, "published"),
+    }
+    if (
+        body.get("schema") != LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA
+        or body.get("method") != _TERMINAL_ACTION_RESULT_METHOD
+        or body.get("policy_sha256") != policy.authentication_sha256
+        or binding.get("policy_sha256") != policy.authentication_sha256
+        or body.get("seed_sha256") != binding.get("seed_sha256")
+        or body.get("incumbent_seed_writer_sha256")
+        != binding.get("incumbent_seed_writer_sha256")
+        or binding.get("incumbent_seed_writer_sha256")
+        != expected_output_hashes["incumbent"]
+        or body.get("split_evidence_sha256") != binding.get("split_evidence_sha256")
+        or body.get("split_rows") != binding.get("split_rows")
+        or body.get("split_row_ids_sha256") != binding.get("split_row_ids_sha256")
+        or body.get("output_state_sha256") != expected_output_hashes
+        or body.get("operation_audit") != dict(_ZERO_OPERATION_AUDIT)
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Exact-zero terminal result is not bound to its compiler inputs."
+        )
+    selected_id = body.get("selected_candidate_id")
+    if (
+        not isinstance(selected_id, str)
+        or not selected_id
+        or selected_id == "incumbent"
+        or body.get("selected_nonincumbent") is not True
+        or body.get("accepted") is not True
+        or body.get("published_is_incumbent") is not False
+        or body.get("rollback_performed") is not False
+        or body.get("exact_zero_cold_start") is not True
+        or body.get("incumbent_all_elements_zero") is not True
+        or int(torch.count_nonzero(incumbent).item()) != 0
+        or torch.equal(selected, incumbent)
+        or not torch.equal(published, selected)
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Exact-zero terminal publication state is internally inconsistent."
+        )
+
+    frontier = body.get("frontier")
+    expected_count = 1 + (
+        len(policy.gauss_newton_damping_frontier)
+        * len(policy.ridge_frontier)
+        * (len(policy.alpha_frontier) - 1)
+    )
+    expected_candidate_ids = {"incumbent"}
+    expected_candidate_ids.update(
+        f"gn-{damping_index:02d}-ridge-{ridge_index:02d}-alpha-{alpha_index:02d}"
+        for damping_index, _damping in enumerate(policy.gauss_newton_damping_frontier)
+        for ridge_index, _ridge in enumerate(policy.ridge_frontier)
+        for alpha_index, _alpha in enumerate(policy.alpha_frontier[1:], start=1)
+    )
+    if (
+        not isinstance(frontier, list)
+        or len(frontier) != expected_count
+        or body.get("frontier_count") != expected_count
+        or body.get("expected_frontier_count") != expected_count
+        or not all(isinstance(value, Mapping) for value in frontier)
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Exact-zero terminal frontier cardinality is invalid."
+        )
+    records = {str(value.get("candidate_id")): value for value in frontier}
+    if len(records) != expected_count or set(records) != expected_candidate_ids:
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Exact-zero terminal frontier identities are invalid."
+        )
+    incumbent_record = records["incumbent"]
+    incumbent_key = _reported_frontier_selection_key(incumbent_record)
+    if (
+        incumbent_record.get("state_sha256") != expected_output_hashes["incumbent"]
+        or incumbent_record.get("selection_key") != incumbent_key
+        or incumbent_record.get("eligible") is not False
+        or incumbent_record.get("exact_zero_incumbent_noop_forbidden") is not True
+        or incumbent_record.get("candidate_ranking_split") != "fit"
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Exact-zero incumbent frontier control is invalid."
+        )
+
+    eligible_records = []
+    for candidate_id, record in records.items():
+        reported_key = _reported_frontier_selection_key(record)
+        if record.get("selection_key") != reported_key:
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Cold-start frontier key for {candidate_id!r} is invalid."
+            )
+        if candidate_id == "incumbent":
+            continue
+        coverage = record.get("structural_coverage")
+        fit_gates = record.get("fit_gates")
+        if not isinstance(coverage, Mapping) or not isinstance(fit_gates, Mapping):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Cold-start frontier record {candidate_id!r} is incomplete."
+            )
+        coverage_body = dict(coverage)
+        coverage_sha256 = coverage_body.pop("coverage_sha256", None)
+        coverage_authenticated = bool(
+            coverage_sha256 == _canonical_sha256(coverage_body)
+            and record.get("structural_coverage_sha256") == coverage_sha256
+            and coverage.get("tensor_sha256") == record.get("state_sha256")
+        )
+        if not coverage_authenticated:
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Cold-start frontier coverage for {candidate_id!r} is invalid."
+            )
+        coverage_complete = coverage.get("complete_dense_writer_coverage") is True
+        if record.get("weight_norm_gate_passed") is not coverage_complete:
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Cold-start frontier coverage gate for {candidate_id!r} is invalid."
+            )
+        fit_passed = bool(fit_gates) and all(
+            value is True for value in fit_gates.values()
+        )
+        derived_eligible = bool(
+            record.get("weight_norm_gate_passed") is True
+            and coverage_complete
+            and fit_passed
+            and tuple(reported_key) < tuple(incumbent_key)
+        )
+        if (
+            record.get("candidate_ranking_split") != "fit"
+            or record.get("relative_to_zero_weight_delta_gate_applied") is not False
+            or record.get("eligible") is not derived_eligible
+        ):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Cold-start frontier eligibility for {candidate_id!r} is invalid."
+            )
+        if derived_eligible:
+            eligible_records.append((tuple(reported_key), candidate_id, record))
+    if not eligible_records:
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Exact-zero terminal frontier has no eligible FIT candidate."
+        )
+    _winning_key, winning_id, selected_record = min(eligible_records)
+    selected_metrics = body.get("selected_metrics_before_validation")
+    if (
+        winning_id != selected_id
+        or selected_record.get("state_sha256") != expected_output_hashes["selected"]
+        or body.get("selected_state_sha256") != expected_output_hashes["selected"]
+        or body.get("selected_selection_key") != selected_record.get("selection_key")
+        or not isinstance(selected_metrics, Mapping)
+        or selected_record.get("fit_metrics") != selected_metrics.get("fit")
+        or selected_record.get("fit_check_metrics") != selected_metrics.get("fit_check")
+        or selected_record.get("selection_metrics") != selected_metrics.get("selection")
+        or selected_record.get("fit_check_and_selection_metrics_diagnostic_only")
+        is not True
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Exact-zero terminal winner is not the authenticated FIT minimum."
+        )
+    unevaluated_marker = {"not_evaluated_before_fit_selection_freeze": True}
+    if any(
+        record.get("fit_check_metrics") is not None
+        or record.get("selection_metrics") is not None
+        or record.get("fit_check_gates") != unevaluated_marker
+        or record.get("selection_gates") != unevaluated_marker
+        for candidate_id, record in records.items()
+        if candidate_id not in {"incumbent", selected_id}
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "A nonselected cold-start frontier state consumed held-out evidence."
+        )
+    split_roles = body.get("split_roles")
+    if (
+        body.get("candidate_selection_evidence_scope") != "fit-only"
+        or body.get("selected_before_any_heldout_publication_diagnostic") is not True
+        or body.get("heldout_candidate_evaluation_count_before_fit_freeze") != 0
+        or body.get("heldout_candidate_evaluation_count_after_fit_freeze") != 6
+        or body.get("heldout_candidate_count_evaluated_after_fit_freeze") != 2
+        or not isinstance(split_roles, Mapping)
+        or split_roles.get("only_fit_rows_used_for_candidate_eligibility_and_ranking")
+        is not True
+        or split_roles.get("fit_check_diagnostic_only") is not True
+        or split_roles.get("selection_diagnostic_only") is not True
+        or split_roles.get("validation_diagnostic_only") is not True
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Exact-zero held-out diagnostic ordering is not authenticated."
+        )
+    return MappingProxyType({**binding, "binding_sha256": binding_sha256})
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2CpcfTerminalActionResidualResult:
     """Authenticated private selection and rollback-safe publication state."""
@@ -1407,8 +1765,20 @@ class Lfm2CpcfTerminalActionResidualResult:
     accepted: bool
     report: Mapping[str, Any]
     result_sha256: str
+    _compiler_input_binding: Mapping[str, Any] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    _compiler_issuer: InitVar[Any] = None
+    _compiler_issued: bool = field(
+        init=False,
+        default=False,
+        repr=False,
+        compare=False,
+    )
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _compiler_issuer: Any) -> None:
         torch = _torch()
         if (
             not isinstance(self.policy, Lfm2CpcfTerminalActionPolicy)
@@ -1465,9 +1835,26 @@ class Lfm2CpcfTerminalActionResidualResult:
             raise Lfm2CpcfTerminalActionAuthenticationError(
                 "Terminal result tensors differ from their report."
             )
+        compiler_issued = _compiler_issuer is _TERMINAL_RESULT_COMPILER_ISSUER
+        compiler_binding = self._compiler_input_binding
+        accepted_exact_zero = bool(
+            self.accepted and int(torch.count_nonzero(owned[0]).item()) == 0
+        )
+        if accepted_exact_zero:
+            compiler_binding = _authenticate_exact_zero_compiled_result(
+                body=body,
+                incumbent=owned[0],
+                selected=owned[1],
+                published=owned[2],
+                policy=self.policy,
+                compiler_input_binding=compiler_binding,
+                compiler_issued=compiler_issued,
+            )
         object.__setattr__(self, "incumbent_down_weight", owned[0])
         object.__setattr__(self, "selected_down_weight", owned[1])
         object.__setattr__(self, "published_down_weight", owned[2])
+        object.__setattr__(self, "_compiler_input_binding", compiler_binding)
+        object.__setattr__(self, "_compiler_issued", compiler_issued)
         object.__setattr__(
             self,
             "report",
@@ -1488,7 +1875,7 @@ class Lfm2CpcfTerminalActionResidualResult:
     def verify_authentication(self) -> bool:
         body = dict(self.report)
         supplied = body.pop("result_sha256", None)
-        return bool(
+        base_valid = bool(
             supplied == self.result_sha256
             and _canonical_sha256(body) == self.result_sha256
             and body.get("output_state_sha256")
@@ -1507,6 +1894,25 @@ class Lfm2CpcfTerminalActionResidualResult:
                 ),
             }
         )
+        if not base_valid:
+            return False
+        if (
+            self.accepted
+            and int(_torch().count_nonzero(self.incumbent_down_weight).item()) == 0
+        ):
+            try:
+                _authenticate_exact_zero_compiled_result(
+                    body=body,
+                    incumbent=self.incumbent_down_weight,
+                    selected=self.selected_down_weight,
+                    published=self.published_down_weight,
+                    policy=self.policy,
+                    compiler_input_binding=self._compiler_input_binding,
+                    compiler_issued=self._compiler_issued,
+                )
+            except Lfm2CpcfTerminalActionResidualError:
+                return False
+        return True
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self.report)
@@ -1548,15 +1954,25 @@ def compile_lfm2_cpcf_terminal_action_residual(
         ),
         selected_policy,
     )
-    prepared = {
-        evidence.split: _prepare_split(evidence, seed) for evidence in ordered_evidence
-    }
     incumbent_input_sha = _tensor_sha256(seed.down_weight, "seed.down_weight")
     incumbent = seed.down_weight.detach().clone()
     if incumbent.data_ptr() == seed.down_weight.data_ptr():
         raise Lfm2CpcfTerminalActionResidualError(
             "Incumbent private snapshot unexpectedly aliases the seed."
         )
+    exact_zero_cold_start = bool(torch.count_nonzero(incumbent).item() == 0)
+    compiler_input_binding = _terminal_compiler_input_binding(
+        seed=seed,
+        evidence=ordered_evidence,
+        policy=selected_policy,
+        incumbent=incumbent,
+    )
+    evidence_by_split = {value.split: value for value in ordered_evidence}
+    frontier_metric_splits = ("fit",) if exact_zero_cold_start else _SPLITS[:-1]
+    prepared = {
+        split: _prepare_split(evidence_by_split[split], seed)
+        for split in frontier_metric_splits
+    }
 
     incumbent_metrics = {
         split: _evaluate_split(
@@ -1565,7 +1981,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
             incumbent,
             metric_chunk_rows=selected_policy.metric_chunk_rows,
         )
-        for split in _SPLITS[:-1]
+        for split in frontier_metric_splits
     }
     oracle_ceilings = {
         split: _evaluate_oracle_ceiling(
@@ -1573,7 +1989,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
             seed,
             metric_chunk_rows=selected_policy.metric_chunk_rows,
         )
-        for split in _SPLITS[:-1]
+        for split in frontier_metric_splits
     }
     gram, eigenvalues, eigenvectors = _ridge_system(prepared["fit"])
     gram_sha = _tensor_sha256(gram, "fit.gram")
@@ -1581,42 +1997,59 @@ def compile_lfm2_cpcf_terminal_action_residual(
 
     incumbent_state_sha = _tensor_sha256(incumbent, "incumbent")
     incumbent_key = _selection_key(
-        incumbent_metrics["selection"],
+        incumbent_metrics["fit" if exact_zero_cold_start else "selection"],
         alpha=0.0,
         damping=selected_policy.gauss_newton_damping_frontier[0],
         ridge=selected_policy.ridge_frontier[0],
         state_sha256=incumbent_state_sha,
     )
-    frontier: list[dict[str, Any]] = [
-        {
-            "candidate_id": "incumbent",
-            "gauss_newton_damping": (selected_policy.gauss_newton_damping_frontier[0]),
-            "ridge": selected_policy.ridge_frontier[0],
-            "alpha": 0.0,
-            "exact_bfloat16_materialization": True,
-            "private_candidate_storage": True,
-            "state_sha256": incumbent_state_sha,
-            "weight_delta_rms_ratio": 0.0,
-            "weight_norm_gate_passed": True,
-            "fit_metrics": incumbent_metrics["fit"].as_dict(),
-            "fit_check_metrics": incumbent_metrics["fit_check"].as_dict(),
-            "selection_metrics": incumbent_metrics["selection"].as_dict(),
-            "fit_gates": {"incumbent_control": True},
-            "fit_check_gates": {"incumbent_control": True},
-            "selection_gates": {"incumbent_control": True},
-            "eligible": True,
-            "selection_key": _selection_key_report(incumbent_key),
-        }
-    ]
+    incumbent_frontier = {
+        "candidate_id": "incumbent",
+        "gauss_newton_damping": (selected_policy.gauss_newton_damping_frontier[0]),
+        "ridge": selected_policy.ridge_frontier[0],
+        "alpha": 0.0,
+        "exact_bfloat16_materialization": True,
+        "private_candidate_storage": True,
+        "state_sha256": incumbent_state_sha,
+        "weight_delta_rms_ratio": 0.0,
+        "weight_norm_gate_passed": True,
+        "fit_metrics": incumbent_metrics["fit"].as_dict(),
+        "fit_check_metrics": (
+            None if exact_zero_cold_start else incumbent_metrics["fit_check"].as_dict()
+        ),
+        "selection_metrics": (
+            None if exact_zero_cold_start else incumbent_metrics["selection"].as_dict()
+        ),
+        "fit_gates": {"incumbent_control": True},
+        "fit_check_gates": {"incumbent_control": True},
+        "selection_gates": {"incumbent_control": True},
+        "eligible": True,
+        "selection_key": _selection_key_report(incumbent_key),
+    }
+    if exact_zero_cold_start:
+        incumbent_frontier.update(
+            {
+                "weight_norm_gate_passed": False,
+                "fit_gates": {"exact_zero_control_not_publishable": True},
+                "fit_check_gates": {"not_evaluated_before_fit_selection_freeze": True},
+                "selection_gates": {"not_evaluated_before_fit_selection_freeze": True},
+                "eligible": False,
+                "exact_zero_incumbent_noop_forbidden": True,
+                "candidate_ranking_split": "fit",
+            }
+        )
+    frontier: list[dict[str, Any]] = [incumbent_frontier]
     selected_id = "incumbent"
-    selected_key = incumbent_key
+    selected_key = None if exact_zero_cold_start else incumbent_key
     selected_weight = incumbent.detach().clone()
     selected_hyperparameters = {
         "gauss_newton_damping": (selected_policy.gauss_newton_damping_frontier[0]),
         "ridge": selected_policy.ridge_frontier[0],
         "alpha": 0.0,
     }
-    selected_split_metrics = {split: incumbent_metrics[split] for split in _SPLITS[:-1]}
+    selected_split_metrics = {
+        split: incumbent_metrics[split] for split in frontier_metric_splits
+    }
     target_residual = (
         prepared["fit"].oracle_hidden - prepared["fit"].incumbent_final_norm_output
     )
@@ -1700,9 +2133,16 @@ def compile_lfm2_cpcf_terminal_action_residual(
                         incumbent,
                         selected_policy.weight_reference_floor,
                     )
-                    weight_gate = (
-                        bool(torch.isfinite(candidate).all().item())
-                        and weight_ratio
+                    structural_coverage = (
+                        _terminal_writer_structural_coverage(candidate)
+                        if exact_zero_cold_start
+                        else None
+                    )
+                    weight_gate = bool(torch.isfinite(candidate).all().item()) and (
+                        structural_coverage.get("complete_dense_writer_coverage")
+                        is True
+                        if exact_zero_cold_start
+                        else weight_ratio
                         <= selected_policy.maximum_weight_delta_rms_ratio
                     )
                     candidate_metrics = {
@@ -1712,7 +2152,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
                             candidate,
                             metric_chunk_rows=(selected_policy.metric_chunk_rows),
                         )
-                        for split in ("fit", "fit_check", "selection")
+                        for split in frontier_metric_splits
                     }
                     fit_gates = _metric_gates(
                         candidate_metrics["fit"],
@@ -1720,57 +2160,92 @@ def compile_lfm2_cpcf_terminal_action_residual(
                         selected_policy,
                         require_selection_improvement=False,
                     )
-                    fit_check_gates = _metric_gates(
-                        candidate_metrics["fit_check"],
-                        incumbent_metrics["fit_check"],
-                        selected_policy,
-                        require_selection_improvement=False,
-                    )
-                    selection_gates = _metric_gates(
-                        candidate_metrics["selection"],
-                        incumbent_metrics["selection"],
-                        selected_policy,
-                        require_selection_improvement=True,
-                    )
-                    eligible = bool(
-                        weight_gate
-                        and _all_passed(fit_gates)
-                        and _all_passed(fit_check_gates)
-                        and _all_passed(selection_gates)
-                    )
+                    if exact_zero_cold_start:
+                        fit_check_gates = {
+                            "not_evaluated_before_fit_selection_freeze": True
+                        }
+                        selection_gates = {
+                            "not_evaluated_before_fit_selection_freeze": True
+                        }
+                    else:
+                        fit_check_gates = _metric_gates(
+                            candidate_metrics["fit_check"],
+                            incumbent_metrics["fit_check"],
+                            selected_policy,
+                            require_selection_improvement=False,
+                        )
+                        selection_gates = _metric_gates(
+                            candidate_metrics["selection"],
+                            incumbent_metrics["selection"],
+                            selected_policy,
+                            require_selection_improvement=True,
+                        )
                     key = _selection_key(
-                        candidate_metrics["selection"],
+                        candidate_metrics[
+                            "fit" if exact_zero_cold_start else "selection"
+                        ],
                         alpha=alpha,
                         damping=damping,
                         ridge=ridge,
                         state_sha256=state_sha,
                     )
-                    frontier.append(
-                        {
-                            "candidate_id": candidate_id,
-                            "gauss_newton_damping": damping,
-                            "ridge": ridge,
-                            "alpha": alpha,
-                            "exact_bfloat16_materialization": True,
-                            "private_candidate_storage": True,
-                            "state_sha256": state_sha,
-                            "weight_delta_rms_ratio": weight_ratio,
-                            "weight_norm_gate_passed": weight_gate,
-                            "fit_metrics": (candidate_metrics["fit"].as_dict()),
-                            "fit_check_metrics": (
-                                candidate_metrics["fit_check"].as_dict()
-                            ),
-                            "selection_metrics": (
-                                candidate_metrics["selection"].as_dict()
-                            ),
-                            "fit_gates": fit_gates,
-                            "fit_check_gates": fit_check_gates,
-                            "selection_gates": selection_gates,
-                            "eligible": eligible,
-                            "selection_key": _selection_key_report(key),
-                        }
+                    eligible = bool(
+                        weight_gate
+                        and _all_passed(fit_gates)
+                        and (
+                            key < incumbent_key
+                            if exact_zero_cold_start
+                            else _all_passed(fit_check_gates)
+                            and _all_passed(selection_gates)
+                        )
                     )
-                    if eligible and key < selected_key:
+                    candidate_report = {
+                        "candidate_id": candidate_id,
+                        "gauss_newton_damping": damping,
+                        "ridge": ridge,
+                        "alpha": alpha,
+                        "exact_bfloat16_materialization": True,
+                        "private_candidate_storage": True,
+                        "state_sha256": state_sha,
+                        "weight_delta_rms_ratio": weight_ratio,
+                        "weight_norm_gate_passed": weight_gate,
+                        "fit_metrics": (candidate_metrics["fit"].as_dict()),
+                        "fit_check_metrics": (
+                            None
+                            if exact_zero_cold_start
+                            else candidate_metrics["fit_check"].as_dict()
+                        ),
+                        "selection_metrics": (
+                            None
+                            if exact_zero_cold_start
+                            else candidate_metrics["selection"].as_dict()
+                        ),
+                        "fit_gates": fit_gates,
+                        "fit_check_gates": fit_check_gates,
+                        "selection_gates": selection_gates,
+                        "eligible": eligible,
+                        "selection_key": _selection_key_report(key),
+                    }
+                    if exact_zero_cold_start:
+                        candidate_report.update(
+                            {
+                                "candidate_ranking_split": "fit",
+                                "fit_check_and_selection_metrics_diagnostic_only": (
+                                    True
+                                ),
+                                "relative_to_zero_weight_delta_gate_applied": False,
+                                "legacy_relative_weight_delta_gate_would_pass": (
+                                    weight_ratio
+                                    <= selected_policy.maximum_weight_delta_rms_ratio
+                                ),
+                                "structural_coverage": dict(structural_coverage),
+                                "structural_coverage_sha256": structural_coverage[
+                                    "coverage_sha256"
+                                ],
+                            }
+                        )
+                    frontier.append(candidate_report)
+                    if eligible and (selected_key is None or key < selected_key):
                         selected_id = candidate_id
                         selected_key = key
                         selected_weight = candidate.detach().clone()
@@ -1781,28 +2256,121 @@ def compile_lfm2_cpcf_terminal_action_residual(
                         }
                         selected_split_metrics = dict(candidate_metrics)
 
-    selected_before_validation = selected_id
+    selected_structural_coverage = None
+    if exact_zero_cold_start:
+        if selected_id == "incumbent" or selected_key is None:
+            raise Lfm2CpcfTerminalActionResidualError(
+                "Exact-zero terminal cold start found no finite, fully dense "
+                "FIT-improving closed-form W2 candidate; incumbent publication "
+                "is forbidden."
+            )
+        selected_structural_coverage = _terminal_writer_structural_coverage(
+            selected_weight
+        )
+        if selected_structural_coverage.get(
+            "complete_dense_writer_coverage"
+        ) is not True or torch.equal(selected_weight, incumbent):
+            raise Lfm2CpcfTerminalActionResidualError(
+                "Exact-zero terminal cold start did not freeze a complete dense "
+                "nonincumbent W2 before held-out diagnostics."
+            )
+
+    selected_before_heldout = selected_id
     selected_state_sha = _tensor_sha256(
         selected_weight,
         "selected_down_weight",
     )
-    incumbent_metrics["validation"] = _evaluate_split(
-        prepared["validation"],
-        seed,
-        incumbent,
-        metric_chunk_rows=selected_policy.metric_chunk_rows,
-    )
-    oracle_ceilings["validation"] = _evaluate_oracle_ceiling(
-        prepared["validation"],
-        seed,
-        metric_chunk_rows=selected_policy.metric_chunk_rows,
-    )
-    selected_validation_metrics = _evaluate_split(
-        prepared["validation"],
-        seed,
-        selected_weight,
-        metric_chunk_rows=selected_policy.metric_chunk_rows,
-    )
+    if exact_zero_cold_start:
+        frozen_selected_metrics: dict[str, Lfm2CpcfTerminalActionSplitMetrics] = {}
+        try:
+            for split in _SPLITS[1:]:
+                prepared[split] = _prepare_split(evidence_by_split[split], seed)
+                incumbent_metrics[split] = _evaluate_split(
+                    prepared[split],
+                    seed,
+                    incumbent,
+                    metric_chunk_rows=selected_policy.metric_chunk_rows,
+                )
+                oracle_ceilings[split] = _evaluate_oracle_ceiling(
+                    prepared[split],
+                    seed,
+                    metric_chunk_rows=selected_policy.metric_chunk_rows,
+                )
+                frozen_selected_metrics[split] = _evaluate_split(
+                    prepared[split],
+                    seed,
+                    selected_weight,
+                    metric_chunk_rows=selected_policy.metric_chunk_rows,
+                )
+        except Exception as exc:
+            raise Lfm2CpcfTerminalActionResidualError(
+                "A held-out terminal diagnostic failed after the FIT-only W2 "
+                "candidate was frozen; no result was issued."
+            ) from exc
+        selected_split_metrics.update(
+            {
+                split: frozen_selected_metrics[split]
+                for split in ("fit_check", "selection")
+            }
+        )
+        selected_frontier_record = next(
+            value for value in frontier if value["candidate_id"] == selected_id
+        )
+        diagnostic_gates = {
+            "fit_check": _metric_gates(
+                frozen_selected_metrics["fit_check"],
+                incumbent_metrics["fit_check"],
+                selected_policy,
+                require_selection_improvement=False,
+            ),
+            "selection": _metric_gates(
+                frozen_selected_metrics["selection"],
+                incumbent_metrics["selection"],
+                selected_policy,
+                require_selection_improvement=True,
+            ),
+        }
+        incumbent_frontier.update(
+            {
+                "fit_check_metrics": incumbent_metrics["fit_check"].as_dict(),
+                "selection_metrics": incumbent_metrics["selection"].as_dict(),
+                "fit_check_gates": {"diagnostic_only_after_fit_freeze": True},
+                "selection_gates": {"diagnostic_only_after_fit_freeze": True},
+            }
+        )
+        selected_frontier_record.update(
+            {
+                "fit_check_metrics": frozen_selected_metrics["fit_check"].as_dict(),
+                "selection_metrics": frozen_selected_metrics["selection"].as_dict(),
+                "fit_check_gates": diagnostic_gates["fit_check"],
+                "selection_gates": diagnostic_gates["selection"],
+                "heldout_diagnostics_evaluated_after_fit_selection_freeze": True,
+                "frozen_candidate_state_sha256": selected_state_sha,
+            }
+        )
+        selected_validation_metrics = frozen_selected_metrics["validation"]
+    else:
+        prepared["validation"] = _prepare_split(
+            evidence_by_split["validation"],
+            seed,
+        )
+        incumbent_metrics["validation"] = _evaluate_split(
+            prepared["validation"],
+            seed,
+            incumbent,
+            metric_chunk_rows=selected_policy.metric_chunk_rows,
+        )
+        oracle_ceilings["validation"] = _evaluate_oracle_ceiling(
+            prepared["validation"],
+            seed,
+            metric_chunk_rows=selected_policy.metric_chunk_rows,
+        )
+        selected_validation_metrics = _evaluate_split(
+            prepared["validation"],
+            seed,
+            selected_weight,
+            metric_chunk_rows=selected_policy.metric_chunk_rows,
+        )
     validation_gates = _metric_gates(
         selected_validation_metrics,
         incumbent_metrics["validation"],
@@ -1811,11 +2379,15 @@ def compile_lfm2_cpcf_terminal_action_residual(
     )
     validation_passed = _all_passed(validation_gates)
     selected_nonincumbent = selected_id != "incumbent"
-    accepted = bool(selected_nonincumbent and validation_passed)
+    accepted = bool(
+        selected_nonincumbent and (exact_zero_cold_start or validation_passed)
+    )
     published = (
         selected_weight.detach().clone() if accepted else incumbent.detach().clone()
     )
-    rollback_performed = bool(selected_nonincumbent and not validation_passed)
+    rollback_performed = bool(
+        not exact_zero_cold_start and selected_nonincumbent and not validation_passed
+    )
     rollback_exact = bool(not rollback_performed or torch.equal(published, incumbent))
     if not rollback_exact:
         raise Lfm2CpcfTerminalActionResidualError(
@@ -1825,6 +2397,18 @@ def compile_lfm2_cpcf_terminal_action_residual(
         raise Lfm2CpcfTerminalActionResidualError(
             "Terminal compilation mutated the authenticated seed writer."
         )
+    if exact_zero_cold_start and (
+        not accepted
+        or torch.equal(published, incumbent)
+        or _terminal_writer_structural_coverage(published).get(
+            "complete_dense_writer_coverage"
+        )
+        is not True
+    ):
+        raise Lfm2CpcfTerminalActionResidualError(
+            "Exact-zero terminal cold start attempted to publish a noop or an "
+            "incomplete W2."
+        )
 
     expected_frontier_count = 1 + (
         len(selected_policy.gauss_newton_damping_frontier)
@@ -1833,7 +2417,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
     )
     if (
         len(frontier) != expected_frontier_count
-        or selected_id != selected_before_validation
+        or selected_id != selected_before_heldout
     ):
         raise Lfm2CpcfTerminalActionResidualError(
             "Terminal frontier cardinality or frozen selection changed."
@@ -1843,12 +2427,53 @@ def compile_lfm2_cpcf_terminal_action_residual(
         "selected": _tensor_sha256(selected_weight, "selected"),
         "published": _tensor_sha256(published, "published"),
     }
+    validation_report = {
+        "evaluated_candidate_id": selected_id,
+        "candidate_count": 1,
+        "metrics": selected_validation_metrics.as_dict(),
+        "gates": validation_gates,
+        "passed": validation_passed,
+        "used_for_fit": False,
+        "used_for_fit_check_veto": False,
+        "used_for_candidate_ranking": False,
+        "used_to_change_selected_candidate_id": False,
+        "used_only_for_frozen_candidate_acceptance": True,
+        "accessed_only_after_selected_id_and_state_sha256_frozen": True,
+    }
+    split_roles = {
+        "fit_used_for_gauss_newton_target": True,
+        "fit_used_for_weighted_ridge": True,
+        "fit_check_used_for_fit": False,
+        "fit_check_used_for_candidate_veto": True,
+        "fit_check_used_for_candidate_ranking": False,
+        "selection_used_for_fit": False,
+        "selection_used_for_candidate_ranking": True,
+        "validation_used_for_fit": False,
+        "validation_used_for_candidate_ranking": False,
+        "validation_candidate_count": 1,
+    }
+    if exact_zero_cold_start:
+        validation_report.update(
+            {
+                "used_only_for_frozen_candidate_acceptance": False,
+                "heldout_diagnostic_only": True,
+                "publication_gate_applied": False,
+                "frozen_candidate_state_sha256": selected_state_sha,
+            }
+        )
+        split_roles.update(
+            {
+                "fit_check_used_for_candidate_veto": False,
+                "fit_check_diagnostic_only": True,
+                "selection_used_for_candidate_ranking": False,
+                "selection_diagnostic_only": True,
+                "validation_diagnostic_only": True,
+                "only_fit_rows_used_for_candidate_eligibility_and_ranking": True,
+            }
+        )
     body = {
         "schema": LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA,
-        "method": (
-            "closed_form_rmsnorm_gauss_newton_then_weighted_ridge_"
-            "exact_bfloat16_terminal_writer_frontier"
-        ),
+        "method": _TERMINAL_ACTION_RESULT_METHOD,
         "policy_sha256": selected_policy.authentication_sha256,
         "seed_sha256": seed.authentication_sha256,
         "split_evidence_sha256": {
@@ -1894,31 +2519,8 @@ def compile_lfm2_cpcf_terminal_action_residual(
             split: metrics.as_dict()
             for split, metrics in selected_split_metrics.items()
         },
-        "validation": {
-            "evaluated_candidate_id": selected_id,
-            "candidate_count": 1,
-            "metrics": selected_validation_metrics.as_dict(),
-            "gates": validation_gates,
-            "passed": validation_passed,
-            "used_for_fit": False,
-            "used_for_fit_check_veto": False,
-            "used_for_candidate_ranking": False,
-            "used_to_change_selected_candidate_id": False,
-            "used_only_for_frozen_candidate_acceptance": True,
-            "accessed_only_after_selected_id_and_state_sha256_frozen": True,
-        },
-        "split_roles": {
-            "fit_used_for_gauss_newton_target": True,
-            "fit_used_for_weighted_ridge": True,
-            "fit_check_used_for_fit": False,
-            "fit_check_used_for_candidate_veto": True,
-            "fit_check_used_for_candidate_ranking": False,
-            "selection_used_for_fit": False,
-            "selection_used_for_candidate_ranking": True,
-            "validation_used_for_fit": False,
-            "validation_used_for_candidate_ranking": False,
-            "validation_candidate_count": 1,
-        },
+        "validation": validation_report,
+        "split_roles": split_roles,
         "selected_nonincumbent": selected_nonincumbent,
         "accepted": accepted,
         "rollback_performed": rollback_performed,
@@ -1931,6 +2533,36 @@ def compile_lfm2_cpcf_terminal_action_residual(
         "output_state_sha256": output_hashes,
         "operation_audit": dict(_ZERO_OPERATION_AUDIT),
     }
+    if exact_zero_cold_start:
+        body.update(
+            {
+                "exact_zero_cold_start": True,
+                "incumbent_seed_writer_sha256": incumbent_state_sha,
+                "incumbent_all_elements_zero": True,
+                "incumbent_nonzero_element_count": 0,
+                "incumbent_noop_publication_forbidden": True,
+                "candidate_selection_evidence_scope": "fit-only",
+                "relative_to_zero_weight_delta_gate_applied": False,
+                "heldout_evidence_role": ("diagnostic-only-after-frozen-fit-selection"),
+                "selected_before_any_heldout_publication_diagnostic": True,
+                "heldout_candidate_evaluation_count_before_fit_freeze": 0,
+                "heldout_candidate_evaluation_count_after_fit_freeze": 6,
+                "heldout_candidate_count_evaluated_after_fit_freeze": 2,
+                "selected_writer_structural_coverage": dict(
+                    selected_structural_coverage
+                ),
+                "selected_writer_structural_coverage_sha256": (
+                    selected_structural_coverage["coverage_sha256"]
+                ),
+                "selected_writer_all_elements_finite": True,
+                "selected_writer_all_elements_nonzero": (
+                    selected_structural_coverage["all_elements_nonzero"]
+                ),
+                "selected_writer_all_source_features_covered": True,
+                "published_writer_is_finite_dense_nonzero_fit_plant": True,
+                "zero_training_pruning_quantization": True,
+            }
+        )
     result_sha = _canonical_sha256(body)
     report = {**body, "result_sha256": result_sha}
     return Lfm2CpcfTerminalActionResidualResult(
@@ -1942,6 +2574,8 @@ def compile_lfm2_cpcf_terminal_action_residual(
         accepted=accepted,
         report=report,
         result_sha256=result_sha,
+        _compiler_input_binding=compiler_input_binding,
+        _compiler_issuer=_TERMINAL_RESULT_COMPILER_ISSUER,
     )
 
 

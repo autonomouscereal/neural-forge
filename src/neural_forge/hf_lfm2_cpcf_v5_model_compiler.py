@@ -123,7 +123,7 @@ from neural_forge.hf_tied_causal_interface_anchor_fold import (
     fit_tied_causal_interface_anchor_residual,
 )
 from neural_forge.hf_tied_causal_interface_fold import (
-    fit_tied_causal_interface,
+    fit_tied_causal_interface_with_statistics,
 )
 
 
@@ -2772,7 +2772,9 @@ class _SelectiveBoundaryCompiler:
         self.fit_weight_summary: list[dict[str, Any]] | None = None
         self.validation_weight_summary: list[dict[str, Any]] | None = None
         self.base_interface: Any | None = None
+        self.base_statistics: Any | None = None
         self.anchor_fold: Any | None = None
+        self.anchor_splits: Mapping[str, Any] | None = None
         self.interface: Any | None = None
         self.anchor_split_reports: dict[str, Any] | None = None
         self.fit_future: Any | None = None
@@ -2847,19 +2849,22 @@ class _SelectiveBoundaryCompiler:
             "validation",
             final_field,
         )
-        self.base_interface = fit_tied_causal_interface(
-            self.table,
-            fit_final,
-            target_width=self.target_width,
-            validation_producer_rows=validation_final,
-            fit_weights=self.fit_weights,
-            validation_weights=self.validation_weights,
-            preserve_vocabulary_mean=self.preserve_vocabulary_mean,
-            target_norm_epsilon=target_norm_epsilon,
-            minimum_validation_top1_agreement=0.0,
-            metric_chunk_rows=self.metric_chunk_rows,
+        self.base_interface, self.base_statistics = (
+            fit_tied_causal_interface_with_statistics(
+                self.table,
+                fit_final,
+                target_width=self.target_width,
+                validation_producer_rows=validation_final,
+                fit_weights=self.fit_weights,
+                validation_weights=self.validation_weights,
+                preserve_vocabulary_mean=self.preserve_vocabulary_mean,
+                target_norm_epsilon=target_norm_epsilon,
+                minimum_validation_top1_agreement=0.0,
+                metric_chunk_rows=self.metric_chunk_rows,
+            )
         )
         anchor_splits = boundary._causal_anchor_splits(inventory)
+        self.anchor_splits = MappingProxyType(dict(anchor_splits))
         self.anchor_fold = fit_tied_causal_interface_anchor_residual(
             self.base_interface,
             self.table,

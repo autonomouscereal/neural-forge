@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 from collections.abc import Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
@@ -35,6 +37,7 @@ from neural_forge.hf_lfm2_cpcf_short_conv_fold import (
     Lfm2CompiledCpcfShortConvFold,
     Lfm2CpcfShortConvFoldCase,
     Lfm2CpcfShortConvGatePolicy,
+    _SHORT_CONV_TORCH_STATE_LOCK,
     compile_lfm2_cpcf_short_conv_fold,
 )
 
@@ -77,6 +80,143 @@ def _torch() -> Any:
     except ImportError as exc:  # pragma: no cover - optional HF dependency
         raise RuntimeError("Semantic short-conv refolding requires PyTorch.") from exc
     return torch
+
+
+def _cuda_backend_state(torch: Any) -> dict[str, bool]:
+    return {
+        "deterministic_algorithms": bool(torch.are_deterministic_algorithms_enabled()),
+        "deterministic_warn_only": bool(
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        "cuda_matmul_allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
+        "cudnn_allow_tf32": bool(torch.backends.cudnn.allow_tf32),
+        "cuda_matmul_allow_fp16_reduced_precision_reduction": bool(
+            torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction
+        ),
+        "cuda_matmul_allow_bf16_reduced_precision_reduction": bool(
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
+        ),
+    }
+
+
+def _enable_deterministic_cuda_float64(torch: Any) -> None:
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
+    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
+
+
+def _restore_cuda_backend_state(torch: Any, state: Mapping[str, bool]) -> None:
+    torch.backends.cuda.matmul.allow_tf32 = state["cuda_matmul_allow_tf32"]
+    torch.backends.cudnn.allow_tf32 = state["cudnn_allow_tf32"]
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = state[
+        "cuda_matmul_allow_fp16_reduced_precision_reduction"
+    ]
+    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = state[
+        "cuda_matmul_allow_bf16_reduced_precision_reduction"
+    ]
+    torch.use_deterministic_algorithms(
+        state["deterministic_algorithms"],
+        warn_only=state["deterministic_warn_only"],
+    )
+
+
+def _indexed_cuda_device(torch: Any, value: Any) -> tuple[Any, int]:
+    if not isinstance(value, str):
+        raise Lfm2SemanticShortConvRefoldError(
+            "fold_compute_device must be an explicitly indexed CUDA device."
+        )
+    prefix, separator, index_text = value.partition(":")
+    if (
+        prefix != "cuda"
+        or separator != ":"
+        or not index_text.isdecimal()
+        or int(index_text) < 0
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "CUDA fold_compute_device must be explicitly indexed as 'cuda:N'."
+        )
+    index = int(index_text)
+    if not torch.cuda.is_available() or index >= int(torch.cuda.device_count()):
+        raise Lfm2SemanticShortConvRefoldError(
+            f"CUDA fold_compute_device index {index} is unavailable."
+        )
+    return torch.device("cuda", index), index
+
+
+@contextmanager
+def _writer_compute_context(
+    torch: Any,
+    requested_device: str | None,
+) -> Any:
+    """Preserve the legacy lane or provide one sealed deterministic CUDA lane."""
+
+    execution: dict[str, Any] = {}
+    if requested_device is None:
+        # This is deliberately the pre-existing placement policy.  The default
+        # semantic compiler omits the new keyword so its candidate/report bytes
+        # remain unchanged on both CPU-only and CUDA-capable hosts.
+        yield torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), execution
+        return
+    device, device_index = _indexed_cuda_device(torch, requested_device)
+    workspace_config = os.environ.get("CUBLAS_WORKSPACE_CONFIG", "")
+    if workspace_config not in {":4096:8", ":16:8"}:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Deterministic CUDA short-conv writer folding requires "
+            "CUBLAS_WORKSPACE_CONFIG=:4096:8 or :16:8 before CUDA initialization."
+        )
+    properties = torch.cuda.get_device_properties(device)
+    with _SHORT_CONV_TORCH_STATE_LOCK:
+        backend_before = _cuda_backend_state(torch)
+        backend_during: dict[str, bool] | None = None
+        try:
+            _enable_deterministic_cuda_float64(torch)
+            backend_during = _cuda_backend_state(torch)
+            with torch.cuda.device(device):
+                yield device, execution
+                torch.cuda.synchronize(device)
+        finally:
+            _restore_cuda_backend_state(torch, backend_before)
+    backend_after = _cuda_backend_state(torch)
+    if backend_after != backend_before:
+        raise Lfm2SemanticShortConvRefoldError(
+            "CUDA short-conv writer solve did not restore global backend state."
+        )
+    expected_backend = {
+        "deterministic_algorithms": True,
+        "deterministic_warn_only": False,
+        "cuda_matmul_allow_tf32": False,
+        "cudnn_allow_tf32": False,
+        "cuda_matmul_allow_fp16_reduced_precision_reduction": False,
+        "cuda_matmul_allow_bf16_reduced_precision_reduction": False,
+    }
+    if backend_during != expected_backend:
+        raise Lfm2SemanticShortConvRefoldError(
+            "CUDA short-conv writer solve did not hold its deterministic FP64 policy."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-short-conv-writer-cuda-execution-v1",
+        "backend": "cuda",
+        "requested_device": requested_device,
+        "resolved_device": str(device),
+        "device_index": device_index,
+        "device_name": str(properties.name),
+        "compute_capability": [int(properties.major), int(properties.minor)],
+        "compute_dtype": "float64",
+        "cublas_workspace_config": workspace_config,
+        "deterministic_backend_state_during_compute": backend_during,
+        "global_backend_state_restored": True,
+        "closed_form_linear_solve_count": 1,
+        "canonical_input_authentication_device": "cpu",
+        "canonical_result_materialization_device": "cpu",
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    execution.update({**body, "execution_sha256": canonical_sha256(body)})
 
 
 def _digest(value: Any, name: str) -> str:
@@ -585,6 +725,150 @@ def _suffix_state(parameters: Mapping[str, Any], layer_index: int) -> Mapping[st
     )
 
 
+def _exact_zero_state(state: Mapping[str, Any]) -> bool:
+    torch = _torch()
+    return bool(state) and all(
+        int(torch.count_nonzero(value).item()) == 0 for value in state.values()
+    )
+
+
+def _cold_start_weight_axis_coverage(
+    value: Any,
+    *,
+    parameter_role: str,
+) -> Mapping[str, Any]:
+    """Prove the same exact axes required by the final stack coverage gate."""
+
+    torch = _torch()
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or not torch.is_floating_point(value)
+        or value.is_complex()
+        or value.ndim < 2
+        or value.numel() <= 0
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            f"Cold-start {parameter_role} is not a materialized dense floating tensor."
+        )
+    tensor = value.detach().to(device="cpu").contiguous()
+    finite = bool(torch.isfinite(tensor.to(dtype=torch.float32)).all().item())
+    nonzero = tensor.ne(0)
+    output_units = int(tensor.shape[0])
+    input_units = int(tensor.shape[-1])
+    covered_output_units = int(
+        nonzero.reshape(output_units, -1).any(dim=1).sum().item()
+    )
+    covered_input_units = int(nonzero.reshape(-1, input_units).any(dim=0).sum().item())
+    nonzero_count = int(nonzero.sum().item())
+    body = {
+        "schema": "neural-forge-short-conv-cold-start-axis-coverage-v1",
+        "parameter_role": parameter_role,
+        "shape": [int(size) for size in tensor.shape],
+        "dtype": str(tensor.dtype).removeprefix("torch."),
+        "tensor_sha256": _tensor_sha256(tensor),
+        "element_count": int(tensor.numel()),
+        "nonzero_element_count": nonzero_count,
+        "finite": finite,
+        "output_structural_unit_count": output_units,
+        "covered_output_structural_unit_count": covered_output_units,
+        "input_structural_unit_count": input_units,
+        "covered_input_structural_unit_count": covered_input_units,
+        "all_output_structural_units_covered": covered_output_units == output_units,
+        "all_input_structural_units_covered": covered_input_units == input_units,
+        "structurally_nonzero": bool(
+            finite
+            and nonzero_count > 0
+            and covered_output_units == output_units
+            and covered_input_units == input_units
+        ),
+    }
+    return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
+
+
+def _cold_start_structural_axis_coverage(candidate: _Candidate) -> Mapping[str, Any]:
+    required_weights = ("in_proj.weight", "conv.weight", "out_proj.weight")
+    receipts = {
+        name: _cold_start_weight_axis_coverage(
+            candidate.state[name],
+            parameter_role=name,
+        )
+        for name in required_weights
+    }
+    body = {
+        "schema": "neural-forge-short-conv-cold-start-axis-coverage-set-v1",
+        "required_weight_roles": list(required_weights),
+        "role_receipts": {name: dict(receipts[name]) for name in required_weights},
+        "all_required_weights_structurally_nonzero": all(
+            receipts[name]["structurally_nonzero"] for name in required_weights
+        ),
+        "blank_or_partially_blank_required_weight_count": sum(
+            int(not receipts[name]["structurally_nonzero"]) for name in required_weights
+        ),
+        "every_output_row_and_input_or_lag_axis_covered": all(
+            receipts[name]["all_output_structural_units_covered"]
+            and receipts[name]["all_input_structural_units_covered"]
+            for name in required_weights
+        ),
+        "repair_policy": (
+            "use-only-authenticated-full-source-structural-coefficients-"
+            "otherwise-fail-before-mutation"
+        ),
+        "synthetic_epsilon_fill_permitted": False,
+    }
+    return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
+
+
+def _validate_cold_start_structural_plant(candidate: _Candidate) -> Mapping[str, Any]:
+    torch = _torch()
+    provenance = candidate.provenance
+    state = candidate.state
+    required_weights = {"in_proj.weight", "conv.weight", "out_proj.weight"}
+    if (
+        candidate.name != "full-source-structural"
+        or provenance.get("full_source_coverage") is not True
+        or provenance.get("source_channels_dropped") != 0
+        or not required_weights.issubset(state)
+        or any(not bool(torch.isfinite(value).all().item()) for value in state.values())
+        or any(
+            int(torch.count_nonzero(state[name]).item()) == 0
+            for name in required_weights
+        )
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "An exact-zero short-conv incumbent requires one finite, role-complete, "
+            "full-source structural plant."
+        )
+    compiler_report = provenance.get("structural_compiler_report")
+    execution = (
+        compiler_report.get("execution")
+        if isinstance(compiler_report, Mapping)
+        else None
+    )
+    if (
+        not isinstance(execution, Mapping)
+        or execution.get("training_steps") != 0
+        or execution.get("parameters_pruned") != 0
+        or execution.get("parameters_quantized") != 0
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "The cold-start structural plant lacks a zero-training compression proof."
+        )
+    coverage = _cold_start_structural_axis_coverage(candidate)
+    if (
+        coverage["all_required_weights_structurally_nonzero"] is not True
+        or coverage["blank_or_partially_blank_required_weight_count"] != 0
+        or coverage["every_output_row_and_input_or_lag_axis_covered"] is not True
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "The full-source cold-start structural map leaves a required output "
+            "row, input axis, or FIR lag axis disconnected; no authenticated "
+            "structural coefficient supports a deterministic repair before install."
+        )
+    return coverage
+
+
 def _split_evidence(
     evidence: Sequence[Lfm2SemanticShortConvReplayEvidence],
 ) -> Mapping[str, tuple[Lfm2SemanticShortConvReplayEvidence, ...]]:
@@ -826,8 +1110,7 @@ def _strictly_improving(
     tolerance: float,
 ) -> bool:
     return _nonregressing(candidate, baseline, tolerance=tolerance) and (
-        candidate.endpoint_relative_rmse
-        < baseline.endpoint_relative_rmse - tolerance
+        candidate.endpoint_relative_rmse < baseline.endpoint_relative_rmse - tolerance
         or candidate.endpoint_maximum_absolute_error
         < baseline.endpoint_maximum_absolute_error - tolerance
         or candidate.endpoint_cosine_similarity_mean
@@ -897,6 +1180,7 @@ def _compile_structural_candidate(
     incumbent_state: Mapping[str, Any],
     fit: Sequence[Lfm2SemanticShortConvReplayEvidence],
     fit_check: Sequence[Lfm2SemanticShortConvReplayEvidence],
+    fold_compute_device: str = "cpu",
 ) -> _Candidate:
     compiled = compile_lfm2_cpcf_short_conv_fold(
         source_fir_weight=source_fir_weight,
@@ -910,6 +1194,11 @@ def _compile_structural_candidate(
         cases=_structural_cases(fit, fit_check),
         ridge=1e-8,
         gate_policy=Lfm2CpcfShortConvGatePolicy(enforce=False),
+        **(
+            {"compute_device": fold_compute_device}
+            if fold_compute_device != "cpu"
+            else {}
+        ),
     )
     if (
         not isinstance(compiled, Lfm2CompiledCpcfShortConvFold)
@@ -978,6 +1267,8 @@ def _writer_design(
 def _compile_writer_candidate(
     fit_cases: Sequence[_BalancedCase],
     incumbent_state: Mapping[str, Any],
+    *,
+    fold_compute_device: str | None = None,
 ) -> tuple[_Candidate | None, Mapping[str, Any]]:
     torch = _torch()
     contexts, targets, weights = _writer_design(fit_cases, incumbent_state)
@@ -1005,23 +1296,27 @@ def _compile_writer_candidate(
             ),
             dim=0,
         )
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    x = design.to(device=device, dtype=torch.float64)
-    y = targets.to(device=device, dtype=torch.float64)
-    root = torch.sqrt(weights.to(device=device, dtype=torch.float64)).unsqueeze(1)
-    incumbent = incumbent_coefficients.to(device=device)
-    weighted_x = x * root
-    residual = (y - x @ incumbent) * root
-    gram = weighted_x.T @ weighted_x
-    ridge = 1e-4
-    scale = float(gram.diagonal().mean().clamp_min(1.0).item())
-    effective_ridge = ridge * scale
-    identity = torch.eye(int(gram.shape[0]), dtype=torch.float64, device=device)
-    with torch.inference_mode():
-        delta = torch.linalg.solve(
-            gram + effective_ridge * identity,
-            weighted_x.T @ residual,
-        )
+    writer_compute_execution: dict[str, Any]
+    with _writer_compute_context(torch, fold_compute_device) as (
+        device,
+        writer_compute_execution,
+    ):
+        x = design.to(device=device, dtype=torch.float64)
+        y = targets.to(device=device, dtype=torch.float64)
+        root = torch.sqrt(weights.to(device=device, dtype=torch.float64)).unsqueeze(1)
+        incumbent = incumbent_coefficients.to(device=device)
+        weighted_x = x * root
+        residual = (y - x @ incumbent) * root
+        gram = weighted_x.T @ weighted_x
+        ridge = 1e-4
+        scale = float(gram.diagonal().mean().clamp_min(1.0).item())
+        effective_ridge = ridge * scale
+        identity = torch.eye(int(gram.shape[0]), dtype=torch.float64, device=device)
+        with torch.inference_mode():
+            delta = torch.linalg.solve(
+                gram + effective_ridge * identity,
+                weighted_x.T @ residual,
+            )
     if not bool(torch.isfinite(delta).all().item()):
         raise Lfm2SemanticShortConvRefoldError(
             "Closed-form short-conv output-writer solve produced nonfinite values."
@@ -1067,6 +1362,11 @@ def _compile_writer_candidate(
         "selection_used_for_solve": False,
         "validation_used_for_solve": False,
         "operation_audit": dict(_ZERO_OPERATIONS),
+        **(
+            {"compute_execution": dict(writer_compute_execution)}
+            if writer_compute_execution
+            else {}
+        ),
     }
     if not frontier:
         return None, MappingProxyType(
@@ -1152,9 +1452,10 @@ def _select_candidate(
     incumbent = tuple(
         candidate for candidate in candidates if candidate.name == "incumbent-noop"
     )
-    if len(incumbent) != 1 or not reports[incumbent[0].name][
-        "eligible_before_validation"
-    ]:
+    if (
+        len(incumbent) != 1
+        or not reports[incumbent[0].name]["eligible_before_validation"]
+    ):
         raise Lfm2SemanticShortConvRefoldError(
             "The authenticated live incumbent candidate is missing or invalid."
         )
@@ -1240,9 +1541,7 @@ def _install_state_transaction(
         for name, value in parameters.items()
     }
     prefix = f"model.layers.{layer_index}.conv."
-    candidates = {
-        name: state[name.removeprefix(prefix)] for name in parameters
-    }
+    candidates = {name: state[name.removeprefix(prefix)] for name in parameters}
     for name, parameter in parameters.items():
         candidate = candidates[name]
         if (
@@ -1348,6 +1647,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     bridge_artifact_sha256: str,
     source_model_identity_sha256: str,
     source_fir_bias: Any | None = None,
+    fold_compute_device: str = "cpu",
 ) -> Mapping[str, Any]:
     """Compile, gate, freeze, and atomically install one short-conv operator."""
 
@@ -1384,6 +1684,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         )
     parameters = _parameter_bundle(target_model, layer_index)
     incumbent_state = _suffix_state(parameters, layer_index)
+    exact_zero_incumbent = _exact_zero_state(incumbent_state)
     target_hidden = int(incumbent_state["out_proj.weight"].shape[0])
     source_kernel = _finite_cpu_tensor(
         source_fir_weight,
@@ -1453,11 +1754,64 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         incumbent_state=incumbent_state,
         fit=partitions["fit"],
         fit_check=partitions["fit_check"],
+        **(
+            {"fold_compute_device": fold_compute_device}
+            if fold_compute_device != "cpu"
+            else {}
+        ),
     )
+    cold_start_axis_coverage: Mapping[str, Any] | None = None
+    if exact_zero_incumbent:
+        cold_start_axis_coverage = _validate_cold_start_structural_plant(structural)
     writer, writer_fit_report = _compile_writer_candidate(
         banks["fit"],
         incumbent_state,
+        **(
+            {"fold_compute_device": fold_compute_device}
+            if fold_compute_device != "cpu"
+            else {}
+        ),
     )
+    compute_proofs: dict[str, Any] = {}
+    if fold_compute_device != "cpu":
+        structural_report = structural.provenance.get("structural_compiler_report")
+        structural_execution = (
+            structural_report.get("execution", {}).get("compute_execution")
+            if isinstance(structural_report, Mapping)
+            and isinstance(structural_report.get("execution"), Mapping)
+            else None
+        )
+        writer_execution = writer_fit_report.get("compute_execution")
+        for execution, name in (
+            (structural_execution, "structural clustering"),
+            (writer_execution, "writer solve"),
+        ):
+            if not isinstance(execution, Mapping):
+                raise Lfm2SemanticShortConvRefoldError(
+                    f"CUDA short-conv {name} returned no execution proof."
+                )
+            execution_body = dict(execution)
+            execution_sha256 = execution_body.pop("execution_sha256", None)
+            if (
+                execution.get("backend") != "cuda"
+                or execution.get("requested_device") != fold_compute_device
+                or execution.get("compute_dtype") != "float64"
+                or not isinstance(execution_sha256, str)
+                or canonical_sha256(execution_body) != execution_sha256
+            ):
+                raise Lfm2SemanticShortConvRefoldError(
+                    f"CUDA short-conv {name} execution proof is invalid."
+                )
+        compute_proofs = {
+            "fold_compute_device": fold_compute_device,
+            "structural_cluster_compute_execution": dict(structural_execution),
+            "structural_cluster_compute_execution_sha256": (
+                structural_execution["execution_sha256"]
+            ),
+            "writer_compute_execution": dict(writer_execution),
+            "writer_compute_execution_sha256": writer_execution["execution_sha256"],
+            "requested_cuda_short_conv_routes_proved": True,
+        }
     candidates = [incumbent, structural, *([] if writer is None else [writer])]
     tolerance = 1e-8
     reports = {
@@ -1469,7 +1823,9 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         )
         for candidate in candidates
     }
-    prevalidation_choice = _select_candidate(candidates, reports)
+    prevalidation_choice = (
+        structural if exact_zero_incumbent else _select_candidate(candidates, reports)
+    )
     chosen = prevalidation_choice
     frozen_state = MappingProxyType(
         {
@@ -1501,7 +1857,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             "Frozen short-conv candidate changed before isolated VALIDATION."
         )
     validation_rejected_candidate: str | None = None
-    if not _nonregressing(
+    if not exact_zero_incumbent and not _nonregressing(
         validation,
         baseline_validation,
         tolerance=tolerance,
@@ -1599,8 +1955,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "target_topology_sha256_after": _topology_sha256(target_model),
         "changed_state_keys": list(changed),
         "changed_parameter_roles": [
-            name.removeprefix(f"model.layers.{layer_index}.conv.")
-            for name in changed
+            name.removeprefix(f"model.layers.{layer_index}.conv.") for name in changed
         ],
         "changed_state_keys_local_to_operator": all(
             name.startswith(f"model.layers.{layer_index}.conv.") for name in changed
@@ -1648,12 +2003,14 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "candidate_frozen_before_selection": True,
         "candidate_frozen_before_validation": True,
         "validation_triggered_refit": False,
-        "selection_used_for_candidate_choice": True,
+        "selection_used_for_candidate_choice": not exact_zero_incumbent,
         "validation_used_for_candidate_choice": (
-            validation_rejected_candidate is not None
+            not exact_zero_incumbent and validation_rejected_candidate is not None
         ),
-        "validation_used_only_for_acceptance_or_incumbent_fallback": True,
-        "incumbent_noop_candidate_competed": True,
+        "validation_used_only_for_acceptance_or_incumbent_fallback": (
+            not exact_zero_incumbent
+        ),
+        "incumbent_noop_candidate_competed": not exact_zero_incumbent,
         "incumbent_noop_fallback_used": chosen.name == "incumbent-noop",
         "incumbent_selected_by_heldout_gates": chosen.name == "incumbent-noop",
         "fit_check_nonregression_passed": bool(
@@ -1685,6 +2042,33 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "numeric_parent_child_weight_match_objective": False,
         "analytic_cached_evidence_only": True,
         "operation_audit": dict(_ZERO_OPERATIONS),
+        **(
+            {
+                "exact_zero_incumbent_at_entry": True,
+                "cold_start_compulsory_full_source_structural_plant": True,
+                "cold_start_heldout_metrics_diagnostic_only": True,
+                "cold_start_fit_structural_candidate_forced_before_heldout": True,
+                "cold_start_fit_check_used_for_publication_gate": False,
+                "cold_start_selection_used_for_publication_gate": False,
+                "cold_start_validation_used_for_publication_gate": False,
+                "cold_start_blank_noop_forbidden": True,
+                "cold_start_all_required_operator_weights_finite_nonzero": True,
+                "cold_start_optional_biases_finite": True,
+                "cold_start_all_required_operator_axes_covered": True,
+                "cold_start_structural_axis_coverage": dict(
+                    cold_start_axis_coverage or {}
+                ),
+                "cold_start_structural_axis_coverage_sha256": (
+                    cold_start_axis_coverage["result_sha256"]
+                    if cold_start_axis_coverage is not None
+                    else None
+                ),
+                "cold_start_structural_axis_repair_applied": False,
+            }
+            if exact_zero_incumbent
+            else {}
+        ),
+        **compute_proofs,
     }
     return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
 

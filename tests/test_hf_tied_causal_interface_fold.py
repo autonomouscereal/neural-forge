@@ -12,6 +12,8 @@ from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
     TiedCausalInterfaceFold,
     TiedCausalInterfaceFoldError,
     fit_tied_causal_interface,
+    fit_tied_causal_interface_from_statistics,
+    fit_tied_causal_interface_with_statistics,
     whiten_tied_causal_interface,
 )
 
@@ -119,6 +121,76 @@ def test_severe_width_reports_real_parameter_contraction_without_training():
     assert folded.report["backward_calls"] == 0
     assert folded.report["quantization_used"] is False
     assert folded.report["pruning_used"] is False
+
+
+def test_second_moment_statistics_replay_is_byte_identical_to_row_fit():
+    table, fit, validation = _affine_low_rank_fixture()
+    fit_weights = torch.linspace(0.25, 1.25, fit.shape[0], dtype=torch.float64)
+    validation_weights = torch.linspace(
+        1.5,
+        0.5,
+        validation.shape[0],
+        dtype=torch.float64,
+    )
+
+    folded, statistics = fit_tied_causal_interface_with_statistics(
+        table,
+        fit,
+        target_width=5,
+        validation_producer_rows=validation,
+        fit_weights=fit_weights,
+        validation_weights=validation_weights,
+        metric_chunk_rows=7,
+    )
+    replayed = fit_tied_causal_interface_from_statistics(table, statistics)
+
+    assert torch.equal(replayed.target_weight, folded.target_weight)
+    assert torch.equal(replayed.producer_encoder, folded.producer_encoder)
+    assert dict(replayed.report) == dict(folded.report)
+    assert statistics.fit_second_moment.shape == (9, 9)
+    assert torch.equal(
+        statistics.fit_second_moment,
+        statistics.fit_second_moment.T,
+    )
+    assert statistics.fit_metric_witness.rows == fit.shape[0]
+    assert statistics.validation_metric_witness.rows == validation.shape[0]
+    assert statistics.source_table_sha256 == interface_module._tensor_sha256(table)
+    assert statistics.source_table_sha256 == folded.report["source_table_sha256"]
+    assert len(statistics.statistics_sha256) == 64
+
+
+def test_statistics_replay_rejects_same_shape_changed_source_before_solver(
+    monkeypatch,
+):
+    table, fit, validation = _affine_low_rank_fixture()
+    _folded, statistics = fit_tied_causal_interface_with_statistics(
+        table,
+        fit,
+        target_width=5,
+        validation_producer_rows=validation,
+        metric_chunk_rows=7,
+    )
+    changed = table.clone()
+    changed[0, 0] += 1.0
+    solver_called = False
+
+    def unexpected_solver(*_args, **_kwargs):
+        nonlocal solver_called
+        solver_called = True
+        raise AssertionError("source binding must be checked before the eigensolve")
+
+    monkeypatch.setattr(
+        interface_module,
+        "_solve_tied_causal_interface_second_moment",
+        unexpected_solver,
+    )
+
+    with pytest.raises(
+        TiedCausalInterfaceFoldError,
+        match="differs from the sufficient-statistics binding",
+    ):
+        fit_tied_causal_interface_from_statistics(changed, statistics)
+    assert solver_called is False
 
 
 def test_self_dual_whitening_preserves_operator_and_orthonormalizes_encoder():

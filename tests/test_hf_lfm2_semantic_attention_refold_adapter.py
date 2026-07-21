@@ -485,7 +485,8 @@ def test_accepted_joint_vo_is_installed_in_the_same_qkvo_transaction(
     assert report["joint_value_output_candidate_published"] is True
     assert report["fresh_joint_value_output_refit_performed"] is True
     assert report["fresh_value_refit_performed"] is True
-    assert report["fresh_output_writer_refit_performed"] is True
+    assert report["fresh_output_writer_refit_performed"] is False
+    assert report["fresh_output_projection_refit_performed"] is True
     assert report["fresh_four_matrix_qkvo_refit_claimed"] is False
     assert report["fixed_inherited_projection_roles"] == ["k_proj"]
 
@@ -576,6 +577,13 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
         parameter.grad = torch.ones_like(parameter)
     evidence = _evidence(model)
     _install_fake_noop_qk_compiler(monkeypatch)
+    monkeypatch.setattr(
+        adapter,
+        "_publish_complete_attention_cold_start",
+        lambda **_kwargs: pytest.fail(
+            "A fully nonzero incumbent must preserve the legacy publication path."
+        ),
+    )
     before_identity = fingerprint_lfm2_parent(model).identity_sha256
     before = {
         name: value.detach().clone() for name, value in model.state_dict().items()
@@ -611,7 +619,7 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
                             "fit_check": {"nonregressing": True},
                             "selection": {"nonregressing": True},
                         },
-                    }
+                    },
                 },
                 "selected_candidate": "incumbent",
                 "selected_candidate_frozen_before_validation": True,
@@ -650,9 +658,10 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     assert receipt["changed_state_keys"] == []
     assert receipt["model_state_before_sha256"] == before_identity
     assert receipt["model_state_after_sha256"] == before_identity
-    assert receipt["target_topology_sha256_before"] == receipt[
-        "target_topology_sha256_after"
-    ]
+    assert (
+        receipt["target_topology_sha256_before"]
+        == receipt["target_topology_sha256_after"]
+    )
     assert receipt["parameter_identities_preserved"] is True
     assert receipt["parameter_storage_preserved"] is True
     assert receipt["gradient_state_preserved"] is True
@@ -662,6 +671,7 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     assert receipt["selection_nonregression_passed"] is True
     assert receipt["validation_nonregression_passed"] is True
     report = receipt["analytic_refold"]
+    assert "complete_attention_cold_start" not in report
     assert report["analytically_refit_projection_roles"] == []
     assert report["fixed_inherited_projection_roles"] == [
         "q_proj",
@@ -793,6 +803,11 @@ def test_exact_zero_qk_is_evidence_planted_and_cannot_publish_as_a_noop(
     assert int(torch.count_nonzero(attention.q_proj.weight).item()) > 0
     assert int(torch.count_nonzero(attention.k_proj.weight).item()) > 0
     assert receipt["installed"] is True
+    assert receipt["parameter_count_changed"] is False
+    assert receipt["topology_changed"] is False
+    assert receipt["parameter_identities_preserved"] is True
+    assert receipt["parameter_storage_preserved"] is True
+    assert receipt["gradient_state_preserved"] is True
     assert receipt["changed_state_keys"] == [
         "model.layers.0.self_attn.k_proj.weight",
         "model.layers.0.self_attn.q_proj.weight",
@@ -812,6 +827,393 @@ def test_exact_zero_qk_is_evidence_planted_and_cannot_publish_as_a_noop(
     sealed = dict(receipt)
     digest = sealed.pop("result_sha256")
     assert canonical_sha256(sealed) == digest
+
+
+def test_all_zero_bfloat16_qkvo_is_compulsorily_planted_with_full_axis_coverage() -> (
+    None
+):
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        for projection in (
+            attention.q_proj,
+            attention.k_proj,
+            attention.v_proj,
+            attention.out_proj,
+        ):
+            projection.weight.zero_()
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    evidence = _evidence(model)
+    identities = tuple(id(parameter) for parameter in model.parameters())
+    pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
+    gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
+
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+
+    assert receipt["installed"] is True
+    assert receipt["changed_state_keys"] == [
+        "model.layers.0.self_attn.k_proj.weight",
+        "model.layers.0.self_attn.out_proj.weight",
+        "model.layers.0.self_attn.q_proj.weight",
+        "model.layers.0.self_attn.v_proj.weight",
+    ]
+    assert sum(parameter.numel() for parameter in model.parameters()) == parameter_count
+    assert tuple(id(parameter) for parameter in model.parameters()) == identities
+    assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
+    assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+    cold = receipt["analytic_refold"]["complete_attention_cold_start"]
+    assert cold["exact_zero_roles_at_entry"] == [
+        "q_proj.weight",
+        "k_proj.weight",
+        "v_proj.weight",
+        "out_proj.weight",
+    ]
+    assert cold["all_qkvo_roles_finite_and_structurally_covered"] is True
+    assert cold["fit_partition_only_used_for_plant"] is True
+    assert cold["heldout_metrics_are_diagnostics_not_publication_gates"] is True
+    assert cold["zero_role_incumbent_noop_allowed"] is False
+    assert cold["randomness_used"] is False
+    assert cold["training_used"] is False
+    assert cold["pruning_used"] is False
+    assert cold["quantization_used"] is False
+    for role, coverage in cold["published_role_coverage"].items():
+        assert coverage["structurally_nonzero"] is True, role
+        assert coverage["all_output_structural_units_covered"] is True
+        assert coverage["all_input_structural_units_covered"] is True
+    for projection in (
+        attention.q_proj,
+        attention.k_proj,
+        attention.v_proj,
+        attention.out_proj,
+    ):
+        assert projection.weight.dtype == torch.bfloat16
+        assert int(torch.count_nonzero(projection.weight).item()) > 0
+    audit = receipt["analytic_refold"]["refold_operation_audit"]
+    assert audit["training_steps"] == 0
+    assert audit["backward_calls"] == 0
+    assert audit["optimizer_steps"] == 0
+    assert audit["parameters_pruned"] == 0
+    assert audit["parameters_quantized"] == 0
+    sealed = dict(receipt)
+    digest = sealed.pop("result_sha256")
+    assert canonical_sha256(sealed) == digest
+
+
+def test_all_zero_qkvo_heldout_regression_is_diagnostic_not_blank_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        for projection in (
+            attention.q_proj,
+            attention.k_proj,
+            attention.v_proj,
+            attention.out_proj,
+        ):
+            projection.weight.zero_()
+    evidence = _evidence(model)
+    values = iter(
+        (
+            _metrics(0.8),
+            _metrics(0.4),
+            _metrics(0.2),
+            _metrics(0.9),
+            _metrics(0.2),
+            _metrics(0.9),
+            _metrics(0.2),
+            _metrics(0.9),
+        )
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_evaluate_bank",
+        lambda *_args, **_kwargs: next(values),
+    )
+
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+
+    assert receipt["installed"] is True
+    assert receipt["fit_check_nonregression_passed"] is False
+    assert receipt["selection_nonregression_passed"] is False
+    assert receipt["validation_nonregression_passed"] is False
+    assert receipt["heldout_nonregression_is_diagnostic_only"] is True
+    cold = receipt["analytic_refold"]["complete_attention_cold_start"]
+    qk = cold["qk_cold_start"]
+    assert qk["heldout_nonregression_passed"] is False
+    assert qk["partitions"]["fit_check"]["nonregressing"] is False
+    assert qk["partitions"]["selection"]["nonregressing"] is False
+    assert qk["partitions"]["validation"]["nonregressing"] is False
+    assert cold["heldout_regression_can_restore_blank_incumbent"] is False
+    assert cold["heldout_metrics_are_diagnostics_not_publication_gates"] is True
+    for projection in (
+        attention.q_proj,
+        attention.k_proj,
+        attention.v_proj,
+        attention.out_proj,
+    ):
+        assert int(torch.count_nonzero(projection.weight).item()) > 0
+
+
+def test_joint_only_cold_start_does_not_claim_a_rejected_output_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        for projection in (
+            attention.q_proj,
+            attention.k_proj,
+            attention.v_proj,
+            attention.out_proj,
+        ):
+            projection.weight.zero_()
+    evidence = _evidence(model)
+    original_compile = adapter._compile_output_writer
+
+    def reject_writer(
+        fit_cases: object,
+        incumbent_output_weight: torch.Tensor,
+        *,
+        solver_device: str,
+        ridge: float = 1e-4,
+    ) -> object:
+        proposal = original_compile(
+            fit_cases,
+            incumbent_output_weight,
+            solver_device=solver_device,
+            ridge=ridge,
+        )
+        baseline = adapter._writer_metrics(tuple(fit_cases), incumbent_output_weight)
+        return adapter._OutputWriterProposal(
+            output_weight=incumbent_output_weight.detach().cpu().clone(),
+            changed=False,
+            fit_improved=False,
+            selected_alpha=None,
+            baseline_fit_metrics=baseline,
+            candidate_fit_metrics=baseline,
+            ridge=proposal.ridge,
+            effective_ridge=proposal.effective_ridge,
+            fit_context_sha256=proposal.fit_context_sha256,
+        )
+
+    monkeypatch.setattr(adapter, "_compile_output_writer", reject_writer)
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+
+    report = receipt["analytic_refold"]
+    assert report["output_writer"]["proposal"]["changed"] is False
+    assert report["output_writer"]["accepted"] is False
+    assert report["fresh_output_writer_refit_performed"] is False
+    assert report["fresh_output_projection_refit_performed"] is True
+    assert report["joint_value_output_candidate_published"] is True
+    assert report["joint_value_output_component_contributed"] is True
+    assert report["output_writer_source"] == (
+        "fit_only_joint_residual_composite_low_rank_factorization"
+    )
+
+
+def test_cold_start_receipt_failure_rolls_back_successful_copy_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        for projection in (
+            attention.q_proj,
+            attention.k_proj,
+            attention.v_proj,
+            attention.out_proj,
+        ):
+            projection.weight.zero_()
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    evidence = _evidence(model)
+    before_identity = fingerprint_lfm2_parent(model).identity_sha256
+    before_topology = adapter._topology_sha256(model)
+    before_count = adapter._parameter_count(model)
+    before = {
+        name: value.detach().clone() for name, value in model.state_dict().items()
+    }
+    identities = tuple(id(parameter) for parameter in model.parameters())
+    pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
+    gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
+    successful_copy_observed = False
+
+    def fail_receipt(**_kwargs: object) -> dict[str, object]:
+        nonlocal successful_copy_observed
+        successful_copy_observed = all(
+            int(torch.count_nonzero(projection.weight).item()) > 0
+            for projection in (
+                attention.q_proj,
+                attention.k_proj,
+                attention.v_proj,
+                attention.out_proj,
+            )
+        )
+        raise RuntimeError("injected-post-copy-receipt-failure")
+
+    monkeypatch.setattr(adapter, "_installation_receipt_body", fail_receipt)
+    with pytest.raises(RuntimeError, match="injected-post-copy-receipt-failure"):
+        adapter.compile_install_lfm2_semantic_attention_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            cache_key="2" * 64,
+            bridge_artifact_sha256="3" * 64,
+        )
+
+    assert successful_copy_observed is True
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before_identity
+    assert adapter._topology_sha256(model) == before_topology
+    assert adapter._parameter_count(model) == before_count
+    assert all(
+        torch.equal(value, before[name]) for name, value in model.state_dict().items()
+    )
+    assert tuple(id(parameter) for parameter in model.parameters()) == identities
+    assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
+    assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+
+
+@pytest.mark.parametrize(
+    "blank_role",
+    ("q_proj", "k_proj", "v_proj", "out_proj"),
+)
+def test_single_zero_attention_role_is_planted_without_blank_noop(
+    blank_role: str,
+) -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        getattr(attention, blank_role).weight.zero_()
+    before = {
+        role: getattr(attention, role).weight.detach().clone()
+        for role in ("q_proj", "k_proj", "v_proj", "out_proj")
+    }
+    evidence = _evidence(model)
+
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+
+    assert receipt["installed"] is True
+    cold = receipt["analytic_refold"]["complete_attention_cold_start"]
+    assert cold["exact_zero_roles_at_entry"] == [f"{blank_role}.weight"]
+    assert cold["all_qkvo_roles_finite_and_structurally_covered"] is True
+    assert int(torch.count_nonzero(getattr(attention, blank_role).weight).item()) > 0
+    preserved_roles = (
+        {"q_proj", "k_proj", "v_proj", "out_proj"}.difference({blank_role})
+        if blank_role in {"q_proj", "k_proj"}
+        else {"q_proj", "k_proj"}
+    )
+    for role in preserved_roles:
+        assert torch.equal(getattr(attention, role).weight, before[role])
+
+
+def test_unidentifiable_zero_value_role_fails_before_any_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        attention.v_proj.weight.zero_()
+    evidence = _evidence(model)
+    before = {
+        name: value.detach().clone() for name, value in model.state_dict().items()
+    }
+
+    def reject_joint(
+        _fit_cases: object,
+        incumbent_value_weight: torch.Tensor,
+        incumbent_output_weight: torch.Tensor,
+        **_kwargs: object,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            value_weight=incumbent_value_weight.detach().cpu().clone(),
+            output_weight=incumbent_output_weight.detach().cpu().clone(),
+            changed=False,
+        )
+
+    monkeypatch.setattr(adapter, "_compile_joint_vo", reject_joint)
+    with pytest.raises(
+        adapter.Lfm2SemanticAttentionRefoldError,
+        match="v_proj.weight has uncovered axes and no identifiable FIT linear system",
+    ):
+        adapter.compile_install_lfm2_semantic_attention_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            cache_key="2" * 64,
+            bridge_artifact_sha256="3" * 64,
+        )
+
+    assert all(
+        torch.equal(value, before[name]) for name, value in model.state_dict().items()
+    )
+
+
+def test_fit_ridge_axis_completion_uses_real_coefficients_and_covers_every_axis() -> (
+    None
+):
+    target = torch.tensor(
+        [
+            [1.0, 2.0, 3.0, 4.0],
+            [2.0, -1.0, 0.5, 3.0],
+            [-1.0, 0.25, 2.5, 1.5],
+            [0.75, 1.25, -2.0, 0.5],
+        ],
+        dtype=torch.float64,
+    )
+    inputs = torch.eye(4, dtype=torch.float64)
+    outputs = inputs @ target.T
+    incumbent = target.to(torch.bfloat16)
+    incumbent[1].zero_()
+    incumbent[:, 2].zero_()
+    original = incumbent.clone()
+
+    repaired, report = adapter._repair_dense_axis_coverage(
+        incumbent,
+        role="q_proj.weight",
+        fit_inputs=inputs,
+        fit_targets=outputs,
+        fit_sqrt_weights=torch.ones(4, dtype=torch.float64),
+    )
+
+    assert report["coverage_before"]["structurally_nonzero"] is False
+    assert report["coverage_after"]["structurally_nonzero"] is True
+    assert report["repaired_element_count"] > 0
+    assert report["fit_ridge"] is not None
+    assert report["synthetic_epsilon_scaffolding_used"] is False
+    assert report["existing_nonzero_entries_overwritten"] == 0
+    torch.testing.assert_close(
+        repaired[original.ne(0)],
+        original[original.ne(0)],
+        rtol=0,
+        atol=0,
+    )
 
 
 def test_multi_projection_transaction_matches_wrapper_changed_key_order() -> None:
@@ -924,6 +1326,53 @@ def test_changed_qkvo_transaction_rolls_back_partial_copy_exactly(
         )
 
     assert copy_calls == 2
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before_identity
+    assert all(
+        torch.equal(value, before[name]) for name, value in model.state_dict().items()
+    )
+    assert tuple(id(parameter) for parameter in model.parameters()) == identities
+    assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
+    assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+
+
+def test_changed_qkvo_transaction_rolls_back_wrong_candidate_copy_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    attention = model.model.layers[0].self_attn
+    state = {
+        "q_proj.weight": attention.q_proj.weight.detach().cpu().clone() + 1,
+        "k_proj.weight": attention.k_proj.weight.detach().cpu().clone() + 1,
+        "v_proj.weight": attention.v_proj.weight.detach().cpu().clone(),
+        "out_proj.weight": attention.out_proj.weight.detach().cpu().clone(),
+    }
+    before_identity = fingerprint_lfm2_parent(model).identity_sha256
+    before = {
+        name: value.detach().clone() for name, value in model.state_dict().items()
+    }
+    identities = tuple(id(parameter) for parameter in model.parameters())
+    pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
+    gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
+
+    def copy_wrong_candidate(
+        parameter: torch.nn.Parameter,
+        candidate: torch.Tensor,
+    ) -> None:
+        parameter.copy_(candidate + 7)
+
+    monkeypatch.setattr(adapter, "_copy_candidate", copy_wrong_candidate)
+    with pytest.raises(
+        adapter.Lfm2SemanticAttentionRefoldError,
+        match="did not publish the exact frozen candidate",
+    ):
+        adapter._install_qkvo_transaction(
+            model,
+            layer_index=0,
+            state=state,
+        )
+
     assert fingerprint_lfm2_parent(model).identity_sha256 == before_identity
     assert all(
         torch.equal(value, before[name]) for name, value in model.state_dict().items()

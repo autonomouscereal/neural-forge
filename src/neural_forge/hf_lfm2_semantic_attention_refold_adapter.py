@@ -817,6 +817,158 @@ def _exact_zero(value: Any) -> bool:
     return int(_torch().count_nonzero(value.detach()).item()) == 0
 
 
+def _dense_axis_coverage(value: Any, *, role: str) -> Mapping[str, Any]:
+    """Measure the same per-axis structural coverage used by the layer stack."""
+
+    torch = _torch()
+    tensor = _finite_cpu_tensor(
+        value,
+        f"{role} structural candidate",
+        ndim=2,
+        dtype=torch.bfloat16,
+    )
+    nonzero = tensor.ne(0)
+    output_units, input_units = map(int, tensor.shape)
+    covered_outputs = int(nonzero.any(dim=1).sum().item())
+    covered_inputs = int(nonzero.any(dim=0).sum().item())
+    nonzero_elements = int(nonzero.sum().item())
+    body = {
+        "schema": "neural-forge-dense-weight-structural-coverage-v1",
+        "parameter_name": role,
+        "ordinary_parameter_required": False,
+        "ordinary_parameter": False,
+        "shape": [output_units, input_units],
+        "dtype": "bfloat16",
+        "tensor_sha256": _tensor_sha256(tensor),
+        "element_count": int(tensor.numel()),
+        "nonzero_element_count": nonzero_elements,
+        "nonzero_element_fraction": nonzero_elements / int(tensor.numel()),
+        "finite": True,
+        "output_structural_unit_count": output_units,
+        "covered_output_structural_unit_count": covered_outputs,
+        "input_structural_unit_count": input_units,
+        "covered_input_structural_unit_count": covered_inputs,
+        "all_output_structural_units_covered": covered_outputs == output_units,
+        "all_input_structural_units_covered": covered_inputs == input_units,
+        "structurally_nonzero": bool(
+            nonzero_elements > 0
+            and covered_outputs == output_units
+            and covered_inputs == input_units
+        ),
+    }
+    return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
+
+
+def _repair_dense_axis_coverage(
+    value: Any,
+    *,
+    role: str,
+    fit_inputs: Any | None = None,
+    fit_targets: Any | None = None,
+    fit_sqrt_weights: Any | None = None,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Complete uncovered axes only with an identifiable FIT ridge solution."""
+
+    torch = _torch()
+    candidate = _finite_cpu_tensor(
+        value,
+        f"{role} structural candidate",
+        ndim=2,
+        dtype=torch.bfloat16,
+    )
+    before = _dense_axis_coverage(candidate, role=role)
+    if before["structurally_nonzero"] is True:
+        body = {
+            "schema": "neural-forge-lfm2-attention-fit-axis-repair-v1",
+            "role": role,
+            "coverage_before": dict(before),
+            "coverage_after": dict(before),
+            "repaired_element_count": 0,
+            "repair_mask_sha256": canonical_sha256([]),
+            "fit_ridge": None,
+            "existing_nonzero_entries_overwritten": 0,
+            "fit_evidence_only": True,
+            "heldout_evidence_used": False,
+            "randomness_used": False,
+            "synthetic_epsilon_scaffolding_used": False,
+            "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+        }
+        return candidate, MappingProxyType(
+            {**body, "repair_sha256": canonical_sha256(body)}
+        )
+    if fit_inputs is None or fit_targets is None or fit_sqrt_weights is None:
+        raise Lfm2SemanticAttentionRefoldError(
+            f"{role} has uncovered axes and no identifiable FIT linear system."
+        )
+    alternate, ridge_receipt = _cold_ridge_projection(
+        fit_inputs,
+        fit_targets,
+        fit_sqrt_weights,
+        role=f"{role}-axis-completion",
+        normalize_element_rms=False,
+    )
+    if tuple(alternate.shape) != tuple(candidate.shape):
+        raise Lfm2SemanticAttentionRefoldError(
+            f"{role} FIT axis-completion ridge changed the target topology."
+        )
+    repaired = candidate.clone()
+    original_nonzero = repaired.ne(0)
+    repair_mask = torch.zeros_like(original_nonzero)
+    uncovered_outputs = ~original_nonzero.any(dim=1)
+    if bool(uncovered_outputs.any().item()):
+        output_mask = uncovered_outputs.unsqueeze(1).expand_as(repair_mask)
+        repair_mask |= output_mask & alternate.ne(0)
+    staged_nonzero = original_nonzero | repair_mask
+    uncovered_inputs = ~staged_nonzero.any(dim=0)
+    if bool(uncovered_inputs.any().item()):
+        input_mask = uncovered_inputs.unsqueeze(0).expand_as(repair_mask)
+        repair_mask |= input_mask & alternate.ne(0)
+    repaired[repair_mask] = alternate[repair_mask]
+    after = _dense_axis_coverage(repaired, role=role)
+    if after["structurally_nonzero"] is not True:
+        raise Lfm2SemanticAttentionRefoldError(
+            f"{role} uncovered axes are not identifiable from the FIT ridge system."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-attention-fit-axis-repair-v1",
+        "role": role,
+        "coverage_before": dict(before),
+        "coverage_after": dict(after),
+        "repaired_element_count": int(repair_mask.sum().item()),
+        "repair_mask_sha256": _tensor_sha256(repair_mask),
+        "fit_ridge": dict(ridge_receipt),
+        "existing_nonzero_entries_overwritten": 0,
+        "fit_evidence_only": True,
+        "heldout_evidence_used": False,
+        "randomness_used": False,
+        "synthetic_epsilon_scaffolding_used": False,
+        "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+    }
+    return repaired, MappingProxyType({**body, "repair_sha256": canonical_sha256(body)})
+
+
+def _copy_seed(
+    seed: Lfm2EndpointQkvoSeed,
+    *,
+    query_weight: Any | None = None,
+    key_weight: Any | None = None,
+    value_weight: Any | None = None,
+    output_weight: Any | None = None,
+) -> Lfm2EndpointQkvoSeed:
+    return Lfm2EndpointQkvoSeed(
+        query_weight=seed.query_weight if query_weight is None else query_weight,
+        key_weight=seed.key_weight if key_weight is None else key_weight,
+        value_weight=seed.value_weight if value_weight is None else value_weight,
+        output_weight=seed.output_weight if output_weight is None else output_weight,
+        query_norm_weight=seed.query_norm_weight,
+        key_norm_weight=seed.key_norm_weight,
+        norm_epsilon=seed.norm_epsilon,
+        source_inventory=seed.source_inventory,
+        source_artifact_sha256=seed.source_artifact_sha256,
+        target_template_spec_sha256=seed.target_template_spec_sha256,
+    )
+
+
 def _rotate_half(value: Any) -> Any:
     half = int(value.shape[-1]) // 2
     return _torch().cat((-value[..., half:], value[..., :half]), dim=-1)
@@ -929,9 +1081,7 @@ def _cold_route_runtime_targets(
         heads = tuple(range(first_head, first_head + queries_per_key_value))
         for local_index, head_index in enumerate(heads):
             query_runtime[:, head_index, 0, local_index] = root_head_dim
-        coordinates = (
-            logits[:, heads, 0, :].permute(0, 2, 1).contiguous().clone()
-        )
+        coordinates = logits[:, heads, 0, :].permute(0, 2, 1).contiguous().clone()
         energy = coordinates.square().sum(dim=-1, keepdim=True)
         budget = float(head_dim) * 0.75
         scale = torch.sqrt(
@@ -943,9 +1093,9 @@ def _cold_route_runtime_targets(
         energy = coordinates.square().sum(dim=-1, keepdim=True)
         key_runtime[:, group_index, :, :queries_per_key_value] = coordinates
         if queries_per_key_value < head_dim:
-            key_runtime[
-                :, group_index, :, queries_per_key_value
-            ] = torch.sqrt((float(head_dim) - energy[..., 0]).clamp_min(0.0))
+            key_runtime[:, group_index, :, queries_per_key_value] = torch.sqrt(
+                (float(head_dim) - energy[..., 0]).clamp_min(0.0)
+            )
         else:
             empty = energy[..., 0] <= torch.finfo(torch.float64).tiny
             uniform_vectors += int(empty.sum().item())
@@ -968,8 +1118,10 @@ def _cold_route_runtime_targets(
         "clipped_key_route_vectors": clipped_vectors,
         "uniform_key_route_vectors": uniform_vectors,
     }
-    return query_runtime, key_runtime, MappingProxyType(
-        {**body, "target_sha256": canonical_sha256(body)}
+    return (
+        query_runtime,
+        key_runtime,
+        MappingProxyType({**body, "target_sha256": canonical_sha256(body)}),
     )
 
 
@@ -980,6 +1132,7 @@ def _cold_ridge_projection(
     *,
     role: str,
     ridge: float = 1e-4,
+    normalize_element_rms: bool = True,
 ) -> tuple[Any, Mapping[str, Any]]:
     """Fit one deterministic dense BF16 plant without gradients or randomness."""
 
@@ -1007,9 +1160,7 @@ def _cold_ridge_projection(
                 scale = float(gram.diagonal().mean().clamp_min(1.0).item())
                 effective_ridge = float(ridge) * scale
                 dual = torch.linalg.solve(
-                    gram
-                    + effective_ridge
-                    * torch.eye(rows, dtype=torch.float64),
+                    gram + effective_ridge * torch.eye(rows, dtype=torch.float64),
                     weighted_y,
                 )
                 weight = dual.T @ weighted_x
@@ -1019,9 +1170,7 @@ def _cold_ridge_projection(
                 scale = float(gram.diagonal().mean().clamp_min(1.0).item())
                 effective_ridge = float(ridge) * scale
                 weight = torch.linalg.solve(
-                    gram
-                    + effective_ridge
-                    * torch.eye(features, dtype=torch.float64),
+                    gram + effective_ridge * torch.eye(features, dtype=torch.float64),
                     weighted_x.T @ weighted_y,
                 ).T
                 solve_form = "deterministic_primal_ridge"
@@ -1034,8 +1183,9 @@ def _cold_ridge_projection(
             f"Cold-start {role} ridge solve produced no finite plant."
         )
     target_rms = 1.0 / math.sqrt(features)
-    observed_rms = torch.sqrt(weight.square().mean())
-    weight = weight * (target_rms / observed_rms)
+    if normalize_element_rms:
+        observed_rms = torch.sqrt(weight.square().mean())
+        weight = weight * (target_rms / observed_rms)
     published = weight.to(torch.bfloat16).contiguous()
     if _exact_zero(published) or not bool(torch.isfinite(published).all().item()):
         raise Lfm2SemanticAttentionRefoldError(
@@ -1055,18 +1205,25 @@ def _cold_ridge_projection(
         "sqrt_weight_sha256": _tensor_sha256(root),
         "published_weight_sha256": _tensor_sha256(published),
         "published_nonzero_elements": int(torch.count_nonzero(published).item()),
-        "normalized_published_element_rms": target_rms,
+        "target_rms_normalization_applied": normalize_element_rms,
+        "target_normalized_element_rms": (
+            target_rms if normalize_element_rms else None
+        ),
+        "normalized_published_element_rms": (
+            target_rms if normalize_element_rms else None
+        ),
+        "published_element_rms": float(
+            torch.sqrt(published.to(torch.float64).square().mean()).item()
+        ),
     }
-    return published, MappingProxyType(
-        {**body, "ridge_sha256": canonical_sha256(body)}
-    )
+    return published, MappingProxyType({**body, "ridge_sha256": canonical_sha256(body)})
 
 
-def _compile_qk_cold_start_plant(
+def _qk_cold_fit_systems(
     seed: Lfm2EndpointQkvoSeed,
     fit_bank: Lfm2EndpointQkResidualEvidenceBank,
-) -> tuple[Any, Any, Mapping[str, Any]]:
-    """Compile a FIT-only route plant for an exact-zero Q/K incumbent."""
+) -> Mapping[str, Any]:
+    """Assemble the authenticated FIT linear systems behind the Q/K plant."""
 
     torch = _torch()
     cases = tuple(fit_bank.cases)
@@ -1131,26 +1288,43 @@ def _compile_qk_cold_start_plant(
         case_scale = torch.sqrt(
             case.query_row_sqrt_weights.to(torch.float64).square().mean()
         )
-        key_weights.append(
-            torch.full((batch * key_length,), float(case_scale.item()))
-        )
+        key_weights.append(torch.full((batch * key_length,), float(case_scale.item())))
         target_receipts.append(dict(target_receipt))
+    return MappingProxyType(
+        {
+            "query_inputs": torch.cat(query_inputs, dim=0),
+            "query_targets": torch.cat(query_targets, dim=0),
+            "query_weights": torch.cat(query_weights, dim=0),
+            "key_inputs": torch.cat(key_inputs, dim=0),
+            "key_targets": torch.cat(key_targets, dim=0),
+            "key_weights": torch.cat(key_weights, dim=0),
+            "target_receipts": tuple(target_receipts),
+        }
+    )
+
+
+def _compile_qk_cold_start_plant(
+    seed: Lfm2EndpointQkvoSeed,
+    fit_bank: Lfm2EndpointQkResidualEvidenceBank,
+) -> tuple[Any, Any, Mapping[str, Any]]:
+    """Compile a FIT-only route plant for an exact-zero Q/K incumbent."""
+
+    systems = _qk_cold_fit_systems(seed, fit_bank)
     planted_query, query_receipt = _cold_ridge_projection(
-        torch.cat(query_inputs, dim=0),
-        torch.cat(query_targets, dim=0),
-        torch.cat(query_weights, dim=0),
+        systems["query_inputs"],
+        systems["query_targets"],
+        systems["query_weights"],
         role="query",
     )
     planted_key, key_receipt = _cold_ridge_projection(
-        torch.cat(key_inputs, dim=0),
-        torch.cat(key_targets, dim=0),
-        torch.cat(key_weights, dim=0),
+        systems["key_inputs"],
+        systems["key_targets"],
+        systems["key_weights"],
         role="key",
     )
-    if (
-        tuple(planted_query.shape) != tuple(seed.query_weight.shape)
-        or tuple(planted_key.shape) != tuple(seed.key_weight.shape)
-    ):
+    if tuple(planted_query.shape) != tuple(seed.query_weight.shape) or tuple(
+        planted_key.shape
+    ) != tuple(seed.key_weight.shape):
         raise Lfm2SemanticAttentionRefoldError(
             "Q/K cold-start plant changed the dense target topology."
         )
@@ -1159,8 +1333,8 @@ def _compile_qk_cold_start_plant(
         "fit_evidence_sha256": fit_bank.evidence_sha256,
         "source_artifact_sha256": fit_bank.source_artifact_sha256,
         "seed_sha256": seed.seed_sha256,
-        "case_evidence_sha256": [case.evidence_sha256 for case in cases],
-        "runtime_targets": target_receipts,
+        "case_evidence_sha256": [case.evidence_sha256 for case in fit_bank.cases],
+        "runtime_targets": list(systems["target_receipts"]),
         "query_ridge": dict(query_receipt),
         "key_ridge": dict(key_receipt),
         "planted_query_sha256": _tensor_sha256(planted_query),
@@ -1171,8 +1345,10 @@ def _compile_qk_cold_start_plant(
         "gradients_used": False,
         "training_steps": 0,
     }
-    return planted_query, planted_key, MappingProxyType(
-        {**body, "plant_sha256": canonical_sha256(body)}
+    return (
+        planted_query,
+        planted_key,
+        MappingProxyType({**body, "plant_sha256": canonical_sha256(body)}),
     )
 
 
@@ -1182,8 +1358,7 @@ def _strict_metric_improvement(
 ) -> bool:
     tolerance = 1e-12
     return bool(
-        candidate.endpoint_relative_rmse
-        < baseline.endpoint_relative_rmse - tolerance
+        candidate.endpoint_relative_rmse < baseline.endpoint_relative_rmse - tolerance
         or candidate.probability_relative_rmse
         < baseline.probability_relative_rmse - tolerance
         or candidate.js_divergence_mean < baseline.js_divergence_mean - tolerance
@@ -1198,32 +1373,77 @@ def _cold_start_qk_seed(
     *,
     banks: Mapping[str, Lfm2EndpointQkResidualEvidenceBank],
     policy: Lfm2EndpointQkResidualFoldPolicy,
+    force_structural_coverage: bool = False,
+    defer_heldout_diagnostics: bool = False,
 ) -> tuple[Lfm2EndpointQkvoSeed, Mapping[str, Any] | None]:
-    """Plant and four-way gate Q/K only when the incumbent is exactly zero."""
+    """Plant zero Q/K from FIT and treat every held-out metric as diagnostic."""
 
     query_was_zero = _exact_zero(seed.query_weight)
     key_was_zero = _exact_zero(seed.key_weight)
-    if not query_was_zero and not key_was_zero:
+    if not query_was_zero and not key_was_zero and not force_structural_coverage:
         return seed, None
-    planted_query, planted_key, plant = _compile_qk_cold_start_plant(
-        seed,
-        banks["fit"],
+    if query_was_zero or key_was_zero:
+        raw_query, raw_key, plant = _compile_qk_cold_start_plant(
+            seed,
+            banks["fit"],
+        )
+    else:
+        raw_query = seed.query_weight
+        raw_key = seed.key_weight
+        plant_body = {
+            "schema": "neural-forge-lfm2-semantic-qk-cold-start-plant-v1",
+            "fit_evidence_sha256": banks["fit"].evidence_sha256,
+            "source_artifact_sha256": banks["fit"].source_artifact_sha256,
+            "seed_sha256": seed.seed_sha256,
+            "case_evidence_sha256": [
+                case.evidence_sha256 for case in banks["fit"].cases
+            ],
+            "runtime_targets": [],
+            "query_ridge": None,
+            "key_ridge": None,
+            "planted_query_sha256": _tensor_sha256(raw_query),
+            "planted_key_sha256": _tensor_sha256(raw_key),
+            "fit_partition_only_used_for_plant": True,
+            "heldout_partitions_used_for_plant": False,
+            "randomness_used": False,
+            "gradients_used": False,
+            "training_steps": 0,
+            "established_qk_preserved_before_axis_coverage": True,
+        }
+        plant = MappingProxyType(
+            {**plant_body, "plant_sha256": canonical_sha256(plant_body)}
+        )
+    candidate_query = raw_query if query_was_zero else seed.query_weight
+    candidate_key = raw_key if key_was_zero else seed.key_weight
+    fit_systems = _qk_cold_fit_systems(seed, banks["fit"])
+    candidate_query, query_coverage = _repair_dense_axis_coverage(
+        candidate_query,
+        role="q_proj.weight",
+        fit_inputs=fit_systems["query_inputs"],
+        fit_targets=fit_systems["query_targets"],
+        fit_sqrt_weights=fit_systems["query_weights"],
     )
-    planted = Lfm2EndpointQkvoSeed(
-        query_weight=planted_query,
-        key_weight=planted_key,
-        value_weight=seed.value_weight,
-        output_weight=seed.output_weight,
-        query_norm_weight=seed.query_norm_weight,
-        key_norm_weight=seed.key_norm_weight,
-        norm_epsilon=seed.norm_epsilon,
-        source_inventory=seed.source_inventory,
-        source_artifact_sha256=seed.source_artifact_sha256,
-        target_template_spec_sha256=seed.target_template_spec_sha256,
+    candidate_key, key_coverage = _repair_dense_axis_coverage(
+        candidate_key,
+        role="k_proj.weight",
+        fit_inputs=fit_systems["key_inputs"],
+        fit_targets=fit_systems["key_targets"],
+        fit_sqrt_weights=fit_systems["key_weights"],
+    )
+    planted = _copy_seed(
+        seed,
+        query_weight=candidate_query,
+        key_weight=candidate_key,
+    )
+    frozen_sha = canonical_sha256(
+        {
+            "query_weight_sha256": _tensor_sha256(planted.query_weight),
+            "key_weight_sha256": _tensor_sha256(planted.key_weight),
+        }
     )
     metrics: dict[str, Any] = {}
-    rejected = None
-    for partition in _PARTITIONS:
+    evaluated_partitions = ("fit",) if defer_heldout_diagnostics else _PARTITIONS
+    for partition in evaluated_partitions:
         baseline = _evaluate_bank(
             banks[partition],
             seed,
@@ -1247,17 +1467,25 @@ def _cold_start_qk_seed(
             "baseline": baseline.as_dict(),
             "candidate": candidate.as_dict(),
             "nonregressing": nonregressing,
+            "diagnostic_only": partition != "fit",
+            "used_for_plant_or_selection": partition == "fit",
         }
-        if not nonregressing and rejected is None:
-            rejected = partition
-    if rejected is not None or not _strict_metric_improvement(
+        if (
+            canonical_sha256(
+                {
+                    "query_weight_sha256": _tensor_sha256(planted.query_weight),
+                    "key_weight_sha256": _tensor_sha256(planted.key_weight),
+                }
+            )
+            != frozen_sha
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Q/K cold-start candidate changed during diagnostic replay."
+            )
+    fit_strictly_improved = _strict_metric_improvement(
         Lfm2EndpointQkMetrics(**metrics["fit"]["candidate"]),
         Lfm2EndpointQkMetrics(**metrics["fit"]["baseline"]),
-    ):
-        raise Lfm2SemanticAttentionRefoldError(
-            "Exact-zero Q/K cold-start plant did not pass frozen four-way "
-            f"nonregression with strict FIT improvement (rejected={rejected!r})."
-        )
+    )
     if (query_was_zero and _exact_zero(planted.query_weight)) or (
         key_was_zero and _exact_zero(planted.key_weight)
     ):
@@ -1271,16 +1499,31 @@ def _cold_start_qk_seed(
         "original_query_exact_zero": query_was_zero,
         "original_key_exact_zero": key_was_zero,
         "plant": dict(plant),
+        "query_axis_coverage": dict(query_coverage),
+        "key_axis_coverage": dict(key_coverage),
         "partitions": metrics,
-        "fit_strictly_improved": True,
+        "fit_strictly_improved": fit_strictly_improved,
+        "heldout_nonregression_passed": (
+            None
+            if defer_heldout_diagnostics
+            else all(
+                metrics[partition]["nonregressing"]
+                for partition in ("fit_check", "selection", "validation")
+            )
+        ),
+        "heldout_metrics_are_diagnostics_not_publication_gates": True,
+        "heldout_metrics_deferred_until_complete_qkvo_freeze": (
+            defer_heldout_diagnostics
+        ),
+        "fit_check_used_for_plant": False,
+        "selection_used_for_plant": False,
+        "validation_used_for_plant": False,
         "candidate_frozen_before_fit_check_selection_validation": True,
         "heldout_refit_or_reselection": False,
         "zero_incumbent_noop_allowed": False,
         "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
     }
-    return planted, MappingProxyType(
-        {**body, "gate_sha256": canonical_sha256(body)}
-    )
+    return planted, MappingProxyType({**body, "gate_sha256": canonical_sha256(body)})
 
 
 def _execution_policy(case_count: int) -> Lfm2EndpointQkResidualFoldPolicy:
@@ -2893,6 +3136,425 @@ def _select_and_validate_vo_candidate(
     )
 
 
+def _compile_complete_attention_cold_start(
+    incumbent_seed: Lfm2EndpointQkvoSeed,
+    *,
+    banks: Mapping[str, Lfm2EndpointQkResidualEvidenceBank],
+    policy: Lfm2EndpointQkResidualFoldPolicy,
+    exact_zero_roles: Sequence[str],
+) -> Mapping[str, Any]:
+    """Compile one FIT-only, coverage-complete Q/K/V/O blank-target plant."""
+
+    torch = _torch()
+    zero_roles = tuple(exact_zero_roles)
+    expected_roles = (
+        "q_proj.weight",
+        "k_proj.weight",
+        "v_proj.weight",
+        "out_proj.weight",
+    )
+    if not zero_roles or any(role not in expected_roles for role in zero_roles):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Complete attention cold-start requires authenticated exact-zero roles."
+        )
+    entry_weights = {
+        "q_proj.weight": incumbent_seed.query_weight,
+        "k_proj.weight": incumbent_seed.key_weight,
+        "v_proj.weight": incumbent_seed.value_weight,
+        "out_proj.weight": incumbent_seed.output_weight,
+    }
+    observed_zero_roles = tuple(
+        role for role in expected_roles if _exact_zero(entry_weights[role])
+    )
+    if zero_roles != observed_zero_roles:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Supplied exact-zero attention roles disagree with incumbent tensors."
+        )
+    entry_coverage = {
+        role: dict(_dense_axis_coverage(weight, role=role))
+        for role, weight in entry_weights.items()
+    }
+    seed, qk_cold_start = _cold_start_qk_seed(
+        incumbent_seed,
+        banks=banks,
+        policy=policy,
+        force_structural_coverage=True,
+        defer_heldout_diagnostics=True,
+    )
+    if qk_cold_start is None:
+        raise AssertionError("Forced Q/K structural cold-start produced no receipt.")
+    frozen_query = seed.query_weight.detach().cpu().clone()
+    frozen_key = seed.key_weight.detach().cpu().clone()
+    joint_banks = {
+        "fit": _joint_vo_cases(
+            banks["fit"],
+            seed,
+            query_weight=frozen_query,
+            key_weight=frozen_key,
+            policy=policy,
+        )
+    }
+    joint_proposal = _compile_joint_vo(
+        joint_banks["fit"],
+        seed.value_weight,
+        seed.output_weight,
+        head_dim=seed.head_dim,
+        solver_device=policy.solver_device,
+    )
+    vo_plant_required = bool(
+        {"v_proj.weight", "out_proj.weight"}.intersection(zero_roles)
+    )
+    candidate_value = (
+        joint_proposal.value_weight
+        if vo_plant_required and joint_proposal.changed
+        else seed.value_weight
+    )
+    candidate_output = (
+        joint_proposal.output_weight
+        if vo_plant_required and joint_proposal.changed
+        else seed.output_weight
+    )
+    candidate_value, value_coverage = _repair_dense_axis_coverage(
+        candidate_value,
+        role="v_proj.weight",
+    )
+    preliminary_output_coverage = _dense_axis_coverage(
+        candidate_output,
+        role="out_proj.weight",
+    )
+    vo_seed = _copy_seed(
+        seed,
+        value_weight=candidate_value,
+        output_weight=candidate_output,
+    )
+    writer_banks = {
+        "fit": _writer_cases_from_joint(
+            joint_banks["fit"],
+            vo_seed,
+            compute_devices=policy.compute_devices,
+        )
+    }
+    writer_proposal = _compile_output_writer(
+        writer_banks["fit"],
+        candidate_output,
+        solver_device=policy.solver_device,
+    )
+    writer_component_published = bool(vo_plant_required and writer_proposal.changed)
+    if writer_component_published:
+        candidate_output = writer_proposal.output_weight
+    fit_writer_cases = tuple(writer_banks["fit"])
+    writer_fit_inputs = torch.cat(
+        tuple(
+            case.context.reshape(-1, int(case.context.shape[-1]))
+            for case in fit_writer_cases
+        ),
+        dim=0,
+    )
+    writer_fit_targets = torch.cat(
+        tuple(
+            case.endpoint_target.reshape(-1, int(case.endpoint_target.shape[-1]))
+            for case in fit_writer_cases
+        ),
+        dim=0,
+    )
+    writer_fit_sqrt_weights = torch.sqrt(
+        torch.cat(
+            tuple(case.row_weights.reshape(-1) for case in fit_writer_cases),
+            dim=0,
+        )
+    )
+    candidate_output, output_coverage = _repair_dense_axis_coverage(
+        candidate_output,
+        role="out_proj.weight",
+        fit_inputs=writer_fit_inputs,
+        fit_targets=writer_fit_targets,
+        fit_sqrt_weights=writer_fit_sqrt_weights,
+    )
+    published_weights = {
+        "q_proj.weight": frozen_query,
+        "k_proj.weight": frozen_key,
+        "v_proj.weight": candidate_value,
+        "out_proj.weight": candidate_output,
+    }
+    published_coverage = {
+        role: dict(_dense_axis_coverage(weight, role=role))
+        for role, weight in published_weights.items()
+    }
+    if not all(
+        receipt["structurally_nonzero"] is True
+        for receipt in published_coverage.values()
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "FIT-only attention cold-start did not cover every Q/K/V/O axis."
+        )
+    for role in zero_roles:
+        if _exact_zero(published_weights[role]) or torch.equal(
+            published_weights[role], entry_weights[role]
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                f"Exact-zero attention role {role} remained an incumbent no-op."
+            )
+    frozen_sha = canonical_sha256(
+        {role: _tensor_sha256(weight) for role, weight in published_weights.items()}
+    )
+    qk_body = dict(qk_cold_start)
+    qk_body.pop("gate_sha256")
+    qk_metrics = dict(qk_body["partitions"])
+    for partition in ("fit_check", "selection", "validation"):
+        baseline = _evaluate_bank(
+            banks[partition],
+            incumbent_seed,
+            query_weight=incumbent_seed.query_weight,
+            key_weight=incumbent_seed.key_weight,
+            policy=policy,
+        )
+        candidate = _evaluate_bank(
+            banks[partition],
+            seed,
+            query_weight=frozen_query,
+            key_weight=frozen_key,
+            policy=policy,
+        )
+        qk_metrics[partition] = {
+            "baseline": baseline.as_dict(),
+            "candidate": candidate.as_dict(),
+            "nonregressing": _metrics_nonregressing(
+                candidate,
+                baseline,
+                tolerance=policy.metric_regression_tolerance,
+            ),
+            "diagnostic_only": True,
+            "used_for_plant_or_selection": False,
+        }
+        if (
+            canonical_sha256(
+                {
+                    role: _tensor_sha256(weight)
+                    for role, weight in published_weights.items()
+                }
+            )
+            != frozen_sha
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Complete Q/K/V/O candidate changed during Q/K diagnostics."
+            )
+    qk_body.update(
+        {
+            "partitions": qk_metrics,
+            "heldout_nonregression_passed": all(
+                qk_metrics[partition]["nonregressing"]
+                for partition in ("fit_check", "selection", "validation")
+            ),
+            "heldout_metrics_deferred_until_complete_qkvo_freeze": True,
+            "complete_qkvo_frozen_before_heldout_diagnostics": True,
+            "heldout_diagnostics_completed_after_complete_qkvo_freeze": True,
+        }
+    )
+    qk_cold_start = MappingProxyType(
+        {**qk_body, "gate_sha256": canonical_sha256(qk_body)}
+    )
+    qk_partitions = qk_cold_start["partitions"]
+    baseline_selection = Lfm2EndpointQkMetrics(**qk_partitions["selection"]["baseline"])
+    candidate_selection = Lfm2EndpointQkMetrics(
+        **qk_partitions["selection"]["candidate"]
+    )
+    baseline_validation = Lfm2EndpointQkMetrics(
+        **qk_partitions["validation"]["baseline"]
+    )
+    candidate_validation = Lfm2EndpointQkMetrics(
+        **qk_partitions["validation"]["candidate"]
+    )
+    for partition in ("fit_check", "selection", "validation"):
+        joint_banks[partition] = _joint_vo_cases(
+            banks[partition],
+            seed,
+            query_weight=frozen_query,
+            key_weight=frozen_key,
+            policy=policy,
+        )
+        if (
+            canonical_sha256(
+                {
+                    role: _tensor_sha256(weight)
+                    for role, weight in published_weights.items()
+                }
+            )
+            != frozen_sha
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Complete Q/K/V/O candidate changed while opening heldout diagnostics."
+            )
+    partition_diagnostics: dict[str, Any] = {}
+    tolerance = policy.metric_regression_tolerance
+    for partition in _PARTITIONS:
+        baseline = _joint_vo_metrics(
+            joint_banks[partition],
+            seed.value_weight,
+            seed.output_weight,
+            head_dim=seed.head_dim,
+            compute_devices=policy.compute_devices,
+        )
+        candidate = _joint_vo_metrics(
+            joint_banks[partition],
+            candidate_value,
+            candidate_output,
+            head_dim=seed.head_dim,
+            compute_devices=policy.compute_devices,
+        )
+        nonregressing = _writer_nonregressing(
+            candidate,
+            baseline,
+            tolerance=tolerance,
+        )
+        partition_diagnostics[partition] = {
+            "case_sha256": [case.case_sha256 for case in joint_banks[partition]],
+            "baseline": baseline.as_dict(),
+            "candidate": candidate.as_dict(),
+            "nonregressing": nonregressing,
+            "diagnostic_only": partition != "fit",
+            "used_for_plant_or_selection": partition == "fit",
+            "can_restore_exact_zero_incumbent": False,
+        }
+        observed_sha = canonical_sha256(
+            {role: _tensor_sha256(weight) for role, weight in published_weights.items()}
+        )
+        if observed_sha != frozen_sha:
+            raise Lfm2SemanticAttentionRefoldError(
+                "Complete attention cold-start candidate changed during diagnostics."
+            )
+    value_changed = not torch.equal(candidate_value, incumbent_seed.value_weight)
+    output_changed = not torch.equal(candidate_output, incumbent_seed.output_weight)
+    published_vo_kind = (
+        "compulsory_fit_only_cold_start"
+        if value_changed or output_changed
+        else "incumbent"
+    )
+    vo_gate_body = {
+        "schema": "neural-forge-lfm2-semantic-vo-cold-start-diagnostic-v1",
+        "published_candidate": published_vo_kind,
+        "selected_candidate": published_vo_kind,
+        "candidate_reports": {
+            "compulsory_fit_only_cold_start": {
+                "eligible_after_fit_fit_check_selection": True,
+                "rejection_partition": None,
+                "partitions": partition_diagnostics,
+            },
+            "fixed_v_output_only": {
+                "eligible_after_fit_fit_check_selection": False,
+                "rejection_partition": None,
+                "partitions": partition_diagnostics,
+            },
+        },
+        "selected_candidate_frozen_before_validation": True,
+        "frozen_candidate_sha256": frozen_sha,
+        "validation_triggered_refit_or_reselection": False,
+        "validation": {
+            "case_sha256": partition_diagnostics["validation"]["case_sha256"],
+            "endpoint_baseline": partition_diagnostics["validation"]["baseline"],
+            "endpoint_candidate": partition_diagnostics["validation"]["candidate"],
+            "endpoint_nonregressing": partition_diagnostics["validation"][
+                "nonregressing"
+            ],
+            "route_baseline": baseline_validation.as_dict(),
+            "route_candidate": candidate_validation.as_dict(),
+            "route_nonregressing": _metrics_nonregressing(
+                candidate_validation,
+                baseline_validation,
+                tolerance=tolerance,
+            ),
+            "diagnostic_only": True,
+        },
+        "heldout_metrics_are_diagnostics_not_publication_gates": True,
+        "zero_role_incumbent_candidate_eligible": False,
+        "alternate_candidate_selected_after_validation": False,
+        "published_value_weight_sha256": _tensor_sha256(candidate_value),
+        "published_output_weight_sha256": _tensor_sha256(candidate_output),
+        "fit_only_analytic_solves": True,
+        "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+    }
+    vo_gate = MappingProxyType(
+        {**vo_gate_body, "gate_sha256": canonical_sha256(vo_gate_body)}
+    )
+    writer_gate = _seal_writer_gate(
+        {
+            "status": (
+                "published-as-fit-only-cold-start-component"
+                if writer_component_published
+                else "not-published-as-independent-candidate"
+            ),
+            "accepted": writer_component_published,
+            "proposal": writer_proposal.as_dict(),
+            "rejection_partition": None,
+            "fit_check": partition_diagnostics["fit_check"],
+            "selection": partition_diagnostics["selection"],
+            "validation": partition_diagnostics["validation"],
+            "candidate_frozen_across_heldout_gates": True,
+            "heldout_metrics_are_diagnostics_not_publication_gates": True,
+        }
+    )
+    body = {
+        "schema": "neural-forge-lfm2-semantic-complete-attention-cold-start-v1",
+        "original_seed_sha256": incumbent_seed.seed_sha256,
+        "route_seed_sha256": seed.seed_sha256,
+        "exact_zero_roles_at_entry": list(zero_roles),
+        "entry_role_coverage": entry_coverage,
+        "qk_cold_start": dict(qk_cold_start),
+        "joint_value_output_proposal": joint_proposal.as_dict(),
+        "output_writer_proposal": writer_proposal.as_dict(),
+        "value_axis_coverage": dict(value_coverage),
+        "preliminary_output_axis_coverage": dict(preliminary_output_coverage),
+        "output_axis_coverage": dict(output_coverage),
+        "published_role_coverage": published_coverage,
+        "partition_diagnostics": partition_diagnostics,
+        "frozen_candidate_sha256": frozen_sha,
+        "candidate_frozen_before_fit_check_selection_validation": True,
+        "fit_partition_only_used_for_plant": True,
+        "fit_check_used_for_plant_or_selection": False,
+        "selection_used_for_plant_or_selection": False,
+        "validation_used_for_plant_or_selection": False,
+        "heldout_metrics_are_diagnostics_not_publication_gates": True,
+        "heldout_regression_can_restore_blank_incumbent": False,
+        "zero_role_incumbent_noop_allowed": False,
+        "all_qkvo_roles_finite_and_structurally_covered": True,
+        "dense_existing_qkvo_topology_only": True,
+        "randomness_used": False,
+        "autograd_used": False,
+        "backward_used": False,
+        "optimizer_used": False,
+        "training_used": False,
+        "pruning_used": False,
+        "quantization_used": False,
+        "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+    }
+    return MappingProxyType(
+        {
+            "query_weight": frozen_query,
+            "key_weight": frozen_key,
+            "value_weight": candidate_value,
+            "output_weight": candidate_output,
+            "seed": seed,
+            "baseline_selection": baseline_selection,
+            "candidate_selection": candidate_selection,
+            "baseline_validation": baseline_validation,
+            "candidate_validation": candidate_validation,
+            "joint_banks": joint_banks,
+            "writer_banks": writer_banks,
+            "writer_proposal": writer_proposal,
+            "joint_proposal": joint_proposal,
+            "vo_gate": vo_gate,
+            "writer_gate": writer_gate,
+            "published_vo_kind": published_vo_kind,
+            "writer_component_published": writer_component_published,
+            "joint_component_published": bool(
+                vo_plant_required and joint_proposal.changed
+            ),
+            "cold_start_report": MappingProxyType(
+                {**body, "cold_start_sha256": canonical_sha256(body)}
+            ),
+        }
+    )
+
+
 def _parameter_bundle(target_model: Any, layer_index: int) -> Mapping[str, Any]:
     torch = _torch()
     attention = _attention_module(target_model, layer_index)
@@ -2944,9 +3606,7 @@ def _install_qkvo_transaction(
     parameter_pointers = {
         name: int(value.data_ptr()) for name, value in parameters.items()
     }
-    parameter_shapes = {
-        name: tuple(value.shape) for name, value in parameters.items()
-    }
+    parameter_shapes = {name: tuple(value.shape) for name, value in parameters.items()}
     parameter_dtypes = {name: value.dtype for name, value in parameters.items()}
     parameter_requires_grad = {
         name: bool(value.requires_grad) for name, value in parameters.items()
@@ -2978,8 +3638,7 @@ def _install_qkvo_transaction(
                 parameters[name].dtype == parameter_dtypes[name] for name in parameters
             )
             and all(
-                bool(parameters[name].requires_grad)
-                == parameter_requires_grad[name]
+                bool(parameters[name].requires_grad) == parameter_requires_grad[name]
                 for name in parameters
             )
             and all(
@@ -3041,6 +3700,13 @@ def _install_qkvo_transaction(
             raise Lfm2SemanticAttentionRefoldError(
                 "Attention installation changed topology, identities, or gradients."
             )
+        if any(
+            _tensor_sha256(parameters[name]) != _tensor_sha256(candidates[name])
+            for name in parameters
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Attention installation did not publish the exact frozen candidate."
+            )
         changed = tuple(
             sorted(
                 name
@@ -3075,6 +3741,416 @@ def _install_qkvo_transaction(
                 "Attention installation failed and exact rollback was not proven."
             )
         raise
+
+
+def _publish_complete_attention_cold_start_unprotected(
+    *,
+    target_model: Any,
+    layer_index: int,
+    raw_evidence: Sequence[Any],
+    cache_key: str,
+    bridge_artifact_sha256: str,
+    inventory: Lfm2DenseQkvoSourceInventory,
+    compiler_lineage_sha256: str,
+    split_sha256: str,
+    partitions: Mapping[str, Sequence[_CaseSource]],
+    balance_receipts: Mapping[str, Mapping[str, Any]],
+    banks: Mapping[str, Lfm2EndpointQkResidualEvidenceBank],
+    policy: Lfm2EndpointQkResidualFoldPolicy,
+    incumbent_seed: Lfm2EndpointQkvoSeed,
+    exact_zero_roles: Sequence[str],
+) -> Mapping[str, Any]:
+    """Install the compulsory blank-entry plant without any held-out rollback."""
+
+    torch = _torch()
+    cold = _compile_complete_attention_cold_start(
+        incumbent_seed,
+        banks=banks,
+        policy=policy,
+        exact_zero_roles=exact_zero_roles,
+    )
+    frozen_query = cold["query_weight"]
+    frozen_key = cold["key_weight"]
+    published_value = cold["value_weight"]
+    published_output = cold["output_weight"]
+    query_changed = not torch.equal(frozen_query, incumbent_seed.query_weight)
+    key_changed = not torch.equal(frozen_key, incumbent_seed.key_weight)
+    value_changed = not torch.equal(published_value, incumbent_seed.value_weight)
+    output_changed = not torch.equal(published_output, incumbent_seed.output_weight)
+    changed_roles = {
+        role
+        for role, changed in (
+            ("q_proj.weight", query_changed),
+            ("k_proj.weight", key_changed),
+            ("v_proj.weight", value_changed),
+            ("out_proj.weight", output_changed),
+        )
+        if changed
+    }
+    if any(role not in changed_roles for role in exact_zero_roles):
+        raise Lfm2SemanticAttentionRefoldError(
+            "A zero attention incumbent survived the compulsory cold-start."
+        )
+    state = {
+        "q_proj.weight": frozen_query,
+        "k_proj.weight": frozen_key,
+        "v_proj.weight": published_value,
+        "out_proj.weight": published_output,
+    }
+    topology_before = _topology_sha256(target_model)
+    before, after, changed, parameter_count = _install_qkvo_transaction(
+        target_model,
+        layer_index=layer_index,
+        state=state,
+    )
+    topology_after = _topology_sha256(target_model)
+    base = _installation_receipt_body(
+        layer_index=layer_index,
+        evidence_sha256=[item.evidence_sha256 for item in raw_evidence],
+        model_state_before_sha256=before,
+        model_state_after_sha256=after,
+        changed_state_keys=changed,
+        parameter_element_count=parameter_count,
+        target_topology_sha256_before=topology_before,
+        target_topology_sha256_after=topology_after,
+    )
+    qk_cold = cold["cold_start_report"]["qk_cold_start"]
+    joint_proposal = cold["joint_proposal"]
+    frozen_qk_sha = canonical_sha256(
+        {
+            "q": _tensor_sha256(frozen_query),
+            "k": _tensor_sha256(frozen_key),
+        }
+    )
+    frozen_qkvo_sha = canonical_sha256(
+        {
+            "q": _tensor_sha256(frozen_query),
+            "k": _tensor_sha256(frozen_key),
+            "v": _tensor_sha256(published_value),
+            "o": _tensor_sha256(published_output),
+        }
+    )
+    heldout_nonregression = {
+        partition: bool(
+            qk_cold["partitions"][partition]["nonregressing"]
+            and cold["cold_start_report"]["partition_diagnostics"][partition][
+                "nonregressing"
+            ]
+        )
+        for partition in ("fit_check", "selection", "validation")
+    }
+    joint_component_contributed = bool(cold["joint_component_published"])
+    writer_component_contributed = bool(cold["writer_component_published"])
+    output_axis_completion_performed = bool(
+        cold["cold_start_report"]["output_axis_coverage"]["repaired_element_count"]
+    )
+    joint_candidate_published_exactly = bool(
+        joint_component_contributed
+        and torch.equal(published_value, joint_proposal.value_weight)
+        and torch.equal(published_output, joint_proposal.output_weight)
+    )
+    if output_axis_completion_performed:
+        output_source = (
+            "fit_only_axis_completion_ridge_after_output_writer"
+            if writer_component_contributed
+            else (
+                "fit_only_axis_completion_ridge_after_joint_value_output"
+                if joint_component_contributed
+                else "fit_only_axis_completion_ridge_from_cached_endpoint_evidence"
+            )
+        )
+    elif writer_component_contributed:
+        output_source = (
+            "fit_only_closed_form_weighted_residual_ridge_after_joint_factor"
+        )
+    elif joint_component_contributed and output_changed:
+        output_source = "fit_only_joint_residual_composite_low_rank_factorization"
+    else:
+        output_source = "authenticated_live_dense_seed"
+    body = {
+        **base,
+        "fit_check_nonregression_passed": heldout_nonregression["fit_check"],
+        "selection_nonregression_passed": heldout_nonregression["selection"],
+        "validation_nonregression_passed": heldout_nonregression["validation"],
+        "heldout_nonregression_is_diagnostic_only": True,
+        "analytic_refold": {
+            "schema": LFM2_SEMANTIC_ATTENTION_REFOLD_SCHEMA,
+            "cache_key": cache_key,
+            "bridge_artifact_sha256": bridge_artifact_sha256,
+            "source_inventory_sha256": inventory.inventory_sha256,
+            "compiler_lineage_sha256": compiler_lineage_sha256,
+            "split_sha256": split_sha256,
+            "partition_batch_indices": {
+                name: sorted({item.batch_index for item in partitions[name]})
+                for name in _PARTITIONS
+            },
+            "trajectory_row_weight_balance": {
+                name: dict(balance_receipts[name]) for name in _PARTITIONS
+            },
+            "fit_evidence_sha256": banks["fit"].evidence_sha256,
+            "fit_check_evidence_sha256": banks["fit_check"].evidence_sha256,
+            "selection_evidence_sha256": banks["selection"].evidence_sha256,
+            "validation_evidence_sha256": banks["validation"].evidence_sha256,
+            "qk_cold_start": dict(qk_cold),
+            "complete_attention_cold_start": dict(cold["cold_start_report"]),
+            "endpoint_compiler_report_sha256": qk_cold["plant"]["plant_sha256"],
+            "endpoint_compiler_bypassed_for_fit_only_cold_start": True,
+            "analytic_execution_policy": {
+                "solver_device": policy.solver_device,
+                "compute_devices": list(policy.compute_devices),
+                "native_bfloat16_sm80_or_newer_only": True,
+                "non_native_bfloat16_devices_used": False,
+                "candidate_endpoint_replay_follows_compute_devices": True,
+            },
+            "selection_baseline": cold["baseline_selection"].as_dict(),
+            "selection_candidate": cold["candidate_selection"].as_dict(),
+            "validation_baseline": cold["baseline_validation"].as_dict(),
+            "validation_candidate": cold["candidate_validation"].as_dict(),
+            "frozen_qk_sha256": frozen_qk_sha,
+            "frozen_qkvo_sha256": frozen_qkvo_sha,
+            "candidate_frozen_before_validation": True,
+            "qk_candidate_frozen_before_validation": True,
+            "output_writer_candidate_frozen_before_validation": True,
+            "joint_value_output_candidate_frozen_before_validation": True,
+            "validation_triggered_refit": False,
+            "heldout_metrics_are_diagnostics_not_publication_gates": True,
+            "numeric_parent_child_weight_match_objective": False,
+            "dense_existing_qkvo_topology_only": True,
+            "analytically_refit_projection_roles": [
+                *(["q_proj"] if query_changed else []),
+                *(["k_proj"] if key_changed else []),
+                *(["v_proj"] if value_changed else []),
+                *(["out_proj"] if output_changed else []),
+            ],
+            "fixed_inherited_projection_roles": [
+                *([] if query_changed else ["q_proj"]),
+                *([] if key_changed else ["k_proj"]),
+                *([] if value_changed else ["v_proj"]),
+                *([] if output_changed else ["out_proj"]),
+            ],
+            "qk_compiler_accepted": False,
+            "qk_compiler_changed": False,
+            "authenticated_qk_seed_fallback_entered_vo_competition": False,
+            "fixed_value_source": (
+                "fit_only_joint_residual_composite_low_rank_factorization"
+                if value_changed
+                else "authenticated_live_dense_seed"
+            ),
+            "output_writer_source": output_source,
+            "output_writer": dict(cold["writer_gate"]),
+            "joint_value_output": joint_proposal.as_dict(),
+            "value_output_candidate_gate": dict(cold["vo_gate"]),
+            "output_writer_cached_qk_probability_replay_calls": sum(
+                len(bank) for bank in cold["joint_banks"].values()
+            ),
+            "output_writer_model_forward_calls": 0,
+            "output_writer_fit_partition_only_used_for_solve": True,
+            "output_writer_heldout_partitions_never_used_for_solve": True,
+            "joint_value_output_candidate_published": (
+                joint_candidate_published_exactly
+            ),
+            "joint_value_output_component_contributed": (joint_component_contributed),
+            "fresh_joint_value_output_refit_performed": (joint_component_contributed),
+            "fresh_value_refit_performed": value_changed,
+            "fresh_output_writer_refit_performed": writer_component_contributed,
+            "fresh_output_projection_refit_performed": output_changed,
+            "output_axis_completion_performed": output_axis_completion_performed,
+            "fresh_query_refit_performed": query_changed,
+            "fresh_key_refit_performed": key_changed,
+            "fresh_four_matrix_qkvo_refit_claimed": bool(
+                query_changed and key_changed and value_changed and output_changed
+            ),
+            "complete_qkvo_bundle_installed_transactionally": True,
+            "complete_qkvo_bundle_transaction_verified": True,
+            "authenticated_incumbent_qkvo_retained_without_installation": False,
+            "projection_parameter_copy_calls": len(changed),
+            "complete_causal_cache_only": True,
+            "contractions_supported": False,
+            "query_supervision_mode": (
+                "one_parent_exact_terminal_endpoint_per_semantic_phase"
+            ),
+            "inserted_target_query_rows_parent_exact": False,
+            "inserted_target_query_rows_used_for_attention_fit": False,
+            "inserted_target_span_completion_requires_lexical_terminal_bank": True,
+            "refold_operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+        },
+    }
+    return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
+
+
+def _publish_complete_attention_cold_start(
+    *,
+    target_model: Any,
+    layer_index: int,
+    raw_evidence: Sequence[Any],
+    cache_key: str,
+    bridge_artifact_sha256: str,
+    inventory: Lfm2DenseQkvoSourceInventory,
+    compiler_lineage_sha256: str,
+    split_sha256: str,
+    partitions: Mapping[str, Sequence[_CaseSource]],
+    balance_receipts: Mapping[str, Mapping[str, Any]],
+    banks: Mapping[str, Lfm2EndpointQkResidualEvidenceBank],
+    policy: Lfm2EndpointQkResidualFoldPolicy,
+    incumbent_seed: Lfm2EndpointQkvoSeed,
+    exact_zero_roles: Sequence[str],
+) -> Mapping[str, Any]:
+    """Keep the blank-entry transaction atomic through receipt sealing."""
+
+    torch = _torch()
+    parameters = _parameter_bundle(target_model, layer_index)
+    snapshots = {
+        name: parameter.detach().to(device="cpu").contiguous().clone()
+        for name, parameter in parameters.items()
+    }
+    parameter_ids = {name: id(parameter) for name, parameter in parameters.items()}
+    parameter_pointers = {
+        name: int(parameter.data_ptr()) for name, parameter in parameters.items()
+    }
+    parameter_shapes = {
+        name: tuple(parameter.shape) for name, parameter in parameters.items()
+    }
+    parameter_dtypes = {name: parameter.dtype for name, parameter in parameters.items()}
+    parameter_requires_grad = {
+        name: bool(parameter.requires_grad) for name, parameter in parameters.items()
+    }
+    gradient_ids = {
+        name: None if parameter.grad is None else id(parameter.grad)
+        for name, parameter in parameters.items()
+    }
+    gradient_hashes = {
+        name: None if parameter.grad is None else _tensor_sha256(parameter.grad)
+        for name, parameter in parameters.items()
+    }
+    model_state_before = fingerprint_lfm2_parent(target_model).identity_sha256
+    topology_before = _topology_sha256(target_model)
+    parameter_count_before = _parameter_count(target_model)
+
+    def exact_outer_state_restored() -> bool:
+        live = _parameter_bundle(target_model, layer_index)
+        return bool(
+            fingerprint_lfm2_parent(target_model).identity_sha256 == model_state_before
+            and _topology_sha256(target_model) == topology_before
+            and _parameter_count(target_model) == parameter_count_before
+            and all(live[name] is parameters[name] for name in parameters)
+            and all(id(live[name]) == parameter_ids[name] for name in parameters)
+            and all(
+                int(live[name].data_ptr()) == parameter_pointers[name]
+                for name in parameters
+            )
+            and all(
+                tuple(live[name].shape) == parameter_shapes[name] for name in parameters
+            )
+            and all(live[name].dtype == parameter_dtypes[name] for name in parameters)
+            and all(
+                bool(live[name].requires_grad) == parameter_requires_grad[name]
+                for name in parameters
+            )
+            and all(
+                (None if live[name].grad is None else id(live[name].grad))
+                == gradient_ids[name]
+                for name in parameters
+            )
+            and all(
+                live[name].grad is None
+                or _tensor_sha256(live[name].grad) == gradient_hashes[name]
+                for name in parameters
+            )
+            and all(
+                _tensor_sha256(live[name]) == _tensor_sha256(snapshots[name])
+                for name in parameters
+            )
+        )
+
+    try:
+        result = _publish_complete_attention_cold_start_unprotected(
+            target_model=target_model,
+            layer_index=layer_index,
+            raw_evidence=raw_evidence,
+            cache_key=cache_key,
+            bridge_artifact_sha256=bridge_artifact_sha256,
+            inventory=inventory,
+            compiler_lineage_sha256=compiler_lineage_sha256,
+            split_sha256=split_sha256,
+            partitions=partitions,
+            balance_receipts=balance_receipts,
+            banks=banks,
+            policy=policy,
+            incumbent_seed=incumbent_seed,
+            exact_zero_roles=exact_zero_roles,
+        )
+        if not isinstance(result, Mapping):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Complete attention cold-start returned no sealed receipt."
+            )
+        sealed = dict(result)
+        result_sha256 = sealed.pop("result_sha256", None)
+        model_state_after = fingerprint_lfm2_parent(target_model).identity_sha256
+        topology_after = _topology_sha256(target_model)
+        actual_changed = tuple(
+            sorted(
+                name
+                for name, parameter in parameters.items()
+                if _tensor_sha256(parameter) != _tensor_sha256(snapshots[name])
+            )
+        )
+        if (
+            result.get("schema") != _INSTALLATION_SCHEMA
+            or result_sha256 != canonical_sha256(sealed)
+            or result.get("model_state_before_sha256") != model_state_before
+            or result.get("model_state_after_sha256") != model_state_after
+            or result.get("changed_state_keys") != list(actual_changed)
+            or not actual_changed
+            or result.get("installed") is not True
+            or result.get("install_count") != 1
+            or result.get("parameter_element_count_before") != parameter_count_before
+            or result.get("parameter_element_count_after") != parameter_count_before
+            or result.get("parameter_count_changed") is not False
+            or result.get("target_topology_sha256_before") != topology_before
+            or result.get("target_topology_sha256_after") != topology_after
+            or topology_after != topology_before
+            or result.get("topology_changed") is not False
+            or _parameter_count(target_model) != parameter_count_before
+            or any(id(parameters[name]) != parameter_ids[name] for name in parameters)
+            or any(
+                int(parameters[name].data_ptr()) != parameter_pointers[name]
+                for name in parameters
+            )
+            or any(
+                (None if parameters[name].grad is None else id(parameters[name].grad))
+                != gradient_ids[name]
+                for name in parameters
+            )
+            or any(
+                parameters[name].grad is not None
+                and _tensor_sha256(parameters[name].grad) != gradient_hashes[name]
+                for name in parameters
+            )
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Complete attention cold-start receipt is stale or unsealed."
+            )
+        return result
+    except BaseException as exc:
+        try:
+            with torch.no_grad():
+                for name, parameter in parameters.items():
+                    parameter.copy_(
+                        snapshots[name].to(
+                            device=parameter.device,
+                            dtype=parameter.dtype,
+                        )
+                    )
+            if not exact_outer_state_restored():
+                raise Lfm2SemanticAttentionRefoldError(
+                    "Complete attention cold-start outer rollback was not exact."
+                )
+        except BaseException as rollback_exc:
+            raise Lfm2SemanticAttentionRefoldError(
+                "Complete attention cold-start failed and exact outer rollback "
+                "was not proven."
+            ) from rollback_exc
+        raise exc
 
 
 def compile_install_lfm2_semantic_attention_postfold(
@@ -3211,6 +4287,33 @@ def compile_install_lfm2_semantic_attention_postfold(
             "validation": validation_bank,
         }
     )
+    exact_zero_roles = tuple(
+        role
+        for role, weight in (
+            ("q_proj.weight", incumbent_seed.query_weight),
+            ("k_proj.weight", incumbent_seed.key_weight),
+            ("v_proj.weight", incumbent_seed.value_weight),
+            ("out_proj.weight", incumbent_seed.output_weight),
+        )
+        if _exact_zero(weight)
+    )
+    if exact_zero_roles:
+        return _publish_complete_attention_cold_start(
+            target_model=target_model,
+            layer_index=layer_index,
+            raw_evidence=raw,
+            cache_key=cache,
+            bridge_artifact_sha256=bridge,
+            inventory=inventory,
+            compiler_lineage_sha256=lineage,
+            split_sha256=split_sha,
+            partitions=partitions,
+            balance_receipts=balance_receipts,
+            banks=banks,
+            policy=policy,
+            incumbent_seed=incumbent_seed,
+            exact_zero_roles=exact_zero_roles,
+        )
     seed, cold_start = _cold_start_qk_seed(
         incumbent_seed,
         banks=banks,
@@ -3258,9 +4361,7 @@ def compile_install_lfm2_semantic_attention_postfold(
     compiler_key_changed = not torch.equal(frozen_key, seed.key_weight)
     if compiled.changed != (
         compiler_query_changed or compiler_key_changed
-    ) or compiled.accepted != (
-        compiler_query_changed or compiler_key_changed
-    ):
+    ) or compiled.accepted != (compiler_query_changed or compiler_key_changed):
         raise Lfm2SemanticAttentionRefoldError(
             "Authenticated Q/K acceptance disagrees with its published tensors."
         )
@@ -3299,14 +4400,8 @@ def compile_install_lfm2_semantic_attention_postfold(
             "Frozen candidate failed VALIDATION or changed after selection freeze."
         )
     if cold_start is not None and (
-        (
-            cold_start["original_query_exact_zero"] is True
-            and _exact_zero(frozen_query)
-        )
-        or (
-            cold_start["original_key_exact_zero"] is True
-            and _exact_zero(frozen_key)
-        )
+        (cold_start["original_query_exact_zero"] is True and _exact_zero(frozen_query))
+        or (cold_start["original_key_exact_zero"] is True and _exact_zero(frozen_key))
         or not (query_changed or key_changed)
     ):
         raise Lfm2SemanticAttentionRefoldError(
@@ -3408,9 +4503,7 @@ def compile_install_lfm2_semantic_attention_postfold(
             compiled.accepted
             or compiled.changed
             or published_vo_kind != "incumbent"
-            or incumbent_report.get(
-                "eligible_after_fit_fit_check_selection"
-            )
+            or incumbent_report.get("eligible_after_fit_fit_check_selection")
             is not True
             or any(
                 incumbent_partitions.get(name, {}).get("nonregressing") is not True
@@ -3497,11 +4590,7 @@ def compile_install_lfm2_semantic_attention_postfold(
             "fit_check_evidence_sha256": fit_check_bank.evidence_sha256,
             "selection_evidence_sha256": selection_bank.evidence_sha256,
             "validation_evidence_sha256": validation_bank.evidence_sha256,
-            **(
-                {}
-                if cold_start is None
-                else {"qk_cold_start": dict(cold_start)}
-            ),
+            **({} if cold_start is None else {"qk_cold_start": dict(cold_start)}),
             "endpoint_compiler_report_sha256": compiled.report["report_sha256"],
             "analytic_execution_policy": {
                 "solver_device": policy.solver_device,
@@ -3572,7 +4661,8 @@ def compile_install_lfm2_semantic_attention_postfold(
                 joint_accepted and value_changed and output_changed
             ),
             "fresh_value_refit_performed": value_changed,
-            "fresh_output_writer_refit_performed": output_changed,
+            "fresh_output_writer_refit_performed": writer_accepted,
+            "fresh_output_projection_refit_performed": output_changed,
             "fresh_query_refit_performed": query_changed,
             "fresh_key_refit_performed": key_changed,
             "fresh_four_matrix_qkvo_refit_claimed": (
@@ -3584,9 +4674,7 @@ def compile_install_lfm2_semantic_attention_postfold(
             ),
             "complete_qkvo_bundle_installed_transactionally": bool(changed),
             "complete_qkvo_bundle_transaction_verified": True,
-            "authenticated_incumbent_qkvo_retained_without_installation": (
-                not changed
-            ),
+            "authenticated_incumbent_qkvo_retained_without_installation": (not changed),
             "projection_parameter_copy_calls": len(changed),
             "complete_causal_cache_only": True,
             "contractions_supported": False,

@@ -61,6 +61,7 @@ from neural_forge.hf_lfm2_cpcf_selective_evidence import (
     open_lfm2_cpcf_selective_evidence_provider_from_catalog,
 )
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+    LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA,
     Lfm2CpcfTerminalActionEvidence,
     Lfm2CpcfTerminalActionPolicy,
     Lfm2CpcfTerminalActionResidualResult,
@@ -118,6 +119,13 @@ from neural_forge.hf_tied_causal_interface_fold import (
     TiedCausalInterfaceFold,
     whiten_tied_causal_interface,
 )
+from neural_forge.hf_tied_residual_congruence import (
+    TIED_RESIDUAL_CONGRUENCE_MODES,
+    TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+    TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+    authenticate_tied_residual_congruence_interface,
+    compile_tied_residual_congruence_candidate,
+)
 from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     fingerprint_hf_tokenizer_semantics,
@@ -162,6 +170,27 @@ _ZERO_OPERATIONS = MappingProxyType(
         "parameters_pruned": 0,
         "parameters_quantized": 0,
     }
+)
+_TERMINAL_ZERO_OPERATION_AUDIT = MappingProxyType(
+    {
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "model_generate_calls": 0,
+        "parent_cache_generation_calls": 0,
+        "trace_recaptures": 0,
+        "autograd_grad_calls": 0,
+        "backward_calls": 0,
+        "optimizer_constructions": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+        "new_parameters": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+)
+_TERMINAL_ACTION_RESULT_METHOD = (
+    "closed_form_rmsnorm_gauss_newton_then_weighted_ridge_"
+    "exact_bfloat16_terminal_writer_frontier"
 )
 
 
@@ -712,6 +741,228 @@ def install_lfm2_self_dual_tied_interface_gauge(
         "parameters_quantized": 0,
     }
     return self_dual, MappingProxyType(_sealed(body, "result_sha256"))
+
+
+def install_lfm2_tied_residual_congruence_gauge(
+    target_model: Any,
+    interface: TiedCausalInterfaceFold,
+    mapped_parent_tied_table: Any,
+    *,
+    mode: str = TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+) -> tuple[TiedCausalInterfaceFold, Mapping[str, Any]]:
+    """Transactionally install a self-dual control or strong tied congruence.
+
+    The strong candidate keeps the self-dual producer basis ``B`` fixed and
+    installs ``mapped_parent_tied_table @ B`` into the child's one native tied
+    embedding/LM-head parameter.  The control retains the historical
+    self-dual output factor.  Both paths use the same topology-preserving
+    transaction and a BF16-exact materialization witness.
+    """
+
+    torch = _torch()
+    if mode not in TIED_RESIDUAL_CONGRUENCE_MODES:
+        raise Lfm2SemanticPostfoldError(
+            f"Unsupported tied residual interface mode: {mode!r}."
+        )
+    candidate = compile_tied_residual_congruence_candidate(
+        interface,
+        mapped_parent_tied_table,
+        mode=mode,
+    )
+    selected = candidate.interface
+    input_module = target_model.get_input_embeddings()
+    output_module = target_model.get_output_embeddings()
+    input_weight = getattr(input_module, "weight", None)
+    output_weight = getattr(output_module, "weight", None)
+    if (
+        not isinstance(input_weight, torch.nn.Parameter)
+        or output_weight is not input_weight
+        or input_weight.dtype != torch.bfloat16
+        or tuple(input_weight.shape) != tuple(selected.target_weight.shape)
+        or getattr(output_module, "bias", None) is not None
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Child has no unbiased native BF16 tied table matching the "
+            "residual-congruence candidate."
+        )
+
+    before_state = fingerprint_lfm2_parent(target_model).identity_sha256
+    before_hashes = _state_tensor_hashes(target_model)
+    before_runtime = _parameter_runtime_snapshot(target_model)
+    before_count = _parameter_count(target_model)
+    incumbent = input_weight.detach().to(device="cpu").contiguous().clone()
+    tied_pointer = int(input_weight.untyped_storage().data_ptr())
+    tied_state_names = tuple(
+        sorted(
+            name
+            for name, value in target_model.state_dict(keep_vars=True).items()
+            if isinstance(value, torch.Tensor)
+            and int(value.untyped_storage().data_ptr()) == tied_pointer
+        )
+    )
+    if not tied_state_names:
+        raise Lfm2SemanticPostfoldError(
+            "Native tied table has no authenticated state-dict aliases."
+        )
+    materialized = candidate.materialized_target_weight.to(
+        device=input_weight.device,
+        dtype=input_weight.dtype,
+    )
+    install = not torch.equal(input_weight.detach(), materialized)
+    try:
+        if install:
+            with torch.no_grad():
+                input_weight.copy_(materialized)
+        after_state = fingerprint_lfm2_parent(target_model).identity_sha256
+        after_hashes = _state_tensor_hashes(target_model)
+        runtime_proof = _parameter_runtime_proof(
+            before_runtime,
+            _parameter_runtime_snapshot(target_model),
+        )
+        changed_state_keys = _changed_state_keys(before_hashes, after_hashes)
+        after_tied_pointer = int(input_weight.untyped_storage().data_ptr())
+        after_tied_state_names = tuple(
+            sorted(
+                name
+                for name, value in target_model.state_dict(keep_vars=True).items()
+                if isinstance(value, torch.Tensor)
+                and int(value.untyped_storage().data_ptr()) == after_tied_pointer
+            )
+        )
+        runtime_preserved = all(
+            runtime_proof[name] is True
+            for name in (
+                "parameter_topology_preserved",
+                "parameter_identities_preserved",
+                "parameter_storage_preserved",
+                "gradient_state_preserved",
+            )
+        )
+        mutation_valid = bool(
+            install
+            and after_state != before_state
+            and tuple(changed_state_keys) == tied_state_names
+        )
+        noop_valid = bool(
+            not install and after_state == before_state and not changed_state_keys
+        )
+        installed_cpu = input_weight.detach().to(device="cpu").contiguous()
+        installed64 = installed_cpu.to(torch.float64)
+        selected64 = selected.target_weight.to(torch.float64)
+        materialization_residual = installed64 - selected64
+        materialization_relative_error = float(
+            torch.linalg.vector_norm(materialization_residual).item()
+            / max(
+                float(torch.linalg.vector_norm(selected64).item()),
+                torch.finfo(torch.float64).tiny,
+            )
+        )
+        materialization_maximum_error = float(
+            materialization_residual.abs().max().item()
+        )
+        if (
+            not runtime_preserved
+            or _parameter_count(target_model) != before_count
+            or target_model.get_input_embeddings().weight
+            is not target_model.get_output_embeddings().weight
+            or after_tied_state_names != tied_state_names
+            or not torch.equal(installed_cpu, candidate.materialized_target_weight)
+            or candidate.report.get("bf16_materialization_exact") is not True
+            or (
+                mode == TIED_RESIDUAL_STRONG_CONGRUENCE_MODE
+                and candidate.report.get("bf16_congruence_exact") is not True
+            )
+            or not (mutation_valid or noop_valid)
+            or not math.isfinite(materialization_relative_error)
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Tied residual-congruence installation changed topology, "
+                "aliases, parameter count, gradients, or expected BF16 bytes."
+            )
+    except BaseException:
+        with torch.no_grad():
+            input_weight.copy_(incumbent.to(device=input_weight.device))
+        rollback_runtime = _parameter_runtime_proof(
+            before_runtime,
+            _parameter_runtime_snapshot(target_model),
+        )
+        if (
+            fingerprint_lfm2_parent(target_model).identity_sha256 != before_state
+            or _state_tensor_hashes(target_model) != before_hashes
+            or not all(
+                rollback_runtime[name] is True
+                for name in (
+                    "parameter_topology_preserved",
+                    "parameter_identities_preserved",
+                    "parameter_storage_preserved",
+                    "gradient_state_preserved",
+                )
+            )
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Tied residual-congruence rollback was not exact."
+            )
+        raise
+
+    body = {
+        "schema": "neural-forge-lfm2-tied-residual-congruence-install-v1",
+        "status": (
+            "installed-selected-tied-residual-interface"
+            if install
+            else "authenticated-selected-tied-residual-interface-noop"
+        ),
+        "mode": mode,
+        "source_interface_report_sha256": interface.report["report_sha256"],
+        "candidate_report_sha256": candidate.report["report_sha256"],
+        "model_state_before_sha256": before_state,
+        "model_state_after_sha256": after_state,
+        "changed_state_keys": list(changed_state_keys),
+        "native_tied_state_aliases_before": list(tied_state_names),
+        "native_tied_state_aliases_after": list(after_tied_state_names),
+        "incumbent_target_weight_sha256": _interface_tensor_sha256(incumbent),
+        "selected_fp64_target_weight_sha256": _interface_tensor_sha256(
+            selected.target_weight
+        ),
+        "expected_bf16_target_weight_sha256": _interface_tensor_sha256(
+            candidate.materialized_target_weight
+        ),
+        "installed_target_weight_sha256": _interface_tensor_sha256(input_weight),
+        "selected_producer_encoder_sha256": _interface_tensor_sha256(
+            selected.producer_encoder
+        ),
+        "installed_vs_selected_fp64_relative_error": materialization_relative_error,
+        "installed_vs_selected_fp64_maximum_absolute_error": (
+            materialization_maximum_error
+        ),
+        "producer_basis_orthogonality_authenticated": candidate.report[
+            "producer_basis_orthogonality_authenticated"
+        ],
+        "fp64_congruence_exact": candidate.report["fp64_congruence_exact"],
+        "bf16_materialization_exact": candidate.report["bf16_materialization_exact"],
+        "bf16_congruence_exact": candidate.report["bf16_congruence_exact"],
+        "congruent_vs_old_output_factor_relative_error": candidate.report[
+            "congruent_vs_old_output_factor_relative_error"
+        ],
+        "congruent_vs_old_output_factor_row_cosine": candidate.report[
+            "congruent_vs_old_output_factor_row_cosine"
+        ],
+        "congruent_vs_old_output_factor_column_cosine": candidate.report[
+            "congruent_vs_old_output_factor_column_cosine"
+        ],
+        "native_tie_preserved": True,
+        "native_tied_alias_set_preserved": True,
+        **dict(runtime_proof),
+        "unique_parameter_count_before": before_count,
+        "unique_parameter_count_after": _parameter_count(target_model),
+        "unique_parameter_count_preserved": True,
+        "full_vocabulary_rows_used": int(input_weight.shape[0]),
+        "target_width": int(input_weight.shape[1]),
+        "global_residual_basis_frozen": True,
+        "independent_per_layer_gauge_rotation_allowed": False,
+        "installation_performed": install,
+        "operation_audit": dict(_ZERO_OPERATIONS),
+    }
+    return selected, MappingProxyType(_sealed(body, "result_sha256"))
 
 
 def _ordinary_directory(value: str | os.PathLike[str], name: str) -> Path:
@@ -3116,6 +3367,10 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 verified.get("fold_compute_device") != fold_compute_device
                 or verified.get("all_mlp_layers_proved_requested_fold_compute_device")
                 is not True
+                or verified.get(
+                    "all_short_conv_layers_proved_requested_fold_compute_device"
+                )
+                is not True
             )
         )
         or verified.get("all_attention_operator_decisions_completed") is not True
@@ -3708,8 +3963,389 @@ def _merge_terminal_evidence(
     )
 
 
+def _terminal_result_tensor_sha256(value: Any) -> str:
+    """Independently reproduce the terminal-result tensor authentication."""
+
+    torch = _torch()
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Cannot authenticate a non-materialized terminal tensor."
+        )
+    tensor = value.detach().to(device="cpu").contiguous()
+    descriptor = {
+        "dtype": str(tensor.dtype).removeprefix("torch."),
+        "shape": [int(size) for size in tensor.shape],
+        "stride": [int(size) for size in tensor.stride()],
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            descriptor,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    )
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C"))
+    return digest.hexdigest()
+
+
+def _reported_terminal_fit_key(record: Mapping[str, Any]) -> tuple[Any, ...] | None:
+    metrics = record.get("fit_metrics")
+    oracle = metrics.get("oracle") if isinstance(metrics, Mapping) else None
+    parent = metrics.get("mapped_parent") if isinstance(metrics, Mapping) else None
+    if not isinstance(oracle, Mapping) or not isinstance(parent, Mapping):
+        return None
+
+    def number(container: Mapping[str, Any], name: str) -> float | None:
+        value = container.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        result = float(value)
+        return result if math.isfinite(result) else None
+
+    values = (
+        number(oracle, "centered_logit_relative_rmse"),
+        number(oracle, "top1_agreement_fraction"),
+        number(parent, "centered_logit_relative_rmse"),
+        number(parent, "top1_agreement_fraction"),
+        number(parent, "reference_winner_positive_margin_fraction"),
+        number(metrics, "maximum_post_layer_rms_ratio_to_incumbent"),
+        number(record, "alpha"),
+        number(record, "gauss_newton_damping"),
+        number(record, "ridge"),
+    )
+    state_sha256 = record.get("state_sha256")
+    if any(value is None for value in values) or not isinstance(state_sha256, str):
+        return None
+    return (
+        values[0],
+        -values[1],
+        values[2],
+        -values[3],
+        -values[4],
+        values[5],
+        values[6],
+        values[7],
+        values[8],
+        state_sha256,
+    )
+
+
+def _authenticated_exact_zero_terminal_plant(
+    report: Mapping[str, Any],
+    *,
+    incumbent: Any,
+    selected: Any,
+    published: Any,
+    policy: Lfm2CpcfTerminalActionPolicy,
+    seed: Lfm2CpcfTerminalActionSeed | None,
+    evidence: Mapping[str, Lfm2CpcfTerminalActionEvidence] | None,
+) -> bool:
+    """Recompute a cold publication from its exact local seed and evidence."""
+
+    torch = _torch()
+    required_splits = ("fit", "fit_check", "selection", "validation")
+    if (
+        int(torch.count_nonzero(incumbent).item()) != 0
+        or not isinstance(policy, Lfm2CpcfTerminalActionPolicy)
+        or not policy.verify_authentication()
+        or not isinstance(seed, Lfm2CpcfTerminalActionSeed)
+        or not seed.verify_authentication()
+        or not isinstance(evidence, Mapping)
+        or set(evidence) != set(required_splits)
+        or not all(
+            isinstance(evidence[split], Lfm2CpcfTerminalActionEvidence)
+            and evidence[split].split == split
+            and evidence[split].verify_authentication()
+            for split in required_splits
+        )
+        or not torch.equal(seed.down_weight, incumbent)
+    ):
+        return False
+    output_hashes = {
+        "incumbent": _terminal_result_tensor_sha256(incumbent),
+        "selected": _terminal_result_tensor_sha256(selected),
+        "published": _terminal_result_tensor_sha256(published),
+    }
+    expected_evidence_sha256 = {
+        split: evidence[split].authentication_sha256 for split in required_splits
+    }
+    expected_rows = {split: evidence[split].rows for split in required_splits}
+    expected_row_ids_sha256 = {
+        split: canonical_sha256(list(evidence[split].row_ids))
+        for split in required_splits
+    }
+    coverage_value = report.get("selected_writer_structural_coverage")
+    validation = report.get("validation")
+    split_roles = report.get("split_roles")
+    frontier = report.get("frontier")
+    selected_metrics = report.get("selected_metrics_before_validation")
+    incumbent_metrics = report.get("incumbent_metrics")
+    if (
+        not isinstance(coverage_value, Mapping)
+        or not isinstance(validation, Mapping)
+        or not isinstance(split_roles, Mapping)
+        or not isinstance(frontier, list)
+        or not isinstance(selected_metrics, Mapping)
+        or not isinstance(incumbent_metrics, Mapping)
+    ):
+        return False
+    coverage = dict(coverage_value)
+    coverage_sha256 = coverage.pop("coverage_sha256", None)
+    nonzero = selected.ne(0)
+    all_finite = bool(torch.isfinite(selected).all().item())
+    all_nonzero = bool(nonzero.all().item())
+    all_outputs_covered = bool(nonzero.any(dim=1).all().item())
+    all_sources_covered = bool(nonzero.any(dim=0).all().item())
+    expected_count = 1 + (
+        len(policy.gauss_newton_damping_frontier)
+        * len(policy.ridge_frontier)
+        * (len(policy.alpha_frontier) - 1)
+    )
+    expected_ids = {"incumbent"}
+    expected_ids.update(
+        f"gn-{damping_index:02d}-ridge-{ridge_index:02d}-alpha-{alpha_index:02d}"
+        for damping_index, _damping in enumerate(policy.gauss_newton_damping_frontier)
+        for ridge_index, _ridge in enumerate(policy.ridge_frontier)
+        for alpha_index, _alpha in enumerate(policy.alpha_frontier[1:], start=1)
+    )
+    if not all(isinstance(value, Mapping) for value in frontier):
+        return False
+    records = {str(value.get("candidate_id")): value for value in frontier}
+    selected_id = report.get("selected_candidate_id")
+    selected_frontier = records.get(str(selected_id))
+    incumbent_frontier = records.get("incumbent")
+    if (
+        len(frontier) != expected_count
+        or len(records) != expected_count
+        or set(records) != expected_ids
+        or report.get("frontier_count") != expected_count
+        or report.get("expected_frontier_count") != expected_count
+        or not isinstance(selected_frontier, Mapping)
+        or not isinstance(incumbent_frontier, Mapping)
+    ):
+        return False
+
+    try:
+        prepared = {
+            split: _prepare_split(evidence[split], seed) for split in required_splits
+        }
+        recomputed_incumbent = {
+            split: _evaluate_split(
+                prepared[split],
+                seed,
+                incumbent,
+                metric_chunk_rows=policy.metric_chunk_rows,
+            )
+            for split in required_splits
+        }
+        recomputed_selected = {
+            split: _evaluate_split(
+                prepared[split],
+                seed,
+                selected,
+                metric_chunk_rows=policy.metric_chunk_rows,
+            )
+            for split in required_splits
+        }
+    except Exception:
+        return False
+    recomputed_fit_gates = _metric_gates(
+        recomputed_selected["fit"],
+        recomputed_incumbent["fit"],
+        policy,
+        require_selection_improvement=False,
+    )
+    recomputed_fit_check_gates = _metric_gates(
+        recomputed_selected["fit_check"],
+        recomputed_incumbent["fit_check"],
+        policy,
+        require_selection_improvement=False,
+    )
+    recomputed_selection_gates = _metric_gates(
+        recomputed_selected["selection"],
+        recomputed_incumbent["selection"],
+        policy,
+        require_selection_improvement=True,
+    )
+    recomputed_validation_gates = _metric_gates(
+        recomputed_selected["validation"],
+        recomputed_incumbent["validation"],
+        policy,
+        require_selection_improvement=False,
+    )
+    selected_fit_key = (
+        recomputed_selected["fit"].oracle.centered_logit_relative_rmse,
+        -recomputed_selected["fit"].oracle.top1_agreement_fraction,
+        recomputed_selected["fit"].mapped_parent.centered_logit_relative_rmse,
+        -recomputed_selected["fit"].mapped_parent.top1_agreement_fraction,
+        -recomputed_selected[
+            "fit"
+        ].mapped_parent.reference_winner_positive_margin_fraction,
+        recomputed_selected["fit"].maximum_post_layer_rms_ratio_to_incumbent,
+        float(selected_frontier.get("alpha")),
+        float(selected_frontier.get("gauss_newton_damping")),
+        float(selected_frontier.get("ridge")),
+        output_hashes["selected"],
+    )
+    incumbent_fit_key = (
+        recomputed_incumbent["fit"].oracle.centered_logit_relative_rmse,
+        -recomputed_incumbent["fit"].oracle.top1_agreement_fraction,
+        recomputed_incumbent["fit"].mapped_parent.centered_logit_relative_rmse,
+        -recomputed_incumbent["fit"].mapped_parent.top1_agreement_fraction,
+        -recomputed_incumbent[
+            "fit"
+        ].mapped_parent.reference_winner_positive_margin_fraction,
+        recomputed_incumbent["fit"].maximum_post_layer_rms_ratio_to_incumbent,
+        float(incumbent_frontier.get("alpha")),
+        float(incumbent_frontier.get("gauss_newton_damping")),
+        float(incumbent_frontier.get("ridge")),
+        output_hashes["incumbent"],
+    )
+    reported_keys = {
+        candidate_id: _reported_terminal_fit_key(value)
+        for candidate_id, value in records.items()
+    }
+    eligible_keys = [
+        (key, candidate_id)
+        for candidate_id, key in reported_keys.items()
+        if key is not None and records[candidate_id].get("eligible") is True
+    ]
+    unevaluated_marker = {"not_evaluated_before_fit_selection_freeze": True}
+    nonselected_heldout_clean = all(
+        value.get("fit_check_metrics") is None
+        and value.get("selection_metrics") is None
+        and value.get("fit_check_gates") == unevaluated_marker
+        and value.get("selection_gates") == unevaluated_marker
+        for candidate_id, value in records.items()
+        if candidate_id not in {"incumbent", selected_id}
+    )
+    return bool(
+        report.get("schema") == LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA
+        and report.get("method") == _TERMINAL_ACTION_RESULT_METHOD
+        and report.get("policy_sha256") == policy.authentication_sha256
+        and report.get("seed_sha256") == seed.authentication_sha256
+        and report.get("incumbent_seed_writer_sha256") == output_hashes["incumbent"]
+        and report.get("split_evidence_sha256") == expected_evidence_sha256
+        and report.get("split_rows") == expected_rows
+        and report.get("split_row_ids_sha256") == expected_row_ids_sha256
+        and report.get("output_state_sha256") == output_hashes
+        and report.get("operation_audit") == dict(_TERMINAL_ZERO_OPERATION_AUDIT)
+        and report.get("exact_zero_cold_start") is True
+        and report.get("incumbent_all_elements_zero") is True
+        and report.get("incumbent_nonzero_element_count") == 0
+        and report.get("incumbent_noop_publication_forbidden") is True
+        and report.get("candidate_selection_evidence_scope") == "fit-only"
+        and report.get("relative_to_zero_weight_delta_gate_applied") is False
+        and report.get("heldout_evidence_role")
+        == "diagnostic-only-after-frozen-fit-selection"
+        and report.get("selected_before_any_heldout_publication_diagnostic") is True
+        and report.get("heldout_candidate_evaluation_count_before_fit_freeze") == 0
+        and report.get("heldout_candidate_evaluation_count_after_fit_freeze") == 6
+        and report.get("heldout_candidate_count_evaluated_after_fit_freeze") == 2
+        and report.get("selected_nonincumbent") is (selected_id != "incumbent")
+        and selected_id != "incumbent"
+        and report.get("accepted") is True
+        and report.get("published_is_incumbent") is False
+        and report.get("rollback_performed") is False
+        and report.get("rollback_exact") is True
+        and report.get("source_seed_writer_unchanged") is True
+        and report.get("parameter_identity_or_topology_mutation") is False
+        and report.get("parameter_count_before") == int(incumbent.numel())
+        and report.get("parameter_count_after") == int(published.numel())
+        and torch.equal(published, selected)
+        and not torch.equal(published, incumbent)
+        and coverage_sha256 == canonical_sha256(coverage)
+        and report.get("selected_writer_structural_coverage_sha256") == coverage_sha256
+        and coverage.get("tensor_sha256") == output_hashes["selected"]
+        and coverage.get("shape") == [int(size) for size in selected.shape]
+        and coverage.get("dtype") == "bfloat16"
+        and coverage.get("element_count") == int(selected.numel())
+        and coverage.get("all_elements_finite") is all_finite
+        and coverage.get("all_elements_nonzero") is all_nonzero
+        and coverage.get("all_target_outputs_covered") is all_outputs_covered
+        and coverage.get("all_source_features_covered") is all_sources_covered
+        and coverage.get("complete_dense_writer_coverage") is True
+        and all_finite
+        and int(torch.count_nonzero(selected).item()) > 0
+        and all_outputs_covered
+        and all_sources_covered
+        and selected_frontier.get("state_sha256") == output_hashes["selected"]
+        and incumbent_frontier.get("state_sha256") == output_hashes["incumbent"]
+        and selected_frontier.get("structural_coverage") == coverage_value
+        and selected_frontier.get("structural_coverage_sha256") == coverage_sha256
+        and selected_frontier.get("candidate_ranking_split") == "fit"
+        and selected_frontier.get("relative_to_zero_weight_delta_gate_applied") is False
+        and selected_frontier.get("fit_metrics") == recomputed_selected["fit"].as_dict()
+        and selected_frontier.get("fit_gates") == recomputed_fit_gates
+        and selected_frontier.get("fit_check_metrics")
+        == recomputed_selected["fit_check"].as_dict()
+        and selected_frontier.get("fit_check_gates") == recomputed_fit_check_gates
+        and selected_frontier.get("selection_metrics")
+        == recomputed_selected["selection"].as_dict()
+        and selected_frontier.get("selection_gates") == recomputed_selection_gates
+        and selected_frontier.get(
+            "heldout_diagnostics_evaluated_after_fit_selection_freeze"
+        )
+        is True
+        and selected_frontier.get("frozen_candidate_state_sha256")
+        == output_hashes["selected"]
+        and tuple(selected_frontier.get("selection_key", ())) == selected_fit_key
+        and tuple(incumbent_frontier.get("selection_key", ())) == incumbent_fit_key
+        and tuple(report.get("selected_selection_key", ())) == selected_fit_key
+        and report.get("selected_state_sha256") == output_hashes["selected"]
+        and all(
+            key is not None
+            and tuple(records[candidate_id].get("selection_key", ())) == key
+            for candidate_id, key in reported_keys.items()
+        )
+        and selected_fit_key < incumbent_fit_key
+        and bool(recomputed_fit_gates)
+        and _all_passed(recomputed_fit_gates)
+        and selected_frontier.get("eligible") is True
+        and bool(eligible_keys)
+        and min(eligible_keys)[1] == selected_id
+        and nonselected_heldout_clean
+        and incumbent_metrics
+        == {split: recomputed_incumbent[split].as_dict() for split in required_splits}
+        and selected_metrics
+        == {
+            split: recomputed_selected[split].as_dict()
+            for split in ("fit", "fit_check", "selection")
+        }
+        and validation.get("metrics") == recomputed_selected["validation"].as_dict()
+        and validation.get("gates") == recomputed_validation_gates
+        and validation.get("passed") is _all_passed(recomputed_validation_gates)
+        and validation.get("heldout_diagnostic_only") is True
+        and validation.get("publication_gate_applied") is False
+        and validation.get("used_for_candidate_ranking") is False
+        and validation.get("used_to_change_selected_candidate_id") is False
+        and validation.get("accessed_only_after_selected_id_and_state_sha256_frozen")
+        is True
+        and validation.get("frozen_candidate_state_sha256") == output_hashes["selected"]
+        and split_roles.get("only_fit_rows_used_for_candidate_eligibility_and_ranking")
+        is True
+        and split_roles.get("fit_check_diagnostic_only") is True
+        and split_roles.get("selection_diagnostic_only") is True
+        and split_roles.get("validation_diagnostic_only") is True
+        and report.get("selected_writer_all_elements_finite") is True
+        and report.get("selected_writer_all_elements_nonzero") is all_nonzero
+        and report.get("selected_writer_all_source_features_covered") is True
+        and report.get("published_writer_is_finite_dense_nonzero_fit_plant") is True
+        and report.get("zero_training_pruning_quantization") is True
+    )
+
+
 def _terminal_publication_decision(
     terminal: Lfm2CpcfTerminalActionResidualResult,
+    *,
+    expected_seed: Lfm2CpcfTerminalActionSeed | None = None,
+    expected_evidence: Mapping[str, Lfm2CpcfTerminalActionEvidence] | None = None,
 ) -> tuple[Any, Mapping[str, Any]]:
     """Authenticate either a changed winner or the exact published incumbent."""
 
@@ -3722,12 +4358,8 @@ def _terminal_publication_decision(
         )
     report = terminal.as_dict()
     operation_audit = report.get("operation_audit")
-    if (
-        not isinstance(operation_audit, Mapping)
-        or not operation_audit
-        or any(
-            type(value) is not int or value != 0 for value in operation_audit.values()
-        )
+    if not isinstance(operation_audit, Mapping) or operation_audit != dict(
+        _TERMINAL_ZERO_OPERATION_AUDIT
     ):
         raise Lfm2SemanticPostfoldError(
             "Fused terminal result does not prove a zero-operation compilation."
@@ -3737,6 +4369,7 @@ def _terminal_publication_decision(
     selected = terminal.selected_down_weight
     published_is_incumbent = bool(torch.equal(published, incumbent))
     published_is_selected = bool(torch.equal(published, selected))
+    incumbent_is_exact_zero = bool(torch.count_nonzero(incumbent).item() == 0)
     validation = report.get("validation")
     validation_passed = bool(
         isinstance(validation, Mapping) and validation.get("passed") is True
@@ -3747,8 +4380,18 @@ def _terminal_publication_decision(
         and report.get("parameter_count_before") == report.get("parameter_count_after")
         and report.get("rollback_exact") is True
     )
+    exact_zero_cold_start = _authenticated_exact_zero_terminal_plant(
+        report,
+        incumbent=incumbent,
+        selected=selected,
+        published=published,
+        policy=terminal.policy,
+        seed=expected_seed,
+        evidence=expected_evidence,
+    )
     changed_winner = bool(
         common_valid
+        and not incumbent_is_exact_zero
         and terminal.accepted
         and terminal.changed
         and terminal.selected_candidate_id != "incumbent"
@@ -3759,8 +4402,10 @@ def _terminal_publication_decision(
         and published_is_selected
         and not published_is_incumbent
     )
+    changed_winner = bool(changed_winner or (common_valid and exact_zero_cold_start))
     incumbent_retained = bool(
         common_valid
+        and not incumbent_is_exact_zero
         and not terminal.accepted
         and not terminal.changed
         and report.get("published_is_incumbent") is True
@@ -3789,7 +4434,11 @@ def _terminal_publication_decision(
             "authenticated exact incumbent."
         )
     if changed_winner:
-        reason = "accepted-nonincumbent-mutation"
+        reason = (
+            "exact-zero-fit-only-structural-plant"
+            if exact_zero_cold_start
+            else "accepted-nonincumbent-mutation"
+        )
     decision = {
         "publication_decision": reason,
         "terminal_publication_decision_accepted": True,
@@ -3802,6 +4451,16 @@ def _terminal_publication_decision(
         "published_is_selected": published_is_selected,
         "published_is_incumbent": published_is_incumbent,
     }
+    if exact_zero_cold_start:
+        decision.update(
+            {
+                "terminal_exact_zero_cold_start": True,
+                "incumbent_noop_publication_forbidden": True,
+                "fit_only_selection_frozen_before_heldout_diagnostics": True,
+                "heldout_metrics_diagnostic_only": True,
+                "published_w2_complete_dense_structural_plant": True,
+            }
+        )
     return published, MappingProxyType(decision)
 
 
@@ -3837,6 +4496,7 @@ def _install_final_w2_once(
     before_count = _parameter_count(target_model)
     before_runtime = _parameter_runtime_snapshot(target_model)
     incumbent = parameter.detach().to(device="cpu").contiguous().clone()
+    incumbent_is_exact_zero = bool(torch.count_nonzero(incumbent).item() == 0)
     published = (
         published_down_weight.detach()
         .to(
@@ -3855,6 +4515,11 @@ def _install_final_w2_once(
             "Fused terminal refused to publish a blank or structurally partial W2."
         )
     install = not torch.equal(parameter.detach(), published)
+    if incumbent_is_exact_zero and not install:
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal forbids incumbent/noop publication for an exact-zero "
+            "W2 cold start."
+        )
     try:
         if install:
             with torch.no_grad():
@@ -3942,6 +4607,91 @@ def _install_final_w2_once(
         "parameter_copy_calls": int(install),
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
+    if incumbent_is_exact_zero:
+        body.update(
+            {
+                "exact_zero_cold_start": True,
+                "incumbent_all_elements_zero": True,
+                "incumbent_noop_publication_forbidden": True,
+                "published_w2_all_elements_finite": True,
+                "published_w2_all_elements_nonzero": bool(published.ne(0).all().item()),
+                "published_w2_all_output_units_covered": True,
+                "published_w2_all_input_units_covered": True,
+                "transactional_dense_cold_start_plant": True,
+            }
+        )
+    return MappingProxyType(_sealed(body, "result_sha256"))
+
+
+def _authenticate_fused_terminal_tied_interface(
+    *,
+    target_model: Any,
+    interface: TiedCausalInterfaceFold,
+    mapped_parent_tied_table: Any,
+    layer_receipt: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Bind terminal evidence to the live, layer-authenticated congruence."""
+
+    torch = _torch()
+    if not isinstance(interface, TiedCausalInterfaceFold):
+        raise TypeError("interface must be TiedCausalInterfaceFold.")
+    if interface.report.get("schema") != TIED_RESIDUAL_CONGRUENCE_SCHEMA:
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal requires an explicit tied residual-congruence schema."
+        )
+    try:
+        authentication = authenticate_tied_residual_congruence_interface(
+            interface,
+            mapped_parent_tied_table=mapped_parent_tied_table,
+        )
+    except (TypeError, ValueError) as exc:
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal rejected the tied residual-congruence lineage."
+        ) from exc
+    lineage = layer_receipt.get("tied_interface_lineage")
+    input_weight = getattr(target_model.get_input_embeddings(), "weight", None)
+    output_weight = getattr(target_model.get_output_embeddings(), "weight", None)
+    if (
+        not isinstance(lineage, Mapping)
+        or lineage.get("interface_report_schema") != TIED_RESIDUAL_CONGRUENCE_SCHEMA
+        or lineage.get("interface_report_sha256")
+        != authentication["interface_report_sha256"]
+        or lineage.get("producer_encoder_sha256")
+        != authentication["producer_encoder_sha256"]
+        or lineage.get("target_weight_sha256") != authentication["target_weight_sha256"]
+        or lineage.get("tied_residual_congruence_authenticated") is not True
+        or lineage.get("global_residual_gauge_required") is not True
+        or not isinstance(input_weight, torch.nn.Parameter)
+        or output_weight is not input_weight
+        or not torch.equal(
+            interface.target_weight.to(device="cpu", dtype=input_weight.dtype),
+            input_weight.detach().to(device="cpu"),
+        )
+        or (
+            authentication.get("strong_congruence_claimed") is True
+            and authentication.get("strong_congruence_recomputed_exact") is not True
+        )
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal interface differs from the frozen layer-stack "
+            "congruence or live tied child."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-fused-terminal-tied-interface-v1",
+        "interface_authentication_sha256": authentication["result_sha256"],
+        "interface_report_sha256": authentication["interface_report_sha256"],
+        "interface_report_schema": TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+        "mode": authentication["mode"],
+        "producer_encoder_sha256": authentication["producer_encoder_sha256"],
+        "target_weight_sha256": authentication["target_weight_sha256"],
+        "layer_stack_interface_lineage_sha256": canonical_sha256(dict(lineage)),
+        "strong_congruence_recomputed_exact": authentication[
+            "strong_congruence_recomputed_exact"
+        ],
+        "global_residual_gauge_frozen_through_terminal": True,
+        "live_native_tied_table_matches_interface": True,
+        "operation_audit": dict(_ZERO_OPERATIONS),
+    }
     return MappingProxyType(_sealed(body, "result_sha256"))
 
 
@@ -3977,6 +4727,12 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
             "evidence cache."
         )
     layer_receipt = layer_stack.receipt
+    terminal_interface_authentication = _authenticate_fused_terminal_tied_interface(
+        target_model=target_model,
+        interface=interface,
+        mapped_parent_tied_table=source_selected_tied_table,
+        layer_receipt=layer_receipt,
+    )
     current_state = fingerprint_lfm2_parent(target_model).identity_sha256
     current_w2 = _tensor_sha256(_final_w2_parameter(target_model))
     final_mlp_producer_coverage_before_terminal = _lfm2_dense_producer_chain_coverage(
@@ -4183,7 +4939,12 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         policy=selected_policy,
     )
     published_down_weight, publication_decision = _terminal_publication_decision(
-        terminal
+        terminal,
+        expected_seed=seed,
+        expected_evidence=fused,
+    )
+    exact_zero_cold_start = bool(
+        publication_decision.get("terminal_exact_zero_cold_start") is True
     )
     fused_heldout_gates = {}
     for split in ("selection", "validation"):
@@ -4206,12 +4967,20 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
             selected_policy,
             require_selection_improvement=False,
         )
-        fused_heldout_gates[split] = {
+        heldout_report = {
             "incumbent": incumbent_metrics.as_dict(),
             "published": published_metrics.as_dict(),
             "gates": gates,
             "passed": _all_passed(gates),
         }
+        if exact_zero_cold_start:
+            heldout_report.update(
+                {
+                    "role": "diagnostic-only-after-frozen-fit-selection",
+                    "publication_gate_applied": False,
+                }
+            )
+        fused_heldout_gates[split] = heldout_report
     lane_gates = {}
     for lane_name, banks in (
         ("parent_endpoint", parent),
@@ -4239,13 +5008,21 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
                 selected_policy,
                 require_selection_improvement=False,
             )
-            lane_gates[lane_name][split] = {
+            heldout_report = {
                 "incumbent": incumbent_metrics.as_dict(),
                 "published": published_metrics.as_dict(),
                 "gates": gates,
                 "passed": _all_passed(gates),
             }
-    if not (
+            if exact_zero_cold_start:
+                heldout_report.update(
+                    {
+                        "role": "diagnostic-only-after-frozen-fit-selection",
+                        "publication_gate_applied": False,
+                    }
+                )
+            lane_gates[lane_name][split] = heldout_report
+    if not exact_zero_cold_start and not (
         all(value["passed"] for value in fused_heldout_gates.values())
         and all(
             value["passed"] for lane in lane_gates.values() for value in lane.values()
@@ -4310,6 +5087,10 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "cache_parent_fingerprint": cache.parent_fingerprint,
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
+        "tied_interface_authentication": dict(terminal_interface_authentication),
+        "tied_interface_authentication_sha256": (
+            terminal_interface_authentication["result_sha256"]
+        ),
         "split_plan": plan.as_dict(),
         "parent_cache_authentication": cache_receipt,
         "parent_final_norm_direct_local_source": parent_final_norm.as_dict(),
@@ -4405,6 +5186,18 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         ],
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
+    if exact_zero_cold_start:
+        body.update(
+            {
+                "terminal_exact_zero_cold_start": True,
+                "terminal_incumbent_noop_publication_forbidden": True,
+                "terminal_fit_only_selection_frozen_before_heldout_diagnostics": (True),
+                "terminal_heldout_metrics_diagnostic_only": True,
+                "terminal_heldout_publication_gate_applied": False,
+                "terminal_dense_structural_plant_installed_transactionally": True,
+                "zero_training_pruning_quantization": True,
+            }
+        )
     return MappingProxyType(_sealed(body, "result_sha256"))
 
 
@@ -4472,6 +5265,98 @@ def _validate_fused_semantic_terminal_receipt(
             "Fused semantic terminal decision counts are not exact integers."
         )
     operation_audit = receipt.get("operation_audit")
+    installation_exact_zero = installation.get("exact_zero_cold_start") is True
+    terminal_result_value = receipt.get("terminal_result")
+    terminal_decision = receipt.get("terminal_publication_decision")
+    fused_heldout = receipt.get("fused_heldout_publication_gates")
+    separate_heldout = receipt.get("separate_heldout_lane_gates")
+    cold_receipt_invalid = False
+    if installation_exact_zero:
+        if isinstance(terminal_result_value, Mapping):
+            terminal_result = _verify_sealed(
+                terminal_result_value,
+                seal_name="result_sha256",
+                label="exact-zero terminal-action result",
+            )
+        else:
+            terminal_result = {}
+        terminal_validation = terminal_result.get("validation")
+        terminal_operations = terminal_result.get("operation_audit")
+        heldout_rows = (
+            list(fused_heldout.values()) if isinstance(fused_heldout, Mapping) else []
+        )
+        if isinstance(separate_heldout, Mapping):
+            heldout_rows.extend(
+                value
+                for lane in separate_heldout.values()
+                if isinstance(lane, Mapping)
+                for value in lane.values()
+            )
+        cold_receipt_invalid = bool(
+            receipt.get("terminal_exact_zero_cold_start") is not True
+            or receipt.get("terminal_incumbent_noop_publication_forbidden") is not True
+            or receipt.get(
+                "terminal_fit_only_selection_frozen_before_heldout_diagnostics"
+            )
+            is not True
+            or receipt.get("terminal_heldout_metrics_diagnostic_only") is not True
+            or receipt.get("terminal_heldout_publication_gate_applied") is not False
+            or receipt.get("terminal_dense_structural_plant_installed_transactionally")
+            is not True
+            or receipt.get("zero_training_pruning_quantization") is not True
+            or not isinstance(terminal_decision, Mapping)
+            or terminal_decision.get("terminal_exact_zero_cold_start") is not True
+            or terminal_decision.get("incumbent_noop_publication_forbidden") is not True
+            or terminal_decision.get(
+                "fit_only_selection_frozen_before_heldout_diagnostics"
+            )
+            is not True
+            or terminal_decision.get("heldout_metrics_diagnostic_only") is not True
+            or terminal_decision.get("published_w2_complete_dense_structural_plant")
+            is not True
+            or terminal_result.get("exact_zero_cold_start") is not True
+            or terminal_result.get("incumbent_all_elements_zero") is not True
+            or terminal_result.get("incumbent_noop_publication_forbidden") is not True
+            or terminal_result.get("candidate_selection_evidence_scope") != "fit-only"
+            or terminal_result.get("relative_to_zero_weight_delta_gate_applied")
+            is not False
+            or terminal_result.get("selected_before_any_heldout_publication_diagnostic")
+            is not True
+            or terminal_result.get("published_writer_is_finite_dense_nonzero_fit_plant")
+            is not True
+            or terminal_result.get("zero_training_pruning_quantization") is not True
+            or not isinstance(terminal_validation, Mapping)
+            or terminal_validation.get("heldout_diagnostic_only") is not True
+            or terminal_validation.get("publication_gate_applied") is not False
+            or not isinstance(terminal_operations, Mapping)
+            or not terminal_operations
+            or any(value != 0 for value in terminal_operations.values())
+            or installation.get("incumbent_all_elements_zero") is not True
+            or installation.get("incumbent_noop_publication_forbidden") is not True
+            or installation.get("published_w2_all_elements_finite") is not True
+            or installation.get("published_w2_all_output_units_covered") is not True
+            or installation.get("published_w2_all_input_units_covered") is not True
+            or installation.get("transactional_dense_cold_start_plant") is not True
+            or len(heldout_rows) != 8
+            or any(
+                not isinstance(value, Mapping)
+                or value.get("role") != "diagnostic-only-after-frozen-fit-selection"
+                or value.get("publication_gate_applied") is not False
+                for value in heldout_rows
+            )
+        )
+    else:
+        cold_receipt_invalid = bool(
+            receipt.get("terminal_exact_zero_cold_start") is True
+            or (
+                isinstance(terminal_result_value, Mapping)
+                and terminal_result_value.get("exact_zero_cold_start") is True
+            )
+            or (
+                isinstance(terminal_decision, Mapping)
+                and terminal_decision.get("terminal_exact_zero_cold_start") is True
+            )
+        )
     invalid = bool(
         receipt.get("schema") != LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA
         or receipt.get("semantic_layer_stack_result_sha256")
@@ -4519,6 +5404,7 @@ def _validate_fused_semantic_terminal_receipt(
         or layer_receipt.get("whole_stage_contains_meaningful_parameter_changes")
         is not True
         or layer_receipt.get("model_state_before_sha256") == current_model_state_sha256
+        or cold_receipt_invalid
     )
     if counts["install"] == 1:
         invalid = bool(
@@ -4714,6 +5600,9 @@ def run_lfm2_semantic_postfold(
     parent_final_norm_tensor_key: str = "model.embedding_norm.weight",
     parent_norm_epsilon_config_key: str = "norm_eps",
     parent_tied_tensor_key: str = "model.embed_tokens.weight",
+    tied_interface_mode: str = TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+    interface_statistics_directory: str | os.PathLike[str] | None = None,
+    expected_interface_statistics_sha256: str | None = None,
     attention_installer: Callable[..., Mapping[str, Any]] | None = None,
     semantic_layer_stack_compiler: Callable[..., Any] | None = None,
     fused_terminal_compiler: Callable[..., Mapping[str, Any]] = (
@@ -4723,6 +5612,26 @@ def run_lfm2_semantic_postfold(
 ) -> Mapping[str, Any]:
     """Execute the complete saved-child semantic postfold transaction."""
 
+    statistics_requested = interface_statistics_directory is not None
+    if statistics_requested != (expected_interface_statistics_sha256 is not None):
+        raise Lfm2SemanticPostfoldError(
+            "Interface statistics directory and external SHA-256 pin must be "
+            "supplied together."
+        )
+    expected_statistics_sha256 = (
+        _digest(
+            expected_interface_statistics_sha256,
+            "expected interface statistics SHA-256",
+        )
+        if statistics_requested
+        else None
+    )
+    foundation_ancestry = _claims_semantic_foundation_schema(compiler_diagnostic_json)
+    if statistics_requested and not foundation_ancestry:
+        raise Lfm2SemanticPostfoldError(
+            "Compact interface statistics are supported only for "
+            "semantic-foundation ancestry."
+        )
     output = _new_output_path(output_checkpoint_directory)
     cache = open_lfm2_circuit_trace_cache(cache_directory, verify=True)
     if cache.cache_key != _digest(expected_cache_key, "expected cache key"):
@@ -4760,7 +5669,6 @@ def run_lfm2_semantic_postfold(
             tensor_key=parent_tied_tensor_key,
         )
     )
-    foundation_ancestry = _claims_semantic_foundation_schema(compiler_diagnostic_json)
     lineage = load_lfm2_semantic_compiler_lineage(
         compiler_diagnostic_json,
         expected_diagnostic_sha256=expected_compiler_diagnostic_sha256,
@@ -4788,6 +5696,18 @@ def run_lfm2_semantic_postfold(
                     expected_foundation_receipt_sha256=(
                         expected_compiler_diagnostic_sha256
                     ),
+                    **(
+                        {
+                            "interface_statistics_directory": (
+                                interface_statistics_directory
+                            ),
+                            "expected_interface_statistics_sha256": (
+                                expected_statistics_sha256
+                            ),
+                        }
+                        if statistics_requested
+                        else {}
+                    ),
                 )
             )
         except Lfm2SemanticFoundationError as exc:
@@ -4804,9 +5724,65 @@ def run_lfm2_semantic_postfold(
             compiler_diagnostic_json=compiler_diagnostic_json,
             expected_compiler_diagnostic_sha256=(expected_compiler_diagnostic_sha256),
         )
-    interface, self_dual_tied_gauge = install_lfm2_self_dual_tied_interface_gauge(
-        target_model,
-        interface,
+    interface_statistics_replay = None
+    if statistics_requested:
+        verified_rehydration = _verify_sealed(
+            interface_rehydration,
+            seal_name="result_sha256",
+            label="compact interface-statistics rehydration",
+        )
+        artifact_sha256 = _digest(
+            verified_rehydration.get("interface_statistics_artifact_sha256"),
+            "rehydrated interface statistics artifact",
+        )
+        manifest_sha256 = _digest(
+            verified_rehydration.get("interface_statistics_manifest_file_sha256"),
+            "rehydrated interface statistics manifest",
+        )
+        replay_sha256 = _digest(
+            verified_rehydration.get("interface_statistics_replay_sha256"),
+            "interface statistics replay",
+        )
+        if (
+            verified_rehydration.get("schema")
+            != "neural-forge-lfm2-semantic-foundation-interface-rehydration-v2"
+            or artifact_sha256 != expected_statistics_sha256
+            or verified_rehydration.get("compiler_cache_open_calls") != 0
+            or verified_rehydration.get("trace_safetensor_open_calls") != 0
+            or verified_rehydration.get("selective_provider_open_calls") != 0
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Compact interface-statistics replay did not authenticate its "
+                "artifact identity or zero-open evidence boundary."
+            )
+        statistics_body = {
+            "schema": (
+                "neural-forge-lfm2-semantic-postfold-interface-statistics-replay-v1"
+            ),
+            "artifact_sha256": artifact_sha256,
+            "manifest_file_sha256": manifest_sha256,
+            "replay_sha256": replay_sha256,
+            "interface_rehydration_sha256": verified_rehydration["result_sha256"],
+            "semantic_evidence_cache_key": cache.cache_key,
+            "semantic_evidence_cache_open_calls": 1,
+            "compiler_cache_open_calls": 0,
+            "trace_safetensor_open_calls": 0,
+            "selective_provider_open_calls": 0,
+        }
+        interface_statistics_replay = MappingProxyType(
+            {
+                **statistics_body,
+                "binding_sha256": canonical_sha256(statistics_body),
+            }
+        )
+    rehydrated_interface_report = dict(interface.report)
+    interface, tied_residual_interface_gauge = (
+        install_lfm2_tied_residual_congruence_gauge(
+            target_model,
+            interface,
+            source_table,
+            mode=tied_interface_mode,
+        )
     )
     layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
         cache=cache,
@@ -4861,9 +5837,16 @@ def run_lfm2_semantic_postfold(
         "compiler_and_semantic_cache_identities_bound_separately": True,
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "mapped_parent_tied_table_sha256": source_table_report["result_sha256"],
-        "rehydrated_interface_report_sha256": interface.report["report_sha256"],
+        "rehydrated_interface_report_sha256": rehydrated_interface_report[
+            "report_sha256"
+        ],
+        "active_tied_interface_report_sha256": interface.report["report_sha256"],
         "interface_rehydration_sha256": interface_rehydration["result_sha256"],
-        "self_dual_tied_gauge_sha256": self_dual_tied_gauge["result_sha256"],
+        "tied_interface_mode": tied_interface_mode,
+        "tied_residual_interface_gauge_sha256": (
+            tied_residual_interface_gauge["result_sha256"]
+        ),
+        "self_dual_tied_gauge_sha256": tied_residual_interface_gauge["result_sha256"],
         "compiler_diagnostic_sha256": _digest(
             expected_compiler_diagnostic_sha256,
             "expected compiler diagnostic SHA-256",
@@ -4876,6 +5859,11 @@ def run_lfm2_semantic_postfold(
         "complete_nonzero_final_mlp_structural_coverage": terminal_receipt[
             "complete_nonzero_final_mlp_structural_coverage"
         ],
+        **(
+            {"interface_statistics_replay": dict(interface_statistics_replay)}
+            if interface_statistics_replay is not None
+            else {}
+        ),
     }
     context_sha = canonical_sha256(context_body)
     reloaded, checkpoint = publish_lfm2_semantic_postfold_checkpoint(
@@ -4903,9 +5891,17 @@ def run_lfm2_semantic_postfold(
         "cache_parent_fingerprint": cache.parent_fingerprint,
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "mapped_parent_tied_table": dict(source_table_report),
-        "rehydrated_interface": dict(interface.report),
+        "rehydrated_interface": rehydrated_interface_report,
+        "active_tied_interface": dict(interface.report),
         "interface_rehydration": dict(interface_rehydration),
-        "self_dual_tied_gauge": dict(self_dual_tied_gauge),
+        **(
+            {"interface_statistics_replay": dict(interface_statistics_replay)}
+            if interface_statistics_replay is not None
+            else {}
+        ),
+        "tied_interface_mode": tied_interface_mode,
+        "tied_residual_interface_gauge": dict(tied_residual_interface_gauge),
+        "self_dual_tied_gauge": dict(tied_residual_interface_gauge),
         "compiler_lineage": {
             str(index): dict(value.report) for index, value in lineage.items()
         },
@@ -5007,10 +6003,13 @@ __all__ = [
     "Lfm2SemanticPostfoldError",
     "SEMANTIC_ATTENTION_INSTALLER_CALLABLE",
     "SEMANTIC_LAYER_STACK_INSTALLER_CALLABLE",
+    "TIED_RESIDUAL_CONGRUENCE_MODES",
+    "TIED_RESIDUAL_STRONG_CONGRUENCE_MODE",
     "compile_install_lfm2_semantic_attention_stage",
     "compile_install_lfm2_fused_semantic_terminal_refold",
     "compile_install_lfm2_semantic_layer_stack_stage",
     "install_lfm2_self_dual_tied_interface_gauge",
+    "install_lfm2_tied_residual_congruence_gauge",
     "load_lfm2_cpcf_v5_standalone_child",
     "load_lfm2_mapped_parent_tied_table_from_local_safetensors",
     "load_lfm2_parent_qkvo_inventory_from_local_safetensors",

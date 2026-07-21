@@ -21,6 +21,11 @@ from neural_forge.hf_lfm2_semantic_mlp_refold_adapter import (  # noqa: E402
 from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
     TiedCausalInterfaceFold,
 )
+from neural_forge.hf_tied_residual_congruence import (  # noqa: E402
+    TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+    TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+    compile_tied_residual_congruence_candidate,
+)
 
 
 _BASE_INTERFACE_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
@@ -130,6 +135,59 @@ def test_validated_interface_lineage_preserves_base_interface_tensor_seals() -> 
     assert receipt["interface_report_schema"] == _BASE_INTERFACE_SCHEMA
     assert receipt["interface_tensor_seal_schema"] == "dtype-nul-shape-nul-raw-v1"
     assert receipt["target_weight_sha256"] == interface.report["target_weight_sha256"]
+
+
+def test_congruence_lineage_is_accepted_and_forces_one_frozen_global_chart() -> None:
+    generator = torch.Generator().manual_seed(721_318)
+    source = torch.randn((5, 3), generator=generator, dtype=torch.float64)
+    target = torch.randn((5, 3), generator=generator, dtype=torch.float64)
+    encoder = torch.randn((3, 3), generator=generator, dtype=torch.float64)
+    report_body = {
+        "schema": _BASE_INTERFACE_SCHEMA,
+        "producer_encoder_sha256": stack._interface_tensor_sha256(encoder),
+        "target_weight_sha256": stack._interface_tensor_sha256(target),
+    }
+    raw = TiedCausalInterfaceFold(
+        target_weight=target,
+        producer_encoder=encoder,
+        report={
+            **report_body,
+            "report_sha256": canonical_sha256(report_body),
+        },
+    )
+    candidate = compile_tied_residual_congruence_candidate(
+        raw,
+        source,
+        mode=TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+    )
+    target_model = _TiedInterfaceTarget(candidate.interface.target_weight)
+
+    lineage = stack._validated_interface_lineage(
+        target_model,
+        candidate.interface,
+    )
+    alignments, parent, bank = _chart_inputs(reject_validation=False)
+    chart, chart_receipt = stack._fit_residual_chart(
+        alignments=alignments,
+        parent=parent,
+        child_bank=bank,
+        producer_encoder=candidate.interface.producer_encoder,
+        layer_index=0,
+        global_gauge_required=lineage["global_residual_gauge_required"],
+    )
+
+    assert lineage["interface_report_schema"] == TIED_RESIDUAL_CONGRUENCE_SCHEMA
+    assert lineage["tied_residual_congruence_authenticated"] is True
+    assert lineage["global_residual_gauge_required"] is True
+    torch.testing.assert_close(
+        chart,
+        candidate.interface.producer_encoder,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert chart_receipt["selected_candidate"] == "base_identity"
+    assert chart_receipt["global_self_dual_gauge_required"] is True
+    assert chart_receipt["independent_layer_rotation_allowed"] is False
 
 
 @pytest.mark.parametrize(
@@ -534,7 +592,13 @@ def _patch_complete_transaction(
     monkeypatch.setattr(stack, "_build_attention_evidence", build_attention)
     monkeypatch.setattr(stack, "_build_short_conv_evidence", build_short)
 
-    def mutate_operator(model, layer_index: int, kind: str):
+    def mutate_operator(
+        model,
+        layer_index: int,
+        kind: str,
+        *,
+        fold_compute_device: str = "cpu",
+    ):
         before = _state_identity(model)
         events.append(f"{layer_index}:install:{kind}")
         installed = layer_index not in noop_operator_layers
@@ -544,7 +608,7 @@ def _patch_complete_transaction(
         if failing_layer == layer_index:
             raise RuntimeError("injected partial operator failure")
         after = _state_identity(model)
-        return {
+        receipt = {
             "status": (
                 "installed-analytic-candidate"
                 if installed
@@ -556,6 +620,26 @@ def _patch_complete_transaction(
             "model_state_after_sha256": after,
             "result_sha256": canonical_sha256(["operator", layer_index, after]),
         }
+        if kind == "short_conv" and fold_compute_device != "cpu":
+            receipt.update(
+                {
+                    "fold_compute_device": fold_compute_device,
+                    "requested_cuda_short_conv_routes_proved": True,
+                    "structural_cluster_compute_execution": {
+                        "backend": "cuda",
+                        "requested_device": fold_compute_device,
+                        "compute_dtype": "float64",
+                        "execution_sha256": "a" * 64,
+                    },
+                    "writer_compute_execution": {
+                        "backend": "cuda",
+                        "requested_device": fold_compute_device,
+                        "compute_dtype": "float64",
+                        "execution_sha256": "b" * 64,
+                    },
+                }
+            )
+        return receipt
 
     monkeypatch.setattr(
         stack,
@@ -568,7 +652,10 @@ def _patch_complete_transaction(
         stack,
         "_install_short_conv_operator",
         lambda target_model, layer_index, **_kwargs: mutate_operator(
-            target_model, layer_index, "short_conv"
+            target_model,
+            layer_index,
+            "short_conv",
+            fold_compute_device=_kwargs.get("fold_compute_device", "cpu"),
         ),
     )
 
@@ -726,13 +813,27 @@ def test_complete_transaction_routes_and_authenticates_cuda_mlp_folding(
 
     assert result.receipt["stack_compute_device_router_present"] is True
     assert result.receipt["fold_compute_device"] == "cuda:1"
+    assert result.receipt["all_mlp_layers_proved_requested_fold_compute_device"] is True
     assert (
-        result.receipt["all_mlp_layers_proved_requested_fold_compute_device"] is True
+        result.receipt["all_short_conv_layers_proved_requested_fold_compute_device"]
+        is True
     )
     assert all(
         item["mlp_fold_compute_device"] == "cuda:1"
         and item["mlp_weight_signature_compute_execution_sha256"] == "9" * 64
         for item in result.receipt["layer_installations"]
+    )
+    short_conv_layers = [
+        item
+        for item in result.receipt["layer_installations"]
+        if item["operator_kind"] == "short_conv"
+    ]
+    assert len(short_conv_layers) == 8
+    assert all(
+        item["short_conv_fold_compute_device"] == "cuda:1"
+        and item["short_conv_structural_cluster_compute_execution_sha256"] == "a" * 64
+        and item["short_conv_writer_compute_execution_sha256"] == "b" * 64
+        for item in short_conv_layers
     )
 
 

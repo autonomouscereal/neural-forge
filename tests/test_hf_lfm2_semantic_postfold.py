@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import inspect
 import json
@@ -122,7 +123,12 @@ def _terminal_evidence(split: str, tag: str):
 class _TerminalFeedForward(torch.nn.Module):
     def __init__(self, weight):
         super().__init__()
-        self.w2 = torch.nn.Linear(2, 2, bias=False, dtype=weight.dtype)
+        self.w2 = torch.nn.Linear(
+            int(weight.shape[1]),
+            int(weight.shape[0]),
+            bias=False,
+            dtype=weight.dtype,
+        )
         with torch.no_grad():
             self.w2.weight.copy_(weight)
 
@@ -192,6 +198,82 @@ def _terminal_result(
         report={**body, "result_sha256": result_sha256},
         result_sha256=result_sha256,
     )
+
+
+def _compiled_exact_zero_terminal_result():
+    generator = torch.Generator().manual_seed(1_901)
+    hidden = 2
+    intermediate = 3
+    epsilon = 1e-5
+    gate = (torch.randn(intermediate, hidden, generator=generator) * 0.55).to(
+        torch.bfloat16
+    )
+    up = (torch.randn(intermediate, hidden, generator=generator) * 0.55).to(
+        torch.bfloat16
+    )
+    target = torch.tensor(
+        [[0.20, -0.16, 0.18], [-0.09, 0.07, -0.08]],
+        dtype=torch.bfloat16,
+    )
+    tied_table = torch.tensor(
+        [[1.0, 0.0], [-1.0, 0.0]],
+        dtype=torch.bfloat16,
+    )
+    seed = terminal_action.Lfm2CpcfTerminalActionSeed(
+        gate_weight=gate,
+        up_weight=up,
+        down_weight=torch.zeros((hidden, intermediate), dtype=torch.bfloat16),
+        final_norm_weight=torch.ones(hidden, dtype=torch.bfloat16),
+        producer_encoder=torch.eye(hidden, dtype=torch.float64),
+        target_tied_weight=tied_table,
+        source_tied_table=tied_table,
+        norm_epsilon=epsilon,
+    )
+
+    def evidence(split, rows, random_seed):
+        split_generator = torch.Generator().manual_seed(random_seed)
+        mlp_input = (torch.randn(rows, hidden, generator=split_generator) * 0.75).to(
+            torch.bfloat16
+        )
+        pre_mlp = (torch.randn(rows, hidden, generator=split_generator) * 0.30).to(
+            torch.float64
+        )
+        pre_mlp[:, 0] = torch.where(
+            torch.arange(rows) % 2 == 0,
+            1.4,
+            -1.4,
+        )
+        features = torch.nn.functional.silu(
+            mlp_input.to(torch.float32) @ gate.to(torch.float32).T
+        ) * (mlp_input.to(torch.float32) @ up.to(torch.float32).T)
+        target_post = pre_mlp + features.to(torch.float64) @ target.to(torch.float64).T
+        parent_final_norm = (
+            target_post
+            / (target_post.square().mean(dim=1, keepdim=True) + epsilon).sqrt()
+        )
+        return terminal_action.Lfm2CpcfTerminalActionEvidence(
+            split=split,
+            row_ids=tuple(f"{split}:{index}" for index in range(rows)),
+            mlp_input=mlp_input,
+            pre_mlp_residual=pre_mlp.to(torch.bfloat16),
+            parent_final_norm_output=parent_final_norm.to(torch.bfloat16),
+            sample_weights=torch.ones(rows, dtype=torch.float64),
+        )
+
+    banks = {
+        "fit": evidence("fit", 32, 1),
+        "fit_check": evidence("fit_check", 16, 2),
+        "selection": evidence("selection", 16, 3),
+        "validation": evidence("validation", 16, 4),
+    }
+    result = terminal_action.compile_lfm2_cpcf_terminal_action_residual(
+        seed=seed,
+        fit_evidence=banks["fit"],
+        fit_check_evidence=banks["fit_check"],
+        selection_evidence=banks["selection"],
+        validation_evidence=banks["validation"],
+    )
+    return seed, banks, result
 
 
 def test_final_w2_incumbent_retention_is_an_exact_zero_copy_decision(
@@ -271,6 +353,118 @@ def test_final_w2_changed_publication_mutates_only_the_writer(monkeypatch) -> No
     assert receipt["published_w2_structurally_nonzero"] is True
 
 
+def test_exact_zero_fit_plant_is_authenticated_and_installed_transactionally(
+    monkeypatch,
+) -> None:
+    seed, evidence, terminal = _compiled_exact_zero_terminal_result()
+    target = _TerminalTarget(seed.down_weight)
+    parameter = target.model.layers[-1].feed_forward.w2.weight
+    parameter.grad = torch.full_like(parameter, 0.25)
+    before_parameter_id = id(parameter)
+    before_storage = int(parameter.data_ptr())
+    before_gradient_id = id(parameter.grad)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda model: SimpleNamespace(identity_sha256=_terminal_target_state(model)),
+    )
+
+    published, decision = postfold._terminal_publication_decision(
+        terminal,
+        expected_seed=seed,
+        expected_evidence=evidence,
+    )
+    receipt = postfold._install_final_w2_once(
+        target,
+        published_down_weight=published,
+    )
+
+    assert torch.count_nonzero(seed.down_weight).item() == 0
+    assert decision["publication_decision"] == ("exact-zero-fit-only-structural-plant")
+    assert decision["terminal_exact_zero_cold_start"] is True
+    assert decision["heldout_metrics_diagnostic_only"] is True
+    assert decision["terminal_incumbent_retained"] is False
+    assert receipt["exact_zero_cold_start"] is True
+    assert receipt["incumbent_all_elements_zero"] is True
+    assert receipt["incumbent_noop_publication_forbidden"] is True
+    assert receipt["transactional_dense_cold_start_plant"] is True
+    assert receipt["installed"] is True
+    assert receipt["install_count"] == 1
+    assert receipt["incumbent_retention_count"] == 0
+    assert receipt["published_w2_all_elements_finite"] is True
+    assert receipt["published_w2_all_output_units_covered"] is True
+    assert receipt["published_w2_all_input_units_covered"] is True
+    assert receipt["parameter_topology_preserved"] is True
+    assert receipt["parameter_identities_preserved"] is True
+    assert receipt["parameter_storage_preserved"] is True
+    assert receipt["gradient_state_preserved"] is True
+    assert receipt["parameter_count_changed"] is False
+    assert set(receipt["operation_audit"].values()) == {0}
+    assert torch.equal(parameter.detach().cpu(), published)
+    assert id(parameter) == before_parameter_id
+    assert int(parameter.data_ptr()) == before_storage
+    assert id(parameter.grad) == before_gradient_id
+
+
+def test_exact_zero_publication_recomputes_fit_and_rejects_dense_forgery() -> None:
+    seed, evidence, terminal = _compiled_exact_zero_terminal_result()
+    forged_weight = terminal.selected_down_weight.clone()
+    forged_weight[0, 0] = forged_weight[0, 0] + 1.0
+    assert not torch.equal(forged_weight, terminal.selected_down_weight)
+    forged_hash = terminal_action._tensor_sha256(forged_weight)
+    forged_coverage = dict(
+        terminal_action._terminal_writer_structural_coverage(forged_weight)
+    )
+    body = copy.deepcopy(terminal.as_dict())
+    body.pop("result_sha256")
+    body["output_state_sha256"]["selected"] = forged_hash
+    body["output_state_sha256"]["published"] = forged_hash
+    body["selected_state_sha256"] = forged_hash
+    body["selected_selection_key"][-1] = forged_hash
+    body["selected_writer_structural_coverage"] = forged_coverage
+    body["selected_writer_structural_coverage_sha256"] = forged_coverage[
+        "coverage_sha256"
+    ]
+    body["selected_writer_all_elements_nonzero"] = forged_coverage[
+        "all_elements_nonzero"
+    ]
+    body["validation"]["frozen_candidate_state_sha256"] = forged_hash
+    selected_frontier = next(
+        value
+        for value in body["frontier"]
+        if value["candidate_id"] == body["selected_candidate_id"]
+    )
+    selected_frontier["state_sha256"] = forged_hash
+    selected_frontier["selection_key"][-1] = forged_hash
+    selected_frontier["structural_coverage"] = forged_coverage
+    selected_frontier["structural_coverage_sha256"] = forged_coverage["coverage_sha256"]
+    selected_frontier["frozen_candidate_state_sha256"] = forged_hash
+    forged_sha256 = terminal_action._canonical_sha256(body)
+    forged = terminal_action.Lfm2CpcfTerminalActionResidualResult(
+        policy=terminal.policy,
+        incumbent_down_weight=terminal.incumbent_down_weight,
+        selected_down_weight=forged_weight,
+        published_down_weight=forged_weight,
+        selected_candidate_id=terminal.selected_candidate_id,
+        accepted=True,
+        report={**body, "result_sha256": forged_sha256},
+        result_sha256=forged_sha256,
+        _compiler_input_binding=terminal._compiler_input_binding,
+        _compiler_issuer=terminal_action._TERMINAL_RESULT_COMPILER_ISSUER,
+    )
+    assert forged.verify_authentication() is True
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="published neither",
+    ):
+        postfold._terminal_publication_decision(
+            forged,
+            expected_seed=seed,
+            expected_evidence=evidence,
+        )
+
+
 @pytest.mark.parametrize(
     "published",
     (
@@ -306,7 +500,7 @@ def test_final_w2_refuses_blank_or_structurally_partial_publication(
 
 
 def test_validation_rejected_selected_writer_publishes_only_incumbent() -> None:
-    incumbent = torch.zeros((2, 2), dtype=torch.bfloat16)
+    incumbent = torch.eye(2, dtype=torch.bfloat16)
     selected = torch.ones((2, 2), dtype=torch.bfloat16)
     terminal = _terminal_result(
         incumbent=incumbent,
@@ -327,6 +521,46 @@ def test_validation_rejected_selected_writer_publishes_only_incumbent() -> None:
     )
     assert decision["terminal_incumbent_retained"] is True
     assert decision["terminal_nonincumbent_candidate_accepted"] is False
+
+
+def test_exact_zero_writer_cannot_use_legacy_validation_rollback() -> None:
+    incumbent = torch.zeros((2, 2), dtype=torch.bfloat16)
+    selected = torch.ones((2, 2), dtype=torch.bfloat16)
+    terminal = _terminal_result(
+        incumbent=incumbent,
+        selected=selected,
+        published=incumbent.clone(),
+        selected_candidate_id="gn-00-ridge-00-alpha-01",
+        accepted=False,
+        validation_passed=False,
+        rollback_performed=True,
+    )
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="published neither",
+    ):
+        postfold._terminal_publication_decision(terminal)
+
+    forged_body = terminal.as_dict()
+    forged_body.pop("result_sha256")
+    forged_body["exact_zero_cold_start"] = True
+    forged_sha256 = terminal_action._canonical_sha256(forged_body)
+    forged = terminal_action.Lfm2CpcfTerminalActionResidualResult(
+        policy=terminal.policy,
+        incumbent_down_weight=terminal.incumbent_down_weight,
+        selected_down_weight=terminal.selected_down_weight,
+        published_down_weight=terminal.published_down_weight,
+        selected_candidate_id=terminal.selected_candidate_id,
+        accepted=terminal.accepted,
+        report={**forged_body, "result_sha256": forged_sha256},
+        result_sha256=forged_sha256,
+    )
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="published neither",
+    ):
+        postfold._terminal_publication_decision(forged)
 
 
 def test_fused_terminal_never_gates_or_installs_the_private_selected_tensor() -> None:
@@ -1297,9 +1531,85 @@ def test_complete_layer_stack_fails_closed_on_conv_and_mlp_gaps(
     assert seal == canonical_sha256(body)
 
 
+def _minimal_postfold_run_arguments(tmp_path: Path) -> dict[str, object]:
+    return {
+        "input_checkpoint_directory": tmp_path / "input",
+        "expected_input_artifact_sha256": "1" * 64,
+        "output_checkpoint_directory": tmp_path / "output",
+        "cache_directory": tmp_path / "cache",
+        "expected_cache_key": "2" * 64,
+        "bridge_directory": tmp_path / "bridge",
+        "expected_bridge_artifact_sha256": "3" * 64,
+        "donor_tokenizer": object(),
+        "target_tokenizer": object(),
+        "parent_model_directory": tmp_path / "parent",
+        "compiler_diagnostic_json": tmp_path / "compiler.json",
+        "expected_compiler_diagnostic_sha256": "4" * 64,
+        "device": "cpu",
+    }
+
+
+@pytest.mark.parametrize(
+    ("statistics_directory", "statistics_sha256"),
+    (
+        (Path("unused-statistics"), None),
+        (None, "a" * 64),
+    ),
+)
+def test_top_level_rejects_unpaired_interface_statistics_before_dispatch(
+    tmp_path: Path,
+    monkeypatch,
+    statistics_directory: Path | None,
+    statistics_sha256: str | None,
+) -> None:
+    def unexpected_dispatch(*_args, **_kwargs):
+        pytest.fail("unpaired statistics reached ancestry or asset dispatch")
+
+    monkeypatch.setattr(
+        postfold,
+        "_claims_semantic_foundation_schema",
+        unexpected_dispatch,
+    )
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="must be supplied together",
+    ):
+        postfold.run_lfm2_semantic_postfold(
+            **_minimal_postfold_run_arguments(tmp_path),
+            interface_statistics_directory=statistics_directory,
+            expected_interface_statistics_sha256=statistics_sha256,
+        )
+
+
+def test_top_level_rejects_statistics_for_nonfoundation_before_output_dispatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    diagnostic = tmp_path / "compiler.json"
+    diagnostic.write_text("{}", encoding="ascii")
+
+    def unexpected_output_dispatch(*_args, **_kwargs):
+        pytest.fail("nonfoundation statistics reached output or asset dispatch")
+
+    monkeypatch.setattr(postfold, "_new_output_path", unexpected_output_dispatch)
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="only for semantic-foundation ancestry",
+    ):
+        postfold.run_lfm2_semantic_postfold(
+            **_minimal_postfold_run_arguments(tmp_path),
+            interface_statistics_directory=tmp_path / "statistics",
+            expected_interface_statistics_sha256="a" * 64,
+        )
+
+
+@pytest.mark.parametrize("use_foundation_statistics", (False, True))
 def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     tmp_path: Path,
     monkeypatch,
+    use_foundation_statistics: bool,
 ) -> None:
     events = []
     cache = SimpleNamespace(cache_key="1" * 64, parent_fingerprint="2" * 64)
@@ -1310,13 +1620,37 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     source_table = torch.ones((2, 2), dtype=torch.bfloat16)
     interface = SimpleNamespace(report={"report_sha256": "6" * 64})
     self_dual_interface = SimpleNamespace(report={"report_sha256": "f" * 64})
-    interface_rehydration = MappingProxyType(
-        {
+    statistics_artifact_sha256 = "a" * 64
+    statistics_manifest_sha256 = "b" * 64
+    statistics_replay_sha256 = "c" * 64
+    if use_foundation_statistics:
+        rehydration_body = {
+            "schema": (
+                "neural-forge-lfm2-semantic-foundation-interface-rehydration-v2"
+            ),
             "compiler_cache_key": "8" * 64,
             "semantic_evidence_cache_key": cache.cache_key,
-            "result_sha256": "9" * 64,
+            "interface_statistics_artifact_sha256": (statistics_artifact_sha256),
+            "interface_statistics_manifest_file_sha256": (statistics_manifest_sha256),
+            "interface_statistics_replay_sha256": statistics_replay_sha256,
+            "compiler_cache_open_calls": 0,
+            "trace_safetensor_open_calls": 0,
+            "selective_provider_open_calls": 0,
         }
-    )
+        interface_rehydration = MappingProxyType(
+            {
+                **rehydration_body,
+                "result_sha256": canonical_sha256(rehydration_body),
+            }
+        )
+    else:
+        interface_rehydration = MappingProxyType(
+            {
+                "compiler_cache_key": "8" * 64,
+                "semantic_evidence_cache_key": cache.cache_key,
+                "result_sha256": "9" * 64,
+            }
+        )
     w1_sha = "1" * 64
     w3_sha = "2" * 64
     w2_sha = "3" * 64
@@ -1490,20 +1824,33 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "rehydrate_lfm2_c61_tied_interface",
         lambda *_a, **_k: (interface, interface_rehydration),
     )
+    foundation_rehydration_calls = []
+
+    def rehydrate_foundation(*_args, **kwargs):
+        foundation_rehydration_calls.append(kwargs)
+        return interface, interface_rehydration
+
+    monkeypatch.setattr(
+        postfold,
+        "rehydrate_lfm2_semantic_foundation_interface",
+        rehydrate_foundation,
+    )
     monkeypatch.setattr(
         postfold,
         "load_lfm2_semantic_compiler_lineage",
         lambda *_a, **_k: MappingProxyType({}),
     )
 
-    def install_gauge(_model, source_interface):
-        events.append("self_dual_gauge")
+    def install_gauge(_model, source_interface, mapped_table, *, mode):
+        events.append("tied_residual_gauge")
         assert source_interface is interface
+        assert mapped_table is source_table
+        assert mode == postfold.TIED_RESIDUAL_STRONG_CONGRUENCE_MODE
         return self_dual_interface, gauge_receipt
 
     monkeypatch.setattr(
         postfold,
-        "install_lfm2_self_dual_tied_interface_gauge",
+        "install_lfm2_tied_residual_congruence_gauge",
         install_gauge,
     )
 
@@ -1547,7 +1894,14 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     cache_directory = tmp_path / "cache"
     cache_directory.mkdir()
     compiler_diagnostic = tmp_path / "compiler.json"
-    compiler_diagnostic.write_text("{}", encoding="utf-8")
+    compiler_diagnostic.write_text(
+        (
+            json.dumps({"schema": postfold.LFM2_SEMANTIC_FOUNDATION_SCHEMA})
+            if use_foundation_statistics
+            else "{}"
+        ),
+        encoding="utf-8",
+    )
 
     result = postfold.run_lfm2_semantic_postfold(
         input_checkpoint_directory=input_checkpoint,
@@ -1565,10 +1919,23 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         device="cpu",
         fold_compute_device="cuda:1",
         fused_terminal_compiler=terminal_compiler,
+        **(
+            {
+                "interface_statistics_directory": tmp_path / "statistics",
+                "expected_interface_statistics_sha256": (statistics_artifact_sha256),
+            }
+            if use_foundation_statistics
+            else {}
+        ),
     )
 
     assert cache_open_calls == [True]
-    assert events == ["self_dual_gauge", "layer_stack", "terminal", "checkpoint"]
+    assert events == [
+        "tied_residual_gauge",
+        "layer_stack",
+        "terminal",
+        "checkpoint",
+    ]
     assert result["compiler_cache_key"] == "8" * 64
     assert result["semantic_evidence_cache_key"] == cache.cache_key
     assert result["context_binding"]["fold_compute_device"] == "cuda:1"
@@ -1584,7 +1951,37 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     assert result["claims"]["attention_correction_install_count"] == 5
     assert result["claims"]["terminal_writer_install_count"] == 0
     assert result["terminal_incumbent_retained"] is True
+    assert (
+        result["tied_interface_mode"] == postfold.TIED_RESIDUAL_STRONG_CONGRUENCE_MODE
+    )
+    assert result["tied_residual_interface_gauge"] == dict(gauge_receipt)
     assert result["self_dual_tied_gauge"] == dict(gauge_receipt)
+    if use_foundation_statistics:
+        assert len(foundation_rehydration_calls) == 1
+        assert foundation_rehydration_calls[0]["interface_statistics_directory"] == (
+            tmp_path / "statistics"
+        )
+        assert (
+            foundation_rehydration_calls[0]["expected_interface_statistics_sha256"]
+            == statistics_artifact_sha256
+        )
+        statistics_binding = result["interface_statistics_replay"]
+        assert statistics_binding["artifact_sha256"] == statistics_artifact_sha256
+        assert statistics_binding["manifest_file_sha256"] == (
+            statistics_manifest_sha256
+        )
+        assert statistics_binding["replay_sha256"] == statistics_replay_sha256
+        assert statistics_binding["semantic_evidence_cache_open_calls"] == 1
+        assert statistics_binding["compiler_cache_open_calls"] == 0
+        assert statistics_binding["trace_safetensor_open_calls"] == 0
+        assert statistics_binding["selective_provider_open_calls"] == 0
+        assert result["context_binding"]["interface_statistics_replay"] == (
+            statistics_binding
+        )
+    else:
+        assert foundation_rehydration_calls == []
+        assert "interface_statistics_replay" not in result
+        assert "interface_statistics_replay" not in result["context_binding"]
     body = dict(result)
     seal = body.pop("result_sha256")
     assert seal == canonical_sha256(body)
