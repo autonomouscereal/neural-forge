@@ -4,11 +4,14 @@
 ``capture`` performs one direct-local reload of an already-retained v5
 ``candidate`` directory, generates each built-in holdout case exactly once at
 that case's own generation limit, and stores the decoded responses and
-automatic semantic gate outside the child artifact.
+automatic semantic gate outside the child artifact.  It also authenticates
+the dense child's unique-parameter count and records a parent/child ratio from
+an explicitly pinned expected parent count, without using checkpoint bytes,
+quantization, or pruning adjustments.
 
 ``finalize`` never loads either model.  It authenticates the stored candidate
-responses, cached parent envelope, manual packet, and packet-bound ratings,
-then writes the final intelligence report.
+responses, cached parent envelope, paired parent/child semantic-review packet,
+and packet-bound ratings, then writes the final intelligence report.
 
 Neither mode trains, prunes, quantizes, downloads, or executes the parent.
 """
@@ -57,11 +60,10 @@ from neural_forge.hf_lfm2_cpcf_v5_quarantine import (  # noqa: E402
 from neural_forge.hf_lfm2_intelligence_gate import (  # noqa: E402
     IntelligenceGatePolicy,
     Lfm2IntelligenceGateError,
+    bind_manual_ratings,
     build_manual_review_packet,
     evaluate_cached_intelligence,
-    load_bound_manual_ratings,
     load_lfm2_intelligence_holdout_manifest,
-    load_manual_review_packet,
 )
 from neural_forge.hf_lfm2_intelligence_holdout import (  # noqa: E402
     baseline_from_lfm2_intelligence_holdout_envelope,
@@ -69,10 +71,15 @@ from neural_forge.hf_lfm2_intelligence_holdout import (  # noqa: E402
     load_lfm2_intelligence_holdout_parent_envelope,
     seal_lfm2_intelligence_holdout_candidate_outputs,
 )
+from neural_forge.hf_lfm2_parent_relative_manual_gate import (  # noqa: E402
+    Lfm2ParentRelativeManualGateError,
+    build_parent_relative_manual_packet,
+    evaluate_parent_relative_manual_retention,
+)
 
 
-CAPTURE_REPORT_SCHEMA = "neural-forge-lfm2-cpcf-v5-standalone-intelligence-capture-v1"
-FINAL_REPORT_SCHEMA = "neural-forge-lfm2-cpcf-v5-standalone-intelligence-final-v1"
+CAPTURE_REPORT_SCHEMA = "neural-forge-lfm2-cpcf-v5-standalone-intelligence-capture-v2"
+FINAL_REPORT_SCHEMA = "neural-forge-lfm2-cpcf-v5-standalone-intelligence-final-v2"
 CHILD_OUTPUT_FILENAME = "standalone-child-outputs-64.json"
 AUTOMATIC_REPORT_FILENAME = "automatic-intelligence-report-64.json"
 MANUAL_PACKET_FILENAME = "manual-review-packet-64.json"
@@ -93,6 +100,14 @@ def _digest(value: Any, name: str) -> str:
     ):
         raise Lfm2CpcfV5StandaloneEvaluationError(
             f"{name} must be a lowercase SHA-256 digest."
+        )
+    return value
+
+
+def _positive_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            f"{name} must be a positive integer."
         )
     return value
 
@@ -334,6 +349,7 @@ class CaptureConfig:
     candidate_directory: Path
     parent_envelope: Path
     expected_parent_envelope_file_sha256: str
+    expected_parent_unique_parameters: int
     expected_candidate_state_sha256: str
     expected_target_tokenizer_semantics_sha256: str
     output_directory: Path
@@ -352,6 +368,10 @@ class CaptureConfig:
             "expected_target_tokenizer_semantics_sha256",
         ):
             _digest(getattr(self, name), name)
+        _positive_int(
+            self.expected_parent_unique_parameters,
+            "expected_parent_unique_parameters",
+        )
         if not isinstance(self.device, str) or not self.device.strip():
             raise Lfm2CpcfV5StandaloneEvaluationError("device must be nonempty.")
         if not isinstance(self.dtype, str) or not self.dtype.strip():
@@ -397,6 +417,11 @@ def capture_standalone_intelligence(
 
     if not isinstance(config, CaptureConfig):
         raise TypeError("config must be CaptureConfig.")
+    if _is_within(config.parent_envelope, config.candidate_directory):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Cached parent evidence must remain outside the standalone child "
+            "artifact."
+        )
     prospective_output = config.output_directory.resolve(strict=False)
     if _paths_overlap(prospective_output, config.candidate_directory):
         raise Lfm2CpcfV5StandaloneEvaluationError(
@@ -419,14 +444,23 @@ def capture_standalone_intelligence(
         expected_file_sha256=(config.expected_parent_envelope_file_sha256),
     )
     metadata = _read_artifact_metadata(config.candidate_directory)
+    zero_artifact_fields = (
+        "training_steps",
+        "backward_calls",
+        "optimizer_steps",
+        "parameters_pruned",
+        "parameters_quantized",
+    )
     if (
         metadata.get("schema") != LFM2_CPCF_V5_QUARANTINE_ARTIFACT_SCHEMA
         or metadata.get("model_state_sha256") != config.expected_candidate_state_sha256
         or metadata.get("tokenizer_semantics_sha256")
         != config.expected_target_tokenizer_semantics_sha256
+        or any(metadata.get(name) != 0 for name in zero_artifact_fields)
     ):
         raise Lfm2CpcfV5StandaloneEvaluationError(
-            "Retained v5 artifact differs from the independently bound child."
+            "Retained v5 artifact differs from the independently bound "
+            "zero-training child."
         )
     loader = Lfm2CpcfV5StrictLocalLoader(
         context_binding_sha256=metadata["context_binding_sha256"],
@@ -466,16 +500,30 @@ def capture_standalone_intelligence(
 
     state_before = fingerprint_model_state(model)
     inventory_before = _parameter_inventory(model)
+    child_unique_parameters = _positive_int(
+        inventory_before.get("unique_parameters"),
+        "child unique parameter count",
+    )
+    parent_unique_parameters = _positive_int(
+        config.expected_parent_unique_parameters,
+        "expected_parent_unique_parameters",
+    )
+    metadata_inventory = metadata.get("parameter_inventory")
+    expected_metadata_inventory = dict(inventory_before)
+    expected_metadata_inventory.pop("checkpoint_byte_size_used", None)
     training_before = bool(model.training)
     if (
         state_before != config.expected_candidate_state_sha256
         or inventory_before.get("inventory_sha256")
         != metadata["parameter_inventory_sha256"]
+        or not isinstance(metadata_inventory, Mapping)
+        or dict(metadata_inventory) != expected_metadata_inventory
+        or parent_unique_parameters <= child_unique_parameters
         or training_before
         or not _gradients_are_absent(model)
     ):
         raise Lfm2CpcfV5StandaloneEvaluationError(
-            "Fresh child is not the expected frozen inference state."
+            "Fresh child is not the expected compact frozen inference state."
         )
     eos_token_ids = _normalized_eos_ids(tokenizer)
     rows = tuple(generate_candidate_rows_once(model, tokenizer, manifest))
@@ -541,19 +589,35 @@ def capture_standalone_intelligence(
         manual_ratings=None,
     )
     automatic_gate_document = automatic_gate.as_dict()
-    manual_packet = build_manual_review_packet(
+    automatic_gate_manual_packet = build_manual_review_packet(
         baseline,
         typed_outputs.candidates,
         policy,
     )
+    manual_packet = build_parent_relative_manual_packet(
+        automatic_gate_manual_packet
+    )
     if (
         automatic_gate_document.get("manual_review", {}).get("status") != "pending"
         or automatic_gate_document.get("manual_review", {}).get("packet_sha256")
-        != manual_packet["packet_sha256"]
+        != automatic_gate_manual_packet["packet_sha256"]
     ):
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Automatic gate did not produce the exact pending manual packet."
         )
+
+    prompt_rows = [
+        {"case_id": spec.case_id, "prompt": spec.prompt}
+        for spec in manifest.cases
+    ]
+    if any(
+        parent.case_id != spec.case_id or parent.prompt != spec.prompt
+        for parent, spec in zip(baseline.cases, manifest.cases)
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Cached parent prompts differ from the child holdout prompts."
+        )
+    realized_compaction_ratio = parent_unique_parameters / child_unique_parameters
 
     report_core = {
         "schema": CAPTURE_REPORT_SCHEMA,
@@ -574,7 +638,35 @@ def capture_standalone_intelligence(
         "candidate_outputs_document_sha256": typed_outputs.document_sha256,
         "automatic_gate_report": automatic_gate_document,
         "automatic_gate_report_sha256": automatic_gate.report_sha256,
+        "automatic_gate_manual_packet_sha256": (
+            automatic_gate_manual_packet["packet_sha256"]
+        ),
         "manual_review_packet_sha256": manual_packet["packet_sha256"],
+        "parameter_compaction": {
+            "counting_method": inventory_before["method"],
+            "parent_state_fingerprint": envelope.parent_state_fingerprint,
+            "externally_pinned_expected_parent_unique_parameters": (
+                parent_unique_parameters
+            ),
+            "child_unique_parameters": child_unique_parameters,
+            "parameters_removed_from_dense_topology": (
+                parent_unique_parameters - child_unique_parameters
+            ),
+            "recorded_parameter_compaction_ratio": realized_compaction_ratio,
+            "child_count_authenticated_from_reloaded_artifact": True,
+            "parent_count_independently_recomputed_by_evaluator": False,
+            "ratio_certification_status": "externally_pinned_parent_count",
+            "checkpoint_byte_ratio_used": False,
+            "quantization_adjustment_used": False,
+            "pruning_mask_adjustment_used": False,
+        },
+        "holdout_prompt_binding": {
+            "same_manifest_prompts_used_for_parent_and_child": True,
+            "prompt_count": len(prompt_rows),
+            "prompt_rows_sha256": canonical_sha256(prompt_rows),
+            "parent_outputs_are_cached_only": True,
+            "parent_outputs_are_not_child_inference_inputs": True,
+        },
         "generation_protocol": {
             "mode": "greedy_whole_response",
             "do_sample": False,
@@ -614,12 +706,17 @@ def capture_standalone_intelligence(
             "parameters_quantized": 0,
             "network_access": False,
             "hub_loader_used": False,
+            "candidate_artifact_zero_operation_fields_authenticated": True,
         },
         "acceptance_semantics": {
             "whole_response_intelligence": True,
             "exact_token_matching_used": False,
             "exact_wording_matching_used": False,
             "manual_review_required": True,
+            "manual_review_is_parent_relative": True,
+            "minimum_parent_relative_manual_retention": 0.90,
+            "automatic_metrics_are_behavioral_or_structural": True,
+            "lexical_similarity_is_not_an_intelligence_metric": True,
         },
     }
     automatic_report = {
@@ -726,19 +823,26 @@ def finalize_standalone_intelligence(
         packet_path,
         name="manual review packet",
     )
-    stored_packet = load_manual_review_packet(
-        packet_document,
-        expected_packet_sha256=automatic["manual_review_packet_sha256"],
-    )
-    rebuilt_packet = build_manual_review_packet(
+    automatic_gate_manual_packet = build_manual_review_packet(
         baseline,
         typed_outputs.candidates,
         policy,
     )
-    if canonical_json_bytes(stored_packet) != canonical_json_bytes(rebuilt_packet):
+    rebuilt_packet = build_parent_relative_manual_packet(
+        automatic_gate_manual_packet
+    )
+    if (
+        automatic_gate_manual_packet["packet_sha256"]
+        != automatic["automatic_gate_manual_packet_sha256"]
+        or rebuilt_packet["packet_sha256"]
+        != automatic["manual_review_packet_sha256"]
+        or canonical_json_bytes(packet_document)
+        != canonical_json_bytes(rebuilt_packet)
+    ):
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Manual packet does not match the authenticated parent and child."
         )
+    stored_packet = rebuilt_packet
 
     automatic_gate = evaluate_cached_intelligence(
         baseline,
@@ -765,18 +869,29 @@ def finalize_standalone_intelligence(
         "manual ratings seal",
     )
     try:
-        ratings = load_bound_manual_ratings(
+        parent_relative_report = evaluate_parent_relative_manual_retention(
+            stored_packet,
             ratings_document,
-            expected_packet_sha256=stored_packet["packet_sha256"],
-            expected_ratings_sha256=ratings_sha256,
+        )
+        candidate_ratings = [
+            {
+                "case_id": row["case_id"],
+                **dict(row["candidate"]),
+            }
+            for row in ratings_document["ratings"]
+        ]
+        gate_ratings = bind_manual_ratings(
+            automatic_gate_manual_packet,
+            candidate_ratings,
+            reviewer_id=str(ratings_document["reviewer_id"]),
         )
         final_gate = evaluate_cached_intelligence(
             baseline,
             typed_outputs.candidates,
             policy=policy,
-            manual_ratings=ratings,
+            manual_ratings=gate_ratings,
         )
-    except Lfm2IntelligenceGateError as error:
+    except (Lfm2IntelligenceGateError, Lfm2ParentRelativeManualGateError) as error:
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Manual ratings are not bound to the exact stored review packet."
         ) from error
@@ -786,20 +901,32 @@ def finalize_standalone_intelligence(
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Bound manual ratings did not resolve manual review."
         )
+    promoted = bool(final_gate.promoted and parent_relative_report["passed"])
+    retention_values = (
+        final_gate.headline_lower_bound,
+        parent_relative_report["retention"],
+    )
+    certified_lower_bound = (
+        min(float(value) for value in retention_values if value is not None)
+        if promoted
+        else None
+    )
 
     final_core = {
         "schema": FINAL_REPORT_SCHEMA,
-        "status": "promoted" if final_gate.promoted else "rejected",
-        "promoted": final_gate.promoted,
+        "status": "promoted" if promoted else "rejected",
+        "promoted": promoted,
         "intelligence_retention_claim": {
             "status": (
                 "certified_conservative_lower_bound"
-                if final_gate.promoted
+                if promoted
                 else "rejected"
             ),
-            "certified_lower_bound": (
-                final_gate.headline_lower_bound if final_gate.promoted else None
+            "certified_lower_bound": certified_lower_bound,
+            "parent_relative_manual_retention": (
+                parent_relative_report["retention"]
             ),
+            "minimum_required_retention": 0.90,
             "exact_output_matching_used": False,
         },
         "manifest_sha256": manifest.manifest_sha256,
@@ -809,10 +936,19 @@ def finalize_standalone_intelligence(
         "candidate_state_sha256": typed_outputs.candidate_state_fingerprint,
         "candidate_outputs_sha256": (typed_outputs.candidate_outputs_sha256),
         "automatic_capture_report_sha256": automatic["capture_report_sha256"],
+        "parameter_compaction": automatic["parameter_compaction"],
+        "holdout_prompt_binding": automatic["holdout_prompt_binding"],
         "manual_review_packet_sha256": stored_packet["packet_sha256"],
         "manual_ratings_file_sha256": (config.expected_manual_ratings_file_sha256),
-        "manual_ratings_sha256": ratings.ratings_sha256,
-        "reviewer_id": ratings.reviewer_id,
+        "manual_ratings_sha256": ratings_sha256,
+        "reviewer_id": ratings_document["reviewer_id"],
+        "parent_relative_manual_report": parent_relative_report,
+        "parent_relative_manual_report_sha256": (
+            parent_relative_report["report_sha256"]
+        ),
+        "automatic_gate_bound_manual_ratings_sha256": (
+            gate_ratings.ratings_sha256
+        ),
         "final_gate_report": final_gate_document,
         "final_gate_report_sha256": final_gate.report_sha256,
         "operation_audit": {
@@ -835,12 +971,16 @@ def finalize_standalone_intelligence(
             "network_access": False,
             "hub_loader_used": False,
             "cached_evidence_only": True,
+            "candidate_artifact_zero_operation_fields_authenticated": True,
         },
         "acceptance_semantics": {
             "whole_response_intelligence": True,
             "exact_token_matching_used": False,
             "exact_wording_matching_used": False,
             "manual_ratings_packet_bound": True,
+            "parent_and_child_scored_on_same_semantic_rubric": True,
+            "minimum_parent_relative_manual_retention": 0.90,
+            "lexical_similarity_is_not_an_intelligence_metric": True,
         },
     }
     final_report = {
@@ -867,6 +1007,11 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument("--parent-envelope", type=Path, required=True)
     capture.add_argument(
         "--expected-parent-envelope-file-sha256",
+        required=True,
+    )
+    capture.add_argument(
+        "--expected-parent-unique-parameters",
+        type=int,
         required=True,
     )
     capture.add_argument(
@@ -912,6 +1057,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "candidate_outputs_sha256": report["candidate_outputs_sha256"],
             "automatic_gate_report_sha256": report["automatic_gate_report_sha256"],
             "manual_review_packet_sha256": report["manual_review_packet_sha256"],
+            "recorded_parameter_compaction_ratio": report[
+                "parameter_compaction"
+            ]["recorded_parameter_compaction_ratio"],
             "capture_report_sha256": report["capture_report_sha256"],
         }
     else:

@@ -18,12 +18,18 @@ from neural_forge.dynamic_fold_executor import fingerprint_model_state
 from neural_forge.hf_lfm2_cpcf_model_fold import (
     independent_parameter_inventory,
 )
+from neural_forge.hf_lfm2_cpcf_v5_quarantine import (
+    LFM2_CPCF_V5_ARTIFACT_METADATA,
+    LFM2_CPCF_V5_QUARANTINE_BACKEND_SCHEMA,
+)
 from neural_forge.hf_lfm2_intelligence_gate import (
-    bind_manual_ratings,
     load_lfm2_intelligence_holdout_manifest,
 )
 from neural_forge.hf_lfm2_intelligence_holdout import (
     seal_lfm2_intelligence_holdout_parent_envelope,
+)
+from neural_forge.hf_lfm2_parent_relative_manual_gate import (
+    bind_parent_relative_manual_ratings,
 )
 
 
@@ -85,6 +91,9 @@ def _parent_envelope(tmp_path: Path) -> tuple[Path, str]:
 def _capture_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    metadata_overrides: dict[str, Any] | None = None,
+    use_real_artifact_metadata: bool = False,
 ) -> dict[str, Any]:
     candidate_directory = tmp_path / "quarantine" / "candidate"
     candidate_directory.mkdir(parents=True)
@@ -96,23 +105,49 @@ def _capture_fixture(
     reference_model.eval()
     candidate_state = fingerprint_model_state(reference_model)
     inventory = dict(independent_parameter_inventory(reference_model))
+    artifact_inventory = dict(inventory)
+    artifact_inventory.pop("checkpoint_byte_size_used")
+    parent_unique_parameters = int(inventory["unique_parameters"]) * 4
     semantics_sha = _sha("target-tokenizer-semantics")
     package_sha = _sha("target-tokenizer-package")
     metadata = {
         "schema": evaluator.LFM2_CPCF_V5_QUARANTINE_ARTIFACT_SCHEMA,
-        "artifact_sha256": _sha("candidate-artifact"),
+        "backend_schema": LFM2_CPCF_V5_QUARANTINE_BACKEND_SCHEMA,
         "context_binding_sha256": _sha("context-binding"),
         "model_state_sha256": candidate_state,
+        "parameter_inventory": artifact_inventory,
         "parameter_inventory_sha256": inventory["inventory_sha256"],
         "materialized_ffn_width": 2,
+        "serialized_ffn_aliases": {},
         "tokenizer_semantics_sha256": semantics_sha,
         "tokenizer_package_sha256": package_sha,
+        "tokenizer_package_files": [],
+        "tokenizer_special_token_ids": {},
+        "dense_safetensor_files": [],
+        "dense_safetensors_only": True,
+        "target_tokenizer_saved_with_child": True,
+        "local_reload_only": True,
+        "network_access": False,
+        "hub_loader_used": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
     }
-    monkeypatch.setattr(
-        evaluator,
-        "_read_artifact_metadata",
-        lambda _directory: dict(metadata),
-    )
+    metadata.update(metadata_overrides or {})
+    metadata = {**metadata, "artifact_sha256": canonical_sha256(metadata)}
+    if use_real_artifact_metadata:
+        _write_json(
+            candidate_directory / LFM2_CPCF_V5_ARTIFACT_METADATA,
+            metadata,
+        )
+    else:
+        monkeypatch.setattr(
+            evaluator,
+            "_read_artifact_metadata",
+            lambda _directory: dict(metadata),
+        )
 
     loader_calls: list[dict[str, Any]] = []
 
@@ -186,6 +221,7 @@ def _capture_fixture(
         candidate_directory=candidate_directory,
         parent_envelope=parent_path,
         expected_parent_envelope_file_sha256=parent_file_sha,
+        expected_parent_unique_parameters=parent_unique_parameters,
         expected_candidate_state_sha256=candidate_state,
         expected_target_tokenizer_semantics_sha256=semantics_sha,
         output_directory=output_directory,
@@ -201,6 +237,7 @@ def _capture_fixture(
         "candidate_state": candidate_state,
         "semantics_sha": semantics_sha,
         "package_sha": package_sha,
+        "parent_unique_parameters": parent_unique_parameters,
         "config": config,
         "report": report,
         "loader_calls": loader_calls,
@@ -236,9 +273,45 @@ def test_capture_persists_text_limits_and_strict_reload(
     assert automatic["operation_audit"]["training_steps"] == 0
     assert automatic["operation_audit"]["parameters_pruned"] == 0
     assert automatic["operation_audit"]["parameters_quantized"] == 0
+    assert (
+        automatic["operation_audit"][
+            "candidate_artifact_zero_operation_fields_authenticated"
+        ]
+        is True
+    )
+    assert automatic["parameter_compaction"] == {
+        "counting_method": "unique_materialized_parameter_storage_offset_numel_identity",
+        "parent_state_fingerprint": _sha("parent-state"),
+        "externally_pinned_expected_parent_unique_parameters": fixture[
+            "parent_unique_parameters"
+        ],
+        "child_unique_parameters": 4,
+        "parameters_removed_from_dense_topology": 12,
+        "recorded_parameter_compaction_ratio": 4.0,
+        "child_count_authenticated_from_reloaded_artifact": True,
+        "parent_count_independently_recomputed_by_evaluator": False,
+        "ratio_certification_status": "externally_pinned_parent_count",
+        "checkpoint_byte_ratio_used": False,
+        "quantization_adjustment_used": False,
+        "pruning_mask_adjustment_used": False,
+    }
+    assert (
+        automatic["holdout_prompt_binding"][
+            "same_manifest_prompts_used_for_parent_and_child"
+        ]
+        is True
+    )
+    assert automatic["acceptance_semantics"]["manual_review_is_parent_relative"]
+    assert (
+        automatic["acceptance_semantics"][
+            "lexical_similarity_is_not_an_intelligence_metric"
+        ]
+        is True
+    )
     assert len(fixture["loader_calls"]) == 2
     assert fixture["loader_calls"][1]["source"] == fixture["candidate_directory"]
     assert packet["packet_sha256"] == automatic["manual_review_packet_sha256"]
+    assert packet["rubric"]["paired_scoring_required"] is True
     assert packet["rubric"]["exact_wording_comparison_permitted"] is False
     assert len(packet["cases"]) == 6
 
@@ -275,6 +348,45 @@ def test_capture_persists_text_limits_and_strict_reload(
         )
 
 
+def test_capture_rejects_nonzero_artifact_training_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="zero-training child",
+    ):
+        _capture_fixture(
+            tmp_path,
+            monkeypatch,
+            metadata_overrides={"training_steps": 1},
+        )
+
+
+def test_capture_accepts_semantic_postfold_artifact_contract_without_sidecars(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Semantic postfold publishes through Lfm2CpcfV5QuarantineSaver, so its
+    # output has this exact sealed metadata contract.  Keep the candidate
+    # directory free of parent-model and trace-cache evidence in this test.
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        use_real_artifact_metadata=True,
+    )
+    candidate_files = {
+        path.name for path in fixture["candidate_directory"].iterdir()
+    }
+    assert candidate_files == {LFM2_CPCF_V5_ARTIFACT_METADATA}
+    assert fixture["report"]["direct_local_reload"][
+        "strict_v5_loader_used"
+    ] is True
+    assert fixture["report"]["operation_audit"]["parent_model_loaded"] is False
+    assert fixture["report"]["operation_audit"]["parent_forward_passes"] == 0
+    assert fixture["report"]["operation_audit"]["parent_generate_invocations"] == 0
+
+
 def test_finalize_binds_manual_ratings_and_refuses_clobber(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -284,20 +396,29 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
     packet = json.loads(
         (capture_directory / evaluator.MANUAL_PACKET_FILENAME).read_text()
     )
-    ratings = bind_manual_ratings(
+    ratings = bind_parent_relative_manual_ratings(
         packet,
         [
             {
                 "case_id": row["case_id"],
-                "correctness": 4,
-                "coherence": 4,
-                "instruction_following": 4,
-                "capability_retention": 4,
+                "parent": {
+                    "correctness": 4,
+                    "coherence": 4,
+                    "instruction_following": 4,
+                    "capability_retention": 4,
+                },
+                "candidate": {
+                    "correctness": 4,
+                    "coherence": 4,
+                    "instruction_following": 4,
+                    "capability_retention": 4,
+                },
+                "reason": "Both responses are fully useful and coherent.",
             }
             for row in packet["cases"]
         ],
         reviewer_id="manual-reviewer",
-    ).as_dict()
+    )
     ratings_path = tmp_path / "manual-ratings-64.json"
     _write_json(ratings_path, ratings)
     ratings_file_sha = _file_sha(ratings_path)
@@ -317,6 +438,12 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
     assert report["manual_ratings_sha256"] == ratings["ratings_sha256"]
     assert report["reviewer_id"] == "manual-reviewer"
     assert report["final_gate_report"]["manual_review"]["status"] == "accepted"
+    assert report["parent_relative_manual_report"]["retention"] == 1.0
+    assert report["intelligence_retention_claim"]["certified_lower_bound"] is None
+    assert report["promoted"] is False
+    assert report["parameter_compaction"][
+        "recorded_parameter_compaction_ratio"
+    ] == pytest.approx(4.0)
     assert report["acceptance_semantics"]["exact_wording_matching_used"] is False
     assert report["operation_audit"]["parent_forward_passes"] == 0
     assert report["operation_audit"]["child_model_loaded"] is False
