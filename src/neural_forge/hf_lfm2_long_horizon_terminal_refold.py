@@ -3,13 +3,15 @@
 This module closes one deliberately narrow gap between the legacy LFM2
 circuit cache and the pure terminal-action residual compiler:
 
-* authenticate a sealed legacy cache while loading only bounded endpoints;
-* invert an authenticated strict one-row tokenizer bridge for every cached
-  prompt and forced token;
+* authenticate a sealed legacy cache, using bounded strict-row reads or one
+  complete authenticated batch at a time for semantic retokenization;
+* either invert an authenticated strict one-row tokenizer bridge or build an
+  exact semantic full-prefix schedule from direct-local donor/target tokenizers;
 * reconstruct the parent's final RMSNorm output analytically from the cached
   final-layer residual and a separately sealed final-normalization contract;
-* replay each complete target-token trajectory through every installed child
-  macrocell exactly once, without calling ``model.forward`` or ``generate``;
+* replay each strict trajectory once, or each maximal target-native semantic
+  branch once when suffix rewrites make one final token trajectory impossible,
+  without calling ``model.forward`` or ``generate``;
 * construct whole-trajectory FIT, FIT-CHECK, SELECTION, and VALIDATION banks;
 * invoke the existing closed-form terminal-action residual primitive; and
 * install the selected final ``w2`` writer in place only after its frozen
@@ -24,9 +26,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -34,6 +38,7 @@ from .hf_lfm2_circuit_trace_cache import (
     CACHED_VERIFIED_TRACE_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     Lfm2CircuitTraceCache,
+    _tensor_sha256 as _cache_tensor_sha256,
     fingerprint_lfm2_parent,
 )
 from .hf_lfm2_cpcf_macrocell_replay import replay_lfm2_cpcf_macrocell
@@ -47,6 +52,17 @@ from .hf_lfm2_cpcf_terminal_action_residual import (
     _prepare_split,
     compile_lfm2_cpcf_terminal_action_residual,
 )
+from .hf_lfm2_direct_local import (
+    Lfm2DirectLocalError,
+    _local_directory,
+    _local_safetensor_shards,
+    _read_json,
+)
+from .hf_lfm2_semantic_span_phase_bridge import (
+    Lfm2SemanticSpanPhaseBridge,
+    Lfm2SemanticSpanPhaseBridgeError,
+    build_lfm2_semantic_span_phase_bridge,
+)
 from .hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2TargetTokenizedRecord,
@@ -55,6 +71,7 @@ from .hf_lfm2_tokenizer_bridge_trace_adapter import (
 )
 from .hf_tied_causal_interface_fold import TiedCausalInterfaceFold
 from .hf_tokenizer_bridge import StrictTokenizerBridgeArtifact
+from .hf_tokenizer_bridge import StrictTokenizerBridgeError
 
 
 LFM2_LONG_HORIZON_PARENT_FINAL_NORM_SCHEMA = (
@@ -62,10 +79,11 @@ LFM2_LONG_HORIZON_PARENT_FINAL_NORM_SCHEMA = (
 )
 LFM2_LONG_HORIZON_SPLIT_PLAN_SCHEMA = "neural-forge-lfm2-long-horizon-split-plan-v1"
 LFM2_LONG_HORIZON_TERMINAL_REFOLD_SCHEMA = (
-    "neural-forge-lfm2-long-horizon-terminal-refold-v1"
+    "neural-forge-lfm2-long-horizon-terminal-refold-v2"
 )
 
 TerminalSplit = Literal["fit", "fit_check", "selection", "validation"]
+TokenizerReplayMode = Literal["strict_one_row", "semantic_span"]
 _SPLITS: tuple[TerminalSplit, ...] = (
     "fit",
     "fit_check",
@@ -284,6 +302,283 @@ class Lfm2SealedParentFinalRmsNorm:
 
 
 @dataclass(frozen=True, slots=True)
+class Lfm2LocalParentFinalRmsNormLoad:
+    """Direct-local safetensors load bound to the cache's full parent identity."""
+
+    final_norm: Lfm2SealedParentFinalRmsNorm
+    report: Mapping[str, Any]
+    result_sha256: str
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.final_norm, Lfm2SealedParentFinalRmsNorm)
+            or not self.final_norm.verify_authentication()
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Direct-local parent final norm is not authenticated."
+            )
+        body = dict(self.report)
+        supplied = body.pop("result_sha256", None)
+        audit = body.get("operation_audit")
+        if (
+            supplied != self.result_sha256
+            or _canonical_sha256(body) != supplied
+            or body.get("cache_key") != self.final_norm.cache_key
+            or body.get("cache_parent_fingerprint")
+            != self.final_norm.parent_fingerprint
+            or body.get("final_norm_authentication_sha256")
+            != self.final_norm.authentication_sha256
+            or not isinstance(audit, Mapping)
+            or audit.get("parent_model_objects_constructed") != 0
+            or audit.get("parent_model_forward_calls") != 0
+            or audit.get("parent_model_generate_calls") != 0
+            or audit.get("network_access_performed") is not False
+            or audit.get("direct_local_json_and_safetensors_only") is not True
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Direct-local parent final-norm load receipt is invalid."
+            )
+        object.__setattr__(
+            self,
+            "report",
+            MappingProxyType({**body, "result_sha256": supplied}),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.report)
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            while block := handle.read(8 * 1024**2):
+                digest.update(block)
+    except OSError as exc:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Could not authenticate local checkpoint file {path.name!r}."
+        ) from exc
+    return digest.hexdigest()
+
+
+def _direct_local_parent_runtime_buffers(config: Any, count: int) -> dict[str, Any]:
+    torch = _torch()
+    if count == 0:
+        return {}
+    rope = getattr(config, "rope_parameters", None)
+    if count != 2 or not isinstance(rope, Mapping) or rope.get("rope_type") != "default":
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local parent identity reconstruction supports either no "
+            "runtime buffers or the authenticated default LFM2 RoPE buffer pair."
+        )
+    base = _positive_finite(rope.get("rope_theta"), "parent rope_theta")
+    hidden = int(getattr(config, "hidden_size", 0))
+    heads = int(getattr(config, "num_attention_heads", 0))
+    head_dim = int(getattr(config, "head_dim", 0) or (hidden // heads if heads else 0))
+    if head_dim <= 0 or head_dim % 2 != 0:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Parent config cannot reconstruct the LFM2 RoPE buffers."
+        )
+    inv_freq = 1.0 / (
+        base
+        ** (
+            torch.arange(0, head_dim, 2, dtype=torch.int64).to(torch.float32)
+            / head_dim
+        )
+    )
+    return {
+        "model.rotary_emb.inv_freq": inv_freq,
+        "model.rotary_emb.original_inv_freq": inv_freq.clone(),
+    }
+
+
+def load_lfm2_parent_final_rmsnorm_from_local_safetensors(
+    cache: Lfm2CircuitTraceCache,
+    model_directory: str | os.PathLike[str],
+    *,
+    tensor_key: str,
+    epsilon_config_key: str,
+) -> Lfm2LocalParentFinalRmsNormLoad:
+    """Load one final norm without constructing or executing a parent model.
+
+    The function scans the direct-local safetensors once to reconstruct the same
+    state/config/runtime-buffer fingerprint sealed by the circuit cache.  The
+    requested tensor and epsilon field are explicit caller inputs; no norm key or
+    epsilon is guessed in core code.
+    """
+
+    if not isinstance(cache, Lfm2CircuitTraceCache):
+        raise TypeError("cache must be Lfm2CircuitTraceCache.")
+    if not isinstance(tensor_key, str) or not tensor_key.strip():
+        raise Lfm2LongHorizonTerminalRefoldError("tensor_key must be nonempty text.")
+    if not isinstance(epsilon_config_key, str) or not epsilon_config_key.strip():
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "epsilon_config_key must be nonempty text."
+        )
+    try:
+        from safetensors import safe_open
+        from transformers import Lfm2Config
+    except ImportError as exc:  # pragma: no cover - optional native dependency
+        raise RuntimeError(
+            "Direct-local final-norm authentication requires safetensors and "
+            "the concrete LFM2 config class."
+        ) from exc
+    try:
+        directory = _local_directory(model_directory, "model_directory")
+        config_payload = _read_json(directory / "config.json", "LFM2 config")
+        shards = _local_safetensor_shards(directory)
+    except Lfm2DirectLocalError as exc:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local parent checkpoint layout is invalid."
+        ) from exc
+    if config_payload.get("model_type") != "lfm2":
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local parent config is not LFM2."
+        )
+    config = Lfm2Config(**config_payload)
+    normalized_config = dict(config.to_dict())
+    normalized_config.pop("_name_or_path", None)
+    config_sha256 = _canonical_sha256(normalized_config)
+    manifest = cache.manifest
+    parent = manifest.get("parent")
+    if not isinstance(parent, Mapping) or parent.get("config_sha256") != config_sha256:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local parent config differs from the cache's model identity."
+        )
+
+    tensor_locations: dict[str, Path] = {}
+    for shard in shards:
+        with safe_open(str(shard), framework="pt", device="cpu") as handle:
+            for name in handle.keys():
+                if name in tensor_locations:
+                    raise Lfm2LongHorizonTerminalRefoldError(
+                        f"Duplicate direct-local parent tensor {name!r}."
+                    )
+                tensor_locations[name] = shard
+    if tensor_key not in tensor_locations:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Direct-local parent lacks requested final norm tensor {tensor_key!r}."
+        )
+
+    tensor_hashes: dict[str, str] = {}
+    selected_weight = None
+    for shard in shards:
+        with safe_open(str(shard), framework="pt", device="cpu") as handle:
+            for name in sorted(handle.keys()):
+                value = handle.get_tensor(name)
+                tensor_hashes[name] = _cache_tensor_sha256(_torch(), value)
+                if name == tensor_key:
+                    selected_weight = value.detach().to(device="cpu").contiguous().clone()
+    expected_state_count = int(parent.get("state_tensor_count", -1))
+    if (
+        bool(getattr(config, "tie_word_embeddings", False))
+        and len(tensor_hashes) + 1 == expected_state_count
+    ):
+        embedding_key = "model.embed_tokens.weight"
+        output_key = "lm_head.weight"
+        if embedding_key in tensor_hashes and output_key not in tensor_hashes:
+            tensor_hashes[output_key] = tensor_hashes[embedding_key]
+        elif output_key in tensor_hashes and embedding_key not in tensor_hashes:
+            tensor_hashes[embedding_key] = tensor_hashes[output_key]
+    if len(tensor_hashes) != expected_state_count:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local safetensors cannot reconstruct every state-dict entry "
+            "sealed by the parent cache."
+        )
+    state_digest = hashlib.sha256(b"neural-forge-lfm2-parent-state-v1\0")
+    for name in sorted(tensor_hashes):
+        state_digest.update(name.encode("utf-8"))
+        state_digest.update(b"\0")
+        state_digest.update(tensor_hashes[name].encode("ascii"))
+        state_digest.update(b"\0")
+    state_sha256 = state_digest.hexdigest()
+
+    expected_buffer_count = int(parent.get("runtime_buffer_count", -1))
+    buffers = _direct_local_parent_runtime_buffers(config, expected_buffer_count)
+    buffer_digest = hashlib.sha256(
+        b"neural-forge-lfm2-parent-runtime-buffers-v1\0"
+    )
+    for name in sorted(buffers):
+        buffer_digest.update(name.encode("utf-8"))
+        buffer_digest.update(b"\0")
+        buffer_digest.update(
+            _cache_tensor_sha256(_torch(), buffers[name]).encode("ascii")
+        )
+        buffer_digest.update(b"\0")
+    buffer_sha256 = buffer_digest.hexdigest()
+    identity_body = {
+        "schema": "neural-forge-lfm2-parent-fingerprint-v2",
+        "model_class": parent.get("model_class"),
+        "config_sha256": config_sha256,
+        "state_dict_sha256": state_sha256,
+        "state_tensor_count": len(tensor_hashes),
+        "runtime_buffer_sha256": buffer_sha256,
+        "runtime_buffer_count": len(buffers),
+    }
+    if (
+        state_sha256 != parent.get("state_dict_sha256")
+        or buffer_sha256 != parent.get("runtime_buffer_sha256")
+        or _canonical_sha256(identity_body) != cache.parent_fingerprint
+        or selected_weight is None
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local safetensors do not reproduce the cache's full parent "
+            "model identity."
+        )
+    epsilon = _positive_finite(
+        normalized_config.get(epsilon_config_key),
+        f"parent config {epsilon_config_key}",
+    )
+    hidden = int(getattr(config, "hidden_size", 0))
+    if selected_weight.ndim != 1 or int(selected_weight.numel()) != hidden:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Requested direct-local final norm does not match parent hidden size."
+        )
+    final_norm = Lfm2SealedParentFinalRmsNorm(
+        cache_key=cache.cache_key,
+        parent_fingerprint=cache.parent_fingerprint,
+        layer_topology_fingerprint=cache.layer_topology_fingerprint,
+        weight=selected_weight,
+        epsilon=epsilon,
+    )
+    body = {
+        "schema": "neural-forge-lfm2-local-parent-final-rmsnorm-load-v1",
+        "cache_key": cache.cache_key,
+        "cache_parent_fingerprint": cache.parent_fingerprint,
+        "source_directory": str(directory),
+        "config_file_sha256": _file_sha256(directory / "config.json"),
+        "checkpoint_files": [
+            {
+                "name": shard.name,
+                "bytes": shard.stat().st_size,
+                "sha256": _file_sha256(shard),
+            }
+            for shard in shards
+        ],
+        "tensor_key": tensor_key,
+        "tensor_sha256": _cache_tensor_sha256(_torch(), selected_weight),
+        "epsilon_config_key": epsilon_config_key,
+        "epsilon": epsilon,
+        "reconstructed_parent_identity": identity_body,
+        "final_norm_authentication_sha256": final_norm.authentication_sha256,
+        "operation_audit": {
+            "parent_model_objects_constructed": 0,
+            "parent_model_forward_calls": 0,
+            "parent_model_generate_calls": 0,
+            "network_access_performed": False,
+            "direct_local_json_and_safetensors_only": True,
+            "training_steps": 0,
+        },
+    }
+    seal = _canonical_sha256(body)
+    return Lfm2LocalParentFinalRmsNormLoad(
+        final_norm=final_norm,
+        report={**body, "result_sha256": seal},
+        result_sha256=seal,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class Lfm2LongHorizonTrajectorySplitPlan:
     """One sealed whole-trajectory split assignment for a cache."""
 
@@ -385,10 +680,12 @@ class _CachedTrajectory:
     batch_index: int
     input_sha256: str
     split: TerminalSplit
-    target_record: Lfm2TargetTokenizedRecord
+    target_record: Lfm2TargetTokenizedRecord | None
+    semantic_bridge: Lfm2SemanticSpanPhaseBridge | None
     parent_final_norm_rows: Any
     horizon_indices: tuple[int, ...]
     selected_payload_sha256: str
+    parent_action_projection: Mapping[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -397,6 +694,10 @@ class _ChildTrajectoryRows:
     pre_mlp_residual: Any
     macrocell_replay_sha256: tuple[str, ...]
     attention_rope_materializations: int
+    embedding_seed_lookup_calls: int = 1
+    full_prefix_replay_calls: int = 1
+    replay_strategy: str = "single-causal-trajectory-v1"
+    replay_branch_phase_sha256: tuple[tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -681,6 +982,7 @@ def _cache_tensor_names(
         names.add("input.position_ids")
     phases = ("prefill",) + tuple(f"decode.{step:03d}" for step in range(decode_steps))
     for phase in phases:
+        names.add(f"{phase}.logits")
         prefix = f"{phase}.layer.{final_layer_index:03d}."
         names.update(prefix + suffix for suffix in suffixes)
         if phase != "prefill":
@@ -793,11 +1095,130 @@ def _validate_cache_trajectory_geometry(
     return torch.cat(residual_rows, dim=0).contiguous()
 
 
+def _verify_parent_action_projection(
+    tensors: Mapping[str, Any],
+    parent_final_norm_rows: Any,
+    bridge: StrictTokenizerBridgeArtifact,
+    source_selected_tied_table: Any,
+    *,
+    decode_steps: int,
+) -> dict[str, Any]:
+    """Bind cached parent actions to the selected tied-interface row order."""
+
+    torch = _torch()
+    profile = bridge.transport_profile
+    mapping = tuple(profile.target_to_donor_row_indices)
+    source = source_selected_tied_table
+    if (
+        not isinstance(source, torch.Tensor)
+        or source.ndim != 2
+        or source.dtype != torch.bfloat16
+        or tuple(source.shape)
+        != (profile.target_row_capacity, int(parent_final_norm_rows.shape[1]))
+        or len(mapping) != profile.target_row_capacity
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "The authenticated source tied table does not implement the "
+            "bridge's target-row action interface."
+        )
+    donor_rows = torch.tensor(mapping, dtype=torch.long)
+    selected_rows = []
+    phases = ("prefill",) + tuple(
+        f"decode.{step:03d}" for step in range(decode_steps)
+    )
+    for phase in phases:
+        logits = tensors.get(f"{phase}.logits")
+        if (
+            not isinstance(logits, torch.Tensor)
+            or logits.ndim != 3
+            or int(logits.shape[0]) != 1
+            or int(logits.shape[1]) < 1
+            or int(logits.shape[2]) != profile.donor_row_capacity
+            or not torch.is_floating_point(logits)
+            or not bool(torch.isfinite(logits).all().item())
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cached parent phase {phase!r} has no authenticated full-vocabulary "
+                "action row."
+            )
+        selected_rows.append(
+            logits.detach()
+            .to(device="cpu")[:, -1, :]
+            .index_select(1, donor_rows)
+            .reshape(1, -1)
+        )
+    cached = torch.cat(selected_rows, dim=0).contiguous()
+    reconstructed = (
+        parent_final_norm_rows.to(device="cpu", dtype=torch.float64)
+        @ source.to(device="cpu", dtype=torch.float64).T
+    ).contiguous()
+    if tuple(cached.shape) != tuple(reconstructed.shape):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Cached parent logits and reconstructed selected-row actions are not "
+            "phase aligned."
+        )
+    cached64 = cached.to(torch.float64)
+    difference = reconstructed - cached64
+    reference_rms = float(cached64.square().mean().sqrt().item())
+    relative_rmse = float(difference.square().mean().sqrt().item()) / max(
+        reference_rms,
+        torch.finfo(torch.float64).tiny,
+    )
+    top1 = cached64.argmax(dim=1)
+    reconstructed_top1 = reconstructed.argmax(dim=1)
+    agreements = top1 == reconstructed_top1
+    row_error = difference.abs().amax(dim=1)
+    row_index = torch.arange(int(cached64.shape[0]), dtype=torch.long)
+    cached_gap = (
+        cached64[row_index, top1] - cached64[row_index, reconstructed_top1]
+    )
+    reconstructed_gap = (
+        reconstructed[row_index, reconstructed_top1]
+        - reconstructed[row_index, top1]
+    )
+    tie_envelope = 2.0 * row_error + torch.finfo(torch.float64).eps
+    tie_verified = agreements | (
+        (cached_gap <= tie_envelope) & (reconstructed_gap <= tie_envelope)
+    )
+    if (
+        not math.isfinite(relative_rmse)
+        or relative_rmse > 0.02
+        or not bool(tie_verified.all().item())
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Cached parent logits do not authenticate the selected tied-table "
+            "action projection at every phase endpoint."
+        )
+    body = {
+        "method": "cached-full-logits-selected-by-sealed-bridge-v1",
+        "phase_order": list(phases),
+        "phase_count": len(phases),
+        "target_to_donor_row_indices_sha256": _canonical_sha256(list(mapping)),
+        "cached_selected_logits_sha256": _tensor_sha256(cached),
+        "reconstructed_selected_logits_sha256": _tensor_sha256(reconstructed),
+        "cached_selected_top1_sha256": _tensor_sha256(top1),
+        "reconstructed_selected_top1_sha256": _tensor_sha256(
+            reconstructed_top1
+        ),
+        "exact_selected_top1_agreement": bool(agreements.all().item()),
+        "exact_selected_top1_agreement_count": int(agreements.sum().item()),
+        "numeric_tie_verified_disagreement_count": int(
+            ((~agreements) & tie_verified).sum().item()
+        ),
+        "all_selected_actions_verified": True,
+        "relative_rmse": relative_rmse,
+        "maximum_relative_rmse": 0.02,
+        "numeric_token_id_equality_required": False,
+    }
+    return {**body, "authentication_sha256": _canonical_sha256(body)}
+
+
 def _collect_cached_trajectories(
     cache: Lfm2CircuitTraceCache,
     bridge: StrictTokenizerBridgeArtifact,
     inverse: tuple[int, ...],
     parent_final_norm: Lfm2SealedParentFinalRmsNorm,
+    source_selected_tied_table: Any,
     split_plan: Lfm2LongHorizonTrajectorySplitPlan,
 ) -> tuple[
     tuple[_CachedTrajectory, ...],
@@ -857,6 +1278,13 @@ def _collect_cached_trajectories(
                     residual,
                     parent_final_norm,
                 )
+                parent_action = _verify_parent_action_projection(
+                    tensors,
+                    parent_rows,
+                    bridge,
+                    source_selected_tied_table,
+                    decode_steps=decode_steps,
+                )
                 target_prompt = _map_donor_ids_to_unique_target(
                     tensors["input.input_ids"],
                     inverse,
@@ -883,9 +1311,11 @@ def _collect_cached_trajectories(
                         input_sha256=reference.input_sha256,
                         split=split_plan.assignments[reference.index],
                         target_record=target_record,
+                        semantic_bridge=None,
                         parent_final_norm_rows=parent_rows,
                         horizon_indices=tuple(range(decode_steps + 1)),
                         selected_payload_sha256=payload.selection_sha256,
+                        parent_action_projection=MappingProxyType(parent_action),
                     )
                 )
                 parent_batch = {
@@ -943,6 +1373,131 @@ def _collect_cached_trajectories(
         tuple(pair_receipts),
         {
             "session": cache_receipt,
+            "selected_payloads": payload_receipts,
+        },
+    )
+
+
+def _collect_cached_semantic_trajectories(
+    cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    donor_tokenizer: Any,
+    target_tokenizer: Any,
+    parent_final_norm: Lfm2SealedParentFinalRmsNorm,
+    source_selected_tied_table: Any,
+    split_plan: Lfm2LongHorizonTrajectorySplitPlan,
+) -> tuple[
+    tuple[_CachedTrajectory, ...],
+    tuple[Lfm2SemanticSpanPhaseBridge, ...],
+    dict[str, Any],
+]:
+    """Authenticate complete cache batches and retokenize every parent phase."""
+
+    try:
+        bridge.verify_live_tokenizers(donor_tokenizer, target_tokenizer)
+    except StrictTokenizerBridgeError as exc:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Live semantic tokenizers differ from the sealed child bridge."
+        ) from exc
+    manifest = cache.manifest
+    topology = manifest.get("layer_topology", {}).get("layers")
+    if not isinstance(topology, list) or not topology:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Cache has no authenticated LFM2 layer topology."
+        )
+    final_layer_index = len(topology) - 1
+    semantic_bridges: list[Lfm2SemanticSpanPhaseBridge] = []
+    cached: list[_CachedTrajectory] = []
+    payload_receipts: list[dict[str, Any]] = []
+    session = cache.authenticated_session()
+    for batch in session.iter_batches():
+        record = batch.record
+        capture = record.get("capture")
+        decode_steps = (
+            None if not isinstance(capture, Mapping) else capture.get("decode_steps")
+        )
+        if (
+            isinstance(decode_steps, bool)
+            or not isinstance(decode_steps, int)
+            or decode_steps <= 0
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch.index} has no forced horizon."
+            )
+        tensors = batch.tensors
+        residual = _validate_cache_trajectory_geometry(
+            tensors,
+            record,
+            final_layer_index=final_layer_index,
+            source_hidden_size=parent_final_norm.source_hidden_size,
+        )
+        parent_rows = _analytical_parent_rmsnorm(residual, parent_final_norm)
+        parent_action = _verify_parent_action_projection(
+            tensors,
+            parent_rows,
+            bridge,
+            source_selected_tied_table,
+            decode_steps=decode_steps,
+        )
+        try:
+            semantic = build_lfm2_semantic_span_phase_bridge(
+                batch,
+                manifest,
+                donor_tokenizer,
+                target_tokenizer,
+                expected_source_cache_key=cache.cache_key,
+                expected_source_manifest_sha256=manifest["manifest_sha256"],
+                expected_source_input_sha256=batch.input_sha256,
+                expected_donor_tokenizer_fingerprint=(
+                    bridge.donor_tokenizer_semantics_sha256
+                ),
+                expected_target_tokenizer_fingerprint=(
+                    bridge.target_tokenizer_semantics_sha256
+                ),
+            )
+        except Lfm2SemanticSpanPhaseBridgeError as exc:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache batch {batch.index} failed semantic-span authentication."
+            ) from exc
+        if (
+            semantic.source_batch_index != batch.index
+            or semantic.source_input_sha256 != batch.input_sha256
+            or len(semantic.phases) != decode_steps + 1
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Semantic phase endpoints differ from the authenticated parent "
+                "trajectory."
+            )
+        semantic_bridges.append(semantic)
+        cached.append(
+            _CachedTrajectory(
+                batch_index=batch.index,
+                input_sha256=batch.input_sha256,
+                split=split_plan.assignments[batch.index],
+                target_record=None,
+                semantic_bridge=semantic,
+                parent_final_norm_rows=parent_rows,
+                horizon_indices=tuple(range(decode_steps + 1)),
+                selected_payload_sha256=semantic.source_record_sha256,
+                parent_action_projection=MappingProxyType(parent_action),
+            )
+        )
+        payload_receipts.append(
+            {
+                "batch_index": batch.index,
+                "input_sha256": batch.input_sha256,
+                "record_sha256": semantic.source_record_sha256,
+                "semantic_bridge_sha256": semantic.bridge_sha256,
+                "authenticated_tensor_count": int(record["tensor_count"]),
+                "authenticated_logical_bytes": int(capture["capture_bytes"]),
+            }
+        )
+    session.verify()
+    return (
+        tuple(cached),
+        tuple(semantic_bridges),
+        {
+            "session": session.as_dict(),
             "selected_payloads": payload_receipts,
         },
     )
@@ -1020,15 +1575,39 @@ def _full_target_trajectory(record: Any) -> tuple[Any, Any, Any, int]:
     return full_ids, full_mask, full_positions, int(prompt.shape[1])
 
 
-def _replay_child_trajectory_once(
+def _replay_child_sequence_once(
     target_model: Any,
     layers: tuple[Any, ...],
-    aligned_record: Any,
+    full_ids: Any,
+    full_mask: Any,
+    positions: Any,
+    row_indices: Sequence[int],
+    *,
+    replay_strategy: str,
 ) -> _ChildTrajectoryRows:
     torch = _torch()
-    full_ids, full_mask, positions, prompt_width = _full_target_trajectory(
-        aligned_record
-    )
+    if (
+        not isinstance(full_ids, torch.Tensor)
+        or not isinstance(full_mask, torch.Tensor)
+        or not isinstance(positions, torch.Tensor)
+        or full_ids.ndim != 2
+        or tuple(full_mask.shape) != tuple(full_ids.shape)
+        or tuple(positions.shape) != tuple(full_ids.shape)
+        or int(full_ids.shape[0]) != 1
+        or int(full_ids.shape[1]) <= 0
+        or not torch.equal(full_mask, torch.ones_like(full_mask))
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Target-native replay requires one complete unpadded token sequence."
+        )
+    selected_rows = tuple(int(value) for value in row_indices)
+    if (
+        not selected_rows
+        or any(value < 0 or value >= int(full_ids.shape[1]) for value in selected_rows)
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Target-native replay endpoint rows lie outside the token sequence."
+        )
     embedding = getattr(target_model.get_input_embeddings(), "weight", None)
     if not isinstance(embedding, torch.nn.Parameter):
         raise Lfm2LongHorizonTerminalRefoldError(
@@ -1075,17 +1654,17 @@ def _replay_child_trajectory_once(
                 layer,
                 residual,
                 padding_mask=full_mask.to(device=device, dtype=dtype),
-            )
+        )
         replay_sha.append(replay.replay_sha256)
         if layer_index == len(layers) - 1:
-            row_indices = torch.tensor(
-                [prompt_width - 1] + list(range(prompt_width, int(full_ids.shape[1]))),
+            index = torch.tensor(
+                selected_rows,
                 dtype=torch.long,
             )
-            final_mlp = replay.mlp_input.index_select(1, row_indices)[0]
+            final_mlp = replay.mlp_input.index_select(1, index)[0]
             final_pre_mlp = replay.post_operator_residual.index_select(
                 1,
-                row_indices,
+                index,
             )[0]
         residual = replay.post_layer_residual
     if final_mlp is None or final_pre_mlp is None:
@@ -1105,12 +1684,125 @@ def _replay_child_trajectory_once(
         pre_mlp_residual=final_pre_mlp.contiguous().clone(),
         macrocell_replay_sha256=tuple(replay_sha),
         attention_rope_materializations=rope_calls,
+        replay_strategy=replay_strategy,
+    )
+
+
+def _replay_child_trajectory_once(
+    target_model: Any,
+    layers: tuple[Any, ...],
+    aligned_record: Any,
+) -> _ChildTrajectoryRows:
+    full_ids, full_mask, positions, prompt_width = _full_target_trajectory(
+        aligned_record
+    )
+    return _replay_child_sequence_once(
+        target_model,
+        layers,
+        full_ids,
+        full_mask,
+        positions,
+        (prompt_width - 1, *range(prompt_width, int(full_ids.shape[1]))),
+        replay_strategy="strict-one-row-single-causal-trajectory-v1",
+    )
+
+
+def _is_token_prefix(prefix: tuple[int, ...], value: tuple[int, ...]) -> bool:
+    return len(prefix) <= len(value) and value[: len(prefix)] == prefix
+
+
+def _replay_child_semantic_span_once(
+    target_model: Any,
+    layers: tuple[Any, ...],
+    semantic: Lfm2SemanticSpanPhaseBridge,
+) -> _ChildTrajectoryRows:
+    """Replay each maximal target-native branch once and collect phase endpoints."""
+
+    torch = _torch()
+    phase_sequences = tuple(
+        phase.target_full_prefix_token_ids for phase in semantic.phases
+    )
+    unique_sequences = tuple(dict.fromkeys(phase_sequences))
+    maxima = tuple(
+        sequence
+        for sequence in unique_sequences
+        if not any(
+            len(other) > len(sequence) and _is_token_prefix(sequence, other)
+            for other in unique_sequences
+        )
+    )
+    if not maxima:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Semantic phase schedule has no complete target-native trajectory."
+        )
+    assignments: list[int] = []
+    for sequence in phase_sequences:
+        matches = tuple(
+            index
+            for index, maximum in enumerate(maxima)
+            if _is_token_prefix(sequence, maximum)
+        )
+        if not matches:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Semantic phase endpoint is not represented by a complete "
+                "target-native trajectory."
+            )
+        assignments.append(matches[0])
+
+    mlp_rows: list[Any | None] = [None] * len(semantic.phases)
+    residual_rows: list[Any | None] = [None] * len(semantic.phases)
+    replay_sha: list[str] = []
+    rope_calls = 0
+    branch_phase_sha: list[tuple[str, ...]] = []
+    for branch_index, sequence in enumerate(maxima):
+        phase_indices = tuple(
+            index
+            for index, assignment in enumerate(assignments)
+            if assignment == branch_index
+        )
+        ids = torch.tensor([sequence], dtype=torch.long)
+        mask = torch.ones_like(ids, dtype=torch.long)
+        positions = torch.arange(
+            semantic.target_position_origin,
+            semantic.target_position_origin + len(sequence),
+            dtype=torch.long,
+        ).unsqueeze(0)
+        replay = _replay_child_sequence_once(
+            target_model,
+            layers,
+            ids,
+            mask,
+            positions,
+            tuple(len(phase_sequences[index]) - 1 for index in phase_indices),
+            replay_strategy="semantic-maximal-target-prefix-branch-v1",
+        )
+        replay_sha.extend(replay.macrocell_replay_sha256)
+        rope_calls += replay.attention_rope_materializations
+        branch_phase_sha.append(
+            tuple(semantic.phases[index].phase_sha256 for index in phase_indices)
+        )
+        for row, phase_index in enumerate(phase_indices):
+            mlp_rows[phase_index] = replay.mlp_input[row : row + 1]
+            residual_rows[phase_index] = replay.pre_mlp_residual[row : row + 1]
+    if any(value is None for value in (*mlp_rows, *residual_rows)):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Semantic target-native replay omitted a parent phase endpoint."
+        )
+    return _ChildTrajectoryRows(
+        mlp_input=torch.cat(tuple(mlp_rows), dim=0),
+        pre_mlp_residual=torch.cat(tuple(residual_rows), dim=0),
+        macrocell_replay_sha256=tuple(replay_sha),
+        attention_rope_materializations=rope_calls,
+        embedding_seed_lookup_calls=len(maxima),
+        full_prefix_replay_calls=len(maxima),
+        replay_strategy="semantic-maximal-target-prefix-branch-cover-v1",
+        replay_branch_phase_sha256=tuple(branch_phase_sha),
     )
 
 
 def _build_split_evidence(
     cached: tuple[_CachedTrajectory, ...],
-    adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+    adapter: Lfm2StrictTokenizerBridgeTraceAdapter | None,
     target_model: Any,
     layers: tuple[Any, ...],
 ) -> tuple[
@@ -1124,8 +1816,28 @@ def _build_split_evidence(
     replay_receipts = []
     rope_calls = 0
     for trajectory in cached:
-        aligned = adapter.records[trajectory.batch_index]
-        child = _replay_child_trajectory_once(target_model, layers, aligned)
+        if trajectory.target_record is not None:
+            if adapter is None or trajectory.semantic_bridge is not None:
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    "Strict target trajectory lost its authenticated adapter."
+                )
+            aligned = adapter.records[trajectory.batch_index]
+            child = _replay_child_trajectory_once(target_model, layers, aligned)
+            record_id = aligned.record_id
+            semantic_sha256 = None
+        else:
+            semantic = trajectory.semantic_bridge
+            if semantic is None or adapter is not None:
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    "Semantic target trajectory has an ambiguous replay adapter."
+                )
+            child = _replay_child_semantic_span_once(
+                target_model,
+                layers,
+                semantic,
+            )
+            record_id = f"semantic-cache-batch-{trajectory.batch_index:06d}"
+            semantic_sha256 = semantic.bridge_sha256
         rope_calls += child.attention_rope_materializations
         expected_rows = len(trajectory.horizon_indices)
         if (
@@ -1152,15 +1864,24 @@ def _build_split_evidence(
         replay_receipts.append(
             {
                 "batch_index": trajectory.batch_index,
-                "record_id": aligned.record_id,
+                "record_id": record_id,
                 "split": trajectory.split,
                 "trajectory_rows": expected_rows,
                 "horizon_minimum": min(trajectory.horizon_indices),
                 "horizon_maximum": max(trajectory.horizon_indices),
-                "embedding_seed_lookup_calls": 1,
-                "macrocell_replay_calls": len(layers),
+                "embedding_seed_lookup_calls": child.embedding_seed_lookup_calls,
+                "full_prefix_replay_calls": child.full_prefix_replay_calls,
+                "macrocell_replay_calls": len(child.macrocell_replay_sha256),
                 "attention_rope_materializations": (
                     child.attention_rope_materializations
+                ),
+                "replay_strategy": child.replay_strategy,
+                "semantic_bridge_sha256": semantic_sha256,
+                "replay_branch_phase_sha256": [
+                    list(value) for value in child.replay_branch_phase_sha256
+                ],
+                "parent_action_projection_sha256": (
+                    trajectory.parent_action_projection["authentication_sha256"]
                 ),
                 "macrocell_replay_sha256": list(child.macrocell_replay_sha256),
             }
@@ -1414,15 +2135,31 @@ def compile_install_lfm2_long_horizon_terminal_refold(
     target_model: Any,
     interface: TiedCausalInterfaceFold,
     source_selected_tied_table: Any,
-    parent_final_norm: Lfm2SealedParentFinalRmsNorm,
+    parent_final_norm: (
+        Lfm2SealedParentFinalRmsNorm | Lfm2LocalParentFinalRmsNormLoad
+    ),
     split_plan: Lfm2LongHorizonTrajectorySplitPlan | None = None,
     policy: Lfm2CpcfTerminalActionPolicy | None = None,
+    tokenizer_replay_mode: TokenizerReplayMode = "strict_one_row",
+    donor_tokenizer: Any | None = None,
+    target_tokenizer: Any | None = None,
 ) -> Lfm2LongHorizonTerminalRefoldResult:
     """Compile and conditionally install one long-horizon terminal refold."""
 
     if not isinstance(cache, Lfm2CircuitTraceCache):
         raise TypeError("cache must be Lfm2CircuitTraceCache.")
-    _verify_parent_norm_binding(cache, parent_final_norm)
+    if isinstance(parent_final_norm, Lfm2LocalParentFinalRmsNormLoad):
+        selected_parent_final_norm = parent_final_norm.final_norm
+        parent_final_norm_source = parent_final_norm.as_dict()
+    elif isinstance(parent_final_norm, Lfm2SealedParentFinalRmsNorm):
+        selected_parent_final_norm = parent_final_norm
+        parent_final_norm_source = None
+    else:
+        raise TypeError(
+            "parent_final_norm must be a sealed norm or authenticated direct-local "
+            "load."
+        )
+    _verify_parent_norm_binding(cache, selected_parent_final_norm)
     interface_report = _verify_interface_report(
         interface,
         source_selected_tied_table,
@@ -1442,22 +2179,61 @@ def compile_install_lfm2_long_horizon_terminal_refold(
         raise TypeError("split_plan must be Lfm2LongHorizonTrajectorySplitPlan.")
     plan.verify_for(cache)
 
+    if tokenizer_replay_mode not in {"strict_one_row", "semantic_span"}:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "tokenizer_replay_mode must be strict_one_row or semantic_span."
+        )
+    if tokenizer_replay_mode == "semantic_span":
+        if donor_tokenizer is None or target_tokenizer is None:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "semantic_span replay requires direct-local donor and target "
+                "tokenizers."
+            )
+    elif donor_tokenizer is not None or target_tokenizer is not None:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local tokenizers are accepted only by explicit semantic_span "
+            "replay."
+        )
+
     seed, down_parameter, layers, target_norm_epsilon = _target_runtime_seed(
         target_model,
         interface,
         source_selected_tied_table,
     )
-    inverse = _strict_inverse_mapping(bridge, seed.vocabulary_size)
     child_before = fingerprint_lfm2_parent(target_model)
     parameter_count_before = _unique_parameter_count(target_model)
-
-    cached, adapter, pair_receipts, cache_receipt = _collect_cached_trajectories(
-        cache,
-        bridge,
-        inverse,
-        parent_final_norm,
-        plan,
-    )
+    semantic_bridges: tuple[Lfm2SemanticSpanPhaseBridge, ...] = ()
+    if tokenizer_replay_mode == "strict_one_row":
+        inverse = _strict_inverse_mapping(bridge, seed.vocabulary_size)
+        cached, adapter, pair_receipts, cache_receipt = (
+            _collect_cached_trajectories(
+                cache,
+                bridge,
+                inverse,
+                selected_parent_final_norm,
+                source_selected_tied_table,
+                plan,
+            )
+        )
+    else:
+        if bridge.target_vocabulary_size != seed.vocabulary_size:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Semantic target tokenizer capacity differs from the installed "
+                "tied child interface."
+            )
+        cached, semantic_bridges, cache_receipt = (
+            _collect_cached_semantic_trajectories(
+                cache,
+                bridge,
+                donor_tokenizer,
+                target_tokenizer,
+                selected_parent_final_norm,
+                source_selected_tied_table,
+                plan,
+            )
+        )
+        adapter = None
+        pair_receipts = ()
     evidence_tuple, horizons, replay_receipts, rope_calls = _build_split_evidence(
         cached,
         adapter,
@@ -1510,7 +2286,10 @@ def compile_install_lfm2_long_horizon_terminal_refold(
             "installation receipt."
         )
 
-    macrocell_calls = cache.batch_count * len(layers)
+    macrocell_calls = sum(
+        int(value["full_prefix_replay_calls"]) * len(layers)
+        for value in replay_receipts
+    )
     observed_macrocell_calls = sum(
         int(value["macrocell_replay_calls"]) for value in replay_receipts
     )
@@ -1522,15 +2301,21 @@ def compile_install_lfm2_long_horizon_terminal_refold(
         "schema": LFM2_LONG_HORIZON_TERMINAL_REFOLD_SCHEMA,
         "method": (
             "sealed_legacy_cache_analytical_parent_final_norm_plus_"
-            "one_pass_complete_child_macrocell_trajectory_plus_closed_form_"
-            "terminal_writer_residual"
+            + (
+                "one_pass_complete_child_macrocell_trajectory"
+                if tokenizer_replay_mode == "strict_one_row"
+                else "semantic_maximal_target_prefix_branch_cover"
+            )
+            + "_plus_closed_form_terminal_writer_residual"
         ),
+        "tokenizer_replay_mode": tokenizer_replay_mode,
         "cache_key": cache.cache_key,
         "cache_parent_fingerprint": cache.parent_fingerprint,
         "cache_layer_topology_fingerprint": cache.layer_topology_fingerprint,
         "cache_authentication_sha256": cache_receipt["session"]["session_sha256"],
         "cache_authentication": cache_receipt,
-        "parent_final_norm": parent_final_norm.as_dict(),
+        "parent_final_norm": selected_parent_final_norm.as_dict(),
+        "parent_final_norm_direct_local_source": parent_final_norm_source,
         "parent_final_norm_reconstruction": {
             "method": "analytical_rmsnorm_from_cached_final_residual",
             "final_norm_module_or_parent_model_called": False,
@@ -1539,15 +2324,35 @@ def compile_install_lfm2_long_horizon_terminal_refold(
         },
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "bridge_transport_profile_fingerprint": bridge.profile_fingerprint,
-        "bridge_trace_adapter_sha256": adapter.evidence_sha256,
+        "bridge_trace_adapter_sha256": (
+            None if adapter is None else adapter.evidence_sha256
+        ),
+        "semantic_span_bridge_sha256": [
+            value.bridge_sha256 for value in semantic_bridges
+        ],
+        "semantic_span_bridges": [
+            value.to_evidence_dict() for value in semantic_bridges
+        ],
         "bridge_pair_authentication_sha256": [
             value["evidence_sha256"] for value in pair_receipts
         ],
         "bridge_inverse_contract": {
-            "every_cached_donor_prompt_and_forced_id_covered": True,
-            "every_used_donor_row_has_exactly_one_target_row": True,
+            "every_cached_donor_prompt_and_forced_id_covered": (
+                tokenizer_replay_mode == "strict_one_row"
+            ),
+            "every_used_donor_row_has_exactly_one_target_row": (
+                tokenizer_replay_mode == "strict_one_row"
+            ),
+            "exact_full_prefix_text_roundtrip_used": (
+                tokenizer_replay_mode == "semantic_span"
+            ),
+            "suffix_rewrite_supported": tokenizer_replay_mode == "semantic_span",
             "numeric_token_id_equality_required": False,
         },
+        "parent_action_projection_sha256": [
+            value.parent_action_projection["authentication_sha256"]
+            for value in cached
+        ],
         "split_plan": plan.as_dict(),
         "split_evidence_sha256": {
             value.split: value.authentication_sha256 for value in evidence_tuple
@@ -1583,9 +2388,25 @@ def compile_install_lfm2_long_horizon_terminal_refold(
             "parent_final_norm_module_calls": 0,
             "parent_cache_generation_calls": 0,
             "parent_trace_recaptures": 0,
+            "authenticated_cache_full_batch_loads": (
+                cache.batch_count if tokenizer_replay_mode == "semantic_span" else 0
+            ),
+            "authenticated_cache_selected_payload_loads": (
+                cache.batch_count if tokenizer_replay_mode == "strict_one_row" else 0
+            ),
+            "parent_cached_action_rows_authenticated": sum(
+                len(value.horizon_indices) for value in cached
+            ),
             "child_model_forward_calls": 0,
             "child_model_generate_calls": 0,
-            "child_embedding_seed_lookups": cache.batch_count,
+            "child_embedding_seed_lookups": sum(
+                int(value["embedding_seed_lookup_calls"])
+                for value in replay_receipts
+            ),
+            "child_target_native_full_prefix_replay_calls": sum(
+                int(value["full_prefix_replay_calls"])
+                for value in replay_receipts
+            ),
             "child_macrocell_replay_calls": observed_macrocell_calls,
             "expected_child_macrocell_replay_calls": macrocell_calls,
             "child_attention_rope_materializations": rope_calls,
@@ -1604,6 +2425,12 @@ def compile_install_lfm2_long_horizon_terminal_refold(
             "changes_only_existing_final_layer_w2_if_accepted": True,
             "does_not_refold_upstream_layers": True,
             "does_not_create_tokenizer_rows": True,
+            "semantic_evidence_is_parent_phase_terminal_only": (
+                tokenizer_replay_mode == "semantic_span"
+            ),
+            "fabricated_intermediate_parent_rows": False,
+            "reconstructs_full_attention_histories": False,
+            "claims_inserted_target_subtoken_parent_actions": False,
             "does_not_claim_multimodal_coverage": True,
         },
     }
@@ -1624,6 +2451,9 @@ __all__ = [
     "Lfm2LongHorizonTerminalRefoldError",
     "Lfm2LongHorizonTerminalRefoldResult",
     "Lfm2LongHorizonTrajectorySplitPlan",
+    "Lfm2LocalParentFinalRmsNormLoad",
     "Lfm2SealedParentFinalRmsNorm",
+    "TokenizerReplayMode",
     "compile_install_lfm2_long_horizon_terminal_refold",
+    "load_lfm2_parent_final_rmsnorm_from_local_safetensors",
 ]

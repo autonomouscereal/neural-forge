@@ -10,6 +10,7 @@ import pytest
 torch = pytest.importorskip("torch")
 pytest.importorskip("safetensors")
 transformers = pytest.importorskip("transformers")
+from safetensors.torch import save_file  # noqa: E402
 
 import neural_forge.hf_lfm2_long_horizon_terminal_refold as refold  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
@@ -61,6 +62,46 @@ class _Tokenizer:
         if len(matches) != 1:
             raise KeyError(text)
         return matches
+
+
+class _GreedyTokenizer:
+    def __init__(self, pieces: list[str]) -> None:
+        self.pieces = list(pieces)
+        self.bos_token_id = None
+        self.eos_token_id = None
+        self.pad_token_id = None
+        self.unk_token_id = None
+        self.all_special_ids: list[int] = []
+
+    def __len__(self) -> int:
+        return len(self.pieces)
+
+    def get_vocab(self) -> dict[str, int]:
+        return {piece: index for index, piece in enumerate(self.pieces)}
+
+    def convert_ids_to_tokens(self, token_id: int) -> str:
+        return self.pieces[token_id]
+
+    def decode(self, token_ids: list[int], **_kwargs: Any) -> str:
+        return "".join(self.pieces[token_id] for token_id in token_ids)
+
+    def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
+        assert add_special_tokens is False
+        ranked = sorted(
+            enumerate(self.pieces),
+            key=lambda item: (-len(item[1]), item[0]),
+        )
+        result = []
+        position = 0
+        while position < len(text):
+            for token_id, piece in ranked:
+                if piece and text.startswith(piece, position):
+                    result.append(token_id)
+                    position += len(piece)
+                    break
+            else:
+                raise KeyError(text[position:])
+        return result
 
 
 def _tokenizer_files(root: Path) -> None:
@@ -204,8 +245,110 @@ def _fixture(
         target_row_capacity=target_vocabulary,
     )
     return {
+        "parent": parent,
         "cache": cache,
         "bridge": bridge,
+        "child": child,
+        "interface": interface,
+        "source_table": source_table,
+        "parent_final_norm": parent_final_norm,
+    }
+
+
+def _semantic_fixture(
+    tmp_path: Path,
+    *,
+    long_horizon: bool = False,
+) -> dict[str, Any]:
+    donor = _GreedyTokenizer(
+        ["<B>", "a", "b", "ab", " ", "c", " c", "!", "z", "x"]
+    )
+    target = _GreedyTokenizer(["<B>", "a", "b", "ab", " ", "c", "!", "z"])
+    parent = _model(
+        vocabulary=len(donor),
+        hidden=8,
+        intermediate=12,
+        seed=2701,
+        tied=False,
+        bfloat16=False,
+    )
+    batches = []
+    for index in range(4):
+        forced = [2, 6, 7]
+        if long_horizon and index == 2:
+            forced = [2, 6, 7, *([8] * 30)]
+        batches.append(
+            {
+                "input_ids": torch.tensor([[0, 8, 1]], dtype=torch.long),
+                "attention_mask": torch.ones((1, 3), dtype=torch.long),
+                "forced_decode_ids": torch.tensor([forced], dtype=torch.long),
+            }
+        )
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path / "semantic-cache",
+        parent,
+        batches,
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=2,
+            max_decode_steps=64,
+        ),
+        input_device="cpu",
+    )
+    parent_final_norm = refold.Lfm2SealedParentFinalRmsNorm(
+        cache_key=cache.cache_key,
+        parent_fingerprint=cache.parent_fingerprint,
+        layer_topology_fingerprint=cache.layer_topology_fingerprint,
+        weight=parent.model.embedding_norm.weight,
+        epsilon=float(parent.model.embedding_norm.variance_epsilon),
+    )
+    tokenizer_root = tmp_path / "semantic-target-tokenizer"
+    _tokenizer_files(tokenizer_root)
+    bridge = seal_strict_tokenizer_bridge_artifact(
+        donor,
+        target,
+        tokenizer_root,
+        donor_row_capacity=len(donor),
+        target_row_capacity=len(target),
+    )
+    mapping = torch.tensor(
+        bridge.transport_profile.target_to_donor_row_indices,
+        dtype=torch.long,
+    )
+    source_table = (
+        parent.get_output_embeddings()
+        .weight.index_select(0, mapping)
+        .detach()
+        .to(device="cpu", dtype=torch.bfloat16)
+        .contiguous()
+        .clone()
+    )
+    generator = torch.Generator().manual_seed(2703)
+    interface = fit_tied_causal_interface(
+        source_table,
+        torch.randn(48, 8, generator=generator),
+        target_width=4,
+        validation_producer_rows=torch.randn(24, 8, generator=generator),
+        minimum_validation_top1_agreement=0.0,
+        metric_chunk_rows=8,
+    )
+    child = _model(
+        vocabulary=len(target),
+        hidden=4,
+        intermediate=8,
+        seed=2705,
+        tied=True,
+        bfloat16=True,
+    )
+    with torch.no_grad():
+        child.get_input_embeddings().weight.copy_(
+            interface.target_weight.to(torch.bfloat16)
+        )
+    return {
+        "parent": parent,
+        "cache": cache,
+        "bridge": bridge,
+        "donor_tokenizer": donor,
+        "target_tokenizer": target,
         "child": child,
         "interface": interface,
         "source_table": source_table,
@@ -344,6 +487,161 @@ def test_real_closed_form_selection_never_mutates_w2_when_rejected(
     assert result.as_dict()["operation_audit"]["training_steps"] == 0
 
 
+def test_semantic_span_replays_expansion_contraction_and_suffix_rewrite(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _semantic_fixture(tmp_path)
+
+    def forbidden_model_forward(*_args, **_kwargs):
+        raise AssertionError("model.forward must not be called")
+
+    values["child"].forward = forbidden_model_forward
+
+    def accepted_compiler(**kwargs):
+        return _accepted_terminal(kwargs["seed"], kwargs["policy"])
+
+    monkeypatch.setattr(
+        refold,
+        "compile_lfm2_cpcf_terminal_action_residual",
+        accepted_compiler,
+    )
+    result = refold.compile_install_lfm2_long_horizon_terminal_refold(
+        cache=values["cache"],
+        bridge=values["bridge"],
+        target_model=values["child"],
+        interface=values["interface"],
+        source_selected_tied_table=values["source_table"],
+        parent_final_norm=values["parent_final_norm"],
+        tokenizer_replay_mode="semantic_span",
+        donor_tokenizer=values["donor_tokenizer"],
+        target_tokenizer=values["target_tokenizer"],
+    )
+
+    report = result.as_dict()
+    assert report["tokenizer_replay_mode"] == "semantic_span"
+    assert report["bridge_inverse_contract"] == {
+        "every_cached_donor_prompt_and_forced_id_covered": False,
+        "every_used_donor_row_has_exactly_one_target_row": False,
+        "exact_full_prefix_text_roundtrip_used": True,
+        "suffix_rewrite_supported": True,
+        "numeric_token_id_equality_required": False,
+    }
+    semantic = report["semantic_span_bridges"][0]
+    assert [phase["target_full_prefix_token_ids"] for phase in semantic["phases"]] == [
+        [0, 7, 1],
+        [0, 7, 3],
+        [0, 7, 3, 4, 5],
+        [0, 7, 3, 4, 5, 6],
+    ]
+    assert semantic["phases"][1]["target_replaced_suffix_token_count"] == 1
+    assert semantic["phases"][2]["target_span_token_count"] == 2
+    assert semantic["expansion"]["full_horizon"][
+        "retokenized_suffix_phase_count"
+    ] == 1
+    receipts = report["trajectory_replay_receipts"]
+    assert all(value["full_prefix_replay_calls"] == 2 for value in receipts)
+    assert all(
+        value["replay_strategy"]
+        == "semantic-maximal-target-prefix-branch-cover-v1"
+        for value in receipts
+    )
+    assert report["operation_audit"]["child_embedding_seed_lookups"] == 8
+    assert report["operation_audit"]["child_macrocell_replay_calls"] == 16
+    assert len(report["parent_action_projection_sha256"]) == 4
+    assert report["operation_audit"]["training_steps"] == 0
+
+
+def test_semantic_span_populates_real_32_plus_horizon_bucket(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _semantic_fixture(tmp_path, long_horizon=True)
+
+    def accepted_compiler(**kwargs):
+        return _accepted_terminal(kwargs["seed"], kwargs["policy"])
+
+    monkeypatch.setattr(
+        refold,
+        "compile_lfm2_cpcf_terminal_action_residual",
+        accepted_compiler,
+    )
+    result = refold.compile_install_lfm2_long_horizon_terminal_refold(
+        cache=values["cache"],
+        bridge=values["bridge"],
+        target_model=values["child"],
+        interface=values["interface"],
+        source_selected_tied_table=values["source_table"],
+        parent_final_norm=values["parent_final_norm"],
+        tokenizer_replay_mode="semantic_span",
+        donor_tokenizer=values["donor_tokenizer"],
+        target_tokenizer=values["target_tokenizer"],
+    )
+
+    report = result.as_dict()
+    bucket = report["horizon_metrics"]["buckets"]["32+"]
+    assert bucket["available"] is True
+    assert bucket["rows"] == 2
+    selection_bridge = report["semantic_span_bridges"][2]
+    assert selection_bridge["expansion"]["horizon_buckets"][2][
+        "phase_count"
+    ] == 1
+
+
+def test_semantic_span_is_explicit_and_strict_path_still_fails_unmapped_rows(
+    tmp_path: Path,
+) -> None:
+    values = _semantic_fixture(tmp_path)
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="does not cover every cached forced-decode row",
+    ):
+        refold.compile_install_lfm2_long_horizon_terminal_refold(
+            cache=values["cache"],
+            bridge=values["bridge"],
+            target_model=values["child"],
+            interface=values["interface"],
+            source_selected_tied_table=values["source_table"],
+            parent_final_norm=values["parent_final_norm"],
+        )
+
+
+def test_semantic_span_fails_closed_on_wrong_action_projection(
+    tmp_path: Path,
+) -> None:
+    values = _semantic_fixture(tmp_path)
+    wrong_source = values["source_table"].flip(0).contiguous()
+    generator = torch.Generator().manual_seed(3703)
+    wrong_interface = fit_tied_causal_interface(
+        wrong_source,
+        torch.randn(48, 8, generator=generator),
+        target_width=4,
+        validation_producer_rows=torch.randn(24, 8, generator=generator),
+        minimum_validation_top1_agreement=0.0,
+        metric_chunk_rows=8,
+    )
+    with torch.no_grad():
+        values["child"].get_input_embeddings().weight.copy_(
+            wrong_interface.target_weight.to(torch.bfloat16)
+        )
+
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="do not authenticate.*action projection",
+    ):
+        refold.compile_install_lfm2_long_horizon_terminal_refold(
+            cache=values["cache"],
+            bridge=values["bridge"],
+            target_model=values["child"],
+            interface=wrong_interface,
+            source_selected_tied_table=wrong_source,
+            parent_final_norm=values["parent_final_norm"],
+            tokenizer_replay_mode="semantic_span",
+            donor_tokenizer=values["donor_tokenizer"],
+            target_tokenizer=values["target_tokenizer"],
+        )
+
+
 def test_fails_closed_when_cached_donor_token_has_no_unique_target_row(
     tmp_path: Path,
 ) -> None:
@@ -395,3 +693,67 @@ def test_parent_norm_and_whole_trajectory_split_seals_fail_closed(
             cache_key=values["cache"].cache_key,
             assignments=("fit", "fit_check", "selection", "selection"),
         )
+
+
+def test_loads_parent_final_norm_directly_from_identity_matched_safetensors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _fixture(tmp_path / "fixture")
+    parent = values["parent"]
+    source = tmp_path / "direct-local-parent"
+    source.mkdir()
+    (source / "config.json").write_text(
+        json.dumps(parent.config.to_dict()),
+        encoding="utf-8",
+    )
+    save_file(
+        {
+            name: value.detach().to(device="cpu").contiguous().clone()
+            for name, value in parent.state_dict().items()
+        },
+        source / "model.safetensors",
+    )
+
+    loaded = refold.load_lfm2_parent_final_rmsnorm_from_local_safetensors(
+        values["cache"],
+        source,
+        tensor_key="model.embedding_norm.weight",
+        epsilon_config_key="norm_eps",
+    )
+
+    assert torch.equal(
+        loaded.final_norm.weight,
+        parent.model.embedding_norm.weight.detach().to(device="cpu"),
+    )
+    assert loaded.final_norm.epsilon == float(parent.config.norm_eps)
+    report = loaded.as_dict()
+    assert report["tensor_key"] == "model.embedding_norm.weight"
+    assert report["epsilon_config_key"] == "norm_eps"
+    assert report["operation_audit"]["parent_model_objects_constructed"] == 0
+    assert report["operation_audit"]["parent_model_forward_calls"] == 0
+    assert (
+        report["reconstructed_parent_identity"]["state_dict_sha256"]
+        == values["cache"].manifest["parent"]["state_dict_sha256"]
+    )
+
+    def accepted_compiler(**kwargs):
+        return _accepted_terminal(kwargs["seed"], kwargs["policy"])
+
+    monkeypatch.setattr(
+        refold,
+        "compile_lfm2_cpcf_terminal_action_residual",
+        accepted_compiler,
+    )
+    result = refold.compile_install_lfm2_long_horizon_terminal_refold(
+        cache=values["cache"],
+        bridge=values["bridge"],
+        target_model=values["child"],
+        interface=values["interface"],
+        source_selected_tied_table=values["source_table"],
+        parent_final_norm=loaded,
+    )
+    assert (
+        result.as_dict()["parent_final_norm_direct_local_source"]["result_sha256"]
+        == loaded.result_sha256
+    )
