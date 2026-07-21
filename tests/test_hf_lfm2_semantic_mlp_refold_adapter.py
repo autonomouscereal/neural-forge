@@ -441,6 +441,123 @@ def test_transactional_install_preserves_topology_identity_and_gradients() -> No
     assert all(value == 0 for value in result.receipt["operation_audit"].values())
 
 
+def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
+    monkeypatch,
+) -> None:
+    model = _Target()
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    evidence = _evidence(model)
+    before = fingerprint_lfm2_parent(model).identity_sha256
+    identities = tuple(id(parameter) for parameter in model.parameters())
+    pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
+    gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
+
+    def regressing_writer(_fit, incumbent, **_policy):
+        state = {name: value.detach().cpu().clone() for name, value in incumbent.items()}
+        state["w2.weight"] = torch.full_like(state["w2.weight"], 64.0)
+        return state, {
+            "solver": "test-regressing-writer",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    def regressing_full(_fit, _inventory, incumbent, **_policy):
+        state = {
+            name: torch.full_like(value, -64.0)
+            for name, value in incumbent.items()
+        }
+        return state, {
+            "solver": "test-regressing-full",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    monkeypatch.setattr(adapter, "_solve_writer", regressing_writer)
+    monkeypatch.setattr(adapter, "_full_candidate_state", regressing_full)
+    prepared = _prepare(model, evidence)
+    assert prepared.selected_role == "incumbent"
+    assert prepared.selection_receipt["incumbent_noop_fallback_used"] is True
+    assert prepared.selection_receipt["heldout_nonregression"][
+        "incumbent-producer-w2"
+    ]["selection"] is False
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+    receipt = dict(result.receipt)
+    seal = receipt.pop("result_sha256")
+    assert adapter.canonical_sha256(receipt) == seal
+    assert receipt["status"] == "retained-authenticated-incumbent"
+    assert receipt["installed"] is False
+    assert receipt["install_count"] == 0
+    assert receipt["changed_parameter_roles"] == []
+    assert receipt["exact_noop_state_proven"] is True
+    assert receipt["parameter_identities_preserved"] is True
+    assert receipt["parameter_storage_preserved"] is True
+    assert receipt["gradient_state_preserved"] is True
+    assert receipt["source_inventory_sha256"] == evidence[0].source_inventory.inventory_sha256
+    assert receipt["compiler_lineage_sha256"] == evidence[
+        0
+    ].source_inventory.compiler_lineage_sha256
+    assert receipt["cache_key"] == _sha("cache")
+    assert receipt["cache_manifest_sha256"] == _sha("cache-manifest")
+    assert receipt["bridge_artifact_sha256"] == _sha("bridge")
+    assert receipt["evidence_sha256"] == [item.evidence_sha256 for item in evidence]
+    assert all(value == 0 for value in receipt["operation_audit"].values())
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before
+    assert tuple(id(parameter) for parameter in model.parameters()) == identities
+    assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
+    assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+    assert not result.final_layer_mlp_evidence
+
+
+def test_identical_mlp_candidates_select_incumbent_and_perform_no_copy(
+    monkeypatch,
+) -> None:
+    model = _Target()
+    evidence = _evidence(model)
+    before = fingerprint_lfm2_parent(model).identity_sha256
+
+    def identical_writer(_fit, incumbent, **_policy):
+        return {
+            name: value.detach().cpu().clone() for name, value in incumbent.items()
+        }, {
+            "solver": "test-identical-writer",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    def identical_full(_fit, _inventory, incumbent, **_policy):
+        return {
+            name: value.detach().cpu().clone() for name, value in incumbent.items()
+        }, {
+            "solver": "test-identical-full",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    monkeypatch.setattr(adapter, "_solve_writer", identical_writer)
+    monkeypatch.setattr(adapter, "_full_candidate_state", identical_full)
+    prepared = _prepare(model, evidence)
+    assert prepared.verify()
+    assert prepared.selected_role == "incumbent"
+    assert prepared.selection_receipt["writer_changed_roles"] == []
+    assert prepared.selection_receipt["full_changed_roles"] == []
+    assert prepared.selection_receipt["heldout_selection_improvement"] == {
+        "incumbent-producer-w2": False,
+        "full-w1-w3-w2": False,
+    }
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+    assert result.receipt["installed"] is False
+    assert result.receipt["install_count"] == 0
+    assert result.receipt["selected_role"] == "incumbent"
+    assert result.receipt["selected_install_roles_identical_to_live_state"] is True
+    assert result.receipt["incumbent_noop_fallback_used"] is True
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before
+
+
 def test_final_w2_deferral_exports_four_banks_and_performs_no_install() -> None:
     model = _Target()
     evidence = _evidence(model, terminal=True)
@@ -456,6 +573,11 @@ def test_final_w2_deferral_exports_four_banks_and_performs_no_install() -> None:
     assert result.receipt["install_count"] == 0
     assert result.receipt["final_layer_mlp_w2_deferred_to_fused_terminal"] is True
     assert fingerprint_lfm2_parent(model).identity_sha256 == before
+    assert result.receipt["cache_key"] == _sha("cache")
+    assert result.receipt["cache_manifest_sha256"] == _sha("cache-manifest")
+    assert result.receipt["evidence_sha256"] == [
+        item.evidence_sha256 for item in evidence
+    ]
     assert set(result.final_layer_mlp_evidence) == {
         "fit",
         "fit_check",

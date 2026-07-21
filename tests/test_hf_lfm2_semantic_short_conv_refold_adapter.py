@@ -244,6 +244,8 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
     seal = receipt.pop("result_sha256")
     assert canonical_sha256(receipt) == seal
     assert receipt["installed"] is True
+    assert receipt["status"] == "installed-frozen-semantic-short-conv-candidate"
+    assert receipt["install_count"] == 1
     assert receipt["parameter_count_changed"] is False
     assert receipt["parameter_element_count"] == count
     assert receipt["full_source_structural_candidate_competed"] is True
@@ -310,24 +312,106 @@ def test_four_partitions_are_trajectory_isolated_and_unit_balanced() -> None:
     assert len(observed) == len(set(observed))
 
 
-def test_validation_can_only_reject_frozen_candidate_without_mutation() -> None:
+def test_validation_rejection_falls_back_to_authenticated_incumbent_noop() -> None:
     model = _ToyModel()
     evidence = _evidence_bank(model, validation_matches_incumbent=True)
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
     before = {
         name: parameter.detach().clone() for name, parameter in model.named_parameters()
     }
+    identities = tuple(id(parameter) for parameter in model.parameters())
+    pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
+    gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
 
-    with pytest.raises(
-        Lfm2SemanticShortConvRefoldError,
-        match="failed isolated VALIDATION",
-    ):
-        _compile(model, evidence)
+    receipt = _compile(model, evidence)
 
+    seal = receipt.pop("result_sha256")
+    assert canonical_sha256(receipt) == seal
+    assert receipt["status"] == "retained-authenticated-incumbent"
+    assert receipt["installed"] is False
+    assert receipt["install_count"] == 0
+    assert receipt["changed_state_keys"] == []
+    assert receipt["changed_parameter_roles"] == []
+    assert receipt["selected_candidate"] == "incumbent-noop"
+    assert receipt["validation_rejected_candidate"] in {
+        "full-source-structural",
+        "incumbent-producer-output-writer",
+    }
+    assert receipt["incumbent_noop_fallback_used"] is True
+    assert receipt["exact_noop_state_proven"] is True
+    assert receipt["model_state_before_sha256"] == receipt["model_state_after_sha256"]
+    assert receipt["target_topology_sha256_before"] == receipt[
+        "target_topology_sha256_after"
+    ]
+    assert receipt["parameter_identities_preserved"] is True
+    assert receipt["parameter_storage_preserved"] is True
+    assert receipt["gradient_state_preserved"] is True
+    assert receipt["cache_key"] == _CACHE
+    assert receipt["bridge_artifact_sha256"] == _BRIDGE
+    assert receipt["source_model_identity_sha256"] == _SOURCE_MODEL
+    assert receipt["compiler_lineage_sha256"] == _LINEAGE
+    assert receipt["transport_evidence_sha256"] == [
+        item.evidence_sha256 for item in evidence
+    ]
+    assert all(value == 0 for value in receipt["operation_audit"].values())
     assert model.forward_calls == 0
     assert all(
         torch.equal(parameter, before[name])
         for name, parameter in model.named_parameters()
     )
+    assert tuple(id(parameter) for parameter in model.parameters()) == identities
+    assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
+    assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+
+
+def test_identical_analytic_candidate_resolves_to_sealed_noop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _ToyModel()
+    evidence = _evidence_bank(model)
+    before = _fingerprint(model).identity_sha256
+
+    def identical_structural(**kwargs: object) -> adapter._Candidate:
+        return adapter._Candidate(
+            name="full-source-structural",
+            state=kwargs["incumbent_state"],
+            provenance={
+                "solver": "test-identical-structural-candidate",
+                "full_source_coverage": True,
+                "source_channels_dropped": 0,
+                "operation_audit": dict(adapter._ZERO_OPERATIONS),
+            },
+        )
+
+    def no_writer(*_args: object, **_kwargs: object) -> tuple[None, dict[str, object]]:
+        return None, {
+            "status": "test-identical-writer-rounded-to-incumbent",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    monkeypatch.setattr(adapter, "_compile_structural_candidate", identical_structural)
+    monkeypatch.setattr(adapter, "_compile_writer_candidate", no_writer)
+    receipt = _compile(model, evidence)
+
+    seal = receipt.pop("result_sha256")
+    assert canonical_sha256(receipt) == seal
+    assert receipt["installed"] is False
+    assert receipt["install_count"] == 0
+    assert receipt["selected_candidate"] == "incumbent-noop"
+    assert receipt["prevalidation_selected_candidate"] == "incumbent-noop"
+    assert receipt["validation_rejected_candidate"] is None
+    assert receipt["candidate_reports_before_validation"][
+        "full-source-structural"
+    ]["fit_improved"] is False
+    assert receipt["candidate_reports_before_validation"][
+        "full-source-structural"
+    ]["heldout_selection_improved"] is False
+    assert receipt["selected_candidate_state_identical_to_incumbent"] is True
+    assert receipt["transport_evidence_sha256"] == [
+        item.evidence_sha256 for item in evidence
+    ]
+    assert _fingerprint(model).identity_sha256 == before
 
 
 def test_stale_or_mutated_evidence_fails_before_install() -> None:

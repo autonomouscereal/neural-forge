@@ -5,12 +5,15 @@ folds every parent B/C/x channel into the smaller dense child producer and FIR.
 This adapter adds the causal protocol that the compiler deliberately does not
 own.  Evidence is captured from the actual child after all earlier layer
 installs, trajectories are split four ways, and a safer incumbent-producer
-output-writer solve competes with the complete structural candidate.
+output-writer solve competes with the complete structural candidate and an
+authenticated no-op copy of the live dense incumbent.
 
 Only semantic span boundaries are parent-exact endpoints.  Expanded target
 subtoken rows may warm the causal FIR state, but they are never relabelled as
 parent-exact observations.  FIT alone produces candidates; FIT-CHECK and
-SELECTION select a frozen candidate; VALIDATION can only accept or reject it.
+SELECTION select a frozen candidate; VALIDATION can only accept it or fall
+back to the already-frozen incumbent.  A candidate that does not materially
+improve held-out selection evidence never displaces the incumbent.
 
 No model is executed here.  The implementation uses deterministic tensor
 algebra under inference/no-grad contexts and performs no backward pass,
@@ -129,6 +132,28 @@ def _parameter_count(model: Any) -> int:
         seen.add(id(parameter))
         total += int(parameter.numel())
     return total
+
+
+def _topology_sha256(model: Any) -> str:
+    parameters = tuple(model.named_parameters())
+    if not parameters:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Target model has no Parameters to authenticate."
+        )
+    return canonical_sha256(
+        {
+            "parameters": [
+                {
+                    "name": name,
+                    "shape": list(parameter.shape),
+                    "dtype": str(parameter.dtype).removeprefix("torch."),
+                    "layout": str(parameter.layout).removeprefix("torch."),
+                    "requires_grad": bool(parameter.requires_grad),
+                }
+                for name, parameter in parameters
+            ]
+        }
+    )
 
 
 def _span_boundaries(owners: Sequence[int]) -> tuple[int, ...]:
@@ -442,6 +467,7 @@ class _Candidate:
 
     def __post_init__(self) -> None:
         if self.name not in {
+            "incumbent-noop",
             "full-source-structural",
             "incumbent-producer-output-writer",
         }:
@@ -793,6 +819,24 @@ def _nonregressing(
     )
 
 
+def _strictly_improving(
+    candidate: Lfm2SemanticShortConvEndpointMetrics,
+    baseline: Lfm2SemanticShortConvEndpointMetrics,
+    *,
+    tolerance: float,
+) -> bool:
+    return _nonregressing(candidate, baseline, tolerance=tolerance) and (
+        candidate.endpoint_relative_rmse
+        < baseline.endpoint_relative_rmse - tolerance
+        or candidate.endpoint_maximum_absolute_error
+        < baseline.endpoint_maximum_absolute_error - tolerance
+        or candidate.endpoint_cosine_similarity_mean
+        > baseline.endpoint_cosine_similarity_mean + tolerance
+        or candidate.endpoint_cosine_similarity_worst
+        > baseline.endpoint_cosine_similarity_worst + tolerance
+    )
+
+
 def _structural_cases(
     fit: Sequence[Lfm2SemanticShortConvReplayEvidence],
     fit_check: Sequence[Lfm2SemanticShortConvReplayEvidence],
@@ -1070,14 +1114,27 @@ def _candidate_report(
         metrics["fit"].endpoint_relative_rmse
         < baseline["fit"].endpoint_relative_rmse - tolerance
     )
+    incumbent_noop = candidate.name == "incumbent-noop"
+    selection_improved = _strictly_improving(
+        metrics["selection"],
+        baseline["selection"],
+        tolerance=tolerance,
+    )
     body = {
         "name": candidate.name,
         "candidate_state_sha256": candidate.state_sha256,
         "provenance": dict(candidate.provenance),
+        "analytic_candidate": not incumbent_noop,
+        "incumbent_noop_candidate": incumbent_noop,
         "fit_improved": fit_improved,
+        "heldout_selection_improved": selection_improved,
         "partition_metrics": {name: metrics[name].as_dict() for name in metrics},
         "partition_nonregression": checks,
-        "eligible_before_validation": fit_improved and all(checks.values()),
+        "eligible_before_validation": (
+            all(checks.values())
+            if incumbent_noop
+            else fit_improved and selection_improved and all(checks.values())
+        ),
         "validation_inspected": False,
     }
     return MappingProxyType(
@@ -1092,16 +1149,23 @@ def _select_candidate(
     candidates: Sequence[_Candidate],
     reports: Mapping[str, Mapping[str, Any]],
 ) -> _Candidate:
+    incumbent = tuple(
+        candidate for candidate in candidates if candidate.name == "incumbent-noop"
+    )
+    if len(incumbent) != 1 or not reports[incumbent[0].name][
+        "eligible_before_validation"
+    ]:
+        raise Lfm2SemanticShortConvRefoldError(
+            "The authenticated live incumbent candidate is missing or invalid."
+        )
     eligible = [
         candidate
         for candidate in candidates
-        if reports[candidate.name]["eligible_before_validation"] is True
+        if candidate.name != "incumbent-noop"
+        and reports[candidate.name]["eligible_before_validation"] is True
     ]
     if not eligible:
-        raise Lfm2SemanticShortConvRefoldError(
-            "Neither structural nor incumbent-producer candidate passed "
-            "FIT/FIT-CHECK/SELECTION nonregression."
-        )
+        return incumbent[0]
     by_name = {candidate.name: candidate for candidate in eligible}
     structural = by_name.get("full-source-structural")
     writer = by_name.get("incumbent-producer-output-writer")
@@ -1153,11 +1217,20 @@ def _install_state_transaction(
         )
     before_model = fingerprint_lfm2_parent(target_model).identity_sha256
     count = _parameter_count(target_model)
+    topology = _topology_sha256(target_model)
     snapshots = {
         name: value.detach().to(device="cpu").contiguous().clone()
         for name, value in parameters.items()
     }
     parameter_ids = {name: id(value) for name, value in parameters.items()}
+    storage_pointers = {
+        name: int(value.data_ptr()) for name, value in parameters.items()
+    }
+    shapes = {name: tuple(value.shape) for name, value in parameters.items()}
+    dtypes = {name: value.dtype for name, value in parameters.items()}
+    requires_grad = {
+        name: bool(value.requires_grad) for name, value in parameters.items()
+    }
     gradient_ids = {
         name: None if value.grad is None else id(value.grad)
         for name, value in parameters.items()
@@ -1167,21 +1240,49 @@ def _install_state_transaction(
         for name, value in parameters.items()
     }
     prefix = f"model.layers.{layer_index}.conv."
+    candidates = {
+        name: state[name.removeprefix(prefix)] for name in parameters
+    }
+    for name, parameter in parameters.items():
+        candidate = candidates[name]
+        if (
+            tuple(candidate.shape) != tuple(parameter.shape)
+            or candidate.dtype != parameter.dtype
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                f"Candidate changed the topology or dtype of {name}."
+            )
+    expected_changed = tuple(
+        name
+        for name, parameter in parameters.items()
+        if not torch.equal(candidates[name], parameter.detach().cpu())
+    )
     try:
         with torch.no_grad():
-            for name, parameter in parameters.items():
-                candidate = state[name.removeprefix(prefix)]
-                if (
-                    tuple(candidate.shape) != tuple(parameter.shape)
-                    or candidate.dtype != parameter.dtype
-                ):
-                    raise Lfm2SemanticShortConvRefoldError(
-                        f"Candidate changed the topology or dtype of {name}."
-                    )
-                parameter.copy_(candidate.to(device=parameter.device))
+            for name in expected_changed:
+                parameter = parameters[name]
+                parameter.copy_(candidates[name].to(device=parameter.device))
+        after_model = fingerprint_lfm2_parent(target_model).identity_sha256
+        changed = tuple(
+            name
+            for name, parameter in parameters.items()
+            if not torch.equal(parameter.detach().cpu(), snapshots[name])
+        )
         if (
             _parameter_count(target_model) != count
+            or _topology_sha256(target_model) != topology
+            or changed != expected_changed
             or any(id(parameters[name]) != parameter_ids[name] for name in parameters)
+            or any(
+                int(parameters[name].data_ptr()) != storage_pointers[name]
+                for name in parameters
+            )
+            or any(tuple(parameters[name].shape) != shapes[name] for name in parameters)
+            or any(parameters[name].dtype != dtypes[name] for name in parameters)
+            or any(
+                bool(parameters[name].requires_grad) != requires_grad[name]
+                for name in parameters
+            )
             or any(
                 (None if parameters[name].grad is None else id(parameters[name].grad))
                 != gradient_ids[name]
@@ -1192,19 +1293,10 @@ def _install_state_transaction(
                 and _tensor_sha256(parameters[name].grad) != gradient_hashes[name]
                 for name in parameters
             )
+            or (bool(changed) != (after_model != before_model))
         ):
             raise Lfm2SemanticShortConvRefoldError(
                 "Short-conv installation changed topology, identities, or gradients."
-            )
-        changed = tuple(
-            name
-            for name, parameter in parameters.items()
-            if not torch.equal(parameter.detach().cpu(), snapshots[name])
-        )
-        after_model = fingerprint_lfm2_parent(target_model).identity_sha256
-        if not changed or after_model == before_model:
-            raise Lfm2SemanticShortConvRefoldError(
-                "Frozen short-conv candidate installed no correction."
             )
         return before_model, after_model, changed, count
     except BaseException:
@@ -1219,6 +1311,22 @@ def _install_state_transaction(
         if (
             fingerprint_lfm2_parent(target_model).identity_sha256 != before_model
             or _parameter_count(target_model) != count
+            or _topology_sha256(target_model) != topology
+            or any(id(parameters[name]) != parameter_ids[name] for name in parameters)
+            or any(
+                int(parameters[name].data_ptr()) != storage_pointers[name]
+                for name in parameters
+            )
+            or any(
+                (None if parameters[name].grad is None else id(parameters[name].grad))
+                != gradient_ids[name]
+                for name in parameters
+            )
+            or any(
+                parameters[name].grad is not None
+                and _tensor_sha256(parameters[name].grad) != gradient_hashes[name]
+                for name in parameters
+            )
         ):
             raise Lfm2SemanticShortConvRefoldError(
                 "Short-conv installation failed and exact rollback was not proven."
@@ -1257,6 +1365,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             "Short-conv evidence changed after authentication."
         )
     current_child_state = fingerprint_lfm2_parent(target_model).identity_sha256
+    target_topology_sha256 = _topology_sha256(target_model)
     lineage = raw[0].compiler_lineage_sha256
     if any(
         item.layer_index != layer_index
@@ -1318,6 +1427,22 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         name: _endpoint_metrics(banks[name], incumbent_state)
         for name in ("fit", "fit_check", "selection")
     }
+    incumbent = _Candidate(
+        name="incumbent-noop",
+        state=incumbent_state,
+        provenance={
+            "solver": "none-authenticated-live-dense-incumbent",
+            "captured_child_model_state_sha256": current_child_state,
+            "cache_key": cache,
+            "bridge_artifact_sha256": bridge,
+            "compiler_lineage_sha256": lineage,
+            "fit_used_for_solve": False,
+            "fit_check_used_for_solve": False,
+            "selection_used_for_solve": False,
+            "validation_used_for_solve": False,
+            "operation_audit": dict(_ZERO_OPERATIONS),
+        },
+    )
     structural = _compile_structural_candidate(
         source_fir_weight=source_kernel,
         source_fir_bias=source_bias,
@@ -1329,7 +1454,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         banks["fit"],
         incumbent_state,
     )
-    candidates = [structural, *([] if writer is None else [writer])]
+    candidates = [incumbent, structural, *([] if writer is None else [writer])]
     tolerance = 1e-8
     reports = {
         candidate.name: _candidate_report(
@@ -1340,7 +1465,8 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         )
         for candidate in candidates
     }
-    chosen = _select_candidate(candidates, reports)
+    prevalidation_choice = _select_candidate(candidates, reports)
+    chosen = prevalidation_choice
     frozen_state = MappingProxyType(
         {
             name: value.detach().to(device="cpu").contiguous().clone()
@@ -1353,13 +1479,53 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         incumbent_state,
     )
     validation = _endpoint_metrics(banks["validation"], frozen_state)
-    if (
-        not _nonregressing(
+    frozen_authentic = (
+        canonical_sha256(
+            {
+                "name": chosen.name,
+                "state": {
+                    name: _tensor_sha256(value)
+                    for name, value in sorted(frozen_state.items())
+                },
+                "provenance": dict(chosen.provenance),
+            }
+        )
+        == frozen_sha
+    )
+    if not frozen_authentic:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Frozen short-conv candidate changed before isolated VALIDATION."
+        )
+    validation_rejected_candidate: str | None = None
+    if not _nonregressing(
+        validation,
+        baseline_validation,
+        tolerance=tolerance,
+    ):
+        if chosen.name == "incumbent-noop":
+            raise Lfm2SemanticShortConvRefoldError(
+                "Authenticated incumbent did not exactly replay VALIDATION."
+            )
+        validation_rejected_candidate = chosen.name
+        chosen = incumbent
+        frozen_state = MappingProxyType(
+            {
+                name: value.detach().to(device="cpu").contiguous().clone()
+                for name, value in incumbent.state.items()
+            }
+        )
+        frozen_sha = incumbent.state_sha256
+        validation = _endpoint_metrics(banks["validation"], frozen_state)
+        if not _nonregressing(
             validation,
             baseline_validation,
             tolerance=tolerance,
-        )
-        or canonical_sha256(
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "Authenticated incumbent fallback failed isolated VALIDATION."
+            )
+    if (
+        canonical_sha256(
             {
                 "name": chosen.name,
                 "state": {
@@ -1372,7 +1538,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         != frozen_sha
     ):
         raise Lfm2SemanticShortConvRefoldError(
-            "Frozen short-conv candidate failed isolated VALIDATION."
+            "Final frozen short-conv choice failed authentication."
         )
     if fingerprint_lfm2_parent(target_model).identity_sha256 != current_child_state:
         raise Lfm2SemanticShortConvRefoldError(
@@ -1403,7 +1569,13 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         source_fir_tensors["bias"] = source_bias
     body = {
         "schema": _INSTALLATION_SCHEMA,
-        "installed": True,
+        "status": (
+            "installed-frozen-semantic-short-conv-candidate"
+            if changed
+            else "retained-authenticated-incumbent"
+        ),
+        "installed": bool(changed),
+        "install_count": int(bool(changed)),
         "layer_index": layer_index,
         "cache_key": cache,
         "bridge_artifact_sha256": bridge,
@@ -1419,12 +1591,26 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         },
         "model_state_before_sha256": before,
         "model_state_after_sha256": after,
+        "target_topology_sha256_before": target_topology_sha256,
+        "target_topology_sha256_after": _topology_sha256(target_model),
         "changed_state_keys": list(changed),
+        "changed_parameter_roles": [
+            name.removeprefix(f"model.layers.{layer_index}.conv.")
+            for name in changed
+        ],
         "changed_state_keys_local_to_operator": all(
             name.startswith(f"model.layers.{layer_index}.conv.") for name in changed
         ),
         "parameter_element_count": parameter_count,
+        "parameter_count_before": parameter_count,
+        "parameter_count_after": parameter_count,
         "parameter_count_changed": False,
+        "topology_changed": False,
+        "parameter_identities_preserved": True,
+        "parameter_storage_preserved": True,
+        "gradient_state_preserved": True,
+        "model_identity_unchanged": before == after,
+        "exact_noop_state_proven": not changed and before == after,
         "target_hidden_size": target_hidden,
         "source_hidden_size": source_hidden,
         "hidden_width_compression_ratio": source_hidden / target_hidden,
@@ -1446,13 +1632,25 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             name: dict(report) for name, report in reports.items()
         },
         "writer_fit_proposal": dict(writer_fit_report),
+        "prevalidation_selected_candidate": prevalidation_choice.name,
+        "validation_rejected_candidate": validation_rejected_candidate,
         "selected_candidate": chosen.name,
         "selected_candidate_state_sha256": frozen_sha,
+        "selected_candidate_state_identical_to_incumbent": (
+            frozen_sha == incumbent.state_sha256
+        ),
         "selected_validation_metrics": validation.as_dict(),
+        "candidate_frozen_before_fit_check": True,
+        "candidate_frozen_before_selection": True,
         "candidate_frozen_before_validation": True,
         "validation_triggered_refit": False,
         "selection_used_for_candidate_choice": True,
-        "validation_used_for_candidate_choice": False,
+        "validation_used_for_candidate_choice": (
+            validation_rejected_candidate is not None
+        ),
+        "validation_used_only_for_acceptance_or_incumbent_fallback": True,
+        "incumbent_noop_candidate_competed": True,
+        "incumbent_noop_fallback_used": chosen.name == "incumbent-noop",
         "complete_parent_bcx_history_consumed": True,
         "parent_bcx_exact_only_at_semantic_span_boundaries": True,
         "inserted_target_bcx_rows_are_owner_expanded_proxies": True,

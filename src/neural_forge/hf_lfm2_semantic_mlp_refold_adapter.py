@@ -13,6 +13,10 @@ Two candidates compete with the incumbent dense SwiGLU:
 * the existing structural residual MLP compiler clusters every parent neuron
   and solves dense W1/W3/W2 with the incumbent child state as its prior.
 
+The authenticated incumbent is a valid no-op result: analytic candidates must
+materially improve held-out selection evidence without regression, and a
+frozen candidate rejected by VALIDATION falls back without mutating the child.
+
 There are no model executions, gradients, optimizers, training steps, pruning,
 quantization, sparsity, shared-parameter aliases, or numerical parent/child
 weight-equality objectives in this module.  The final layer can explicitly
@@ -602,7 +606,8 @@ class Lfm2PreparedSemanticMlpRefold:
         ):
             _digest(value, name)
         if (
-            self.selected_role not in {"incumbent-producer-w2", "full-w1-w3-w2"}
+            self.selected_role
+            not in {"incumbent", "incumbent-producer-w2", "full-w1-w3-w2"}
             or not all(
                 candidate.verify()
                 for candidate in (
@@ -612,7 +617,11 @@ class Lfm2PreparedSemanticMlpRefold:
                 )
             )
             or self.selected_role
-            not in {self.writer_candidate.role, self.full_candidate.role}
+            not in {
+                self.incumbent.role,
+                self.writer_candidate.role,
+                self.full_candidate.role,
+            }
             or set(self.partition_batch_indices) != set(_PARTITIONS)
             or any(not self.partition_batch_indices[name] for name in _PARTITIONS)
             or any(
@@ -652,6 +661,8 @@ class Lfm2PreparedSemanticMlpRefold:
 
     @property
     def selected_candidate(self) -> Lfm2FrozenSemanticMlpCandidate:
+        if self.selected_role == self.incumbent.role:
+            return self.incumbent
         if self.selected_role == self.writer_candidate.role:
             return self.writer_candidate
         return self.full_candidate
@@ -902,6 +913,38 @@ def _nonregressing(
         >= baseline.mean_endpoint_cosine
         and candidate.minimum_endpoint_cosine + cosine_tolerance
         >= baseline.minimum_endpoint_cosine
+    )
+
+
+def _strictly_improving(
+    candidate: Lfm2SemanticMlpEndpointMetrics,
+    baseline: Lfm2SemanticMlpEndpointMetrics,
+    *,
+    rmse_relative_tolerance: float,
+    cosine_tolerance: float,
+) -> bool:
+    rmse_margin = max(
+        1e-12,
+        rmse_relative_tolerance * max(baseline.endpoint_rmse, 1e-12),
+    )
+    maximum_absolute_error_margin = max(
+        1e-12,
+        rmse_relative_tolerance
+        * max(baseline.endpoint_target_maximum_absolute_value, 1e-12),
+    )
+    return _nonregressing(
+        candidate,
+        baseline,
+        rmse_relative_tolerance=rmse_relative_tolerance,
+        cosine_tolerance=cosine_tolerance,
+    ) and (
+        candidate.endpoint_rmse < baseline.endpoint_rmse - rmse_margin
+        or candidate.endpoint_maximum_absolute_error
+        < baseline.endpoint_maximum_absolute_error - maximum_absolute_error_margin
+        or candidate.mean_endpoint_cosine
+        > baseline.mean_endpoint_cosine + cosine_tolerance
+        or candidate.minimum_endpoint_cosine
+        > baseline.minimum_endpoint_cosine + cosine_tolerance
     )
 
 
@@ -1237,10 +1280,19 @@ def prepare_lfm2_semantic_mlp_postfold(
             )
             for name in heldout
         }
-        for candidate in (writer, full)
+        for candidate in (incumbent, writer, full)
     }
     writer_changed = bool(_changed_roles(incumbent_state, writer_state))
     full_changed = bool(_changed_roles(incumbent_state, full_state))
+    selection_improvement = {
+        candidate.role: _strictly_improving(
+            candidate.metrics["selection"],
+            incumbent.metrics["selection"],
+            rmse_relative_tolerance=float(rmse_relative_tolerance),
+            cosine_tolerance=float(cosine_tolerance),
+        )
+        for candidate in (writer, full)
+    }
     writer_selection_vs_full = _nonregressing(
         writer.metrics["selection"],
         full.metrics["selection"],
@@ -1249,10 +1301,10 @@ def prepare_lfm2_semantic_mlp_postfold(
     )
     writer_prevalidation = all(
         eligibility[writer.role][name] for name in ("fit_check", "selection")
-    )
+    ) and selection_improvement[writer.role]
     full_prevalidation = all(
         eligibility[full.role][name] for name in ("fit_check", "selection")
-    )
+    ) and selection_improvement[full.role]
     if (
         writer_changed
         and writer_prevalidation
@@ -1264,12 +1316,17 @@ def prepare_lfm2_semantic_mlp_postfold(
         selected = full
         rationale = "full-fold-selection-quality-exceeded-conservative-writer"
     else:
+        selected = incumbent
+        rationale = "retained-incumbent-no-analytic-candidate-passed-heldout-gates"
+    prevalidation_selected_role = selected.role
+    validation_rejected_role: CandidateRole | None = None
+    if selected.role != "incumbent" and not eligibility[selected.role]["validation"]:
+        validation_rejected_role = selected.role
+        selected = incumbent
+        rationale = "retained-incumbent-after-frozen-analytic-validation-rejection"
+    if not eligibility["incumbent"]["validation"]:
         raise Lfm2SemanticMlpRefoldError(
-            "No nonempty semantic MLP candidate passed FIT-CHECK and SELECTION."
-        )
-    if not eligibility[selected.role]["validation"]:
-        raise Lfm2SemanticMlpRefoldError(
-            "The frozen selected semantic MLP candidate regressed on VALIDATION."
+            "The authenticated incumbent did not exactly replay VALIDATION."
         )
     if fingerprint_lfm2_parent(target_model).identity_sha256 != current_state:
         raise Lfm2SemanticMlpRefoldError(
@@ -1282,15 +1339,24 @@ def prepare_lfm2_semantic_mlp_postfold(
     selection = MappingProxyType(
         {
             "selected_role": selected.role,
+            "prevalidation_selected_role": prevalidation_selected_role,
+            "validation_rejected_role": validation_rejected_role,
             "rationale": rationale,
             "writer_changed_roles": list(_changed_roles(incumbent_state, writer_state)),
             "full_changed_roles": list(_changed_roles(incumbent_state, full_state)),
             "heldout_nonregression": eligibility,
+            "heldout_selection_improvement": selection_improvement,
             "writer_selection_nonregressing_versus_full": writer_selection_vs_full,
+            "incumbent_noop_candidate_competed": True,
+            "incumbent_noop_fallback_used": selected.role == "incumbent",
             "candidate_frozen_before_fit_check": True,
             "candidate_frozen_before_selection": True,
             "candidate_frozen_before_validation": True,
             "validation_triggered_refit": False,
+            "validation_used_for_candidate_choice": (
+                validation_rejected_role is not None
+            ),
+            "validation_used_only_for_acceptance_or_incumbent_fallback": True,
             "fit_partition_only_used_for_solves": True,
             "heldout_partitions_used_for_solves": False,
             "endpoint_metrics": {
@@ -1391,35 +1457,101 @@ def install_lfm2_prepared_semantic_mlp_postfold(
         )
     )
     if not expected_changed:
-        if not defer_down_weight:
-            raise Lfm2SemanticMlpRefoldError(
-                "Selected semantic MLP candidate contains no installable correction."
-            )
-        if set(prepared.terminal_action_evidence) != set(_PARTITIONS):
+        if defer_down_weight and set(prepared.terminal_action_evidence) != set(
+            _PARTITIONS
+        ):
             raise Lfm2SemanticMlpRefoldError(
                 "A fully deferred W2 requires all four terminal-action banks."
             )
+        if (
+            fingerprint_lfm2_parent(target_model).identity_sha256 != current
+            or _topology_sha256(target_model) != prepared.target_topology_sha256
+            or _parameter_count(target_model) != prepared.target_parameter_count
+            or any(
+                not torch.equal(parameter.detach().cpu(), incumbent[name])
+                for name, parameter in parameters.items()
+            )
+            or any(id(parameters[name]) != identities[name] for name in parameters)
+            or any(
+                int(parameters[name].data_ptr()) != pointers[name]
+                for name in parameters
+            )
+            or any(tuple(parameters[name].shape) != shapes[name] for name in parameters)
+            or any(parameters[name].dtype != dtypes[name] for name in parameters)
+            or any(
+                bool(parameters[name].requires_grad) != requires_grad[name]
+                for name in parameters
+            )
+            or any(
+                (None if parameters[name].grad is None else id(parameters[name].grad))
+                != gradient_ids[name]
+                for name in parameters
+            )
+            or any(
+                parameters[name].grad is not None
+                and _tensor_sha256(parameters[name].grad) != gradient_hashes[name]
+                for name in parameters
+            )
+        ):
+            raise Lfm2SemanticMlpRefoldError(
+                "Semantic MLP no-op changed state, topology, identity, or gradients."
+            )
         receipt_body = {
             "schema": LFM2_SEMANTIC_MLP_INSTALLATION_SCHEMA,
-            "status": "prepared-final-w2-deferred",
+            "status": (
+                "prepared-final-w2-deferred"
+                if defer_down_weight
+                else "retained-authenticated-incumbent"
+            ),
             "installed": False,
             "layer_index": prepared.layer_index,
             "preparation_sha256": prepared.preparation_sha256,
             "selected_role": prepared.selected_role,
+            "selected_candidate_sha256": (
+                prepared.selected_candidate.candidate_sha256
+            ),
             "model_state_before_sha256": current,
             "model_state_after_sha256": current,
+            "target_topology_sha256": prepared.target_topology_sha256,
             "parameter_count_before": prepared.target_parameter_count,
             "parameter_count_after": prepared.target_parameter_count,
             "parameter_count_changed": False,
             "topology_changed": False,
+            "parameter_identities_preserved": True,
+            "parameter_storage_preserved": True,
+            "gradient_state_preserved": True,
+            "exact_noop_state_proven": True,
             "install_count": 0,
             "changed_parameter_roles": [],
-            "final_layer_mlp_w2_deferred_to_fused_terminal": True,
-            "downstream_terminal_replay_and_validation_required": True,
+            "selected_install_roles_identical_to_live_state": True,
+            "incumbent_noop_fallback_used": prepared.selected_role == "incumbent",
+            "final_layer_mlp_w2_deferred_to_fused_terminal": defer_down_weight,
+            "downstream_terminal_replay_and_validation_required": defer_down_weight,
             "terminal_action_evidence_sha256": {
                 name: value.authentication_sha256
                 for name, value in prepared.terminal_action_evidence.items()
             },
+            "source_inventory_sha256": prepared.source_inventory_sha256,
+            "compiler_lineage_sha256": prepared.compiler_lineage_sha256,
+            "cache_key": prepared.cache_key,
+            "cache_manifest_sha256": prepared.cache_manifest_sha256,
+            "bridge_artifact_sha256": prepared.bridge_artifact_sha256,
+            "evidence_sha256": list(prepared.evidence_sha256),
+            "evidence_endpoint_count": len(prepared.evidence_sha256),
+            "parent_exact_endpoint_count": len(prepared.evidence_sha256),
+            "partition_batch_indices": {
+                name: list(prepared.partition_batch_indices[name])
+                for name in _PARTITIONS
+            },
+            "candidate_frozen_before_fit_check": True,
+            "candidate_frozen_before_selection": True,
+            "candidate_frozen_before_validation": True,
+            "validation_triggered_refit": False,
+            "inserted_target_rows_used": 0,
+            "query_scope": "one-parent-exact-semantic-endpoint-per-phase",
+            "numeric_parent_child_weight_match_objective": False,
+            "analytic_linear_and_cluster_solves_only": True,
+            "sequential_replay_freshness_enforced": True,
             "operation_audit": dict(_ZERO_OPERATIONS),
         }
         receipt = MappingProxyType(
@@ -1431,7 +1563,9 @@ def install_lfm2_prepared_semantic_mlp_postfold(
         return Lfm2SemanticMlpPostfoldResult(
             receipt=receipt,
             prepared=prepared,
-            final_layer_mlp_evidence=prepared.terminal_action_evidence,
+            final_layer_mlp_evidence=(
+                prepared.terminal_action_evidence if defer_down_weight else {}
+            ),
         )
     try:
         with torch.no_grad():
@@ -1523,12 +1657,22 @@ def install_lfm2_prepared_semantic_mlp_postfold(
             "cache_key": prepared.cache_key,
             "cache_manifest_sha256": prepared.cache_manifest_sha256,
             "bridge_artifact_sha256": prepared.bridge_artifact_sha256,
+            "evidence_sha256": list(prepared.evidence_sha256),
             "evidence_endpoint_count": len(prepared.evidence_sha256),
             "parent_exact_endpoint_count": len(prepared.evidence_sha256),
+            "partition_batch_indices": {
+                name: list(prepared.partition_batch_indices[name])
+                for name in _PARTITIONS
+            },
+            "candidate_frozen_before_fit_check": True,
+            "candidate_frozen_before_selection": True,
+            "candidate_frozen_before_validation": True,
+            "validation_triggered_refit": False,
             "inserted_target_rows_used": 0,
             "query_scope": "one-parent-exact-semantic-endpoint-per-phase",
             "candidate_scope": (
-                "incumbent-producer-dense-w2-residual-writer-and-"
+                "authenticated-incumbent-noop-and-incumbent-producer-dense-w2-"
+                "residual-writer-and-"
                 "full-source-clustered-dense-w1-w3-w2"
             ),
             "numeric_parent_child_weight_match_objective": False,
