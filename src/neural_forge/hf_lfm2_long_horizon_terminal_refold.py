@@ -361,10 +361,73 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _direct_local_parent_runtime_buffers(config: Any, count: int) -> dict[str, Any]:
+def _direct_local_parent_runtime_dtype(
+    normalized_config: Mapping[str, Any],
+    checkpoint_floating_dtypes: set[Any],
+) -> Any:
+    torch = _torch()
+    if not checkpoint_floating_dtypes or any(
+        not isinstance(value, torch.dtype)
+        or not value.is_floating_point
+        or value.is_complex
+        for value in checkpoint_floating_dtypes
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local parent checkpoint does not expose a valid real "
+            "floating runtime dtype."
+        )
+    checkpoint_names = {
+        str(value).removeprefix("torch.") for value in checkpoint_floating_dtypes
+    }
+    config_value = normalized_config.get("dtype")
+    if config_value is None:
+        if len(checkpoint_names) != 1:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Direct-local parent checkpoint has multiple floating dtypes "
+                "but its normalized config does not select one runtime dtype."
+            )
+        dtype_name = next(iter(checkpoint_names))
+    else:
+        if not isinstance(config_value, str):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Normalized direct-local parent config dtype must be text."
+            )
+        dtype_name = config_value.removeprefix("torch.")
+        if checkpoint_names != {dtype_name}:
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Normalized parent config dtype and direct-local checkpoint "
+                "floating dtypes disagree."
+            )
+    dtype = getattr(torch, dtype_name, None)
+    if (
+        not isinstance(dtype, torch.dtype)
+        or not dtype.is_floating_point
+        or dtype.is_complex
+        or str(dtype).removeprefix("torch.") != dtype_name
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"Unsupported direct-local parent runtime dtype {dtype_name!r}."
+        )
+    return dtype
+
+
+def _direct_local_parent_runtime_buffers(
+    config: Any,
+    count: int,
+    *,
+    dtype: Any,
+) -> dict[str, Any]:
     torch = _torch()
     if count == 0:
         return {}
+    if (
+        not isinstance(dtype, torch.dtype)
+        or not dtype.is_floating_point
+        or dtype.is_complex
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local parent runtime buffer dtype must be real floating."
+        )
     rope = getattr(config, "rope_parameters", None)
     if (
         count != 2
@@ -389,6 +452,7 @@ def _direct_local_parent_runtime_buffers(config: Any, count: int) -> dict[str, A
             torch.arange(0, head_dim, 2, dtype=torch.int64).to(torch.float32) / head_dim
         )
     )
+    inv_freq = inv_freq.to(dtype=dtype)
     return {
         "model.rotary_emb.inv_freq": inv_freq,
         "model.rotary_emb.original_inv_freq": inv_freq.clone(),
@@ -464,12 +528,15 @@ def load_lfm2_parent_final_rmsnorm_from_local_safetensors(
         )
 
     tensor_hashes: dict[str, str] = {}
+    checkpoint_floating_dtypes: set[Any] = set()
     selected_weight = None
     for shard in shards:
         with safe_open(str(shard), framework="pt", device="cpu") as handle:
             for name in sorted(handle.keys()):
                 value = handle.get_tensor(name)
                 tensor_hashes[name] = _cache_tensor_sha256(_torch(), value)
+                if _torch().is_floating_point(value) and not value.is_complex():
+                    checkpoint_floating_dtypes.add(value.dtype)
                 if name == tensor_key:
                     selected_weight = (
                         value.detach().to(device="cpu").contiguous().clone()
@@ -499,7 +566,19 @@ def load_lfm2_parent_final_rmsnorm_from_local_safetensors(
     state_sha256 = state_digest.hexdigest()
 
     expected_buffer_count = int(parent.get("runtime_buffer_count", -1))
-    buffers = _direct_local_parent_runtime_buffers(config, expected_buffer_count)
+    runtime_buffer_dtype = (
+        None
+        if expected_buffer_count == 0
+        else _direct_local_parent_runtime_dtype(
+            normalized_config,
+            checkpoint_floating_dtypes,
+        )
+    )
+    buffers = _direct_local_parent_runtime_buffers(
+        config,
+        expected_buffer_count,
+        dtype=runtime_buffer_dtype,
+    )
     buffer_digest = hashlib.sha256(b"neural-forge-lfm2-parent-runtime-buffers-v1\0")
     for name in sorted(buffers):
         buffer_digest.update(name.encode("utf-8"))
@@ -562,6 +641,15 @@ def load_lfm2_parent_final_rmsnorm_from_local_safetensors(
         "tensor_sha256": _cache_tensor_sha256(_torch(), selected_weight),
         "epsilon_config_key": epsilon_config_key,
         "epsilon": epsilon,
+        "checkpoint_floating_dtypes": sorted(
+            str(value).removeprefix("torch.")
+            for value in checkpoint_floating_dtypes
+        ),
+        "runtime_buffer_dtype": (
+            None
+            if runtime_buffer_dtype is None
+            else str(runtime_buffer_dtype).removeprefix("torch.")
+        ),
         "reconstructed_parent_identity": identity_body,
         "final_norm_authentication_sha256": final_norm.authentication_sha256,
         "operation_audit": {

@@ -155,15 +155,19 @@ def _fixture(
     donor_vocabulary: int = 31,
     target_vocabulary: int = 31,
     include_unmapped_donor_row: bool = False,
+    parent_tied: bool = False,
+    parent_bfloat16: bool = False,
 ) -> dict[str, Any]:
     parent = _model(
         vocabulary=donor_vocabulary,
         hidden=8,
         intermediate=12,
         seed=1701,
-        tied=False,
-        bfloat16=False,
+        tied=parent_tied,
+        bfloat16=parent_bfloat16,
     )
+    if parent_bfloat16:
+        parent.config.dtype = torch.bfloat16
     batches = []
     for index in range(4):
         terminal = (
@@ -817,3 +821,58 @@ def test_loads_parent_final_norm_directly_from_identity_matched_safetensors(
         result.as_dict()["parent_final_norm_direct_local_source"]["result_sha256"]
         == loaded.result_sha256
     )
+
+
+def test_direct_local_parent_reconstructs_authenticated_bfloat16_rope_buffers(
+    tmp_path: Path,
+) -> None:
+    values = _fixture(
+        tmp_path / "fixture",
+        parent_tied=True,
+        parent_bfloat16=True,
+    )
+    parent = values["parent"]
+    source = tmp_path / "direct-local-parent"
+    source.mkdir()
+    (source / "config.json").write_text(
+        json.dumps(parent.config.to_dict()),
+        encoding="utf-8",
+    )
+    save_file(
+        {
+            name: value.detach().to(device="cpu").contiguous().clone()
+            for name, value in parent.state_dict().items()
+            if name != "lm_head.weight"
+        },
+        source / "model.safetensors",
+    )
+
+    loaded = refold.load_lfm2_parent_final_rmsnorm_from_local_safetensors(
+        values["cache"],
+        source,
+        tensor_key="model.embedding_norm.weight",
+        epsilon_config_key="norm_eps",
+    )
+
+    report = loaded.as_dict()
+    assert report["checkpoint_floating_dtypes"] == ["bfloat16"]
+    assert report["runtime_buffer_dtype"] == "bfloat16"
+    assert (
+        report["reconstructed_parent_identity"]["runtime_buffer_sha256"]
+        == values["cache"].manifest["parent"]["runtime_buffer_sha256"]
+    )
+    assert (
+        report["reconstructed_parent_identity"]["state_dict_sha256"]
+        == values["cache"].manifest["parent"]["state_dict_sha256"]
+    )
+
+
+def test_direct_local_parent_rejects_config_checkpoint_dtype_disagreement() -> None:
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="config dtype and direct-local checkpoint floating dtypes disagree",
+    ):
+        refold._direct_local_parent_runtime_dtype(
+            {"dtype": "bfloat16"},
+            {torch.float32},
+        )
