@@ -74,6 +74,9 @@ from neural_forge.hf_semantic_attention_lattice import (
     inspect_lfm2_semantic_attention_cache_capability,
     transport_lfm2_phase_probability_preserving_attention,
 )
+from neural_forge.hf_tied_causal_interface_anchor_fold import (
+    TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
+)
 from neural_forge.hf_tied_causal_interface_fold import TiedCausalInterfaceFold
 from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
@@ -83,6 +86,9 @@ from neural_forge.hf_tokenizer_bridge import (
 
 LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA = (
     "neural-forge-lfm2-semantic-layer-stack-refold-v1"
+)
+_TIED_CAUSAL_INTERFACE_FOLD_SCHEMA = (
+    "neural-forge-tied-causal-interface-fold-v1"
 )
 _EXPECTED_ATTENTION_INDICES = (2, 4, 6, 8, 10, 12)
 _EXPECTED_SHORT_CONV_INDICES = (0, 1, 3, 5, 7, 9, 11, 13)
@@ -2307,8 +2313,19 @@ def _validated_interface_lineage(
     report = dict(interface.report)
     report_body = dict(report)
     report_sha = report_body.pop("report_sha256", None)
-    producer_sha = _interface_tensor_sha256(interface.producer_encoder)
-    target_sha = _interface_tensor_sha256(interface.target_weight)
+    report_schema = report.get("schema")
+    if report_schema == _TIED_CAUSAL_INTERFACE_FOLD_SCHEMA:
+        tensor_sha256 = _interface_tensor_sha256
+        tensor_seal_schema = "dtype-nul-shape-nul-raw-v1"
+    elif report_schema == TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA:
+        tensor_sha256 = _anchor_interface_tensor_sha256
+        tensor_seal_schema = "canonical-descriptor-prefix-raw-v1"
+    else:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Passed tied-interface coordinates use an unsupported report schema."
+        )
+    producer_sha = tensor_sha256(interface.producer_encoder)
+    target_sha = tensor_sha256(interface.target_weight)
     if (
         not isinstance(input_weight, torch.nn.Parameter)
         or output_weight is not input_weight
@@ -2327,6 +2344,8 @@ def _validated_interface_lineage(
     return MappingProxyType(
         {
             "interface_report_sha256": report_sha,
+            "interface_report_schema": report_schema,
+            "interface_tensor_seal_schema": tensor_seal_schema,
             "producer_encoder_sha256": producer_sha,
             "target_weight_sha256": target_sha,
             "target_weight_matches_live_tied_child": True,
@@ -2334,6 +2353,28 @@ def _validated_interface_lineage(
             "producer_encoder_inferred_from_repaired_target_table": False,
         }
     )
+
+
+def _anchor_interface_tensor_sha256(value: Any) -> str:
+    """Match the tensor seal used by the causal-anchor residual report."""
+
+    torch = _torch()
+    tensor = value.detach().to(device="cpu").contiguous()
+    descriptor = {
+        "dtype": str(tensor.dtype).removeprefix("torch."),
+        "shape": [int(size) for size in tensor.shape],
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            descriptor,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    )
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
 
 
 def _final_w2_parameter(target_model: Any) -> Any:

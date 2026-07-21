@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from types import MappingProxyType, SimpleNamespace
 
 import pytest
@@ -15,6 +17,147 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
 from neural_forge.hf_lfm2_semantic_mlp_refold_adapter import (  # noqa: E402
     Lfm2DirectLocalMlpSourceInventory,
 )
+from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
+    TiedCausalInterfaceFold,
+)
+
+
+_BASE_INTERFACE_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
+_ANCHOR_INTERFACE_SCHEMA = "neural-forge-tied-causal-anchor-residual-v1"
+
+
+def _anchor_tensor_sha256(value: torch.Tensor) -> str:
+    tensor = value.detach().to(device="cpu").contiguous()
+    descriptor = {
+        "dtype": str(tensor.dtype).removeprefix("torch."),
+        "shape": [int(size) for size in tensor.shape],
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            descriptor,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    )
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+class _TiedInterfaceTarget(torch.nn.Module):
+    def __init__(self, weight: torch.Tensor) -> None:
+        super().__init__()
+        vocabulary, width = weight.shape
+        self.embedding = torch.nn.Embedding(
+            vocabulary,
+            width,
+            dtype=weight.dtype,
+        )
+        with torch.no_grad():
+            self.embedding.weight.copy_(weight)
+        self.output = torch.nn.Linear(
+            width,
+            vocabulary,
+            bias=False,
+            dtype=weight.dtype,
+        )
+        self.output.weight = self.embedding.weight
+
+    def get_input_embeddings(self):
+        return self.embedding
+
+    def get_output_embeddings(self):
+        return self.output
+
+
+def _interface_for_schema(
+    schema: str,
+) -> tuple[_TiedInterfaceTarget, TiedCausalInterfaceFold]:
+    target_weight = torch.tensor(
+        [[1.0, -2.0], [3.0, 4.0], [-5.0, 6.0]],
+        dtype=torch.float64,
+    )
+    producer_encoder = torch.tensor(
+        [[1.0, 0.5], [-0.25, 2.0], [3.0, -4.0], [0.75, 1.25]],
+        dtype=torch.float64,
+    )
+    tensor_sha256 = (
+        _anchor_tensor_sha256
+        if schema == _ANCHOR_INTERFACE_SCHEMA
+        else stack._interface_tensor_sha256
+    )
+    report_body = {
+        "schema": schema,
+        "producer_encoder_sha256": tensor_sha256(producer_encoder),
+        "target_weight_sha256": tensor_sha256(target_weight),
+    }
+    interface = TiedCausalInterfaceFold(
+        target_weight=target_weight,
+        producer_encoder=producer_encoder,
+        report={
+            **report_body,
+            "report_sha256": canonical_sha256(report_body),
+        },
+    )
+    return _TiedInterfaceTarget(target_weight), interface
+
+
+def test_validated_interface_lineage_accepts_anchor_active_tensor_seals() -> None:
+    target, interface = _interface_for_schema(_ANCHOR_INTERFACE_SCHEMA)
+    assert _anchor_tensor_sha256(
+        interface.producer_encoder
+    ) != stack._interface_tensor_sha256(interface.producer_encoder)
+
+    receipt = stack._validated_interface_lineage(target, interface)
+
+    assert receipt["interface_report_schema"] == _ANCHOR_INTERFACE_SCHEMA
+    assert (
+        receipt["interface_tensor_seal_schema"]
+        == "canonical-descriptor-prefix-raw-v1"
+    )
+    assert receipt["producer_encoder_sha256"] == interface.report[
+        "producer_encoder_sha256"
+    ]
+
+
+def test_validated_interface_lineage_preserves_base_interface_tensor_seals() -> None:
+    target, interface = _interface_for_schema(_BASE_INTERFACE_SCHEMA)
+
+    receipt = stack._validated_interface_lineage(target, interface)
+
+    assert receipt["interface_report_schema"] == _BASE_INTERFACE_SCHEMA
+    assert receipt["interface_tensor_seal_schema"] == "dtype-nul-shape-nul-raw-v1"
+    assert receipt["target_weight_sha256"] == interface.report[
+        "target_weight_sha256"
+    ]
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [_ANCHOR_INTERFACE_SCHEMA, _BASE_INTERFACE_SCHEMA],
+)
+def test_validated_interface_lineage_rejects_schema_specific_tensor_tampering(
+    schema: str,
+) -> None:
+    target, interface = _interface_for_schema(schema)
+    tampered_body = dict(interface.report)
+    tampered_body.pop("report_sha256")
+    tampered_body["target_weight_sha256"] = "0" * 64
+    tampered = TiedCausalInterfaceFold(
+        target_weight=interface.target_weight,
+        producer_encoder=interface.producer_encoder,
+        report={
+            **tampered_body,
+            "report_sha256": canonical_sha256(tampered_body),
+        },
+    )
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="lack exact authenticated child lineage",
+    ):
+        stack._validated_interface_lineage(target, tampered)
 
 
 def _terminal_banks():
