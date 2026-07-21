@@ -321,6 +321,68 @@ def _material_full_win_case(model: _Target):
     return tuple(values), desired
 
 
+def _cold_start_parent_endpoint_evidence(
+    model: _Target,
+) -> tuple[adapter.Lfm2SemanticMlpEndpointEvidence, ...]:
+    source = _source()
+    state_sha = fingerprint_lfm2_parent(model).identity_sha256
+    inputs = torch.tensor(
+        [
+            [0.75, -0.50, 0.25, 1.00],
+            [-0.40, 0.80, 0.50, -0.20],
+            [0.30, 0.20, -0.90, 0.70],
+            [1.00, 0.40, 0.10, -0.60],
+            [-0.70, -0.30, 0.80, 0.20],
+            [0.20, 1.00, -0.40, 0.60],
+            [0.60, -0.80, -0.10, 0.50],
+            [-0.20, 0.30, 0.90, -0.70],
+        ],
+        dtype=torch.bfloat16,
+    )
+    child_pre = torch.tensor(
+        [[0.20, -0.10, 0.30, 0.05]],
+        dtype=torch.bfloat16,
+    )
+    values = []
+    for batch_index in range(4):
+        for phase_index, input_row in enumerate(inputs):
+            child_input = input_row.unsqueeze(0)
+            input64 = child_input.to(torch.float64)
+            parent_gate = input64 @ source.gate_weight.to(torch.float64).T
+            parent_up = input64 @ source.up_weight.to(torch.float64).T
+            parent_post = torch.nn.functional.silu(parent_gate) * parent_up
+            parent_endpoint = (
+                child_pre.to(torch.float64)
+                + parent_post @ source.down_weight.to(torch.float64).T
+            )
+            values.append(
+                adapter.Lfm2SemanticMlpEndpointEvidence(
+                    batch_index=batch_index,
+                    trajectory_sha256=_sha(f"cold-trajectory:{batch_index}"),
+                    phase_index=phase_index,
+                    phase_sha256=_sha(f"cold-phase:{batch_index}:{phase_index}"),
+                    layer_index=0,
+                    alignment_sha256=_sha(
+                        f"cold-alignment:{batch_index}:{phase_index}"
+                    ),
+                    cache_key=_sha("cache"),
+                    cache_manifest_sha256=_sha("cache-manifest"),
+                    bridge_artifact_sha256=_sha("bridge"),
+                    captured_child_model_state_sha256=state_sha,
+                    source_inventory=source,
+                    parent_gate=parent_gate.to(torch.bfloat16),
+                    parent_up=parent_up.to(torch.bfloat16),
+                    parent_post_swiglu=parent_post.to(torch.bfloat16),
+                    actual_child_mlp_input=child_input,
+                    actual_child_pre_mlp_residual=child_pre,
+                    parent_post_mlp_residual_target_space=(
+                        parent_endpoint.to(torch.bfloat16)
+                    ),
+                )
+            )
+    return tuple(values)
+
+
 def test_typed_source_and_endpoint_seals_reject_inserted_rows() -> None:
     model = _Target()
     source = _source()
@@ -380,6 +442,114 @@ def test_prepare_freezes_two_fit_only_candidates_and_prefers_writer() -> None:
         "selection": True,
         "validation": True,
     }
+
+
+def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -> None:
+    model = _Target()
+    mlp = model.model.layers[0].feed_forward
+    with torch.no_grad():
+        for parameter in mlp.parameters():
+            parameter.zero_()
+    before = fingerprint_lfm2_parent(model).identity_sha256
+    prepared = _prepare(model, _cold_start_parent_endpoint_evidence(model))
+
+    assert prepared.verify()
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before
+    assert prepared.selected_role == "full-w1-w3-w2"
+    assert prepared.selection_receipt["full_changed_roles"] == [
+        "w1.weight",
+        "w3.weight",
+        "w2.weight",
+    ]
+    assert all(
+        int(torch.count_nonzero(value).item()) > 0
+        for value in (
+            prepared.full_candidate.gate_weight,
+            prepared.full_candidate.up_weight,
+            prepared.full_candidate.down_weight,
+        )
+    )
+    cold = prepared.full_candidate.solver_receipt["cold_start_escape"]
+    assert cold == {
+        "incumbent_w1_w3_w2_exactly_zero": True,
+        "requested_maximum_delta_ratio": 1.0,
+        "effective_full_structural_maximum_delta_ratio": None,
+        "relative_incumbent_trust_cap_applied": False,
+        "authenticated_full_source_structural_solve_used": True,
+        "random_initialization_used": False,
+        "gradient_training_used": False,
+    }
+    assert prepared.selection_receipt["cold_start_escape"] == cold
+    planting = prepared.full_candidate.solver_receipt["source_derived_planting"]
+    assert planting == {
+        "source_inventory_sha256": _source().inventory_sha256,
+        "compiler_lineage_sha256": _sha("compiler-lineage"),
+        "residual_assignment_sha256": _sha("residual-chart"),
+        "full_source_coverage": True,
+        "planted_roles": ["w1.weight", "w3.weight", "w2.weight"],
+        "all_dense_w1_w3_w2_roles_planted": True,
+        "fit_partition_only_used_for_solve": True,
+    }
+    assert prepared.selection_receipt["source_derived_planting"] == planting
+    corrections = prepared.full_candidate.solver_receipt["prior_correction_reports"]
+    assert {report["role"] for report in corrections} == {
+        "mlp_gate",
+        "mlp_up",
+        "mlp_down",
+    }
+    assert all(report["prior_norm"] == 0.0 for report in corrections)
+    assert all(report["update_scale"] == 1.0 for report in corrections)
+    assert set(prepared.full_candidate.solver_receipt["operation_audit"].values()) == {
+        0
+    }
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+    assert result.receipt["selected_role"] == "full-w1-w3-w2"
+    assert result.receipt["cold_start_escape"] == cold
+    assert result.receipt["source_derived_planting"] == planting
+    assert all(
+        int(torch.count_nonzero(parameter).item()) > 0 for parameter in mlp.parameters()
+    )
+
+
+def test_exact_zero_incumbent_fails_closed_when_no_full_plant_passes() -> None:
+    model = _Target()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].feed_forward.parameters():
+            parameter.zero_()
+
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="no fully planted nonzero structural W1/W3/W2 candidate",
+    ):
+        _prepare(model, _evidence(model))
+
+
+def test_nonzero_incumbent_preserves_requested_relative_trust_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Target()
+    observed_caps = []
+    real_compile = adapter.compile_lfm2_structural_residual_mlp_fold
+
+    def recording_compile(**kwargs):
+        observed_caps.append(kwargs["max_prior_delta_ratio"])
+        return real_compile(**kwargs)
+
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_structural_residual_mlp_fold",
+        recording_compile,
+    )
+    prepared = _prepare(model, _evidence(model))
+
+    assert observed_caps == [1.0]
+    assert "cold_start_escape" not in prepared.full_candidate.solver_receipt
+    assert "cold_start_escape" not in prepared.selection_receipt
+    assert prepared.selected_role == "incumbent-producer-w2"
 
 
 def test_materially_better_full_candidate_wins_after_frozen_selection(

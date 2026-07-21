@@ -162,6 +162,8 @@ def test_final_w2_incumbent_retention_is_an_exact_zero_copy_decision(
     assert receipt["parameter_identities_preserved"] is True
     assert receipt["parameter_storage_preserved"] is True
     assert receipt["gradient_state_preserved"] is True
+    assert receipt["published_w2_structurally_nonzero"] is True
+    assert receipt["published_w2_structural_coverage"]["structurally_nonzero"] is True
     assert id(parameter) == before_parameter_id
     assert int(parameter.data_ptr()) == before_parameter_ptr
     assert id(parameter.grad) == before_gradient_id
@@ -202,6 +204,41 @@ def test_final_w2_changed_publication_mutates_only_the_writer(monkeypatch) -> No
     assert receipt["parameter_identities_preserved"] is True
     assert receipt["parameter_storage_preserved"] is True
     assert receipt["gradient_state_preserved"] is True
+    assert receipt["published_w2_structurally_nonzero"] is True
+
+
+@pytest.mark.parametrize(
+    "published",
+    (
+        torch.zeros((2, 2), dtype=torch.bfloat16),
+        torch.tensor([[1.0, 0.0], [0.0, 0.0]], dtype=torch.bfloat16),
+    ),
+)
+def test_final_w2_refuses_blank_or_structurally_partial_publication(
+    monkeypatch,
+    published,
+) -> None:
+    target = _TerminalTarget(torch.eye(2, dtype=torch.bfloat16))
+    before = {
+        name: value.detach().clone() for name, value in target.state_dict().items()
+    }
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda model: SimpleNamespace(identity_sha256=_terminal_target_state(model)),
+    )
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="blank or structurally partial W2",
+    ):
+        postfold._install_final_w2_once(
+            target,
+            published_down_weight=published,
+        )
+
+    for name, value in target.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
 
 
 def test_validation_rejected_selected_writer_publishes_only_incumbent() -> None:
@@ -1180,6 +1217,38 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
             "result_sha256": "9" * 64,
         }
     )
+    w1_sha = "1" * 64
+    w3_sha = "2" * 64
+    w2_sha = "3" * 64
+
+    def sealed(body):
+        return {**body, "result_sha256": canonical_sha256(body)}
+
+    coverage_before_body = {
+        "schema": "neural-forge-lfm2-dense-producer-chain-coverage-v1",
+        "layer_index": 13,
+        "producer_kind": "mlp",
+        "deferred_roles": ["feed_forward.w2.weight"],
+        "role_receipts": {
+            "feed_forward.w1.weight": {"tensor_sha256": w1_sha},
+            "feed_forward.w3.weight": {"tensor_sha256": w3_sha},
+            "feed_forward.w2.weight": {"tensor_sha256": w2_sha},
+        },
+        "all_required_roles_structurally_nonzero": True,
+        "blank_or_partially_blank_required_role_count": 0,
+    }
+    coverage_before = sealed(coverage_before_body)
+    coverage_after_body = {
+        **coverage_before_body,
+        "deferred_roles": [],
+    }
+    coverage_after = sealed(coverage_after_body)
+    published_coverage_body = {
+        "schema": "neural-forge-dense-weight-structural-coverage-v1",
+        "tensor_sha256": w2_sha,
+        "structurally_nonzero": True,
+    }
+    published_coverage = sealed(published_coverage_body)
     layer_body = {
         "complete_causal_layer_stack_adjudicated": True,
         "complete_causal_layer_stack_installed": False,
@@ -1199,6 +1268,22 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "nonterminal_mlp_writer_incumbent_noop_count": 1,
         "final_mlp_producer_install_count": 0,
         "final_mlp_producer_incumbent_noop_count": 1,
+        "attention_producer_structural_coverage_count": 6,
+        "short_conv_producer_structural_coverage_count": 8,
+        "nonterminal_mlp_producer_structural_coverage_count": 13,
+        "final_mlp_producer_structural_coverage_count": 1,
+        "installed_complete_producer_chain_count": 25,
+        "authenticated_nonzero_folded_seed_retained_noop_count": 3,
+        "blank_or_partially_blank_producer_chain_count": 0,
+        "complete_nonzero_structural_producer_coverage": True,
+        "all_producer_chains_installed_or_retained_nonzero_seed": True,
+        "layer_installations": [
+            {
+                "mlp_producer_coverage_decision": {
+                    "coverage_after_sha256": coverage_before["result_sha256"]
+                }
+            }
+        ],
         "operator_parameter_mutation_count": 13,
         "mlp_parameter_mutation_count": 12,
     }
@@ -1222,6 +1307,12 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "parameter_count_changed": False,
         "model_state_before_sha256": "d" * 64,
         "model_state_after_sha256": "d" * 64,
+        "published_w2_sha256": w2_sha,
+        "published_w2_structurally_nonzero": True,
+        "published_w2_structural_coverage": published_coverage,
+        "published_w2_structural_coverage_sha256": published_coverage[
+            "result_sha256"
+        ],
     }
     terminal_body = {
         "schema": postfold.LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA,
@@ -1235,6 +1326,9 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "terminal_writer_mutation_count": 0,
         "terminal_writer_incumbent_retention_count": 1,
         "installation": terminal_installation,
+        "final_mlp_producer_coverage_before_terminal": coverage_before,
+        "final_mlp_full_coverage_after_terminal": coverage_after,
+        "complete_nonzero_final_mlp_structural_coverage": True,
         "operation_audit": dict(postfold._ZERO_OPERATIONS),
     }
     terminal = MappingProxyType(

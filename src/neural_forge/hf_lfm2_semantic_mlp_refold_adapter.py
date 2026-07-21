@@ -1097,6 +1097,26 @@ def _changed_roles(
     )
 
 
+def _nonzero_swiglu_roles(state: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the nonzero roles of one complete dense W1/W3/W2 state."""
+
+    torch = _torch()
+    roles = ("w1.weight", "w3.weight", "w2.weight")
+    if set(state) != set(roles):
+        raise Lfm2SemanticMlpRefoldError(
+            "Cold-start detection requires one complete dense W1/W3/W2 state."
+        )
+    return tuple(
+        role for role in roles if int(torch.count_nonzero(state[role]).item()) > 0
+    )
+
+
+def _exact_zero_swiglu_state(state: Mapping[str, Any]) -> bool:
+    """Return whether the complete dense W1/W3/W2 incumbent is exactly zero."""
+
+    return not _nonzero_swiglu_roles(state)
+
+
 def _terminal_banks(
     partitions: Mapping[str, Sequence[Lfm2SemanticMlpEndpointEvidence]],
     *,
@@ -1218,13 +1238,15 @@ def prepare_lfm2_semantic_mlp_postfold(
         )
     partitions = _split_evidence(raw)
     source_before = inventory.inventory_sha256
+    exact_zero_incumbent = _exact_zero_swiglu_state(incumbent_state)
+    requested_maximum_delta_ratio = (
+        None if maximum_delta_ratio is None else float(maximum_delta_ratio)
+    )
     writer_state, writer_solver = _solve_writer(
         partitions["fit"],
         incumbent_state,
         ridge=float(ridge),
-        maximum_delta_ratio=(
-            None if maximum_delta_ratio is None else float(maximum_delta_ratio)
-        ),
+        maximum_delta_ratio=requested_maximum_delta_ratio,
     )
     full_state, full_solver = _full_candidate_state(
         partitions["fit"],
@@ -1232,12 +1254,60 @@ def prepare_lfm2_semantic_mlp_postfold(
         incumbent_state,
         ridge=float(ridge),
         maximum_delta_ratio=(
-            None if maximum_delta_ratio is None else float(maximum_delta_ratio)
+            None if exact_zero_incumbent else requested_maximum_delta_ratio
         ),
         cluster_ridge=float(cluster_ridge),
         cluster_max_iterations=int(cluster_max_iterations),
         cluster_distance_chunk_size=int(cluster_distance_chunk_size),
     )
+    if exact_zero_incumbent:
+        correction_reports = full_solver.get("prior_correction_reports")
+        planted_roles = _nonzero_swiglu_roles(full_state)
+        if (
+            not isinstance(correction_reports, list)
+            or len(correction_reports) != 3
+            or {report.get("role") for report in correction_reports}
+            != {"mlp_gate", "mlp_up", "mlp_down"}
+            or any(
+                report.get("prior_provided") is not True
+                or report.get("prior_norm") != 0.0
+                or report.get("update_scale") != 1.0
+                for report in correction_reports
+            )
+        ):
+            raise Lfm2SemanticMlpRefoldError(
+                "Exact-zero cold-start structural solve did not prove an "
+                "unclipped complete W1/W3/W2 projection."
+            )
+        full_solver = MappingProxyType(
+            {
+                **dict(full_solver),
+                "cold_start_escape": {
+                    "incumbent_w1_w3_w2_exactly_zero": True,
+                    "requested_maximum_delta_ratio": (requested_maximum_delta_ratio),
+                    "effective_full_structural_maximum_delta_ratio": None,
+                    "relative_incumbent_trust_cap_applied": False,
+                    "authenticated_full_source_structural_solve_used": True,
+                    "random_initialization_used": False,
+                    "gradient_training_used": False,
+                },
+                "source_derived_planting": {
+                    "source_inventory_sha256": inventory.inventory_sha256,
+                    "compiler_lineage_sha256": inventory.compiler_lineage_sha256,
+                    "residual_assignment_sha256": (
+                        inventory.residual_assignment_sha256
+                    ),
+                    "full_source_coverage": (
+                        full_solver.get("full_source_coverage") is True
+                    ),
+                    "planted_roles": list(planted_roles),
+                    "all_dense_w1_w3_w2_roles_planted": (
+                        planted_roles == ("w1.weight", "w3.weight", "w2.weight")
+                    ),
+                    "fit_partition_only_used_for_solve": True,
+                },
+            }
+        )
     if inventory.inventory_sha256 != source_before or not inventory.verify():
         raise Lfm2SemanticMlpRefoldError(
             "Direct-local parent W1/W3/W2 bundle changed during compilation."
@@ -1324,6 +1394,15 @@ def prepare_lfm2_semantic_mlp_postfold(
         validation_rejected_role = selected.role
         selected = incumbent
         rationale = "retained-incumbent-after-frozen-analytic-validation-rejection"
+    if exact_zero_incumbent and (
+        selected.role != "full-w1-w3-w2"
+        or _nonzero_swiglu_roles(selected.state_dict())
+        != ("w1.weight", "w3.weight", "w2.weight")
+    ):
+        raise Lfm2SemanticMlpRefoldError(
+            "Exact-zero cold start has no fully planted nonzero structural "
+            "W1/W3/W2 candidate that passed every held-out gate."
+        )
     if not eligibility["incumbent"]["validation"]:
         raise Lfm2SemanticMlpRefoldError(
             "The authenticated incumbent did not exactly replay VALIDATION."
@@ -1336,37 +1415,41 @@ def prepare_lfm2_semantic_mlp_postfold(
         partitions,
         required=require_terminal_action_evidence,
     )
-    selection = MappingProxyType(
-        {
-            "selected_role": selected.role,
-            "prevalidation_selected_role": prevalidation_selected_role,
-            "validation_rejected_role": validation_rejected_role,
-            "rationale": rationale,
-            "writer_changed_roles": list(_changed_roles(incumbent_state, writer_state)),
-            "full_changed_roles": list(_changed_roles(incumbent_state, full_state)),
-            "heldout_nonregression": eligibility,
-            "heldout_selection_improvement": selection_improvement,
-            "writer_selection_nonregressing_versus_full": writer_selection_vs_full,
-            "incumbent_noop_candidate_competed": True,
-            "incumbent_noop_fallback_used": selected.role == "incumbent",
-            "candidate_frozen_before_fit_check": True,
-            "candidate_frozen_before_selection": True,
-            "candidate_frozen_before_validation": True,
-            "validation_triggered_refit": False,
-            "validation_used_for_candidate_choice": (
-                validation_rejected_role is not None
-            ),
-            "validation_used_only_for_acceptance_or_incumbent_fallback": True,
-            "fit_partition_only_used_for_solves": True,
-            "heldout_partitions_used_for_solves": False,
-            "endpoint_metrics": {
-                candidate.role: {
-                    name: candidate.metrics[name].as_dict() for name in _PARTITIONS
-                }
-                for candidate in (incumbent, writer, full)
-            },
-        }
-    )
+    selection_body = {
+        "selected_role": selected.role,
+        "prevalidation_selected_role": prevalidation_selected_role,
+        "validation_rejected_role": validation_rejected_role,
+        "rationale": rationale,
+        "writer_changed_roles": list(_changed_roles(incumbent_state, writer_state)),
+        "full_changed_roles": list(_changed_roles(incumbent_state, full_state)),
+        "heldout_nonregression": eligibility,
+        "heldout_selection_improvement": selection_improvement,
+        "writer_selection_nonregressing_versus_full": writer_selection_vs_full,
+        "incumbent_noop_candidate_competed": True,
+        "incumbent_noop_fallback_used": selected.role == "incumbent",
+        "candidate_frozen_before_fit_check": True,
+        "candidate_frozen_before_selection": True,
+        "candidate_frozen_before_validation": True,
+        "validation_triggered_refit": False,
+        "validation_used_for_candidate_choice": (validation_rejected_role is not None),
+        "validation_used_only_for_acceptance_or_incumbent_fallback": True,
+        "fit_partition_only_used_for_solves": True,
+        "heldout_partitions_used_for_solves": False,
+        "endpoint_metrics": {
+            candidate.role: {
+                name: candidate.metrics[name].as_dict() for name in _PARTITIONS
+            }
+            for candidate in (incumbent, writer, full)
+        },
+    }
+    if exact_zero_incumbent:
+        selection_body["cold_start_escape"] = dict(
+            full.solver_receipt["cold_start_escape"]
+        )
+        selection_body["source_derived_planting"] = dict(
+            full.solver_receipt["source_derived_planting"]
+        )
+    selection = MappingProxyType(selection_body)
     return Lfm2PreparedSemanticMlpRefold(
         layer_index=layer_index,
         captured_child_model_state_sha256=current_state,
@@ -1570,6 +1653,18 @@ def install_lfm2_prepared_semantic_mlp_postfold(
             "numeric_parent_child_weight_match_objective": False,
             "analytic_linear_and_cluster_solves_only": True,
             "sequential_replay_freshness_enforced": True,
+            **(
+                {
+                    "cold_start_escape": dict(
+                        prepared.selection_receipt["cold_start_escape"]
+                    ),
+                    "source_derived_planting": dict(
+                        prepared.selection_receipt["source_derived_planting"]
+                    ),
+                }
+                if "cold_start_escape" in prepared.selection_receipt
+                else {}
+            ),
             "operation_audit": dict(_ZERO_OPERATIONS),
         }
         receipt = MappingProxyType(
@@ -1696,6 +1791,18 @@ def install_lfm2_prepared_semantic_mlp_postfold(
             "numeric_parent_child_weight_match_objective": False,
             "analytic_linear_and_cluster_solves_only": True,
             "sequential_replay_freshness_enforced": True,
+            **(
+                {
+                    "cold_start_escape": dict(
+                        prepared.selection_receipt["cold_start_escape"]
+                    ),
+                    "source_derived_planting": dict(
+                        prepared.selection_receipt["source_derived_planting"]
+                    ),
+                }
+                if "cold_start_escape" in prepared.selection_receipt
+                else {}
+            ),
             "operation_audit": dict(_ZERO_OPERATIONS),
         }
         receipt = MappingProxyType(

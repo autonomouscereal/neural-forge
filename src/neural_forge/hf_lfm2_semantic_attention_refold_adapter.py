@@ -813,6 +813,476 @@ def _seed(
     )
 
 
+def _exact_zero(value: Any) -> bool:
+    return int(_torch().count_nonzero(value.detach()).item()) == 0
+
+
+def _rotate_half(value: Any) -> Any:
+    half = int(value.shape[-1]) // 2
+    return _torch().cat((-value[..., half:], value[..., :half]), dim=-1)
+
+
+def _cold_projection_preimage(
+    runtime_rows: Any,
+    anchor_rows: Any,
+    *,
+    norm_weight: Any,
+    norm_epsilon: float,
+    cosine: Any,
+    sine: Any,
+    role: str,
+) -> Any:
+    """Recover deterministic raw projection rows for one sealed route plant."""
+
+    torch = _torch()
+    runtime = runtime_rows.detach().to(device="cpu", dtype=torch.float64)
+    anchors = anchor_rows.detach().to(device="cpu", dtype=torch.float64)
+    gain = norm_weight.detach().to(device="cpu", dtype=torch.float64)
+    cos = cosine.detach().to(device="cpu", dtype=torch.float64)
+    sin = sine.detach().to(device="cpu", dtype=torch.float64)
+    if (
+        runtime.ndim != 4
+        or tuple(runtime.shape) != tuple(anchors.shape)
+        or tuple(gain.shape) != (int(runtime.shape[-1]),)
+        or tuple(cos.shape)
+        != (int(runtime.shape[0]), int(runtime.shape[2]), int(runtime.shape[3]))
+        or tuple(sin.shape) != tuple(cos.shape)
+        or bool((gain.abs() <= torch.finfo(torch.float64).eps).any().item())
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            f"Cold-start {role} rows cannot pass the target RMSNorm/RoPE geometry."
+        )
+    radius = cos.square() + sin.square()
+    if bool((radius <= torch.finfo(torch.float64).tiny).any().item()):
+        raise Lfm2SemanticAttentionRefoldError(
+            f"Cold-start {role} evidence contains a zero-radius RoPE row."
+        )
+    unrotated = (
+        runtime * cos.unsqueeze(1) - _rotate_half(runtime) * sin.unsqueeze(1)
+    ) / radius.unsqueeze(1)
+    direction = unrotated / gain.reshape(1, 1, 1, -1)
+    direction_rms = torch.sqrt(direction.square().mean(dim=-1, keepdim=True))
+    if bool((direction_rms <= torch.finfo(torch.float64).tiny).any().item()):
+        raise Lfm2SemanticAttentionRefoldError(
+            f"Cold-start {role} route target has an empty normalized direction."
+        )
+    anchor_rms = torch.sqrt(anchors.square().mean(dim=-1, keepdim=True)).clamp_min(
+        math.sqrt(norm_epsilon)
+    )
+    result = direction / direction_rms * anchor_rms
+    if not bool(torch.isfinite(result).all().item()):
+        raise Lfm2SemanticAttentionRefoldError(
+            f"Cold-start {role} preimage produced nonfinite rows."
+        )
+    return result.contiguous()
+
+
+def _cold_route_runtime_targets(
+    case: Lfm2EndpointQkResidualCase,
+    seed: Lfm2EndpointQkvoSeed,
+) -> tuple[Any, Any, Mapping[str, Any]]:
+    """Factor sealed route logits into target-native post-RoPE Q/K rows."""
+
+    torch = _torch()
+    probabilities = case.target_probability_barycenter.to(torch.float64)
+    mask = case.target_causal_mask
+    batch, query_heads, query_length, key_length = map(int, probabilities.shape)
+    head_dim = seed.head_dim
+    key_value_heads = seed.key_value_heads
+    queries_per_key_value = seed.queries_per_key_value
+    if (
+        query_length != 1
+        or query_heads != seed.query_heads
+        or query_heads != key_value_heads * queries_per_key_value
+        or queries_per_key_value > head_dim
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Cold-start Q/K planting requires one terminal query and an integral "
+            "target GQA head geometry."
+        )
+    expanded_mask = mask
+    safe = torch.where(
+        expanded_mask,
+        probabilities.clamp_min(torch.finfo(torch.float64).tiny),
+        torch.ones_like(probabilities),
+    )
+    logits = torch.where(expanded_mask, torch.log(safe), torch.zeros_like(safe))
+    counts = expanded_mask.sum(dim=-1, keepdim=True).clamp_min(1)
+    logits = torch.where(
+        expanded_mask,
+        logits - (logits * expanded_mask).sum(dim=-1, keepdim=True) / counts,
+        torch.zeros_like(logits),
+    )
+    query_runtime = torch.zeros(
+        (batch, query_heads, 1, head_dim),
+        dtype=torch.float64,
+    )
+    key_runtime = torch.zeros(
+        (batch, key_value_heads, key_length, head_dim),
+        dtype=torch.float64,
+    )
+    root_head_dim = math.sqrt(head_dim)
+    clipped_vectors = 0
+    uniform_vectors = 0
+    for group_index in range(key_value_heads):
+        first_head = group_index * queries_per_key_value
+        heads = tuple(range(first_head, first_head + queries_per_key_value))
+        for local_index, head_index in enumerate(heads):
+            query_runtime[:, head_index, 0, local_index] = root_head_dim
+        coordinates = (
+            logits[:, heads, 0, :].permute(0, 2, 1).contiguous().clone()
+        )
+        energy = coordinates.square().sum(dim=-1, keepdim=True)
+        budget = float(head_dim) * 0.75
+        scale = torch.sqrt(
+            torch.full_like(energy, budget)
+            / energy.clamp_min(torch.finfo(torch.float64).tiny)
+        ).clamp_max(1.0)
+        clipped_vectors += int((scale < 1.0).sum().item())
+        coordinates.mul_(scale)
+        energy = coordinates.square().sum(dim=-1, keepdim=True)
+        key_runtime[:, group_index, :, :queries_per_key_value] = coordinates
+        if queries_per_key_value < head_dim:
+            key_runtime[
+                :, group_index, :, queries_per_key_value
+            ] = torch.sqrt((float(head_dim) - energy[..., 0]).clamp_min(0.0))
+        else:
+            empty = energy[..., 0] <= torch.finfo(torch.float64).tiny
+            uniform_vectors += int(empty.sum().item())
+            if bool(empty.any().item()):
+                key_runtime[:, group_index, :, -1] = torch.where(
+                    empty,
+                    torch.full_like(energy[..., 0], root_head_dim),
+                    key_runtime[:, group_index, :, -1],
+                )
+    body = {
+        "schema": "neural-forge-lfm2-semantic-qk-cold-runtime-target-v1",
+        "case_evidence_sha256": case.evidence_sha256,
+        "target_probability_sha256": _tensor_sha256(probabilities),
+        "target_mask_sha256": _tensor_sha256(mask),
+        "query_runtime_sha256": _tensor_sha256(query_runtime),
+        "key_runtime_sha256": _tensor_sha256(key_runtime),
+        "centered_log_probability_factorization": True,
+        "post_rope_score_scale": "query_coordinate_equals_sqrt_head_dim",
+        "gqa_shared_key_coordinates": True,
+        "clipped_key_route_vectors": clipped_vectors,
+        "uniform_key_route_vectors": uniform_vectors,
+    }
+    return query_runtime, key_runtime, MappingProxyType(
+        {**body, "target_sha256": canonical_sha256(body)}
+    )
+
+
+def _cold_ridge_projection(
+    inputs: Any,
+    targets: Any,
+    sqrt_weights: Any,
+    *,
+    role: str,
+    ridge: float = 1e-4,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Fit one deterministic dense BF16 plant without gradients or randomness."""
+
+    torch = _torch()
+    x = inputs.detach().to(device="cpu", dtype=torch.float64)
+    y = targets.detach().to(device="cpu", dtype=torch.float64)
+    root = sqrt_weights.detach().to(device="cpu", dtype=torch.float64).reshape(-1, 1)
+    if (
+        x.ndim != 2
+        or y.ndim != 2
+        or int(x.shape[0]) != int(y.shape[0])
+        or tuple(root.shape) != (int(x.shape[0]), 1)
+        or bool((root <= 0.0).any().item())
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            f"Cold-start {role} ridge rows are incompatible."
+        )
+    weighted_x = x * root
+    weighted_y = y * root
+    rows, features = map(int, weighted_x.shape)
+    try:
+        with torch.inference_mode():
+            if rows <= features:
+                gram = weighted_x @ weighted_x.T
+                scale = float(gram.diagonal().mean().clamp_min(1.0).item())
+                effective_ridge = float(ridge) * scale
+                dual = torch.linalg.solve(
+                    gram
+                    + effective_ridge
+                    * torch.eye(rows, dtype=torch.float64),
+                    weighted_y,
+                )
+                weight = dual.T @ weighted_x
+                solve_form = "deterministic_dual_ridge"
+            else:
+                gram = weighted_x.T @ weighted_x
+                scale = float(gram.diagonal().mean().clamp_min(1.0).item())
+                effective_ridge = float(ridge) * scale
+                weight = torch.linalg.solve(
+                    gram
+                    + effective_ridge
+                    * torch.eye(features, dtype=torch.float64),
+                    weighted_x.T @ weighted_y,
+                ).T
+                solve_form = "deterministic_primal_ridge"
+    except RuntimeError as exc:
+        raise Lfm2SemanticAttentionRefoldError(
+            f"Cold-start {role} ridge solve failed."
+        ) from exc
+    if not bool(torch.isfinite(weight).all().item()) or _exact_zero(weight):
+        raise Lfm2SemanticAttentionRefoldError(
+            f"Cold-start {role} ridge solve produced no finite plant."
+        )
+    target_rms = 1.0 / math.sqrt(features)
+    observed_rms = torch.sqrt(weight.square().mean())
+    weight = weight * (target_rms / observed_rms)
+    published = weight.to(torch.bfloat16).contiguous()
+    if _exact_zero(published) or not bool(torch.isfinite(published).all().item()):
+        raise Lfm2SemanticAttentionRefoldError(
+            f"Cold-start {role} plant vanished during BF16 publication."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-semantic-qk-cold-ridge-v1",
+        "role": role,
+        "solve_form": solve_form,
+        "row_count": rows,
+        "input_width": features,
+        "output_width": int(weight.shape[0]),
+        "ridge": float(ridge),
+        "effective_ridge": effective_ridge,
+        "input_sha256": _tensor_sha256(x),
+        "target_sha256": _tensor_sha256(y),
+        "sqrt_weight_sha256": _tensor_sha256(root),
+        "published_weight_sha256": _tensor_sha256(published),
+        "published_nonzero_elements": int(torch.count_nonzero(published).item()),
+        "normalized_published_element_rms": target_rms,
+    }
+    return published, MappingProxyType(
+        {**body, "ridge_sha256": canonical_sha256(body)}
+    )
+
+
+def _compile_qk_cold_start_plant(
+    seed: Lfm2EndpointQkvoSeed,
+    fit_bank: Lfm2EndpointQkResidualEvidenceBank,
+) -> tuple[Any, Any, Mapping[str, Any]]:
+    """Compile a FIT-only route plant for an exact-zero Q/K incumbent."""
+
+    torch = _torch()
+    cases = tuple(fit_bank.cases)
+    if fit_bank.partition != "fit" or not cases:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Q/K cold-start planting requires one authenticated FIT bank."
+        )
+    query_inputs = []
+    query_targets = []
+    query_weights = []
+    key_inputs = []
+    key_targets = []
+    key_weights = []
+    target_receipts = []
+    query_weight64 = seed.query_weight.to(torch.float64)
+    key_weight64 = seed.key_weight.to(torch.float64)
+    for case in cases:
+        query_runtime, key_runtime, target_receipt = _cold_route_runtime_targets(
+            case,
+            seed,
+        )
+        batch, query_length, hidden = map(int, case.target_query_inputs.shape)
+        key_length = int(case.target_key_value_inputs.shape[1])
+        query_anchor = (
+            case.target_query_inputs.to(torch.float64) @ query_weight64.T
+        ).reshape(batch, query_length, seed.query_heads, seed.head_dim)
+        query_anchor = query_anchor.permute(0, 2, 1, 3).contiguous()
+        key_anchor = (
+            case.target_key_value_inputs.to(torch.float64) @ key_weight64.T
+        ).reshape(batch, key_length, seed.key_value_heads, seed.head_dim)
+        key_anchor = key_anchor.permute(0, 2, 1, 3).contiguous()
+        query_raw = _cold_projection_preimage(
+            query_runtime,
+            query_anchor,
+            norm_weight=seed.query_norm_weight,
+            norm_epsilon=seed.norm_epsilon,
+            cosine=case.query_rope_cos,
+            sine=case.query_rope_sin,
+            role="query",
+        )
+        key_raw = _cold_projection_preimage(
+            key_runtime,
+            key_anchor,
+            norm_weight=seed.key_norm_weight,
+            norm_epsilon=seed.norm_epsilon,
+            cosine=case.key_rope_cos,
+            sine=case.key_rope_sin,
+            role="key",
+        )
+        query_inputs.append(case.target_query_inputs.reshape(-1, hidden))
+        query_targets.append(
+            query_raw.permute(0, 2, 1, 3).reshape(-1, seed.query_heads * seed.head_dim)
+        )
+        query_weights.append(case.query_row_sqrt_weights.reshape(-1))
+        key_inputs.append(case.target_key_value_inputs.reshape(-1, hidden))
+        key_targets.append(
+            key_raw.permute(0, 2, 1, 3).reshape(
+                -1,
+                seed.key_value_heads * seed.head_dim,
+            )
+        )
+        case_scale = torch.sqrt(
+            case.query_row_sqrt_weights.to(torch.float64).square().mean()
+        )
+        key_weights.append(
+            torch.full((batch * key_length,), float(case_scale.item()))
+        )
+        target_receipts.append(dict(target_receipt))
+    planted_query, query_receipt = _cold_ridge_projection(
+        torch.cat(query_inputs, dim=0),
+        torch.cat(query_targets, dim=0),
+        torch.cat(query_weights, dim=0),
+        role="query",
+    )
+    planted_key, key_receipt = _cold_ridge_projection(
+        torch.cat(key_inputs, dim=0),
+        torch.cat(key_targets, dim=0),
+        torch.cat(key_weights, dim=0),
+        role="key",
+    )
+    if (
+        tuple(planted_query.shape) != tuple(seed.query_weight.shape)
+        or tuple(planted_key.shape) != tuple(seed.key_weight.shape)
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Q/K cold-start plant changed the dense target topology."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-semantic-qk-cold-start-plant-v1",
+        "fit_evidence_sha256": fit_bank.evidence_sha256,
+        "source_artifact_sha256": fit_bank.source_artifact_sha256,
+        "seed_sha256": seed.seed_sha256,
+        "case_evidence_sha256": [case.evidence_sha256 for case in cases],
+        "runtime_targets": target_receipts,
+        "query_ridge": dict(query_receipt),
+        "key_ridge": dict(key_receipt),
+        "planted_query_sha256": _tensor_sha256(planted_query),
+        "planted_key_sha256": _tensor_sha256(planted_key),
+        "fit_partition_only_used_for_plant": True,
+        "heldout_partitions_used_for_plant": False,
+        "randomness_used": False,
+        "gradients_used": False,
+        "training_steps": 0,
+    }
+    return planted_query, planted_key, MappingProxyType(
+        {**body, "plant_sha256": canonical_sha256(body)}
+    )
+
+
+def _strict_metric_improvement(
+    candidate: Lfm2EndpointQkMetrics,
+    baseline: Lfm2EndpointQkMetrics,
+) -> bool:
+    tolerance = 1e-12
+    return bool(
+        candidate.endpoint_relative_rmse
+        < baseline.endpoint_relative_rmse - tolerance
+        or candidate.probability_relative_rmse
+        < baseline.probability_relative_rmse - tolerance
+        or candidate.js_divergence_mean < baseline.js_divergence_mean - tolerance
+        or candidate.js_divergence_worst < baseline.js_divergence_worst - tolerance
+        or candidate.top1_route_agreement_fraction
+        > baseline.top1_route_agreement_fraction + tolerance
+    )
+
+
+def _cold_start_qk_seed(
+    seed: Lfm2EndpointQkvoSeed,
+    *,
+    banks: Mapping[str, Lfm2EndpointQkResidualEvidenceBank],
+    policy: Lfm2EndpointQkResidualFoldPolicy,
+) -> tuple[Lfm2EndpointQkvoSeed, Mapping[str, Any] | None]:
+    """Plant and four-way gate Q/K only when the incumbent is exactly zero."""
+
+    query_was_zero = _exact_zero(seed.query_weight)
+    key_was_zero = _exact_zero(seed.key_weight)
+    if not query_was_zero and not key_was_zero:
+        return seed, None
+    planted_query, planted_key, plant = _compile_qk_cold_start_plant(
+        seed,
+        banks["fit"],
+    )
+    planted = Lfm2EndpointQkvoSeed(
+        query_weight=planted_query,
+        key_weight=planted_key,
+        value_weight=seed.value_weight,
+        output_weight=seed.output_weight,
+        query_norm_weight=seed.query_norm_weight,
+        key_norm_weight=seed.key_norm_weight,
+        norm_epsilon=seed.norm_epsilon,
+        source_inventory=seed.source_inventory,
+        source_artifact_sha256=seed.source_artifact_sha256,
+        target_template_spec_sha256=seed.target_template_spec_sha256,
+    )
+    metrics: dict[str, Any] = {}
+    rejected = None
+    for partition in _PARTITIONS:
+        baseline = _evaluate_bank(
+            banks[partition],
+            seed,
+            query_weight=seed.query_weight,
+            key_weight=seed.key_weight,
+            policy=policy,
+        )
+        candidate = _evaluate_bank(
+            banks[partition],
+            planted,
+            query_weight=planted.query_weight,
+            key_weight=planted.key_weight,
+            policy=policy,
+        )
+        nonregressing = _metrics_nonregressing(
+            candidate,
+            baseline,
+            tolerance=policy.metric_regression_tolerance,
+        )
+        metrics[partition] = {
+            "baseline": baseline.as_dict(),
+            "candidate": candidate.as_dict(),
+            "nonregressing": nonregressing,
+        }
+        if not nonregressing and rejected is None:
+            rejected = partition
+    if rejected is not None or not _strict_metric_improvement(
+        Lfm2EndpointQkMetrics(**metrics["fit"]["candidate"]),
+        Lfm2EndpointQkMetrics(**metrics["fit"]["baseline"]),
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Exact-zero Q/K cold-start plant did not pass frozen four-way "
+            f"nonregression with strict FIT improvement (rejected={rejected!r})."
+        )
+    if (query_was_zero and _exact_zero(planted.query_weight)) or (
+        key_was_zero and _exact_zero(planted.key_weight)
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Authenticated Q/K cold-start left an originally zero role at zero."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-semantic-qk-cold-start-gate-v1",
+        "original_seed_sha256": seed.seed_sha256,
+        "planted_seed_sha256": planted.seed_sha256,
+        "original_query_exact_zero": query_was_zero,
+        "original_key_exact_zero": key_was_zero,
+        "plant": dict(plant),
+        "partitions": metrics,
+        "fit_strictly_improved": True,
+        "candidate_frozen_before_fit_check_selection_validation": True,
+        "heldout_refit_or_reselection": False,
+        "zero_incumbent_noop_allowed": False,
+        "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+    }
+    return planted, MappingProxyType(
+        {**body, "gate_sha256": canonical_sha256(body)}
+    )
+
+
 def _execution_policy(case_count: int) -> Lfm2EndpointQkResidualFoldPolicy:
     torch = _torch()
     devices = ()
@@ -2697,7 +3167,7 @@ def compile_install_lfm2_semantic_attention_postfold(
             "compiler_lineage_sha256": lineage,
         }
     )
-    seed = _seed(
+    incumbent_seed = _seed(
         target_model,
         layer_index=layer_index,
         source_inventory=inventory,
@@ -2724,6 +3194,19 @@ def compile_install_lfm2_semantic_attention_postfold(
         source_artifact_sha256=source_artifact,
     )
     policy = _execution_policy(len(normalized))
+    banks = MappingProxyType(
+        {
+            "fit": fit_bank,
+            "fit_check": fit_check_bank,
+            "selection": selection_bank,
+            "validation": validation_bank,
+        }
+    )
+    seed, cold_start = _cold_start_qk_seed(
+        incumbent_seed,
+        banks=banks,
+        policy=policy,
+    )
     compiled = compile_lfm2_cached_endpoint_qk_residual_fold(
         seed=seed,
         fit_bank=fit_bank,
@@ -2762,14 +3245,18 @@ def compile_install_lfm2_semantic_attention_postfold(
         )
     frozen_query = compiled.query_weight.detach().cpu().clone()
     frozen_key = compiled.key_weight.detach().cpu().clone()
-    query_changed = not torch.equal(frozen_query, seed.query_weight)
-    key_changed = not torch.equal(frozen_key, seed.key_weight)
-    if compiled.changed != (query_changed or key_changed) or compiled.accepted != (
-        query_changed or key_changed
+    compiler_query_changed = not torch.equal(frozen_query, seed.query_weight)
+    compiler_key_changed = not torch.equal(frozen_key, seed.key_weight)
+    if compiled.changed != (
+        compiler_query_changed or compiler_key_changed
+    ) or compiled.accepted != (
+        compiler_query_changed or compiler_key_changed
     ):
         raise Lfm2SemanticAttentionRefoldError(
             "Authenticated Q/K acceptance disagrees with its published tensors."
         )
+    query_changed = not torch.equal(frozen_query, incumbent_seed.query_weight)
+    key_changed = not torch.equal(frozen_key, incumbent_seed.key_weight)
     frozen_qk_sha = canonical_sha256(
         {
             "q": _tensor_sha256(frozen_query),
@@ -2801,6 +3288,20 @@ def compile_install_lfm2_semantic_attention_postfold(
     ):
         raise Lfm2SemanticAttentionRefoldError(
             "Frozen candidate failed VALIDATION or changed after selection freeze."
+        )
+    if cold_start is not None and (
+        (
+            cold_start["original_query_exact_zero"] is True
+            and _exact_zero(frozen_query)
+        )
+        or (
+            cold_start["original_key_exact_zero"] is True
+            and _exact_zero(frozen_key)
+        )
+        or not (query_changed or key_changed)
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Exact-zero Q/K cold-start cannot publish a zero or total-incumbent no-op."
         )
     joint_banks = {
         "fit": _joint_vo_cases(
@@ -2873,8 +3374,8 @@ def compile_install_lfm2_semantic_attention_postfold(
         )
     writer_accepted = published_vo_kind == "fixed_v_output_only"
     joint_accepted = published_vo_kind == "joint_value_output"
-    value_changed = not torch.equal(published_value, seed.value_weight)
-    output_changed = not torch.equal(published_output, seed.output_weight)
+    value_changed = not torch.equal(published_value, incumbent_seed.value_weight)
+    output_changed = not torch.equal(published_output, incumbent_seed.output_weight)
     if (
         (writer_accepted and (value_changed or not output_changed))
         or (joint_accepted and not (value_changed or output_changed))
@@ -2987,6 +3488,11 @@ def compile_install_lfm2_semantic_attention_postfold(
             "fit_check_evidence_sha256": fit_check_bank.evidence_sha256,
             "selection_evidence_sha256": selection_bank.evidence_sha256,
             "validation_evidence_sha256": validation_bank.evidence_sha256,
+            **(
+                {}
+                if cold_start is None
+                else {"qk_cold_start": dict(cold_start)}
+            ),
             "endpoint_compiler_report_sha256": compiled.report["report_sha256"],
             "analytic_execution_policy": {
                 "solver_device": policy.solver_device,

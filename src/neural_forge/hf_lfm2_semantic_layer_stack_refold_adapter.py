@@ -54,6 +54,7 @@ from neural_forge.hf_lfm2_semantic_postfold import (
     _attention_tensor_names,
     _changed_state_keys,
     _interface_tensor_sha256,
+    _lfm2_dense_producer_chain_coverage,
     _local_safetensor_shards,
     _parameter_count,
     _semantic_alignments_from_session,
@@ -128,6 +129,86 @@ def _verify_sealed(value: Mapping[str, Any], label: str) -> dict[str, Any]:
     if supplied != canonical_sha256(result):
         raise Lfm2SemanticLayerStackRefoldError(f"{label} receipt seal is invalid.")
     return {**result, "result_sha256": supplied}
+
+
+def _validate_producer_coverage_decision(
+    *,
+    layer_index: int,
+    producer_kind: str,
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+    installation: Mapping[str, Any],
+    defer_down_weight: bool = False,
+) -> Mapping[str, Any]:
+    """Require cold starts to plant a chain and authenticate refinement no-ops."""
+
+    before_receipt = _verify_sealed(before, "producer coverage before")
+    after_receipt = _verify_sealed(after, "producer coverage after")
+    expected_deferred = ["feed_forward.w2.weight"] if defer_down_weight else []
+    common_invalid = bool(
+        before_receipt.get("layer_index") != layer_index
+        or after_receipt.get("layer_index") != layer_index
+        or before_receipt.get("producer_kind") != producer_kind
+        or after_receipt.get("producer_kind") != producer_kind
+        or before_receipt.get("deferred_roles") != expected_deferred
+        or after_receipt.get("deferred_roles") != expected_deferred
+        or before_receipt.get("dense_existing_topology_only") is not True
+        or after_receipt.get("dense_existing_topology_only") is not True
+        or before_receipt.get("operation_audit") != dict(_ZERO_OPERATIONS)
+        or after_receipt.get("operation_audit") != dict(_ZERO_OPERATIONS)
+        or after_receipt.get("all_required_roles_structurally_nonzero") is not True
+        or after_receipt.get("blank_or_partially_blank_required_role_count") != 0
+    )
+    installed = installation.get("installed") is True
+    model_state_changed = bool(
+        installation.get("model_state_before_sha256")
+        != installation.get("model_state_after_sha256")
+    )
+    role_state_changed = bool(
+        before_receipt.get("required_role_state_sha256")
+        != after_receipt.get("required_role_state_sha256")
+    )
+    cold_start = bool(
+        before_receipt.get("all_required_roles_structurally_nonzero") is not True
+    )
+    retained_nonzero_seed = bool(
+        not installed
+        and not cold_start
+        and not model_state_changed
+        and not role_state_changed
+    )
+    installed_complete_chain = bool(
+        installed and model_state_changed
+    )
+    if common_invalid or not (installed_complete_chain or retained_nonzero_seed):
+        if cold_start and not installed_complete_chain:
+            reason = "blank-or-partial-producer-chain-was-not-densely-planted"
+        elif not installed and not retained_nonzero_seed:
+            reason = "producer-noop-did-not-retain-an-authenticated-nonzero-seed"
+        else:
+            reason = "producer-installation-did-not-prove-complete-coverage"
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"Layer {layer_index} {producer_kind} coverage rejected: {reason}."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-producer-coverage-decision-v1",
+        "layer_index": layer_index,
+        "producer_kind": producer_kind,
+        "deferred_roles": expected_deferred,
+        "coverage_before_sha256": before_receipt["result_sha256"],
+        "coverage_after_sha256": after_receipt["result_sha256"],
+        "coverage_before": before_receipt,
+        "coverage_after": after_receipt,
+        "cold_start_or_partial_seed_at_entry": cold_start,
+        "installed_complete_structurally_nonzero_chain": installed_complete_chain,
+        "authenticated_nonzero_folded_seed_retained_by_noop": retained_nonzero_seed,
+        "all_required_roles_structurally_nonzero_after_decision": True,
+        "blank_or_partially_blank_required_role_count_after_decision": 0,
+        "numeric_parent_child_weight_match_objective": False,
+        "training_steps": 0,
+        "operation_audit": dict(_ZERO_OPERATIONS),
+    }
+    return _sealed(body)
 
 
 def _file_sha256(path: Path) -> str:
@@ -2325,8 +2406,10 @@ def _layer_receipt(
     operator_kind: str,
     before_operator_replay: _LayerReplayBank,
     operator_receipt: Mapping[str, Any],
+    operator_coverage_decision: Mapping[str, Any],
     after_operator_replay: _LayerReplayBank,
     mlp_receipt: Mapping[str, Any],
+    mlp_coverage_decision: Mapping[str, Any],
     mlp_source_provenance: Mapping[str, Any],
     propagation_replay: _LayerReplayBank,
     chart_receipt: Mapping[str, Any],
@@ -2345,6 +2428,10 @@ def _layer_receipt(
         "before_operator_replay_bank_sha256": before_operator_replay.bank_sha256,
         "operator_decision_sha256": operator_receipt["result_sha256"],
         "operator_installation_sha256": operator_receipt["result_sha256"],
+        "operator_producer_coverage_decision_sha256": (
+            operator_coverage_decision["result_sha256"]
+        ),
+        "operator_producer_coverage_decision": dict(operator_coverage_decision),
         "operator_decision_count": 1,
         "operator_installed": operator_receipt.get("installed") is True,
         "operator_install_count": int(operator_receipt.get("installed") is True),
@@ -2361,6 +2448,10 @@ def _layer_receipt(
         "after_operator_replay_bank_sha256": after_operator_replay.bank_sha256,
         "mlp_decision_sha256": mlp_receipt["result_sha256"],
         "mlp_installation_sha256": mlp_receipt["result_sha256"],
+        "mlp_producer_coverage_decision_sha256": (
+            mlp_coverage_decision["result_sha256"]
+        ),
+        "mlp_producer_coverage_decision": dict(mlp_coverage_decision),
         "mlp_decision_count": 1,
         "mlp_installed": mlp_receipt.get("installed") is True,
         "mlp_install_count": int(mlp_receipt.get("installed") is True),
@@ -2391,6 +2482,7 @@ def _layer_receipt(
             None if fir_receipt is None else fir_receipt["result_sha256"]
         ),
         "operator_then_replay_fresh_mlp_then_propagate": True,
+        "operator_and_mlp_producer_chains_structurally_nonzero": True,
         "numeric_parent_child_weight_match_objective": False,
         "training_steps": 0,
     }
@@ -2518,6 +2610,14 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             final_mlp_producer_install_count = 0
             final_mlp_producer_incumbent_noop_count = 0
             mlp_parameter_mutation_count = 0
+            attention_producer_coverage_count = 0
+            short_conv_producer_coverage_count = 0
+            nonterminal_mlp_producer_coverage_count = 0
+            final_mlp_producer_coverage_count = 0
+            cold_start_producer_chain_count = 0
+            installed_complete_producer_chain_count = 0
+            retained_nonzero_seed_noop_count = 0
+            blank_or_partially_blank_producer_chain_count = 0
             final_terminal_evidence: Mapping[str, Any] = MappingProxyType({})
             for layer_index, operator_kind in enumerate(kinds):
                 before_operator_replay = _replay_current_layer(
@@ -2541,6 +2641,11 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     layer_index=layer_index,
                 )
                 fir_receipt = None
+                operator_coverage_before = _lfm2_dense_producer_chain_coverage(
+                    target_model,
+                    layer_index=layer_index,
+                    producer_kind=operator_kind,
+                )
                 if operator_kind == "full_attention":
                     lineage = compiler_lineage[layer_index]
                     operator_evidence = _build_attention_evidence(
@@ -2615,6 +2720,45 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     short_conv_incumbent_noop_count += int(
                         operator_receipt.get("installed") is False
                     )
+                operator_coverage_after = _lfm2_dense_producer_chain_coverage(
+                    target_model,
+                    layer_index=layer_index,
+                    producer_kind=operator_kind,
+                )
+                operator_coverage_decision = _validate_producer_coverage_decision(
+                    layer_index=layer_index,
+                    producer_kind=operator_kind,
+                    before=operator_coverage_before,
+                    after=operator_coverage_after,
+                    installation=operator_receipt,
+                )
+                attention_producer_coverage_count += int(
+                    operator_kind == "full_attention"
+                )
+                short_conv_producer_coverage_count += int(
+                    operator_kind == "short_conv"
+                )
+                cold_start_producer_chain_count += int(
+                    operator_coverage_decision[
+                        "cold_start_or_partial_seed_at_entry"
+                    ]
+                )
+                installed_complete_producer_chain_count += int(
+                    operator_coverage_decision[
+                        "installed_complete_structurally_nonzero_chain"
+                    ]
+                )
+                retained_nonzero_seed_noop_count += int(
+                    operator_coverage_decision[
+                        "authenticated_nonzero_folded_seed_retained_by_noop"
+                    ]
+                )
+                blank_or_partially_blank_producer_chain_count += int(
+                    operator_coverage_decision[
+                        "blank_or_partially_blank_required_role_count_after_decision"
+                    ]
+                    > 0
+                )
                 operator_parameter_mutation_count += int(
                     operator_receipt["model_state_before_sha256"]
                     != operator_receipt["model_state_after_sha256"]
@@ -2659,6 +2803,12 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     final_layer=layer_index == 13,
                 )
                 mlp_evidence_compile_count += 1
+                mlp_coverage_before = _lfm2_dense_producer_chain_coverage(
+                    target_model,
+                    layer_index=layer_index,
+                    producer_kind="mlp",
+                    defer_down_weight=layer_index == 13,
+                )
                 mlp_receipt, terminal_evidence = _install_mlp(
                     target_model=target_model,
                     layer_index=layer_index,
@@ -2669,7 +2819,41 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     final_layer=layer_index == 13,
                     parameter_count=parameter_count,
                 )
+                mlp_coverage_after = _lfm2_dense_producer_chain_coverage(
+                    target_model,
+                    layer_index=layer_index,
+                    producer_kind="mlp",
+                    defer_down_weight=layer_index == 13,
+                )
+                mlp_coverage_decision = _validate_producer_coverage_decision(
+                    layer_index=layer_index,
+                    producer_kind="mlp",
+                    before=mlp_coverage_before,
+                    after=mlp_coverage_after,
+                    installation=mlp_receipt,
+                    defer_down_weight=layer_index == 13,
+                )
+                cold_start_producer_chain_count += int(
+                    mlp_coverage_decision["cold_start_or_partial_seed_at_entry"]
+                )
+                installed_complete_producer_chain_count += int(
+                    mlp_coverage_decision[
+                        "installed_complete_structurally_nonzero_chain"
+                    ]
+                )
+                retained_nonzero_seed_noop_count += int(
+                    mlp_coverage_decision[
+                        "authenticated_nonzero_folded_seed_retained_by_noop"
+                    ]
+                )
+                blank_or_partially_blank_producer_chain_count += int(
+                    mlp_coverage_decision[
+                        "blank_or_partially_blank_required_role_count_after_decision"
+                    ]
+                    > 0
+                )
                 if layer_index < 13:
+                    nonterminal_mlp_producer_coverage_count += 1
                     nonterminal_mlp_decision_count += 1
                     nonterminal_mlp_install_count += int(
                         mlp_receipt.get("installed") is True
@@ -2678,6 +2862,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         mlp_receipt.get("installed") is False
                     )
                 else:
+                    final_mlp_producer_coverage_count = 1
                     final_terminal_evidence = terminal_evidence
                     final_mlp_producer_install_count = int(
                         mlp_receipt.get("installed") is True
@@ -2708,8 +2893,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         operator_kind=operator_kind,
                         before_operator_replay=before_operator_replay,
                         operator_receipt=operator_receipt,
+                        operator_coverage_decision=operator_coverage_decision,
                         after_operator_replay=after_operator_replay,
                         mlp_receipt=mlp_receipt,
+                        mlp_coverage_decision=mlp_coverage_decision,
                         mlp_source_provenance=mlp_source_provenance,
                         propagation_replay=propagation_replay,
                         chart_receipt=chart_receipt,
@@ -2750,6 +2937,23 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             or final_mlp_producer_install_count
             + final_mlp_producer_incumbent_noop_count
             != 1
+            or attention_producer_coverage_count != 6
+            or short_conv_producer_coverage_count != 8
+            or nonterminal_mlp_producer_coverage_count != 13
+            or final_mlp_producer_coverage_count != 1
+            or blank_or_partially_blank_producer_chain_count != 0
+            or installed_complete_producer_chain_count
+            + retained_nonzero_seed_noop_count
+            != 28
+            or retained_nonzero_seed_noop_count
+            != (
+                attention_incumbent_noop_count
+                + short_conv_incumbent_noop_count
+                + nonterminal_mlp_incumbent_noop_count
+                + final_mlp_producer_incumbent_noop_count
+            )
+            or cold_start_producer_chain_count
+            > installed_complete_producer_chain_count
             or operator_parameter_mutation_count
             != attention_install_count + short_conv_install_count
             or mlp_parameter_mutation_count
@@ -2819,6 +3023,30 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "final_mlp_producer_incumbent_noop_count": (
                 final_mlp_producer_incumbent_noop_count
             ),
+            "attention_producer_structural_coverage_count": (
+                attention_producer_coverage_count
+            ),
+            "short_conv_producer_structural_coverage_count": (
+                short_conv_producer_coverage_count
+            ),
+            "nonterminal_mlp_producer_structural_coverage_count": (
+                nonterminal_mlp_producer_coverage_count
+            ),
+            "final_mlp_producer_structural_coverage_count": (
+                final_mlp_producer_coverage_count
+            ),
+            "cold_start_or_partial_producer_chain_count": (
+                cold_start_producer_chain_count
+            ),
+            "installed_complete_producer_chain_count": (
+                installed_complete_producer_chain_count
+            ),
+            "authenticated_nonzero_folded_seed_retained_noop_count": (
+                retained_nonzero_seed_noop_count
+            ),
+            "blank_or_partially_blank_producer_chain_count": (
+                blank_or_partially_blank_producer_chain_count
+            ),
             "mlp_parameter_mutation_count": mlp_parameter_mutation_count,
             "heldout_selected_incumbent_noop_count": sum(
                 int(value["operator_incumbent_noop_selected"])
@@ -2826,6 +3054,8 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 for value in layer_receipts
             ),
             "complete_causal_layer_stack_adjudicated": True,
+            "complete_nonzero_structural_producer_coverage": True,
+            "all_producer_chains_installed_or_retained_nonzero_seed": True,
             "complete_causal_layer_stack_installed": (
                 attention_install_count == attention_decision_count
                 and short_conv_install_count == short_conv_decision_count

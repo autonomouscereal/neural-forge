@@ -39,6 +39,34 @@ class _TinyTarget(torch.nn.Module):
         self._neural_forge_quarantine_tokenizer = object()
 
 
+class _DenseCoverageLayer(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.self_attn = torch.nn.Module()
+        self.self_attn.q_proj = torch.nn.Linear(3, 3, bias=False)
+        self.self_attn.k_proj = torch.nn.Linear(3, 2, bias=False)
+        self.self_attn.v_proj = torch.nn.Linear(3, 2, bias=False)
+        self.self_attn.out_proj = torch.nn.Linear(2, 3, bias=False)
+        self.conv = torch.nn.Module()
+        self.conv.in_proj = torch.nn.Linear(3, 6, bias=False)
+        self.conv.conv = torch.nn.Conv1d(6, 6, 3, groups=6, bias=False)
+        self.conv.out_proj = torch.nn.Linear(6, 3, bias=False)
+        self.feed_forward = torch.nn.Module()
+        self.feed_forward.w1 = torch.nn.Linear(3, 5, bias=False)
+        self.feed_forward.w3 = torch.nn.Linear(3, 5, bias=False)
+        self.feed_forward.w2 = torch.nn.Linear(5, 3, bias=False)
+        with torch.no_grad():
+            for parameter in self.parameters():
+                parameter.zero_()
+
+
+class _DenseCoverageTarget(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.model = torch.nn.Module()
+        self.model.layers = torch.nn.ModuleList([_DenseCoverageLayer()])
+
+
 def _state_identity(model: _TinyTarget) -> str:
     return canonical_sha256(
         {
@@ -48,12 +76,88 @@ def _state_identity(model: _TinyTarget) -> str:
     )
 
 
+def test_dense_producer_coverage_authenticates_each_structural_axis_and_deferred_w2(
+) -> None:
+    target = _DenseCoverageTarget()
+    layer = target.model.layers[0]
+
+    blank_attention = stack._lfm2_dense_producer_chain_coverage(
+        target,
+        layer_index=0,
+        producer_kind="full_attention",
+    )
+    assert blank_attention["all_required_roles_structurally_nonzero"] is False
+    assert blank_attention["blank_or_partially_blank_required_role_count"] == 4
+
+    with torch.no_grad():
+        for projection in (
+            layer.self_attn.q_proj,
+            layer.self_attn.k_proj,
+            layer.self_attn.v_proj,
+            layer.self_attn.out_proj,
+        ):
+            projection.weight.fill_(1.0)
+        layer.feed_forward.w1.weight.fill_(1.0)
+        layer.feed_forward.w3.weight.fill_(1.0)
+
+    planted_attention = stack._lfm2_dense_producer_chain_coverage(
+        target,
+        layer_index=0,
+        producer_kind="full_attention",
+    )
+    assert planted_attention["all_required_roles_structurally_nonzero"] is True
+    assert planted_attention["blank_or_partially_blank_required_role_count"] == 0
+
+    deferred_mlp = stack._lfm2_dense_producer_chain_coverage(
+        target,
+        layer_index=0,
+        producer_kind="mlp",
+        defer_down_weight=True,
+    )
+    assert deferred_mlp["all_required_roles_structurally_nonzero"] is True
+    assert deferred_mlp["deferred_roles"] == ["feed_forward.w2.weight"]
+
+    incomplete_full_mlp = stack._lfm2_dense_producer_chain_coverage(
+        target,
+        layer_index=0,
+        producer_kind="mlp",
+    )
+    assert incomplete_full_mlp["all_required_roles_structurally_nonzero"] is False
+    assert incomplete_full_mlp["blank_or_partially_blank_required_role_count"] == 1
+
+    with torch.no_grad():
+        layer.feed_forward.w2.weight.fill_(1.0)
+        layer.self_attn.q_proj.weight.zero_()
+        layer.self_attn.q_proj.weight[0, 0] = 1.0
+    partial_attention = stack._lfm2_dense_producer_chain_coverage(
+        target,
+        layer_index=0,
+        producer_kind="full_attention",
+    )
+    q_receipt = partial_attention["role_receipts"]["self_attn.q_proj.weight"]
+    assert q_receipt["nonzero_element_count"] == 1
+    assert q_receipt["all_output_structural_units_covered"] is False
+    assert q_receipt["all_input_structural_units_covered"] is False
+    assert partial_attention["all_required_roles_structurally_nonzero"] is False
+
+    full_mlp = stack._lfm2_dense_producer_chain_coverage(
+        target,
+        layer_index=0,
+        producer_kind="mlp",
+    )
+    assert full_mlp["all_required_roles_structurally_nonzero"] is True
+
+
 def _patch_complete_transaction(
     monkeypatch,
     *,
     failing_layer: int | None = None,
     noop_operator_layers: frozenset[int] = frozenset(),
     noop_mlp_layers: frozenset[int] = frozenset(),
+    blank_operator_layers: frozenset[int] = frozenset(),
+    blank_mlp_layers: frozenset[int] = frozenset(),
+    incomplete_operator_after_layers: frozenset[int] = frozenset(),
+    incomplete_mlp_after_layers: frozenset[int] = frozenset(),
 ):
     events: list[str] = []
 
@@ -149,6 +253,56 @@ def _patch_complete_transaction(
         lambda: (object, object, lambda **_kwargs: None),
     )
     monkeypatch.setattr(stack, "_final_w2_parameter", lambda model: model.final_w2)
+    coverage_calls: dict[tuple[int, str], int] = {}
+
+    def producer_coverage(
+        model,
+        *,
+        layer_index,
+        producer_kind,
+        defer_down_weight=False,
+    ):
+        key = (layer_index, producer_kind)
+        ordinal = coverage_calls.get(key, 0)
+        coverage_calls[key] = ordinal + 1
+        is_before = ordinal % 2 == 0
+        blank_at_entry = (
+            layer_index in blank_mlp_layers
+            if producer_kind == "mlp"
+            else layer_index in blank_operator_layers
+        )
+        incomplete_after = (
+            layer_index in incomplete_mlp_after_layers
+            if producer_kind == "mlp"
+            else layer_index in incomplete_operator_after_layers
+        )
+        complete = not (
+            (is_before and blank_at_entry) or (not is_before and incomplete_after)
+        )
+        state_sha = canonical_sha256(
+            ["coverage-state", layer_index, producer_kind, _state_identity(model)]
+        )
+        body = {
+            "schema": "neural-forge-lfm2-dense-producer-chain-coverage-v1",
+            "layer_index": layer_index,
+            "producer_kind": producer_kind,
+            "deferred_roles": (
+                ["feed_forward.w2.weight"] if defer_down_weight else []
+            ),
+            "required_role_state_sha256": state_sha,
+            "model_state_tensor_hashes_sha256": _state_identity(model),
+            "all_required_roles_structurally_nonzero": complete,
+            "blank_or_partially_blank_required_role_count": int(not complete),
+            "dense_existing_topology_only": True,
+            "operation_audit": dict(stack._ZERO_OPERATIONS),
+        }
+        return stack._sealed(body)
+
+    monkeypatch.setattr(
+        stack,
+        "_lfm2_dense_producer_chain_coverage",
+        producer_coverage,
+    )
     monkeypatch.setattr(
         stack,
         "_target_rope",
@@ -357,6 +511,15 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
     assert result.receipt["short_conv_operator_install_count"] == 8
     assert result.receipt["replay_fresh_mlp_evidence_compile_count"] == 14
     assert result.receipt["final_layer_mlp_w2_install_count"] == 0
+    assert result.receipt["complete_nonzero_structural_producer_coverage"] is True
+    assert result.receipt["blank_or_partially_blank_producer_chain_count"] == 0
+    assert result.receipt["installed_complete_producer_chain_count"] == 27
+    assert (
+        result.receipt[
+            "authenticated_nonzero_folded_seed_retained_noop_count"
+        ]
+        == 1
+    )
     torch.testing.assert_close(target.final_w2, before_w2, rtol=0, atol=0)
     for layer_index in range(14):
         kind = (
@@ -418,6 +581,70 @@ def test_complete_transaction_truthfully_counts_mixed_incumbent_noops(
     assert receipt["complete_causal_layer_stack_adjudicated"] is True
     assert receipt["complete_causal_layer_stack_installed"] is False
     assert receipt["whole_stage_contains_meaningful_parameter_changes"] is True
+    assert receipt["complete_nonzero_structural_producer_coverage"] is True
+    assert receipt["blank_or_partially_blank_producer_chain_count"] == 0
+    assert receipt["authenticated_nonzero_folded_seed_retained_noop_count"] == 4
+
+
+def test_blank_producer_chain_cannot_be_accepted_as_an_incumbent_noop(
+    monkeypatch,
+) -> None:
+    target, cache, bridge, _events = _patch_complete_transaction(
+        monkeypatch,
+        noop_operator_layers=frozenset({0}),
+        blank_operator_layers=frozenset({0}),
+    )
+    before = _state_identity(target)
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="exact entry bytes were restored",
+    ):
+        stack.compile_install_lfm2_semantic_layer_stack_postfold(
+            cache=cache,
+            bridge=bridge,
+            target_model=target,
+            interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+            compiler_lineage={
+                index: object() for index in stack._EXPECTED_ATTENTION_INDICES
+            },
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            attention_installer=lambda **_kwargs: None,
+        )
+
+    assert _state_identity(target) == before
+
+
+def test_installed_but_structurally_partial_producer_chain_rolls_back(
+    monkeypatch,
+) -> None:
+    target, cache, bridge, _events = _patch_complete_transaction(
+        monkeypatch,
+        incomplete_mlp_after_layers=frozenset({2}),
+    )
+    before = _state_identity(target)
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="exact entry bytes were restored",
+    ):
+        stack.compile_install_lfm2_semantic_layer_stack_postfold(
+            cache=cache,
+            bridge=bridge,
+            target_model=target,
+            interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+            compiler_lineage={
+                index: object() for index in stack._EXPECTED_ATTENTION_INDICES
+            },
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            attention_installer=lambda **_kwargs: None,
+        )
+
+    assert _state_identity(target) == before
 
 
 def test_complete_transaction_rejects_an_all_incumbent_noop_stack(

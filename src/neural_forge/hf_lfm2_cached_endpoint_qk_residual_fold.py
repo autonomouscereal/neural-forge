@@ -4027,17 +4027,42 @@ def _trust_scale(
 ) -> tuple[Any, Any, float, float, float]:
     torch = _torch()
     tiny = torch.finfo(torch.float64).tiny
-    query_relative = float(
+    query_delta_norm = float(
         torch.linalg.vector_norm(delta_query.to(torch.float64)).item()
-    ) / max(
-        float(torch.linalg.vector_norm(current_query.to(torch.float64)).item()),
-        tiny,
     )
-    key_relative = float(
+    query_current_norm = float(
+        torch.linalg.vector_norm(current_query.to(torch.float64)).item()
+    )
+    key_delta_norm = float(
         torch.linalg.vector_norm(delta_key.to(torch.float64)).item()
-    ) / max(
-        float(torch.linalg.vector_norm(current_key.to(torch.float64)).item()),
-        tiny,
+    )
+    key_current_norm = float(
+        torch.linalg.vector_norm(current_key.to(torch.float64)).item()
+    )
+
+    # A relative trust region has no meaningful incumbent scale when an exact
+    # compiler blank reaches this solver.  Dividing a real analytic direction
+    # by float64.tiny made the trust multiplier itself float64.tiny, so the
+    # BF16 frontier silently rounded every cold-start correction back to zero.
+    # Use the direction as the unit reference only for the exact-zero branch.
+    # Every nonzero incumbent follows the original calculation byte-for-byte.
+    query_relative = (
+        0.0
+        if query_current_norm == 0.0 and query_delta_norm == 0.0
+        else (
+            1.0
+            if query_current_norm == 0.0
+            else query_delta_norm / max(query_current_norm, tiny)
+        )
+    )
+    key_relative = (
+        0.0
+        if key_current_norm == 0.0 and key_delta_norm == 0.0
+        else (
+            1.0
+            if key_current_norm == 0.0
+            else key_delta_norm / max(key_current_norm, tiny)
+        )
     )
     scale = min(
         1.0,

@@ -283,6 +283,179 @@ def _state_tensor_hashes(model: Any) -> dict[str, str]:
     }
 
 
+_DENSE_PRODUCER_WEIGHT_ROLES = MappingProxyType(
+    {
+        "full_attention": (
+            "self_attn.q_proj.weight",
+            "self_attn.k_proj.weight",
+            "self_attn.v_proj.weight",
+            "self_attn.out_proj.weight",
+        ),
+        "short_conv": (
+            "conv.in_proj.weight",
+            "conv.conv.weight",
+            "conv.out_proj.weight",
+        ),
+        "mlp": (
+            "feed_forward.w1.weight",
+            "feed_forward.w3.weight",
+            "feed_forward.w2.weight",
+        ),
+    }
+)
+
+
+def _dense_weight_structural_coverage(
+    value: Any,
+    *,
+    parameter_name: str,
+    require_parameter: bool = True,
+) -> Mapping[str, Any]:
+    """Authenticate that a dense producer spans every output and input axis.
+
+    This is deliberately an exact structural gate, not a quality metric.  A
+    dense folded weight is considered planted only when it is finite, contains
+    a nonzero coefficient, and leaves no output row/channel or input/lag column
+    structurally disconnected.  It does not require parent/child numeric weight
+    equality and it does not impose an arbitrary magnitude threshold.
+    """
+
+    torch = _torch()
+    if (
+        (require_parameter and not isinstance(value, torch.nn.Parameter))
+        or not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or not torch.is_floating_point(value)
+        or value.ndim < 2
+        or value.numel() <= 0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"{parameter_name} is not a materialized dense floating "
+            + ("Parameter." if require_parameter else "tensor.")
+        )
+    tensor = value.detach().to(device="cpu").contiguous()
+    finite = bool(torch.isfinite(tensor.to(dtype=torch.float32)).all().item())
+    nonzero = tensor.ne(0)
+    nonzero_count = int(nonzero.sum().item())
+    output_units = int(tensor.shape[0])
+    input_units = int(tensor.shape[-1])
+    covered_output_units = int(
+        nonzero.reshape(output_units, -1).any(dim=1).sum().item()
+    )
+    covered_input_units = int(
+        nonzero.reshape(-1, input_units).any(dim=0).sum().item()
+    )
+    body = {
+        "schema": "neural-forge-dense-weight-structural-coverage-v1",
+        "parameter_name": parameter_name,
+        "ordinary_parameter_required": require_parameter,
+        "ordinary_parameter": isinstance(value, torch.nn.Parameter),
+        "shape": [int(size) for size in tensor.shape],
+        "dtype": str(tensor.dtype).removeprefix("torch."),
+        "tensor_sha256": _tensor_sha256(tensor),
+        "element_count": int(tensor.numel()),
+        "nonzero_element_count": nonzero_count,
+        "nonzero_element_fraction": nonzero_count / int(tensor.numel()),
+        "finite": finite,
+        "output_structural_unit_count": output_units,
+        "covered_output_structural_unit_count": covered_output_units,
+        "input_structural_unit_count": input_units,
+        "covered_input_structural_unit_count": covered_input_units,
+        "all_output_structural_units_covered": (
+            covered_output_units == output_units
+        ),
+        "all_input_structural_units_covered": covered_input_units == input_units,
+        "structurally_nonzero": bool(
+            finite
+            and nonzero_count > 0
+            and covered_output_units == output_units
+            and covered_input_units == input_units
+        ),
+    }
+    return MappingProxyType(_sealed(body, "result_sha256"))
+
+
+def _lfm2_dense_producer_chain_coverage(
+    target_model: Any,
+    *,
+    layer_index: int,
+    producer_kind: str,
+    defer_down_weight: bool = False,
+) -> Mapping[str, Any]:
+    """Seal structural coverage of one existing dense LFM2 producer chain.
+
+    The final MLP may defer only W2.  Its W1/W3 producer must still be planted
+    before terminal evidence can be trusted; the deferred W2 bytes are recorded
+    and authenticated but are not counted as required until terminal publish.
+    """
+
+    if (
+        isinstance(layer_index, bool)
+        or not isinstance(layer_index, int)
+        or layer_index < 0
+        or producer_kind not in _DENSE_PRODUCER_WEIGHT_ROLES
+        or (defer_down_weight and producer_kind != "mlp")
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Dense producer-chain coverage request is invalid."
+        )
+    roles = tuple(_DENSE_PRODUCER_WEIGHT_ROLES[producer_kind])
+    deferred_roles = (
+        ("feed_forward.w2.weight",) if defer_down_weight else ()
+    )
+    required_roles = tuple(role for role in roles if role not in deferred_roles)
+    named_rows = list(target_model.named_parameters(remove_duplicate=False))
+    named: dict[str, Any] = {}
+    duplicate_names: set[str] = set()
+    for name, parameter in named_rows:
+        if name in named:
+            duplicate_names.add(name)
+        named[name] = parameter
+    receipts: dict[str, Mapping[str, Any]] = {}
+    for role in roles:
+        parameter_name = f"model.layers.{layer_index}.{role}"
+        if parameter_name in duplicate_names or parameter_name not in named:
+            raise Lfm2SemanticPostfoldError(
+                f"Dense producer Parameter {parameter_name} is missing or ambiguous."
+            )
+        receipts[role] = _dense_weight_structural_coverage(
+            named[parameter_name],
+            parameter_name=parameter_name,
+        )
+    role_hashes = {
+        role: receipts[role]["tensor_sha256"] for role in roles
+    }
+    body = {
+        "schema": "neural-forge-lfm2-dense-producer-chain-coverage-v1",
+        "layer_index": layer_index,
+        "producer_kind": producer_kind,
+        "required_roles": list(required_roles),
+        "deferred_roles": list(deferred_roles),
+        "role_receipts": {role: dict(receipts[role]) for role in roles},
+        "required_role_state_sha256": canonical_sha256(
+            {role: role_hashes[role] for role in required_roles}
+        ),
+        "all_role_state_sha256": canonical_sha256(role_hashes),
+        "required_role_count": len(required_roles),
+        "structurally_nonzero_required_role_count": sum(
+            int(receipts[role]["structurally_nonzero"])
+            for role in required_roles
+        ),
+        "blank_or_partially_blank_required_role_count": sum(
+            int(not receipts[role]["structurally_nonzero"])
+            for role in required_roles
+        ),
+        "all_required_roles_structurally_nonzero": all(
+            receipts[role]["structurally_nonzero"] for role in required_roles
+        ),
+        "dense_existing_topology_only": True,
+        "numeric_parent_child_weight_match_objective": False,
+        "operation_audit": dict(_ZERO_OPERATIONS),
+    }
+    return MappingProxyType(_sealed(body, "result_sha256"))
+
+
 def _changed_state_keys(
     before: Mapping[str, str],
     after: Mapping[str, str],
@@ -2556,6 +2729,129 @@ def _final_w2_parameter(target_model: Any) -> Any:
     return parameter
 
 
+def _validate_live_layer_stack_producer_coverage(
+    target_model: Any,
+    receipt: Mapping[str, Any],
+) -> None:
+    """Cross-check every nested coverage proof against the live folded child."""
+
+    layer_values = receipt.get("layer_installations")
+    if not isinstance(layer_values, list) or len(layer_values) != 14:
+        raise Lfm2SemanticPostfoldError(
+            "Layer-stack receipt omitted its fourteen producer coverage decisions."
+        )
+    for layer_index, raw_layer in enumerate(layer_values):
+        if not isinstance(raw_layer, Mapping):
+            raise Lfm2SemanticPostfoldError(
+                "Layer-stack producer coverage decision is not a mapping."
+            )
+        layer = _verify_sealed(
+            raw_layer,
+            seal_name="result_sha256",
+            label=f"semantic layer {layer_index} transaction",
+        )
+        expected_operator_kind = (
+            "full_attention" if layer_index in (2, 4, 6, 8, 10, 12) else "short_conv"
+        )
+        if (
+            layer.get("layer_index") != layer_index
+            or layer.get("operator_kind") != expected_operator_kind
+            or layer.get("operator_and_mlp_producer_chains_structurally_nonzero")
+            is not True
+        ):
+            raise Lfm2SemanticPostfoldError(
+                f"Layer {layer_index} structural producer receipt is inconsistent."
+            )
+        for lane, producer_kind, defer_down_weight in (
+            ("operator", expected_operator_kind, False),
+            ("mlp", "mlp", layer_index == 13),
+        ):
+            decision_value = layer.get(f"{lane}_producer_coverage_decision")
+            if not isinstance(decision_value, Mapping):
+                raise Lfm2SemanticPostfoldError(
+                    f"Layer {layer_index} omitted {lane} producer coverage."
+                )
+            decision = _verify_sealed(
+                decision_value,
+                seal_name="result_sha256",
+                label=f"layer {layer_index} {lane} producer coverage decision",
+            )
+            before_value = decision.get("coverage_before")
+            after_value = decision.get("coverage_after")
+            if not isinstance(before_value, Mapping) or not isinstance(
+                after_value, Mapping
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    f"Layer {layer_index} {lane} coverage omitted before/after proof."
+                )
+            before_coverage = _verify_sealed(
+                before_value,
+                seal_name="result_sha256",
+                label=f"layer {layer_index} {lane} pre-decision coverage",
+            )
+            after_coverage = _verify_sealed(
+                after_value,
+                seal_name="result_sha256",
+                label=f"layer {layer_index} {lane} post-decision coverage",
+            )
+            installed = decision.get(
+                "installed_complete_structurally_nonzero_chain"
+            )
+            retained = decision.get(
+                "authenticated_nonzero_folded_seed_retained_by_noop"
+            )
+            expected_deferred = (
+                ["feed_forward.w2.weight"] if defer_down_weight else []
+            )
+            if (
+                decision.get("layer_index") != layer_index
+                or decision.get("producer_kind") != producer_kind
+                or decision.get("deferred_roles") != expected_deferred
+                or decision.get("coverage_before_sha256")
+                != before_coverage.get("result_sha256")
+                or decision.get("coverage_after_sha256")
+                != after_coverage.get("result_sha256")
+                or decision.get(
+                    "all_required_roles_structurally_nonzero_after_decision"
+                )
+                is not True
+                or decision.get(
+                    "blank_or_partially_blank_required_role_count_after_decision"
+                )
+                != 0
+                or type(installed) is not bool
+                or type(retained) is not bool
+                or installed == retained
+                or (decision.get("cold_start_or_partial_seed_at_entry") and not installed)
+                or (
+                    retained
+                    and (
+                        before_coverage.get(
+                            "all_required_roles_structurally_nonzero"
+                        )
+                        is not True
+                        or before_coverage.get("required_role_state_sha256")
+                        != after_coverage.get("required_role_state_sha256")
+                    )
+                )
+                or layer.get(f"{lane}_installed") is not installed
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    f"Layer {layer_index} {lane} coverage decision is internally false."
+                )
+            live = _lfm2_dense_producer_chain_coverage(
+                target_model,
+                layer_index=layer_index,
+                producer_kind=producer_kind,
+                defer_down_weight=defer_down_weight,
+            )
+            if live.get("result_sha256") != after_coverage.get("result_sha256"):
+                raise Lfm2SemanticPostfoldError(
+                    f"Layer {layer_index} live {lane} producer bytes differ from "
+                    "the authenticated structural coverage decision."
+                )
+
+
 def compile_install_lfm2_semantic_layer_stack_stage(
     *,
     cache: Lfm2CircuitTraceCache,
@@ -2662,6 +2958,29 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         or verified.get("final_mlp_producer_install_count", -1)
         + verified.get("final_mlp_producer_incumbent_noop_count", -1)
         != 1
+        or verified.get("complete_nonzero_structural_producer_coverage")
+        is not True
+        or verified.get("all_producer_chains_installed_or_retained_nonzero_seed")
+        is not True
+        or verified.get("attention_producer_structural_coverage_count") != 6
+        or verified.get("short_conv_producer_structural_coverage_count") != 8
+        or verified.get("nonterminal_mlp_producer_structural_coverage_count") != 13
+        or verified.get("final_mlp_producer_structural_coverage_count") != 1
+        or verified.get("blank_or_partially_blank_producer_chain_count") != 0
+        or verified.get("installed_complete_producer_chain_count", -1)
+        + verified.get(
+            "authenticated_nonzero_folded_seed_retained_noop_count", -1
+        )
+        != 28
+        or verified.get(
+            "authenticated_nonzero_folded_seed_retained_noop_count", -1
+        )
+        != (
+            verified.get("attention_operator_incumbent_noop_count", -2)
+            + verified.get("short_conv_operator_incumbent_noop_count", -2)
+            + verified.get("nonterminal_mlp_writer_incumbent_noop_count", -2)
+            + verified.get("final_mlp_producer_incumbent_noop_count", -2)
+        )
         or verified.get("whole_stage_contains_meaningful_parameter_changes") is not True
         or verified.get("operator_parameter_mutation_count", -1)
         != verified.get("attention_operator_install_count", -2)
@@ -2690,6 +3009,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         raise Lfm2SemanticPostfoldError(
             "Semantic layer-stack compiler returned an incomplete receipt."
         )
+    _validate_live_layer_stack_producer_coverage(target_model, verified)
     return Lfm2SemanticLayerStackInstallation(
         receipt=verified,
         final_layer_mlp_evidence=result.final_layer_mlp_evidence,
@@ -3339,6 +3659,15 @@ def _install_final_w2_once(
         device=parameter.device,
         dtype=parameter.dtype,
     ).contiguous()
+    published_coverage = _dense_weight_structural_coverage(
+        published,
+        parameter_name=parameter_name,
+        require_parameter=False,
+    )
+    if published_coverage.get("structurally_nonzero") is not True:
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal refused to publish a blank or structurally partial W2."
+        )
     install = not torch.equal(parameter.detach(), published)
     try:
         if install:
@@ -3412,6 +3741,11 @@ def _install_final_w2_once(
         "model_state_after_sha256": after_state,
         "incumbent_w2_sha256": _tensor_sha256(incumbent),
         "published_w2_sha256": _tensor_sha256(parameter),
+        "published_w2_structural_coverage": dict(published_coverage),
+        "published_w2_structural_coverage_sha256": published_coverage[
+            "result_sha256"
+        ],
+        "published_w2_structurally_nonzero": True,
         "installed_w2_sha256": _tensor_sha256(parameter) if install else None,
         "changed_state_keys": list(changed_state_keys),
         **dict(runtime_proof),
@@ -3465,9 +3799,41 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     layer_receipt = layer_stack.receipt
     current_state = fingerprint_lfm2_parent(target_model).identity_sha256
     current_w2 = _tensor_sha256(_final_w2_parameter(target_model))
+    final_mlp_producer_coverage_before_terminal = (
+        _lfm2_dense_producer_chain_coverage(
+            target_model,
+            layer_index=13,
+            producer_kind="mlp",
+            defer_down_weight=True,
+        )
+    )
+    layer_installations = layer_receipt.get("layer_installations")
+    final_layer_installation = (
+        layer_installations[-1]
+        if isinstance(layer_installations, list) and layer_installations
+        else None
+    )
+    recorded_final_mlp_coverage = (
+        final_layer_installation.get("mlp_producer_coverage_decision")
+        if isinstance(final_layer_installation, Mapping)
+        else None
+    )
     if (
         layer_receipt.get("model_state_after_sha256") != current_state
         or layer_receipt.get("deferred_final_w2_sha256") != current_w2
+        or layer_receipt.get("complete_nonzero_structural_producer_coverage")
+        is not True
+        or final_mlp_producer_coverage_before_terminal.get(
+            "all_required_roles_structurally_nonzero"
+        )
+        is not True
+        or final_mlp_producer_coverage_before_terminal.get(
+            "blank_or_partially_blank_required_role_count"
+        )
+        != 0
+        or not isinstance(recorded_final_mlp_coverage, Mapping)
+        or recorded_final_mlp_coverage.get("coverage_after_sha256")
+        != final_mlp_producer_coverage_before_terminal.get("result_sha256")
         or layer_receipt.get("whole_stage_contains_meaningful_parameter_changes")
         is not True
         or layer_receipt.get("model_state_before_sha256") == current_state
@@ -3735,6 +4101,25 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         target_model,
         published_down_weight=published_down_weight,
     )
+    final_mlp_full_coverage_after_terminal = _lfm2_dense_producer_chain_coverage(
+        target_model,
+        layer_index=13,
+        producer_kind="mlp",
+        defer_down_weight=False,
+    )
+    if (
+        final_mlp_full_coverage_after_terminal.get(
+            "all_required_roles_structurally_nonzero"
+        )
+        is not True
+        or final_mlp_full_coverage_after_terminal.get(
+            "blank_or_partially_blank_required_role_count"
+        )
+        != 0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal did not leave a complete nonzero final MLP chain."
+        )
     observed_counts = {value["inserted_continuation_rows"] for value in observed}
     decode_counts = {value["parent_decode_steps"] for value in observed}
     target_counts = {value["target_decode_tokens"] for value in observed}
@@ -3810,6 +4195,13 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "fused_heldout_publication_gates": fused_heldout_gates,
         "separate_heldout_lane_gates": lane_gates,
         "installation": dict(installation),
+        "final_mlp_producer_coverage_before_terminal": dict(
+            final_mlp_producer_coverage_before_terminal
+        ),
+        "final_mlp_full_coverage_after_terminal": dict(
+            final_mlp_full_coverage_after_terminal
+        ),
+        "complete_nonzero_final_mlp_structural_coverage": True,
         "terminal_writer_decision_count": 1,
         "terminal_writer_install_count": installation["install_count"],
         "terminal_writer_mutation_count": installation["mutation_count"],
@@ -3849,6 +4241,52 @@ def _validate_fused_semantic_terminal_receipt(
         raise Lfm2SemanticPostfoldError(
             "Fused semantic terminal returned no installation decision."
         )
+    coverage_before_value = receipt.get(
+        "final_mlp_producer_coverage_before_terminal"
+    )
+    coverage_after_value = receipt.get("final_mlp_full_coverage_after_terminal")
+    published_coverage_value = installation.get(
+        "published_w2_structural_coverage"
+    )
+    if not all(
+        isinstance(value, Mapping)
+        for value in (
+            coverage_before_value,
+            coverage_after_value,
+            published_coverage_value,
+        )
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Fused semantic terminal omitted structural producer coverage."
+        )
+    coverage_before = _verify_sealed(
+        coverage_before_value,
+        seal_name="result_sha256",
+        label="preterminal final-MLP producer coverage",
+    )
+    coverage_after = _verify_sealed(
+        coverage_after_value,
+        seal_name="result_sha256",
+        label="published final-MLP producer coverage",
+    )
+    published_coverage = _verify_sealed(
+        published_coverage_value,
+        seal_name="result_sha256",
+        label="published final-W2 structural coverage",
+    )
+    before_roles = coverage_before.get("role_receipts")
+    after_roles = coverage_after.get("role_receipts")
+    w1_w3_unchanged = bool(
+        isinstance(before_roles, Mapping)
+        and isinstance(after_roles, Mapping)
+        and all(
+            isinstance(before_roles.get(role), Mapping)
+            and isinstance(after_roles.get(role), Mapping)
+            and before_roles[role].get("tensor_sha256")
+            == after_roles[role].get("tensor_sha256")
+            for role in ("feed_forward.w1.weight", "feed_forward.w3.weight")
+        )
+    )
     counts = {
         "decision": receipt.get("terminal_writer_decision_count"),
         "install": receipt.get("terminal_writer_install_count"),
@@ -3878,6 +4316,32 @@ def _validate_fused_semantic_terminal_receipt(
         or installation.get("parameter_storage_preserved") is not True
         or installation.get("gradient_state_preserved") is not True
         or installation.get("parameter_count_changed") is not False
+        or installation.get("published_w2_structurally_nonzero") is not True
+        or installation.get("published_w2_structural_coverage_sha256")
+        != published_coverage.get("result_sha256")
+        or published_coverage.get("structurally_nonzero") is not True
+        or published_coverage.get("tensor_sha256")
+        != installation.get("published_w2_sha256")
+        or receipt.get("complete_nonzero_final_mlp_structural_coverage")
+        is not True
+        or coverage_before.get("producer_kind") != "mlp"
+        or coverage_before.get("layer_index") != 13
+        or coverage_before.get("deferred_roles")
+        != ["feed_forward.w2.weight"]
+        or coverage_before.get("all_required_roles_structurally_nonzero")
+        is not True
+        or coverage_after.get("producer_kind") != "mlp"
+        or coverage_after.get("layer_index") != 13
+        or coverage_after.get("deferred_roles") != []
+        or coverage_after.get("all_required_roles_structurally_nonzero")
+        is not True
+        or coverage_after.get("blank_or_partially_blank_required_role_count")
+        != 0
+        or not w1_w3_unchanged
+        or not isinstance(after_roles, Mapping)
+        or not isinstance(after_roles.get("feed_forward.w2.weight"), Mapping)
+        or after_roles["feed_forward.w2.weight"].get("tensor_sha256")
+        != published_coverage.get("tensor_sha256")
         or installation.get("model_state_before_sha256")
         != layer_receipt.get("model_state_after_sha256")
         or installation.get("model_state_after_sha256")
@@ -4235,6 +4699,12 @@ def run_lfm2_semantic_postfold(
         ),
         "semantic_layer_stack_stage_sha256": layer_stack.receipt["result_sha256"],
         "fused_semantic_terminal_refold_sha256": terminal_receipt["result_sha256"],
+        "complete_nonzero_structural_producer_coverage": layer_stack.receipt[
+            "complete_nonzero_structural_producer_coverage"
+        ],
+        "complete_nonzero_final_mlp_structural_coverage": terminal_receipt[
+            "complete_nonzero_final_mlp_structural_coverage"
+        ],
     }
     context_sha = canonical_sha256(context_body)
     reloaded, checkpoint = publish_lfm2_semantic_postfold_checkpoint(
@@ -4285,6 +4755,21 @@ def run_lfm2_semantic_postfold(
         "operation_audit": dict(_ZERO_OPERATIONS),
         "claims": {
             "complete_causal_layer_stack_adjudicated": True,
+            "complete_nonzero_structural_producer_coverage": (
+                layer_stack.receipt[
+                    "complete_nonzero_structural_producer_coverage"
+                ]
+            ),
+            "blank_or_partially_blank_producer_chain_count": (
+                layer_stack.receipt[
+                    "blank_or_partially_blank_producer_chain_count"
+                ]
+            ),
+            "complete_nonzero_final_mlp_structural_coverage": (
+                terminal_receipt[
+                    "complete_nonzero_final_mlp_structural_coverage"
+                ]
+            ),
             "complete_causal_layer_stack_installed": layer_stack.receipt[
                 "complete_causal_layer_stack_installed"
             ],

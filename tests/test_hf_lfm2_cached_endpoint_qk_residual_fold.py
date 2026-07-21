@@ -727,6 +727,69 @@ def test_exact_frontier_rejects_a_finite_truncated_regressing_direction(
     assert torch.equal(proposal.key_weight, proposal.seed.key_weight)
 
 
+def test_exact_zero_trust_reference_preserves_a_real_cold_direction() -> None:
+    delta_query = torch.tensor([[1.0, -2.0], [3.0, -4.0]], dtype=torch.float32)
+    delta_key = torch.tensor([[2.0, -1.0]], dtype=torch.float32)
+    current_query = torch.zeros_like(delta_query)
+    current_key = torch.zeros_like(delta_key)
+
+    query, key, query_relative, key_relative, scale = endpoint_fold._trust_scale(
+        delta_query,
+        delta_key,
+        current_query,
+        current_key,
+        0.25,
+    )
+
+    assert query_relative == 1.0
+    assert key_relative == 1.0
+    assert scale == 0.25
+    assert torch.equal(query, delta_query * 0.25)
+    assert torch.equal(key, delta_key * 0.25)
+    assert int(torch.count_nonzero(query.to(torch.bfloat16)).item()) > 0
+    assert int(torch.count_nonzero(key.to(torch.bfloat16)).item()) > 0
+
+
+def test_nonzero_trust_reference_is_the_original_relative_norm_formula() -> None:
+    delta_query = torch.tensor([[1.0, -2.0], [3.0, -4.0]], dtype=torch.float32)
+    delta_key = torch.tensor([[2.0, -1.0]], dtype=torch.float32)
+    current_query = torch.tensor([[0.5, 1.0], [-1.5, 2.0]], dtype=torch.float32)
+    current_key = torch.tensor([[1.5, -0.25]], dtype=torch.float32)
+    trust_radius = 0.375
+    tiny = torch.finfo(torch.float64).tiny
+    expected_query_relative = float(
+        torch.linalg.vector_norm(delta_query.to(torch.float64)).item()
+    ) / max(
+        float(torch.linalg.vector_norm(current_query.to(torch.float64)).item()),
+        tiny,
+    )
+    expected_key_relative = float(
+        torch.linalg.vector_norm(delta_key.to(torch.float64)).item()
+    ) / max(
+        float(torch.linalg.vector_norm(current_key.to(torch.float64)).item()),
+        tiny,
+    )
+    expected_scale = min(
+        1.0,
+        trust_radius / max(expected_query_relative, tiny),
+        trust_radius / max(expected_key_relative, tiny),
+    )
+
+    query, key, query_relative, key_relative, scale = endpoint_fold._trust_scale(
+        delta_query,
+        delta_key,
+        current_query,
+        current_key,
+        trust_radius,
+    )
+
+    assert query_relative == expected_query_relative
+    assert key_relative == expected_key_relative
+    assert scale == expected_scale
+    assert torch.equal(query, delta_query * expected_scale)
+    assert torch.equal(key, delta_key * expected_scale)
+
+
 def test_nonpositive_curvature_direction_is_never_usable() -> None:
     class NonpositiveOperator:
         normal_operator_calls = 0

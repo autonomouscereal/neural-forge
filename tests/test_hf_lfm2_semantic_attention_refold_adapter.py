@@ -700,6 +700,120 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
 
 
+def test_exact_zero_qk_is_evidence_planted_and_cannot_publish_as_a_noop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        attention.q_proj.weight.zero_()
+        attention.k_proj.weight.zero_()
+    evidence = _evidence(model)
+
+    class _Compiled:
+        def __init__(self, seed: object) -> None:
+            self.query_weight = seed.query_weight.clone()
+            self.key_weight = seed.key_weight.clone()
+            self.accepted = False
+            self.changed = False
+            self.report = {"report_sha256": "8" * 64}
+
+        def verify(self) -> str:
+            return self.report["report_sha256"]
+
+    monkeypatch.setattr(adapter, "Lfm2CompiledEndpointQkResidualFold", _Compiled)
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_cached_endpoint_qk_residual_fold",
+        lambda **kwargs: _Compiled(kwargs["seed"]),
+    )
+    metric_values = iter(
+        [
+            value
+            for _partition in adapter._PARTITIONS
+            for value in (_metrics(0.8), _metrics(0.4))
+        ]
+        + [_metrics(0.4), _metrics(0.4), _metrics(0.4), _metrics(0.4)]
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_evaluate_bank",
+        lambda *_args, **_kwargs: next(metric_values),
+    )
+
+    def retain_vo_incumbent(
+        **kwargs: object,
+    ) -> tuple[torch.Tensor, torch.Tensor, object]:
+        seed = kwargs["seed"]
+        return (
+            seed.value_weight,
+            seed.output_weight,
+            {
+                "published_candidate": "incumbent",
+                "candidate_reports": {
+                    "incumbent": {
+                        "eligible_after_fit_fit_check_selection": True,
+                        "partitions": {
+                            "fit": {"nonregressing": True},
+                            "fit_check": {"nonregressing": True},
+                            "selection": {"nonregressing": True},
+                        },
+                    },
+                    "fixed_v_output_only": {
+                        "rejection_partition": "fit",
+                        "partitions": {
+                            "fit_check": {"nonregressing": True},
+                            "selection": {"nonregressing": True},
+                        },
+                    },
+                },
+                "selected_candidate": "incumbent",
+                "selected_candidate_frozen_before_validation": True,
+                "validation_triggered_refit_or_reselection": False,
+                "validation": {
+                    "endpoint_nonregressing": True,
+                    "route_nonregressing": True,
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        adapter,
+        "_select_and_validate_vo_candidate",
+        retain_vo_incumbent,
+    )
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+
+    assert int(torch.count_nonzero(attention.q_proj.weight).item()) > 0
+    assert int(torch.count_nonzero(attention.k_proj.weight).item()) > 0
+    assert receipt["installed"] is True
+    assert receipt["changed_state_keys"] == [
+        "model.layers.0.self_attn.q_proj.weight",
+        "model.layers.0.self_attn.k_proj.weight",
+    ]
+    cold = receipt["analytic_refold"]["qk_cold_start"]
+    assert cold["original_query_exact_zero"] is True
+    assert cold["original_key_exact_zero"] is True
+    assert cold["fit_strictly_improved"] is True
+    assert cold["candidate_frozen_before_fit_check_selection_validation"] is True
+    assert cold["heldout_refit_or_reselection"] is False
+    assert cold["zero_incumbent_noop_allowed"] is False
+    assert cold["plant"]["fit_partition_only_used_for_plant"] is True
+    assert cold["plant"]["heldout_partitions_used_for_plant"] is False
+    assert cold["plant"]["randomness_used"] is False
+    assert cold["plant"]["gradients_used"] is False
+    assert cold["operation_audit"]["training_steps"] == 0
+    sealed = dict(receipt)
+    digest = sealed.pop("result_sha256")
+    assert canonical_sha256(sealed) == digest
+
+
 def test_changed_qkvo_transaction_rolls_back_partial_copy_exactly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
