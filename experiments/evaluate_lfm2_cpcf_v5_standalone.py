@@ -7,11 +7,14 @@ that case's own generation limit, and stores the decoded responses and
 automatic semantic gate outside the child artifact.  It also authenticates
 the dense child's unique-parameter count and records a parent/child ratio from
 an explicitly pinned expected parent count, without using checkpoint bytes,
-quantization, or pruning adjustments.
+quantization, or pruning adjustments.  For a semantic-postfold child, optional
+receipt arguments bind the external run receipt, nested checkpoint receipt,
+artifact metadata, model state, and tokenizer semantics before generation.
 
-``finalize`` never loads either model.  It authenticates the stored candidate
-responses, cached parent envelope, paired parent/child semantic-review packet,
-and packet-bound ratings, then writes the final intelligence report.
+``finalize`` never loads either model.  It authenticates an independently
+pinned capture report, the stored candidate responses, cached parent envelope,
+paired parent/child semantic-review packet, and packet-bound ratings, then
+writes the final intelligence report.
 
 Neither mode trains, prunes, quantizes, downloads, or executes the parent.
 """
@@ -71,6 +74,9 @@ from neural_forge.hf_lfm2_intelligence_holdout import (  # noqa: E402
     load_lfm2_intelligence_holdout_parent_envelope,
     seal_lfm2_intelligence_holdout_candidate_outputs,
 )
+from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
+    fingerprint_lfm2_parent,
+)
 from neural_forge.hf_lfm2_parent_relative_manual_gate import (  # noqa: E402
     Lfm2ParentRelativeManualGateError,
     build_parent_relative_manual_packet,
@@ -85,6 +91,28 @@ AUTOMATIC_REPORT_FILENAME = "automatic-intelligence-report-64.json"
 MANUAL_PACKET_FILENAME = "manual-review-packet-64.json"
 FINAL_REPORT_FILENAME = "final-intelligence-report-64.json"
 EXPECTED_CASE_COUNT = 64
+LFM2_SEMANTIC_POSTFOLD_SCHEMA = "neural-forge-lfm2-semantic-postfold-v1"
+LFM2_SEMANTIC_POSTFOLD_CHECKPOINT_SCHEMA = (
+    "neural-forge-lfm2-semantic-postfold-checkpoint-v1"
+)
+SEMANTIC_POSTFOLD_EVALUATION_PROVENANCE_SCHEMA = (
+    "neural-forge-lfm2-semantic-postfold-evaluation-provenance-v1"
+)
+SEMANTIC_POSTFOLD_ZERO_OPERATION_AUDIT = {
+    "parent_model_objects_constructed": 0,
+    "parent_model_forward_calls": 0,
+    "parent_model_generate_calls": 0,
+    "parent_trace_recaptures": 0,
+    "child_model_forward_calls": 0,
+    "child_model_generate_calls": 0,
+    "autograd_grad_calls": 0,
+    "backward_calls": 0,
+    "optimizer_constructions": 0,
+    "optimizer_steps": 0,
+    "training_steps": 0,
+    "parameters_pruned": 0,
+    "parameters_quantized": 0,
+}
 _SHA256_CHARACTERS = frozenset("0123456789abcdef")
 
 
@@ -106,9 +134,7 @@ def _digest(value: Any, name: str) -> str:
 
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise Lfm2CpcfV5StandaloneEvaluationError(
-            f"{name} must be a positive integer."
-        )
+        raise Lfm2CpcfV5StandaloneEvaluationError(f"{name} must be a positive integer.")
     return value
 
 
@@ -353,6 +379,10 @@ class CaptureConfig:
     expected_candidate_state_sha256: str
     expected_target_tokenizer_semantics_sha256: str
     output_directory: Path
+    semantic_postfold_receipt: Path | None = None
+    expected_semantic_postfold_receipt_file_sha256: str | None = None
+    expected_semantic_postfold_receipt_sha256: str | None = None
+    expected_candidate_artifact_sha256: str | None = None
     device: str = "cuda:0"
     dtype: str = "bfloat16"
 
@@ -368,6 +398,36 @@ class CaptureConfig:
             "expected_target_tokenizer_semantics_sha256",
         ):
             _digest(getattr(self, name), name)
+        semantic_bindings = (
+            self.semantic_postfold_receipt,
+            self.expected_semantic_postfold_receipt_file_sha256,
+            self.expected_semantic_postfold_receipt_sha256,
+            self.expected_candidate_artifact_sha256,
+        )
+        if any(value is not None for value in semantic_bindings) and not all(
+            value is not None for value in semantic_bindings
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Semantic-postfold receipt path, file SHA-256, receipt seal, "
+                "and candidate artifact SHA-256 must be supplied together."
+            )
+        semantic_receipt = None
+        if self.semantic_postfold_receipt is not None:
+            semantic_receipt = _local_file(
+                self.semantic_postfold_receipt,
+                "semantic_postfold_receipt",
+            )
+            if _is_within(semantic_receipt, candidate):
+                raise Lfm2CpcfV5StandaloneEvaluationError(
+                    "Semantic-postfold provenance must remain outside the "
+                    "standalone child artifact."
+                )
+            for name in (
+                "expected_semantic_postfold_receipt_file_sha256",
+                "expected_semantic_postfold_receipt_sha256",
+                "expected_candidate_artifact_sha256",
+            ):
+                _digest(str(getattr(self, name)), name)
         _positive_int(
             self.expected_parent_unique_parameters,
             "expected_parent_unique_parameters",
@@ -380,16 +440,21 @@ class CaptureConfig:
         object.__setattr__(self, "candidate_directory", candidate)
         object.__setattr__(self, "parent_envelope", envelope)
         object.__setattr__(self, "output_directory", output)
+        object.__setattr__(self, "semantic_postfold_receipt", semantic_receipt)
 
 
 @dataclass(frozen=True, slots=True)
 class FinalizeConfig:
     capture_directory: Path
+    expected_capture_report_file_sha256: str
+    expected_capture_report_sha256: str
     parent_envelope: Path
     expected_parent_envelope_file_sha256: str
     manual_ratings: Path
     expected_manual_ratings_file_sha256: str
     output_directory: Path
+    expected_semantic_postfold_receipt_sha256: str | None = None
+    expected_candidate_artifact_sha256: str | None = None
 
     def __post_init__(self) -> None:
         capture = _local_directory(
@@ -399,15 +464,174 @@ class FinalizeConfig:
         envelope = _local_file(self.parent_envelope, "parent_envelope")
         ratings = _local_file(self.manual_ratings, "manual_ratings")
         for name in (
+            "expected_capture_report_file_sha256",
+            "expected_capture_report_sha256",
             "expected_parent_envelope_file_sha256",
             "expected_manual_ratings_file_sha256",
         ):
             _digest(getattr(self, name), name)
+        semantic_bindings = (
+            self.expected_semantic_postfold_receipt_sha256,
+            self.expected_candidate_artifact_sha256,
+        )
+        if any(value is not None for value in semantic_bindings) and not all(
+            value is not None for value in semantic_bindings
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Final semantic receipt and candidate artifact SHA-256 pins "
+                "must be supplied together."
+            )
+        for name, value in (
+            (
+                "expected_semantic_postfold_receipt_sha256",
+                self.expected_semantic_postfold_receipt_sha256,
+            ),
+            (
+                "expected_candidate_artifact_sha256",
+                self.expected_candidate_artifact_sha256,
+            ),
+        ):
+            if value is not None:
+                _digest(value, name)
         output = Path(self.output_directory).expanduser().absolute()
         object.__setattr__(self, "capture_directory", capture)
         object.__setattr__(self, "parent_envelope", envelope)
         object.__setattr__(self, "manual_ratings", ratings)
         object.__setattr__(self, "output_directory", output)
+
+
+def _authenticate_semantic_postfold_provenance(
+    config: CaptureConfig,
+    metadata: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Bind a standalone artifact to its independently pinned fold receipt."""
+
+    receipt_path = config.semantic_postfold_receipt
+    if receipt_path is None:
+        return None
+    receipt_document = _read_canonical_json(
+        receipt_path,
+        name="semantic-postfold receipt",
+        expected_file_sha256=str(config.expected_semantic_postfold_receipt_file_sha256),
+    )
+    receipt = _sealed_report(
+        receipt_document,
+        schema=LFM2_SEMANTIC_POSTFOLD_SCHEMA,
+        seal_field="result_sha256",
+        name="semantic-postfold receipt",
+    )
+    expected_receipt_sha256 = _digest(
+        config.expected_semantic_postfold_receipt_sha256,
+        "expected_semantic_postfold_receipt_sha256",
+    )
+    if receipt["result_sha256"] != expected_receipt_sha256:
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold receipt differs from its independent seal."
+        )
+    checkpoint_value = receipt.get("checkpoint")
+    if not isinstance(checkpoint_value, Mapping):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold receipt has no checkpoint publication receipt."
+        )
+    checkpoint = _sealed_report(
+        checkpoint_value,
+        schema=LFM2_SEMANTIC_POSTFOLD_CHECKPOINT_SCHEMA,
+        seal_field="result_sha256",
+        name="semantic-postfold checkpoint receipt",
+    )
+    expected_artifact_sha256 = _digest(
+        config.expected_candidate_artifact_sha256,
+        "expected_candidate_artifact_sha256",
+    )
+    expected_state_sha256 = config.expected_candidate_state_sha256
+    expected_semantics_sha256 = config.expected_target_tokenizer_semantics_sha256
+    context = receipt.get("context_binding")
+    claims = receipt.get("claims")
+    operation_audit = receipt.get("operation_audit")
+    checkpoint_audit = checkpoint.get("operation_audit")
+    parameter_inventory = metadata.get("parameter_inventory")
+    if not isinstance(context, Mapping):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold receipt has no context binding."
+        )
+    context_body = dict(context)
+    context_sha256 = context_body.pop("context_sha256", None)
+    if _digest(context_sha256, "semantic-postfold context binding") != canonical_sha256(
+        context_body
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold context binding self-hash is invalid."
+        )
+    fresh_reload_parent_free_state_sha256 = _digest(
+        receipt.get("fresh_reload_parent_free_state_sha256"),
+        "semantic-postfold fresh-reload parent-free state",
+    )
+    if (
+        receipt.get("status") != "standalone-semantic-postfold-saved-and-reloaded"
+        or context_sha256 != checkpoint.get("context_binding_sha256")
+        or checkpoint.get("context_binding_sha256")
+        != metadata.get("context_binding_sha256")
+        or checkpoint.get("artifact_sha256") != expected_artifact_sha256
+        or metadata.get("artifact_sha256") != expected_artifact_sha256
+        or checkpoint.get("model_state_sha256") != expected_state_sha256
+        or metadata.get("model_state_sha256") != expected_state_sha256
+        or checkpoint.get("parameter_inventory_sha256")
+        != metadata.get("parameter_inventory_sha256")
+        or checkpoint.get("tokenizer_semantics_sha256") != expected_semantics_sha256
+        or metadata.get("tokenizer_semantics_sha256") != expected_semantics_sha256
+        or checkpoint.get("materialized_ffn_width")
+        != metadata.get("materialized_ffn_width")
+        or not isinstance(parameter_inventory, Mapping)
+        or checkpoint.get("parameter_element_count")
+        != parameter_inventory.get("unique_parameters")
+        or checkpoint.get("staged_reload_verified") is not True
+        or checkpoint.get("published_reload_verified") is not True
+        or checkpoint.get("standalone_dense_safetensors") is not True
+        or checkpoint.get("parent_model_required_for_reload") is not False
+        or checkpoint.get("cache_required_for_reload") is not False
+        or checkpoint.get("network_access_performed") is not False
+        or not isinstance(claims, Mapping)
+        or claims.get("standalone_child") is not True
+        or claims.get("training_performed") is not False
+        or claims.get("pruning_performed") is not False
+        or claims.get("quantization_performed") is not False
+        or not isinstance(operation_audit, Mapping)
+        or not isinstance(checkpoint_audit, Mapping)
+        or dict(operation_audit) != SEMANTIC_POSTFOLD_ZERO_OPERATION_AUDIT
+        or dict(checkpoint_audit) != SEMANTIC_POSTFOLD_ZERO_OPERATION_AUDIT
+    ):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold receipt does not authenticate this exact "
+            "standalone zero-training child."
+        )
+    producer_directory = checkpoint.get("output_directory")
+    if not isinstance(producer_directory, str) or not producer_directory:
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Semantic-postfold checkpoint receipt lost its publication path."
+        )
+    return {
+        "schema": SEMANTIC_POSTFOLD_EVALUATION_PROVENANCE_SCHEMA,
+        "semantic_postfold_receipt_file_sha256": (
+            config.expected_semantic_postfold_receipt_file_sha256
+        ),
+        "semantic_postfold_receipt_sha256": receipt["result_sha256"],
+        "semantic_postfold_checkpoint_receipt_sha256": checkpoint["result_sha256"],
+        "candidate_artifact_sha256": expected_artifact_sha256,
+        "candidate_model_state_sha256": expected_state_sha256,
+        "candidate_parameter_inventory_sha256": metadata["parameter_inventory_sha256"],
+        "candidate_tokenizer_semantics_sha256": expected_semantics_sha256,
+        "context_binding_sha256": metadata["context_binding_sha256"],
+        "fresh_reload_parent_free_state_sha256": (
+            fresh_reload_parent_free_state_sha256
+        ),
+        "producer_output_directory": producer_directory,
+        "evaluated_candidate_directory": str(config.candidate_directory),
+        "directory_binding_mode": "content_identity_not_absolute_path",
+        "receipt_and_checkpoint_seals_authenticated": True,
+        "artifact_metadata_matches_checkpoint_receipt": True,
+        "standalone_parent_free_reload_authenticated": False,
+        "zero_training_pruning_quantization_authenticated": True,
+    }
 
 
 def capture_standalone_intelligence(
@@ -419,8 +643,7 @@ def capture_standalone_intelligence(
         raise TypeError("config must be CaptureConfig.")
     if _is_within(config.parent_envelope, config.candidate_directory):
         raise Lfm2CpcfV5StandaloneEvaluationError(
-            "Cached parent evidence must remain outside the standalone child "
-            "artifact."
+            "Cached parent evidence must remain outside the standalone child artifact."
         )
     prospective_output = config.output_directory.resolve(strict=False)
     if _paths_overlap(prospective_output, config.candidate_directory):
@@ -428,17 +651,6 @@ def capture_standalone_intelligence(
             "Evaluation artifacts must use a directory disjoint from the "
             "child artifact."
         )
-    output_directory = _output_directory(config.output_directory)
-    destinations = (
-        output_directory / CHILD_OUTPUT_FILENAME,
-        output_directory / AUTOMATIC_REPORT_FILENAME,
-        output_directory / MANUAL_PACKET_FILENAME,
-    )
-    if any(path.exists() or path.is_symlink() for path in destinations):
-        raise Lfm2CpcfV5StandaloneEvaluationError(
-            "Capture outputs already exist; refusing to regenerate responses."
-        )
-
     manifest, envelope = _load_parent_envelope(
         config.parent_envelope,
         expected_file_sha256=(config.expected_parent_envelope_file_sha256),
@@ -461,6 +673,20 @@ def capture_standalone_intelligence(
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Retained v5 artifact differs from the independently bound "
             "zero-training child."
+        )
+    semantic_postfold_provenance = _authenticate_semantic_postfold_provenance(
+        config,
+        metadata,
+    )
+    output_directory = _output_directory(config.output_directory)
+    destinations = (
+        output_directory / CHILD_OUTPUT_FILENAME,
+        output_directory / AUTOMATIC_REPORT_FILENAME,
+        output_directory / MANUAL_PACKET_FILENAME,
+    )
+    if any(path.exists() or path.is_symlink() for path in destinations):
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Capture outputs already exist; refusing to regenerate responses."
         )
     loader = Lfm2CpcfV5StrictLocalLoader(
         context_binding_sha256=metadata["context_binding_sha256"],
@@ -525,6 +751,24 @@ def capture_standalone_intelligence(
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Fresh child is not the expected compact frozen inference state."
         )
+    if semantic_postfold_provenance is not None:
+        fresh_reload_parent_free_state_sha256 = fingerprint_lfm2_parent(
+            model
+        ).identity_sha256
+        if fresh_reload_parent_free_state_sha256 != semantic_postfold_provenance.get(
+            "fresh_reload_parent_free_state_sha256"
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Fresh strict-local child differs from the semantic-postfold "
+                "parent-free reload identity."
+            )
+        semantic_postfold_provenance = {
+            **semantic_postfold_provenance,
+            "evaluated_fresh_reload_parent_free_state_sha256": (
+                fresh_reload_parent_free_state_sha256
+            ),
+            "standalone_parent_free_reload_authenticated": True,
+        }
     eos_token_ids = _normalized_eos_ids(tokenizer)
     rows = tuple(generate_candidate_rows_once(model, tokenizer, manifest))
     state_after = fingerprint_model_state(model)
@@ -594,9 +838,7 @@ def capture_standalone_intelligence(
         typed_outputs.candidates,
         policy,
     )
-    manual_packet = build_parent_relative_manual_packet(
-        automatic_gate_manual_packet
-    )
+    manual_packet = build_parent_relative_manual_packet(automatic_gate_manual_packet)
     if (
         automatic_gate_document.get("manual_review", {}).get("status") != "pending"
         or automatic_gate_document.get("manual_review", {}).get("packet_sha256")
@@ -607,8 +849,7 @@ def capture_standalone_intelligence(
         )
 
     prompt_rows = [
-        {"case_id": spec.case_id, "prompt": spec.prompt}
-        for spec in manifest.cases
+        {"case_id": spec.case_id, "prompt": spec.prompt} for spec in manifest.cases
     ]
     if any(
         parent.case_id != spec.case_id or parent.prompt != spec.prompt
@@ -642,6 +883,11 @@ def capture_standalone_intelligence(
             automatic_gate_manual_packet["packet_sha256"]
         ),
         "manual_review_packet_sha256": manual_packet["packet_sha256"],
+        **(
+            {"semantic_postfold_provenance": semantic_postfold_provenance}
+            if semantic_postfold_provenance is not None
+            else {}
+        ),
         "parameter_compaction": {
             "counting_method": inventory_before["method"],
             "parent_state_fingerprint": envelope.parent_state_fingerprint,
@@ -707,6 +953,9 @@ def capture_standalone_intelligence(
             "network_access": False,
             "hub_loader_used": False,
             "candidate_artifact_zero_operation_fields_authenticated": True,
+            "semantic_postfold_receipt_authenticated": (
+                semantic_postfold_provenance is not None
+            ),
         },
         "acceptance_semantics": {
             "whole_response_intelligence": True,
@@ -717,6 +966,9 @@ def capture_standalone_intelligence(
             "minimum_parent_relative_manual_retention": 0.90,
             "automatic_metrics_are_behavioral_or_structural": True,
             "lexical_similarity_is_not_an_intelligence_metric": True,
+            "semantic_postfold_checkpoint_and_receipt_pinned": (
+                semantic_postfold_provenance is not None
+            ),
         },
     }
     automatic_report = {
@@ -755,6 +1007,7 @@ def finalize_standalone_intelligence(
     automatic_document = _read_canonical_json(
         automatic_path,
         name="automatic intelligence report",
+        expected_file_sha256=config.expected_capture_report_file_sha256,
     )
     automatic = _sealed_report(
         automatic_document,
@@ -762,6 +1015,29 @@ def finalize_standalone_intelligence(
         seal_field="capture_report_sha256",
         name="automatic intelligence report",
     )
+    if automatic["capture_report_sha256"] != config.expected_capture_report_sha256:
+        raise Lfm2CpcfV5StandaloneEvaluationError(
+            "Automatic intelligence report differs from its independent seal."
+        )
+    if config.expected_semantic_postfold_receipt_sha256 is not None:
+        provenance = automatic.get("semantic_postfold_provenance")
+        if (
+            not isinstance(provenance, Mapping)
+            or provenance.get("semantic_postfold_receipt_sha256")
+            != config.expected_semantic_postfold_receipt_sha256
+            or provenance.get("candidate_artifact_sha256")
+            != config.expected_candidate_artifact_sha256
+            or provenance.get("receipt_and_checkpoint_seals_authenticated") is not True
+            or provenance.get("artifact_metadata_matches_checkpoint_receipt")
+            is not True
+            or provenance.get("standalone_parent_free_reload_authenticated") is not True
+            or provenance.get("zero_training_pruning_quantization_authenticated")
+            is not True
+        ):
+            raise Lfm2CpcfV5StandaloneEvaluationError(
+                "Automatic report differs from the independently pinned "
+                "semantic child provenance."
+            )
     reload_record = automatic.get("direct_local_reload")
     candidate_path_value = (
         reload_record.get("candidate_artifact_directory")
@@ -828,16 +1104,12 @@ def finalize_standalone_intelligence(
         typed_outputs.candidates,
         policy,
     )
-    rebuilt_packet = build_parent_relative_manual_packet(
-        automatic_gate_manual_packet
-    )
+    rebuilt_packet = build_parent_relative_manual_packet(automatic_gate_manual_packet)
     if (
         automatic_gate_manual_packet["packet_sha256"]
         != automatic["automatic_gate_manual_packet_sha256"]
-        or rebuilt_packet["packet_sha256"]
-        != automatic["manual_review_packet_sha256"]
-        or canonical_json_bytes(packet_document)
-        != canonical_json_bytes(rebuilt_packet)
+        or rebuilt_packet["packet_sha256"] != automatic["manual_review_packet_sha256"]
+        or canonical_json_bytes(packet_document) != canonical_json_bytes(rebuilt_packet)
     ):
         raise Lfm2CpcfV5StandaloneEvaluationError(
             "Manual packet does not match the authenticated parent and child."
@@ -918,14 +1190,10 @@ def finalize_standalone_intelligence(
         "promoted": promoted,
         "intelligence_retention_claim": {
             "status": (
-                "certified_conservative_lower_bound"
-                if promoted
-                else "rejected"
+                "certified_conservative_lower_bound" if promoted else "rejected"
             ),
             "certified_lower_bound": certified_lower_bound,
-            "parent_relative_manual_retention": (
-                parent_relative_report["retention"]
-            ),
+            "parent_relative_manual_retention": (parent_relative_report["retention"]),
             "minimum_required_retention": 0.90,
             "exact_output_matching_used": False,
         },
@@ -936,6 +1204,14 @@ def finalize_standalone_intelligence(
         "candidate_state_sha256": typed_outputs.candidate_state_fingerprint,
         "candidate_outputs_sha256": (typed_outputs.candidate_outputs_sha256),
         "automatic_capture_report_sha256": automatic["capture_report_sha256"],
+        "automatic_capture_report_file_sha256": (
+            config.expected_capture_report_file_sha256
+        ),
+        **(
+            {"semantic_postfold_provenance": automatic["semantic_postfold_provenance"]}
+            if "semantic_postfold_provenance" in automatic
+            else {}
+        ),
         "parameter_compaction": automatic["parameter_compaction"],
         "holdout_prompt_binding": automatic["holdout_prompt_binding"],
         "manual_review_packet_sha256": stored_packet["packet_sha256"],
@@ -946,9 +1222,7 @@ def finalize_standalone_intelligence(
         "parent_relative_manual_report_sha256": (
             parent_relative_report["report_sha256"]
         ),
-        "automatic_gate_bound_manual_ratings_sha256": (
-            gate_ratings.ratings_sha256
-        ),
+        "automatic_gate_bound_manual_ratings_sha256": (gate_ratings.ratings_sha256),
         "final_gate_report": final_gate_document,
         "final_gate_report_sha256": final_gate.report_sha256,
         "operation_audit": {
@@ -981,6 +1255,9 @@ def finalize_standalone_intelligence(
             "parent_and_child_scored_on_same_semantic_rubric": True,
             "minimum_parent_relative_manual_retention": 0.90,
             "lexical_similarity_is_not_an_intelligence_metric": True,
+            "semantic_postfold_checkpoint_and_receipt_pinned": (
+                "semantic_postfold_provenance" in automatic
+            ),
         },
     }
     final_report = {
@@ -997,7 +1274,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     capture = modes.add_parser(
         "capture",
-        help="Reload the retained child and persist one 64-case evaluation.",
+        help=(
+            "Reload the retained child and persist one 64-case evaluation "
+            "with per-case limits up to 96 tokens."
+        ),
     )
     capture.add_argument(
         "--candidate-directory",
@@ -1022,6 +1302,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--expected-target-tokenizer-semantics-sha256",
         required=True,
     )
+    capture.add_argument(
+        "--semantic-postfold-receipt",
+        type=Path,
+        help=(
+            "External semantic-postfold run receipt. Supply with all three "
+            "semantic receipt/artifact SHA-256 pins to authenticate the exact "
+            "published semantic child before generation."
+        ),
+    )
+    capture.add_argument(
+        "--expected-semantic-postfold-receipt-file-sha256",
+    )
+    capture.add_argument(
+        "--expected-semantic-postfold-receipt-sha256",
+    )
+    capture.add_argument(
+        "--expected-candidate-artifact-sha256",
+    )
     capture.add_argument("--output-directory", type=Path, required=True)
     capture.add_argument("--device", default="cuda:0")
     capture.add_argument("--dtype", default="bfloat16")
@@ -1033,6 +1331,14 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_argument("--capture-directory", type=Path, required=True)
     finalize.add_argument("--parent-envelope", type=Path, required=True)
     finalize.add_argument(
+        "--expected-capture-report-file-sha256",
+        required=True,
+    )
+    finalize.add_argument(
+        "--expected-capture-report-sha256",
+        required=True,
+    )
+    finalize.add_argument(
         "--expected-parent-envelope-file-sha256",
         required=True,
     )
@@ -1040,6 +1346,12 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_argument(
         "--expected-manual-ratings-file-sha256",
         required=True,
+    )
+    finalize.add_argument(
+        "--expected-semantic-postfold-receipt-sha256",
+    )
+    finalize.add_argument(
+        "--expected-candidate-artifact-sha256",
     )
     finalize.add_argument("--output-directory", type=Path, required=True)
     return parser
@@ -1057,9 +1369,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "candidate_outputs_sha256": report["candidate_outputs_sha256"],
             "automatic_gate_report_sha256": report["automatic_gate_report_sha256"],
             "manual_review_packet_sha256": report["manual_review_packet_sha256"],
-            "recorded_parameter_compaction_ratio": report[
-                "parameter_compaction"
-            ]["recorded_parameter_compaction_ratio"],
+            "recorded_parameter_compaction_ratio": report["parameter_compaction"][
+                "recorded_parameter_compaction_ratio"
+            ],
             "capture_report_sha256": report["capture_report_sha256"],
         }
     else:

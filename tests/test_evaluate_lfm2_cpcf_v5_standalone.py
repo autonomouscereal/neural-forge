@@ -94,6 +94,7 @@ def _capture_fixture(
     *,
     metadata_overrides: dict[str, Any] | None = None,
     use_real_artifact_metadata: bool = False,
+    authenticate_semantic_postfold: bool = False,
 ) -> dict[str, Any]:
     candidate_directory = tmp_path / "quarantine" / "candidate"
     candidate_directory.mkdir(parents=True)
@@ -110,10 +111,15 @@ def _capture_fixture(
     parent_unique_parameters = int(inventory["unique_parameters"]) * 4
     semantics_sha = _sha("target-tokenizer-semantics")
     package_sha = _sha("target-tokenizer-package")
+    context_binding_body = {
+        "schema": "neural-forge-lfm2-semantic-postfold-context-v1",
+        "fixture": "semantic-evaluation",
+    }
+    context_binding_sha = canonical_sha256(context_binding_body)
     metadata = {
         "schema": evaluator.LFM2_CPCF_V5_QUARANTINE_ARTIFACT_SCHEMA,
         "backend_schema": LFM2_CPCF_V5_QUARANTINE_BACKEND_SCHEMA,
-        "context_binding_sha256": _sha("context-binding"),
+        "context_binding_sha256": context_binding_sha,
         "model_state_sha256": candidate_state,
         "parameter_inventory": artifact_inventory,
         "parameter_inventory_sha256": inventory["inventory_sha256"],
@@ -148,6 +154,79 @@ def _capture_fixture(
             "_read_artifact_metadata",
             lambda _directory: dict(metadata),
         )
+
+    semantic_receipt_path = None
+    semantic_receipt_file_sha = None
+    semantic_receipt_sha = None
+    fresh_reload_parent_free_state_sha = None
+    if authenticate_semantic_postfold:
+        zero_operations = {
+            "parent_model_objects_constructed": 0,
+            "parent_model_forward_calls": 0,
+            "parent_model_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "child_model_forward_calls": 0,
+            "child_model_generate_calls": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "optimizer_constructions": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        checkpoint_core = {
+            "schema": evaluator.LFM2_SEMANTIC_POSTFOLD_CHECKPOINT_SCHEMA,
+            "output_directory": str(candidate_directory),
+            "context_binding_sha256": metadata["context_binding_sha256"],
+            "artifact_sha256": metadata["artifact_sha256"],
+            "model_state_sha256": candidate_state,
+            "parameter_inventory_sha256": inventory["inventory_sha256"],
+            "tokenizer_semantics_sha256": semantics_sha,
+            "parameter_element_count": inventory["unique_parameters"],
+            "materialized_ffn_width": metadata["materialized_ffn_width"],
+            "staged_reload_verified": True,
+            "published_reload_verified": True,
+            "standalone_dense_safetensors": True,
+            "parent_model_required_for_reload": False,
+            "cache_required_for_reload": False,
+            "network_access_performed": False,
+            "operation_audit": zero_operations,
+        }
+        checkpoint = {
+            **checkpoint_core,
+            "result_sha256": canonical_sha256(checkpoint_core),
+        }
+        receipt_core = {
+            "schema": evaluator.LFM2_SEMANTIC_POSTFOLD_SCHEMA,
+            "status": "standalone-semantic-postfold-saved-and-reloaded",
+            "checkpoint": checkpoint,
+            "context_binding": {
+                **context_binding_body,
+                "context_sha256": context_binding_sha,
+            },
+            "fresh_reload_parent_free_state_sha256": _sha(
+                "fresh-reload-parent-free-state"
+            ),
+            "operation_audit": zero_operations,
+            "claims": {
+                "standalone_child": True,
+                "training_performed": False,
+                "pruning_performed": False,
+                "quantization_performed": False,
+            },
+        }
+        semantic_receipt = {
+            **receipt_core,
+            "result_sha256": canonical_sha256(receipt_core),
+        }
+        semantic_receipt_path = tmp_path / "semantic-postfold-receipt.json"
+        _write_json(semantic_receipt_path, semantic_receipt)
+        semantic_receipt_file_sha = _file_sha(semantic_receipt_path)
+        semantic_receipt_sha = semantic_receipt["result_sha256"]
+        fresh_reload_parent_free_state_sha = semantic_receipt[
+            "fresh_reload_parent_free_state_sha256"
+        ]
 
     loader_calls: list[dict[str, Any]] = []
 
@@ -212,6 +291,16 @@ def _capture_fixture(
         "Lfm2CpcfV5StrictLocalLoader",
         _StrictLoader,
     )
+    if fresh_reload_parent_free_state_sha is not None:
+        monkeypatch.setattr(
+            evaluator,
+            "fingerprint_lfm2_parent",
+            lambda _model: type(
+                "FixtureLfm2Identity",
+                (),
+                {"identity_sha256": fresh_reload_parent_free_state_sha},
+            )(),
+        )
     monkeypatch.setattr(
         evaluator,
         "generate_candidate_rows_once",
@@ -225,6 +314,18 @@ def _capture_fixture(
         expected_candidate_state_sha256=candidate_state,
         expected_target_tokenizer_semantics_sha256=semantics_sha,
         output_directory=output_directory,
+        **(
+            {
+                "semantic_postfold_receipt": semantic_receipt_path,
+                "expected_semantic_postfold_receipt_file_sha256": (
+                    semantic_receipt_file_sha
+                ),
+                "expected_semantic_postfold_receipt_sha256": (semantic_receipt_sha),
+                "expected_candidate_artifact_sha256": metadata["artifact_sha256"],
+            }
+            if authenticate_semantic_postfold
+            else {}
+        ),
         device="cpu",
         dtype="float32",
     )
@@ -238,6 +339,11 @@ def _capture_fixture(
         "semantics_sha": semantics_sha,
         "package_sha": package_sha,
         "parent_unique_parameters": parent_unique_parameters,
+        "metadata": metadata,
+        "semantic_receipt_path": semantic_receipt_path,
+        "semantic_receipt_file_sha": semantic_receipt_file_sha,
+        "semantic_receipt_sha": semantic_receipt_sha,
+        "fresh_reload_parent_free_state_sha": (fresh_reload_parent_free_state_sha),
         "config": config,
         "report": report,
         "loader_calls": loader_calls,
@@ -374,24 +480,260 @@ def test_capture_accepts_semantic_postfold_artifact_contract_without_sidecars(
         tmp_path,
         monkeypatch,
         use_real_artifact_metadata=True,
+        authenticate_semantic_postfold=True,
     )
-    candidate_files = {
-        path.name for path in fixture["candidate_directory"].iterdir()
-    }
+    candidate_files = {path.name for path in fixture["candidate_directory"].iterdir()}
     assert candidate_files == {LFM2_CPCF_V5_ARTIFACT_METADATA}
-    assert fixture["report"]["direct_local_reload"][
-        "strict_v5_loader_used"
-    ] is True
+    assert fixture["report"]["direct_local_reload"]["strict_v5_loader_used"] is True
     assert fixture["report"]["operation_audit"]["parent_model_loaded"] is False
     assert fixture["report"]["operation_audit"]["parent_forward_passes"] == 0
     assert fixture["report"]["operation_audit"]["parent_generate_invocations"] == 0
+    provenance = fixture["report"]["semantic_postfold_provenance"]
+    assert (
+        provenance["semantic_postfold_receipt_file_sha256"]
+        == fixture["semantic_receipt_file_sha"]
+    )
+    assert (
+        provenance["semantic_postfold_receipt_sha256"]
+        == fixture["semantic_receipt_sha"]
+    )
+    assert (
+        provenance["candidate_artifact_sha256"]
+        == fixture["metadata"]["artifact_sha256"]
+    )
+    assert provenance["artifact_metadata_matches_checkpoint_receipt"] is True
+    assert (
+        provenance["fresh_reload_parent_free_state_sha256"]
+        == fixture["fresh_reload_parent_free_state_sha"]
+    )
+    assert provenance["standalone_parent_free_reload_authenticated"] is True
+    assert (
+        fixture["report"]["acceptance_semantics"][
+            "semantic_postfold_checkpoint_and_receipt_pinned"
+        ]
+        is True
+    )
+
+
+def test_semantic_capture_requires_complete_independent_pin_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _capture_fixture(tmp_path, monkeypatch)
+    receipt = tmp_path / "unused-semantic-receipt.json"
+    receipt.write_text("{}", encoding="ascii")
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="must be supplied together",
+    ):
+        replace(
+            fixture["config"],
+            output_directory=tmp_path / "other-evaluation",
+            semantic_postfold_receipt=receipt,
+        )
+
+
+def test_semantic_capture_rejects_unsealed_receipt_before_reload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate_directory = tmp_path / "candidate"
+    candidate_directory.mkdir()
+    parent_path, parent_file_sha = _parent_envelope(tmp_path)
+    receipt_path = tmp_path / "semantic-receipt.json"
+    receipt_path.write_text("{}", encoding="ascii")
+    config = evaluator.CaptureConfig(
+        candidate_directory=candidate_directory,
+        parent_envelope=parent_path,
+        expected_parent_envelope_file_sha256=parent_file_sha,
+        expected_parent_unique_parameters=16,
+        expected_candidate_state_sha256=_sha("candidate-state"),
+        expected_target_tokenizer_semantics_sha256=_sha("semantics"),
+        output_directory=tmp_path / "evaluation",
+        semantic_postfold_receipt=receipt_path,
+        expected_semantic_postfold_receipt_file_sha256=_file_sha(receipt_path),
+        expected_semantic_postfold_receipt_sha256=_sha("receipt"),
+        expected_candidate_artifact_sha256=_sha("expected-artifact"),
+        device="cpu",
+        dtype="float32",
+    )
+    metadata = {
+        "schema": evaluator.LFM2_CPCF_V5_QUARANTINE_ARTIFACT_SCHEMA,
+        "model_state_sha256": config.expected_candidate_state_sha256,
+        "tokenizer_semantics_sha256": (
+            config.expected_target_tokenizer_semantics_sha256
+        ),
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    monkeypatch.setattr(
+        evaluator,
+        "_read_artifact_metadata",
+        lambda _directory: metadata,
+    )
+    monkeypatch.setattr(
+        evaluator,
+        "Lfm2CpcfV5StrictLocalLoader",
+        lambda **_kwargs: pytest.fail("loader must not be constructed"),
+    )
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="schema or seal is invalid",
+    ):
+        evaluator.capture_standalone_intelligence(config)
+    assert not config.output_directory.exists()
+
+
+def test_semantic_capture_rejects_receipt_artifact_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+    )
+    mismatched = replace(
+        fixture["config"],
+        expected_candidate_artifact_sha256=_sha("different-artifact"),
+    )
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="does not authenticate this exact",
+    ):
+        evaluator._authenticate_semantic_postfold_provenance(
+            mismatched,
+            fixture["metadata"],
+        )
+
+
+def test_semantic_capture_rejects_stale_context_binding_self_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+    )
+    document = json.loads(fixture["semantic_receipt_path"].read_text())
+    receipt_core = dict(document)
+    receipt_core.pop("result_sha256")
+    context = dict(receipt_core["context_binding"])
+    context["compiler_cache_key"] = _sha("tampered-compiler-cache")
+    receipt_core["context_binding"] = context
+    tampered = {
+        **receipt_core,
+        "result_sha256": canonical_sha256(receipt_core),
+    }
+    path = tmp_path / "semantic-receipt-stale-context.json"
+    _write_json(path, tampered)
+    config = replace(
+        fixture["config"],
+        semantic_postfold_receipt=path,
+        expected_semantic_postfold_receipt_file_sha256=_file_sha(path),
+        expected_semantic_postfold_receipt_sha256=tampered["result_sha256"],
+    )
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="context binding self-hash is invalid",
+    ):
+        evaluator._authenticate_semantic_postfold_provenance(
+            config,
+            fixture["metadata"],
+        )
+
+
+def test_semantic_capture_rejects_unknown_nonzero_operation_audit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+    )
+    document = json.loads(fixture["semantic_receipt_path"].read_text())
+    receipt_core = dict(document)
+    receipt_core.pop("result_sha256")
+    outer_audit = dict(receipt_core["operation_audit"])
+    outer_audit["gradient_updates"] = 99
+    receipt_core["operation_audit"] = outer_audit
+    checkpoint_core = dict(receipt_core["checkpoint"])
+    checkpoint_core.pop("result_sha256")
+    checkpoint_audit = dict(checkpoint_core["operation_audit"])
+    checkpoint_audit["gradient_updates"] = 99
+    checkpoint_core["operation_audit"] = checkpoint_audit
+    receipt_core["checkpoint"] = {
+        **checkpoint_core,
+        "result_sha256": canonical_sha256(checkpoint_core),
+    }
+    tampered = {
+        **receipt_core,
+        "result_sha256": canonical_sha256(receipt_core),
+    }
+    path = tmp_path / "semantic-receipt-nonzero-audit.json"
+    _write_json(path, tampered)
+    config = replace(
+        fixture["config"],
+        semantic_postfold_receipt=path,
+        expected_semantic_postfold_receipt_file_sha256=_file_sha(path),
+        expected_semantic_postfold_receipt_sha256=tampered["result_sha256"],
+    )
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="does not authenticate this exact",
+    ):
+        evaluator._authenticate_semantic_postfold_provenance(
+            config,
+            fixture["metadata"],
+        )
+
+
+def test_semantic_capture_recomputes_fresh_parent_free_reload_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+    )
+    generated_before = len(fixture["generated_limits"])
+    monkeypatch.setattr(
+        evaluator,
+        "fingerprint_lfm2_parent",
+        lambda _model: type(
+            "WrongLfm2Identity",
+            (),
+            {"identity_sha256": _sha("wrong-fresh-reload")},
+        )(),
+    )
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="differs from the semantic-postfold parent-free reload identity",
+    ):
+        evaluator.capture_standalone_intelligence(
+            replace(
+                fixture["config"],
+                output_directory=tmp_path / "wrong-fresh-reload-evaluation",
+            )
+        )
+    assert len(fixture["generated_limits"]) == generated_before
 
 
 def test_finalize_binds_manual_ratings_and_refuses_clobber(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = _capture_fixture(tmp_path, monkeypatch)
+    fixture = _capture_fixture(
+        tmp_path,
+        monkeypatch,
+        authenticate_semantic_postfold=True,
+    )
     capture_directory = fixture["output_directory"]
     packet = json.loads(
         (capture_directory / evaluator.MANUAL_PACKET_FILENAME).read_text()
@@ -422,14 +764,41 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
     ratings_path = tmp_path / "manual-ratings-64.json"
     _write_json(ratings_path, ratings)
     ratings_file_sha = _file_sha(ratings_path)
+    automatic_path = capture_directory / evaluator.AUTOMATIC_REPORT_FILENAME
     config = evaluator.FinalizeConfig(
         capture_directory=capture_directory,
+        expected_capture_report_file_sha256=_file_sha(automatic_path),
+        expected_capture_report_sha256=fixture["report"]["capture_report_sha256"],
         parent_envelope=fixture["parent_path"],
         expected_parent_envelope_file_sha256=fixture["parent_file_sha"],
         manual_ratings=ratings_path,
         expected_manual_ratings_file_sha256=ratings_file_sha,
         output_directory=capture_directory,
+        expected_semantic_postfold_receipt_sha256=fixture["semantic_receipt_sha"],
+        expected_candidate_artifact_sha256=fixture["metadata"]["artifact_sha256"],
     )
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="independent seal",
+    ):
+        evaluator.finalize_standalone_intelligence(
+            replace(
+                config,
+                expected_capture_report_sha256=_sha("different-capture-report"),
+                output_directory=tmp_path / "bad-capture-pin",
+            )
+        )
+    with pytest.raises(
+        evaluator.Lfm2CpcfV5StandaloneEvaluationError,
+        match="independently pinned semantic child",
+    ):
+        evaluator.finalize_standalone_intelligence(
+            replace(
+                config,
+                expected_candidate_artifact_sha256=_sha("different-artifact"),
+                output_directory=tmp_path / "bad-semantic-pin",
+            )
+        )
     report = evaluator.finalize_standalone_intelligence(config)
     stored = json.loads(
         (capture_directory / evaluator.FINAL_REPORT_FILENAME).read_text()
@@ -447,6 +816,16 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
     assert report["acceptance_semantics"]["exact_wording_matching_used"] is False
     assert report["operation_audit"]["parent_forward_passes"] == 0
     assert report["operation_audit"]["child_model_loaded"] is False
+    assert (
+        report["semantic_postfold_provenance"]
+        == fixture["report"]["semantic_postfold_provenance"]
+    )
+    assert (
+        report["acceptance_semantics"][
+            "semantic_postfold_checkpoint_and_receipt_pinned"
+        ]
+        is True
+    )
 
     with pytest.raises(
         evaluator.Lfm2CpcfV5StandaloneEvaluationError,
@@ -482,11 +861,15 @@ def test_finalize_binds_manual_ratings_and_refuses_clobber(
     _write_json(tampered_path, tampered)
     bad_config = evaluator.FinalizeConfig(
         capture_directory=capture_directory,
+        expected_capture_report_file_sha256=_file_sha(automatic_path),
+        expected_capture_report_sha256=fixture["report"]["capture_report_sha256"],
         parent_envelope=fixture["parent_path"],
         expected_parent_envelope_file_sha256=fixture["parent_file_sha"],
         manual_ratings=tampered_path,
         expected_manual_ratings_file_sha256=_file_sha(tampered_path),
         output_directory=tmp_path / "bad-final",
+        expected_semantic_postfold_receipt_sha256=fixture["semantic_receipt_sha"],
+        expected_candidate_artifact_sha256=fixture["metadata"]["artifact_sha256"],
     )
     with pytest.raises(
         evaluator.Lfm2CpcfV5StandaloneEvaluationError,
