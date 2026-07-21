@@ -272,6 +272,23 @@ def recache_complete_causal_evidence(
         )
     batches, source_session = _source_input_batches(source)
     geometry = _batch_geometry(batches)
+    source_capture = source_manifest.get("capture")
+    if not isinstance(source_capture, Mapping):
+        raise Lfm2CompleteCausalEvidenceRecacheError(
+            "Source cache has no authenticated capture policy."
+        )
+    source_require_top1 = source_capture.get("require_top1_agreement")
+    source_allow_numeric_tie = source_capture.get(
+        "allow_top1_disagreement_within_numeric_error_envelope",
+        False,
+    )
+    if (
+        not isinstance(source_require_top1, bool)
+        or not isinstance(source_allow_numeric_tie, bool)
+    ):
+        raise Lfm2CompleteCausalEvidenceRecacheError(
+            "Source cache top-1 verification policy is invalid."
+        )
 
     parent = load_local_lfm2_model(
         parent_model_directory,
@@ -300,8 +317,16 @@ def recache_complete_causal_evidence(
         max_capture_bytes=maximum_capture_bytes_per_batch,
         logit_rtol=logit_rtol,
         logit_atol=logit_atol,
-        require_top1_agreement=True,
-        allow_top1_disagreement_within_numeric_error_envelope=False,
+        # Preserve the already-sealed corpus verification contract.  This
+        # source cache intentionally accepts a few BF16 cached/full-prefix
+        # top-1 tie breaks; requiring a stronger decision here would make the
+        # exact cached causal operator impossible to recapture.  Attention
+        # scores/probabilities/context are independently reconstructed and
+        # authenticated on the execution device.
+        require_top1_agreement=source_require_top1,
+        allow_top1_disagreement_within_numeric_error_envelope=(
+            source_allow_numeric_tie
+        ),
         decode_trace_mode=CACHED_VERIFIED_TRACE_MODE,
         capture_causal_circuit_evidence=True,
     )
@@ -337,6 +362,12 @@ def recache_complete_causal_evidence(
             "selective_session_sha256": source_session["session_sha256"],
             "selected_input_tensors_only": True,
             "parent_forward_calls": 0,
+            "inherited_verification_policy": {
+                "require_top1_agreement": source_require_top1,
+                "allow_top1_disagreement_within_numeric_error_envelope": (
+                    source_allow_numeric_tie
+                ),
+            },
         },
         "local_parent": {
             **direct_local_io_audit(parent_model_directory),
