@@ -1,0 +1,424 @@
+from __future__ import annotations
+
+import ast
+import hashlib
+from pathlib import Path
+
+import pytest
+
+torch = pytest.importorskip("torch")
+
+import neural_forge.hf_lfm2_semantic_mlp_refold_adapter as adapter  # noqa: E402
+from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
+    fingerprint_lfm2_parent,
+)
+
+
+def _sha(label: str) -> str:
+    return hashlib.sha256(label.encode("utf-8")).hexdigest()
+
+
+class _Config:
+    model_type = "lfm2"
+    norm_eps = 1e-5
+
+    def to_dict(self):
+        return {
+            "model_type": "lfm2",
+            "hidden_size": 4,
+            "intermediate_size": 3,
+            "num_hidden_layers": 1,
+            "norm_eps": self.norm_eps,
+        }
+
+
+class _Mlp(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.w1 = torch.nn.Linear(4, 3, bias=False, dtype=torch.bfloat16)
+        self.w3 = torch.nn.Linear(4, 3, bias=False, dtype=torch.bfloat16)
+        self.w2 = torch.nn.Linear(3, 4, bias=False, dtype=torch.bfloat16)
+        with torch.no_grad():
+            self.w1.weight.copy_(
+                torch.tensor(
+                    [
+                        [0.50, -0.25, 0.10, 0.20],
+                        [-0.20, 0.40, 0.30, -0.10],
+                        [0.15, 0.05, -0.35, 0.45],
+                    ],
+                    dtype=torch.bfloat16,
+                )
+            )
+            self.w3.weight.copy_(
+                torch.tensor(
+                    [
+                        [0.30, 0.10, -0.20, 0.40],
+                        [0.25, -0.30, 0.45, 0.15],
+                        [-0.10, 0.35, 0.20, 0.50],
+                    ],
+                    dtype=torch.bfloat16,
+                )
+            )
+            self.w2.weight.copy_(
+                torch.tensor(
+                    [
+                        [0.30, -0.20, 0.10],
+                        [-0.10, 0.25, 0.35],
+                        [0.20, 0.15, -0.30],
+                        [0.05, -0.40, 0.25],
+                    ],
+                    dtype=torch.bfloat16,
+                )
+            )
+
+
+class _Layer(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.feed_forward = _Mlp()
+
+
+class _Inner(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.layers = torch.nn.ModuleList([_Layer()])
+
+
+class _Target(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.config = _Config()
+        self.model = _Inner()
+
+
+def _source() -> adapter.Lfm2DirectLocalMlpSourceInventory:
+    gate = torch.tensor(
+        [
+            [0.20, -0.10, 0.30, 0.15],
+            [-0.25, 0.35, 0.10, -0.20],
+            [0.40, 0.05, -0.15, 0.25],
+            [0.10, 0.30, 0.20, -0.35],
+            [-0.30, 0.20, 0.45, 0.05],
+        ],
+        dtype=torch.bfloat16,
+    )
+    up = torch.tensor(
+        [
+            [0.10, 0.25, -0.20, 0.35],
+            [0.30, -0.15, 0.40, 0.10],
+            [-0.20, 0.45, 0.15, -0.10],
+            [0.35, 0.05, -0.30, 0.20],
+            [0.15, -0.25, 0.30, 0.40],
+        ],
+        dtype=torch.bfloat16,
+    )
+    down = torch.tensor(
+        [
+            [0.20, -0.10, 0.30, 0.15, -0.20],
+            [-0.15, 0.25, 0.05, 0.35, 0.10],
+            [0.30, 0.20, -0.25, 0.10, 0.15],
+            [0.05, -0.30, 0.20, 0.25, 0.40],
+        ],
+        dtype=torch.bfloat16,
+    )
+    return adapter.Lfm2DirectLocalMlpSourceInventory(
+        layer_index=0,
+        parent_model_identity_sha256=_sha("parent"),
+        parent_checkpoint_manifest_sha256=_sha("manifest"),
+        direct_local_loader_receipt_sha256=_sha("loader"),
+        residual_assignment_sha256=_sha("residual-chart"),
+        compiler_lineage_sha256=_sha("compiler-lineage"),
+        gate_weight=gate,
+        up_weight=up,
+        down_weight=down,
+    )
+
+
+def _evidence(
+    model: _Target,
+    *,
+    batches: int = 4,
+    total_phases: int | None = None,
+    terminal: bool = True,
+) -> tuple[adapter.Lfm2SemanticMlpEndpointEvidence, ...]:
+    source = _source()
+    state = fingerprint_lfm2_parent(model).identity_sha256
+    mlp = model.model.layers[0].feed_forward
+    child_input = torch.tensor([[0.75, -0.50, 0.25, 1.00]], dtype=torch.bfloat16)
+    child_pre = torch.tensor([[0.20, -0.10, 0.30, 0.05]], dtype=torch.bfloat16)
+    desired_down = mlp.w2.weight.detach().to(torch.float64) + torch.tensor(
+        [
+            [0.08, -0.02, 0.04],
+            [-0.03, 0.05, 0.06],
+            [0.04, 0.03, -0.05],
+            [0.02, -0.06, 0.05],
+        ],
+        dtype=torch.float64,
+    )
+    inputs64 = child_input.to(torch.float64)
+    child_post = torch.nn.functional.silu(
+        inputs64 @ mlp.w1.weight.detach().to(torch.float64).T
+    ) * (inputs64 @ mlp.w3.weight.detach().to(torch.float64).T)
+    desired_endpoint = (child_pre.to(torch.float64) + child_post @ desired_down.T).to(
+        torch.bfloat16
+    )
+    parent_input = torch.tensor([[0.40, -0.20, 0.60, 0.10]], dtype=torch.bfloat16)
+    parent_gate = (
+        parent_input.to(torch.float64) @ source.gate_weight.to(torch.float64).T
+    ).to(torch.bfloat16)
+    parent_up = (
+        parent_input.to(torch.float64) @ source.up_weight.to(torch.float64).T
+    ).to(torch.bfloat16)
+    parent_post = (
+        torch.nn.functional.silu(parent_gate.to(torch.float64))
+        * parent_up.to(torch.float64)
+    ).to(torch.bfloat16)
+    if total_phases is None:
+        per_batch = [1] * batches
+    else:
+        quotient, remainder = divmod(total_phases, batches)
+        per_batch = [quotient + int(index < remainder) for index in range(batches)]
+    values = []
+    phase_global = 0
+    for batch_index, phase_count in enumerate(per_batch):
+        for phase_index in range(phase_count):
+            values.append(
+                adapter.Lfm2SemanticMlpEndpointEvidence(
+                    batch_index=batch_index,
+                    trajectory_sha256=_sha(f"trajectory:{batch_index}"),
+                    phase_index=phase_index,
+                    phase_sha256=_sha(f"phase:{batch_index}:{phase_index}"),
+                    layer_index=0,
+                    alignment_sha256=_sha(f"alignment:{batch_index}:{phase_index}"),
+                    cache_key=_sha("cache"),
+                    cache_manifest_sha256=_sha("cache-manifest"),
+                    bridge_artifact_sha256=_sha("bridge"),
+                    captured_child_model_state_sha256=state,
+                    source_inventory=source,
+                    parent_gate=parent_gate,
+                    parent_up=parent_up,
+                    parent_post_swiglu=parent_post,
+                    actual_child_mlp_input=child_input,
+                    actual_child_pre_mlp_residual=child_pre,
+                    parent_post_mlp_residual_target_space=desired_endpoint,
+                    parent_final_norm_output_target_space=(
+                        desired_endpoint if terminal else None
+                    ),
+                )
+            )
+            phase_global += 1
+    assert phase_global == (total_phases if total_phases is not None else batches)
+    return tuple(values)
+
+
+def _prepare(
+    model: _Target,
+    evidence: tuple[adapter.Lfm2SemanticMlpEndpointEvidence, ...],
+    *,
+    terminal: bool = False,
+) -> adapter.Lfm2PreparedSemanticMlpRefold:
+    return adapter.prepare_lfm2_semantic_mlp_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key=_sha("cache"),
+        cache_manifest_sha256=_sha("cache-manifest"),
+        bridge_artifact_sha256=_sha("bridge"),
+        maximum_delta_ratio=1.0,
+        rmse_relative_tolerance=1e-4,
+        cosine_tolerance=1e-5,
+        require_terminal_action_evidence=terminal,
+    )
+
+
+def test_typed_source_and_endpoint_seals_reject_inserted_rows() -> None:
+    model = _Target()
+    source = _source()
+    assert source.verify()
+    assert source.authentication_body()["loader_mode"] == "direct-local-safetensors"
+    valid = _evidence(model)[0]
+    assert valid.verify()
+    assert valid.authentication_body()["parent_exact_semantic_endpoint"] is True
+    with pytest.raises(adapter.Lfm2SemanticMlpRefoldError, match="noninserted"):
+        adapter.Lfm2SemanticMlpEndpointEvidence(
+            batch_index=valid.batch_index,
+            trajectory_sha256=valid.trajectory_sha256,
+            phase_index=valid.phase_index,
+            phase_sha256=valid.phase_sha256,
+            layer_index=valid.layer_index,
+            alignment_sha256=valid.alignment_sha256,
+            cache_key=valid.cache_key,
+            cache_manifest_sha256=valid.cache_manifest_sha256,
+            bridge_artifact_sha256=valid.bridge_artifact_sha256,
+            captured_child_model_state_sha256=(valid.captured_child_model_state_sha256),
+            source_inventory=valid.source_inventory,
+            parent_gate=valid.parent_gate,
+            parent_up=valid.parent_up,
+            parent_post_swiglu=valid.parent_post_swiglu,
+            actual_child_mlp_input=valid.actual_child_mlp_input,
+            actual_child_pre_mlp_residual=valid.actual_child_pre_mlp_residual,
+            parent_post_mlp_residual_target_space=(
+                valid.parent_post_mlp_residual_target_space
+            ),
+            inserted_target_row=True,
+        )
+
+
+def test_prepare_freezes_two_fit_only_candidates_and_prefers_writer() -> None:
+    model = _Target()
+    before = fingerprint_lfm2_parent(model).identity_sha256
+    prepared = _prepare(model, _evidence(model))
+    assert prepared.verify()
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before
+    assert prepared.selected_role == "incumbent-producer-w2"
+    assert prepared.writer_candidate.solver_receipt["cluster_solve"] is False
+    assert prepared.full_candidate.solver_receipt["cluster_solve"] is True
+    assert prepared.full_candidate.solver_receipt["full_source_coverage"] is True
+    assert prepared.selection_receipt["fit_partition_only_used_for_solves"] is True
+    metrics = prepared.selection_receipt["endpoint_metrics"]
+    for role in ("incumbent", "incumbent-producer-w2", "full-w1-w3-w2"):
+        for partition in ("fit", "fit_check", "selection", "validation"):
+            assert metrics[role][partition]["endpoint_rows"] > 0
+            assert "endpoint_rmse" in metrics[role][partition]
+            assert "mean_endpoint_cosine" in metrics[role][partition]
+    heldout = prepared.selection_receipt["heldout_nonregression"][
+        "incumbent-producer-w2"
+    ]
+    assert heldout == {
+        "fit_check": True,
+        "selection": True,
+        "validation": True,
+    }
+
+
+def test_transactional_install_preserves_topology_identity_and_gradients() -> None:
+    model = _Target()
+    mlp = model.model.layers[0].feed_forward
+    for parameter in mlp.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    evidence = _evidence(model)
+    prepared = _prepare(model, evidence)
+    count = sum(parameter.numel() for parameter in model.parameters())
+    identities = tuple(id(parameter) for parameter in model.parameters())
+    pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
+    gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
+    before = fingerprint_lfm2_parent(model).identity_sha256
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+    assert result.receipt["installed"] is True
+    assert result.receipt["selected_role"] == "incumbent-producer-w2"
+    assert result.receipt["changed_parameter_roles"] == ["w2.weight"]
+    assert result.receipt["model_state_before_sha256"] == before
+    assert result.receipt["model_state_after_sha256"] != before
+    assert result.receipt["parameter_count_changed"] is False
+    assert sum(parameter.numel() for parameter in model.parameters()) == count
+    assert tuple(id(parameter) for parameter in model.parameters()) == identities
+    assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
+    assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+    assert all(value == 0 for value in result.receipt["operation_audit"].values())
+
+
+def test_final_w2_deferral_exports_four_banks_and_performs_no_install() -> None:
+    model = _Target()
+    evidence = _evidence(model, terminal=True)
+    before = fingerprint_lfm2_parent(model).identity_sha256
+    prepared = _prepare(model, evidence, terminal=True)
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+        defer_down_weight=True,
+    )
+    assert result.receipt["status"] == "prepared-final-w2-deferred"
+    assert result.receipt["installed"] is False
+    assert result.receipt["install_count"] == 0
+    assert result.receipt["final_layer_mlp_w2_deferred_to_fused_terminal"] is True
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before
+    assert set(result.final_layer_mlp_evidence) == {
+        "fit",
+        "fit_check",
+        "selection",
+        "validation",
+    }
+    for partition, bank in result.final_layer_mlp_evidence.items():
+        assert bank.split == partition
+        assert bank.verify_authentication()
+        assert (
+            result.receipt["terminal_action_evidence_sha256"][partition]
+            == bank.authentication_sha256
+        )
+
+
+def test_stale_replay_fails_closed_and_copy_failure_rolls_back_exactly(
+    monkeypatch,
+) -> None:
+    stale_model = _Target()
+    stale_prepared = _prepare(stale_model, _evidence(stale_model))
+    with torch.no_grad():
+        stale_model.model.layers[0].feed_forward.w1.weight.add_(0.01)
+    with pytest.raises(adapter.Lfm2SemanticMlpRefoldError, match="stale"):
+        adapter.install_lfm2_prepared_semantic_mlp_postfold(
+            target_model=stale_model,
+            prepared=stale_prepared,
+        )
+
+    model = _Target()
+    prepared = _prepare(model, _evidence(model))
+    before = fingerprint_lfm2_parent(model).identity_sha256
+    target_w2 = model.model.layers[0].feed_forward.w2.weight
+    original = adapter._copy_candidate
+
+    def copy_then_fail(parameter, value):
+        original(parameter, value)
+        if parameter is target_w2:
+            raise RuntimeError("injected after W2 copy")
+
+    monkeypatch.setattr(adapter, "_copy_candidate", copy_then_fail)
+    with pytest.raises(RuntimeError, match="injected"):
+        adapter.install_lfm2_prepared_semantic_mlp_postfold(
+            target_model=model,
+            prepared=prepared,
+        )
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before
+
+
+def test_repeated_complete_cache_scale_accepts_all_365_phases() -> None:
+    model = _Target()
+    evidence = _evidence(model, batches=16, total_phases=365)
+    prepared = _prepare(model, evidence)
+    assert len(prepared.evidence_sha256) == 365
+    assert (
+        sum(
+            prepared.incumbent.metrics[name].endpoint_rows
+            for name in ("fit", "fit_check", "selection", "validation")
+        )
+        == 365
+    )
+    assert set(prepared.partition_batch_indices) == {
+        "fit",
+        "fit_check",
+        "selection",
+        "validation",
+    }
+    assert prepared.selection_receipt["candidate_frozen_before_validation"] is True
+
+
+def test_module_ast_contains_no_execution_or_training_calls() -> None:
+    path = Path(adapter.__file__)
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    forbidden_attributes = {
+        "forward",
+        "generate",
+        "backward",
+        "step",
+        "zero_grad",
+        "grad",
+        "from_pretrained",
+    }
+    called = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert called.isdisjoint(forbidden_attributes)
