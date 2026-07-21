@@ -366,7 +366,11 @@ def _direct_local_parent_runtime_buffers(config: Any, count: int) -> dict[str, A
     if count == 0:
         return {}
     rope = getattr(config, "rope_parameters", None)
-    if count != 2 or not isinstance(rope, Mapping) or rope.get("rope_type") != "default":
+    if (
+        count != 2
+        or not isinstance(rope, Mapping)
+        or rope.get("rope_type") != "default"
+    ):
         raise Lfm2LongHorizonTerminalRefoldError(
             "Direct-local parent identity reconstruction supports either no "
             "runtime buffers or the authenticated default LFM2 RoPE buffer pair."
@@ -382,8 +386,7 @@ def _direct_local_parent_runtime_buffers(config: Any, count: int) -> dict[str, A
     inv_freq = 1.0 / (
         base
         ** (
-            torch.arange(0, head_dim, 2, dtype=torch.int64).to(torch.float32)
-            / head_dim
+            torch.arange(0, head_dim, 2, dtype=torch.int64).to(torch.float32) / head_dim
         )
     )
     return {
@@ -468,7 +471,9 @@ def load_lfm2_parent_final_rmsnorm_from_local_safetensors(
                 value = handle.get_tensor(name)
                 tensor_hashes[name] = _cache_tensor_sha256(_torch(), value)
                 if name == tensor_key:
-                    selected_weight = value.detach().to(device="cpu").contiguous().clone()
+                    selected_weight = (
+                        value.detach().to(device="cpu").contiguous().clone()
+                    )
     expected_state_count = int(parent.get("state_tensor_count", -1))
     if (
         bool(getattr(config, "tie_word_embeddings", False))
@@ -495,9 +500,7 @@ def load_lfm2_parent_final_rmsnorm_from_local_safetensors(
 
     expected_buffer_count = int(parent.get("runtime_buffer_count", -1))
     buffers = _direct_local_parent_runtime_buffers(config, expected_buffer_count)
-    buffer_digest = hashlib.sha256(
-        b"neural-forge-lfm2-parent-runtime-buffers-v1\0"
-    )
+    buffer_digest = hashlib.sha256(b"neural-forge-lfm2-parent-runtime-buffers-v1\0")
     for name in sorted(buffers):
         buffer_digest.update(name.encode("utf-8"))
         buffer_digest.update(b"\0")
@@ -685,6 +688,7 @@ class _CachedTrajectory:
     parent_final_norm_rows: Any
     horizon_indices: tuple[int, ...]
     selected_payload_sha256: str
+    parent_final_norm_endpoint: Mapping[str, Any]
     parent_action_projection: Mapping[str, Any]
 
 
@@ -933,10 +937,12 @@ def _map_donor_ids_to_unique_target(
     return mapped.contiguous().clone()
 
 
-def _analytical_parent_rmsnorm(
+def _runtime_parent_rmsnorm(
     residual_rows: Any,
     seal: Lfm2SealedParentFinalRmsNorm,
 ) -> Any:
+    """Replay the concrete LFM2 RMSNorm arithmetic without a model object."""
+
     torch = _torch()
     if (
         not isinstance(residual_rows, torch.Tensor)
@@ -948,17 +954,165 @@ def _analytical_parent_rmsnorm(
         raise Lfm2LongHorizonTerminalRefoldError(
             "Cached final residual rows differ from the sealed parent norm."
         )
-    rows = residual_rows.to(device="cpu", dtype=torch.float64)
-    result = (
-        rows
-        * (rows.square().mean(dim=1, keepdim=True) + seal.epsilon).rsqrt()
-        * seal.weight.to(torch.float64)
-    ).to(torch.bfloat16)
+    rows = residual_rows.detach().to(device="cpu").contiguous()
+    input_dtype = rows.dtype
+    hidden = rows.to(torch.float32)
+    variance = hidden.square().mean(dim=1, keepdim=True)
+    normalized = hidden * torch.rsqrt(variance + seal.epsilon)
+    result = seal.weight * normalized.to(input_dtype)
     if not bool(torch.isfinite(result).all().item()):
         raise Lfm2LongHorizonTerminalRefoldError(
-            "Analytical parent final RMSNorm reconstruction is nonfinite."
+            "Runtime-equivalent parent final RMSNorm replay is nonfinite."
         )
     return result.contiguous().clone()
+
+
+def _verify_parent_final_norm_endpoint(
+    tensors: Mapping[str, Any],
+    residual_rows: Any,
+    seal: Lfm2SealedParentFinalRmsNorm,
+    *,
+    decode_steps: int,
+) -> tuple[Any, dict[str, Any]]:
+    """Bind direct-local norm bytes to every authenticated cache endpoint."""
+
+    torch = _torch()
+    phases = ("prefill",) + tuple(f"decode.{step:03d}" for step in range(decode_steps))
+    norm_inputs = []
+    norm_outputs = []
+    head_inputs = []
+    endpoint_names = tuple(
+        f"{phase}.output.{field}"
+        for phase in phases
+        for field in (
+            "final_norm_input",
+            "final_norm_output",
+            "lm_head_input",
+        )
+    )
+    present_endpoint_names = tuple(name for name in endpoint_names if name in tensors)
+    if not present_endpoint_names:
+        replayed = _runtime_parent_rmsnorm(residual_rows, seal)
+        body = {
+            "method": "exact-parent-identity-bound-runtime-rmsnorm-replay-v1",
+            "phase_order": list(phases),
+            "phase_count": len(phases),
+            "parent_final_norm_authentication_sha256": seal.authentication_sha256,
+            "cached_final_residual_sha256": _tensor_sha256(residual_rows),
+            "cached_output_endpoint_available": False,
+            "runtime_replay_to_cached_output_verified": False,
+            "runtime_replay_used_as_compiler_target": True,
+            "parent_model_objects_constructed": 0,
+            "parent_model_forward_calls": 0,
+        }
+        return replayed.to(torch.bfloat16).contiguous().clone(), {
+            **body,
+            "authentication_sha256": _canonical_sha256(body),
+        }
+    if len(present_endpoint_names) != len(endpoint_names):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Cache final RMSNorm endpoint inventory is partial or phase-incomplete."
+        )
+    for phase in phases:
+        values = tuple(
+            tensors.get(f"{phase}.output.{field}")
+            for field in (
+                "final_norm_input",
+                "final_norm_output",
+                "lm_head_input",
+            )
+        )
+        if (
+            any(not isinstance(value, torch.Tensor) for value in values)
+            or any(value.ndim != 3 for value in values)
+            or len({tuple(value.shape) for value in values}) != 1
+            or int(values[0].shape[0]) != 1
+            or int(values[0].shape[1]) < 1
+            or int(values[0].shape[2]) != seal.source_hidden_size
+            or any(not torch.is_floating_point(value) for value in values)
+            or any(not bool(torch.isfinite(value).all().item()) for value in values)
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                f"Cache phase {phase!r} has no aligned final RMSNorm endpoint."
+            )
+        norm_inputs.append(values[0][:, -1, :].reshape(1, -1))
+        norm_outputs.append(values[1][:, -1, :].reshape(1, -1))
+        head_inputs.append(values[2][:, -1, :].reshape(1, -1))
+
+    cached_input = torch.cat(norm_inputs, dim=0).to(device="cpu").contiguous()
+    cached_output = torch.cat(norm_outputs, dim=0).to(device="cpu").contiguous()
+    cached_head = torch.cat(head_inputs, dim=0).to(device="cpu").contiguous()
+    residual = residual_rows.detach().to(device="cpu").contiguous()
+    if not torch.equal(cached_input, residual):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Cached final-layer residual does not exactly equal the final "
+            "RMSNorm input."
+        )
+    if not torch.equal(cached_output, cached_head):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Cached final RMSNorm output does not exactly equal LM-head input."
+        )
+
+    replayed = _runtime_parent_rmsnorm(cached_input, seal)
+    if tuple(replayed.shape) != tuple(cached_output.shape):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Runtime-equivalent final RMSNorm replay changed endpoint shape."
+        )
+    replay64 = replayed.to(torch.float64)
+    cached64 = cached_output.to(torch.float64)
+    difference = (replay64 - cached64).abs()
+    dtype = cached_output.dtype
+    epsilon = float(torch.finfo(dtype).eps)
+    # The checkpoint may have been traced on a different device, whose FP32
+    # reduction order can differ.  Keep the allowance scale-relative (never a
+    # denominator clamped to one): two storage-precision bins for BF16/FP16,
+    # or 64 FP32/FP64 epsilons for the reduction itself.
+    multiplier = 2.0 if dtype in {torch.bfloat16, torch.float16} else 64.0
+    scale = torch.maximum(replay64.abs(), cached64.abs())
+    tolerance = scale * (multiplier * epsilon)
+    exact_zero = scale == 0
+    equivalent = (difference <= tolerance) | (exact_zero & (difference == 0))
+    if not bool(equivalent.all().item()):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local parent final RMSNorm does not reproduce the "
+            "authenticated cache endpoint."
+        )
+    reference_rms = float(cached64.square().mean().sqrt().item())
+    relative_rmse = float(difference.square().mean().sqrt().item()) / max(
+        reference_rms,
+        torch.finfo(torch.float64).tiny,
+    )
+    body = {
+        "method": "direct-local-rmsnorm-runtime-replay-to-authenticated-cache-v1",
+        "phase_order": list(phases),
+        "phase_count": len(phases),
+        "parent_final_norm_authentication_sha256": seal.authentication_sha256,
+        "cached_final_residual_sha256": _tensor_sha256(residual),
+        "cached_final_norm_input_sha256": _tensor_sha256(cached_input),
+        "cached_final_norm_output_sha256": _tensor_sha256(cached_output),
+        "cached_lm_head_input_sha256": _tensor_sha256(cached_head),
+        "runtime_replayed_final_norm_output_sha256": _tensor_sha256(replayed),
+        "final_residual_to_norm_input_exact": True,
+        "final_norm_output_to_lm_head_input_exact": True,
+        "runtime_replay_exact": bool(torch.equal(replayed, cached_output)),
+        "runtime_replay_all_elements_verified": True,
+        "runtime_replay_relative_rmse": relative_rmse,
+        "runtime_replay_maximum_absolute_error": float(difference.max().item()),
+        "scale_relative_tolerance_multiplier": multiplier,
+        "storage_dtype_epsilon": epsilon,
+        "absolute_denominator_floor_used": False,
+        "cached_output_endpoint_available": True,
+        "runtime_replay_to_cached_output_verified": True,
+        "runtime_replay_used_as_compiler_target": False,
+        "authenticated_cached_output_used_as_compiler_target": True,
+        "parent_model_objects_constructed": 0,
+        "parent_model_forward_calls": 0,
+    }
+    # Use the authenticated cache output itself as the folding target.  BF16 is
+    # the established terminal compiler evidence dtype; this removes the old
+    # FP64 analytical approximation from the target path.
+    target_rows = cached_output.to(torch.bfloat16).contiguous().clone()
+    return target_rows, {**body, "authentication_sha256": _canonical_sha256(body)}
 
 
 def _cache_tensor_names(
@@ -987,6 +1141,21 @@ def _cache_tensor_names(
         names.update(prefix + suffix for suffix in suffixes)
         if phase != "prefill":
             names.add(f"{phase}.forced_token_ids")
+    endpoint_names = {
+        f"{phase}.output.{field}"
+        for phase in phases
+        for field in (
+            "final_norm_input",
+            "final_norm_output",
+            "lm_head_input",
+        )
+    }
+    present_endpoint_names = endpoint_names.intersection(inventory)
+    if present_endpoint_names and present_endpoint_names != endpoint_names:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Legacy cache has partial or phase-incomplete final RMSNorm evidence."
+        )
+    names.update(present_endpoint_names)
     missing = sorted(names.difference(inventory))
     if missing:
         raise Lfm2LongHorizonTerminalRefoldError(
@@ -1123,9 +1292,7 @@ def _verify_parent_action_projection(
         )
     donor_rows = torch.tensor(mapping, dtype=torch.long)
     selected_rows = []
-    phases = ("prefill",) + tuple(
-        f"decode.{step:03d}" for step in range(decode_steps)
-    )
+    phases = ("prefill",) + tuple(f"decode.{step:03d}" for step in range(decode_steps))
     for phase in phases:
         logits = tensors.get(f"{phase}.logits")
         if (
@@ -1169,12 +1336,9 @@ def _verify_parent_action_projection(
     agreements = top1 == reconstructed_top1
     row_error = difference.abs().amax(dim=1)
     row_index = torch.arange(int(cached64.shape[0]), dtype=torch.long)
-    cached_gap = (
-        cached64[row_index, top1] - cached64[row_index, reconstructed_top1]
-    )
+    cached_gap = cached64[row_index, top1] - cached64[row_index, reconstructed_top1]
     reconstructed_gap = (
-        reconstructed[row_index, reconstructed_top1]
-        - reconstructed[row_index, top1]
+        reconstructed[row_index, reconstructed_top1] - reconstructed[row_index, top1]
     )
     tie_envelope = 2.0 * row_error + torch.finfo(torch.float64).eps
     tie_verified = agreements | (
@@ -1197,9 +1361,7 @@ def _verify_parent_action_projection(
         "cached_selected_logits_sha256": _tensor_sha256(cached),
         "reconstructed_selected_logits_sha256": _tensor_sha256(reconstructed),
         "cached_selected_top1_sha256": _tensor_sha256(top1),
-        "reconstructed_selected_top1_sha256": _tensor_sha256(
-            reconstructed_top1
-        ),
+        "reconstructed_selected_top1_sha256": _tensor_sha256(reconstructed_top1),
         "exact_selected_top1_agreement": bool(agreements.all().item()),
         "exact_selected_top1_agreement_count": int(agreements.sum().item()),
         "numeric_tie_verified_disagreement_count": int(
@@ -1274,9 +1436,11 @@ def _collect_cached_trajectories(
                     final_layer_index=final_layer_index,
                     source_hidden_size=parent_final_norm.source_hidden_size,
                 )
-                parent_rows = _analytical_parent_rmsnorm(
+                parent_rows, norm_endpoint = _verify_parent_final_norm_endpoint(
+                    tensors,
                     residual,
                     parent_final_norm,
+                    decode_steps=decode_steps,
                 )
                 parent_action = _verify_parent_action_projection(
                     tensors,
@@ -1315,6 +1479,7 @@ def _collect_cached_trajectories(
                         parent_final_norm_rows=parent_rows,
                         horizon_indices=tuple(range(decode_steps + 1)),
                         selected_payload_sha256=payload.selection_sha256,
+                        parent_final_norm_endpoint=MappingProxyType(norm_endpoint),
                         parent_action_projection=MappingProxyType(parent_action),
                     )
                 )
@@ -1431,7 +1596,12 @@ def _collect_cached_semantic_trajectories(
             final_layer_index=final_layer_index,
             source_hidden_size=parent_final_norm.source_hidden_size,
         )
-        parent_rows = _analytical_parent_rmsnorm(residual, parent_final_norm)
+        parent_rows, norm_endpoint = _verify_parent_final_norm_endpoint(
+            tensors,
+            residual,
+            parent_final_norm,
+            decode_steps=decode_steps,
+        )
         parent_action = _verify_parent_action_projection(
             tensors,
             parent_rows,
@@ -1479,6 +1649,7 @@ def _collect_cached_semantic_trajectories(
                 parent_final_norm_rows=parent_rows,
                 horizon_indices=tuple(range(decode_steps + 1)),
                 selected_payload_sha256=semantic.source_record_sha256,
+                parent_final_norm_endpoint=MappingProxyType(norm_endpoint),
                 parent_action_projection=MappingProxyType(parent_action),
             )
         )
@@ -1601,9 +1772,8 @@ def _replay_child_sequence_once(
             "Target-native replay requires one complete unpadded token sequence."
         )
     selected_rows = tuple(int(value) for value in row_indices)
-    if (
-        not selected_rows
-        or any(value < 0 or value >= int(full_ids.shape[1]) for value in selected_rows)
+    if not selected_rows or any(
+        value < 0 or value >= int(full_ids.shape[1]) for value in selected_rows
     ):
         raise Lfm2LongHorizonTerminalRefoldError(
             "Target-native replay endpoint rows lie outside the token sequence."
@@ -1654,7 +1824,7 @@ def _replay_child_sequence_once(
                 layer,
                 residual,
                 padding_mask=full_mask.to(device=device, dtype=dtype),
-        )
+            )
         replay_sha.append(replay.replay_sha256)
         if layer_index == len(layers) - 1:
             index = torch.tensor(
@@ -1882,6 +2052,9 @@ def _build_split_evidence(
                 ],
                 "parent_action_projection_sha256": (
                     trajectory.parent_action_projection["authentication_sha256"]
+                ),
+                "parent_final_norm_endpoint_sha256": (
+                    trajectory.parent_final_norm_endpoint["authentication_sha256"]
                 ),
                 "macrocell_replay_sha256": list(child.macrocell_replay_sha256),
             }
@@ -2135,9 +2308,7 @@ def compile_install_lfm2_long_horizon_terminal_refold(
     target_model: Any,
     interface: TiedCausalInterfaceFold,
     source_selected_tied_table: Any,
-    parent_final_norm: (
-        Lfm2SealedParentFinalRmsNorm | Lfm2LocalParentFinalRmsNormLoad
-    ),
+    parent_final_norm: (Lfm2SealedParentFinalRmsNorm | Lfm2LocalParentFinalRmsNormLoad),
     split_plan: Lfm2LongHorizonTrajectorySplitPlan | None = None,
     policy: Lfm2CpcfTerminalActionPolicy | None = None,
     tokenizer_replay_mode: TokenizerReplayMode = "strict_one_row",
@@ -2205,15 +2376,13 @@ def compile_install_lfm2_long_horizon_terminal_refold(
     semantic_bridges: tuple[Lfm2SemanticSpanPhaseBridge, ...] = ()
     if tokenizer_replay_mode == "strict_one_row":
         inverse = _strict_inverse_mapping(bridge, seed.vocabulary_size)
-        cached, adapter, pair_receipts, cache_receipt = (
-            _collect_cached_trajectories(
-                cache,
-                bridge,
-                inverse,
-                selected_parent_final_norm,
-                source_selected_tied_table,
-                plan,
-            )
+        cached, adapter, pair_receipts, cache_receipt = _collect_cached_trajectories(
+            cache,
+            bridge,
+            inverse,
+            selected_parent_final_norm,
+            source_selected_tied_table,
+            plan,
         )
     else:
         if bridge.target_vocabulary_size != seed.vocabulary_size:
@@ -2221,19 +2390,22 @@ def compile_install_lfm2_long_horizon_terminal_refold(
                 "Semantic target tokenizer capacity differs from the installed "
                 "tied child interface."
             )
-        cached, semantic_bridges, cache_receipt = (
-            _collect_cached_semantic_trajectories(
-                cache,
-                bridge,
-                donor_tokenizer,
-                target_tokenizer,
-                selected_parent_final_norm,
-                source_selected_tied_table,
-                plan,
-            )
+        cached, semantic_bridges, cache_receipt = _collect_cached_semantic_trajectories(
+            cache,
+            bridge,
+            donor_tokenizer,
+            target_tokenizer,
+            selected_parent_final_norm,
+            source_selected_tied_table,
+            plan,
         )
         adapter = None
         pair_receipts = ()
+    authenticated_norm_endpoints = all(
+        value.parent_final_norm_endpoint.get("runtime_replay_to_cached_output_verified")
+        is True
+        for value in cached
+    )
     evidence_tuple, horizons, replay_receipts, rope_calls = _build_split_evidence(
         cached,
         adapter,
@@ -2300,7 +2472,7 @@ def compile_install_lfm2_long_horizon_terminal_refold(
     body = {
         "schema": LFM2_LONG_HORIZON_TERMINAL_REFOLD_SCHEMA,
         "method": (
-            "sealed_legacy_cache_analytical_parent_final_norm_plus_"
+            "sealed_cache_runtime_verified_parent_final_norm_endpoint_plus_"
             + (
                 "one_pass_complete_child_macrocell_trajectory"
                 if tokenizer_replay_mode == "strict_one_row"
@@ -2317,10 +2489,23 @@ def compile_install_lfm2_long_horizon_terminal_refold(
         "parent_final_norm": selected_parent_final_norm.as_dict(),
         "parent_final_norm_direct_local_source": parent_final_norm_source,
         "parent_final_norm_reconstruction": {
-            "method": "analytical_rmsnorm_from_cached_final_residual",
+            "method": (
+                "direct_local_runtime_equivalent_rmsnorm_replay_then_"
+                "authenticated_cached_output"
+            ),
             "final_norm_module_or_parent_model_called": False,
             "reconstructed_output_dtype": "bfloat16",
             "prompt_endpoint_and_every_forced_position": True,
+            "cached_final_residual_to_norm_input_exact": (authenticated_norm_endpoints),
+            "cached_final_norm_output_to_lm_head_input_exact": (
+                authenticated_norm_endpoints
+            ),
+            "authenticated_cached_output_used_as_compiler_target": (
+                authenticated_norm_endpoints
+            ),
+            "legacy_cache_exact_parent_identity_fallback_used": (
+                not authenticated_norm_endpoints
+            ),
         },
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "bridge_transport_profile_fingerprint": bridge.profile_fingerprint,
@@ -2350,7 +2535,10 @@ def compile_install_lfm2_long_horizon_terminal_refold(
             "numeric_token_id_equality_required": False,
         },
         "parent_action_projection_sha256": [
-            value.parent_action_projection["authentication_sha256"]
+            value.parent_action_projection["authentication_sha256"] for value in cached
+        ],
+        "parent_final_norm_endpoint_sha256": [
+            value.parent_final_norm_endpoint["authentication_sha256"]
             for value in cached
         ],
         "split_plan": plan.as_dict(),
@@ -2400,12 +2588,10 @@ def compile_install_lfm2_long_horizon_terminal_refold(
             "child_model_forward_calls": 0,
             "child_model_generate_calls": 0,
             "child_embedding_seed_lookups": sum(
-                int(value["embedding_seed_lookup_calls"])
-                for value in replay_receipts
+                int(value["embedding_seed_lookup_calls"]) for value in replay_receipts
             ),
             "child_target_native_full_prefix_replay_calls": sum(
-                int(value["full_prefix_replay_calls"])
-                for value in replay_receipts
+                int(value["full_prefix_replay_calls"]) for value in replay_receipts
             ),
             "child_macrocell_replay_calls": observed_macrocell_calls,
             "expected_child_macrocell_replay_calls": macrocell_calls,

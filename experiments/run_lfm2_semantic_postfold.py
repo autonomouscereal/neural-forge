@@ -98,8 +98,19 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-input-artifact-sha256", required=True)
     parser.add_argument("--output-checkpoint", required=True)
     parser.add_argument("--receipt-json", required=True)
-    parser.add_argument("--trace-cache", required=True)
-    parser.add_argument("--expected-cache-key", required=True)
+    parser.add_argument(
+        "--trace-cache",
+        required=True,
+        help=(
+            "Complete semantic-evidence cache. The distinct c61 compiler cache "
+            "is reopened from the pinned compiler diagnostic."
+        ),
+    )
+    parser.add_argument(
+        "--expected-cache-key",
+        required=True,
+        help="Externally pinned identity of the semantic-evidence cache.",
+    )
     parser.add_argument("--bridge-directory", required=True)
     parser.add_argument("--expected-bridge-artifact-sha256", required=True)
     parser.add_argument("--donor-tokenizer-directory", required=True)

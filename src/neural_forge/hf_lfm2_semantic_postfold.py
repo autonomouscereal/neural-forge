@@ -32,6 +32,10 @@ from types import MappingProxyType
 from typing import Any
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge import dynamic_lfm2_cpcf_resources as cpcf_resources
+from neural_forge import hf_lfm2_cpcf_model_compiler as cpcf_model_compiler
+from neural_forge import hf_lfm2_cpcf_model_fold as cpcf_model_fold
+from neural_forge import hf_lfm2_cpcf_v5_model_compiler as cpcf_v5_compiler
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
 from neural_forge.hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceBatch,
@@ -45,11 +49,17 @@ from neural_forge.hf_lfm2_cpcf_v5_quarantine import (
     Lfm2CpcfV5QuarantineSaver,
     Lfm2CpcfV5StrictLocalLoader,
 )
-from neural_forge.hf_lfm2_cpcf_model_fold import independent_parameter_inventory
+from neural_forge.hf_lfm2_cpcf_model_fold import (
+    Lfm2CpcfModelFoldPolicy,
+    independent_parameter_inventory,
+)
 from neural_forge.hf_lfm2_cpcf_macrocell_replay import (
     replay_lfm2_cpcf_macrocell,
 )
 from neural_forge.hf_lfm2_cpcf_model_compiler import _rope_from_target
+from neural_forge.hf_lfm2_cpcf_selective_evidence import (
+    open_lfm2_cpcf_selective_evidence_provider_from_catalog,
+)
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
     Lfm2CpcfTerminalActionEvidence,
     Lfm2CpcfTerminalActionPolicy,
@@ -172,6 +182,19 @@ def _digest(value: Any, name: str) -> str:
     return value
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for block in iter(lambda: handle.read(8 * 1024**2), b""):
+                digest.update(block)
+    except OSError as exc:
+        raise Lfm2SemanticPostfoldError(
+            f"Could not hash authenticated local file {path}."
+        ) from exc
+    return digest.hexdigest()
+
+
 def _sealed(body: Mapping[str, Any], seal_name: str) -> dict[str, Any]:
     if seal_name in body:
         raise Lfm2SemanticPostfoldError(f"Receipt body already contains {seal_name!r}.")
@@ -263,9 +286,22 @@ def _changed_state_keys(
 
 
 def _ordinary_directory(value: str | os.PathLike[str], name: str) -> Path:
-    path = Path(value).expanduser().resolve()
+    lexical = Path(value).expanduser()
+    if lexical.is_symlink():
+        raise Lfm2SemanticPostfoldError(f"{name} must not be a symlink.")
+    path = lexical.resolve()
     if not path.is_dir() or path.is_symlink():
         raise Lfm2SemanticPostfoldError(f"{name} must be a real local directory.")
+    return path
+
+
+def _ordinary_file(value: str | os.PathLike[str], name: str) -> Path:
+    lexical = Path(value).expanduser()
+    if lexical.is_symlink():
+        raise Lfm2SemanticPostfoldError(f"{name} must not be a symlink.")
+    path = lexical.resolve()
+    if not path.is_file() or path.is_symlink():
+        raise Lfm2SemanticPostfoldError(f"{name} must be a real local file.")
     return path
 
 
@@ -292,6 +328,63 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise Lfm2SemanticPostfoldError(f"{label} must contain a JSON object.")
     return value
+
+
+def _read_canonical_json(path: Path, label: str) -> tuple[dict[str, Any], str]:
+    """Read one canonical runner artifact and retain its exact file identity."""
+
+    path = _ordinary_file(path, label)
+    try:
+        raw = path.read_bytes()
+        value = json.loads(raw.decode("ascii"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Lfm2SemanticPostfoldError(f"Could not parse {label}.") from exc
+    if not isinstance(value, dict):
+        raise Lfm2SemanticPostfoldError(f"{label} must contain a JSON object.")
+    expected = (
+        json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        + b"\n"
+    )
+    if raw != expected:
+        raise Lfm2SemanticPostfoldError(f"{label} is not canonical JSON.")
+    return value, hashlib.sha256(raw).hexdigest()
+
+
+def _authenticated_c61_diagnostic(
+    diagnostic_json: str | os.PathLike[str],
+    *,
+    expected_diagnostic_sha256: str,
+) -> tuple[Mapping[str, Any], str]:
+    path = _ordinary_file(diagnostic_json, "c61 compiler diagnostic")
+    diagnostic, file_sha256 = _read_canonical_json(
+        path,
+        "c61 compiler diagnostic",
+    )
+    expected = _digest(
+        expected_diagnostic_sha256,
+        "expected c61 compiler diagnostic SHA-256",
+    )
+    verified = _verify_sealed(
+        diagnostic,
+        seal_name="receipt_sha256",
+        label="c61 compiler diagnostic",
+    )
+    if (
+        verified["receipt_sha256"] != expected
+        or verified.get("schema")
+        != "neural-forge-lfm2-cpcf-v5-selective-blank-fold-run-v1"
+        or verified.get("status") != "compiled_in_memory_diagnostic_not_published"
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "c61 compiler diagnostic differs from its externally pinned receipt."
+        )
+    return MappingProxyType(verified), file_sha256
 
 
 def _input_artifact_metadata(
@@ -557,6 +650,366 @@ def reconstruct_lfm2_saved_tied_interface(
     )
 
 
+def rehydrate_lfm2_c61_tied_interface(
+    target_model: Any,
+    source_selected_tied_table: Any,
+    *,
+    semantic_cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    target_tokenizer: Any,
+    compiler_diagnostic_json: str | os.PathLike[str],
+    expected_compiler_diagnostic_sha256: str,
+) -> tuple[TiedCausalInterfaceFold, Mapping[str, Any]]:
+    """Replay c61's exact tied-interface compiler from its sealed evidence.
+
+    Anchor repair changes the saved target table while deliberately keeping the
+    producer encoder fixed.  Consequently the encoder cannot be inverted from
+    an anchor-active checkpoint.  This routine instead warm-opens c61's exact
+    compiler cache/catalog, loads only final-normalization evidence, and reruns
+    the deterministic interface compiler.  Every resulting tensor and report
+    is matched to both the c61 lineage and the saved dense child.
+    """
+
+    torch = _torch()
+    diagnostic, diagnostic_file_sha256 = _authenticated_c61_diagnostic(
+        compiler_diagnostic_json,
+        expected_diagnostic_sha256=expected_compiler_diagnostic_sha256,
+    )
+    inputs = diagnostic.get("inputs")
+    request = diagnostic.get("request")
+    preparation_value = diagnostic.get("selective_catalog_artifact")
+    compiled_value = diagnostic.get("compiled_model_fold")
+    bundle_value = diagnostic.get("boundary_bundle")
+    install_value = diagnostic.get("interface_install")
+    seam = diagnostic.get("compiled_candidate_consumer_seam")
+    if any(
+        not isinstance(value, Mapping)
+        for value in (
+            inputs,
+            request,
+            preparation_value,
+            compiled_value,
+            bundle_value,
+            install_value,
+            seam,
+        )
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "c61 diagnostic lacks exact interface-rehydration ancestry."
+        )
+    preparation = _verify_sealed(
+        preparation_value,
+        seal_name="preparation_receipt_sha256",
+        label="c61 selective-catalog preparation",
+    )
+    compiled = _verify_sealed(
+        compiled_value,
+        seal_name="result_sha256",
+        label="c61 compiled-model receipt",
+    )
+    bundle = _verify_sealed(
+        bundle_value,
+        seal_name="bundle_sha256",
+        label="c61 boundary bundle",
+    )
+    install = _verify_sealed(
+        install_value,
+        seal_name="report_sha256",
+        label="c61 tied-interface installation",
+    )
+    compiler_cache_key = _digest(
+        inputs.get("cache_key"),
+        "c61 compiler cache key",
+    )
+    common_parent = _digest(
+        inputs.get("parent_fingerprint"),
+        "c61 parent fingerprint",
+    )
+    if (
+        semantic_cache.parent_fingerprint != common_parent
+        or inputs.get("bridge_artifact_sha256") != bridge.artifact_sha256
+        or seam.get("cache_sha256") != compiler_cache_key
+        or seam.get("parent_sha256") != common_parent
+        or seam.get("bridge_sha256") != bridge.artifact_sha256
+        or preparation.get("cache_key") != compiler_cache_key
+        or preparation.get("trace_cache_directory")
+        != inputs.get("trace_cache_directory")
+        or preparation.get("catalog_store_directory")
+        != request.get("selective_catalog_store_directory")
+        or inputs.get("selective_catalog_preparation_receipt_sha256")
+        != preparation["preparation_receipt_sha256"]
+        or inputs.get("selective_catalog_binding_sha256")
+        != preparation.get("binding_sha256")
+        or inputs.get("selective_catalog_artifact_manifest_sha256")
+        != preparation.get("artifact_manifest_sha256")
+        or inputs.get("selective_catalog_artifact_sha256")
+        != preparation.get("artifact_catalog_sha256")
+        or compiled.get("selective_catalog_sha256")
+        != preparation.get("selective_catalog_sha256")
+        or compiled.get("selective_source_sha256")
+        != preparation.get("selective_source_sha256")
+        or compiled.get("selective_provider_sha256")
+        != preparation.get("selective_provider_sha256")
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Compiler-cache, catalog, bridge, or parent ancestry diverged."
+        )
+
+    preparation_path = _ordinary_file(
+        preparation.get("catalog_receipt_json"),
+        "c61 selective-catalog preparation receipt",
+    )
+    preparation_disk, preparation_file_sha256 = _read_canonical_json(
+        preparation_path,
+        "c61 selective-catalog preparation receipt",
+    )
+    if preparation_disk != preparation:
+        raise Lfm2SemanticPostfoldError(
+            "On-disk selective-catalog receipt differs from c61's sealed copy."
+        )
+    compiler_cache_directory = _ordinary_directory(
+        inputs.get("trace_cache_directory"),
+        "c61 compiler trace cache",
+    )
+    catalog_store_directory = _ordinary_directory(
+        preparation.get("catalog_store_directory"),
+        "c61 selective-catalog store",
+    )
+    artifact_path = _ordinary_directory(
+        preparation.get("artifact_path"),
+        "c61 selective-catalog artifact",
+    )
+    try:
+        artifact_path.relative_to(catalog_store_directory)
+    except ValueError as exc:
+        raise Lfm2SemanticPostfoldError(
+            "c61 selective-catalog artifact lies outside its sealed store."
+        ) from exc
+    trajectory_path = _ordinary_file(
+        inputs.get("trajectory_corpus"),
+        "c61 trajectory corpus",
+    )
+    trajectory_sha256 = _file_sha256(trajectory_path)
+    if trajectory_sha256 != _digest(
+        inputs.get("trajectory_corpus_sha256"),
+        "c61 trajectory corpus SHA-256",
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "c61 trajectory corpus changed before interface rehydration."
+        )
+
+    compiler_cache = open_lfm2_circuit_trace_cache(
+        compiler_cache_directory,
+        verify=True,
+    )
+    if (
+        compiler_cache.cache_key != compiler_cache_key
+        or compiler_cache.parent_fingerprint != common_parent
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "The reopened c61 compiler cache differs from its sealed identity."
+        )
+    rows = cpcf_resources._read_trajectory_rows(trajectory_path)
+    trace_adapter = cpcf_resources._build_trace_adapter(
+        rows=rows,
+        target_tokenizer=target_tokenizer,
+        bridge=bridge,
+        cache=compiler_cache,
+    )
+    if trace_adapter.evidence_sha256 != _digest(
+        inputs.get("trace_adapter_sha256"),
+        "c61 trace-adapter SHA-256",
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Rebuilt c61 target-token trace adapter changed."
+        )
+
+    provider = None
+    final_payload = None
+    final_norm_authentication_sha256 = None
+    try:
+        provider = open_lfm2_cpcf_selective_evidence_provider_from_catalog(
+            compiler_cache,
+            artifact_store=catalog_store_directory,
+            expected_binding_sha256=_digest(
+                preparation.get("binding_sha256"),
+                "c61 selective-catalog binding SHA-256",
+            ),
+            expected_manifest_sha256=_digest(
+                preparation.get("artifact_manifest_sha256"),
+                "c61 selective-catalog manifest SHA-256",
+            ),
+            expected_catalog_sha256=_digest(
+                preparation.get("artifact_catalog_sha256"),
+                "c61 selective-catalog artifact SHA-256",
+            ),
+        )
+        catalog = provider.catalog
+        if (
+            catalog.catalog_sha256 != preparation.get("selective_catalog_sha256")
+            or catalog.source_sha256 != preparation.get("selective_source_sha256")
+            or catalog.provider_sha256 != preparation.get("selective_provider_sha256")
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Warm-opened selective catalog differs from c61."
+            )
+        final_payload = provider.load_final_norm_payload()
+        final_norm_authentication_sha256 = provider.authenticate_final_norm_payload(
+            final_payload
+        )
+        if final_norm_authentication_sha256 != _digest(
+            compiled.get("final_norm_authentication_sha256"),
+            "c61 final-normalization authentication SHA-256",
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Final-normalization evidence changed since c61 compilation."
+            )
+        shells = cpcf_v5_compiler.build_lfm2_cpcf_v5_target_phase_shells(
+            trace_adapter,
+            catalog,
+            None,
+            final_norm_payload=final_payload,
+        )
+        final_phases = cpcf_v5_compiler.materialize_lfm2_cpcf_v5_final_norm_phases(
+            shells,
+            catalog,
+            final_payload,
+        )
+        boundary_compiler = cpcf_v5_compiler._SelectiveBoundaryCompiler(
+            shells,
+            catalog,
+            source_selected_tied_table,
+            target_hidden_width=int(target_model.config.hidden_size),
+            model_policy=Lfm2CpcfModelFoldPolicy(),
+        )
+        interface = boundary_compiler.fit_interface(
+            final_phases,
+            target_norm_epsilon=cpcf_model_fold._final_norm_epsilon(target_model),
+        )
+    finally:
+        if provider is not None and final_payload is not None:
+            provider.release_final_norm_payload(final_payload)
+        if provider is not None:
+            provider.close()
+
+    lineage = bundle.get("interface_lineage")
+    if not isinstance(lineage, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "c61 boundary bundle has no tied-interface lineage."
+        )
+    base_report = _verify_sealed(
+        lineage.get("base_interface_report"),
+        seal_name="report_sha256",
+        label="c61 base tied-interface report",
+    )
+    anchor_report = _verify_sealed(
+        lineage.get("causal_anchor_report"),
+        seal_name="report_sha256",
+        label="c61 causal-anchor interface report",
+    )
+    active_report = _verify_sealed(
+        interface.report,
+        seal_name="report_sha256",
+        label="rehydrated c61 active interface",
+    )
+    active_anchor_value = anchor_report.get("active_anchor_residual_selected")
+    base_control_value = anchor_report.get("selected_candidate_is_base_control")
+    if (
+        not isinstance(active_anchor_value, bool)
+        or not isinstance(base_control_value, bool)
+        or active_anchor_value is base_control_value
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "c61 causal-anchor selection flags are not exact booleans."
+        )
+    active_anchor = active_anchor_value
+    source64 = (
+        source_selected_tied_table.detach()
+        .to(
+            device="cpu",
+            dtype=torch.float64,
+        )
+        .contiguous()
+    )
+    target = getattr(target_model.get_input_embeddings(), "weight", None)
+    output = getattr(target_model.get_output_embeddings(), "weight", None)
+    if not isinstance(target, torch.nn.Parameter) or output is not target:
+        raise Lfm2SemanticPostfoldError(
+            "Saved c61 child no longer exposes one native tied table."
+        )
+    saved_target = target.detach().to(device="cpu").contiguous()
+    expected_saved_target = interface.target_weight.to(
+        dtype=saved_target.dtype,
+    ).contiguous()
+    saved_target_runtime_sha256 = cpcf_model_compiler._tensor_sha256(saved_target)
+    if (
+        dict(boundary_compiler.base_interface.report) != base_report
+        or dict(boundary_compiler.anchor_fold.report) != anchor_report
+        or active_report != anchor_report
+        or lineage.get("base_interface_report_sha256") != base_report["report_sha256"]
+        or lineage.get("causal_anchor_report_sha256") != anchor_report["report_sha256"]
+        or lineage.get("active_interface_report_sha256")
+        != active_report["report_sha256"]
+        or lineage.get("active_interface_is_anchor_repaired") is not active_anchor
+        or lineage.get("active_interface_is_base_control") != (not active_anchor)
+        or lineage.get("producer_encoder_fixed_by_anchor_selection") is not True
+        or bundle.get("interface_report_sha256") != active_report["report_sha256"]
+        or bundle.get("base_interface_report_sha256") != base_report["report_sha256"]
+        or bundle.get("causal_anchor_report_sha256") != anchor_report["report_sha256"]
+        or compiled.get("boundary_bundle_sha256") != bundle["bundle_sha256"]
+        or install.get("interface_report_sha256") != active_report["report_sha256"]
+        or install.get("target_weight_sha256") != saved_target_runtime_sha256
+        or not torch.equal(saved_target, expected_saved_target)
+        or active_report.get("target_weight_sha256")
+        != _interface_tensor_sha256(interface.target_weight)
+        or active_report.get("producer_encoder_sha256")
+        != _interface_tensor_sha256(interface.producer_encoder)
+        or base_report.get("source_table_sha256") != _interface_tensor_sha256(source64)
+        or anchor_report.get("source_tied_table_sha256")
+        != _interface_tensor_sha256(source64)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Rehydrated producer coordinates differ from c61 or the saved child."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-c61-interface-rehydration-v1",
+        "compiler_diagnostic_receipt_sha256": diagnostic["receipt_sha256"],
+        "compiler_diagnostic_file_sha256": diagnostic_file_sha256,
+        "compiler_cache_key": compiler_cache_key,
+        "semantic_evidence_cache_key": semantic_cache.cache_key,
+        "common_parent_fingerprint": common_parent,
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "trajectory_corpus_sha256": trajectory_sha256,
+        "trace_adapter_sha256": trace_adapter.evidence_sha256,
+        "selective_catalog_preparation_receipt_sha256": (
+            preparation["preparation_receipt_sha256"]
+        ),
+        "selective_catalog_preparation_file_sha256": preparation_file_sha256,
+        "selective_catalog_binding_sha256": preparation["binding_sha256"],
+        "selective_catalog_manifest_sha256": preparation["artifact_manifest_sha256"],
+        "selective_catalog_artifact_sha256": preparation["artifact_catalog_sha256"],
+        "final_norm_authentication_sha256": final_norm_authentication_sha256,
+        "base_interface_report_sha256": base_report["report_sha256"],
+        "active_interface_report_sha256": active_report["report_sha256"],
+        "active_interface_is_anchor_repaired": active_anchor,
+        "active_interface_is_base_control": not active_anchor,
+        "source_table_sha256": _interface_tensor_sha256(source64),
+        "active_target_weight_sha256": active_report["target_weight_sha256"],
+        "saved_target_weight_runtime_sha256": saved_target_runtime_sha256,
+        "producer_encoder_sha256": active_report["producer_encoder_sha256"],
+        "producer_encoder_recovered_from_repaired_target_table": False,
+        "producer_encoder_recomputed_from_authenticated_final_norm_evidence": True,
+        "compiler_and_semantic_cache_identities_bound_separately": True,
+        "parent_model_objects_constructed": 0,
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+    }
+    return interface, MappingProxyType(_sealed(body, "result_sha256"))
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2SemanticCompilerLayerLineage:
     """Normalized, authenticated c61 attention ancestry for one layer."""
@@ -662,30 +1115,26 @@ def load_lfm2_semantic_compiler_lineage(
 ) -> Mapping[int, Lfm2SemanticCompilerLayerLineage]:
     """Reduce the giant c61 diagnostic to the exact attention ancestry used."""
 
-    path = Path(diagnostic_json).expanduser().resolve()
-    diagnostic = _read_json(path, "c61 compiler diagnostic")
-    expected = _digest(
-        expected_diagnostic_sha256,
-        "expected c61 compiler diagnostic SHA-256",
+    verified, diagnostic_file_sha256 = _authenticated_c61_diagnostic(
+        diagnostic_json,
+        expected_diagnostic_sha256=expected_diagnostic_sha256,
     )
-    verified = _verify_sealed(
-        diagnostic,
-        seal_name="receipt_sha256",
-        label="c61 compiler diagnostic",
-    )
+    expected = verified["receipt_sha256"]
     inputs = verified.get("inputs")
     seam = verified.get("compiled_candidate_consumer_seam")
     compiled = verified.get("compiled_model_fold")
+    compiler_cache_key = (
+        None if not isinstance(inputs, Mapping) else inputs.get("cache_key")
+    )
     if (
-        verified["receipt_sha256"] != expected
-        or verified.get("schema")
-        != "neural-forge-lfm2-cpcf-v5-selective-blank-fold-run-v1"
-        or verified.get("status") != "compiled_in_memory_diagnostic_not_published"
-        or not isinstance(inputs, Mapping)
-        or inputs.get("cache_key") != cache.cache_key
+        not isinstance(inputs, Mapping)
+        or _digest(compiler_cache_key, "c61 compiler cache key") != compiler_cache_key
         or inputs.get("parent_fingerprint") != cache.parent_fingerprint
         or inputs.get("bridge_artifact_sha256") != bridge.artifact_sha256
         or not isinstance(seam, Mapping)
+        or seam.get("cache_sha256") != compiler_cache_key
+        or seam.get("parent_sha256") != cache.parent_fingerprint
+        or seam.get("bridge_sha256") != bridge.artifact_sha256
         or seam.get("target_state_sha256") != input_metadata.get("model_state_sha256")
         or not isinstance(compiled, Mapping)
     ):
@@ -779,6 +1228,11 @@ def load_lfm2_semantic_compiler_lineage(
         body = {
             "schema": LFM2_SEMANTIC_COMPILER_LINEAGE_SCHEMA,
             "diagnostic_receipt_sha256": expected,
+            "diagnostic_file_sha256": diagnostic_file_sha256,
+            "compiler_cache_key": compiler_cache_key,
+            "semantic_evidence_cache_key": cache.cache_key,
+            "common_parent_fingerprint": cache.parent_fingerprint,
+            "compiler_and_semantic_cache_identities_bound_separately": True,
             "compiled_model_fold_sha256": compiled_report["result_sha256"],
             "layer_index": layer_index,
             "layer_result_sha256": layer["result_sha256"],
@@ -2522,6 +2976,18 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     torch = _torch()
     if not isinstance(layer_stack, Lfm2SemanticLayerStackInstallation):
         raise TypeError("layer_stack must authenticate deferred final-MLP evidence.")
+    if not isinstance(parent_final_norm, Lfm2LocalParentFinalRmsNormLoad):
+        raise TypeError("parent_final_norm must be an authenticated direct-local load.")
+    if (
+        parent_final_norm.final_norm.cache_key != cache.cache_key
+        or parent_final_norm.final_norm.parent_fingerprint != cache.parent_fingerprint
+        or parent_final_norm.final_norm.layer_topology_fingerprint
+        != cache.layer_topology_fingerprint
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Direct-local parent final RMSNorm is not bound to the semantic "
+            "evidence cache."
+        )
     layer_receipt = layer_stack.receipt
     current_state = fingerprint_lfm2_parent(target_model).identity_sha256
     current_w2 = _tensor_sha256(_final_w2_parameter(target_model))
@@ -2552,6 +3018,19 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         source_selected_tied_table,
         plan,
     )
+    if not all(
+        value.parent_final_norm_endpoint.get("runtime_replay_to_cached_output_verified")
+        is True
+        and value.parent_final_norm_endpoint.get(
+            "authenticated_cached_output_used_as_compiler_target"
+        )
+        is True
+        for value in cached
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic postfold requires every cached pre-final residual to "
+            "authenticate the direct-local parent RMSNorm output."
+        )
     parent_raw, _horizons, parent_replays, parent_rope_calls = _build_split_evidence(
         cached,
         None,
@@ -2771,10 +3250,34 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     body = {
         "schema": LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA,
         "cache_key": cache.cache_key,
+        "cache_parent_fingerprint": cache.parent_fingerprint,
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
         "split_plan": plan.as_dict(),
         "parent_cache_authentication": cache_receipt,
+        "parent_final_norm_direct_local_source": parent_final_norm.as_dict(),
+        "parent_final_norm_provenance": {
+            "direct_local_full_state_identity_reconstructed": True,
+            "reconstructed_parent_fingerprint": (
+                parent_final_norm.final_norm.parent_fingerprint
+            ),
+            "matches_authenticated_cache_parent_fingerprint": (
+                parent_final_norm.final_norm.parent_fingerprint
+                == cache.parent_fingerprint
+            ),
+            "cached_final_residual_to_norm_input_exact": True,
+            "runtime_equivalent_norm_replay_verified_at_every_phase": True,
+            "authenticated_cached_norm_output_used_as_terminal_target": True,
+            "parent_model_objects_constructed": 0,
+            "parent_model_forward_calls": 0,
+        },
+        "parent_final_norm_endpoint_sha256": [
+            value.parent_final_norm_endpoint["authentication_sha256"]
+            for value in cached
+        ],
+        "parent_action_projection_sha256": [
+            value.parent_action_projection["authentication_sha256"] for value in cached
+        ],
         "parent_endpoint_evidence_sha256": {
             split: value.authentication_sha256 for split, value in parent.items()
         },
@@ -2855,6 +3358,23 @@ def _safe_remove_staging(path: Path, parent: Path) -> None:
         shutil.rmtree(resolved)
 
 
+def _safe_remove_failed_publication(path: Path, expected: Path) -> None:
+    """Remove only the exact new output created by this failed transaction."""
+
+    try:
+        resolved = path.resolve()
+        intended = expected.resolve()
+    except OSError:
+        return
+    if (
+        resolved == intended
+        and resolved.parent == intended.parent
+        and resolved.is_dir()
+        and not resolved.is_symlink()
+    ):
+        shutil.rmtree(resolved)
+
+
 def publish_lfm2_semantic_postfold_checkpoint(
     *,
     target_model: Any,
@@ -2899,6 +3419,7 @@ def publish_lfm2_semantic_postfold_checkpoint(
             dir=str(output.parent),
         )
     ).resolve()
+    publication_moved = False
     try:
         saver(target_model, staging)
         staged = loader(staging)
@@ -2907,6 +3428,7 @@ def publish_lfm2_semantic_postfold_checkpoint(
                 "Staged checkpoint reload differs from the postfold child."
             )
         os.replace(staging, output)
+        publication_moved = True
         reloaded = loader(output)
         if fingerprint_model_state(reloaded) != model_state or _parameter_count(
             reloaded
@@ -2917,6 +3439,8 @@ def publish_lfm2_semantic_postfold_checkpoint(
     except BaseException:
         if staging.exists():
             _safe_remove_staging(staging, output.parent)
+        if publication_moved and output.exists():
+            _safe_remove_failed_publication(output, output)
         raise
     metadata = _input_artifact_metadata(
         output,
@@ -3011,13 +3535,21 @@ def run_lfm2_semantic_postfold(
             tensor_key=parent_tied_tensor_key,
         )
     )
-    interface = reconstruct_lfm2_saved_tied_interface(target_model, source_table)
     lineage = load_lfm2_semantic_compiler_lineage(
         compiler_diagnostic_json,
         expected_diagnostic_sha256=expected_compiler_diagnostic_sha256,
         cache=cache,
         bridge=bridge,
         input_metadata=input_metadata,
+    )
+    interface, interface_rehydration = rehydrate_lfm2_c61_tied_interface(
+        target_model,
+        source_table,
+        semantic_cache=cache,
+        bridge=bridge,
+        target_tokenizer=target_tokenizer,
+        compiler_diagnostic_json=compiler_diagnostic_json,
+        expected_compiler_diagnostic_sha256=(expected_compiler_diagnostic_sha256),
     )
     layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
         cache=cache,
@@ -3055,10 +3587,14 @@ def run_lfm2_semantic_postfold(
     context_body = {
         "schema": "neural-forge-lfm2-semantic-postfold-context-v1",
         "input_artifact_sha256": input_metadata["artifact_sha256"],
-        "cache_key": cache.cache_key,
+        "compiler_cache_key": interface_rehydration["compiler_cache_key"],
+        "semantic_evidence_cache_key": cache.cache_key,
+        "common_parent_fingerprint": cache.parent_fingerprint,
+        "compiler_and_semantic_cache_identities_bound_separately": True,
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "mapped_parent_tied_table_sha256": source_table_report["result_sha256"],
-        "saved_interface_report_sha256": interface.report["report_sha256"],
+        "rehydrated_interface_report_sha256": interface.report["report_sha256"],
+        "interface_rehydration_sha256": interface_rehydration["result_sha256"],
         "compiler_diagnostic_sha256": _digest(
             expected_compiler_diagnostic_sha256,
             "expected compiler diagnostic SHA-256",
@@ -3086,11 +3622,13 @@ def run_lfm2_semantic_postfold(
             "artifact_sha256": input_metadata["artifact_sha256"],
             "model_state_sha256": input_metadata["model_state_sha256"],
         },
-        "cache_key": cache.cache_key,
+        "compiler_cache_key": interface_rehydration["compiler_cache_key"],
+        "semantic_evidence_cache_key": cache.cache_key,
         "cache_parent_fingerprint": cache.parent_fingerprint,
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "mapped_parent_tied_table": dict(source_table_report),
-        "saved_interface": dict(interface.report),
+        "rehydrated_interface": dict(interface.report),
+        "interface_rehydration": dict(interface_rehydration),
         "compiler_lineage": {
             str(index): dict(value.report) for index, value in lineage.items()
         },
@@ -3145,6 +3683,7 @@ __all__ = [
     "load_lfm2_parent_qkvo_inventory_from_local_safetensors",
     "load_lfm2_semantic_compiler_lineage",
     "publish_lfm2_semantic_postfold_checkpoint",
+    "rehydrate_lfm2_c61_tied_interface",
     "reconstruct_lfm2_saved_tied_interface",
     "run_lfm2_semantic_postfold",
     "seal_lfm2_semantic_attention_installation_receipt",

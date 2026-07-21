@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
@@ -85,6 +86,373 @@ def test_reconstructs_saved_mean_preserving_interface_without_parent_model() -> 
         rtol=0,
         atol=0,
     )
+
+
+def _seal(value, field):
+    return {**value, field: canonical_sha256(value)}
+
+
+def test_compiler_lineage_accepts_distinct_semantic_cache_key(monkeypatch) -> None:
+    compiler_key = "1" * 64
+    semantic_key = "2" * 64
+    parent = "3" * 64
+    bridge_sha = "4" * 64
+    target_state = "5" * 64
+    artifact = {
+        "query_groups": [[0]],
+        "query_barycentric_weights": [[1.0]],
+    }
+    direct = _seal(
+        {
+            "candidate_id": "direct_monolithic",
+            "operator_artifact": artifact,
+            "operator_artifact_sha256": canonical_sha256(artifact),
+            "selection_context_metrics": {
+                "query_groups_sha256": canonical_sha256(
+                    {"groups": [[0]], "weights": [[1.0]]}
+                )
+            },
+        },
+        "report_sha256",
+    )
+    endpoint = _seal(
+        {
+            "source_inventory": {"fixture": True},
+            "source_inventory_sha256": "6" * 64,
+        },
+        "artifact_sha256",
+    )
+    layer = _seal(
+        {
+            "layer_index": 2,
+            "operator_kind": "full_attention",
+            "solver_evidence_policy": {
+                "attention_candidate_evaluations": {
+                    "direct_monolithic": direct,
+                },
+                "endpoint_residual_attention_artifact": endpoint,
+                "endpoint_residual_attention_artifact_sha256": endpoint[
+                    "artifact_sha256"
+                ],
+            },
+        },
+        "result_sha256",
+    )
+    compiled = _seal({"fixture": "compiled"}, "result_sha256")
+    diagnostic = {
+        "receipt_sha256": "7" * 64,
+        "inputs": {
+            "cache_key": compiler_key,
+            "parent_fingerprint": parent,
+            "bridge_artifact_sha256": bridge_sha,
+        },
+        "compiled_candidate_consumer_seam": {
+            "cache_sha256": compiler_key,
+            "parent_sha256": parent,
+            "bridge_sha256": bridge_sha,
+            "target_state_sha256": target_state,
+        },
+        "compiled_model_fold": compiled,
+        "layer_results": [layer],
+    }
+    inventory = SimpleNamespace(inventory_sha256="6" * 64)
+    monkeypatch.setattr(
+        postfold,
+        "_authenticated_c61_diagnostic",
+        lambda *_a, **_k: (MappingProxyType(diagnostic), "8" * 64),
+    )
+    monkeypatch.setattr(postfold, "_typed_qkvo_inventory", lambda _value: inventory)
+    monkeypatch.setattr(
+        postfold,
+        "Lfm2SemanticCompilerLayerLineage",
+        lambda **kwargs: SimpleNamespace(**kwargs),
+    )
+    result = postfold.load_lfm2_semantic_compiler_lineage(
+        "unused.json",
+        expected_diagnostic_sha256=diagnostic["receipt_sha256"],
+        cache=SimpleNamespace(cache_key=semantic_key, parent_fingerprint=parent),
+        bridge=SimpleNamespace(artifact_sha256=bridge_sha),
+        input_metadata={"model_state_sha256": target_state},
+    )
+
+    assert result[2].report["compiler_cache_key"] == compiler_key
+    assert result[2].report["semantic_evidence_cache_key"] == semantic_key
+    assert (
+        result[2].report["compiler_and_semantic_cache_identities_bound_separately"]
+        is True
+    )
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="not the compiler ancestry",
+    ):
+        postfold.load_lfm2_semantic_compiler_lineage(
+            "unused.json",
+            expected_diagnostic_sha256=diagnostic["receipt_sha256"],
+            cache=SimpleNamespace(
+                cache_key=semantic_key,
+                parent_fingerprint="f" * 64,
+            ),
+            bridge=SimpleNamespace(artifact_sha256=bridge_sha),
+            input_metadata={"model_state_sha256": target_state},
+        )
+
+
+def test_anchor_active_interface_rehydrates_exact_producer_encoder(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    compiler_key = "1" * 64
+    semantic_key = "2" * 64
+    parent = "3" * 64
+    bridge_sha = "4" * 64
+    final_norm_sha = "5" * 64
+    source = torch.tensor(
+        [[1.0, 2.0, 3.0], [2.0, -1.0, 1.0], [0.5, 4.0, -2.0]],
+        dtype=torch.bfloat16,
+    )
+    source64 = source.to(torch.float64)
+    encoder = torch.tensor(
+        [[0.2, 0.1], [0.3, -0.4], [0.5, 0.2]],
+        dtype=torch.float64,
+    )
+    base_target = torch.tensor(
+        [[0.5, 1.0], [0.5, -1.0], [0.5, 0.25]],
+        dtype=torch.float64,
+    )
+    # Anchor repair intentionally destroys the constant first column.  An
+    # inverse of the saved table is therefore invalid, while the producer map
+    # remains exactly the base compiler's map.
+    active_target = base_target + torch.tensor(
+        [[0.125, 0.0], [0.0, 0.25], [-0.125, 0.0]],
+        dtype=torch.float64,
+    )
+    base_report = _seal(
+        {
+            "source_table_sha256": postfold._interface_tensor_sha256(source64),
+            "target_weight_sha256": postfold._interface_tensor_sha256(base_target),
+            "producer_encoder_sha256": postfold._interface_tensor_sha256(encoder),
+        },
+        "report_sha256",
+    )
+    anchor_report = _seal(
+        {
+            "base_interface_report_sha256": base_report["report_sha256"],
+            "source_tied_table_sha256": postfold._interface_tensor_sha256(source64),
+            "target_weight_sha256": postfold._interface_tensor_sha256(active_target),
+            "producer_encoder_sha256": postfold._interface_tensor_sha256(encoder),
+            "selected_candidate_is_base_control": False,
+            "active_anchor_residual_selected": True,
+        },
+        "report_sha256",
+    )
+    interface = postfold.TiedCausalInterfaceFold(
+        target_weight=active_target,
+        producer_encoder=encoder,
+        report=anchor_report,
+    )
+    base_interface = postfold.TiedCausalInterfaceFold(
+        target_weight=base_target,
+        producer_encoder=encoder,
+        report=base_report,
+    )
+    model = _TiedModel(active_target.to(torch.bfloat16))
+    model.config = SimpleNamespace(hidden_size=2)
+
+    store = tmp_path / "catalog-store"
+    artifact = store / "artifact"
+    artifact.mkdir(parents=True)
+    compiler_cache = tmp_path / "compiler-cache"
+    compiler_cache.mkdir()
+    trajectory = tmp_path / "trajectory.json"
+    trajectory.write_text("[]", encoding="ascii")
+    trajectory_sha = hashlib.sha256(trajectory.read_bytes()).hexdigest()
+    preparation_path = tmp_path / "catalog-receipt.json"
+    preparation_body = {
+        "catalog_receipt_json": str(preparation_path.resolve()),
+        "catalog_store_directory": str(store.resolve()),
+        "trace_cache_directory": str(compiler_cache.resolve()),
+        "artifact_path": str(artifact.resolve()),
+        "cache_key": compiler_key,
+        "binding_sha256": "6" * 64,
+        "artifact_manifest_sha256": "7" * 64,
+        "artifact_catalog_sha256": "8" * 64,
+        "selective_catalog_sha256": "9" * 64,
+        "selective_source_sha256": "a" * 64,
+        "selective_provider_sha256": "b" * 64,
+    }
+    preparation = _seal(preparation_body, "preparation_receipt_sha256")
+    preparation_path.write_bytes(
+        (
+            json.dumps(
+                preparation,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii"),
+    )
+    lineage = {
+        "base_interface_report": base_report,
+        "causal_anchor_report": anchor_report,
+        "base_interface_report_sha256": base_report["report_sha256"],
+        "causal_anchor_report_sha256": anchor_report["report_sha256"],
+        "active_interface_report_sha256": anchor_report["report_sha256"],
+        "active_interface_is_anchor_repaired": True,
+        "active_interface_is_base_control": False,
+        "producer_encoder_fixed_by_anchor_selection": True,
+    }
+    bundle = _seal(
+        {
+            "interface_report_sha256": anchor_report["report_sha256"],
+            "base_interface_report_sha256": base_report["report_sha256"],
+            "causal_anchor_report_sha256": anchor_report["report_sha256"],
+            "interface_lineage": lineage,
+        },
+        "bundle_sha256",
+    )
+    compiled = _seal(
+        {
+            "selective_catalog_sha256": preparation["selective_catalog_sha256"],
+            "selective_source_sha256": preparation["selective_source_sha256"],
+            "selective_provider_sha256": preparation["selective_provider_sha256"],
+            "final_norm_authentication_sha256": final_norm_sha,
+            "boundary_bundle_sha256": bundle["bundle_sha256"],
+        },
+        "result_sha256",
+    )
+    install = _seal(
+        {
+            "interface_report_sha256": anchor_report["report_sha256"],
+            "target_weight_sha256": postfold.cpcf_model_compiler._tensor_sha256(
+                model.weight.detach()
+            ),
+        },
+        "report_sha256",
+    )
+    inputs = {
+        "cache_key": compiler_key,
+        "parent_fingerprint": parent,
+        "bridge_artifact_sha256": bridge_sha,
+        "trace_cache_directory": str(compiler_cache.resolve()),
+        "trajectory_corpus": str(trajectory.resolve()),
+        "trajectory_corpus_sha256": trajectory_sha,
+        "trace_adapter_sha256": "c" * 64,
+        "selective_catalog_preparation_receipt_sha256": preparation[
+            "preparation_receipt_sha256"
+        ],
+        "selective_catalog_binding_sha256": preparation["binding_sha256"],
+        "selective_catalog_artifact_manifest_sha256": preparation[
+            "artifact_manifest_sha256"
+        ],
+        "selective_catalog_artifact_sha256": preparation["artifact_catalog_sha256"],
+    }
+    diagnostic = {
+        "receipt_sha256": "d" * 64,
+        "inputs": inputs,
+        "request": {
+            "selective_catalog_store_directory": str(store.resolve()),
+        },
+        "selective_catalog_artifact": preparation,
+        "compiled_model_fold": compiled,
+        "boundary_bundle": bundle,
+        "interface_install": install,
+        "compiled_candidate_consumer_seam": {
+            "cache_sha256": compiler_key,
+            "parent_sha256": parent,
+            "bridge_sha256": bridge_sha,
+        },
+    }
+
+    class Provider:
+        catalog = SimpleNamespace(
+            catalog_sha256=preparation["selective_catalog_sha256"],
+            source_sha256=preparation["selective_source_sha256"],
+            provider_sha256=preparation["selective_provider_sha256"],
+        )
+
+        def load_final_norm_payload(self):
+            return object()
+
+        def authenticate_final_norm_payload(self, _payload):
+            return final_norm_sha
+
+        def release_final_norm_payload(self, _payload):
+            return None
+
+        def close(self):
+            return None
+
+    class BoundaryCompiler:
+        def __init__(self, *_args, **_kwargs):
+            self.base_interface = base_interface
+            self.anchor_fold = SimpleNamespace(report=anchor_report)
+
+        def fit_interface(self, *_args, **_kwargs):
+            return interface
+
+    monkeypatch.setattr(
+        postfold,
+        "_authenticated_c61_diagnostic",
+        lambda *_a, **_k: (MappingProxyType(diagnostic), "e" * 64),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "open_lfm2_circuit_trace_cache",
+        lambda *_a, **_k: SimpleNamespace(
+            cache_key=compiler_key,
+            parent_fingerprint=parent,
+        ),
+    )
+    monkeypatch.setattr(postfold.cpcf_resources, "_read_trajectory_rows", lambda _p: ())
+    monkeypatch.setattr(
+        postfold.cpcf_resources,
+        "_build_trace_adapter",
+        lambda **_k: SimpleNamespace(evidence_sha256="c" * 64),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "open_lfm2_cpcf_selective_evidence_provider_from_catalog",
+        lambda *_a, **_k: Provider(),
+    )
+    monkeypatch.setattr(
+        postfold.cpcf_v5_compiler,
+        "build_lfm2_cpcf_v5_target_phase_shells",
+        lambda *_a, **_k: (),
+    )
+    monkeypatch.setattr(
+        postfold.cpcf_v5_compiler,
+        "materialize_lfm2_cpcf_v5_final_norm_phases",
+        lambda *_a, **_k: (),
+    )
+    monkeypatch.setattr(
+        postfold.cpcf_v5_compiler,
+        "_SelectiveBoundaryCompiler",
+        BoundaryCompiler,
+    )
+    monkeypatch.setattr(
+        postfold.cpcf_model_fold, "_final_norm_epsilon", lambda _m: 1e-5
+    )
+
+    rehydrated, receipt = postfold.rehydrate_lfm2_c61_tied_interface(
+        model,
+        source,
+        semantic_cache=SimpleNamespace(
+            cache_key=semantic_key,
+            parent_fingerprint=parent,
+        ),
+        bridge=SimpleNamespace(artifact_sha256=bridge_sha),
+        target_tokenizer=object(),
+        compiler_diagnostic_json="unused.json",
+        expected_compiler_diagnostic_sha256=diagnostic["receipt_sha256"],
+    )
+
+    torch.testing.assert_close(rehydrated.producer_encoder, encoder, rtol=0, atol=0)
+    assert receipt["active_interface_is_anchor_repaired"] is True
+    assert receipt["producer_encoder_recovered_from_repaired_target_table"] is False
+    assert receipt["compiler_cache_key"] == compiler_key
+    assert receipt["semantic_evidence_cache_key"] == semantic_key
 
 
 def test_attention_installation_receipt_requires_a_real_layer_local_change() -> None:
@@ -377,6 +745,68 @@ def test_checkpoint_publication_is_staged_then_reloaded_after_atomic_move(
     assert receipt["operation_audit"]["optimizer_steps"] == 0
 
 
+def test_failed_post_move_reload_removes_only_new_publication(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    model = _TiedModel(torch.full((4, 2), 0.5, dtype=torch.bfloat16))
+
+    class Saver:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __call__(self, _model, directory):
+            body = {
+                "schema": postfold.LFM2_CPCF_V5_QUARANTINE_ARTIFACT_SCHEMA,
+                "dense_safetensors_only": True,
+                "target_tokenizer_saved_with_child": True,
+                "local_reload_only": True,
+                "network_access": False,
+                "hub_loader_used": False,
+            }
+            (directory / postfold.LFM2_CPCF_V5_ARTIFACT_METADATA).write_text(
+                json.dumps({**body, "artifact_sha256": canonical_sha256(body)}),
+                encoding="utf-8",
+            )
+
+    class Loader:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __call__(self, directory):
+            if directory.name == "failed-publication":
+                raise RuntimeError("synthetic final reload failure")
+            return model
+
+    monkeypatch.setattr(postfold, "Lfm2CpcfV5QuarantineSaver", Saver)
+    monkeypatch.setattr(postfold, "Lfm2CpcfV5StrictLocalLoader", Loader)
+    monkeypatch.setattr(postfold, "fingerprint_model_state", lambda _model: "1" * 64)
+    monkeypatch.setattr(
+        postfold,
+        "independent_parameter_inventory",
+        lambda _model: {"inventory_sha256": "2" * 64},
+    )
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_hf_tokenizer_semantics",
+        lambda _tokenizer: "3" * 64,
+    )
+    monkeypatch.setattr(postfold, "_ffn_width", lambda _model: 7)
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 100)
+    output = tmp_path / "failed-publication"
+
+    with pytest.raises(RuntimeError, match="synthetic final reload failure"):
+        postfold.publish_lfm2_semantic_postfold_checkpoint(
+            target_model=model,
+            target_tokenizer=object(),
+            output_directory=output,
+            context_binding_sha256="4" * 64,
+            device="cpu",
+        )
+
+    assert not output.exists()
+
+
 def test_complete_layer_stack_fails_closed_on_conv_and_mlp_gaps(
     monkeypatch,
 ) -> None:
@@ -432,6 +862,13 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     parent_norm = object()
     source_table = torch.ones((2, 2), dtype=torch.bfloat16)
     interface = SimpleNamespace(report={"report_sha256": "6" * 64})
+    interface_rehydration = MappingProxyType(
+        {
+            "compiler_cache_key": "8" * 64,
+            "semantic_evidence_cache_key": cache.cache_key,
+            "result_sha256": "9" * 64,
+        }
+    )
     layer_body = {
         "complete_causal_layer_stack_installed": True,
     }
@@ -489,8 +926,8 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     )
     monkeypatch.setattr(
         postfold,
-        "reconstruct_lfm2_saved_tied_interface",
-        lambda *_a, **_k: interface,
+        "rehydrate_lfm2_c61_tied_interface",
+        lambda *_a, **_k: (interface, interface_rehydration),
     )
     monkeypatch.setattr(
         postfold,
@@ -556,6 +993,14 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
 
     assert cache_open_calls == [True]
     assert events == ["layer_stack", "terminal", "checkpoint"]
+    assert result["compiler_cache_key"] == "8" * 64
+    assert result["semantic_evidence_cache_key"] == cache.cache_key
+    assert (
+        result["context_binding"][
+            "compiler_and_semantic_cache_identities_bound_separately"
+        ]
+        is True
+    )
     assert result["claims"]["training_performed"] is False
     assert result["claims"]["attention_correction_installed"] is True
     body = dict(result)

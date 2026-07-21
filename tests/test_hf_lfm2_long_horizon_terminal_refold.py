@@ -695,6 +695,66 @@ def test_parent_norm_and_whole_trajectory_split_seals_fail_closed(
         )
 
 
+def test_parent_final_norm_runtime_replay_authenticates_cached_endpoints() -> None:
+    seal = refold.Lfm2SealedParentFinalRmsNorm(
+        cache_key="1" * 64,
+        parent_fingerprint="2" * 64,
+        layer_topology_fingerprint="3" * 64,
+        weight=torch.tensor([1.0, 0.75, 1.25], dtype=torch.float32),
+        epsilon=1e-5,
+    )
+    residual = torch.tensor(
+        [[1.0, -2.0, 0.5], [0.25, 3.0, -1.0]],
+        dtype=torch.float32,
+    )
+    replayed = refold._runtime_parent_rmsnorm(residual, seal)
+    tensors = {}
+    for index, phase in enumerate(("prefill", "decode.000")):
+        endpoint_input = residual[index : index + 1].reshape(1, 1, -1)
+        endpoint_output = replayed[index : index + 1].reshape(1, 1, -1)
+        tensors[f"{phase}.output.final_norm_input"] = endpoint_input
+        tensors[f"{phase}.output.final_norm_output"] = endpoint_output
+        tensors[f"{phase}.output.lm_head_input"] = endpoint_output.clone()
+
+    target, receipt = refold._verify_parent_final_norm_endpoint(
+        tensors,
+        residual,
+        seal,
+        decode_steps=1,
+    )
+
+    torch.testing.assert_close(
+        target,
+        replayed.to(torch.bfloat16),
+        rtol=0,
+        atol=0,
+    )
+    assert receipt["final_residual_to_norm_input_exact"] is True
+    assert receipt["runtime_replay_to_cached_output_verified"] is True
+    assert receipt["authenticated_cached_output_used_as_compiler_target"] is True
+    body = dict(receipt)
+    authentication = body.pop("authentication_sha256")
+    assert authentication == refold._canonical_sha256(body)
+
+    wrong = refold.Lfm2SealedParentFinalRmsNorm(
+        cache_key=seal.cache_key,
+        parent_fingerprint=seal.parent_fingerprint,
+        layer_topology_fingerprint=seal.layer_topology_fingerprint,
+        weight=seal.weight * 2.0,
+        epsilon=seal.epsilon,
+    )
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="does not reproduce the authenticated cache endpoint",
+    ):
+        refold._verify_parent_final_norm_endpoint(
+            tensors,
+            residual,
+            wrong,
+            decode_steps=1,
+        )
+
+
 def test_loads_parent_final_norm_directly_from_identity_matched_safetensors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
