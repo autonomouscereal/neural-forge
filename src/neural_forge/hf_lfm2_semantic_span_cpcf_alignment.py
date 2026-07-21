@@ -234,6 +234,19 @@ def _target_to_donor_boundaries(
     return tuple(mapped), tuple(owners)
 
 
+def _compute_donor_span_multiplicities(
+    owners: tuple[int | None, ...],
+    *,
+    donor_count: int,
+) -> tuple[int, ...]:
+    """Compute the immutable donor-owner histogram used by one phase."""
+
+    return tuple(
+        sum(value == donor_index for value in owners)
+        for donor_index in range(donor_count)
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2SemanticSpanCpcfPhaseAlignment:
     """One target-native phase plus its exact cached-parent row map."""
@@ -250,6 +263,11 @@ class Lfm2SemanticSpanCpcfPhaseAlignment:
     target_rewrite_start: int
     target_replaced_suffix_tokens: int
     target_replacement_token_ids: tuple[int, ...]
+    _cached_donor_span_multiplicities: tuple[int, ...] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
     alignment_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -336,6 +354,14 @@ class Lfm2SemanticSpanCpcfPhaseAlignment:
             "target_replacement_token_ids",
             tuple(self.target_replacement_token_ids),
         )
+        object.__setattr__(
+            self,
+            "_cached_donor_span_multiplicities",
+            _compute_donor_span_multiplicities(
+                owners,
+                donor_count=len(donor),
+            ),
+        )
         object.__setattr__(self, "alignment_sha256", canonical_sha256(self._body()))
 
     @property
@@ -364,13 +390,7 @@ class Lfm2SemanticSpanCpcfPhaseAlignment:
 
     @property
     def donor_span_multiplicities(self) -> tuple[int, ...]:
-        return tuple(
-            sum(
-                value == donor_index
-                for value in self.target_to_donor_span_owner_positions
-            )
-            for donor_index in range(self.donor_full_prefix_tokens)
-        )
+        return self._cached_donor_span_multiplicities
 
     @property
     def omitted_donor_boundary_positions(self) -> tuple[int, ...]:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import json
 from typing import Any
 
 import pytest
@@ -7,6 +9,10 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from neural_forge import (  # noqa: E402
+    hf_lfm2_semantic_span_cpcf_alignment as alignment_module,
+)
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_semantic_span_cpcf_alignment import (  # noqa: E402
     Lfm2SemanticSpanCpcfAlignmentError,
     audit_lfm2_semantic_span_cpcf_refinement,
@@ -281,6 +287,80 @@ def test_alignment_is_sealed_and_has_zero_model_or_training_operations() -> None
     }
     assert all(value == 0 for value in evidence["operation_audit"].values())
     assert evidence["alignment_sha256"] == alignment.alignment_sha256
+
+
+def test_cached_multiplicities_preserve_legacy_evidence_bytes_and_seals() -> None:
+    alignment, _donor, _target = _alignment()
+    observed = alignment.to_evidence_dict()
+    legacy = copy.deepcopy(observed)
+
+    for phase, legacy_phase in zip(
+        alignment.phases,
+        legacy["phases"],
+        strict=True,
+    ):
+        legacy_multiplicities = tuple(
+            sum(
+                owner == donor_index
+                for owner in phase.target_to_donor_span_owner_positions
+            )
+            for donor_index in range(phase.donor_full_prefix_tokens)
+        )
+        assert phase.donor_span_multiplicities == legacy_multiplicities
+        legacy_phase["donor_span_multiplicities"] = list(legacy_multiplicities)
+        legacy_phase_body = dict(legacy_phase)
+        legacy_phase_seal = legacy_phase_body.pop("alignment_sha256")
+        assert canonical_sha256(legacy_phase_body) == legacy_phase_seal
+
+    assert legacy == observed
+    assert json.dumps(legacy, sort_keys=True, separators=(",", ":")) == json.dumps(
+        observed,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    legacy_body = dict(legacy)
+    legacy_seal = legacy_body.pop("alignment_sha256")
+    assert canonical_sha256(legacy_body) == legacy_seal
+    assert legacy_seal == alignment.alignment_sha256
+
+
+def test_multiplicities_are_computed_once_per_frozen_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = alignment_module._compute_donor_span_multiplicities
+    calls = 0
+
+    def counted(
+        owners: tuple[int | None, ...],
+        *,
+        donor_count: int,
+    ) -> tuple[int, ...]:
+        nonlocal calls
+        calls += 1
+        return original(owners, donor_count=donor_count)
+
+    monkeypatch.setattr(
+        alignment_module,
+        "_compute_donor_span_multiplicities",
+        counted,
+    )
+    alignment, _donor, _target = _alignment()
+    construction_calls = len(alignment.phases)
+    assert calls == construction_calls
+
+    for _ in range(3):
+        for phase in alignment.phases:
+            assert phase.donor_span_multiplicities
+            _ = phase.probability_preserving_attention_transport_supported
+            _ = phase.attention_transport_kind
+            phase.to_evidence_dict()
+        alignment.to_evidence_dict()
+        audit_lfm2_semantic_span_cpcf_refinement(
+            [alignment],
+            expected_batch_count=1,
+        )
+
+    assert calls == construction_calls
 
 
 def test_all_16_refinement_audit_is_explicit_long_horizon_go_no_go() -> None:
