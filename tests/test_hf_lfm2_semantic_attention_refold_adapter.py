@@ -339,24 +339,32 @@ def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
     before_query = model.model.layers[0].self_attn.q_proj.weight.detach().clone()
     before_output = model.model.layers[0].self_attn.out_proj.weight.detach().clone()
 
-    def accept_writer(
-        proposal: adapter._OutputWriterProposal,
-        **_kwargs: object,
-    ) -> tuple[torch.Tensor, object]:
+    def accept_writer_competition(
+        **kwargs: object,
+    ) -> tuple[torch.Tensor, torch.Tensor, object]:
+        proposal = kwargs["output_proposal"]
+        seed = kwargs["seed"]
         assert proposal.changed is True
         body = {
-            "status": "accepted-after-frozen-validation",
-            "accepted": True,
-            "proposal": proposal.as_dict(),
-            "rejection_partition": None,
-            "fit_check": {"nonregressing": True},
-            "selection": {"nonregressing": True},
-            "validation": {"nonregressing": True},
-            "candidate_frozen_across_heldout_gates": True,
+            "published_candidate": "fixed_v_output_only",
+            "candidate_reports": {
+                "fixed_v_output_only": {
+                    "rejection_partition": None,
+                    "partitions": {
+                        "fit_check": {"nonregressing": True},
+                        "selection": {"nonregressing": True},
+                    },
+                }
+            },
+            "validation": {"endpoint_nonregressing": True},
         }
-        return proposal.output_weight, adapter._seal_writer_gate(body)
+        return seed.value_weight, proposal.output_weight, body
 
-    monkeypatch.setattr(adapter, "_gate_output_writer", accept_writer)
+    monkeypatch.setattr(
+        adapter,
+        "_select_and_validate_vo_candidate",
+        accept_writer_competition,
+    )
     receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
         target_model=model,
         layer_index=0,
@@ -383,6 +391,69 @@ def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
     assert report["fixed_inherited_projection_roles"] == ["v_proj"]
     assert report["fresh_value_refit_performed"] is False
     assert report["complete_qkvo_bundle_installed_transactionally"] is True
+
+
+def test_accepted_joint_vo_is_installed_in_the_same_qkvo_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    evidence = _evidence(model)
+    _install_fake_compiler(monkeypatch)
+    before_value = model.model.layers[0].self_attn.v_proj.weight.detach().clone()
+    before_output = model.model.layers[0].self_attn.out_proj.weight.detach().clone()
+
+    def accept_joint_competition(
+        **kwargs: object,
+    ) -> tuple[torch.Tensor, torch.Tensor, object]:
+        seed = kwargs["seed"]
+        value = seed.value_weight.clone()
+        output = seed.output_weight.clone()
+        value[0, 0] += 1.0
+        output[0, 0] += 1.0
+        return (
+            value,
+            output,
+            {
+                "published_candidate": "joint_value_output",
+                "candidate_reports": {
+                    "fixed_v_output_only": {
+                        "rejection_partition": "selection",
+                        "partitions": {
+                            "fit_check": {"nonregressing": True},
+                            "selection": {"nonregressing": True},
+                        },
+                    }
+                },
+                "validation": {"endpoint_nonregressing": True},
+            },
+        )
+
+    monkeypatch.setattr(
+        adapter,
+        "_select_and_validate_vo_candidate",
+        accept_joint_competition,
+    )
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+
+    assert not torch.equal(model.model.layers[0].self_attn.v_proj.weight, before_value)
+    assert not torch.equal(
+        model.model.layers[0].self_attn.out_proj.weight, before_output
+    )
+    assert "model.layers.0.self_attn.v_proj.weight" in receipt["changed_state_keys"]
+    assert "model.layers.0.self_attn.out_proj.weight" in receipt["changed_state_keys"]
+    report = receipt["analytic_refold"]
+    assert report["joint_value_output_candidate_published"] is True
+    assert report["fresh_joint_value_output_refit_performed"] is True
+    assert report["fresh_value_refit_performed"] is True
+    assert report["fresh_output_writer_refit_performed"] is True
+    assert report["fresh_four_matrix_qkvo_refit_claimed"] is True
+    assert report["fixed_inherited_projection_roles"] == []
 
 
 def test_incomplete_causal_history_fails_before_the_compiler(
@@ -486,6 +557,199 @@ def _writer_case(
     )
 
 
+def _joint_case_from_factors(
+    features: torch.Tensor,
+    value_weight: torch.Tensor,
+    output_weight: torch.Tensor,
+    *,
+    label: str,
+) -> adapter._JointVoCase:
+    rows, query_heads, hidden = map(int, features.shape)
+    assert query_heads == 2
+    key_inputs = torch.cat(
+        tuple(features[:, head_index, :] for head_index in range(query_heads)),
+        dim=0,
+    ).to(torch.bfloat16)
+    probabilities = torch.zeros(
+        1,
+        query_heads,
+        rows,
+        rows * query_heads,
+        dtype=torch.float64,
+    )
+    for head_index in range(query_heads):
+        row_indices = torch.arange(rows)
+        probabilities[0, head_index, row_indices, head_index * rows + row_indices] = 1.0
+    contexts = torch.cat(
+        tuple(
+            (
+                features[:, head_index, :].to(torch.bfloat16)
+                @ value_weight.to(torch.bfloat16).T
+            ).to(torch.float64)
+            for head_index in range(query_heads)
+        ),
+        dim=1,
+    )
+    endpoint = (contexts @ output_weight.to(torch.float64).T).unsqueeze(0)
+    return adapter._JointVoCase(
+        head_features=features.to(torch.bfloat16).to(torch.float64).unsqueeze(0),
+        probabilities=probabilities,
+        key_value_inputs=key_inputs.unsqueeze(0),
+        endpoint_target=endpoint,
+        row_weights=torch.ones(1, rows, dtype=torch.float64),
+        trajectory_sha256=canonical_sha256({"joint-vo-case": label}),
+        seed_replay_equivalence=adapter._bfloat16_endpoint_equivalence(
+            endpoint,
+            endpoint,
+        ),
+    )
+
+
+def test_seed_endpoint_equivalence_accepts_one_bfloat16_ulp_but_not_loose_drift() -> (
+    None
+):
+    expected = torch.tensor([[[1.0, 2.0, 3.0, 4.0]]], dtype=torch.float64)
+    one_ulp = expected.clone()
+    one_ulp[0, 0, 0] += torch.finfo(torch.bfloat16).eps
+    accepted = adapter._bfloat16_endpoint_equivalence(one_ulp, expected)
+    drifted = expected.clone()
+    drifted[0, 0, 0] += 0.25
+    rejected = adapter._bfloat16_endpoint_equivalence(drifted, expected)
+
+    assert accepted["equivalent"] is True
+    assert accepted["bitwise_cross_backend_identity_required"] is False
+    assert rejected["equivalent"] is False
+    accepted_body = dict(accepted)
+    assert accepted_body.pop("equivalence_sha256") == canonical_sha256(accepted_body)
+
+
+def test_joint_vo_dual_fold_recovers_a_missing_value_subspace() -> None:
+    generator = torch.Generator().manual_seed(29)
+    features = torch.randint(
+        -2,
+        3,
+        (24, 2, 4),
+        generator=generator,
+    ).to(torch.float64)
+    incumbent_value = torch.tensor(
+        [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
+        dtype=torch.bfloat16,
+    )
+    target_value = torch.tensor(
+        [[0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+        dtype=torch.bfloat16,
+    )
+    output = torch.eye(4, dtype=torch.bfloat16)
+    case = _joint_case_from_factors(
+        features,
+        target_value,
+        output,
+        label="missing-value-subspace",
+    )
+    proposal = adapter._compile_joint_vo(
+        (case,),
+        incumbent_value,
+        output,
+        head_dim=2,
+        solver_device="cpu",
+        ridge=1e-10,
+    )
+
+    assert proposal.changed is True
+    assert proposal.candidate_fit_metrics.endpoint_relative_rmse < 0.01
+    assert (
+        proposal.candidate_fit_metrics.endpoint_relative_rmse
+        < proposal.baseline_fit_metrics.endpoint_relative_rmse * 0.02
+    )
+    assert not torch.equal(proposal.value_weight, incumbent_value)
+    assert tuple(proposal.value_weight.shape) == tuple(incumbent_value.shape)
+    assert tuple(proposal.output_weight.shape) == tuple(output.shape)
+    report = proposal.as_dict()
+    assert report["giant_primal_system_formed"] is False
+    assert report["giant_primal_system_inverted"] is False
+    assert report["dual_dimension"] == 24
+    assert report["primal_feature_dimension"] == 8
+    factor = report["factorization_receipts"][0]
+    assert factor["exact_topology_rank"] == 2
+    assert "rank_truncation_performed" in factor
+    assert report["operation_audit"]["model_forward_calls"] == 0
+
+
+def test_vo_competition_prefers_fixed_value_writer_when_joint_is_not_stronger() -> None:
+    generator = torch.Generator().manual_seed(31)
+    features = torch.randint(
+        -2,
+        3,
+        (24, 2, 4),
+        generator=generator,
+    ).to(torch.float64)
+    value = torch.tensor(
+        [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
+        dtype=torch.bfloat16,
+    )
+    incumbent_output = torch.eye(4, dtype=torch.bfloat16)
+    target_output = torch.tensor(
+        [
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 1.5, 0.0, 0.0],
+            [0.0, 0.0, 1.75, 0.0],
+            [0.0, 0.0, 0.0, 1.25],
+        ],
+        dtype=torch.bfloat16,
+    )
+    joint_case = _joint_case_from_factors(
+        features,
+        value,
+        target_output,
+        label="output-only-target",
+    )
+    context = torch.cat(
+        tuple(
+            (features[:, head_index, :].to(torch.bfloat16) @ value.T).to(torch.float64)
+            for head_index in range(2)
+        ),
+        dim=1,
+    )
+    writer_case = _writer_case(context, target_output.to(torch.float64), label="vo")
+    output_proposal = adapter._compile_output_writer(
+        (writer_case,),
+        incumbent_output,
+        solver_device="cpu",
+        ridge=1e-10,
+    )
+    joint_proposal = adapter._compile_joint_vo(
+        (joint_case,),
+        value,
+        incumbent_output,
+        head_dim=2,
+        solver_device="cpu",
+        ridge=1e-10,
+    )
+    seed = SimpleNamespace(
+        value_weight=value,
+        output_weight=incumbent_output,
+        head_dim=2,
+        seed_sha256="a" * 64,
+    )
+    published_value, published_output, gate = adapter._select_and_validate_vo_candidate(
+        banks={name: (joint_case,) for name in adapter._PARTITIONS},
+        seed=seed,
+        output_proposal=output_proposal,
+        joint_proposal=joint_proposal,
+        tolerance=1e-6,
+        validation_route_baseline=_metrics(0.1),
+        validation_route_candidate=_metrics(0.1),
+    )
+
+    assert output_proposal.changed is True
+    assert gate["selected_candidate"] == "fixed_v_output_only"
+    assert gate["published_candidate"] == "fixed_v_output_only"
+    assert gate["validation_triggered_refit_or_reselection"] is False
+    assert gate["alternate_candidate_selected_after_validation"] is False
+    assert torch.equal(published_value, value)
+    assert torch.equal(published_output, output_proposal.output_weight)
+
+
 def test_output_writer_closed_form_fit_passes_all_frozen_heldout_gates() -> None:
     incumbent = torch.zeros(4, 4, dtype=torch.bfloat16)
     target = torch.tensor(
@@ -573,10 +837,14 @@ def test_execution_policy_excludes_visible_devices_without_native_bfloat16(
 ) -> None:
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 4)
+    capabilities = ((8, 6), (6, 1), (7, 5), (8, 9))
+    monkeypatch.setattr(torch.cuda, "get_device_capability", capabilities.__getitem__)
     monkeypatch.setattr(
         torch.cuda,
         "is_bf16_supported",
-        lambda index: index in {0, 3},
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("wrong API must not be called")
+        ),
     )
 
     policy = adapter._execution_policy(8)
@@ -590,7 +858,7 @@ def test_execution_policy_falls_back_to_cpu_without_native_bfloat16(
 ) -> None:
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 3)
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda _index: False)
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda _index: (7, 5))
 
     policy = adapter._execution_policy(8)
 

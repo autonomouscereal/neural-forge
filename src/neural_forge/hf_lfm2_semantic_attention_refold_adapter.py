@@ -3,10 +3,13 @@
 The semantic lattice is a teacher, not a weight-matching target.  This module
 turns its probability/context evidence and an authenticated actual-child
 macrocell replay into endpoint cases for the existing matrix-free Q/K
-compiler, then solves an analytic residual output writer while holding V
-fixed.  FIT, FIT-CHECK, SELECTION, and VALIDATION remain disjoint.  Candidates
-are frozen before VALIDATION and dense Q/K/V/O is copied into the existing
-child topology only after every applicable held-out gate passes.
+compiler, then competes an analytic fixed-V output writer with a joint V/O
+residual factorization.  The latter solves in endpoint-row space and projects
+each GQA group's composite maps back through its exact shared-V,
+head-specific-O rank.  FIT, FIT-CHECK, SELECTION, and VALIDATION remain
+disjoint.  Candidates are frozen before VALIDATION and dense Q/K/V/O is copied
+into the existing child topology only after every applicable held-out gate
+passes.
 
 No model is executed here.  There are no gradients, optimizers, training
 steps, pruning operations, quantization operations, or numerical parent/child
@@ -762,15 +765,21 @@ def _seed(
 
 def _execution_policy(case_count: int) -> Lfm2EndpointQkResidualFoldPolicy:
     torch = _torch()
-    devices = (
-        tuple(
-            f"cuda:{index}"
-            for index in range(torch.cuda.device_count())
-            if torch.cuda.is_bf16_supported(index)
-        )
-        if torch.cuda.is_available()
-        else ()
-    )
+    devices = ()
+    if torch.cuda.is_available():
+        native = []
+        for index in range(torch.cuda.device_count()):
+            try:
+                major, _minor = torch.cuda.get_device_capability(index)
+            except (AssertionError, RuntimeError):
+                continue
+            # PyTorch's is_bf16_supported positional argument is an emulation
+            # flag, not a device index.  Capability is queried explicitly so a
+            # heterogeneous host cannot inherit cuda:0's answer for P40/Turing
+            # cards.  Native CUDA BF16 tensor-core execution begins at SM80.
+            if int(major) >= 8:
+                native.append(f"cuda:{index}")
+        devices = tuple(native)
     return Lfm2EndpointQkResidualFoldPolicy(
         solver_device=devices[0] if devices else "cpu",
         compute_devices=devices,
@@ -985,14 +994,338 @@ class _OutputWriterProposal:
         return {**self._body(), "proposal_sha256": self.proposal_sha256}
 
 
-def _writer_cases(
+def _bfloat16_endpoint_equivalence(actual: Any, expected: Any) -> Mapping[str, Any]:
+    """Seal a strict one-BF16-ULP numerical replay envelope."""
+
+    torch = _torch()
+    observed = _finite_cpu_tensor(
+        actual,
+        "observed seed endpoint",
+        ndim=3,
+    ).to(torch.float64)
+    reference = _finite_cpu_tensor(
+        expected,
+        "authenticated seed endpoint",
+        ndim=3,
+    ).to(torch.float64)
+    if tuple(observed.shape) != tuple(reference.shape):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Seed replay endpoints do not have the same geometry."
+        )
+    difference = observed - reference
+    rmse = float(torch.sqrt(difference.square().mean()).item())
+    reference_rms = float(torch.sqrt(reference.square().mean()).item())
+    maximum = float(difference.abs().max().item())
+    reference_maximum = float(reference.abs().max().item())
+    observed_rows = observed.reshape(-1, int(observed.shape[-1]))
+    reference_rows = reference.reshape(-1, int(reference.shape[-1]))
+    observed_norm = torch.linalg.vector_norm(observed_rows, dim=-1)
+    reference_norm = torch.linalg.vector_norm(reference_rows, dim=-1)
+    denominator = observed_norm * reference_norm
+    both_zero = (observed_norm == 0.0) & (reference_norm == 0.0)
+    cosine = torch.where(
+        both_zero,
+        torch.ones_like(denominator),
+        torch.where(
+            denominator > torch.finfo(torch.float64).tiny,
+            (observed_rows * reference_rows).sum(dim=-1)
+            / denominator.clamp_min(torch.finfo(torch.float64).tiny),
+            torch.zeros_like(denominator),
+        ),
+    ).clamp(-1.0, 1.0)
+    mean_cosine = float(cosine.mean().item())
+    worst_cosine = float(cosine.min().item())
+    unit_roundoff = float(torch.finfo(torch.bfloat16).eps)
+    normalized_rmse = rmse / max(reference_rms, 1.0)
+    normalized_maximum = maximum / max(reference_maximum, 1.0)
+    minimum_mean_cosine = 1.0 - 2.0 * unit_roundoff**2
+    minimum_worst_cosine = 1.0 - 8.0 * unit_roundoff**2
+    equivalent = (
+        normalized_rmse <= unit_roundoff
+        and normalized_maximum <= unit_roundoff
+        and mean_cosine >= minimum_mean_cosine
+        and worst_cosine >= minimum_worst_cosine
+    )
+    body = {
+        "schema": "neural-forge-lfm2-semantic-bfloat16-endpoint-equivalence-v1",
+        "actual_sha256": _tensor_sha256(observed),
+        "expected_sha256": _tensor_sha256(reference),
+        "rmse": rmse,
+        "normalized_rmse": normalized_rmse,
+        "maximum_absolute_error": maximum,
+        "normalized_maximum_absolute_error": normalized_maximum,
+        "mean_cosine_similarity": mean_cosine,
+        "worst_cosine_similarity": worst_cosine,
+        "bfloat16_unit_roundoff": unit_roundoff,
+        "maximum_normalized_rmse": unit_roundoff,
+        "maximum_normalized_absolute_error": unit_roundoff,
+        "minimum_mean_cosine_similarity": minimum_mean_cosine,
+        "minimum_worst_cosine_similarity": minimum_worst_cosine,
+        "equivalent": equivalent,
+        "bitwise_cross_backend_identity_required": False,
+    }
+    return MappingProxyType({**body, "equivalence_sha256": canonical_sha256(body)})
+
+
+@dataclass(frozen=True, slots=True)
+class _JointVoCase:
+    """Probability-weighted pre-V features for parent-exact endpoint rows."""
+
+    head_features: Any = field(repr=False, compare=False)
+    probabilities: Any = field(repr=False, compare=False)
+    key_value_inputs: Any = field(repr=False, compare=False)
+    endpoint_target: Any = field(repr=False, compare=False)
+    row_weights: Any = field(repr=False, compare=False)
+    trajectory_sha256: str
+    seed_replay_equivalence: Mapping[str, Any]
+    case_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        features = _finite_cpu_tensor(
+            self.head_features,
+            "joint V/O probability-weighted input features",
+            ndim=4,
+            dtype=torch.float64,
+        )
+        probabilities = _finite_cpu_tensor(
+            self.probabilities,
+            "joint V/O frozen Q/K probabilities",
+            ndim=4,
+            dtype=torch.float64,
+        )
+        key_inputs = _finite_cpu_tensor(
+            self.key_value_inputs,
+            "joint V/O replay-fresh key/value inputs",
+            ndim=3,
+            dtype=torch.bfloat16,
+        )
+        endpoint = _finite_cpu_tensor(
+            self.endpoint_target,
+            "joint V/O endpoint target",
+            ndim=3,
+            dtype=torch.float64,
+        )
+        weights = _finite_cpu_tensor(
+            self.row_weights,
+            "joint V/O row weights",
+            ndim=2,
+            dtype=torch.float64,
+        )
+        if (
+            tuple(features.shape[:2]) != tuple(endpoint.shape[:2])
+            or tuple(probabilities.shape[:1]) != tuple(endpoint.shape[:1])
+            or int(probabilities.shape[1]) != int(features.shape[2])
+            or int(probabilities.shape[2]) != int(endpoint.shape[1])
+            or tuple(probabilities.shape[0::3])
+            != (int(key_inputs.shape[0]), int(key_inputs.shape[1]))
+            or int(features.shape[3]) != int(key_inputs.shape[2])
+            or tuple(weights.shape) != tuple(endpoint.shape[:2])
+            or bool((weights <= 0.0).any().item())
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Joint V/O features, targets, and positive row weights are not aligned."
+            )
+        trajectory = _digest(
+            self.trajectory_sha256,
+            "joint V/O trajectory SHA-256",
+        )
+        equivalence = dict(self.seed_replay_equivalence)
+        equivalence_sha = equivalence.pop("equivalence_sha256", None)
+        if equivalence.get(
+            "equivalent"
+        ) is not True or equivalence_sha != canonical_sha256(equivalence):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Joint V/O case lacks a sealed equivalent seed replay."
+            )
+        object.__setattr__(self, "head_features", features)
+        object.__setattr__(self, "probabilities", probabilities)
+        object.__setattr__(self, "key_value_inputs", key_inputs)
+        object.__setattr__(self, "endpoint_target", endpoint)
+        object.__setattr__(self, "row_weights", weights)
+        object.__setattr__(self, "trajectory_sha256", trajectory)
+        object.__setattr__(
+            self,
+            "seed_replay_equivalence",
+            MappingProxyType({**equivalence, "equivalence_sha256": equivalence_sha}),
+        )
+        object.__setattr__(
+            self,
+            "case_sha256",
+            canonical_sha256(
+                {
+                    "schema": "neural-forge-lfm2-semantic-joint-vo-case-v1",
+                    "trajectory_sha256": trajectory,
+                    "head_features_sha256": _tensor_sha256(features),
+                    "probabilities_sha256": _tensor_sha256(probabilities),
+                    "key_value_inputs_sha256": _tensor_sha256(key_inputs),
+                    "endpoint_target_sha256": _tensor_sha256(endpoint),
+                    "row_weights_sha256": _tensor_sha256(weights),
+                    "seed_replay_equivalence_sha256": equivalence_sha,
+                    "parent_exact_semantic_endpoint_rows_only": True,
+                    "inserted_target_query_rows_parent_exact": False,
+                }
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _JointVoProposal:
+    value_weight: Any = field(repr=False, compare=False)
+    output_weight: Any = field(repr=False, compare=False)
+    changed: bool
+    fit_improved: bool
+    baseline_fit_metrics: _WriterMetrics
+    candidate_fit_metrics: _WriterMetrics
+    ridge: float
+    effective_ridge: float
+    dual_dimension: int
+    primal_feature_dimension: int
+    fit_evidence_sha256: str
+    factorization_receipts: tuple[Mapping[str, Any], ...]
+    proposal_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        value = _finite_cpu_tensor(
+            self.value_weight,
+            "joint V/O value proposal",
+            ndim=2,
+            dtype=torch.bfloat16,
+        )
+        output = _finite_cpu_tensor(
+            self.output_weight,
+            "joint V/O output proposal",
+            ndim=2,
+            dtype=torch.bfloat16,
+        )
+        receipts = tuple(
+            MappingProxyType(dict(item)) for item in self.factorization_receipts
+        )
+        if (
+            not math.isfinite(self.ridge)
+            or self.ridge <= 0.0
+            or not math.isfinite(self.effective_ridge)
+            or self.effective_ridge <= 0.0
+            or self.dual_dimension <= 0
+            or self.primal_feature_dimension <= 0
+            or not receipts
+            or self.fit_improved != self.changed
+            or (
+                self.changed
+                and self.candidate_fit_metrics.endpoint_relative_rmse
+                >= self.baseline_fit_metrics.endpoint_relative_rmse
+            )
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Joint V/O proposal metadata is inconsistent."
+            )
+        fit_sha = _digest(self.fit_evidence_sha256, "joint V/O FIT evidence SHA-256")
+        object.__setattr__(self, "value_weight", value)
+        object.__setattr__(self, "output_weight", output)
+        object.__setattr__(self, "fit_evidence_sha256", fit_sha)
+        object.__setattr__(self, "factorization_receipts", receipts)
+        object.__setattr__(self, "proposal_sha256", canonical_sha256(self._body()))
+
+    def _body(self) -> dict[str, Any]:
+        return {
+            "schema": "neural-forge-lfm2-semantic-joint-vo-proposal-v1",
+            "value_weight_sha256": _tensor_sha256(self.value_weight),
+            "output_weight_sha256": _tensor_sha256(self.output_weight),
+            "changed": self.changed,
+            "fit_improved": self.fit_improved,
+            "baseline_fit_metrics": self.baseline_fit_metrics.as_dict(),
+            "candidate_fit_metrics": self.candidate_fit_metrics.as_dict(),
+            "ridge": self.ridge,
+            "effective_ridge": self.effective_ridge,
+            "dual_dimension": self.dual_dimension,
+            "primal_feature_dimension": self.primal_feature_dimension,
+            "giant_primal_system_formed": False,
+            "giant_primal_system_inverted": False,
+            "fit_evidence_sha256": self.fit_evidence_sha256,
+            "factorization_receipts": [
+                dict(item) for item in self.factorization_receipts
+            ],
+            "solver": (
+                "closed_form_weighted_residual_dual_ridge_then_deterministic_"
+                "shared_value_low_rank_factorization"
+            ),
+            "shared_value_per_key_value_group": True,
+            "head_specific_output_blocks": True,
+            "factorized_candidate_published_in_proposal": self.changed,
+            "factorization_attempt_rejected_after_bfloat16_fit_replay": (
+                not self.changed
+            ),
+            "fit_only": True,
+            "numeric_parent_child_weight_match_objective": False,
+            "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        return {**self._body(), "proposal_sha256": self.proposal_sha256}
+
+
+def _joint_vo_prediction(
+    case: _JointVoCase,
+    value_weight: Any,
+    output_weight: Any,
+    *,
+    head_dim: int,
+    device: str = "cpu",
+) -> Any:
+    """Replay materialized BF16 V followed by the frozen-probability O path."""
+
+    torch = _torch()
+    resolved = torch.device(device)
+    value = value_weight.detach().to(device=resolved, dtype=torch.bfloat16)
+    output = output_weight.detach().to(device=resolved, dtype=torch.float64)
+    query_heads = int(case.probabilities.shape[1])
+    if (
+        head_dim <= 0
+        or int(value.shape[0]) % head_dim
+        or int(output.shape[1]) != query_heads * head_dim
+        or int(value.shape[1]) != int(case.key_value_inputs.shape[2])
+        or int(output.shape[0]) != int(case.endpoint_target.shape[2])
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Joint V/O candidate does not match its exact dense GQA topology."
+        )
+    key_value_heads = int(value.shape[0]) // head_dim
+    if query_heads % key_value_heads:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Joint V/O candidate has a nonintegral GQA repeat factor."
+        )
+    batch, key_length, _hidden = map(int, case.key_value_inputs.shape)
+    query_length = int(case.endpoint_target.shape[1])
+    with torch.inference_mode():
+        key_inputs = case.key_value_inputs.to(device=resolved)
+        value_heads = (
+            (key_inputs @ value.T)
+            .reshape(batch, key_length, key_value_heads, head_dim)
+            .permute(0, 2, 1, 3)
+            .contiguous()
+        )
+        repeated_value = value_heads.repeat_interleave(
+            query_heads // key_value_heads,
+            dim=1,
+        ).to(torch.float64)
+        context = (
+            case.probabilities.to(device=resolved)
+            .matmul(repeated_value)
+            .permute(0, 2, 1, 3)
+            .reshape(batch, query_length, query_heads * head_dim)
+        )
+        return (context @ output.T).detach().cpu().contiguous()
+
+
+def _joint_vo_cases(
     bank: Lfm2EndpointQkResidualEvidenceBank,
     seed: Lfm2EndpointQkvoSeed,
     *,
     query_weight: Any,
     key_weight: Any,
     policy: Lfm2EndpointQkResidualFoldPolicy,
-) -> tuple[_WriterCase, ...]:
+) -> tuple[_JointVoCase, ...]:
     torch = _torch()
     devices = policy.compute_devices or ("cpu",)
     result = []
@@ -1005,13 +1338,73 @@ def _writer_cases(
             key_weight=key_weight,
             device=device,
         )
-        resolved = torch.device(device)
-        key_inputs = case.target_key_value_inputs.to(device=resolved)
-        batch, key_length, _hidden = map(int, key_inputs.shape)
-        query_length = int(case.target_query_inputs.shape[1])
+        key_inputs = case.target_key_value_inputs.detach().to(
+            device="cpu",
+            dtype=torch.bfloat16,
+        )
+        with torch.inference_mode():
+            head_features = torch.einsum(
+                "bhqk,bkf->bqhf",
+                probabilities.to(torch.float64),
+                key_inputs.to(torch.float64),
+            ).contiguous()
+        common = {
+            "head_features": head_features,
+            "probabilities": probabilities.to(torch.float64),
+            "key_value_inputs": key_inputs,
+            "endpoint_target": case.parent_endpoint_target.to(torch.float64),
+            "row_weights": case.query_row_sqrt_weights.to(torch.float64).square(),
+            "trajectory_sha256": case.trajectory_sha256,
+        }
+        joint_case = _JointVoCase(
+            **common,
+            seed_replay_equivalence=_bfloat16_endpoint_equivalence(
+                replayed_endpoint,
+                replayed_endpoint,
+            ),
+        )
+        reconstructed = _joint_vo_prediction(
+            joint_case,
+            seed.value_weight,
+            seed.output_weight,
+            head_dim=seed.head_dim,
+            device=device,
+        )
+        equivalence = _bfloat16_endpoint_equivalence(
+            reconstructed,
+            replayed_endpoint,
+        )
+        if equivalence["equivalent"] is not True:
+            raise Lfm2SemanticAttentionRefoldError(
+                "Joint V/O seed replay exceeds the sealed BF16 numerical envelope."
+            )
+        result.append(
+            _JointVoCase(
+                **common,
+                seed_replay_equivalence=equivalence,
+            )
+        )
+    return tuple(result)
+
+
+def _writer_cases_from_joint(
+    joint_cases: Sequence[_JointVoCase],
+    seed: Lfm2EndpointQkvoSeed,
+    *,
+    compute_devices: Sequence[str] = (),
+) -> tuple[_WriterCase, ...]:
+    torch = _torch()
+    devices = tuple(compute_devices) or ("cpu",)
+    result = []
+    for case_index, case in enumerate(joint_cases):
+        device = torch.device(devices[case_index % len(devices)])
+        value = seed.value_weight.to(device=device, dtype=torch.bfloat16)
+        key_inputs = case.key_value_inputs.to(device=device)
+        batch, key_length, _hidden = map(int, case.key_value_inputs.shape)
+        query_length = int(case.endpoint_target.shape[1])
         with torch.inference_mode():
             value_heads = (
-                (key_inputs @ seed.value_weight.to(device=resolved).T)
+                (key_inputs @ value.T)
                 .reshape(
                     batch,
                     key_length,
@@ -1021,13 +1414,14 @@ def _writer_cases(
                 .permute(0, 2, 1, 3)
                 .contiguous()
             )
-            repeated_value = value_heads.repeat_interleave(
-                seed.queries_per_key_value,
-                dim=1,
-            ).to(torch.float64)
-            context_on_device = (
-                probabilities.to(device=resolved, dtype=torch.float64)
-                .matmul(repeated_value)
+            context = (
+                case.probabilities.to(device=device)
+                .matmul(
+                    value_heads.repeat_interleave(
+                        seed.queries_per_key_value,
+                        dim=1,
+                    ).to(torch.float64)
+                )
                 .permute(0, 2, 1, 3)
                 .reshape(
                     batch,
@@ -1036,34 +1430,35 @@ def _writer_cases(
                 )
                 .contiguous()
             )
-            reconstructed_endpoint = (
-                context_on_device
-                @ seed.output_weight.to(device=resolved, dtype=torch.float64).T
-            ).cpu()
-            context = context_on_device.cpu()
-        if (
-            tuple(context.shape[-1:]) != tuple(seed.output_weight.shape[1:])
-            or tuple(case.parent_endpoint_target.shape[-1:])
-            != tuple(seed.output_weight.shape[:1])
-            or not torch.allclose(
-                reconstructed_endpoint,
-                replayed_endpoint.to(torch.float64),
-                rtol=1e-12,
-                atol=1e-12,
-            )
-        ):
-            raise Lfm2SemanticAttentionRefoldError(
-                "Inherited-V context reconstruction does not reproduce exact replay."
-            )
         result.append(
             _WriterCase(
-                context=context,
-                endpoint_target=case.parent_endpoint_target.to(torch.float64),
-                row_weights=case.query_row_sqrt_weights.to(torch.float64).square(),
+                context=context.detach().cpu(),
+                endpoint_target=case.endpoint_target,
+                row_weights=case.row_weights,
                 trajectory_sha256=case.trajectory_sha256,
             )
         )
     return tuple(result)
+
+
+def _writer_cases(
+    bank: Lfm2EndpointQkResidualEvidenceBank,
+    seed: Lfm2EndpointQkvoSeed,
+    *,
+    query_weight: Any,
+    key_weight: Any,
+    policy: Lfm2EndpointQkResidualFoldPolicy,
+) -> tuple[_WriterCase, ...]:
+    return _writer_cases_from_joint(
+        _joint_vo_cases(
+            bank,
+            seed,
+            query_weight=query_weight,
+            key_weight=key_weight,
+            policy=policy,
+        ),
+        seed,
+    )
 
 
 def _writer_metrics(
@@ -1238,6 +1633,410 @@ def _compile_output_writer(
     )
 
 
+def _joint_vo_metrics(
+    cases: Sequence[_JointVoCase],
+    value_weight: Any,
+    output_weight: Any,
+    *,
+    head_dim: int,
+    compute_devices: Sequence[str] = (),
+) -> _WriterMetrics:
+    torch = _torch()
+    selected = tuple(cases)
+    if not selected:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Joint V/O metrics require at least one exact endpoint case."
+        )
+    squared_error = torch.zeros((), dtype=torch.float64)
+    squared_target = torch.zeros((), dtype=torch.float64)
+    weighted_elements = torch.zeros((), dtype=torch.float64)
+    weighted_cosine = torch.zeros((), dtype=torch.float64)
+    cosine_weight = torch.zeros((), dtype=torch.float64)
+    maximum = 0.0
+    worst_cosine = 1.0
+    rows = 0
+    devices = tuple(compute_devices) or ("cpu",)
+    for case_index, case in enumerate(selected):
+        prediction = _joint_vo_prediction(
+            case,
+            value_weight,
+            output_weight,
+            head_dim=head_dim,
+            device=devices[case_index % len(devices)],
+        )
+        difference = prediction - case.endpoint_target
+        weights = case.row_weights.unsqueeze(-1)
+        squared_error += (difference.square() * weights).sum()
+        squared_target += (case.endpoint_target.square() * weights).sum()
+        weighted_elements += weights.sum() * int(case.endpoint_target.shape[-1])
+        maximum = max(maximum, float(difference.abs().max().item()))
+        prediction_norm = torch.linalg.vector_norm(prediction, dim=-1)
+        target_norm = torch.linalg.vector_norm(case.endpoint_target, dim=-1)
+        denominator = prediction_norm * target_norm
+        both_zero = (prediction_norm == 0.0) & (target_norm == 0.0)
+        cosine = torch.where(
+            both_zero,
+            torch.ones_like(denominator),
+            torch.where(
+                denominator > torch.finfo(torch.float64).tiny,
+                (prediction * case.endpoint_target).sum(dim=-1)
+                / denominator.clamp_min(torch.finfo(torch.float64).tiny),
+                torch.zeros_like(denominator),
+            ),
+        ).clamp(-1.0, 1.0)
+        weighted_cosine += (cosine * case.row_weights).sum()
+        cosine_weight += case.row_weights.sum()
+        worst_cosine = min(worst_cosine, float(cosine.min().item()))
+        rows += int(case.row_weights.numel())
+    element_mass = weighted_elements.clamp_min(torch.finfo(torch.float64).tiny)
+    rmse = torch.sqrt(squared_error / element_mass)
+    target_scale = torch.sqrt(squared_target / element_mass).clamp_min(
+        torch.finfo(torch.float64).tiny
+    )
+    return _WriterMetrics(
+        case_count=len(selected),
+        row_count=rows,
+        endpoint_rmse=float(rmse.item()),
+        endpoint_relative_rmse=float((rmse / target_scale).item()),
+        endpoint_maximum_absolute_error=maximum,
+        endpoint_cosine_similarity_mean=float((weighted_cosine / cosine_weight).item()),
+        endpoint_cosine_similarity_worst=worst_cosine,
+    )
+
+
+def _factor_group_composites(
+    composites: Sequence[Any],
+    *,
+    rowspace_generators: Any,
+    target_rank: int,
+    group_index: int,
+) -> tuple[Any, tuple[Any, ...], Mapping[str, Any]]:
+    """Best deterministic shared-rowspace rank factor in a reduced basis."""
+
+    torch = _torch()
+    selected = tuple(
+        item.detach().to(device="cpu", dtype=torch.float64).contiguous()
+        for item in composites
+    )
+    generators = rowspace_generators.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    )
+    if (
+        not selected
+        or target_rank <= 0
+        or generators.ndim != 2
+        or generators.numel() == 0
+        or any(
+            item.ndim != 2 or tuple(item.shape) != tuple(selected[0].shape)
+            for item in selected
+        )
+        or int(generators.shape[1]) != int(selected[0].shape[1])
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Joint V/O group composites do not define one factorable topology."
+        )
+    stacked = torch.cat(selected, dim=0)
+    with torch.inference_mode():
+        basis_columns, _triangular = torch.linalg.qr(
+            generators.T,
+            mode="reduced",
+        )
+        reduced = stacked @ basis_columns
+        reconstructed = reduced @ basis_columns.T
+        rowspace_error = float((reconstructed - stacked).abs().max().item())
+        rowspace_scale = float(stacked.abs().max().clamp_min(1.0).item())
+        if rowspace_error > 1e-9 * rowspace_scale:
+            raise Lfm2SemanticAttentionRefoldError(
+                "Reduced joint V/O row space does not contain its composite target."
+            )
+        left, singular_values, reduced_right = torch.linalg.svd(
+            reduced,
+            full_matrices=False,
+        )
+        right = reduced_right @ basis_columns.T
+    available_rank = int(singular_values.numel())
+    retained_rank = min(target_rank, available_rank)
+    if retained_rank <= 0:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Joint V/O factorization found no available singular direction."
+        )
+    numerical_threshold = (
+        torch.finfo(torch.float64).eps
+        * max(stacked.shape)
+        * singular_values[0].abs().clamp_min(torch.finfo(torch.float64).tiny)
+    )
+    numerical_rank = int((singular_values > numerical_threshold).sum().item())
+    retained_effective_rank = min(retained_rank, numerical_rank)
+    left_rank = left[:, :retained_rank].clone()
+    right_rank = right[:retained_rank].clone()
+    # SVD signs are arbitrary.  Canonicalize each pair by the largest-magnitude
+    # coordinate of the right factor so receipts and BF16 materialization remain
+    # deterministic for one numeric backend.
+    for index in range(retained_rank):
+        pivot = int(torch.argmax(right_rank[index].abs()).item())
+        if float(right_rank[index, pivot].item()) < 0.0:
+            right_rank[index].neg_()
+            left_rank[:, index].neg_()
+    root = torch.sqrt(singular_values[:retained_rank].clamp_min(0.0))
+    output_stack = left_rank * root.unsqueeze(0)
+    value = root.unsqueeze(1) * right_rank
+    if retained_rank < target_rank:
+        output_stack = torch.nn.functional.pad(
+            output_stack,
+            (0, target_rank - retained_rank),
+        )
+        value = torch.nn.functional.pad(
+            value,
+            (0, 0, 0, target_rank - retained_rank),
+        )
+    value_bfloat16 = value.to(torch.bfloat16).contiguous()
+    output_bfloat16 = output_stack.to(torch.bfloat16).contiguous()
+    output_size = int(selected[0].shape[0])
+    output_blocks = tuple(
+        output_bfloat16[index * output_size : (index + 1) * output_size].clone()
+        for index in range(len(selected))
+    )
+    realized = output_bfloat16.to(torch.float64) @ value_bfloat16.to(torch.float64)
+    factor_error = realized - stacked
+    total_energy = float(singular_values.square().sum().item())
+    discarded_energy = float(singular_values[retained_rank:].square().sum().item())
+    body = {
+        "schema": "neural-forge-lfm2-semantic-joint-vo-group-factor-v1",
+        "key_value_group_index": group_index,
+        "query_head_count": len(selected),
+        "output_size": output_size,
+        "input_size": int(selected[0].shape[1]),
+        "exact_topology_rank": target_rank,
+        "reduced_rowspace_dimension": int(basis_columns.shape[1]),
+        "available_spectrum_rank": available_rank,
+        "numerical_rank": numerical_rank,
+        "retained_rank_capacity": retained_rank,
+        "retained_effective_rank": retained_effective_rank,
+        "rank_truncation_performed": numerical_rank > target_rank,
+        "discarded_spectral_energy": discarded_energy,
+        "discarded_spectral_energy_fraction": (
+            0.0 if total_energy == 0.0 else discarded_energy / total_energy
+        ),
+        "reduced_rowspace_maximum_absolute_error": rowspace_error,
+        "materialized_bfloat16_factor_rmse": float(
+            torch.sqrt(factor_error.square().mean()).item()
+        ),
+        "materialized_bfloat16_factor_maximum_absolute_error": float(
+            factor_error.abs().max().item()
+        ),
+        "singular_values_sha256": _tensor_sha256(singular_values),
+        "value_weight_sha256": _tensor_sha256(value_bfloat16),
+        "output_block_sha256": [_tensor_sha256(item) for item in output_blocks],
+        "deterministic_sign_canonicalization": "right_max_abs_coordinate_nonnegative",
+        "balanced_square_root_singular_value_factors": True,
+    }
+    return (
+        value_bfloat16,
+        output_blocks,
+        MappingProxyType({**body, "factor_sha256": canonical_sha256(body)}),
+    )
+
+
+def _compile_joint_vo(
+    fit_cases: Sequence[_JointVoCase],
+    incumbent_value_weight: Any,
+    incumbent_output_weight: Any,
+    *,
+    head_dim: int,
+    solver_device: str,
+    ridge: float = 1e-4,
+) -> _JointVoProposal:
+    """Solve composite V/O residuals in row-space and refactor exact GQA ranks."""
+
+    torch = _torch()
+    selected = tuple(fit_cases)
+    if not selected:
+        raise Lfm2SemanticAttentionRefoldError("Joint V/O FIT bank is empty.")
+    incumbent_value = incumbent_value_weight.detach().to(
+        device="cpu",
+        dtype=torch.bfloat16,
+    )
+    incumbent_output = incumbent_output_weight.detach().to(
+        device="cpu",
+        dtype=torch.bfloat16,
+    )
+    query_heads = int(selected[0].head_features.shape[2])
+    hidden = int(selected[0].head_features.shape[3])
+    output_size = int(selected[0].endpoint_target.shape[2])
+    if (
+        head_dim <= 0
+        or any(
+            tuple(case.head_features.shape[2:]) != (query_heads, hidden)
+            or int(case.endpoint_target.shape[2]) != output_size
+            for case in selected
+        )
+        or int(incumbent_value.shape[0]) % head_dim
+        or int(incumbent_value.shape[1]) != hidden
+        or tuple(incumbent_output.shape) != (output_size, query_heads * head_dim)
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Joint V/O FIT cases disagree with the incumbent dense GQA topology."
+        )
+    key_value_heads = int(incumbent_value.shape[0]) // head_dim
+    if key_value_heads <= 0 or query_heads % key_value_heads:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Joint V/O FIT topology has a nonintegral query-to-value repeat."
+        )
+    queries_per_key_value = query_heads // key_value_heads
+    baseline = _joint_vo_metrics(
+        selected,
+        incumbent_value,
+        incumbent_output,
+        head_dim=head_dim,
+        compute_devices=(solver_device,),
+    )
+    features = torch.cat(
+        tuple(case.head_features.reshape(-1, query_heads, hidden) for case in selected),
+        dim=0,
+    )
+    targets = torch.cat(
+        tuple(case.endpoint_target.reshape(-1, output_size) for case in selected),
+        dim=0,
+    )
+    weights = torch.cat(
+        tuple(case.row_weights.reshape(-1) for case in selected),
+        dim=0,
+    )
+    baseline_predictions = torch.cat(
+        tuple(
+            _joint_vo_prediction(
+                case,
+                incumbent_value,
+                incumbent_output,
+                head_dim=head_dim,
+                device=solver_device,
+            ).reshape(-1, output_size)
+            for case in selected
+        ),
+        dim=0,
+    )
+    device = torch.device(solver_device)
+    root = torch.sqrt(weights.to(device=device, dtype=torch.float64))
+    weighted_features = (
+        features.to(device=device, dtype=torch.float64) * root[:, None, None]
+    )
+    weighted_residual = (targets - baseline_predictions).to(
+        device=device, dtype=torch.float64
+    ) * root[:, None]
+    dual_gram = torch.zeros(
+        (int(features.shape[0]), int(features.shape[0])),
+        dtype=torch.float64,
+        device=device,
+    )
+    with torch.inference_mode():
+        for head_index in range(query_heads):
+            head_rows = weighted_features[:, head_index, :]
+            dual_gram.add_(head_rows @ head_rows.T)
+        scale = float(dual_gram.diagonal().mean().clamp_min(1.0).item())
+        effective_ridge = float(ridge) * scale
+        dual = torch.linalg.solve(
+            dual_gram
+            + effective_ridge
+            * torch.eye(
+                int(dual_gram.shape[0]),
+                dtype=torch.float64,
+                device=device,
+            ),
+            weighted_residual,
+        )
+    if not bool(torch.isfinite(dual).all().item()):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Closed-form joint V/O dual ridge solve produced nonfinite values."
+        )
+    incumbent_value64 = incumbent_value.to(torch.float64)
+    incumbent_output64 = incumbent_output.to(torch.float64)
+    candidate_value = incumbent_value.clone()
+    candidate_output = incumbent_output.clone()
+    factor_receipts = []
+    for group_index in range(key_value_heads):
+        first_head = group_index * queries_per_key_value
+        heads = tuple(range(first_head, first_head + queries_per_key_value))
+        value_slice = incumbent_value64[
+            group_index * head_dim : (group_index + 1) * head_dim
+        ]
+        composites = []
+        for head_index in heads:
+            output_slice = incumbent_output64[
+                :,
+                head_index * head_dim : (head_index + 1) * head_dim,
+            ]
+            baseline_composite = output_slice @ value_slice
+            delta_composite = (
+                (dual.T @ weighted_features[:, head_index, :]).detach().cpu()
+            )
+            composites.append((baseline_composite + delta_composite).contiguous())
+        generators = torch.cat(
+            (
+                value_slice,
+                *tuple(
+                    weighted_features[:, head_index, :].detach().cpu()
+                    for head_index in heads
+                ),
+            ),
+            dim=0,
+        )
+        group_value, group_outputs, factor_receipt = _factor_group_composites(
+            composites,
+            rowspace_generators=generators,
+            target_rank=head_dim,
+            group_index=group_index,
+        )
+        candidate_value[group_index * head_dim : (group_index + 1) * head_dim] = (
+            group_value
+        )
+        for head_index, output_block in zip(heads, group_outputs, strict=True):
+            candidate_output[
+                :,
+                head_index * head_dim : (head_index + 1) * head_dim,
+            ] = output_block
+        factor_receipts.append(factor_receipt)
+    candidate_metrics = _joint_vo_metrics(
+        selected,
+        candidate_value,
+        candidate_output,
+        head_dim=head_dim,
+        compute_devices=(solver_device,),
+    )
+    changed = not (
+        torch.equal(candidate_value, incumbent_value)
+        and torch.equal(candidate_output, incumbent_output)
+    )
+    improvement = (
+        baseline.endpoint_relative_rmse - candidate_metrics.endpoint_relative_rmse
+    )
+    accepted_fit = changed and improvement > 1e-8
+    if not accepted_fit:
+        candidate_value = incumbent_value
+        candidate_output = incumbent_output
+        candidate_metrics = baseline
+    fit_sha = canonical_sha256(
+        {
+            "case_sha256": [case.case_sha256 for case in selected],
+            "probability_weighted_input_features_used": True,
+        }
+    )
+    return _JointVoProposal(
+        value_weight=candidate_value,
+        output_weight=candidate_output,
+        changed=accepted_fit,
+        fit_improved=accepted_fit,
+        baseline_fit_metrics=baseline,
+        candidate_fit_metrics=candidate_metrics,
+        ridge=float(ridge),
+        effective_ridge=effective_ridge,
+        dual_dimension=int(features.shape[0]),
+        primal_feature_dimension=query_heads * hidden,
+        fit_evidence_sha256=fit_sha,
+        factorization_receipts=tuple(factor_receipts),
+    )
+
+
 def _writer_nonregressing(
     candidate: _WriterMetrics,
     baseline: _WriterMetrics,
@@ -1336,6 +2135,246 @@ def _gate_output_writer(
         "candidate_frozen_across_heldout_gates": True,
     }
     return proposal.output_weight, _seal_writer_gate(body)
+
+
+def _select_and_validate_vo_candidate(
+    *,
+    banks: Mapping[str, Sequence[_JointVoCase]],
+    seed: Lfm2EndpointQkvoSeed,
+    output_proposal: _OutputWriterProposal,
+    joint_proposal: _JointVoProposal,
+    tolerance: float,
+    validation_route_baseline: Lfm2EndpointQkMetrics,
+    validation_route_candidate: Lfm2EndpointQkMetrics,
+    compute_devices: Sequence[str] = (),
+) -> tuple[Any, Any, Mapping[str, Any]]:
+    """Select without VALIDATION leakage, freeze once, then gate once."""
+
+    candidates = [
+        {
+            "name": "incumbent",
+            "complexity": 0,
+            "value": seed.value_weight,
+            "output": seed.output_weight,
+            "proposal_changed": False,
+            "proposal_sha256": seed.seed_sha256,
+        },
+        {
+            "name": "fixed_v_output_only",
+            "complexity": 1,
+            "value": seed.value_weight,
+            "output": output_proposal.output_weight,
+            "proposal_changed": output_proposal.changed,
+            "proposal_sha256": output_proposal.proposal_sha256,
+        },
+        {
+            "name": "joint_value_output",
+            "complexity": 2,
+            "value": joint_proposal.value_weight,
+            "output": joint_proposal.output_weight,
+            "proposal_changed": joint_proposal.changed,
+            "proposal_sha256": joint_proposal.proposal_sha256,
+        },
+    ]
+    baseline_metrics = {
+        partition: _joint_vo_metrics(
+            banks[partition],
+            seed.value_weight,
+            seed.output_weight,
+            head_dim=seed.head_dim,
+            compute_devices=compute_devices,
+        )
+        for partition in ("fit", "fit_check", "selection")
+    }
+    reports: dict[str, dict[str, Any]] = {}
+    eligible = []
+    for candidate in candidates:
+        partition_reports = {}
+        rejection_partition = None
+        for partition in ("fit", "fit_check", "selection"):
+            metrics = _joint_vo_metrics(
+                banks[partition],
+                candidate["value"],
+                candidate["output"],
+                head_dim=seed.head_dim,
+                compute_devices=compute_devices,
+            )
+            nonregressing = _writer_nonregressing(
+                metrics,
+                baseline_metrics[partition],
+                tolerance=tolerance,
+            )
+            if candidate["name"] != "incumbent" and partition == "fit":
+                nonregressing = (
+                    nonregressing
+                    and metrics.endpoint_relative_rmse
+                    < baseline_metrics[partition].endpoint_relative_rmse
+                )
+            partition_reports[partition] = {
+                "case_sha256": [case.case_sha256 for case in banks[partition]],
+                "baseline": baseline_metrics[partition].as_dict(),
+                "candidate": metrics.as_dict(),
+                "nonregressing": nonregressing,
+            }
+            if rejection_partition is None and not nonregressing:
+                rejection_partition = partition
+        is_eligible = candidate["name"] == "incumbent" or (
+            candidate["proposal_changed"] and rejection_partition is None
+        )
+        reports[candidate["name"]] = {
+            "complexity": candidate["complexity"],
+            "proposal_changed": candidate["proposal_changed"],
+            "proposal_sha256": candidate["proposal_sha256"],
+            "eligible_after_fit_fit_check_selection": is_eligible,
+            "rejection_partition": (
+                rejection_partition
+                if candidate["proposal_changed"]
+                else (None if candidate["name"] == "incumbent" else "fit")
+            ),
+            "partitions": partition_reports,
+        }
+        if is_eligible:
+            eligible.append(candidate)
+    strongest = min(
+        eligible,
+        key=lambda candidate: (
+            reports[candidate["name"]]["partitions"]["selection"]["candidate"][
+                "endpoint_relative_rmse"
+            ],
+            reports[candidate["name"]]["partitions"]["selection"]["candidate"][
+                "endpoint_maximum_absolute_error"
+            ],
+            -reports[candidate["name"]]["partitions"]["selection"]["candidate"][
+                "endpoint_cosine_similarity_mean"
+            ],
+            -reports[candidate["name"]]["partitions"]["selection"]["candidate"][
+                "endpoint_cosine_similarity_worst"
+            ],
+            candidate["complexity"],
+        ),
+    )
+    strongest_metrics = _joint_vo_metrics(
+        banks["selection"],
+        strongest["value"],
+        strongest["output"],
+        head_dim=seed.head_dim,
+        compute_devices=compute_devices,
+    )
+    selected = next(
+        candidate
+        for candidate in sorted(eligible, key=lambda item: item["complexity"])
+        if _writer_nonregressing(
+            _joint_vo_metrics(
+                banks["selection"],
+                candidate["value"],
+                candidate["output"],
+                head_dim=seed.head_dim,
+                compute_devices=compute_devices,
+            ),
+            strongest_metrics,
+            tolerance=tolerance,
+        )
+    )
+    frozen = {
+        "value": selected["value"].detach().to(device="cpu").contiguous().clone(),
+        "output": selected["output"].detach().to(device="cpu").contiguous().clone(),
+    }
+    frozen_sha = canonical_sha256(
+        {
+            "candidate_name": selected["name"],
+            "value_weight_sha256": _tensor_sha256(frozen["value"]),
+            "output_weight_sha256": _tensor_sha256(frozen["output"]),
+            "proposal_sha256": selected["proposal_sha256"],
+        }
+    )
+    route_nonregressing = _metrics_nonregressing(
+        validation_route_candidate,
+        validation_route_baseline,
+        tolerance=tolerance,
+    )
+    if not route_nonregressing:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Frozen V/O selection reached VALIDATION with regressing Q/K routes."
+        )
+    validation_baseline = _joint_vo_metrics(
+        banks["validation"],
+        seed.value_weight,
+        seed.output_weight,
+        head_dim=seed.head_dim,
+        compute_devices=compute_devices,
+    )
+    validation_selected = _joint_vo_metrics(
+        banks["validation"],
+        frozen["value"],
+        frozen["output"],
+        head_dim=seed.head_dim,
+        compute_devices=compute_devices,
+    )
+    endpoint_nonregressing = _writer_nonregressing(
+        validation_selected,
+        validation_baseline,
+        tolerance=tolerance,
+    )
+    if _tensor_sha256(frozen["value"]) != _tensor_sha256(
+        selected["value"]
+    ) or _tensor_sha256(frozen["output"]) != _tensor_sha256(selected["output"]):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Selected V/O candidate changed after the pre-VALIDATION freeze."
+        )
+    published_name = selected["name"] if endpoint_nonregressing else "incumbent"
+    published_value = frozen["value"] if endpoint_nonregressing else seed.value_weight
+    published_output = (
+        frozen["output"] if endpoint_nonregressing else seed.output_weight
+    )
+    body = {
+        "schema": "neural-forge-lfm2-semantic-vo-candidate-gate-v1",
+        "candidate_reports": reports,
+        "strongest_selection_candidate": strongest["name"],
+        "selected_candidate": selected["name"],
+        "published_candidate": published_name,
+        "selection_rule": (
+            "choose_lowest_complexity_candidate_only_when_it_nonregresses_the_"
+            "strongest_candidate_on_isolated_selection"
+        ),
+        "complexity_order": [
+            "incumbent",
+            "fixed_v_output_only",
+            "joint_value_output",
+        ],
+        "selected_candidate_frozen_before_validation": True,
+        "frozen_candidate_sha256": frozen_sha,
+        "validation_triggered_refit_or_reselection": False,
+        "validation": {
+            "case_sha256": [case.case_sha256 for case in banks["validation"]],
+            "endpoint_baseline": validation_baseline.as_dict(),
+            "endpoint_candidate": validation_selected.as_dict(),
+            "endpoint_nonregressing": endpoint_nonregressing,
+            "route_baseline": validation_route_baseline.as_dict(),
+            "route_candidate": validation_route_candidate.as_dict(),
+            "route_nonregressing": route_nonregressing,
+            "gated_metrics": [
+                "endpoint_relative_rmse",
+                "endpoint_maximum_absolute_error",
+                "endpoint_cosine_similarity_mean",
+                "endpoint_cosine_similarity_worst",
+                "qk_route_metrics",
+            ],
+        },
+        "selected_correction_rejected_on_validation": (
+            selected["name"] != "incumbent" and not endpoint_nonregressing
+        ),
+        "alternate_candidate_selected_after_validation": False,
+        "published_value_weight_sha256": _tensor_sha256(published_value),
+        "published_output_weight_sha256": _tensor_sha256(published_output),
+        "fit_only_analytic_solves": True,
+        "inserted_target_query_rows_parent_exact": False,
+        "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+    }
+    return (
+        published_value,
+        published_output,
+        MappingProxyType({**body, "gate_sha256": canonical_sha256(body)}),
+    )
 
 
 def _parameter_bundle(target_model: Any, layer_index: int) -> Mapping[str, Any]:
@@ -1645,29 +2684,29 @@ def compile_install_lfm2_semantic_attention_postfold(
         raise Lfm2SemanticAttentionRefoldError(
             "Frozen candidate failed VALIDATION or changed after selection freeze."
         )
-    writer_banks = {
-        "fit": _writer_cases(
+    joint_banks = {
+        "fit": _joint_vo_cases(
             fit_bank,
             seed,
             query_weight=frozen_query,
             key_weight=frozen_key,
             policy=policy,
         ),
-        "fit_check": _writer_cases(
+        "fit_check": _joint_vo_cases(
             fit_check_bank,
             seed,
             query_weight=frozen_query,
             key_weight=frozen_key,
             policy=policy,
         ),
-        "selection": _writer_cases(
+        "selection": _joint_vo_cases(
             selection_bank,
             seed,
             query_weight=frozen_query,
             key_weight=frozen_key,
             policy=policy,
         ),
-        "validation": _writer_cases(
+        "validation": _joint_vo_cases(
             validation_bank,
             seed,
             query_weight=frozen_query,
@@ -1675,36 +2714,87 @@ def compile_install_lfm2_semantic_attention_postfold(
             policy=policy,
         ),
     }
+    writer_banks = {
+        name: _writer_cases_from_joint(
+            joint_banks[name],
+            seed,
+            compute_devices=policy.compute_devices,
+        )
+        for name in _PARTITIONS
+    }
     writer_proposal = _compile_output_writer(
         writer_banks["fit"],
         seed.output_weight,
         solver_device=policy.solver_device,
     )
-    published_output, writer_gate = _gate_output_writer(
-        writer_proposal,
-        fit_check_cases=writer_banks["fit_check"],
-        selection_cases=writer_banks["selection"],
-        validation_cases=writer_banks["validation"],
-        incumbent_output_weight=seed.output_weight,
-        tolerance=tolerance,
+    joint_proposal = _compile_joint_vo(
+        joint_banks["fit"],
+        seed.value_weight,
+        seed.output_weight,
+        head_dim=seed.head_dim,
+        solver_device=policy.solver_device,
     )
-    writer_accepted = bool(writer_gate["accepted"])
-    if writer_accepted != (not torch.equal(published_output, seed.output_weight)):
-        raise Lfm2SemanticAttentionRefoldError(
-            "Output-writer gate acceptance disagrees with its published state."
+    published_value, published_output, vo_gate = _select_and_validate_vo_candidate(
+        banks=joint_banks,
+        seed=seed,
+        output_proposal=writer_proposal,
+        joint_proposal=joint_proposal,
+        tolerance=tolerance,
+        validation_route_baseline=baseline_validation,
+        validation_route_candidate=candidate_validation,
+        compute_devices=policy.compute_devices,
+    )
+    published_vo_kind = str(vo_gate["published_candidate"])
+    writer_accepted = published_vo_kind == "fixed_v_output_only"
+    joint_accepted = published_vo_kind == "joint_value_output"
+    value_changed = not torch.equal(published_value, seed.value_weight)
+    output_changed = not torch.equal(published_output, seed.output_weight)
+    if (
+        (writer_accepted and (value_changed or not output_changed))
+        or (joint_accepted and not (value_changed or output_changed))
+        or (
+            not writer_accepted
+            and not joint_accepted
+            and (value_changed or output_changed)
         )
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "V/O candidate gate acceptance disagrees with its published state."
+        )
+    output_report = vo_gate["candidate_reports"]["fixed_v_output_only"]
+    writer_gate = _seal_writer_gate(
+        {
+            "status": (
+                "accepted-after-frozen-validation"
+                if writer_accepted
+                else "rejected-by-joint-vo-candidate-competition"
+            ),
+            "accepted": writer_accepted,
+            "proposal": writer_proposal.as_dict(),
+            "rejection_partition": (
+                None
+                if writer_accepted
+                else (output_report["rejection_partition"] or "selection")
+            ),
+            "fit_check": output_report["partitions"]["fit_check"],
+            "selection": output_report["partitions"]["selection"],
+            "validation": vo_gate["validation"] if writer_accepted else None,
+            "candidate_frozen_across_heldout_gates": writer_accepted,
+            "competed_against_incumbent_and_joint_value_output": True,
+        }
+    )
     frozen_qkvo_sha = canonical_sha256(
         {
             "q": _tensor_sha256(frozen_query),
             "k": _tensor_sha256(frozen_key),
-            "v": _tensor_sha256(seed.value_weight),
+            "v": _tensor_sha256(published_value),
             "o": _tensor_sha256(published_output),
         }
     )
     state = {
         "q_proj.weight": frozen_query,
         "k_proj.weight": frozen_key,
-        "v_proj.weight": seed.value_weight,
+        "v_proj.weight": published_value,
         "out_proj.weight": published_output,
     }
     before, after, changed, parameter_count = _install_qkvo_transaction(
@@ -1741,6 +2831,13 @@ def compile_install_lfm2_semantic_attention_postfold(
             "selection_evidence_sha256": selection_bank.evidence_sha256,
             "validation_evidence_sha256": validation_bank.evidence_sha256,
             "endpoint_compiler_report_sha256": compiled.report["report_sha256"],
+            "analytic_execution_policy": {
+                "solver_device": policy.solver_device,
+                "compute_devices": list(policy.compute_devices),
+                "native_bfloat16_sm80_or_newer_only": True,
+                "non_native_bfloat16_devices_used": False,
+                "candidate_endpoint_replay_follows_compute_devices": True,
+            },
             "selection_baseline": baseline_selection.as_dict(),
             "selection_candidate": candidate_selection.as_dict(),
             "validation_baseline": baseline_validation.as_dict(),
@@ -1752,37 +2849,54 @@ def compile_install_lfm2_semantic_attention_postfold(
             "output_writer_candidate_frozen_before_validation": (
                 writer_proposal.changed
             ),
+            "joint_value_output_candidate_frozen_before_validation": (
+                joint_proposal.changed
+            ),
             "validation_triggered_refit": False,
             "numeric_parent_child_weight_match_objective": False,
             "dense_existing_qkvo_topology_only": True,
             "analytically_refit_projection_roles": [
                 "q_proj",
                 "k_proj",
-                *(["out_proj"] if writer_accepted else []),
+                *(["v_proj"] if value_changed else []),
+                *(["out_proj"] if output_changed else []),
             ],
             "fixed_inherited_projection_roles": [
-                "v_proj",
-                *([] if writer_accepted else ["out_proj"]),
+                *([] if value_changed else ["v_proj"]),
+                *([] if output_changed else ["out_proj"]),
             ],
             "fixed_value_source": (
-                "authenticated_live_c61_dense_seed_already_folded_on_broad_cache"
+                "fit_only_joint_residual_composite_low_rank_factorization"
+                if value_changed
+                else "authenticated_live_c61_dense_seed_already_folded_on_broad_cache"
             ),
             "output_writer_source": (
-                "fit_only_closed_form_weighted_residual_ridge"
-                if writer_accepted
-                else "authenticated_live_c61_seed_after_explicit_analytic_rejection"
+                "fit_only_joint_residual_composite_low_rank_factorization"
+                if joint_accepted and output_changed
+                else (
+                    "fit_only_closed_form_weighted_residual_ridge"
+                    if writer_accepted
+                    else "authenticated_live_c61_seed_after_explicit_analytic_rejection"
+                )
             ),
             "output_writer": dict(writer_gate),
+            "joint_value_output": joint_proposal.as_dict(),
+            "value_output_candidate_gate": dict(vo_gate),
             "output_writer_cached_qk_probability_replay_calls": sum(
-                len(bank) for bank in writer_banks.values()
+                len(bank) for bank in joint_banks.values()
             ),
             "output_writer_model_forward_calls": 0,
             "output_writer_fit_partition_only_used_for_solve": True,
             "output_writer_heldout_partitions_never_used_for_solve": True,
-            "fresh_joint_value_output_refit_performed": False,
-            "fresh_value_refit_performed": False,
-            "fresh_output_writer_refit_performed": writer_accepted,
-            "fresh_four_matrix_qkvo_refit_claimed": False,
+            "joint_value_output_candidate_published": joint_accepted,
+            "fresh_joint_value_output_refit_performed": (
+                joint_accepted and value_changed and output_changed
+            ),
+            "fresh_value_refit_performed": value_changed,
+            "fresh_output_writer_refit_performed": output_changed,
+            "fresh_four_matrix_qkvo_refit_claimed": (
+                joint_accepted and value_changed and output_changed
+            ),
             "complete_qkvo_bundle_installed_transactionally": True,
             "complete_causal_cache_only": True,
             "contractions_supported": False,
