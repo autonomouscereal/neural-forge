@@ -58,16 +58,16 @@ class _Layer(torch.nn.Module):
 
 
 class _Backbone(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, layer_count: int = 1) -> None:
         super().__init__()
-        self.layers = torch.nn.ModuleList([_Layer()])
+        self.layers = torch.nn.ModuleList([_Layer() for _ in range(layer_count)])
 
 
 class _Model(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, layer_count: int = 1) -> None:
         super().__init__()
         self.config = _Config()
-        self.model = _Backbone()
+        self.model = _Backbone(layer_count)
 
     def forward(self, *_args: object, **_kwargs: object) -> object:
         raise AssertionError("The semantic refold must never execute the model.")
@@ -83,9 +83,10 @@ class _Evidence:
         replay: adapter.Lfm2SemanticAttentionReplayEndpoint,
         source_inventory: object,
         complete_history: bool = True,
+        layer_index: int = 0,
     ) -> None:
         self.batch_index = batch_index
-        self.layer_index = 0
+        self.layer_index = layer_index
         self.alignment = alignment
         self.alignment_sha256 = alignment.alignment_sha256
         self.transport = transport
@@ -171,18 +172,18 @@ class _Evidence:
         }
         self.compiler_lineage_sha256 = "9" * 64
         capability_sha = canonical_sha256(
-            {"batch": batch_index, "layer": 0, "kind": "capability"}
+            {"batch": batch_index, "layer": layer_index, "kind": "capability"}
         )
         self.capability = {
             "capability_sha256": capability_sha,
-            "layer_index": 0,
+            "layer_index": layer_index,
             "exact_history_supported": complete_history,
             "blocking_reasons": [] if complete_history else ["missing"],
             "missing_donor_prefix_positions": [],
         }
         self.history = {
             "history_sha256": canonical_sha256(
-                {"batch": batch_index, "layer": 0, "kind": "history"}
+                {"batch": batch_index, "layer": layer_index, "kind": "history"}
             ),
             "source_capability_sha256": capability_sha,
             "token_count": alignment.donor_full_prefix_tokens,
@@ -227,7 +228,12 @@ def _source_inventory() -> object:
     )
 
 
-def _evidence(model: _Model, *, complete_history: bool = True) -> tuple[_Evidence, ...]:
+def _evidence(
+    model: _Model,
+    *,
+    complete_history: bool = True,
+    layer_index: int = 0,
+) -> tuple[_Evidence, ...]:
     alignment = _alignment()
     generator = torch.Generator().manual_seed(11)
     parent_query = torch.randn(1, 4, 2, 2, generator=generator).to(torch.bfloat16)
@@ -247,7 +253,7 @@ def _evidence(model: _Model, *, complete_history: bool = True) -> tuple[_Evidenc
     for batch_index in range(4):
         replay = adapter.Lfm2SemanticAttentionReplayEndpoint(
             batch_index=batch_index,
-            layer_index=0,
+            layer_index=layer_index,
             alignment_sha256=alignment.alignment_sha256,
             cache_key="2" * 64,
             bridge_artifact_sha256="3" * 64,
@@ -286,6 +292,7 @@ def _evidence(model: _Model, *, complete_history: bool = True) -> tuple[_Evidenc
                 replay=replay,
                 source_inventory=inventory,
                 complete_history=complete_history,
+                layer_index=layer_index,
             )
         )
     return tuple(result)
@@ -369,6 +376,83 @@ def _install_fake_noop_qk_compiler(monkeypatch: pytest.MonkeyPatch) -> None:
         "_evaluate_bank",
         lambda *_args, **_kwargs: _metrics(0.5),
     )
+
+
+def _force_unchanged_output_writer(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = adapter._compile_output_writer
+
+    def compile_unchanged(
+        fit_cases: object,
+        incumbent_output_weight: torch.Tensor,
+        *,
+        solver_device: str,
+        ridge: float = 1e-4,
+    ) -> object:
+        proposal = original(
+            fit_cases,
+            incumbent_output_weight,
+            solver_device=solver_device,
+            ridge=ridge,
+        )
+        baseline = adapter._writer_metrics(tuple(fit_cases), incumbent_output_weight)
+        return adapter._OutputWriterProposal(
+            output_weight=incumbent_output_weight.detach().cpu().clone(),
+            changed=False,
+            fit_improved=False,
+            selected_alpha=None,
+            baseline_fit_metrics=baseline,
+            candidate_fit_metrics=baseline,
+            ridge=proposal.ridge,
+            effective_ridge=proposal.effective_ridge,
+            fit_context_sha256=proposal.fit_context_sha256,
+            prior_preservation_receipt=proposal.prior_preservation_receipt,
+        )
+
+    monkeypatch.setattr(adapter, "_compile_output_writer", compile_unchanged)
+
+
+def _force_unchanged_joint_vo(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = adapter._compile_joint_vo
+
+    def compile_unchanged(
+        cases: object,
+        incumbent_value: torch.Tensor,
+        incumbent_output: torch.Tensor,
+        *,
+        head_dim: int,
+        solver_device: str,
+        ridge: float = 1e-4,
+    ) -> object:
+        proposal = original(
+            cases,
+            incumbent_value,
+            incumbent_output,
+            head_dim=head_dim,
+            solver_device=solver_device,
+            ridge=ridge,
+        )
+        baseline = adapter._joint_vo_metrics(
+            tuple(cases),
+            incumbent_value,
+            incumbent_output,
+            head_dim=head_dim,
+        )
+        return adapter._JointVoProposal(
+            value_weight=incumbent_value.detach().cpu().clone(),
+            output_weight=incumbent_output.detach().cpu().clone(),
+            changed=False,
+            fit_improved=False,
+            baseline_fit_metrics=baseline,
+            candidate_fit_metrics=baseline,
+            ridge=proposal.ridge,
+            effective_ridge=proposal.effective_ridge,
+            dual_dimension=proposal.dual_dimension,
+            primal_feature_dimension=proposal.primal_feature_dimension,
+            fit_evidence_sha256=proposal.fit_evidence_sha256,
+            factorization_receipts=proposal.factorization_receipts,
+        )
+
+    monkeypatch.setattr(adapter, "_compile_joint_vo", compile_unchanged)
 
 
 def test_closed_form_fit_corrections_publish_with_heldout_metrics_diagnostic(
@@ -490,32 +574,6 @@ def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
     before_query = model.model.layers[0].self_attn.q_proj.weight.detach().clone()
     before_output = model.model.layers[0].self_attn.out_proj.weight.detach().clone()
 
-    def accept_writer_competition(
-        **kwargs: object,
-    ) -> tuple[torch.Tensor, torch.Tensor, object]:
-        proposal = kwargs["output_proposal"]
-        seed = kwargs["seed"]
-        assert proposal.changed is True
-        body = {
-            "published_candidate": "fixed_v_output_only",
-            "candidate_reports": {
-                "fixed_v_output_only": {
-                    "rejection_partition": None,
-                    "partitions": {
-                        "fit_check": {"nonregressing": True},
-                        "selection": {"nonregressing": True},
-                    },
-                }
-            },
-            "validation": {"endpoint_nonregressing": True},
-        }
-        return seed.value_weight, proposal.output_weight, body
-
-    monkeypatch.setattr(
-        adapter,
-        "_select_and_validate_vo_candidate",
-        accept_writer_competition,
-    )
     receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
         target_model=model,
         layer_index=0,
@@ -533,6 +591,9 @@ def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
         model.model.layers[0].self_attn.out_proj.weight, before_output
     )
     report = receipt["analytic_refold"]
+    assert report["value_output_candidate_gate"]["published_candidate"] == (
+        "fixed_v_output_only"
+    )
     assert report["fresh_output_writer_refit_performed"] is True
     assert report["analytically_refit_projection_roles"] == [
         "q_proj",
@@ -543,121 +604,88 @@ def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
     assert report["complete_qkvo_bundle_installed_transactionally"] is True
 
 
-def test_joint_vo_publication_is_rejected_before_any_parameter_transaction(
+def test_joint_only_vo_candidate_publishes_and_installs_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = _Model()
     evidence = _evidence(model)
     _install_fake_compiler(monkeypatch)
+    _force_unchanged_output_writer(monkeypatch)
     before_value = model.model.layers[0].self_attn.v_proj.weight.detach().clone()
     before_output = model.model.layers[0].self_attn.out_proj.weight.detach().clone()
 
-    def accept_joint_competition(
-        **kwargs: object,
-    ) -> tuple[torch.Tensor, torch.Tensor, object]:
-        seed = kwargs["seed"]
-        value = seed.value_weight.clone()
-        output = seed.output_weight.clone()
-        value[0, 0] += 1.0
-        output[0, 0] += 1.0
-        return (
-            value,
-            output,
-            {
-                "published_candidate": "joint_value_output",
-                "candidate_reports": {
-                    "fixed_v_output_only": {
-                        "rejection_partition": "selection",
-                        "partitions": {
-                            "fit_check": {"nonregressing": True},
-                            "selection": {"nonregressing": True},
-                        },
-                    }
-                },
-                "validation": {"endpoint_nonregressing": True},
-            },
-        )
-
-    monkeypatch.setattr(
-        adapter,
-        "_select_and_validate_vo_candidate",
-        accept_joint_competition,
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
     )
-    with pytest.raises(
-        adapter.Lfm2SemanticAttentionRefoldError,
-        match="joint low-rank V/O",
-    ):
-        adapter.compile_install_lfm2_semantic_attention_postfold(
-            target_model=model,
-            layer_index=0,
-            evidence=evidence,
-            cache_key="2" * 64,
-            bridge_artifact_sha256="3" * 64,
-        )
+    postfold._authenticate_lfm2_semantic_attention_operator_receipt(
+        receipt,
+        layer_index=0,
+    )
 
-    assert torch.equal(model.model.layers[0].self_attn.v_proj.weight, before_value)
-    assert torch.equal(model.model.layers[0].self_attn.out_proj.weight, before_output)
+    report = receipt["analytic_refold"]
+    gate = report["value_output_candidate_gate"]
+    assert gate["published_candidate"] == "joint_value_output"
+    assert gate["structurally_eligible_candidate_count"] == 1
+    assert report["output_writer"]["proposal"]["changed"] is False
+    assert report["output_writer"]["accepted"] is False
+    assert report["joint_value_output_candidate_published"] is True
+    assert report["fresh_joint_value_output_refit_performed"] is True
+    assert (
+        report["joint_value_output"]["value_weight_sha256"]
+        == report["frozen_attention_six_tensor_bundle"]["v_proj.weight"]
+    )
+    assert (
+        report["joint_value_output"]["output_weight_sha256"]
+        == report["frozen_attention_six_tensor_bundle"]["out_proj.weight"]
+    )
+    assert not torch.equal(model.model.layers[0].self_attn.v_proj.weight, before_value)
+    assert not torch.equal(
+        model.model.layers[0].self_attn.out_proj.weight,
+        before_output,
+    )
 
 
-def test_qk_seed_fallback_still_cannot_publish_joint_v_o_factorization(
+def test_qk_seed_fallback_can_publish_joint_v_o_factorization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = _Model()
     evidence = _evidence(model)
     _install_fake_noop_qk_compiler(monkeypatch)
+    _force_unchanged_output_writer(monkeypatch)
     before = {
         name: value.detach().clone() for name, value in model.state_dict().items()
     }
-    reached_competition = False
 
-    def accept_joint_competition(
-        **kwargs: object,
-    ) -> tuple[torch.Tensor, torch.Tensor, object]:
-        nonlocal reached_competition
-        reached_competition = True
-        seed = kwargs["seed"]
-        value = seed.value_weight.clone()
-        output = seed.output_weight.clone()
-        value[0, 0] += 1.0
-        output[0, 0] += 1.0
-        return (
-            value,
-            output,
-            {
-                "published_candidate": "joint_value_output",
-                "candidate_reports": {
-                    "fixed_v_output_only": {
-                        "rejection_partition": "selection",
-                        "partitions": {
-                            "fit_check": {"nonregressing": True},
-                            "selection": {"nonregressing": True},
-                        },
-                    }
-                },
-                "validation": {"endpoint_nonregressing": True},
-            },
-        )
-
-    monkeypatch.setattr(
-        adapter,
-        "_select_and_validate_vo_candidate",
-        accept_joint_competition,
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
     )
-    with pytest.raises(
-        adapter.Lfm2SemanticAttentionRefoldError,
-        match="joint low-rank V/O",
-    ):
-        adapter.compile_install_lfm2_semantic_attention_postfold(
-            target_model=model,
-            layer_index=0,
-            evidence=evidence,
-            cache_key="2" * 64,
-            bridge_artifact_sha256="3" * 64,
-        )
 
-    assert reached_competition is True
-    assert all(
-        torch.equal(value, before[name]) for name, value in model.state_dict().items()
+    report = receipt["analytic_refold"]
+    assert report["qk_compiler_changed"] is False
+    assert report["authenticated_qk_seed_fallback_entered_vo_competition"] is True
+    assert report["value_output_candidate_gate"]["published_candidate"] == (
+        "joint_value_output"
+    )
+    assert report["joint_value_output_candidate_published"] is True
+    assert torch.equal(
+        model.model.layers[0].self_attn.q_proj.weight,
+        before["model.layers.0.self_attn.q_proj.weight"],
+    )
+    assert torch.equal(
+        model.model.layers[0].self_attn.k_proj.weight,
+        before["model.layers.0.self_attn.k_proj.weight"],
+    )
+    assert not torch.equal(
+        model.model.layers[0].self_attn.v_proj.weight,
+        before["model.layers.0.self_attn.v_proj.weight"],
     )
 
 
@@ -669,6 +697,8 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
         parameter.grad = torch.ones_like(parameter)
     evidence = _evidence(model)
     _install_fake_noop_qk_compiler(monkeypatch)
+    _force_unchanged_output_writer(monkeypatch)
+    _force_unchanged_joint_vo(monkeypatch)
     monkeypatch.setattr(
         adapter,
         "_publish_complete_attention_cold_start",
@@ -683,51 +713,6 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     identities = tuple(id(parameter) for parameter in model.parameters())
     pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
     gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
-    reached_competition = False
-
-    def retain_incumbent(
-        **kwargs: object,
-    ) -> tuple[torch.Tensor, torch.Tensor, object]:
-        nonlocal reached_competition
-        reached_competition = True
-        seed = kwargs["seed"]
-        return (
-            seed.value_weight,
-            seed.output_weight,
-            {
-                "published_candidate": "incumbent",
-                "candidate_reports": {
-                    "incumbent": {
-                        "eligible_after_fit_fit_check_selection": True,
-                        "partitions": {
-                            "fit": {"nonregressing": True},
-                            "fit_check": {"nonregressing": True},
-                            "selection": {"nonregressing": True},
-                        },
-                    },
-                    "fixed_v_output_only": {
-                        "rejection_partition": "fit",
-                        "partitions": {
-                            "fit_check": {"nonregressing": True},
-                            "selection": {"nonregressing": True},
-                        },
-                    },
-                },
-                "selected_candidate": "incumbent",
-                "selected_candidate_frozen_before_validation": True,
-                "validation_triggered_refit_or_reselection": False,
-                "validation": {
-                    "endpoint_nonregressing": True,
-                    "route_nonregressing": True,
-                },
-            },
-        )
-
-    monkeypatch.setattr(
-        adapter,
-        "_select_and_validate_vo_candidate",
-        retain_incumbent,
-    )
     monkeypatch.setattr(
         adapter,
         "_copy_candidate",
@@ -743,10 +728,7 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
         bridge_artifact_sha256="3" * 64,
     )
 
-    assert reached_competition is True
-    assert receipt["status"] == (
-        "deterministic-fit-correction-rounded-to-incumbent-noop"
-    )
+    assert receipt["status"] == adapter.LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS
     assert receipt["installed"] is False
     assert receipt["install_count"] == 0
     assert receipt["changed_state_keys"] == []
@@ -760,6 +742,13 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     assert receipt["parameter_storage_preserved"] is True
     assert receipt["gradient_state_preserved"] is True
     assert receipt["exact_noop_state_proven"] is True
+    assert receipt["selected_candidate"] == "incumbent-noop"
+    assert receipt["selected_candidate_state_identical_to_incumbent"] is True
+    assert receipt["incumbent_noop_fallback_used"] is True
+    assert receipt["incumbent_noop_fallback_reason"] == (
+        "all-analytic-proposals-structurally-invalid-or-identical"
+    )
+    assert receipt["structurally_eligible_candidate_count"] == 0
     assert receipt["incumbent_selected_by_heldout_gates"] is False
     assert receipt["fit_check_nonregression_passed"] is None
     assert receipt["selection_nonregression_passed"] is None
@@ -782,7 +771,7 @@ def test_total_qkvo_noop_returns_authenticated_receipt_without_copying(
     assert report["frozen_attention_six_tensor_bundle_sha256"] == canonical_sha256(
         report["frozen_attention_six_tensor_bundle"]
     )
-    assert stack_adapter._authenticated_heldout_incumbent_noop(
+    assert stack_adapter._authenticated_attention_incumbent_noop(
         receipt,
         before_sha256=before_identity,
         after_sha256=before_identity,
@@ -850,47 +839,6 @@ def test_exact_zero_qk_is_evidence_planted_and_cannot_publish_as_a_noop(
         lambda *_args, **_kwargs: next(metric_values),
     )
 
-    def retain_vo_incumbent(
-        **kwargs: object,
-    ) -> tuple[torch.Tensor, torch.Tensor, object]:
-        seed = kwargs["seed"]
-        return (
-            seed.value_weight,
-            seed.output_weight,
-            {
-                "published_candidate": "incumbent",
-                "candidate_reports": {
-                    "incumbent": {
-                        "eligible_after_fit_fit_check_selection": True,
-                        "partitions": {
-                            "fit": {"nonregressing": True},
-                            "fit_check": {"nonregressing": True},
-                            "selection": {"nonregressing": True},
-                        },
-                    },
-                    "fixed_v_output_only": {
-                        "rejection_partition": "fit",
-                        "partitions": {
-                            "fit_check": {"nonregressing": True},
-                            "selection": {"nonregressing": True},
-                        },
-                    },
-                },
-                "selected_candidate": "incumbent",
-                "selected_candidate_frozen_before_validation": True,
-                "validation_triggered_refit_or_reselection": False,
-                "validation": {
-                    "endpoint_nonregressing": True,
-                    "route_nonregressing": True,
-                },
-            },
-        )
-
-    monkeypatch.setattr(
-        adapter,
-        "_select_and_validate_vo_candidate",
-        retain_vo_incumbent,
-    )
     receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
         target_model=model,
         layer_index=0,
@@ -1091,7 +1039,56 @@ def test_all_zero_qkvo_heldout_regression_is_diagnostic_not_blank_rollback(
         assert int(torch.count_nonzero(projection.weight).item()) > 0
 
 
-def test_joint_only_cold_start_does_not_claim_a_rejected_output_writer(
+def test_exact_zero_final_attention_layer_gets_complete_nonzero_plant() -> None:
+    final_attention_layer = 12
+    model = _Model(layer_count=final_attention_layer + 1)
+    attention = model.model.layers[final_attention_layer].self_attn
+    with torch.no_grad():
+        for projection in (
+            attention.q_proj,
+            attention.k_proj,
+            attention.v_proj,
+            attention.out_proj,
+        ):
+            projection.weight.zero_()
+    evidence = _evidence(model, layer_index=final_attention_layer)
+
+    receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+        target_model=model,
+        layer_index=final_attention_layer,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+    postfold._authenticate_lfm2_semantic_attention_operator_receipt(
+        receipt,
+        layer_index=final_attention_layer,
+    )
+
+    prefix = f"model.layers.{final_attention_layer}.self_attn."
+    assert receipt["installed"] is True
+    assert all(name.startswith(prefix) for name in receipt["changed_state_keys"])
+    cold = receipt["analytic_refold"]["complete_attention_cold_start"]
+    assert cold["exact_zero_roles_at_entry"] == [
+        "q_proj.weight",
+        "k_proj.weight",
+        "v_proj.weight",
+        "out_proj.weight",
+    ]
+    assert all(
+        coverage["structurally_nonzero"] is True
+        for coverage in cold["published_role_coverage"].values()
+    )
+    for projection in (
+        attention.q_proj,
+        attention.k_proj,
+        attention.v_proj,
+        attention.out_proj,
+    ):
+        assert int(torch.count_nonzero(projection.weight).item()) > 0
+
+
+def test_joint_only_cold_start_publishes_without_claiming_output_writer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = _Model()
@@ -1147,10 +1144,10 @@ def test_joint_only_cold_start_does_not_claim_a_rejected_output_writer(
     assert report["output_writer"]["accepted"] is False
     assert report["fresh_output_writer_refit_performed"] is False
     assert report["fresh_output_projection_refit_performed"] is True
-    assert report["joint_value_output_candidate_published"] is False
-    assert report["joint_value_output_component_contributed"] is False
+    assert report["joint_value_output_candidate_published"] is True
+    assert report["joint_value_output_component_contributed"] is True
     assert report["output_writer_source"] == (
-        "authenticated_parent_derived_output_prior"
+        "fit_only_joint_value_output_residual_factorization"
     )
 
 
@@ -1607,6 +1604,7 @@ def test_multi_projection_transaction_matches_wrapper_changed_key_order() -> Non
             parameter_element_count=parameter_count,
             target_topology_sha256_before=topology,
             target_topology_sha256_after=adapter._topology_sha256(target_model),
+            structurally_eligible_candidate_count=1,
         )
         return {**body, "result_sha256": canonical_sha256(body)}
 
@@ -2040,10 +2038,12 @@ def test_joint_vo_dual_fold_recovers_a_missing_value_subspace() -> None:
     assert report["giant_primal_system_inverted"] is False
     assert report["dual_dimension"] == 24
     assert report["primal_feature_dimension"] == 8
-    assert report["diagnostic_only"] is True
-    assert report["publication_allowed"] is False
-    assert report["publication_lane"] == "fixed_v_prior_preserving_output_writer"
-    assert report["factorized_candidate_published_in_proposal"] is False
+    assert report["diagnostic_only"] is False
+    assert report["publication_allowed"] is True
+    assert report["publication_lane"] == (
+        "structural_fit_ordered_value_output_candidates"
+    )
+    assert report["factorized_candidate_published_in_proposal"] is True
     assert report["numeric_metric_used_for_publication"] is False
     factor = report["factorization_receipts"][0]
     assert factor["exact_topology_rank"] == 2
@@ -2051,7 +2051,7 @@ def test_joint_vo_dual_fold_recovers_a_missing_value_subspace() -> None:
     assert report["operation_audit"]["model_forward_calls"] == 0
 
 
-def test_vo_competition_prefers_fixed_value_writer_when_joint_is_not_stronger() -> None:
+def test_vo_competition_orders_all_structural_candidates_by_fit_only() -> None:
     generator = torch.Generator().manual_seed(31)
     features = torch.randint(
         -2,
@@ -2118,12 +2118,241 @@ def test_vo_competition_prefers_fixed_value_writer_when_joint_is_not_stronger() 
     )
 
     assert output_proposal.changed is True
-    assert gate["selected_candidate"] == "fixed_v_output_only"
-    assert gate["published_candidate"] == "fixed_v_output_only"
+    reports = gate["candidate_reports"]
+    eligible = ("fixed_v_output_only", "joint_value_output")
+
+    def fit_key(name: str) -> tuple[object, ...]:
+        metrics = reports[name]["partitions"]["fit"]["candidate"]
+        return (
+            metrics["endpoint_relative_rmse"],
+            metrics["endpoint_rmse"],
+            metrics["endpoint_maximum_absolute_error"],
+            -metrics["endpoint_cosine_similarity_mean"],
+            -metrics["endpoint_cosine_similarity_worst"],
+            reports[name]["proposal_sha256"],
+        )
+
+    expected = min(eligible, key=fit_key)
+    assert all(reports[name]["eligible"] is True for name in eligible)
+    assert gate["structurally_eligible_candidate_count"] == 2
+    assert gate["selected_candidate"] == expected
+    assert gate["published_candidate"] == expected
+    assert gate["fit_metrics_used_for_candidate_ordering"] is True
+    assert gate["fit_metrics_used_for_structural_eligibility"] is False
+    assert gate["fit_metric_threshold_used_for_candidate_selection"] is False
+    assert gate["numeric_metric_used_for_candidate_selection"] is True
     assert gate["validation_triggered_refit_or_reselection"] is False
     assert gate["alternate_candidate_selected_after_validation"] is False
+    if expected == "fixed_v_output_only":
+        assert torch.equal(published_value, value)
+        assert torch.equal(published_output, output_proposal.output_weight)
+    else:
+        assert torch.equal(published_value, joint_proposal.value_weight)
+        assert torch.equal(published_output, joint_proposal.output_weight)
+
+
+def test_vo_structural_eligibility_is_the_exact_nonmetric_conjunction() -> None:
+    incumbent_value = torch.zeros(2, 4, dtype=torch.bfloat16)
+    incumbent_output = torch.zeros(4, 4, dtype=torch.bfloat16)
+    valid_value = incumbent_value.clone()
+    valid_value[0, 0] = 1.0
+
+    eligible = adapter._vo_structural_eligibility(
+        value_weight=valid_value,
+        output_weight=incumbent_output.clone(),
+        incumbent_value_weight=incumbent_value,
+        incumbent_output_weight=incumbent_output,
+    )
+    identical = adapter._vo_structural_eligibility(
+        value_weight=incumbent_value.clone(),
+        output_weight=incumbent_output.clone(),
+        incumbent_value_weight=incumbent_value,
+        incumbent_output_weight=incumbent_output,
+    )
+    nonfinite = valid_value.clone()
+    nonfinite[0, 0] = torch.nan
+    invalid_rows = {
+        "nonfinite": adapter._vo_structural_eligibility(
+            value_weight=nonfinite,
+            output_weight=incumbent_output,
+            incumbent_value_weight=incumbent_value,
+            incumbent_output_weight=incumbent_output,
+        ),
+        "dtype": adapter._vo_structural_eligibility(
+            value_weight=valid_value.float(),
+            output_weight=incumbent_output,
+            incumbent_value_weight=incumbent_value,
+            incumbent_output_weight=incumbent_output,
+        ),
+        "shape": adapter._vo_structural_eligibility(
+            value_weight=valid_value[:, :3],
+            output_weight=incumbent_output,
+            incumbent_value_weight=incumbent_value,
+            incumbent_output_weight=incumbent_output,
+        ),
+        "layout": adapter._vo_structural_eligibility(
+            value_weight=valid_value.to_sparse(),
+            output_weight=incumbent_output,
+            incumbent_value_weight=incumbent_value,
+            incumbent_output_weight=incumbent_output,
+        ),
+    }
+
+    assert eligible["eligible"] is True
+    assert eligible["numeric_metric_used_for_eligibility"] is False
+    assert identical["effectful"] is False
+    assert identical["eligible"] is False
+    assert all(row["eligible"] is False for row in invalid_rows.values())
+    assert invalid_rows["nonfinite"]["finite"] is False
+    assert invalid_rows["dtype"]["bfloat16"] is False
+    assert invalid_rows["shape"]["exact_shape"] is False
+    assert invalid_rows["layout"]["dense_strided"] is False
+
+
+def test_vo_incumbent_is_used_only_when_proposals_are_invalid_or_identical() -> None:
+    generator = torch.Generator().manual_seed(41)
+    features = torch.randint(-2, 3, (8, 2, 4), generator=generator).to(torch.float64)
+    value = torch.tensor(
+        [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
+        dtype=torch.bfloat16,
+    )
+    output = torch.eye(4, dtype=torch.bfloat16)
+    case = _joint_case_from_factors(
+        features,
+        value,
+        output,
+        label="invalid-or-identical-fallback",
+    )
+    seed = SimpleNamespace(
+        value_weight=value,
+        output_weight=output,
+        head_dim=2,
+        seed_sha256="a" * 64,
+    )
+    invalid_writer = SimpleNamespace(
+        output_weight=output[:, :3].contiguous(),
+        changed=True,
+        proposal_sha256="b" * 64,
+    )
+    identical_joint = SimpleNamespace(
+        value_weight=value.clone(),
+        output_weight=output.clone(),
+        changed=False,
+        proposal_sha256="c" * 64,
+    )
+
+    published_value, published_output, gate = adapter._select_and_validate_vo_candidate(
+        banks={partition: (case,) for partition in adapter._PARTITIONS},
+        seed=seed,
+        output_proposal=invalid_writer,
+        joint_proposal=identical_joint,
+        tolerance=0.0,
+        validation_route_baseline=_metrics(0.1),
+        validation_route_candidate=_metrics(0.9),
+    )
+
+    assert gate["structurally_eligible_candidate_count"] == 0
+    assert gate["published_candidate"] == "incumbent"
+    assert gate["incumbent_noop_fallback_used"] is True
+    assert gate["incumbent_noop_fallback_reason"] == (
+        "all-analytic-proposals-structurally-invalid-or-identical"
+    )
+    assert gate["candidate_reports"]["fixed_v_output_only"]["exact_shape"] is False
+    assert gate["candidate_reports"]["fixed_v_output_only"]["effectful"] is True
+    assert gate["candidate_reports"]["joint_value_output"]["effectful"] is False
     assert torch.equal(published_value, value)
-    assert torch.equal(published_output, output_proposal.output_weight)
+    assert torch.equal(published_output, output)
+
+
+def test_vo_heldout_metric_regression_cannot_veto_frozen_fit_selection() -> None:
+    generator = torch.Generator().manual_seed(37)
+    features = torch.randint(-2, 3, (24, 2, 4), generator=generator).to(torch.float64)
+    incumbent_value = torch.tensor(
+        [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
+        dtype=torch.bfloat16,
+    )
+    target_value = torch.tensor(
+        [[0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+        dtype=torch.bfloat16,
+    )
+    output = torch.eye(4, dtype=torch.bfloat16)
+    fit_case = _joint_case_from_factors(
+        features,
+        target_value,
+        output,
+        label="heldout-regression-fit",
+    )
+    contradictory_heldout = _joint_case_from_factors(
+        features,
+        incumbent_value,
+        output,
+        label="heldout-regression-validation",
+    )
+    incumbent_context = torch.cat(
+        tuple(
+            (features[:, head_index, :].to(torch.bfloat16) @ incumbent_value.T).to(
+                torch.float64
+            )
+            for head_index in range(2)
+        ),
+        dim=1,
+    )
+    writer_case = adapter._WriterCase(
+        context=incumbent_context.unsqueeze(0),
+        endpoint_target=fit_case.endpoint_target,
+        row_weights=torch.ones(1, int(features.shape[0]), dtype=torch.float64),
+        trajectory_sha256=canonical_sha256({"writer-case": "heldout-regression"}),
+    )
+    output_proposal = adapter._compile_output_writer(
+        (writer_case,),
+        output,
+        solver_device="cpu",
+        ridge=1e-10,
+    )
+    joint_proposal = adapter._compile_joint_vo(
+        (fit_case,),
+        incumbent_value,
+        output,
+        head_dim=2,
+        solver_device="cpu",
+        ridge=1e-10,
+    )
+    seed = SimpleNamespace(
+        value_weight=incumbent_value,
+        output_weight=output,
+        head_dim=2,
+        seed_sha256="a" * 64,
+    )
+
+    published_value, published_output, gate = adapter._select_and_validate_vo_candidate(
+        banks={
+            "fit": (fit_case,),
+            "fit_check": (contradictory_heldout,),
+            "selection": (contradictory_heldout,),
+            "validation": (contradictory_heldout,),
+        },
+        seed=seed,
+        output_proposal=output_proposal,
+        joint_proposal=joint_proposal,
+        tolerance=0.0,
+        validation_route_baseline=_metrics(0.1),
+        validation_route_candidate=_metrics(0.9),
+    )
+
+    selected = gate["published_candidate"]
+    assert selected != "incumbent"
+    assert gate["validation"]["endpoint_nonregressing"] is False
+    assert gate["validation"]["route_nonregressing"] is False
+    assert gate["validation"]["diagnostic_only"] is True
+    assert gate["validation_publication_veto_applied"] is False
+    assert gate["selected_correction_rejected_on_validation"] is False
+    assert gate["rollback_authorized"] is False
+    if selected == "joint_value_output":
+        assert torch.equal(published_value, joint_proposal.value_weight)
+        assert torch.equal(published_output, joint_proposal.output_weight)
+    else:
+        assert torch.equal(published_value, incumbent_value)
+        assert torch.equal(published_output, output_proposal.output_weight)
 
 
 def test_output_writer_closed_form_fit_passes_all_frozen_heldout_gates() -> None:

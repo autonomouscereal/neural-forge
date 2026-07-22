@@ -42,6 +42,7 @@ from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
     seal_lfm2_dense_qkvo_source_inventory,
 )
 from neural_forge.hf_lfm2_semantic_attention_refold_adapter import (
+    LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS,
     Lfm2SemanticAttentionReplayEndpoint,
 )
 from neural_forge.hf_lfm2_semantic_postfold import (
@@ -108,6 +109,9 @@ _SHORT_CONV_INSTALLATION_SCHEMA = (
 _SHORT_CONV_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
 _MLP_INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-mlp-installation-v1"
 _MLP_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
+_ATTENTION_CANDIDATE_ELIGIBILITY_BASIS = (
+    "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
+)
 _MLP_FUNCTIONAL_PROVENANCE_SCHEMA = (
     "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v2"
 )
@@ -1565,6 +1569,54 @@ def _authenticated_heldout_incumbent_noop(
     )
 
 
+def _authenticated_attention_incumbent_noop(
+    receipt: Mapping[str, Any],
+    *,
+    before_sha256: str,
+    after_sha256: str,
+    changed_state_keys: Sequence[str],
+) -> bool:
+    """Accept only an attention no-op caused by an empty structural frontier."""
+
+    return bool(
+        receipt.get("status") == LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS
+        and receipt.get("selected_candidate") == "incumbent-noop"
+        and receipt.get("selected_candidate_state_identical_to_incumbent") is True
+        and receipt.get("incumbent_noop_fallback_used") is True
+        and receipt.get("incumbent_noop_fallback_reason")
+        == "all-analytic-proposals-structurally-invalid-or-identical"
+        and receipt.get("structurally_eligible_candidate_count") == 0
+        and receipt.get("candidate_eligibility_basis")
+        == _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS
+        and receipt.get("structural_safety_is_only_candidate_veto") is True
+        and receipt.get("fit_metrics_used_for_candidate_ordering") is True
+        and receipt.get("fit_metrics_used_for_structural_eligibility") is False
+        and receipt.get("incumbent_selected_by_heldout_gates") is False
+        and receipt.get("heldout_metrics_are_diagnostic_only") is True
+        and receipt.get("validation_publication_veto_applied") is False
+        and receipt.get("rollback_authorized") is False
+        and receipt.get("numeric_metrics_have_final_intelligence_authority") is False
+        and receipt.get("validation_rejected_candidate") is None
+        and receipt.get("numeric_metric_used_for_publication_or_rollback") is False
+        and receipt.get("installed") is False
+        and receipt.get("candidate_frozen_before_validation") is True
+        and receipt.get("validation_triggered_refit") is False
+        and receipt.get("model_state_before_sha256") == before_sha256
+        and receipt.get("model_state_after_sha256") == after_sha256
+        and before_sha256 == after_sha256
+        and receipt.get("changed_state_keys") == []
+        and not changed_state_keys
+        and receipt.get("parameter_count_changed") is False
+        and receipt.get("topology_changed") is False
+        and receipt.get("parameter_identities_preserved") is True
+        and receipt.get("parameter_storage_preserved") is True
+        and receipt.get("gradient_state_preserved") is True
+        and receipt.get("exact_noop_state_proven") is True
+        and receipt.get("analytic_cached_evidence_only") is True
+        and _is_zero_operation_audit(receipt.get("operation_audit"))
+    )
+
+
 def _authenticated_short_conv_incumbent_noop(
     receipt: Mapping[str, Any],
     *,
@@ -1726,7 +1778,14 @@ def _install_attention_operator(
     after = fingerprint_lfm2_parent(target_model).identity_sha256
     changed = _changed_state_keys(before_hashes, after_hashes)
     raw_receipt = _verify_sealed(candidate, "semantic attention")
-    if _authenticated_heldout_incumbent_noop(
+    if raw_receipt.get("status") in {
+        "heldout-selected-incumbent-noop",
+        "deterministic-fit-correction-rounded-to-incumbent-noop",
+    }:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Attention installer returned an obsolete metric-based incumbent no-op."
+        )
+    if _authenticated_attention_incumbent_noop(
         raw_receipt,
         before_sha256=before,
         after_sha256=after,
@@ -3476,7 +3535,7 @@ def _layer_receipt(
     operator_noop_status = (
         _SHORT_CONV_STRUCTURAL_NOOP_STATUS
         if operator_kind == "short_conv"
-        else "heldout-selected-incumbent-noop"
+        else LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS
     )
     body = {
         "schema": "neural-forge-lfm2-semantic-layer-transaction-v1",

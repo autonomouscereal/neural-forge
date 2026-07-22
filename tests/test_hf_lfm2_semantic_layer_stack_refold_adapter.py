@@ -491,6 +491,7 @@ def _persistable_attention_operator_receipt(
     output_proposal_body = {
         "schema": "neural-forge-lfm2-semantic-output-writer-proposal-v1",
         "output_weight_sha256": bundle["out_proj.weight"],
+        "changed": False,
         "value_weight_fixed": True,
         "fit_improved_is_diagnostic_only": True,
         "numeric_metric_used_for_step_size_selection": False,
@@ -511,40 +512,102 @@ def _persistable_attention_operator_receipt(
         "gate_sha256": canonical_sha256(output_writer_body),
     }
     joint_body = {
-        "diagnostic_only": True,
-        "publication_allowed": False,
+        "value_weight_sha256": bundle["v_proj.weight"],
+        "output_weight_sha256": bundle["out_proj.weight"],
+        "changed": False,
+        "diagnostic_only": False,
+        "publication_allowed": True,
         "numeric_metric_used_for_publication": False,
     }
     joint = {
         **joint_body,
         "proposal_sha256": canonical_sha256(joint_body),
     }
-    partition_report = {
-        "diagnostic_only": True,
-        "used_for_publication": False,
+    metrics = {
+        "endpoint_relative_rmse": 1.0,
+        "endpoint_rmse": 1.0,
+        "endpoint_maximum_absolute_error": 1.0,
+        "endpoint_cosine_similarity_mean": 0.0,
+        "endpoint_cosine_similarity_worst": 0.0,
     }
-    candidate_reports = {
-        candidate: {
-            "structurally_publishable": candidate != "joint_value_output",
-            "partitions": {
-                partition: dict(partition_report)
-                for partition in ("fit", "fit_check", "selection", "validation")
-            },
+    proposal_sha256 = {
+        "incumbent": canonical_sha256(["attention-incumbent", layer_index]),
+        "fixed_v_output_only": output_proposal["proposal_sha256"],
+        "joint_value_output": joint["proposal_sha256"],
+    }
+    candidate_reports = {}
+    for candidate in ("incumbent", "fixed_v_output_only", "joint_value_output"):
+        partitions = {}
+        for partition in ("fit", "fit_check", "selection", "validation"):
+            partitions[partition] = {
+                "candidate": dict(metrics),
+                "diagnostic_only": partition != "fit",
+                "used_for_candidate_ordering": False,
+                "used_for_structural_eligibility": False,
+                "used_for_publication_threshold": False,
+                "used_for_publication": False,
+            }
+        candidate_reports[candidate] = {
+            "proposal_changed": False,
+            "proposal_sha256": proposal_sha256[candidate],
+            "finite": True,
+            "dense_strided": True,
+            "bfloat16": True,
+            "exact_shape": True,
+            "effectful": False,
+            "eligible": False,
+            "eligibility_basis": (
+                "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
+            ),
+            "numeric_metric_used_for_eligibility": False,
+            "eligible_after_fit_structural_check": False,
+            "eligible_after_fit_fit_check_selection": False,
+            "structurally_publishable": False,
+            "partitions": partitions,
         }
-        for candidate in ("incumbent", "fixed_v_output_only", "joint_value_output")
-    }
     value_output_gate_body = {
         "schema": "neural-forge-lfm2-semantic-vo-candidate-gate-v1",
         "candidate_reports": candidate_reports,
         "selected_candidate": "incumbent",
         "published_candidate": "incumbent",
+        "structurally_eligible_candidate_count": 0,
+        "candidate_eligibility_basis": (
+            "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
+        ),
+        "structural_safety_is_only_candidate_veto": True,
+        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_ordering_metrics": [
+            "endpoint_relative_rmse",
+            "endpoint_rmse",
+            "endpoint_maximum_absolute_error",
+            "negative_endpoint_cosine_similarity_mean",
+            "negative_endpoint_cosine_similarity_worst",
+        ],
+        "exact_fit_tie_breaker": "proposal_sha256",
+        "fit_metrics_used_for_structural_eligibility": False,
+        "fit_metric_threshold_used_for_candidate_selection": False,
+        "incumbent_noop_fallback_used": True,
+        "incumbent_noop_fallback_reason": (
+            "all-analytic-proposals-structurally-invalid-or-identical"
+        ),
         "selected_candidate_frozen_before_validation": True,
+        "selected_candidate_frozen_before_heldout_diagnostics": True,
+        "frozen_candidate_sha256": canonical_sha256(
+            {
+                "candidate_name": "incumbent",
+                "value_weight_sha256": bundle["v_proj.weight"],
+                "output_weight_sha256": bundle["out_proj.weight"],
+                "proposal_sha256": proposal_sha256["incumbent"],
+            }
+        ),
         "validation_triggered_refit_or_reselection": False,
         "validation": {
             "diagnostic_only": True,
             "used_for_publication": False,
         },
         "selected_correction_rejected_on_validation": False,
+        "validation_publication_veto_applied": False,
+        "rollback_authorized": False,
         "alternate_candidate_selected_after_validation": False,
         "published_value_weight_sha256": bundle["v_proj.weight"],
         "published_output_weight_sha256": bundle["out_proj.weight"],
@@ -552,7 +615,7 @@ def _persistable_attention_operator_receipt(
         "heldout_metrics_are_diagnostic_only": True,
         "numeric_metric_used_for_candidate_selection": False,
         "numeric_metric_used_for_publication_or_rollback": False,
-        "joint_value_output_publication_allowed": False,
+        "joint_value_output_publication_allowed": True,
         "fixed_value_weight_preserved": True,
         "operation_audit": {
             **dict(stack._ZERO_OPERATIONS),
@@ -568,6 +631,8 @@ def _persistable_attention_operator_receipt(
     )
     analytic = {
         "schema": "neural-forge-lfm2-semantic-attention-refold-v1",
+        "cache_key": "a" * 64,
+        "bridge_artifact_sha256": "b" * 64,
         "frozen_attention_six_tensor_bundle": bundle,
         "frozen_attention_six_tensor_bundle_roles": list(roles),
         "frozen_attention_six_tensor_bundle_sha256": canonical_sha256(bundle),
@@ -591,13 +656,19 @@ def _persistable_attention_operator_receipt(
         "value_output_candidate_gate": value_output_gate,
         "heldout_metrics_are_diagnostic_only": True,
         "numeric_metric_used_for_publication_or_rollback": False,
-        "joint_value_output_candidate_diagnostic_only": True,
-        "joint_value_output_publication_allowed": False,
+        "joint_value_output_candidate_diagnostic_only": False,
+        "joint_value_output_publication_allowed": True,
         "joint_value_output_candidate_published": False,
         "complete_qkvo_bundle_installed_transactionally": installed,
         "complete_qkvo_bundle_transaction_verified": True,
         "authenticated_incumbent_qkvo_retained_without_installation": not installed,
         "projection_parameter_copy_calls": len(changed),
+        "analytically_refit_projection_roles": (["q_proj"] if installed else []),
+        "fixed_inherited_projection_roles": (
+            ["k_proj", "v_proj", "out_proj"]
+            if installed
+            else ["q_proj", "k_proj", "v_proj", "out_proj"]
+        ),
         "fresh_output_writer_refit_performed": False,
         "all_semantically_exact_endpoint_rows_used_for_attention_fit": True,
         "terminal_endpoint_only_supervision": False,
@@ -619,7 +690,7 @@ def _persistable_attention_operator_receipt(
         "status": (
             "installed-frozen-semantic-attention-candidate"
             if installed
-            else "heldout-selected-incumbent-noop"
+            else stack.LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS
         ),
         "layer_index": layer_index,
         "installed": installed,
@@ -638,7 +709,29 @@ def _persistable_attention_operator_receipt(
         "parameter_storage_preserved": True,
         "gradient_state_preserved": True,
         "exact_noop_state_proven": not installed,
+        "selected_candidate": (
+            "frozen-semantic-attention-candidate" if installed else "incumbent-noop"
+        ),
+        "selected_candidate_state_identical_to_incumbent": not installed,
+        "incumbent_noop_fallback_used": not installed,
+        "incumbent_noop_fallback_reason": (
+            None
+            if installed
+            else "all-analytic-proposals-structurally-invalid-or-identical"
+        ),
+        "structurally_eligible_candidate_count": int(installed),
+        "candidate_eligibility_basis": (
+            "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
+        ),
+        "structural_safety_is_only_candidate_veto": True,
+        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_structural_eligibility": False,
+        "incumbent_selected_by_heldout_gates": False,
         "heldout_metrics_are_diagnostic_only": True,
+        "validation_publication_veto_applied": False,
+        "rollback_authorized": False,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "validation_rejected_candidate": None,
         "numeric_metric_used_for_publication_or_rollback": False,
         "candidate_frozen_before_validation": True,
         "validation_triggered_refit": False,
@@ -1132,7 +1225,8 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
         )
         analytic = layer["attention_operator_decision_receipt"]["analytic_refold"]
         assert len(analytic["frozen_attention_six_tensor_bundle"]) == 6
-        assert analytic["joint_value_output_publication_allowed"] is False
+        assert analytic["joint_value_output_publication_allowed"] is True
+        assert analytic["joint_value_output_candidate_diagnostic_only"] is False
     torch.testing.assert_close(target.final_w2, before_w2, rtol=0, atol=0)
     for layer_index in range(14):
         kind = (
@@ -2771,6 +2865,95 @@ def test_mlp_install_rejects_legacy_noop_reasons(
             monkeypatch,
             status=status,
             final_layer=final_layer,
+        )
+
+
+def test_attention_install_accepts_only_structural_no_candidate_noop_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = _FourteenLayerReceiptStateTarget()
+    state = _state_identity(target)
+    monkeypatch.setattr(
+        stack,
+        "fingerprint_lfm2_parent",
+        lambda model: SimpleNamespace(identity_sha256=_state_identity(model)),
+    )
+    layer_index = 2
+    evidence_sha256 = canonical_sha256(["attention", layer_index])
+    evidence = (
+        SimpleNamespace(
+            evidence_sha256=evidence_sha256,
+            actual_child_replay=SimpleNamespace(
+                captured_child_model_state_sha256=state
+            ),
+        ),
+    )
+    parameter_count = stack._parameter_count(target)
+    receipt = _persistable_attention_operator_receipt(
+        layer_index=layer_index,
+        before=state,
+        after=state,
+        installed=False,
+        parameter_count=parameter_count,
+    )
+
+    accepted = stack._install_attention_operator(
+        target_model=target,
+        layer_index=layer_index,
+        evidence=evidence,
+        cache_key="a" * 64,
+        bridge_artifact_sha256="b" * 64,
+        installer=lambda **_kwargs: receipt,
+        parameter_count=parameter_count,
+    )
+
+    assert accepted["status"] == stack.LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS
+    assert accepted["incumbent_noop_fallback_used"] is True
+    assert accepted["structurally_eligible_candidate_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "status",
+    (
+        "heldout-selected-incumbent-noop",
+        "deterministic-fit-correction-rounded-to-incumbent-noop",
+    ),
+)
+def test_attention_install_rejects_legacy_metric_noop_reasons(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    target = _FourteenLayerReceiptStateTarget()
+    state = _state_identity(target)
+    monkeypatch.setattr(
+        stack,
+        "fingerprint_lfm2_parent",
+        lambda model: SimpleNamespace(identity_sha256=_state_identity(model)),
+    )
+    layer_index = 2
+    evidence = (
+        SimpleNamespace(
+            evidence_sha256=canonical_sha256(["attention", layer_index]),
+            actual_child_replay=SimpleNamespace(
+                captured_child_model_state_sha256=state
+            ),
+        ),
+    )
+    body = {"status": status}
+    receipt = {**body, "result_sha256": canonical_sha256(body)}
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="obsolete metric-based incumbent no-op",
+    ):
+        stack._install_attention_operator(
+            target_model=target,
+            layer_index=layer_index,
+            evidence=evidence,
+            cache_key="a" * 64,
+            bridge_artifact_sha256="b" * 64,
+            installer=lambda **_kwargs: receipt,
+            parameter_count=stack._parameter_count(target),
         )
 
 

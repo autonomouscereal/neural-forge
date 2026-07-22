@@ -154,6 +154,10 @@ LFM2_SEMANTIC_ATTENTION_STAGE_SCHEMA = "neural-forge-lfm2-semantic-attention-sta
 LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA = (
     "neural-forge-lfm2-semantic-attention-installation-v1"
 )
+_ATTENTION_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
+_ATTENTION_CANDIDATE_ELIGIBILITY_BASIS = (
+    "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
+)
 LFM2_SEMANTIC_POSTFOLD_CHECKPOINT_SCHEMA = (
     "neural-forge-lfm2-semantic-postfold-checkpoint-v1"
 )
@@ -3905,6 +3909,7 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
     candidate_reports = value_output_gate.get("candidate_reports")
     validation_gate = value_output_gate.get("validation")
     gate_schema = value_output_gate.get("schema")
+    published_candidate = value_output_gate.get("published_candidate")
     if not isinstance(candidate_reports, Mapping) or not isinstance(
         validation_gate,
         Mapping,
@@ -3913,9 +3918,8 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
             f"Attention layer {layer_index} omitted its V/O diagnostic partitions."
         )
     normal_gate = gate_schema == "neural-forge-lfm2-semantic-vo-candidate-gate-v1"
-    cold_gate = gate_schema == "neural-forge-lfm2-semantic-vo-cold-start-diagnostic-v1"
     gate_invalid = bool(
-        (not normal_gate and not cold_gate)
+        not normal_gate
         or value_output_gate.get("published_value_weight_sha256")
         != bundle.get("v_proj.weight")
         or value_output_gate.get("published_output_weight_sha256")
@@ -3923,7 +3927,7 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
         or value_output_gate.get("numeric_metric_used_for_publication_or_rollback")
         is not False
         or value_output_gate.get("fit_only_analytic_solves") is not True
-        or value_output_gate.get("fixed_value_weight_preserved") is not True
+        or type(value_output_gate.get("fixed_value_weight_preserved")) is not bool
         or value_output_gate.get("selected_candidate_frozen_before_validation")
         is not True
         or value_output_gate.get("validation_triggered_refit_or_reselection")
@@ -3940,91 +3944,246 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
             "fixed_v_output_only",
             "joint_value_output",
         }
-        published_candidate = value_output_gate.get("published_candidate")
+        expected_effect = {
+            "incumbent": False,
+            "fixed_v_output_only": output_proposal.get("changed"),
+            "joint_value_output": joint.get("changed"),
+        }
+        eligible_count = sum(
+            int(
+                isinstance(candidate_reports.get(name), Mapping)
+                and candidate_reports[name].get("eligible") is True
+            )
+            for name in ("fixed_v_output_only", "joint_value_output")
+        )
+        eligible_names = [
+            name
+            for name in ("fixed_v_output_only", "joint_value_output")
+            if isinstance(candidate_reports.get(name), Mapping)
+            and candidate_reports[name].get("eligible") is True
+        ]
+
+        def reported_fit_ordering_key(name: str) -> tuple[Any, ...] | None:
+            report = candidate_reports.get(name)
+            partitions = (
+                report.get("partitions") if isinstance(report, Mapping) else None
+            )
+            fit = partitions.get("fit") if isinstance(partitions, Mapping) else None
+            metrics = fit.get("candidate") if isinstance(fit, Mapping) else None
+            proposal_sha256 = (
+                report.get("proposal_sha256") if isinstance(report, Mapping) else None
+            )
+            fields = (
+                "endpoint_relative_rmse",
+                "endpoint_rmse",
+                "endpoint_maximum_absolute_error",
+                "endpoint_cosine_similarity_mean",
+                "endpoint_cosine_similarity_worst",
+            )
+            if (
+                not isinstance(metrics, Mapping)
+                or not isinstance(proposal_sha256, str)
+                or len(proposal_sha256) != 64
+                or any(
+                    isinstance(metrics.get(field), bool)
+                    or not isinstance(metrics.get(field), (int, float))
+                    or not math.isfinite(float(metrics[field]))
+                    for field in fields
+                )
+            ):
+                return None
+            return (
+                float(metrics[fields[0]]),
+                float(metrics[fields[1]]),
+                float(metrics[fields[2]]),
+                -float(metrics[fields[3]]),
+                -float(metrics[fields[4]]),
+                proposal_sha256,
+            )
+
+        fit_ordering = {
+            name: reported_fit_ordering_key(name) for name in eligible_names
+        }
+        fit_ordering_invalid = any(value is None for value in fit_ordering.values())
+        fit_selected_candidate = (
+            None
+            if not eligible_names or fit_ordering_invalid
+            else min(eligible_names, key=lambda name: fit_ordering[name])
+        )
+        selected_report = candidate_reports.get(published_candidate)
+        expected_frozen_candidate_sha256 = (
+            canonical_sha256(
+                {
+                    "candidate_name": published_candidate,
+                    "value_weight_sha256": bundle.get("v_proj.weight"),
+                    "output_weight_sha256": bundle.get("out_proj.weight"),
+                    "proposal_sha256": selected_report.get("proposal_sha256"),
+                }
+            )
+            if isinstance(selected_report, Mapping)
+            else None
+        )
+
+        def invalid_candidate_report(name: str, report: Any) -> bool:
+            if not isinstance(report, Mapping) or not isinstance(
+                report.get("partitions"),
+                Mapping,
+            ):
+                return True
+            partitions = report["partitions"]
+            structural = all(
+                report.get(field) is True
+                for field in ("finite", "dense_strided", "bfloat16", "exact_shape")
+            )
+            effectful = expected_effect[name]
+            eligible = bool(structural and effectful)
+            fit = partitions.get("fit")
+            heldout = [
+                partitions.get(name)
+                for name in ("fit_check", "selection", "validation")
+            ]
+            return bool(
+                set(partitions) != {"fit", "fit_check", "selection", "validation"}
+                or type(effectful) is not bool
+                or report.get("effectful") is not effectful
+                or report.get("proposal_changed") is not effectful
+                or report.get("eligible") is not eligible
+                or report.get("eligible_after_fit_structural_check") is not eligible
+                or report.get("eligible_after_fit_fit_check_selection") is not eligible
+                or report.get("structurally_publishable") is not eligible
+                or report.get("eligibility_basis")
+                != _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS
+                or report.get("numeric_metric_used_for_eligibility") is not False
+                or not isinstance(fit, Mapping)
+                or fit.get("diagnostic_only") is not False
+                or fit.get("used_for_candidate_ordering") is not eligible
+                or fit.get("used_for_structural_eligibility") is not False
+                or fit.get("used_for_publication_threshold") is not False
+                or fit.get("used_for_publication") is not False
+                or any(
+                    not isinstance(partition, Mapping)
+                    or partition.get("diagnostic_only") is not True
+                    or partition.get("used_for_candidate_ordering") is not False
+                    or partition.get("used_for_structural_eligibility") is not False
+                    or partition.get("used_for_publication_threshold") is not False
+                    or partition.get("used_for_publication") is not False
+                    for partition in heldout
+                )
+            )
+
         gate_invalid = bool(
             gate_invalid
             or set(candidate_reports) != expected_candidates
-            or published_candidate not in {"incumbent", "fixed_v_output_only"}
+            or published_candidate not in expected_candidates
             or value_output_gate.get("selected_candidate") != published_candidate
-            or value_output_gate.get("numeric_metric_used_for_candidate_selection")
+            or value_output_gate.get("frozen_candidate_sha256")
+            != expected_frozen_candidate_sha256
+            or not isinstance(candidate_reports.get("fixed_v_output_only"), Mapping)
+            or candidate_reports["fixed_v_output_only"].get("proposal_sha256")
+            != output_proposal.get("proposal_sha256")
+            or not isinstance(candidate_reports.get("joint_value_output"), Mapping)
+            or candidate_reports["joint_value_output"].get("proposal_sha256")
+            != joint.get("proposal_sha256")
+            or value_output_gate.get("structurally_eligible_candidate_count")
+            != eligible_count
+            or value_output_gate.get("candidate_eligibility_basis")
+            != _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS
+            or value_output_gate.get("structural_safety_is_only_candidate_veto")
+            is not True
+            or value_output_gate.get("fit_metrics_used_for_candidate_ordering")
+            is not True
+            or value_output_gate.get("fit_ordering_metrics")
+            != [
+                "endpoint_relative_rmse",
+                "endpoint_rmse",
+                "endpoint_maximum_absolute_error",
+                "negative_endpoint_cosine_similarity_mean",
+                "negative_endpoint_cosine_similarity_worst",
+            ]
+            or value_output_gate.get("exact_fit_tie_breaker") != "proposal_sha256"
+            or value_output_gate.get("fit_metrics_used_for_structural_eligibility")
             is not False
+            or value_output_gate.get(
+                "fit_metric_threshold_used_for_candidate_selection"
+            )
+            is not False
+            or value_output_gate.get("numeric_metric_used_for_candidate_selection")
+            is not (eligible_count > 1)
+            or value_output_gate.get("incumbent_noop_fallback_used")
+            is not (eligible_count == 0)
+            or value_output_gate.get("incumbent_noop_fallback_reason")
+            != (
+                "all-analytic-proposals-structurally-invalid-or-identical"
+                if eligible_count == 0
+                else None
+            )
+            or value_output_gate.get(
+                "selected_candidate_frozen_before_heldout_diagnostics"
+            )
+            is not True
+            or (published_candidate == "incumbent") is not (eligible_count == 0)
+            or fit_ordering_invalid
+            or (eligible_count > 0 and published_candidate != fit_selected_candidate)
+            or (
+                published_candidate != "incumbent"
+                and candidate_reports[published_candidate].get("eligible") is not True
+            )
             or value_output_gate.get("heldout_metrics_are_diagnostic_only") is not True
             or value_output_gate.get("joint_value_output_publication_allowed")
-            is not False
+            is not True
             or value_output_gate.get("selected_correction_rejected_on_validation")
             is not False
+            or value_output_gate.get("validation_publication_veto_applied") is not False
+            or value_output_gate.get("rollback_authorized") is not False
             or validation_gate.get("used_for_publication") is not False
             or output_writer.get("accepted")
             is not (published_candidate == "fixed_v_output_only")
             or any(
-                not isinstance(report, Mapping)
-                or not isinstance(report.get("partitions"), Mapping)
-                or set(report["partitions"])
-                != {"fit", "fit_check", "selection", "validation"}
-                or any(
-                    not isinstance(partition, Mapping)
-                    or partition.get("diagnostic_only") is not True
-                    or partition.get("used_for_publication") is not False
-                    for partition in report["partitions"].values()
-                )
-                for report in candidate_reports.values()
+                invalid_candidate_report(name, candidate_reports.get(name))
+                for name in expected_candidates
             )
-            or not isinstance(candidate_reports.get("joint_value_output"), Mapping)
-            or candidate_reports["joint_value_output"].get("structurally_publishable")
-            is not False
-        )
-    elif cold_gate:
-        expected_candidates = {
-            "fixed_v_prior_preserving_cold_start",
-            "fixed_v_output_only",
-            "joint_value_output",
-        }
-        gate_invalid = bool(
-            gate_invalid
-            or set(candidate_reports) != expected_candidates
-            or value_output_gate.get("selected_candidate")
-            != "fixed_v_prior_preserving_cold_start"
-            or value_output_gate.get("published_candidate")
-            != "fixed_v_prior_preserving_cold_start"
-            or value_output_gate.get(
-                "heldout_metrics_are_diagnostics_not_publication_gates"
-            )
-            is not True
-            or value_output_gate.get("joint_svd_refactor_used_for_publication")
-            is not False
-            or value_output_gate.get("zero_role_incumbent_candidate_eligible")
-            is not False
-            or any(
-                not isinstance(report, Mapping)
-                or not isinstance(report.get("partitions"), Mapping)
-                or set(report["partitions"])
-                != {"fit", "fit_check", "selection", "validation"}
-                or any(
-                    not isinstance(report["partitions"].get(partition), Mapping)
-                    or report["partitions"][partition].get("diagnostic_only")
-                    is not True
-                    or report["partitions"][partition].get(
-                        "used_for_plant_or_selection"
-                    )
-                    is not False
-                    for partition in ("fit_check", "selection", "validation")
-                )
-                for report in candidate_reports.values()
-            )
-            or not isinstance(candidate_reports.get("joint_value_output"), Mapping)
-            or candidate_reports["joint_value_output"].get("diagnostic_only")
-            is not True
-            or candidate_reports["joint_value_output"].get("publication_allowed")
-            is not False
         )
     if gate_invalid:
         raise Lfm2SemanticPostfoldError(
             f"Attention layer {layer_index} V/O gate permits behavioral publication."
         )
+    structurally_eligible_count = receipt.get("structurally_eligible_candidate_count")
+    expected_status = (
+        "installed-frozen-semantic-attention-candidate"
+        if installed
+        else _ATTENTION_STRUCTURAL_NOOP_STATUS
+    )
+    expected_selected_candidate = (
+        "frozen-semantic-attention-candidate" if installed else "incumbent-noop"
+    )
+    joint_published = published_candidate == "joint_value_output"
     invalid = bool(
         receipt.get("schema") != LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA
         or receipt.get("layer_index") != layer_index
         or type(installed) is not bool
+        or receipt.get("status") != expected_status
+        or type(structurally_eligible_count) is not int
+        or structurally_eligible_count < 0
+        or installed is not (structurally_eligible_count > 0)
+        or receipt.get("selected_candidate") != expected_selected_candidate
+        or receipt.get("selected_candidate_state_identical_to_incumbent") is installed
+        or receipt.get("incumbent_noop_fallback_used") is installed
+        or receipt.get("incumbent_noop_fallback_reason")
+        != (
+            None
+            if installed
+            else "all-analytic-proposals-structurally-invalid-or-identical"
+        )
+        or receipt.get("candidate_eligibility_basis")
+        != _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS
+        or receipt.get("structural_safety_is_only_candidate_veto") is not True
+        or receipt.get("fit_metrics_used_for_candidate_ordering") is not True
+        or receipt.get("fit_metrics_used_for_structural_eligibility") is not False
+        or receipt.get("incumbent_selected_by_heldout_gates") is not False
+        or receipt.get("validation_publication_veto_applied") is not False
+        or receipt.get("rollback_authorized") is not False
+        or receipt.get("numeric_metrics_have_final_intelligence_authority") is not False
+        or receipt.get("validation_rejected_candidate") is not None
         or not isinstance(before_sha256, str)
         or not isinstance(after_sha256, str)
         or _digest(before_sha256, "attention model state before") != before_sha256
@@ -4084,9 +4243,9 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
         or not analytic.get("output_writer_source")
         or analytic.get("heldout_metrics_are_diagnostic_only") is not True
         or analytic.get("numeric_metric_used_for_publication_or_rollback") is not False
-        or analytic.get("joint_value_output_candidate_diagnostic_only") is not True
-        or analytic.get("joint_value_output_publication_allowed") is not False
-        or analytic.get("joint_value_output_candidate_published") is not False
+        or analytic.get("joint_value_output_candidate_diagnostic_only") is not False
+        or analytic.get("joint_value_output_publication_allowed") is not True
+        or analytic.get("joint_value_output_candidate_published") is not joint_published
         or analytic.get("complete_qkvo_bundle_installed_transactionally")
         is not installed
         or analytic.get("complete_qkvo_bundle_transaction_verified") is not True
@@ -4113,9 +4272,20 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
         or output_proposal.get("numeric_metric_used_for_step_size_selection")
         is not False
         or output_proposal.get("numeric_metric_used_for_publication") is not False
-        or output_proposal.get("output_weight_sha256") != bundle.get("out_proj.weight")
-        or joint.get("diagnostic_only") is not True
-        or joint.get("publication_allowed") is not False
+        or (
+            published_candidate == "fixed_v_output_only"
+            and output_proposal.get("output_weight_sha256")
+            != bundle.get("out_proj.weight")
+        )
+        or (
+            joint_published
+            and (
+                joint.get("value_weight_sha256") != bundle.get("v_proj.weight")
+                or joint.get("output_weight_sha256") != bundle.get("out_proj.weight")
+            )
+        )
+        or joint.get("diagnostic_only") is not False
+        or joint.get("publication_allowed") is not True
         or joint.get("numeric_metric_used_for_publication") is not False
         or type(analytic.get("fresh_output_writer_refit_performed")) is not bool
         or output_writer.get("accepted")

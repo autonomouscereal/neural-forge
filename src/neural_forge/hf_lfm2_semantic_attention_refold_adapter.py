@@ -8,8 +8,9 @@ residual factorization.  The latter solves in endpoint-row space and projects
 each GQA group's composite maps back through its exact shared-V,
 head-specific-O rank.  FIT, FIT-CHECK, SELECTION, and VALIDATION remain
 disjoint.  Candidates are frozen before VALIDATION and dense Q/K/V/O is copied
-into the existing child topology only after every applicable held-out gate
-passes.
+into the existing child topology after FIT-only structural selection.  Every
+held-out partition is evaluated after the selected tensors are frozen and is
+diagnostic only; it can neither reject the candidate nor restore an incumbent.
 
 No model is executed here.  There are no gradients, optimizers, training
 steps, pruning operations, quantization operations, or numerical parent/child
@@ -56,8 +57,14 @@ LFM2_SEMANTIC_ATTENTION_REFOLD_SCHEMA = "neural-forge-lfm2-semantic-attention-re
 LFM2_SEMANTIC_ATTENTION_REPLAY_ENDPOINT_SCHEMA = (
     "neural-forge-lfm2-semantic-attention-replay-endpoint-v1"
 )
+LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS = (
+    "structurally-identical-or-invalid-incumbent-noop"
+)
 _INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-attention-installation-v1"
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
+_VO_CANDIDATE_ELIGIBILITY_BASIS = (
+    "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
+)
 _INSTALLATION_ZERO_OPERATIONS = MappingProxyType(
     {
         "parent_model_objects_constructed": 0,
@@ -200,6 +207,7 @@ def _installation_receipt_body(
     parameter_element_count: int,
     target_topology_sha256_before: str,
     target_topology_sha256_after: str,
+    structurally_eligible_candidate_count: int,
 ) -> dict[str, Any]:
     evidence = tuple(
         _digest(value, "transport evidence SHA-256") for value in evidence_sha256
@@ -224,7 +232,11 @@ def _installation_receipt_body(
         or isinstance(parameter_element_count, bool)
         or not isinstance(parameter_element_count, int)
         or parameter_element_count <= 0
+        or isinstance(structurally_eligible_candidate_count, bool)
+        or not isinstance(structurally_eligible_candidate_count, int)
+        or structurally_eligible_candidate_count < 0
         or bool(changed) != (before != after)
+        or bool(changed) != (structurally_eligible_candidate_count > 0)
         or topology_before != topology_after
     ):
         raise Lfm2SemanticAttentionRefoldError(
@@ -236,7 +248,7 @@ def _installation_receipt_body(
         "status": (
             "installed-frozen-semantic-attention-candidate"
             if installed
-            else "deterministic-fit-correction-rounded-to-incumbent-noop"
+            else LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS
         ),
         "layer_index": layer_index,
         "installed": installed,
@@ -255,11 +267,32 @@ def _installation_receipt_body(
         "parameter_storage_preserved": True,
         "gradient_state_preserved": True,
         "exact_noop_state_proven": not installed,
+        "selected_candidate": (
+            "frozen-semantic-attention-candidate" if installed else "incumbent-noop"
+        ),
+        "selected_candidate_state_identical_to_incumbent": not installed,
+        "incumbent_noop_fallback_used": not installed,
+        "incumbent_noop_fallback_reason": (
+            None
+            if installed
+            else "all-analytic-proposals-structurally-invalid-or-identical"
+        ),
+        "structurally_eligible_candidate_count": (
+            structurally_eligible_candidate_count
+        ),
+        "candidate_eligibility_basis": _VO_CANDIDATE_ELIGIBILITY_BASIS,
+        "structural_safety_is_only_candidate_veto": True,
+        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_structural_eligibility": False,
         "incumbent_selected_by_heldout_gates": False,
         "fit_check_nonregression_passed": None,
         "selection_nonregression_passed": None,
         "validation_nonregression_passed": None,
         "heldout_metrics_are_diagnostic_only": True,
+        "validation_publication_veto_applied": False,
+        "rollback_authorized": False,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "validation_rejected_candidate": None,
         "numeric_metric_used_for_publication_or_rollback": False,
         "candidate_frozen_before_validation": True,
         "validation_triggered_refit": False,
@@ -3064,11 +3097,11 @@ class _JointVoProposal:
             ),
             "shared_value_per_key_value_group": True,
             "head_specific_output_blocks": True,
-            "factorized_candidate_published_in_proposal": False,
+            "factorized_candidate_published_in_proposal": True,
             "factorization_attempt_rejected_after_bfloat16_fit_replay": False,
-            "diagnostic_only": True,
-            "publication_allowed": False,
-            "publication_lane": "fixed_v_prior_preserving_output_writer",
+            "diagnostic_only": False,
+            "publication_allowed": True,
+            "publication_lane": "structural_fit_ordered_value_output_candidates",
             "fit_improved_is_diagnostic_only": True,
             "numeric_metric_used_for_publication": False,
             "fit_only": True,
@@ -3954,6 +3987,74 @@ def _gate_output_writer(
     return published, _seal_writer_gate(body)
 
 
+def _vo_fit_ordering_key(
+    metrics: _WriterMetrics,
+    *,
+    proposal_sha256: str,
+) -> tuple[float, float, float, float, float, str]:
+    """Order structurally eligible proposals with FIT values and stable ties."""
+
+    return (
+        metrics.endpoint_relative_rmse,
+        metrics.endpoint_rmse,
+        metrics.endpoint_maximum_absolute_error,
+        -metrics.endpoint_cosine_similarity_mean,
+        -metrics.endpoint_cosine_similarity_worst,
+        proposal_sha256,
+    )
+
+
+def _vo_structural_eligibility(
+    *,
+    value_weight: Any,
+    output_weight: Any,
+    incumbent_value_weight: Any,
+    incumbent_output_weight: Any,
+) -> Mapping[str, Any]:
+    """Classify a V/O proposal without consulting any numeric quality metric."""
+
+    torch = _torch()
+    tensors = (value_weight, output_weight)
+    tensor_objects = all(isinstance(value, torch.Tensor) for value in tensors)
+    dense = bool(
+        tensor_objects and all(value.layout == torch.strided for value in tensors)
+    )
+    bfloat16 = bool(
+        tensor_objects and all(value.dtype == torch.bfloat16 for value in tensors)
+    )
+    exact_shape = bool(
+        tensor_objects
+        and tuple(value_weight.shape) == tuple(incumbent_value_weight.shape)
+        and tuple(output_weight.shape) == tuple(incumbent_output_weight.shape)
+    )
+    finite = bool(
+        tensor_objects
+        and dense
+        and all(bool(torch.isfinite(value).all().item()) for value in tensors)
+    )
+    effectful = bool(
+        tensor_objects
+        and dense
+        and not (
+            torch.equal(value_weight, incumbent_value_weight)
+            and torch.equal(output_weight, incumbent_output_weight)
+        )
+    )
+    eligible = bool(finite and dense and bfloat16 and exact_shape and effectful)
+    return MappingProxyType(
+        {
+            "finite": finite,
+            "dense_strided": dense,
+            "bfloat16": bfloat16,
+            "exact_shape": exact_shape,
+            "effectful": effectful,
+            "eligible": eligible,
+            "eligibility_basis": _VO_CANDIDATE_ELIGIBILITY_BASIS,
+            "numeric_metric_used_for_eligibility": False,
+        }
+    )
+
+
 def _select_and_validate_vo_candidate(
     *,
     banks: Mapping[str, Sequence[_JointVoCase]],
@@ -3965,9 +4066,10 @@ def _select_and_validate_vo_candidate(
     validation_route_candidate: Lfm2EndpointQkMetrics,
     compute_devices: Sequence[str] = (),
 ) -> tuple[Any, Any, Mapping[str, Any]]:
-    """Publish the structural FIT lane and report held-out metrics diagnostically."""
+    """Freeze a FIT-ordered structural proposal, then diagnose held-out rows."""
 
-    candidates = [
+    torch = _torch()
+    candidate_rows = [
         {
             "name": "incumbent",
             "complexity": 0,
@@ -3993,53 +4095,96 @@ def _select_and_validate_vo_candidate(
             "proposal_sha256": joint_proposal.proposal_sha256,
         },
     ]
-    baseline_metrics = {
-        partition: _joint_vo_metrics(
-            banks[partition],
-            seed.value_weight,
-            seed.output_weight,
-            head_dim=seed.head_dim,
-            compute_devices=compute_devices,
-        )
-        for partition in _PARTITIONS
-    }
+    baseline_fit = _joint_vo_metrics(
+        banks["fit"],
+        seed.value_weight,
+        seed.output_weight,
+        head_dim=seed.head_dim,
+        compute_devices=compute_devices,
+    )
     reports: dict[str, dict[str, Any]] = {}
-    for candidate in candidates:
-        partition_reports = {}
-        for partition in _PARTITIONS:
-            metrics = _joint_vo_metrics(
-                banks[partition],
+    eligible: list[tuple[tuple[Any, ...], Mapping[str, Any]]] = []
+    for candidate in candidate_rows:
+        structural = _vo_structural_eligibility(
+            value_weight=candidate["value"],
+            output_weight=candidate["output"],
+            incumbent_value_weight=seed.value_weight,
+            incumbent_output_weight=seed.output_weight,
+        )
+        if candidate["name"] == "incumbent":
+            structural = MappingProxyType(
+                {
+                    **dict(structural),
+                    "effectful": False,
+                    "eligible": False,
+                    "incumbent_fallback_only": True,
+                }
+            )
+        elif structural["dense_strided"] and structural["effectful"] is not bool(
+            candidate["proposal_changed"]
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                f"{candidate['name']} proposal metadata disagrees with its tensor effect."
+            )
+        fit_metrics = (
+            _joint_vo_metrics(
+                banks["fit"],
                 candidate["value"],
                 candidate["output"],
                 head_dim=seed.head_dim,
                 compute_devices=compute_devices,
             )
-            nonregressing = _writer_nonregressing(
-                metrics,
-                baseline_metrics[partition],
-                tolerance=tolerance,
-            )
-            partition_reports[partition] = {
-                "case_sha256": [case.case_sha256 for case in banks[partition]],
-                "baseline": baseline_metrics[partition].as_dict(),
-                "candidate": metrics.as_dict(),
-                "nonregressing": nonregressing,
-                "diagnostic_only": True,
-                "used_for_publication": False,
-            }
-        structurally_publishable = candidate["name"] == "incumbent" or (
-            candidate["name"] == "fixed_v_output_only" and candidate["proposal_changed"]
+            if structural["finite"]
+            and structural["dense_strided"]
+            and structural["bfloat16"]
+            and structural["exact_shape"]
+            else None
         )
         reports[candidate["name"]] = {
             "complexity": candidate["complexity"],
             "proposal_changed": candidate["proposal_changed"],
             "proposal_sha256": candidate["proposal_sha256"],
-            "eligible_after_fit_fit_check_selection": structurally_publishable,
-            "structurally_publishable": structurally_publishable,
+            **dict(structural),
+            "eligible_after_fit_structural_check": structural["eligible"],
+            "eligible_after_fit_fit_check_selection": structural["eligible"],
+            "structurally_publishable": structural["eligible"],
             "rejection_partition": None,
-            "partitions": partition_reports,
+            "partitions": {
+                "fit": {
+                    "case_sha256": [case.case_sha256 for case in banks["fit"]],
+                    "baseline": baseline_fit.as_dict(),
+                    "candidate": None if fit_metrics is None else fit_metrics.as_dict(),
+                    "nonregressing": (
+                        None
+                        if fit_metrics is None
+                        else _writer_nonregressing(
+                            fit_metrics,
+                            baseline_fit,
+                            tolerance=tolerance,
+                        )
+                    ),
+                    "diagnostic_only": False,
+                    "used_for_candidate_ordering": structural["eligible"],
+                    "used_for_structural_eligibility": False,
+                    "used_for_publication_threshold": False,
+                    "used_for_publication": False,
+                }
+            },
         }
-    selected = candidates[1] if output_proposal.changed else candidates[0]
+        if structural["eligible"]:
+            assert fit_metrics is not None
+            eligible.append(
+                (
+                    _vo_fit_ordering_key(
+                        fit_metrics,
+                        proposal_sha256=str(candidate["proposal_sha256"]),
+                    ),
+                    candidate,
+                )
+            )
+    selected = (
+        min(eligible, key=lambda value: value[0])[1] if eligible else candidate_rows[0]
+    )
     frozen = {
         "value": selected["value"].detach().to(device="cpu").contiguous().clone(),
         "output": selected["output"].detach().to(device="cpu").contiguous().clone(),
@@ -4052,18 +4197,75 @@ def _select_and_validate_vo_candidate(
             "proposal_sha256": selected["proposal_sha256"],
         }
     )
+
+    # FIT-CHECK, SELECTION, and VALIDATION are opened only after the selected
+    # tensors above are frozen.  They populate diagnostics for every analytic
+    # proposal but never refit, reselect, reject, or restore the incumbent.
+    baseline_metrics: dict[str, _WriterMetrics] = {"fit": baseline_fit}
+    for partition in ("fit_check", "selection", "validation"):
+        baseline = _joint_vo_metrics(
+            banks[partition],
+            seed.value_weight,
+            seed.output_weight,
+            head_dim=seed.head_dim,
+            compute_devices=compute_devices,
+        )
+        baseline_metrics[partition] = baseline
+        for candidate in candidate_rows:
+            report = reports[candidate["name"]]
+            structural_valid = bool(
+                report["finite"]
+                and report["dense_strided"]
+                and report["bfloat16"]
+                and report["exact_shape"]
+            )
+            metrics = (
+                _joint_vo_metrics(
+                    banks[partition],
+                    candidate["value"],
+                    candidate["output"],
+                    head_dim=seed.head_dim,
+                    compute_devices=compute_devices,
+                )
+                if structural_valid
+                else None
+            )
+            report["partitions"][partition] = {
+                "case_sha256": [case.case_sha256 for case in banks[partition]],
+                "baseline": baseline.as_dict(),
+                "candidate": None if metrics is None else metrics.as_dict(),
+                "nonregressing": (
+                    None
+                    if metrics is None
+                    else _writer_nonregressing(metrics, baseline, tolerance=tolerance)
+                ),
+                "diagnostic_only": True,
+                "used_for_candidate_ordering": False,
+                "used_for_structural_eligibility": False,
+                "used_for_publication_threshold": False,
+                "used_for_publication": False,
+            }
+        if (
+            canonical_sha256(
+                {
+                    "candidate_name": selected["name"],
+                    "value_weight_sha256": _tensor_sha256(frozen["value"]),
+                    "output_weight_sha256": _tensor_sha256(frozen["output"]),
+                    "proposal_sha256": selected["proposal_sha256"],
+                }
+            )
+            != frozen_sha
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                "Selected V/O candidate changed during held-out diagnostics."
+            )
+
     route_nonregressing = _metrics_nonregressing(
         validation_route_candidate,
         validation_route_baseline,
         tolerance=tolerance,
     )
-    validation_baseline = _joint_vo_metrics(
-        banks["validation"],
-        seed.value_weight,
-        seed.output_weight,
-        head_dim=seed.head_dim,
-        compute_devices=compute_devices,
-    )
+    validation_baseline = baseline_metrics["validation"]
     validation_selected = _joint_vo_metrics(
         banks["validation"],
         frozen["value"],
@@ -4080,27 +4282,43 @@ def _select_and_validate_vo_candidate(
         selected["value"]
     ) or _tensor_sha256(frozen["output"]) != _tensor_sha256(selected["output"]):
         raise Lfm2SemanticAttentionRefoldError(
-            "Selected V/O candidate changed after the pre-VALIDATION freeze."
+            "Selected V/O candidate changed after the pre-heldout freeze."
         )
-    published_name = selected["name"]
-    published_value = frozen["value"]
-    published_output = frozen["output"]
+    published_name = str(selected["name"])
     body = {
         "schema": "neural-forge-lfm2-semantic-vo-candidate-gate-v1",
         "candidate_reports": reports,
-        "strongest_selection_candidate": None,
-        "selected_candidate": selected["name"],
+        "strongest_selection_candidate": (
+            None if published_name == "incumbent" else published_name
+        ),
+        "selected_candidate": published_name,
         "published_candidate": published_name,
         "selection_rule": (
-            "publish-deterministic-fit-only-fixed-v-output-correction-when-"
-            "materialized-otherwise-retain-incumbent"
+            "exclude-incumbent-when-any-finite-dense-bfloat16-exact-shape-"
+            "effectful-proposal-exists-then-order-eligible-proposals-by-fit"
         ),
-        "complexity_order": [
-            "incumbent",
-            "fixed_v_output_only",
-            "joint_value_output",
+        "fit_ordering_metrics": [
+            "endpoint_relative_rmse",
+            "endpoint_rmse",
+            "endpoint_maximum_absolute_error",
+            "negative_endpoint_cosine_similarity_mean",
+            "negative_endpoint_cosine_similarity_worst",
         ],
+        "exact_fit_tie_breaker": "proposal_sha256",
+        "structurally_eligible_candidate_count": len(eligible),
+        "candidate_eligibility_basis": _VO_CANDIDATE_ELIGIBILITY_BASIS,
+        "structural_safety_is_only_candidate_veto": True,
+        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_structural_eligibility": False,
+        "fit_metric_threshold_used_for_candidate_selection": False,
+        "incumbent_noop_fallback_used": not eligible,
+        "incumbent_noop_fallback_reason": (
+            "all-analytic-proposals-structurally-invalid-or-identical"
+            if not eligible
+            else None
+        ),
         "selected_candidate_frozen_before_validation": True,
+        "selected_candidate_frozen_before_heldout_diagnostics": True,
         "frozen_candidate_sha256": frozen_sha,
         "validation_triggered_refit_or_reselection": False,
         "validation": {
@@ -4123,20 +4341,22 @@ def _select_and_validate_vo_candidate(
         },
         "selected_correction_rejected_on_validation": False,
         "alternate_candidate_selected_after_validation": False,
-        "published_value_weight_sha256": _tensor_sha256(published_value),
-        "published_output_weight_sha256": _tensor_sha256(published_output),
+        "validation_publication_veto_applied": False,
+        "rollback_authorized": False,
+        "published_value_weight_sha256": _tensor_sha256(frozen["value"]),
+        "published_output_weight_sha256": _tensor_sha256(frozen["output"]),
         "fit_only_analytic_solves": True,
         "heldout_metrics_are_diagnostic_only": True,
-        "numeric_metric_used_for_candidate_selection": False,
+        "numeric_metric_used_for_candidate_selection": len(eligible) > 1,
         "numeric_metric_used_for_publication_or_rollback": False,
-        "joint_value_output_publication_allowed": False,
-        "fixed_value_weight_preserved": True,
+        "joint_value_output_publication_allowed": True,
+        "fixed_value_weight_preserved": torch.equal(frozen["value"], seed.value_weight),
         "all_semantically_exact_endpoint_rows_used": True,
         "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
     }
     return (
-        published_value,
-        published_output,
+        frozen["value"],
+        frozen["output"],
         MappingProxyType({**body, "gate_sha256": canonical_sha256(body)}),
     )
 
@@ -4391,115 +4611,137 @@ def _compile_complete_attention_cold_start(
             raise Lfm2SemanticAttentionRefoldError(
                 "Complete Q/K/V/O candidate changed while opening heldout diagnostics."
             )
-    partition_diagnostics: dict[str, Any] = {}
+    writer_banks.update(
+        {
+            partition: _writer_cases_from_joint(
+                joint_banks[partition],
+                seed,
+                compute_devices=policy.compute_devices,
+            )
+            for partition in ("fit_check", "selection", "validation")
+        }
+    )
     tolerance = policy.metric_regression_tolerance
-    for partition in _PARTITIONS:
-        baseline = _joint_vo_metrics(
-            joint_banks[partition],
-            seed.value_weight,
-            seed.output_weight,
-            head_dim=seed.head_dim,
-            compute_devices=policy.compute_devices,
+    candidate_value, candidate_output, vo_gate = _select_and_validate_vo_candidate(
+        banks=joint_banks,
+        seed=seed,
+        output_proposal=writer_proposal,
+        joint_proposal=joint_proposal,
+        tolerance=tolerance,
+        validation_route_baseline=baseline_validation,
+        validation_route_candidate=candidate_validation,
+        compute_devices=policy.compute_devices,
+    )
+    published_vo_kind = str(vo_gate["published_candidate"])
+    writer_component_published = published_vo_kind == "fixed_v_output_only"
+    joint_component_published = published_vo_kind == "joint_value_output"
+    expected_value = (
+        joint_proposal.value_weight if joint_component_published else seed.value_weight
+    )
+    expected_output = (
+        joint_proposal.output_weight
+        if joint_component_published
+        else (
+            writer_proposal.output_weight
+            if writer_component_published
+            else seed.output_weight
         )
-        candidate = _joint_vo_metrics(
-            joint_banks[partition],
-            candidate_value,
-            candidate_output,
-            head_dim=seed.head_dim,
-            compute_devices=policy.compute_devices,
+    )
+    if not torch.equal(candidate_value, expected_value) or not torch.equal(
+        candidate_output,
+        expected_output,
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Cold-start V/O selection disagrees with its frozen analytic proposal."
         )
-        nonregressing = _writer_nonregressing(
-            candidate,
-            baseline,
-            tolerance=tolerance,
+    value_coverage_body = dict(
+        _dense_axis_coverage(candidate_value, role="v_proj.weight")
+    )
+    value_coverage = MappingProxyType(
+        {
+            **value_coverage_body,
+            "repaired_element_count": 0,
+            "source_prior_preserved_without_axis_mutation": (
+                not joint_component_published
+            ),
+        }
+    )
+    output_coverage_body = dict(
+        _dense_axis_coverage(candidate_output, role="out_proj.weight")
+    )
+    output_coverage = MappingProxyType(
+        {
+            **output_coverage_body,
+            "repaired_element_count": 0,
+            "source_prior_plus_fit_rowspace_correction_preserved": True,
+        }
+    )
+    published_weights = {
+        "q_proj.weight": frozen_query,
+        "k_proj.weight": frozen_key,
+        "v_proj.weight": candidate_value,
+        "out_proj.weight": candidate_output,
+    }
+    published_coverage = {
+        role: dict(_dense_axis_coverage(weight, role=role))
+        for role, weight in published_weights.items()
+    }
+    if not all(
+        receipt["structurally_nonzero"] is True
+        for receipt in published_coverage.values()
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "FIT-selected attention cold-start lost complete Q/K/V/O axis coverage."
         )
-        partition_diagnostics[partition] = {
-            "case_sha256": [case.case_sha256 for case in joint_banks[partition]],
-            "baseline": baseline.as_dict(),
-            "candidate": candidate.as_dict(),
-            "nonregressing": nonregressing,
-            "diagnostic_only": partition != "fit",
+    for role in zero_roles:
+        if _exact_zero(published_weights[role]) or torch.equal(
+            published_weights[role],
+            entry_weights[role],
+        ):
+            raise Lfm2SemanticAttentionRefoldError(
+                f"Exact-zero attention role {role} remained an incumbent no-op."
+            )
+    frozen_sha = canonical_sha256(
+        {role: _tensor_sha256(weight) for role, weight in published_weights.items()}
+    )
+    if (
+        canonical_sha256(
+            {role: _tensor_sha256(weight) for role, weight in published_weights.items()}
+        )
+        != frozen_sha
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Final cold-start candidate changed after held-out diagnostics."
+        )
+    selected_report = vo_gate["candidate_reports"][published_vo_kind]
+    partition_diagnostics = {
+        partition: {
+            **dict(selected_report["partitions"][partition]),
             "used_for_plant_or_selection": partition == "fit",
             "can_restore_exact_zero_incumbent": False,
         }
-        observed_sha = canonical_sha256(
-            {role: _tensor_sha256(weight) for role, weight in published_weights.items()}
-        )
-        if observed_sha != frozen_sha:
-            raise Lfm2SemanticAttentionRefoldError(
-                "Complete attention cold-start candidate changed during diagnostics."
-            )
-    published_vo_kind = "fixed_v_prior_preserving_cold_start"
-    vo_gate_body = {
-        "schema": "neural-forge-lfm2-semantic-vo-cold-start-diagnostic-v1",
-        "published_candidate": published_vo_kind,
-        "selected_candidate": published_vo_kind,
-        "candidate_reports": {
-            "fixed_v_prior_preserving_cold_start": {
-                "eligible_after_fit_fit_check_selection": True,
-                "rejection_partition": None,
-                "partitions": partition_diagnostics,
-            },
-            "fixed_v_output_only": {
-                "eligible_after_fit_fit_check_selection": True,
-                "rejection_partition": None,
-                "partitions": partition_diagnostics,
-            },
-            "joint_value_output": {
-                "eligible_after_fit_fit_check_selection": False,
-                "rejection_partition": None,
-                "partitions": partition_diagnostics,
-                "diagnostic_only": True,
-                "publication_allowed": False,
-            },
-        },
-        "selected_candidate_frozen_before_validation": True,
-        "frozen_candidate_sha256": frozen_sha,
-        "validation_triggered_refit_or_reselection": False,
-        "validation": {
-            "case_sha256": partition_diagnostics["validation"]["case_sha256"],
-            "endpoint_baseline": partition_diagnostics["validation"]["baseline"],
-            "endpoint_candidate": partition_diagnostics["validation"]["candidate"],
-            "endpoint_nonregressing": partition_diagnostics["validation"][
-                "nonregressing"
-            ],
-            "route_baseline": baseline_validation.as_dict(),
-            "route_candidate": candidate_validation.as_dict(),
-            "route_nonregressing": _metrics_nonregressing(
-                candidate_validation,
-                baseline_validation,
-                tolerance=tolerance,
-            ),
-            "diagnostic_only": True,
-        },
-        "heldout_metrics_are_diagnostics_not_publication_gates": True,
-        "numeric_metric_used_for_publication_or_rollback": False,
-        "fixed_value_weight_preserved": True,
-        "joint_svd_refactor_used_for_publication": False,
-        "zero_role_incumbent_candidate_eligible": False,
-        "alternate_candidate_selected_after_validation": False,
-        "published_value_weight_sha256": _tensor_sha256(candidate_value),
-        "published_output_weight_sha256": _tensor_sha256(candidate_output),
-        "fit_only_analytic_solves": True,
-        "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+        for partition in _PARTITIONS
     }
-    vo_gate = MappingProxyType(
-        {**vo_gate_body, "gate_sha256": canonical_sha256(vo_gate_body)}
-    )
+    output_report = vo_gate["candidate_reports"]["fixed_v_output_only"]
     writer_gate = _seal_writer_gate(
         {
             "status": (
                 "published-as-fit-only-cold-start-component"
                 if writer_component_published
-                else "not-published-as-independent-candidate"
+                else (
+                    "fit-eligible-not-selected"
+                    if writer_proposal.changed
+                    else "structurally-identical-to-incumbent"
+                )
             ),
             "accepted": writer_component_published,
             "proposal": writer_proposal.as_dict(),
             "rejection_partition": None,
-            "fit_check": partition_diagnostics["fit_check"],
-            "selection": partition_diagnostics["selection"],
-            "validation": partition_diagnostics["validation"],
+            "fit_check": output_report["partitions"]["fit_check"],
+            "selection": output_report["partitions"]["selection"],
+            "validation": vo_gate["validation"],
             "candidate_frozen_across_heldout_gates": True,
+            "competed_against_incumbent_and_joint_value_output": True,
             "heldout_metrics_are_diagnostics_not_publication_gates": True,
             "heldout_metrics_are_diagnostic_only": True,
             "numeric_metric_used_for_publication": False,
@@ -4558,7 +4800,7 @@ def _compile_complete_attention_cold_start(
             "writer_gate": writer_gate,
             "published_vo_kind": published_vo_kind,
             "writer_component_published": writer_component_published,
-            "joint_component_published": bool(False),
+            "joint_component_published": joint_component_published,
             "cold_start_report": MappingProxyType(
                 {**body, "cold_start_sha256": canonical_sha256(body)}
             ),
@@ -4848,6 +5090,9 @@ def _publish_complete_attention_cold_start_unprotected(
         parameter_element_count=parameter_count,
         target_topology_sha256_before=topology_before,
         target_topology_sha256_after=topology_after,
+        structurally_eligible_candidate_count=(
+            1 + int(cold["vo_gate"]["structurally_eligible_candidate_count"])
+        ),
     )
     qk_cold = cold["cold_start_report"]["qk_cold_start"]
     joint_proposal = cold["joint_proposal"]
@@ -4890,8 +5135,16 @@ def _publish_complete_attention_cold_start_unprotected(
     output_axis_completion_performed = bool(
         cold["cold_start_report"]["output_axis_coverage"]["repaired_element_count"]
     )
-    joint_candidate_published_exactly = False
-    if writer_component_contributed:
+    joint_candidate_published_exactly = bool(
+        joint_component_contributed
+        and _tensor_sha256(joint_proposal.value_weight)
+        == _tensor_sha256(published_value)
+        and _tensor_sha256(joint_proposal.output_weight)
+        == _tensor_sha256(published_output)
+    )
+    if joint_component_contributed:
+        output_source = "fit_only_joint_value_output_residual_factorization"
+    elif writer_component_contributed:
         output_source = "fit_only_fixed_v_prior_preserving_output_residual_ridge"
     else:
         output_source = "authenticated_parent_derived_output_prior"
@@ -4953,8 +5206,8 @@ def _publish_complete_attention_cold_start_unprotected(
             "heldout_metrics_are_diagnostics_not_publication_gates": True,
             "heldout_metrics_are_diagnostic_only": True,
             "numeric_metric_used_for_publication_or_rollback": False,
-            "joint_value_output_candidate_diagnostic_only": True,
-            "joint_value_output_publication_allowed": False,
+            "joint_value_output_candidate_diagnostic_only": False,
+            "joint_value_output_publication_allowed": True,
             "numeric_parent_child_weight_match_objective": False,
             "dense_existing_qkvo_topology_only": True,
             "analytically_refit_projection_roles": [
@@ -4972,7 +5225,11 @@ def _publish_complete_attention_cold_start_unprotected(
             "qk_compiler_accepted": False,
             "qk_compiler_changed": False,
             "authenticated_qk_seed_fallback_entered_vo_competition": False,
-            "fixed_value_source": ("authenticated_parent_derived_fixed_value_prior"),
+            "fixed_value_source": (
+                "fit_only_joint_value_output_residual_factorization"
+                if joint_component_contributed
+                else "authenticated_parent_derived_fixed_value_prior"
+            ),
             "output_writer_source": output_source,
             "output_writer": dict(cold["writer_gate"]),
             "joint_value_output": joint_proposal.as_dict(),
@@ -4988,8 +5245,10 @@ def _publish_complete_attention_cold_start_unprotected(
             ),
             "joint_value_output_component_contributed": (joint_component_contributed),
             "fresh_joint_value_output_refit_performed": (joint_component_contributed),
-            "fresh_value_refit_performed": False,
-            "source_derived_value_prior_installed": value_changed,
+            "fresh_value_refit_performed": joint_component_contributed,
+            "source_derived_value_prior_installed": bool(
+                value_changed and not joint_component_contributed
+            ),
             "fresh_output_writer_refit_performed": writer_component_contributed,
             "fresh_output_projection_refit_performed": output_changed,
             "output_axis_completion_performed": output_axis_completion_performed,
@@ -5512,23 +5771,26 @@ def compile_install_lfm2_semantic_attention_postfold(
     if published_vo_kind not in {
         "incumbent",
         "fixed_v_output_only",
+        "joint_value_output",
     }:
         raise Lfm2SemanticAttentionRefoldError(
-            "V/O publication must preserve fixed V; joint low-rank V/O "
-            "factorizations are diagnostic-only."
+            "V/O publication selected an unknown structural candidate."
         )
     writer_accepted = published_vo_kind == "fixed_v_output_only"
-    joint_accepted = False
+    joint_accepted = published_vo_kind == "joint_value_output"
     value_changed = not torch.equal(published_value, incumbent_seed.value_weight)
     output_changed = not torch.equal(published_output, incumbent_seed.output_weight)
-    if (
-        (writer_accepted and (value_changed or not output_changed))
-        or (joint_accepted and not (value_changed or output_changed))
-        or (
-            not writer_accepted
-            and not joint_accepted
-            and (value_changed or output_changed)
-        )
+    expected_value = (
+        joint_proposal.value_weight if joint_accepted else seed.value_weight
+    )
+    expected_output = (
+        joint_proposal.output_weight
+        if joint_accepted
+        else (writer_proposal.output_weight if writer_accepted else seed.output_weight)
+    )
+    if not torch.equal(published_value, expected_value) or not torch.equal(
+        published_output,
+        expected_output,
     ):
         raise Lfm2SemanticAttentionRefoldError(
             "V/O candidate gate acceptance disagrees with its published state."
@@ -5539,7 +5801,11 @@ def compile_install_lfm2_semantic_attention_postfold(
             "status": (
                 "published-deterministic-fit-only-correction"
                 if writer_accepted
-                else "deterministic-fit-correction-rounded-to-incumbent"
+                else (
+                    "fit-eligible-not-selected"
+                    if writer_proposal.changed
+                    else "structurally-identical-to-incumbent"
+                )
             ),
             "accepted": writer_accepted,
             "proposal": writer_proposal.as_dict(),
@@ -5548,7 +5814,7 @@ def compile_install_lfm2_semantic_attention_postfold(
             "selection": output_report["partitions"]["selection"],
             "validation": vo_gate["validation"],
             "candidate_frozen_across_heldout_gates": True,
-            "competed_against_incumbent_and_joint_value_output": False,
+            "competed_against_incumbent_and_joint_value_output": True,
             "heldout_metrics_are_diagnostic_only": True,
             "numeric_metric_used_for_publication": False,
         }
@@ -5587,6 +5853,9 @@ def compile_install_lfm2_semantic_attention_postfold(
         state=state,
     )
     topology_after = _topology_sha256(target_model)
+    structurally_eligible_candidate_count = int(query_changed or key_changed) + int(
+        vo_gate["structurally_eligible_candidate_count"]
+    )
     base = _installation_receipt_body(
         layer_index=layer_index,
         evidence_sha256=[item.evidence_sha256 for item in raw],
@@ -5596,6 +5865,7 @@ def compile_install_lfm2_semantic_attention_postfold(
         parameter_element_count=parameter_count,
         target_topology_sha256_before=topology_before,
         target_topology_sha256_after=topology_after,
+        structurally_eligible_candidate_count=(structurally_eligible_candidate_count),
     )
     body = {
         **base,
@@ -5655,8 +5925,8 @@ def compile_install_lfm2_semantic_attention_postfold(
             "joint_value_output_candidate_frozen_before_validation": (
                 joint_proposal.changed
             ),
-            "joint_value_output_candidate_diagnostic_only": True,
-            "joint_value_output_publication_allowed": False,
+            "joint_value_output_candidate_diagnostic_only": False,
+            "joint_value_output_publication_allowed": True,
             "validation_triggered_refit": False,
             "numeric_parent_child_weight_match_objective": False,
             "dense_existing_qkvo_topology_only": True,
@@ -5678,12 +5948,18 @@ def compile_install_lfm2_semantic_attention_postfold(
                 not compiled.changed
             ),
             "fixed_value_source": (
-                "authenticated_live_c61_dense_seed_already_folded_on_broad_cache"
+                "fit_only_joint_value_output_residual_factorization"
+                if joint_accepted
+                else "authenticated_live_c61_dense_seed_already_folded_on_broad_cache"
             ),
             "output_writer_source": (
-                "fit_only_fixed_v_prior_preserving_output_residual_ridge"
-                if writer_accepted
-                else "authenticated_live_c61_seed_after_bfloat16_noop_correction"
+                "fit_only_joint_value_output_residual_factorization"
+                if joint_accepted
+                else (
+                    "fit_only_fixed_v_prior_preserving_output_residual_ridge"
+                    if writer_accepted
+                    else "authenticated_live_c61_seed_after_structural_noop"
+                )
             ),
             "output_writer": dict(writer_gate),
             "joint_value_output": joint_proposal.as_dict(),
@@ -5695,9 +5971,7 @@ def compile_install_lfm2_semantic_attention_postfold(
             "output_writer_fit_partition_only_used_for_solve": True,
             "output_writer_heldout_partitions_never_used_for_solve": True,
             "joint_value_output_candidate_published": joint_accepted,
-            "fresh_joint_value_output_refit_performed": (
-                joint_accepted and value_changed and output_changed
-            ),
+            "fresh_joint_value_output_refit_performed": joint_accepted,
             "fresh_value_refit_performed": value_changed,
             "fresh_output_writer_refit_performed": writer_accepted,
             "fresh_output_projection_refit_performed": output_changed,
@@ -5735,6 +6009,7 @@ def compile_install_lfm2_semantic_attention_postfold(
 __all__ = [
     "LFM2_SEMANTIC_ATTENTION_REFOLD_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_REPLAY_ENDPOINT_SCHEMA",
+    "LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS",
     "Lfm2SemanticAttentionRefoldError",
     "Lfm2SemanticAttentionReplayEndpoint",
     "compile_install_lfm2_semantic_attention_postfold",
