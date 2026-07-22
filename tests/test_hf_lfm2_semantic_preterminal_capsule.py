@@ -5,7 +5,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
@@ -244,6 +244,29 @@ def _load(problem):
         expected_bindings_sha256=reference.bindings_sha256,
         device="cpu",
     )
+
+
+def test_read_only_parameter_inventory_is_thawed_before_canonical_sealing(
+    monkeypatch,
+) -> None:
+    inventory = {
+        "method": "unique-materialized-parameters",
+        "unique_parameters": 12,
+        "independent_methods_agree": True,
+        "alias_groups": [],
+        "inventory_sha256": "d" * 64,
+    }
+    readonly_inventory = MappingProxyType(inventory)
+    monkeypatch.setattr(
+        capsule,
+        "independent_parameter_inventory",
+        lambda _model: readonly_inventory,
+    )
+
+    canonical = capsule._canonical_parameter_inventory(object())
+
+    assert canonical == inventory
+    assert isinstance(canonical, dict)
 
 
 def test_preterminal_capsule_round_trip_exact_banks_and_zero_w2(

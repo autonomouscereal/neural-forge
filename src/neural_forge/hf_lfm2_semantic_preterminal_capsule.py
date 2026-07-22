@@ -658,10 +658,7 @@ def _validate_live_seam(
         raise Lfm2SemanticPreterminalCapsuleError(
             "Final-layer W1/W3 producer coverage is incomplete."
         )
-    inventory = _canonical_mapping(
-        independent_parameter_inventory(target_model),
-        "preterminal parameter inventory",
-    )
+    inventory = _canonical_parameter_inventory(target_model)
     inventory_sha = _digest(
         inventory.get("inventory_sha256"),
         "preterminal parameter inventory SHA-256",
@@ -695,6 +692,15 @@ def _validate_live_seam(
         "interface_authentication": dict(interface_authentication),
         "attention_receipt_authentication": supplied_attention,
     }
+
+
+def _canonical_parameter_inventory(target_model: Any) -> dict[str, Any]:
+    """Thaw the inventory's read-only top-level view before JSON sealing."""
+
+    return _canonical_mapping(
+        dict(independent_parameter_inventory(target_model)),
+        "preterminal parameter inventory",
+    )
 
 
 def _context_body(
