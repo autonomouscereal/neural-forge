@@ -942,7 +942,11 @@ def _patch_complete_transaction(
             "status": (
                 "installed-analytic-candidate"
                 if installed
-                else "heldout-selected-incumbent-noop"
+                else (
+                    stack._SHORT_CONV_STRUCTURAL_NOOP_STATUS
+                    if kind == "short_conv"
+                    else "heldout-selected-incumbent-noop"
+                )
             ),
             "installed": installed,
             "install_count": int(installed),
@@ -2633,6 +2637,140 @@ def test_heldout_selected_incumbent_noop_contract_is_strict() -> None:
         after_sha256=state,
         changed_state_keys=(),
     )
+
+
+def _invoke_short_conv_noop_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    status: str,
+) -> MappingProxyType | dict[str, object]:
+    target = _FourteenLayerReceiptStateTarget()
+    state = _state_identity(target)
+    monkeypatch.setattr(
+        stack,
+        "fingerprint_lfm2_parent",
+        lambda model: SimpleNamespace(identity_sha256=_state_identity(model)),
+    )
+    evidence = (
+        SimpleNamespace(
+            captured_child_model_state_sha256=state,
+            evidence_sha256="d" * 64,
+        ),
+    )
+    cache = SimpleNamespace(cache_key="a" * 64, parent_fingerprint="c" * 64)
+    bridge = SimpleNamespace(artifact_sha256="b" * 64)
+    parameter_count = stack._parameter_count(target)
+    body: dict[str, object] = {
+        "schema": stack._SHORT_CONV_INSTALLATION_SCHEMA,
+        "status": status,
+        "installed": False,
+        "candidate_frozen_before_validation": True,
+        "validation_triggered_refit": False,
+        "model_state_before_sha256": state,
+        "model_state_after_sha256": state,
+        "changed_state_keys": [],
+        "parameter_count_changed": False,
+        "topology_changed": False,
+        "parameter_identities_preserved": True,
+        "parameter_storage_preserved": True,
+        "gradient_state_preserved": True,
+        "exact_noop_state_proven": True,
+        "analytic_cached_evidence_only": True,
+        "operation_audit": dict(stack._ZERO_OPERATIONS),
+        "layer_index": 0,
+        "cache_key": cache.cache_key,
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "source_model_identity_sha256": cache.parent_fingerprint,
+        "transport_evidence_sha256": [evidence[0].evidence_sha256],
+        "parameter_element_count": parameter_count,
+    }
+    if status == "heldout-selected-incumbent-noop":
+        body.update(
+            {
+                "incumbent_selected_by_heldout_gates": True,
+                "fit_check_nonregression_passed": True,
+                "selection_nonregression_passed": True,
+                "validation_nonregression_passed": True,
+            }
+        )
+    elif status == "deterministic-fit-correction-rounded-to-incumbent-noop":
+        body.update(
+            {
+                "incumbent_selected_by_heldout_gates": False,
+                "heldout_metrics_are_diagnostic_only": True,
+                "numeric_metric_used_for_publication_or_rollback": False,
+            }
+        )
+    elif status == stack._SHORT_CONV_STRUCTURAL_NOOP_STATUS:
+        body.update(
+            {
+                "selected_candidate": "incumbent-noop",
+                "selected_candidate_state_identical_to_incumbent": True,
+                "incumbent_noop_fallback_used": True,
+                "incumbent_noop_fallback_reason": (
+                    "all-analytic-proposals-structurally-invalid-or-identical"
+                ),
+                "incumbent_selected_by_heldout_gates": False,
+                "structurally_eligible_candidate_count": 0,
+                "candidate_eligibility_basis": (
+                    "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+                ),
+                "structural_safety_is_only_candidate_veto": True,
+                "fit_metrics_used_for_candidate_ordering": True,
+                "fit_metrics_used_for_structural_eligibility": False,
+                "heldout_metrics_are_diagnostic_only": True,
+                "validation_publication_veto_applied": False,
+                "rollback_authorized": False,
+                "numeric_metrics_have_final_intelligence_authority": False,
+                "validation_rejected_candidate": None,
+            }
+        )
+    else:  # pragma: no cover - constrained by focused callers below
+        raise AssertionError(f"unsupported test status: {status}")
+    receipt = {**body, "result_sha256": canonical_sha256(body)}
+
+    return stack._install_short_conv_operator(
+        target_model=target,
+        layer_index=0,
+        evidence=evidence,
+        source_fir_weight=torch.ones((2, 1, 2), dtype=torch.bfloat16),
+        source_fir_bias=None,
+        cache=cache,
+        bridge=bridge,
+        installer=lambda **_kwargs: receipt,
+        parameter_count=parameter_count,
+    )
+
+
+@pytest.mark.parametrize(
+    "status",
+    (
+        "heldout-selected-incumbent-noop",
+        "deterministic-fit-correction-rounded-to-incumbent-noop",
+    ),
+)
+def test_short_conv_install_rejects_legacy_noop_reasons(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="incomplete or over-broad receipt",
+    ):
+        _invoke_short_conv_noop_receipt(monkeypatch, status=status)
+
+
+def test_short_conv_install_accepts_structural_no_candidate_noop_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    receipt = _invoke_short_conv_noop_receipt(
+        monkeypatch,
+        status=stack._SHORT_CONV_STRUCTURAL_NOOP_STATUS,
+    )
+
+    assert receipt["status"] == stack._SHORT_CONV_STRUCTURAL_NOOP_STATUS
+    assert receipt["incumbent_noop_fallback_used"] is True
+    assert receipt["structurally_eligible_candidate_count"] == 0
 
 
 def test_stack_never_implements_its_own_cuda_bf16_router() -> None:

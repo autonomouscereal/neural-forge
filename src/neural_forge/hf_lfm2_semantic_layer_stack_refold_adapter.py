@@ -105,6 +105,7 @@ _PARTITIONS = ("fit", "fit_check", "selection", "validation")
 _SHORT_CONV_INSTALLATION_SCHEMA = (
     "neural-forge-lfm2-semantic-short-conv-installation-v1"
 )
+_SHORT_CONV_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
 _MLP_INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-mlp-installation-v1"
 _MLP_FUNCTIONAL_PROVENANCE_SCHEMA = (
     "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v2"
@@ -1499,7 +1500,7 @@ def _authenticated_heldout_incumbent_noop(
     after_sha256: str,
     changed_state_keys: Sequence[str],
 ) -> bool:
-    """Recognize a frozen heldout-selected incumbent without requiring mutation."""
+    """Recognize an authenticated incumbent control without requiring mutation."""
 
     legacy_heldout_noop = bool(
         receipt.get("status") == "heldout-selected-incumbent-noop"
@@ -1515,8 +1516,28 @@ def _authenticated_heldout_incumbent_noop(
         and receipt.get("heldout_metrics_are_diagnostic_only") is True
         and receipt.get("numeric_metric_used_for_publication_or_rollback") is False
     )
+    structural_only_noop = bool(
+        receipt.get("status") == _SHORT_CONV_STRUCTURAL_NOOP_STATUS
+        and receipt.get("selected_candidate") == "incumbent-noop"
+        and receipt.get("selected_candidate_state_identical_to_incumbent") is True
+        and receipt.get("incumbent_noop_fallback_used") is True
+        and receipt.get("incumbent_noop_fallback_reason")
+        == "all-analytic-proposals-structurally-invalid-or-identical"
+        and receipt.get("incumbent_selected_by_heldout_gates") is False
+        and receipt.get("structurally_eligible_candidate_count") == 0
+        and receipt.get("candidate_eligibility_basis")
+        == "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+        and receipt.get("structural_safety_is_only_candidate_veto") is True
+        and receipt.get("fit_metrics_used_for_candidate_ordering") is True
+        and receipt.get("fit_metrics_used_for_structural_eligibility") is False
+        and receipt.get("heldout_metrics_are_diagnostic_only") is True
+        and receipt.get("validation_publication_veto_applied") is False
+        and receipt.get("rollback_authorized") is False
+        and receipt.get("numeric_metrics_have_final_intelligence_authority") is False
+        and receipt.get("validation_rejected_candidate") is None
+    )
     return bool(
-        (legacy_heldout_noop or deterministic_fit_noop)
+        (legacy_heldout_noop or deterministic_fit_noop or structural_only_noop)
         and receipt.get("installed") is False
         and receipt.get("candidate_frozen_before_validation") is True
         and receipt.get("validation_triggered_refit") is False
@@ -1540,6 +1561,26 @@ def _authenticated_heldout_incumbent_noop(
             or receipt.get("analytic_linear_and_cluster_solves_only") is True
         )
         and _is_zero_operation_audit(receipt.get("operation_audit"))
+    )
+
+
+def _authenticated_short_conv_incumbent_noop(
+    receipt: Mapping[str, Any],
+    *,
+    before_sha256: str,
+    after_sha256: str,
+    changed_state_keys: Sequence[str],
+) -> bool:
+    """Require the structural no-candidate/no-effect reason for short convolution."""
+
+    return bool(
+        receipt.get("status") == _SHORT_CONV_STRUCTURAL_NOOP_STATUS
+        and _authenticated_heldout_incumbent_noop(
+            receipt,
+            before_sha256=before_sha256,
+            after_sha256=after_sha256,
+            changed_state_keys=changed_state_keys,
+        )
     )
 
 
@@ -1872,7 +1913,7 @@ def _install_short_conv_operator(
     after = fingerprint_lfm2_parent(target_model).identity_sha256
     changed = _changed_state_keys(before_hashes, after_hashes)
     prefix = f"model.layers.{layer_index}.conv."
-    if _authenticated_heldout_incumbent_noop(
+    if _authenticated_short_conv_incumbent_noop(
         receipt,
         before_sha256=before,
         after_sha256=after,
@@ -3309,6 +3350,11 @@ def _layer_receipt(
                 writer_execution.get("execution_sha256")
             ),
         }
+    operator_noop_status = (
+        _SHORT_CONV_STRUCTURAL_NOOP_STATUS
+        if operator_kind == "short_conv"
+        else "heldout-selected-incumbent-noop"
+    )
     body = {
         "schema": "neural-forge-lfm2-semantic-layer-transaction-v1",
         "layer_index": layer_index,
@@ -3335,7 +3381,7 @@ def _layer_receipt(
             != after_operator_replay.captured_child_model_state_sha256
         ),
         "operator_incumbent_noop_selected": (
-            operator_receipt.get("status") == "heldout-selected-incumbent-noop"
+            operator_receipt.get("status") == operator_noop_status
         ),
         "after_operator_replay_bank_sha256": after_operator_replay.bank_sha256,
         "mlp_decision_sha256": mlp_receipt["result_sha256"],

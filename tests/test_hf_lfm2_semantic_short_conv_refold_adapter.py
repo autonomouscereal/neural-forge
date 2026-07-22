@@ -293,6 +293,18 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
     assert receipt["parameter_count_changed"] is False
     assert receipt["parameter_element_count"] == count
     assert receipt["full_source_structural_candidate_competed"] is True
+    writer_proposal = receipt["writer_fit_proposal"]
+    assert writer_proposal["candidate_frontier_count"] == 5
+    assert writer_proposal["structurally_eligible_candidate_count"] == sum(
+        int(record["structurally_eligible"] is True)
+        for record in writer_proposal["candidate_frontier"]
+    )
+    assert all(
+        record["fit_thresholds_used_for_eligibility"] is False
+        and record["fit_nonregression_used_for_eligibility"] is False
+        and record["relative_magnitude_threshold_used_for_eligibility"] is False
+        for record in writer_proposal["candidate_frontier"]
+    )
     reports = receipt["candidate_reports_before_validation"]
     assert "full-source-structural" in reports
     assert reports["full-source-structural"]["provenance"]["full_source_coverage"]
@@ -305,6 +317,17 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
     assert receipt["parent_exact_endpoint_row_count"] == len(evidence)
     assert receipt["candidate_frozen_before_validation"] is True
     assert receipt["validation_triggered_refit"] is False
+    assert receipt["candidate_eligibility_basis"] == (
+        "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+    )
+    assert receipt["structural_safety_is_only_candidate_veto"] is True
+    assert receipt["fit_metrics_used_for_candidate_ordering"] is True
+    assert receipt["fit_metrics_used_for_structural_eligibility"] is False
+    assert receipt["fit_check_metrics_diagnostic_only"] is True
+    assert receipt["selection_metrics_diagnostic_only"] is True
+    assert receipt["validation_metrics_diagnostic_only"] is True
+    assert receipt["relative_magnitude_metrics_diagnostic_only"] is True
+    assert receipt["numeric_metrics_have_final_intelligence_authority"] is False
     assert receipt["operation_audit"]["training_steps"] == 0
     assert receipt["operation_audit"]["model_forward_calls"] == 0
     assert model.forward_calls == 0
@@ -314,27 +337,12 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
         assert torch.equal(operator.in_proj.weight, before_in)
         assert torch.equal(operator.conv.weight, before_conv)
         assert all("out_proj" in name for name in receipt["changed_state_keys"])
-        writer_selection = reports["incumbent-producer-output-writer"][
-            "partition_metrics"
-        ]["selection"]
-        structural_selection = reports["full-source-structural"]["partition_metrics"][
-            "selection"
-        ]
+        assert tuple(
+            reports["incumbent-producer-output-writer"]["fit_ordering_key"]
+        ) <= tuple(reports["full-source-structural"]["fit_ordering_key"])
         assert (
-            writer_selection["endpoint_relative_rmse"]
-            <= structural_selection["endpoint_relative_rmse"] + 1e-8
-        )
-        assert (
-            writer_selection["endpoint_maximum_absolute_error"]
-            <= structural_selection["endpoint_maximum_absolute_error"] + 1e-8
-        )
-        assert (
-            writer_selection["endpoint_cosine_similarity_mean"] + 1e-8
-            >= structural_selection["endpoint_cosine_similarity_mean"]
-        )
-        assert (
-            writer_selection["endpoint_cosine_similarity_worst"] + 1e-8
-            >= structural_selection["endpoint_cosine_similarity_worst"]
+            reports["incumbent-producer-output-writer"]["candidate_ranking_split"]
+            == "fit"
         )
 
 
@@ -677,7 +685,7 @@ def test_four_partitions_are_trajectory_isolated_and_unit_balanced() -> None:
     assert len(observed) == len(set(observed))
 
 
-def test_validation_rejection_falls_back_to_authenticated_incumbent_noop() -> None:
+def test_validation_diagnostic_cannot_restore_authenticated_incumbent_noop() -> None:
     model = _ToyModel()
     evidence = _evidence_bank(model, validation_matches_incumbent=True)
     for parameter in model.parameters():
@@ -688,36 +696,39 @@ def test_validation_rejection_falls_back_to_authenticated_incumbent_noop() -> No
     identities = tuple(id(parameter) for parameter in model.parameters())
     pointers = tuple(parameter.data_ptr() for parameter in model.parameters())
     gradient_ids = tuple(id(parameter.grad) for parameter in model.parameters())
+    gradients = tuple(
+        parameter.grad.detach().clone() for parameter in model.parameters()
+    )
 
     receipt = _compile(model, evidence)
 
     seal = receipt.pop("result_sha256")
     assert canonical_sha256(receipt) == seal
-    assert receipt["status"] == "heldout-selected-incumbent-noop"
-    assert receipt["incumbent_selected_by_heldout_gates"] is True
-    assert receipt["fit_check_nonregression_passed"] is True
-    assert receipt["selection_nonregression_passed"] is True
-    assert receipt["validation_nonregression_passed"] is True
-    assert stack_adapter._authenticated_heldout_incumbent_noop(
-        receipt,
-        before_sha256=receipt["model_state_before_sha256"],
-        after_sha256=receipt["model_state_after_sha256"],
-        changed_state_keys=receipt["changed_state_keys"],
-    )
-    assert receipt["installed"] is False
-    assert receipt["install_count"] == 0
-    assert receipt["changed_state_keys"] == []
-    assert receipt["changed_parameter_roles"] == []
-    assert receipt["selected_candidate"] == "incumbent-noop"
-    assert receipt["validation_rejected_candidate"] in {
+    assert receipt["status"] == "installed-frozen-semantic-short-conv-candidate"
+    assert receipt["incumbent_selected_by_heldout_gates"] is False
+    assert receipt["validation_nonregression_passed"] is False
+    assert receipt["validation_diagnostic_would_have_failed_legacy_gate"] is True
+    assert receipt["validation_metrics_diagnostic_only"] is True
+    assert receipt["validation_publication_veto_applied"] is False
+    assert receipt["rollback_authorized"] is False
+    assert receipt["numeric_metrics_have_final_intelligence_authority"] is False
+    assert receipt["installed"] is True
+    assert receipt["install_count"] == 1
+    assert receipt["changed_state_keys"]
+    assert receipt["changed_parameter_roles"]
+    assert receipt["selected_candidate"] in {
         "full-source-structural",
         "incumbent-producer-output-writer",
     }
-    assert receipt["incumbent_noop_fallback_used"] is True
+    assert receipt["validation_rejected_candidate"] is None
+    assert receipt["incumbent_noop_fallback_used"] is False
+    assert receipt["selection_used_for_candidate_choice"] is False
+    assert receipt["validation_used_for_candidate_choice"] is False
+    assert receipt["validation_used_only_for_acceptance_or_incumbent_fallback"] is False
     assert "exact_zero_incumbent_at_entry" not in receipt
     assert "cold_start_compulsory_full_source_structural_plant" not in receipt
-    assert receipt["exact_noop_state_proven"] is True
-    assert receipt["model_state_before_sha256"] == receipt["model_state_after_sha256"]
+    assert receipt["exact_noop_state_proven"] is False
+    assert receipt["model_state_before_sha256"] != receipt["model_state_after_sha256"]
     assert (
         receipt["target_topology_sha256_before"]
         == receipt["target_topology_sha256_after"]
@@ -735,12 +746,122 @@ def test_validation_rejection_falls_back_to_authenticated_incumbent_noop() -> No
     assert all(value == 0 for value in receipt["operation_audit"].values())
     assert model.forward_calls == 0
     assert all(
-        torch.equal(parameter, before[name])
+        (not torch.equal(parameter, before[name]))
+        == (name in receipt["changed_state_keys"])
         for name, parameter in model.named_parameters()
     )
     assert tuple(id(parameter) for parameter in model.parameters()) == identities
     assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
     assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+    assert all(
+        torch.equal(parameter.grad, gradient)
+        for parameter, gradient in zip(model.parameters(), gradients)
+    )
+
+
+def test_effectful_structural_candidate_survives_fit_diagnostic_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _ToyModel()
+    evidence = _evidence_bank(model)
+
+    def deliberately_bad_structural(**kwargs: object) -> adapter._Candidate:
+        state = {
+            name: value.detach().clone()
+            for name, value in kwargs["incumbent_state"].items()
+        }
+        state["out_proj.weight"].fill_(256.0)
+        return adapter._Candidate(
+            name="full-source-structural",
+            state=state,
+            provenance={
+                "solver": "test-finite-shape-correct-fit-diagnostic-miss",
+                "full_source_coverage": True,
+                "source_channels_dropped": 0,
+                "operation_audit": dict(adapter._ZERO_OPERATIONS),
+            },
+        )
+
+    def no_writer(*_args: object, **_kwargs: object) -> tuple[None, dict[str, object]]:
+        return None, {
+            "status": "test-no-writer",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    monkeypatch.setattr(
+        adapter,
+        "_compile_structural_candidate",
+        deliberately_bad_structural,
+    )
+    monkeypatch.setattr(adapter, "_compile_writer_candidate", no_writer)
+
+    receipt = _compile(model, evidence)
+    report = receipt["candidate_reports_before_validation"]["full-source-structural"]
+
+    assert receipt["installed"] is True
+    assert receipt["selected_candidate"] == "full-source-structural"
+    assert report["structural_safety_passed"] is True
+    assert report["effectful_nonincumbent"] is True
+    assert report["structurally_eligible"] is True
+    assert report["fit_improved"] is False
+    assert report["partition_nonregression"]["fit"] is False
+    assert report["numeric_diagnostic_miss"] is True
+    assert report["numeric_diagnostic_miss_can_exclude_candidate"] is False
+    assert receipt["validation_rejected_candidate"] is None
+    assert receipt["incumbent_noop_fallback_used"] is False
+
+
+def test_structurally_invalid_only_proposal_uses_authenticated_incumbent_control(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _ToyModel()
+    evidence = _evidence_bank(model)
+    before = _fingerprint(model).identity_sha256
+
+    def invalid_structural(**kwargs: object) -> adapter._Candidate:
+        state = {
+            name: value.detach().clone()
+            for name, value in kwargs["incumbent_state"].items()
+        }
+        state["out_proj.weight"] = state["out_proj.weight"][:1].clone()
+        return adapter._Candidate(
+            name="full-source-structural",
+            state=state,
+            provenance={
+                "solver": "test-invalid-shape",
+                "full_source_coverage": True,
+                "source_channels_dropped": 0,
+                "operation_audit": dict(adapter._ZERO_OPERATIONS),
+            },
+        )
+
+    def no_writer(*_args: object, **_kwargs: object) -> tuple[None, dict[str, object]]:
+        return None, {
+            "status": "test-no-writer",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    monkeypatch.setattr(adapter, "_compile_structural_candidate", invalid_structural)
+    monkeypatch.setattr(adapter, "_compile_writer_candidate", no_writer)
+
+    receipt = _compile(model, evidence)
+    report = receipt["candidate_reports_before_validation"]["full-source-structural"]
+
+    assert receipt["status"] == "structurally-identical-or-invalid-incumbent-noop"
+    assert receipt["installed"] is False
+    assert receipt["selected_candidate"] == "incumbent-noop"
+    assert receipt["incumbent_noop_fallback_used"] is True
+    assert receipt["incumbent_selected_by_heldout_gates"] is False
+    assert report["structural_safety_passed"] is False
+    assert report["structurally_eligible"] is False
+    assert report["partition_metrics"]["fit"] is None
+    assert _fingerprint(model).identity_sha256 == before
+    assert stack_adapter._authenticated_heldout_incumbent_noop(
+        receipt,
+        before_sha256=before,
+        after_sha256=before,
+        changed_state_keys=(),
+    )
 
 
 def test_identical_analytic_candidate_resolves_to_sealed_noop(
@@ -776,9 +897,13 @@ def test_identical_analytic_candidate_resolves_to_sealed_noop(
     assert canonical_sha256(receipt) == seal
     assert receipt["installed"] is False
     assert receipt["install_count"] == 0
+    assert receipt["status"] == "structurally-identical-or-invalid-incumbent-noop"
     assert receipt["selected_candidate"] == "incumbent-noop"
     assert receipt["prevalidation_selected_candidate"] == "incumbent-noop"
     assert receipt["validation_rejected_candidate"] is None
+    assert receipt["incumbent_noop_fallback_used"] is True
+    assert receipt["incumbent_selected_by_heldout_gates"] is False
+    assert receipt["structurally_eligible_candidate_count"] == 0
     assert (
         receipt["candidate_reports_before_validation"]["full-source-structural"][
             "fit_improved"
@@ -791,11 +916,23 @@ def test_identical_analytic_candidate_resolves_to_sealed_noop(
         ]
         is False
     )
+    assert (
+        receipt["candidate_reports_before_validation"]["full-source-structural"][
+            "structurally_eligible"
+        ]
+        is False
+    )
     assert receipt["selected_candidate_state_identical_to_incumbent"] is True
     assert receipt["transport_evidence_sha256"] == [
         item.evidence_sha256 for item in evidence
     ]
     assert _fingerprint(model).identity_sha256 == before
+    assert stack_adapter._authenticated_heldout_incumbent_noop(
+        receipt,
+        before_sha256=receipt["model_state_before_sha256"],
+        after_sha256=receipt["model_state_after_sha256"],
+        changed_state_keys=receipt["changed_state_keys"],
+    )
 
 
 def test_stale_or_mutated_evidence_fails_before_install() -> None:

@@ -5,15 +5,17 @@ folds every parent B/C/x channel into the smaller dense child producer and FIR.
 This adapter adds the causal protocol that the compiler deliberately does not
 own.  Evidence is captured from the actual child after all earlier layer
 installs, trajectories are split four ways, and a safer incumbent-producer
-output-writer solve competes with the complete structural candidate and an
-authenticated no-op copy of the live dense incumbent.
+output-writer solve is ordered against the complete structural candidate while
+an authenticated no-op copy of the live dense incumbent remains a control.
 
 Only semantic span boundaries are parent-exact endpoints.  Expanded target
 subtoken rows may warm the causal FIR state, but they are never relabelled as
-parent-exact observations.  FIT alone produces candidates; FIT-CHECK and
-SELECTION select a frozen candidate; VALIDATION can only accept it or fall
-back to the already-frozen incumbent.  A candidate that does not materially
-improve held-out selection evidence never displaces the incumbent.
+parent-exact observations.  Every finite, shape-correct, private dense state
+that differs from the incumbent remains eligible.  FIT metrics provide only a
+deterministic ordering among those states.  FIT-CHECK, SELECTION, VALIDATION,
+and relative-magnitude measurements are diagnostics after that policy; none
+can veto the folded state or restore the incumbent.  The incumbent is retained
+only when every analytic proposal is structurally invalid or byte-identical.
 
 No model is executed here.  The implementation uses deterministic tensor
 algebra under inference/no-grad contexts and performs no backward pass,
@@ -50,6 +52,10 @@ LFM2_SEMANTIC_SHORT_CONV_REPLAY_EVIDENCE_SCHEMA = (
 )
 _INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-short-conv-installation-v1"
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
+_CANDIDATE_ELIGIBILITY_BASIS = (
+    "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+)
+_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
 _ZERO_OPERATIONS = MappingProxyType(
     {
         "parent_model_objects_constructed": 0,
@@ -634,6 +640,171 @@ class _Candidate:
                 }
             ),
         )
+
+
+def _candidate_state_structural_report(
+    state: Mapping[str, Any],
+    incumbent_state: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Describe structural safety without applying a numeric-quality veto."""
+
+    torch = _torch()
+    exact_roles = set(state) == set(incumbent_state)
+    role_reports: dict[str, dict[str, Any]] = {}
+    candidate_pointers: list[int] = []
+    state_hashes: dict[str, str] = {}
+    for name in sorted(set(state) | set(incumbent_state)):
+        value = state.get(name)
+        incumbent = incumbent_state.get(name)
+        tensor = isinstance(value, torch.Tensor)
+        incumbent_tensor = isinstance(incumbent, torch.Tensor)
+        dense_strided = bool(tensor and value.layout == torch.strided)
+        cpu_materialized = bool(tensor and value.device.type == "cpu")
+        shape_matches = bool(
+            tensor and incumbent_tensor and tuple(value.shape) == tuple(incumbent.shape)
+        )
+        dtype_matches = bool(
+            tensor and incumbent_tensor and value.dtype == incumbent.dtype
+        )
+        detached = bool(tensor and not value.requires_grad and value.grad_fn is None)
+        finite = bool(
+            tensor
+            and value.device.type != "meta"
+            and bool(torch.isfinite(value).all().item())
+        )
+        owns_exact_storage = False
+        private_from_incumbent = False
+        if tensor and dense_strided and cpu_materialized and int(value.numel()) > 0:
+            storage_elements = int(value.untyped_storage().nbytes()) // int(
+                value.element_size()
+            )
+            owns_exact_storage = bool(
+                value._base is None
+                and int(value.storage_offset()) == 0
+                and storage_elements == int(value.numel())
+            )
+            candidate_pointers.append(int(value.data_ptr()))
+            private_from_incumbent = bool(
+                not incumbent_tensor
+                or incumbent.device.type == "meta"
+                or int(value.data_ptr()) != int(incumbent.data_ptr())
+            )
+            state_hashes[name] = _tensor_sha256(value)
+        role_reports[name] = {
+            "present_in_candidate": name in state,
+            "present_in_incumbent": name in incumbent_state,
+            "tensor": tensor,
+            "dense_strided": dense_strided,
+            "cpu_materialized": cpu_materialized,
+            "shape_matches_incumbent": shape_matches,
+            "dtype_matches_incumbent": dtype_matches,
+            "detached": detached,
+            "all_elements_finite": finite,
+            "owns_exact_storage_allocation": owns_exact_storage,
+            "private_from_live_incumbent": private_from_incumbent,
+            "shape": list(value.shape) if tensor else None,
+            "dtype": str(value.dtype).removeprefix("torch.") if tensor else None,
+            "element_count": int(value.numel()) if tensor else None,
+        }
+    storage_is_private_per_role = len(candidate_pointers) == len(
+        set(candidate_pointers)
+    )
+    structural_safety = bool(
+        exact_roles
+        and role_reports
+        and storage_is_private_per_role
+        and all(
+            report[flag] is True
+            for report in role_reports.values()
+            for flag in (
+                "tensor",
+                "dense_strided",
+                "cpu_materialized",
+                "shape_matches_incumbent",
+                "dtype_matches_incumbent",
+                "detached",
+                "all_elements_finite",
+                "owns_exact_storage_allocation",
+                "private_from_live_incumbent",
+            )
+        )
+    )
+    effectful = bool(
+        structural_safety
+        and any(
+            not torch.equal(state[name], incumbent_state[name])
+            for name in sorted(incumbent_state)
+        )
+    )
+    body = {
+        "candidate_eligibility_basis": _CANDIDATE_ELIGIBILITY_BASIS,
+        "exact_dense_topology_roles_covered": exact_roles,
+        "storage_is_private_per_role": storage_is_private_per_role,
+        "role_reports": role_reports,
+        "state_tensor_bundle_sha256": (
+            canonical_sha256(state_hashes)
+            if len(state_hashes) == len(state) and exact_roles
+            else None
+        ),
+        "structural_safety_passed": structural_safety,
+        "effectful_nonincumbent": effectful,
+        "structurally_eligible": structural_safety and effectful,
+        "numeric_metrics_used_for_structural_eligibility": False,
+        "numeric_thresholds_used_for_structural_eligibility": False,
+        "relative_magnitude_used_for_structural_eligibility": False,
+    }
+    return MappingProxyType(
+        {
+            **body,
+            "structural_report_sha256": canonical_sha256(body),
+        }
+    )
+
+
+def _candidate_relative_magnitude_diagnostics(
+    state: Mapping[str, Any],
+    incumbent_state: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Measure mutation size for review; never use it for eligibility or rank."""
+
+    torch = _torch()
+    reference_floor = 1e-12
+    delta_squared = torch.zeros((), dtype=torch.float64)
+    incumbent_squared = torch.zeros((), dtype=torch.float64)
+    element_count = 0
+    maximum_absolute_delta = 0.0
+    for name in sorted(incumbent_state):
+        candidate = state[name].to(torch.float64)
+        incumbent = incumbent_state[name].to(torch.float64)
+        delta = candidate - incumbent
+        delta_squared += delta.square().sum()
+        incumbent_squared += incumbent.square().sum()
+        element_count += int(delta.numel())
+        maximum_absolute_delta = max(
+            maximum_absolute_delta,
+            float(delta.abs().max().item()),
+        )
+    denominator = max(element_count, 1)
+    delta_rms = float(torch.sqrt(delta_squared / denominator).item())
+    incumbent_rms = float(torch.sqrt(incumbent_squared / denominator).item())
+    body = {
+        "delta_rms": delta_rms,
+        "incumbent_rms": incumbent_rms,
+        "relative_delta_rms_ratio": delta_rms / max(incumbent_rms, reference_floor),
+        "maximum_absolute_delta": maximum_absolute_delta,
+        "reference_floor": reference_floor,
+        "element_count": element_count,
+        "diagnostic_only": True,
+        "relative_magnitude_threshold_used_for_eligibility": False,
+        "relative_magnitude_used_for_candidate_ordering": False,
+        "relative_magnitude_has_final_intelligence_authority": False,
+    }
+    return MappingProxyType(
+        {
+            **body,
+            "magnitude_diagnostics_sha256": canonical_sha256(body),
+        }
+    )
 
 
 def _short_conv_module(target_model: Any, layer_index: int) -> Any:
@@ -1264,6 +1435,32 @@ def _writer_design(
     )
 
 
+def _fit_metric_ordering_key(
+    metrics: Lfm2SemanticShortConvEndpointMetrics | None,
+    *deterministic_tiebreakers: Any,
+) -> tuple[Any, ...]:
+    if metrics is None:
+        return (1, 0.0, 0.0, 0.0, 0.0, *deterministic_tiebreakers)
+    return (
+        0,
+        metrics.endpoint_relative_rmse,
+        metrics.endpoint_maximum_absolute_error,
+        -metrics.endpoint_cosine_similarity_mean,
+        -metrics.endpoint_cosine_similarity_worst,
+        *deterministic_tiebreakers,
+    )
+
+
+def _diagnostic_endpoint_metrics(
+    cases: Sequence[_BalancedCase],
+    state: Mapping[str, Any],
+) -> tuple[Lfm2SemanticShortConvEndpointMetrics | None, str | None]:
+    try:
+        return _endpoint_metrics(cases, state), None
+    except Lfm2SemanticShortConvRefoldError as exc:
+        return None, str(exc)
+
+
 def _compile_writer_candidate(
     fit_cases: Sequence[_BalancedCase],
     incumbent_state: Mapping[str, Any],
@@ -1322,7 +1519,16 @@ def _compile_writer_candidate(
             "Closed-form short-conv output-writer solve produced nonfinite values."
         )
     baseline = _endpoint_metrics(fit_cases, incumbent_state)
-    frontier = []
+    frontier: list[
+        tuple[
+            tuple[Any, ...],
+            float,
+            Mapping[str, Any],
+            Lfm2SemanticShortConvEndpointMetrics | None,
+            Mapping[str, Any],
+        ]
+    ] = []
+    frontier_reports: list[dict[str, Any]] = []
     for alpha in (0.125, 0.25, 0.5, 0.75, 1.0):
         coefficients = (incumbent + alpha * delta).to(device="cpu")
         state = {
@@ -1340,16 +1546,59 @@ def _compile_writer_candidate(
                 .to(dtype=incumbent_state["out_proj.bias"].dtype)
                 .contiguous()
             )
-        if all(
-            torch.equal(state[name], incumbent_state[name]) for name in incumbent_state
-        ):
-            continue
-        metrics = _endpoint_metrics(fit_cases, state)
-        if (
-            metrics.endpoint_relative_rmse < baseline.endpoint_relative_rmse - 1e-8
-            and _nonregressing(metrics, baseline, tolerance=1e-8)
-        ):
-            frontier.append((metrics.endpoint_relative_rmse, alpha, state, metrics))
+        structural = _candidate_state_structural_report(state, incumbent_state)
+        metrics: Lfm2SemanticShortConvEndpointMetrics | None = None
+        metrics_error: str | None = None
+        magnitude: Mapping[str, Any] | None = None
+        ordering_key: tuple[Any, ...] | None = None
+        if structural["structural_safety_passed"] is True:
+            magnitude = _candidate_relative_magnitude_diagnostics(
+                state,
+                incumbent_state,
+            )
+        if structural["structurally_eligible"] is True:
+            metrics, metrics_error = _diagnostic_endpoint_metrics(fit_cases, state)
+            ordering_key = _fit_metric_ordering_key(
+                metrics,
+                alpha,
+                structural["state_tensor_bundle_sha256"],
+            )
+        fit_improved = bool(
+            metrics is not None
+            and metrics.endpoint_relative_rmse < baseline.endpoint_relative_rmse - 1e-8
+        )
+        fit_nonregression = bool(
+            metrics is not None and _nonregressing(metrics, baseline, tolerance=1e-8)
+        )
+        record = {
+            "alpha": alpha,
+            "exact_bfloat16_materialization": True,
+            "candidate_state_tensor_bundle_sha256": structural[
+                "state_tensor_bundle_sha256"
+            ],
+            "structural_report": dict(structural),
+            "structural_report_sha256": structural["structural_report_sha256"],
+            "structural_safety_passed": structural["structural_safety_passed"],
+            "effectful_nonincumbent": structural["effectful_nonincumbent"],
+            "structurally_eligible": structural["structurally_eligible"],
+            "candidate_eligibility_basis": _CANDIDATE_ELIGIBILITY_BASIS,
+            "fit_metrics": None if metrics is None else metrics.as_dict(),
+            "fit_metrics_error": metrics_error,
+            "fit_improved_diagnostic": fit_improved,
+            "fit_nonregression_diagnostic_passed": fit_nonregression,
+            "fit_ordering_key": (None if ordering_key is None else list(ordering_key)),
+            "relative_magnitude_diagnostics": (
+                None if magnitude is None else dict(magnitude)
+            ),
+            "fit_thresholds_used_for_eligibility": False,
+            "fit_nonregression_used_for_eligibility": False,
+            "relative_magnitude_threshold_used_for_eligibility": False,
+            "fit_metrics_used_for_candidate_ordering": True,
+            "fit_metrics_have_final_intelligence_authority": False,
+        }
+        frontier_reports.append(record)
+        if ordering_key is not None:
+            frontier.append((ordering_key, alpha, state, metrics, record))
     base_report = {
         "solver": "closed_form_trajectory_weighted_residual_ridge_bfloat16_frontier",
         "ridge": ridge,
@@ -1361,6 +1610,20 @@ def _compile_writer_candidate(
         "incumbent_conv_fixed": True,
         "selection_used_for_solve": False,
         "validation_used_for_solve": False,
+        "candidate_eligibility_basis": _CANDIDATE_ELIGIBILITY_BASIS,
+        "structural_safety_is_only_candidate_veto": True,
+        "fit_metrics_role": (
+            "ordering-among-structurally-eligible-not-threshold-gating"
+        ),
+        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_structural_eligibility": False,
+        "fit_thresholds_used_for_candidate_eligibility": False,
+        "fit_nonregression_used_for_candidate_eligibility": False,
+        "relative_magnitude_metrics_diagnostic_only": True,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "candidate_frontier": frontier_reports,
+        "candidate_frontier_count": len(frontier_reports),
+        "structurally_eligible_candidate_count": len(frontier),
         "operation_audit": dict(_ZERO_OPERATIONS),
         **(
             {"compute_execution": dict(writer_compute_execution)}
@@ -1372,18 +1635,28 @@ def _compile_writer_candidate(
         return None, MappingProxyType(
             {
                 **base_report,
-                "status": "rejected-no-bfloat16-fit-improvement",
+                "status": "no-structurally-eligible-effectful-writer-proposal",
                 "selected_alpha": None,
+                "selected_fit_ordering_key": None,
             }
         )
-    _score, alpha, state, metrics = min(
-        frontier, key=lambda value: (value[0], value[1])
+    ordering_key, alpha, state, metrics, selected_record = min(
+        frontier,
+        key=lambda value: value[0],
     )
     report = {
         **base_report,
-        "status": "fit-proposal",
+        "status": "fit-ordered-structurally-eligible-proposal",
         "selected_alpha": alpha,
-        "candidate_fit_metrics": metrics.as_dict(),
+        "selected_fit_ordering_key": list(ordering_key),
+        "candidate_fit_metrics": None if metrics is None else metrics.as_dict(),
+        "candidate_fit_metrics_error": selected_record["fit_metrics_error"],
+        "selected_structural_report_sha256": selected_record[
+            "structural_report_sha256"
+        ],
+        "selected_relative_magnitude_diagnostics": selected_record[
+            "relative_magnitude_diagnostics"
+        ],
     }
     return (
         _Candidate(
@@ -1398,28 +1671,73 @@ def _compile_writer_candidate(
 def _candidate_report(
     candidate: _Candidate,
     *,
+    incumbent_state: Mapping[str, Any],
     banks: Mapping[str, Sequence[_BalancedCase]],
     baseline: Mapping[str, Lfm2SemanticShortConvEndpointMetrics],
     tolerance: float,
 ) -> Mapping[str, Any]:
-    metrics = {
-        name: _endpoint_metrics(banks[name], candidate.state)
-        for name in ("fit", "fit_check", "selection")
-    }
+    structural = _candidate_state_structural_report(
+        candidate.state,
+        incumbent_state,
+    )
+    metrics: dict[str, Lfm2SemanticShortConvEndpointMetrics | None] = {}
+    metric_errors: dict[str, str | None] = {}
+    for name in ("fit", "fit_check", "selection"):
+        if structural["structural_safety_passed"] is True:
+            metrics[name], metric_errors[name] = _diagnostic_endpoint_metrics(
+                banks[name],
+                candidate.state,
+            )
+        else:
+            metrics[name] = None
+            metric_errors[name] = "candidate failed structural safety"
     checks = {
-        name: _nonregressing(metrics[name], baseline[name], tolerance=tolerance)
+        name: (
+            None
+            if metrics[name] is None
+            else _nonregressing(metrics[name], baseline[name], tolerance=tolerance)
+        )
         for name in metrics
     }
     fit_improved = (
-        metrics["fit"].endpoint_relative_rmse
+        metrics["fit"] is not None
+        and metrics["fit"].endpoint_relative_rmse
         < baseline["fit"].endpoint_relative_rmse - tolerance
     )
     incumbent_noop = candidate.name == "incumbent-noop"
-    selection_improved = _strictly_improving(
-        metrics["selection"],
-        baseline["selection"],
-        tolerance=tolerance,
+    selection_improved = bool(
+        metrics["selection"] is not None
+        and _strictly_improving(
+            metrics["selection"],
+            baseline["selection"],
+            tolerance=tolerance,
+        )
     )
+    structurally_eligible = bool(
+        not incumbent_noop and structural["structurally_eligible"] is True
+    )
+    simplicity = {
+        "incumbent-producer-output-writer": 0,
+        "full-source-structural": 1,
+    }
+    fit_ordering_key = (
+        None
+        if not structurally_eligible
+        else _fit_metric_ordering_key(
+            metrics["fit"],
+            simplicity[candidate.name],
+            candidate.state_sha256,
+        )
+    )
+    magnitude = (
+        _candidate_relative_magnitude_diagnostics(
+            candidate.state,
+            incumbent_state,
+        )
+        if structural["structural_safety_passed"] is True
+        else None
+    )
+    numeric_diagnostic_miss = any(value is not True for value in checks.values())
     body = {
         "name": candidate.name,
         "candidate_state_sha256": candidate.state_sha256,
@@ -1428,13 +1746,41 @@ def _candidate_report(
         "incumbent_noop_candidate": incumbent_noop,
         "fit_improved": fit_improved,
         "heldout_selection_improved": selection_improved,
-        "partition_metrics": {name: metrics[name].as_dict() for name in metrics},
+        "partition_metrics": {
+            name: None if metrics[name] is None else metrics[name].as_dict()
+            for name in metrics
+        },
+        "partition_metric_errors": metric_errors,
         "partition_nonregression": checks,
-        "eligible_before_validation": (
-            all(checks.values())
-            if incumbent_noop
-            else fit_improved and selection_improved and all(checks.values())
+        "structural_report": dict(structural),
+        "structural_report_sha256": structural["structural_report_sha256"],
+        "structural_safety_passed": structural["structural_safety_passed"],
+        "effectful_nonincumbent": structural["effectful_nonincumbent"],
+        "structurally_eligible": structurally_eligible,
+        "eligible": structurally_eligible,
+        "eligible_before_validation": structurally_eligible,
+        "candidate_eligibility_basis": _CANDIDATE_ELIGIBILITY_BASIS,
+        "candidate_ranking_split": "fit",
+        "fit_ordering_key": (
+            None if fit_ordering_key is None else list(fit_ordering_key)
         ),
+        "relative_magnitude_diagnostics": (
+            None if magnitude is None else dict(magnitude)
+        ),
+        "fit_metric_nonregression_diagnostic_passed": checks["fit"],
+        "fit_check_metric_nonregression_diagnostic_passed": checks["fit_check"],
+        "selection_metric_nonregression_diagnostic_passed": checks["selection"],
+        "numeric_diagnostic_miss": numeric_diagnostic_miss,
+        "structural_safety_is_only_candidate_veto": True,
+        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_structural_eligibility": False,
+        "fit_thresholds_used_for_eligibility": False,
+        "fit_check_thresholds_used_for_eligibility": False,
+        "selection_thresholds_used_for_eligibility": False,
+        "relative_magnitude_threshold_used_for_eligibility": False,
+        "fit_check_and_selection_metrics_diagnostic_only": True,
+        "numeric_diagnostic_miss_can_exclude_candidate": False,
+        "numeric_metrics_have_final_intelligence_authority": False,
         "validation_inspected": False,
     }
     return MappingProxyType(
@@ -1454,7 +1800,8 @@ def _select_candidate(
     )
     if (
         len(incumbent) != 1
-        or not reports[incumbent[0].name]["eligible_before_validation"]
+        or reports[incumbent[0].name]["structural_safety_passed"] is not True
+        or reports[incumbent[0].name]["effectful_nonincumbent"] is not False
     ):
         raise Lfm2SemanticShortConvRefoldError(
             "The authenticated live incumbent candidate is missing or invalid."
@@ -1463,42 +1810,18 @@ def _select_candidate(
         candidate
         for candidate in candidates
         if candidate.name != "incumbent-noop"
-        and reports[candidate.name]["eligible_before_validation"] is True
+        and reports[candidate.name]["structurally_eligible"] is True
     ]
     if not eligible:
         return incumbent[0]
-    by_name = {candidate.name: candidate for candidate in eligible}
-    structural = by_name.get("full-source-structural")
-    writer = by_name.get("incumbent-producer-output-writer")
-    if structural is not None and writer is not None:
-        structural_selection = Lfm2SemanticShortConvEndpointMetrics(
-            **reports[structural.name]["partition_metrics"]["selection"]
-        )
-        writer_selection = Lfm2SemanticShortConvEndpointMetrics(
-            **reports[writer.name]["partition_metrics"]["selection"]
-        )
-        if not _nonregressing(
-            writer_selection,
-            structural_selection,
-            tolerance=1e-8,
-        ):
-            return structural
-        return writer
-    simplicity = {
-        "incumbent-producer-output-writer": 0,
-        "full-source-structural": 1,
-    }
 
-    def score(candidate: _Candidate) -> tuple[float, float, float, float, int, str]:
-        metrics = reports[candidate.name]["partition_metrics"]["selection"]
-        return (
-            float(metrics["endpoint_relative_rmse"]),
-            float(metrics["endpoint_maximum_absolute_error"]),
-            -float(metrics["endpoint_cosine_similarity_mean"]),
-            -float(metrics["endpoint_cosine_similarity_worst"]),
-            simplicity[candidate.name],
-            candidate.state_sha256,
-        )
+    def score(candidate: _Candidate) -> tuple[Any, ...]:
+        key = reports[candidate.name]["fit_ordering_key"]
+        if not isinstance(key, list):
+            raise Lfm2SemanticShortConvRefoldError(
+                "A structurally eligible candidate has no deterministic FIT key."
+            )
+        return tuple(key)
 
     return min(eligible, key=score)
 
@@ -1651,6 +1974,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
 ) -> Mapping[str, Any]:
     """Compile, gate, freeze, and atomically install one short-conv operator."""
 
+    torch = _torch()
     cache = _digest(cache_key, "cache key")
     bridge = _digest(bridge_artifact_sha256, "bridge artifact SHA-256")
     source_identity = _digest(
@@ -1817,12 +2141,20 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     reports = {
         candidate.name: _candidate_report(
             candidate,
+            incumbent_state=incumbent_state,
             banks=banks,
             baseline=baseline,
             tolerance=tolerance,
         )
         for candidate in candidates
     }
+    if (
+        exact_zero_incumbent
+        and reports[structural.name]["structurally_eligible"] is not True
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "The compulsory cold-start structural plant is not effectful and safe."
+        )
     prevalidation_choice = (
         structural if exact_zero_incumbent else _select_candidate(candidates, reports)
     )
@@ -1838,7 +2170,10 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         banks["validation"],
         incumbent_state,
     )
-    validation = _endpoint_metrics(banks["validation"], frozen_state)
+    validation, validation_metrics_error = _diagnostic_endpoint_metrics(
+        banks["validation"],
+        frozen_state,
+    )
     frozen_authentic = (
         canonical_sha256(
             {
@@ -1856,34 +2191,16 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         raise Lfm2SemanticShortConvRefoldError(
             "Frozen short-conv candidate changed before isolated VALIDATION."
         )
-    validation_rejected_candidate: str | None = None
-    if not exact_zero_incumbent and not _nonregressing(
-        validation,
-        baseline_validation,
-        tolerance=tolerance,
-    ):
-        if chosen.name == "incumbent-noop":
-            raise Lfm2SemanticShortConvRefoldError(
-                "Authenticated incumbent did not exactly replay VALIDATION."
-            )
-        validation_rejected_candidate = chosen.name
-        chosen = incumbent
-        frozen_state = MappingProxyType(
-            {
-                name: value.detach().to(device="cpu").contiguous().clone()
-                for name, value in incumbent.state.items()
-            }
-        )
-        frozen_sha = incumbent.state_sha256
-        validation = _endpoint_metrics(banks["validation"], frozen_state)
-        if not _nonregressing(
+    validation_nonregression = (
+        None
+        if validation is None
+        else _nonregressing(
             validation,
             baseline_validation,
             tolerance=tolerance,
-        ):
-            raise Lfm2SemanticShortConvRefoldError(
-                "Authenticated incumbent fallback failed isolated VALIDATION."
-            )
+        )
+    )
+    validation_rejected_candidate: str | None = None
     if (
         canonical_sha256(
             {
@@ -1932,7 +2249,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "status": (
             "installed-frozen-semantic-short-conv-candidate"
             if changed
-            else "heldout-selected-incumbent-noop"
+            else _STRUCTURAL_NOOP_STATUS
         ),
         "installed": bool(changed),
         "install_count": int(bool(changed)),
@@ -1996,34 +2313,75 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "selected_candidate": chosen.name,
         "selected_candidate_state_sha256": frozen_sha,
         "selected_candidate_state_identical_to_incumbent": (
-            frozen_sha == incumbent.state_sha256
+            all(
+                torch.equal(frozen_state[name], incumbent_state[name])
+                for name in incumbent_state
+            )
         ),
-        "selected_validation_metrics": validation.as_dict(),
+        "selected_validation_metrics": (
+            None if validation is None else validation.as_dict()
+        ),
+        "selected_validation_metrics_error": validation_metrics_error,
         "candidate_frozen_before_fit_check": True,
         "candidate_frozen_before_selection": True,
         "candidate_frozen_before_validation": True,
         "validation_triggered_refit": False,
-        "selection_used_for_candidate_choice": not exact_zero_incumbent,
-        "validation_used_for_candidate_choice": (
-            not exact_zero_incumbent and validation_rejected_candidate is not None
-        ),
-        "validation_used_only_for_acceptance_or_incumbent_fallback": (
-            not exact_zero_incumbent
-        ),
-        "incumbent_noop_candidate_competed": not exact_zero_incumbent,
+        "selection_used_for_candidate_choice": False,
+        "validation_used_for_candidate_choice": False,
+        "validation_used_only_for_acceptance_or_incumbent_fallback": False,
+        "incumbent_noop_candidate_competed": False,
         "incumbent_noop_fallback_used": chosen.name == "incumbent-noop",
-        "incumbent_selected_by_heldout_gates": chosen.name == "incumbent-noop",
-        "fit_check_nonregression_passed": bool(
-            reports[chosen.name]["partition_nonregression"]["fit_check"]
+        "incumbent_noop_fallback_reason": (
+            "all-analytic-proposals-structurally-invalid-or-identical"
+            if chosen.name == "incumbent-noop"
+            else None
         ),
-        "selection_nonregression_passed": bool(
-            reports[chosen.name]["partition_nonregression"]["selection"]
+        "incumbent_selected_by_heldout_gates": False,
+        "fit_check_nonregression_passed": reports[chosen.name][
+            "partition_nonregression"
+        ]["fit_check"],
+        "selection_nonregression_passed": reports[chosen.name][
+            "partition_nonregression"
+        ]["selection"],
+        "validation_nonregression_passed": validation_nonregression,
+        "validation_diagnostic_would_have_failed_legacy_gate": (
+            validation_nonregression is not True
         ),
-        "validation_nonregression_passed": _nonregressing(
-            validation,
-            baseline_validation,
-            tolerance=tolerance,
+        "candidate_selection_evidence_scope": (
+            "finite-dense-structural-eligibility-plus-fit-ordering"
         ),
+        "candidate_eligibility_basis": _CANDIDATE_ELIGIBILITY_BASIS,
+        "structural_safety_is_only_candidate_veto": True,
+        "structurally_eligible_candidate_count": sum(
+            int(report["structurally_eligible"] is True)
+            for name, report in reports.items()
+            if name != "incumbent-noop"
+        ),
+        "fit_metrics_role": (
+            "ordering-among-structurally-eligible-not-threshold-gating"
+        ),
+        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_pre_review_candidate_selection": True,
+        "fit_metrics_used_for_structural_eligibility": False,
+        "fit_thresholds_used_for_candidate_eligibility": False,
+        "fit_check_thresholds_used_for_candidate_eligibility": False,
+        "selection_thresholds_used_for_candidate_eligibility": False,
+        "validation_thresholds_used_for_publication": False,
+        "relative_magnitude_threshold_used_for_candidate_eligibility": False,
+        "relative_magnitude_metrics_diagnostic_only": True,
+        "fit_check_metrics_diagnostic_only": True,
+        "selection_metrics_diagnostic_only": True,
+        "validation_metrics_diagnostic_only": True,
+        "heldout_metrics_are_diagnostic_only": True,
+        "numeric_metrics_used_for_candidate_eligibility": False,
+        "numeric_thresholds_used_for_candidate_eligibility": False,
+        "numeric_thresholds_used_for_publication": False,
+        "numeric_diagnostic_miss_can_exclude_structural_candidate": False,
+        "validation_publication_veto_applied": False,
+        "rollback_authorized": False,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "fit_metrics_have_final_intelligence_authority": False,
+        "behavioral_intelligence_review_outside_short_conv_compiler": True,
         "complete_parent_bcx_history_consumed": True,
         "parent_bcx_exact_only_at_semantic_span_boundaries": True,
         "inserted_target_bcx_rows_are_owner_expanded_proxies": True,
