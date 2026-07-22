@@ -30,8 +30,10 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import RLock
 from types import MappingProxyType
 from typing import Any
+from weakref import WeakKeyDictionary
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge import dynamic_lfm2_cpcf_resources as cpcf_resources
@@ -69,6 +71,7 @@ from neural_forge.hf_lfm2_cpcf_selective_evidence import (
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
     LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA,
     LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA,
+    LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA,
     Lfm2CpcfTerminalActionEvidence,
     Lfm2CpcfTerminalActionPolicy,
     Lfm2CpcfTerminalActionResidualResult,
@@ -187,6 +190,88 @@ _ZERO_OPERATIONS = MappingProxyType(
         "parameters_quantized": 0,
     }
 )
+
+_TERMINAL_FRONTIER_EXPORT_CONTEXT_ISSUER = object()
+_TERMINAL_FRONTIER_LIVE_FACT_NAMES = (
+    "mapped_parent_tied_table_sha256",
+    "tied_interface_authentication_sha256",
+    "terminal_cache_compatibility_sha256",
+    "terminal_cache_payload_binding_sha256",
+)
+
+
+class _CompilerIssuedTerminalFrontierExportContext(Mapping[str, Any]):
+    """Immutable live context that cannot be recreated by resealing a dict."""
+
+    __slots__ = (
+        "_issued_fact_sha256",
+        "_issued_fact_tuple",
+        "_issuer",
+        "_values",
+    )
+
+    def __init__(
+        self,
+        values: Mapping[str, Any],
+        issued_facts: Mapping[str, str],
+        *,
+        issuer: object,
+    ) -> None:
+        if issuer is not _TERMINAL_FRONTIER_EXPORT_CONTEXT_ISSUER:
+            raise Lfm2SemanticPostfoldError(
+                "Only the fused compiler may issue a terminal frontier context."
+            )
+        facts = dict(issued_facts)
+        if set(facts) != set(_TERMINAL_FRONTIER_LIVE_FACT_NAMES):
+            raise Lfm2SemanticPostfoldError(
+                "Terminal frontier issued facts are incomplete."
+            )
+        fact_tuple = tuple(
+            (name, facts[name]) for name in _TERMINAL_FRONTIER_LIVE_FACT_NAMES
+        )
+        object.__setattr__(self, "_values", MappingProxyType(dict(values)))
+        object.__setattr__(self, "_issued_fact_tuple", fact_tuple)
+        object.__setattr__(
+            self,
+            "_issued_fact_sha256",
+            canonical_sha256([list(value) for value in fact_tuple]),
+        )
+        object.__setattr__(self, "_issuer", issuer)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("Compiler-issued terminal frontier contexts are frozen.")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("Compiler-issued terminal frontier contexts are frozen.")
+
+    def __getitem__(self, key: str) -> Any:
+        return self._values[key]
+
+    def __iter__(self):
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def _authenticate_issued_facts(
+        self,
+        issuer: object,
+    ) -> tuple[tuple[tuple[str, str], ...], str]:
+        if issuer is not self._issuer or issuer is not (
+            _TERMINAL_FRONTIER_EXPORT_CONTEXT_ISSUER
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Terminal frontier context was not issued by this compiler."
+            )
+        fact_tuple = self._issued_fact_tuple
+        fact_sha256 = self._issued_fact_sha256
+        if fact_sha256 != canonical_sha256([list(value) for value in fact_tuple]):
+            raise Lfm2SemanticPostfoldError(
+                "Terminal frontier compiler-issued fact binding changed."
+            )
+        return fact_tuple, fact_sha256
+
+
 _TERMINAL_ZERO_OPERATION_AUDIT = MappingProxyType(
     {
         "parent_model_forward_calls": 0,
@@ -308,6 +393,171 @@ def _tensor_sha256(value: Any) -> str:
             "data_sha256": hashlib.sha256(raw).hexdigest(),
         }
     )
+
+
+def _owned_receipt_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _owned_receipt_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_owned_receipt_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_owned_receipt_value(item) for item in value)
+    return value
+
+
+class _CompilerIssuedFusedSemanticTerminalReceipt(Mapping[str, Any]):
+    """Identity-only mapping proof for one live fused-terminal compilation."""
+
+    __slots__ = ("__weakref__",)
+    __hash__ = object.__hash__
+    __eq__ = object.__eq__
+
+    def __new__(cls):
+        raise Lfm2SemanticPostfoldError(
+            "Fused semantic terminal receipts are issued only by the real compiler."
+        )
+
+    def __getitem__(self, key: str) -> Any:
+        return _fused_semantic_terminal_receipt_values(self)[key]
+
+    def __iter__(self):
+        return iter(_fused_semantic_terminal_receipt_values(self))
+
+    def __len__(self) -> int:
+        return len(_fused_semantic_terminal_receipt_values(self))
+
+    def __copy__(self):
+        return object.__new__(type(self))
+
+    def __deepcopy__(self, memo):
+        copied = object.__new__(type(self))
+        memo[id(self)] = copied
+        return copied
+
+
+@dataclass(frozen=True, slots=True)
+class _FusedSemanticTerminalReceiptRegistration:
+    outer_result_sha256: str
+    terminal_action_result_sha256: str
+    terminal_action_selected_w2_sha256: str
+    terminal_action_published_w2_sha256: str
+    semantic_selected_w2_sha256: str
+    semantic_published_w2_sha256: str
+    values: Mapping[str, Any] = field(repr=False, compare=False)
+
+
+def _fused_semantic_terminal_receipt_registration(
+    value: Mapping[str, Any],
+    *,
+    values: Mapping[str, Any],
+) -> _FusedSemanticTerminalReceiptRegistration:
+    return _FusedSemanticTerminalReceiptRegistration(
+        outer_result_sha256=_digest(
+            value.get("result_sha256"),
+            "fused semantic terminal receipt",
+        ),
+        terminal_action_result_sha256=_digest(
+            value.get("terminal_action_result_sha256"),
+            "fused semantic terminal-action result",
+        ),
+        terminal_action_selected_w2_sha256=_digest(
+            value.get("terminal_action_selected_w2_sha256"),
+            "fused semantic terminal-action selected W2",
+        ),
+        terminal_action_published_w2_sha256=_digest(
+            value.get("terminal_action_published_w2_sha256"),
+            "fused semantic terminal-action published W2",
+        ),
+        semantic_selected_w2_sha256=_digest(
+            value.get("semantic_selected_w2_sha256"),
+            "fused semantic selected W2",
+        ),
+        semantic_published_w2_sha256=_digest(
+            value.get("semantic_published_w2_sha256"),
+            "fused semantic published W2",
+        ),
+        values=values,
+    )
+
+
+def _build_fused_semantic_terminal_receipt_registry():
+    registry: WeakKeyDictionary[
+        _CompilerIssuedFusedSemanticTerminalReceipt,
+        _FusedSemanticTerminalReceiptRegistration,
+    ] = WeakKeyDictionary()
+    registry_lock = RLock()
+
+    def issue(
+        value: Mapping[str, Any],
+    ) -> _CompilerIssuedFusedSemanticTerminalReceipt:
+        authenticated = _verify_sealed(
+            value,
+            seal_name="result_sha256",
+            label="fused semantic terminal compiler receipt",
+        )
+        owned = MappingProxyType(_owned_receipt_value(authenticated))
+        proof = object.__new__(_CompilerIssuedFusedSemanticTerminalReceipt)
+        registration = _fused_semantic_terminal_receipt_registration(
+            owned,
+            values=owned,
+        )
+        with registry_lock:
+            registry[proof] = registration
+        return proof
+
+    def authenticate(
+        value: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if type(value) is not _CompilerIssuedFusedSemanticTerminalReceipt:
+            raise Lfm2SemanticPostfoldError(
+                "Fused semantic terminal receipt is not compiler-issued."
+            )
+        with registry_lock:
+            registration = registry.get(value)
+        if registration is None:
+            raise Lfm2SemanticPostfoldError(
+                "Fused semantic terminal receipt proof is unregistered."
+            )
+        authenticated = _verify_sealed(
+            registration.values,
+            seal_name="result_sha256",
+            label="compiler-issued fused semantic terminal receipt",
+        )
+        observed = _fused_semantic_terminal_receipt_registration(
+            authenticated,
+            values=registration.values,
+        )
+        if observed != registration:
+            raise Lfm2SemanticPostfoldError(
+                "Fused semantic terminal receipt diverges from compiler-issued lineage."
+            )
+        return authenticated
+
+    def values(
+        proof: _CompilerIssuedFusedSemanticTerminalReceipt,
+    ) -> Mapping[str, Any]:
+        with registry_lock:
+            registration = registry.get(proof)
+        if registration is None:
+            raise Lfm2SemanticPostfoldError(
+                "Fused semantic terminal receipt proof is unregistered."
+            )
+        return registration.values
+
+    def size() -> int:
+        with registry_lock:
+            return len(registry)
+
+    return issue, authenticate, values, size
+
+
+(
+    _issue_fused_semantic_terminal_receipt,
+    _authenticate_fused_semantic_terminal_receipt_lineage,
+    _fused_semantic_terminal_receipt_values,
+    _fused_semantic_terminal_receipt_registry_size,
+) = _build_fused_semantic_terminal_receipt_registry()
+del _build_fused_semantic_terminal_receipt_registry
 
 
 def _interface_tensor_sha256(value: Any) -> str:
@@ -6216,6 +6466,9 @@ def _authenticated_exact_zero_terminal_plant(
             continue
         coverage_complete = bool(
             candidate_coverage_value.get("complete_dense_writer_coverage") is True
+            and candidate_coverage_value.get("complete_dense_writer_structural_safety")
+            is True
+            and candidate_coverage_value.get("owns_exact_storage_allocation") is True
         )
         effectful_nonincumbent = (
             record.get("state_sha256") != output_hashes["incumbent"]
@@ -6230,10 +6483,19 @@ def _authenticated_exact_zero_terminal_plant(
             or record.get("weight_norm_gate_passed") is not coverage_complete
             or record.get("effectful_nonincumbent") is not effectful_nonincumbent
             or record.get("structurally_eligible") is not structurally_eligible
+            or record.get("structural_safety_passed") is not coverage_complete
             or record.get("eligible") is not structurally_eligible
             or record.get("candidate_eligibility_basis")
-            != "finite_dense_coverage_and_nonincumbent_effect"
+            != "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
             or record.get("fit_metric_gates_passed") is not fit_metric_gates_passed
+            or record.get("weight_delta_threshold_used_for_eligibility") is not False
+            or record.get("fit_thresholds_used_for_eligibility") is not False
+            or record.get("fit_check_thresholds_used_for_eligibility") is not False
+            or record.get("selection_thresholds_used_for_eligibility") is not False
+            or record.get("numeric_thresholds_used_for_publication") is not False
+            or record.get("numeric_metrics_used_for_candidate_ordering") is not True
+            or record.get("numeric_metrics_have_final_intelligence_authority")
+            is not False
             or record.get("fit_metric_thresholds_used_for_candidate_eligibility")
             is not False
             or record.get("fit_metrics_used_for_candidate_ordering") is not True
@@ -6276,10 +6538,27 @@ def _authenticated_exact_zero_terminal_plant(
         and report.get("incumbent_noop_publication_forbidden") is True
         and report.get("exact_zero_candidate_eligibility_schema")
         == LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA
+        and report.get("structural_nonveto_schema")
+        == LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA
         and report.get("candidate_selection_evidence_scope")
         == "finite-dense-structural-eligibility-plus-fit-ordering"
         and report.get("candidate_eligibility_basis")
-        == "finite_dense_coverage_and_nonincumbent_effect"
+        == "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+        and report.get("structural_safety_is_only_candidate_veto") is True
+        and report.get("numeric_metrics_used_for_candidate_ordering") is True
+        and report.get("numeric_metrics_used_for_candidate_eligibility") is False
+        and report.get("numeric_thresholds_used_for_candidate_eligibility") is False
+        and report.get("numeric_thresholds_used_for_publication") is False
+        and report.get("weight_delta_threshold_used_for_candidate_eligibility") is False
+        and report.get("fit_thresholds_used_for_candidate_eligibility") is False
+        and report.get("fit_check_thresholds_used_for_candidate_eligibility") is False
+        and report.get("selection_thresholds_used_for_candidate_eligibility") is False
+        and report.get("validation_thresholds_used_for_publication") is False
+        and report.get("validation_publication_veto_applied") is False
+        and report.get("rollback_authorized") is False
+        and report.get("numeric_metrics_have_final_intelligence_authority") is False
+        and report.get("behavioral_intelligence_review_outside_terminal_compiler")
+        is True
         and report.get("fit_metrics_role")
         == "ordering-among-structurally-eligible-not-threshold-gating"
         and report.get("fit_metrics_used_for_candidate_ordering") is True
@@ -6322,6 +6601,8 @@ def _authenticated_exact_zero_terminal_plant(
         and coverage.get("all_target_outputs_covered") is all_outputs_covered
         and coverage.get("all_source_features_covered") is all_sources_covered
         and coverage.get("complete_dense_writer_coverage") is True
+        and coverage.get("complete_dense_writer_structural_safety") is True
+        and coverage.get("owns_exact_storage_allocation") is True
         and all_finite
         and int(torch.count_nonzero(selected).item()) > 0
         and all_outputs_covered
@@ -6372,6 +6653,7 @@ def _authenticated_exact_zero_terminal_plant(
         and validation.get("passed") is _all_passed(recomputed_validation_gates)
         and validation.get("heldout_diagnostic_only") is True
         and validation.get("publication_gate_applied") is False
+        and validation.get("used_only_for_frozen_candidate_acceptance") is False
         and validation.get("used_for_candidate_ranking") is False
         and validation.get("used_to_change_selected_candidate_id") is False
         and validation.get("accessed_only_after_selected_id_and_state_sha256_frozen")
@@ -6379,6 +6661,7 @@ def _authenticated_exact_zero_terminal_plant(
         and validation.get("frozen_candidate_state_sha256") == output_hashes["selected"]
         and split_roles.get("candidate_eligibility_uses_only_finite_dense_structure")
         is True
+        and split_roles.get("candidate_eligibility_uses_only_structural_safety") is True
         and split_roles.get("fit_used_for_candidate_eligibility") is False
         and split_roles.get("only_fit_rows_used_for_candidate_ordering") is True
         and split_roles.get("fit_metrics_used_for_pre_review_candidate_selection")
@@ -6391,6 +6674,8 @@ def _authenticated_exact_zero_terminal_plant(
         and report.get("selected_writer_all_elements_finite") is True
         and report.get("selected_writer_all_elements_nonzero") is all_nonzero
         and report.get("selected_writer_all_source_features_covered") is True
+        and report.get("published_writer_is_structurally_safe_effectful_nonincumbent")
+        is True
         and report.get("published_writer_is_finite_dense_nonzero_structural_plant")
         is True
         and report.get("nonfinite_candidate_or_replay_is_hard_failure") is True
@@ -6404,7 +6689,7 @@ def _terminal_publication_decision(
     expected_seed: Lfm2CpcfTerminalActionSeed | None = None,
     expected_evidence: Mapping[str, Lfm2CpcfTerminalActionEvidence] | None = None,
 ) -> tuple[Any, Mapping[str, Any]]:
-    """Authenticate either a changed winner or the exact published incumbent."""
+    """Authenticate a structurally safe nonincumbent terminal publication."""
 
     torch = _torch()
     if not isinstance(terminal, Lfm2CpcfTerminalActionResidualResult):
@@ -6424,11 +6709,22 @@ def _terminal_publication_decision(
     published = terminal.published_down_weight
     incumbent = terminal.incumbent_down_weight
     selected = terminal.selected_down_weight
+    terminal_action_selected_sha256 = _terminal_action_tensor_sha256(
+        selected,
+        "terminal.selected_down_weight",
+    )
+    terminal_action_published_sha256 = _terminal_action_tensor_sha256(
+        published,
+        "terminal.published_down_weight",
+    )
+    semantic_selected_sha256 = _tensor_sha256(selected)
+    semantic_published_sha256 = _tensor_sha256(published)
+    semantic_incumbent_sha256 = _tensor_sha256(incumbent)
     published_is_incumbent = bool(torch.equal(published, incumbent))
     published_is_selected = bool(torch.equal(published, selected))
     incumbent_is_exact_zero = bool(torch.count_nonzero(incumbent).item() == 0)
     validation = report.get("validation")
-    validation_passed = bool(
+    validation_diagnostics_passed = bool(
         isinstance(validation, Mapping) and validation.get("passed") is True
     )
     common_valid = bool(
@@ -6436,6 +6732,31 @@ def _terminal_publication_decision(
         and report.get("parameter_identity_or_topology_mutation") is False
         and report.get("parameter_count_before") == report.get("parameter_count_after")
         and report.get("rollback_exact") is True
+        and report.get("structural_nonveto_schema")
+        == LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA
+        and report.get("candidate_eligibility_basis")
+        == "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+        and report.get("structural_safety_is_only_candidate_veto") is True
+        and report.get("numeric_metrics_used_for_candidate_ordering") is True
+        and report.get("numeric_metrics_used_for_candidate_eligibility") is False
+        and report.get("numeric_thresholds_used_for_candidate_eligibility") is False
+        and report.get("numeric_thresholds_used_for_publication") is False
+        and report.get("weight_delta_threshold_used_for_candidate_eligibility") is False
+        and report.get("fit_thresholds_used_for_candidate_eligibility") is False
+        and report.get("fit_check_thresholds_used_for_candidate_eligibility") is False
+        and report.get("selection_thresholds_used_for_candidate_eligibility") is False
+        and report.get("validation_thresholds_used_for_publication") is False
+        and report.get("validation_publication_veto_applied") is False
+        and report.get("rollback_authorized") is False
+        and report.get("numeric_metrics_have_final_intelligence_authority") is False
+        and report.get("behavioral_intelligence_review_outside_terminal_compiler")
+        is True
+        and report.get("published_writer_is_structurally_safe_effectful_nonincumbent")
+        is True
+        and isinstance(validation, Mapping)
+        and validation.get("heldout_diagnostic_only") is True
+        and validation.get("publication_gate_applied") is False
+        and validation.get("used_only_for_frozen_candidate_acceptance") is False
     )
     exact_zero_cold_start = _authenticated_exact_zero_terminal_plant(
         report,
@@ -6448,63 +6769,46 @@ def _terminal_publication_decision(
     )
     changed_winner = bool(
         common_valid
-        and not incumbent_is_exact_zero
         and terminal.accepted
         and terminal.changed
         and terminal.selected_candidate_id != "incumbent"
         and report.get("selected_nonincumbent") is True
         and report.get("published_is_incumbent") is False
         and report.get("rollback_performed") is False
-        and validation_passed
         and published_is_selected
         and not published_is_incumbent
+        and (not incumbent_is_exact_zero or exact_zero_cold_start)
     )
-    changed_winner = bool(changed_winner or (common_valid and exact_zero_cold_start))
-    incumbent_retained = bool(
-        common_valid
-        and not incumbent_is_exact_zero
-        and not terminal.accepted
-        and not terminal.changed
-        and report.get("published_is_incumbent") is True
-        and published_is_incumbent
-    )
-    if incumbent_retained:
-        if terminal.selected_candidate_id == "incumbent":
-            incumbent_retained = bool(
-                report.get("selected_nonincumbent") is False
-                and validation_passed
-                and report.get("rollback_performed") is False
-            )
-            reason = "heldout-selected-incumbent"
-        else:
-            incumbent_retained = bool(
-                report.get("selected_nonincumbent") is True
-                and not validation_passed
-                and report.get("rollback_performed") is True
-            )
-            reason = "frozen-candidate-validation-rollback-to-incumbent"
-    else:
-        reason = ""
-    if not changed_winner and not incumbent_retained:
+    if not changed_winner:
         raise Lfm2SemanticPostfoldError(
-            "Fused terminal published neither an accepted changed winner nor an "
-            "authenticated exact incumbent."
+            "Fused terminal published neither an authenticated structural-nonveto "
+            "changed winner nor a valid cold-start plant."
         )
-    if changed_winner:
-        reason = (
-            "exact-zero-structural-fit-ordered-plant"
-            if exact_zero_cold_start
-            else "accepted-nonincumbent-mutation"
-        )
+    reason = (
+        "exact-zero-structural-fit-ordered-plant"
+        if exact_zero_cold_start
+        else "accepted-nonincumbent-mutation"
+    )
     decision = {
         "publication_decision": reason,
         "terminal_publication_decision_accepted": True,
-        "terminal_nonincumbent_candidate_accepted": changed_winner,
-        "terminal_incumbent_retained": incumbent_retained,
-        "terminal_writer_changed": changed_winner,
-        "published_w2_sha256": _tensor_sha256(published),
-        "selected_w2_sha256": _tensor_sha256(selected),
-        "incumbent_w2_sha256": _tensor_sha256(incumbent),
+        "terminal_nonincumbent_candidate_accepted": True,
+        "terminal_incumbent_retained": False,
+        "terminal_writer_changed": True,
+        "structural_candidate_eligibility_authenticated": True,
+        "heldout_metrics_diagnostic_only": True,
+        "validation_diagnostics_passed": validation_diagnostics_passed,
+        "validation_publication_gate_applied": False,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "terminal_action_result_sha256": terminal.result_sha256,
+        "terminal_action_selected_w2_sha256": terminal_action_selected_sha256,
+        "terminal_action_published_w2_sha256": terminal_action_published_sha256,
+        "semantic_selected_w2_sha256": semantic_selected_sha256,
+        "semantic_published_w2_sha256": semantic_published_sha256,
+        "semantic_incumbent_w2_sha256": semantic_incumbent_sha256,
+        "published_w2_sha256": semantic_published_sha256,
+        "selected_w2_sha256": semantic_selected_sha256,
+        "incumbent_w2_sha256": semantic_incumbent_sha256,
         "published_is_selected": published_is_selected,
         "published_is_incumbent": published_is_incumbent,
     }
@@ -6532,6 +6836,7 @@ def _install_final_w2_once(
     target_model: Any,
     *,
     published_down_weight: Any,
+    terminal_publication_decision: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     torch = _torch()
     layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
@@ -6553,6 +6858,48 @@ def _install_final_w2_once(
     ):
         raise Lfm2SemanticPostfoldError(
             "Published final W2 is not a finite detached dense topology match."
+        )
+    if not isinstance(terminal_publication_decision, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Final W2 installation omitted its terminal publication decision."
+        )
+    terminal_action_result_sha256 = _digest(
+        terminal_publication_decision.get("terminal_action_result_sha256"),
+        "terminal-action result",
+    )
+    terminal_action_selected_sha256 = _digest(
+        terminal_publication_decision.get("terminal_action_selected_w2_sha256"),
+        "terminal-action selected W2",
+    )
+    terminal_action_published_sha256 = _digest(
+        terminal_publication_decision.get("terminal_action_published_w2_sha256"),
+        "terminal-action published W2",
+    )
+    semantic_selected_sha256 = _digest(
+        terminal_publication_decision.get("semantic_selected_w2_sha256"),
+        "semantic selected W2",
+    )
+    semantic_published_sha256 = _digest(
+        terminal_publication_decision.get("semantic_published_w2_sha256"),
+        "semantic published W2",
+    )
+    observed_semantic_published_sha256 = _tensor_sha256(published_down_weight)
+    observed_terminal_action_published_sha256 = _terminal_action_tensor_sha256(
+        published_down_weight,
+        "published_down_weight",
+    )
+    if (
+        terminal_action_selected_sha256 != terminal_action_published_sha256
+        or terminal_action_published_sha256 != observed_terminal_action_published_sha256
+        or semantic_selected_sha256 != semantic_published_sha256
+        or semantic_published_sha256 != observed_semantic_published_sha256
+        or terminal_publication_decision.get("selected_w2_sha256")
+        != semantic_selected_sha256
+        or terminal_publication_decision.get("published_w2_sha256")
+        != semantic_published_sha256
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Final W2 publication decision is not bound to the installed writer."
         )
     parameter_name = f"model.layers.{len(layers) - 1}.feed_forward.w2.weight"
     before_state = fingerprint_lfm2_parent(target_model).identity_sha256
@@ -6614,6 +6961,12 @@ def _install_final_w2_once(
             not runtime_preserved
             or _parameter_count(target_model) != before_count
             or not torch.equal(parameter.detach(), published)
+            or _tensor_sha256(parameter) != semantic_published_sha256
+            or _terminal_action_tensor_sha256(
+                parameter,
+                "installed_final_w2",
+            )
+            != terminal_action_published_sha256
             or not (mutation_valid or noop_valid)
         ):
             raise Lfm2SemanticPostfoldError(
@@ -6652,6 +7005,11 @@ def _install_final_w2_once(
         "parameter_name": parameter_name,
         "model_state_before_sha256": before_state,
         "model_state_after_sha256": after_state,
+        "terminal_action_result_sha256": terminal_action_result_sha256,
+        "terminal_action_selected_w2_sha256": terminal_action_selected_sha256,
+        "terminal_action_published_w2_sha256": terminal_action_published_sha256,
+        "semantic_selected_w2_sha256": semantic_selected_sha256,
+        "semantic_published_w2_sha256": semantic_published_sha256,
         "incumbent_w2_sha256": _tensor_sha256(incumbent),
         "published_w2_sha256": _tensor_sha256(parameter),
         "published_w2_structural_coverage": dict(published_coverage),
@@ -6822,12 +7180,27 @@ def _build_terminal_frontier_export_context(
         raise Lfm2SemanticPostfoldError(
             "Terminal frontier export context has contradictory cache-session facts."
         )
+    compatibility = _verify_sealed(
+        terminal_cache_compatibility,
+        seal_name="authentication_sha256",
+        label="terminal frontier cache compatibility",
+    )
+    payload_binding = _verify_sealed(
+        terminal_cache_payload_binding,
+        seal_name="authentication_sha256",
+        label="terminal frontier cache payload binding",
+    )
+    interface_authentication = _verify_sealed(
+        terminal_interface_authentication,
+        seal_name="result_sha256",
+        label="terminal frontier tied-interface authentication",
+    )
     compatibility_sha256 = _digest(
-        terminal_cache_compatibility.get("authentication_sha256"),
+        compatibility.get("authentication_sha256"),
         "terminal cache compatibility authentication",
     )
     payload_binding_sha256 = _digest(
-        terminal_cache_payload_binding.get("authentication_sha256"),
+        payload_binding.get("authentication_sha256"),
         "terminal cache payload binding authentication",
     )
     layer_result_sha256 = _digest(
@@ -6835,7 +7208,7 @@ def _build_terminal_frontier_export_context(
         "semantic layer-stack result",
     )
     interface_result_sha256 = _digest(
-        terminal_interface_authentication.get("result_sha256"),
+        interface_authentication.get("result_sha256"),
         "terminal tied-interface authentication",
     )
     terminal_seed_sha256 = _digest(
@@ -6846,9 +7219,24 @@ def _build_terminal_frontier_export_context(
         terminal.incumbent_down_weight,
         "terminal.incumbent_down_weight",
     )
-    if terminal.report.get("incumbent_seed_writer_sha256") != terminal_incumbent_sha256:
+    terminal_session_sha256 = _digest(
+        terminal_cache_session_sha256,
+        "terminal cache session",
+    )
+    mapped_table_sha256 = _tensor_sha256(mapped_parent_tied_table)
+    if (
+        terminal.report.get("incumbent_seed_writer_sha256") != terminal_incumbent_sha256
+        or compatibility.get("schema")
+        != LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA
+        or compatibility.get("cache_key") != cache.cache_key
+        or payload_binding.get("compatibility_authentication_sha256")
+        != compatibility_sha256
+        or payload_binding.get("payload_session_sha256") != terminal_session_sha256
+        or interface_authentication.get("schema")
+        != "neural-forge-lfm2-fused-terminal-tied-interface-v1"
+    ):
         raise Lfm2SemanticPostfoldError(
-            "Terminal frontier incumbent differs from its authenticated seed."
+            "Terminal frontier live facts differ from their authenticated sources."
         )
     body = {
         "schema": LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA,
@@ -6859,10 +7247,7 @@ def _build_terminal_frontier_export_context(
         ),
         "terminal_cache_compatibility_sha256": compatibility_sha256,
         "terminal_cache_payload_binding_sha256": payload_binding_sha256,
-        "terminal_cache_session_sha256": _digest(
-            terminal_cache_session_sha256,
-            "terminal cache session",
-        ),
+        "terminal_cache_session_sha256": terminal_session_sha256,
         "layer_stack_cache_session_sha256": _digest(
             layer_receipt.get("cache_selective_session_sha256"),
             "layer-stack cache session",
@@ -6880,9 +7265,9 @@ def _build_terminal_frontier_export_context(
             parent_final_norm.result_sha256,
             "parent final norm receipt",
         ),
-        "mapped_parent_tied_table_sha256": _tensor_sha256(mapped_parent_tied_table),
+        "mapped_parent_tied_table_sha256": mapped_table_sha256,
         "mapped_parent_tied_table_interface_report_sha256": _digest(
-            terminal_interface_authentication.get("interface_report_sha256"),
+            interface_authentication.get("interface_report_sha256"),
             "mapped tied-table interface report",
         ),
         "semantic_layer_stack_result_sha256": layer_result_sha256,
@@ -6897,13 +7282,27 @@ def _build_terminal_frontier_export_context(
         "frontier_export_occurs_before_final_w2_installation": True,
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
-    return MappingProxyType(_sealed(body, "context_sha256"))
+    sealed = _sealed(body, "context_sha256")
+    issued_facts = {name: sealed[name] for name in _TERMINAL_FRONTIER_LIVE_FACT_NAMES}
+    return _CompilerIssuedTerminalFrontierExportContext(
+        sealed,
+        issued_facts,
+        issuer=_TERMINAL_FRONTIER_EXPORT_CONTEXT_ISSUER,
+    )
 
 
 def _authenticate_terminal_frontier_export_context(
     terminal: Lfm2CpcfTerminalActionResidualResult,
     context: Mapping[str, Any],
 ) -> Mapping[str, Any]:
+    if not isinstance(context, _CompilerIssuedTerminalFrontierExportContext):
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier export context is not compiler-issued."
+        )
+    issued_fact_tuple, issued_fact_sha256 = context._authenticate_issued_facts(
+        _TERMINAL_FRONTIER_EXPORT_CONTEXT_ISSUER
+    )
+    issued_facts = dict(issued_fact_tuple)
     authenticated = _verify_sealed(
         context,
         seal_name="context_sha256",
@@ -6930,11 +7329,17 @@ def _authenticate_terminal_frontier_export_context(
             and authenticated.get("same_live_cache_session_as_layer_stack") is True
         )
         or authenticated.get("operation_audit") != dict(_ZERO_OPERATIONS)
+        or any(
+            authenticated.get(name) != issued_facts.get(name)
+            for name in _TERMINAL_FRONTIER_LIVE_FACT_NAMES
+        )
+        or issued_fact_sha256
+        != canonical_sha256([list(value) for value in issued_fact_tuple])
     ):
         raise Lfm2SemanticPostfoldError(
             "Terminal frontier export context does not authenticate the live result."
         )
-    return MappingProxyType(authenticated)
+    return context
 
 
 def _export_authenticated_terminal_frontier(
@@ -7423,6 +7828,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     installation = _install_final_w2_once(
         target_model,
         published_down_weight=published_down_weight,
+        terminal_publication_decision=publication_decision,
     )
     final_mlp_full_coverage_after_terminal = _lfm2_dense_producer_chain_coverage(
         target_model,
@@ -7582,6 +7988,19 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "observed_trace_is_not_global_lexical_proof": True,
         "lexical_teacher": dict(teacher_report),
         "terminal_result": terminal.as_dict(),
+        "terminal_action_result_sha256": publication_decision[
+            "terminal_action_result_sha256"
+        ],
+        "terminal_action_selected_w2_sha256": publication_decision[
+            "terminal_action_selected_w2_sha256"
+        ],
+        "terminal_action_published_w2_sha256": publication_decision[
+            "terminal_action_published_w2_sha256"
+        ],
+        "semantic_selected_w2_sha256": publication_decision[
+            "semantic_selected_w2_sha256"
+        ],
+        "semantic_published_w2_sha256": installation["semantic_published_w2_sha256"],
         **_terminal_frontier_export_receipt_fields(
             terminal_frontier_export,
             terminal_frontier_export_context,
@@ -7645,7 +8064,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
                 "zero_training_pruning_quantization": True,
             }
         )
-    return MappingProxyType(_sealed(body, "result_sha256"))
+    return _issue_fused_semantic_terminal_receipt(_sealed(body, "result_sha256"))
 
 
 def _authenticate_fused_terminal_cache_evidence(
@@ -7972,6 +8391,7 @@ def _validate_fused_semantic_terminal_receipt(
     layer_receipt: Mapping[str, Any],
     current_model_state_sha256: str,
 ) -> Mapping[str, Any]:
+    receipt = _authenticate_fused_semantic_terminal_receipt_lineage(receipt)
     _authenticate_fused_terminal_cache_evidence(receipt)
     installation = receipt.get("installation")
     if not isinstance(installation, Mapping):
@@ -8034,6 +8454,158 @@ def _validate_fused_semantic_terminal_receipt(
     installation_exact_zero = installation.get("exact_zero_cold_start") is True
     terminal_result_value = receipt.get("terminal_result")
     terminal_decision = receipt.get("terminal_publication_decision")
+    if not isinstance(terminal_result_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Fused semantic terminal omitted its authenticated terminal result."
+        )
+    terminal_result = _verify_sealed(
+        terminal_result_value,
+        seal_name="result_sha256",
+        label="terminal-action result",
+    )
+    terminal_validation = terminal_result.get("validation")
+    terminal_output_hashes = terminal_result.get("output_state_sha256")
+    terminal_frontier = terminal_result.get("frontier")
+    terminal_selected_id = terminal_result.get("selected_candidate_id")
+    terminal_selected_record = None
+    if isinstance(terminal_frontier, list):
+        terminal_selected_record = next(
+            (
+                value
+                for value in terminal_frontier
+                if isinstance(value, Mapping)
+                and value.get("candidate_id") == terminal_selected_id
+            ),
+            None,
+        )
+    terminal_selected_coverage = terminal_result.get(
+        "selected_writer_structural_coverage"
+    )
+    terminal_decision_values = (
+        terminal_decision if isinstance(terminal_decision, Mapping) else {}
+    )
+    terminal_output_values = (
+        terminal_output_hashes if isinstance(terminal_output_hashes, Mapping) else {}
+    )
+    # Terminal-action digests include that compiler's tensor descriptor, while
+    # semantic digests use this module's descriptor.  Bind each domain end to
+    # end, but never compare values across the two domains.
+    receipt_cross_binding_invalid = bool(
+        terminal_result.get("result_sha256")
+        != terminal_decision_values.get("terminal_action_result_sha256")
+        or terminal_decision_values.get("terminal_action_result_sha256")
+        != installation.get("terminal_action_result_sha256")
+        or receipt.get("terminal_action_result_sha256")
+        != terminal_decision_values.get("terminal_action_result_sha256")
+        or terminal_output_values.get("selected")
+        != terminal_decision_values.get("terminal_action_selected_w2_sha256")
+        or terminal_decision_values.get("terminal_action_selected_w2_sha256")
+        != installation.get("terminal_action_selected_w2_sha256")
+        or receipt.get("terminal_action_selected_w2_sha256")
+        != terminal_decision_values.get("terminal_action_selected_w2_sha256")
+        or terminal_output_values.get("published")
+        != terminal_decision_values.get("terminal_action_published_w2_sha256")
+        or terminal_decision_values.get("terminal_action_published_w2_sha256")
+        != installation.get("terminal_action_published_w2_sha256")
+        or receipt.get("terminal_action_published_w2_sha256")
+        != terminal_decision_values.get("terminal_action_published_w2_sha256")
+        or terminal_decision_values.get("semantic_selected_w2_sha256")
+        != terminal_decision_values.get("selected_w2_sha256")
+        or terminal_decision_values.get("semantic_selected_w2_sha256")
+        != installation.get("semantic_selected_w2_sha256")
+        or receipt.get("semantic_selected_w2_sha256")
+        != terminal_decision_values.get("semantic_selected_w2_sha256")
+        or terminal_decision_values.get("semantic_published_w2_sha256")
+        != terminal_decision_values.get("published_w2_sha256")
+        or terminal_decision_values.get("semantic_published_w2_sha256")
+        != installation.get("semantic_published_w2_sha256")
+        or installation.get("semantic_published_w2_sha256")
+        != installation.get("published_w2_sha256")
+        or receipt.get("semantic_published_w2_sha256")
+        != installation.get("semantic_published_w2_sha256")
+    )
+    terminal_result_invalid = bool(
+        receipt_cross_binding_invalid
+        or terminal_result.get("schema") != LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA
+        or terminal_result.get("method") != _TERMINAL_ACTION_RESULT_METHOD
+        or terminal_result.get("structural_nonveto_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA
+        or terminal_result.get("candidate_eligibility_basis")
+        != "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+        or terminal_result.get("structural_safety_is_only_candidate_veto") is not True
+        or terminal_result.get("numeric_metrics_used_for_candidate_eligibility")
+        is not False
+        or terminal_result.get("numeric_thresholds_used_for_candidate_eligibility")
+        is not False
+        or terminal_result.get("numeric_thresholds_used_for_publication") is not False
+        or terminal_result.get("validation_publication_veto_applied") is not False
+        or terminal_result.get("rollback_authorized") is not False
+        or terminal_result.get("numeric_metrics_have_final_intelligence_authority")
+        is not False
+        or terminal_result.get(
+            "behavioral_intelligence_review_outside_terminal_compiler"
+        )
+        is not True
+        or terminal_result.get(
+            "published_writer_is_structurally_safe_effectful_nonincumbent"
+        )
+        is not True
+        or terminal_result.get("accepted") is not True
+        or terminal_result.get("selected_nonincumbent") is not True
+        or not isinstance(terminal_selected_id, str)
+        or not terminal_selected_id
+        or terminal_selected_id == "incumbent"
+        or terminal_result.get("published_is_incumbent") is not False
+        or terminal_result.get("rollback_performed") is not False
+        or terminal_result.get("rollback_exact") is not True
+        or terminal_result.get("source_seed_writer_unchanged") is not True
+        or terminal_result.get("parameter_identity_or_topology_mutation") is not False
+        or terminal_result.get("parameter_count_before")
+        != terminal_result.get("parameter_count_after")
+        or not isinstance(terminal_output_hashes, Mapping)
+        or terminal_output_hashes.get("selected")
+        != terminal_output_hashes.get("published")
+        or terminal_output_hashes.get("selected")
+        == terminal_output_hashes.get("incumbent")
+        or not isinstance(terminal_selected_record, Mapping)
+        or terminal_selected_record.get("state_sha256")
+        != terminal_output_hashes.get("selected")
+        or terminal_selected_record.get("eligible") is not True
+        or terminal_selected_record.get("structurally_eligible") is not True
+        or terminal_selected_record.get("effectful_nonincumbent") is not True
+        or terminal_selected_record.get("structural_safety_passed") is not True
+        or not isinstance(terminal_selected_coverage, Mapping)
+        or terminal_selected_coverage.get("tensor_sha256")
+        != terminal_output_hashes.get("selected")
+        or terminal_selected_coverage.get("owns_exact_storage_allocation") is not True
+        or terminal_selected_coverage.get("complete_dense_writer_structural_safety")
+        is not True
+        or not isinstance(terminal_validation, Mapping)
+        or type(terminal_validation.get("passed")) is not bool
+        or terminal_validation.get("heldout_diagnostic_only") is not True
+        or terminal_validation.get("publication_gate_applied") is not False
+        or terminal_validation.get("used_only_for_frozen_candidate_acceptance")
+        is not False
+        or terminal_result.get("operation_audit")
+        != dict(_TERMINAL_ZERO_OPERATION_AUDIT)
+        or not isinstance(terminal_decision, Mapping)
+        or terminal_decision.get("terminal_publication_decision_accepted") is not True
+        or terminal_decision.get("terminal_nonincumbent_candidate_accepted") is not True
+        or terminal_decision.get("terminal_incumbent_retained") is not False
+        or terminal_decision.get("terminal_writer_changed") is not True
+        or terminal_decision.get("structural_candidate_eligibility_authenticated")
+        is not True
+        or terminal_decision.get("heldout_metrics_diagnostic_only") is not True
+        or terminal_decision.get("validation_publication_gate_applied") is not False
+        or terminal_decision.get("numeric_metrics_have_final_intelligence_authority")
+        is not False
+        or terminal_decision.get("published_is_selected") is not True
+        or terminal_decision.get("published_is_incumbent") is not False
+        or terminal_decision.get("published_w2_sha256")
+        != terminal_decision.get("selected_w2_sha256")
+        or terminal_decision.get("published_w2_sha256")
+        != installation.get("published_w2_sha256")
+    )
     fused_heldout = receipt.get("fused_heldout_diagnostics")
     separate_heldout = receipt.get("separate_heldout_lane_diagnostics")
     heldout_rows = (
@@ -8067,15 +8639,6 @@ def _validate_fused_semantic_terminal_receipt(
                 break
     cold_receipt_invalid = False
     if installation_exact_zero:
-        if isinstance(terminal_result_value, Mapping):
-            terminal_result = _verify_sealed(
-                terminal_result_value,
-                seal_name="result_sha256",
-                label="exact-zero terminal-action result",
-            )
-        else:
-            terminal_result = {}
-        terminal_validation = terminal_result.get("validation")
         terminal_operations = terminal_result.get("operation_audit")
         cold_receipt_invalid = bool(
             receipt.get("terminal_exact_zero_cold_start") is not True
@@ -8143,7 +8706,23 @@ def _validate_fused_semantic_terminal_receipt(
             or terminal_result.get("candidate_selection_evidence_scope")
             != "finite-dense-structural-eligibility-plus-fit-ordering"
             or terminal_result.get("candidate_eligibility_basis")
-            != "finite_dense_coverage_and_nonincumbent_effect"
+            != "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+            or terminal_result.get("structural_nonveto_schema")
+            != LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA
+            or terminal_result.get("structural_safety_is_only_candidate_veto")
+            is not True
+            or terminal_result.get("numeric_metrics_used_for_candidate_eligibility")
+            is not False
+            or terminal_result.get("numeric_thresholds_used_for_candidate_eligibility")
+            is not False
+            or terminal_result.get("numeric_thresholds_used_for_publication")
+            is not False
+            or terminal_result.get("validation_publication_veto_applied") is not False
+            or terminal_result.get("rollback_authorized") is not False
+            or terminal_result.get(
+                "behavioral_intelligence_review_outside_terminal_compiler"
+            )
+            is not True
             or terminal_result.get("fit_metrics_role")
             != "ordering-among-structurally-eligible-not-threshold-gating"
             or terminal_result.get("fit_metrics_used_for_candidate_ordering")
@@ -8176,6 +8755,8 @@ def _validate_fused_semantic_terminal_receipt(
             or not isinstance(terminal_validation, Mapping)
             or terminal_validation.get("heldout_diagnostic_only") is not True
             or terminal_validation.get("publication_gate_applied") is not False
+            or terminal_validation.get("used_only_for_frozen_candidate_acceptance")
+            is not False
             or not isinstance(terminal_operations, Mapping)
             or not terminal_operations
             or any(value != 0 for value in terminal_operations.values())
@@ -8206,10 +8787,14 @@ def _validate_fused_semantic_terminal_receipt(
         or receipt.get("terminal_publication_decision_accepted") is not True
         or receipt.get("terminal_heldout_metrics_diagnostic_only") is not True
         or receipt.get("terminal_heldout_publication_gate_applied") is not False
+        or receipt.get("terminal_nonincumbent_candidate_accepted") is not True
+        or receipt.get("terminal_incumbent_retained") is not False
+        or terminal_result_invalid
         or heldout_diagnostics_invalid
         or counts["decision"] != 1
-        or counts["install"] + counts["retention"] != 1
-        or counts["mutation"] != counts["install"]
+        or counts["install"] != 1
+        or counts["mutation"] != 1
+        or counts["retention"] != 0
         or installation.get("decision_count") != 1
         or installation.get("install_count") != counts["install"]
         or installation.get("mutation_count") != counts["mutation"]
@@ -8250,29 +8835,15 @@ def _validate_fused_semantic_terminal_receipt(
         or layer_receipt.get("model_state_before_sha256") == current_model_state_sha256
         or cold_receipt_invalid
     )
-    if counts["install"] == 1:
-        invalid = bool(
-            invalid
-            or installation.get("installed") is not True
-            or installation.get("exact_zero_copy_noop") is not False
-            or not installation.get("changed_state_keys")
-            or installation.get("model_state_before_sha256")
-            == installation.get("model_state_after_sha256")
-            or receipt.get("terminal_nonincumbent_candidate_accepted") is not True
-            or receipt.get("terminal_incumbent_retained") is not False
-        )
-    else:
-        invalid = bool(
-            invalid
-            or installation.get("installed") is not False
-            or installation.get("exact_zero_copy_noop") is not True
-            or installation.get("parameter_copy_calls") != 0
-            or installation.get("changed_state_keys") != []
-            or installation.get("model_state_before_sha256")
-            != installation.get("model_state_after_sha256")
-            or receipt.get("terminal_nonincumbent_candidate_accepted") is not False
-            or receipt.get("terminal_incumbent_retained") is not True
-        )
+    invalid = bool(
+        invalid
+        or installation.get("installed") is not True
+        or installation.get("exact_zero_copy_noop") is not False
+        or installation.get("parameter_copy_calls") != 1
+        or not installation.get("changed_state_keys")
+        or installation.get("model_state_before_sha256")
+        == installation.get("model_state_after_sha256")
+    )
     if invalid:
         raise Lfm2SemanticPostfoldError(
             "Fused semantic terminal receipt is incomplete or internally false."
@@ -8807,15 +9378,10 @@ def run_lfm2_semantic_postfold(
                 },
             )
         )
-        terminal_receipt = _verify_sealed(
-            terminal,
-            seal_name="result_sha256",
-            label="fused semantic terminal",
-        )
         state_after_terminal = fingerprint_lfm2_parent(target_model).identity_sha256
         terminal_receipt = dict(
             _validate_fused_semantic_terminal_receipt(
-                terminal_receipt,
+                terminal,
                 layer_receipt=layer_stack.receipt,
                 current_model_state_sha256=state_after_terminal,
             )

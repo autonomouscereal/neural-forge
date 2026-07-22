@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import copy
+import gc
 import hashlib
 import inspect
 import json
+import weakref
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
 
@@ -278,8 +280,70 @@ def _compiled_exact_zero_terminal_result(*, policy=None):
     return seed, banks, result
 
 
+def _compiled_nonzero_terminal_result_with_failed_validation():
+    zero_seed, banks, _zero_result = _compiled_exact_zero_terminal_result()
+    seed = terminal_action.Lfm2CpcfTerminalActionSeed(
+        gate_weight=zero_seed.gate_weight,
+        up_weight=zero_seed.up_weight,
+        down_weight=torch.tensor(
+            [[0.03, -0.02, 0.01], [-0.01, 0.04, 0.02]],
+            dtype=torch.bfloat16,
+        ),
+        final_norm_weight=zero_seed.final_norm_weight,
+        producer_encoder=zero_seed.producer_encoder,
+        target_tied_weight=zero_seed.target_tied_weight,
+        source_tied_table=zero_seed.source_tied_table,
+        norm_epsilon=zero_seed.norm_epsilon,
+    )
+    policy = terminal_action.Lfm2CpcfTerminalActionPolicy(
+        minimum_selection_centered_rmse_improvement_fraction=1.0,
+        minimum_selection_oracle_top1_gain=1.0,
+        minimum_selection_parent_top1_gain=1.0,
+        minimum_selection_parent_positive_margin_gain=1.0,
+        metric_regression_tolerance=0.0,
+        maximum_post_layer_rms_ratio=1e-12,
+        maximum_weight_delta_rms_ratio=1e-12,
+    )
+    result = terminal_action.compile_lfm2_cpcf_terminal_action_residual(
+        seed=seed,
+        fit_evidence=banks["fit"],
+        fit_check_evidence=banks["fit_check"],
+        selection_evidence=banks["selection"],
+        validation_evidence=banks["validation"],
+        policy=policy,
+    )
+    return seed, banks, result
+
+
 def _frontier_export_context(terminal, *, resume_mode=False):
     session_sha256 = "9" * 64
+
+    def seal(body, name):
+        return {**body, name: canonical_sha256(body)}
+
+    compatibility = seal(
+        {
+            "schema": postfold.LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA,
+            "cache_key": "1" * 64,
+        },
+        "authentication_sha256",
+    )
+    payload_binding = seal(
+        {
+            "compatibility_authentication_sha256": compatibility[
+                "authentication_sha256"
+            ],
+            "payload_session_sha256": session_sha256,
+        },
+        "authentication_sha256",
+    )
+    interface_authentication = seal(
+        {
+            "schema": "neural-forge-lfm2-fused-terminal-tied-interface-v1",
+            "interface_report_sha256": "7" * 64,
+        },
+        "result_sha256",
+    )
     return postfold._build_terminal_frontier_export_context(
         terminal=terminal,
         cache=SimpleNamespace(cache_key="1" * 64, parent_fingerprint="2" * 64),
@@ -290,17 +354,28 @@ def _frontier_export_context(terminal, *, resume_mode=False):
             "result_sha256": "5" * 64,
             "cache_selective_session_sha256": session_sha256,
         },
-        terminal_interface_authentication={
-            "result_sha256": "6" * 64,
-            "interface_report_sha256": "7" * 64,
-        },
-        terminal_cache_compatibility={"authentication_sha256": "8" * 64},
-        terminal_cache_payload_binding={"authentication_sha256": "a" * 64},
+        terminal_interface_authentication=interface_authentication,
+        terminal_cache_compatibility=compatibility,
+        terminal_cache_payload_binding=payload_binding,
         terminal_cache_session_sha256=session_sha256,
         same_live_cache_session_as_layer_stack=not resume_mode,
         cache_content_identity_matches_layer_stack=True,
         preterminal_resume_mode=resume_mode,
     )
+
+
+def _installation_publication_decision(weight):
+    semantic_sha256 = postfold._tensor_sha256(weight)
+    terminal_action_sha256 = terminal_action._tensor_sha256(weight)
+    return {
+        "terminal_action_result_sha256": "a" * 64,
+        "terminal_action_selected_w2_sha256": terminal_action_sha256,
+        "terminal_action_published_w2_sha256": terminal_action_sha256,
+        "semantic_selected_w2_sha256": semantic_sha256,
+        "semantic_published_w2_sha256": semantic_sha256,
+        "selected_w2_sha256": semantic_sha256,
+        "published_w2_sha256": semantic_sha256,
+    }
 
 
 def test_final_w2_incumbent_retention_is_an_exact_zero_copy_decision(
@@ -324,6 +399,7 @@ def test_final_w2_incumbent_retention_is_an_exact_zero_copy_decision(
     receipt = postfold._install_final_w2_once(
         target,
         published_down_weight=parameter.detach().cpu().clone(),
+        terminal_publication_decision=_installation_publication_decision(parameter),
     )
 
     assert receipt["installed"] is False
@@ -362,6 +438,7 @@ def test_final_w2_changed_publication_mutates_only_the_writer(monkeypatch) -> No
     receipt = postfold._install_final_w2_once(
         target,
         published_down_weight=published,
+        terminal_publication_decision=_installation_publication_decision(published),
     )
 
     assert receipt["installed"] is True
@@ -404,6 +481,7 @@ def test_exact_zero_structural_fit_ordered_plant_installs_transactionally(
     receipt = postfold._install_final_w2_once(
         target,
         published_down_weight=published,
+        terminal_publication_decision=decision,
     )
 
     assert torch.count_nonzero(seed.down_weight).item() == 0
@@ -420,6 +498,23 @@ def test_exact_zero_structural_fit_ordered_plant_installs_transactionally(
     assert decision["terminal_exact_zero_cold_start"] is True
     assert decision["heldout_metrics_diagnostic_only"] is True
     assert decision["terminal_incumbent_retained"] is False
+    assert decision["terminal_action_result_sha256"] == terminal.result_sha256
+    assert (
+        decision["terminal_action_selected_w2_sha256"]
+        == terminal.as_dict()["output_state_sha256"]["selected"]
+    )
+    assert (
+        receipt["terminal_action_selected_w2_sha256"]
+        == decision["terminal_action_selected_w2_sha256"]
+    )
+    assert (
+        receipt["semantic_selected_w2_sha256"]
+        == decision["semantic_selected_w2_sha256"]
+    )
+    assert (
+        decision["terminal_action_selected_w2_sha256"]
+        != decision["semantic_selected_w2_sha256"]
+    )
     assert receipt["exact_zero_cold_start"] is True
     assert receipt["incumbent_all_elements_zero"] is True
     assert receipt["incumbent_noop_publication_forbidden"] is True
@@ -475,7 +570,9 @@ def test_exact_zero_semantic_publication_accepts_fit_proxy_gate_miss() -> None:
     assert decision["fit_metrics_have_final_intelligence_authority"] is False
 
 
-def test_exact_zero_publication_recomputes_fit_and_rejects_dense_forgery() -> None:
+def test_exact_zero_publication_rejects_authenticated_then_mutated_dense_forgery() -> (
+    None
+):
     seed, evidence, terminal = _compiled_exact_zero_terminal_result()
     forged_weight = terminal.selected_down_weight.clone()
     forged_weight[0, 0] = forged_weight[0, 0] + 1.0
@@ -512,24 +609,35 @@ def test_exact_zero_publication_recomputes_fit_and_rejects_dense_forgery() -> No
     forged = terminal_action.Lfm2CpcfTerminalActionResidualResult(
         policy=terminal.policy,
         incumbent_down_weight=terminal.incumbent_down_weight,
-        selected_down_weight=forged_weight,
-        published_down_weight=forged_weight,
-        frontier_down_weights={
-            **terminal.frontier_down_weights,
-            terminal.selected_candidate_id: forged_weight,
-        },
+        selected_down_weight=terminal.selected_down_weight,
+        published_down_weight=terminal.published_down_weight,
+        frontier_down_weights=terminal.frontier_down_weights,
         selected_candidate_id=terminal.selected_candidate_id,
-        accepted=True,
-        report={**body, "result_sha256": forged_sha256},
-        result_sha256=forged_sha256,
+        accepted=terminal.accepted,
+        report=terminal.as_dict(),
+        result_sha256=terminal.result_sha256,
         _compiler_input_binding=terminal._compiler_input_binding,
         _compiler_issuer=terminal_action._TERMINAL_RESULT_COMPILER_ISSUER,
+        _compiler_lineage_receipt=terminal._compiler_lineage_token,
     )
     assert forged.verify_authentication() is True
+    object.__setattr__(forged, "selected_down_weight", forged_weight.clone())
+    object.__setattr__(forged, "published_down_weight", forged_weight.clone())
+    object.__setattr__(
+        forged,
+        "frontier_down_weights",
+        {
+            **terminal.frontier_down_weights,
+            terminal.selected_candidate_id: forged_weight.clone(),
+        },
+    )
+    object.__setattr__(forged, "report", {**body, "result_sha256": forged_sha256})
+    object.__setattr__(forged, "result_sha256", forged_sha256)
+    assert forged.verify_authentication() is False
 
     with pytest.raises(
         postfold.Lfm2SemanticPostfoldError,
-        match="published neither",
+        match="changed after authentication",
     ):
         postfold._terminal_publication_decision(
             forged,
@@ -566,13 +674,14 @@ def test_final_w2_refuses_blank_or_structurally_partial_publication(
         postfold._install_final_w2_once(
             target,
             published_down_weight=published,
+            terminal_publication_decision=_installation_publication_decision(published),
         )
 
     for name, value in target.state_dict().items():
         torch.testing.assert_close(value, before[name], rtol=0, atol=0)
 
 
-def test_validation_rejected_selected_writer_publishes_only_incumbent() -> None:
+def test_legacy_validation_rollback_to_incumbent_is_rejected() -> None:
     incumbent = torch.eye(2, dtype=torch.bfloat16)
     selected = torch.ones((2, 2), dtype=torch.bfloat16)
     terminal = _terminal_result(
@@ -585,15 +694,39 @@ def test_validation_rejected_selected_writer_publishes_only_incumbent() -> None:
         rollback_performed=True,
     )
 
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="published neither",
+    ):
+        postfold._terminal_publication_decision(terminal)
+
+
+def test_nonzero_structural_publication_ignores_failed_validation_diagnostic() -> None:
+    _seed, _evidence, terminal = (
+        _compiled_nonzero_terminal_result_with_failed_validation()
+    )
+    report = terminal.as_dict()
+
     published, decision = postfold._terminal_publication_decision(terminal)
 
-    assert torch.equal(published, incumbent)
-    assert not torch.equal(published, selected)
-    assert decision["publication_decision"] == (
-        "frozen-candidate-validation-rollback-to-incumbent"
-    )
-    assert decision["terminal_incumbent_retained"] is True
-    assert decision["terminal_nonincumbent_candidate_accepted"] is False
+    assert report["validation"]["passed"] is False
+    assert report["validation"]["heldout_diagnostic_only"] is True
+    assert report["validation"]["publication_gate_applied"] is False
+    assert report["validation"]["used_only_for_frozen_candidate_acceptance"] is False
+    assert report["validation_publication_veto_applied"] is False
+    assert report["rollback_authorized"] is False
+    assert report["rollback_performed"] is False
+    assert terminal.accepted is True
+    assert terminal.changed is True
+    assert torch.equal(published, terminal.selected_down_weight)
+    assert not torch.equal(published, terminal.incumbent_down_weight)
+    assert decision["terminal_publication_decision_accepted"] is True
+    assert decision["terminal_nonincumbent_candidate_accepted"] is True
+    assert decision["terminal_incumbent_retained"] is False
+    assert decision["validation_diagnostics_passed"] is False
+    assert decision["validation_publication_gate_applied"] is False
+    assert decision["heldout_metrics_diagnostic_only"] is True
+    assert decision["numeric_metrics_have_final_intelligence_authority"] is False
 
 
 def test_exact_zero_writer_cannot_use_legacy_validation_rollback() -> None:
@@ -801,6 +934,87 @@ def test_terminal_frontier_export_seam_receives_full_bank_once_before_w2_install
     )
 
 
+@pytest.mark.parametrize(
+    "field_name",
+    (
+        "mapped_parent_tied_table_sha256",
+        "tied_interface_authentication_sha256",
+        "terminal_cache_compatibility_sha256",
+        "terminal_cache_payload_binding_sha256",
+    ),
+)
+def test_terminal_frontier_export_context_rejects_resealed_live_fact_relabel(
+    field_name,
+) -> None:
+    _seed, _evidence, terminal = _compiled_exact_zero_terminal_result()
+    issued = _frontier_export_context(terminal, resume_mode=True)
+    relabeled = dict(issued)
+    relabeled[field_name] = hashlib.sha256(field_name.encode("ascii")).hexdigest()
+    relabeled.pop("context_sha256")
+    relabeled["context_sha256"] = canonical_sha256(relabeled)
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="not compiler-issued",
+    ):
+        postfold._authenticate_terminal_frontier_export_context(
+            terminal,
+            relabeled,
+        )
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    (
+        "mapped_parent_tied_table_sha256",
+        "tied_interface_authentication_sha256",
+        "terminal_cache_compatibility_sha256",
+        "terminal_cache_payload_binding_sha256",
+    ),
+)
+def test_terminal_frontier_exporter_cannot_reassign_issued_context_state(
+    field_name,
+) -> None:
+    _seed, _evidence, terminal = _compiled_exact_zero_terminal_result()
+    issued = _frontier_export_context(terminal, resume_mode=True)
+    relabeled = dict(issued)
+    relabeled[field_name] = hashlib.sha256(
+        f"exporter:{field_name}".encode("ascii")
+    ).hexdigest()
+    relabeled.pop("context_sha256")
+    relabeled["context_sha256"] = canonical_sha256(relabeled)
+
+    def mutate_context(_result, export_context):
+        export_context._values = MappingProxyType(relabeled)
+        pytest.fail("frozen compiler-issued context accepted reassignment")
+
+    with pytest.raises(AttributeError, match="frozen"):
+        postfold._export_authenticated_terminal_frontier(
+            terminal,
+            issued,
+            mutate_context,
+        )
+    with pytest.raises(AttributeError, match="frozen"):
+        issued._issued_fact_tuple = tuple(
+            (name, relabeled[name])
+            for name in postfold._TERMINAL_FRONTIER_LIVE_FACT_NAMES
+        )
+    with pytest.raises(AttributeError, match="frozen"):
+        issued._issued_facts = MappingProxyType(
+            {
+                name: relabeled[name]
+                for name in postfold._TERMINAL_FRONTIER_LIVE_FACT_NAMES
+            }
+        )
+    assert (
+        postfold._authenticate_terminal_frontier_export_context(
+            terminal,
+            issued,
+        )
+        is issued
+    )
+
+
 def test_terminal_frontier_exporter_exception_or_mutation_precedes_w2_install() -> None:
     _seed, _evidence, terminal = _compiled_exact_zero_terminal_result()
     live_final_w2 = torch.zeros_like(terminal.incumbent_down_weight)
@@ -878,7 +1092,7 @@ def test_nonzero_heldout_regression_is_a_sealed_diagnostic_only(
     assert "separate-heldout-lane-regression" not in source
 
 
-def test_heldout_selected_incumbent_is_a_valid_terminal_publication() -> None:
+def test_heldout_selected_incumbent_is_not_a_terminal_publication() -> None:
     incumbent = torch.eye(2, dtype=torch.bfloat16)
     terminal = _terminal_result(
         incumbent=incumbent,
@@ -890,12 +1104,11 @@ def test_heldout_selected_incumbent_is_a_valid_terminal_publication() -> None:
         rollback_performed=False,
     )
 
-    published, decision = postfold._terminal_publication_decision(terminal)
-
-    assert torch.equal(published, incumbent)
-    assert decision["publication_decision"] == "heldout-selected-incumbent"
-    assert decision["terminal_publication_decision_accepted"] is True
-    assert decision["terminal_writer_changed"] is False
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="published neither",
+    ):
+        postfold._terminal_publication_decision(terminal)
 
 
 def test_reconstructs_saved_mean_preserving_interface_without_parent_model() -> None:
@@ -2446,9 +2659,17 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
                 "result_sha256": "9" * 64,
             }
         )
+    _terminal_seed, _terminal_evidence, terminal_action_result = (
+        _compiled_nonzero_terminal_result_with_failed_validation()
+    )
+    _published_terminal_weight, terminal_publication_decision = (
+        postfold._terminal_publication_decision(terminal_action_result)
+    )
+    terminal_action_report = terminal_action_result.as_dict()
     w1_sha = "1" * 64
     w3_sha = "2" * 64
-    w2_sha = "3" * 64
+    incumbent_w2_sha = terminal_publication_decision["incumbent_w2_sha256"]
+    w2_sha = terminal_publication_decision["published_w2_sha256"]
 
     def sealed(body):
         return {**body, "result_sha256": canonical_sha256(body)}
@@ -2622,7 +2843,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "role_receipts": {
             "feed_forward.w1.weight": {"tensor_sha256": w1_sha},
             "feed_forward.w3.weight": {"tensor_sha256": w3_sha},
-            "feed_forward.w2.weight": {"tensor_sha256": w2_sha},
+            "feed_forward.w2.weight": {"tensor_sha256": incumbent_w2_sha},
         },
         "all_required_roles_structurally_nonzero": True,
         "blank_or_partially_blank_required_role_count": 0,
@@ -2631,6 +2852,10 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     coverage_after_body = {
         **coverage_before_body,
         "deferred_roles": [],
+        "role_receipts": {
+            **coverage_before_body["role_receipts"],
+            "feed_forward.w2.weight": {"tensor_sha256": w2_sha},
+        },
     }
     coverage_after = sealed(coverage_after_body)
     published_coverage_body = {
@@ -2696,20 +2921,35 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     layer_stack = SimpleNamespace(receipt=layer_receipt)
     terminal_installation = {
         "decision_count": 1,
-        "installed": False,
-        "install_count": 0,
-        "mutation_count": 0,
-        "incumbent_retention_count": 1,
-        "exact_zero_copy_noop": True,
-        "parameter_copy_calls": 0,
-        "changed_state_keys": [],
+        "installed": True,
+        "install_count": 1,
+        "mutation_count": 1,
+        "incumbent_retention_count": 0,
+        "exact_zero_copy_noop": False,
+        "parameter_copy_calls": 1,
+        "changed_state_keys": ["model.layers.13.feed_forward.w2.weight"],
         "parameter_topology_preserved": True,
         "parameter_identities_preserved": True,
         "parameter_storage_preserved": True,
         "gradient_state_preserved": True,
         "parameter_count_changed": False,
         "model_state_before_sha256": "d" * 64,
-        "model_state_after_sha256": "d" * 64,
+        "model_state_after_sha256": "e" * 64,
+        "terminal_action_result_sha256": terminal_publication_decision[
+            "terminal_action_result_sha256"
+        ],
+        "terminal_action_selected_w2_sha256": terminal_publication_decision[
+            "terminal_action_selected_w2_sha256"
+        ],
+        "terminal_action_published_w2_sha256": terminal_publication_decision[
+            "terminal_action_published_w2_sha256"
+        ],
+        "semantic_selected_w2_sha256": terminal_publication_decision[
+            "semantic_selected_w2_sha256"
+        ],
+        "semantic_published_w2_sha256": terminal_publication_decision[
+            "semantic_published_w2_sha256"
+        ],
         "published_w2_sha256": w2_sha,
         "published_w2_structurally_nonzero": True,
         "published_w2_structural_coverage": published_coverage,
@@ -2720,12 +2960,29 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
         "accepted": True,
         "terminal_publication_decision_accepted": True,
-        "terminal_nonincumbent_candidate_accepted": False,
-        "terminal_incumbent_retained": True,
+        "terminal_nonincumbent_candidate_accepted": True,
+        "terminal_incumbent_retained": False,
         "terminal_writer_decision_count": 1,
-        "terminal_writer_install_count": 0,
-        "terminal_writer_mutation_count": 0,
-        "terminal_writer_incumbent_retention_count": 1,
+        "terminal_writer_install_count": 1,
+        "terminal_writer_mutation_count": 1,
+        "terminal_writer_incumbent_retention_count": 0,
+        "terminal_result": terminal_action_report,
+        "terminal_action_result_sha256": terminal_publication_decision[
+            "terminal_action_result_sha256"
+        ],
+        "terminal_action_selected_w2_sha256": terminal_publication_decision[
+            "terminal_action_selected_w2_sha256"
+        ],
+        "terminal_action_published_w2_sha256": terminal_publication_decision[
+            "terminal_action_published_w2_sha256"
+        ],
+        "semantic_selected_w2_sha256": terminal_publication_decision[
+            "semantic_selected_w2_sha256"
+        ],
+        "semantic_published_w2_sha256": terminal_publication_decision[
+            "semantic_published_w2_sha256"
+        ],
+        "terminal_publication_decision": dict(terminal_publication_decision),
         "installation": terminal_installation,
         "final_mlp_producer_coverage_before_terminal": coverage_before,
         "final_mlp_full_coverage_after_terminal": coverage_after,
@@ -2758,9 +3015,157 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "terminal_heldout_publication_gate_applied": False,
         "operation_audit": dict(postfold._ZERO_OPERATIONS),
     }
-    terminal = MappingProxyType(
-        {**terminal_body, "result_sha256": canonical_sha256(terminal_body)}
+    terminal = postfold._issue_fused_semantic_terminal_receipt(
+        MappingProxyType(
+            {**terminal_body, "result_sha256": canonical_sha256(terminal_body)}
+        )
     )
+
+    validated_terminal = postfold._validate_fused_semantic_terminal_receipt(
+        terminal,
+        layer_receipt=layer_receipt,
+        current_model_state_sha256="e" * 64,
+    )
+    assert validated_terminal["result_sha256"] == terminal["result_sha256"]
+    assert type(terminal) is postfold._CompilerIssuedFusedSemanticTerminalReceipt
+    assert type(terminal).__slots__ == ("__weakref__",)
+    assert not hasattr(terminal, "__dict__")
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError):
+        postfold._CompilerIssuedFusedSemanticTerminalReceipt()
+
+    reconstructed_terminal = copy.deepcopy(dict(terminal))
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="not compiler-issued",
+    ):
+        postfold._validate_fused_semantic_terminal_receipt(
+            reconstructed_terminal,
+            layer_receipt=layer_receipt,
+            current_model_state_sha256="e" * 64,
+        )
+
+    for copied_terminal in (copy.copy(terminal), copy.deepcopy(terminal)):
+        with pytest.raises(
+            postfold.Lfm2SemanticPostfoldError,
+            match="unregistered",
+        ):
+            postfold._validate_fused_semantic_terminal_receipt(
+                copied_terminal,
+                layer_receipt=layer_receipt,
+                current_model_state_sha256="e" * 64,
+            )
+
+    gc.collect()
+    registry_size_before = postfold._fused_semantic_terminal_receipt_registry_size()
+    temporary_terminal = postfold._issue_fused_semantic_terminal_receipt(dict(terminal))
+    temporary_reference = weakref.ref(temporary_terminal)
+    assert temporary_reference() is temporary_terminal
+    assert (
+        postfold._fused_semantic_terminal_receipt_registry_size()
+        == registry_size_before + 1
+    )
+    del temporary_terminal
+    gc.collect()
+    assert temporary_reference() is None
+    assert (
+        postfold._fused_semantic_terminal_receipt_registry_size()
+        == registry_size_before
+    )
+
+    def reseal_terminal_result(receipt):
+        result = receipt.get("terminal_result")
+        if isinstance(result, dict):
+            result.pop("result_sha256", None)
+            result["result_sha256"] = canonical_sha256(result)
+        receipt.pop("result_sha256", None)
+        receipt["result_sha256"] = canonical_sha256(receipt)
+        return receipt
+
+    def replace_terminal_selected_and_published_state(receipt):
+        result = receipt["terminal_result"]
+        replacement_sha256 = "f" * 64
+        result["output_state_sha256"]["selected"] = replacement_sha256
+        result["output_state_sha256"]["published"] = replacement_sha256
+        result["selected_state_sha256"] = replacement_sha256
+        result["selected_selection_key"][-1] = replacement_sha256
+
+        selected_coverage = result["selected_writer_structural_coverage"]
+        selected_coverage.pop("coverage_sha256", None)
+        selected_coverage["tensor_sha256"] = replacement_sha256
+        selected_coverage["coverage_sha256"] = terminal_action._canonical_sha256(
+            selected_coverage
+        )
+        result["selected_writer_structural_coverage_sha256"] = selected_coverage[
+            "coverage_sha256"
+        ]
+
+        selected_record = next(
+            value
+            for value in result["frontier"]
+            if value["candidate_id"] == result["selected_candidate_id"]
+        )
+        selected_record["state_sha256"] = replacement_sha256
+        selected_record["selection_key"][-1] = replacement_sha256
+        record_coverage = selected_record["structural_coverage"]
+        record_coverage.pop("coverage_sha256", None)
+        record_coverage["tensor_sha256"] = replacement_sha256
+        record_coverage["coverage_sha256"] = terminal_action._canonical_sha256(
+            record_coverage
+        )
+        selected_record["structural_coverage_sha256"] = record_coverage[
+            "coverage_sha256"
+        ]
+
+    tamper_cases = {
+        "missing-terminal-result": lambda value: value.pop("terminal_result"),
+        "result-not-accepted": lambda value: value["terminal_result"].__setitem__(
+            "accepted", False
+        ),
+        "result-selected-incumbent": lambda value: value["terminal_result"].__setitem__(
+            "selected_nonincumbent", False
+        ),
+        "result-published-incumbent": lambda value: value[
+            "terminal_result"
+        ].__setitem__("published_is_incumbent", True),
+        "result-rollback": lambda value: value["terminal_result"].__setitem__(
+            "rollback_performed", True
+        ),
+        "result-wrong-structural-schema": lambda value: value[
+            "terminal_result"
+        ].__setitem__("structural_nonveto_schema", "caller-resealed"),
+        "validation-not-diagnostic": lambda value: value["terminal_result"][
+            "validation"
+        ].__setitem__("heldout_diagnostic_only", False),
+        "validation-publication-gate": lambda value: value["terminal_result"][
+            "validation"
+        ].__setitem__("publication_gate_applied", True),
+        "validation-frozen-acceptance": lambda value: value["terminal_result"][
+            "validation"
+        ].__setitem__("used_only_for_frozen_candidate_acceptance", True),
+        "receipt-retention-count": lambda value: value.__setitem__(
+            "terminal_writer_incumbent_retention_count", 1
+        ),
+        "decision-retains-incumbent": lambda value: value[
+            "terminal_publication_decision"
+        ].__setitem__("terminal_incumbent_retained", True),
+        "coherent-terminal-state-replacement": (
+            replace_terminal_selected_and_published_state
+        ),
+    }
+    for tamper_name, tamper in tamper_cases.items():
+        tampered = copy.deepcopy(dict(terminal))
+        tamper(tampered)
+        reseal_terminal_result(tampered)
+        with pytest.raises(
+            postfold.Lfm2SemanticPostfoldError,
+            match="terminal|receipt",
+        ):
+            postfold._validate_fused_semantic_terminal_receipt(
+                tampered,
+                layer_receipt=layer_receipt,
+                current_model_state_sha256="e" * 64,
+            )
+
     cache_open_calls = []
 
     def open_cache(*_args, **kwargs):
@@ -2899,7 +3304,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     monkeypatch.setattr(
         postfold,
         "fingerprint_lfm2_parent",
-        lambda _model: SimpleNamespace(identity_sha256="d" * 64),
+        lambda _model: SimpleNamespace(identity_sha256="e" * 64),
     )
     input_checkpoint = tmp_path / "input"
     input_checkpoint.mkdir()
@@ -2969,8 +3374,8 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     assert result["claims"]["attention_correction_installed"] is True
     assert result["claims"]["complete_causal_layer_stack_installed"] is False
     assert result["claims"]["attention_correction_install_count"] == 5
-    assert result["claims"]["terminal_writer_install_count"] == 0
-    assert result["terminal_incumbent_retained"] is True
+    assert result["claims"]["terminal_writer_install_count"] == 1
+    assert result["terminal_incumbent_retained"] is False
     assert (
         result["tied_interface_mode"] == postfold.TIED_RESIDUAL_STRONG_CONGRUENCE_MODE
     )
