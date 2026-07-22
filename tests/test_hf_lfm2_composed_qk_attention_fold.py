@@ -617,9 +617,7 @@ def test_rejected_composed_score_still_issues_authenticated_endpoint_start(
         source_key_weight=composed_artifacts.source.key,
         source_value_weight=composed_artifacts.source.value,
         source_output_weight=composed_artifacts.source.output,
-        target_query_weight_template=torch.zeros_like(
-            composed_artifacts.target.query
-        ),
+        target_query_weight_template=torch.zeros_like(composed_artifacts.target.query),
         target_key_weight_template=torch.zeros_like(composed_artifacts.target.key),
         target_value_weight_template=composed_artifacts.value_template,
         target_output_weight_template=composed_artifacts.output_template,
@@ -662,9 +660,7 @@ def test_rejected_composed_score_still_issues_authenticated_endpoint_start(
         _child_context(attempt.endpoint_start.producer_artifact, case)
         for case in endpoint_fit_cases
     )
-    output_prior = (composed_artifacts.target.output.float() * 1.5).to(
-        torch.bfloat16
-    )
+    output_prior = (composed_artifacts.target.output.float() * 1.5).to(torch.bfloat16)
     fit_value_output = compile_lfm2_structural_attention_value_output_fold(
         producer=attempt.endpoint_start.producer_artifact,
         target_value_weight_template=composed_artifacts.value_template,
@@ -690,9 +686,7 @@ def test_rejected_composed_score_still_issues_authenticated_endpoint_start(
         source_key_weight=composed_artifacts.source.key,
         source_value_weight=composed_artifacts.source.value,
         source_output_weight=composed_artifacts.source.output,
-        target_query_weight_template=torch.zeros_like(
-            composed_artifacts.target.query
-        ),
+        target_query_weight_template=torch.zeros_like(composed_artifacts.target.query),
         target_key_weight_template=torch.zeros_like(composed_artifacts.target.key),
         target_value_weight_template=composed_artifacts.value_template,
         target_output_weight_template=composed_artifacts.output_template,
@@ -724,6 +718,15 @@ def test_rejected_composed_score_still_issues_authenticated_endpoint_start(
         attempt.endpoint_start.artifact_sha256
     )
     assert endpoint.report["composed_score_residual_candidate_eligible"] is False
+    assert (
+        endpoint.report["development_numeric_metrics_can_veto_effectful_candidate"]
+        is False
+    )
+    assert (
+        endpoint.report["development_numeric_metrics_have_final_intelligence_authority"]
+        is False
+    )
+    assert endpoint.report["structurally_selected_finite_effectful_candidate_published"]
     assert endpoint.verify_authentication() == endpoint.artifact_sha256
     with pytest.raises(
         composed_fold.Lfm2ComposedQkAttentionFoldError,
@@ -737,9 +740,7 @@ def test_rejected_composed_score_still_issues_authenticated_endpoint_start(
             target_query_weight_template=torch.zeros_like(
                 composed_artifacts.target.query
             ),
-            target_key_weight_template=torch.zeros_like(
-                composed_artifacts.target.key
-            ),
+            target_key_weight_template=torch.zeros_like(composed_artifacts.target.key),
             target_value_weight_template=composed_artifacts.value_template,
             target_output_weight_template=composed_artifacts.output_template,
             upstream_fit_cases=composed_artifacts.cases,
@@ -1110,12 +1111,25 @@ def test_endpoint_residual_fifth_arm_is_an_authenticated_4x_qkvo_chain(
     assert fifth.verify_authentication() == fifth.artifact_sha256
     assert len(fifth.blocks) == 2
     assert fifth.report["outer_block_count"] == 2
-    assert fifth.report["fit_check_endpoint_and_route_nonregressing"]
+    assert fifth.report["fit_endpoint_improvement_proxy_passed"]
+    assert fifth.report["fit_check_endpoint_and_route_nonregressing"] is False
     assert fifth.report["fit_check_first_metric_evaluation_after_all_outer_blocks"]
     assert fifth.report["fit_check_triggered_refit"] is False
     assert fifth.report["fit_check_role"] == (
-        "reused_development_acceptance_gate_not_unbiased_validation"
+        "reused_development_diagnostics_not_acceptance_gate_or_unbiased_validation"
     )
+    assert fifth.report["development_numeric_metrics_role"] == (
+        "diagnostic_only_after_structural_selection"
+    )
+    assert (
+        fifth.report["development_numeric_metrics_can_veto_effectful_candidate"]
+        is False
+    )
+    assert (
+        fifth.report["development_numeric_metrics_have_final_intelligence_authority"]
+        is False
+    )
+    assert fifth.report["structurally_selected_finite_effectful_candidate_published"]
     assert fifth.report["unbiased_generalization_claimed"] is False
     assert fifth.report["fresh_whole_child_intelligence_validation_required"]
     assert fifth.report["proof_scope"] == (
@@ -1127,26 +1141,27 @@ def test_endpoint_residual_fifth_arm_is_an_authenticated_4x_qkvo_chain(
         fifth.final_fit_metrics.endpoint_relative_rmse
         < fifth.baseline_fit_metrics.endpoint_relative_rmse
     )
-    tolerance = fifth.policy.endpoint_policy.metric_regression_tolerance
     assert (
         fifth.final_fit_check_metrics.endpoint_relative_rmse
-        <= fifth.baseline_fit_check_metrics.endpoint_relative_rmse + tolerance
+        < fifth.baseline_fit_check_metrics.endpoint_relative_rmse
     )
-    assert (
-        fifth.final_fit_check_metrics.probability_relative_rmse
-        <= fifth.baseline_fit_check_metrics.probability_relative_rmse + tolerance
+    assert fifth.report["baseline_fit_check_metrics"] == (
+        fifth.baseline_fit_check_metrics.as_dict()
     )
-    assert (
-        fifth.final_fit_check_metrics.js_divergence_mean
-        <= fifth.baseline_fit_check_metrics.js_divergence_mean + tolerance
+    assert fifth.report["final_fit_check_metrics"] == (
+        fifth.final_fit_check_metrics.as_dict()
     )
-    assert (
-        fifth.final_fit_check_metrics.js_divergence_worst
-        <= fifth.baseline_fit_check_metrics.js_divergence_worst + tolerance
-    )
-    assert (
-        fifth.final_fit_check_metrics.top1_route_agreement_fraction + tolerance
-        >= fifth.baseline_fit_check_metrics.top1_route_agreement_fraction
+    assert any(
+        (
+            fifth.final_fit_check_metrics.probability_relative_rmse
+            > fifth.baseline_fit_check_metrics.probability_relative_rmse,
+            fifth.final_fit_check_metrics.js_divergence_mean
+            > fifth.baseline_fit_check_metrics.js_divergence_mean,
+            fifth.final_fit_check_metrics.js_divergence_worst
+            > fifth.baseline_fit_check_metrics.js_divergence_worst,
+            fifth.final_fit_check_metrics.top1_route_agreement_fraction
+            < fifth.baseline_fit_check_metrics.top1_route_agreement_fraction,
+        )
     )
     source_parameters = sum(
         tensor.numel()
@@ -1376,6 +1391,30 @@ def test_endpoint_fifth_arm_rejects_resealed_forged_final_metrics(
             final_fit_metrics=forged_metrics,
             report=report,
         )
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    (
+        "development_numeric_metrics_can_veto_effectful_candidate",
+        "development_numeric_metrics_have_final_intelligence_authority",
+    ),
+)
+def test_endpoint_fifth_arm_rejects_resealed_numeric_authority_claim(
+    endpoint_residual_artifacts: SimpleNamespace,
+    field_name: str,
+) -> None:
+    fifth = endpoint_residual_artifacts.fifth
+    report = dict(fifth.report)
+    report.pop("artifact_sha256")
+    report[field_name] = True
+    report["artifact_sha256"] = composed_fold._canonical_sha256(report)
+
+    with pytest.raises(
+        composed_fold.Lfm2ComposedQkAttentionAuthenticationError,
+        match="artifact receipt is invalid",
+    ):
+        replace(fifth, report=report)
 
 
 def test_endpoint_direct_cached_probability_context_mismatch_is_rejected(

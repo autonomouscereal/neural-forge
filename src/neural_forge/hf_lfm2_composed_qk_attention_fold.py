@@ -1330,18 +1330,15 @@ class Lfm2ComposedQkStageOneAttempt:
                 raise TypeError("composed_candidate has the wrong type.")
             candidate_sha = candidate.verify_authentication()
         selected_start_sha = candidate_sha or start_sha
-        if (
-            (candidate is not None) != score_result.accepted
-            or (
-                candidate is not None
-                and (
-                    candidate.score_result is not score_result
-                    or candidate.qk_fit_bank is not self.endpoint_start.qk_fit_bank
-                    or candidate.qk_fit_check_bank
-                    is not self.endpoint_start.qk_fit_check_bank
-                    or candidate.primitive_fold is not self.endpoint_start.primitive_fold
-                    or candidate.global_sync is not self.endpoint_start.global_sync
-                )
+        if (candidate is not None) != score_result.accepted or (
+            candidate is not None
+            and (
+                candidate.score_result is not score_result
+                or candidate.qk_fit_bank is not self.endpoint_start.qk_fit_bank
+                or candidate.qk_fit_check_bank
+                is not self.endpoint_start.qk_fit_check_bank
+                or candidate.primitive_fold is not self.endpoint_start.primitive_fold
+                or candidate.global_sync is not self.endpoint_start.global_sync
             )
         ):
             raise Lfm2ComposedQkAttentionAuthenticationError(
@@ -1387,10 +1384,7 @@ class Lfm2ComposedQkStageOneAttempt:
     @property
     def selected_endpoint_start(
         self,
-    ) -> (
-        Lfm2CompiledComposedQkAttentionProducerFold
-        | Lfm2AuthenticatedEndpointQkStart
-    ):
+    ) -> Lfm2CompiledComposedQkAttentionProducerFold | Lfm2AuthenticatedEndpointQkStart:
         return self.composed_candidate or self.endpoint_start
 
     def verify_authentication(self) -> str:
@@ -1686,9 +1680,7 @@ def compile_lfm2_composed_qk_stage_one_attempt(
         "score_result_report_sha256": score_sha,
         "score_result_accepted": score_result.accepted,
         "score_residual_fourth_arm_eligible": score_result.accepted,
-        "starting_producer_sha256": _structural_artifact_sha256(
-            global_seed_producer
-        ),
+        "starting_producer_sha256": _structural_artifact_sha256(global_seed_producer),
         "starting_query_weight_sha256": _tensor_sha256(
             global_seed_producer.query_weight
         ),
@@ -1752,8 +1744,7 @@ def compile_lfm2_composed_qk_stage_one_attempt(
             or qk_fit_producer.query_groups != corrected_producer.query_groups
             or qk_fit_producer.query_barycentric_weights
             != corrected_producer.query_barycentric_weights
-            or qk_fit_producer.key_value_groups
-            != corrected_producer.key_value_groups
+            or qk_fit_producer.key_value_groups != corrected_producer.key_value_groups
             or qk_fit_producer.key_value_barycentric_weights
             != corrected_producer.key_value_barycentric_weights
         ):
@@ -1763,48 +1754,54 @@ def compile_lfm2_composed_qk_stage_one_attempt(
             )
     if corrected_producer is not None:
         body = {
-        "schema": LFM2_COMPOSED_QK_PRODUCER_SCHEMA,
-        "candidate_id": SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID,
-        "policy": policy_value.as_dict(),
-        "policy_sha256": policy_value.authentication_sha256,
-        "source_split_sha256": source_split,
-        "source_runtime_sha256": runtime.source_runtime_sha256,
-        "upstream_fit_case_count": len(cases),
-        "upstream_fit_case_bundle_sha256": case_bundle,
-        "upstream_trajectory_sha256s": list(trajectories),
-        "upstream_trajectory_bundle_sha256": trajectory_bundle,
-        "qk_fit_evidence_sha256": qk_fit_bank.evidence_sha256,
-        "qk_fit_check_evidence_sha256": qk_fit_check_bank.evidence_sha256,
-        "qk_fit_source_ordinals": list(qk_fit_bank.source_case_ordinals),
-        "qk_fit_check_source_ordinals": list(qk_fit_check_bank.source_case_ordinals),
-        "qk_fit_structural_producer_sha256": _structural_artifact_sha256(
-            qk_fit_producer
-        ),
-        "primitive_report_sha256": primitive_sha,
-        "primitive_factor_state_bundle_sha256": _factor_state_bundle_sha256(
-            primitive.factor_sufficient_states
-        ),
-        "primitive_fit_factor_state_bundle_sha256": _factor_state_bundle_sha256(
-            fit_states
-        ),
-        "global_sync_report_sha256": global_sha,
-        "score_fit_evidence_sha256": score_fit_bank.evidence_sha256,
-        "score_fit_check_evidence_sha256": score_fit_check_bank.evidence_sha256,
-        "score_result_report_sha256": score_sha,
-        "corrected_producer_sha256": _structural_artifact_sha256(corrected_producer),
-        "corrected_query_weight_sha256": _tensor_sha256(
-            corrected_producer.query_weight
-        ),
-        "corrected_key_weight_sha256": _tensor_sha256(corrected_producer.key_weight),
-        "corrected_value_weight_sha256": _tensor_sha256(
-            corrected_producer.value_weight
-        ),
-        "primitive_local_qk_published": False,
-        "fit_check_used_for_structural_groups_or_priors": False,
-        "fit_check_used_for_score_solver_updates": False,
-        "fit_check_used_for_frozen_quality_gate": True,
-        "ordinary_dense_target_qkv": True,
-        "operation_audit": {name: 0 for name in _ZERO_OPERATION_FIELDS},
+            "schema": LFM2_COMPOSED_QK_PRODUCER_SCHEMA,
+            "candidate_id": SCORE_ROUTED_RESIDUAL_SEEDED_SEQUENCE_EFFECTIVE_CANDIDATE_ID,
+            "policy": policy_value.as_dict(),
+            "policy_sha256": policy_value.authentication_sha256,
+            "source_split_sha256": source_split,
+            "source_runtime_sha256": runtime.source_runtime_sha256,
+            "upstream_fit_case_count": len(cases),
+            "upstream_fit_case_bundle_sha256": case_bundle,
+            "upstream_trajectory_sha256s": list(trajectories),
+            "upstream_trajectory_bundle_sha256": trajectory_bundle,
+            "qk_fit_evidence_sha256": qk_fit_bank.evidence_sha256,
+            "qk_fit_check_evidence_sha256": qk_fit_check_bank.evidence_sha256,
+            "qk_fit_source_ordinals": list(qk_fit_bank.source_case_ordinals),
+            "qk_fit_check_source_ordinals": list(
+                qk_fit_check_bank.source_case_ordinals
+            ),
+            "qk_fit_structural_producer_sha256": _structural_artifact_sha256(
+                qk_fit_producer
+            ),
+            "primitive_report_sha256": primitive_sha,
+            "primitive_factor_state_bundle_sha256": _factor_state_bundle_sha256(
+                primitive.factor_sufficient_states
+            ),
+            "primitive_fit_factor_state_bundle_sha256": _factor_state_bundle_sha256(
+                fit_states
+            ),
+            "global_sync_report_sha256": global_sha,
+            "score_fit_evidence_sha256": score_fit_bank.evidence_sha256,
+            "score_fit_check_evidence_sha256": score_fit_check_bank.evidence_sha256,
+            "score_result_report_sha256": score_sha,
+            "corrected_producer_sha256": _structural_artifact_sha256(
+                corrected_producer
+            ),
+            "corrected_query_weight_sha256": _tensor_sha256(
+                corrected_producer.query_weight
+            ),
+            "corrected_key_weight_sha256": _tensor_sha256(
+                corrected_producer.key_weight
+            ),
+            "corrected_value_weight_sha256": _tensor_sha256(
+                corrected_producer.value_weight
+            ),
+            "primitive_local_qk_published": False,
+            "fit_check_used_for_structural_groups_or_priors": False,
+            "fit_check_used_for_score_solver_updates": False,
+            "fit_check_used_for_frozen_quality_gate": True,
+            "ordinary_dense_target_qkv": True,
+            "operation_audit": {name: 0 for name in _ZERO_OPERATION_FIELDS},
         }
         composed_candidate = Lfm2CompiledComposedQkAttentionProducerFold(
             policy=policy_value,
@@ -1830,9 +1827,7 @@ def compile_lfm2_composed_qk_stage_one_attempt(
             if composed_candidate is not None
             else endpoint_start.artifact_sha256
         ),
-        "global_gauge_fallback_start_artifact_sha256": (
-            endpoint_start.artifact_sha256
-        ),
+        "global_gauge_fallback_start_artifact_sha256": (endpoint_start.artifact_sha256),
         "endpoint_start_source": (
             "accepted_score_residual_corrected_dense_qkv"
             if composed_candidate is not None
@@ -1843,9 +1838,7 @@ def compile_lfm2_composed_qk_stage_one_attempt(
         "score_result_accepted": score_result.accepted,
         "composed_candidate_eligible": composed_candidate is not None,
         "composed_candidate_artifact_sha256": (
-            None
-            if composed_candidate is None
-            else composed_candidate.artifact_sha256
+            None if composed_candidate is None else composed_candidate.artifact_sha256
         ),
         "failed_composed_candidate_omitted": composed_candidate is None,
         "endpoint_start_issued_independently": True,
@@ -1919,9 +1912,7 @@ def _endpoint_qk_start_binding(
             "endpoint_qk_start_artifact_schema": LFM2_ENDPOINT_QK_START_SCHEMA,
             "endpoint_qk_start_source": "structural_global_gauge_dense_qkv",
             "composed_score_residual_candidate_eligible": False,
-            "composed_score_residual_result_sha256": (
-                artifact.score_result.verify()
-            ),
+            "composed_score_residual_result_sha256": (artifact.score_result.verify()),
         }
     )
 
@@ -2926,7 +2917,7 @@ class Lfm2CompiledComposedEndpointResidualBlock:
 
 @dataclass(frozen=True, slots=True)
 class Lfm2CompiledComposedEndpointResidualAttentionFold:
-    """Authenticated fifth-arm dense QKVO artifact with a development gate."""
+    """Authenticated fifth-arm QKVO artifact with diagnostic development metrics."""
 
     policy: Lfm2ComposedEndpointResidualAttentionFoldPolicy
     composed_qk: Lfm2EndpointQkStartingArtifact
@@ -3120,7 +3111,6 @@ class Lfm2CompiledComposedEndpointResidualAttentionFold:
             self.final_evaluation_seed,
             compute_devices=devices,
         )
-        tolerance = self.policy.endpoint_policy.metric_regression_tolerance
         if (
             _structural_state_sha256(baseline_state)
             != _structural_state_sha256(initial_state)
@@ -3132,19 +3122,21 @@ class Lfm2CompiledComposedEndpointResidualAttentionFold:
             != recomputed_baseline_check.as_dict()
             or self.final_fit_check_metrics.as_dict()
             != recomputed_final_check.as_dict()
-            or self.final_fit_metrics.endpoint_relative_rmse
-            > self.baseline_fit_metrics.endpoint_relative_rmse
-            - self.policy.endpoint_policy.minimum_fit_endpoint_improvement
-            or not _endpoint_metrics_nonregressing(
-                self.final_fit_check_metrics,
-                self.baseline_fit_check_metrics,
-                tolerance=tolerance,
-            )
         ):
             raise Lfm2ComposedQkAttentionAuthenticationError(
-                "Fifth-arm metrics do not replay, or final FIT improvement/"
-                "development-gate non-regression failed."
+                "Fifth-arm development metrics do not replay from the "
+                "authenticated evaluation evidence and dense states."
             )
+        fit_endpoint_improvement_proxy_passed = bool(
+            self.final_fit_metrics.endpoint_relative_rmse
+            <= self.baseline_fit_metrics.endpoint_relative_rmse
+            - self.policy.endpoint_policy.minimum_fit_endpoint_improvement
+        )
+        fit_check_endpoint_and_route_nonregressing = _endpoint_metrics_nonregressing(
+            self.final_fit_check_metrics,
+            self.baseline_fit_check_metrics,
+            tolerance=self.policy.endpoint_policy.metric_regression_tolerance,
+        )
         block_shas = [block.block_sha256 for block in blocks]
         body = dict(self.report)
         seal = body.pop("artifact_sha256", None)
@@ -3200,12 +3192,24 @@ class Lfm2CompiledComposedEndpointResidualAttentionFold:
             "final_fit_metrics": self.final_fit_metrics.as_dict(),
             "baseline_fit_check_metrics": (self.baseline_fit_check_metrics.as_dict()),
             "final_fit_check_metrics": self.final_fit_check_metrics.as_dict(),
-            "fit_check_endpoint_and_route_nonregressing": True,
+            "fit_endpoint_improvement_proxy_passed": (
+                fit_endpoint_improvement_proxy_passed
+            ),
+            "fit_check_endpoint_and_route_nonregressing": (
+                fit_check_endpoint_and_route_nonregressing
+            ),
             "fit_check_first_metric_evaluation_after_all_outer_blocks": True,
             "fit_check_triggered_refit": False,
             "fit_check_role": (
-                "reused_development_acceptance_gate_not_unbiased_validation"
+                "reused_development_diagnostics_not_acceptance_gate_or_"
+                "unbiased_validation"
             ),
+            "development_numeric_metrics_role": (
+                "diagnostic_only_after_structural_selection"
+            ),
+            "development_numeric_metrics_can_veto_effectful_candidate": False,
+            "development_numeric_metrics_have_final_intelligence_authority": False,
+            "structurally_selected_finite_effectful_candidate_published": True,
             "unbiased_generalization_claimed": False,
             "fresh_whole_child_intelligence_validation_required": True,
             "proof_scope": (
@@ -3616,24 +3620,16 @@ def compile_lfm2_composed_endpoint_residual_attention_fold(
         final_seed,
         compute_devices=devices,
     )
-    tolerance = selected_policy.endpoint_policy.metric_regression_tolerance
-    if (
+    fit_endpoint_improvement_proxy_passed = bool(
         final_fit_metrics.endpoint_relative_rmse
-        > baseline_fit_metrics.endpoint_relative_rmse
+        <= baseline_fit_metrics.endpoint_relative_rmse
         - selected_policy.endpoint_policy.minimum_fit_endpoint_improvement
-        or not _endpoint_metrics_nonregressing(
-            final_check_metrics,
-            baseline_check_metrics,
-            tolerance=tolerance,
-        )
-    ):
-        raise Lfm2ComposedQkAttentionFoldError(
-            "The fifth arm failed final FIT improvement or development-gate "
-            f"endpoint/route non-regression; FIT baseline={baseline_fit_metrics.as_dict()!r}; "
-            f"FIT final={final_fit_metrics.as_dict()!r}; FIT-CHECK baseline="
-            f"{baseline_check_metrics.as_dict()!r}; FIT-CHECK final="
-            f"{final_check_metrics.as_dict()!r}."
-        )
+    )
+    fit_check_endpoint_and_route_nonregressing = _endpoint_metrics_nonregressing(
+        final_check_metrics,
+        baseline_check_metrics,
+        tolerance=selected_policy.endpoint_policy.metric_regression_tolerance,
+    )
     final_state = blocks[-1].state_dict()
     target_parameters = sum(int(value.numel()) for value in final_state.values())
     evaluation_cases = (
@@ -3685,12 +3681,23 @@ def compile_lfm2_composed_endpoint_residual_attention_fold(
         "final_fit_metrics": final_fit_metrics.as_dict(),
         "baseline_fit_check_metrics": baseline_check_metrics.as_dict(),
         "final_fit_check_metrics": final_check_metrics.as_dict(),
-        "fit_check_endpoint_and_route_nonregressing": True,
+        "fit_endpoint_improvement_proxy_passed": (
+            fit_endpoint_improvement_proxy_passed
+        ),
+        "fit_check_endpoint_and_route_nonregressing": (
+            fit_check_endpoint_and_route_nonregressing
+        ),
         "fit_check_first_metric_evaluation_after_all_outer_blocks": True,
         "fit_check_triggered_refit": False,
         "fit_check_role": (
-            "reused_development_acceptance_gate_not_unbiased_validation"
+            "reused_development_diagnostics_not_acceptance_gate_or_unbiased_validation"
         ),
+        "development_numeric_metrics_role": (
+            "diagnostic_only_after_structural_selection"
+        ),
+        "development_numeric_metrics_can_veto_effectful_candidate": False,
+        "development_numeric_metrics_have_final_intelligence_authority": False,
+        "structurally_selected_finite_effectful_candidate_published": True,
         "unbiased_generalization_claimed": False,
         "fresh_whole_child_intelligence_validation_required": True,
         "proof_scope": (

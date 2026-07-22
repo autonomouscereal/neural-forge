@@ -22,10 +22,11 @@ import json
 import math
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
-from threading import Barrier
+from dataclasses import InitVar, dataclass, field
+from threading import Barrier, RLock
 from types import MappingProxyType
 from typing import Any, Literal
+from weakref import WeakKeyDictionary
 
 
 LFM2_ENDPOINT_QK_CASE_SCHEMA = "neural-forge-lfm2-endpoint-qk-case-v1"
@@ -1934,7 +1935,12 @@ def _build_observed_execution_receipt(
         int(sweep["solve_report"]["normal_operator_calls"]) for sweep in sweeps
     )
     expected_exact_replay_calls = (
-        2 + len(sweeps) + sum(len(sweep.get("frontier", ())) for sweep in sweeps)
+        2
+        + len(sweeps)
+        + sum(
+            sum(row.get("metrics") is not None for row in sweep.get("frontier", ()))
+            for sweep in sweeps
+        )
     )
     expected_jvp_calls = numerical_normal_calls + 1
     expected_vjp_calls = numerical_normal_calls + len(sweeps) + 1
@@ -2446,7 +2452,10 @@ def _verify_observed_execution_receipt(
         "exact_replay_calls": (
             2
             + len(sweep_values)
-            + sum(len(sweep.get("frontier", ())) for sweep in sweep_values)
+            + sum(
+                sum(row.get("metrics") is not None for row in sweep.get("frontier", ()))
+                for sweep in sweep_values
+            )
         ),
         "endpoint_jvp_calls": numerical_normal_calls + 1,
         "endpoint_vjp_calls": numerical_normal_calls + len(sweep_values) + 1,
@@ -4583,6 +4592,269 @@ def _all_nonregressing(
     )
 
 
+_FIT_STRUCTURAL_ELIGIBILITY_RULE = "finite_shape_correct_effectful_exact_bfloat16_state"
+_FIT_METRIC_ORDERING_RULE = (
+    "lexicographic_endpoint_rmse_probability_rmse_js_worst_negative_top1_"
+    "alpha_state_sha256"
+)
+_FIT_NUMERIC_PROXY_ROLE = (
+    "diagnostic_only_never_candidate_eligibility_or_final_intelligence_authority"
+)
+_FIT_FRONTIER_LINEAGE_SCHEMA = "neural-forge-lfm2-endpoint-qk-fit-frontier-lineage-v1"
+_FIT_PROPOSAL_COMPILER_ISSUER = object()
+
+
+class _FitFrontierLineageProof:
+    """Opaque per-proposal identity; copies are deliberately unissued."""
+
+    __slots__ = ("__weakref__",)
+
+    def __deepcopy__(self, _memo: dict[int, Any]) -> _FitFrontierLineageProof:
+        return type(self)()
+
+
+def _fit_metric_selection_key(
+    metrics: Lfm2EndpointQkMetrics,
+    alpha: float,
+    state_sha256: str,
+) -> tuple[float, float, float, float, float, str]:
+    """Order structurally eligible states; metrics rank but never veto them."""
+
+    return (
+        metrics.endpoint_relative_rmse,
+        metrics.probability_relative_rmse,
+        metrics.js_divergence_worst,
+        -metrics.top1_route_agreement_fraction,
+        alpha,
+        state_sha256,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _FitFrontierLineageRow:
+    alpha: float
+    state_sha256: str
+    candidate_finite: bool
+    candidate_shape_correct: bool
+    candidate_effectful: bool
+    structurally_eligible: bool
+    report_row_sha256: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "alpha": self.alpha,
+            "state_sha256": self.state_sha256,
+            "candidate_finite": self.candidate_finite,
+            "candidate_shape_correct": self.candidate_shape_correct,
+            "candidate_effectful": self.candidate_effectful,
+            "structurally_eligible": self.structurally_eligible,
+            "report_row_sha256": self.report_row_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class _FitSweepFrontierLineage:
+    sweep: int
+    rows: tuple[_FitFrontierLineageRow, ...]
+    selected_alpha: float | None
+    selected_state_sha256: str
+    selection_reason: str
+    report_sweep_sha256: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "sweep": self.sweep,
+            "rows": [row.as_dict() for row in self.rows],
+            "selected_alpha": self.selected_alpha,
+            "selected_state_sha256": self.selected_state_sha256,
+            "selection_reason": self.selection_reason,
+            "report_sweep_sha256": self.report_sweep_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class _FitFrontierLineageBinding:
+    seed_sha256: str
+    policy_sha256: str
+    fit_evidence_sha256: str
+    sweeps: tuple[_FitSweepFrontierLineage, ...]
+    binding_sha256: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": _FIT_FRONTIER_LINEAGE_SCHEMA,
+            "seed_sha256": self.seed_sha256,
+            "policy_sha256": self.policy_sha256,
+            "fit_evidence_sha256": self.fit_evidence_sha256,
+            "sweeps": [sweep.as_dict() for sweep in self.sweeps],
+        }
+
+
+_FIT_FRONTIER_LINEAGE_PROOFS: WeakKeyDictionary[
+    _FitFrontierLineageProof,
+    tuple[_FitFrontierLineageBinding, str],
+] = WeakKeyDictionary()
+_FIT_FRONTIER_LINEAGE_PROOF_LOCK = RLock()
+
+
+def _issue_fit_frontier_lineage_proof(
+    binding: _FitFrontierLineageBinding,
+) -> _FitFrontierLineageProof:
+    proof = _FitFrontierLineageProof()
+    with _FIT_FRONTIER_LINEAGE_PROOF_LOCK:
+        _FIT_FRONTIER_LINEAGE_PROOFS[proof] = (binding, binding.binding_sha256)
+    return proof
+
+
+def _authenticate_fit_frontier_lineage_proof(
+    proof: Any,
+    binding: _FitFrontierLineageBinding,
+) -> None:
+    if not isinstance(proof, _FitFrontierLineageProof):
+        raise Lfm2EndpointQkResidualAuthenticationError(
+            "FIT frontier lineage proof is missing or replaced."
+        )
+    with _FIT_FRONTIER_LINEAGE_PROOF_LOCK:
+        issued = _FIT_FRONTIER_LINEAGE_PROOFS.get(proof)
+    if (
+        issued is None
+        or issued[0] is not binding
+        or issued[1] != binding.binding_sha256
+    ):
+        raise Lfm2EndpointQkResidualAuthenticationError(
+            "FIT frontier lineage proof no longer names its compiler record."
+        )
+
+
+def _build_fit_frontier_lineage_binding(
+    *,
+    seed_sha256: str,
+    policy_sha256: str,
+    fit_evidence_sha256: str,
+    sweeps: tuple[_FitSweepFrontierLineage, ...],
+) -> _FitFrontierLineageBinding:
+    body = {
+        "schema": _FIT_FRONTIER_LINEAGE_SCHEMA,
+        "seed_sha256": seed_sha256,
+        "policy_sha256": policy_sha256,
+        "fit_evidence_sha256": fit_evidence_sha256,
+        "sweeps": [sweep.as_dict() for sweep in sweeps],
+    }
+    return _FitFrontierLineageBinding(
+        seed_sha256=seed_sha256,
+        policy_sha256=policy_sha256,
+        fit_evidence_sha256=fit_evidence_sha256,
+        sweeps=sweeps,
+        binding_sha256=_canonical_sha256(body),
+    )
+
+
+def _authenticate_fit_frontier_lineage_binding(
+    value: Any,
+    *,
+    seed_sha256: str,
+    policy_sha256: str,
+    fit_evidence_sha256: str,
+    policy: Lfm2EndpointQkResidualFoldPolicy,
+) -> _FitFrontierLineageBinding:
+    if (
+        not isinstance(value, _FitFrontierLineageBinding)
+        or value.seed_sha256 != seed_sha256
+        or value.policy_sha256 != policy_sha256
+        or value.fit_evidence_sha256 != fit_evidence_sha256
+        or not value.sweeps
+        or len(value.sweeps) > policy.maximum_sweeps
+        or value.binding_sha256 != _canonical_sha256(value.as_dict())
+    ):
+        raise Lfm2EndpointQkResidualAuthenticationError(
+            "FIT frontier lineage record is absent, replaced, or invalid."
+        )
+    for sweep_index, sweep in enumerate(value.sweeps):
+        if (
+            not isinstance(sweep, _FitSweepFrontierLineage)
+            or sweep.sweep != sweep_index
+            or not isinstance(sweep.rows, tuple)
+            or _required_sha256(
+                sweep.selected_state_sha256,
+                f"frontier_lineage.sweeps[{sweep_index}].selected_state_sha256",
+            )
+            != sweep.selected_state_sha256
+            or _required_sha256(
+                sweep.report_sweep_sha256,
+                f"frontier_lineage.sweeps[{sweep_index}].report_sweep_sha256",
+            )
+            != sweep.report_sweep_sha256
+        ):
+            raise Lfm2EndpointQkResidualAuthenticationError(
+                "FIT frontier lineage sweep inventory is invalid."
+            )
+        if sweep.rows:
+            if (
+                len(sweep.rows) != len(policy.alpha_frontier)
+                or tuple(row.alpha for row in sweep.rows) != policy.alpha_frontier
+                or sweep.selected_alpha not in policy.alpha_frontier
+                or sweep.selection_reason
+                not in {
+                    "best_effectful_structural_candidate_by_fit_metrics",
+                    "all_nonzero_candidates_identical_or_invalid",
+                }
+            ):
+                raise Lfm2EndpointQkResidualAuthenticationError(
+                    "FIT frontier lineage alpha or selection inventory is invalid."
+                )
+        elif (
+            sweep.selected_alpha is not None
+            or sweep.selection_reason != "unusable_direction_no_frontier"
+        ):
+            raise Lfm2EndpointQkResidualAuthenticationError(
+                "FIT frontier lineage records an invalid no-frontier sweep."
+            )
+        for row in sweep.rows:
+            if (
+                not isinstance(row, _FitFrontierLineageRow)
+                or not all(
+                    type(getattr(row, name)) is bool
+                    for name in (
+                        "candidate_finite",
+                        "candidate_shape_correct",
+                        "candidate_effectful",
+                        "structurally_eligible",
+                    )
+                )
+                or row.structurally_eligible
+                is not (
+                    row.candidate_finite
+                    and row.candidate_shape_correct
+                    and row.candidate_effectful
+                )
+                or _required_sha256(
+                    row.state_sha256,
+                    f"frontier_lineage.sweeps[{sweep_index}].state_sha256",
+                )
+                != row.state_sha256
+                or _required_sha256(
+                    row.report_row_sha256,
+                    f"frontier_lineage.sweeps[{sweep_index}].report_row_sha256",
+                )
+                != row.report_row_sha256
+            ):
+                raise Lfm2EndpointQkResidualAuthenticationError(
+                    "FIT frontier lineage row is invalid."
+                )
+        if sweep.rows:
+            selected_rows = tuple(
+                row for row in sweep.rows if row.alpha == sweep.selected_alpha
+            )
+            if (
+                len(selected_rows) != 1
+                or selected_rows[0].state_sha256 != sweep.selected_state_sha256
+            ):
+                raise Lfm2EndpointQkResidualAuthenticationError(
+                    "FIT frontier lineage selected alpha/state is inconsistent."
+                )
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class _FitNumericalResult:
     query_weight: Any
@@ -4590,6 +4862,7 @@ class _FitNumericalResult:
     initial_metrics: Lfm2EndpointQkMetrics
     proposed_metrics: Lfm2EndpointQkMetrics
     sweeps: tuple[Mapping[str, Any], ...]
+    frontier_lineage_sweeps: tuple[_FitSweepFrontierLineage, ...]
     changed: bool
 
 
@@ -4611,9 +4884,16 @@ def _compile_fit_numerics(
     )
     current_metrics = initial_metrics
     sweeps: list[dict[str, Any]] = []
+    frontier_lineage_sweeps: list[_FitSweepFrontierLineage] = []
     changed = False
     with torch.no_grad():
         for sweep in range(policy.maximum_sweeps):
+            current_state_sha = _state_sha256(
+                {
+                    "q_proj.weight": current_query.detach().cpu(),
+                    "k_proj.weight": current_key.detach().cpu(),
+                }
+            )
             _attach_replay(
                 fit_cases,
                 seed,
@@ -4641,6 +4921,16 @@ def _compile_fit_numerics(
             }
             if not bool(solve_report["usable_direction"]):
                 sweeps.append(sweep_report)
+                frontier_lineage_sweeps.append(
+                    _FitSweepFrontierLineage(
+                        sweep=sweep,
+                        rows=(),
+                        selected_alpha=None,
+                        selected_state_sha256=current_state_sha,
+                        selection_reason="unusable_direction_no_frontier",
+                        report_sweep_sha256=_canonical_sha256(sweep_report),
+                    )
+                )
                 break
             delta_query, delta_key = operator.unpack(direction)
             (
@@ -4657,6 +4947,7 @@ def _compile_fit_numerics(
                 policy.trust_radius,
             )
             frontier = []
+            frontier_lineage_rows: list[_FitFrontierLineageRow] = []
             selected: (
                 tuple[
                     tuple[float, float, float, float, float, str],
@@ -4667,6 +4958,9 @@ def _compile_fit_numerics(
                 ]
                 | None
             ) = None
+            alpha_zero_fallback: (
+                tuple[float, Any, Any, Lfm2EndpointQkMetrics] | None
+            ) = None
             for alpha in policy.alpha_frontier:
                 candidate_query = (
                     current_query.to(torch.float32) + alpha * delta_query
@@ -4674,11 +4968,25 @@ def _compile_fit_numerics(
                 candidate_key = (current_key.to(torch.float32) + alpha * delta_key).to(
                     torch.bfloat16
                 )
-                metrics = _evaluate(
-                    fit_cases,
-                    seed,
-                    candidate_query,
-                    candidate_key,
+                candidate_shape_correct = bool(
+                    candidate_query.layout == torch.strided
+                    and candidate_key.layout == torch.strided
+                    and candidate_query.dtype == torch.bfloat16
+                    and candidate_key.dtype == torch.bfloat16
+                    and tuple(candidate_query.shape) == tuple(current_query.shape)
+                    and tuple(candidate_key.shape) == tuple(current_key.shape)
+                )
+                candidate_finite = bool(
+                    candidate_shape_correct
+                    and torch.isfinite(candidate_query).all().item()
+                    and torch.isfinite(candidate_key).all().item()
+                )
+                candidate_effectful = bool(
+                    candidate_shape_correct
+                    and not (
+                        torch.equal(candidate_query, current_query)
+                        and torch.equal(candidate_key, current_key)
+                    )
                 )
                 state_sha = _state_sha256(
                     {
@@ -4686,31 +4994,77 @@ def _compile_fit_numerics(
                         "k_proj.weight": candidate_key.detach().cpu(),
                     }
                 )
-                eligible = alpha == 0.0 or (
-                    metrics.endpoint_relative_rmse
-                    <= current_metrics.endpoint_relative_rmse
-                    - policy.minimum_fit_endpoint_improvement
-                    and _route_nonregressing(
+                structurally_eligible = bool(
+                    candidate_finite and candidate_shape_correct and candidate_effectful
+                )
+                metrics = None
+                fit_endpoint_improvement_proxy_passed = None
+                route_nonregression_proxy_passed = None
+                legacy_numeric_proxy_gate_passed = None
+                if candidate_finite and candidate_shape_correct:
+                    metrics = _evaluate(
+                        fit_cases,
+                        seed,
+                        candidate_query,
+                        candidate_key,
+                    )
+                    fit_endpoint_improvement_proxy_passed = bool(
+                        metrics.endpoint_relative_rmse
+                        <= current_metrics.endpoint_relative_rmse
+                        - policy.minimum_fit_endpoint_improvement
+                    )
+                    route_nonregression_proxy_passed = _route_nonregressing(
                         metrics,
                         current_metrics,
                         policy.metric_regression_tolerance,
                     )
+                    legacy_numeric_proxy_gate_passed = bool(
+                        fit_endpoint_improvement_proxy_passed
+                        and route_nonregression_proxy_passed
+                    )
+                frontier_row = {
+                    "alpha": alpha,
+                    "exact_bfloat16_state": True,
+                    "candidate_finite": candidate_finite,
+                    "candidate_shape_correct": candidate_shape_correct,
+                    "candidate_effectful": candidate_effectful,
+                    "eligible": structurally_eligible,
+                    "fit_endpoint_improvement_proxy_passed": (
+                        fit_endpoint_improvement_proxy_passed
+                    ),
+                    "route_nonregression_proxy_passed": (
+                        route_nonregression_proxy_passed
+                    ),
+                    "legacy_numeric_proxy_gate_passed": (
+                        legacy_numeric_proxy_gate_passed
+                    ),
+                    "numeric_proxy_role": _FIT_NUMERIC_PROXY_ROLE,
+                    "state_sha256": state_sha,
+                    "metrics": None if metrics is None else metrics.as_dict(),
+                }
+                frontier.append(frontier_row)
+                frontier_lineage_rows.append(
+                    _FitFrontierLineageRow(
+                        alpha=alpha,
+                        state_sha256=state_sha,
+                        candidate_finite=candidate_finite,
+                        candidate_shape_correct=candidate_shape_correct,
+                        candidate_effectful=candidate_effectful,
+                        structurally_eligible=structurally_eligible,
+                        report_row_sha256=_canonical_sha256(frontier_row),
+                    )
                 )
-                frontier.append(
-                    {
-                        "alpha": alpha,
-                        "exact_bfloat16_state": True,
-                        "eligible": eligible,
-                        "state_sha256": state_sha,
-                        "metrics": metrics.as_dict(),
-                    }
-                )
-                if eligible:
-                    selection_key = (
-                        metrics.endpoint_relative_rmse,
-                        metrics.probability_relative_rmse,
-                        metrics.js_divergence_worst,
-                        -metrics.top1_route_agreement_fraction,
+                if alpha == 0.0 and metrics is not None:
+                    alpha_zero_fallback = (
+                        alpha,
+                        candidate_query,
+                        candidate_key,
+                        metrics,
+                    )
+                if structurally_eligible:
+                    assert metrics is not None
+                    selection_key = _fit_metric_selection_key(
+                        metrics,
                         alpha,
                         state_sha,
                     )
@@ -4723,14 +5077,27 @@ def _compile_fit_numerics(
                     )
                     if selected is None or candidate[0] < selected[0]:
                         selected = candidate
-            assert selected is not None
-            (
-                _selection_key,
-                selected_alpha,
-                selected_query,
-                selected_key,
-                selected_metrics,
-            ) = selected
+            if alpha_zero_fallback is None:
+                raise Lfm2EndpointQkResidualFoldError(
+                    "FIT alpha-zero fallback is not one finite shape-correct BF16 state."
+                )
+            if selected is None:
+                (
+                    selected_alpha,
+                    selected_query,
+                    selected_key,
+                    selected_metrics,
+                ) = alpha_zero_fallback
+                selection_reason = "all_nonzero_candidates_identical_or_invalid"
+            else:
+                (
+                    _selection_key,
+                    selected_alpha,
+                    selected_query,
+                    selected_key,
+                    selected_metrics,
+                ) = selected
+                selection_reason = "best_effectful_structural_candidate_by_fit_metrics"
             sweep_report.update(
                 {
                     "unscaled_query_relative_delta": query_relative,
@@ -4738,9 +5105,26 @@ def _compile_fit_numerics(
                     "trust_scale": trust_scale,
                     "frontier": frontier,
                     "selected_alpha": selected_alpha,
+                    "selection_reason": selection_reason,
                 }
             )
             sweeps.append(sweep_report)
+            selected_state_sha = _state_sha256(
+                {
+                    "q_proj.weight": selected_query.detach().cpu(),
+                    "k_proj.weight": selected_key.detach().cpu(),
+                }
+            )
+            frontier_lineage_sweeps.append(
+                _FitSweepFrontierLineage(
+                    sweep=sweep,
+                    rows=tuple(frontier_lineage_rows),
+                    selected_alpha=selected_alpha,
+                    selected_state_sha256=selected_state_sha,
+                    selection_reason=selection_reason,
+                    report_sweep_sha256=_canonical_sha256(sweep_report),
+                )
+            )
             same_state = torch.equal(
                 selected_query,
                 current_query,
@@ -4757,6 +5141,7 @@ def _compile_fit_numerics(
         initial_metrics=initial_metrics,
         proposed_metrics=current_metrics,
         sweeps=tuple(MappingProxyType(value) for value in sweeps),
+        frontier_lineage_sweeps=tuple(frontier_lineage_sweeps),
         changed=changed,
     )
 
@@ -4787,6 +5172,7 @@ def _verify_fit_sweep_semantics(
     initial_metrics: Lfm2EndpointQkMetrics,
     proposed_metrics: Lfm2EndpointQkMetrics,
     policy: Lfm2EndpointQkResidualFoldPolicy,
+    frontier_lineage_binding: _FitFrontierLineageBinding,
 ) -> None:
     if (
         not isinstance(sweeps, list)
@@ -4795,6 +5181,11 @@ def _verify_fit_sweep_semantics(
     ):
         raise Lfm2EndpointQkResidualAuthenticationError(
             "FIT sweep inventory is empty, unbounded, or not a list."
+        )
+    lineage_sweeps = frontier_lineage_binding.sweeps
+    if len(lineage_sweeps) != len(sweeps):
+        raise Lfm2EndpointQkResidualAuthenticationError(
+            "FIT frontier lineage sweep count differs from the report."
         )
     solve_fields = {
         "converged",
@@ -4821,11 +5212,19 @@ def _verify_fit_sweep_semantics(
         "trust_scale",
         "frontier",
         "selected_alpha",
+        "selection_reason",
     }
     frontier_fields = {
         "alpha",
         "exact_bfloat16_state",
+        "candidate_finite",
+        "candidate_shape_correct",
+        "candidate_effectful",
         "eligible",
+        "fit_endpoint_improvement_proxy_passed",
+        "route_nonregression_proxy_passed",
+        "legacy_numeric_proxy_gate_passed",
+        "numeric_proxy_role",
         "state_sha256",
         "metrics",
     }
@@ -4837,6 +5236,7 @@ def _verify_fit_sweep_semantics(
         }
     )
     for sweep_index, sweep in enumerate(sweeps):
+        lineage_sweep = lineage_sweeps[sweep_index]
         if (
             not isinstance(sweep, Mapping)
             or sweep.get("sweep") != sweep_index
@@ -4932,6 +5332,16 @@ def _verify_fit_sweep_semantics(
                 raise Lfm2EndpointQkResidualAuthenticationError(
                     "An unusable FIT direction exposed a frontier or did not stop."
                 )
+            if (
+                lineage_sweep.rows
+                or lineage_sweep.selected_alpha is not None
+                or lineage_sweep.selected_state_sha256 != current_state_sha
+                or lineage_sweep.selection_reason != "unusable_direction_no_frontier"
+                or lineage_sweep.report_sweep_sha256 != _canonical_sha256(dict(sweep))
+            ):
+                raise Lfm2EndpointQkResidualAuthenticationError(
+                    "An unusable FIT sweep differs from compiler frontier lineage."
+                )
             continue
         if set(sweep) != usable_sweep_fields:
             raise Lfm2EndpointQkResidualAuthenticationError(
@@ -4963,16 +5373,39 @@ def _verify_fit_sweep_semantics(
             raise Lfm2EndpointQkResidualAuthenticationError(
                 "FIT sweep frontier does not match the authenticated alpha policy."
             )
+        if len(lineage_sweep.rows) != len(frontier):
+            raise Lfm2EndpointQkResidualAuthenticationError(
+                "FIT frontier lineage row count differs from the report."
+            )
         eligible_rows = []
+        alpha_zero_row: (
+            tuple[
+                float,
+                str,
+                Lfm2EndpointQkMetrics,
+            ]
+            | None
+        ) = None
         for frontier_index, (row, expected_alpha) in enumerate(
             zip(frontier, policy.alpha_frontier, strict=True)
         ):
+            lineage_row = lineage_sweep.rows[frontier_index]
             if (
                 not isinstance(row, Mapping)
                 or set(row) != frontier_fields
                 or row.get("alpha") != expected_alpha
                 or row.get("exact_bfloat16_state") is not True
-                or not isinstance(row.get("eligible"), bool)
+                or row.get("candidate_shape_correct") is not True
+                or not all(
+                    isinstance(row.get(name), bool)
+                    for name in (
+                        "candidate_finite",
+                        "candidate_shape_correct",
+                        "candidate_effectful",
+                        "eligible",
+                    )
+                )
+                or row.get("numeric_proxy_role") != _FIT_NUMERIC_PROXY_ROLE
             ):
                 raise Lfm2EndpointQkResidualAuthenticationError(
                     "FIT sweep frontier row schema or alpha order is invalid."
@@ -4981,54 +5414,138 @@ def _verify_fit_sweep_semantics(
                 row.get("state_sha256"),
                 f"sweeps[{sweep_index}].frontier[{frontier_index}].state_sha256",
             )
-            metrics = _metrics_from_sweep_report(
-                row.get("metrics"),
-                f"sweeps[{sweep_index}].frontier[{frontier_index}].metrics",
+            if (
+                lineage_row.alpha != expected_alpha
+                or lineage_row.state_sha256 != state_sha
+                or lineage_row.candidate_finite is not row["candidate_finite"]
+                or lineage_row.candidate_shape_correct
+                is not row["candidate_shape_correct"]
+                or lineage_row.candidate_effectful is not row["candidate_effectful"]
+                or lineage_row.structurally_eligible is not row["eligible"]
+            ):
+                raise Lfm2EndpointQkResidualAuthenticationError(
+                    "FIT frontier lineage structural eligibility differs from the "
+                    "compiler-created BF16 candidate."
+                )
+            expected_effectful = state_sha != current_state_sha
+            expected_eligible = bool(
+                row["candidate_finite"]
+                and row["candidate_shape_correct"]
+                and expected_effectful
             )
-            expected_eligible = expected_alpha == 0.0 or (
-                metrics.endpoint_relative_rmse
-                <= current_metrics.endpoint_relative_rmse
-                - policy.minimum_fit_endpoint_improvement
-                and _route_nonregressing(
+            if (
+                bool(row["candidate_effectful"]) != expected_effectful
+                or bool(row["eligible"]) != expected_eligible
+            ):
+                raise Lfm2EndpointQkResidualAuthenticationError(
+                    "FIT sweep frontier bypasses reconstructed structural eligibility."
+                )
+            metrics: Lfm2EndpointQkMetrics | None
+            if row["candidate_finite"] and row["candidate_shape_correct"]:
+                metrics = _metrics_from_sweep_report(
+                    row.get("metrics"),
+                    f"sweeps[{sweep_index}].frontier[{frontier_index}].metrics",
+                )
+                expected_fit_proxy = bool(
+                    metrics.endpoint_relative_rmse
+                    <= current_metrics.endpoint_relative_rmse
+                    - policy.minimum_fit_endpoint_improvement
+                )
+                expected_route_proxy = _route_nonregressing(
                     metrics,
                     current_metrics,
                     policy.metric_regression_tolerance,
                 )
-            )
-            if bool(row["eligible"]) != expected_eligible:
-                raise Lfm2EndpointQkResidualAuthenticationError(
-                    "FIT sweep frontier eligibility bypasses the exact metric gate."
+                expected_legacy_proxy = bool(
+                    expected_fit_proxy and expected_route_proxy
                 )
+                if (
+                    row.get("fit_endpoint_improvement_proxy_passed")
+                    is not expected_fit_proxy
+                    or row.get("route_nonregression_proxy_passed")
+                    is not expected_route_proxy
+                    or row.get("legacy_numeric_proxy_gate_passed")
+                    is not expected_legacy_proxy
+                ):
+                    raise Lfm2EndpointQkResidualAuthenticationError(
+                        "FIT sweep numeric proxy diagnostics do not replay."
+                    )
+            else:
+                metrics = None
+                if (
+                    row.get("metrics") is not None
+                    or row.get("fit_endpoint_improvement_proxy_passed") is not None
+                    or row.get("route_nonregression_proxy_passed") is not None
+                    or row.get("legacy_numeric_proxy_gate_passed") is not None
+                ):
+                    raise Lfm2EndpointQkResidualAuthenticationError(
+                        "An invalid FIT candidate carries metrics or proxy diagnostics."
+                    )
             if expected_alpha == 0.0 and (
-                metrics.as_dict() != current_metrics.as_dict()
+                not row["candidate_finite"]
+                or not row["candidate_shape_correct"]
+                or expected_effectful
+                or expected_eligible
+                or metrics is None
+                or metrics.as_dict() != current_metrics.as_dict()
                 or state_sha != current_state_sha
             ):
                 raise Lfm2EndpointQkResidualAuthenticationError(
-                    "FIT sweep alpha-zero row is not the current dense state."
+                    "FIT sweep alpha-zero row is not the current dense fallback state."
                 )
-            selection_key = (
-                metrics.endpoint_relative_rmse,
-                metrics.probability_relative_rmse,
-                metrics.js_divergence_worst,
-                -metrics.top1_route_agreement_fraction,
-                expected_alpha,
-                state_sha,
-            )
+            if expected_alpha == 0.0:
+                assert metrics is not None
+                alpha_zero_row = (
+                    expected_alpha,
+                    state_sha,
+                    metrics,
+                )
             if expected_eligible:
+                assert metrics is not None
+                selection_key = _fit_metric_selection_key(
+                    metrics,
+                    expected_alpha,
+                    state_sha,
+                )
                 eligible_rows.append(
                     (selection_key, expected_alpha, state_sha, metrics)
                 )
-        if not eligible_rows:
+            if lineage_row.report_row_sha256 != _canonical_sha256(dict(row)):
+                raise Lfm2EndpointQkResidualAuthenticationError(
+                    "FIT frontier row diagnostics or counts differ from compiler "
+                    "lineage."
+                )
+        if alpha_zero_row is None:
             raise Lfm2EndpointQkResidualAuthenticationError(
-                "FIT sweep frontier has no alpha-zero fallback."
+                "FIT sweep frontier has no valid alpha-zero fallback."
             )
-        _selection, selected_alpha, selected_state_sha, selected_metrics = min(
-            eligible_rows,
-            key=lambda value: value[0],
-        )
-        if sweep.get("selected_alpha") != selected_alpha:
+        if eligible_rows:
+            _selection, selected_alpha, selected_state_sha, selected_metrics = min(
+                eligible_rows,
+                key=lambda value: value[0],
+            )
+            expected_selection_reason = (
+                "best_effectful_structural_candidate_by_fit_metrics"
+            )
+        else:
+            selected_alpha, selected_state_sha, selected_metrics = alpha_zero_row
+            expected_selection_reason = "all_nonzero_candidates_identical_or_invalid"
+        if (
+            sweep.get("selected_alpha") != selected_alpha
+            or sweep.get("selection_reason") != expected_selection_reason
+        ):
             raise Lfm2EndpointQkResidualAuthenticationError(
-                "FIT sweep did not select the exact best eligible BF16 state."
+                "FIT sweep did not select the metric-best effectful BF16 state or "
+                "its exact alpha-zero fallback."
+            )
+        if (
+            lineage_sweep.selected_alpha != selected_alpha
+            or lineage_sweep.selected_state_sha256 != selected_state_sha
+            or lineage_sweep.selection_reason != expected_selection_reason
+            or lineage_sweep.report_sweep_sha256 != _canonical_sha256(dict(sweep))
+        ):
+            raise Lfm2EndpointQkResidualAuthenticationError(
+                "FIT frontier ranking or selected state differs from compiler lineage."
             )
         current_metrics = selected_metrics
         previous_state_sha = current_state_sha
@@ -5067,8 +5584,20 @@ class Lfm2CompiledEndpointQkFitProposal:
     initial_fit_metrics: Lfm2EndpointQkMetrics
     proposed_fit_metrics: Lfm2EndpointQkMetrics
     report: Mapping[str, Any]
+    _frontier_lineage_binding: _FitFrontierLineageBinding | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    _compiler_issuer: InitVar[Any] = None
+    _frontier_lineage_proof: _FitFrontierLineageProof | None = field(
+        init=False,
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _compiler_issuer: Any) -> None:
         torch = _torch()
         query = _dense_cpu_tensor(
             self.query_weight,
@@ -5093,6 +5622,14 @@ class Lfm2CompiledEndpointQkFitProposal:
                 "FIT-only endpoint proposal does not bind its policy/evidence."
             )
         fit_sha = self.fit_bank.verify()
+        seed_sha = self.seed.verify()
+        frontier_lineage_binding = _authenticate_fit_frontier_lineage_binding(
+            self._frontier_lineage_binding,
+            seed_sha256=seed_sha,
+            policy_sha256=self.policy.authentication_sha256,
+            fit_evidence_sha256=fit_sha,
+            policy=self.policy,
+        )
         body = dict(self.report)
         supplied = body.pop("report_sha256", None)
         sweeps = body.get("sweeps")
@@ -5123,6 +5660,14 @@ class Lfm2CompiledEndpointQkFitProposal:
             "fit_check_accessible",
             "fit_check_cases_consumed",
             "exact_bfloat16_frontier",
+            "fit_candidate_eligibility_rule",
+            "fit_candidate_ordering_rule",
+            "fit_numeric_proxy_role",
+            "fit_numeric_metrics_can_veto_effectful_candidate",
+            "fit_numeric_metrics_have_final_intelligence_authority",
+            "fit_frontier_lineage_schema",
+            "fit_frontier_lineage_binding_sha256",
+            "fit_frontier_lineage_private_compiler_record",
             "direct_parent_probability_barycenter_target",
             "direct_parent_endpoint_target",
             "operation_audit",
@@ -5146,7 +5691,7 @@ class Lfm2CompiledEndpointQkFitProposal:
                 "fit_only_fixed_vo_endpoint_probability_gauss_newton_"
                 "ridge_bfloat16_frontier"
             )
-            or body.get("seed_sha256") != self.seed.verify()
+            or body.get("seed_sha256") != seed_sha
             or body.get("source_inventory_sha256")
             != self.seed.source_inventory.inventory_sha256
             or body.get("policy") != self.policy.as_dict()
@@ -5174,6 +5719,17 @@ class Lfm2CompiledEndpointQkFitProposal:
             or body.get("fit_check_cases_consumed") != 0
             or body.get("fit_check_accessible") is not False
             or body.get("exact_bfloat16_frontier") is not True
+            or body.get("fit_candidate_eligibility_rule")
+            != _FIT_STRUCTURAL_ELIGIBILITY_RULE
+            or body.get("fit_candidate_ordering_rule") != _FIT_METRIC_ORDERING_RULE
+            or body.get("fit_numeric_proxy_role") != _FIT_NUMERIC_PROXY_ROLE
+            or body.get("fit_numeric_metrics_can_veto_effectful_candidate") is not False
+            or body.get("fit_numeric_metrics_have_final_intelligence_authority")
+            is not False
+            or body.get("fit_frontier_lineage_schema") != _FIT_FRONTIER_LINEAGE_SCHEMA
+            or body.get("fit_frontier_lineage_binding_sha256")
+            != frontier_lineage_binding.binding_sha256
+            or body.get("fit_frontier_lineage_private_compiler_record") is not True
             or body.get("direct_parent_probability_barycenter_target") is not True
             or body.get("direct_parent_endpoint_target") is not True
             or body.get("operation_audit") != expected_operation_audit
@@ -5189,6 +5745,7 @@ class Lfm2CompiledEndpointQkFitProposal:
             initial_metrics=self.initial_fit_metrics,
             proposed_metrics=self.proposed_fit_metrics,
             policy=self.policy,
+            frontier_lineage_binding=frontier_lineage_binding,
         )
         _verify_observed_execution_receipt(
             body.get("observed_execution_receipt"),
@@ -5224,8 +5781,25 @@ class Lfm2CompiledEndpointQkFitProposal:
                 "FIT-only endpoint proposal metrics do not replay from its "
                 "sealed evidence and dense state."
             )
+        if _compiler_issuer is not _FIT_PROPOSAL_COMPILER_ISSUER:
+            raise Lfm2EndpointQkResidualAuthenticationError(
+                "FIT proposal is not compiler-issued with an opaque lineage proof."
+            )
+        frontier_lineage_proof = _issue_fit_frontier_lineage_proof(
+            frontier_lineage_binding
+        )
         object.__setattr__(self, "query_weight", query)
         object.__setattr__(self, "key_weight", key)
+        object.__setattr__(
+            self,
+            "_frontier_lineage_binding",
+            frontier_lineage_binding,
+        )
+        object.__setattr__(
+            self,
+            "_frontier_lineage_proof",
+            frontier_lineage_proof,
+        )
         object.__setattr__(
             self,
             "report",
@@ -5237,6 +5811,10 @@ class Lfm2CompiledEndpointQkFitProposal:
         return str(self.report["report_sha256"])
 
     def verify(self) -> str:
+        _authenticate_fit_frontier_lineage_proof(
+            self._frontier_lineage_proof,
+            self._frontier_lineage_binding,
+        )
         rebuilt = Lfm2CompiledEndpointQkFitProposal(
             query_weight=self.query_weight,
             key_weight=self.key_weight,
@@ -5247,6 +5825,8 @@ class Lfm2CompiledEndpointQkFitProposal:
             initial_fit_metrics=self.initial_fit_metrics,
             proposed_fit_metrics=self.proposed_fit_metrics,
             report=self.report,
+            _frontier_lineage_binding=self._frontier_lineage_binding,
+            _compiler_issuer=_FIT_PROPOSAL_COMPILER_ISSUER,
         )
         return rebuilt.report_sha256
 
@@ -5703,6 +6283,12 @@ def compile_lfm2_cached_endpoint_qk_fit_proposal(
         solver_device=solver,
         policy=selected_policy,
     )
+    frontier_lineage_binding = _build_fit_frontier_lineage_binding(
+        seed_sha256=seed.seed_sha256,
+        policy_sha256=selected_policy.authentication_sha256,
+        fit_evidence_sha256=fit_sha,
+        sweeps=numerical.frontier_lineage_sweeps,
+    )
     execution_receipt = _build_observed_execution_receipt(
         seed=seed,
         fit_bank=fit_bank,
@@ -5744,6 +6330,16 @@ def compile_lfm2_cached_endpoint_qk_fit_proposal(
         "fit_check_accessible": False,
         "fit_check_cases_consumed": 0,
         "exact_bfloat16_frontier": True,
+        "fit_candidate_eligibility_rule": _FIT_STRUCTURAL_ELIGIBILITY_RULE,
+        "fit_candidate_ordering_rule": _FIT_METRIC_ORDERING_RULE,
+        "fit_numeric_proxy_role": _FIT_NUMERIC_PROXY_ROLE,
+        "fit_numeric_metrics_can_veto_effectful_candidate": False,
+        "fit_numeric_metrics_have_final_intelligence_authority": False,
+        "fit_frontier_lineage_schema": _FIT_FRONTIER_LINEAGE_SCHEMA,
+        "fit_frontier_lineage_binding_sha256": (
+            frontier_lineage_binding.binding_sha256
+        ),
+        "fit_frontier_lineage_private_compiler_record": True,
         "direct_parent_probability_barycenter_target": True,
         "direct_parent_endpoint_target": True,
         "operation_audit": {
@@ -5767,6 +6363,8 @@ def compile_lfm2_cached_endpoint_qk_fit_proposal(
         initial_fit_metrics=numerical.initial_metrics,
         proposed_fit_metrics=numerical.proposed_metrics,
         report=report,
+        _frontier_lineage_binding=frontier_lineage_binding,
+        _compiler_issuer=_FIT_PROPOSAL_COMPILER_ISSUER,
     )
 
 

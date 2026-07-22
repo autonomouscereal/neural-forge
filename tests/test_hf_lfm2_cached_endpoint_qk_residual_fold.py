@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -654,9 +655,7 @@ def test_target_is_direct_parent_probability_barycenter_not_logit_average() -> N
     ]
 
 
-def test_finite_one_iteration_cg_direction_enters_exact_nonregressing_frontier() -> (
-    None
-):
+def test_finite_one_iteration_cg_direction_enters_exact_structural_frontier() -> None:
     fixture = _make_fixture()
     proposal = compile_lfm2_cached_endpoint_qk_fit_proposal(
         seed=fixture["seed_a"],
@@ -673,6 +672,14 @@ def test_finite_one_iteration_cg_direction_enters_exact_nonregressing_frontier()
         proposal.initial_fit_metrics,
         proposal.policy.metric_regression_tolerance,
     )
+    assert proposal.report["fit_candidate_eligibility_rule"] == (
+        "finite_shape_correct_effectful_exact_bfloat16_state"
+    )
+    assert proposal.report["fit_numeric_metrics_can_veto_effectful_candidate"] is False
+    assert (
+        proposal.report["fit_numeric_metrics_have_final_intelligence_authority"]
+        is False
+    )
     for sweep in proposal.report["sweeps"]:
         solve = sweep["solve_report"]
         assert solve["converged"] is False
@@ -683,7 +690,20 @@ def test_finite_one_iteration_cg_direction_enters_exact_nonregressing_frontier()
         selected = next(
             row for row in sweep["frontier"] if row["alpha"] == sweep["selected_alpha"]
         )
+        assert sweep["selection_reason"] == (
+            "best_effectful_structural_candidate_by_fit_metrics"
+        )
+        assert selected["candidate_finite"] is True
+        assert selected["candidate_shape_correct"] is True
+        assert selected["candidate_effectful"] is True
         assert selected["eligible"] is True
+        assert isinstance(selected["fit_endpoint_improvement_proxy_passed"], bool)
+        assert isinstance(selected["route_nonregression_proxy_passed"], bool)
+        assert isinstance(selected["legacy_numeric_proxy_gate_passed"], bool)
+        alpha_zero = sweep["frontier"][0]
+        assert alpha_zero["alpha"] == 0.0
+        assert alpha_zero["candidate_effectful"] is False
+        assert alpha_zero["eligible"] is False
     assert proposal.verify() == proposal.report_sha256
 
     changed_semantics = json.loads(json.dumps(dict(proposal.report)))
@@ -699,7 +719,7 @@ def test_finite_one_iteration_cg_direction_enters_exact_nonregressing_frontier()
         replace(proposal, report=changed_semantics)
 
 
-def test_exact_frontier_rejects_a_finite_truncated_regressing_direction(
+def test_exact_frontier_retains_a_finite_truncated_regressing_direction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fixture = _make_fixture()
@@ -731,14 +751,430 @@ def test_exact_frontier_rejects_a_finite_truncated_regressing_direction(
     )
 
     assert proposal.report["sweeps"][0]["solve_report"]["usable_direction"] is True
-    assert proposal.report["sweeps"][0]["selected_alpha"] == 0.0
-    assert proposal.changed is False
-    assert (
-        proposal.proposed_fit_metrics.as_dict()
-        == proposal.initial_fit_metrics.as_dict()
+    assert proposal.report["sweeps"][0]["selected_alpha"] > 0.0
+    assert proposal.report["sweeps"][0]["selection_reason"] == (
+        "best_effectful_structural_candidate_by_fit_metrics"
     )
+    selected = next(
+        row
+        for row in proposal.report["sweeps"][0]["frontier"]
+        if row["alpha"] == proposal.report["sweeps"][0]["selected_alpha"]
+    )
+    assert selected["candidate_finite"] is True
+    assert selected["candidate_shape_correct"] is True
+    assert selected["candidate_effectful"] is True
+    assert selected["eligible"] is True
+    assert selected["legacy_numeric_proxy_gate_passed"] is False
+    assert proposal.changed is True
+    assert not (
+        torch.equal(proposal.query_weight, proposal.seed.query_weight)
+        and torch.equal(proposal.key_weight, proposal.seed.key_weight)
+    )
+    assert proposal.verify() == proposal.report_sha256
+
+
+def test_alpha_zero_is_only_used_when_every_nonzero_bf16_state_is_identical(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _make_fixture()
+
+    def zero_trust_direction(
+        delta_query: torch.Tensor,
+        delta_key: torch.Tensor,
+        current_query: torch.Tensor,
+        current_key: torch.Tensor,
+        trust_radius: float,
+    ) -> tuple[torch.Tensor, torch.Tensor, float, float, float]:
+        del current_query, current_key, trust_radius
+        return (
+            torch.zeros_like(delta_query),
+            torch.zeros_like(delta_key),
+            0.0,
+            0.0,
+            1.0,
+        )
+
+    monkeypatch.setattr(endpoint_fold, "_trust_scale", zero_trust_direction)
+    proposal = compile_lfm2_cached_endpoint_qk_fit_proposal(
+        seed=fixture["seed_a"],
+        fit_bank=fixture["fit_bank"],
+        policy=replace(
+            _one_iteration_policy(),
+            maximum_sweeps=2,
+            authentication_sha256="",
+        ),
+    )
+
+    sweep = proposal.report["sweeps"][0]
+    assert sweep["selected_alpha"] == 0.0
+    assert sweep["selection_reason"] == "all_nonzero_candidates_identical_or_invalid"
+    assert all(row["candidate_finite"] for row in sweep["frontier"])
+    assert all(row["candidate_shape_correct"] for row in sweep["frontier"])
+    assert all(not row["candidate_effectful"] for row in sweep["frontier"])
+    assert all(not row["eligible"] for row in sweep["frontier"])
+    assert proposal.changed is False
     assert torch.equal(proposal.query_weight, proposal.seed.query_weight)
     assert torch.equal(proposal.key_weight, proposal.seed.key_weight)
+    assert proposal.verify() == proposal.report_sha256
+
+
+def test_alpha_zero_is_used_when_every_nonzero_bf16_state_is_nonfinite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _make_fixture()
+
+    def overflowing_trust_direction(
+        delta_query: torch.Tensor,
+        delta_key: torch.Tensor,
+        current_query: torch.Tensor,
+        current_key: torch.Tensor,
+        trust_radius: float,
+    ) -> tuple[torch.Tensor, torch.Tensor, float, float, float]:
+        del current_query, current_key, trust_radius
+        maximum = torch.finfo(torch.float32).max
+        return (
+            torch.full_like(delta_query, maximum),
+            torch.full_like(delta_key, maximum),
+            1.0,
+            1.0,
+            1.0,
+        )
+
+    monkeypatch.setattr(endpoint_fold, "_trust_scale", overflowing_trust_direction)
+    policy = replace(
+        _one_iteration_policy(),
+        maximum_sweeps=2,
+        alpha_frontier=(0.0, 1.0),
+        authentication_sha256="",
+    )
+    proposal = compile_lfm2_cached_endpoint_qk_fit_proposal(
+        seed=fixture["seed_a"],
+        fit_bank=fixture["fit_bank"],
+        policy=policy,
+    )
+
+    sweep = proposal.report["sweeps"][0]
+    assert sweep["selected_alpha"] == 0.0
+    assert sweep["selection_reason"] == "all_nonzero_candidates_identical_or_invalid"
+    invalid = sweep["frontier"][1]
+    assert invalid["candidate_finite"] is False
+    assert invalid["candidate_shape_correct"] is True
+    assert invalid["candidate_effectful"] is True
+    assert invalid["eligible"] is False
+    assert invalid["metrics"] is None
+    assert invalid["legacy_numeric_proxy_gate_passed"] is None
+    assert proposal.changed is False
+    assert proposal.verify() == proposal.report_sha256
+
+
+def test_resealed_fit_frontier_cannot_relabel_effectful_candidate_ineligible(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    report = json.loads(json.dumps(dict(proposal.report)))
+    report.pop("report_sha256")
+    effectful = next(
+        row
+        for sweep in report["sweeps"]
+        for row in sweep["frontier"]
+        if row["candidate_effectful"]
+    )
+    assert effectful["eligible"] is True
+    effectful["eligible"] = False
+    report["report_sha256"] = endpoint_fold._canonical_sha256(report)
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="structural eligibility",
+    ):
+        replace(proposal, report=report)
+
+
+def test_resealed_fit_frontier_cannot_forge_numeric_proxy_diagnostics(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    report = json.loads(json.dumps(dict(proposal.report)))
+    report.pop("report_sha256")
+    candidate = next(
+        row
+        for sweep in report["sweeps"]
+        for row in sweep["frontier"]
+        if row["candidate_finite"] and row["candidate_shape_correct"]
+    )
+    candidate["legacy_numeric_proxy_gate_passed"] = not candidate[
+        "legacy_numeric_proxy_gate_passed"
+    ]
+    report["report_sha256"] = endpoint_fold._canonical_sha256(report)
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="numeric proxy diagnostics",
+    ):
+        replace(proposal, report=report)
+
+
+def test_private_lineage_rejects_nonselected_state_effect_and_eligibility_relabel(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    report = json.loads(json.dumps(dict(proposal.report)))
+    report.pop("report_sha256")
+    sweep = next(value for value in report["sweeps"] if "frontier" in value)
+    alpha_zero = next(row for row in sweep["frontier"] if row["alpha"] == 0.0)
+    candidate = next(
+        row
+        for row in sweep["frontier"]
+        if row["alpha"] not in (0.0, sweep["selected_alpha"])
+        and row["candidate_effectful"]
+    )
+    candidate["state_sha256"] = alpha_zero["state_sha256"]
+    candidate["candidate_effectful"] = False
+    candidate["eligible"] = False
+    report["report_sha256"] = endpoint_fold._canonical_sha256(report)
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="frontier lineage structural eligibility",
+    ):
+        replace(proposal, report=report)
+
+
+def test_private_lineage_rejects_selected_state_and_alpha_provenance_swap(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    report = json.loads(json.dumps(dict(proposal.report)))
+    report.pop("report_sha256")
+    sweep = next(value for value in report["sweeps"] if "frontier" in value)
+    selected = next(
+        row for row in sweep["frontier"] if row["alpha"] == sweep["selected_alpha"]
+    )
+    nonselected = next(
+        row
+        for row in sweep["frontier"]
+        if row["alpha"] not in (0.0, sweep["selected_alpha"])
+        and row["candidate_effectful"]
+    )
+    selected_alpha = selected["alpha"]
+    nonselected_alpha = nonselected["alpha"]
+    selected_payload = {key: value for key, value in selected.items() if key != "alpha"}
+    nonselected_payload = {
+        key: value for key, value in nonselected.items() if key != "alpha"
+    }
+    selected.clear()
+    selected.update({"alpha": selected_alpha, **nonselected_payload})
+    nonselected.clear()
+    nonselected.update({"alpha": nonselected_alpha, **selected_payload})
+    sweep["selected_alpha"] = nonselected_alpha
+    report["report_sha256"] = endpoint_fold._canonical_sha256(report)
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="frontier lineage structural eligibility|frontier ranking",
+    ):
+        replace(proposal, report=report)
+
+
+@pytest.mark.parametrize("tamper", ("metric-count", "coherent-proxy"))
+def test_private_lineage_rejects_resealed_nonselected_diagnostics(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+    tamper: str,
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    report = json.loads(json.dumps(dict(proposal.report)))
+    report.pop("report_sha256")
+    sweep = next(value for value in report["sweeps"] if "frontier" in value)
+    candidate = next(
+        row
+        for row in sweep["frontier"]
+        if row["alpha"] not in (0.0, sweep["selected_alpha"])
+        and row["metrics"] is not None
+    )
+    if tamper == "metric-count":
+        candidate["metrics"]["case_count"] += 1
+    else:
+        candidate["metrics"]["js_divergence_mean"] = 1e6
+        candidate["route_nonregression_proxy_passed"] = False
+        candidate["legacy_numeric_proxy_gate_passed"] = False
+    report["report_sha256"] = endpoint_fold._canonical_sha256(report)
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="row diagnostics or counts",
+    ):
+        replace(proposal, report=report)
+
+
+@pytest.mark.parametrize("replacement", (None, object()))
+def test_compiled_fit_proposal_requires_original_private_frontier_lineage(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+    replacement: object,
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="lineage record is absent, replaced, or invalid",
+    ):
+        replace(proposal, _frontier_lineage_binding=replacement)
+
+
+def test_resealed_public_lineage_digest_must_match_private_compiler_record(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    report = json.loads(json.dumps(dict(proposal.report)))
+    report.pop("report_sha256")
+    report["fit_frontier_lineage_binding_sha256"] = "0" * 64
+    report["report_sha256"] = endpoint_fold._canonical_sha256(report)
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="failed authentication",
+    ):
+        replace(proposal, report=report)
+
+
+def test_fit_proposal_deep_copied_private_record_loses_opaque_proof(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    copied = copy.copy(proposal)
+    copied_record = copy.deepcopy(proposal._frontier_lineage_binding)
+    object.__setattr__(copied, "_frontier_lineage_binding", copied_record)
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="proof no longer names its compiler record",
+    ):
+        copied.verify()
+
+
+def test_fit_proposal_rejects_deterministic_record_substitution(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    second = compile_lfm2_cached_endpoint_qk_fit_proposal(
+        seed=fixture["seed_a"],
+        fit_bank=fixture["fit_bank"],
+        policy=proposal.policy,
+    )
+    assert second._frontier_lineage_binding.binding_sha256 == (
+        proposal._frontier_lineage_binding.binding_sha256
+    )
+    assert second._frontier_lineage_binding is not proposal._frontier_lineage_binding
+    substituted = copy.copy(proposal)
+    object.__setattr__(
+        substituted,
+        "_frontier_lineage_binding",
+        second._frontier_lineage_binding,
+    )
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="proof no longer names its compiler record",
+    ):
+        substituted.verify()
+
+
+def test_fit_proposal_rejects_coherently_resealed_report_and_lineage_copy(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    original_binding = proposal._frontier_lineage_binding
+    assert isinstance(original_binding, endpoint_fold._FitFrontierLineageBinding)
+
+    report = json.loads(json.dumps(dict(proposal.report)))
+    report.pop("report_sha256")
+    sweep_index = next(
+        index for index, sweep in enumerate(report["sweeps"]) if "frontier" in sweep
+    )
+    sweep = report["sweeps"][sweep_index]
+    row_index = next(
+        index
+        for index, row in enumerate(sweep["frontier"])
+        if row["alpha"] not in (0.0, sweep["selected_alpha"])
+        and row["metrics"] is not None
+    )
+    row = sweep["frontier"][row_index]
+    row["metrics"]["case_count"] += 1
+
+    lineage_sweep = original_binding.sweeps[sweep_index]
+    changed_rows = list(lineage_sweep.rows)
+    changed_rows[row_index] = replace(
+        changed_rows[row_index],
+        report_row_sha256=endpoint_fold._canonical_sha256(row),
+    )
+    changed_lineage_sweep = replace(
+        lineage_sweep,
+        rows=tuple(changed_rows),
+        report_sweep_sha256=endpoint_fold._canonical_sha256(sweep),
+    )
+    changed_sweeps = list(original_binding.sweeps)
+    changed_sweeps[sweep_index] = changed_lineage_sweep
+    unsigned_binding = replace(
+        original_binding,
+        sweeps=tuple(changed_sweeps),
+        binding_sha256="",
+    )
+    changed_binding = replace(
+        unsigned_binding,
+        binding_sha256=endpoint_fold._canonical_sha256(unsigned_binding.as_dict()),
+    )
+    report["fit_frontier_lineage_binding_sha256"] = changed_binding.binding_sha256
+    report["report_sha256"] = endpoint_fold._canonical_sha256(report)
+
+    forged = copy.copy(proposal)
+    object.__setattr__(forged, "report", report)
+    object.__setattr__(forged, "_frontier_lineage_binding", changed_binding)
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="proof no longer names its compiler record",
+    ):
+        forged.verify()
+
+
+@pytest.mark.parametrize("replacement", (None, object()))
+def test_fit_proposal_rejects_postconstruction_opaque_proof_replacement(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+    replacement: object,
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    replaced = copy.copy(proposal)
+    object.__setattr__(replaced, "_frontier_lineage_proof", replacement)
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="lineage proof is missing or replaced",
+    ):
+        replaced.verify()
+
+
+def test_normal_dataclass_reconstruction_cannot_supply_an_opaque_lineage_proof(
+    fit_proposal_fixture: tuple[dict[str, object], object],
+) -> None:
+    _fixture, proposal = fit_proposal_fixture
+    assert isinstance(proposal, endpoint_fold.Lfm2CompiledEndpointQkFitProposal)
+    proof_field = proposal.__dataclass_fields__["_frontier_lineage_proof"]
+    assert proof_field.init is False
+
+    with pytest.raises(
+        Lfm2EndpointQkResidualAuthenticationError,
+        match="not compiler-issued with an opaque lineage proof",
+    ):
+        replace(proposal)
 
 
 def test_exact_zero_trust_reference_preserves_a_real_cold_direction() -> None:
