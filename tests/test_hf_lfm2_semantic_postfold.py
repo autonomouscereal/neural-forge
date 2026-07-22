@@ -676,6 +676,75 @@ def test_preterminal_capsule_path_guard_rejects_overlap_before_loading(
         )
 
 
+def test_preterminal_capsule_path_guard_ignores_blank_tokenizer_path_sentinels(
+    tmp_path: Path,
+) -> None:
+    sources = {
+        name: tmp_path / name
+        for name in ("input", "cache", "bridge", "parent", "statistics")
+    }
+    for path in sources.values():
+        path.mkdir()
+    diagnostic = tmp_path / "compiler.json"
+    diagnostic.write_text("{}", encoding="ascii")
+
+    output, capsule = postfold._validate_preterminal_capsule_path_disjointness(
+        output_checkpoint_directory=tmp_path / "run" / "checkpoint",
+        preterminal_capsule_directory=tmp_path / "run" / "preterminal-capsule",
+        input_checkpoint_directory=sources["input"],
+        cache_directory=sources["cache"],
+        bridge_directory=sources["bridge"],
+        parent_model_directory=sources["parent"],
+        compiler_diagnostic_json=diagnostic,
+        interface_statistics_directory=sources["statistics"],
+        donor_tokenizer=SimpleNamespace(
+            name_or_path="",
+            tokenizer_file="   ",
+            init_kwargs={"vocab_file": ""},
+        ),
+        target_tokenizer=SimpleNamespace(
+            name_or_path="",
+            init_kwargs={"name_or_path": "   "},
+        ),
+    )
+
+    assert output == (tmp_path / "run" / "checkpoint").resolve()
+    assert capsule == (tmp_path / "run" / "preterminal-capsule").resolve()
+
+
+def test_preterminal_capsule_path_guard_still_protects_real_tokenizer_source(
+    tmp_path: Path,
+) -> None:
+    sources = {
+        name: tmp_path / name
+        for name in ("input", "cache", "bridge", "parent", "statistics", "tokenizer")
+    }
+    for path in sources.values():
+        path.mkdir()
+    diagnostic = tmp_path / "compiler.json"
+    diagnostic.write_text("{}", encoding="ascii")
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="local tokenizer source",
+    ):
+        postfold._validate_preterminal_capsule_path_disjointness(
+            output_checkpoint_directory=tmp_path / "output",
+            preterminal_capsule_directory=sources["tokenizer"] / "capsule",
+            input_checkpoint_directory=sources["input"],
+            cache_directory=sources["cache"],
+            bridge_directory=sources["bridge"],
+            parent_model_directory=sources["parent"],
+            compiler_diagnostic_json=diagnostic,
+            interface_statistics_directory=sources["statistics"],
+            donor_tokenizer=SimpleNamespace(
+                name_or_path=str(sources["tokenizer"]),
+                init_kwargs={"name_or_path": ""},
+            ),
+            target_tokenizer=SimpleNamespace(name_or_path=""),
+        )
+
+
 def test_terminal_frontier_export_seam_receives_full_bank_once_before_w2_install() -> (
     None
 ):

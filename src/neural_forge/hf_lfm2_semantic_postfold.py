@@ -1112,7 +1112,14 @@ def _local_tokenizer_source_paths(tokenizer: Any) -> tuple[Path, ...]:
     for value in candidates:
         if not isinstance(value, (str, os.PathLike)):
             continue
-        path = Path(value).expanduser().resolve()
+        # Several local tokenizer implementations use an empty string to mean
+        # "no source path".  Resolving that sentinel would turn it into the
+        # process working directory and falsely make every nested output look
+        # like it overlaps a tokenizer input.
+        raw_value = os.fspath(value)
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            continue
+        path = Path(raw_value).expanduser().resolve()
         if path.exists() or path.is_symlink():
             paths.add(path)
     return tuple(sorted(paths, key=str))
