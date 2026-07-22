@@ -15,7 +15,9 @@ Two candidates compete with the incumbent dense SwiGLU:
   gate/up medoids, represents every parent neuron through a sparse multi-anchor
   consumer plan, transports that plan through the authenticated residual chart,
   and applies FIT-only closed-form W1/W3/W2 corrections.  Nonzero incumbents
-  retain the established full-source structural compiler and trust cap.
+  retain the established full-source structural compiler.  A requested
+  maximum delta ratio is retained only as a review diagnostic; it never clips
+  either analytic proposal.
 
 The authenticated incumbent is a valid no-op result only when every analytic
 proposal is structurally invalid or tensor-identical to it.  Finite, dense,
@@ -1326,10 +1328,6 @@ def _solve_writer(
             / torch.linalg.vector_norm(prior).clamp_min(1e-30)
         ).item()
     )
-    applied_scale = 1.0
-    if maximum_delta_ratio is not None and unclipped_ratio > maximum_delta_ratio:
-        applied_scale = maximum_delta_ratio / unclipped_ratio
-        delta = delta * applied_scale
     candidate_down = (prior + delta).to(incumbent["w2.weight"].dtype)
     state = MappingProxyType(
         {
@@ -1346,8 +1344,22 @@ def _solve_writer(
         "ridge": ridge,
         "effective_ridge": regularizer,
         "unclipped_delta_ratio": unclipped_ratio,
+        "observed_solver_delta_ratio": unclipped_ratio,
         "maximum_delta_ratio": maximum_delta_ratio,
-        "applied_delta_scale": applied_scale,
+        "requested_maximum_delta_ratio_goal": maximum_delta_ratio,
+        "requested_delta_ratio_goal_met": (
+            None
+            if maximum_delta_ratio is None
+            else unclipped_ratio <= maximum_delta_ratio
+        ),
+        "effective_maximum_delta_ratio_cap": None,
+        "delta_ratio_cap_applied": False,
+        "relative_incumbent_trust_cap_applied": False,
+        "applied_delta_scale": 1.0,
+        "numeric_delta_ratio_used_for_candidate_eligibility": False,
+        "numeric_delta_ratio_used_for_candidate_ordering": False,
+        "numeric_delta_ratio_used_for_publication_or_rollback": False,
+        "numeric_delta_ratio_has_final_intelligence_authority": False,
         "analytic_linear_solve": True,
         "cluster_solve": False,
         "operation_audit": dict(_ZERO_OPERATIONS),
@@ -1420,7 +1432,7 @@ def _full_candidate_state(
             case_sample_weights=tuple(item.sample_weight for item in fit),
             normalized_decoder_ridge=_NORMALIZED_DECODER_RIDGE,
             ridge=ridge,
-            max_prior_delta_ratio=maximum_delta_ratio,
+            max_prior_delta_ratio=None,
             cluster_ridge=cluster_ridge,
             cluster_max_iterations=cluster_max_iterations,
             cluster_distance_chunk_size=cluster_distance_chunk_size,
@@ -1453,7 +1465,7 @@ def _full_candidate_state(
             down_weight_prior=incumbent["w2.weight"],
             residual_assignment_sha256=inventory.residual_assignment_sha256,
             ridge=ridge,
-            max_prior_delta_ratio=maximum_delta_ratio,
+            max_prior_delta_ratio=None,
             cluster_ridge=cluster_ridge,
             cluster_max_iterations=cluster_max_iterations,
             cluster_distance_chunk_size=cluster_distance_chunk_size,
@@ -1479,6 +1491,13 @@ def _full_candidate_state(
         "heldout_rows_used_by_solver": 0,
         "analytic_linear_solve": True,
         "cluster_solve": True,
+        "requested_maximum_delta_ratio_goal": maximum_delta_ratio,
+        "effective_maximum_delta_ratio_cap": None,
+        "delta_ratio_cap_applied": False,
+        "numeric_delta_ratio_used_for_candidate_eligibility": False,
+        "numeric_delta_ratio_used_for_candidate_ordering": False,
+        "numeric_delta_ratio_used_for_publication_or_rollback": False,
+        "numeric_delta_ratio_has_final_intelligence_authority": False,
         "current_dense_c61_w1_w3_w2_used_as_priors": incumbent_priors_used,
         **(
             {
@@ -1502,6 +1521,50 @@ def _changed_roles(
     return tuple(
         name for name in incumbent if not torch.equal(incumbent[name], candidate[name])
     )
+
+
+def _planting_strength_diagnostics(
+    candidate: Mapping[str, Any],
+    incumbent: Mapping[str, Any],
+    *,
+    requested_maximum_delta_ratio_goal: float | None,
+) -> dict[str, Any]:
+    """Describe materialized planting strength without controlling the plant."""
+
+    torch = _torch()
+    by_role: dict[str, dict[str, float]] = {}
+    for role in ("w1.weight", "w3.weight", "w2.weight"):
+        prior = incumbent[role].to(torch.float64)
+        delta = candidate[role].to(torch.float64) - prior
+        incumbent_norm = float(torch.linalg.vector_norm(prior).item())
+        delta_norm = float(torch.linalg.vector_norm(delta).item())
+        observed_ratio = delta_norm / max(incumbent_norm, 1e-30)
+        if not math.isfinite(observed_ratio):
+            observed_ratio = _MAX_FINITE_FLOAT
+        by_role[role] = {
+            "incumbent_norm": incumbent_norm,
+            "delta_norm": delta_norm,
+            "observed_delta_ratio": observed_ratio,
+        }
+    observed_maximum = max(value["observed_delta_ratio"] for value in by_role.values())
+    return {
+        "requested_maximum_delta_ratio_goal": (requested_maximum_delta_ratio_goal),
+        "observed_maximum_delta_ratio": observed_maximum,
+        "observed_delta_ratio_by_role": by_role,
+        "requested_delta_ratio_goal_met": (
+            None
+            if requested_maximum_delta_ratio_goal is None
+            else observed_maximum <= requested_maximum_delta_ratio_goal
+        ),
+        "effective_maximum_delta_ratio_cap": None,
+        "delta_ratio_cap_applied": False,
+        "delta_ratio_used_to_scale_candidate": False,
+        "delta_ratio_diagnostic_only": True,
+        "numeric_delta_ratio_used_for_candidate_eligibility": False,
+        "numeric_delta_ratio_used_for_candidate_ordering": False,
+        "numeric_delta_ratio_used_for_publication_or_rollback": False,
+        "numeric_delta_ratio_has_final_intelligence_authority": False,
+    }
 
 
 def _candidate_state_structural_report(
@@ -1819,9 +1882,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         target_ffn_norm_weight=target_ffn_norm_weight,
         exact_zero_incumbent=exact_zero_incumbent,
         ridge=float(ridge),
-        maximum_delta_ratio=(
-            None if exact_zero_incumbent else requested_maximum_delta_ratio
-        ),
+        maximum_delta_ratio=requested_maximum_delta_ratio,
         cluster_ridge=float(cluster_ridge),
         cluster_max_iterations=int(cluster_max_iterations),
         cluster_distance_chunk_size=int(cluster_distance_chunk_size),
@@ -2225,9 +2286,33 @@ def prepare_lfm2_semantic_mlp_postfold(
         full_state,
         incumbent_state,
     )
+    writer_planting_strength = _planting_strength_diagnostics(
+        writer_state,
+        incumbent_state,
+        requested_maximum_delta_ratio_goal=requested_maximum_delta_ratio,
+    )
+    full_planting_strength = _planting_strength_diagnostics(
+        full_state,
+        incumbent_state,
+        requested_maximum_delta_ratio_goal=requested_maximum_delta_ratio,
+    )
     writer_solver = MappingProxyType(
         {
             **dict(writer_solver),
+            "planting_strength_diagnostics": writer_planting_strength,
+            "requested_maximum_delta_ratio_goal": requested_maximum_delta_ratio,
+            "observed_maximum_delta_ratio": writer_planting_strength[
+                "observed_maximum_delta_ratio"
+            ],
+            "requested_delta_ratio_goal_met": writer_planting_strength[
+                "requested_delta_ratio_goal_met"
+            ],
+            "effective_maximum_delta_ratio_cap": None,
+            "delta_ratio_cap_applied": False,
+            "numeric_delta_ratio_used_for_candidate_eligibility": False,
+            "numeric_delta_ratio_used_for_candidate_ordering": False,
+            "numeric_delta_ratio_used_for_publication_or_rollback": False,
+            "numeric_delta_ratio_has_final_intelligence_authority": False,
             "candidate_structural_report": dict(writer_structural),
             "candidate_structural_report_sha256": writer_structural[
                 "structural_report_sha256"
@@ -2240,6 +2325,20 @@ def prepare_lfm2_semantic_mlp_postfold(
     full_solver = MappingProxyType(
         {
             **dict(full_solver),
+            "planting_strength_diagnostics": full_planting_strength,
+            "requested_maximum_delta_ratio_goal": requested_maximum_delta_ratio,
+            "observed_maximum_delta_ratio": full_planting_strength[
+                "observed_maximum_delta_ratio"
+            ],
+            "requested_delta_ratio_goal_met": full_planting_strength[
+                "requested_delta_ratio_goal_met"
+            ],
+            "effective_maximum_delta_ratio_cap": None,
+            "delta_ratio_cap_applied": False,
+            "numeric_delta_ratio_used_for_candidate_eligibility": False,
+            "numeric_delta_ratio_used_for_candidate_ordering": False,
+            "numeric_delta_ratio_used_for_publication_or_rollback": False,
+            "numeric_delta_ratio_has_final_intelligence_authority": False,
             "candidate_structural_report": dict(full_structural),
             "candidate_structural_report_sha256": full_structural[
                 "structural_report_sha256"
@@ -2329,6 +2428,15 @@ def prepare_lfm2_semantic_mlp_postfold(
         writer.role: writer_structural,
         full.role: full_structural,
     }
+    planting_strength_diagnostics = {
+        "incumbent": _planting_strength_diagnostics(
+            incumbent_state,
+            incumbent_state,
+            requested_maximum_delta_ratio_goal=requested_maximum_delta_ratio,
+        ),
+        writer.role: writer_planting_strength,
+        full.role: full_planting_strength,
+    }
     fit_ordering_keys = {
         candidate.role: (
             list(_fit_metric_ordering_key(candidate))
@@ -2397,6 +2505,9 @@ def prepare_lfm2_semantic_mlp_postfold(
                 is True
             ),
             "fit_ordering_key": fit_ordering_keys.get(candidate.role),
+            "planting_strength_diagnostics": planting_strength_diagnostics[
+                candidate.role
+            ],
             "partition_metric_errors": dict(metric_errors[candidate.role]),
             "metric_evaluation_failure_can_exclude_candidate": False,
             "partition_nonregression_diagnostics": heldout_nonregression[
@@ -2423,6 +2534,16 @@ def prepare_lfm2_semantic_mlp_postfold(
         "writer_selection_nonregressing_versus_full": writer_selection_vs_full,
         "candidate_reports": candidate_reports,
         "fit_ordering_keys": fit_ordering_keys,
+        "planting_strength_diagnostics": planting_strength_diagnostics,
+        "requested_maximum_delta_ratio_goal": requested_maximum_delta_ratio,
+        "effective_maximum_delta_ratio_cap": None,
+        "delta_ratio_cap_applied": False,
+        "delta_ratio_used_to_scale_candidate": False,
+        "delta_ratio_diagnostic_only": True,
+        "numeric_delta_ratio_used_for_candidate_eligibility": False,
+        "numeric_delta_ratio_used_for_candidate_ordering": False,
+        "numeric_delta_ratio_used_for_publication_or_rollback": False,
+        "numeric_delta_ratio_has_final_intelligence_authority": False,
         "partition_metric_errors": {
             role: dict(errors) for role, errors in metric_errors.items()
         },
@@ -2591,6 +2712,23 @@ def _metric_guidance_receipt_fields(
         "numeric_thresholds_used_for_candidate_eligibility": False,
         "numeric_thresholds_used_for_publication": False,
         "numeric_metric_used_for_publication_or_rollback": False,
+        "planting_strength_diagnostics": dict(
+            selection["planting_strength_diagnostics"]
+        ),
+        "selected_candidate_planting_strength_diagnostics": dict(
+            selection["planting_strength_diagnostics"][prepared.selected_role]
+        ),
+        "requested_maximum_delta_ratio_goal": selection[
+            "requested_maximum_delta_ratio_goal"
+        ],
+        "effective_maximum_delta_ratio_cap": None,
+        "delta_ratio_cap_applied": False,
+        "delta_ratio_used_to_scale_candidate": False,
+        "delta_ratio_diagnostic_only": True,
+        "numeric_delta_ratio_used_for_candidate_eligibility": False,
+        "numeric_delta_ratio_used_for_candidate_ordering": False,
+        "numeric_delta_ratio_used_for_publication_or_rollback": False,
+        "numeric_delta_ratio_has_final_intelligence_authority": False,
         "numeric_diagnostic_miss_can_exclude_structural_candidate": False,
         "metric_evaluation_failure_can_exclude_structural_candidate": False,
         "validation_publication_veto_applied": False,

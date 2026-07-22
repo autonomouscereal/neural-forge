@@ -407,6 +407,7 @@ def _prepare(
     evidence: tuple[adapter.Lfm2SemanticMlpEndpointEvidence, ...],
     *,
     terminal: bool = False,
+    maximum_delta_ratio: float | None = 1.0,
 ) -> adapter.Lfm2PreparedSemanticMlpRefold:
     return adapter.prepare_lfm2_semantic_mlp_postfold(
         target_model=model,
@@ -415,7 +416,7 @@ def _prepare(
         cache_key=_sha("cache"),
         cache_manifest_sha256=_sha("cache-manifest"),
         bridge_artifact_sha256=_sha("bridge"),
-        maximum_delta_ratio=1.0,
+        maximum_delta_ratio=maximum_delta_ratio,
         rmse_relative_tolerance=1e-4,
         cosine_tolerance=1e-5,
         require_terminal_action_evidence=terminal,
@@ -634,17 +635,20 @@ def test_typed_source_and_endpoint_seals_reject_inserted_rows() -> None:
         )
 
 
-def test_prepare_freezes_two_fit_only_candidates_and_prefers_writer() -> None:
+def test_prepare_freezes_two_fit_only_candidates_and_selects_by_fit_order() -> None:
     model = _Target()
     before = fingerprint_lfm2_parent(model).identity_sha256
     prepared = _prepare(model, _evidence(model))
     assert prepared.verify()
     assert fingerprint_lfm2_parent(model).identity_sha256 == before
-    assert prepared.selected_role == "incumbent-producer-w2"
+    assert prepared.selected_role == "full-w1-w3-w2"
     assert prepared.writer_candidate.solver_receipt["cluster_solve"] is False
     assert prepared.full_candidate.solver_receipt["cluster_solve"] is True
     assert prepared.full_candidate.solver_receipt["full_source_coverage"] is True
     assert prepared.selection_receipt["fit_partition_only_used_for_solves"] is True
+    assert prepared.selection_receipt["fit_ordering_keys"][
+        prepared.selected_role
+    ] == min(prepared.selection_receipt["fit_ordering_keys"].values())
     metrics = prepared.selection_receipt["endpoint_metrics"]
     for role in ("incumbent", "incumbent-producer-w2", "full-w1-w3-w2"):
         for partition in ("fit", "fit_check", "selection", "validation"):
@@ -1041,7 +1045,7 @@ def test_exact_zero_incumbent_continues_complete_plant_past_local_quality_gates(
     assert fingerprint_lfm2_parent(model).identity_sha256 == before
 
 
-def test_nonzero_incumbent_preserves_requested_relative_trust_cap(
+def test_tiny_requested_delta_ratio_is_diagnostic_and_never_caps_candidates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = _Target()
@@ -1066,12 +1070,68 @@ def test_nonzero_incumbent_preserves_requested_relative_trust_cap(
         "compile_lfm2_normalized_input_real_medoid_structural_mlp_fold",
         forbidden_blank_compile,
     )
-    prepared = _prepare(model, _evidence(model))
+    tiny_goal = 1e-12
+    prepared = _prepare(
+        model,
+        _evidence(model),
+        maximum_delta_ratio=tiny_goal,
+    )
 
-    assert observed_caps == [1.0]
+    assert observed_caps == [None]
     assert "cold_start_escape" not in prepared.full_candidate.solver_receipt
     assert "cold_start_escape" not in prepared.selection_receipt
-    assert prepared.selected_role == "incumbent-producer-w2"
+    assert prepared.selected_role in {"incumbent-producer-w2", "full-w1-w3-w2"}
+    selection = prepared.selection_receipt
+    assert selection["requested_maximum_delta_ratio_goal"] == tiny_goal
+    assert selection["effective_maximum_delta_ratio_cap"] is None
+    assert selection["delta_ratio_cap_applied"] is False
+    assert selection["delta_ratio_used_to_scale_candidate"] is False
+    assert selection["delta_ratio_diagnostic_only"] is True
+    assert selection["numeric_delta_ratio_used_for_candidate_eligibility"] is False
+    assert selection["numeric_delta_ratio_used_for_candidate_ordering"] is False
+    assert selection["numeric_delta_ratio_used_for_publication_or_rollback"] is False
+    assert selection["numeric_delta_ratio_has_final_intelligence_authority"] is False
+    writer_strength = selection["planting_strength_diagnostics"][
+        "incumbent-producer-w2"
+    ]
+    assert writer_strength["observed_maximum_delta_ratio"] > tiny_goal
+    assert writer_strength["requested_delta_ratio_goal_met"] is False
+    assert writer_strength["effective_maximum_delta_ratio_cap"] is None
+    assert writer_strength["delta_ratio_cap_applied"] is False
+    writer_solver = prepared.writer_candidate.solver_receipt
+    assert writer_solver["unclipped_delta_ratio"] > tiny_goal
+    assert writer_solver["applied_delta_scale"] == 1.0
+    assert writer_solver["requested_maximum_delta_ratio_goal"] == tiny_goal
+    assert writer_solver["requested_delta_ratio_goal_met"] is False
+    assert writer_solver["effective_maximum_delta_ratio_cap"] is None
+    assert writer_solver["delta_ratio_cap_applied"] is False
+    full_solver = prepared.full_candidate.solver_receipt
+    assert full_solver["requested_maximum_delta_ratio_goal"] == tiny_goal
+    assert full_solver["effective_maximum_delta_ratio_cap"] is None
+    assert full_solver["delta_ratio_cap_applied"] is False
+    assert all(
+        report["update_scale"] == 1.0
+        for report in full_solver["prior_correction_reports"]
+    )
+    writer_report = selection["candidate_reports"]["incumbent-producer-w2"]
+    assert writer_report["effectful_nonincumbent"] is True
+    assert writer_report["structurally_eligible"] is True
+    selected_strength = selection["planting_strength_diagnostics"][
+        prepared.selected_role
+    ]
+    assert selected_strength["observed_maximum_delta_ratio"] > tiny_goal
+    assert selected_strength["requested_delta_ratio_goal_met"] is False
+    selected_report = selection["candidate_reports"][prepared.selected_role]
+    assert selected_report["effectful_nonincumbent"] is True
+    assert selected_report["structurally_eligible"] is True
+    eligible_fit_keys = [
+        selection["fit_ordering_keys"][role]
+        for role in ("incumbent-producer-w2", "full-w1-w3-w2")
+        if selection["candidate_reports"][role]["structurally_eligible"] is True
+    ]
+    assert selection["fit_ordering_keys"][prepared.selected_role] == min(
+        eligible_fit_keys
+    )
 
 
 def test_materially_better_full_candidate_wins_after_frozen_selection(
@@ -1122,8 +1182,12 @@ def test_transactional_install_preserves_topology_identity_and_gradients() -> No
         prepared=prepared,
     )
     assert result.receipt["installed"] is True
-    assert result.receipt["selected_role"] == "incumbent-producer-w2"
-    assert result.receipt["changed_parameter_roles"] == ["w2.weight"]
+    assert result.receipt["selected_role"] == "full-w1-w3-w2"
+    assert result.receipt["changed_parameter_roles"] == [
+        "w1.weight",
+        "w2.weight",
+        "w3.weight",
+    ]
     assert result.receipt["model_state_before_sha256"] == before
     assert result.receipt["model_state_after_sha256"] != before
     assert result.receipt["parameter_count_changed"] is False
@@ -1428,7 +1492,7 @@ def test_invalid_mlp_proposals_are_sealed_and_use_structural_incumbent_fallback(
     assert fingerprint_lfm2_parent(model).identity_sha256 == before
 
 
-def test_final_w2_deferral_exports_four_banks_and_performs_no_install() -> None:
+def test_final_w2_deferral_exports_four_banks_and_installs_selected_producers() -> None:
     model = _Target()
     evidence = _evidence(model, terminal=True)
     before = fingerprint_lfm2_parent(model).identity_sha256
@@ -1438,11 +1502,12 @@ def test_final_w2_deferral_exports_four_banks_and_performs_no_install() -> None:
         prepared=prepared,
         defer_down_weight=True,
     )
-    assert result.receipt["status"] == "prepared-final-w2-deferred"
-    assert result.receipt["installed"] is False
-    assert result.receipt["install_count"] == 0
+    assert result.receipt["status"] == "installed-w1-w3-final-w2-deferred"
+    assert result.receipt["installed"] is True
+    assert result.receipt["install_count"] == 1
+    assert result.receipt["changed_parameter_roles"] == ["w1.weight", "w3.weight"]
     assert result.receipt["final_layer_mlp_w2_deferred_to_fused_terminal"] is True
-    assert fingerprint_lfm2_parent(model).identity_sha256 == before
+    assert fingerprint_lfm2_parent(model).identity_sha256 != before
     assert result.receipt["cache_key"] == _sha("cache")
     assert result.receipt["cache_manifest_sha256"] == _sha("cache-manifest")
     assert result.receipt["evidence_sha256"] == [
