@@ -10,6 +10,7 @@ torch = pytest.importorskip("torch")
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
 import neural_forge.hf_lfm2_semantic_layer_stack_refold_adapter as stack  # noqa: E402
+import neural_forge.hf_tied_residual_congruence as congruence  # noqa: E402
 from neural_forge.hf_tied_causal_interface_anchor_fold import (  # noqa: E402
     TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
 )
@@ -181,8 +182,99 @@ def test_candidate_seven_anchor_residual_is_transported_after_strong_base():
     assert authentication["strong_base_plus_anchor_residual_claimed"] is True
     assert authentication["strong_congruence_recomputed_exact"] is False
     assert authentication["anchor_residual_formula_recomputed_exact"] is True
+    assert authentication["anchor_source_bound_polar_authenticated"] is True
+    assert authentication["raw_linalg_diagnostics_in_authentication_identity"] is False
+    assert (
+        authentication["anchor_source_bound_polar_certificate_sha256"]
+        == hybrid.report["anchor_source_bound_polar_certificate_sha256"]
+    )
+    assert "producer_basis_orthogonality_spectral_error_recomputed" not in (
+        authentication
+    )
+    assert "recomputed_congruence_relative_error" not in authentication
     assert hybrid.report["fp64_selected_formula_relative_error"] == 0.0
     assert hybrid.report["fp64_congruence_relative_error"] > 0.0
+
+
+def test_hybrid_authentication_never_reexecutes_whitening_svd(monkeypatch):
+    source, base_interface = _synthetic_inputs()
+    residual = torch.full_like(base_interface.target_weight, 0.125)
+    selected = _interface(
+        base_interface.target_weight + residual,
+        base_interface.producer_encoder,
+        schema=TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
+    )
+    candidate = compile_tied_residual_congruence_candidate(
+        selected,
+        source,
+        mode=TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE,
+        anchor_base_target_weight=base_interface.target_weight,
+        anchor_source_residual_weight=residual,
+    )
+
+    def reject_fresh_svd(_interface_value):
+        raise AssertionError("hybrid authentication replayed whitening SVD")
+
+    monkeypatch.setattr(
+        congruence,
+        "_self_dual_control",
+        reject_fresh_svd,
+    )
+    authentication = authenticate_tied_residual_congruence_interface(
+        candidate.interface,
+        mapped_parent_tied_table=source,
+        anchor_transport_witness=candidate.anchor_transport_witness,
+    )
+
+    assert authentication["anchor_source_bound_polar_authenticated"] is True
+    assert authentication["anchor_residual_formula_recomputed_exact"] is True
+
+
+def test_hybrid_authentication_identity_is_ambient_thread_independent():
+    original_threads = int(torch.get_num_threads())
+    try:
+        torch.set_num_threads(1)
+        generator = torch.Generator().manual_seed(7)
+        source = torch.randn((101, 128), generator=generator, dtype=torch.float64)
+        base = torch.randn((101, 96), generator=generator, dtype=torch.float64)
+        residual = 0.125 * torch.randn(
+            (101, 96),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        encoder = torch.randn(
+            (128, 96),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        selected = _interface(
+            base + residual,
+            encoder,
+            schema=TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
+        )
+        candidate = compile_tied_residual_congruence_candidate(
+            selected,
+            source,
+            mode=TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE,
+            anchor_base_target_weight=base,
+            anchor_source_residual_weight=residual,
+        )
+        first = authenticate_tied_residual_congruence_interface(
+            candidate.interface,
+            mapped_parent_tied_table=source,
+            anchor_transport_witness=candidate.anchor_transport_witness,
+        )
+        torch.set_num_threads(max(2, original_threads))
+        second = authenticate_tied_residual_congruence_interface(
+            candidate.interface,
+            mapped_parent_tied_table=source,
+            anchor_transport_witness=candidate.anchor_transport_witness,
+        )
+    finally:
+        torch.set_num_threads(original_threads)
+
+    assert dict(first) == dict(second)
+    assert first["result_sha256"] == second["result_sha256"]
 
 
 def test_candidate_zero_anchor_residual_reduces_exactly_to_pure_strong():
@@ -335,7 +427,7 @@ def test_resealed_arbitrary_hybrid_target_fails_exact_transport_recomputation():
         )
 
 
-def test_resealed_orthonormal_basis_fails_recomputed_whitening_identity():
+def test_resealed_orthonormal_basis_fails_source_bound_polar_identity():
     source, base_interface = _synthetic_inputs()
     residual = torch.full_like(base_interface.target_weight, 0.125)
     selected = _interface(
@@ -408,7 +500,7 @@ def test_resealed_orthonormal_basis_fails_recomputed_whitening_identity():
 
     with pytest.raises(
         TiedResidualCongruenceError,
-        match="delta @ \\(B.T @ E\\)",
+        match="source-bound full-column polar factor",
     ):
         authenticate_tied_residual_congruence_interface(
             forged,

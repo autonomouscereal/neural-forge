@@ -19,7 +19,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import threading
 from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
@@ -80,6 +82,9 @@ class TiedResidualCongruenceError(ValueError):
     """A tied residual-congruence candidate failed authentication."""
 
 
+_NUMERICAL_LOCK = threading.RLock()
+
+
 def _torch() -> Any:
     try:
         import torch
@@ -108,6 +113,164 @@ def _matrix(value: Any, name: str) -> Any:
     if not bool(torch.isfinite(result).all().item()):
         raise TiedResidualCongruenceError(f"{name} contains NaN or infinity.")
     return result
+
+
+@contextmanager
+def _canonical_fp64_cpu_math(torch: Any) -> Any:
+    """Use one reproducible CPU reduction order for proof-bearing FP64 math.
+
+    The layer compiler legitimately changes the process intra-op thread count
+    while constructing GPU-backed MLP signatures.  LAPACK/SVD diagnostics can
+    differ by a few last bits after that transition even when every input byte
+    is unchanged.  Algebraic authentication must not inherit that ambient
+    execution state, so proof-bearing products and decompositions use one
+    process-local, single-threaded numerical envelope and restore the caller's
+    setting exactly.
+    """
+
+    with _NUMERICAL_LOCK:
+        original_threads = int(torch.get_num_threads())
+        try:
+            if original_threads != 1:
+                torch.set_num_threads(1)
+            with torch.no_grad():
+                yield
+        finally:
+            if int(torch.get_num_threads()) != original_threads:
+                torch.set_num_threads(original_threads)
+
+
+def _fp64_gamma(operation_count: int) -> float:
+    """Higham's ``gamma_n`` bound for a declared FP64 operation envelope."""
+
+    torch = _torch()
+    if isinstance(operation_count, bool) or operation_count <= 0:
+        raise TiedResidualCongruenceError(
+            "Floating-point operation count must be a positive integer."
+        )
+    scaled = float(operation_count) * float(torch.finfo(torch.float64).eps)
+    if not math.isfinite(scaled) or scaled >= 1.0:
+        raise TiedResidualCongruenceError(
+            "Floating-point certificate exceeds the valid gamma_n domain."
+        )
+    return scaled / (1.0 - scaled)
+
+
+def _source_bound_polar_certificate(
+    basis: Any,
+    source_encoder: Any,
+) -> tuple[Mapping[str, Any], Any]:
+    """Certify ``basis`` as the unique full-column polar factor of ``E``.
+
+    A fresh SVD is deliberately not part of authentication.  For a full-rank
+    rectangular encoder ``E``, ``B`` is its unique polar factor exactly when
+    ``B.T @ B = I`` and ``R = B.T @ E`` is symmetric positive definite with
+    ``E = B @ R``.  We certify those defining relations directly.  The error
+    envelope is Higham's scale-aware ``gamma_n`` for the dependency depth of
+    the proof-bearing dense products; it has no empirical or behavior-score
+    threshold.
+    """
+
+    torch = _torch()
+    selected_basis = _matrix(basis, "polar certificate producer basis")
+    encoder = _matrix(source_encoder, "polar certificate source encoder")
+    if tuple(selected_basis.shape) != tuple(encoder.shape):
+        raise TiedResidualCongruenceError(
+            "Polar certificate basis and source encoder shapes differ."
+        )
+    source_width, target_width = map(int, selected_basis.shape)
+    # One certificate value follows a length-source_width dot product and then
+    # a length-target_width reconstruction dot product.  A multiply and add are
+    # counted separately, two symmetry operations are included, and the final
+    # target_width factor covers conversion from componentwise to matrix-norm
+    # error.  This is a dependency-depth bound, not a fitted tolerance.
+    operation_count = target_width * (
+        2 * source_width + 2 * target_width + 2
+    )
+    relation_bound = _fp64_gamma(operation_count)
+    with _canonical_fp64_cpu_math(torch):
+        identity = torch.eye(target_width, dtype=torch.float64)
+        gram = (selected_basis.T @ selected_basis).contiguous()
+        right_stretch = (selected_basis.T @ encoder).contiguous()
+        symmetric_stretch = (
+            (right_stretch + right_stretch.T) * 0.5
+        ).contiguous()
+        reconstruction = (selected_basis @ right_stretch).contiguous()
+        orthogonality_relative_error = float(
+            torch.linalg.vector_norm(gram - identity).item()
+            / max(
+                float(torch.linalg.vector_norm(identity).item()),
+                torch.finfo(torch.float64).tiny,
+            )
+        )
+        reconstruction_relative_error = _relative_error(
+            reconstruction,
+            encoder,
+        )
+        symmetry_relative_error = _relative_error(
+            right_stretch,
+            symmetric_stretch,
+        )
+        eigenvalues = torch.linalg.eigvalsh(symmetric_stretch)
+        minimum_eigenvalue = float(eigenvalues.min().item())
+        maximum_absolute_eigenvalue = float(eigenvalues.abs().max().item())
+        positive_definite_floor = relation_bound * max(
+            maximum_absolute_eigenvalue,
+            torch.finfo(torch.float64).tiny,
+        )
+    orthogonality_passed = bool(
+        math.isfinite(orthogonality_relative_error)
+        and orthogonality_relative_error <= relation_bound
+    )
+    reconstruction_passed = bool(
+        math.isfinite(reconstruction_relative_error)
+        and reconstruction_relative_error <= relation_bound
+    )
+    symmetric_passed = bool(
+        math.isfinite(symmetry_relative_error)
+        and symmetry_relative_error <= relation_bound
+    )
+    positive_definite_passed = bool(
+        math.isfinite(minimum_eigenvalue)
+        and minimum_eigenvalue > positive_definite_floor
+    )
+    if not all(
+        (
+            orthogonality_passed,
+            reconstruction_passed,
+            symmetric_passed,
+            positive_definite_passed,
+        )
+    ):
+        raise TiedResidualCongruenceError(
+            "Producer basis is not the source-bound full-column polar factor."
+        )
+    # Raw decomposition diagnostics are intentionally excluded from this sealed
+    # identity.  Their classifications are proof-bearing; their last bits are
+    # not.  The exact input and derived-stretch hashes still bind the bytes.
+    body = {
+        "schema": "neural-forge-source-bound-polar-certificate-v1",
+        "source_encoder_sha256": _tensor_sha256(encoder),
+        "producer_basis_sha256": _tensor_sha256(selected_basis),
+        "right_stretch_sha256": _tensor_sha256(right_stretch),
+        "source_width": source_width,
+        "target_width": target_width,
+        "fp64_scalar_operation_envelope": operation_count,
+        "fp64_gamma_relation_bound": relation_bound,
+        "orthonormal_columns_within_derived_bound": orthogonality_passed,
+        "source_reconstruction_within_derived_bound": reconstruction_passed,
+        "right_stretch_symmetric_within_derived_bound": symmetric_passed,
+        "right_stretch_positive_definite_above_derived_floor": (
+            positive_definite_passed
+        ),
+        "source_bound_unique_full_column_polar_factor_authenticated": True,
+        "fresh_svd_reexecution_required": False,
+        "empirical_tolerance_used": False,
+    }
+    return (
+        MappingProxyType({**body, "result_sha256": _canonical_sha256(body)}),
+        right_stretch,
+    )
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -434,10 +597,11 @@ def authenticate_tied_residual_congruence_interface(
         )
     target = _matrix(interface.target_weight, "interface.target_weight")
     basis = _matrix(interface.producer_encoder, "interface.producer_encoder")
-    identity = torch.eye(int(basis.shape[1]), dtype=torch.float64)
-    orthogonality_error = float(
-        torch.linalg.matrix_norm(basis.T @ basis - identity, ord=2).item()
-    )
+    with _canonical_fp64_cpu_math(torch):
+        identity = torch.eye(int(basis.shape[1]), dtype=torch.float64)
+        orthogonality_error = float(
+            torch.linalg.vector_norm(basis.T @ basis - identity).item()
+        )
     reported_tolerance = report.get("producer_basis_orthogonality_tolerance")
     residual_transport = (
         mode == TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE
@@ -463,6 +627,7 @@ def authenticate_tied_residual_congruence_interface(
         "anchor_selfdual_residual_sha256",
         "anchor_realized_selfdual_residual_sha256",
         "anchor_transport_witness_sha256",
+        "anchor_source_bound_polar_certificate_sha256",
     )
     if (
         not isinstance(reported_tolerance, (int, float))
@@ -472,6 +637,12 @@ def authenticate_tied_residual_congruence_interface(
         or orthogonality_error > float(reported_tolerance)
         or report.get("producer_encoder_sha256") != _tensor_sha256(basis)
         or report.get("target_weight_sha256") != _tensor_sha256(target)
+        or not _is_sha256(report.get("current_self_dual_interface_report_sha256"))
+        or report.get("current_self_dual_interface_report_authentication_role")
+        != (
+            "compile-time-provenance-only;source-bound-polar-certificate-is-"
+            "fresh-authentication"
+        )
         or report.get("producer_basis_orthogonality_authenticated") is not True
         or report.get("global_residual_basis_unchanged") is not True
         or report.get("anchor_residual_transport_applied", False)
@@ -515,19 +686,22 @@ def authenticate_tied_residual_congruence_interface(
     recomputed_maximum_error: float | None = None
     bf16_exact_recomputed: bool | None = None
     anchor_formula_recomputed_exact = False
+    anchor_source_bound_polar_authenticated = False
+    anchor_source_bound_polar_certificate_sha256: str | None = None
     if source_recomputed:
         source = _matrix(mapped_parent_tied_table, "mapped_parent_tied_table")
         if tuple(source.shape) != (int(target.shape[0]), int(basis.shape[0])):
             raise TiedResidualCongruenceError(
                 "Mapped parent table is incompatible with the congruence interface."
             )
-        expected = (source @ basis).contiguous()
-        exact_recomputed = bool(torch.equal(target, expected))
-        recomputed_relative_error = _relative_error(target, expected)
-        recomputed_maximum_error = float((target - expected).abs().max().item())
-        bf16_exact_recomputed = bool(
-            torch.equal(target.to(torch.bfloat16), expected.to(torch.bfloat16))
-        )
+        with _canonical_fp64_cpu_math(torch):
+            expected = (source @ basis).contiguous()
+            exact_recomputed = bool(torch.equal(target, expected))
+            recomputed_relative_error = _relative_error(target, expected)
+            recomputed_maximum_error = float((target - expected).abs().max().item())
+            bf16_exact_recomputed = bool(
+                torch.equal(target.to(torch.bfloat16), expected.to(torch.bfloat16))
+            )
         if (
             report.get("mapped_parent_tied_table_sha256") != _tensor_sha256(source)
             or report.get("strong_base_target_weight_sha256")
@@ -576,25 +750,33 @@ def authenticate_tied_residual_congruence_interface(
                     "Anchor transport inputs do not reproduce the selected source "
                     "interface."
                 )
-            right_stretch = (basis.T @ anchor_encoder).contiguous()
-            expected_anchor_residual = (
-                anchor_source_residual @ right_stretch
-            ).contiguous()
-            expected_hybrid_target = (
-                expected + expected_anchor_residual
-            ).contiguous()
-            realized_residual = (target - expected).contiguous()
-            anchor_formula_recomputed_exact = bool(
-                torch.equal(target, expected_hybrid_target)
+            polar_certificate, right_stretch = _source_bound_polar_certificate(
+                basis,
+                anchor_encoder,
             )
-            expected_control = _self_dual_control(anchor_source_interface)
+            anchor_source_bound_polar_certificate_sha256 = polar_certificate[
+                "result_sha256"
+            ]
+            anchor_source_bound_polar_authenticated = True
+            with _canonical_fp64_cpu_math(torch):
+                expected_anchor_residual = (
+                    anchor_source_residual @ right_stretch
+                ).contiguous()
+                expected_hybrid_target = (
+                    expected + expected_anchor_residual
+                ).contiguous()
+                realized_residual = (target - expected).contiguous()
+                anchor_formula_recomputed_exact = bool(
+                    torch.equal(target, expected_hybrid_target)
+                )
             if (
                 not anchor_formula_recomputed_exact
-                or not torch.equal(basis, expected_control.producer_encoder)
-                or report.get("current_self_dual_interface_report_sha256")
-                != expected_control.report["report_sha256"]
                 or report.get("strong_base_producer_encoder_sha256")
-                != _tensor_sha256(expected_control.producer_encoder)
+                != _tensor_sha256(basis)
+                or report.get("anchor_source_bound_polar_certificate_sha256")
+                != polar_certificate["result_sha256"]
+                or report.get("anchor_source_bound_polar_certificate")
+                != dict(polar_certificate)
                 or report.get("anchor_transport_witness_sha256")
                 != anchor_transport_witness.witness_sha256
                 or report.get("source_interface_report_sha256")
@@ -617,12 +799,11 @@ def authenticate_tied_residual_congruence_interface(
                 )
 
     body = {
-        "schema": "neural-forge-tied-residual-congruence-authentication-v1",
+        "schema": "neural-forge-tied-residual-congruence-authentication-v2",
         "interface_report_sha256": report["report_sha256"],
         "mode": mode,
         "producer_encoder_sha256": report["producer_encoder_sha256"],
         "target_weight_sha256": report["target_weight_sha256"],
-        "producer_basis_orthogonality_spectral_error_recomputed": (orthogonality_error),
         "producer_basis_orthogonality_authenticated": True,
         "mapped_parent_tied_table_supplied": source_recomputed,
         "strong_congruence_recomputed_exact": exact_recomputed,
@@ -634,10 +815,13 @@ def authenticate_tied_residual_congruence_interface(
         "anchor_residual_formula_recomputed_exact": (
             anchor_formula_recomputed_exact
         ),
-        "recomputed_congruence_relative_error": recomputed_relative_error,
-        "recomputed_congruence_maximum_absolute_error": (
-            recomputed_maximum_error
+        "anchor_source_bound_polar_authenticated": (
+            anchor_source_bound_polar_authenticated
         ),
+        "anchor_source_bound_polar_certificate_sha256": (
+            anchor_source_bound_polar_certificate_sha256
+        ),
+        "raw_linalg_diagnostics_in_authentication_identity": False,
         "strong_congruence_claimed": strong,
         "strong_base_plus_anchor_residual_claimed": residual_transport,
         "current_selfdual_control_claimed": current,
@@ -667,7 +851,8 @@ def compile_tied_residual_congruence_candidate(
         raise TiedResidualCongruenceError(
             f"mode must be one of {TIED_RESIDUAL_CONGRUENCE_MODES!r}."
         )
-    current = _self_dual_control(interface)
+    with _canonical_fp64_cpu_math(torch):
+        current = _self_dual_control(interface)
     _authenticated_report(current.report, "self-dual control")
     source = _matrix(mapped_parent_tied_table, "mapped_parent_tied_table")
     current_target = _matrix(current.target_weight, "current target_weight")
@@ -726,7 +911,8 @@ def compile_tied_residual_congruence_candidate(
             "child and source width matching the producer basis."
         )
 
-    with torch.no_grad():
+    anchor_source_bound_polar_certificate: Mapping[str, Any] | None = None
+    with _canonical_fp64_cpu_math(torch):
         identity = torch.eye(int(basis.shape[1]), dtype=torch.float64)
         orthogonality_residual = basis.T @ basis - identity
         orthogonality_spectral_error = float(
@@ -751,7 +937,10 @@ def compile_tied_residual_congruence_candidate(
         anchor_source_residual = anchor_source_residual_input
         anchor_selfdual_residual = None
         if anchor_source_residual is not None:
-            right_stretch = (basis.T @ source_encoder).contiguous()
+            (
+                anchor_source_bound_polar_certificate,
+                right_stretch,
+            ) = _source_bound_polar_certificate(basis, source_encoder)
             anchor_selfdual_residual = (
                 anchor_source_residual @ right_stretch
             ).contiguous()
@@ -838,6 +1027,10 @@ def compile_tied_residual_congruence_candidate(
         ),
         "source_interface_report_sha256": interface.report["report_sha256"],
         "current_self_dual_interface_report_sha256": current.report["report_sha256"],
+        "current_self_dual_interface_report_authentication_role": (
+            "compile-time-provenance-only;source-bound-polar-certificate-is-"
+            "fresh-authentication"
+        ),
         "mapped_parent_tied_table_sha256": _tensor_sha256(source),
         "strong_base_producer_encoder_sha256": _tensor_sha256(basis),
         "strong_base_target_weight_sha256": _tensor_sha256(congruent_target),
@@ -962,6 +1155,16 @@ def compile_tied_residual_congruence_candidate(
             None
             if anchor_transport_witness is None
             else anchor_transport_witness.witness_sha256
+        ),
+        "anchor_source_bound_polar_certificate_sha256": (
+            None
+            if anchor_source_bound_polar_certificate is None
+            else anchor_source_bound_polar_certificate["result_sha256"]
+        ),
+        "anchor_source_bound_polar_certificate": (
+            None
+            if anchor_source_bound_polar_certificate is None
+            else dict(anchor_source_bound_polar_certificate)
         ),
         "global_residual_basis_unchanged": True,
         "native_tied_parameter_topology_change_required": False,
