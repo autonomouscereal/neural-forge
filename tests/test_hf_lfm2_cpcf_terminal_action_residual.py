@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import gc
+import weakref
 from dataclasses import replace
 
 import pytest
@@ -417,7 +419,7 @@ def test_exact_zero_writer_uses_structural_eligibility_then_fit_ordering(
         "finite-dense-structural-eligibility-plus-fit-ordering"
     )
     assert report["candidate_eligibility_basis"] == (
-        "finite_dense_coverage_and_nonincumbent_effect"
+        "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
     )
     assert report["fit_metrics_role"] == (
         "ordering-among-structurally-eligible-not-threshold-gating"
@@ -448,6 +450,10 @@ def test_exact_zero_writer_uses_structural_eligibility_then_fit_ordering(
     assert coverage["all_target_outputs_covered"] is True
     assert coverage["all_source_features_covered"] is True
     assert coverage["complete_dense_writer_coverage"] is True
+    assert coverage["complete_dense_writer_structural_safety"] is True
+    assert coverage["owns_exact_storage_allocation"] is True
+    assert coverage["storage_offset"] == 0
+    assert coverage["storage_bytes"] == coverage["expected_storage_bytes"]
     assert coverage["nonzero_element_count"] > 0
     assert torch.isfinite(fitted_branch_output).all().item() is True
     assert torch.count_nonzero(fitted_branch_output).item() > 0
@@ -509,6 +515,54 @@ def test_exact_zero_dense_candidate_publishes_despite_fit_proxy_gate_miss() -> N
     assert report["structurally_eligible_fit_metric_gate_miss_count"] > 0
     assert report["fit_metric_gate_miss_can_exclude_structural_candidate"] is False
     assert report["published_writer_is_finite_dense_nonzero_structural_plant"]
+    assert result.verify_authentication() is True
+
+
+def test_nonzero_dense_candidate_publishes_despite_all_numeric_diagnostics_and_validation() -> (
+    None
+):
+    seed, evidence_banks, rejecting_validation = _synthetic_terminal_problem()
+    policy = Lfm2CpcfTerminalActionPolicy(
+        minimum_selection_centered_rmse_improvement_fraction=1.0,
+        minimum_selection_oracle_top1_gain=1.0,
+        minimum_selection_parent_top1_gain=1.0,
+        minimum_selection_parent_positive_margin_gain=1.0,
+        metric_regression_tolerance=0.0,
+        maximum_post_layer_rms_ratio=1e-12,
+        maximum_weight_delta_rms_ratio=1e-12,
+    )
+    result = _compile(
+        seed,
+        {**evidence_banks, "validation": rejecting_validation},
+        policy=policy,
+    )
+    report = result.as_dict()
+    selected = next(
+        value
+        for value in report["frontier"]
+        if value["candidate_id"] == result.selected_candidate_id
+    )
+
+    assert result.selected_candidate_id != "incumbent"
+    assert result.accepted is True
+    assert result.changed is True
+    assert selected["eligible"] is True
+    assert selected["structurally_eligible"] is True
+    assert selected["numeric_diagnostic_gate_miss"] is True
+    assert selected["legacy_weight_delta_threshold_would_pass"] is False
+    assert selected["fit_thresholds_used_for_eligibility"] is False
+    assert selected["fit_check_thresholds_used_for_eligibility"] is False
+    assert selected["selection_thresholds_used_for_eligibility"] is False
+    assert selected["numeric_thresholds_used_for_publication"] is False
+    assert report["numeric_thresholds_used_for_candidate_eligibility"] is False
+    assert report["numeric_thresholds_used_for_publication"] is False
+    assert report["structural_safety_is_only_candidate_veto"] is True
+    assert report["validation"]["passed"] is False
+    assert report["validation"]["heldout_diagnostic_only"] is True
+    assert report["validation"]["publication_gate_applied"] is False
+    assert report["rollback_performed"] is False
+    assert report["published_is_incumbent"] is False
+    assert torch.equal(result.published_down_weight, result.selected_down_weight)
     assert result.verify_authentication() is True
 
 
@@ -577,6 +631,396 @@ def test_exact_zero_result_rejects_self_sealed_caller_forgery() -> None:
         )
 
 
+def test_nonzero_result_rejects_self_sealed_caller_forgery() -> None:
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(seed, evidence_banks)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="compiler-issued",
+    ):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.published_down_weight,
+            frontier_down_weights=result.frontier_down_weights,
+            selected_candidate_id=result.selected_candidate_id,
+            accepted=result.accepted,
+            report=result.as_dict(),
+            result_sha256=result.result_sha256,
+        )
+
+
+@pytest.mark.parametrize(
+    "variant",
+    (
+        "method_relabel_schema_omitted",
+        "method_omitted_schema_altered",
+        "lineage_forged_with_labels_removed",
+        "accepted_without_report_or_tensor_frontier",
+        "unaccepted_but_frontier_bearing",
+    ),
+)
+def test_nonzero_result_cannot_downgrade_compiler_authentication_by_resealing(
+    variant,
+) -> None:
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(seed, evidence_banks)
+    body = copy.deepcopy(result.as_dict())
+    body.pop("result_sha256")
+    frontier_down_weights = result.frontier_down_weights
+    accepted = result.accepted
+
+    if variant == "method_relabel_schema_omitted":
+        body["method"] = "caller-relabeled-legacy-result"
+        body.pop("structural_nonveto_schema")
+    elif variant == "method_omitted_schema_altered":
+        body.pop("method")
+        body["structural_nonveto_schema"] = "caller-forged-schema"
+    elif variant == "lineage_forged_with_labels_removed":
+        body.pop("method")
+        body["structural_nonveto_schema"] = "caller-forged-schema"
+        body["seed_sha256"] = "1" * 64
+        body["split_evidence_sha256"] = {
+            split: "2" * 64 for split in body["split_evidence_sha256"]
+        }
+        body["split_row_ids_sha256"] = {
+            split: "3" * 64 for split in body["split_row_ids_sha256"]
+        }
+    elif variant == "accepted_without_report_or_tensor_frontier":
+        body["method"] = "caller-relabeled-legacy-result"
+        body.pop("structural_nonveto_schema")
+        body.pop("frontier")
+        frontier_down_weights = None
+    else:
+        body["method"] = "caller-relabeled-legacy-result"
+        body.pop("structural_nonveto_schema")
+        body["accepted"] = False
+        accepted = False
+
+    forged_sha256 = terminal._canonical_sha256(body)
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="accepted or frontier-bearing terminal result must be compiler-issued",
+    ):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.published_down_weight,
+            frontier_down_weights=frontier_down_weights,
+            selected_candidate_id=result.selected_candidate_id,
+            accepted=accepted,
+            report={**body, "result_sha256": forged_sha256},
+            result_sha256=forged_sha256,
+        )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    (
+        lambda body: body.__setitem__("method", "caller-relabeled-legacy-result"),
+        lambda body: body.pop("method"),
+        lambda body: body.pop("structural_nonveto_schema"),
+        lambda body: body.__setitem__(
+            "structural_nonveto_schema", "caller-forged-schema"
+        ),
+    ),
+)
+def test_verify_authentication_rejects_resealed_compiler_contract_downgrade(
+    tamper,
+) -> None:
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(seed, evidence_banks)
+    body = copy.deepcopy(result.as_dict())
+    body.pop("result_sha256")
+    tamper(body)
+    forged_sha256 = terminal._canonical_sha256(body)
+    object.__setattr__(
+        result,
+        "report",
+        {**body, "result_sha256": forged_sha256},
+    )
+    object.__setattr__(result, "result_sha256", forged_sha256)
+
+    assert result.verify_authentication() is False
+
+
+@pytest.fixture(scope="module", params=(False, True), ids=("nonzero", "exact-zero"))
+def compiler_issued_structural_nonveto_result(request):
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    if request.param:
+        seed = _zero_terminal_seed(seed)
+    return _compile(seed, evidence_banks)
+
+
+def _forge_compiler_lineage(result):
+    binding_body = copy.deepcopy(dict(result._compiler_input_binding))
+    binding_body.pop("binding_sha256")
+    binding_body["seed_sha256"] = "1" * 64
+    binding_body["split_evidence_sha256"] = {
+        split: "2" * 64 for split in binding_body["split_evidence_sha256"]
+    }
+    binding_body["split_row_ids_sha256"] = {
+        split: "3" * 64 for split in binding_body["split_row_ids_sha256"]
+    }
+    forged_binding = {
+        **binding_body,
+        "binding_sha256": terminal._canonical_sha256(binding_body),
+    }
+
+    body = copy.deepcopy(result.as_dict())
+    body.pop("result_sha256")
+    body["seed_sha256"] = binding_body["seed_sha256"]
+    body["split_evidence_sha256"] = binding_body["split_evidence_sha256"]
+    body["split_row_ids_sha256"] = binding_body["split_row_ids_sha256"]
+    forged_facts = terminal._terminal_compiler_lineage_facts(
+        forged_binding,
+        context="forged_test_binding",
+    )
+    body["compiler_lineage_sha256"] = terminal._terminal_compiler_lineage_sha256(
+        forged_facts
+    )
+    forged_result_sha256 = terminal._canonical_sha256(body)
+    forged_report = {**body, "result_sha256": forged_result_sha256}
+    return forged_binding, forged_report, forged_result_sha256
+
+
+def test_compiler_lineage_proof_is_identity_only_and_not_constructible(
+    compiler_issued_structural_nonveto_result,
+) -> None:
+    proof = compiler_issued_structural_nonveto_result._compiler_lineage_token
+
+    assert type(proof) is terminal._TerminalCompilerLineageProof
+    assert type(proof).__slots__ == ("__weakref__",)
+    assert not hasattr(proof, "__dict__")
+    assert not hasattr(proof, "facts")
+    assert not hasattr(proof, "lineage_sha256")
+    with pytest.raises(Lfm2CpcfTerminalActionAuthenticationError):
+        terminal._TerminalCompilerLineageProof()
+    with pytest.raises(AttributeError):
+        proof.caller_data = "0" * 64
+    with pytest.raises(AttributeError):
+        object.__setattr__(proof, "caller_data", "0" * 64)
+
+
+def test_compiler_lineage_registry_releases_unreachable_proofs() -> None:
+    gc.collect()
+    before = terminal._terminal_compiler_lineage_registry_size()
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(seed, evidence_banks)
+    proof_reference = weakref.ref(result._compiler_lineage_token)
+
+    assert proof_reference() is result._compiler_lineage_token
+    assert terminal._terminal_compiler_lineage_registry_size() == before + 1
+
+    del result
+    gc.collect()
+
+    assert proof_reference() is None
+    assert terminal._terminal_compiler_lineage_registry_size() == before
+
+
+def _reconstruct_with_lineage_proof(result, proof):
+    return terminal.Lfm2CpcfTerminalActionResidualResult(
+        policy=result.policy,
+        incumbent_down_weight=result.incumbent_down_weight,
+        selected_down_weight=result.selected_down_weight,
+        published_down_weight=result.published_down_weight,
+        frontier_down_weights=result.frontier_down_weights,
+        selected_candidate_id=result.selected_candidate_id,
+        accepted=result.accepted,
+        report=result.as_dict(),
+        result_sha256=result.result_sha256,
+        _compiler_input_binding=result._compiler_input_binding,
+        _compiler_issuer=terminal._TERMINAL_RESULT_COMPILER_ISSUER,
+        _compiler_lineage_receipt=proof,
+    )
+
+
+@pytest.mark.parametrize("copy_kind", ("new", "copy", "deepcopy"))
+def test_unregistered_or_copied_lineage_proof_is_rejected(
+    compiler_issued_structural_nonveto_result,
+    copy_kind,
+) -> None:
+    result = compiler_issued_structural_nonveto_result
+    original = result._compiler_lineage_token
+    if copy_kind == "new":
+        forged = object.__new__(terminal._TerminalCompilerLineageProof)
+    elif copy_kind == "copy":
+        forged = copy.copy(original)
+    else:
+        forged = copy.deepcopy(original)
+
+    assert forged is not original
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="unregistered compiler-lineage proof",
+    ):
+        _reconstruct_with_lineage_proof(result, forged)
+
+    probe = copy.copy(result)
+    object.__setattr__(probe, "_compiler_lineage_token", forged)
+    assert probe.verify_authentication() is False
+
+
+def test_registered_lineage_proof_substitution_is_rejected(
+    compiler_issued_structural_nonveto_result,
+) -> None:
+    result = compiler_issued_structural_nonveto_result
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    if int(torch.count_nonzero(result.incumbent_down_weight).item()) == 0:
+        alternate = _compile(seed, evidence_banks)
+    else:
+        alternate = _compile(_zero_terminal_seed(seed), evidence_banks)
+    substituted = alternate._compiler_lineage_token
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="diverges from compiler-issued lineage",
+    ):
+        _reconstruct_with_lineage_proof(result, substituted)
+
+    probe = copy.copy(result)
+    object.__setattr__(probe, "_compiler_lineage_token", substituted)
+    assert probe.verify_authentication() is False
+
+
+@pytest.mark.parametrize("replacement", ("metrics", "gates_and_passed"))
+def test_compiler_lineage_rejects_coordinated_validation_report_replacement(
+    compiler_issued_structural_nonveto_result,
+    replacement,
+) -> None:
+    result = compiler_issued_structural_nonveto_result
+    body = copy.deepcopy(result.as_dict())
+    body.pop("result_sha256")
+    if replacement == "metrics":
+        body["validation"]["metrics"] = copy.deepcopy(
+            body["incumbent_metrics"]["validation"]
+        )
+    else:
+        body["validation"]["gates"] = {
+            name: False for name in body["validation"]["gates"]
+        }
+        body["validation"]["passed"] = False
+    forged_sha256 = terminal._canonical_sha256(body)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="diverges from compiler-issued lineage",
+    ):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.published_down_weight,
+            frontier_down_weights=result.frontier_down_weights,
+            selected_candidate_id=result.selected_candidate_id,
+            accepted=result.accepted,
+            report={**body, "result_sha256": forged_sha256},
+            result_sha256=forged_sha256,
+            _compiler_input_binding=result._compiler_input_binding,
+            _compiler_issuer=terminal._TERMINAL_RESULT_COMPILER_ISSUER,
+            _compiler_lineage_receipt=result._compiler_lineage_token,
+        )
+
+    probe = copy.copy(result)
+    object.__setattr__(probe, "report", {**body, "result_sha256": forged_sha256})
+    object.__setattr__(probe, "result_sha256", forged_sha256)
+    assert probe.verify_authentication() is False
+
+
+def test_forged_resealed_binding_and_report_cannot_replace_compiler_lineage(
+    compiler_issued_structural_nonveto_result,
+) -> None:
+    result = compiler_issued_structural_nonveto_result
+    forged_binding, forged_report, forged_sha256 = _forge_compiler_lineage(result)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="diverges from compiler-issued lineage",
+    ):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.published_down_weight,
+            frontier_down_weights=result.frontier_down_weights,
+            selected_candidate_id=result.selected_candidate_id,
+            accepted=result.accepted,
+            report=forged_report,
+            result_sha256=forged_sha256,
+            _compiler_input_binding=forged_binding,
+            _compiler_issuer=terminal._TERMINAL_RESULT_COMPILER_ISSUER,
+            _compiler_lineage_receipt=result._compiler_lineage_token,
+        )
+
+    probe = copy.copy(result)
+    object.__setattr__(probe, "_compiler_input_binding", forged_binding)
+    object.__setattr__(probe, "report", forged_report)
+    object.__setattr__(probe, "result_sha256", forged_sha256)
+    assert probe.verify_authentication() is False
+
+
+@pytest.mark.parametrize(
+    ("field", "forged_value"),
+    (
+        ("used_for_fit", True),
+        ("used_for_fit_check_veto", True),
+        ("used_for_candidate_ranking", True),
+        ("used_to_change_selected_candidate_id", True),
+        ("used_only_for_frozen_candidate_acceptance", True),
+        ("heldout_diagnostic_only", False),
+        ("publication_gate_applied", True),
+        ("numeric_thresholds_diagnostic_only", False),
+        ("accessed_only_after_selected_id_and_state_sha256_frozen", False),
+        ("__omit_used_for_fit", None),
+        ("__extra_role", True),
+    ),
+)
+def test_validation_diagnostic_schema_rejects_resealed_role_tamper(
+    compiler_issued_structural_nonveto_result,
+    field,
+    forged_value,
+) -> None:
+    result = compiler_issued_structural_nonveto_result
+    body = copy.deepcopy(result.as_dict())
+    body.pop("result_sha256")
+    if field == "__omit_used_for_fit":
+        body["validation"].pop("used_for_fit")
+    elif field == "__extra_role":
+        body["validation"]["caller_forged_role"] = forged_value
+    else:
+        body["validation"][field] = forged_value
+    forged_sha256 = terminal._canonical_sha256(body)
+    forged_report = {**body, "result_sha256": forged_sha256}
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="validation report|compiler-issued lineage",
+    ):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.published_down_weight,
+            frontier_down_weights=result.frontier_down_weights,
+            selected_candidate_id=result.selected_candidate_id,
+            accepted=result.accepted,
+            report=forged_report,
+            result_sha256=forged_sha256,
+            _compiler_input_binding=result._compiler_input_binding,
+            _compiler_issuer=terminal._TERMINAL_RESULT_COMPILER_ISSUER,
+            _compiler_lineage_receipt=result._compiler_lineage_token,
+        )
+
+    probe = copy.copy(result)
+    object.__setattr__(probe, "report", forged_report)
+    object.__setattr__(probe, "result_sha256", forged_sha256)
+    assert probe.verify_authentication() is False
+
+
 @pytest.mark.parametrize("tamper_kind", ("missing", "extra", "bytes", "nonfinite"))
 def test_terminal_frontier_writer_bank_fails_closed(tamper_kind) -> None:
     seed, evidence_banks, _ = _synthetic_terminal_problem()
@@ -629,6 +1073,9 @@ def test_terminal_frontier_writer_bank_is_privately_owned_and_reauthenticated() 
         accepted=compiled.accepted,
         report=compiled.as_dict(),
         result_sha256=compiled.result_sha256,
+        _compiler_input_binding=compiled._compiler_input_binding,
+        _compiler_issuer=terminal._TERMINAL_RESULT_COMPILER_ISSUER,
+        _compiler_lineage_receipt=compiled._compiler_lineage_token,
     )
     first_id = next(iter(supplied))
     assert (
@@ -746,10 +1193,57 @@ def test_exact_zero_result_rejects_resealed_internal_lineage_tamper(tamper) -> N
             result_sha256=forged_sha256,
             _compiler_input_binding=result._compiler_input_binding,
             _compiler_issuer=terminal._TERMINAL_RESULT_COMPILER_ISSUER,
+            _compiler_lineage_receipt=result._compiler_lineage_token,
         )
 
 
-def test_validation_cannot_reselect_and_rejection_rolls_back_exactly() -> None:
+@pytest.mark.parametrize(
+    "tamper",
+    (
+        lambda body: body.pop("structural_nonveto_schema"),
+        lambda body: body.__setitem__("structural_nonveto_schema", "caller-forged"),
+        lambda body: next(
+            value
+            for value in body["frontier"]
+            if value["candidate_id"] == body["selected_candidate_id"]
+        ).__setitem__("eligible", False),
+        lambda body: next(
+            value
+            for value in body["frontier"]
+            if value["candidate_id"] == body["selected_candidate_id"]
+        ).__setitem__("numeric_thresholds_used_for_publication", True),
+        lambda body: body["validation"].__setitem__("publication_gate_applied", True),
+        lambda body: body["selected_writer_structural_coverage"].__setitem__(
+            "state_sha256", "0" * 64
+        ),
+    ),
+)
+def test_nonzero_result_rejects_resealed_structural_nonveto_tamper(tamper) -> None:
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(seed, evidence_banks)
+    body = copy.deepcopy(result.as_dict())
+    body.pop("result_sha256")
+    tamper(body)
+    forged_sha256 = terminal._canonical_sha256(body)
+
+    with pytest.raises(Lfm2CpcfTerminalActionAuthenticationError):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.published_down_weight,
+            frontier_down_weights=result.frontier_down_weights,
+            selected_candidate_id=result.selected_candidate_id,
+            accepted=result.accepted,
+            report={**body, "result_sha256": forged_sha256},
+            result_sha256=forged_sha256,
+            _compiler_input_binding=result._compiler_input_binding,
+            _compiler_issuer=terminal._TERMINAL_RESULT_COMPILER_ISSUER,
+            _compiler_lineage_receipt=result._compiler_lineage_token,
+        )
+
+
+def test_validation_cannot_reselect_or_veto_structural_publication() -> None:
     seed, evidence_banks, rejecting_validation = _synthetic_terminal_problem()
     accepted = _compile(seed, evidence_banks)
     rejected_banks = {
@@ -766,18 +1260,20 @@ def test_validation_cannot_reselect_and_rejection_rolls_back_exactly() -> None:
         rejected.selected_down_weight,
         accepted.selected_down_weight,
     )
-    assert rejected.accepted is False
-    assert rejected.changed is False
+    assert rejected.accepted is True
+    assert rejected.changed is True
     assert report["validation"]["passed"] is False
     assert report["validation"]["candidate_count"] == 1
     assert report["validation"]["used_for_candidate_ranking"] is False
     assert report["validation"]["used_to_change_selected_candidate_id"] is False
-    assert report["rollback_performed"] is True
+    assert report["validation"]["heldout_diagnostic_only"] is True
+    assert report["validation"]["publication_gate_applied"] is False
+    assert report["rollback_performed"] is False
     assert report["rollback_exact"] is True
-    assert report["published_is_incumbent"] is True
+    assert report["published_is_incumbent"] is False
     assert torch.equal(
         rejected.published_down_weight,
-        rejected.incumbent_down_weight,
+        rejected.selected_down_weight,
     )
     assert rejected.verify_authentication() is True
 

@@ -20,6 +20,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     Lfm2CpcfTerminalActionResidualResult,
+    compile_lfm2_cpcf_terminal_action_residual as _compile_terminal_action_residual,
 )
 from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
     fit_tied_causal_interface,
@@ -405,35 +406,10 @@ def _semantic_fixture(
     }
 
 
-def _accepted_terminal(seed, policy) -> Lfm2CpcfTerminalActionResidualResult:
-    incumbent = seed.down_weight.detach().clone()
-    selected = incumbent.clone()
-    selected.reshape(-1)[0] = selected.reshape(-1)[0] + torch.tensor(
-        0.125,
-        dtype=torch.bfloat16,
-    )
-    assert not torch.equal(selected, incumbent)
-    body = {
-        "policy_sha256": policy.authentication_sha256,
-        "selected_candidate_id": "test-accepted-candidate",
-        "accepted": True,
-        "output_state_sha256": {
-            "incumbent": refold._tensor_sha256(incumbent),
-            "selected": refold._tensor_sha256(selected),
-            "published": refold._tensor_sha256(selected),
-        },
-    }
-    seal = refold._canonical_sha256(body)
-    return Lfm2CpcfTerminalActionResidualResult(
-        policy=policy,
-        incumbent_down_weight=incumbent,
-        selected_down_weight=selected,
-        published_down_weight=selected,
-        selected_candidate_id="test-accepted-candidate",
-        accepted=True,
-        report={**body, "result_sha256": seal},
-        result_sha256=seal,
-    )
+def _accepted_terminal(**kwargs) -> Lfm2CpcfTerminalActionResidualResult:
+    """Use the real compiler so accepted test results retain private provenance."""
+
+    return _compile_terminal_action_residual(**kwargs)
 
 
 def _near_tie_cached_payload() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -507,7 +483,7 @@ def test_replays_each_complete_trajectory_once_and_installs_only_accepted_w2(
     child.forward = forbidden_model_forward
 
     def accepted_compiler(**kwargs):
-        return _accepted_terminal(kwargs["seed"], kwargs["policy"])
+        return _accepted_terminal(**kwargs)
 
     monkeypatch.setattr(
         refold,
@@ -802,7 +778,7 @@ def test_semantic_span_replays_expansion_contraction_and_suffix_rewrite(
     values["child"].forward = forbidden_model_forward
 
     def accepted_compiler(**kwargs):
-        return _accepted_terminal(kwargs["seed"], kwargs["policy"])
+        return _accepted_terminal(**kwargs)
 
     monkeypatch.setattr(
         refold,
@@ -874,7 +850,7 @@ def test_semantic_span_populates_real_32_plus_horizon_bucket(
     values = _semantic_fixture(tmp_path, long_horizon=True)
 
     def accepted_compiler(**kwargs):
-        return _accepted_terminal(kwargs["seed"], kwargs["policy"])
+        return _accepted_terminal(**kwargs)
 
     monkeypatch.setattr(
         refold,
@@ -1111,7 +1087,7 @@ def test_loads_parent_final_norm_directly_from_identity_matched_safetensors(
     )
 
     def accepted_compiler(**kwargs):
-        return _accepted_terminal(kwargs["seed"], kwargs["policy"])
+        return _accepted_terminal(**kwargs)
 
     monkeypatch.setattr(
         refold,
