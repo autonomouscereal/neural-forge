@@ -824,6 +824,7 @@ def _persistable_attention_operator_receipt(
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_attention_binding_authenticates_complete_recipe_component_equivalence(

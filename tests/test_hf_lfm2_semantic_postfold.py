@@ -2438,6 +2438,7 @@ def test_complete_layer_stack_fails_closed_on_conv_and_mlp_gaps(
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_layer_stack_stage_forwards_exact_authenticated_body_recipe(
@@ -2900,7 +2901,7 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
 ) -> None:
     events: list[str] = []
     recipe = postfold.resolve_lfm2_semantic_body_recipe(
-        "source_producer_residual_writer"
+        "structural_sequence_residual_mlp_writer"
     )
     seed, evidence, _fixture_result = _compiled_exact_zero_terminal_result()
     cache_key = "1" * 64

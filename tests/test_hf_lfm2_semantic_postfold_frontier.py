@@ -525,6 +525,7 @@ def test_bank_persists_every_candidate_without_metric_elimination(
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     )
     assert bank.manifest["one_terminal_frontier_bank_contains_one_body_recipe"] is True
     assert bank.manifest["other_body_recipes_require_sealed_foundation_replay"] is True
@@ -982,6 +983,7 @@ def test_materializer_reauthenticates_structural_eligibility_before_copy(
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
@@ -1041,7 +1043,7 @@ def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
     assert receipt["holistic_review_complete"] is False
     assert receipt["materialization_is_not_intelligence_acceptance"] is True
     assert receipt["body_recipe_id"] == recipe_id
-    assert receipt["complete_body_recipe_candidate_count"] == 4
+    assert receipt["complete_body_recipe_candidate_count"] == 5
     assert receipt["one_terminal_frontier_bank_contains_one_body_recipe"] is True
     assert receipt["other_body_recipes_require_sealed_foundation_replay"] is True
     assert receipt["standalone_child"] is True

@@ -155,7 +155,7 @@ def test_cli_forwards_exact_compact_statistics_pair(
             "--expected-interface-statistics-sha256",
             "a" * 64,
             "--body-recipe",
-            "source_producer_residual_writer",
+            "structural_sequence_residual_mlp_writer",
         ]
     )
 
@@ -163,7 +163,7 @@ def test_cli_forwards_exact_compact_statistics_pair(
     assert len(calls) == 1
     assert calls[0]["interface_statistics_directory"] == str(statistics_directory)
     assert calls[0]["expected_interface_statistics_sha256"] == "a" * 64
-    assert calls[0]["body_recipe"] == "source_producer_residual_writer"
+    assert calls[0]["body_recipe"] == "structural_sequence_residual_mlp_writer"
     assert written == [(tmp_path / "receipt.json", {"result_sha256": "f" * 64})]
 
 

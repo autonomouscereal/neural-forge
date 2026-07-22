@@ -842,6 +842,7 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ):
         model = _Target()
         with torch.no_grad():
@@ -890,6 +891,13 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     assert state_sha256["source_producer_residual_writer"] == state_sha256[
         "residual_writer"
     ]
+    structural_sequence_writer = prepared_by_recipe[
+        "structural_sequence_residual_mlp_writer"
+    ]
+    assert structural_sequence_writer.selected_role == "incumbent-producer-w2"
+    assert state_sha256["structural_sequence_residual_mlp_writer"] == state_sha256[
+        "residual_writer"
+    ]
 
 
 def test_prepared_recipe_and_selected_lane_cannot_be_resealed_independently() -> None:
@@ -898,6 +906,7 @@ def test_prepared_recipe_and_selected_lane_cannot_be_resealed_independently() ->
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     )
     for source_recipe_id in recipe_ids:
         model = _Target()
@@ -1440,6 +1449,7 @@ def test_regressing_metrics_do_not_veto_structurally_valid_effectful_candidate(
         ("full_strength_structural", "full-w1-w3-w2"),
         ("residual_writer", "incumbent-producer-w2"),
         ("source_producer_residual_writer", "incumbent-producer-w2"),
+        ("structural_sequence_residual_mlp_writer", "incumbent-producer-w2"),
     ),
 )
 def test_recipe_priority_survives_poor_heldout_diagnostics(
@@ -1501,6 +1511,7 @@ def test_recipe_priority_survives_poor_heldout_diagnostics(
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_identical_mlp_candidates_select_incumbent_and_perform_no_copy(
@@ -1621,6 +1632,7 @@ def test_metric_evaluation_failure_is_diagnostic_not_structural_veto(
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_invalid_mlp_proposals_are_sealed_and_use_structural_incumbent_fallback(

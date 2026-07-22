@@ -15,6 +15,7 @@ from neural_forge import hf_lfm2_semantic_layer_stack_refold_adapter as stack_ad
 from neural_forge.hf_lfm2_semantic_body_recipe import (
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS,
+    LFM2_SEMANTIC_BODY_RECIPE_V4_IDS,
     Lfm2SemanticBodyRecipe,
     Lfm2SemanticBodyRecipeError,
     is_supported_lfm2_semantic_component_equivalence_inventory,
@@ -24,19 +25,20 @@ from neural_forge.hf_lfm2_semantic_body_recipe import (
 )
 
 
-def test_exact_four_body_recipes_are_sealed_and_non_cartesian() -> None:
+def test_exact_five_body_recipes_are_sealed_and_non_cartesian() -> None:
     assert LFM2_SEMANTIC_BODY_RECIPE_IDS == (
         "fit_guided",
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     )
     recipes = tuple(
         resolve_lfm2_semantic_body_recipe(recipe_id)
         for recipe_id in LFM2_SEMANTIC_BODY_RECIPE_IDS
     )
 
-    assert len({recipe.recipe_sha256 for recipe in recipes}) == 4
+    assert len({recipe.recipe_sha256 for recipe in recipes}) == 5
     assert all(recipe.verify() for recipe in recipes)
     assert all(recipe.as_dict()["cartesian_product"] is False for recipe in recipes)
     assert all(
@@ -55,6 +57,16 @@ def test_exact_four_body_recipes_are_sealed_and_non_cartesian() -> None:
         "mlp": "uncapped_w2_residual_writer_priority",
     }
     assert hybrid.fit_metrics_order_candidates is False
+    structural_sequence_writer = resolve_lfm2_semantic_body_recipe(
+        "structural_sequence_residual_mlp_writer"
+    )
+    assert dict(structural_sequence_writer.component_lanes) == {
+        "qk": "maximum_trust_radius_full_alpha_source_derived_residual",
+        "value_output": "joint_then_fixed_structural_priority",
+        "short_conv": "full_source_structural_priority",
+        "mlp": "uncapped_w2_residual_writer_priority",
+    }
+    assert structural_sequence_writer.fit_metrics_order_candidates is False
 
 
 def test_recipe_rejects_unknown_or_resealed_identity() -> None:
@@ -65,16 +77,21 @@ def test_recipe_rejects_unknown_or_resealed_identity() -> None:
         replace(recipe, recipe_sha256="0" * 64)
 
 
-def test_receipt_inventory_accepts_legacy_three_and_current_four_only() -> None:
+def test_receipt_inventory_accepts_legacy_three_four_and_current_five_only() -> None:
     assert is_supported_lfm2_semantic_body_recipe_inventory(
         list(LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS),
         3,
         materialized_recipe_id="residual_writer",
     )
     assert is_supported_lfm2_semantic_body_recipe_inventory(
-        list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        list(LFM2_SEMANTIC_BODY_RECIPE_V4_IDS),
         4,
         materialized_recipe_id="source_producer_residual_writer",
+    )
+    assert is_supported_lfm2_semantic_body_recipe_inventory(
+        list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        5,
+        materialized_recipe_id="structural_sequence_residual_mlp_writer",
     )
     assert not is_supported_lfm2_semantic_body_recipe_inventory(
         ["fit_guided", "residual_writer"],
@@ -90,6 +107,11 @@ def test_receipt_inventory_accepts_legacy_three_and_current_four_only() -> None:
         list(LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS),
         3,
         materialized_recipe_id="source_producer_residual_writer",
+    )
+    assert not is_supported_lfm2_semantic_body_recipe_inventory(
+        list(LFM2_SEMANTIC_BODY_RECIPE_V4_IDS),
+        4,
+        materialized_recipe_id="structural_sequence_residual_mlp_writer",
     )
 
 
@@ -131,6 +153,25 @@ def test_component_equivalence_accepts_sealed_legacy_and_current_claims_only() -
         materialized_recipe_id="residual_writer",
     )
 
+    structural_lane = "joint_then_fixed_structural_priority"
+    assert is_supported_lfm2_semantic_component_equivalence_inventory(
+        "value_output",
+        structural_lane,
+        ["full_strength_structural"],
+        False,
+        materialized_recipe_id="full_strength_structural",
+    )
+    assert is_supported_lfm2_semantic_component_equivalence_inventory(
+        "value_output",
+        structural_lane,
+        [
+            "full_strength_structural",
+            "structural_sequence_residual_mlp_writer",
+        ],
+        True,
+        materialized_recipe_id="structural_sequence_residual_mlp_writer",
+    )
+
 
 def test_qk_structural_recipes_use_strongest_authenticated_lane_without_metrics() -> (
     None
@@ -152,24 +193,37 @@ def test_qk_structural_recipes_use_strongest_authenticated_lane_without_metrics(
         base,
         Lfm2SemanticBodyRecipe("source_producer_residual_writer"),
     )
+    structural_sequence_writer = _qk_policy_for_body_recipe(
+        base,
+        Lfm2SemanticBodyRecipe("structural_sequence_residual_mlp_writer"),
+    )
 
     assert fit is base
     assert fit.alpha_frontier == base.alpha_frontier
     assert (
-        full.alpha_frontier == writer.alpha_frontier == producer_writer.alpha_frontier
+        full.alpha_frontier
+        == writer.alpha_frontier
+        == producer_writer.alpha_frontier
+        == structural_sequence_writer.alpha_frontier
     )
     assert producer_writer.alpha_frontier == (0.0, 1.0)
     assert (
-        full.trust_radius == writer.trust_radius == producer_writer.trust_radius == 2.0
+        full.trust_radius
+        == writer.trust_radius
+        == producer_writer.trust_radius
+        == structural_sequence_writer.trust_radius
+        == 2.0
     )
     assert (
         full.authentication_sha256
         == writer.authentication_sha256
         == producer_writer.authentication_sha256
+        == structural_sequence_writer.authentication_sha256
     )
     assert full.verify_authentication() is True
     assert writer.verify_authentication() is True
     assert producer_writer.verify_authentication() is True
+    assert structural_sequence_writer.verify_authentication() is True
 
 
 @pytest.mark.parametrize("recipe_id", LFM2_SEMANTIC_BODY_RECIPE_IDS)
@@ -243,7 +297,8 @@ def test_attention_nested_recipe_lane_and_candidate_policy_are_bound(
     recipe = resolve_lfm2_semantic_body_recipe(recipe_id)
     published = (
         "joint_value_output"
-        if recipe_id == "full_strength_structural"
+        if recipe.component_lanes["value_output"]
+        == "joint_then_fixed_structural_priority"
         else "fixed_v_output_only"
     )
     reports = {

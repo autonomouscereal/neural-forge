@@ -348,7 +348,7 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
         )
 
 
-def test_four_recipes_materialize_the_declared_effectful_nonblank_states(
+def test_five_recipes_materialize_the_declared_effectful_nonblank_states(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def deterministic_tiebreakers_only(
@@ -368,6 +368,7 @@ def test_four_recipes_materialize_the_declared_effectful_nonblank_states(
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ):
         model = _ToyModel()
         receipts[recipe_id] = _compile(
@@ -394,6 +395,15 @@ def test_four_recipes_materialize_the_declared_effectful_nonblank_states(
         receipts["source_producer_residual_writer"]["model_state_after_sha256"]
         == receipts["full_strength_structural"]["model_state_after_sha256"]
     )
+    assert receipts["structural_sequence_residual_mlp_writer"][
+        "selected_candidate"
+    ] == "full-source-structural"
+    assert (
+        receipts["structural_sequence_residual_mlp_writer"][
+            "model_state_after_sha256"
+        ]
+        == receipts["full_strength_structural"]["model_state_after_sha256"]
+    )
     assert (
         len({receipt["model_state_after_sha256"] for receipt in receipts.values()}) == 3
     )
@@ -411,6 +421,7 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ):
         evidence_source = _ToyModel()
         source_evidence = _evidence_bank(evidence_source)
@@ -458,6 +469,12 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     assert (
         receipts["full_strength_structural"]["model_state_after_sha256"]
         == receipts["source_producer_residual_writer"]["model_state_after_sha256"]
+    )
+    assert (
+        receipts["full_strength_structural"]["model_state_after_sha256"]
+        == receipts["structural_sequence_residual_mlp_writer"][
+            "model_state_after_sha256"
+        ]
     )
 
 
@@ -881,6 +898,7 @@ def test_validation_diagnostic_cannot_restore_authenticated_incumbent_noop() -> 
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_effectful_structural_candidate_survives_fit_diagnostic_miss(
@@ -944,6 +962,7 @@ def test_effectful_structural_candidate_survives_fit_diagnostic_miss(
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_structurally_invalid_only_proposal_uses_authenticated_incumbent_control(
@@ -1009,6 +1028,7 @@ def test_structurally_invalid_only_proposal_uses_authenticated_incumbent_control
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_identical_analytic_candidate_resolves_to_sealed_noop(

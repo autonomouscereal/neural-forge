@@ -995,6 +995,7 @@ def test_blank_attention_recipes_materialize_the_declared_component_lanes() -> N
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     )
     for recipe_id in recipe_ids:
         model = _Model()
@@ -1066,6 +1067,9 @@ def test_blank_attention_recipes_materialize_the_declared_component_lanes() -> N
     assert state_by_recipe["source_producer_residual_writer"] == state_by_recipe[
         "residual_writer"
     ]
+    assert state_by_recipe[
+        "structural_sequence_residual_mlp_writer"
+    ] == state_by_recipe["full_strength_structural"]
 
 
 def test_all_zero_qkvo_heldout_regression_is_diagnostic_not_blank_rollback(
@@ -2335,6 +2339,7 @@ def test_vo_structural_eligibility_is_the_exact_nonmetric_conjunction() -> None:
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_vo_incumbent_is_used_only_when_proposals_are_invalid_or_identical(
@@ -2403,6 +2408,7 @@ def test_vo_incumbent_is_used_only_when_proposals_are_invalid_or_identical(
         "full_strength_structural",
         "residual_writer",
         "source_producer_residual_writer",
+        "structural_sequence_residual_mlp_writer",
     ),
 )
 def test_vo_heldout_metric_regression_cannot_veto_frozen_fit_selection(
@@ -2486,7 +2492,10 @@ def test_vo_heldout_metric_regression_cannot_veto_frozen_fit_selection(
     selected = gate["published_candidate"]
     assert selected != "incumbent"
     assert gate["body_recipe_id"] == body_recipe
-    if body_recipe == "full_strength_structural":
+    if body_recipe in {
+        "full_strength_structural",
+        "structural_sequence_residual_mlp_writer",
+    }:
         assert selected == "joint_value_output"
     elif body_recipe in {"residual_writer", "source_producer_residual_writer"}:
         assert selected == "fixed_v_output_only"

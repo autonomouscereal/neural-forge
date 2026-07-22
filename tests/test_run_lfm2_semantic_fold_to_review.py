@@ -32,7 +32,7 @@ def _sources(tmp_path: Path) -> dict[str, Path]:
 
 def _arguments(tmp_path: Path, paths: dict[str, Path]) -> dict[str, object]:
     recipe = runner.resolve_lfm2_semantic_body_recipe(
-        "source_producer_residual_writer"
+        "structural_sequence_residual_mlp_writer"
     )
     return {
         "run_directory": tmp_path / "run",
@@ -280,7 +280,7 @@ def test_one_command_driver_exports_once_materializes_all_and_stops_for_review(
         events.append("postfold")
         assert kwargs["terminal_frontier_exporter_factory"]
         assert kwargs["body_recipe"].recipe_id == (
-            "source_producer_residual_writer"
+            "structural_sequence_residual_mlp_writer"
         )
         capsule_path = Path(kwargs["preterminal_capsule_directory"])
         capsule_path.mkdir()
@@ -421,7 +421,9 @@ def test_one_command_driver_exports_once_materializes_all_and_stops_for_review(
 
     def prepare(**kwargs):
         events.append("qualitative-preparation")
-        assert kwargs["lane_labels"] == ("source_producer_residual_writer",)
+        assert kwargs["lane_labels"] == (
+            "structural_sequence_residual_mlp_writer",
+        )
         assert len(kwargs["dossier_paths"]) == 1
         Path(kwargs["merged_json"]).write_text("{}\n", encoding="utf-8")
         Path(kwargs["markdown_path"]).write_text("# Review\n", encoding="utf-8")
@@ -899,6 +901,6 @@ def test_cli_forwards_pinned_recipe_and_review_horizon(
 
     assert runner.main(cli) == 0
     assert len(calls) == 1
-    assert calls[0]["body_recipe"] == "source_producer_residual_writer"
+    assert calls[0]["body_recipe"] == "structural_sequence_residual_mlp_writer"
     assert calls[0]["maximum_new_tokens"] == 256
     assert calls[0]["anchor_candidate_index"] == 7

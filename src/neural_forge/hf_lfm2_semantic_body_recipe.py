@@ -1,6 +1,6 @@
 """Authenticated, non-Cartesian body-recipe lanes for semantic LFM2 folding.
 
-The body compiler deliberately exposes four complete recipes rather than a
+The body compiler deliberately exposes five complete recipes rather than a
 Cartesian product of every component proposal.  A recipe is selection policy,
 not a quality gate: component candidates are eligible only by structural
 safety and effect, FIT values may order ``fit_guided``, and held-out values are
@@ -23,18 +23,24 @@ Lfm2SemanticBodyRecipeId = Literal[
     "full_strength_structural",
     "residual_writer",
     "source_producer_residual_writer",
+    "structural_sequence_residual_mlp_writer",
 ]
 LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     "fit_guided",
     "full_strength_structural",
     "residual_writer",
 )
-LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+LFM2_SEMANTIC_BODY_RECIPE_V4_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     *LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS,
     "source_producer_residual_writer",
 )
+LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+    *LFM2_SEMANTIC_BODY_RECIPE_V4_IDS,
+    "structural_sequence_residual_mlp_writer",
+)
 LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES = (
     LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS,
+    LFM2_SEMANTIC_BODY_RECIPE_V4_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
 )
 
@@ -73,6 +79,14 @@ _RECIPE_COMPONENT_LANES = MappingProxyType(
             {
                 "qk": ("maximum_trust_radius_full_alpha_source_derived_residual"),
                 "value_output": "fixed_writer_then_joint_residual_priority",
+                "short_conv": "full_source_structural_priority",
+                "mlp": "uncapped_w2_residual_writer_priority",
+            }
+        ),
+        "structural_sequence_residual_mlp_writer": MappingProxyType(
+            {
+                "qk": ("maximum_trust_radius_full_alpha_source_derived_residual"),
+                "value_output": "joint_then_fixed_structural_priority",
                 "short_conv": "full_source_structural_priority",
                 "mlp": "uncapped_w2_residual_writer_priority",
             }
@@ -169,7 +183,7 @@ def is_supported_lfm2_semantic_body_recipe_inventory(
     *,
     materialized_recipe_id: object | None = None,
 ) -> bool:
-    """Accept sealed legacy-three receipts while writers emit the current four."""
+    """Accept sealed legacy three/four receipts while writers emit five."""
 
     if (
         not isinstance(candidate_ids, Sequence)
@@ -246,6 +260,7 @@ def is_supported_lfm2_semantic_component_equivalence_inventory(
 __all__ = [
     "LFM2_SEMANTIC_BODY_RECIPE_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS",
+    "LFM2_SEMANTIC_BODY_RECIPE_V4_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES",
     "LFM2_SEMANTIC_BODY_RECIPE_SCHEMA",
     "Lfm2SemanticBodyRecipe",
