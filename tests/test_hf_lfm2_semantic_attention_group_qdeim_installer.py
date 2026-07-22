@@ -85,7 +85,11 @@ class _Model(torch.nn.Module):
         raise AssertionError("The installer must never execute the child model.")
 
 
-def _source() -> dict[str, object]:
+def _source(
+    *,
+    query_norm: torch.Tensor | None = None,
+    key_norm: torch.Tensor | None = None,
+) -> dict[str, object]:
     source_q = torch.arange(8 * 4, dtype=torch.bfloat16).reshape(8, 4).add(1)
     source_k = torch.arange(4 * 4, dtype=torch.bfloat16).reshape(4, 4).add(2)
     source_v = torch.arange(4 * 4, dtype=torch.bfloat16).reshape(4, 4).add(3)
@@ -96,8 +100,10 @@ def _source() -> dict[str, object]:
         source_value_weight=source_v,
         source_output_weight=source_o,
     )
-    query_norm = torch.tensor([1.25, 0.75], dtype=torch.bfloat16)
-    key_norm = torch.tensor([0.875, 1.375], dtype=torch.bfloat16)
+    if query_norm is None:
+        query_norm = torch.tensor([1.25, 0.75], dtype=torch.bfloat16)
+    if key_norm is None:
+        key_norm = torch.tensor([0.875, 1.375], dtype=torch.bfloat16)
     norm_inventory = installer.seal_lfm2_semantic_attention_group_qdeim_norm_inventory(
         layer_index=0,
         source_parent_identity_sha256="d" * 64,
@@ -117,14 +123,19 @@ def _source() -> dict[str, object]:
     }
 
 
-def _arguments(model: _Model) -> dict[str, object]:
+def _arguments(
+    model: _Model,
+    *,
+    query_norm: torch.Tensor | None = None,
+    key_norm: torch.Tensor | None = None,
+) -> dict[str, object]:
     return {
         "target_model": model,
         "session": SimpleNamespace(),
         "layer_index": 0,
         "fit_batch_indices": (0,),
         "fit_batch_sample_weights": {0: 1.0},
-        **_source(),
+        **_source(query_norm=query_norm, key_norm=key_norm),
         "normalized_input_decoder": torch.eye(4, dtype=torch.float64),
         "normalized_input_decoder_receipt": {"test": "decoder"},
         "residual_output_chart": torch.eye(4, dtype=torch.float64),
@@ -332,6 +343,39 @@ def _candidate(**kwargs: object) -> Lfm2SemanticAttentionGroupQdeimCandidate:
         "whole_decoded_behavior_is_primary_intelligence_evidence": True,
         "automatic_semantic_acceptance_or_rejection_permitted": False,
     }
+    fit_indices = list(kwargs.get("fit_batch_indices", (0,)))
+    capability_body = {
+        "schema": (
+            "neural-forge-lfm2-semantic-attention-group-qdeim-"
+            "cache-capability-v1"
+        ),
+        "cache_key": "test-cache",
+        "cache_manifest_sha256": "1" * 64,
+        "cache_selective_session_sha256": "2" * 64,
+        "layer_index": 0,
+        "fit_batch_indices": fit_indices,
+        "true_post_softmax_context_complete": True,
+        "tensor_payloads_loaded": 0,
+        "parent_forward_calls": 0,
+        "trace_recaptures": 0,
+        "training_steps": 0,
+    }
+    capability = _sealed(capability_body)
+    context_body = {
+        "schema": "neural-forge-lfm2-semantic-attention-qdeim-context-bank-v1",
+        "route": "captured_true",
+        "fit_batch_indices": fit_indices,
+        "selected_payloads": [{"session_sha256": "2" * 64}],
+        "heldout_tensor_payload_loads": 0,
+        "parent_forward_calls": 0,
+        "trace_recaptures": 0,
+        "training_steps": 0,
+    }
+    context_bank = _sealed(context_body)
+    adapter_body["cache_capability_sha256"] = capability["result_sha256"]
+    adapter_body["cache_capability_receipt"] = dict(capability)
+    adapter_body["context_bank_receipt_sha256"] = context_bank["result_sha256"]
+    adapter_body["context_bank_receipt"] = dict(context_bank)
     return Lfm2SemanticAttentionGroupQdeimCandidate(
         layer_index=0,
         compiled=compiled,
@@ -433,6 +477,13 @@ def test_coupled_candidate_installs_all_six_tensors_and_escapes_zero_norms(
     assert report["changed_state_keys"] == sorted(
         prefix + role for role in installer._ALL_ROLES
     )
+    assert report["changed_state_key_count"] == 6
+    assert report["transaction_covered_state_keys"] == sorted(
+        prefix + role for role in installer._ALL_ROLES
+    )
+    assert report["transaction_covered_parameter_role_count"] == 6
+    assert report["six_role_transaction_coverage_proven"]
+    assert report["all_six_roles_changed"]
     assert report["complete_six_parameter_bundle_installed_transactionally"]
     assert report["blank_query_norm_zero_escape_proven"]
     assert report["blank_key_norm_zero_escape_proven"]
@@ -452,6 +503,202 @@ def test_coupled_candidate_installs_all_six_tensors_and_escapes_zero_norms(
         torch.equal(value.grad, gradient_before[name])
         for name, value in model.named_parameters()
     )
+
+
+def test_canonical_neutral_norm_seeds_install_four_changed_keys_with_six_role_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        attention.q_layernorm.weight.fill_(1)
+        attention.k_layernorm.weight.fill_(1)
+    neutral = torch.ones(2, dtype=torch.bfloat16)
+    arguments = _arguments(model, query_norm=neutral, key_norm=neutral)
+    before = _bundle(model)
+    monkeypatch.setattr(
+        installer,
+        "compile_lfm2_semantic_attention_group_qdeim_from_cache",
+        _candidate,
+    )
+
+    result = installer.compile_install_lfm2_semantic_attention_group_qdeim(**arguments)
+
+    assert isinstance(
+        result,
+        installer.Lfm2SemanticAttentionGroupQdeimInstallationResult,
+    )
+    prefix = "model.layers.0.self_attn."
+    expected_changed = sorted(prefix + role for role in installer._QKVO_ROLES)
+    expected_covered = sorted(prefix + role for role in installer._ALL_ROLES)
+    report = result.receipt
+    preparation = result.prepared.authentication_body()
+    assert report["changed_state_keys"] == expected_changed
+    assert report["changed_state_key_count"] == 4
+    assert report["prepared_expected_changed_state_keys"] == expected_changed
+    assert report["prepared_expected_changed_state_keys_matched"]
+    assert report["changed_parameter_roles"] == sorted(installer._QKVO_ROLES)
+    assert report["unchanged_transaction_parameter_roles"] == sorted(
+        installer._NORM_ROLES
+    )
+    assert report["transaction_covered_state_keys"] == expected_covered
+    assert report["transaction_covered_parameter_roles"] == list(installer._ALL_ROLES)
+    assert report["all_six_roles_supplied_to_atomic_transaction"]
+    assert report["six_role_transaction_coverage_proven"]
+    assert report["all_six_roles_changed"] is False
+    assert report["actual_changed_bytes_cover_four_to_six_roles"]
+    assert report["source_norm_equal_to_target_seed_roles"] == sorted(
+        installer._NORM_ROLES
+    )
+    assert report["source_norm_changed_from_target_seed_roles"] == []
+    assert report["blank_query_norm_zero_escape_proven"] is False
+    assert report["blank_key_norm_zero_escape_proven"] is False
+    assert report["target_seed_authentication_sha256"] == canonical_sha256(
+        report["target_seed_authentication"]
+    )
+    assert (
+        report["target_seed_authentication"]
+        == preparation["target_seed_authentication"]
+    )
+    assert preparation["transaction_covered_state_keys"] == expected_covered
+    assert (
+        preparation["expected_changed_state_keys_after_installation"]
+        == expected_changed
+    )
+    assert preparation[
+        "expected_unchanged_seed_equal_candidate_state_keys_after_installation"
+    ] == sorted(prefix + role for role in installer._NORM_ROLES)
+    assert all(
+        report["target_seed_authentication"][role]["seed_kind"]
+        == installer._NORM_ONE_SEED_KIND
+        for role in installer._NORM_ROLES
+    )
+    assert all(
+        report["norm_seed_transitions"][role]["candidate_equal_to_seed"]
+        and not report["norm_seed_transitions"][role]["bytes_changed"]
+        for role in installer._NORM_ROLES
+    )
+    assert all(
+        torch.equal(_bundle(model)[prefix + role], before[prefix + role])
+        for role in installer._NORM_ROLES
+    )
+
+
+def test_arbitrary_norm_seed_fails_before_compilation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        attention.q_layernorm.weight.copy_(
+            torch.tensor([1.0, 0.0], dtype=torch.bfloat16)
+        )
+    before = _bundle(model)
+    compiler_called = False
+
+    def forbidden_compiler(**_kwargs: object) -> object:
+        nonlocal compiler_called
+        compiler_called = True
+        raise AssertionError("An arbitrary norm seed must fail before compilation.")
+
+    monkeypatch.setattr(
+        installer,
+        "compile_lfm2_semantic_attention_group_qdeim_from_cache",
+        forbidden_compiler,
+    )
+    with pytest.raises(
+        installer.Lfm2SemanticAttentionGroupQdeimInstallationError,
+        match="neither",
+    ):
+        installer.prepare_lfm2_semantic_attention_group_qdeim_installation(
+            **_arguments(model)
+        )
+    assert compiler_called is False
+    assert all(
+        torch.equal(value, before[name]) for name, value in _bundle(model).items()
+    )
+
+
+def test_one_neutral_norm_match_reports_five_changed_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    attention = model.model.layers[0].self_attn
+    with torch.no_grad():
+        attention.q_layernorm.weight.fill_(1)
+        attention.k_layernorm.weight.fill_(1)
+    query = torch.ones(2, dtype=torch.bfloat16)
+    key = torch.tensor([0.875, 1.375], dtype=torch.bfloat16)
+    monkeypatch.setattr(
+        installer,
+        "compile_lfm2_semantic_attention_group_qdeim_from_cache",
+        _candidate,
+    )
+
+    result = installer.compile_install_lfm2_semantic_attention_group_qdeim(
+        **_arguments(model, query_norm=query, key_norm=key)
+    )
+
+    assert isinstance(
+        result,
+        installer.Lfm2SemanticAttentionGroupQdeimInstallationResult,
+    )
+    report = result.receipt
+    prefix = "model.layers.0.self_attn."
+    assert report["changed_state_key_count"] == 5
+    assert report["changed_state_keys"] == sorted(
+        [
+            *(prefix + role for role in installer._QKVO_ROLES),
+            prefix + "k_layernorm.weight",
+        ]
+    )
+    assert report["source_norm_equal_to_target_seed_roles"] == ["q_layernorm.weight"]
+    assert report["source_norm_changed_from_target_seed_roles"] == [
+        "k_layernorm.weight"
+    ]
+    assert report["norm_seed_transitions"]["q_layernorm.weight"][
+        "candidate_equal_to_seed"
+    ]
+    assert report["norm_seed_transitions"]["k_layernorm.weight"]["bytes_changed"]
+
+
+def test_direct_parent_norms_allow_zero_coordinates_but_reject_all_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    query = torch.tensor([1.25, 0.0], dtype=torch.bfloat16)
+    key = torch.tensor([0.0, 1.375], dtype=torch.bfloat16)
+    model = _Model()
+    monkeypatch.setattr(
+        installer,
+        "compile_lfm2_semantic_attention_group_qdeim_from_cache",
+        _candidate,
+    )
+
+    result = installer.compile_install_lfm2_semantic_attention_group_qdeim(
+        **_arguments(model, query_norm=query, key_norm=key)
+    )
+
+    assert isinstance(
+        result,
+        installer.Lfm2SemanticAttentionGroupQdeimInstallationResult,
+    )
+    torch.testing.assert_close(
+        model.model.layers[0].self_attn.q_layernorm.weight,
+        query,
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        model.model.layers[0].self_attn.k_layernorm.weight,
+        key,
+        rtol=0,
+        atol=0,
+    )
+    with pytest.raises(
+        installer.Lfm2SemanticAttentionGroupQdeimInstallationError,
+        match="all-zero",
+    ):
+        _source(query_norm=torch.zeros(2, dtype=torch.bfloat16), key_norm=key)
 
 
 def test_typed_deficit_returns_without_fallback_or_mutation(
@@ -565,6 +812,34 @@ def test_prepared_candidate_rejects_stale_target_identity_before_transaction(
         )
     assert transaction_called is False
     assert int(torch.count_nonzero(attention.q_layernorm.weight).item()) == 0
+
+
+def test_prepared_candidate_rejects_forged_norm_not_in_source_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    monkeypatch.setattr(
+        installer,
+        "compile_lfm2_semantic_attention_group_qdeim_from_cache",
+        _candidate,
+    )
+    prepared = installer.prepare_lfm2_semantic_attention_group_qdeim_installation(
+        **_arguments(model)
+    )
+    assert isinstance(
+        prepared,
+        installer.Lfm2PreparedSemanticAttentionGroupQdeimInstallation,
+    )
+
+    with pytest.raises(
+        installer.Lfm2SemanticAttentionGroupQdeimInstallationError,
+        match="exact sealed direct-parent norm inventory",
+    ):
+        replace(
+            prepared,
+            query_norm_weight=torch.tensor([2.0, 3.0], dtype=torch.bfloat16),
+            preparation_sha256="",
+        )
 
 
 def test_six_tensor_transaction_rolls_back_partial_copy_exactly(
@@ -795,10 +1070,19 @@ def test_compiled_decoder_tensor_drift_fails_without_mutation(
     )
 
 
-def test_post_transaction_validation_failure_rolls_back_all_six(
+@pytest.mark.parametrize("canonical_neutral_norm_seed", [False, True])
+def test_post_transaction_validation_failure_rolls_back_exact_seeded_bundle(
     monkeypatch: pytest.MonkeyPatch,
+    canonical_neutral_norm_seed: bool,
 ) -> None:
     model = _Model()
+    norm = None
+    if canonical_neutral_norm_seed:
+        norm = torch.ones(2, dtype=torch.bfloat16)
+        attention = model.model.layers[0].self_attn
+        with torch.no_grad():
+            attention.q_layernorm.weight.copy_(norm)
+            attention.k_layernorm.weight.copy_(norm)
     for parameter in model.parameters():
         parameter.grad = torch.full_like(parameter, 11.0)
     before_identity = fingerprint_lfm2_parent(model).identity_sha256
@@ -815,7 +1099,7 @@ def test_post_transaction_validation_failure_rolls_back_all_six(
         _candidate,
     )
     prepared = installer.prepare_lfm2_semantic_attention_group_qdeim_installation(
-        **_arguments(model)
+        **_arguments(model, query_norm=norm, key_norm=norm)
     )
     assert isinstance(
         prepared,
@@ -837,7 +1121,7 @@ def test_post_transaction_validation_failure_rolls_back_all_six(
     )
     with pytest.raises(
         installer.Lfm2SemanticAttentionGroupQdeimInstallationError,
-        match="publish exactly all six",
+        match="six-role coverage",
     ):
         installer.install_lfm2_prepared_semantic_attention_group_qdeim(
             target_model=model,

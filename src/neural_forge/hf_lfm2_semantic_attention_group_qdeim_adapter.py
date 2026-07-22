@@ -566,6 +566,35 @@ def _verified_chart_and_decoder(
     )
     chart_sha = _tensor_sha256(chart, label="residual output chart")
     decoder_sha = _tensor_sha256(decoder, label="normalized input decoder")
+    partition_batch_indices = chart_receipt.get("partition_batch_indices")
+    partition_names = ("fit", "fit_check", "selection", "validation")
+    partition_valid = bool(
+        isinstance(partition_batch_indices, Mapping)
+        and set(partition_batch_indices) == set(partition_names)
+        and all(
+            isinstance(partition_batch_indices.get(name), list)
+            and partition_batch_indices[name]
+            and all(
+                isinstance(batch_index, int)
+                and not isinstance(batch_index, bool)
+                and batch_index >= 0
+                for batch_index in partition_batch_indices[name]
+            )
+            for name in partition_names
+        )
+    )
+    ordered_partition_batches = (
+        []
+        if not partition_valid
+        else [
+            batch_index
+            for name in partition_names
+            for batch_index in partition_batch_indices[name]
+        ]
+    )
+    fit_batch_indices = (
+        [] if not partition_valid else list(partition_batch_indices["fit"])
+    )
     if (
         chart_receipt.get("schema") != _RESIDUAL_CHART_SCHEMA
         or chart_receipt.get("layer_index") != layer_index
@@ -576,6 +605,8 @@ def _verified_chart_and_decoder(
         or chart_receipt.get("numeric_metric_used_for_publication_or_rollback")
         is not False
         or chart_receipt.get("training_steps") != 0
+        or not partition_valid
+        or len(ordered_partition_batches) != len(set(ordered_partition_batches))
     ):
         raise Lfm2SemanticAttentionGroupQdeimAdapterError(
             "Residual chart is not the authenticated FIT-only layer-stack chart."
@@ -588,6 +619,25 @@ def _verified_chart_and_decoder(
         or decoder_receipt.get("published_decoder_sha256") != decoder_sha
         or decoder_receipt.get("fit_rows_only_used_for_residual") is not True
         or decoder_receipt.get("heldout_rows_used_for_fit") != 0
+        or decoder_receipt.get("trajectory_batch_indices")
+        != ordered_partition_batches
+        or decoder_receipt.get("fit_batch_indices") != fit_batch_indices
+        or decoder_receipt.get("heldout_batch_indices")
+        != ordered_partition_batches[len(fit_batch_indices) :]
+        or decoder_receipt.get("fit_trajectory_count") != len(fit_batch_indices)
+        or decoder_receipt.get(
+            "residual_chart_partition_batch_indices_sha256"
+        )
+        != canonical_sha256(
+            {
+                name: list(partition_batch_indices[name])
+                for name in partition_names
+            }
+        )
+        or decoder_receipt.get(
+            "fit_batch_indices_authenticated_from_residual_chart"
+        )
+        is not True
         or decoder_receipt.get("gradients_used") is not False
         or decoder_receipt.get("training_steps") != 0
     ):
@@ -1009,6 +1059,13 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
         normalized_input_decoder=normalized_input_decoder,
         normalized_input_decoder_receipt=normalized_input_decoder_receipt,
     )
+    if (
+        chart_receipt["partition_batch_indices"]["fit"] != list(fit_indices)
+        or decoder_receipt["fit_batch_indices"] != list(fit_indices)
+    ):
+        raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+            "Normalized decoder FIT batches differ from the selected cache rows."
+        )
     inventory = _verified_source_inventory(
         source_query_weight=source_query_weight,
         source_key_weight=source_key_weight,
@@ -1158,6 +1215,7 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
         "cache_manifest_sha256": manifest["manifest_sha256"],
         "cache_selective_session_sha256": session_receipt["session_sha256"],
         "cache_capability_sha256": capability["result_sha256"],
+        "cache_capability_receipt": _deep_thaw(capability),
         "source_attention_contract": dict(contract),
         "source_inventory_sha256": inventory.inventory_sha256,
         "source_state_sha256": source_state_sha,

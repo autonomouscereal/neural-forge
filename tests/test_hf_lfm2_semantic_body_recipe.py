@@ -17,16 +17,20 @@ from neural_forge.hf_lfm2_semantic_body_recipe import (
     LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V4_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V5_IDS,
+    LFM2_SEMANTIC_BODY_RECIPE_V7_IDS,
+    LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS,
+    LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_SCHEMA,
     Lfm2SemanticBodyRecipe,
     Lfm2SemanticBodyRecipeError,
     is_supported_lfm2_semantic_component_equivalence_inventory,
     is_supported_lfm2_semantic_body_recipe_inventory,
     lfm2_semantic_body_recipe_ids_for_component_lane,
     resolve_lfm2_semantic_body_recipe,
+    resolve_lfm2_semantic_nonblocking_behavior_flow,
 )
 
 
-def test_exact_seven_body_recipes_are_sealed_and_non_cartesian() -> None:
+def test_exact_nine_body_recipes_are_sealed_and_non_cartesian() -> None:
     assert LFM2_SEMANTIC_BODY_RECIPE_IDS == (
         "fit_guided",
         "full_strength_structural",
@@ -35,13 +39,15 @@ def test_exact_seven_body_recipes_are_sealed_and_non_cartesian() -> None:
         "structural_sequence_residual_mlp_writer",
         "nonlinear_qdeim_structural",
         "nonlinear_qdeim_fit_corrected",
+        "nonlinear_qdeim_coupled_attention_structural",
+        "nonlinear_qdeim_coupled_attention_fit_corrected",
     )
     recipes = tuple(
         resolve_lfm2_semantic_body_recipe(recipe_id)
         for recipe_id in LFM2_SEMANTIC_BODY_RECIPE_IDS
     )
 
-    assert len({recipe.recipe_sha256 for recipe in recipes}) == 7
+    assert len({recipe.recipe_sha256 for recipe in recipes}) == 9
     assert all(recipe.verify() for recipe in recipes)
     assert all(recipe.as_dict()["cartesian_product"] is False for recipe in recipes)
     assert all(
@@ -70,12 +76,8 @@ def test_exact_seven_body_recipes_are_sealed_and_non_cartesian() -> None:
         "mlp": "uncapped_w2_residual_writer_priority",
     }
     assert structural_sequence_writer.fit_metrics_order_candidates is False
-    qdeim_structural = resolve_lfm2_semantic_body_recipe(
-        "nonlinear_qdeim_structural"
-    )
-    qdeim_corrected = resolve_lfm2_semantic_body_recipe(
-        "nonlinear_qdeim_fit_corrected"
-    )
+    qdeim_structural = resolve_lfm2_semantic_body_recipe("nonlinear_qdeim_structural")
+    qdeim_corrected = resolve_lfm2_semantic_body_recipe("nonlinear_qdeim_fit_corrected")
     assert dict(qdeim_structural.component_lanes) == {
         "qk": "maximum_trust_radius_full_alpha_source_derived_residual",
         "value_output": "joint_then_fixed_structural_priority",
@@ -84,6 +86,22 @@ def test_exact_seven_body_recipes_are_sealed_and_non_cartesian() -> None:
     }
     assert dict(qdeim_corrected.component_lanes) == {
         **dict(qdeim_structural.component_lanes),
+        "mlp": "nonlinear_qdeim_fit_corrected_priority",
+    }
+    coupled_structural = resolve_lfm2_semantic_body_recipe(
+        "nonlinear_qdeim_coupled_attention_structural"
+    )
+    coupled_corrected = resolve_lfm2_semantic_body_recipe(
+        "nonlinear_qdeim_coupled_attention_fit_corrected"
+    )
+    assert dict(coupled_structural.component_lanes) == {
+        "qk": "intact_gqa_group_qdeim_coupled_qkvo",
+        "value_output": "intact_gqa_group_qdeim_coupled_qkvo",
+        "short_conv": "full_source_structural_priority",
+        "mlp": "nonlinear_qdeim_structural_priority",
+    }
+    assert dict(coupled_corrected.component_lanes) == {
+        **dict(coupled_structural.component_lanes),
         "mlp": "nonlinear_qdeim_fit_corrected_priority",
     }
 
@@ -96,7 +114,61 @@ def test_recipe_rejects_unknown_or_resealed_identity() -> None:
         replace(recipe, recipe_sha256="0" * 64)
 
 
-def test_receipt_inventory_accepts_sealed_three_four_five_and_current_seven() -> None:
+def test_nonblocking_behavior_flow_is_separate_sealed_and_coupled_only() -> None:
+    expected_recipe_hashes = {
+        "fit_guided": "fedc74e4d1bbe28a77c00f3c78a12ba58910899134d214d324b03343c0c6056a",
+        "full_strength_structural": "eed15b90833fcae8b01493b02c23716999f2e4fb1cebca2af7d198e01298e7ff",
+        "residual_writer": "131a3934b912fdf564cb8a7145323fada1aeec1355f71b7a9d74f46e4baa1f23",
+        "source_producer_residual_writer": "5767c45aeb2b022c50fd084d4c7e17d9451b33b6a188c4fba4e9c705095cc4da",
+        "structural_sequence_residual_mlp_writer": "11298ed377b2ad775b5a1a29cae3dc38292adf995af88dc197d601d4c2f7b784",
+        "nonlinear_qdeim_structural": "62a7b081dbeb739494a7d75f4e968f442724ea2add8f1f01c3107036bb2cac5d",
+        "nonlinear_qdeim_fit_corrected": "6897bb34f76223e46919be696031e0afeb703c92c6ab7836f6fba23c330356ac",
+        "nonlinear_qdeim_coupled_attention_structural": "2725779d70161592345868bad2270ca5dbeaecbb1416a3c129b32fe3449235dc",
+        "nonlinear_qdeim_coupled_attention_fit_corrected": "0c37f95ad809c83a1a34df61afcf080a64e228bbe19a7465d300d36a541334ce",
+    }
+    assert {
+        recipe_id: resolve_lfm2_semantic_body_recipe(recipe_id).recipe_sha256
+        for recipe_id in LFM2_SEMANTIC_BODY_RECIPE_IDS
+    } == expected_recipe_hashes
+    assert LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS == (
+        "nonlinear_qdeim_coupled_attention_structural",
+        "nonlinear_qdeim_coupled_attention_fit_corrected",
+    )
+    assert resolve_lfm2_semantic_nonblocking_behavior_flow("fit_guided") is None
+
+    for recipe_id in LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS:
+        recipe = resolve_lfm2_semantic_body_recipe(recipe_id)
+        policy = resolve_lfm2_semantic_nonblocking_behavior_flow(recipe)
+        assert policy is not None
+        assert policy.verify() is True
+        assert policy.body_recipe_sha256 == recipe.recipe_sha256
+        assert policy.as_dict() == {
+            "schema": LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_SCHEMA,
+            "body_recipe_id": recipe.recipe_id,
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "structural_authentication_is_only_materialization_veto": True,
+            "numeric_metrics_may_prioritize_investigation": True,
+            "numeric_accept_veto_publish_delete_stop_authority": False,
+            "manual_annotations_may_guide_next_hypothesis": True,
+            "manual_or_binary_accept_veto_publish_delete_stop_authority": False,
+            "decoded_complete_behavior_is_primary_intelligence_evidence": True,
+            "retention_target_is_objective_not_cutoff": True,
+            "all_structurally_safe_candidates_must_be_materialized": True,
+            "all_materialized_candidates_must_receive_decoded_review": True,
+            "manual_verdict_required_for_continuation": False,
+            "quality_evidence_can_stop_iteration": False,
+            "policy_sha256": policy.policy_sha256,
+        }
+        with pytest.raises(
+            Lfm2SemanticBodyRecipeError,
+            match="behavior-flow authentication",
+        ):
+            replace(policy, policy_sha256="0" * 64)
+
+
+def test_receipt_inventory_accepts_sealed_three_four_five_seven_and_current_nine() -> (
+    None
+):
     assert is_supported_lfm2_semantic_body_recipe_inventory(
         list(LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS),
         3,
@@ -113,9 +185,14 @@ def test_receipt_inventory_accepts_sealed_three_four_five_and_current_seven() ->
         materialized_recipe_id="structural_sequence_residual_mlp_writer",
     )
     assert is_supported_lfm2_semantic_body_recipe_inventory(
-        list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        list(LFM2_SEMANTIC_BODY_RECIPE_V7_IDS),
         7,
         materialized_recipe_id="nonlinear_qdeim_fit_corrected",
+    )
+    assert is_supported_lfm2_semantic_body_recipe_inventory(
+        list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        9,
+        materialized_recipe_id="nonlinear_qdeim_coupled_attention_fit_corrected",
     )
     assert not is_supported_lfm2_semantic_body_recipe_inventory(
         ["fit_guided", "residual_writer"],
@@ -141,6 +218,11 @@ def test_receipt_inventory_accepts_sealed_three_four_five_and_current_seven() ->
         list(LFM2_SEMANTIC_BODY_RECIPE_V5_IDS),
         5,
         materialized_recipe_id="nonlinear_qdeim_structural",
+    )
+    assert not is_supported_lfm2_semantic_body_recipe_inventory(
+        list(LFM2_SEMANTIC_BODY_RECIPE_V7_IDS),
+        7,
+        materialized_recipe_id="nonlinear_qdeim_coupled_attention_structural",
     )
 
 
@@ -211,6 +293,26 @@ def test_component_equivalence_accepts_sealed_legacy_and_current_claims_only() -
         ],
         True,
         materialized_recipe_id="nonlinear_qdeim_structural",
+    )
+
+    coupled_lane = "intact_gqa_group_qdeim_coupled_qkvo"
+    coupled_recipe_ids = [
+        "nonlinear_qdeim_coupled_attention_structural",
+        "nonlinear_qdeim_coupled_attention_fit_corrected",
+    ]
+    assert is_supported_lfm2_semantic_component_equivalence_inventory(
+        "qk",
+        coupled_lane,
+        coupled_recipe_ids,
+        True,
+        materialized_recipe_id="nonlinear_qdeim_coupled_attention_structural",
+    )
+    assert is_supported_lfm2_semantic_component_equivalence_inventory(
+        "value_output",
+        coupled_lane,
+        coupled_recipe_ids,
+        True,
+        materialized_recipe_id="nonlinear_qdeim_coupled_attention_fit_corrected",
     )
 
 
@@ -352,6 +454,35 @@ def test_attention_nested_recipe_lane_and_candidate_policy_are_bound(
     recipe_id: str,
 ) -> None:
     recipe = resolve_lfm2_semantic_body_recipe(recipe_id)
+    if recipe.component_lanes["qk"] == "intact_gqa_group_qdeim_coupled_qkvo":
+        coupled_receipt = {
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_component_lane": recipe.component_lanes["qk"],
+            "recipe_value_output_lane": recipe.component_lanes["value_output"],
+            "coupled_qkvo_single_candidate": True,
+            "split_qk_or_vo_fallback_used": False,
+        }
+        stack_adapter._require_attention_body_recipe_binding(
+            coupled_receipt,
+            recipe,
+            label="test coupled attention",
+        )
+        for field, forged_value in (
+            ("recipe_component_lane", "forged-qk-lane"),
+            ("recipe_value_output_lane", "forged-value-output-lane"),
+            ("coupled_qkvo_single_candidate", False),
+            ("split_qk_or_vo_fallback_used", True),
+        ):
+            with pytest.raises(stack_adapter.Lfm2SemanticLayerStackRefoldError):
+                stack_adapter._require_attention_body_recipe_binding(
+                    {**coupled_receipt, field: forged_value},
+                    recipe,
+                    label="test coupled attention",
+                )
+        return
+
     published = (
         "joint_value_output"
         if recipe.component_lanes["value_output"]

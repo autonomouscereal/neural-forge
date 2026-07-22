@@ -1,6 +1,6 @@
 """Authenticated, non-Cartesian body-recipe lanes for semantic LFM2 folding.
 
-The body compiler deliberately exposes seven complete recipes rather than a
+The body compiler deliberately exposes nine complete recipes rather than a
 Cartesian product of every component proposal.  A recipe is selection policy,
 not a quality gate: component candidates are eligible only by structural
 safety and effect, FIT values may order ``fit_guided``, and held-out values are
@@ -18,6 +18,9 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 
 
 LFM2_SEMANTIC_BODY_RECIPE_SCHEMA = "neural-forge-lfm2-semantic-body-recipe-v1"
+LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_SCHEMA = (
+    "neural-forge-lfm2-semantic-nonblocking-behavior-flow-v2"
+)
 Lfm2SemanticBodyRecipeId = Literal[
     "fit_guided",
     "full_strength_structural",
@@ -26,6 +29,8 @@ Lfm2SemanticBodyRecipeId = Literal[
     "structural_sequence_residual_mlp_writer",
     "nonlinear_qdeim_structural",
     "nonlinear_qdeim_fit_corrected",
+    "nonlinear_qdeim_coupled_attention_structural",
+    "nonlinear_qdeim_coupled_attention_fit_corrected",
 ]
 LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     "fit_guided",
@@ -40,16 +45,28 @@ LFM2_SEMANTIC_BODY_RECIPE_V5_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     *LFM2_SEMANTIC_BODY_RECIPE_V4_IDS,
     "structural_sequence_residual_mlp_writer",
 )
-LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+LFM2_SEMANTIC_BODY_RECIPE_V7_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     *LFM2_SEMANTIC_BODY_RECIPE_V5_IDS,
     "nonlinear_qdeim_structural",
     "nonlinear_qdeim_fit_corrected",
+)
+LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+    *LFM2_SEMANTIC_BODY_RECIPE_V7_IDS,
+    "nonlinear_qdeim_coupled_attention_structural",
+    "nonlinear_qdeim_coupled_attention_fit_corrected",
 )
 LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES = (
     LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V4_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V5_IDS,
+    LFM2_SEMANTIC_BODY_RECIPE_V7_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
+)
+LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS: tuple[
+    Lfm2SemanticBodyRecipeId, ...
+] = (
+    "nonlinear_qdeim_coupled_attention_structural",
+    "nonlinear_qdeim_coupled_attention_fit_corrected",
 )
 
 
@@ -111,6 +128,22 @@ _RECIPE_COMPONENT_LANES = MappingProxyType(
             {
                 "qk": ("maximum_trust_radius_full_alpha_source_derived_residual"),
                 "value_output": "joint_then_fixed_structural_priority",
+                "short_conv": "full_source_structural_priority",
+                "mlp": "nonlinear_qdeim_fit_corrected_priority",
+            }
+        ),
+        "nonlinear_qdeim_coupled_attention_structural": MappingProxyType(
+            {
+                "qk": "intact_gqa_group_qdeim_coupled_qkvo",
+                "value_output": "intact_gqa_group_qdeim_coupled_qkvo",
+                "short_conv": "full_source_structural_priority",
+                "mlp": "nonlinear_qdeim_structural_priority",
+            }
+        ),
+        "nonlinear_qdeim_coupled_attention_fit_corrected": MappingProxyType(
+            {
+                "qk": "intact_gqa_group_qdeim_coupled_qkvo",
+                "value_output": "intact_gqa_group_qdeim_coupled_qkvo",
                 "short_conv": "full_source_structural_priority",
                 "mlp": "nonlinear_qdeim_fit_corrected_priority",
             }
@@ -183,6 +216,72 @@ class Lfm2SemanticBodyRecipe:
         return self.recipe_sha256 == canonical_sha256(self.authentication_body())
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2SemanticNonblockingBehaviorFlow:
+    """A separately sealed interpretation layer over an unchanged v1 recipe.
+
+    This policy deliberately does not participate in body-recipe
+    authentication.  Existing recipe identities and historical artifacts
+    therefore remain byte-stable while an opted-in outer orchestration layer
+    can treat decoded behavior as evidence instead of a manual or numeric
+    release gate.
+    """
+
+    body_recipe_id: Lfm2SemanticBodyRecipeId
+    body_recipe_sha256: str
+    policy_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if self.body_recipe_id not in (
+            LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS
+        ):
+            raise Lfm2SemanticBodyRecipeError(
+                "Nonblocking behavior flow is available only for the coupled "
+                "attention Q-DEIM recipes."
+            )
+        recipe = resolve_lfm2_semantic_body_recipe(self.body_recipe_id)
+        supplied_recipe_sha256 = str(self.body_recipe_sha256).strip().lower()
+        if supplied_recipe_sha256 != recipe.recipe_sha256:
+            raise Lfm2SemanticBodyRecipeError(
+                "Nonblocking behavior flow is not bound to the authentic body recipe."
+            )
+        object.__setattr__(self, "body_recipe_sha256", supplied_recipe_sha256)
+        expected = canonical_sha256(self.authentication_body())
+        supplied = str(self.policy_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise Lfm2SemanticBodyRecipeError(
+                "Nonblocking behavior-flow authentication is invalid."
+            )
+        object.__setattr__(self, "policy_sha256", expected)
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_SCHEMA,
+            "body_recipe_id": self.body_recipe_id,
+            "body_recipe_sha256": self.body_recipe_sha256,
+            "structural_authentication_is_only_materialization_veto": True,
+            "numeric_metrics_may_prioritize_investigation": True,
+            "numeric_accept_veto_publish_delete_stop_authority": False,
+            "manual_annotations_may_guide_next_hypothesis": True,
+            "manual_or_binary_accept_veto_publish_delete_stop_authority": False,
+            "decoded_complete_behavior_is_primary_intelligence_evidence": True,
+            "retention_target_is_objective_not_cutoff": True,
+            "all_structurally_safe_candidates_must_be_materialized": True,
+            "all_materialized_candidates_must_receive_decoded_review": True,
+            "manual_verdict_required_for_continuation": False,
+            "quality_evidence_can_stop_iteration": False,
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            **self.authentication_body(),
+            "policy_sha256": self.policy_sha256,
+        }
+
+    def verify(self) -> bool:
+        return self.policy_sha256 == canonical_sha256(self.authentication_body())
+
+
 def resolve_lfm2_semantic_body_recipe(
     value: str | Lfm2SemanticBodyRecipe | None = None,
 ) -> Lfm2SemanticBodyRecipe:
@@ -201,13 +300,27 @@ def resolve_lfm2_semantic_body_recipe(
     return Lfm2SemanticBodyRecipe(value)  # type: ignore[arg-type]
 
 
+def resolve_lfm2_semantic_nonblocking_behavior_flow(
+    value: str | Lfm2SemanticBodyRecipe,
+) -> Lfm2SemanticNonblockingBehaviorFlow | None:
+    """Return the additive v2 policy only for recipes that explicitly opt in."""
+
+    recipe = resolve_lfm2_semantic_body_recipe(value)
+    if recipe.recipe_id not in LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS:
+        return None
+    return Lfm2SemanticNonblockingBehaviorFlow(
+        body_recipe_id=recipe.recipe_id,
+        body_recipe_sha256=recipe.recipe_sha256,
+    )
+
+
 def is_supported_lfm2_semantic_body_recipe_inventory(
     candidate_ids: object,
     candidate_count: object | None = None,
     *,
     materialized_recipe_id: object | None = None,
 ) -> bool:
-    """Accept sealed legacy three/four receipts while writers emit five."""
+    """Accept every sealed historical inventory while writers emit nine."""
 
     if (
         not isinstance(candidate_ids, Sequence)
@@ -282,17 +395,22 @@ def is_supported_lfm2_semantic_component_equivalence_inventory(
 
 
 __all__ = [
+    "LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS",
+    "LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_SCHEMA",
     "LFM2_SEMANTIC_BODY_RECIPE_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_V4_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_V5_IDS",
+    "LFM2_SEMANTIC_BODY_RECIPE_V7_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES",
     "LFM2_SEMANTIC_BODY_RECIPE_SCHEMA",
     "Lfm2SemanticBodyRecipe",
     "Lfm2SemanticBodyRecipeError",
     "Lfm2SemanticBodyRecipeId",
+    "Lfm2SemanticNonblockingBehaviorFlow",
     "is_supported_lfm2_semantic_component_equivalence_inventory",
     "is_supported_lfm2_semantic_body_recipe_inventory",
     "lfm2_semantic_body_recipe_ids_for_component_lane",
     "resolve_lfm2_semantic_body_recipe",
+    "resolve_lfm2_semantic_nonblocking_behavior_flow",
 ]

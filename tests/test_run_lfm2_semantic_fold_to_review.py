@@ -121,9 +121,7 @@ def _seal_review_inputs(
         json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
-    arguments["expected_prompts_file_sha256"] = runner._file_sha256(
-        paths["prompts"]
-    )
+    arguments["expected_prompts_file_sha256"] = runner._file_sha256(paths["prompts"])
     arguments["expected_parent_envelope_sha256"] = envelope["envelope_sha256"]
     arguments["expected_parent_envelope_file_sha256"] = runner._file_sha256(
         paths["parent-envelope"]
@@ -154,12 +152,24 @@ def _install_manifest_preflight(
     )
 
 
-def test_one_command_driver_exports_once_materializes_all_and_stops_for_review(
+@pytest.mark.parametrize(
+    ("recipe_id", "nonblocking"),
+    (
+        ("structural_sequence_residual_mlp_writer", False),
+        ("nonlinear_qdeim_coupled_attention_structural", True),
+    ),
+)
+def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    recipe_id: str,
+    nonblocking: bool,
 ) -> None:
     paths = _sources(tmp_path)
     arguments = _arguments(tmp_path, paths)
+    recipe = runner.resolve_lfm2_semantic_body_recipe(recipe_id)
+    arguments["body_recipe"] = recipe.recipe_id
+    arguments["expected_body_recipe_sha256"] = recipe.recipe_sha256
     candidate_ids = ("writer-a", "writer-b")
     events: list[str] = []
     references: dict[str, object] = {}
@@ -279,9 +289,7 @@ def test_one_command_driver_exports_once_materializes_all_and_stops_for_review(
     def run_postfold(**kwargs):
         events.append("postfold")
         assert kwargs["terminal_frontier_exporter_factory"]
-        assert kwargs["body_recipe"].recipe_id == (
-            "structural_sequence_residual_mlp_writer"
-        )
+        assert kwargs["body_recipe"].recipe_id == recipe_id
         capsule_path = Path(kwargs["preterminal_capsule_directory"])
         capsule_path.mkdir()
         capsule = runner.Lfm2SemanticPreterminalCapsuleReference(
@@ -311,9 +319,7 @@ def test_one_command_driver_exports_once_materializes_all_and_stops_for_review(
         return {
             "status": "terminal-frontier-exported-review-pending",
             "result_sha256": "7" * 64,
-            "final_selection_status": (
-                "deferred-to-manual-whole-response-review"
-            ),
+            "final_selection_status": ("deferred-to-manual-whole-response-review"),
             "final_selected_candidate_id": None,
             "final_selection_performed": False,
             "automatic_candidate_selection_performed": False,
@@ -388,8 +394,9 @@ def test_one_command_driver_exports_once_materializes_all_and_stops_for_review(
             Path(kwargs["frontier_run_receipt"]).read_text(encoding="utf-8")
         )
         assert kwargs["candidate_ids"] == ()
-        assert kwargs["expected_parent_envelope_sha256"] == (
-            arguments["expected_parent_envelope_sha256"]
+        assert (
+            kwargs["expected_parent_envelope_sha256"]
+            == (arguments["expected_parent_envelope_sha256"])
         )
         assert kwargs["expected_parent_envelope_file_sha256"] == runner._file_sha256(
             paths["parent-envelope"]
@@ -424,9 +431,8 @@ def test_one_command_driver_exports_once_materializes_all_and_stops_for_review(
 
     def prepare(**kwargs):
         events.append("qualitative-preparation")
-        assert kwargs["lane_labels"] == (
-            "structural_sequence_residual_mlp_writer",
-        )
+        assert nonblocking is False
+        assert kwargs["lane_labels"] == (recipe_id,)
         assert len(kwargs["dossier_paths"]) == 1
         Path(kwargs["merged_json"]).write_text("{}\n", encoding="utf-8")
         Path(kwargs["markdown_path"]).write_text("# Review\n", encoding="utf-8")
@@ -441,20 +447,88 @@ def test_one_command_driver_exports_once_materializes_all_and_stops_for_review(
 
     result = runner.run_fold_to_review(**arguments)
 
-    assert events == [
+    expected_events = [
         "postfold",
         "bank-export",
         "bank-load",
         "materialize:writer-a",
         "materialize:writer-b",
         "whole-response-review",
-        "qualitative-preparation",
     ]
+    if not nonblocking:
+        expected_events.append("qualitative-preparation")
+    assert events == expected_events
     assert result["candidate_count"] == len(candidate_ids)
     assert result["automatic_candidate_selection_performed"] is False
     assert result["automatic_candidate_acceptance_performed"] is False
-    assert result["candidate_published_before_manual_review"] is False
-    assert result["blank_manual_verdict_prepared"] is True
+    assert result["blank_manual_verdict_prepared"] is (not nonblocking)
+    if nonblocking:
+        assert "candidate_published_before_manual_review" not in result
+        assert result["schema"] == runner.NONBLOCKING_PIPELINE_SCHEMA
+        assert (
+            result["status"]
+            == "decoded-behavior-evidence-complete-continuation-unblocked"
+        )
+        assert result["continuation_unblocked"] is True
+        assert result["decoded_behavior_evidence_complete"] is True
+        assert result["manual_verdict_required_for_continuation"] is False
+        assert result["continuation_requires_manual_review_or_verdict"] is False
+        assert result["manual_verdict_artifact_created"] is False
+        assert result["all_materialized_candidate_checkpoints_retained"] is True
+        assert result["retained_candidate_checkpoint_ids"] == list(candidate_ids)
+        assert result["retained_candidate_checkpoint_count"] == len(candidate_ids)
+        assert (
+            result["candidate_checkpoint_retention_depends_on_manual_verdict"] is False
+        )
+        assert result["quality_evidence_can_stop_iteration"] is False
+        assert result["numeric_accept_veto_publish_delete_stop_authority"] is False
+        assert (
+            result["manual_or_binary_accept_veto_publish_delete_stop_authority"]
+            is False
+        )
+        assert result["behavior_flow"]["body_recipe_sha256"] == (recipe.recipe_sha256)
+        assert (
+            result["behavior_flow_policy_sha256"]
+            == (result["behavior_flow"]["policy_sha256"])
+        )
+        assert (
+            result["legacy_v1_pending_terminal_receipt_interpretation"][
+                "interpreted_as_frontier_handoff_only"
+            ]
+            is True
+        )
+        assert (
+            result["legacy_v1_artifact_interpretation"][
+                "nested_manual_review_required_or_authoritative_labels_are_historical_only"
+            ]
+            is True
+        )
+        assert (
+            result["legacy_v1_artifact_interpretation"][
+                "unchanged_v1_body_recipe_manual_authority_label_is_historical_only"
+            ]
+            is True
+        )
+        assert (
+            result["legacy_v1_artifact_interpretation"][
+                "nested_v1_quality_labels_have_v2_continuation_authority"
+            ]
+            is False
+        )
+        observations = result["optional_behavior_observations"]
+        assert observations["observations"] == []
+        assert observations["manual_input_required"] is False
+        assert observations["binary_verdict_requested"] is False
+        assert observations["accept_veto_publish_delete_stop_authority"] is False
+        assert not (
+            Path(arguments["run_directory"]) / "manual-verdict-template.json"
+        ).exists()
+    else:
+        assert result["candidate_published_before_manual_review"] is False
+        assert result["schema"] == runner.PIPELINE_SCHEMA
+        assert result["status"] == (
+            "ready-for-manual-whole-response-intelligence-review"
+        )
     assert not (Path(arguments["run_directory"]) / "unselected-checkpoint").exists()
     persisted = json.loads(
         (Path(arguments["run_directory"]) / "pipeline-receipt.json").read_text(
@@ -484,6 +558,33 @@ def test_prompt_pin_rejected_before_run_directory_or_fold(
         runner.run_fold_to_review(**arguments)
 
     assert not Path(arguments["run_directory"]).exists()
+
+
+def test_nonblocking_checkpoint_retention_proof_fails_closed(
+    tmp_path: Path,
+) -> None:
+    materializations = tmp_path / "materializations"
+    materializations.mkdir()
+    missing_checkpoint = materializations / "writer-a" / "checkpoint"
+    frontier = {
+        "materializations_directory": str(materializations),
+        "candidate_ids": ["writer-a"],
+        "candidate_count": 1,
+        "materialized_count": 1,
+        "all_retained_candidates_materialized": True,
+        "materializations": [
+            {
+                "candidate_id": "writer-a",
+                "checkpoint_path": str(missing_checkpoint),
+            }
+        ],
+    }
+
+    with pytest.raises(
+        runner.Lfm2SemanticFoldToReviewError,
+        match="unretained candidate checkpoint",
+    ):
+        runner._retained_candidate_checkpoint_ids(frontier)
 
 
 def test_wrong_model_sealed_parent_envelope_fails_before_run_or_fold(
@@ -830,9 +931,7 @@ def test_postfold_parent_mismatch_fails_before_frontier_materialization(
         return {
             "status": "terminal-frontier-exported-review-pending",
             "result_sha256": "1" * 64,
-            "final_selection_status": (
-                "deferred-to-manual-whole-response-review"
-            ),
+            "final_selection_status": ("deferred-to-manual-whole-response-review"),
             "final_selected_candidate_id": None,
             "final_selection_performed": False,
             "automatic_candidate_selection_performed": False,

@@ -225,7 +225,7 @@ def test_existing_attention_profile_hashes_remain_byte_stable() -> None:
             # Its exact-zero compiler/publication hardening intentionally
             # advances this pin while the three attention-only profiles stay
             # byte-stable.
-            "9e2e734f1ae4c4efc04a4b8b90de022eefe4f7f97b3ff37f5085d3e6b2f568b4"
+                "a6daaba1b698b3d405c4999415bc9a57c49007b2ec890b4d788ab77e55025414"
         ),
     }
 

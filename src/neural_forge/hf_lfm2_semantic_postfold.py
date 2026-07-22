@@ -172,6 +172,9 @@ LFM2_SEMANTIC_ATTENTION_STAGE_SCHEMA = "neural-forge-lfm2-semantic-attention-sta
 LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA = (
     "neural-forge-lfm2-semantic-attention-installation-v1"
 )
+LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA = (
+    "neural-forge-lfm2-semantic-attention-group-qdeim-layer-installation-v1"
+)
 _ATTENTION_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
 _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS = (
     "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
@@ -368,6 +371,14 @@ def _digest(value: Any, name: str) -> str:
     ):
         raise Lfm2SemanticPostfoldError(f"{name} must be a lowercase SHA-256 digest.")
     return value
+
+
+def _is_digest(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _file_sha256(path: Path) -> str:
@@ -4310,6 +4321,651 @@ def _validate_attention_installation_receipt(
     return receipt
 
 
+def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    layer_index: int,
+    body_recipe: str | Lfm2SemanticBodyRecipe | None = None,
+) -> Mapping[str, Any]:
+    """Authenticate one persisted intact-group Q-DEIM six-tensor install."""
+
+    recipe = _authenticate_body_recipe_binding(
+        receipt,
+        body_recipe=body_recipe,
+        component="qk",
+        label=f"coupled attention Q-DEIM layer {layer_index} receipt",
+    )
+    raw_value = receipt.get("coupled_attention_installation_receipt")
+    adapter_value = receipt.get("coupled_attention_candidate_receipt")
+    compiler_value = receipt.get("coupled_attention_compiler_receipt")
+    norm_value = receipt.get("source_norm_inventory")
+    direct_value = receipt.get("direct_attention_source_receipt")
+    decoder_value = receipt.get("normalized_input_decoder_receipt")
+    chart_value = receipt.get("residual_chart_receipt")
+    if not all(
+        isinstance(value, Mapping)
+        for value in (
+            raw_value,
+            adapter_value,
+            compiler_value,
+            norm_value,
+            direct_value,
+            decoder_value,
+            chart_value,
+        )
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Coupled attention Q-DEIM layer {layer_index} omitted provenance."
+        )
+    raw = _verify_sealed(
+        raw_value,
+        seal_name="result_sha256",
+        label=f"coupled attention Q-DEIM layer {layer_index} installation",
+    )
+    adapter = _verify_sealed(
+        adapter_value,
+        seal_name="result_sha256",
+        label=f"coupled attention Q-DEIM layer {layer_index} cache adapter",
+    )
+    compiler = _verify_sealed(
+        compiler_value,
+        seal_name="result_sha256",
+        label=f"coupled attention Q-DEIM layer {layer_index} compiler",
+    )
+    capability_value = adapter.get("cache_capability_receipt")
+    context_bank_value = adapter.get("context_bank_receipt")
+    if not isinstance(capability_value, Mapping) or not isinstance(
+        context_bank_value,
+        Mapping,
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Coupled attention Q-DEIM layer {layer_index} omitted cache evidence roots."
+        )
+    capability = _verify_sealed(
+        capability_value,
+        seal_name="result_sha256",
+        label=f"coupled attention Q-DEIM layer {layer_index} cache capability",
+    )
+    context_bank = _verify_sealed(
+        context_bank_value,
+        seal_name="result_sha256",
+        label=f"coupled attention Q-DEIM layer {layer_index} context bank",
+    )
+    direct = _verify_sealed(
+        direct_value,
+        seal_name="result_sha256",
+        label=f"coupled attention Q-DEIM layer {layer_index} direct source",
+    )
+    decoder = _verify_sealed(
+        decoder_value,
+        seal_name="decoder_sha256",
+        label=f"coupled attention Q-DEIM layer {layer_index} decoder",
+    )
+    chart = _verify_sealed(
+        chart_value,
+        seal_name="result_sha256",
+        label=f"coupled attention Q-DEIM layer {layer_index} residual chart",
+    )
+    norm = dict(norm_value)
+    norm_sha256 = norm.pop("inventory_sha256", None)
+    if norm_sha256 != canonical_sha256(norm):
+        raise Lfm2SemanticPostfoldError(
+            f"Coupled attention Q-DEIM layer {layer_index} norm inventory is stale."
+        )
+    norm = {**norm, "inventory_sha256": norm_sha256}
+    changed_keys = receipt.get("changed_state_keys")
+    transport_evidence = receipt.get("transport_evidence_sha256")
+    prefix = f"model.layers.{layer_index}.self_attn."
+    required_projection_roles = _ATTENTION_SIX_TENSOR_ROLES[:4]
+    optional_norm_roles = _ATTENTION_SIX_TENSOR_ROLES[4:]
+    required_projection_keys = {
+        prefix + role for role in required_projection_roles
+    }
+    allowed_changed_keys = required_projection_keys | {
+        prefix + role for role in optional_norm_roles
+    }
+    transaction_covered_keys = sorted(allowed_changed_keys)
+    candidate_hashes = adapter.get("candidate_tensor_sha256")
+    norm_hashes = norm.get("tensor_receipts")
+    if not isinstance(candidate_hashes, Mapping) or not isinstance(
+        norm_hashes,
+        Mapping,
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Coupled attention Q-DEIM layer {layer_index} omitted tensor hashes."
+        )
+    six_tensor_bundle = {
+        "q_proj.weight": candidate_hashes.get("q_proj.weight"),
+        "k_proj.weight": candidate_hashes.get("k_proj.weight"),
+        "v_proj.weight": candidate_hashes.get("v_proj.weight"),
+        "out_proj.weight": candidate_hashes.get("out_proj.weight"),
+        "q_layernorm.weight": (
+            norm_hashes.get("q_layernorm.weight", {}).get("tensor_sha256")
+            if isinstance(norm_hashes.get("q_layernorm.weight"), Mapping)
+            else None
+        ),
+        "k_layernorm.weight": (
+            norm_hashes.get("k_layernorm.weight", {}).get("tensor_sha256")
+            if isinstance(norm_hashes.get("k_layernorm.weight"), Mapping)
+            else None
+        ),
+    }
+    target_seed_authentication = raw.get("target_seed_authentication")
+    norm_seed_transitions = raw.get("norm_seed_transitions")
+    compiler_topology = compiler.get("topology")
+    seed_shapes: dict[str, tuple[int, ...]] = {}
+    if isinstance(compiler_topology, Mapping):
+        target_hidden_size = compiler_topology.get("target_hidden_size")
+        target_query_head_count = compiler_topology.get(
+            "target_query_head_count"
+        )
+        target_key_value_head_count = compiler_topology.get(
+            "target_key_value_head_count"
+        )
+        head_dim = compiler_topology.get("head_dim")
+        dimensions = (
+            target_hidden_size,
+            target_query_head_count,
+            target_key_value_head_count,
+            head_dim,
+        )
+        if all(
+            not isinstance(value, bool)
+            and isinstance(value, int)
+            and value > 0
+            for value in dimensions
+        ):
+            query_width = target_query_head_count * head_dim
+            key_value_width = target_key_value_head_count * head_dim
+            seed_shapes = {
+                "q_proj.weight": (query_width, target_hidden_size),
+                "k_proj.weight": (key_value_width, target_hidden_size),
+                "v_proj.weight": (key_value_width, target_hidden_size),
+                "out_proj.weight": (target_hidden_size, query_width),
+                "q_layernorm.weight": (head_dim,),
+                "k_layernorm.weight": (head_dim,),
+            }
+    torch = _torch()
+    exact_zero_seed_sha256 = {
+        role: _tensor_sha256(torch.zeros(shape, dtype=torch.bfloat16))
+        for role, shape in seed_shapes.items()
+    }
+    exact_one_norm_seed_sha256 = {
+        role: _tensor_sha256(torch.ones(seed_shapes[role], dtype=torch.bfloat16))
+        for role in optional_norm_roles
+        if role in seed_shapes
+    }
+    expected_changed_roles: list[str] = list(required_projection_roles)
+    expected_changed_norm_roles: list[str] = []
+    norm_transition_contract_valid = bool(
+        isinstance(target_seed_authentication, Mapping)
+        and set(target_seed_authentication) == set(_ATTENTION_SIX_TENSOR_ROLES)
+        and set(seed_shapes) == set(_ATTENTION_SIX_TENSOR_ROLES)
+        and set(norm_hashes) == set(optional_norm_roles)
+        and isinstance(norm_hashes.get("q_layernorm.weight"), Mapping)
+        and isinstance(norm_hashes.get("k_layernorm.weight"), Mapping)
+        and norm_hashes["q_layernorm.weight"].get("shape")
+        == list(seed_shapes.get("q_layernorm.weight", ()))
+        and norm_hashes["k_layernorm.weight"].get("shape")
+        == list(seed_shapes.get("k_layernorm.weight", ()))
+        and norm_hashes["q_layernorm.weight"].get("dtype") == "torch.bfloat16"
+        and norm_hashes["k_layernorm.weight"].get("dtype") == "torch.bfloat16"
+        and raw.get("target_seed_authentication_sha256")
+        == canonical_sha256(target_seed_authentication)
+        and isinstance(norm_seed_transitions, Mapping)
+        and set(norm_seed_transitions) == set(optional_norm_roles)
+    )
+    if norm_transition_contract_valid:
+        for role in required_projection_roles:
+            seed = target_seed_authentication.get(role)
+            norm_transition_contract_valid = bool(
+                norm_transition_contract_valid
+                and isinstance(seed, Mapping)
+                and seed.get("state_key") == prefix + role
+                and seed.get("seed_policy") == "exact-zero-blank-required"
+                and seed.get("seed_kind") == "exact-zero-blank"
+                and seed.get("seed_tensor_sha256")
+                == exact_zero_seed_sha256.get(role)
+                and _digest(
+                    seed.get("seed_tensor_sha256"),
+                    f"coupled attention {role} seed",
+                )
+                == seed.get("seed_tensor_sha256")
+            )
+        for role in optional_norm_roles:
+            seed = target_seed_authentication.get(role)
+            transition = norm_seed_transitions.get(role)
+            source_sha256 = six_tensor_bundle[role]
+            seed_sha256 = seed.get("seed_tensor_sha256") if isinstance(
+                seed,
+                Mapping,
+            ) else None
+            bytes_changed = bool(source_sha256 != seed_sha256)
+            expected_transition = (
+                {
+                    **dict(seed),
+                    "source_norm_tensor_sha256": source_sha256,
+                    "candidate_equal_to_seed": not bytes_changed,
+                    "bytes_changed": bytes_changed,
+                }
+                if isinstance(seed, Mapping)
+                else None
+            )
+            norm_transition_contract_valid = bool(
+                norm_transition_contract_valid
+                and isinstance(seed, Mapping)
+                and seed.get("state_key") == prefix + role
+                and seed.get("seed_policy")
+                == "exact-zero-legacy-blank-or-exact-one-canonical-neutral"
+                and seed.get("seed_kind")
+                in {
+                    "exact-zero-legacy-blank",
+                    "exact-one-canonical-neutral",
+                }
+                and seed.get("seed_tensor_sha256")
+                == (
+                    exact_zero_seed_sha256.get(role)
+                    if seed.get("seed_kind") == "exact-zero-legacy-blank"
+                    else exact_one_norm_seed_sha256.get(role)
+                )
+                and _digest(
+                    seed_sha256,
+                    f"coupled attention {role} seed",
+                )
+                == seed_sha256
+                and isinstance(transition, Mapping)
+                and dict(transition) == expected_transition
+            )
+            if bytes_changed:
+                expected_changed_roles.append(role)
+                expected_changed_norm_roles.append(role)
+    expected_changed_roles = sorted(expected_changed_roles)
+    expected_unchanged_roles = sorted(
+        set(_ATTENTION_SIX_TENSOR_ROLES) - set(expected_changed_roles)
+    )
+    expected_changed_norm_roles = sorted(expected_changed_norm_roles)
+    expected_equal_norm_roles = sorted(
+        set(optional_norm_roles) - set(expected_changed_norm_roles)
+    )
+    changed_roles = sorted(name.removeprefix(prefix) for name in changed_keys) if (
+        isinstance(changed_keys, list)
+    ) else []
+    adapter_authentication = compiler.get("authentication")
+    compiler_evidence = compiler.get("evidence")
+    compiler_selection = compiler.get("selection")
+    compiler_materialization = compiler.get("materialization")
+    compiler_policy = compiler.get("semantic_policy")
+    source_parent_identity_sha256 = raw.get("source_parent_identity_sha256")
+    source_inventory_sha256 = raw.get("source_qkvo_inventory_sha256")
+    cache_manifest_sha256 = raw.get("cache_manifest_sha256")
+    cache_capability_sha256 = raw.get("cache_capability_sha256")
+    cache_session_sha256 = raw.get("cache_selective_session_sha256")
+    direct_receipt_sha256 = direct.get("result_sha256")
+    cache_key = receipt.get("cache_key")
+    bridge_artifact_sha256 = receipt.get("bridge_artifact_sha256")
+    parameter_count = receipt.get("parameter_element_count_before")
+    operation_audit = raw.get("operation_audit")
+    selected_context_payloads = context_bank.get("selected_payloads")
+    invalid = bool(
+        receipt.get("schema")
+        != LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA
+        or receipt.get("layer_index") != layer_index
+        or receipt.get("status")
+        != "installed-coupled-intact-group-qdeim-attention"
+        or receipt.get("installed") is not True
+        or receipt.get("install_count") != 1
+        or receipt.get("recipe_qk_lane")
+        != "intact_gqa_group_qdeim_coupled_qkvo"
+        or receipt.get("recipe_value_output_lane")
+        != "intact_gqa_group_qdeim_coupled_qkvo"
+        or recipe.component_lanes["qk"]
+        != "intact_gqa_group_qdeim_coupled_qkvo"
+        or recipe.component_lanes["value_output"]
+        != "intact_gqa_group_qdeim_coupled_qkvo"
+        or receipt.get("coupled_qkvo_single_candidate") is not True
+        or receipt.get("split_qk_or_vo_fallback_used") is not False
+        or receipt.get("legacy_split_attention_installer_called") is not False
+        or not isinstance(changed_keys, list)
+        or changed_keys != sorted(changed_keys)
+        or len(changed_keys) != len(set(changed_keys))
+        or not required_projection_keys.issubset(changed_keys)
+        or not set(changed_keys).issubset(allowed_changed_keys)
+        or raw.get("changed_state_keys") != changed_keys
+        or receipt.get("actual_changed_state_key_count") != len(changed_keys)
+        or receipt.get("transaction_covered_state_keys")
+        != transaction_covered_keys
+        or receipt.get("transaction_covered_parameter_role_count") != 6
+        or receipt.get("all_six_roles_supplied_to_atomic_transaction") is not True
+        or receipt.get("six_role_transaction_coverage_proven") is not True
+        or receipt.get("actual_changed_bytes_cover_four_to_six_roles") is not True
+        or raw.get("changed_state_key_count") != len(changed_keys)
+        or raw.get("prepared_expected_changed_state_keys") != changed_keys
+        or raw.get("prepared_expected_changed_state_keys_matched") is not True
+        or raw.get("transaction_covered_state_keys") != transaction_covered_keys
+        or raw.get("transaction_covered_parameter_role_count") != 6
+        or raw.get("all_six_roles_supplied_to_atomic_transaction") is not True
+        or raw.get("six_role_transaction_coverage_proven") is not True
+        or raw.get("actual_changed_bytes_cover_four_to_six_roles") is not True
+        or raw.get("all_six_roles_changed") is not (len(changed_keys) == 6)
+        or norm_transition_contract_valid is not True
+        or changed_roles != expected_changed_roles
+        or raw.get("changed_parameter_roles") != expected_changed_roles
+        or raw.get("unchanged_transaction_parameter_roles")
+        != expected_unchanged_roles
+        or raw.get("transaction_covered_parameter_roles")
+        != list(_ATTENTION_SIX_TENSOR_ROLES)
+        or raw.get("source_norm_changed_from_target_seed_roles")
+        != expected_changed_norm_roles
+        or raw.get("source_norm_equal_to_target_seed_roles")
+        != expected_equal_norm_roles
+        or raw.get("blank_query_norm_zero_escape_proven")
+        is not (
+            target_seed_authentication["q_layernorm.weight"]["seed_kind"]
+            == "exact-zero-legacy-blank"
+            and "q_layernorm.weight" in expected_changed_norm_roles
+        )
+        or raw.get("blank_key_norm_zero_escape_proven")
+        is not (
+            target_seed_authentication["k_layernorm.weight"]["seed_kind"]
+            == "exact-zero-legacy-blank"
+            and "k_layernorm.weight" in expected_changed_norm_roles
+        )
+        or receipt.get("model_state_before_sha256")
+        != raw.get("model_state_before_sha256")
+        or receipt.get("model_state_after_sha256")
+        != raw.get("model_state_after_sha256")
+        or receipt.get("model_state_before_sha256")
+        == receipt.get("model_state_after_sha256")
+        or receipt.get("parameter_element_count_before")
+        != receipt.get("parameter_element_count_after")
+        or isinstance(parameter_count, bool)
+        or not isinstance(parameter_count, int)
+        or parameter_count <= 0
+        or parameter_count != raw.get("parameter_count_before")
+        or parameter_count != raw.get("parameter_count_after")
+        or receipt.get("parameter_count_changed") is not False
+        or receipt.get("target_topology_sha256_before")
+        != receipt.get("target_topology_sha256_after")
+        or receipt.get("target_topology_sha256_before")
+        != raw.get("target_topology_sha256_before")
+        or receipt.get("topology_changed") is not False
+        or receipt.get("parameter_identities_preserved") is not True
+        or receipt.get("parameter_storage_preserved") is not True
+        or receipt.get("gradient_state_preserved") is not True
+        or receipt.get("same_selective_cache_session_as_layer_stack") is not True
+        or not isinstance(transport_evidence, list)
+        or transport_evidence != [adapter.get("result_sha256")]
+        or raw.get("schema")
+        != "neural-forge-lfm2-semantic-attention-group-qdeim-installation-v1"
+        or raw.get("candidate_adapter_result_sha256")
+        != adapter.get("result_sha256")
+        or raw.get("candidate_compiler_result_sha256")
+        != compiler.get("result_sha256")
+        or raw.get("source_norm_inventory_sha256") != norm_sha256
+        or source_inventory_sha256 != adapter.get("source_inventory_sha256")
+        or source_inventory_sha256 != direct.get("source_inventory_sha256")
+        or source_inventory_sha256 != norm.get("source_qkvo_inventory_sha256")
+        or source_parent_identity_sha256
+        != norm.get("source_parent_identity_sha256")
+        or source_parent_identity_sha256
+        != adapter.get("cache_parent_fingerprint")
+        or cache_session_sha256
+        != adapter.get("cache_selective_session_sha256")
+        or cache_session_sha256 != receipt.get("cache_selective_session_sha256")
+        or cache_manifest_sha256 != adapter.get("cache_manifest_sha256")
+        or cache_capability_sha256 != adapter.get("cache_capability_sha256")
+        or capability.get("schema")
+        != "neural-forge-lfm2-semantic-attention-group-qdeim-cache-capability-v1"
+        or capability.get("result_sha256") != cache_capability_sha256
+        or capability.get("cache_key") != cache_key
+        or capability.get("cache_manifest_sha256") != cache_manifest_sha256
+        or capability.get("cache_selective_session_sha256")
+        != cache_session_sha256
+        or capability.get("layer_index") != layer_index
+        or capability.get("fit_batch_indices") != adapter.get("fit_batch_indices")
+        or capability.get("true_post_softmax_context_complete") is not True
+        or capability.get("tensor_payloads_loaded") != 0
+        or capability.get("parent_forward_calls") != 0
+        or capability.get("trace_recaptures") != 0
+        or capability.get("training_steps") != 0
+        or context_bank.get("schema")
+        != "neural-forge-lfm2-semantic-attention-qdeim-context-bank-v1"
+        or context_bank.get("result_sha256")
+        != adapter.get("context_bank_receipt_sha256")
+        or context_bank.get("route") != "captured_true"
+        or context_bank.get("fit_batch_indices") != adapter.get("fit_batch_indices")
+        or not isinstance(selected_context_payloads, list)
+        or not selected_context_payloads
+        or any(
+            not isinstance(payload, Mapping)
+            or payload.get("session_sha256") != cache_session_sha256
+            for payload in selected_context_payloads
+        )
+        or context_bank.get("heldout_tensor_payload_loads") != 0
+        or context_bank.get("parent_forward_calls") != 0
+        or context_bank.get("trace_recaptures") != 0
+        or context_bank.get("training_steps") != 0
+        or raw.get("residual_chart_receipt_sha256")
+        != chart.get("result_sha256")
+        or raw.get("normalized_input_decoder_receipt_sha256")
+        != decoder.get("decoder_sha256")
+        or raw.get("context_bank_receipt_sha256")
+        != adapter.get("context_bank_receipt_sha256")
+        or adapter.get("schema")
+        != "neural-forge-lfm2-semantic-attention-group-qdeim-cache-adapter-v1"
+        or adapter.get("layer_index") != layer_index
+        or adapter.get("cache_key") != cache_key
+        or adapter.get("source_state_sha256") != raw.get("source_state_sha256")
+        or adapter.get("target_template_sha256")
+        != raw.get("target_template_sha256")
+        or adapter.get("candidate_state_sha256")
+        != raw.get("candidate_state_sha256")
+        or adapter.get("residual_chart_receipt_sha256")
+        != raw.get("residual_chart_receipt_sha256")
+        or adapter.get("residual_chart_sha256")
+        != raw.get("residual_output_chart_sha256")
+        or adapter.get("normalized_input_decoder_receipt_sha256")
+        != raw.get("normalized_input_decoder_receipt_sha256")
+        or adapter.get("normalized_input_decoder_sha256")
+        != raw.get("normalized_input_decoder_sha256")
+        or adapter.get("context_bank_receipt_sha256")
+        != raw.get("context_bank_receipt_sha256")
+        or adapter.get("standalone_compiler_result_sha256")
+        != compiler.get("result_sha256")
+        or compiler.get("schema")
+        != "neural-forge-lfm2-attention-intact-gqa-group-qdeim-v1"
+        or not isinstance(adapter_authentication, Mapping)
+        or adapter_authentication.get("source_state_sha256_before")
+        != raw.get("source_state_sha256")
+        or adapter_authentication.get("source_state_sha256_after")
+        != raw.get("source_state_sha256")
+        or adapter_authentication.get("source_state_immutable") is not True
+        or adapter_authentication.get("target_template_sha256")
+        != raw.get("target_template_sha256")
+        or adapter_authentication.get("normalized_input_decoder_sha256")
+        != raw.get("normalized_input_decoder_sha256")
+        or adapter_authentication.get("residual_output_chart_sha256")
+        != raw.get("residual_output_chart_sha256")
+        or not isinstance(compiler_evidence, Mapping)
+        or compiler_evidence.get("fit_partition_only") is not True
+        or compiler_evidence.get("heldout_rows_used") is not False
+        or not isinstance(compiler_selection, Mapping)
+        or compiler_selection.get("selected_source_key_value_groups")
+        != adapter.get("selected_source_key_value_groups")
+        or compiler_selection.get("selected_source_query_heads")
+        != adapter.get("selected_source_query_heads")
+        or compiler_selection.get("whole_gqa_groups_only") is not True
+        or compiler_selection.get("qkv_producer_averaging_performed") is not False
+        or not isinstance(compiler_materialization, Mapping)
+        or compiler_materialization.get("candidate_state_sha256")
+        != raw.get("candidate_state_sha256")
+        or compiler_materialization.get("standalone_dense_tensors") is not True
+        or not isinstance(compiler_policy, Mapping)
+        or compiler_policy.get("numeric_threshold_auto_accept_permitted") is not False
+        or compiler_policy.get("numeric_threshold_auto_veto_permitted") is not False
+        or compiler_policy.get("automatic_semantic_publication_permitted") is not False
+        or compiler_policy.get("whole_response_intelligence_evaluation_is_primary")
+        is not True
+        or norm.get("schema")
+        != (
+            "neural-forge-lfm2-semantic-attention-group-qdeim-"
+            "parent-norm-inventory-v1"
+        )
+        or norm.get("layer_index") != layer_index
+        or norm.get("direct_parent_norms_only") is not True
+        or norm.get("head_averaging_or_refit_performed") is not False
+        or set(norm_hashes) != set(optional_norm_roles)
+        or direct.get("schema")
+        != "neural-forge-lfm2-direct-parent-qkvo-session-load-v1"
+        or direct.get("layer_index") != layer_index
+        or direct.get("query_norm_weight_sha256")
+        != six_tensor_bundle["q_layernorm.weight"]
+        or direct.get("key_norm_weight_sha256")
+        != six_tensor_bundle["k_layernorm.weight"]
+        or direct.get("qk_norms_loaded_as_atomic_attention_source") is not True
+        or direct.get("direct_local_safetensors") is not True
+        or direct.get("parent_model_objects_constructed") != 0
+        or not isinstance(cache_key, str)
+        or not cache_key
+        or _digest(
+            source_parent_identity_sha256,
+            "coupled attention source parent identity",
+        )
+        != source_parent_identity_sha256
+        or _digest(cache_session_sha256, "coupled attention cache session")
+        != cache_session_sha256
+        or _digest(cache_manifest_sha256, "coupled attention cache manifest")
+        != cache_manifest_sha256
+        or _digest(cache_capability_sha256, "coupled attention cache capability")
+        != cache_capability_sha256
+        or _digest(
+            bridge_artifact_sha256,
+            "coupled attention tokenizer bridge artifact",
+        )
+        != bridge_artifact_sha256
+        or _digest(
+            direct.get("parent_session_open_receipt_sha256"),
+            "coupled attention direct parent session",
+        )
+        != direct.get("parent_session_open_receipt_sha256")
+        or _digest(
+            direct.get("operator_norm_weight_sha256"),
+            "coupled attention direct operator norm",
+        )
+        != direct.get("operator_norm_weight_sha256")
+        or _digest(
+            direct.get("compiler_lineage_sha256"),
+            "coupled attention direct compiler lineage",
+        )
+        != direct.get("compiler_lineage_sha256")
+        or _digest(
+            direct_receipt_sha256,
+            "coupled attention direct source receipt",
+        )
+        != direct_receipt_sha256
+        or raw.get("complete_six_parameter_bundle_installed_transactionally")
+        is not True
+        or raw.get("qkvo_installed_from_one_coupled_intact_group_candidate")
+        is not True
+        or raw.get("query_and_key_norms_installed_from_direct_parent_tensors")
+        is not True
+        or raw.get("heldout_payload_used_for_compilation") is not False
+        or receipt.get("analytic_cached_evidence_only") is not True
+        or receipt.get("heldout_metrics_are_diagnostic_only") is not True
+        or receipt.get("numeric_metric_used_for_candidate_selection") is not False
+        or receipt.get("numeric_metric_used_for_publication_or_rollback") is not False
+        or receipt.get("numeric_metrics_have_final_intelligence_authority") is not False
+        or receipt.get("binary_manual_threshold_has_iteration_veto_authority")
+        is not False
+        or receipt.get("binary_manual_acceptance_gate_required") is not False
+        or receipt.get(
+            "intelligence_retention_target_is_objective_not_numeric_cutoff"
+        )
+        is not True
+        or receipt.get("whole_decoded_behavior_is_primary_intelligence_evidence")
+        is not True
+        or receipt.get("operation_audit") != dict(_ZERO_OPERATIONS)
+        or not isinstance(operation_audit, Mapping)
+        or any(operation_audit.get(name) != 0 for name in _ZERO_OPERATIONS)
+        or set(six_tensor_bundle) != set(_ATTENTION_SIX_TENSOR_ROLES)
+        or any(
+            not isinstance(value, str)
+            or _digest(value, f"coupled attention {role}") != value
+            for role, value in six_tensor_bundle.items()
+        )
+    )
+    if invalid:
+        raise Lfm2SemanticPostfoldError(
+            f"Coupled attention Q-DEIM layer {layer_index} receipt is incomplete."
+        )
+    changed_projection = [
+        name
+        for name in changed_keys
+        if name.rsplit(".", 2)[-2]
+        in {"q_proj", "k_proj", "v_proj", "out_proj"}
+    ]
+    changed_norm = [
+        name
+        for name in changed_keys
+        if name.rsplit(".", 2)[-2] in {"q_layernorm", "k_layernorm"}
+    ]
+    return MappingProxyType(
+        {
+            "layer_index": layer_index,
+            "operator_receipt_sha256": receipt["result_sha256"],
+            "model_state_before_sha256": receipt["model_state_before_sha256"],
+            "model_state_after_sha256": receipt["model_state_after_sha256"],
+            "transport_evidence_sha256": list(transport_evidence),
+            "parameter_element_count": parameter_count,
+            "installed": True,
+            "changed_state_keys": list(changed_keys),
+            "changed_projection_state_keys": changed_projection,
+            "changed_norm_state_keys": changed_norm,
+            "six_tensor_bundle": six_tensor_bundle,
+            "six_tensor_bundle_sha256": canonical_sha256(six_tensor_bundle),
+            "qk_bundle_sha256": canonical_sha256(
+                {
+                    "q": six_tensor_bundle["q_proj.weight"],
+                    "k": six_tensor_bundle["k_proj.weight"],
+                }
+            ),
+            "qkvo_bundle_sha256": canonical_sha256(
+                {
+                    "q": six_tensor_bundle["q_proj.weight"],
+                    "k": six_tensor_bundle["k_proj.weight"],
+                    "v": six_tensor_bundle["v_proj.weight"],
+                    "o": six_tensor_bundle["out_proj.weight"],
+                }
+            ),
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_qk_lane": recipe.component_lanes["qk"],
+            "recipe_value_output_lane": recipe.component_lanes["value_output"],
+            "coupled_attention_group_qdeim": True,
+            "cache_key": cache_key,
+            "cache_parent_fingerprint": source_parent_identity_sha256,
+            "source_parent_identity_sha256": source_parent_identity_sha256,
+            "cache_selective_session_sha256": cache_session_sha256,
+            "bridge_artifact_sha256": bridge_artifact_sha256,
+            "cache_manifest_sha256": cache_manifest_sha256,
+            "cache_capability_sha256": cache_capability_sha256,
+            "direct_attention_source_receipt_sha256": direct_receipt_sha256,
+            "direct_parent_session_open_receipt_sha256": direct[
+                "parent_session_open_receipt_sha256"
+            ],
+            "direct_compiler_lineage_sha256": direct["compiler_lineage_sha256"],
+            "source_qkvo_inventory_sha256": source_inventory_sha256,
+            "source_norm_inventory_sha256": norm_sha256,
+            "candidate_adapter_result_sha256": adapter["result_sha256"],
+            "candidate_compiler_result_sha256": compiler["result_sha256"],
+            "numeric_behavior_gate_used": False,
+            "binary_manual_gate_used": False,
+            "retention_target_is_objective_not_numeric_cutoff": True,
+        }
+    )
+
+
 def _authenticate_lfm2_semantic_attention_operator_receipt(
     value: Mapping[str, Any],
     *,
@@ -4323,6 +4979,15 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
         seal_name="result_sha256",
         label=f"semantic attention layer {layer_index} operator receipt",
     )
+    if (
+        receipt.get("schema")
+        == LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA
+    ):
+        return _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
+            receipt,
+            layer_index=layer_index,
+            body_recipe=body_recipe,
+        )
     recipe = _authenticate_body_recipe_binding(
         receipt,
         body_recipe=body_recipe,
@@ -4914,6 +5579,353 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
     )
 
 
+def _authenticate_lfm2_coupled_attention_stack_root_binding(
+    stack: Mapping[str, Any],
+    operator: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Bind one authenticated coupled operator to its persisted stack roots."""
+
+    layer_index = operator.get("layer_index")
+    direct_by_layer = stack.get("direct_attention_source_receipt_sha256")
+    cache_key = stack.get("cache_key")
+    cache_session_sha256 = stack.get("cache_selective_session_sha256")
+    cache_session_value = stack.get("cache_selective_session")
+    if not isinstance(cache_session_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Coupled attention layer stack omitted its selective cache session."
+        )
+    cache_session = _verify_sealed(
+        cache_session_value,
+        seal_name="session_sha256",
+        label="coupled attention layer-stack selective cache session",
+    )
+    bridge_artifact_sha256 = stack.get("bridge_artifact_sha256")
+    cache_parent_fingerprint = stack.get("cache_parent_fingerprint")
+    parent_checkpoint_session_sha256 = stack.get(
+        "parent_checkpoint_session_sha256"
+    )
+    parent_checkpoint_session_value = stack.get("parent_checkpoint_session")
+    if not isinstance(parent_checkpoint_session_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Coupled attention layer stack omitted its parent checkpoint session."
+        )
+    parent_checkpoint_session = _verify_sealed(
+        parent_checkpoint_session_value,
+        seal_name="session_sha256",
+        label="coupled attention layer-stack parent checkpoint session",
+    )
+    parent_identity_value = parent_checkpoint_session.get(
+        "parent_identity_reconstruction"
+    )
+    if not isinstance(parent_identity_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Coupled attention parent session omitted exact identity reconstruction."
+        )
+    parent_identity = _verify_sealed(
+        parent_identity_value,
+        seal_name="result_sha256",
+        label="coupled attention exact parent identity reconstruction",
+    )
+    cache_contract = cache_session.get("authentication_contract")
+    cache_batches = cache_session.get("ordered_authenticated_batches")
+    expected_cache_contract_keys = {
+        "committed_local_cache_only",
+        "manifest_completion_and_layout_verified",
+        "trace_file_sha256_passes_per_session",
+        "record_file_sha256_passes_per_session",
+        "record_self_hash_verified",
+        "safetensors_metadata_verified",
+        "complete_tensor_key_inventory_verified",
+        "selected_tensor_descriptors_verified_per_load",
+        "stable_file_identity_checked_before_and_after_load",
+        "authenticated_trace_guard_held_open",
+        "safetensors_mapping_held_open",
+        "safetensors_mapping_opened_per_selection_and_closed",
+        "unselected_tensor_payloads_loaded",
+        "parent_forward_calls",
+        "training_steps",
+        "toctou_boundary",
+    }
+    expected_cache_session_keys = {
+        "schema",
+        "cache_key",
+        "manifest_sha256",
+        "completion_sha256",
+        "batch_count",
+        "ordered_authenticated_batches",
+        "authentication_contract",
+        "session_sha256",
+    }
+    expected_cache_batch_keys = {
+        "batch_index",
+        "input_sha256",
+        "trace_file_sha256",
+        "record_file_sha256",
+        "record_sha256",
+        "tensor_count",
+        "logical_bytes",
+    }
+    cache_session_complete = bool(
+        set(cache_session) == expected_cache_session_keys
+        and _is_digest(cache_session.get("manifest_sha256"))
+        and _is_digest(cache_session.get("completion_sha256"))
+        and isinstance(cache_batches, list)
+        and cache_batches
+        and cache_session.get("batch_count") == len(cache_batches)
+        and all(
+            isinstance(batch, Mapping)
+            and set(batch) == expected_cache_batch_keys
+            and batch.get("batch_index") == ordinal
+            and all(
+                _is_digest(batch.get(name))
+                for name in (
+                    "input_sha256",
+                    "trace_file_sha256",
+                    "record_file_sha256",
+                    "record_sha256",
+                )
+            )
+            and isinstance(batch.get("tensor_count"), int)
+            and not isinstance(batch.get("tensor_count"), bool)
+            and batch.get("tensor_count") > 0
+            and isinstance(batch.get("logical_bytes"), int)
+            and not isinstance(batch.get("logical_bytes"), bool)
+            and batch.get("logical_bytes") > 0
+            for ordinal, batch in enumerate(cache_batches)
+        )
+        and isinstance(cache_contract, Mapping)
+        and set(cache_contract) == expected_cache_contract_keys
+        and all(
+            cache_contract.get(name) is True
+            for name in (
+                "committed_local_cache_only",
+                "manifest_completion_and_layout_verified",
+                "record_self_hash_verified",
+                "safetensors_metadata_verified",
+                "complete_tensor_key_inventory_verified",
+                "selected_tensor_descriptors_verified_per_load",
+                "stable_file_identity_checked_before_and_after_load",
+                "authenticated_trace_guard_held_open",
+                "safetensors_mapping_opened_per_selection_and_closed",
+            )
+        )
+        and cache_contract.get("trace_file_sha256_passes_per_session") == 1
+        and cache_contract.get("record_file_sha256_passes_per_session") == 1
+        and cache_contract.get("safetensors_mapping_held_open") is False
+        and cache_contract.get("unselected_tensor_payloads_loaded") is False
+        and cache_contract.get("parent_forward_calls") == 0
+        and cache_contract.get("training_steps") == 0
+        and isinstance(cache_contract.get("toctou_boundary"), str)
+        and bool(cache_contract.get("toctou_boundary"))
+    )
+    expected_parent_session_keys = {
+        "schema",
+        "parent_model_identity_sha256",
+        "checkpoint_manifest_sha256",
+        "open_receipt_sha256",
+        "config_file_sha256",
+        "normalized_config_sha256",
+        "norm_epsilon",
+        "loaded_tensor_sha256",
+        "parent_identity_reconstruction_sha256",
+        "parent_identity_reconstruction",
+        "exact_parent_identity_authenticated",
+        "checkpoint_files_rehashed_after_materialization",
+        "shards_hashed_once",
+        "shards_opened_once",
+        "parent_model_objects_constructed",
+        "parent_forward_calls",
+        "network_access_performed",
+        "session_sha256",
+    }
+    expected_parent_identity_keys = {
+        "schema",
+        "cache_parent_identity_sha256",
+        "cache_parent_record",
+        "checkpoint_manifest_sha256",
+        "config_file_sha256",
+        "normalized_config_sha256",
+        "checkpoint_tensor_inventory_sha256",
+        "checkpoint_tensor_count",
+        "checkpoint_tensor_records",
+        "reconstructed_state_dict_sha256",
+        "reconstructed_state_tensor_count",
+        "runtime_buffer_records",
+        "reconstructed_runtime_buffer_sha256",
+        "reconstructed_runtime_buffer_count",
+        "reconstructed_parent_identity",
+        "reconstructed_parent_identity_sha256",
+        "exact_parent_identity_authenticated",
+        "parent_model_objects_constructed",
+        "parent_forward_calls",
+        "network_access_performed",
+        "result_sha256",
+    }
+    loaded_tensor_sha256 = parent_checkpoint_session.get("loaded_tensor_sha256")
+    checkpoint_tensor_records = parent_identity.get("checkpoint_tensor_records")
+    runtime_buffer_records = parent_identity.get("runtime_buffer_records")
+    reconstructed_parent = parent_identity.get("reconstructed_parent_identity")
+    parent_session_complete = bool(
+        set(parent_checkpoint_session) == expected_parent_session_keys
+        and set(parent_identity) == expected_parent_identity_keys
+        and all(
+            _is_digest(parent_checkpoint_session.get(name))
+            for name in (
+                "parent_model_identity_sha256",
+                "checkpoint_manifest_sha256",
+                "open_receipt_sha256",
+                "config_file_sha256",
+                "normalized_config_sha256",
+                "parent_identity_reconstruction_sha256",
+            )
+        )
+        and isinstance(parent_checkpoint_session.get("norm_epsilon"), (int, float))
+        and not isinstance(parent_checkpoint_session.get("norm_epsilon"), bool)
+        and math.isfinite(float(parent_checkpoint_session["norm_epsilon"]))
+        and float(parent_checkpoint_session["norm_epsilon"]) > 0.0
+        and isinstance(loaded_tensor_sha256, Mapping)
+        and loaded_tensor_sha256
+        and all(
+            isinstance(name, str) and bool(name) and _is_digest(digest)
+            for name, digest in loaded_tensor_sha256.items()
+        )
+        and parent_checkpoint_session.get("parent_identity_reconstruction_sha256")
+        == parent_identity.get("result_sha256")
+        and parent_identity.get("schema")
+        == "neural-forge-direct-parent-exact-identity-reconstruction-v1"
+        and parent_identity.get("cache_parent_identity_sha256")
+        == parent_checkpoint_session.get("parent_model_identity_sha256")
+        and parent_identity.get("checkpoint_manifest_sha256")
+        == parent_checkpoint_session.get("checkpoint_manifest_sha256")
+        and parent_identity.get("config_file_sha256")
+        == parent_checkpoint_session.get("config_file_sha256")
+        and parent_identity.get("normalized_config_sha256")
+        == parent_checkpoint_session.get("normalized_config_sha256")
+        and all(
+            _is_digest(parent_identity.get(name))
+            for name in (
+                "checkpoint_tensor_inventory_sha256",
+                "reconstructed_state_dict_sha256",
+                "reconstructed_runtime_buffer_sha256",
+                "reconstructed_parent_identity_sha256",
+            )
+        )
+        and isinstance(checkpoint_tensor_records, list)
+        and parent_identity.get("checkpoint_tensor_count")
+        == len(checkpoint_tensor_records)
+        and isinstance(runtime_buffer_records, list)
+        and parent_identity.get("reconstructed_runtime_buffer_count")
+        == len(runtime_buffer_records)
+        and isinstance(reconstructed_parent, Mapping)
+        and canonical_sha256(reconstructed_parent)
+        == parent_identity.get("reconstructed_parent_identity_sha256")
+        and parent_identity.get("reconstructed_parent_identity_sha256")
+        == parent_checkpoint_session.get("parent_model_identity_sha256")
+        and parent_identity.get("exact_parent_identity_authenticated") is True
+        and parent_identity.get("parent_model_objects_constructed") == 0
+        and parent_identity.get("parent_forward_calls") == 0
+        and parent_identity.get("network_access_performed") is False
+    )
+    expected_direct_sha256 = (
+        direct_by_layer.get(str(layer_index))
+        if isinstance(direct_by_layer, Mapping)
+        else None
+    )
+    if (
+        operator.get("coupled_attention_group_qdeim") is not True
+        or isinstance(layer_index, bool)
+        or not isinstance(layer_index, int)
+        or layer_index not in _EXPECTED_SEMANTIC_ATTENTION_LAYERS
+        or not isinstance(cache_key, str)
+        or not cache_key
+        or _digest(cache_session_sha256, "layer-stack selective cache session")
+        != cache_session_sha256
+        or cache_session.get("schema")
+        != "neural-forge-lfm2-circuit-trace-selective-session-v1"
+        or cache_session.get("session_sha256") != cache_session_sha256
+        or cache_session.get("cache_key") != cache_key
+        or cache_session.get("manifest_sha256")
+        != operator.get("cache_manifest_sha256")
+        or cache_session_complete is not True
+        or isinstance(cache_session.get("batch_count"), bool)
+        or not isinstance(cache_session.get("batch_count"), int)
+        or cache_session.get("batch_count") <= 0
+        or not isinstance(cache_session.get("authentication_contract"), Mapping)
+        or cache_session["authentication_contract"].get("parent_forward_calls") != 0
+        or cache_session["authentication_contract"].get("training_steps") != 0
+        or _digest(bridge_artifact_sha256, "layer-stack tokenizer bridge")
+        != bridge_artifact_sha256
+        or _digest(cache_parent_fingerprint, "layer-stack cache parent")
+        != cache_parent_fingerprint
+        or _digest(
+            parent_checkpoint_session_sha256,
+            "layer-stack parent checkpoint session",
+        )
+        != parent_checkpoint_session_sha256
+        or parent_checkpoint_session.get("schema")
+        != "neural-forge-direct-parent-session-v2"
+        or parent_checkpoint_session.get("session_sha256")
+        != parent_checkpoint_session_sha256
+        or parent_checkpoint_session.get("parent_model_identity_sha256")
+        != cache_parent_fingerprint
+        or parent_session_complete is not True
+        or parent_checkpoint_session.get("checkpoint_files_rehashed_after_materialization")
+        is not True
+        or parent_checkpoint_session.get("shards_hashed_once") is not True
+        or parent_checkpoint_session.get("shards_opened_once") is not True
+        or parent_checkpoint_session.get("exact_parent_identity_authenticated")
+        is not True
+        or parent_checkpoint_session.get("parent_model_objects_constructed") != 0
+        or parent_checkpoint_session.get("parent_forward_calls") != 0
+        or parent_checkpoint_session.get("network_access_performed") is not False
+        or _digest(expected_direct_sha256, "layer-stack direct attention source")
+        != expected_direct_sha256
+        or operator.get("cache_key") != cache_key
+        or operator.get("cache_selective_session_sha256")
+        != cache_session_sha256
+        or operator.get("bridge_artifact_sha256") != bridge_artifact_sha256
+        or operator.get("cache_parent_fingerprint")
+        != cache_parent_fingerprint
+        or operator.get("source_parent_identity_sha256")
+        != cache_parent_fingerprint
+        or operator.get("direct_parent_session_open_receipt_sha256")
+        != parent_checkpoint_session.get("open_receipt_sha256")
+        or operator.get("direct_attention_source_receipt_sha256")
+        != expected_direct_sha256
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Coupled attention Q-DEIM layer {layer_index} is not bound to "
+            "the persisted layer-stack cache, bridge, parent, and direct source roots."
+        )
+    return MappingProxyType(
+        {
+            "layer_index": layer_index,
+            "cache_key": cache_key,
+            "cache_selective_session_sha256": cache_session_sha256,
+            "cache_manifest_sha256": cache_session["manifest_sha256"],
+            "bridge_artifact_sha256": bridge_artifact_sha256,
+            "cache_parent_fingerprint": cache_parent_fingerprint,
+            "parent_checkpoint_session_sha256": (
+                parent_checkpoint_session_sha256
+            ),
+            "parent_checkpoint_open_receipt_sha256": (
+                parent_checkpoint_session["open_receipt_sha256"]
+            ),
+            "direct_attention_source_receipt_sha256": expected_direct_sha256,
+            "cache_capability_sha256": operator["cache_capability_sha256"],
+            "candidate_adapter_result_sha256": operator[
+                "candidate_adapter_result_sha256"
+            ],
+            "candidate_compiler_result_sha256": operator[
+                "candidate_compiler_result_sha256"
+            ],
+            "direct_compiler_lineage_sha256": operator[
+                "direct_compiler_lineage_sha256"
+            ],
+        }
+    )
+
+
 def authenticate_lfm2_semantic_layer_stack_attention_receipts(
     value: Mapping[str, Any],
     *,
@@ -4956,6 +5968,7 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
             + "."
         )
     authenticated = []
+    coupled_root_bindings: list[Mapping[str, Any]] = []
     verified_layers: list[Mapping[str, Any]] = []
     operator_installed_by_layer: list[bool] = []
     mlp_installed_by_layer: list[bool] = []
@@ -5122,6 +6135,13 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
             raise Lfm2SemanticPostfoldError(
                 f"Attention layer {layer_index} receipt bindings disagree."
             )
+        if decision.get("coupled_attention_group_qdeim") is True:
+            coupled_root_bindings.append(
+                _authenticate_lfm2_coupled_attention_stack_root_binding(
+                    stack,
+                    decision,
+                )
+            )
         authenticated.append(dict(decision))
     if expected_layer_before_sha256 != stack_after_sha256:
         raise Lfm2SemanticPostfoldError(
@@ -5225,6 +6245,14 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
         "changed_projection_state_keys": changed_projection,
         "changed_norm_state_keys": changed_norm,
         "per_layer": authenticated,
+        "coupled_attention_layer_indices": [
+            item["layer_index"] for item in coupled_root_bindings
+        ],
+        "coupled_attention_root_binding_count": len(coupled_root_bindings),
+        "coupled_attention_persisted_roots": [
+            dict(item) for item in coupled_root_bindings
+        ],
+        "all_coupled_attention_stack_roots_authenticated": True,
         "full_operator_receipts_embedded": True,
         "full_installation_receipts_embedded": True,
         "all_six_tensor_transactions_authenticated": True,
@@ -12085,6 +13113,7 @@ def run_lfm2_semantic_postfold(
 
 __all__ = [
     "authenticate_lfm2_semantic_layer_stack_attention_receipts",
+    "LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_STAGE_SCHEMA",
     "LFM2_SEMANTIC_COMPILER_LINEAGE_SCHEMA",

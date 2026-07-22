@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Fold one LFM2 body lane directly into a complete manual-review dossier.
+"""Fold one LFM2 body lane directly into complete decoded behavior evidence.
 
 The transaction publishes a preterminal capsule, exports the terminal W2 bank
 from the same live cache session, materializes every structurally eligible
-writer as a standalone dense child, generates whole responses, and prepares a
-blank qualitative verdict.  It performs no automatic candidate selection.
+writer as a standalone dense child, and generates whole responses.  Historical
+recipes retain the v1 qualitative-review handoff.  Opted-in coupled-attention
+recipes use a separately sealed v2 flow in which metrics and optional human
+observations guide investigation but cannot gate continuation or publication.
 """
 
 from __future__ import annotations
@@ -54,7 +56,10 @@ from experiments.run_lfm2_residual_attention_fold import (  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
+    Lfm2SemanticBodyRecipe,
+    Lfm2SemanticNonblockingBehaviorFlow,
     resolve_lfm2_semantic_body_recipe,
+    resolve_lfm2_semantic_nonblocking_behavior_flow,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     open_lfm2_circuit_trace_cache,
@@ -77,13 +82,15 @@ from neural_forge.hf_lfm2_semantic_preterminal_capsule import (  # noqa: E402
 
 
 PIPELINE_SCHEMA = "neural-forge-lfm2-semantic-fold-to-review-v1"
+NONBLOCKING_PIPELINE_SCHEMA = "neural-forge-lfm2-semantic-fold-to-decoded-behavior-v2"
+OPTIONAL_BEHAVIOR_OBSERVATIONS_SCHEMA = (
+    "neural-forge-lfm2-semantic-optional-behavior-observations-v1"
+)
 CONTINUOUS_COMPILATION_SCHEMA = (
     "neural-forge-lfm2-semantic-continuous-terminal-frontier-compilation-v1"
 )
 FRONTIER_RUN_SCHEMA = "neural-forge-lfm2-semantic-terminal-frontier-run-v1"
-FRONTIER_PROGRESS_SCHEMA = (
-    "neural-forge-lfm2-semantic-terminal-frontier-progress-v1"
-)
+FRONTIER_PROGRESS_SCHEMA = "neural-forge-lfm2-semantic-terminal-frontier-progress-v1"
 _SAFE_COMPONENT = re.compile(r"[^A-Za-z0-9_.-]+")
 _ZERO_OPERATION_AUDIT = {
     "training_steps": 0,
@@ -293,9 +300,7 @@ def _authenticate_review_preflight(
         envelope.get("tokenizer_sha256"),
         label="parent envelope tokenizer SHA-256",
     )
-    donor_tokenizer_sha256 = fingerprint_local_tokenizer(
-        donor_tokenizer_directory
-    )
+    donor_tokenizer_sha256 = fingerprint_local_tokenizer(donor_tokenizer_directory)
     if donor_tokenizer_sha256 != tokenizer_sha256:
         raise Lfm2SemanticFoldToReviewError(
             "Parent response envelope belongs to a different donor tokenizer."
@@ -375,9 +380,7 @@ def _existing_file(value: Path, *, label: str) -> Path:
     except OSError as exc:
         raise Lfm2SemanticFoldToReviewError(f"{label} is missing.") from exc
     if resolved != lexical or not resolved.is_file():
-        raise Lfm2SemanticFoldToReviewError(
-            f"{label} must be one canonical real file."
-        )
+        raise Lfm2SemanticFoldToReviewError(f"{label} must be one canonical real file.")
     return resolved
 
 
@@ -398,7 +401,9 @@ def _new_run_directory(value: Path, *, readonly: Sequence[Path]) -> Path:
     return output
 
 
-def _atomic_json(path: Path, value: Mapping[str, Any], *, replace: bool = False) -> None:
+def _atomic_json(
+    path: Path, value: Mapping[str, Any], *, replace: bool = False
+) -> None:
     payload = (
         json.dumps(
             dict(value),
@@ -427,6 +432,49 @@ def _atomic_json(path: Path, value: Mapping[str, Any], *, replace: bool = False)
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def _prepare_optional_behavior_observations(
+    *,
+    output_json: Path,
+    recipe: Lfm2SemanticBodyRecipe,
+    behavior_flow: Lfm2SemanticNonblockingBehaviorFlow,
+    dossier_path: Path,
+    dossier: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Write an optional freeform notebook, never a verdict or release gate."""
+
+    body = {
+        "schema": OPTIONAL_BEHAVIOR_OBSERVATIONS_SCHEMA,
+        "status": "optional-nonbinary-observations-empty",
+        "body_recipe_id": recipe.recipe_id,
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "behavior_flow_policy_sha256": behavior_flow.policy_sha256,
+        "whole_response_dossier": {
+            "path": str(dossier_path),
+            "file_sha256": _file_sha256(dossier_path),
+            "dossier_sha256": dossier["dossier_sha256"],
+        },
+        "candidate_count": dossier["reviewed_candidate_count"],
+        "prompt_count": dossier["prompt_count"],
+        "observation_format": "optional-nonbinary-freeform",
+        "manual_input_required": False,
+        "binary_verdict_requested": False,
+        "score_cutoff_requested": False,
+        "accept_veto_publish_delete_stop_authority": False,
+        "may_guide_next_hypothesis": True,
+        "observations": [],
+    }
+    document = {
+        **body,
+        "observations_sha256": canonical_sha256(body),
+    }
+    _atomic_json(output_json, document)
+    return {
+        "path": str(output_json),
+        "file_sha256": _file_sha256(output_json),
+        **document,
+    }
 
 
 def _candidate_component(index: int, candidate_id: str) -> str:
@@ -536,8 +584,7 @@ def _materialize_complete_structural_frontier(
         != len(candidate_ids)
         or bank.manifest.get("all_structurally_eligible_candidates_exported")
         is not True
-        or bank.manifest.get("structurally_ineligible_candidates_exported")
-        is not False
+        or bank.manifest.get("structurally_ineligible_candidates_exported") is not False
         or bank.manifest.get("structural_safety_is_only_candidate_veto") is not True
         or bank.manifest.get("candidate_metric_threshold_used_for_export") is not False
         or not candidate_ids
@@ -625,6 +672,60 @@ def _materialize_complete_structural_frontier(
     return document
 
 
+def _retained_candidate_checkpoint_ids(
+    frontier: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Prove that every decoded candidate checkpoint remains locally retained."""
+
+    candidate_ids = frontier.get("candidate_ids")
+    materializations = frontier.get("materializations")
+    raw_materializations_directory = frontier.get("materializations_directory")
+    materializations_directory = (
+        Path(raw_materializations_directory).absolute()
+        if isinstance(raw_materializations_directory, str)
+        and raw_materializations_directory
+        else None
+    )
+    if (
+        not isinstance(candidate_ids, Sequence)
+        or isinstance(candidate_ids, (str, bytes, bytearray))
+        or not isinstance(materializations, Sequence)
+        or isinstance(materializations, (str, bytes, bytearray))
+        or len(candidate_ids) != len(materializations)
+        or frontier.get("candidate_count") != len(candidate_ids)
+        or frontier.get("materialized_count") != len(candidate_ids)
+        or frontier.get("all_retained_candidates_materialized") is not True
+        or materializations_directory is None
+        or not materializations_directory.is_dir()
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "Decoded behavior flow cannot prove complete checkpoint retention."
+        )
+    retained: list[str] = []
+    for expected_id, materialization in zip(
+        candidate_ids, materializations, strict=True
+    ):
+        if (
+            not isinstance(expected_id, str)
+            or not isinstance(materialization, Mapping)
+            or materialization.get("candidate_id") != expected_id
+        ):
+            raise Lfm2SemanticFoldToReviewError(
+                "Decoded behavior flow found a foreign materialized checkpoint."
+            )
+        checkpoint = Path(str(materialization.get("checkpoint_path", ""))).absolute()
+        if (
+            not checkpoint.is_dir()
+            or checkpoint.is_symlink()
+            or materializations_directory not in checkpoint.parents
+        ):
+            raise Lfm2SemanticFoldToReviewError(
+                "Decoded behavior flow found an unretained candidate checkpoint."
+            )
+        retained.append(expected_id)
+    return tuple(retained)
+
+
 def _validate_pending_postfold(
     *,
     postfold: Mapping[str, Any],
@@ -635,10 +736,14 @@ def _validate_pending_postfold(
 ) -> None:
     fused = postfold.get("fused_semantic_terminal")
     reuse = postfold.get("pipeline_cache_session_reuse")
-    context = fused.get("terminal_frontier_export_context") if isinstance(
-        fused,
-        Mapping,
-    ) else None
+    context = (
+        fused.get("terminal_frontier_export_context")
+        if isinstance(
+            fused,
+            Mapping,
+        )
+        else None
+    )
     if (
         postfold.get("status") != "terminal-frontier-exported-review-pending"
         or postfold.get("final_selection_status")
@@ -650,8 +755,7 @@ def _validate_pending_postfold(
         or postfold.get("candidate_published_before_manual_review") is not False
         or postfold.get("checkpoint_published") is not False
         or postfold.get("semantic_evidence_cache_key") != preflight.cache_key
-        or postfold.get("cache_parent_fingerprint")
-        != preflight.parent_identity_sha256
+        or postfold.get("cache_parent_fingerprint") != preflight.parent_identity_sha256
         or postfold.get("terminal_writer_install_count") != 0
         or postfold.get("terminal_writer_mutation_count") != 0
         or postfold.get("preterminal_capsule") != capsule.as_dict()
@@ -714,7 +818,7 @@ def run_fold_to_review(
     expected_parent_envelope_sha256: str,
     expected_parent_envelope_file_sha256: str,
 ) -> dict[str, Any]:
-    """Run one pinned body recipe through decoded manual-review preparation."""
+    """Run one pinned recipe through its sealed decoded-evidence flow."""
 
     if (
         isinstance(maximum_prompt_tokens, bool)
@@ -762,6 +866,7 @@ def run_fold_to_review(
         raise Lfm2SemanticFoldToReviewError(
             "Selected semantic body recipe differs from its external pin."
         )
+    behavior_flow = resolve_lfm2_semantic_nonblocking_behavior_flow(recipe)
     if isinstance(anchor_candidate_index, bool) or anchor_candidate_index < 0:
         raise Lfm2SemanticFoldToReviewError(
             "anchor_candidate_index must be a nonnegative integer."
@@ -771,9 +876,7 @@ def run_fold_to_review(
         expected_prompts_file_sha256=expected_prompts_file_sha256,
         parent_envelope=normalized_files["cached parent response envelope"],
         expected_parent_envelope_sha256=expected_parent_envelope_sha256,
-        expected_parent_envelope_file_sha256=(
-            expected_parent_envelope_file_sha256
-        ),
+        expected_parent_envelope_file_sha256=(expected_parent_envelope_file_sha256),
         trace_cache=normalized_directories["trace cache"],
         expected_cache_key=expected_cache_key,
         donor_tokenizer_directory=normalized_directories["donor tokenizer"],
@@ -781,9 +884,7 @@ def run_fold_to_review(
         maximum_prompt_tokens=maximum_prompt_tokens,
         maximum_new_tokens=maximum_new_tokens,
     )
-    readonly = tuple(normalized_directories.values()) + tuple(
-        normalized_files.values()
-    )
+    readonly = tuple(normalized_directories.values()) + tuple(normalized_files.values())
     run_root = _new_run_directory(run_directory, readonly=readonly)
     unpublished_checkpoint = run_root / "unselected-checkpoint"
     capsule_output = run_root / "preterminal-capsule"
@@ -795,14 +896,11 @@ def run_fold_to_review(
     merged_path = run_root / "qualitative-merged.json"
     markdown_path = run_root / "qualitative-review.md"
     verdict_path = run_root / "manual-verdict-template.json"
+    observations_path = run_root / "optional-behavior-observations.json"
     pipeline_receipt = run_root / "pipeline-receipt.json"
 
-    donor_tokenizer = load_local_tokenizer(
-        normalized_directories["donor tokenizer"]
-    )
-    target_tokenizer = load_local_tokenizer(
-        normalized_directories["target tokenizer"]
-    )
+    donor_tokenizer = load_local_tokenizer(normalized_directories["donor tokenizer"])
+    target_tokenizer = load_local_tokenizer(normalized_directories["target tokenizer"])
     capsules: list[Lfm2SemanticPreterminalCapsuleReference] = []
     banks: list[Lfm2SemanticTerminalFrontierBankReference] = []
     source_root_records: list[Lfm2SemanticTerminalFrontierSourceRoots] = []
@@ -825,12 +923,8 @@ def run_fold_to_review(
             semantic_cache_directory=normalized_directories["trace cache"],
             tokenizer_bridge_directory=normalized_directories["tokenizer bridge"],
             parent_model_directory=normalized_directories["parent model"],
-            donor_tokenizer_directories=(
-                normalized_directories["donor tokenizer"],
-            ),
-            target_tokenizer_directories=(
-                normalized_directories["target tokenizer"],
-            ),
+            donor_tokenizer_directories=(normalized_directories["donor tokenizer"],),
+            target_tokenizer_directories=(normalized_directories["target tokenizer"],),
         )
         source_root_records.append(source_roots)
 
@@ -864,15 +958,11 @@ def run_fold_to_review(
             target_tokenizer=target_tokenizer,
             parent_model_directory=normalized_directories["parent model"],
             compiler_diagnostic_json=normalized_files["compiler diagnostic"],
-            expected_compiler_diagnostic_sha256=(
-                expected_compiler_diagnostic_sha256
-            ),
+            expected_compiler_diagnostic_sha256=(expected_compiler_diagnostic_sha256),
             interface_statistics_directory=(
                 normalized_directories["interface statistics"]
             ),
-            expected_interface_statistics_sha256=(
-                expected_interface_statistics_sha256
-            ),
+            expected_interface_statistics_sha256=(expected_interface_statistics_sha256),
             interface_frontier_companion_json=(
                 normalized_files["interface frontier companion"]
             ),
@@ -948,17 +1038,14 @@ def run_fold_to_review(
         or dossier.get("maximum_new_tokens") != preflight.maximum_new_tokens
         or not isinstance(dossier_parent, Mapping)
         or dossier_parent.get("envelope_sha256") != preflight.envelope_sha256
-        or dossier_parent.get("parent_state_sha256")
-        != preflight.parent_state_sha256
+        or dossier_parent.get("parent_state_sha256") != preflight.parent_state_sha256
         or dossier_parent.get("parent_identity_sha256")
         != preflight.parent_identity_sha256
         or dossier_parent.get("parent_unique_parameters")
         != preflight.parent_unique_parameters
         or dossier_parent.get("tokenizer_sha256") != preflight.tokenizer_sha256
-        or dossier_parent.get("maximum_new_tokens")
-        != preflight.maximum_new_tokens
-        or dossier_parent.get("response_bank_sha256")
-        != preflight.response_bank_sha256
+        or dossier_parent.get("maximum_new_tokens") != preflight.maximum_new_tokens
+        or dossier_parent.get("response_bank_sha256") != preflight.response_bank_sha256
         or dossier.get("evaluation_policy", {}).get(
             "decoded_whole_responses_are_authoritative"
         )
@@ -972,18 +1059,7 @@ def run_fold_to_review(
             "Whole-response dossier did not review the complete structural bank."
         )
     _release_cuda()
-    qualitative = prepare_qualitative_review(
-        dossier_paths=(dossier_path,),
-        expected_dossier_file_sha256s=(_file_sha256(dossier_path),),
-        expected_dossier_sha256s=(dossier["dossier_sha256"],),
-        lane_labels=(recipe.recipe_id,),
-        merged_json=merged_path,
-        markdown_path=markdown_path,
-        verdict_template_json=verdict_path,
-    )
-    body = {
-        "schema": PIPELINE_SCHEMA,
-        "status": "ready-for-manual-whole-response-intelligence-review",
+    common_body = {
         "run_directory": str(run_root),
         "body_recipe": recipe.as_dict(),
         "body_recipe_sha256": recipe.recipe_sha256,
@@ -1011,19 +1087,91 @@ def run_fold_to_review(
             "maximum_prompt_tokens": maximum_prompt_tokens,
             "maximum_new_tokens": maximum_new_tokens,
         },
-        "qualitative_review": dict(qualitative),
         "candidate_count": frontier["candidate_count"],
         "all_and_only_structurally_eligible_candidates_materialized": True,
         "all_materialized_candidates_received_whole_response_review": True,
-        "numeric_metrics_are_diagnostics_only": True,
-        "numeric_metrics_have_final_intelligence_authority": False,
         "automatic_candidate_selection_performed": False,
         "automatic_candidate_acceptance_performed": False,
-        "candidate_published_before_manual_review": False,
-        "blank_manual_verdict_prepared": True,
-        "manual_whole_response_intelligence_review_is_authoritative": True,
         "operation_audit": dict(_ZERO_OPERATION_AUDIT),
     }
+    if behavior_flow is None:
+        qualitative = prepare_qualitative_review(
+            dossier_paths=(dossier_path,),
+            expected_dossier_file_sha256s=(_file_sha256(dossier_path),),
+            expected_dossier_sha256s=(dossier["dossier_sha256"],),
+            lane_labels=(recipe.recipe_id,),
+            merged_json=merged_path,
+            markdown_path=markdown_path,
+            verdict_template_json=verdict_path,
+        )
+        body = {
+            "schema": PIPELINE_SCHEMA,
+            "status": "ready-for-manual-whole-response-intelligence-review",
+            **common_body,
+            "qualitative_review": dict(qualitative),
+            "numeric_metrics_are_diagnostics_only": True,
+            "numeric_metrics_have_final_intelligence_authority": False,
+            "candidate_published_before_manual_review": False,
+            "blank_manual_verdict_prepared": True,
+            "manual_whole_response_intelligence_review_is_authoritative": True,
+        }
+    else:
+        retained_candidate_ids = _retained_candidate_checkpoint_ids(frontier)
+        observations = _prepare_optional_behavior_observations(
+            output_json=observations_path,
+            recipe=recipe,
+            behavior_flow=behavior_flow,
+            dossier_path=dossier_path,
+            dossier=dossier,
+        )
+        body = {
+            "schema": NONBLOCKING_PIPELINE_SCHEMA,
+            "status": "decoded-behavior-evidence-complete-continuation-unblocked",
+            **common_body,
+            "behavior_flow": behavior_flow.as_dict(),
+            "behavior_flow_policy_sha256": behavior_flow.policy_sha256,
+            "legacy_v1_pending_terminal_receipt_interpretation": {
+                "source_status": postfold["status"],
+                "source_final_selection_status": postfold["final_selection_status"],
+                "source_postfold_result_sha256": postfold["result_sha256"],
+                "interpreted_as_frontier_handoff_only": True,
+                "source_manual_review_pending_label_has_no_v2_continuation_authority": True,
+            },
+            "legacy_v1_artifact_interpretation": {
+                "historical_artifact_roles": [
+                    "body-recipe-v1-authentication-provenance",
+                    "postfold-frontier-handoff",
+                    "continuous-frontier-compilation-provenance",
+                    "frontier-materialization-provenance",
+                ],
+                "nested_manual_review_required_or_authoritative_labels_are_historical_only": True,
+                "unchanged_v1_body_recipe_manual_authority_label_is_historical_only": True,
+                "nested_v1_quality_labels_have_v2_accept_veto_publish_delete_stop_authority": False,
+                "nested_v1_quality_labels_have_v2_continuation_authority": False,
+            },
+            "optional_behavior_observations": observations,
+            "structural_authentication_is_only_materialization_veto": True,
+            "all_structurally_safe_candidates_must_be_materialized": True,
+            "all_materialized_candidates_must_receive_decoded_review": True,
+            "decoded_behavior_evidence_complete": True,
+            "all_materialized_candidate_checkpoints_retained": True,
+            "retained_candidate_checkpoint_count": len(retained_candidate_ids),
+            "retained_candidate_checkpoint_ids": list(retained_candidate_ids),
+            "candidate_checkpoint_retention_depends_on_manual_verdict": False,
+            "candidate_checkpoints_are_evidence_not_accepted_or_rejected": True,
+            "decoded_complete_behavior_is_primary_intelligence_evidence": True,
+            "retention_target_is_objective_not_cutoff": True,
+            "numeric_metrics_may_prioritize_investigation": True,
+            "numeric_accept_veto_publish_delete_stop_authority": False,
+            "manual_annotations_may_guide_next_hypothesis": True,
+            "manual_or_binary_accept_veto_publish_delete_stop_authority": False,
+            "manual_verdict_required_for_continuation": False,
+            "continuation_requires_manual_review_or_verdict": False,
+            "manual_verdict_artifact_created": False,
+            "blank_manual_verdict_prepared": False,
+            "quality_evidence_can_stop_iteration": False,
+            "continuation_unblocked": True,
+        }
     document = {**body, "pipeline_sha256": canonical_sha256(body)}
     _atomic_json(pipeline_receipt, document)
     return document
@@ -1033,8 +1181,9 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Fold one pinned LFM2 body recipe into a complete structural terminal "
-            "frontier and decoded manual-review dossier without training or "
-            "automatic quality gating."
+            "frontier and decoded behavior dossier without training or automatic "
+            "quality gating. Coupled Q-DEIM recipes continue under the sealed "
+            "nonblocking v2 behavior policy."
         )
     )
     parser.add_argument("--run-directory", required=True, type=Path)
@@ -1110,9 +1259,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         target_tokenizer_directory=args.target_tokenizer_directory,
         parent_model_directory=args.parent_model_directory,
         compiler_diagnostic_json=args.compiler_diagnostic_json,
-        expected_compiler_diagnostic_sha256=(
-            args.expected_compiler_diagnostic_sha256
-        ),
+        expected_compiler_diagnostic_sha256=(args.expected_compiler_diagnostic_sha256),
         interface_statistics_directory=args.interface_statistics_directory,
         expected_interface_statistics_sha256=(
             args.expected_interface_statistics_sha256

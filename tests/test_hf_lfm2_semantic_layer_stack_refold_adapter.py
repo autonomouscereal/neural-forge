@@ -40,6 +40,188 @@ _BASE_INTERFACE_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
 _ANCHOR_INTERFACE_SCHEMA = "neural-forge-tied-causal-anchor-residual-v1"
 
 
+def test_normalized_operator_decoder_uses_exact_residual_chart_fit_batch_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_ids = (10, 20, 30, 40)
+    alignments = tuple(
+        SimpleNamespace(
+            source_batch_index=batch_index,
+            phases=(
+                SimpleNamespace(target_to_donor_boundary_positions=(0,)),
+            ),
+        )
+        for batch_index in batch_ids
+    )
+    chart = torch.eye(2, dtype=torch.float64)
+    partition_batch_indices = {
+        "fit": [30],
+        "fit_check": [10],
+        "selection": [40],
+        "validation": [20],
+    }
+    chart_body = {
+        "schema": "neural-forge-lfm2-layer-stack-residual-chart-v1",
+        "layer_index": 0,
+        "chart_sha256": stack._tensor_sha256(chart),
+        "partition_batch_indices": partition_batch_indices,
+    }
+    chart_receipt = MappingProxyType(
+        {**chart_body, "result_sha256": canonical_sha256(chart_body)}
+    )
+    calls: list[tuple[int, tuple[float, ...]]] = []
+
+    def fake_fit(
+        *,
+        parent_raw_rows: object,
+        fit_trajectory_count: int,
+        **_kwargs: object,
+    ) -> tuple[torch.Tensor, MappingProxyType]:
+        rows = tuple(parent_raw_rows)
+        values = tuple(float(value[0, 0].item()) for value in rows)
+        calls.append((fit_trajectory_count, values))
+        decoder = torch.cat(rows[:fit_trajectory_count], dim=0).mean(dim=0)
+        body = {
+            "schema": "test-normalized-decoder",
+            "fit_trajectory_count": fit_trajectory_count,
+        }
+        return decoder, MappingProxyType(
+            {**body, "decoder_sha256": canonical_sha256(body)}
+        )
+
+    monkeypatch.setattr(
+        stack,
+        "_fit_normalized_operator_input_decoder",
+        fake_fit,
+    )
+
+    def run(fit_check_value: float) -> tuple[torch.Tensor, MappingProxyType]:
+        values = {10: fit_check_value, 20: 2.0, 30: 3.0, 40: 4.0}
+        parent = {
+            batch_index: SimpleNamespace(
+                final_histories={
+                    "residual.pre": torch.tensor(
+                        [[[values[batch_index], 0.0]]],
+                        dtype=torch.float64,
+                    )
+                }
+            )
+            for batch_index in batch_ids
+        }
+        child = SimpleNamespace(
+            replay_by_batch={
+                batch_index: SimpleNamespace(
+                    operator_input=torch.tensor(
+                        [[[values[batch_index], 0.0]]],
+                        dtype=torch.float64,
+                    )
+                )
+                for batch_index in batch_ids
+            }
+        )
+        return stack._fit_layer_normalized_operator_input_decoder(
+            alignments=alignments,
+            parent=parent,
+            child_bank=child,
+            parent_operator_norm_weight=torch.ones(2),
+            target_operator_norm_weight=torch.ones(2),
+            parent_norm_epsilon=1e-5,
+            target_norm_epsilon=1e-5,
+            chart=chart,
+            chart_receipt=chart_receipt,
+        )
+
+    first, first_receipt = run(1.0)
+    second, second_receipt = run(999.0)
+
+    assert all(count == 1 and values[0] == 3.0 for count, values in calls)
+    assert torch.equal(first, second)
+    assert first_receipt["fit_batch_indices"] == [30]
+    assert second_receipt["fit_batch_indices"] == [30]
+    assert first_receipt["trajectory_batch_indices"] == [30, 10, 40, 20]
+    assert first_receipt["heldout_batch_indices"] == [10, 40, 20]
+    assert first_receipt["fit_batch_indices_authenticated_from_residual_chart"]
+
+
+def test_real_normalized_operator_decoder_is_invariant_to_every_nonfit_split() -> (
+    None
+):
+    batch_ids = (10, 20, 30, 40)
+    fit_batch_index = 30
+    alignments = tuple(
+        SimpleNamespace(
+            source_batch_index=batch_index,
+            phases=(
+                SimpleNamespace(target_to_donor_boundary_positions=(0,)),
+            ),
+        )
+        for batch_index in batch_ids
+    )
+    chart = torch.eye(2, dtype=torch.float64)
+    partition_batch_indices = {
+        "fit": [fit_batch_index],
+        "fit_check": [10],
+        "selection": [40],
+        "validation": [20],
+    }
+    chart_body = {
+        "schema": "neural-forge-lfm2-layer-stack-residual-chart-v1",
+        "layer_index": 0,
+        "chart_sha256": stack._tensor_sha256(chart),
+        "partition_batch_indices": partition_batch_indices,
+    }
+    chart_receipt = MappingProxyType(
+        {**chart_body, "result_sha256": canonical_sha256(chart_body)}
+    )
+
+    def run(
+        overrides: dict[int, float] | None = None,
+    ) -> tuple[torch.Tensor, MappingProxyType]:
+        values = {10: 1.0, 20: 2.0, 30: 3.0, 40: 4.0}
+        values.update({} if overrides is None else overrides)
+        parent = {
+            batch_index: SimpleNamespace(
+                final_histories={
+                    "residual.pre": torch.tensor(
+                        [[[values[batch_index], values[batch_index] + 0.5]]],
+                        dtype=torch.float64,
+                    )
+                }
+            )
+            for batch_index in batch_ids
+        }
+        child = SimpleNamespace(
+            replay_by_batch={
+                batch_index: SimpleNamespace(
+                    operator_input=torch.tensor(
+                        [[[0.25 * values[batch_index], 0.5]]],
+                        dtype=torch.float64,
+                    )
+                )
+                for batch_index in batch_ids
+            }
+        )
+        return stack._fit_layer_normalized_operator_input_decoder(
+            alignments=alignments,
+            parent=parent,
+            child_bank=child,
+            parent_operator_norm_weight=torch.ones(2, dtype=torch.bfloat16),
+            target_operator_norm_weight=torch.ones(2, dtype=torch.bfloat16),
+            parent_norm_epsilon=1e-5,
+            target_norm_epsilon=1e-5,
+            chart=chart,
+            chart_receipt=chart_receipt,
+        )
+
+    baseline, baseline_receipt = run()
+    for nonfit_batch_index in (10, 40, 20):
+        perturbed, receipt = run({nonfit_batch_index: 10_000.0})
+        torch.testing.assert_close(perturbed, baseline, rtol=0, atol=0)
+        assert receipt["fit_batch_indices"] == [fit_batch_index]
+        assert receipt["heldout_rows_used_for_fit"] == 0
+    assert baseline_receipt["fit_trajectory_count"] == 1
+
+
 def _body_recipe_fields(recipe_id: str = "fit_guided") -> dict[str, object]:
     recipe = stack.resolve_lfm2_semantic_body_recipe(recipe_id)
     return {

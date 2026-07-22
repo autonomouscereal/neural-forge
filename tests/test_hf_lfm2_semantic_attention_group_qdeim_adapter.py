@@ -199,6 +199,12 @@ def _source_and_maps() -> dict[str, object]:
         "schema": "neural-forge-lfm2-layer-stack-residual-chart-v1",
         "layer_index": 0,
         "chart_sha256": lfm2_authenticated_tensor_sha256(chart),
+        "partition_batch_indices": {
+            "fit": [0],
+            "fit_check": [1],
+            "selection": [2],
+            "validation": [3],
+        },
         "fit_only": True,
         "validation_rows_used_for_fit": 0,
         "numeric_metric_used_for_candidate_selection": False,
@@ -211,6 +217,19 @@ def _source_and_maps() -> dict[str, object]:
         "residual_chart_sha256": chart_receipt["result_sha256"],
         "residual_chart_observed_sha256": lfm2_authenticated_tensor_sha256(chart),
         "published_decoder_sha256": lfm2_authenticated_tensor_sha256(decoder),
+        "trajectory_batch_indices": [0, 1, 2, 3],
+        "fit_batch_indices": [0],
+        "heldout_batch_indices": [1, 2, 3],
+        "fit_trajectory_count": 1,
+        "residual_chart_partition_batch_indices_sha256": canonical_sha256(
+            {
+                "fit": [0],
+                "fit_check": [1],
+                "selection": [2],
+                "validation": [3],
+            }
+        ),
+        "fit_batch_indices_authenticated_from_residual_chart": True,
         "fit_rows_only_used_for_residual": True,
         "heldout_rows_used_for_fit": 0,
         "gradients_used": False,

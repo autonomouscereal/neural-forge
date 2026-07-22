@@ -50,12 +50,21 @@ from neural_forge.hf_lfm2_semantic_attention_refold_adapter import (
     LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS,
     Lfm2SemanticAttentionReplayEndpoint,
 )
+from neural_forge.hf_lfm2_semantic_attention_group_qdeim_adapter import (
+    Lfm2SemanticAttentionGroupQdeimEvidenceDeficit,
+)
+from neural_forge.hf_lfm2_semantic_attention_group_qdeim_installer import (
+    Lfm2SemanticAttentionGroupQdeimInstallationResult,
+    compile_install_lfm2_semantic_attention_group_qdeim,
+    seal_lfm2_semantic_attention_group_qdeim_norm_inventory,
+)
 from neural_forge.hf_lfm2_semantic_body_recipe import (
     Lfm2SemanticBodyRecipe,
     is_supported_lfm2_semantic_component_equivalence_inventory,
     resolve_lfm2_semantic_body_recipe,
 )
 from neural_forge.hf_lfm2_semantic_postfold import (
+    LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA,
     LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA,
     Lfm2SemanticAttentionTransportEvidence,
     Lfm2SemanticCompilerLayerLineage,
@@ -123,6 +132,7 @@ _MLP_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
 _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS = (
     "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
 )
+_COUPLED_ATTENTION_QDEIM_LANE = "intact_gqa_group_qdeim_coupled_qkvo"
 _MLP_FUNCTIONAL_PROVENANCE_SCHEMA = (
     "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v3"
 )
@@ -201,6 +211,21 @@ def _require_attention_body_recipe_binding(
         component="qk",
         label=label,
     )
+    if (
+        recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
+        and recipe.component_lanes["value_output"]
+        == _COUPLED_ATTENTION_QDEIM_LANE
+    ):
+        if (
+            receipt.get("recipe_value_output_lane")
+            != _COUPLED_ATTENTION_QDEIM_LANE
+            or receipt.get("coupled_qkvo_single_candidate") is not True
+            or receipt.get("split_qk_or_vo_fallback_used") is not False
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"{label} did not bind one coupled Q/K/V/O recipe lane."
+            )
+        return
     analytic = receipt.get("analytic_refold")
     gate_value = (
         analytic.get("value_output_candidate_gate")
@@ -1799,6 +1824,135 @@ def _fit_residual_chart(
     return chart, MappingProxyType(report)
 
 
+def _fit_layer_normalized_operator_input_decoder(
+    *,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    parent: Mapping[int, _ParentLayerTrajectory],
+    child_bank: _LayerReplayBank,
+    parent_operator_norm_weight: Any,
+    target_operator_norm_weight: Any,
+    parent_norm_epsilon: float,
+    target_norm_epsilon: float,
+    chart: Any,
+    chart_receipt: Mapping[str, Any],
+) -> tuple[Any, Mapping[str, Any]]:
+    """Fit the shared FIT-only operator-input decoder once for one layer."""
+
+    torch = _torch()
+    verified_chart_receipt = _verify_sealed(chart_receipt, "residual chart")
+    partition_value = verified_chart_receipt.get("partition_batch_indices")
+    if (
+        verified_chart_receipt.get("schema")
+        != "neural-forge-lfm2-layer-stack-residual-chart-v1"
+        or verified_chart_receipt.get("chart_sha256") != _tensor_sha256(chart)
+        or not isinstance(partition_value, Mapping)
+        or set(partition_value) != set(_PARTITIONS)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Normalized operator-input decoder requires the selected sealed "
+            "residual-chart partition."
+        )
+    alignment_by_batch: dict[int, Lfm2SemanticSpanCpcfAlignment] = {}
+    for alignment in alignments:
+        batch_index = alignment.source_batch_index
+        if batch_index in alignment_by_batch:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Normalized operator-input decoder received duplicate batches."
+            )
+        alignment_by_batch[batch_index] = alignment
+    partition_batches: dict[str, tuple[int, ...]] = {}
+    observed_batches: list[int] = []
+    for partition in _PARTITIONS:
+        supplied = partition_value.get(partition)
+        if (
+            not isinstance(supplied, list)
+            or not supplied
+            or any(
+                isinstance(batch_index, bool)
+                or not isinstance(batch_index, int)
+                or batch_index < 0
+                for batch_index in supplied
+            )
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Residual-chart decoder partitions must contain batch indices."
+            )
+        partition_batches[partition] = tuple(supplied)
+        observed_batches.extend(supplied)
+    if (
+        len(observed_batches) != len(set(observed_batches))
+        or set(observed_batches) != set(alignment_by_batch)
+        or set(parent) != set(alignment_by_batch)
+        or set(child_bank.replay_by_batch) != set(alignment_by_batch)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Residual-chart decoder partitions do not cover the exact trajectories."
+        )
+    trajectory_batch_indices = tuple(observed_batches)
+    fit_batch_indices = partition_batches["fit"]
+    ordered_alignments = tuple(
+        alignment_by_batch[batch_index]
+        for batch_index in trajectory_batch_indices
+    )
+    parent_operator_rows = []
+    child_operator_rows = []
+    for alignment in ordered_alignments:
+        batch_index = alignment.source_batch_index
+        boundary = alignment.phases[-1].target_to_donor_boundary_positions
+        target_positions = tuple(
+            index for index, value in enumerate(boundary) if value is not None
+        )
+        donor_positions = tuple(int(value) for value in boundary if value is not None)
+        parent_operator_rows.append(
+            parent[batch_index]
+            .final_histories["residual.pre"][0]
+            .index_select(
+                0,
+                torch.tensor(donor_positions, dtype=torch.long),
+            )
+        )
+        child_operator_rows.append(
+            child_bank.replay_by_batch[batch_index]
+            .operator_input[0]
+            .index_select(
+                0,
+                torch.tensor(target_positions, dtype=torch.long),
+            )
+        )
+    decoder, decoder_receipt = _fit_normalized_operator_input_decoder(
+        parent_raw_rows=parent_operator_rows,
+        child_normalized_rows=child_operator_rows,
+        parent_operator_norm_weight=parent_operator_norm_weight,
+        target_operator_norm_weight=target_operator_norm_weight,
+        parent_norm_epsilon=parent_norm_epsilon,
+        target_norm_epsilon=target_norm_epsilon,
+        residual_chart=chart,
+        residual_chart_sha256=verified_chart_receipt["result_sha256"],
+        fit_trajectory_count=len(fit_batch_indices),
+    )
+    decoder_body = dict(decoder_receipt)
+    decoder_body.pop("decoder_sha256")
+    decoder_body.update(
+        {
+            "trajectory_batch_indices": list(trajectory_batch_indices),
+            "fit_batch_indices": list(fit_batch_indices),
+            "heldout_batch_indices": list(
+                trajectory_batch_indices[len(fit_batch_indices) :]
+            ),
+            "residual_chart_partition_batch_indices_sha256": canonical_sha256(
+                {
+                    partition: list(partition_batches[partition])
+                    for partition in _PARTITIONS
+                }
+            ),
+            "fit_batch_indices_authenticated_from_residual_chart": True,
+        }
+    )
+    return decoder, MappingProxyType(
+        {**decoder_body, "decoder_sha256": canonical_sha256(decoder_body)}
+    )
+
+
 def _build_attention_evidence(
     *,
     cache: Lfm2CircuitTraceCache,
@@ -1833,44 +1987,17 @@ def _build_attention_evidence(
         and target_norm_epsilon is not None
     )
     if complete_parent_prior_contract:
-        parent_operator_rows = []
-        child_operator_rows = []
-        for alignment in ordered_alignments:
-            batch_index = alignment.source_batch_index
-            boundary = alignment.phases[-1].target_to_donor_boundary_positions
-            target_positions = tuple(
-                index for index, value in enumerate(boundary) if value is not None
-            )
-            donor_positions = tuple(
-                int(value) for value in boundary if value is not None
-            )
-            parent_operator_rows.append(
-                parent[batch_index]
-                .final_histories["residual.pre"][0]
-                .index_select(
-                    0,
-                    torch.tensor(donor_positions, dtype=torch.long),
-                )
-            )
-            child_operator_rows.append(
-                child_bank.replay_by_batch[batch_index]
-                .operator_input[0]
-                .index_select(
-                    0,
-                    torch.tensor(target_positions, dtype=torch.long),
-                )
-            )
         normalized_input_decoder, normalized_input_decoder_receipt = (
-            _fit_normalized_operator_input_decoder(
-                parent_raw_rows=parent_operator_rows,
-                child_normalized_rows=child_operator_rows,
+            _fit_layer_normalized_operator_input_decoder(
+                alignments=ordered_alignments,
+                parent=parent,
+                child_bank=child_bank,
                 parent_operator_norm_weight=parent_qk_tensors["operator_norm"],
                 target_operator_norm_weight=target_operator_norm_weight,
                 parent_norm_epsilon=parent_norm_epsilon,
                 target_norm_epsilon=target_norm_epsilon,
-                residual_chart=chart,
-                residual_chart_sha256=chart_receipt["result_sha256"],
-                fit_trajectory_count=max(1, len(ordered_alignments) // 2),
+                chart=chart,
+                chart_receipt=chart_receipt,
             )
         )
         (
@@ -2505,6 +2632,262 @@ def _install_attention_operator(
             "Attention operator returned the wrong receipt schema."
         )
     return MappingProxyType(receipt)
+
+
+def _install_coupled_attention_group_qdeim_operator(
+    *,
+    target_model: Any,
+    session: Any,
+    layer_index: int,
+    fit_batch_indices: Sequence[int],
+    fit_batch_sample_weights: Mapping[int, float],
+    source_query_weight: Any,
+    source_key_weight: Any,
+    source_value_weight: Any,
+    source_out_weight: Any,
+    source_inventory: Any,
+    source_query_norm_weight: Any,
+    source_key_norm_weight: Any,
+    source_norm_inventory: Any,
+    normalized_input_decoder: Any,
+    normalized_input_decoder_receipt: Mapping[str, Any],
+    residual_output_chart: Any,
+    residual_chart_receipt: Mapping[str, Any],
+    direct_attention_source_receipt: Mapping[str, Any],
+    cache_key: str,
+    bridge_artifact_sha256: str,
+    parameter_count: int,
+    body_recipe: str | Lfm2SemanticBodyRecipe,
+    installer: Callable[..., Any] = (
+        compile_install_lfm2_semantic_attention_group_qdeim
+    ),
+) -> Mapping[str, Any]:
+    """Install one intact Q/K/V/O/norm candidate and bind it to the recipe."""
+
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    if (
+        recipe.component_lanes["qk"] != _COUPLED_ATTENTION_QDEIM_LANE
+        or recipe.component_lanes["value_output"]
+        != _COUPLED_ATTENTION_QDEIM_LANE
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Coupled attention Q-DEIM requires one shared Q/K/V/O recipe lane."
+        )
+    if not callable(installer):
+        raise TypeError("Coupled attention group-QDEIM installer must be callable.")
+    entry = _WholeModelSnapshot.capture(target_model)
+    before_hashes = _state_tensor_hashes(target_model)
+    before = fingerprint_lfm2_parent(target_model).identity_sha256
+    try:
+        result = installer(
+            target_model=target_model,
+            session=session,
+            layer_index=layer_index,
+            fit_batch_indices=tuple(fit_batch_indices),
+            fit_batch_sample_weights=dict(fit_batch_sample_weights),
+            source_query_weight=source_query_weight,
+            source_key_weight=source_key_weight,
+            source_value_weight=source_value_weight,
+            source_out_weight=source_out_weight,
+            source_inventory=source_inventory,
+            source_query_norm_weight=source_query_norm_weight,
+            source_key_norm_weight=source_key_norm_weight,
+            source_norm_inventory=source_norm_inventory,
+            normalized_input_decoder=normalized_input_decoder,
+            normalized_input_decoder_receipt=normalized_input_decoder_receipt,
+            residual_output_chart=residual_output_chart,
+            residual_chart_receipt=residual_chart_receipt,
+        )
+        if isinstance(result, Lfm2SemanticAttentionGroupQdeimEvidenceDeficit):
+            deficit = dict(result.report)
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Coupled attention Q-DEIM has no authenticated dense candidate: "
+                f"{deficit.get('deficit_kind', 'unknown-evidence-deficit')}."
+            )
+        if not isinstance(
+            result,
+            Lfm2SemanticAttentionGroupQdeimInstallationResult,
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Coupled attention Q-DEIM returned no typed installation result."
+            )
+        raw = _verify_sealed(result.receipt, "coupled attention Q-DEIM installation")
+        adapter = _verify_sealed(
+            result.prepared.candidate.report,
+            "coupled attention Q-DEIM cache candidate",
+        )
+        compiler = _verify_sealed(
+            result.prepared.candidate.compiled.report,
+            "coupled attention Q-DEIM standalone compiler",
+        )
+        after_hashes = _state_tensor_hashes(target_model)
+        after = fingerprint_lfm2_parent(target_model).identity_sha256
+        changed = _changed_state_keys(before_hashes, after_hashes)
+        prefix = f"model.layers.{layer_index}.self_attn."
+        transaction_covered = tuple(
+            sorted(
+                prefix + role
+                for role in (
+                    "q_proj.weight",
+                    "k_proj.weight",
+                    "v_proj.weight",
+                    "out_proj.weight",
+                    "q_layernorm.weight",
+                    "k_layernorm.weight",
+                )
+            )
+        )
+        required_projection_changes = {
+            prefix + role
+            for role in (
+                "q_proj.weight",
+                "k_proj.weight",
+                "v_proj.weight",
+                "out_proj.weight",
+            )
+        }
+        expected_changed = tuple(raw.get("changed_state_keys", ()))
+        if (
+            raw.get("installed") is not True
+            or raw.get("install_count") != 1
+            or raw.get("layer_index") != layer_index
+            or raw.get("model_state_before_sha256") != before
+            or raw.get("model_state_after_sha256") != after
+            or tuple(changed) != expected_changed
+            or tuple(raw.get("transaction_covered_state_keys", ()))
+            != transaction_covered
+            or raw.get("transaction_covered_parameter_role_count") != 6
+            or raw.get("all_six_roles_supplied_to_atomic_transaction") is not True
+            or raw.get("six_role_transaction_coverage_proven") is not True
+            or raw.get("prepared_expected_changed_state_keys")
+            != list(expected_changed)
+            or raw.get("prepared_expected_changed_state_keys_matched") is not True
+            or raw.get("changed_state_key_count") != len(expected_changed)
+            or raw.get("actual_changed_bytes_cover_four_to_six_roles") is not True
+            or not 4 <= len(expected_changed) <= 6
+            or not required_projection_changes.issubset(expected_changed)
+            or any(name not in transaction_covered for name in expected_changed)
+            or raw.get("parameter_count_before") != parameter_count
+            or raw.get("parameter_count_after") != parameter_count
+            or raw.get("parameter_count_changed") is not False
+            or raw.get("target_topology_sha256_before")
+            != raw.get("target_topology_sha256_after")
+            or raw.get("topology_changed") is not False
+            or raw.get("complete_six_parameter_bundle_installed_transactionally")
+            is not True
+            or raw.get("qkvo_installed_from_one_coupled_intact_group_candidate")
+            is not True
+            or raw.get("query_and_key_norms_installed_from_direct_parent_tensors")
+            is not True
+            or raw.get("split_qk_or_vo_fallback_used") is not False
+            or raw.get("candidate_adapter_result_sha256")
+            != adapter.get("result_sha256")
+            or raw.get("candidate_compiler_result_sha256")
+            != compiler.get("result_sha256")
+            or raw.get("source_qkvo_inventory_sha256")
+            != source_inventory.inventory_sha256
+            or raw.get("source_norm_inventory_sha256")
+            != source_norm_inventory.inventory_sha256
+            or raw.get("cache_selective_session_sha256")
+            != adapter.get("cache_selective_session_sha256")
+            or adapter.get("fit_batch_indices") != list(fit_batch_indices)
+            or adapter.get("heldout_tensor_payload_loads") != 0
+            or raw.get("heldout_payload_used_for_compilation") is not False
+            or raw.get("numeric_metrics_have_semantic_decision_authority")
+            is not False
+            or raw.get("binary_manual_acceptance_gate_required") is not False
+            or raw.get("whole_decoded_behavior_is_primary_intelligence_evidence")
+            is not True
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Coupled attention Q-DEIM installation lost its cache, recipe, "
+                "six-tensor, or no-gating contract."
+            )
+        evidence_sha256 = [adapter["result_sha256"]]
+        body = {
+            "schema": (
+                LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA
+            ),
+            "status": "installed-coupled-intact-group-qdeim-attention",
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_component_lane": recipe.component_lanes["qk"],
+            "recipe_qk_lane": recipe.component_lanes["qk"],
+            "recipe_value_output_lane": recipe.component_lanes["value_output"],
+            "layer_index": layer_index,
+            "installed": True,
+            "install_count": 1,
+            "selected_candidate": "intact-gqa-group-qdeim-qkvo",
+            "structurally_eligible_candidate_count": 1,
+            "candidate_eligibility_basis": (
+                "authenticated_dense_bfloat16_exact_six_parameter_topology"
+            ),
+            "coupled_qkvo_single_candidate": True,
+            "split_qk_or_vo_fallback_used": False,
+            "legacy_split_attention_installer_called": False,
+            "transport_evidence_sha256": evidence_sha256,
+            "model_state_before_sha256": before,
+            "model_state_after_sha256": after,
+            "changed_state_keys": list(changed),
+            "transaction_covered_state_keys": list(transaction_covered),
+            "transaction_covered_parameter_role_count": 6,
+            "all_six_roles_supplied_to_atomic_transaction": True,
+            "six_role_transaction_coverage_proven": True,
+            "actual_changed_state_key_count": len(changed),
+            "actual_changed_bytes_cover_four_to_six_roles": True,
+            "parameter_element_count_before": parameter_count,
+            "parameter_element_count_after": parameter_count,
+            "parameter_count_changed": False,
+            "target_topology_sha256_before": raw["target_topology_sha256_before"],
+            "target_topology_sha256_after": raw["target_topology_sha256_after"],
+            "topology_changed": False,
+            "parameter_identities_preserved": True,
+            "parameter_storage_preserved": True,
+            "gradient_state_preserved": True,
+            "fit_batch_indices": list(fit_batch_indices),
+            "fit_batch_sample_weights": [
+                {
+                    "batch_index": int(index),
+                    "sample_weight": float(fit_batch_sample_weights[index]),
+                }
+                for index in fit_batch_indices
+            ],
+            "cache_key": cache_key,
+            "bridge_artifact_sha256": bridge_artifact_sha256,
+            "cache_selective_session_sha256": raw[
+                "cache_selective_session_sha256"
+            ],
+            "same_selective_cache_session_as_layer_stack": True,
+            "coupled_attention_installation_receipt": raw,
+            "coupled_attention_candidate_receipt": adapter,
+            "coupled_attention_compiler_receipt": compiler,
+            "source_norm_inventory": source_norm_inventory.as_dict(),
+            "direct_attention_source_receipt": dict(
+                direct_attention_source_receipt
+            ),
+            "normalized_input_decoder_receipt": dict(
+                normalized_input_decoder_receipt
+            ),
+            "residual_chart_receipt": dict(residual_chart_receipt),
+            "complete_qkvo_bundle_installed_transactionally": True,
+            "complete_qkvo_bundle_transaction_verified": True,
+            "qk_norm_zero_escape_installed_transactionally": True,
+            "analytic_cached_evidence_only": True,
+            "heldout_metrics_are_diagnostic_only": True,
+            "numeric_metric_used_for_candidate_selection": False,
+            "numeric_metric_used_for_publication_or_rollback": False,
+            "numeric_metrics_have_final_intelligence_authority": False,
+            "binary_manual_threshold_has_iteration_veto_authority": False,
+            "binary_manual_acceptance_gate_required": False,
+            "intelligence_retention_target_is_objective_not_numeric_cutoff": True,
+            "whole_decoded_behavior_is_primary_intelligence_evidence": True,
+            "operation_audit": dict(_ZERO_OPERATIONS),
+        }
+        return _sealed(body)
+    except BaseException:
+        entry.restore(target_model)
+        raise
 
 
 def _semantic_terminal_target_position(phase: Any) -> int:
@@ -4401,7 +4784,10 @@ def _layer_receipt(
     short_conv_compute_fields: dict[str, Any] = {}
     attention_receipt_fields: dict[str, Any] = {}
     if operator_kind == "full_attention":
-        if recipe.fit_metrics_order_candidates:
+        if (
+            recipe.fit_metrics_order_candidates
+            or recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
+        ):
             _authenticate_lfm2_semantic_attention_operator_receipt(
                 operator_receipt,
                 layer_index=layer_index,
@@ -4645,7 +5031,12 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     if not isinstance(compiler_lineage, Mapping):
         raise TypeError("compiler_lineage must be a mapping.")
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
-    if not callable(attention_installer):
+    coupled_attention_recipe = bool(
+        recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
+        and recipe.component_lanes["value_output"]
+        == _COUPLED_ATTENTION_QDEIM_LANE
+    )
+    if not coupled_attention_recipe and not callable(attention_installer):
         raise Lfm2SemanticLayerStackRefoldError(
             "The complete stack requires the analytic attention installer."
         )
@@ -4831,38 +5222,152 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         "norm_eps",
                         None,
                     )
-                    operator_evidence = _build_attention_evidence(
-                        cache=cache,
-                        session=cache_session,
-                        bridge=bridge,
-                        alignments=alignments,
-                        parent=parent,
-                        child_bank=before_operator_replay,
-                        chart=chart,
-                        chart_receipt=chart_receipt,
-                        layer_index=layer_index,
-                        lineage=lineage,
-                        target_rope_inv_freq=target_rope_inv_freq,
-                        target_rope_attention_scaling=(target_rope_attention_scaling),
-                        parent_qk_tensors=parent_qk_tensors,
-                        target_operator_norm_weight=target_operator_norm_weight,
-                        parent_norm_epsilon=getattr(
+                    if coupled_attention_recipe:
+                        parent_norm_epsilon = getattr(
                             parent_session,
                             "norm_epsilon",
                             None,
-                        ),
-                        target_norm_epsilon=target_norm_epsilon,
-                    )
-                    operator_receipt = _install_attention_operator(
-                        target_model=target_model,
-                        layer_index=layer_index,
-                        evidence=operator_evidence,
-                        cache_key=cache.cache_key,
-                        bridge_artifact_sha256=bridge.artifact_sha256,
-                        installer=attention_installer,
-                        parameter_count=parameter_count,
-                        body_recipe=recipe,
-                    )
+                        )
+                        if (
+                            parent_norm_epsilon is None
+                            or target_norm_epsilon is None
+                            or target_operator_norm_weight is None
+                        ):
+                            raise Lfm2SemanticLayerStackRefoldError(
+                                "Coupled attention Q-DEIM requires authenticated "
+                                "parent and target normalization contracts."
+                            )
+                        normalized_decoder, normalized_decoder_receipt = (
+                            _fit_layer_normalized_operator_input_decoder(
+                                alignments=alignments,
+                                parent=parent,
+                                child_bank=before_operator_replay,
+                                parent_operator_norm_weight=(
+                                    parent_qk_tensors["operator_norm"]
+                                ),
+                                target_operator_norm_weight=(
+                                    target_operator_norm_weight
+                                ),
+                                parent_norm_epsilon=parent_norm_epsilon,
+                                target_norm_epsilon=target_norm_epsilon,
+                                chart=chart,
+                                chart_receipt=chart_receipt,
+                            )
+                        )
+                        partition_batches = chart_receipt.get(
+                            "partition_batch_indices"
+                        )
+                        fit_batch_indices = (
+                            partition_batches.get("fit")
+                            if isinstance(partition_batches, Mapping)
+                            else None
+                        )
+                        if (
+                            not isinstance(fit_batch_indices, list)
+                            or not fit_batch_indices
+                            or any(
+                                isinstance(index, bool)
+                                or not isinstance(index, int)
+                                or index < 0
+                                for index in fit_batch_indices
+                            )
+                        ):
+                            raise Lfm2SemanticLayerStackRefoldError(
+                                "Residual chart omitted its authenticated FIT batches."
+                            )
+                        fit_batch_sample_weights = {
+                            index: 1.0 for index in fit_batch_indices
+                        }
+                        source_norm_inventory = (
+                            seal_lfm2_semantic_attention_group_qdeim_norm_inventory(
+                                layer_index=layer_index,
+                                source_parent_identity_sha256=(
+                                    cache.parent_fingerprint
+                                ),
+                                source_inventory=lineage.source_inventory,
+                                source_query_norm_weight=(
+                                    parent_qk_tensors["q_norm"]
+                                ),
+                                source_key_norm_weight=parent_qk_tensors["k_norm"],
+                            )
+                        )
+                        operator_receipt = (
+                            _install_coupled_attention_group_qdeim_operator(
+                                target_model=target_model,
+                                session=cache_session,
+                                layer_index=layer_index,
+                                fit_batch_indices=fit_batch_indices,
+                                fit_batch_sample_weights=(
+                                    fit_batch_sample_weights
+                                ),
+                                source_query_weight=parent_qk_tensors["q"],
+                                source_key_weight=parent_qk_tensors["k"],
+                                source_value_weight=parent_qk_tensors["v"],
+                                source_out_weight=parent_qk_tensors["o"],
+                                source_inventory=lineage.source_inventory,
+                                source_query_norm_weight=(
+                                    parent_qk_tensors["q_norm"]
+                                ),
+                                source_key_norm_weight=parent_qk_tensors["k_norm"],
+                                source_norm_inventory=source_norm_inventory,
+                                normalized_input_decoder=normalized_decoder,
+                                normalized_input_decoder_receipt=(
+                                    normalized_decoder_receipt
+                                ),
+                                residual_output_chart=chart,
+                                residual_chart_receipt=chart_receipt,
+                                direct_attention_source_receipt=(
+                                    direct_attention_receipts[layer_index]
+                                ),
+                                cache_key=cache.cache_key,
+                                bridge_artifact_sha256=bridge.artifact_sha256,
+                                parameter_count=parameter_count,
+                                body_recipe=recipe,
+                            )
+                        )
+                        operator_evidence_sha256 = tuple(
+                            operator_receipt["transport_evidence_sha256"]
+                        )
+                    else:
+                        operator_evidence = _build_attention_evidence(
+                            cache=cache,
+                            session=cache_session,
+                            bridge=bridge,
+                            alignments=alignments,
+                            parent=parent,
+                            child_bank=before_operator_replay,
+                            chart=chart,
+                            chart_receipt=chart_receipt,
+                            layer_index=layer_index,
+                            lineage=lineage,
+                            target_rope_inv_freq=target_rope_inv_freq,
+                            target_rope_attention_scaling=(
+                                target_rope_attention_scaling
+                            ),
+                            parent_qk_tensors=parent_qk_tensors,
+                            target_operator_norm_weight=(
+                                target_operator_norm_weight
+                            ),
+                            parent_norm_epsilon=getattr(
+                                parent_session,
+                                "norm_epsilon",
+                                None,
+                            ),
+                            target_norm_epsilon=target_norm_epsilon,
+                        )
+                        operator_receipt = _install_attention_operator(
+                            target_model=target_model,
+                            layer_index=layer_index,
+                            evidence=operator_evidence,
+                            cache_key=cache.cache_key,
+                            bridge_artifact_sha256=bridge.artifact_sha256,
+                            installer=attention_installer,
+                            parameter_count=parameter_count,
+                            body_recipe=recipe,
+                        )
+                        operator_evidence_sha256 = tuple(
+                            item.evidence_sha256 for item in operator_evidence
+                        )
                     attention_decision_count += 1
                     attention_install_count += int(
                         operator_receipt.get("installed") is True
@@ -4893,6 +5398,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         chart=chart,
                         chart_receipt=chart_receipt,
                         layer_index=layer_index,
+                    )
+                    operator_evidence_sha256 = tuple(
+                        item.evidence_sha256 for item in operator_evidence
                     )
                     operator_receipt = _install_short_conv_operator(
                         target_model=target_model,
@@ -5105,9 +5613,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         propagation_replay=propagation_replay,
                         chart_receipt=chart_receipt,
                         parent=parent,
-                        operator_evidence_sha256=tuple(
-                            item.evidence_sha256 for item in operator_evidence
-                        ),
+                        operator_evidence_sha256=operator_evidence_sha256,
                         mlp_evidence_sha256=tuple(
                             item.evidence_sha256 for item in mlp_evidence
                         ),
@@ -5232,6 +5738,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "cache_parent_fingerprint": cache.parent_fingerprint,
             "cache_layer_topology_sha256": cache.layer_topology_fingerprint,
             "cache_selective_session_sha256": cache_session_receipt["session_sha256"],
+            "cache_selective_session": dict(cache_session_receipt),
             "tokenizer_session_receipt_sha256": tokenizer_session_receipt[
                 "receipt_sha256"
             ],

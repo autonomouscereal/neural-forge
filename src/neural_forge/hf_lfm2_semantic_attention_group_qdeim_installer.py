@@ -1,9 +1,11 @@
 """Transactional installer for sealed-cache intact-group attention Q-DEIM.
 
 The cache adapter compiles one coupled dense Q/K/V/O candidate.  This module
-binds that candidate to an exact-zero target attention block, carries the
-direct parent Q/K RMSNorm weights alongside it, and publishes all six ordinary
-Parameters in the existing atomic attention transaction.
+binds that candidate to an authenticated blank target attention block, carries
+the direct parent Q/K RMSNorm weights alongside it, and publishes all six
+ordinary Parameters in the existing atomic attention transaction.  Blank
+Q/K/V/O matrices are exactly zero.  Q/K RMSNorm seeds are either the legacy
+exact-zero blank or the canonical exact-one neutral initialization.
 
 Preparation and installation are deliberately separate.  The prepared object
 authenticates the live blank target, the cache candidate, the direct-parent
@@ -65,6 +67,11 @@ _QKVO_ROLES = (
 )
 _NORM_ROLES = ("q_layernorm.weight", "k_layernorm.weight")
 _ALL_ROLES = (*_QKVO_ROLES, *_NORM_ROLES)
+_QKVO_SEED_POLICY = "exact-zero-blank-required"
+_NORM_SEED_POLICY = "exact-zero-legacy-blank-or-exact-one-canonical-neutral"
+_QKVO_ZERO_SEED_KIND = "exact-zero-blank"
+_NORM_ZERO_SEED_KIND = "exact-zero-legacy-blank"
+_NORM_ONE_SEED_KIND = "exact-one-canonical-neutral"
 _ZERO_OPERATIONS = MappingProxyType(
     {
         "parent_model_objects_constructed": 0,
@@ -188,6 +195,67 @@ def _self_sealed_report(
             f"{label} self-seal is invalid."
         )
     return MappingProxyType({**thawed, seal_name: supplied})
+
+
+def _target_seed_authentication(
+    snapshot: _TargetSnapshot,
+) -> Mapping[str, Mapping[str, Any]]:
+    """Authenticate the only blank seeds this installer is allowed to replace."""
+
+    if not _verify_target_snapshot(snapshot):
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            "Target seed authentication requires one intact target snapshot."
+        )
+    torch = _torch()
+    prefix = f"model.layers.{snapshot.layer_index}.self_attn."
+    authentication: dict[str, Mapping[str, Any]] = {}
+    for role in _QKVO_ROLES:
+        name = prefix + role
+        value = snapshot.parameter_values[name]
+        if not torch.equal(value, torch.zeros_like(value)):
+            raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+                "Coupled attention group-QDEIM installation requires exact-zero "
+                f"blank Q/K/V/O matrices; {role!r} is not exact-zero."
+            )
+        authentication[role] = MappingProxyType(
+            {
+                "state_key": name,
+                "seed_policy": _QKVO_SEED_POLICY,
+                "seed_kind": _QKVO_ZERO_SEED_KIND,
+                "seed_tensor_sha256": snapshot.parameter_sha256[name],
+            }
+        )
+    for role in _NORM_ROLES:
+        name = prefix + role
+        value = snapshot.parameter_values[name]
+        if torch.equal(value, torch.zeros_like(value)):
+            seed_kind = _NORM_ZERO_SEED_KIND
+        elif torch.equal(value, torch.ones_like(value)):
+            seed_kind = _NORM_ONE_SEED_KIND
+        else:
+            raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+                "Coupled attention group-QDEIM Q/K norm seeds must each be "
+                "exact-zero legacy blanks or exact-one canonical neutral seeds; "
+                f"{role!r} is neither."
+            )
+        authentication[role] = MappingProxyType(
+            {
+                "state_key": name,
+                "seed_policy": _NORM_SEED_POLICY,
+                "seed_kind": seed_kind,
+                "seed_tensor_sha256": snapshot.parameter_sha256[name],
+            }
+        )
+    return MappingProxyType(authentication)
+
+
+def _target_seed_authentication_body(
+    snapshot: _TargetSnapshot,
+) -> dict[str, dict[str, Any]]:
+    return {
+        role: dict(receipt)
+        for role, receipt in _target_seed_authentication(snapshot).items()
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,11 +411,12 @@ def seal_lfm2_semantic_attention_group_qdeim_norm_inventory(
     )
     if (
         tuple(query.shape) != tuple(key.shape)
-        or bool((query == 0).any().item())
-        or bool((key == 0).any().item())
+        or int(torch.count_nonzero(query).item()) == 0
+        or int(torch.count_nonzero(key).item()) == 0
     ):
         raise Lfm2SemanticAttentionGroupQdeimInstallationError(
-            "Direct-parent Q/K norm tensors must share a nonzero BF16 head axis."
+            "Direct-parent Q/K norm tensors must share one BF16 head axis and "
+            "must not be all-zero."
         )
 
     def receipt(value: Any) -> Mapping[str, Any]:
@@ -767,6 +836,25 @@ def _candidate_state(
         seal_name="result_sha256",
         label="semantic attention group-QDEIM adapter report",
     )
+    capability_value = adapter_report.get("cache_capability_receipt")
+    context_bank_value = adapter_report.get("context_bank_receipt")
+    if not isinstance(capability_value, Mapping) or not isinstance(
+        context_bank_value,
+        Mapping,
+    ):
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            "Cache adapter omitted its capability or true-context receipt."
+        )
+    capability_report = _self_sealed_report(
+        capability_value,
+        seal_name="result_sha256",
+        label="semantic attention group-QDEIM cache capability",
+    )
+    context_bank_report = _self_sealed_report(
+        context_bank_value,
+        seal_name="result_sha256",
+        label="semantic attention group-QDEIM true-context bank",
+    )
     compiled_report = _self_sealed_report(
         candidate.compiled.report,
         seal_name="result_sha256",
@@ -912,11 +1000,48 @@ def _candidate_state(
         for group in selected_groups
         for offset in range(queries_per_key_value)
     )
+    selected_payloads = context_bank_report.get("selected_payloads")
     if (
         adapter_report.get("schema")
         != LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_ADAPTER_SCHEMA
         or adapter_report.get("layer_index") != layer_index
         or adapter_report.get("source_inventory_sha256") != source_inventory_sha256
+        or capability_report.get("schema")
+        != "neural-forge-lfm2-semantic-attention-group-qdeim-cache-capability-v1"
+        or capability_report.get("result_sha256")
+        != adapter_report.get("cache_capability_sha256")
+        or capability_report.get("cache_key") != adapter_report.get("cache_key")
+        or capability_report.get("cache_manifest_sha256")
+        != adapter_report.get("cache_manifest_sha256")
+        or capability_report.get("cache_selective_session_sha256")
+        != adapter_report.get("cache_selective_session_sha256")
+        or capability_report.get("layer_index") != layer_index
+        or capability_report.get("fit_batch_indices")
+        != adapter_report.get("fit_batch_indices")
+        or capability_report.get("true_post_softmax_context_complete") is not True
+        or capability_report.get("tensor_payloads_loaded") != 0
+        or capability_report.get("parent_forward_calls") != 0
+        or capability_report.get("trace_recaptures") != 0
+        or capability_report.get("training_steps") != 0
+        or context_bank_report.get("schema")
+        != "neural-forge-lfm2-semantic-attention-qdeim-context-bank-v1"
+        or context_bank_report.get("result_sha256")
+        != adapter_report.get("context_bank_receipt_sha256")
+        or context_bank_report.get("route") != "captured_true"
+        or context_bank_report.get("fit_batch_indices")
+        != adapter_report.get("fit_batch_indices")
+        or not isinstance(selected_payloads, list)
+        or not selected_payloads
+        or any(
+            not isinstance(payload, Mapping)
+            or payload.get("session_sha256")
+            != adapter_report.get("cache_selective_session_sha256")
+            for payload in selected_payloads
+        )
+        or context_bank_report.get("heldout_tensor_payload_loads") != 0
+        or context_bank_report.get("parent_forward_calls") != 0
+        or context_bank_report.get("trace_recaptures") != 0
+        or context_bank_report.get("training_steps") != 0
         or adapter_report.get("source_state_sha256") != source_state_sha256
         or adapter_report.get("cache_parent_fingerprint")
         != source_parent_identity_sha256
@@ -1112,11 +1237,12 @@ def _verified_norms(
         != source_norm_inventory.query_norm_receipt["tensor_sha256"]
         or _tensor_sha256(key, label="source key norm")
         != source_norm_inventory.key_norm_receipt["tensor_sha256"]
-        or bool((query == 0).any().item())
-        or bool((key == 0).any().item())
+        or int(torch.count_nonzero(query).item()) == 0
+        or int(torch.count_nonzero(key).item()) == 0
     ):
         raise Lfm2SemanticAttentionGroupQdeimInstallationError(
-            "Direct-parent norm tensors are stale, zero, or incompatible with the target."
+            "Direct-parent norm tensors are stale, all-zero, or incompatible with "
+            "the target."
         )
     return query, key
 
@@ -1190,6 +1316,11 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
         )
         object.__setattr__(self, "query_norm_weight", query)
         object.__setattr__(self, "key_norm_weight", key)
+        if not self._prepared_norms_match_source_inventory():
+            raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+                "Prepared Q/K norm tensors are not the exact sealed direct-parent "
+                "norm inventory for this layer."
+            )
         computed = canonical_sha256(self.authentication_body())
         if self.preparation_sha256 and self.preparation_sha256 != computed:
             raise Lfm2SemanticAttentionGroupQdeimInstallationError(
@@ -1197,7 +1328,56 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
             )
         object.__setattr__(self, "preparation_sha256", computed)
 
+    def _prepared_norms_match_source_inventory(self) -> bool:
+        try:
+            inventory = self.source_norm_inventory
+            return bool(
+                isinstance(
+                    inventory,
+                    Lfm2SemanticAttentionGroupQdeimNormInventory,
+                )
+                and inventory.verify() == inventory.inventory_sha256
+                and inventory.layer_index == self.layer_index
+                and _tensor_sha256(
+                    self.query_norm_weight,
+                    label="prepared query norm",
+                )
+                == inventory.query_norm_receipt["tensor_sha256"]
+                and _tensor_sha256(
+                    self.key_norm_weight,
+                    label="prepared key norm",
+                )
+                == inventory.key_norm_receipt["tensor_sha256"]
+            )
+        except (KeyError, TypeError, ValueError, RuntimeError):
+            return False
+
     def authentication_body(self) -> dict[str, Any]:
+        target_seed_authentication = _target_seed_authentication_body(
+            self.target_snapshot
+        )
+        torch = _torch()
+        prefix = f"model.layers.{self.layer_index}.self_attn."
+        transaction_covered_state_keys = sorted(prefix + role for role in _ALL_ROLES)
+        expected_changed_state_keys = sorted(
+            [
+                *(prefix + role for role in _QKVO_ROLES),
+                *(
+                    prefix + role
+                    for role, source_norm in (
+                        ("q_layernorm.weight", self.query_norm_weight),
+                        ("k_layernorm.weight", self.key_norm_weight),
+                    )
+                    if not torch.equal(
+                        self.target_snapshot.parameter_values[prefix + role],
+                        source_norm,
+                    )
+                ),
+            ]
+        )
+        expected_unchanged_state_keys = sorted(
+            set(transaction_covered_state_keys) - set(expected_changed_state_keys)
+        )
         return {
             "schema": LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_PREPARATION_SCHEMA,
             "layer_index": self.layer_index,
@@ -1214,6 +1394,13 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
                 label="prepared key norm",
             ),
             "source_norm_inventory_sha256": self.source_norm_inventory.inventory_sha256,
+            "source_parent_identity_sha256": (
+                self.source_norm_inventory.source_parent_identity_sha256
+            ),
+            "source_qkvo_inventory_sha256": (
+                self.source_norm_inventory.source_qkvo_inventory_sha256
+            ),
+            "prepared_norm_tensors_match_source_inventory": True,
             "target_template_sha256": self.target_template_sha256,
             "normalized_input_decoder_sha256": self.normalized_input_decoder_sha256,
             "residual_output_chart_sha256": self.residual_output_chart_sha256,
@@ -1235,7 +1422,27 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
             ),
             "captured_gradient_ids": dict(self.target_snapshot.gradient_ids),
             "captured_gradient_sha256": dict(self.target_snapshot.gradient_sha256),
-            "exact_zero_blank_target_required_and_proven": True,
+            "target_seed_authentication": target_seed_authentication,
+            "target_seed_authentication_sha256": canonical_sha256(
+                target_seed_authentication
+            ),
+            "exact_zero_qkvo_blank_target_required_and_proven": True,
+            "qk_norm_seed_policy": _NORM_SEED_POLICY,
+            "qk_norm_seed_policy_authenticated": True,
+            "six_role_atomic_transaction_coverage_required": True,
+            "transaction_covered_parameter_roles": list(_ALL_ROLES),
+            "transaction_covered_state_keys": transaction_covered_state_keys,
+            "transaction_covered_parameter_role_count": len(_ALL_ROLES),
+            "expected_changed_state_keys_after_installation": (
+                expected_changed_state_keys
+            ),
+            "expected_changed_state_key_count_after_installation": len(
+                expected_changed_state_keys
+            ),
+            "expected_unchanged_seed_equal_candidate_state_keys_after_installation": (
+                expected_unchanged_state_keys
+            ),
+            "actual_changed_bytes_may_cover_four_to_six_roles": True,
             "candidate_frozen_before_installation": True,
             "numeric_metrics_have_semantic_decision_authority": False,
             "binary_manual_threshold_has_iteration_veto_authority": False,
@@ -1247,6 +1454,7 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
         try:
             return bool(
                 _verify_target_snapshot(self.target_snapshot)
+                and self._prepared_norms_match_source_inventory()
                 and self.source_norm_inventory.verify()
                 == self.source_norm_inventory.inventory_sha256
                 and self.preparation_sha256
@@ -1316,15 +1524,8 @@ def prepare_lfm2_semantic_attention_group_qdeim_installation(
 ):
     """Compile and freeze a coupled candidate without mutating the blank target."""
 
-    torch = _torch()
     snapshot = _target_snapshot(target_model, layer_index=layer_index)
-    if any(
-        int(torch.count_nonzero(value).item()) != 0
-        for value in snapshot.parameter_values.values()
-    ):
-        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
-            "Coupled attention group-QDEIM installation requires an exact-zero blank Q/K/V/O/norm target."
-        )
+    _target_seed_authentication(snapshot)
     target_parameters = _transaction._parameter_bundle(target_model, layer_index)
     query_norm, key_norm = _verified_norms(
         layer_index=layer_index,
@@ -1508,6 +1709,32 @@ def install_lfm2_prepared_semantic_attention_group_qdeim(
         "q_layernorm.weight": prepared.query_norm_weight,
         "k_layernorm.weight": prepared.key_norm_weight,
     }
+    target_seed_authentication = _target_seed_authentication_body(
+        prepared.target_snapshot
+    )
+    transaction_covered_keys = tuple(sorted(prefix + role for role in _ALL_ROLES))
+    expected_changed = tuple(
+        name
+        for name in transaction_covered_keys
+        if not _torch().equal(
+            prepared.target_snapshot.parameter_values[name],
+            install_state[name.removeprefix(prefix)],
+        )
+    )
+    prepared_authentication = prepared.authentication_body()
+    prepared_expected_changed = tuple(
+        prepared_authentication["expected_changed_state_keys_after_installation"]
+    )
+    expected_qkvo_changes = {prefix + role for role in _QKVO_ROLES}
+    if (
+        prepared_expected_changed != expected_changed
+        or not expected_qkvo_changes.issubset(expected_changed)
+        or not 4 <= len(expected_changed) <= 6
+    ):
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            "Authenticated attention candidate must change all four exact-zero "
+            "Q/K/V/O matrices and may change zero, one, or both neutral norm seeds."
+        )
     try:
         before, after, changed, parameter_count = (
             _transaction._install_qkvo_transaction(
@@ -1516,7 +1743,6 @@ def install_lfm2_prepared_semantic_attention_group_qdeim(
                 state=install_state,
             )
         )
-        expected_changed = tuple(sorted(prefix + role for role in _ALL_ROLES))
         current_topology = _transaction._topology_sha256(target_model)
         current_count = _transaction._parameter_count(target_model)
         if (
@@ -1528,7 +1754,8 @@ def install_lfm2_prepared_semantic_attention_group_qdeim(
             or current_topology != prepared.target_snapshot.topology_sha256
         ):
             raise Lfm2SemanticAttentionGroupQdeimInstallationError(
-                "Coupled attention transaction did not publish exactly all six Parameters."
+                "Coupled attention transaction did not preserve six-role coverage "
+                "and publish its exact four-to-six-role byte-change inventory."
             )
     except BaseException as exc:
         if not _snapshot_matches(target_model, prepared.target_snapshot):
@@ -1543,6 +1770,28 @@ def install_lfm2_prepared_semantic_attention_group_qdeim(
                 "Six-Parameter attention transaction failed and exact rollback was not proven."
             ) from exc
         raise
+    changed_roles = tuple(name.removeprefix(prefix) for name in changed)
+    unchanged_roles = tuple(
+        sorted(role for role in _ALL_ROLES if prefix + role not in changed)
+    )
+    source_norm_equal_to_seed_roles = tuple(
+        sorted(role for role in _NORM_ROLES if prefix + role not in changed)
+    )
+    source_norm_changed_from_seed_roles = tuple(
+        sorted(role for role in _NORM_ROLES if prefix + role in changed)
+    )
+    norm_seed_transitions = {
+        role: {
+            **target_seed_authentication[role],
+            "source_norm_tensor_sha256": _tensor_sha256(
+                install_state[role],
+                label=f"installed {role}",
+            ),
+            "candidate_equal_to_seed": prefix + role not in changed,
+            "bytes_changed": prefix + role in changed,
+        }
+        for role in _NORM_ROLES
+    }
     receipt_body = {
         "schema": LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_INSTALLATION_SCHEMA,
         "status": "installed-coupled-intact-group-qdeim-attention",
@@ -1586,12 +1835,44 @@ def install_lfm2_prepared_semantic_attention_group_qdeim(
         "parameter_storage_preserved": True,
         "gradient_state_preserved": True,
         "changed_state_keys": list(changed),
+        "changed_state_key_count": len(changed),
+        "prepared_expected_changed_state_keys": list(prepared_expected_changed),
+        "prepared_expected_changed_state_keys_matched": True,
+        "changed_parameter_roles": list(changed_roles),
+        "unchanged_transaction_parameter_roles": list(unchanged_roles),
         "candidate_parameter_roles": list(_ALL_ROLES),
+        "transaction_covered_parameter_roles": list(_ALL_ROLES),
+        "transaction_covered_state_keys": list(transaction_covered_keys),
+        "transaction_covered_parameter_role_count": len(_ALL_ROLES),
+        "all_six_roles_supplied_to_atomic_transaction": True,
+        "six_role_transaction_coverage_proven": True,
+        "all_six_roles_changed": len(changed) == len(_ALL_ROLES),
+        "actual_changed_bytes_cover_four_to_six_roles": 4 <= len(changed) <= 6,
+        "target_seed_authentication": target_seed_authentication,
+        "target_seed_authentication_sha256": canonical_sha256(
+            target_seed_authentication
+        ),
+        "exact_zero_qkvo_blank_target_required_and_proven": True,
+        "qk_norm_seed_policy": _NORM_SEED_POLICY,
+        "qk_norm_seed_policy_authenticated": True,
+        "norm_seed_transitions": norm_seed_transitions,
+        "source_norm_equal_to_target_seed_roles": list(source_norm_equal_to_seed_roles),
+        "source_norm_changed_from_target_seed_roles": list(
+            source_norm_changed_from_seed_roles
+        ),
         "complete_six_parameter_bundle_installed_transactionally": True,
         "qkvo_installed_from_one_coupled_intact_group_candidate": True,
         "query_and_key_norms_installed_from_direct_parent_tensors": True,
-        "blank_query_norm_zero_escape_proven": True,
-        "blank_key_norm_zero_escape_proven": True,
+        "blank_query_norm_zero_escape_proven": (
+            target_seed_authentication["q_layernorm.weight"]["seed_kind"]
+            == _NORM_ZERO_SEED_KIND
+            and "q_layernorm.weight" in changed_roles
+        ),
+        "blank_key_norm_zero_escape_proven": (
+            target_seed_authentication["k_layernorm.weight"]["seed_kind"]
+            == _NORM_ZERO_SEED_KIND
+            and "k_layernorm.weight" in changed_roles
+        ),
         "split_qk_or_vo_fallback_used": False,
         "incumbent_noop_fallback_used": False,
         "structural_proxy_fallback_used": False,

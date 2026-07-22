@@ -292,12 +292,18 @@ def _evidence_for_zero_writer(evidence, seed):
     )
 
 
-def _qdeim_down_weight_prior(seed, down_weight):
+def _qdeim_down_weight_prior(
+    seed,
+    down_weight,
+    *,
+    body_recipe_id="nonlinear_qdeim_structural",
+    mlp_lane="nonlinear_qdeim_structural_priority",
+):
     return Lfm2CpcfTerminalActionDownWeightPrior(
         down_weight=down_weight,
-        body_recipe_id="nonlinear_qdeim_structural",
+        body_recipe_id=body_recipe_id,
         body_recipe_sha256="1" * 64,
-        mlp_lane="nonlinear_qdeim_structural_priority",
+        mlp_lane=mlp_lane,
         selected_role="full-w1-w3-w2",
         selected_candidate_sha256="2" * 64,
         preparation_sha256="3" * 64,
@@ -306,6 +312,46 @@ def _qdeim_down_weight_prior(seed, down_weight):
             seed.down_weight
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("body_recipe_id", "mlp_lane"),
+    (
+        (
+            "nonlinear_qdeim_structural",
+            "nonlinear_qdeim_structural_priority",
+        ),
+        (
+            "nonlinear_qdeim_fit_corrected",
+            "nonlinear_qdeim_fit_corrected_priority",
+        ),
+        (
+            "nonlinear_qdeim_coupled_attention_structural",
+            "nonlinear_qdeim_structural_priority",
+        ),
+        (
+            "nonlinear_qdeim_coupled_attention_fit_corrected",
+            "nonlinear_qdeim_fit_corrected_priority",
+        ),
+    ),
+)
+def test_qdeim_prior_accepts_exact_base_and_coupled_recipe_lane_pairs(
+    body_recipe_id,
+    mlp_lane,
+) -> None:
+    source_seed, _evidence_banks, _ = _synthetic_terminal_problem()
+    seed = _zero_terminal_seed(source_seed)
+
+    prior = _qdeim_down_weight_prior(
+        seed,
+        source_seed.down_weight,
+        body_recipe_id=body_recipe_id,
+        mlp_lane=mlp_lane,
+    )
+
+    assert prior.body_recipe_id == body_recipe_id
+    assert prior.mlp_lane == mlp_lane
+    assert prior.verify_authentication() is True
 
 
 def test_qdeim_prior_is_a_pure_frontier_state_and_center_for_generated_deltas(
