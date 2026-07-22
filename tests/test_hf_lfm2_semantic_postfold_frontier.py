@@ -33,6 +33,59 @@ def _sha(label: str) -> str:
     return hashlib.sha256(label.encode("utf-8")).hexdigest()
 
 
+def _synthetic_terminal_composite_lineage(
+    *,
+    cache_key: str,
+    cache_parent_fingerprint: str,
+    bridge_artifact_sha256: str,
+    interface_report_sha256: str,
+    compatibility_sha256: str,
+    payload_binding_sha256: str,
+    session_sha256: str,
+):
+    source_body = {
+        "schema": "neural-forge-lfm2-long-horizon-terminal-source-lineage-v1",
+        "cache_key": cache_key,
+        "cache_manifest_sha256": _sha("cache-manifest"),
+        "cache_parent_fingerprint": cache_parent_fingerprint,
+        "cache_layer_topology_fingerprint": _sha("cache-topology"),
+        "bridge_artifact_sha256": bridge_artifact_sha256,
+        "bridge_transport_profile_fingerprint": _sha("bridge-profile"),
+        "target_to_donor_row_indices_sha256": _sha("row-map"),
+        "parent_final_norm_authentication_sha256": _sha("parent-norm-auth"),
+        "mapped_table_bfloat16_sha256": _sha("mapped-bfloat16"),
+        "mapped_table_interface_source_sha256": _sha("mapped-interface"),
+        "interface_report_sha256": interface_report_sha256,
+        "compiler_source_binding_sha256": _sha("source-binding"),
+        "direct_local_checkpoint_source_authenticated": False,
+        "behavioral_tolerance_used_for_source_admission": False,
+        "exact_lineage_is_source_admission_authority": True,
+    }
+    source = postfold.Lfm2LongHorizonTerminalSourceLineage(
+        frontier._sealed(source_body, "authentication_sha256")
+    )
+    compiler_inputs = {
+        "source_lineage": source.as_dict(),
+        "source_lineage_sha256": source.authentication_sha256,
+        "cache_key": cache_key,
+        "cache_compatibility_sha256": compatibility_sha256,
+        "cache_payload_binding_sha256": payload_binding_sha256,
+        "cache_session_sha256": session_sha256,
+        "parent_action_projection_sha256": [],
+        "parent_action_projections": [],
+    }
+    composite_body = {
+        "schema": "neural-forge-lfm2-long-horizon-terminal-composite-lineage-v1",
+        "compiler_inputs": compiler_inputs,
+        "compiler_binding_sha256": frontier.canonical_sha256(compiler_inputs),
+        "numeric_projection_diagnostics_are_admission_authority": False,
+        "exact_lineage_is_compiler_admission_authority": True,
+    }
+    return postfold.Lfm2LongHorizonTerminalCompositeLineage(
+        frontier._sealed(composite_body, "authentication_sha256")
+    )
+
+
 def _terminal_result():
     generator = torch.Generator().manual_seed(1)
     hidden = 4
@@ -168,6 +221,15 @@ def _capsule_reference(tmp_path, result):
         },
         "result_sha256",
     )
+    composite_lineage = _synthetic_terminal_composite_lineage(
+        cache_key=bindings["semantic_cache_key"],
+        cache_parent_fingerprint=bindings["cache_parent_fingerprint"],
+        bridge_artifact_sha256=bindings["bridge_artifact_sha256"],
+        interface_report_sha256=interface_authentication["interface_report_sha256"],
+        compatibility_sha256=compatibility["authentication_sha256"],
+        payload_binding_sha256=payload_binding["authentication_sha256"],
+        session_sha256=layer_receipt["cache_selective_session_sha256"],
+    )
     context = postfold._build_terminal_frontier_export_context(
         terminal=result,
         cache=SimpleNamespace(
@@ -183,6 +245,7 @@ def _capsule_reference(tmp_path, result):
         terminal_interface_authentication=terminal_interface_authentication,
         terminal_cache_compatibility=compatibility,
         terminal_cache_payload_binding=payload_binding,
+        terminal_composite_lineage=composite_lineage,
         terminal_cache_session_sha256=layer_receipt["cache_selective_session_sha256"],
         same_live_cache_session_as_layer_stack=False,
         cache_content_identity_matches_layer_stack=True,
@@ -667,6 +730,15 @@ def test_capsule_resume_orchestrator_uses_two_argument_export_seam(
         lambda *_a, **_k: (
             torch.eye(4, dtype=torch.bfloat16),
             {"result_sha256": bindings.mapped_parent_tied_table_receipt_sha256},
+        ),
+    )
+    monkeypatch.setattr(
+        frontier,
+        "build_lfm2_long_horizon_terminal_source_lineage",
+        lambda **_kwargs: postfold.Lfm2LongHorizonTerminalSourceLineage(
+            export_context["terminal_composite_lineage"]["compiler_inputs"][
+                "source_lineage"
+            ]
         ),
     )
     monkeypatch.setattr(

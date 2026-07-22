@@ -60,6 +60,7 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
 )
 from neural_forge.hf_lfm2_long_horizon_terminal_refold import (
     Lfm2LongHorizonTrajectorySplitPlan,
+    build_lfm2_long_horizon_terminal_source_lineage,
     load_lfm2_parent_final_rmsnorm_from_local_safetensors,
     preflight_lfm2_long_horizon_terminal_cache,
 )
@@ -1632,15 +1633,27 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         raise Lfm2SemanticTerminalFrontierError(
             "Preterminal capsule is not bound to the supplied parent final norm."
         )
-    mapped_parent_tied_table, mapped_parent_tied_table_receipt = (
+    loaded_mapped_parent_tied_table = (
         load_lfm2_mapped_parent_tied_table_from_local_safetensors(
             parent_model_directory,
             cache=cache,
             bridge=bridge,
             authenticated_parent_final_norm=parent_final_norm,
             tensor_key=parent_tied_tensor_key,
+            include_source_lineage_report=True,
         )
     )
+    if len(loaded_mapped_parent_tied_table) == 3:
+        (
+            mapped_parent_tied_table,
+            mapped_parent_tied_table_receipt,
+            mapped_parent_tied_table_source_report,
+        ) = loaded_mapped_parent_tied_table
+    else:  # Compatibility for injected test loaders; production returns three.
+        mapped_parent_tied_table, mapped_parent_tied_table_receipt = (
+            loaded_mapped_parent_tied_table
+        )
+        mapped_parent_tied_table_source_report = None
     if (
         mapped_parent_tied_table_receipt.get("result_sha256")
         != bindings.mapped_parent_tied_table_receipt_sha256
@@ -1661,6 +1674,14 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         raise Lfm2SemanticTerminalFrontierError(
             "Capsule tied interface could not be reauthenticated for terminal resume."
         ) from exc
+    terminal_source_lineage = build_lfm2_long_horizon_terminal_source_lineage(
+        cache=cache,
+        bridge=bridge,
+        parent_final_norm=parent_final_norm,
+        interface=capsule.interface,
+        source_selected_tied_table=mapped_parent_tied_table,
+        direct_local_mapped_source_report=(mapped_parent_tied_table_source_report),
+    )
     expected_live_context_facts = {
         "mapped_parent_tied_table_sha256": _tensor_sha256(mapped_parent_tied_table),
         "tied_interface_authentication_sha256": (
@@ -1707,6 +1728,7 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         layer_stack=capsule.layer_stack,
         interface=capsule.interface,
         source_selected_tied_table=mapped_parent_tied_table,
+        source_lineage=terminal_source_lineage,
         parent_final_norm=parent_final_norm,
         donor_tokenizer=donor_tokenizer,
         target_tokenizer=capsule.target_tokenizer,

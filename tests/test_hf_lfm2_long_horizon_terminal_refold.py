@@ -14,6 +14,7 @@ from safetensors.torch import save_file  # noqa: E402
 
 import neural_forge.hf_lfm2_long_horizon_terminal_refold as refold  # noqa: E402
 import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
+import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     Lfm2CircuitTraceCaptureConfig,
     build_lfm2_circuit_trace_cache,
@@ -254,6 +255,13 @@ def _fixture(
         donor_row_capacity=donor_vocabulary,
         target_row_capacity=target_vocabulary,
     )
+    source_lineage = refold.build_lfm2_long_horizon_terminal_source_lineage(
+        cache=cache,
+        bridge=bridge,
+        parent_final_norm=parent_final_norm,
+        interface=interface,
+        source_selected_tied_table=source_table,
+    )
     return {
         "parent": parent,
         "cache": cache,
@@ -261,6 +269,7 @@ def _fixture(
         "child": child,
         "interface": interface,
         "source_table": source_table,
+        "source_lineage": source_lineage,
         "parent_final_norm": parent_final_norm,
     }
 
@@ -393,6 +402,13 @@ def _semantic_fixture(
         child.get_input_embeddings().weight.copy_(
             interface.target_weight.to(torch.bfloat16)
         )
+    source_lineage = refold.build_lfm2_long_horizon_terminal_source_lineage(
+        cache=cache,
+        bridge=bridge,
+        parent_final_norm=parent_final_norm,
+        interface=interface,
+        source_selected_tied_table=source_table,
+    )
     return {
         "parent": parent,
         "cache": cache,
@@ -402,6 +418,7 @@ def _semantic_fixture(
         "child": child,
         "interface": interface,
         "source_table": source_table,
+        "source_lineage": source_lineage,
         "parent_final_norm": parent_final_norm,
     }
 
@@ -466,6 +483,63 @@ def _near_tie_cached_payload() -> tuple[dict[str, Any], dict[str, Any]]:
     return tensors, capture
 
 
+def _material_cached_payload() -> tuple[dict[str, Any], dict[str, Any]]:
+    cached = torch.tensor([[[20.0, -5.0, 9.0]]])
+    full = torch.tensor([[[-5.0, 20.0, 9.0]]])
+    forced = torch.tensor([[2]], dtype=torch.long)
+    # Ask the cache comparison helper for the complete, exact diagnostics under
+    # a deliberately loose envelope, then state the real terminal tolerance
+    # outcome explicitly.  The terminal verifier recomputes it at atol=0.25.
+    diagnostic_config = Lfm2CircuitTraceCaptureConfig(
+        logit_rtol=0.0,
+        logit_atol=100.0,
+        require_top1_agreement=True,
+        allow_top1_disagreement_within_numeric_error_envelope=True,
+    )
+
+    def comparison(name: str) -> dict[str, Any]:
+        result = trace_cache._compare_logits(
+            torch,
+            cached,
+            full,
+            config=diagnostic_config,
+            name=name,
+        )
+        result["numerically_close"] = False
+        return result
+
+    prefill = {
+        "phase": "cached_prefill",
+        "prefix_length": 3,
+        **comparison("material cached prefill"),
+    }
+    decode = {
+        "phase": "decode.000",
+        "prefix_length": 4,
+        "forced_token_sha256": trace_cache._tensor_sha256(torch, forced),
+        **comparison("material decode.000"),
+    }
+    tensors = {
+        "cached_prefill.logits": cached,
+        "prefill.logits": full,
+        "decode.000.logits": cached.clone(),
+        "decode.000.full_prefix_logits": full.clone(),
+        "decode.000.forced_token_ids": forced,
+    }
+    capture = {
+        "decode_steps": 1,
+        "cached_full_prefix_verifications": [prefill, decode],
+        "all_cached_logits_verified": False,
+        "all_cached_top1_verified": False,
+        "all_cached_top1_decisions_verified": True,
+        "decode_trace_mode": trace_cache.CACHED_VERIFIED_TRACE_MODE,
+        "canonical_trace_source": "verified_one_token_cache",
+        "cached_logits_accepted": False,
+        "cached_forward_count": 2,
+    }
+    return tensors, capture
+
+
 def test_replays_each_complete_trajectory_once_and_installs_only_accepted_w2(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -496,6 +570,7 @@ def test_replays_each_complete_trajectory_once_and_installs_only_accepted_w2(
         target_model=child,
         interface=values["interface"],
         source_selected_tied_table=values["source_table"],
+        source_lineage=values["source_lineage"],
         parent_final_norm=values["parent_final_norm"],
     )
 
@@ -619,17 +694,35 @@ def test_forced_cached_near_ties_are_raw_rederived_not_exact_top1_gated() -> Non
     )
 
 
-def test_cached_trace_fails_closed_on_material_or_incomplete_verification() -> None:
+def test_material_cached_trace_is_diagnostic_but_integrity_still_fails_closed() -> None:
+    material_tensors, material_capture = _material_cached_payload()
+    metadata = refold._terminal_cache_capture_compatibility(
+        material_capture,
+        batch_index=0,
+    )
+    raw = refold._verify_cached_full_prefix_payload_equivalence(
+        material_tensors,
+        material_capture,
+        batch_index=0,
+        logit_rtol=0.0,
+        logit_atol=0.25,
+    )
+
+    assert metadata["cached_logits_numerically_verified"] is False
+    assert metadata["collector_cached_logits_accepted"] is False
+    assert metadata["numeric_diagnostics_are_admission_authority"] is False
+    assert raw["all_logits_numerically_close"] is False
+    assert raw["top1_disagreement_count"] == 2
+    assert raw["numeric_diagnostics_are_admission_authority"] is False
+
     tensors, capture = _near_tie_cached_payload()
     material = json.loads(json.dumps(capture))
     material["cached_full_prefix_verifications"][0][
         "top1_disagreement_within_numeric_error_envelope"
     ] = False
-    with pytest.raises(
-        refold.Lfm2LongHorizonTerminalRefoldError,
-        match="not authenticated as a numeric-envelope near tie",
-    ):
-        refold._terminal_cache_capture_compatibility(material, batch_index=0)
+    diagnostic = refold._terminal_cache_capture_compatibility(material, batch_index=0)
+    assert diagnostic["all_top1_disagreements_numeric_envelope_verified"] is False
+    assert diagnostic["numeric_diagnostics_are_admission_authority"] is False
 
     incomplete = json.loads(json.dumps(capture))
     incomplete["cached_full_prefix_verifications"].pop()
@@ -734,6 +827,7 @@ def test_metadata_preflight_failure_precedes_target_seed_replay_and_solve(
             target_model=values["child"],
             interface=values["interface"],
             source_selected_tied_table=values["source_table"],
+            source_lineage=values["source_lineage"],
             parent_final_norm=values["parent_final_norm"],
         )
     assert events == ["metadata_preflight"]
@@ -753,6 +847,7 @@ def test_real_closed_form_selection_never_mutates_w2_when_rejected(
         target_model=child,
         interface=values["interface"],
         source_selected_tied_table=values["source_table"],
+        source_lineage=values["source_lineage"],
         parent_final_norm=values["parent_final_norm"],
     )
 
@@ -791,6 +886,7 @@ def test_semantic_span_replays_expansion_contraction_and_suffix_rewrite(
         target_model=values["child"],
         interface=values["interface"],
         source_selected_tied_table=values["source_table"],
+        source_lineage=values["source_lineage"],
         parent_final_norm=values["parent_final_norm"],
         tokenizer_replay_mode="semantic_span",
         donor_tokenizer=values["donor_tokenizer"],
@@ -863,6 +959,7 @@ def test_semantic_span_populates_real_32_plus_horizon_bucket(
         target_model=values["child"],
         interface=values["interface"],
         source_selected_tied_table=values["source_table"],
+        source_lineage=values["source_lineage"],
         parent_final_norm=values["parent_final_norm"],
         tokenizer_replay_mode="semantic_span",
         donor_tokenizer=values["donor_tokenizer"],
@@ -891,6 +988,7 @@ def test_semantic_span_is_explicit_and_strict_path_still_fails_unmapped_rows(
             target_model=values["child"],
             interface=values["interface"],
             source_selected_tied_table=values["source_table"],
+            source_lineage=values["source_lineage"],
             parent_final_norm=values["parent_final_norm"],
         )
 
@@ -916,7 +1014,7 @@ def test_semantic_span_fails_closed_on_wrong_action_projection(
 
     with pytest.raises(
         refold.Lfm2LongHorizonTerminalRefoldError,
-        match="do not authenticate.*action projection",
+        match="source lineage differs",
     ):
         refold.compile_install_lfm2_long_horizon_terminal_refold(
             cache=values["cache"],
@@ -924,11 +1022,51 @@ def test_semantic_span_fails_closed_on_wrong_action_projection(
             target_model=values["child"],
             interface=wrong_interface,
             source_selected_tied_table=wrong_source,
+            source_lineage=values["source_lineage"],
             parent_final_norm=values["parent_final_norm"],
             tokenizer_replay_mode="semantic_span",
             donor_tokenizer=values["donor_tokenizer"],
             target_tokenizer=values["target_tokenizer"],
         )
+
+
+def test_large_projection_error_survives_with_exact_lineage_and_tamper_fails(
+    tmp_path: Path,
+) -> None:
+    values = _fixture(tmp_path)
+    donor_rows = values["bridge"].transport_profile.donor_row_capacity
+    parent_rows = torch.zeros((2, 8), dtype=torch.bfloat16)
+    logits = torch.linspace(-40.0, 40.0, donor_rows).reshape(1, 1, -1)
+    tensors = {
+        "prefill.logits": logits,
+        "decode.000.logits": logits.flip(-1).contiguous(),
+    }
+
+    report = refold._verify_parent_action_projection(
+        tensors,
+        parent_rows,
+        values["bridge"],
+        values["source_table"],
+        decode_steps=1,
+        source_lineage=values["source_lineage"],
+        batch_index=0,
+        input_sha256="1" * 64,
+        record_sha256="2" * 64,
+        payload_binding_sha256="3" * 64,
+    )
+
+    assert report["relative_rmse"] > 0.02
+    assert report["relative_rmse_diagnostic_only"] is True
+    assert report["numeric_admission_threshold_applied"] is False
+    assert report["numeric_projection_error_can_reject_or_rollback"] is False
+
+    tampered = values["source_lineage"].as_dict()
+    tampered["mapped_table_bfloat16_sha256"] = "0" * 64
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="source lineage authentication is invalid",
+    ):
+        refold.Lfm2LongHorizonTerminalSourceLineage(tampered)
 
 
 def test_fails_closed_when_cached_donor_token_has_no_unique_target_row(
@@ -952,6 +1090,7 @@ def test_fails_closed_when_cached_donor_token_has_no_unique_target_row(
             target_model=values["child"],
             interface=values["interface"],
             source_selected_tied_table=values["source_table"],
+            source_lineage=values["source_lineage"],
             parent_final_norm=values["parent_final_norm"],
         )
     assert torch.equal(writer, before)
@@ -1032,16 +1171,21 @@ def test_parent_final_norm_runtime_replay_authenticates_cached_endpoints() -> No
         weight=seal.weight * 2.0,
         epsilon=seal.epsilon,
     )
-    with pytest.raises(
-        refold.Lfm2LongHorizonTerminalRefoldError,
-        match="does not reproduce the authenticated cache endpoint",
-    ):
-        refold._verify_parent_final_norm_endpoint(
-            tensors,
-            residual,
-            wrong,
-            decode_steps=1,
-        )
+    wrong_target, wrong_receipt = refold._verify_parent_final_norm_endpoint(
+        tensors,
+        residual,
+        wrong,
+        decode_steps=1,
+    )
+    torch.testing.assert_close(
+        wrong_target,
+        replayed.to(torch.bfloat16),
+        rtol=0,
+        atol=0,
+    )
+    assert wrong_receipt["runtime_replay_within_legacy_numeric_envelope"] is False
+    assert wrong_receipt["runtime_replay_metrics_diagnostic_only"] is True
+    assert wrong_receipt["runtime_replay_numeric_admission_threshold_applied"] is False
 
 
 def test_loads_parent_final_norm_directly_from_identity_matched_safetensors(
@@ -1100,12 +1244,169 @@ def test_loads_parent_final_norm_directly_from_identity_matched_safetensors(
         target_model=values["child"],
         interface=values["interface"],
         source_selected_tied_table=values["source_table"],
+        source_lineage=values["source_lineage"],
         parent_final_norm=loaded,
     )
     assert (
         result.as_dict()["parent_final_norm_direct_local_source"]["result_sha256"]
         == loaded.result_sha256
     )
+
+
+def test_mapped_tied_table_rejects_same_shape_different_parent_checkpoint(
+    tmp_path: Path,
+) -> None:
+    values = _fixture(tmp_path / "fixture", parent_tied=True)
+    parent_a = values["parent"]
+
+    def save_parent(model: Any, directory: Path) -> None:
+        directory.mkdir()
+        (directory / "config.json").write_text(
+            json.dumps(model.config.to_dict()),
+            encoding="utf-8",
+        )
+        save_file(
+            {
+                name: value.detach().to(device="cpu").contiguous().clone()
+                for name, value in model.state_dict().items()
+                if name != "lm_head.weight"
+            },
+            directory / "model.safetensors",
+        )
+
+    checkpoint_a = tmp_path / "parent-a"
+    save_parent(parent_a, checkpoint_a)
+    authenticated_a = refold.load_lfm2_parent_final_rmsnorm_from_local_safetensors(
+        values["cache"],
+        checkpoint_a,
+        tensor_key="model.embedding_norm.weight",
+        epsilon_config_key="norm_eps",
+    )
+    rows_a, _legacy_a, source_a = (
+        postfold.load_lfm2_mapped_parent_tied_table_from_local_safetensors(
+            checkpoint_a,
+            cache=values["cache"],
+            bridge=values["bridge"],
+            authenticated_parent_final_norm=authenticated_a,
+            include_source_lineage_report=True,
+        )
+    )
+    assert source_a["source_checkpoint_exactly_matches_authenticated_parent"] is True
+    assert source_a[
+        "independently_authenticated_parent_identity_sha256"
+    ] == values["cache"].parent_fingerprint
+    assert torch.equal(
+        rows_a,
+        parent_a.get_input_embeddings().weight.detach().to(torch.bfloat16),
+    )
+    direct_lineage = refold.build_lfm2_long_horizon_terminal_source_lineage(
+        cache=values["cache"],
+        bridge=values["bridge"],
+        parent_final_norm=authenticated_a,
+        interface=values["interface"],
+        source_selected_tied_table=rows_a,
+        direct_local_mapped_source_report=source_a,
+    )
+    assert direct_lineage.direct_local_checkpoint_source_authenticated is True
+    reconstruction = direct_lineage.document["direct_local_mapped_reconstruction"]
+    assert reconstruction["exact_tensor_equality_verified"] is True
+    assert reconstruction["operation_audit"]["parent_model_objects_constructed"] == 0
+    assert reconstruction["operation_audit"]["parent_model_forward_calls"] == 0
+    assert (
+        reconstruction["reconstructed_mapped_table_descriptor"]
+        == reconstruction["supplied_mapped_table_descriptor"]
+    )
+
+    parent_b = _model(
+        vocabulary=31,
+        hidden=8,
+        intermediate=12,
+        seed=99_999,
+        tied=True,
+        bfloat16=False,
+    )
+    checkpoint_b = tmp_path / "parent-b"
+    save_parent(parent_b, checkpoint_b)
+    assert not torch.equal(
+        parent_a.get_input_embeddings().weight,
+        parent_b.get_input_embeddings().weight,
+    )
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="differs from the independently authenticated parent checkpoint",
+    ):
+        postfold.load_lfm2_mapped_parent_tied_table_from_local_safetensors(
+            checkpoint_b,
+            cache=values["cache"],
+            bridge=values["bridge"],
+            authenticated_parent_final_norm=authenticated_a,
+            include_source_lineage_report=True,
+        )
+
+    # A source report has an ordinary caller-recomputable self-hash.  Prove
+    # that substituting B's mapped bytes while retaining A's exact checkpoint
+    # inventory cannot mint terminal lineage, even when the supplied causal
+    # interface is internally consistent with B.
+    rows_b = (
+        parent_b.get_input_embeddings()
+        .weight.detach()
+        .to(device="cpu", dtype=torch.bfloat16)
+        .contiguous()
+        .clone()
+    )
+    generator = torch.Generator().manual_seed(1703)
+    interface_b = fit_tied_causal_interface(
+        rows_b,
+        torch.randn(48, 8, generator=generator),
+        target_width=4,
+        validation_producer_rows=torch.randn(24, 8, generator=generator),
+        minimum_validation_top1_agreement=0.0,
+        metric_chunk_rows=8,
+    )
+    forged = dict(source_a)
+    forged.pop("result_sha256")
+    forged["source_tensor_sha256"] = refold._tensor_sha256(
+        parent_b.get_input_embeddings().weight.detach().to(device="cpu"),
+        "parent_tied_source_tensor",
+    )
+    forged["mapped_table_bfloat16_sha256"] = refold._tensor_sha256(
+        rows_b,
+        "mapped_parent_tied_table",
+    )
+    forged["mapped_table_interface_source_sha256"] = (
+        refold._interface_tensor_sha256(rows_b.to(torch.float64))
+    )
+    forged["result_sha256"] = refold._canonical_sha256(forged)
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="not the exact bridge projection",
+    ):
+        refold.build_lfm2_long_horizon_terminal_source_lineage(
+            cache=values["cache"],
+            bridge=values["bridge"],
+            parent_final_norm=authenticated_a,
+            interface=interface_b,
+            source_selected_tied_table=rows_b,
+            direct_local_mapped_source_report=forged,
+        )
+
+    tampered_mapping = dict(source_a)
+    tampered_mapping.pop("result_sha256")
+    tampered_mapping["target_to_donor_row_indices_sha256"] = "0" * 64
+    tampered_mapping["result_sha256"] = refold._canonical_sha256(tampered_mapping)
+    with pytest.raises(
+        refold.Lfm2LongHorizonTerminalRefoldError,
+        match="differs from the exact cache, bridge, checkpoint",
+    ):
+        refold.build_lfm2_long_horizon_terminal_source_lineage(
+            cache=values["cache"],
+            bridge=values["bridge"],
+            parent_final_norm=authenticated_a,
+            interface=values["interface"],
+            source_selected_tied_table=rows_a,
+            direct_local_mapped_source_report=tampered_mapping,
+        )
 
 
 def test_direct_local_parent_reconstructs_authenticated_bfloat16_rope_buffers(

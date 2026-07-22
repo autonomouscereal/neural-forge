@@ -315,6 +315,152 @@ def _compiled_nonzero_terminal_result_with_failed_validation():
     return seed, banks, result
 
 
+def _synthetic_terminal_lineages(
+    *,
+    cache_key,
+    cache_parent_fingerprint,
+    bridge_artifact_sha256,
+    compatibility_sha256,
+    payload_binding_sha256,
+    session_sha256,
+    interface_report_sha256="7" * 64,
+    direct_local=True,
+    projection_sha256=(),
+    projections=(),
+):
+    def seal(body, name):
+        return {**body, name: canonical_sha256(body)}
+
+    parent_source = None
+    mapped_source = None
+    parent_source_sha256 = None
+    mapped_source_sha256 = None
+    mapped_reconstruction = None
+    mapped_reconstruction_sha256 = None
+    if direct_local:
+        checkpoint_files = [
+            {"name": "model.safetensors", "bytes": 1, "sha256": "6" * 64}
+        ]
+        parent_identity = {"synthetic_parent_identity": cache_parent_fingerprint}
+        parent_body = {
+            "schema": "neural-forge-lfm2-local-parent-final-rmsnorm-load-v1",
+            "cache_key": cache_key,
+            "cache_parent_fingerprint": cache_parent_fingerprint,
+            "config_file_sha256": "5" * 64,
+            "checkpoint_files": checkpoint_files,
+            "reconstructed_parent_identity": parent_identity,
+        }
+        parent_source = seal(parent_body, "result_sha256")
+        parent_source_sha256 = parent_source["result_sha256"]
+        mapped_body = {
+            "schema": "neural-forge-lfm2-direct-local-mapped-tied-table-source-v1",
+            "parent_final_norm_load_sha256": parent_source_sha256,
+            "config_file": {
+                "name": "config.json",
+                "bytes": 1,
+                "sha256": parent_body["config_file_sha256"],
+            },
+            "checkpoint_files": checkpoint_files,
+            "independently_authenticated_parent_checkpoint_files_sha256": (
+                canonical_sha256(checkpoint_files)
+            ),
+            "independently_authenticated_parent_identity_sha256": (
+                canonical_sha256(parent_identity)
+            ),
+            "source_checkpoint_exactly_matches_authenticated_parent": True,
+            "source_tensor_sha256": "1" * 64,
+        }
+        mapped_source = seal(mapped_body, "result_sha256")
+        mapped_source_sha256 = mapped_source["result_sha256"]
+        mapped_descriptor = {
+            "dtype": "bfloat16",
+            "shape": [2, 2],
+            "numel": 4,
+            "size_bytes": 8,
+            "bfloat16_sha256": "e" * 64,
+            "interface_source_sha256": "f" * 64,
+        }
+        reconstruction_body = {
+            "schema": (
+                "neural-forge-lfm2-direct-local-mapped-tied-table-"
+                "reconstruction-v1"
+            ),
+            "cache_key": cache_key,
+            "cache_parent_fingerprint": cache_parent_fingerprint,
+            "parent_final_norm_load_sha256": parent_source_sha256,
+            "mapped_source_report_sha256": mapped_source_sha256,
+            "checkpoint_files": checkpoint_files,
+            "checkpoint_files_sha256": canonical_sha256(checkpoint_files),
+            "bridge_artifact_sha256": bridge_artifact_sha256,
+            "bridge_transport_profile_fingerprint": "c" * 64,
+            "target_to_donor_row_indices_sha256": "d" * 64,
+            "source_tensor_descriptor": {"sha256": "1" * 64},
+            "reconstructed_mapped_table_descriptor": mapped_descriptor,
+            "supplied_mapped_table_descriptor": mapped_descriptor,
+            "exact_tensor_equality_verified": True,
+            "operation_audit": {
+                "checkpoint_tensor_loads": 1,
+                "parent_model_objects_constructed": 0,
+                "parent_model_forward_calls": 0,
+                "parent_model_generate_calls": 0,
+                "network_access_performed": False,
+                "training_steps": 0,
+            },
+        }
+        mapped_reconstruction = seal(reconstruction_body, "result_sha256")
+        mapped_reconstruction_sha256 = mapped_reconstruction["result_sha256"]
+    source_body = {
+        "schema": "neural-forge-lfm2-long-horizon-terminal-source-lineage-v1",
+        "cache_key": cache_key,
+        "cache_manifest_sha256": "a" * 64,
+        "cache_parent_fingerprint": cache_parent_fingerprint,
+        "cache_layer_topology_fingerprint": "b" * 64,
+        "bridge_artifact_sha256": bridge_artifact_sha256,
+        "bridge_transport_profile_fingerprint": "c" * 64,
+        "target_to_donor_row_indices_sha256": "d" * 64,
+        "parent_final_norm_authentication_sha256": "4" * 64,
+        "mapped_table_bfloat16_sha256": "e" * 64,
+        "mapped_table_interface_source_sha256": "f" * 64,
+        "interface_report_sha256": interface_report_sha256,
+        "compiler_source_binding_sha256": "8" * 64,
+        "parent_final_norm_direct_local_source_sha256": parent_source_sha256,
+        "direct_local_mapped_source_report_sha256": mapped_source_sha256,
+        "direct_local_mapped_reconstruction_sha256": (
+            mapped_reconstruction_sha256
+        ),
+        "parent_final_norm_direct_local_source": parent_source,
+        "direct_local_mapped_source_report": mapped_source,
+        "direct_local_mapped_reconstruction": mapped_reconstruction,
+        "direct_local_checkpoint_source_authenticated": direct_local,
+        "behavioral_tolerance_used_for_source_admission": False,
+        "exact_lineage_is_source_admission_authority": True,
+    }
+    source = postfold.Lfm2LongHorizonTerminalSourceLineage(
+        seal(source_body, "authentication_sha256")
+    )
+    compiler_inputs = {
+        "source_lineage": source.as_dict(),
+        "source_lineage_sha256": source.authentication_sha256,
+        "cache_key": cache_key,
+        "cache_compatibility_sha256": compatibility_sha256,
+        "cache_payload_binding_sha256": payload_binding_sha256,
+        "cache_session_sha256": session_sha256,
+        "parent_action_projection_sha256": list(projection_sha256),
+        "parent_action_projections": list(projections),
+    }
+    composite_body = {
+        "schema": "neural-forge-lfm2-long-horizon-terminal-composite-lineage-v1",
+        "compiler_inputs": compiler_inputs,
+        "compiler_binding_sha256": canonical_sha256(compiler_inputs),
+        "numeric_projection_diagnostics_are_admission_authority": False,
+        "exact_lineage_is_compiler_admission_authority": True,
+    }
+    composite = postfold.Lfm2LongHorizonTerminalCompositeLineage(
+        seal(composite_body, "authentication_sha256")
+    )
+    return source, composite
+
+
 def _frontier_export_context(terminal, *, resume_mode=False):
     session_sha256 = "9" * 64
 
@@ -344,6 +490,15 @@ def _frontier_export_context(terminal, *, resume_mode=False):
         },
         "result_sha256",
     )
+    _source_lineage, composite_lineage = _synthetic_terminal_lineages(
+        cache_key="1" * 64,
+        cache_parent_fingerprint="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+        compatibility_sha256=compatibility["authentication_sha256"],
+        payload_binding_sha256=payload_binding["authentication_sha256"],
+        session_sha256=session_sha256,
+        direct_local=False,
+    )
     return postfold._build_terminal_frontier_export_context(
         terminal=terminal,
         cache=SimpleNamespace(cache_key="1" * 64, parent_fingerprint="2" * 64),
@@ -357,6 +512,7 @@ def _frontier_export_context(terminal, *, resume_mode=False):
         terminal_interface_authentication=interface_authentication,
         terminal_cache_compatibility=compatibility,
         terminal_cache_payload_binding=payload_binding,
+        terminal_composite_lineage=composite_lineage,
         terminal_cache_session_sha256=session_sha256,
         same_live_cache_session_as_layer_stack=not resume_mode,
         cache_content_identity_matches_layer_stack=True,
@@ -2348,7 +2504,11 @@ def _minimal_postfold_run_arguments(tmp_path: Path) -> dict[str, object]:
     }
 
 
-def _cached_fused_terminal_evidence() -> dict[str, object]:
+def _cached_fused_terminal_evidence(
+    *,
+    numerically_close: bool = True,
+    disagreement_envelope_verified: bool = True,
+) -> dict[str, object]:
     cache_key = "1" * 64
     manifest_sha256 = "2" * 64
     completion_sha256 = "3" * 64
@@ -2363,16 +2523,21 @@ def _cached_fused_terminal_evidence() -> dict[str, object]:
         ("cached_prefill", 2, 0, None),
         ("decode.000", 1, 1, "a" * 64),
     ):
+        phase_envelope_verified = (
+            True if disagreements == 0 else disagreement_envelope_verified
+        )
         phase_body = {
             "phase": phase,
             "cached_logits_sha256": "6" * 64,
             "full_prefix_logits_sha256": "7" * 64,
             "row_count": rows,
             "maximum_absolute_error": 0.125,
-            "numerically_close": True,
+            "numerically_close": numerically_close,
             "top1_exact_agreement": disagreements == 0,
             "top1_disagreement_count": disagreements,
-            "all_top1_disagreements_within_numeric_error_envelope": True,
+            "all_top1_disagreements_within_numeric_error_envelope": (
+                phase_envelope_verified
+            ),
             "forced_token_sha256": forced_sha,
         }
         phases.append(auth(phase_body, "authentication_sha256"))
@@ -2386,8 +2551,10 @@ def _cached_fused_terminal_evidence() -> dict[str, object]:
             value["authentication_sha256"] for value in phases
         ],
         "top1_disagreement_count": 1,
-        "all_logits_numerically_close": True,
-        "all_top1_disagreements_within_numeric_error_envelope": True,
+        "all_logits_numerically_close": numerically_close,
+        "all_top1_disagreements_within_numeric_error_envelope": (
+            disagreement_envelope_verified
+        ),
         "top1_exactness_is_diagnostic_only": True,
     }
     raw = auth(raw_body, "authentication_sha256")
@@ -2397,6 +2564,10 @@ def _cached_fused_terminal_evidence() -> dict[str, object]:
         "verification_phase_count": 2,
         "verification_phase_order": ["cached_prefill", "decode.000"],
         "top1_disagreement_count": 1,
+        "cached_logits_numerically_verified": numerically_close,
+        "all_top1_disagreements_numeric_envelope_verified": (
+            disagreement_envelope_verified
+        ),
     }
     compatibility_body = {
         "schema": postfold.LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA,
@@ -2408,13 +2579,15 @@ def _cached_fused_terminal_evidence() -> dict[str, object]:
         "ordered_batch_record_sha256": [record_sha256],
         "ordered_batch_record_file_sha256": [record_file_sha256],
         "batch_compatibility": [batch_compatibility],
-        "all_cached_logits_numerically_verified": True,
+        "all_cached_logits_numerically_verified": numerically_close,
         "cached_top1_disagreement_count": 1,
         "terminal_trajectory_compatibility_verified": True,
         "forced_decode_tokens_are_caller_supplied": True,
         "top1_exactness_is_diagnostic_only": True,
         "top1_exactness_is_publication_gate": False,
-        "all_top1_disagreements_numeric_envelope_verified": True,
+        "all_top1_disagreements_numeric_envelope_verified": (
+            disagreement_envelope_verified
+        ),
         "full_prefix_recache_required": False,
         "preflight_io_contract": {
             "trace_file_sha256_passes": 0,
@@ -2462,6 +2635,16 @@ def _cached_fused_terminal_evidence() -> dict[str, object]:
         "large_trace_file_sha256_authenticated_once_by_consuming_session": True,
     }
     binding = auth(binding_body, "authentication_sha256")
+    cache_parent_fingerprint = "8" * 64
+    bridge_artifact_sha256 = "9" * 64
+    source_lineage, composite_lineage = _synthetic_terminal_lineages(
+        cache_key=cache_key,
+        cache_parent_fingerprint=cache_parent_fingerprint,
+        bridge_artifact_sha256=bridge_artifact_sha256,
+        compatibility_sha256=compatibility["authentication_sha256"],
+        payload_binding_sha256=binding["authentication_sha256"],
+        session_sha256=session["session_sha256"],
+    )
     io_body = {
         "metadata_preflight_trace_file_sha256_passes": 0,
         "metadata_preflight_trace_payload_bytes_read": 0,
@@ -2484,9 +2667,20 @@ def _cached_fused_terminal_evidence() -> dict[str, object]:
     io_audit = auth(io_body, "result_sha256")
     body = {
         "cache_key": cache_key,
+        "cache_parent_fingerprint": cache_parent_fingerprint,
+        "bridge_artifact_sha256": bridge_artifact_sha256,
         "terminal_cache_compatibility": compatibility,
         "terminal_cache_compatibility_sha256": compatibility["authentication_sha256"],
         "terminal_cache_payload_binding": binding,
+        "terminal_source_lineage": source_lineage.as_dict(),
+        "terminal_source_lineage_sha256": source_lineage.authentication_sha256,
+        "terminal_composite_lineage": composite_lineage.as_dict(),
+        "terminal_composite_lineage_sha256": composite_lineage.authentication_sha256,
+        "terminal_compiler_binding_sha256": composite_lineage.compiler_binding_sha256,
+        "parent_action_projection_sha256": [],
+        "parent_action_projection_diagnostics": [],
+        "parent_action_projection_numeric_threshold_applied": False,
+        "parent_action_projection_metrics_diagnostic_only": True,
         "parent_cache_authentication": cache_authentication,
         "terminal_cache_tensor_payload_load_audit": payload_load_audit,
         "cached_full_prefix_payload_verification": [raw],
@@ -2514,6 +2708,29 @@ def test_fused_cache_evidence_rejects_fully_resealed_session_and_phase_drift():
     assert authentication["every_raw_cached_full_prefix_row_rederived"] is True
     assert authentication["raw_logit_rows_verified"] == 3
     assert authentication["top1_disagreement_count"] == 1
+
+    diagnostic_only = _cached_fused_terminal_evidence(
+        numerically_close=False,
+        disagreement_envelope_verified=False,
+    )
+    diagnostic_authentication = postfold._authenticate_fused_terminal_cache_evidence(
+        postfold._verify_sealed(
+            diagnostic_only,
+            seal_name="result_sha256",
+            label="numeric-diagnostic-only fused terminal",
+        )
+    )
+    assert diagnostic_authentication["all_logits_numerically_close"] is False
+    assert (
+        diagnostic_authentication[
+            "all_top1_disagreements_within_numeric_error_envelope"
+        ]
+        is False
+    )
+    assert (
+        diagnostic_authentication["numeric_diagnostics_are_admission_authority"]
+        is False
+    )
 
     session_drift = copy.deepcopy(valid)
     binding = session_drift["terminal_cache_payload_binding"]
@@ -2719,6 +2936,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "decode_trace_mode": "full_prefix_canonical",
         "verification_phase_count": 0,
         "top1_disagreement_count": 0,
+        "all_top1_disagreements_numeric_envelope_verified": True,
     }
     compatibility_body = {
         "schema": postfold.LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA,
@@ -2800,6 +3018,14 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "full_tensor_inventory_payload_logical_bytes_total": 128,
     }
     terminal_cache_io = MappingProxyType(sealed(io_body))
+    terminal_source_lineage, terminal_composite_lineage = _synthetic_terminal_lineages(
+        cache_key=cache.cache_key,
+        cache_parent_fingerprint=cache.parent_fingerprint,
+        bridge_artifact_sha256=bridge.artifact_sha256,
+        compatibility_sha256=terminal_cache_compatibility["authentication_sha256"],
+        payload_binding_sha256=payload_binding["authentication_sha256"],
+        session_sha256=session_receipt["session_sha256"],
+    )
 
     selective_session_calls = []
 
@@ -2988,11 +3214,28 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "final_mlp_full_coverage_after_terminal": coverage_after,
         "complete_nonzero_final_mlp_structural_coverage": True,
         "cache_key": cache.cache_key,
+        "cache_parent_fingerprint": cache.parent_fingerprint,
+        "bridge_artifact_sha256": bridge.artifact_sha256,
         "terminal_cache_compatibility": dict(terminal_cache_compatibility),
         "terminal_cache_compatibility_sha256": terminal_cache_compatibility[
             "authentication_sha256"
         ],
         "terminal_cache_payload_binding": dict(payload_binding),
+        "terminal_source_lineage": terminal_source_lineage.as_dict(),
+        "terminal_source_lineage_sha256": (
+            terminal_source_lineage.authentication_sha256
+        ),
+        "terminal_composite_lineage": terminal_composite_lineage.as_dict(),
+        "terminal_composite_lineage_sha256": (
+            terminal_composite_lineage.authentication_sha256
+        ),
+        "terminal_compiler_binding_sha256": (
+            terminal_composite_lineage.compiler_binding_sha256
+        ),
+        "parent_action_projection_sha256": [],
+        "parent_action_projection_diagnostics": [],
+        "parent_action_projection_numeric_threshold_applied": False,
+        "parent_action_projection_metrics_diagnostic_only": True,
         "parent_cache_authentication": cache_authentication,
         "terminal_cache_tensor_payload_load_audit": payload_load_audit,
         "cached_full_prefix_payload_verification": [dict(raw_receipt)],
@@ -3221,6 +3464,11 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
             source_table,
             MappingProxyType({"result_sha256": "7" * 64}),
         ),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "build_lfm2_long_horizon_terminal_source_lineage",
+        lambda **_kwargs: terminal_source_lineage,
     )
     monkeypatch.setattr(
         postfold,

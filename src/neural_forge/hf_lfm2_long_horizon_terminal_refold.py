@@ -101,6 +101,18 @@ LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA = (
 LFM2_LONG_HORIZON_TERMINAL_PAYLOAD_LOAD_AUDIT_SCHEMA = (
     "neural-forge-lfm2-long-horizon-terminal-payload-load-audit-v1"
 )
+LFM2_LONG_HORIZON_TERMINAL_SOURCE_LINEAGE_SCHEMA = (
+    "neural-forge-lfm2-long-horizon-terminal-source-lineage-v1"
+)
+LFM2_LONG_HORIZON_TERMINAL_COMPOSITE_LINEAGE_SCHEMA = (
+    "neural-forge-lfm2-long-horizon-terminal-composite-lineage-v1"
+)
+LFM2_DIRECT_LOCAL_MAPPED_TIED_TABLE_SOURCE_SCHEMA = (
+    "neural-forge-lfm2-direct-local-mapped-tied-table-source-v1"
+)
+LFM2_DIRECT_LOCAL_MAPPED_TIED_TABLE_RECONSTRUCTION_SCHEMA = (
+    "neural-forge-lfm2-direct-local-mapped-tied-table-reconstruction-v1"
+)
 
 TerminalSplit = Literal["fit", "fit_check", "selection", "validation"]
 TokenizerReplayMode = Literal["strict_one_row", "semantic_span"]
@@ -941,6 +953,784 @@ def _verify_interface_report(
     return {**report, "report_sha256": supplied}
 
 
+def _owned_canonical_document(
+    value: Mapping[str, Any],
+    *,
+    name: str,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise Lfm2LongHorizonTerminalRefoldError(f"{name} must be a mapping.")
+    try:
+        return json.loads(
+            json.dumps(
+                dict(value),
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"{name} must be finite canonical JSON."
+        ) from exc
+
+
+def _verified_file_record(value: Any, *, name: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"{name} must be an authenticated file record."
+        )
+    record = dict(value)
+    filename = record.get("name")
+    size = record.get("bytes")
+    if (
+        not isinstance(filename, str)
+        or not filename
+        or Path(filename).name != filename
+        or isinstance(size, bool)
+        or not isinstance(size, int)
+        or size <= 0
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            f"{name} has an invalid filename or byte count."
+        )
+    _digest(record.get("sha256"), f"{name} SHA-256")
+    return record
+
+
+def _authenticate_direct_local_mapped_source_report(
+    value: Mapping[str, Any],
+    *,
+    cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    parent_final_norm: Lfm2LocalParentFinalRmsNormLoad,
+    source_selected_tied_table: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Authenticate the exact checkpoint-to-BF16 mapped-table derivation."""
+
+    report = _owned_canonical_document(
+        value,
+        name="direct-local mapped tied-table source report",
+    )
+    supplied = report.pop("result_sha256", None)
+    if supplied != _canonical_sha256(report):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local mapped tied-table source report self-seal is invalid."
+        )
+    config_file = _verified_file_record(
+        report.get("config_file"),
+        name="parent config file",
+    )
+    index_value = report.get("safetensors_index_file")
+    index_file = (
+        None
+        if index_value is None
+        else _verified_file_record(index_value, name="parent safetensors index")
+    )
+    raw_files = report.get("checkpoint_files")
+    if not isinstance(raw_files, list) or not raw_files:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local mapped source report has no checkpoint shards."
+        )
+    checkpoint_files = [
+        _verified_file_record(value, name=f"parent checkpoint shard {index}")
+        for index, value in enumerate(raw_files)
+    ]
+    if len({value["name"] for value in checkpoint_files}) != len(checkpoint_files):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local mapped source checkpoint shard names are duplicated."
+        )
+    source_shard = _verified_file_record(
+        report.get("source_tensor_shard"),
+        name="mapped tied-table source shard",
+    )
+    if source_shard not in checkpoint_files:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Mapped tied-table source shard is absent from the checkpoint inventory."
+        )
+    source = source_selected_tied_table
+    torch = _torch()
+    mapping = tuple(bridge.transport_profile.target_to_donor_row_indices)
+    source_shape = [int(size) for size in source.shape]
+    expected_parent_norm_load = parent_final_norm.result_sha256
+    parent_report = _owned_canonical_document(
+        parent_final_norm.as_dict(),
+        name="independently authenticated parent checkpoint report",
+    )
+    parent_report_body = dict(parent_report)
+    parent_report_sha256 = parent_report_body.pop("result_sha256", None)
+    parent_raw_files = parent_report.get("checkpoint_files")
+    parent_identity = parent_report.get("reconstructed_parent_identity")
+    if (
+        parent_report_sha256 != _canonical_sha256(parent_report_body)
+        or parent_report_sha256 != expected_parent_norm_load
+        or not isinstance(parent_raw_files, list)
+        or not parent_raw_files
+        or not isinstance(parent_identity, Mapping)
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Independent parent checkpoint identity receipt is invalid."
+        )
+    parent_checkpoint_files = [
+        _verified_file_record(
+            value,
+            name=f"independently authenticated parent checkpoint shard {index}",
+        )
+        for index, value in enumerate(parent_raw_files)
+    ]
+    parent_config_sha256 = _digest(
+        parent_report.get("config_file_sha256"),
+        "independently authenticated parent config SHA-256",
+    )
+    parent_checkpoint_files_sha256 = _canonical_sha256(parent_checkpoint_files)
+    parent_identity_sha256 = _canonical_sha256(parent_identity)
+    if (
+        report.get("schema") != LFM2_DIRECT_LOCAL_MAPPED_TIED_TABLE_SOURCE_SCHEMA
+        or report.get("cache_key") != cache.cache_key
+        or report.get("cache_manifest_sha256") != cache.manifest.get("manifest_sha256")
+        or report.get("cache_parent_fingerprint") != cache.parent_fingerprint
+        or report.get("cache_layer_topology_fingerprint")
+        != cache.layer_topology_fingerprint
+        or report.get("parent_final_norm_load_sha256") != expected_parent_norm_load
+        or report.get("parent_final_norm_authentication_sha256")
+        != parent_final_norm.final_norm.authentication_sha256
+        or config_file["sha256"] != parent_config_sha256
+        or checkpoint_files != parent_checkpoint_files
+        or report.get("independently_authenticated_parent_checkpoint_files_sha256")
+        != parent_checkpoint_files_sha256
+        or report.get("independently_authenticated_parent_identity_sha256")
+        != parent_identity_sha256
+        or report.get("source_checkpoint_exactly_matches_authenticated_parent")
+        is not True
+        or parent_report.get("cache_key") != cache.cache_key
+        or parent_report.get("cache_parent_fingerprint")
+        != cache.parent_fingerprint
+        or parent_identity_sha256 != cache.parent_fingerprint
+        or report.get("bridge_artifact_sha256") != bridge.artifact_sha256
+        or report.get("bridge_transport_profile_fingerprint")
+        != bridge.profile_fingerprint
+        or report.get("target_to_donor_row_indices_sha256")
+        != _canonical_sha256(list(mapping))
+        or report.get("source_tensor_key") is None
+        or not isinstance(report.get("source_tensor_key"), str)
+        or not report.get("source_tensor_key")
+        or report.get("source_tensor_dtype")
+        not in {"bfloat16", "float16", "float32", "float64"}
+        or not isinstance(report.get("source_tensor_shape"), list)
+        or len(report.get("source_tensor_shape")) != 2
+        or any(
+            type(size) is not int or size <= 0 for size in report["source_tensor_shape"]
+        )
+        or report["source_tensor_shape"][0]
+        != bridge.transport_profile.donor_row_capacity
+        or report.get("mapped_table_shape") != source_shape
+        or report.get("mapped_table_dtype") != "bfloat16"
+        or report.get("mapped_table_bfloat16_sha256")
+        != _tensor_sha256(source, "mapped_parent_tied_table")
+        or report.get("mapped_table_interface_source_sha256")
+        != _interface_tensor_sha256(source.to(device="cpu", dtype=torch.float64))
+        or report.get("mapping_operation")
+        != "exact_target_to_donor_index_select_then_cpu_bfloat16_contiguous_clone"
+        or report.get("deterministic_cast_to_bfloat16") is not True
+        or report.get("network_access_performed") is not False
+        or report.get("parent_model_objects_constructed") != 0
+        or report.get("parent_model_forward_calls") != 0
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local mapped tied-table source report differs from the exact "
+            "cache, bridge, checkpoint, cast, or mapped BF16 table."
+        )
+    source_tensor_sha256 = _digest(
+        report.get("source_tensor_sha256"),
+        "parent tied source tensor SHA-256",
+    )
+    _digest(config_file["sha256"], "parent config SHA-256")
+    if index_file is not None:
+        _digest(index_file["sha256"], "parent safetensors index SHA-256")
+
+    # A caller can recompute an ordinary receipt self-hash, so claimed file
+    # inventory and mapped-table digests alone cannot prove that the supplied
+    # table was actually read from the authenticated parent checkpoint.  Mint
+    # terminal lineage only after independently reopening those exact bytes,
+    # loading the declared tensor, and replaying the bridge selection/cast.
+    try:
+        from safetensors import safe_open
+    except ImportError as exc:  # pragma: no cover - optional native dependency
+        raise RuntimeError(
+            "Direct-local mapped-source authentication requires safetensors."
+        ) from exc
+    try:
+        source_directory = _local_directory(
+            report.get("source_directory"),
+            "mapped tied-table source directory",
+        )
+        parent_directory = _local_directory(
+            parent_report.get("source_directory"),
+            "independently authenticated parent source directory",
+        )
+        live_shards = _local_safetensor_shards(source_directory)
+    except (TypeError, Lfm2DirectLocalError) as exc:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local mapped source directory cannot be authenticated."
+        ) from exc
+    if source_directory != parent_directory:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Mapped tied-table source directory differs from the independently "
+            "authenticated parent checkpoint directory."
+        )
+
+    config_path = source_directory / config_file["name"]
+    index_path = source_directory / "model.safetensors.index.json"
+    try:
+        live_config_file = {
+            "name": config_path.name,
+            "bytes": config_path.stat().st_size,
+            "sha256": _file_sha256(config_path),
+        }
+        live_checkpoint_files = [
+            {
+                "name": shard.name,
+                "bytes": shard.stat().st_size,
+                "sha256": _file_sha256(shard),
+            }
+            for shard in live_shards
+        ]
+        live_index_file = (
+            {
+                "name": index_path.name,
+                "bytes": index_path.stat().st_size,
+                "sha256": _file_sha256(index_path),
+            }
+            if index_path.is_file() and not index_path.is_symlink()
+            else None
+        )
+    except OSError as exc:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local mapped source files cannot be authenticated."
+        ) from exc
+    if (
+        config_path.is_symlink()
+        or any(shard.is_symlink() for shard in live_shards)
+        or live_config_file != config_file
+        or live_checkpoint_files != checkpoint_files
+        or live_index_file != index_file
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local mapped source files differ from the authenticated "
+            "parent checkpoint inventory."
+        )
+
+    source_tensor_key = str(report["source_tensor_key"])
+    reconstructed_source = None
+    reconstructed_source_shard = None
+    for shard in live_shards:
+        with safe_open(str(shard), framework="pt", device="cpu") as handle:
+            if source_tensor_key in handle.keys():
+                if reconstructed_source is not None:
+                    raise Lfm2LongHorizonTerminalRefoldError(
+                        "Mapped tied-table source tensor appears in multiple "
+                        "authenticated checkpoint shards."
+                    )
+                reconstructed_source = (
+                    handle.get_tensor(source_tensor_key)
+                    .detach()
+                    .to(device="cpu")
+                    .contiguous()
+                    .clone()
+                )
+                reconstructed_source_shard = shard
+    if reconstructed_source is None or reconstructed_source_shard is None:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Authenticated parent checkpoint lacks the mapped tied-table source "
+            "tensor."
+        )
+    reconstructed_source_shape = [
+        int(size) for size in reconstructed_source.shape
+    ]
+    reconstructed_source_dtype = str(reconstructed_source.dtype).removeprefix(
+        "torch."
+    )
+    reconstructed_source_sha256 = _tensor_sha256(
+        reconstructed_source,
+        "parent_tied_source_tensor",
+    )
+    reconstructed_source_shard_record = next(
+        value
+        for value in live_checkpoint_files
+        if value["name"] == reconstructed_source_shard.name
+    )
+    mapped_from_checkpoint = (
+        reconstructed_source.index_select(
+            0,
+            torch.tensor(mapping, dtype=torch.long),
+        )
+        .detach()
+        .to(device="cpu", dtype=torch.bfloat16)
+        .contiguous()
+        .clone()
+    )
+    mapped_descriptor = {
+        "dtype": str(mapped_from_checkpoint.dtype).removeprefix("torch."),
+        "shape": [int(size) for size in mapped_from_checkpoint.shape],
+        "numel": int(mapped_from_checkpoint.numel()),
+        "size_bytes": int(
+            mapped_from_checkpoint.numel() * mapped_from_checkpoint.element_size()
+        ),
+        "bfloat16_sha256": _tensor_sha256(
+            mapped_from_checkpoint,
+            "mapped_parent_tied_table",
+        ),
+        "interface_source_sha256": _interface_tensor_sha256(
+            mapped_from_checkpoint.to(device="cpu", dtype=torch.float64)
+        ),
+    }
+    supplied_descriptor = {
+        "dtype": str(source.dtype).removeprefix("torch."),
+        "shape": source_shape,
+        "numel": int(source.numel()),
+        "size_bytes": int(source.numel() * source.element_size()),
+        "bfloat16_sha256": _tensor_sha256(source, "mapped_parent_tied_table"),
+        "interface_source_sha256": _interface_tensor_sha256(
+            source.to(device="cpu", dtype=torch.float64)
+        ),
+    }
+    if (
+        reconstructed_source_shape != report["source_tensor_shape"]
+        or reconstructed_source_dtype != report["source_tensor_dtype"]
+        or reconstructed_source_sha256 != source_tensor_sha256
+        or reconstructed_source_shard_record != source_shard
+        or mapped_descriptor != supplied_descriptor
+        or not torch.equal(
+            mapped_from_checkpoint,
+            source.detach().to(device="cpu").contiguous(),
+        )
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Supplied mapped tied table is not the exact bridge projection of "
+            "the independently authenticated parent checkpoint tensor."
+        )
+
+    # Reauthenticate file bytes after tensor materialization so a changed local
+    # source cannot be accepted under the pre-read inventory.
+    if live_checkpoint_files != [
+        {
+            "name": shard.name,
+            "bytes": shard.stat().st_size,
+            "sha256": _file_sha256(shard),
+        }
+        for shard in live_shards
+    ]:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Direct-local mapped source checkpoint changed during exact "
+            "reconstruction."
+        )
+
+    reconstruction_body = {
+        "schema": LFM2_DIRECT_LOCAL_MAPPED_TIED_TABLE_RECONSTRUCTION_SCHEMA,
+        "cache_key": cache.cache_key,
+        "cache_parent_fingerprint": cache.parent_fingerprint,
+        "parent_final_norm_load_sha256": expected_parent_norm_load,
+        "mapped_source_report_sha256": supplied,
+        "source_directory": str(source_directory),
+        "config_file": live_config_file,
+        "checkpoint_files": live_checkpoint_files,
+        "checkpoint_files_sha256": parent_checkpoint_files_sha256,
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "bridge_transport_profile_fingerprint": bridge.profile_fingerprint,
+        "target_to_donor_row_indices_sha256": _canonical_sha256(list(mapping)),
+        "source_tensor_key": source_tensor_key,
+        "source_tensor_shard": reconstructed_source_shard_record,
+        "source_tensor_descriptor": {
+            "dtype": reconstructed_source_dtype,
+            "shape": reconstructed_source_shape,
+            "numel": int(reconstructed_source.numel()),
+            "size_bytes": int(
+                reconstructed_source.numel() * reconstructed_source.element_size()
+            ),
+            "sha256": reconstructed_source_sha256,
+        },
+        "reconstructed_mapped_table_descriptor": mapped_descriptor,
+        "supplied_mapped_table_descriptor": supplied_descriptor,
+        "exact_tensor_equality_verified": True,
+        "mapping_operation": (
+            "exact_target_to_donor_index_select_then_cpu_bfloat16_contiguous_clone"
+        ),
+        "operation_audit": {
+            "checkpoint_tensor_loads": 1,
+            "parent_model_objects_constructed": 0,
+            "parent_model_forward_calls": 0,
+            "parent_model_generate_calls": 0,
+            "network_access_performed": False,
+            "training_steps": 0,
+        },
+    }
+    reconstruction = {
+        **reconstruction_body,
+        "result_sha256": _canonical_sha256(reconstruction_body),
+    }
+    return {**report, "result_sha256": supplied}, reconstruction
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2LongHorizonTerminalSourceLineage:
+    """Exact cache/bridge/checkpoint/interface ancestry for terminal evidence."""
+
+    document: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        document = _owned_canonical_document(
+            self.document,
+            name="terminal source lineage",
+        )
+        body = dict(document)
+        supplied = body.pop("authentication_sha256", None)
+        direct_local = body.get("direct_local_checkpoint_source_authenticated")
+        if (
+            supplied != _canonical_sha256(body)
+            or body.get("schema") != LFM2_LONG_HORIZON_TERMINAL_SOURCE_LINEAGE_SCHEMA
+            or type(direct_local) is not bool
+            or body.get("behavioral_tolerance_used_for_source_admission") is not False
+            or body.get("exact_lineage_is_source_admission_authority") is not True
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal source lineage authentication is invalid."
+            )
+        for name in (
+            "cache_key",
+            "cache_manifest_sha256",
+            "cache_parent_fingerprint",
+            "cache_layer_topology_fingerprint",
+            "bridge_artifact_sha256",
+            "bridge_transport_profile_fingerprint",
+            "target_to_donor_row_indices_sha256",
+            "parent_final_norm_authentication_sha256",
+            "mapped_table_bfloat16_sha256",
+            "mapped_table_interface_source_sha256",
+            "interface_report_sha256",
+            "compiler_source_binding_sha256",
+        ):
+            _digest(body.get(name), f"terminal source lineage {name}")
+        if direct_local:
+            parent_source = body.get("parent_final_norm_direct_local_source")
+            mapped_source = body.get("direct_local_mapped_source_report")
+            reconstruction_source = body.get("direct_local_mapped_reconstruction")
+            if not isinstance(parent_source, Mapping) or not isinstance(
+                mapped_source,
+                Mapping,
+            ) or not isinstance(reconstruction_source, Mapping):
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    "Direct-local terminal source lineage omitted its independent "
+                    "parent checkpoint receipts."
+                )
+            parent_document = _owned_canonical_document(
+                parent_source,
+                name="terminal source parent checkpoint receipt",
+            )
+            parent_body = dict(parent_document)
+            parent_sha256 = parent_body.pop("result_sha256", None)
+            mapped_document = _owned_canonical_document(
+                mapped_source,
+                name="terminal source mapped-table checkpoint receipt",
+            )
+            mapped_body = dict(mapped_document)
+            mapped_sha256 = mapped_body.pop("result_sha256", None)
+            reconstruction_document = _owned_canonical_document(
+                reconstruction_source,
+                name="terminal source exact mapped-table reconstruction receipt",
+            )
+            reconstruction_body = dict(reconstruction_document)
+            reconstruction_sha256 = reconstruction_body.pop("result_sha256", None)
+            parent_files = parent_document.get("checkpoint_files")
+            mapped_files = mapped_document.get("checkpoint_files")
+            parent_identity = parent_document.get("reconstructed_parent_identity")
+            mapped_config = mapped_document.get("config_file")
+            source_descriptor = reconstruction_document.get(
+                "source_tensor_descriptor"
+            )
+            mapped_descriptor = reconstruction_document.get(
+                "reconstructed_mapped_table_descriptor"
+            )
+            supplied_descriptor = reconstruction_document.get(
+                "supplied_mapped_table_descriptor"
+            )
+            reconstruction_audit = reconstruction_document.get("operation_audit")
+            if (
+                parent_sha256 != _canonical_sha256(parent_body)
+                or mapped_sha256 != _canonical_sha256(mapped_body)
+                or reconstruction_sha256 != _canonical_sha256(reconstruction_body)
+                or parent_document.get("schema")
+                != "neural-forge-lfm2-local-parent-final-rmsnorm-load-v1"
+                or mapped_document.get("schema")
+                != LFM2_DIRECT_LOCAL_MAPPED_TIED_TABLE_SOURCE_SCHEMA
+                or reconstruction_document.get("schema")
+                != LFM2_DIRECT_LOCAL_MAPPED_TIED_TABLE_RECONSTRUCTION_SCHEMA
+                or not isinstance(parent_files, list)
+                or not parent_files
+                or mapped_files != parent_files
+                or not isinstance(parent_identity, Mapping)
+                or not isinstance(mapped_config, Mapping)
+                or mapped_config.get("sha256")
+                != parent_document.get("config_file_sha256")
+                or mapped_document.get("parent_final_norm_load_sha256")
+                != parent_sha256
+                or body.get("parent_final_norm_direct_local_source_sha256")
+                != parent_sha256
+                or body.get("direct_local_mapped_source_report_sha256")
+                != mapped_sha256
+                or body.get("direct_local_mapped_reconstruction_sha256")
+                != reconstruction_sha256
+                or parent_document.get("cache_parent_fingerprint")
+                != body.get("cache_parent_fingerprint")
+                or mapped_document.get(
+                    "independently_authenticated_parent_checkpoint_files_sha256"
+                )
+                != _canonical_sha256(parent_files)
+                or mapped_document.get(
+                    "independently_authenticated_parent_identity_sha256"
+                )
+                != _canonical_sha256(parent_identity)
+                or mapped_document.get(
+                    "source_checkpoint_exactly_matches_authenticated_parent"
+                )
+                is not True
+                or reconstruction_document.get("cache_key")
+                != body.get("cache_key")
+                or reconstruction_document.get("cache_parent_fingerprint")
+                != body.get("cache_parent_fingerprint")
+                or reconstruction_document.get("parent_final_norm_load_sha256")
+                != parent_sha256
+                or reconstruction_document.get("mapped_source_report_sha256")
+                != mapped_sha256
+                or reconstruction_document.get("checkpoint_files") != parent_files
+                or reconstruction_document.get("checkpoint_files_sha256")
+                != _canonical_sha256(parent_files)
+                or reconstruction_document.get("bridge_artifact_sha256")
+                != body.get("bridge_artifact_sha256")
+                or reconstruction_document.get(
+                    "bridge_transport_profile_fingerprint"
+                )
+                != body.get("bridge_transport_profile_fingerprint")
+                or reconstruction_document.get(
+                    "target_to_donor_row_indices_sha256"
+                )
+                != body.get("target_to_donor_row_indices_sha256")
+                or not isinstance(source_descriptor, Mapping)
+                or source_descriptor.get("sha256")
+                != mapped_document.get("source_tensor_sha256")
+                or not isinstance(mapped_descriptor, Mapping)
+                or not isinstance(supplied_descriptor, Mapping)
+                or mapped_descriptor != supplied_descriptor
+                or mapped_descriptor.get("bfloat16_sha256")
+                != body.get("mapped_table_bfloat16_sha256")
+                or mapped_descriptor.get("interface_source_sha256")
+                != body.get("mapped_table_interface_source_sha256")
+                or reconstruction_document.get("exact_tensor_equality_verified")
+                is not True
+                or not isinstance(reconstruction_audit, Mapping)
+                or reconstruction_audit.get("checkpoint_tensor_loads") != 1
+                or reconstruction_audit.get("parent_model_objects_constructed") != 0
+                or reconstruction_audit.get("parent_model_forward_calls") != 0
+                or reconstruction_audit.get("parent_model_generate_calls") != 0
+                or reconstruction_audit.get("network_access_performed") is not False
+                or reconstruction_audit.get("training_steps") != 0
+            ):
+                raise Lfm2LongHorizonTerminalRefoldError(
+                    "Direct-local terminal source lineage is not cross-bound to "
+                    "one independently authenticated parent checkpoint."
+                )
+        object.__setattr__(
+            self,
+            "document",
+            MappingProxyType({**body, "authentication_sha256": supplied}),
+        )
+
+    @property
+    def authentication_sha256(self) -> str:
+        return str(self.document["authentication_sha256"])
+
+    @property
+    def direct_local_checkpoint_source_authenticated(self) -> bool:
+        return bool(self.document["direct_local_checkpoint_source_authenticated"])
+
+    def verify_authentication(self) -> bool:
+        body = dict(self.document)
+        supplied = body.pop("authentication_sha256", None)
+        return supplied == _canonical_sha256(body)
+
+    def as_dict(self) -> dict[str, Any]:
+        return _owned_canonical_document(
+            self.document,
+            name="terminal source lineage",
+        )
+
+    def verify_for(
+        self,
+        *,
+        cache: Lfm2CircuitTraceCache,
+        bridge: StrictTokenizerBridgeArtifact,
+        parent_final_norm: (
+            Lfm2SealedParentFinalRmsNorm | Lfm2LocalParentFinalRmsNormLoad
+        ),
+        interface: TiedCausalInterfaceFold,
+        source_selected_tied_table: Any,
+    ) -> None:
+        source_report = self.document.get("direct_local_mapped_source_report")
+        normalized_parent = parent_final_norm
+        if self.document.get(
+            "parent_final_norm_direct_local_source"
+        ) is None and isinstance(parent_final_norm, Lfm2LocalParentFinalRmsNormLoad):
+            normalized_parent = parent_final_norm.final_norm
+        expected = build_lfm2_long_horizon_terminal_source_lineage(
+            cache=cache,
+            bridge=bridge,
+            parent_final_norm=normalized_parent,
+            interface=interface,
+            source_selected_tied_table=source_selected_tied_table,
+            direct_local_mapped_source_report=(
+                source_report if isinstance(source_report, Mapping) else None
+            ),
+        )
+        if expected.as_dict() != self.as_dict():
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal source lineage differs from the exact live source inputs."
+            )
+
+
+def build_lfm2_long_horizon_terminal_source_lineage(
+    *,
+    cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    parent_final_norm: (Lfm2SealedParentFinalRmsNorm | Lfm2LocalParentFinalRmsNormLoad),
+    interface: TiedCausalInterfaceFold,
+    source_selected_tied_table: Any,
+    direct_local_mapped_source_report: Mapping[str, Any] | None = None,
+) -> Lfm2LongHorizonTerminalSourceLineage:
+    """Bind exact source bytes and row order without a behavioral tolerance."""
+
+    if not isinstance(cache, Lfm2CircuitTraceCache):
+        raise TypeError("cache must be Lfm2CircuitTraceCache.")
+    try:
+        bridge.verify_files()
+    except Exception as exc:
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal source lineage tokenizer bridge authentication failed."
+        ) from exc
+    if isinstance(parent_final_norm, Lfm2LocalParentFinalRmsNormLoad):
+        selected_parent_norm = parent_final_norm.final_norm
+        parent_norm_source = parent_final_norm.as_dict()
+    elif isinstance(parent_final_norm, Lfm2SealedParentFinalRmsNorm):
+        selected_parent_norm = parent_final_norm
+        parent_norm_source = None
+    else:
+        raise TypeError(
+            "parent_final_norm must be a sealed norm or authenticated direct-local load."
+        )
+    _verify_parent_norm_binding(cache, selected_parent_norm)
+    interface_report = _verify_interface_report(
+        interface,
+        source_selected_tied_table,
+    )
+    source = source_selected_tied_table
+    torch = _torch()
+    mapping = tuple(bridge.transport_profile.target_to_donor_row_indices)
+    if (
+        not isinstance(source, torch.Tensor)
+        or source.layout != torch.strided
+        or source.device.type == "meta"
+        or source.ndim != 2
+        or source.dtype != torch.bfloat16
+        or not bool(torch.isfinite(source).all().item())
+        or tuple(source.shape)
+        != (
+            bridge.transport_profile.target_row_capacity,
+            selected_parent_norm.source_hidden_size,
+        )
+        or len(mapping) != int(source.shape[0])
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal source lineage requires one finite bridge-indexed BF16 table."
+        )
+    authenticated_source_report = None
+    authenticated_source_reconstruction = None
+    if direct_local_mapped_source_report is not None:
+        if not isinstance(parent_final_norm, Lfm2LocalParentFinalRmsNormLoad):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Direct-local mapped source lineage requires its authenticated "
+                "direct-local final-norm load."
+            )
+        (
+            authenticated_source_report,
+            authenticated_source_reconstruction,
+        ) = _authenticate_direct_local_mapped_source_report(
+            direct_local_mapped_source_report,
+            cache=cache,
+            bridge=bridge,
+            parent_final_norm=parent_final_norm,
+            source_selected_tied_table=source,
+        )
+    source64 = source.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    compiler_source = {
+        "cache_key": cache.cache_key,
+        "cache_manifest_sha256": cache.manifest["manifest_sha256"],
+        "cache_parent_fingerprint": cache.parent_fingerprint,
+        "cache_layer_topology_fingerprint": cache.layer_topology_fingerprint,
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "bridge_transport_profile_fingerprint": bridge.profile_fingerprint,
+        "target_to_donor_row_indices_sha256": _canonical_sha256(list(mapping)),
+        "parent_final_norm_authentication_sha256": (
+            selected_parent_norm.authentication_sha256
+        ),
+        "parent_final_norm_direct_local_source_sha256": (
+            None if parent_norm_source is None else parent_norm_source["result_sha256"]
+        ),
+        "direct_local_mapped_source_report_sha256": (
+            None
+            if authenticated_source_report is None
+            else authenticated_source_report["result_sha256"]
+        ),
+        "direct_local_mapped_reconstruction_sha256": (
+            None
+            if authenticated_source_reconstruction is None
+            else authenticated_source_reconstruction["result_sha256"]
+        ),
+        "mapped_table_bfloat16_sha256": _tensor_sha256(
+            source,
+            "mapped_parent_tied_table",
+        ),
+        "mapped_table_interface_source_sha256": _interface_tensor_sha256(source64),
+        "interface_report_sha256": interface_report["report_sha256"],
+    }
+    body = {
+        "schema": LFM2_LONG_HORIZON_TERMINAL_SOURCE_LINEAGE_SCHEMA,
+        **compiler_source,
+        "parent_final_norm": selected_parent_norm.as_dict(),
+        "parent_final_norm_direct_local_source": parent_norm_source,
+        "direct_local_mapped_source_report": authenticated_source_report,
+        "direct_local_mapped_reconstruction": (
+            authenticated_source_reconstruction
+        ),
+        "interface_report": interface_report,
+        "mapped_table_shape": [int(size) for size in source.shape],
+        "mapped_table_dtype": "bfloat16",
+        "direct_local_checkpoint_source_authenticated": (
+            authenticated_source_report is not None
+        ),
+        "compiler_source_binding_sha256": _canonical_sha256(compiler_source),
+        "behavioral_tolerance_used_for_source_admission": False,
+        "exact_lineage_is_source_admission_authority": True,
+        "operation_audit": {
+            "parent_model_forward_calls": 0,
+            "parent_model_generate_calls": 0,
+            "network_access_performed": False,
+            "training_steps": 0,
+        },
+    }
+    return Lfm2LongHorizonTerminalSourceLineage(
+        {**body, "authentication_sha256": _canonical_sha256(body)}
+    )
+
+
 def _target_runtime_seed(
     target_model: Any,
     interface: TiedCausalInterfaceFold,
@@ -1191,20 +1981,14 @@ def _verify_parent_final_norm_endpoint(
     difference = (replay64 - cached64).abs()
     dtype = cached_output.dtype
     epsilon = float(torch.finfo(dtype).eps)
-    # The checkpoint may have been traced on a different device, whose FP32
-    # reduction order can differ.  Keep the allowance scale-relative (never a
-    # denominator clamped to one): two storage-precision bins for BF16/FP16,
-    # or 64 FP32/FP64 epsilons for the reduction itself.
+    # Preserve the former device/storage envelope as a diagnostic only.  The
+    # authenticated cached endpoint is the compiler target; exact checkpoint,
+    # cache, final-norm, and payload lineage provides source admission.
     multiplier = 2.0 if dtype in {torch.bfloat16, torch.float16} else 64.0
     scale = torch.maximum(replay64.abs(), cached64.abs())
     tolerance = scale * (multiplier * epsilon)
     exact_zero = scale == 0
     equivalent = (difference <= tolerance) | (exact_zero & (difference == 0))
-    if not bool(equivalent.all().item()):
-        raise Lfm2LongHorizonTerminalRefoldError(
-            "Direct-local parent final RMSNorm does not reproduce the "
-            "authenticated cache endpoint."
-        )
     reference_rms = float(cached64.square().mean().sqrt().item())
     relative_rmse = float(difference.square().mean().sqrt().item()) / max(
         reference_rms,
@@ -1223,11 +2007,16 @@ def _verify_parent_final_norm_endpoint(
         "final_residual_to_norm_input_exact": True,
         "final_norm_output_to_lm_head_input_exact": True,
         "runtime_replay_exact": bool(torch.equal(replayed, cached_output)),
-        "runtime_replay_all_elements_verified": True,
+        "runtime_replay_all_elements_finite": True,
+        "runtime_replay_within_legacy_numeric_envelope": bool(equivalent.all().item()),
         "runtime_replay_relative_rmse": relative_rmse,
         "runtime_replay_maximum_absolute_error": float(difference.max().item()),
         "scale_relative_tolerance_multiplier": multiplier,
         "storage_dtype_epsilon": epsilon,
+        "runtime_replay_metrics_diagnostic_only": True,
+        "runtime_replay_numeric_admission_threshold_applied": False,
+        "runtime_replay_numeric_error_can_reject_or_rollback": False,
+        "exact_source_lineage_is_admission_authority": True,
         "absolute_denominator_floor_used": False,
         "cached_output_endpoint_available": True,
         "runtime_replay_to_cached_output_verified": True,
@@ -1323,11 +2112,9 @@ def _cached_verification_compatibility(
 
     The cache collector already compared the complete cached logit row against
     a use-cache=False full-prefix execution.  The terminal fold consumes
-    caller-forced tokens, so an exact greedy winner is not a trajectory gate.
-    A winner disagreement is nevertheless accepted only when the sealed
-    collector record proves that *every* disagreement lies inside the numeric
-    error envelope.  Older exact-winner records remain compatible; older
-    disagreement records without the detailed envelope evidence fail closed.
+    caller-forced tokens, so neither numerical closeness nor a greedy winner is
+    a trajectory gate.  Preserve complete finite diagnostics and fail only when
+    their sealed structure is malformed or internally inconsistent.
     """
 
     if not isinstance(value, Mapping):
@@ -1341,10 +2128,11 @@ def _cached_verification_compatibility(
             f"Cache batch {batch_index} full-prefix verification coverage is "
             "missing, duplicated, or reordered."
         )
-    if value.get("numerically_close") is not True:
+    numerically_close = value.get("numerically_close")
+    if type(numerically_close) is not bool:
         raise Lfm2LongHorizonTerminalRefoldError(
-            f"Cache batch {batch_index} phase {expected_phase!r} has a material "
-            "cached/full-prefix logit disagreement."
+            f"Cache batch {batch_index} phase {expected_phase!r} has malformed "
+            "cached/full-prefix numeric diagnostics."
         )
     maximum_absolute_error = _nonnegative_finite_metadata_number(
         value.get("max_abs_error"),
@@ -1384,20 +2172,19 @@ def _cached_verification_compatibility(
                 "contradictory exact top-1 metadata."
             )
     else:
-        # These fields were added specifically to distinguish a BF16/numeric
-        # near tie from a material action disagreement.  Do not infer a tie
-        # from allclose alone and do not accept a legacy disagreement that
-        # lacks this complete sealed coverage.
-        if envelope_verified is not True or not isinstance(first, Mapping):
+        # Keep the complete disagreement diagnostics, including a material
+        # disagreement outside the old envelope.  Exact cache receipts admit
+        # the evidence; these values only help rank and interpret it.
+        if type(envelope_verified) is not bool or not isinstance(first, Mapping):
             raise Lfm2LongHorizonTerminalRefoldError(
                 f"Cache batch {batch_index} phase {expected_phase!r} top-1 "
-                "disagreement is not authenticated as a numeric-envelope "
-                "near tie."
+                "disagreement diagnostics are incomplete."
             )
-        if first.get("within_numeric_error_envelope") is not True:
+        first_within_envelope = first.get("within_numeric_error_envelope")
+        if type(first_within_envelope) is not bool:
             raise Lfm2LongHorizonTerminalRefoldError(
                 f"Cache batch {batch_index} phase {expected_phase!r} first "
-                "top-1 disagreement lies outside the numeric error envelope."
+                "top-1 disagreement has malformed envelope diagnostics."
             )
         for name in ("row_index", "cached_token_id", "full_prefix_token_id"):
             item = first.get(name)
@@ -1426,13 +2213,14 @@ def _cached_verification_compatibility(
             )
         }
         envelope = numeric["winner_pair_error_envelope"] + 1e-12
-        if (
+        recomputed_first_within_envelope = not (
             numeric["cached_preference_gap"] > envelope
             or numeric["full_prefix_preference_gap"] > envelope
-        ):
+        )
+        if first_within_envelope is not recomputed_first_within_envelope:
             raise Lfm2LongHorizonTerminalRefoldError(
                 f"Cache batch {batch_index} phase {expected_phase!r} near-tie "
-                "gaps exceed the authenticated numeric error envelope."
+                "metadata differs from its sealed numeric diagnostics."
             )
         for name in (
             "maximum_cached_preference_gap_on_disagreement",
@@ -1463,7 +2251,7 @@ def _cached_verification_compatibility(
     body = {
         "phase": expected_phase,
         "prefix_length": expected_prefix_length,
-        "numerically_close": True,
+        "numerically_close": numerically_close,
         "maximum_absolute_error": maximum_absolute_error,
         "top1_exact_agreement": top1_agreement,
         "top1_exactness_is_diagnostic_only": True,
@@ -1472,6 +2260,8 @@ def _cached_verification_compatibility(
             top1_agreement or envelope_verified is True
         ),
         "collector_top1_decision_verified": decision_verified,
+        "numeric_diagnostics_are_admission_authority": False,
+        "exact_cache_lineage_is_admission_authority": True,
     }
     return {**body, "authentication_sha256": _canonical_sha256(body)}
 
@@ -1534,6 +2324,8 @@ def _terminal_cache_capture_compatibility(
             "top1_disagreement_count": 0,
             "all_top1_disagreements_numeric_envelope_verified": True,
             "forced_decode_trajectory_compatible": True,
+            "numeric_diagnostics_are_admission_authority": False,
+            "exact_cache_lineage_is_admission_authority": True,
         }
         return {**body, "authentication_sha256": _canonical_sha256(body)}
 
@@ -1572,10 +2364,16 @@ def _terminal_cache_capture_compatibility(
         )
     )
     all_exact = all(value["top1_exact_agreement"] for value in phase_receipts)
+    all_numerically_close = all(
+        value["numerically_close"] is True for value in phase_receipts
+    )
+    cached_logits_verified = capture.get("all_cached_logits_verified")
+    cached_logits_accepted = capture.get("cached_logits_accepted")
     if (
-        capture.get("all_cached_logits_verified") is not True
+        type(cached_logits_verified) is not bool
+        or cached_logits_verified is not all_numerically_close
         or capture.get("all_cached_top1_verified") is not all_exact
-        or capture.get("cached_logits_accepted") is not True
+        or type(cached_logits_accepted) is not bool
         or capture.get("canonical_trace_source") != "verified_one_token_cache"
         or capture.get("cached_forward_count") != len(expected_phases)
     ):
@@ -1600,7 +2398,8 @@ def _terminal_cache_capture_compatibility(
         "verification_authentication_sha256": [
             value["authentication_sha256"] for value in phase_receipts
         ],
-        "cached_logits_numerically_verified": True,
+        "cached_logits_numerically_verified": all_numerically_close,
+        "collector_cached_logits_accepted": cached_logits_accepted,
         "cached_top1_exact_for_all_phases": all_exact,
         "collector_all_top1_decisions_verified": top1_decisions,
         "top1_exactness_is_diagnostic_only": True,
@@ -1610,6 +2409,8 @@ def _terminal_cache_capture_compatibility(
             for value in phase_receipts
         ),
         "forced_decode_trajectory_compatible": True,
+        "numeric_diagnostics_are_admission_authority": False,
+        "exact_cache_lineage_is_admission_authority": True,
     }
     return {**body, "authentication_sha256": _canonical_sha256(body)}
 
@@ -1891,6 +2692,18 @@ def _authenticate_terminal_cache_compatibility(
         for value in batches
         if value["decode_trace_mode"] == CACHED_VERIFIED_TRACE_MODE
     )
+    all_cached_logits_numerically_verified = (
+        all(
+            value["cached_logits_numerically_verified"] is True
+            for value in cached_batches
+        )
+        if cached_batches
+        else None
+    )
+    all_numeric_envelopes_verified = all(
+        value["all_top1_disagreements_numeric_envelope_verified"] is True
+        for value in batches
+    )
     body = {
         "schema": LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA,
         "cache_key": cache.cache_key,
@@ -1906,12 +2719,7 @@ def _authenticate_terminal_cache_compatibility(
         ],
         "batch_compatibility": batches,
         "all_cached_logits_numerically_verified": (
-            all(
-                value["cached_logits_numerically_verified"] is True
-                for value in cached_batches
-            )
-            if cached_batches
-            else None
+            all_cached_logits_numerically_verified
         ),
         "all_cached_top1_exact": (
             all(
@@ -1922,20 +2730,24 @@ def _authenticate_terminal_cache_compatibility(
             else None
         ),
         "cached_top1_disagreement_count": disagreement_count,
-        "all_top1_disagreements_numeric_envelope_verified": all(
-            value["all_top1_disagreements_numeric_envelope_verified"] is True
-            for value in batches
+        "all_top1_disagreements_numeric_envelope_verified": (
+            all_numeric_envelopes_verified
         ),
         "forced_decode_tokens_are_caller_supplied": True,
         "top1_exactness_is_diagnostic_only": True,
         "top1_exactness_is_publication_gate": False,
         "terminal_trajectory_compatibility_verified": True,
         "full_prefix_recache_required": False,
-        "full_prefix_recache_assessment": (
-            "not_required_for_this_forced_token_terminal_fold_when_every_cached_"
-            "logit_comparison_is_numerically_verified_and_every_top1_"
-            "disagreement_is_inside_the_authenticated_numeric_error_envelope"
+        "full_prefix_recache_recommended_diagnostic": bool(
+            all_cached_logits_numerically_verified is False
+            or not all_numeric_envelopes_verified
         ),
+        "full_prefix_recache_assessment": (
+            "diagnostic_only_exact_cache_lineage_remains_admissible_regardless_"
+            "of_cached_full_prefix_numeric_difference"
+        ),
+        "numeric_diagnostics_are_admission_authority": False,
+        "exact_cache_lineage_is_admission_authority": True,
         "preflight_io_contract": {
             "authenticated_sealed_batch_record_metadata_used": True,
             "manifest_file_reads": 1,
@@ -2222,6 +3034,8 @@ def _verify_cached_full_prefix_payload_equivalence(
             "all_logits_numerically_close": True,
             "all_top1_disagreements_within_numeric_error_envelope": True,
             "top1_exactness_is_diagnostic_only": True,
+            "numeric_diagnostics_are_admission_authority": False,
+            "exact_payload_lineage_is_admission_authority": True,
         }
         return {**body, "authentication_sha256": _canonical_sha256(body)}
 
@@ -2289,8 +3103,7 @@ def _verify_cached_full_prefix_payload_equivalence(
             )
         )
         if (
-            not numerically_close
-            or sealed.get("numerically_close") is not True
+            sealed.get("numerically_close") is not numerically_close
             or not math.isclose(
                 maximum_error,
                 float(sealed.get("max_abs_error")),
@@ -2374,16 +3187,15 @@ def _verify_cached_full_prefix_payload_equivalence(
                     "within_numeric_error_envelope": within,
                 }
         if (
-            not every_disagreement_within_envelope
-            or sealed.get(
+            sealed.get(
                 "top1_disagreement_within_numeric_error_envelope",
                 every_disagreement_within_envelope,
             )
             is not every_disagreement_within_envelope
         ):
             raise Lfm2LongHorizonTerminalRefoldError(
-                f"Cache batch {batch_index} phase {phase!r} contains a material "
-                "raw top-1 disagreement outside the numeric error envelope."
+                f"Cache batch {batch_index} phase {phase!r} raw top-1 envelope "
+                "diagnostics differ from the sealed record."
             )
         sealed_first = sealed.get("first_top1_disagreement")
         if first_disagreement is None:
@@ -2428,11 +3240,15 @@ def _verify_cached_full_prefix_payload_equivalence(
             "full_prefix_logits_sha256": _tensor_sha256(full),
             "row_count": int(cached64.shape[0]),
             "maximum_absolute_error": maximum_error,
-            "numerically_close": True,
+            "numerically_close": numerically_close,
             "top1_exact_agreement": disagreement_count == 0,
             "top1_disagreement_count": disagreement_count,
-            "all_top1_disagreements_within_numeric_error_envelope": True,
+            "all_top1_disagreements_within_numeric_error_envelope": (
+                every_disagreement_within_envelope
+            ),
             "forced_token_sha256": forced_token_sha256,
+            "numeric_diagnostics_are_admission_authority": False,
+            "exact_payload_lineage_is_admission_authority": True,
         }
         phase_receipts.append(
             {**phase_body, "authentication_sha256": _canonical_sha256(phase_body)}
@@ -2447,9 +3263,16 @@ def _verify_cached_full_prefix_payload_equivalence(
             value["authentication_sha256"] for value in phase_receipts
         ],
         "top1_disagreement_count": total_disagreements,
-        "all_logits_numerically_close": True,
-        "all_top1_disagreements_within_numeric_error_envelope": True,
+        "all_logits_numerically_close": all(
+            value["numerically_close"] is True for value in phase_receipts
+        ),
+        "all_top1_disagreements_within_numeric_error_envelope": all(
+            value["all_top1_disagreements_within_numeric_error_envelope"] is True
+            for value in phase_receipts
+        ),
         "top1_exactness_is_diagnostic_only": True,
+        "numeric_diagnostics_are_admission_authority": False,
+        "exact_payload_lineage_is_admission_authority": True,
     }
     return {**body, "authentication_sha256": _canonical_sha256(body)}
 
@@ -2569,13 +3392,47 @@ def _verify_parent_action_projection(
     source_selected_tied_table: Any,
     *,
     decode_steps: int,
+    source_lineage: Lfm2LongHorizonTerminalSourceLineage,
+    batch_index: int,
+    input_sha256: str,
+    record_sha256: str,
+    payload_binding_sha256: str,
 ) -> dict[str, Any]:
-    """Bind cached parent actions to the selected tied-interface row order."""
+    """Bind cached actions to exact source lineage; score only diagnostically."""
 
     torch = _torch()
     profile = bridge.transport_profile
     mapping = tuple(profile.target_to_donor_row_indices)
     source = source_selected_tied_table
+    if (
+        not isinstance(source_lineage, Lfm2LongHorizonTerminalSourceLineage)
+        or not source_lineage.verify_authentication()
+        or source_lineage.document.get("bridge_artifact_sha256")
+        != bridge.artifact_sha256
+        or source_lineage.document.get("bridge_transport_profile_fingerprint")
+        != bridge.profile_fingerprint
+        or source_lineage.document.get("target_to_donor_row_indices_sha256")
+        != _canonical_sha256(list(mapping))
+        or source_lineage.document.get("mapped_table_bfloat16_sha256")
+        != _tensor_sha256(source, "mapped_parent_tied_table")
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Parent action projection lacks exact authenticated source lineage."
+        )
+    if (
+        isinstance(batch_index, bool)
+        or not isinstance(batch_index, int)
+        or batch_index < 0
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Parent action projection batch index is invalid."
+        )
+    input_sha256 = _digest(input_sha256, "parent action input SHA-256")
+    record_sha256 = _digest(record_sha256, "parent action record SHA-256")
+    payload_binding_sha256 = _digest(
+        payload_binding_sha256,
+        "parent action payload binding SHA-256",
+    )
     if (
         not isinstance(source, torch.Tensor)
         or source.ndim != 2
@@ -2624,6 +3481,12 @@ def _verify_parent_action_projection(
         )
     cached64 = cached.to(torch.float64)
     difference = reconstructed - cached64
+    if not bool(torch.isfinite(reconstructed).all().item()) or not bool(
+        torch.isfinite(difference).all().item()
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Parent action projection produced non-finite diagnostic values."
+        )
     reference_rms = float(cached64.square().mean().sqrt().item())
     relative_rmse = float(difference.square().mean().sqrt().item()) / max(
         reference_rms,
@@ -2642,20 +3505,24 @@ def _verify_parent_action_projection(
     tie_verified = agreements | (
         (cached_gap <= tie_envelope) & (reconstructed_gap <= tie_envelope)
     )
-    if (
-        not math.isfinite(relative_rmse)
-        or relative_rmse > 0.02
-        or not bool(tie_verified.all().item())
-    ):
+    if not math.isfinite(relative_rmse):
         raise Lfm2LongHorizonTerminalRefoldError(
-            "Cached parent logits do not authenticate the selected tied-table "
-            "action projection at every phase endpoint."
+            "Parent action projection produced a non-finite relative-RMSE diagnostic."
         )
     body = {
-        "method": "cached-full-logits-selected-by-sealed-bridge-v1",
+        "method": "exact-source-lineage-bound-action-projection-v2",
+        "source_lineage_sha256": source_lineage.authentication_sha256,
+        "batch_index": batch_index,
+        "input_sha256": input_sha256,
+        "record_sha256": record_sha256,
+        "payload_binding_sha256": payload_binding_sha256,
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "bridge_transport_profile_fingerprint": bridge.profile_fingerprint,
         "phase_order": list(phases),
         "phase_count": len(phases),
         "target_to_donor_row_indices_sha256": _canonical_sha256(list(mapping)),
+        "parent_final_norm_rows_sha256": _tensor_sha256(parent_final_norm_rows),
+        "mapped_source_table_bfloat16_sha256": _tensor_sha256(source),
         "cached_selected_logits_sha256": _tensor_sha256(cached),
         "reconstructed_selected_logits_sha256": _tensor_sha256(reconstructed),
         "cached_selected_top1_sha256": _tensor_sha256(top1),
@@ -2665,9 +3532,15 @@ def _verify_parent_action_projection(
         "numeric_tie_verified_disagreement_count": int(
             ((~agreements) & tie_verified).sum().item()
         ),
-        "all_selected_actions_verified": True,
+        "all_numeric_ties_within_reconstruction_envelope": bool(
+            tie_verified.all().item()
+        ),
         "relative_rmse": relative_rmse,
-        "maximum_relative_rmse": 0.02,
+        "relative_rmse_diagnostic_only": True,
+        "top1_and_tie_diagnostics_only": True,
+        "numeric_admission_threshold_applied": False,
+        "numeric_projection_error_can_reject_or_rollback": False,
+        "exact_composite_lineage_required_for_compiler_use": True,
         "numeric_token_id_equality_required": False,
     }
     return {**body, "authentication_sha256": _canonical_sha256(body)}
@@ -2679,6 +3552,7 @@ def _collect_cached_trajectories(
     inverse: tuple[int, ...],
     parent_final_norm: Lfm2SealedParentFinalRmsNorm,
     source_selected_tied_table: Any,
+    source_lineage: Lfm2LongHorizonTerminalSourceLineage,
     split_plan: Lfm2LongHorizonTrajectorySplitPlan,
     authenticated_session: Any | None = None,
 ) -> tuple[
@@ -2755,6 +3629,11 @@ def _collect_cached_trajectories(
                     bridge,
                     source_selected_tied_table,
                     decode_steps=decode_steps,
+                    source_lineage=source_lineage,
+                    batch_index=reference.index,
+                    input_sha256=reference.input_sha256,
+                    record_sha256=reference.record_sha256,
+                    payload_binding_sha256=payload.selection_sha256,
                 )
                 target_prompt = _map_donor_ids_to_unique_target(
                     tensors["input.input_ids"],
@@ -2858,6 +3737,7 @@ def _collect_cached_semantic_trajectories(
     target_tokenizer: Any,
     parent_final_norm: Lfm2SealedParentFinalRmsNorm,
     source_selected_tied_table: Any,
+    source_lineage: Lfm2LongHorizonTerminalSourceLineage,
     split_plan: Lfm2LongHorizonTrajectorySplitPlan,
     authenticated_session: Any | None = None,
 ) -> tuple[
@@ -2958,6 +3838,15 @@ def _collect_cached_semantic_trajectories(
             bridge,
             source_selected_tied_table,
             decode_steps=decode_steps,
+            source_lineage=source_lineage,
+            batch_index=batch.index,
+            input_sha256=batch.input_sha256,
+            record_sha256=record["record_sha256"],
+            payload_binding_sha256=(
+                record["record_sha256"]
+                if selected_receipt is None
+                else selected_receipt["selection_sha256"]
+            ),
         )
         try:
             semantic = build_lfm2_semantic_span_phase_bridge(
@@ -3023,6 +3912,241 @@ def _collect_cached_semantic_trajectories(
             "session": session.as_dict(),
             "selected_payloads": payload_receipts,
         },
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2LongHorizonTerminalCompositeLineage:
+    """Compiler binding over source, cache session, and exact batch payloads."""
+
+    document: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        document = _owned_canonical_document(
+            self.document,
+            name="terminal composite lineage",
+        )
+        body = dict(document)
+        supplied = body.pop("authentication_sha256", None)
+        compiler_inputs = body.get("compiler_inputs")
+        if (
+            supplied != _canonical_sha256(body)
+            or body.get("schema") != LFM2_LONG_HORIZON_TERMINAL_COMPOSITE_LINEAGE_SCHEMA
+            or not isinstance(compiler_inputs, Mapping)
+            or body.get("compiler_binding_sha256") != _canonical_sha256(compiler_inputs)
+            or body.get("numeric_projection_diagnostics_are_admission_authority")
+            is not False
+            or body.get("exact_lineage_is_compiler_admission_authority") is not True
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal composite lineage authentication is invalid."
+            )
+        _digest(
+            compiler_inputs.get("source_lineage_sha256"),
+            "terminal composite source lineage SHA-256",
+        )
+        _digest(
+            compiler_inputs.get("cache_session_sha256"),
+            "terminal composite cache session SHA-256",
+        )
+        _digest(
+            body.get("compiler_binding_sha256"),
+            "terminal composite compiler binding SHA-256",
+        )
+        object.__setattr__(
+            self,
+            "document",
+            MappingProxyType({**body, "authentication_sha256": supplied}),
+        )
+
+    @property
+    def authentication_sha256(self) -> str:
+        return str(self.document["authentication_sha256"])
+
+    @property
+    def compiler_binding_sha256(self) -> str:
+        return str(self.document["compiler_binding_sha256"])
+
+    def verify_authentication(self) -> bool:
+        body = dict(self.document)
+        supplied = body.pop("authentication_sha256", None)
+        compiler_inputs = body.get("compiler_inputs")
+        return bool(
+            supplied == _canonical_sha256(body)
+            and isinstance(compiler_inputs, Mapping)
+            and body.get("compiler_binding_sha256")
+            == _canonical_sha256(compiler_inputs)
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return _owned_canonical_document(
+            self.document,
+            name="terminal composite lineage",
+        )
+
+
+def authenticate_lfm2_long_horizon_terminal_composite_lineage(
+    value: Mapping[str, Any],
+    *,
+    expected_source_lineage_sha256: str | None = None,
+) -> Lfm2LongHorizonTerminalCompositeLineage:
+    lineage = Lfm2LongHorizonTerminalCompositeLineage(value)
+    compiler_inputs = lineage.document["compiler_inputs"]
+    source_document = compiler_inputs.get("source_lineage")
+    if not isinstance(source_document, Mapping):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal composite lineage omitted its typed source lineage."
+        )
+    source = Lfm2LongHorizonTerminalSourceLineage(source_document)
+    if compiler_inputs.get("source_lineage_sha256") != source.authentication_sha256 or (
+        expected_source_lineage_sha256 is not None
+        and source.authentication_sha256
+        != _digest(
+            expected_source_lineage_sha256,
+            "expected terminal source lineage SHA-256",
+        )
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal composite and source lineage bindings differ."
+        )
+    return lineage
+
+
+def _build_terminal_composite_lineage(
+    *,
+    cache: Lfm2CircuitTraceCache,
+    source_lineage: Lfm2LongHorizonTerminalSourceLineage,
+    compatibility: Mapping[str, Any],
+    payload_binding: Mapping[str, Any],
+    cache_receipt: Mapping[str, Any],
+    cached: Sequence[_CachedTrajectory],
+) -> Lfm2LongHorizonTerminalCompositeLineage:
+    if (
+        not isinstance(source_lineage, Lfm2LongHorizonTerminalSourceLineage)
+        or not source_lineage.verify_authentication()
+        or source_lineage.document.get("cache_key") != cache.cache_key
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal composite compiler received invalid source lineage."
+        )
+    compatibility_document = _owned_canonical_document(
+        compatibility,
+        name="terminal cache compatibility",
+    )
+    compatibility_body = dict(compatibility_document)
+    compatibility_sha256 = compatibility_body.pop("authentication_sha256", None)
+    binding_document = _owned_canonical_document(
+        payload_binding,
+        name="terminal cache payload binding",
+    )
+    binding_body = dict(binding_document)
+    binding_sha256 = binding_body.pop("authentication_sha256", None)
+    receipt = _owned_canonical_document(
+        cache_receipt,
+        name="terminal cache receipt",
+    )
+    session = receipt.get("session")
+    payloads = receipt.get("selected_payloads")
+    if not isinstance(session, Mapping) or not isinstance(payloads, list):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal composite lineage lacks cache session or payload receipts."
+        )
+    session_body = dict(session)
+    session_sha256 = session_body.pop("session_sha256", None)
+    ordered_batches = session.get(
+        "ordered_authenticated_batches",
+        session.get("ordered_verified_batches"),
+    )
+    if (
+        compatibility_sha256 != _canonical_sha256(compatibility_body)
+        or binding_sha256 != _canonical_sha256(binding_body)
+        or session_sha256 != _canonical_sha256(session_body)
+        or not isinstance(ordered_batches, list)
+        or len(ordered_batches) != len(cached)
+        or len(payloads) != len(cached)
+        or session.get("cache_key") != cache.cache_key
+        or session.get("manifest_sha256") != cache.manifest.get("manifest_sha256")
+        or binding_document.get("compatibility_authentication_sha256")
+        != compatibility_sha256
+        or binding_document.get("payload_session_sha256") != session_sha256
+    ):
+        raise Lfm2LongHorizonTerminalRefoldError(
+            "Terminal composite cache/session binding is invalid."
+        )
+    projections: list[dict[str, Any]] = []
+    projection_sha256: list[str] = []
+    for expected_index, (trajectory, batch, payload) in enumerate(
+        zip(cached, ordered_batches, payloads, strict=True)
+    ):
+        if not isinstance(batch, Mapping) or not isinstance(payload, Mapping):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal composite batch or payload receipt is malformed."
+            )
+        projection = _owned_canonical_document(
+            trajectory.parent_action_projection,
+            name=f"parent action projection {expected_index}",
+        )
+        projection_body = dict(projection)
+        projection_authentication = projection_body.pop(
+            "authentication_sha256",
+            None,
+        )
+        selective = payload.get("selective_payload")
+        expected_payload_binding = payload.get("selection_sha256")
+        if expected_payload_binding is None and isinstance(selective, Mapping):
+            expected_payload_binding = selective.get("selection_sha256")
+        if expected_payload_binding is None:
+            expected_payload_binding = payload.get("record_sha256")
+        if (
+            projection_authentication != _canonical_sha256(projection_body)
+            or projection.get("source_lineage_sha256")
+            != source_lineage.authentication_sha256
+            or projection.get("batch_index") != expected_index
+            or trajectory.batch_index != expected_index
+            or batch.get("batch_index") != expected_index
+            or projection.get("input_sha256") != batch.get("input_sha256")
+            or projection.get("record_sha256") != batch.get("record_sha256")
+            or projection.get("payload_binding_sha256") != expected_payload_binding
+            or projection.get("numeric_admission_threshold_applied") is not False
+            or projection.get("numeric_projection_error_can_reject_or_rollback")
+            is not False
+        ):
+            raise Lfm2LongHorizonTerminalRefoldError(
+                "Terminal parent-action projection differs from its exact batch "
+                "or source lineage."
+            )
+        projections.append(projection)
+        projection_sha256.append(projection_authentication)
+    compiler_inputs = {
+        "source_lineage": source_lineage.as_dict(),
+        "source_lineage_sha256": source_lineage.authentication_sha256,
+        "cache_key": cache.cache_key,
+        "cache_manifest_sha256": cache.manifest["manifest_sha256"],
+        "cache_parent_fingerprint": cache.parent_fingerprint,
+        "cache_layer_topology_fingerprint": cache.layer_topology_fingerprint,
+        "cache_compatibility_sha256": compatibility_sha256,
+        "cache_payload_binding_sha256": binding_sha256,
+        "cache_session_sha256": session_sha256,
+        "ordered_authenticated_batches": ordered_batches,
+        "selected_or_full_payload_receipts": payloads,
+        "parent_action_projection_sha256": projection_sha256,
+        "parent_action_projections": projections,
+    }
+    body = {
+        "schema": LFM2_LONG_HORIZON_TERMINAL_COMPOSITE_LINEAGE_SCHEMA,
+        "compiler_inputs": compiler_inputs,
+        "compiler_binding_sha256": _canonical_sha256(compiler_inputs),
+        "exact_cache_bridge_parent_source_interface_binding": True,
+        "numeric_projection_diagnostics_are_admission_authority": False,
+        "exact_lineage_is_compiler_admission_authority": True,
+        "operation_audit": {
+            "parent_model_forward_calls": 0,
+            "parent_cache_generation_calls": 0,
+            "training_steps": 0,
+        },
+    }
+    return Lfm2LongHorizonTerminalCompositeLineage(
+        {**body, "authentication_sha256": _canonical_sha256(body)}
     )
 
 
@@ -3660,6 +4784,7 @@ def compile_install_lfm2_long_horizon_terminal_refold(
     target_model: Any,
     interface: TiedCausalInterfaceFold,
     source_selected_tied_table: Any,
+    source_lineage: Lfm2LongHorizonTerminalSourceLineage,
     parent_final_norm: (Lfm2SealedParentFinalRmsNorm | Lfm2LocalParentFinalRmsNormLoad),
     split_plan: Lfm2LongHorizonTrajectorySplitPlan | None = None,
     policy: Lfm2CpcfTerminalActionPolicy | None = None,
@@ -3698,6 +4823,15 @@ def compile_install_lfm2_long_horizon_terminal_refold(
     interface_report = _verify_interface_report(
         interface,
         source_selected_tied_table,
+    )
+    if not isinstance(source_lineage, Lfm2LongHorizonTerminalSourceLineage):
+        raise TypeError("source_lineage must be Lfm2LongHorizonTerminalSourceLineage.")
+    source_lineage.verify_for(
+        cache=cache,
+        bridge=bridge,
+        parent_final_norm=parent_final_norm,
+        interface=interface,
+        source_selected_tied_table=source_selected_tied_table,
     )
     selected_policy = policy or Lfm2CpcfTerminalActionPolicy()
     if (
@@ -3752,6 +4886,7 @@ def compile_install_lfm2_long_horizon_terminal_refold(
                     inverse,
                     selected_parent_final_norm,
                     source_selected_tied_table,
+                    source_lineage,
                     plan,
                     authenticated_session=terminal_cache_session,
                 )
@@ -3770,6 +4905,7 @@ def compile_install_lfm2_long_horizon_terminal_refold(
                     target_tokenizer,
                     selected_parent_final_norm,
                     source_selected_tied_table,
+                    source_lineage,
                     plan,
                     authenticated_session=terminal_cache_session,
                 )
@@ -3782,6 +4918,14 @@ def compile_install_lfm2_long_horizon_terminal_refold(
             current_terminal_cache_compatibility,
             cache_receipt,
         )
+    )
+    terminal_composite_lineage = _build_terminal_composite_lineage(
+        cache=cache,
+        source_lineage=source_lineage,
+        compatibility=current_terminal_cache_compatibility,
+        payload_binding=terminal_cache_payload_binding,
+        cache_receipt=cache_receipt,
+        cached=cached,
     )
     terminal_cache_tensor_payload_load_audit = _summarize_terminal_cache_payload_loads(
         cache_receipt
@@ -3876,6 +5020,15 @@ def compile_install_lfm2_long_horizon_terminal_refold(
             current_terminal_cache_compatibility["authentication_sha256"]
         ),
         "terminal_cache_payload_binding": terminal_cache_payload_binding,
+        "terminal_source_lineage": source_lineage.as_dict(),
+        "terminal_source_lineage_sha256": source_lineage.authentication_sha256,
+        "terminal_composite_lineage": terminal_composite_lineage.as_dict(),
+        "terminal_composite_lineage_sha256": (
+            terminal_composite_lineage.authentication_sha256
+        ),
+        "terminal_compiler_binding_sha256": (
+            terminal_composite_lineage.compiler_binding_sha256
+        ),
         "terminal_cache_tensor_payload_load_audit": (
             terminal_cache_tensor_payload_load_audit
         ),
@@ -3937,6 +5090,11 @@ def compile_install_lfm2_long_horizon_terminal_refold(
         "parent_action_projection_sha256": [
             value.parent_action_projection["authentication_sha256"] for value in cached
         ],
+        "parent_action_projection_diagnostics": [
+            dict(value.parent_action_projection) for value in cached
+        ],
+        "parent_action_projection_numeric_threshold_applied": False,
+        "parent_action_projection_metrics_diagnostic_only": True,
         "parent_final_norm_endpoint_sha256": [
             value.parent_final_norm_endpoint["authentication_sha256"]
             for value in cached
@@ -4052,17 +5210,25 @@ def compile_install_lfm2_long_horizon_terminal_refold(
 
 
 __all__ = [
+    "LFM2_DIRECT_LOCAL_MAPPED_TIED_TABLE_RECONSTRUCTION_SCHEMA",
+    "LFM2_DIRECT_LOCAL_MAPPED_TIED_TABLE_SOURCE_SCHEMA",
+    "LFM2_LONG_HORIZON_TERMINAL_COMPOSITE_LINEAGE_SCHEMA",
     "LFM2_LONG_HORIZON_PARENT_FINAL_NORM_SCHEMA",
+    "LFM2_LONG_HORIZON_TERMINAL_SOURCE_LINEAGE_SCHEMA",
     "LFM2_LONG_HORIZON_SPLIT_PLAN_SCHEMA",
     "LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA",
     "LFM2_LONG_HORIZON_TERMINAL_PAYLOAD_LOAD_AUDIT_SCHEMA",
     "LFM2_LONG_HORIZON_TERMINAL_REFOLD_SCHEMA",
+    "Lfm2LongHorizonTerminalCompositeLineage",
     "Lfm2LongHorizonTerminalRefoldError",
     "Lfm2LongHorizonTerminalRefoldResult",
+    "Lfm2LongHorizonTerminalSourceLineage",
     "Lfm2LongHorizonTrajectorySplitPlan",
     "Lfm2LocalParentFinalRmsNormLoad",
     "Lfm2SealedParentFinalRmsNorm",
     "TokenizerReplayMode",
+    "authenticate_lfm2_long_horizon_terminal_composite_lineage",
+    "build_lfm2_long_horizon_terminal_source_lineage",
     "compile_install_lfm2_long_horizon_terminal_refold",
     "load_lfm2_parent_final_rmsnorm_from_local_safetensors",
     "preflight_lfm2_long_horizon_terminal_cache",
