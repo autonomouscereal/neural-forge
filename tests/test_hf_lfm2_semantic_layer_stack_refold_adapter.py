@@ -36,6 +36,15 @@ _BASE_INTERFACE_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
 _ANCHOR_INTERFACE_SCHEMA = "neural-forge-tied-causal-anchor-residual-v1"
 
 
+def _body_recipe_fields(recipe_id: str = "fit_guided") -> dict[str, object]:
+    recipe = stack.resolve_lfm2_semantic_body_recipe(recipe_id)
+    return {
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+    }
+
+
 def _mlp_functional_provenance_receipt(layer_index: int) -> dict[str, object]:
     policy_body = {
         "schema": "neural-forge-bf16-cross-kernel-equivalence-policy-v1",
@@ -475,7 +484,9 @@ def _persistable_attention_operator_receipt(
     after: str,
     installed: bool,
     parameter_count: int = 2,
+    body_recipe: str = "fit_guided",
 ) -> dict[str, object]:
+    recipe = stack.resolve_lfm2_semantic_body_recipe(body_recipe)
     roles = (
         "q_proj.weight",
         "k_proj.weight",
@@ -566,6 +577,8 @@ def _persistable_attention_operator_receipt(
             "partitions": partitions,
         }
     value_output_gate_body = {
+        **_body_recipe_fields(recipe.recipe_id),
+        "recipe_component_lane": recipe.component_lanes["value_output"],
         "schema": "neural-forge-lfm2-semantic-vo-candidate-gate-v1",
         "candidate_reports": candidate_reports,
         "selected_candidate": "incumbent",
@@ -576,6 +589,8 @@ def _persistable_attention_operator_receipt(
         ),
         "structural_safety_is_only_candidate_veto": True,
         "fit_metrics_used_for_candidate_ordering": True,
+        "component_selection_policy_equivalent_recipe_ids": [recipe.recipe_id],
+        "component_selection_policy_equivalent_to_other_recipe": False,
         "fit_ordering_metrics": [
             "endpoint_relative_rmse",
             "endpoint_rmse",
@@ -630,6 +645,9 @@ def _persistable_attention_operator_receipt(
         [f"model.layers.{layer_index}.self_attn.q_proj.weight"] if installed else []
     )
     analytic = {
+        **_body_recipe_fields(recipe.recipe_id),
+        "recipe_qk_lane": recipe.component_lanes["qk"],
+        "recipe_value_output_lane": recipe.component_lanes["value_output"],
         "schema": "neural-forge-lfm2-semantic-attention-refold-v1",
         "cache_key": "a" * 64,
         "bridge_artifact_sha256": "b" * 64,
@@ -686,6 +704,8 @@ def _persistable_attention_operator_receipt(
     }
     topology = canonical_sha256(["test-attention-topology", layer_index])
     body = {
+        **_body_recipe_fields(recipe.recipe_id),
+        "recipe_component_lane": recipe.component_lanes["qk"],
         "schema": stack.LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA,
         "status": (
             "installed-frozen-semantic-attention-candidate"
@@ -1012,7 +1032,9 @@ def _patch_complete_transaction(
         kind: str,
         *,
         fold_compute_device: str = "cpu",
+        body_recipe: object = "fit_guided",
     ):
+        recipe = stack.resolve_lfm2_semantic_body_recipe(body_recipe)
         before = _state_identity(model)
         events.append(f"{layer_index}:install:{kind}")
         installed = layer_index not in noop_operator_layers
@@ -1054,7 +1076,18 @@ def _patch_complete_transaction(
                 after=after,
                 installed=installed,
                 parameter_count=stack._parameter_count(model),
+                body_recipe=recipe.recipe_id,
             )
+        else:
+            receipt_body = {
+                **{key: value for key, value in receipt.items() if key != "result_sha256"},
+                **_body_recipe_fields(recipe.recipe_id),
+                "recipe_component_lane": recipe.component_lanes["short_conv"],
+            }
+            receipt = {
+                **receipt_body,
+                "result_sha256": canonical_sha256(receipt_body),
+            }
         if kind == "short_conv" and fold_compute_device != "cpu":
             receipt.update(
                 {
@@ -1074,13 +1107,22 @@ def _patch_complete_transaction(
                     },
                 }
             )
-        return receipt
+        resealed_body = {
+            key: value for key, value in receipt.items() if key != "result_sha256"
+        }
+        return {
+            **resealed_body,
+            "result_sha256": canonical_sha256(resealed_body),
+        }
 
     monkeypatch.setattr(
         stack,
         "_install_attention_operator",
         lambda target_model, layer_index, **_kwargs: mutate_operator(
-            target_model, layer_index, "full_attention"
+            target_model,
+            layer_index,
+            "full_attention",
+            body_recipe=_kwargs.get("body_recipe", "fit_guided"),
         ),
     )
     monkeypatch.setattr(
@@ -1091,6 +1133,7 @@ def _patch_complete_transaction(
             layer_index,
             "short_conv",
             fold_compute_device=_kwargs.get("fold_compute_device", "cpu"),
+            body_recipe=_kwargs.get("body_recipe", "fit_guided"),
         ),
     )
 
@@ -1114,6 +1157,9 @@ def _patch_complete_transaction(
     monkeypatch.setattr(stack, "_build_mlp_evidence", build_mlp)
 
     def install_mlp(*, target_model, layer_index, **_kwargs):
+        recipe = stack.resolve_lfm2_semantic_body_recipe(
+            _kwargs.get("body_recipe", "fit_guided")
+        )
         before = _state_identity(target_model)
         events.append(f"{layer_index}:install:mlp")
         installed = layer_index < 13 and layer_index not in noop_mlp_layers
@@ -1141,6 +1187,8 @@ def _patch_complete_transaction(
             ),
         }
         receipt_body = {
+            **_body_recipe_fields(recipe.recipe_id),
+            "recipe_component_lane": recipe.component_lanes["mlp"],
             "status": (
                 "installed-frozen-semantic-mlp-candidate"
                 if installed
@@ -2526,6 +2574,10 @@ def test_real_v2_parent_mlp_provenance_reaches_layer0_receipt() -> None:
 
     operator_receipt = stack._sealed(
         {
+            **_body_recipe_fields(),
+            "recipe_component_lane": stack.resolve_lfm2_semantic_body_recipe(
+                "fit_guided"
+            ).component_lanes["short_conv"],
             "status": "installed-analytic-candidate",
             "installed": True,
         }
@@ -2533,6 +2585,10 @@ def test_real_v2_parent_mlp_provenance_reaches_layer0_receipt() -> None:
     producer_coverage = stack._sealed({"all_required_roles_structurally_nonzero": True})
     mlp_receipt = stack._sealed(
         {
+            **_body_recipe_fields(),
+            "recipe_component_lane": stack.resolve_lfm2_semantic_body_recipe(
+                "fit_guided"
+            ).component_lanes["mlp"],
             "status": "installed-frozen-semantic-mlp-candidate",
             "installed": True,
         }
@@ -2700,7 +2756,10 @@ def _invoke_mlp_noop_receipt(
     evidence = (SimpleNamespace(captured_child_model_state_sha256=state),)
     parameter_count = stack._parameter_count(target)
     terminal_evidence = _terminal_banks() if final_layer else {}
+    recipe = stack.resolve_lfm2_semantic_body_recipe("fit_guided")
     body: dict[str, object] = {
+        **_body_recipe_fields(recipe.recipe_id),
+        "recipe_component_lane": recipe.component_lanes["mlp"],
         "schema": stack._MLP_INSTALLATION_SCHEMA,
         "status": status,
         "installed": False,
@@ -2939,7 +2998,12 @@ def test_attention_install_rejects_legacy_metric_noop_reasons(
             ),
         ),
     )
-    body = {"status": status}
+    recipe = stack.resolve_lfm2_semantic_body_recipe("fit_guided")
+    body = {
+        **_body_recipe_fields(),
+        "recipe_component_lane": recipe.component_lanes["qk"],
+        "status": status,
+    }
     receipt = {**body, "result_sha256": canonical_sha256(body)}
 
     with pytest.raises(
@@ -2978,7 +3042,10 @@ def _invoke_short_conv_noop_receipt(
     cache = SimpleNamespace(cache_key="a" * 64, parent_fingerprint="c" * 64)
     bridge = SimpleNamespace(artifact_sha256="b" * 64)
     parameter_count = stack._parameter_count(target)
+    recipe = stack.resolve_lfm2_semantic_body_recipe("fit_guided")
     body: dict[str, object] = {
+        **_body_recipe_fields(recipe.recipe_id),
+        "recipe_component_lane": recipe.component_lanes["short_conv"],
         "schema": stack._SHORT_CONV_INSTALLATION_SCHEMA,
         "status": status,
         "installed": False,

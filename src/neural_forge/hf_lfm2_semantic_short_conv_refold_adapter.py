@@ -42,6 +42,10 @@ from neural_forge.hf_lfm2_cpcf_short_conv_fold import (
     _SHORT_CONV_TORCH_STATE_LOCK,
     compile_lfm2_cpcf_short_conv_fold,
 )
+from neural_forge.hf_lfm2_semantic_body_recipe import (
+    Lfm2SemanticBodyRecipe,
+    resolve_lfm2_semantic_body_recipe,
+)
 
 
 LFM2_SEMANTIC_SHORT_CONV_REFOLD_SCHEMA = (
@@ -616,6 +620,7 @@ class _Candidate:
             "incumbent-noop",
             "full-source-structural",
             "incumbent-producer-output-writer",
+            "full-source-producer-output-writer",
         }:
             raise Lfm2SemanticShortConvRefoldError("Unknown short-conv candidate.")
         normalized = {
@@ -997,7 +1002,11 @@ def _validate_cold_start_structural_plant(candidate: _Candidate) -> Mapping[str,
     state = candidate.state
     required_weights = {"in_proj.weight", "conv.weight", "out_proj.weight"}
     if (
-        candidate.name != "full-source-structural"
+        candidate.name
+        not in {
+            "full-source-structural",
+            "full-source-producer-output-writer",
+        }
         or provenance.get("full_source_coverage") is not True
         or provenance.get("source_channels_dropped") != 0
         or not required_weights.issubset(state)
@@ -1465,10 +1474,21 @@ def _compile_writer_candidate(
     fit_cases: Sequence[_BalancedCase],
     incumbent_state: Mapping[str, Any],
     *,
+    fixed_producer_state: Mapping[str, Any] | None = None,
+    candidate_name: str = "incumbent-producer-output-writer",
+    fixed_producer_provenance: Mapping[str, Any] | None = None,
     fold_compute_device: str | None = None,
+    body_recipe: Lfm2SemanticBodyRecipe | None = None,
 ) -> tuple[_Candidate | None, Mapping[str, Any]]:
     torch = _torch()
-    contexts, targets, weights = _writer_design(fit_cases, incumbent_state)
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    producer_state = (
+        incumbent_state if fixed_producer_state is None else fixed_producer_state
+    )
+    producer_source = (
+        "live-incumbent" if fixed_producer_state is None else "full-source-structural"
+    )
+    contexts, targets, weights = _writer_design(fit_cases, producer_state)
     fit_context_sha = canonical_sha256(
         {
             "case_sha256": [case.case_sha256 for case in fit_cases],
@@ -1477,19 +1497,19 @@ def _compile_writer_candidate(
             "weights_sha256": _tensor_sha256(weights),
         }
     )
-    has_bias = "out_proj.bias" in incumbent_state
+    has_bias = "out_proj.bias" in producer_state
     design = contexts
     if has_bias:
         design = torch.cat(
             (design, torch.ones((design.shape[0], 1), dtype=torch.float64)),
             dim=1,
         )
-    incumbent_coefficients = incumbent_state["out_proj.weight"].to(torch.float64).T
+    incumbent_coefficients = producer_state["out_proj.weight"].to(torch.float64).T
     if has_bias:
         incumbent_coefficients = torch.cat(
             (
                 incumbent_coefficients,
-                incumbent_state["out_proj.bias"].to(torch.float64).reshape(1, -1),
+                producer_state["out_proj.bias"].to(torch.float64).reshape(1, -1),
             ),
             dim=0,
         )
@@ -1518,7 +1538,7 @@ def _compile_writer_candidate(
         raise Lfm2SemanticShortConvRefoldError(
             "Closed-form short-conv output-writer solve produced nonfinite values."
         )
-    baseline = _endpoint_metrics(fit_cases, incumbent_state)
+    baseline = _endpoint_metrics(fit_cases, producer_state)
     frontier: list[
         tuple[
             tuple[Any, ...],
@@ -1533,17 +1553,17 @@ def _compile_writer_candidate(
         coefficients = (incumbent + alpha * delta).to(device="cpu")
         state = {
             name: value.detach().to(device="cpu").contiguous().clone()
-            for name, value in incumbent_state.items()
+            for name, value in producer_state.items()
         }
         state["out_proj.weight"] = (
             coefficients[: contexts.shape[1], :]
-            .T.to(dtype=incumbent_state["out_proj.weight"].dtype)
+            .T.to(dtype=producer_state["out_proj.weight"].dtype)
             .contiguous()
         )
         if has_bias:
             state["out_proj.bias"] = (
                 coefficients[-1, :]
-                .to(dtype=incumbent_state["out_proj.bias"].dtype)
+                .to(dtype=producer_state["out_proj.bias"].dtype)
                 .contiguous()
             )
         structural = _candidate_state_structural_report(state, incumbent_state)
@@ -1593,7 +1613,9 @@ def _compile_writer_candidate(
             "fit_thresholds_used_for_eligibility": False,
             "fit_nonregression_used_for_eligibility": False,
             "relative_magnitude_threshold_used_for_eligibility": False,
-            "fit_metrics_used_for_candidate_ordering": True,
+            "fit_metrics_used_for_candidate_ordering": (
+                recipe.fit_metrics_order_candidates
+            ),
             "fit_metrics_have_final_intelligence_authority": False,
         }
         frontier_reports.append(record)
@@ -1606,21 +1628,57 @@ def _compile_writer_candidate(
         "fit_context_sha256": fit_context_sha,
         "baseline_fit_metrics": baseline.as_dict(),
         "fit_only": True,
-        "incumbent_in_proj_fixed": True,
-        "incumbent_conv_fixed": True,
+        "fixed_producer_state_source": producer_source,
+        "fixed_producer_state_sha256": canonical_sha256(
+            {
+                name: _tensor_sha256(value)
+                for name, value in sorted(producer_state.items())
+            }
+        ),
+        "live_incumbent_producers_fixed": fixed_producer_state is None,
+        "full_source_structural_producers_fixed": fixed_producer_state is not None,
+        "incumbent_in_proj_fixed": fixed_producer_state is None,
+        "incumbent_conv_fixed": fixed_producer_state is None,
+        "full_source_coverage": (
+            fixed_producer_provenance.get("full_source_coverage") is True
+            if isinstance(fixed_producer_provenance, Mapping)
+            else False
+        ),
+        "source_channels_dropped": (
+            fixed_producer_provenance.get("source_channels_dropped")
+            if isinstance(fixed_producer_provenance, Mapping)
+            else None
+        ),
+        "structural_compiler_report": (
+            dict(fixed_producer_provenance["structural_compiler_report"])
+            if isinstance(fixed_producer_provenance, Mapping)
+            and isinstance(
+                fixed_producer_provenance.get("structural_compiler_report"),
+                Mapping,
+            )
+            else None
+        ),
         "selection_used_for_solve": False,
         "validation_used_for_solve": False,
         "candidate_eligibility_basis": _CANDIDATE_ELIGIBILITY_BASIS,
         "structural_safety_is_only_candidate_veto": True,
         "fit_metrics_role": (
             "ordering-among-structurally-eligible-not-threshold-gating"
+            if recipe.fit_metrics_order_candidates
+            else "diagnostic-only"
         ),
-        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_candidate_ordering": (
+            recipe.fit_metrics_order_candidates
+        ),
         "fit_metrics_used_for_structural_eligibility": False,
         "fit_thresholds_used_for_candidate_eligibility": False,
         "fit_nonregression_used_for_candidate_eligibility": False,
         "relative_magnitude_metrics_diagnostic_only": True,
         "numeric_metrics_have_final_intelligence_authority": False,
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "recipe_component_lane": recipe.component_lanes["short_conv"],
         "candidate_frontier": frontier_reports,
         "candidate_frontier_count": len(frontier_reports),
         "structurally_eligible_candidate_count": len(frontier),
@@ -1640,13 +1698,24 @@ def _compile_writer_candidate(
                 "selected_fit_ordering_key": None,
             }
         )
-    ordering_key, alpha, state, metrics, selected_record = min(
-        frontier,
-        key=lambda value: value[0],
-    )
+    if not recipe.fit_metrics_order_candidates:
+        ordering_key, alpha, state, metrics, selected_record = max(
+            frontier,
+            key=lambda value: (
+                value[1],
+                value[4]["candidate_state_tensor_bundle_sha256"],
+            ),
+        )
+        selection_status = "recipe-alpha-one-or-strongest-safe-writer-proposal"
+    else:
+        ordering_key, alpha, state, metrics, selected_record = min(
+            frontier,
+            key=lambda value: value[0],
+        )
+        selection_status = "fit-ordered-structurally-eligible-proposal"
     report = {
         **base_report,
-        "status": "fit-ordered-structurally-eligible-proposal",
+        "status": selection_status,
         "selected_alpha": alpha,
         "selected_fit_ordering_key": list(ordering_key),
         "candidate_fit_metrics": None if metrics is None else metrics.as_dict(),
@@ -1660,7 +1729,7 @@ def _compile_writer_candidate(
     }
     return (
         _Candidate(
-            name="incumbent-producer-output-writer",
+            name=candidate_name,
             state=state,
             provenance=report,
         ),
@@ -1675,7 +1744,9 @@ def _candidate_report(
     banks: Mapping[str, Sequence[_BalancedCase]],
     baseline: Mapping[str, Lfm2SemanticShortConvEndpointMetrics],
     tolerance: float,
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Mapping[str, Any]:
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     structural = _candidate_state_structural_report(
         candidate.state,
         incumbent_state,
@@ -1718,6 +1789,7 @@ def _candidate_report(
     )
     simplicity = {
         "incumbent-producer-output-writer": 0,
+        "full-source-producer-output-writer": 0,
         "full-source-structural": 1,
     }
     fit_ordering_key = (
@@ -1772,7 +1844,9 @@ def _candidate_report(
         "selection_metric_nonregression_diagnostic_passed": checks["selection"],
         "numeric_diagnostic_miss": numeric_diagnostic_miss,
         "structural_safety_is_only_candidate_veto": True,
-        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_candidate_ordering": (
+            recipe.fit_metrics_order_candidates
+        ),
         "fit_metrics_used_for_structural_eligibility": False,
         "fit_thresholds_used_for_eligibility": False,
         "fit_check_thresholds_used_for_eligibility": False,
@@ -1794,7 +1868,10 @@ def _candidate_report(
 def _select_candidate(
     candidates: Sequence[_Candidate],
     reports: Mapping[str, Mapping[str, Any]],
+    *,
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> _Candidate:
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     incumbent = tuple(
         candidate for candidate in candidates if candidate.name == "incumbent-noop"
     )
@@ -1814,6 +1891,21 @@ def _select_candidate(
     ]
     if not eligible:
         return incumbent[0]
+
+    by_name = {candidate.name: candidate for candidate in eligible}
+    if recipe.recipe_id == "full_strength_structural":
+        return by_name.get(
+            "full-source-structural",
+            by_name.get("incumbent-producer-output-writer", eligible[0]),
+        )
+    if recipe.recipe_id == "residual_writer":
+        return by_name.get(
+            "full-source-producer-output-writer",
+            by_name.get(
+                "incumbent-producer-output-writer",
+                by_name.get("full-source-structural", eligible[0]),
+            ),
+        )
 
     def score(candidate: _Candidate) -> tuple[Any, ...]:
         key = reports[candidate.name]["fit_ordering_key"]
@@ -1971,6 +2063,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     source_model_identity_sha256: str,
     source_fir_bias: Any | None = None,
     fold_compute_device: str = "cpu",
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Mapping[str, Any]:
     """Compile, gate, freeze, and atomically install one short-conv operator."""
 
@@ -1981,6 +2074,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         source_model_identity_sha256,
         "source model identity SHA-256",
     )
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     raw = tuple(evidence)
     if not raw or any(
         not isinstance(item, Lfm2SemanticShortConvReplayEvidence) for item in raw
@@ -2087,9 +2181,22 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     cold_start_axis_coverage: Mapping[str, Any] | None = None
     if exact_zero_incumbent:
         cold_start_axis_coverage = _validate_cold_start_structural_plant(structural)
+    blank_residual_writer = bool(
+        exact_zero_incumbent and recipe.recipe_id == "residual_writer"
+    )
     writer, writer_fit_report = _compile_writer_candidate(
         banks["fit"],
         incumbent_state,
+        fixed_producer_state=(structural.state if blank_residual_writer else None),
+        candidate_name=(
+            "full-source-producer-output-writer"
+            if blank_residual_writer
+            else "incumbent-producer-output-writer"
+        ),
+        fixed_producer_provenance=(
+            structural.provenance if blank_residual_writer else None
+        ),
+        body_recipe=recipe,
         **(
             {"fold_compute_device": fold_compute_device}
             if fold_compute_device != "cpu"
@@ -2145,6 +2252,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             banks=banks,
             baseline=baseline,
             tolerance=tolerance,
+            body_recipe=recipe,
         )
         for candidate in candidates
     }
@@ -2156,8 +2264,18 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             "The compulsory cold-start structural plant is not effectful and safe."
         )
     prevalidation_choice = (
-        structural if exact_zero_incumbent else _select_candidate(candidates, reports)
+        _select_candidate(candidates, reports, body_recipe=recipe)
+        if blank_residual_writer
+        else (
+            structural
+            if exact_zero_incumbent
+            else _select_candidate(candidates, reports, body_recipe=recipe)
+        )
     )
+    if exact_zero_incumbent:
+        cold_start_axis_coverage = _validate_cold_start_structural_plant(
+            prevalidation_choice
+        )
     chosen = prevalidation_choice
     frozen_state = MappingProxyType(
         {
@@ -2246,6 +2364,10 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         source_fir_tensors["bias"] = source_bias
     body = {
         "schema": _INSTALLATION_SCHEMA,
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "recipe_component_lane": recipe.component_lanes["short_conv"],
         "status": (
             "installed-frozen-semantic-short-conv-candidate"
             if changed
@@ -2349,6 +2471,8 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         ),
         "candidate_selection_evidence_scope": (
             "finite-dense-structural-eligibility-plus-fit-ordering"
+            if recipe.fit_metrics_order_candidates
+            else "finite-dense-structural-eligibility-plus-recipe-priority"
         ),
         "candidate_eligibility_basis": _CANDIDATE_ELIGIBILITY_BASIS,
         "structural_safety_is_only_candidate_veto": True,
@@ -2359,9 +2483,15 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         ),
         "fit_metrics_role": (
             "ordering-among-structurally-eligible-not-threshold-gating"
+            if recipe.fit_metrics_order_candidates
+            else "diagnostic-only"
         ),
-        "fit_metrics_used_for_candidate_ordering": True,
-        "fit_metrics_used_for_pre_review_candidate_selection": True,
+        "fit_metrics_used_for_candidate_ordering": (
+            recipe.fit_metrics_order_candidates
+        ),
+        "fit_metrics_used_for_pre_review_candidate_selection": (
+            recipe.fit_metrics_order_candidates
+        ),
         "fit_metrics_used_for_structural_eligibility": False,
         "fit_thresholds_used_for_candidate_eligibility": False,
         "fit_check_thresholds_used_for_candidate_eligibility": False,
@@ -2387,7 +2517,12 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "inserted_target_bcx_rows_are_owner_expanded_proxies": True,
         "complete_source_channel_coverage_candidate_compiled": True,
         "full_source_structural_candidate_competed": True,
-        "incumbent_producer_output_writer_candidate_competed": writer is not None,
+        "incumbent_producer_output_writer_candidate_competed": bool(
+            writer is not None and writer.name == "incumbent-producer-output-writer"
+        ),
+        "full_source_producer_output_writer_candidate_competed": bool(
+            writer is not None and writer.name == "full-source-producer-output-writer"
+        ),
         "inserted_target_row_count": inserted_count,
         "semantic_boundary_bcx_row_count": boundary_count,
         "parent_exact_endpoint_row_count": endpoint_count,
@@ -2405,7 +2540,20 @@ def compile_install_lfm2_semantic_short_conv_postfold(
                 "exact_zero_incumbent_at_entry": True,
                 "cold_start_compulsory_full_source_structural_plant": True,
                 "cold_start_heldout_metrics_diagnostic_only": True,
-                "cold_start_fit_structural_candidate_forced_before_heldout": True,
+                "cold_start_fit_structural_candidate_forced_before_heldout": (
+                    chosen.name == "full-source-structural"
+                ),
+                "cold_start_recipe_candidate_forced_before_heldout": True,
+                "cold_start_selected_state_uses_full_source_structural_producers": (
+                    chosen.name
+                    in {
+                        "full-source-structural",
+                        "full-source-producer-output-writer",
+                    }
+                ),
+                "cold_start_residual_writer_component_equivalent_to_structural": (
+                    blank_residual_writer and chosen.name == "full-source-structural"
+                ),
                 "cold_start_fit_check_used_for_publication_gate": False,
                 "cold_start_selection_used_for_publication_gate": False,
                 "cold_start_validation_used_for_publication_gate": False,

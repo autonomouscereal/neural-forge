@@ -45,6 +45,10 @@ from neural_forge.hf_lfm2_semantic_attention_refold_adapter import (
     LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS,
     Lfm2SemanticAttentionReplayEndpoint,
 )
+from neural_forge.hf_lfm2_semantic_body_recipe import (
+    Lfm2SemanticBodyRecipe,
+    resolve_lfm2_semantic_body_recipe,
+)
 from neural_forge.hf_lfm2_semantic_postfold import (
     LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA,
     Lfm2SemanticAttentionTransportEvidence,
@@ -153,6 +157,132 @@ def _verify_sealed(value: Mapping[str, Any], label: str) -> dict[str, Any]:
     if supplied != canonical_sha256(result):
         raise Lfm2SemanticLayerStackRefoldError(f"{label} receipt seal is invalid.")
     return {**result, "result_sha256": supplied}
+
+
+def _require_body_recipe_binding(
+    receipt: Mapping[str, Any],
+    recipe: Lfm2SemanticBodyRecipe,
+    *,
+    component: str,
+    label: str,
+) -> None:
+    expected_lane = recipe.component_lanes.get(component)
+    if (
+        expected_lane is None
+        or receipt.get("body_recipe") != recipe.as_dict()
+        or receipt.get("body_recipe_sha256") != recipe.recipe_sha256
+        or receipt.get("body_recipe_id") != recipe.recipe_id
+        or receipt.get("recipe_component_lane") != expected_lane
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label} did not bind the requested semantic body recipe and lane."
+        )
+
+
+def _require_attention_body_recipe_binding(
+    receipt: Mapping[str, Any],
+    recipe: Lfm2SemanticBodyRecipe,
+    *,
+    label: str,
+) -> None:
+    """Bind the nested Q/K and V/O decisions to one complete body recipe."""
+
+    _require_body_recipe_binding(
+        receipt,
+        recipe,
+        component="qk",
+        label=label,
+    )
+    analytic = receipt.get("analytic_refold")
+    gate_value = (
+        analytic.get("value_output_candidate_gate")
+        if isinstance(analytic, Mapping)
+        else None
+    )
+    if not isinstance(analytic, Mapping) or not isinstance(gate_value, Mapping):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label} omitted its recipe-bound Q/K or V/O decision."
+        )
+    if (
+        analytic.get("body_recipe") != recipe.as_dict()
+        or analytic.get("body_recipe_sha256") != recipe.recipe_sha256
+        or analytic.get("body_recipe_id") != recipe.recipe_id
+        or analytic.get("recipe_qk_lane") != recipe.component_lanes["qk"]
+        or analytic.get("recipe_value_output_lane")
+        != recipe.component_lanes["value_output"]
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label} analytic receipt changed its Q/K or V/O recipe lane."
+        )
+    gate = dict(gate_value)
+    supplied_gate_sha256 = gate.pop("gate_sha256", None)
+    if supplied_gate_sha256 != canonical_sha256(gate):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label} V/O decision seal is invalid."
+        )
+    _require_body_recipe_binding(
+        gate,
+        recipe,
+        component="value_output",
+        label=f"{label} V/O decision",
+    )
+    reports = gate.get("candidate_reports")
+    if not isinstance(reports, Mapping):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label} V/O decision omitted its candidate frontier."
+        )
+    analytic_names = ("fixed_v_output_only", "joint_value_output")
+    eligible_names = tuple(
+        name
+        for name in analytic_names
+        if isinstance(reports.get(name), Mapping)
+        and reports[name].get("eligible") is True
+    )
+    if recipe.recipe_id == "full_strength_structural":
+        expected = (
+            "joint_value_output"
+            if "joint_value_output" in eligible_names
+            else (
+                "fixed_v_output_only"
+                if "fixed_v_output_only" in eligible_names
+                else "incumbent"
+            )
+        )
+    elif recipe.recipe_id == "residual_writer":
+        expected = (
+            "fixed_v_output_only"
+            if "fixed_v_output_only" in eligible_names
+            else (
+                "joint_value_output"
+                if "joint_value_output" in eligible_names
+                else "incumbent"
+            )
+        )
+    else:
+        expected = str(gate.get("published_candidate"))
+    published = gate.get("published_candidate")
+    if (
+        set(reports) != {"incumbent", *analytic_names}
+        or gate.get("selected_candidate") != published
+        or gate.get("structurally_eligible_candidate_count") != len(eligible_names)
+        or gate.get("fit_metrics_used_for_candidate_ordering")
+        is not recipe.fit_metrics_order_candidates
+        or gate.get("component_selection_policy_equivalent_recipe_ids")
+        != [recipe.recipe_id]
+        or gate.get("component_selection_policy_equivalent_to_other_recipe") is not False
+        or published != expected
+        or (published == "incumbent") is not (not eligible_names)
+        or (
+            published != "incumbent"
+            and (
+                not isinstance(reports.get(published), Mapping)
+                or reports[published].get("eligible") is not True
+            )
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label} V/O candidate is not bound to the declared recipe policy."
+        )
 
 
 def _validate_producer_coverage_decision(
@@ -1498,9 +1628,32 @@ def _is_zero_operation_audit(value: Any) -> bool:
     )
 
 
+def _fit_ordering_flag_matches_bound_recipe(
+    receipt: Mapping[str, Any],
+    *,
+    component: str,
+) -> bool:
+    """Authenticate FIT ordering for fit-guided and diagnostics elsewhere."""
+
+    recipe_id = receipt.get("body_recipe_id")
+    try:
+        recipe = resolve_lfm2_semantic_body_recipe(str(recipe_id))
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        receipt.get("body_recipe") == recipe.as_dict()
+        and receipt.get("body_recipe_sha256") == recipe.recipe_sha256
+        and receipt.get("recipe_component_lane")
+        == recipe.component_lanes.get(component)
+        and receipt.get("fit_metrics_used_for_candidate_ordering")
+        is recipe.fit_metrics_order_candidates
+    )
+
+
 def _authenticated_heldout_incumbent_noop(
     receipt: Mapping[str, Any],
     *,
+    component: str,
     before_sha256: str,
     after_sha256: str,
     changed_state_keys: Sequence[str],
@@ -1533,7 +1686,10 @@ def _authenticated_heldout_incumbent_noop(
         and receipt.get("candidate_eligibility_basis")
         == "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
         and receipt.get("structural_safety_is_only_candidate_veto") is True
-        and receipt.get("fit_metrics_used_for_candidate_ordering") is True
+        and _fit_ordering_flag_matches_bound_recipe(
+            receipt,
+            component=component,
+        )
         and receipt.get("fit_metrics_used_for_structural_eligibility") is False
         and receipt.get("heldout_metrics_are_diagnostic_only") is True
         and receipt.get("validation_publication_veto_applied") is False
@@ -1589,7 +1745,7 @@ def _authenticated_attention_incumbent_noop(
         and receipt.get("candidate_eligibility_basis")
         == _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS
         and receipt.get("structural_safety_is_only_candidate_veto") is True
-        and receipt.get("fit_metrics_used_for_candidate_ordering") is True
+        and _fit_ordering_flag_matches_bound_recipe(receipt, component="qk")
         and receipt.get("fit_metrics_used_for_structural_eligibility") is False
         and receipt.get("incumbent_selected_by_heldout_gates") is False
         and receipt.get("heldout_metrics_are_diagnostic_only") is True
@@ -1630,6 +1786,7 @@ def _authenticated_short_conv_incumbent_noop(
         receipt.get("status") == _SHORT_CONV_STRUCTURAL_NOOP_STATUS
         and _authenticated_heldout_incumbent_noop(
             receipt,
+            component="short_conv",
             before_sha256=before_sha256,
             after_sha256=after_sha256,
             changed_state_keys=changed_state_keys,
@@ -1691,7 +1848,7 @@ def _authenticated_mlp_incumbent_noop(
         and receipt.get("candidate_eligibility_basis")
         == "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
         and receipt.get("structural_safety_is_only_candidate_veto") is True
-        and receipt.get("fit_metrics_used_for_candidate_ordering") is True
+        and _fit_ordering_flag_matches_bound_recipe(receipt, component="mlp")
         and receipt.get("fit_metrics_used_for_structural_eligibility") is False
         and receipt.get("heldout_metrics_are_diagnostic_only") is True
         and receipt.get("validation_publication_veto_applied") is False
@@ -1730,7 +1887,7 @@ def _authenticated_final_mlp_analytic_deferral(
         and receipt.get("candidate_eligibility_basis")
         == "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
         and receipt.get("structural_safety_is_only_candidate_veto") is True
-        and receipt.get("fit_metrics_used_for_candidate_ordering") is True
+        and _fit_ordering_flag_matches_bound_recipe(receipt, component="mlp")
         and receipt.get("fit_metrics_used_for_structural_eligibility") is False
         and receipt.get("heldout_metrics_are_diagnostic_only") is True
         and receipt.get("validation_publication_veto_applied") is False
@@ -1757,7 +1914,9 @@ def _install_attention_operator(
     bridge_artifact_sha256: str,
     installer: Callable[..., Mapping[str, Any]],
     parameter_count: int,
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Mapping[str, Any]:
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
     if any(
@@ -1773,6 +1932,7 @@ def _install_attention_operator(
         evidence=tuple(evidence),
         cache_key=cache_key,
         bridge_artifact_sha256=bridge_artifact_sha256,
+        body_recipe=recipe,
     )
     after_hashes = _state_tensor_hashes(target_model)
     after = fingerprint_lfm2_parent(target_model).identity_sha256
@@ -1785,6 +1945,11 @@ def _install_attention_operator(
         raise Lfm2SemanticLayerStackRefoldError(
             "Attention installer returned an obsolete metric-based incumbent no-op."
         )
+    _require_attention_body_recipe_binding(
+        raw_receipt,
+        recipe,
+        label="Attention installer",
+    )
     if _authenticated_attention_incumbent_noop(
         raw_receipt,
         before_sha256=before,
@@ -2035,7 +2200,9 @@ def _install_short_conv_operator(
     installer: Callable[..., Mapping[str, Any]],
     parameter_count: int,
     fold_compute_device: str = "cpu",
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Mapping[str, Any]:
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
     if any(item.captured_child_model_state_sha256 != before for item in evidence):
@@ -2051,6 +2218,7 @@ def _install_short_conv_operator(
         cache_key=cache.cache_key,
         bridge_artifact_sha256=bridge.artifact_sha256,
         source_model_identity_sha256=cache.parent_fingerprint,
+        body_recipe=recipe,
         **(
             {"fold_compute_device": fold_compute_device}
             if fold_compute_device != "cpu"
@@ -2058,6 +2226,12 @@ def _install_short_conv_operator(
         ),
     )
     receipt = _verify_sealed(candidate, "short-conv operator")
+    _require_body_recipe_binding(
+        receipt,
+        recipe,
+        component="short_conv",
+        label="Short-conv installer",
+    )
     if fold_compute_device != "cpu":
         structural_execution = receipt.get("structural_cluster_compute_execution")
         writer_execution = receipt.get("writer_compute_execution")
@@ -3071,7 +3245,9 @@ def _install_mlp(
     final_layer: bool,
     parameter_count: int,
     fold_compute_device: str = "cpu",
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
     if any(item.captured_child_model_state_sha256 != before for item in evidence):
@@ -3093,6 +3269,7 @@ def _install_mlp(
         cache_manifest_sha256=cache.manifest["manifest_sha256"],
         bridge_artifact_sha256=bridge.artifact_sha256,
         defer_down_weight=final_layer,
+        body_recipe=recipe,
         **(
             {"fold_compute_device": fold_compute_device}
             if fold_compute_device != "cpu"
@@ -3106,6 +3283,12 @@ def _install_mlp(
             "MLP installer returned no authenticated receipt."
         )
     receipt = _verify_sealed(receipt_value, "semantic MLP")
+    _require_body_recipe_binding(
+        receipt,
+        recipe,
+        component="mlp",
+        label="MLP installer",
+    )
     after_hashes = _state_tensor_hashes(target_model)
     after = fingerprint_lfm2_parent(target_model).identity_sha256
     changed = _changed_state_keys(before_hashes, after_hashes)
@@ -3469,7 +3652,28 @@ def _layer_receipt(
     mlp_evidence_sha256: Sequence[str],
     fir_receipt: Mapping[str, Any] | None,
     fold_compute_device: str,
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Mapping[str, Any]:
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    if operator_kind == "full_attention":
+        _require_attention_body_recipe_binding(
+            operator_receipt,
+            recipe,
+            label=f"Layer {layer_index} operator receipt",
+        )
+    else:
+        _require_body_recipe_binding(
+            operator_receipt,
+            recipe,
+            component="short_conv",
+            label=f"Layer {layer_index} operator receipt",
+        )
+    _require_body_recipe_binding(
+        mlp_receipt,
+        recipe,
+        component="mlp",
+        label=f"Layer {layer_index} MLP receipt",
+    )
     verified_mlp_source_provenance = _validated_mlp_source_functional_provenance(
         mlp_source_provenance,
         layer_index=layer_index,
@@ -3494,10 +3698,11 @@ def _layer_receipt(
     short_conv_compute_fields: dict[str, Any] = {}
     attention_receipt_fields: dict[str, Any] = {}
     if operator_kind == "full_attention":
-        _authenticate_lfm2_semantic_attention_operator_receipt(
-            operator_receipt,
-            layer_index=layer_index,
-        )
+        if recipe.recipe_id == "fit_guided":
+            _authenticate_lfm2_semantic_attention_operator_receipt(
+                operator_receipt,
+                layer_index=layer_index,
+            )
         # The attention adapter's sealed operator result is also its atomic
         # installation receipt.  Persist both bindings explicitly so neither
         # side becomes an opaque hash after the folding process exits.
@@ -3539,6 +3744,9 @@ def _layer_receipt(
     )
     body = {
         "schema": "neural-forge-lfm2-semantic-layer-transaction-v1",
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
         "layer_index": layer_index,
         "operator_kind": operator_kind,
         "model_state_before_operator_sha256": (
@@ -3547,6 +3755,7 @@ def _layer_receipt(
         "before_operator_replay_bank_sha256": before_operator_replay.bank_sha256,
         "operator_decision_sha256": operator_receipt["result_sha256"],
         "operator_installation_sha256": operator_receipt["result_sha256"],
+        "operator_complete_candidate_frontier_receipt": dict(operator_receipt),
         **attention_receipt_fields,
         "operator_producer_coverage_decision_sha256": (
             operator_coverage_decision["result_sha256"]
@@ -3568,6 +3777,7 @@ def _layer_receipt(
         "after_operator_replay_bank_sha256": after_operator_replay.bank_sha256,
         "mlp_decision_sha256": mlp_receipt["result_sha256"],
         "mlp_installation_sha256": mlp_receipt["result_sha256"],
+        "mlp_complete_candidate_frontier_receipt": dict(mlp_receipt),
         "mlp_producer_coverage_decision_sha256": (
             mlp_coverage_decision["result_sha256"]
         ),
@@ -3657,6 +3867,9 @@ def _layer_receipt(
         "operator_then_replay_fresh_mlp_then_propagate": True,
         "operator_and_mlp_producer_chains_structurally_nonzero": True,
         "numeric_parent_child_weight_match_objective": False,
+        "numeric_thresholds_used_for_candidate_admission": False,
+        "heldout_metrics_have_candidate_or_publication_authority": False,
+        "incumbent_fallback_only_when_all_alternatives_invalid_or_identical": True,
         "training_steps": 0,
     }
     return _sealed(body)
@@ -3677,6 +3890,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     mlp_installer: Callable[..., Any] | None = None,
     fold_compute_device: str = "cpu",
     authenticated_cache_session: Any | None = None,
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete fourteen-layer child transaction.
 
@@ -3692,6 +3906,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
     if not isinstance(compiler_lineage, Mapping):
         raise TypeError("compiler_lineage must be a mapping.")
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     if not callable(attention_installer):
         raise Lfm2SemanticLayerStackRefoldError(
             "The complete stack requires the analytic attention installer."
@@ -3899,6 +4114,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         bridge_artifact_sha256=bridge.artifact_sha256,
                         installer=attention_installer,
                         parameter_count=parameter_count,
+                        body_recipe=recipe,
                     )
                     attention_decision_count += 1
                     attention_install_count += int(
@@ -3941,6 +4157,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         bridge=bridge,
                         installer=selected_short_installer,
                         parameter_count=parameter_count,
+                        body_recipe=recipe,
                         **(
                             {"fold_compute_device": fold_compute_device}
                             if fold_compute_device != "cpu"
@@ -4054,6 +4271,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     final_layer=layer_index == 13,
                     parameter_count=parameter_count,
                     fold_compute_device=fold_compute_device,
+                    body_recipe=recipe,
                 )
                 mlp_coverage_after = _lfm2_dense_producer_chain_coverage(
                     target_model,
@@ -4151,6 +4369,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         ),
                         fir_receipt=fir_receipt,
                         fold_compute_device=fold_compute_device,
+                        body_recipe=recipe,
                     )
                 )
                 residual_bank = _next_residual_bank(propagation_replay)
@@ -4214,6 +4433,16 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             )
             != snapshot.modes
             or any(
+                value.get("body_recipe_id") != recipe.recipe_id
+                or value.get("body_recipe_sha256") != recipe.recipe_sha256
+                or value.get("body_recipe") != recipe.as_dict()
+                or value.get("numeric_thresholds_used_for_candidate_admission")
+                is not False
+                or value.get("heldout_metrics_have_candidate_or_publication_authority")
+                is not False
+                for value in layer_receipts
+            )
+            or any(
                 value.get("mlp_fold_compute_device") != fold_compute_device
                 for value in layer_receipts
             )
@@ -4251,6 +4480,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             )
         body = {
             "schema": LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA,
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
             "status": "complete-causal-layer-stack-adjudicated-final-w2-deferred",
             "cache_key": cache.cache_key,
             "cache_parent_fingerprint": cache.parent_fingerprint,
@@ -4387,6 +4619,11 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "final_norm_target_uses_unrotated_authenticated_interface": True,
             "short_conv_inserted_owner_rows_are_proxies_only": True,
             "numeric_parent_child_weight_match_objective": False,
+            "numeric_thresholds_used_for_candidate_admission": False,
+            "heldout_metrics_have_candidate_or_publication_authority": False,
+            "fit_metrics_order_candidates": recipe.fit_metrics_order_candidates,
+            "incumbent_fallback_only_when_all_alternatives_invalid_or_identical": True,
+            "complete_candidate_frontiers_embedded_in_layer_receipts": True,
             "operation_audit": dict(_ZERO_OPERATIONS),
         }
         receipt = _sealed(body)

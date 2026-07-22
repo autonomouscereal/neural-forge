@@ -253,6 +253,7 @@ def _compile(
     evidence: tuple[Lfm2SemanticShortConvReplayEvidence, ...],
     *,
     fold_compute_device: str | None = None,
+    body_recipe: str = "fit_guided",
 ) -> dict[str, object]:
     weight, bias = _source_fir()
     return dict(
@@ -265,6 +266,7 @@ def _compile(
             cache_key=_CACHE,
             bridge_artifact_sha256=_BRIDGE,
             source_model_identity_sha256=_SOURCE_MODEL,
+            body_recipe=body_recipe,
             **(
                 {"fold_compute_device": fold_compute_device}
                 if fold_compute_device is not None
@@ -344,6 +346,100 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
             reports["incumbent-producer-output-writer"]["candidate_ranking_split"]
             == "fit"
         )
+
+
+def test_three_recipes_materialize_distinct_effectful_nonblank_states(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def deterministic_tiebreakers_only(
+        _metrics: object,
+        *tiebreakers: object,
+    ) -> tuple[object, ...]:
+        return tuple(tiebreakers)
+
+    monkeypatch.setattr(
+        adapter,
+        "_fit_metric_ordering_key",
+        deterministic_tiebreakers_only,
+    )
+    receipts: dict[str, dict[str, object]] = {}
+    for recipe_id in (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+    ):
+        model = _ToyModel()
+        receipts[recipe_id] = _compile(
+            model,
+            _evidence_bank(model),
+            body_recipe=recipe_id,
+        )
+
+    assert receipts["fit_guided"]["selected_candidate"] == (
+        "incumbent-producer-output-writer"
+    )
+    assert receipts["fit_guided"]["writer_fit_proposal"]["selected_alpha"] == 0.125
+    assert receipts["full_strength_structural"]["selected_candidate"] == (
+        "full-source-structural"
+    )
+    assert receipts["residual_writer"]["selected_candidate"] == (
+        "incumbent-producer-output-writer"
+    )
+    assert receipts["residual_writer"]["writer_fit_proposal"]["selected_alpha"] == 1.0
+    assert (
+        len({receipt["model_state_after_sha256"] for receipt in receipts.values()}) == 3
+    )
+    assert all(
+        receipt["installed"] is True
+        and receipt["model_state_before_sha256"] != receipt["model_state_after_sha256"]
+        and receipt["numeric_metrics_have_final_intelligence_authority"] is False
+        for receipt in receipts.values()
+    )
+
+
+def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
+    receipts: dict[str, dict[str, object]] = {}
+    for recipe_id in ("full_strength_structural", "residual_writer"):
+        evidence_source = _ToyModel()
+        source_evidence = _evidence_bank(evidence_source)
+        model = _ToyModel()
+        with torch.no_grad():
+            for parameter in model.model.layers[0].conv.parameters():
+                parameter.zero_()
+        captured = _fingerprint(model).identity_sha256
+        evidence = tuple(
+            replace(item, captured_child_model_state_sha256=captured)
+            for item in source_evidence
+        )
+        receipt = _compile(model, evidence, body_recipe=recipe_id)
+        receipts[recipe_id] = receipt
+        assert receipt["installed"] is True
+        assert receipt["cold_start_blank_noop_forbidden"] is True
+        assert (
+            receipt["cold_start_selected_state_uses_full_source_structural_producers"]
+            is True
+        )
+        assert all(
+            int(torch.count_nonzero(parameter).item()) > 0
+            for parameter in model.model.layers[0].conv.parameters()
+        )
+
+    assert receipts["full_strength_structural"]["selected_candidate"] == (
+        "full-source-structural"
+    )
+    assert receipts["residual_writer"]["selected_candidate"] == (
+        "full-source-producer-output-writer"
+    )
+    assert (
+        receipts["residual_writer"][
+            "cold_start_residual_writer_component_equivalent_to_structural"
+        ]
+        is False
+    )
+    assert (
+        receipts["full_strength_structural"]["model_state_after_sha256"]
+        != receipts["residual_writer"]["model_state_after_sha256"]
+    )
 
 
 def test_explicit_cpu_fold_device_preserves_default_receipt_and_state_bytes() -> None:
@@ -759,8 +855,13 @@ def test_validation_diagnostic_cannot_restore_authenticated_incumbent_noop() -> 
     )
 
 
+@pytest.mark.parametrize(
+    "body_recipe",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
 def test_effectful_structural_candidate_survives_fit_diagnostic_miss(
     monkeypatch: pytest.MonkeyPatch,
+    body_recipe: str,
 ) -> None:
     model = _ToyModel()
     evidence = _evidence_bank(model)
@@ -795,7 +896,7 @@ def test_effectful_structural_candidate_survives_fit_diagnostic_miss(
     )
     monkeypatch.setattr(adapter, "_compile_writer_candidate", no_writer)
 
-    receipt = _compile(model, evidence)
+    receipt = _compile(model, evidence, body_recipe=body_recipe)
     report = receipt["candidate_reports_before_validation"]["full-source-structural"]
 
     assert receipt["installed"] is True
@@ -809,10 +910,16 @@ def test_effectful_structural_candidate_survives_fit_diagnostic_miss(
     assert report["numeric_diagnostic_miss_can_exclude_candidate"] is False
     assert receipt["validation_rejected_candidate"] is None
     assert receipt["incumbent_noop_fallback_used"] is False
+    assert receipt["body_recipe_id"] == body_recipe
 
 
+@pytest.mark.parametrize(
+    "body_recipe",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
 def test_structurally_invalid_only_proposal_uses_authenticated_incumbent_control(
     monkeypatch: pytest.MonkeyPatch,
+    body_recipe: str,
 ) -> None:
     model = _ToyModel()
     evidence = _evidence_bank(model)
@@ -844,7 +951,7 @@ def test_structurally_invalid_only_proposal_uses_authenticated_incumbent_control
     monkeypatch.setattr(adapter, "_compile_structural_candidate", invalid_structural)
     monkeypatch.setattr(adapter, "_compile_writer_candidate", no_writer)
 
-    receipt = _compile(model, evidence)
+    receipt = _compile(model, evidence, body_recipe=body_recipe)
     report = receipt["candidate_reports_before_validation"]["full-source-structural"]
 
     assert receipt["status"] == "structurally-identical-or-invalid-incumbent-noop"
@@ -852,20 +959,27 @@ def test_structurally_invalid_only_proposal_uses_authenticated_incumbent_control
     assert receipt["selected_candidate"] == "incumbent-noop"
     assert receipt["incumbent_noop_fallback_used"] is True
     assert receipt["incumbent_selected_by_heldout_gates"] is False
+    assert receipt["body_recipe_id"] == body_recipe
     assert report["structural_safety_passed"] is False
     assert report["structurally_eligible"] is False
     assert report["partition_metrics"]["fit"] is None
     assert _fingerprint(model).identity_sha256 == before
     assert stack_adapter._authenticated_heldout_incumbent_noop(
         receipt,
+        component="short_conv",
         before_sha256=before,
         after_sha256=before,
         changed_state_keys=(),
     )
 
 
+@pytest.mark.parametrize(
+    "body_recipe",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
 def test_identical_analytic_candidate_resolves_to_sealed_noop(
     monkeypatch: pytest.MonkeyPatch,
+    body_recipe: str,
 ) -> None:
     model = _ToyModel()
     evidence = _evidence_bank(model)
@@ -891,12 +1005,13 @@ def test_identical_analytic_candidate_resolves_to_sealed_noop(
 
     monkeypatch.setattr(adapter, "_compile_structural_candidate", identical_structural)
     monkeypatch.setattr(adapter, "_compile_writer_candidate", no_writer)
-    receipt = _compile(model, evidence)
+    receipt = _compile(model, evidence, body_recipe=body_recipe)
 
     seal = receipt.pop("result_sha256")
     assert canonical_sha256(receipt) == seal
     assert receipt["installed"] is False
     assert receipt["install_count"] == 0
+    assert receipt["body_recipe_id"] == body_recipe
     assert receipt["status"] == "structurally-identical-or-invalid-incumbent-noop"
     assert receipt["selected_candidate"] == "incumbent-noop"
     assert receipt["prevalidation_selected_candidate"] == "incumbent-noop"
@@ -929,6 +1044,7 @@ def test_identical_analytic_candidate_resolves_to_sealed_noop(
     assert _fingerprint(model).identity_sha256 == before
     assert stack_adapter._authenticated_heldout_incumbent_noop(
         receipt,
+        component="short_conv",
         before_sha256=receipt["model_state_before_sha256"],
         after_sha256=receipt["model_state_after_sha256"],
         changed_state_keys=receipt["changed_state_keys"],

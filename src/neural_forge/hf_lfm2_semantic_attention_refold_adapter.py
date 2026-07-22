@@ -23,7 +23,7 @@ import hashlib
 import itertools
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
@@ -44,6 +44,10 @@ from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
     seal_lfm2_endpoint_qk_fit_check_bank,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import fingerprint_lfm2_parent
+from neural_forge.hf_lfm2_semantic_body_recipe import (
+    Lfm2SemanticBodyRecipe,
+    resolve_lfm2_semantic_body_recipe,
+)
 from neural_forge.hf_lfm2_semantic_span_cpcf_alignment import (
     Lfm2SemanticSpanCpcfPhaseAlignment,
 )
@@ -208,7 +212,9 @@ def _installation_receipt_body(
     target_topology_sha256_before: str,
     target_topology_sha256_after: str,
     structurally_eligible_candidate_count: int,
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> dict[str, Any]:
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     evidence = tuple(
         _digest(value, "transport evidence SHA-256") for value in evidence_sha256
     )
@@ -245,6 +251,10 @@ def _installation_receipt_body(
     installed = bool(changed)
     return {
         "schema": _INSTALLATION_SCHEMA,
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "recipe_component_lane": recipe.component_lanes["qk"],
         "status": (
             "installed-frozen-semantic-attention-candidate"
             if installed
@@ -282,7 +292,9 @@ def _installation_receipt_body(
         ),
         "candidate_eligibility_basis": _VO_CANDIDATE_ELIGIBILITY_BASIS,
         "structural_safety_is_only_candidate_veto": True,
-        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_candidate_ordering": (
+            recipe.fit_metrics_order_candidates
+        ),
         "fit_metrics_used_for_structural_eligibility": False,
         "incumbent_selected_by_heldout_gates": False,
         "fit_check_nonregression_passed": None,
@@ -2631,6 +2643,27 @@ def _execution_policy(case_count: int) -> Lfm2EndpointQkResidualFoldPolicy:
     )
 
 
+def _qk_policy_for_body_recipe(
+    policy: Lfm2EndpointQkResidualFoldPolicy,
+    recipe: Lfm2SemanticBodyRecipe,
+) -> Lfm2EndpointQkResidualFoldPolicy:
+    """Select the complete-alpha Q/K lane without hiding structural choices."""
+
+    if recipe.fit_metrics_order_candidates:
+        return policy
+    # Keeping alpha zero alongside alpha one authenticates the incumbent
+    # control while making the only effectful proposal the full residual step
+    # under the compiler's largest authenticated trust radius. FIT metrics are
+    # still emitted, but cannot choose a weaker alpha in either structural
+    # recipe. This is deliberately named as maximum-trust, not uncapped.
+    return replace(
+        policy,
+        trust_radius=2.0,
+        alpha_frontier=(0.0, 1.0),
+        authentication_sha256="",
+    )
+
+
 def _evaluate_bank(
     bank: Lfm2EndpointQkResidualEvidenceBank,
     seed: Lfm2EndpointQkvoSeed,
@@ -4065,10 +4098,12 @@ def _select_and_validate_vo_candidate(
     validation_route_baseline: Lfm2EndpointQkMetrics,
     validation_route_candidate: Lfm2EndpointQkMetrics,
     compute_devices: Sequence[str] = (),
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> tuple[Any, Any, Mapping[str, Any]]:
     """Freeze a FIT-ordered structural proposal, then diagnose held-out rows."""
 
     torch = _torch()
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     candidate_rows = [
         {
             "name": "incumbent",
@@ -4163,8 +4198,10 @@ def _select_and_validate_vo_candidate(
                             tolerance=tolerance,
                         )
                     ),
-                    "diagnostic_only": False,
-                    "used_for_candidate_ordering": structural["eligible"],
+                    "diagnostic_only": not recipe.fit_metrics_order_candidates,
+                    "used_for_candidate_ordering": (
+                        structural["eligible"] and recipe.fit_metrics_order_candidates
+                    ),
                     "used_for_structural_eligibility": False,
                     "used_for_publication_threshold": False,
                     "used_for_publication": False,
@@ -4182,9 +4219,24 @@ def _select_and_validate_vo_candidate(
                     candidate,
                 )
             )
-    selected = (
-        min(eligible, key=lambda value: value[0])[1] if eligible else candidate_rows[0]
-    )
+    if not eligible:
+        selected = candidate_rows[0]
+    elif recipe.fit_metrics_order_candidates:
+        selected = min(eligible, key=lambda value: value[0])[1]
+    else:
+        structural_by_name = {str(value[1]["name"]): value[1] for value in eligible}
+        if recipe.recipe_id == "residual_writer":
+            selected = structural_by_name.get(
+                "fixed_v_output_only",
+                structural_by_name.get("joint_value_output"),
+            )
+        else:
+            selected = structural_by_name.get(
+                "joint_value_output",
+                structural_by_name.get("fixed_v_output_only"),
+            )
+        if selected is None:  # pragma: no cover - eligible names are closed above
+            raise AssertionError("Structural V/O frontier has no known proposal.")
     frozen = {
         "value": selected["value"].detach().to(device="cpu").contiguous().clone(),
         "output": selected["output"].detach().to(device="cpu").contiguous().clone(),
@@ -4287,6 +4339,10 @@ def _select_and_validate_vo_candidate(
     published_name = str(selected["name"])
     body = {
         "schema": "neural-forge-lfm2-semantic-vo-candidate-gate-v1",
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "recipe_component_lane": recipe.component_lanes["value_output"],
         "candidate_reports": reports,
         "strongest_selection_candidate": (
             None if published_name == "incumbent" else published_name
@@ -4296,7 +4352,17 @@ def _select_and_validate_vo_candidate(
         "selection_rule": (
             "exclude-incumbent-when-any-finite-dense-bfloat16-exact-shape-"
             "effectful-proposal-exists-then-order-eligible-proposals-by-fit"
+            if recipe.fit_metrics_order_candidates
+            else (
+                "exclude-incumbent-then-fixed-output-writer-before-joint-value-"
+                "output-by-authenticated-residual-writer-priority"
+                if recipe.recipe_id == "residual_writer"
+                else "exclude-incumbent-then-joint-value-output-before-fixed-"
+                "writer-by-authenticated-structural-priority"
+            )
         ),
+        "component_selection_policy_equivalent_recipe_ids": [recipe.recipe_id],
+        "component_selection_policy_equivalent_to_other_recipe": False,
         "fit_ordering_metrics": [
             "endpoint_relative_rmse",
             "endpoint_rmse",
@@ -4308,7 +4374,9 @@ def _select_and_validate_vo_candidate(
         "structurally_eligible_candidate_count": len(eligible),
         "candidate_eligibility_basis": _VO_CANDIDATE_ELIGIBILITY_BASIS,
         "structural_safety_is_only_candidate_veto": True,
-        "fit_metrics_used_for_candidate_ordering": True,
+        "fit_metrics_used_for_candidate_ordering": (
+            recipe.fit_metrics_order_candidates
+        ),
         "fit_metrics_used_for_structural_eligibility": False,
         "fit_metric_threshold_used_for_candidate_selection": False,
         "incumbent_noop_fallback_used": not eligible,
@@ -4347,7 +4415,9 @@ def _select_and_validate_vo_candidate(
         "published_output_weight_sha256": _tensor_sha256(frozen["output"]),
         "fit_only_analytic_solves": True,
         "heldout_metrics_are_diagnostic_only": True,
-        "numeric_metric_used_for_candidate_selection": len(eligible) > 1,
+        "numeric_metric_used_for_candidate_selection": bool(
+            recipe.fit_metrics_order_candidates and len(eligible) > 1
+        ),
         "numeric_metric_used_for_publication_or_rollback": False,
         "joint_value_output_publication_allowed": True,
         "fixed_value_weight_preserved": torch.equal(frozen["value"], seed.value_weight),
@@ -4367,10 +4437,12 @@ def _compile_complete_attention_cold_start(
     banks: Mapping[str, Lfm2EndpointQkResidualEvidenceBank],
     policy: Lfm2EndpointQkResidualFoldPolicy,
     exact_zero_roles: Sequence[str],
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Mapping[str, Any]:
     """Compile one FIT-only, coverage-complete Q/K/V/O blank-target plant."""
 
     torch = _torch()
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     zero_roles = tuple(exact_zero_roles)
     expected_roles = (
         "q_proj.weight",
@@ -4631,6 +4703,7 @@ def _compile_complete_attention_cold_start(
         validation_route_baseline=baseline_validation,
         validation_route_candidate=candidate_validation,
         compute_devices=policy.compute_devices,
+        body_recipe=recipe,
     )
     published_vo_kind = str(vo_gate["published_candidate"])
     writer_component_published = published_vo_kind == "fixed_v_output_only"
@@ -4749,6 +4822,9 @@ def _compile_complete_attention_cold_start(
     )
     body = {
         "schema": "neural-forge-lfm2-semantic-complete-attention-cold-start-v1",
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
         "original_seed_sha256": incumbent_seed.seed_sha256,
         "route_seed_sha256": seed.seed_sha256,
         "exact_zero_roles_at_entry": list(zero_roles),
@@ -5034,15 +5110,18 @@ def _publish_complete_attention_cold_start_unprotected(
     policy: Lfm2EndpointQkResidualFoldPolicy,
     incumbent_seed: Lfm2EndpointQkvoSeed,
     exact_zero_roles: Sequence[str],
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Mapping[str, Any]:
     """Install the compulsory blank-entry plant without any held-out rollback."""
 
     torch = _torch()
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     cold = _compile_complete_attention_cold_start(
         incumbent_seed,
         banks=banks,
         policy=policy,
         exact_zero_roles=exact_zero_roles,
+        body_recipe=recipe,
     )
     frozen_query = cold["query_weight"]
     frozen_key = cold["key_weight"]
@@ -5093,6 +5172,7 @@ def _publish_complete_attention_cold_start_unprotected(
         structurally_eligible_candidate_count=(
             1 + int(cold["vo_gate"]["structurally_eligible_candidate_count"])
         ),
+        body_recipe=recipe,
     )
     qk_cold = cold["cold_start_report"]["qk_cold_start"]
     joint_proposal = cold["joint_proposal"]
@@ -5156,6 +5236,20 @@ def _publish_complete_attention_cold_start_unprotected(
         "heldout_nonregression_is_diagnostic_only": True,
         "analytic_refold": {
             "schema": LFM2_SEMANTIC_ATTENTION_REFOLD_SCHEMA,
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_qk_lane": recipe.component_lanes["qk"],
+            "recipe_value_output_lane": recipe.component_lanes["value_output"],
+            "qk_component_selection_policy_equivalent_recipe_ids": (
+                ["full_strength_structural", "residual_writer"]
+                if not recipe.fit_metrics_order_candidates
+                else ["fit_guided"]
+            ),
+            "qk_component_selection_policy_equivalent_to_other_recipe": (
+                not recipe.fit_metrics_order_candidates
+            ),
+            "qk_component_equivalence_does_not_claim_complete_body_equivalence": (True),
             "cache_key": cache_key,
             "bridge_artifact_sha256": bridge_artifact_sha256,
             "source_inventory_sha256": inventory.inventory_sha256,
@@ -5293,6 +5387,7 @@ def _publish_complete_attention_cold_start(
     policy: Lfm2EndpointQkResidualFoldPolicy,
     incumbent_seed: Lfm2EndpointQkvoSeed,
     exact_zero_roles: Sequence[str],
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Mapping[str, Any]:
     """Keep the blank-entry transaction atomic through receipt sealing."""
 
@@ -5377,6 +5472,7 @@ def _publish_complete_attention_cold_start(
             policy=policy,
             incumbent_seed=incumbent_seed,
             exact_zero_roles=exact_zero_roles,
+            body_recipe=body_recipe,
         )
         if not isinstance(result, Mapping):
             raise Lfm2SemanticAttentionRefoldError(
@@ -5459,10 +5555,12 @@ def compile_install_lfm2_semantic_attention_postfold(
     evidence: Sequence[Any],
     cache_key: str,
     bridge_artifact_sha256: str,
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Mapping[str, Any]:
     """Compile and atomically install one semantic long-horizon Q/K/V/O fold."""
 
     torch = _torch()
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     cache = _digest(cache_key, "cache key")
     bridge = _digest(bridge_artifact_sha256, "bridge artifact SHA-256")
     raw = tuple(evidence)
@@ -5582,7 +5680,10 @@ def compile_install_lfm2_semantic_attention_postfold(
         source_split_sha256=split_sha,
         source_artifact_sha256=source_artifact,
     )
-    policy = _execution_policy(len(normalized))
+    policy = _qk_policy_for_body_recipe(
+        _execution_policy(len(normalized)),
+        recipe,
+    )
     banks = MappingProxyType(
         {
             "fit": fit_bank,
@@ -5617,6 +5718,7 @@ def compile_install_lfm2_semantic_attention_postfold(
             policy=policy,
             incumbent_seed=incumbent_seed,
             exact_zero_roles=exact_zero_roles,
+            body_recipe=recipe,
         )
     seed, cold_start = _cold_start_qk_seed(
         incumbent_seed,
@@ -5766,6 +5868,7 @@ def compile_install_lfm2_semantic_attention_postfold(
         validation_route_baseline=baseline_validation,
         validation_route_candidate=candidate_validation,
         compute_devices=policy.compute_devices,
+        body_recipe=recipe,
     )
     published_vo_kind = str(vo_gate["published_candidate"])
     if published_vo_kind not in {
@@ -5866,11 +5969,17 @@ def compile_install_lfm2_semantic_attention_postfold(
         target_topology_sha256_before=topology_before,
         target_topology_sha256_after=topology_after,
         structurally_eligible_candidate_count=(structurally_eligible_candidate_count),
+        body_recipe=recipe,
     )
     body = {
         **base,
         "analytic_refold": {
             "schema": LFM2_SEMANTIC_ATTENTION_REFOLD_SCHEMA,
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_qk_lane": recipe.component_lanes["qk"],
+            "recipe_value_output_lane": recipe.component_lanes["value_output"],
             "cache_key": cache,
             "bridge_artifact_sha256": bridge,
             "source_inventory_sha256": inventory.inventory_sha256,

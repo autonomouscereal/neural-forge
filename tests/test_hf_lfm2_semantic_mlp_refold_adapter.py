@@ -408,6 +408,7 @@ def _prepare(
     *,
     terminal: bool = False,
     maximum_delta_ratio: float | None = 1.0,
+    body_recipe: str = "fit_guided",
 ) -> adapter.Lfm2PreparedSemanticMlpRefold:
     return adapter.prepare_lfm2_semantic_mlp_postfold(
         target_model=model,
@@ -420,6 +421,7 @@ def _prepare(
         rmse_relative_tolerance=1e-4,
         cosine_tolerance=1e-5,
         require_terminal_action_evidence=terminal,
+        body_recipe=body_recipe,
     )
 
 
@@ -811,6 +813,94 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
     assert all(
         int(torch.count_nonzero(parameter).item()) > 0 for parameter in mlp.parameters()
     )
+
+
+def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
+    prepared_by_recipe: dict[str, adapter.Lfm2PreparedSemanticMlpRefold] = {}
+    state_sha256: dict[str, str] = {}
+    for recipe_id in ("full_strength_structural", "residual_writer"):
+        model = _Target()
+        with torch.no_grad():
+            for parameter in model.model.layers[0].feed_forward.parameters():
+                parameter.zero_()
+        prepared = _prepare(
+            model,
+            _cold_start_parent_endpoint_evidence(model),
+            body_recipe=recipe_id,
+        )
+        prepared_by_recipe[recipe_id] = prepared
+        state_sha256[recipe_id] = adapter._state_sha256(
+            prepared.selected_candidate.state_dict()
+        )
+        assert prepared.verify()
+        assert (
+            prepared.selection_receipt[
+                "blank_target_selected_state_uses_full_source_structural_producers"
+            ]
+            is True
+        )
+        assert adapter._nonzero_swiglu_roles(
+            prepared.selected_candidate.state_dict()
+        ) == ("w1.weight", "w3.weight", "w2.weight")
+
+    assert prepared_by_recipe["full_strength_structural"].selected_role == (
+        "full-w1-w3-w2"
+    )
+    residual = prepared_by_recipe["residual_writer"]
+    assert residual.selected_role == "incumbent-producer-w2"
+    assert residual.writer_candidate.solver_receipt["fixed_producer_state_source"] == (
+        "full-source-structural-w1-w3"
+    )
+    assert (
+        residual.selection_receipt[
+            "blank_target_residual_writer_component_equivalent_to_full_structural"
+        ]
+        is False
+    )
+    assert state_sha256["full_strength_structural"] != state_sha256["residual_writer"]
+
+
+def test_prepared_recipe_and_selected_lane_cannot_be_resealed_independently() -> None:
+    recipe_ids = (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+    )
+    for source_recipe_id in recipe_ids:
+        model = _Target()
+        prepared = _prepare(
+            model,
+            _evidence(model),
+            body_recipe=source_recipe_id,
+        )
+        for replacement_recipe_id in recipe_ids:
+            if replacement_recipe_id == source_recipe_id:
+                continue
+            with pytest.raises(
+                adapter.Lfm2SemanticMlpRefoldError,
+                match="recipe binding",
+            ):
+                replace(
+                    prepared,
+                    body_recipe=adapter.resolve_lfm2_semantic_body_recipe(
+                        replacement_recipe_id
+                    ),
+                )
+        forged_selected_role = (
+            "incumbent-producer-w2"
+            if prepared.selected_role == "full-w1-w3-w2"
+            else "full-w1-w3-w2"
+        )
+        with pytest.raises(
+            adapter.Lfm2SemanticMlpRefoldError,
+            match="recipe binding",
+        ):
+            replace(prepared, selected_role=forged_selected_role)
+        with pytest.raises(
+            adapter.Lfm2SemanticMlpRefoldError,
+            match="recipe binding",
+        ):
+            replace(prepared, writer_candidate=prepared.full_candidate)
 
 
 def test_blank_dispatch_uses_only_weighted_fit_chart_multi_anchor(
@@ -1310,8 +1400,73 @@ def test_regressing_metrics_do_not_veto_structurally_valid_effectful_candidate(
     assert not result.final_layer_mlp_evidence
 
 
+@pytest.mark.parametrize(
+    ("body_recipe", "expected_role"),
+    (
+        ("fit_guided", "full-w1-w3-w2"),
+        ("full_strength_structural", "full-w1-w3-w2"),
+        ("residual_writer", "incumbent-producer-w2"),
+    ),
+)
+def test_recipe_priority_survives_poor_heldout_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+    body_recipe: str,
+    expected_role: str,
+) -> None:
+    model = _Target()
+    evidence = _evidence(model)
+
+    def regressing_writer(_fit, incumbent, **_policy):
+        state = {
+            name: value.detach().cpu().clone() for name, value in incumbent.items()
+        }
+        state["w2.weight"] = torch.full_like(state["w2.weight"], 64.0)
+        return state, {
+            "solver": "test-recipe-regressing-writer",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    def regressing_full(_fit, _inventory, incumbent, **_policy):
+        return {
+            name: torch.full_like(value, -64.0) for name, value in incumbent.items()
+        }, {
+            "solver": "test-recipe-regressing-full",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    monkeypatch.setattr(adapter, "_solve_writer", regressing_writer)
+    monkeypatch.setattr(adapter, "_full_candidate_state", regressing_full)
+    prepared = _prepare(model, evidence, body_recipe=body_recipe)
+
+    assert prepared.selected_role == expected_role
+    assert prepared.selection_receipt["body_recipe_id"] == body_recipe
+    assert (
+        prepared.selection_receipt["heldout_nonregression"][expected_role]["validation"]
+        is False
+    )
+    assert prepared.selection_receipt["incumbent_noop_fallback_used"] is False
+    assert prepared.selection_receipt["validation_publication_veto_applied"] is False
+    assert (
+        prepared.selection_receipt["numeric_metrics_have_final_intelligence_authority"]
+        is False
+    )
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+    assert result.receipt["installed"] is True
+    assert result.receipt["selected_role"] == expected_role
+    assert result.receipt["body_recipe_id"] == body_recipe
+
+
+@pytest.mark.parametrize(
+    "body_recipe",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
 def test_identical_mlp_candidates_select_incumbent_and_perform_no_copy(
     monkeypatch,
+    body_recipe: str,
 ) -> None:
     model = _Target()
     evidence = _evidence(model)
@@ -1335,7 +1490,7 @@ def test_identical_mlp_candidates_select_incumbent_and_perform_no_copy(
 
     monkeypatch.setattr(adapter, "_solve_writer", identical_writer)
     monkeypatch.setattr(adapter, "_full_candidate_state", identical_full)
-    prepared = _prepare(model, evidence)
+    prepared = _prepare(model, evidence, body_recipe=body_recipe)
     assert prepared.verify()
     assert prepared.selected_role == "incumbent"
     assert prepared.selection_receipt["writer_changed_roles"] == []
@@ -1366,10 +1521,12 @@ def test_identical_mlp_candidates_select_incumbent_and_perform_no_copy(
     assert result.receipt["status"] == adapter._STRUCTURAL_NOOP_STATUS
     assert result.receipt["selected_candidate"] == "incumbent-noop"
     assert result.receipt["incumbent_selected_by_heldout_gates"] is False
+    assert result.receipt["body_recipe_id"] == body_recipe
     assert result.receipt["heldout_metrics_are_diagnostic_only"] is True
     assert result.receipt["numeric_metric_used_for_publication_or_rollback"] is False
     assert stack_adapter._authenticated_heldout_incumbent_noop(
         result.receipt,
+        component="mlp",
         before_sha256=before,
         after_sha256=before,
         changed_state_keys=(),
@@ -1418,8 +1575,13 @@ def test_metric_evaluation_failure_is_diagnostic_not_structural_veto(
     )
 
 
+@pytest.mark.parametrize(
+    "body_recipe",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
 def test_invalid_mlp_proposals_are_sealed_and_use_structural_incumbent_fallback(
     monkeypatch,
+    body_recipe: str,
 ) -> None:
     model = _Target()
     evidence = _evidence(model)
@@ -1447,7 +1609,7 @@ def test_invalid_mlp_proposals_are_sealed_and_use_structural_incumbent_fallback(
 
     monkeypatch.setattr(adapter, "_solve_writer", wrong_dtype_writer)
     monkeypatch.setattr(adapter, "_full_candidate_state", nonfinite_full)
-    prepared = _prepare(model, evidence)
+    prepared = _prepare(model, evidence, body_recipe=body_recipe)
 
     assert prepared.verify()
     assert prepared.selected_role == "incumbent"
@@ -1483,8 +1645,10 @@ def test_invalid_mlp_proposals_are_sealed_and_use_structural_incumbent_fallback(
     assert result.receipt["installed"] is False
     assert result.receipt["install_count"] == 0
     assert result.receipt["incumbent_selected_by_heldout_gates"] is False
+    assert result.receipt["body_recipe_id"] == body_recipe
     assert stack_adapter._authenticated_heldout_incumbent_noop(
         result.receipt,
+        component="mlp",
         before_sha256=before,
         after_sha256=before,
         changed_state_keys=(),

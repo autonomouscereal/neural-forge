@@ -458,7 +458,12 @@ def _force_unchanged_joint_vo(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_closed_form_fit_corrections_publish_with_heldout_metrics_diagnostic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    model = _Model()
+    # This assertion describes the fixed-V writer branch.  Seed only the model
+    # construction because another valid random incumbent can make FIT ranking
+    # select the competing joint V/O branch instead.
+    with torch.random.fork_rng():
+        torch.manual_seed(0)
+        model = _Model()
     evidence = _evidence(model)
     _install_fake_compiler(monkeypatch)
     before = model.model.layers[0].self_attn.q_proj.weight.detach().clone()
@@ -568,7 +573,13 @@ def test_validation_regression_is_diagnostic_and_cannot_rollback_fit_fold(
 def test_accepted_output_writer_is_installed_in_the_same_qkvo_transaction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    model = _Model()
+    # This test exercises the fixed-V output-writer transaction specifically.
+    # The default module initializer is random, and some valid initial states
+    # make the FIT-guided lane prefer the competing joint V/O proposal instead.
+    # Isolate a known writer-selecting state without perturbing the suite RNG.
+    with torch.random.fork_rng():
+        torch.manual_seed(0)
+        model = _Model()
     evidence = _evidence(model)
     _install_fake_compiler(monkeypatch)
     before_query = model.model.layers[0].self_attn.q_proj.weight.detach().clone()
@@ -975,6 +986,51 @@ def test_all_zero_bfloat16_qkvo_is_compulsorily_planted_with_full_axis_coverage(
     sealed = dict(receipt)
     digest = sealed.pop("result_sha256")
     assert canonical_sha256(sealed) == digest
+
+
+def test_blank_structural_and_residual_writer_attention_lanes_are_distinct() -> None:
+    state_by_recipe: dict[str, dict[str, str]] = {}
+    for recipe_id in ("full_strength_structural", "residual_writer"):
+        model = _Model()
+        attention = model.model.layers[0].self_attn
+        with torch.no_grad():
+            for projection in (
+                attention.q_proj,
+                attention.k_proj,
+                attention.v_proj,
+                attention.out_proj,
+            ):
+                projection.weight.zero_()
+        receipt = adapter.compile_install_lfm2_semantic_attention_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=_evidence(model),
+            cache_key="2" * 64,
+            bridge_artifact_sha256="3" * 64,
+            body_recipe=recipe_id,
+        )
+        gate = receipt["analytic_refold"]["value_output_candidate_gate"]
+        assert receipt["body_recipe_id"] == recipe_id
+        assert gate["body_recipe_id"] == recipe_id
+        assert gate["fit_metrics_used_for_candidate_ordering"] is False
+        assert receipt["heldout_metrics_are_diagnostic_only"] is True
+        assert all(
+            int(torch.count_nonzero(projection.weight).item()) > 0
+            for projection in (
+                attention.q_proj,
+                attention.k_proj,
+                attention.v_proj,
+                attention.out_proj,
+            )
+        )
+        state_by_recipe[recipe_id] = {
+            role: adapter._tensor_sha256(getattr(attention, role).weight)
+            for role in ("q_proj", "k_proj", "v_proj", "out_proj")
+        }
+
+    assert state_by_recipe["full_strength_structural"] != state_by_recipe[
+        "residual_writer"
+    ]
 
 
 def test_all_zero_qkvo_heldout_regression_is_diagnostic_not_blank_rollback(
@@ -1606,6 +1662,34 @@ def test_multi_projection_transaction_matches_wrapper_changed_key_order() -> Non
             target_topology_sha256_after=adapter._topology_sha256(target_model),
             structurally_eligible_candidate_count=1,
         )
+        recipe = adapter.resolve_lfm2_semantic_body_recipe("fit_guided")
+        candidate_reports = {
+            "incumbent": {"eligible": False},
+            "fixed_v_output_only": {"eligible": True},
+            "joint_value_output": {"eligible": False},
+        }
+        gate_body = {
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_component_lane": recipe.component_lanes["value_output"],
+            "candidate_reports": candidate_reports,
+            "selected_candidate": "fixed_v_output_only",
+            "published_candidate": "fixed_v_output_only",
+            "structurally_eligible_candidate_count": 1,
+            "fit_metrics_used_for_candidate_ordering": True,
+            "component_selection_policy_equivalent_recipe_ids": [recipe.recipe_id],
+            "component_selection_policy_equivalent_to_other_recipe": False,
+        }
+        gate = {**gate_body, "gate_sha256": canonical_sha256(gate_body)}
+        body["analytic_refold"] = {
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_qk_lane": recipe.component_lanes["qk"],
+            "recipe_value_output_lane": recipe.component_lanes["value_output"],
+            "value_output_candidate_gate": gate,
+        }
         return {**body, "result_sha256": canonical_sha256(body)}
 
     receipt = stack_adapter._install_attention_operator(
@@ -2209,7 +2293,13 @@ def test_vo_structural_eligibility_is_the_exact_nonmetric_conjunction() -> None:
     assert invalid_rows["layout"]["dense_strided"] is False
 
 
-def test_vo_incumbent_is_used_only_when_proposals_are_invalid_or_identical() -> None:
+@pytest.mark.parametrize(
+    "body_recipe",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
+def test_vo_incumbent_is_used_only_when_proposals_are_invalid_or_identical(
+    body_recipe: str,
+) -> None:
     generator = torch.Generator().manual_seed(41)
     features = torch.randint(-2, 3, (8, 2, 4), generator=generator).to(torch.float64)
     value = torch.tensor(
@@ -2249,11 +2339,13 @@ def test_vo_incumbent_is_used_only_when_proposals_are_invalid_or_identical() -> 
         tolerance=0.0,
         validation_route_baseline=_metrics(0.1),
         validation_route_candidate=_metrics(0.9),
+        body_recipe=body_recipe,
     )
 
     assert gate["structurally_eligible_candidate_count"] == 0
     assert gate["published_candidate"] == "incumbent"
     assert gate["incumbent_noop_fallback_used"] is True
+    assert gate["body_recipe_id"] == body_recipe
     assert gate["incumbent_noop_fallback_reason"] == (
         "all-analytic-proposals-structurally-invalid-or-identical"
     )
@@ -2264,7 +2356,13 @@ def test_vo_incumbent_is_used_only_when_proposals_are_invalid_or_identical() -> 
     assert torch.equal(published_output, output)
 
 
-def test_vo_heldout_metric_regression_cannot_veto_frozen_fit_selection() -> None:
+@pytest.mark.parametrize(
+    "body_recipe",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
+def test_vo_heldout_metric_regression_cannot_veto_frozen_fit_selection(
+    body_recipe: str,
+) -> None:
     generator = torch.Generator().manual_seed(37)
     features = torch.randint(-2, 3, (24, 2, 4), generator=generator).to(torch.float64)
     incumbent_value = torch.tensor(
@@ -2337,10 +2435,16 @@ def test_vo_heldout_metric_regression_cannot_veto_frozen_fit_selection() -> None
         tolerance=0.0,
         validation_route_baseline=_metrics(0.1),
         validation_route_candidate=_metrics(0.9),
+        body_recipe=body_recipe,
     )
 
     selected = gate["published_candidate"]
     assert selected != "incumbent"
+    assert gate["body_recipe_id"] == body_recipe
+    if body_recipe == "full_strength_structural":
+        assert selected == "joint_value_output"
+    elif body_recipe == "residual_writer":
+        assert selected == "fixed_v_output_only"
     assert gate["validation"]["endpoint_nonregressing"] is False
     assert gate["validation"]["route_nonregressing"] is False
     assert gate["validation"]["diagnostic_only"] is True

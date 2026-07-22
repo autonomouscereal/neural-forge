@@ -47,6 +47,10 @@ from neural_forge.hf_lfm2_circuit_trace_cache import fingerprint_lfm2_parent
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
     Lfm2CpcfTerminalActionEvidence,
 )
+from neural_forge.hf_lfm2_semantic_body_recipe import (
+    Lfm2SemanticBodyRecipe,
+    resolve_lfm2_semantic_body_recipe,
+)
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (
     Lfm2CachedMlpFoldCase,
     Lfm2CachedNormalizedInputMlpFoldCase,
@@ -852,12 +856,54 @@ class Lfm2PreparedSemanticMlpRefold:
     incumbent: Lfm2FrozenSemanticMlpCandidate
     writer_candidate: Lfm2FrozenSemanticMlpCandidate
     full_candidate: Lfm2FrozenSemanticMlpCandidate
+    body_recipe: Lfm2SemanticBodyRecipe
     selected_role: CandidateRole
     selection_receipt: Mapping[str, Any]
     terminal_action_evidence: Mapping[str, Lfm2CpcfTerminalActionEvidence]
     preparation_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
+        recipe_binding_valid = bool(
+            isinstance(self.body_recipe, Lfm2SemanticBodyRecipe)
+            and self.body_recipe.verify()
+            and isinstance(self.selection_receipt, Mapping)
+            and self.selection_receipt.get("body_recipe")
+            == self.body_recipe.as_dict()
+            and self.selection_receipt.get("body_recipe_sha256")
+            == self.body_recipe.recipe_sha256
+            and self.selection_receipt.get("body_recipe_id")
+            == self.body_recipe.recipe_id
+            and self.selection_receipt.get("recipe_component_lane")
+            == self.body_recipe.component_lanes["mlp"]
+        )
+        selected_role_binding_valid = bool(
+            isinstance(self.selection_receipt, Mapping)
+            and self.selection_receipt.get("selected_role") == self.selected_role
+            and self.selection_receipt.get("prevalidation_selected_role")
+            == self.selected_role
+            and self.selection_receipt.get("validation_rejected_role") is None
+        )
+        candidate_reports = (
+            self.selection_receipt.get("candidate_reports")
+            if isinstance(self.selection_receipt, Mapping)
+            else None
+        )
+        candidate_binding_valid = bool(
+            self.incumbent.role == "incumbent"
+            and self.writer_candidate.role == "incumbent-producer-w2"
+            and self.full_candidate.role == "full-w1-w3-w2"
+            and isinstance(candidate_reports, Mapping)
+            and all(
+                isinstance(candidate_reports.get(candidate.role), Mapping)
+                and candidate_reports[candidate.role].get("candidate_sha256")
+                == candidate.candidate_sha256
+                for candidate in (
+                    self.incumbent,
+                    self.writer_candidate,
+                    self.full_candidate,
+                )
+            )
+        )
         for value, name in (
             (self.captured_child_model_state_sha256, "captured child state"),
             (self.target_topology_sha256, "target topology"),
@@ -892,9 +938,12 @@ class Lfm2PreparedSemanticMlpRefold:
                 for value in self.evidence_sha256
             )
             or set(self.terminal_action_evidence).difference(_PARTITIONS)
+            or not recipe_binding_valid
+            or not selected_role_binding_valid
+            or not candidate_binding_valid
         ):
             raise Lfm2SemanticMlpRefoldError(
-                "Prepared semantic MLP candidate set is incomplete."
+                "Prepared semantic MLP candidate set or recipe binding is incomplete."
             )
         object.__setattr__(
             self,
@@ -953,6 +1002,8 @@ class Lfm2PreparedSemanticMlpRefold:
                 "incumbent-producer-w2": self.writer_candidate.candidate_sha256,
                 "full-w1-w3-w2": self.full_candidate.candidate_sha256,
             },
+            "body_recipe": self.body_recipe.as_dict(),
+            "body_recipe_sha256": self.body_recipe.recipe_sha256,
             "selected_role": self.selected_role,
             "selection_receipt": dict(self.selection_receipt),
             "terminal_action_evidence_sha256": {
@@ -1795,12 +1846,14 @@ def prepare_lfm2_semantic_mlp_postfold(
     cosine_tolerance: float = 1e-8,
     require_terminal_action_evidence: bool = False,
     fold_compute_device: str = "cpu",
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Lfm2PreparedSemanticMlpRefold:
     """Compile and freeze both FIT-only candidates without mutating the child."""
 
     cache = _digest(cache_key, "cache key")
     manifest = _digest(cache_manifest_sha256, "cache manifest")
     bridge = _digest(bridge_artifact_sha256, "bridge artifact")
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     if (
         not isinstance(ridge, (int, float))
         or isinstance(ridge, bool)
@@ -1868,12 +1921,6 @@ def prepare_lfm2_semantic_mlp_postfold(
     exact_zero_incumbent = _exact_zero_swiglu_state(incumbent_state)
     requested_maximum_delta_ratio = (
         None if maximum_delta_ratio is None else float(maximum_delta_ratio)
-    )
-    writer_state, writer_solver = _solve_writer(
-        partitions["fit"],
-        incumbent_state,
-        ridge=float(ridge),
-        maximum_delta_ratio=requested_maximum_delta_ratio,
     )
     full_state, full_solver = _full_candidate_state(
         partitions["fit"],
@@ -2274,6 +2321,31 @@ def prepare_lfm2_semantic_mlp_postfold(
                 },
             }
         )
+    writer_fixed_producer_source = (
+        "full-source-structural-w1-w3"
+        if exact_zero_incumbent
+        else "live-incumbent-w1-w3"
+    )
+    writer_fixed_producer_state = (
+        full_state if exact_zero_incumbent else incumbent_state
+    )
+    writer_state, writer_solver = _solve_writer(
+        partitions["fit"],
+        writer_fixed_producer_state,
+        ridge=float(ridge),
+        maximum_delta_ratio=requested_maximum_delta_ratio,
+    )
+    writer_solver = MappingProxyType(
+        {
+            **dict(writer_solver),
+            "fixed_producer_state_source": writer_fixed_producer_source,
+            "fixed_producer_state_sha256": _state_sha256(writer_fixed_producer_state),
+            "blank_compatible_full_source_producer_plant": exact_zero_incumbent,
+            "legacy_candidate_role_name_describes_nonblank_lane": (
+                exact_zero_incumbent
+            ),
+        }
+    )
     if inventory.inventory_sha256 != source_before or not inventory.verify():
         raise Lfm2SemanticMlpRefoldError(
             "Direct-local parent W1/W3/W2 bundle changed during compilation."
@@ -2456,12 +2528,21 @@ def prepare_lfm2_semantic_mlp_postfold(
                 "The compulsory cold-start full W1/W3/W2 proposal is not finite, "
                 "dense, target-shaped, target-dtype, and effectful."
             )
-        selected = full
-        rationale = (
-            "blank-target-complete-structural-plant-continues-to-whole-response-"
-            "evaluation"
-        )
-    elif analytic_frontier:
+        if recipe.recipe_id == "residual_writer" and any(
+            candidate is writer for candidate in analytic_frontier
+        ):
+            selected = writer
+            rationale = (
+                "blank-target-full-source-producers-plus-w2-residual-writer-"
+                "continues-to-whole-response-evaluation"
+            )
+        else:
+            selected = full
+            rationale = (
+                "blank-target-complete-structural-plant-continues-to-whole-"
+                "response-evaluation"
+            )
+    elif recipe.recipe_id == "fit_guided" and analytic_frontier:
         selected = min(
             analytic_frontier,
             key=_fit_metric_ordering_key,
@@ -2469,6 +2550,24 @@ def prepare_lfm2_semantic_mlp_postfold(
         rationale = (
             "deterministic-fit-order-among-structurally-eligible-effectful-"
             "analytic-proposals"
+        )
+    elif recipe.recipe_id == "full_strength_structural" and analytic_frontier:
+        selected = (
+            full
+            if any(candidate is full for candidate in analytic_frontier)
+            else writer
+        )
+        rationale = (
+            "recipe-full-source-w1-w3-w2-structural-priority-without-numeric-ordering"
+        )
+    elif recipe.recipe_id == "residual_writer" and analytic_frontier:
+        selected = (
+            writer
+            if any(candidate is writer for candidate in analytic_frontier)
+            else full
+        )
+        rationale = (
+            "recipe-uncapped-w2-residual-writer-priority-without-numeric-ordering"
         )
     else:
         selected = incumbent
@@ -2523,6 +2622,10 @@ def prepare_lfm2_semantic_mlp_postfold(
         for candidate in (incumbent, writer, full)
     }
     selection_body = {
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "recipe_component_lane": recipe.component_lanes["mlp"],
         "selected_role": selected.role,
         "prevalidation_selected_role": prevalidation_selected_role,
         "validation_rejected_role": validation_rejected_role,
@@ -2564,6 +2667,13 @@ def prepare_lfm2_semantic_mlp_postfold(
         "component_quality_gates_block_installation": False,
         "blank_target_requires_complete_structural_plant": exact_zero_incumbent,
         "blank_target_continues_to_whole_response_evaluation": (exact_zero_incumbent),
+        "blank_target_selected_state_uses_full_source_structural_producers": (
+            exact_zero_incumbent and selected.role != "incumbent"
+        ),
+        "blank_target_residual_writer_component_equivalent_to_full_structural": (
+            exact_zero_incumbent
+            and structural_reports[writer.role]["structurally_eligible"] is not True
+        ),
         "candidate_frozen_before_fit_check": True,
         "candidate_frozen_before_selection": True,
         "candidate_frozen_before_validation": True,
@@ -2581,15 +2691,23 @@ def prepare_lfm2_semantic_mlp_postfold(
         "heldout_partitions_used_for_solves": False,
         "candidate_selection_evidence_scope": (
             "finite-dense-structural-eligibility-plus-fit-ordering"
+            if recipe.fit_metrics_order_candidates
+            else "finite-dense-structural-eligibility-plus-recipe-priority"
         ),
         "candidate_eligibility_basis": _CANDIDATE_ELIGIBILITY_BASIS,
         "structural_safety_is_only_candidate_veto": True,
         "structurally_eligible_candidate_count": len(analytic_frontier),
         "fit_metrics_role": (
             "ordering-among-structurally-eligible-not-threshold-gating"
+            if recipe.fit_metrics_order_candidates
+            else "diagnostic-only"
         ),
-        "fit_metrics_used_for_candidate_ordering": True,
-        "fit_metrics_used_for_pre_review_candidate_selection": True,
+        "fit_metrics_used_for_candidate_ordering": (
+            recipe.fit_metrics_order_candidates
+        ),
+        "fit_metrics_used_for_pre_review_candidate_selection": (
+            recipe.fit_metrics_order_candidates
+        ),
         "fit_metrics_used_for_structural_eligibility": False,
         "fit_thresholds_used_for_candidate_eligibility": False,
         "fit_check_thresholds_used_for_candidate_eligibility": False,
@@ -2624,7 +2742,7 @@ def prepare_lfm2_semantic_mlp_postfold(
             "Candidate preparation mutated the live child."
         )
     if exact_zero_incumbent and (
-        selected.role != "full-w1-w3-w2"
+        selected.role not in {"incumbent-producer-w2", "full-w1-w3-w2"}
         or _nonzero_swiglu_roles(selected.state_dict())
         != ("w1.weight", "w3.weight", "w2.weight")
     ):
@@ -2659,6 +2777,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         incumbent=incumbent,
         writer_candidate=writer,
         full_candidate=full,
+        body_recipe=recipe,
         selected_role=selected.role,
         selection_receipt=selection,
         terminal_action_evidence=terminal,
@@ -2679,6 +2798,10 @@ def _metric_guidance_receipt_fields(
     selection = prepared.selection_receipt
     selected_nonregression = selection["heldout_nonregression"][prepared.selected_role]
     return {
+        "body_recipe": prepared.body_recipe.as_dict(),
+        "body_recipe_sha256": prepared.body_recipe.recipe_sha256,
+        "body_recipe_id": prepared.body_recipe.recipe_id,
+        "recipe_component_lane": prepared.body_recipe.component_lanes["mlp"],
         "incumbent_noop_fallback_used": prepared.selected_role == "incumbent",
         "incumbent_noop_fallback_reason": selection["incumbent_noop_fallback_reason"],
         "incumbent_selected_by_heldout_gates": False,
@@ -2697,8 +2820,12 @@ def _metric_guidance_receipt_fields(
             "structurally_eligible_candidate_count"
         ],
         "fit_metrics_role": selection["fit_metrics_role"],
-        "fit_metrics_used_for_candidate_ordering": True,
-        "fit_metrics_used_for_pre_review_candidate_selection": True,
+        "fit_metrics_used_for_candidate_ordering": selection[
+            "fit_metrics_used_for_candidate_ordering"
+        ],
+        "fit_metrics_used_for_pre_review_candidate_selection": selection[
+            "fit_metrics_used_for_pre_review_candidate_selection"
+        ],
         "fit_metrics_used_for_structural_eligibility": False,
         "fit_thresholds_used_for_candidate_eligibility": False,
         "fit_check_thresholds_used_for_candidate_eligibility": False,
