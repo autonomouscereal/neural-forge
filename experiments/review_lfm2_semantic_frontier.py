@@ -39,6 +39,7 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 DOSSIER_SCHEMA = "neural-forge-lfm2-semantic-frontier-manual-review-v1"
 PROGRESS_SCHEMA = "neural-forge-lfm2-semantic-frontier-review-progress-v1"
 PROMPTS_SCHEMA = "neural-forge-whole-response-review-prompts-v1"
+PARENT_ENVELOPE_SCHEMA = "neural-forge-lfm2-whole-response-parent-envelope-v1"
 
 
 class Lfm2SemanticFrontierReviewError(RuntimeError):
@@ -154,6 +155,53 @@ def _load_frontier_run(
     ):
         raise Lfm2SemanticFrontierReviewError(
             "Frontier run candidate inventory is incomplete."
+        )
+    return document
+
+
+def _load_parent_envelope(
+    path: Path,
+    *,
+    expected_envelope_sha256: str,
+    expected_file_sha256: str | None,
+    expected_prompt_set_sha256: str,
+    expected_prompt_ids: Sequence[str],
+) -> dict[str, Any]:
+    lexical = path.expanduser().absolute()
+    if lexical.is_symlink() or not lexical.is_file():
+        raise Lfm2SemanticFrontierReviewError(
+            "Parent response envelope must be one real local file."
+        )
+    if expected_file_sha256 is not None and _file_sha256(lexical) != _digest(
+        expected_file_sha256,
+        label="expected parent envelope file SHA-256",
+    ):
+        raise Lfm2SemanticFrontierReviewError("Parent response envelope bytes changed.")
+    document = json.loads(lexical.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise Lfm2SemanticFrontierReviewError(
+            "Parent response envelope must be a JSON object."
+        )
+    body = dict(document)
+    supplied = body.pop("envelope_sha256", None)
+    responses = document.get("responses")
+    if (
+        document.get("schema") != PARENT_ENVELOPE_SCHEMA
+        or document.get("status") != "complete-one-time-parent-response-cache"
+        or supplied != canonical_sha256(body)
+        or supplied
+        != _digest(
+            expected_envelope_sha256,
+            label="expected parent envelope SHA-256",
+        )
+        or document.get("prompt_set_sha256") != expected_prompt_set_sha256
+        or not isinstance(responses, list)
+        or [row.get("id") for row in responses] != list(expected_prompt_ids)
+        or document.get("prompt_count") != len(expected_prompt_ids)
+        or document.get("response_bank_sha256") != canonical_sha256(responses)
+    ):
+        raise Lfm2SemanticFrontierReviewError(
+            "Parent response envelope is incomplete or differs from its pins."
         )
     return document
 
@@ -424,6 +472,9 @@ def review_frontier(
     dtype: str,
     maximum_prompt_tokens: int,
     maximum_new_tokens: int,
+    parent_envelope: Path | None = None,
+    expected_parent_envelope_sha256: str | None = None,
+    expected_parent_envelope_file_sha256: str | None = None,
 ) -> dict[str, Any]:
     if not 1 <= maximum_prompt_tokens <= 8192:
         raise Lfm2SemanticFrontierReviewError(
@@ -446,6 +497,24 @@ def review_frontier(
     prompts = load_review_prompts(prompts_json)
     prompt_rows = [dict(row) for row in prompts]
     prompt_sha256 = canonical_sha256(prompt_rows)
+    if (parent_envelope is None) != (expected_parent_envelope_sha256 is None):
+        raise Lfm2SemanticFrontierReviewError(
+            "Parent envelope path and expected envelope SHA-256 must be paired."
+        )
+    parent = (
+        None
+        if parent_envelope is None
+        else _load_parent_envelope(
+            parent_envelope,
+            expected_envelope_sha256=str(expected_parent_envelope_sha256),
+            expected_file_sha256=expected_parent_envelope_file_sha256,
+            expected_prompt_set_sha256=prompt_sha256,
+            expected_prompt_ids=[row["id"] for row in prompts],
+        )
+    )
+    parent_responses = (
+        {} if parent is None else {str(row["id"]): row for row in parent["responses"]}
+    )
     materializations = {
         str(row["candidate_id"]): row for row in run["materializations"]
     }
@@ -468,6 +537,14 @@ def review_frontier(
             maximum_prompt_tokens=maximum_prompt_tokens,
             maximum_new_tokens=maximum_new_tokens,
         )
+        if parent is not None:
+            for response in child["responses"]:
+                parent_response = parent_responses[str(response["id"])]
+                response["parent_response"] = parent_response["response"]
+                response["parent_response_token_ids"] = parent_response[
+                    "response_token_ids"
+                ]
+                response["parent_diagnostics"] = parent_response["diagnostics"]
         completed.append(child)
         progress_body = {
             "schema": PROGRESS_SCHEMA,
@@ -497,6 +574,22 @@ def review_frontier(
         "prompt_count": len(prompts),
         "maximum_prompt_tokens": maximum_prompt_tokens,
         "maximum_new_tokens": maximum_new_tokens,
+        "parent_response_envelope": (
+            None
+            if parent is None
+            else {
+                "path": str(parent_envelope.absolute()),
+                "envelope_sha256": parent["envelope_sha256"],
+                "parent_state_sha256": parent["parent_state_sha256"],
+                "parent_identity_sha256": parent["parent_identity_sha256"],
+                "parent_unique_parameters": parent["parent_unique_parameters"],
+                "tokenizer_sha256": parent["tokenizer_sha256"],
+                "maximum_new_tokens": parent["maximum_new_tokens"],
+                "inference_device": parent.get("inference_device"),
+                "inference_dtype": parent.get("inference_dtype"),
+                "response_bank_sha256": parent["response_bank_sha256"],
+            }
+        ),
         "requested_candidate_ids": list(selected),
         "reviewed_candidate_count": len(completed),
         "candidate_reviews": completed,
@@ -507,6 +600,7 @@ def review_frontier(
             "automatic_acceptance_or_rejection_performed": False,
             "exact_parent_token_match_required": False,
             "manual_intelligence_judgment_required": True,
+            "parent_comparison_uses_cached_text_only": parent is not None,
         },
         "operation_audit": {
             "training_steps": 0,
@@ -543,6 +637,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")
     parser.add_argument("--maximum-prompt-tokens", type=int, default=1024)
     parser.add_argument("--maximum-new-tokens", type=int, default=256)
+    parser.add_argument("--parent-envelope", type=Path)
+    parser.add_argument("--expected-parent-envelope-sha256")
+    parser.add_argument("--expected-parent-envelope-file-sha256")
     return parser
 
 
@@ -559,6 +656,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         dtype=args.dtype,
         maximum_prompt_tokens=args.maximum_prompt_tokens,
         maximum_new_tokens=args.maximum_new_tokens,
+        parent_envelope=args.parent_envelope,
+        expected_parent_envelope_sha256=args.expected_parent_envelope_sha256,
+        expected_parent_envelope_file_sha256=(
+            args.expected_parent_envelope_file_sha256
+        ),
     )
     print(
         json.dumps(

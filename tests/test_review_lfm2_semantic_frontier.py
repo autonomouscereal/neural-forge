@@ -121,6 +121,7 @@ def test_review_frontier_preserves_all_outputs_for_manual_judgment(
         "automatic_acceptance_or_rejection_performed": False,
         "exact_parent_token_match_required": False,
         "manual_intelligence_judgment_required": True,
+        "parent_comparison_uses_cached_text_only": False,
     }
     assert document["operation_audit"]["training_steps"] == 0
     assert document["operation_audit"]["parent_forward_passes"] == 0
@@ -181,3 +182,82 @@ def test_response_diagnostics_never_returns_a_verdict() -> None:
     assert "accepted" not in diagnostics
     assert "rejected" not in diagnostics
     assert diagnostics["interpretation"].startswith("diagnostic-only")
+
+
+def test_cached_parent_text_is_attached_without_running_parent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    candidate_ids = ("candidate-a",)
+    run_path = tmp_path / "run.json"
+    run = _write_run(run_path, candidate_ids)
+    prompts_path = tmp_path / "prompts.json"
+    _write_prompts(prompts_path)
+    prompts = review.load_review_prompts(prompts_path)
+    prompt_sha256 = review.canonical_sha256([dict(row) for row in prompts])
+    parent_rows = [
+        {
+            "id": row["id"],
+            "category": row["category"],
+            "response": f"cached parent response {row['id']}",
+            "response_token_ids": [9, 10],
+            "diagnostics": {"interpretation": "diagnostic-only"},
+        }
+        for row in prompts
+    ]
+    parent_body = {
+        "schema": review.PARENT_ENVELOPE_SCHEMA,
+        "status": "complete-one-time-parent-response-cache",
+        "prompt_set_sha256": prompt_sha256,
+        "prompt_count": len(prompts),
+        "maximum_new_tokens": 256,
+        "parent_state_sha256": "a" * 64,
+        "parent_identity_sha256": "b" * 64,
+        "parent_unique_parameters": 229_000_000,
+        "tokenizer_sha256": "c" * 64,
+        "responses": parent_rows,
+        "response_bank_sha256": review.canonical_sha256(parent_rows),
+    }
+    parent_document = {
+        **parent_body,
+        "envelope_sha256": review.canonical_sha256(parent_body),
+    }
+    parent_path = tmp_path / "parent.json"
+    parent_path.write_text(json.dumps(parent_document), encoding="utf-8")
+
+    monkeypatch.setattr(
+        review,
+        "_review_one_child",
+        lambda materialization, prompt_rows, **_kwargs: {
+            "candidate_id": materialization["candidate_id"],
+            "responses": [
+                {"id": row["id"], "response": f"child response {row['id']}"}
+                for row in prompt_rows
+            ],
+        },
+    )
+    document = review.review_frontier(
+        frontier_run_receipt=run_path,
+        expected_frontier_run_sha256=str(run["run_sha256"]),
+        expected_frontier_run_file_sha256=None,
+        prompts_json=prompts_path,
+        output_json=tmp_path / "compared.json",
+        candidate_ids=(),
+        device="cpu",
+        dtype="bfloat16",
+        maximum_prompt_tokens=1024,
+        maximum_new_tokens=256,
+        parent_envelope=parent_path,
+        expected_parent_envelope_sha256=parent_document["envelope_sha256"],
+    )
+    responses = document["candidate_reviews"][0]["responses"]
+    assert responses[0]["parent_response"].startswith("cached parent response")
+    assert responses[0]["parent_response_token_ids"] == [9, 10]
+    assert (
+        document["parent_response_envelope"]["envelope_sha256"]
+        == (parent_document["envelope_sha256"])
+    )
+    assert (
+        document["evaluation_policy"]["parent_comparison_uses_cached_text_only"] is True
+    )
+    assert document["operation_audit"]["parent_forward_passes"] == 0
