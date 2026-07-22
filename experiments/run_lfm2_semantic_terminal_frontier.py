@@ -166,21 +166,29 @@ def _source_roots_from_manifest(
             "Frontier source-root roles are malformed."
         )
 
-    def one(role: str) -> Path:
+    def values_for(role: str) -> tuple[Path, ...]:
         values = role_paths.get(role)
-        if not isinstance(values, list) or len(values) != 1:
+        if (
+            not isinstance(values, Sequence)
+            or isinstance(values, (str, bytes, bytearray))
+            or not values
+            or any(not isinstance(value, str) for value in values)
+        ):
+            raise Lfm2SemanticTerminalFrontierRunnerError(
+                f"Frontier source role {role!r} must be a nonempty path sequence."
+            )
+        return tuple(Path(value) for value in values)
+
+    def one(role: str) -> Path:
+        values = values_for(role)
+        if len(values) != 1:
             raise Lfm2SemanticTerminalFrontierRunnerError(
                 f"Frontier source role {role!r} must name exactly one directory."
             )
-        return Path(values[0])
+        return values[0]
 
     def many(role: str) -> tuple[Path, ...]:
-        values = role_paths.get(role)
-        if not isinstance(values, list) or not values:
-            raise Lfm2SemanticTerminalFrontierRunnerError(
-                f"Frontier source role {role!r} must be nonempty."
-            )
-        return tuple(Path(value) for value in values)
+        return values_for(role)
 
     return Lfm2SemanticTerminalFrontierSourceRoots(
         preterminal_capsule_directory=one("preterminal_capsule"),

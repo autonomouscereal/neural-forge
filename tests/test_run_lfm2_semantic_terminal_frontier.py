@@ -100,7 +100,21 @@ def test_complete_frontier_allows_shared_parent_and_donor_read_root(
         lambda *_args, **_kwargs: SimpleNamespace(
             reference=reference,
             manifest=MappingProxyType(
-                {"authenticated_source_roots": MappingProxyType(source_roots)}
+                {
+                    "authenticated_source_roots": MappingProxyType(
+                        {
+                            **source_roots,
+                            "role_paths": MappingProxyType(
+                                {
+                                    role: tuple(values)
+                                    for role, values in source_roots[
+                                        "role_paths"
+                                    ].items()
+                                }
+                            ),
+                        }
+                    )
+                }
             ),
         ),
     )
