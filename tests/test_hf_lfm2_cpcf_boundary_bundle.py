@@ -671,15 +671,25 @@ def test_anchor_integration_is_deterministic_and_preserves_both_seals():
         lineage["causal_anchor_report_sha256"]
         == first.report["interface_report_sha256"]
     )
-    assert lineage["active_interface_is_anchor_repaired"] is False
-    assert lineage["active_interface_is_base_control"] is True
-    assert lineage["causal_anchor_report"]["selected_candidate_is_base_control"] is True
+    assert lineage["active_interface_is_anchor_repaired"] is True
+    assert lineage["active_interface_is_base_control"] is False
+    anchor = lineage["causal_anchor_report"]
+    assert anchor["selected_candidate_is_base_control"] is False
+    assert anchor["structural_safety_is_only_candidate_veto"] is True
+    assert anchor["numeric_thresholds_used_for_candidate_eligibility"] is False
+    assert anchor["numeric_metrics_used_for_base_fallback"] is False
+    assert anchor["base_control_used_only_for_structural_fallback"] is True
     assert (
-        lineage["causal_anchor_report"][
-            "target_anchor_metrics_used_for_candidate_selection"
+        anchor["minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal"]
+        is True
+    )
+    assert (
+        anchor[
+            "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate"
         ]
         is False
     )
+    assert anchor["target_anchor_metrics_used_for_candidate_selection"] is False
     assert lineage["additional_runtime_parameter_count"] == 0
     assert (
         first.report["causal_anchor_extraction"]["no_sampled_prefix_row_duplication"]
@@ -693,10 +703,10 @@ def test_anchor_integration_is_deterministic_and_preserves_both_seals():
     )
     assert (
         first.report["coordinate_contract"]["active_interface_is_anchor_repaired"]
-        is False
+        is True
     )
     assert (
-        first.report["coordinate_contract"]["active_interface_is_base_control"] is True
+        first.report["coordinate_contract"]["active_interface_is_base_control"] is False
     )
 
 

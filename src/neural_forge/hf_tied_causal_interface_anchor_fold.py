@@ -3,18 +3,20 @@
 The base CPCF interface is fitted to mapped-parent logits.  Across tokenizer
 boundaries that objective can faithfully preserve the *wrong* free-running
 decision: the unchanged parent is executing a noncanonical token sequence.
-This module adds a bounded residual to the already folded dense tied table
+This module adds an analytic residual to the already folded dense tied table
 using coherent, teacher-forced next-token anchors from the sealed trajectory
 cache.
 
 The producer encoder is fixed.  For every fit observation, the residual is
 asked to place the target next token above the strongest mapped-parent
 competitor by a candidate margin.  The sparse linear constraints are solved in
-observation space with deterministic FP64 ridge regression.  The unmodified
-base interface is an explicit same-row control.  Residual candidates must
-preserve mapped-parent behavior relative to that control, and candidates are
-ranked only by mapped-parent logit behavior and drift.  Target-anchor metrics
-remain diagnostics.  Validation is evaluated only after the winner is frozen.
+observation space with deterministic FP64 ridge regression.  Every finite,
+dense, shape/dtype-correct residual that changes the tied table remains
+eligible.  Mapped-parent behavior, table drift, and the configured 90% value
+are diagnostic guidance for deterministic ordering, never eligibility gates.
+The unmodified base interface is used only when every analytic candidate is
+structurally invalid or tensor-identical.  Target-anchor metrics remain
+diagnostics.  Validation is evaluated only after the winner is frozen.
 
 No optimizer, backward pass, parent execution, pruning, quantization, or
 additional runtime parameter is used.  The result replaces a ``V x H`` tied
@@ -412,6 +414,18 @@ def _mapped_parent_competitors(
     return torch.cat(competitors).contiguous()
 
 
+def _stable_finite_vector_norm(value: Any) -> float:
+    """Return a finite diagnostic norm for a finite FP64 tensor."""
+
+    torch = _torch()
+    scale = float(value.abs().max().item())
+    if scale == 0.0:
+        return 0.0
+    normalized = float(torch.linalg.vector_norm(value / scale).item())
+    result = scale * normalized
+    return min(result, torch.finfo(torch.float64).max)
+
+
 def _fit_residual(
     base_weight: Any,
     fit_coordinates: Any,
@@ -468,27 +482,18 @@ def _fit_residual(
             "Causal-anchor residual contains NaN or infinity."
         )
 
-    base_norm = float(torch.linalg.vector_norm(base_weight).item())
-    if not math.isfinite(base_norm) or base_norm <= 0.0:
-        raise TiedCausalAnchorFoldError(
-            "The base tied table must have positive finite energy."
-        )
-    residual_norm = float(torch.linalg.vector_norm(residual).item())
-    raw_relative_drift = residual_norm / base_norm
-    scale = 1.0
-    if raw_relative_drift > maximum_relative_table_drift:
-        scale = maximum_relative_table_drift / raw_relative_drift
-        residual.mul_(scale)
-        residual_norm *= scale
-    relative_drift = residual_norm / base_norm
+    base_norm = _stable_finite_vector_norm(base_weight)
+    residual_norm = _stable_finite_vector_norm(residual)
+    drift_reference_norm = max(base_norm, torch.finfo(torch.float64).eps)
+    relative_drift = residual_norm / drift_reference_norm
+    if not math.isfinite(relative_drift):
+        relative_drift = torch.finfo(torch.float64).max
     repaired = base_weight + residual
-    if (
-        tuple(repaired.shape) != tuple(base_weight.shape)
-        or not bool(torch.isfinite(repaired).all().item())
-        or relative_drift > maximum_relative_table_drift + 1e-12
+    if tuple(repaired.shape) != tuple(base_weight.shape) or not bool(
+        torch.isfinite(repaired).all().item()
     ):
         raise TiedCausalAnchorFoldError(
-            "Causal-anchor residual violated its shape, finite, or drift bound."
+            "Causal-anchor residual violated its shape or finite contract."
         )
     realized = (
         fit_coordinates
@@ -502,11 +507,19 @@ def _fit_residual(
         "ridge_absolute": regularization,
         "requested_margin": margin,
         "fit_constraint_count": int(target_ids.numel()),
-        "raw_relative_table_drift": raw_relative_drift,
+        "raw_relative_table_drift": relative_drift,
         "relative_table_drift": relative_drift,
         "maximum_relative_table_drift": maximum_relative_table_drift,
-        "drift_scale": scale,
-        "drift_clipped": scale < 1.0,
+        "maximum_relative_table_drift_is_diagnostic_review_goal": True,
+        "maximum_relative_table_drift_used_as_candidate_eligibility_gate": False,
+        "maximum_relative_table_drift_used_to_clip_candidate": False,
+        "relative_table_drift_review_goal_met": (
+            relative_drift <= maximum_relative_table_drift + 1e-12
+        ),
+        "relative_table_drift_reference_norm": drift_reference_norm,
+        "relative_table_drift_reference_used_epsilon": base_norm == 0.0,
+        "drift_scale": 1.0,
+        "drift_clipped": False,
         "fit_requested_margin_rmse": float(
             torch.sqrt((realized - margin).square().mean()).item()
         ),
@@ -523,6 +536,71 @@ def _fit_residual(
         "target_weight_sha256": _tensor_sha256(repaired),
     }
     return residual, report
+
+
+def _residual_candidate_structure(
+    base_weight: Any,
+    residual: Any,
+) -> tuple[Any | None, dict[str, Any]]:
+    """Authenticate structural eligibility without consulting performance."""
+
+    torch = _torch()
+    is_tensor = isinstance(residual, torch.Tensor)
+    dense = bool(is_tensor and residual.layout == torch.strided)
+    shape_matches = bool(
+        is_tensor and tuple(residual.shape) == tuple(base_weight.shape)
+    )
+    dtype_matches = bool(is_tensor and residual.dtype == base_weight.dtype)
+    device_matches = bool(is_tensor and residual.device == base_weight.device)
+    finite = bool(is_tensor and dense and bool(torch.isfinite(residual).all().item()))
+    structurally_valid = bool(
+        is_tensor
+        and dense
+        and shape_matches
+        and dtype_matches
+        and device_matches
+        and finite
+    )
+    repaired = base_weight + residual if structurally_valid else None
+    repaired_finite = bool(
+        repaired is not None and bool(torch.isfinite(repaired).all().item())
+    )
+    structurally_valid = structurally_valid and repaired_finite
+    tensor_identical = bool(structurally_valid and torch.equal(repaired, base_weight))
+    effectful = structurally_valid and not tensor_identical
+    if effectful:
+        rejection_reason = None
+    elif structurally_valid:
+        rejection_reason = "tensor_identical_to_base"
+    elif not is_tensor:
+        rejection_reason = "residual_is_not_tensor"
+    elif not dense:
+        rejection_reason = "residual_is_not_dense_strided"
+    elif not shape_matches:
+        rejection_reason = "residual_shape_differs_from_base"
+    elif not dtype_matches:
+        rejection_reason = "residual_dtype_differs_from_base"
+    elif not device_matches:
+        rejection_reason = "residual_device_differs_from_base"
+    elif not finite:
+        rejection_reason = "residual_contains_nonfinite_values"
+    else:
+        rejection_reason = "repaired_table_contains_nonfinite_values"
+    return repaired, {
+        "residual_is_tensor": is_tensor,
+        "residual_is_dense_strided": dense,
+        "residual_shape_matches_base": shape_matches,
+        "residual_dtype_matches_base": dtype_matches,
+        "residual_device_matches_base": device_matches,
+        "residual_values_finite": finite,
+        "repaired_values_finite": repaired_finite,
+        "structurally_valid": structurally_valid,
+        "tensor_identical_to_base": tensor_identical,
+        "effectful_residual": effectful,
+        "structurally_eligible": effectful,
+        "structural_rejection_reason": rejection_reason,
+        "numeric_metrics_used_for_structural_eligibility": False,
+    }
 
 
 def _split_metrics(
@@ -654,6 +732,8 @@ def _split_metrics(
         "raw_and_runtime_coordinates_have_same_target_top1": True,
         "runtime_target_coordinates_rms_normalized": True,
         "raw_target_coordinates_used_for_parent_behavior_selection": True,
+        "raw_target_coordinates_used_for_parent_behavior_diagnostic_ordering": True,
+        "parent_behavior_metrics_used_as_candidate_eligibility_gate": False,
         "exact_output_text_or_token_sequence_matching_used": False,
     }
 
@@ -753,7 +833,7 @@ def fit_tied_causal_interface_anchor_residual(
     maximum_fit_anchor_rows: int = 4096,
     minimum_mapped_parent_behavior_retention: float = 0.90,
 ) -> TiedCausalAnchorResidualFold:
-    """Fit and select one bounded same-shape tied-table anchor residual."""
+    """Fit and diagnostically order same-shape tied-table anchor residuals."""
 
     torch = _torch()
     if not isinstance(base_interface, TiedCausalInterfaceFold):
@@ -815,7 +895,7 @@ def fit_tied_causal_interface_anchor_residual(
         maximum_fit_anchor_rows,
         "maximum_fit_anchor_rows",
     )
-    behavior_retention = _fraction(
+    behavior_review_goal = _fraction(
         minimum_mapped_parent_behavior_retention,
         "minimum_mapped_parent_behavior_retention",
     )
@@ -851,14 +931,14 @@ def fit_tied_causal_interface_anchor_residual(
             "mapped_parent_raw_centered_logit_retained_energy_fraction"
         ]
     )
-    required_parent_top1 = base_parent_top1 * behavior_retention
-    required_parent_energy = (
-        base_parent_energy * behavior_retention
+    diagnostic_goal_parent_top1 = base_parent_top1 * behavior_review_goal
+    diagnostic_goal_parent_energy = (
+        base_parent_energy * behavior_review_goal
         if base_parent_energy > 0.0
         else base_parent_energy
     )
 
-    def behavior_score(
+    def diagnostic_score(
         metrics: Mapping[str, Any],
         *,
         relative_table_drift: float,
@@ -872,6 +952,43 @@ def fit_tied_causal_interface_anchor_residual(
             -relative_table_drift,
         )
 
+    def behavior_review(
+        metrics: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        parent_top1 = float(metrics["mapped_parent_top1_agreement"])
+        parent_energy = float(
+            metrics["mapped_parent_raw_centered_logit_retained_energy_fraction"]
+        )
+        base_energy = float(
+            metrics["base_interface_raw_centered_logit_retained_energy_fraction"]
+        )
+        parent_top1_met = parent_top1 + 1e-12 >= diagnostic_goal_parent_top1
+        parent_energy_met = parent_energy + 1e-12 >= diagnostic_goal_parent_energy
+        base_energy_met = base_energy + 1e-12 >= behavior_review_goal
+        return {
+            "mapped_parent_behavior_retention_review_goal": behavior_review_goal,
+            "diagnostic_goal_mapped_parent_top1_agreement": (
+                diagnostic_goal_parent_top1
+            ),
+            "diagnostic_goal_mapped_parent_raw_centered_logit_retained_energy_fraction": (
+                diagnostic_goal_parent_energy
+            ),
+            "diagnostic_goal_base_interface_raw_centered_logit_retained_energy_fraction": (
+                behavior_review_goal
+            ),
+            "mapped_parent_top1_review_goal_met": parent_top1_met,
+            "mapped_parent_raw_centered_energy_review_goal_met": parent_energy_met,
+            "base_interface_raw_centered_energy_review_goal_met": base_energy_met,
+            "all_mapped_parent_behavior_review_goals_met": (
+                parent_top1_met and parent_energy_met and base_energy_met
+            ),
+            "mapped_parent_behavior_review_goal_used_as_eligibility_gate": False,
+        }
+
+    _base_repaired, base_structure = _residual_candidate_structure(
+        base_weight,
+        zero_residual,
+    )
     base_candidate_report = {
         "candidate_index": 0,
         "candidate_kind": "unmodified_base_interface",
@@ -883,21 +1000,28 @@ def fit_tied_causal_interface_anchor_residual(
         "raw_relative_table_drift": 0.0,
         "relative_table_drift": 0.0,
         "maximum_relative_table_drift": drift_limit,
+        "maximum_relative_table_drift_is_diagnostic_review_goal": True,
+        "maximum_relative_table_drift_used_as_candidate_eligibility_gate": False,
+        "maximum_relative_table_drift_used_to_clip_candidate": False,
+        "relative_table_drift_review_goal_met": True,
         "drift_scale": 1.0,
         "drift_clipped": False,
         "residual_weight_sha256": _tensor_sha256(zero_residual),
         "target_weight_sha256": _tensor_sha256(base_weight),
         "selection_metrics": base_selection_metrics,
-        "minimum_required_mapped_parent_top1_agreement": required_parent_top1,
-        "minimum_required_mapped_parent_raw_centered_logit_retained_energy_fraction": (
-            required_parent_energy
+        "selection_metrics_computed": True,
+        **behavior_review(base_selection_metrics),
+        **base_structure,
+        "base_fallback_eligible": False,
+        "candidate_eligible_for_selection": False,
+        "selection_diagnostic_score": list(
+            diagnostic_score(
+                base_selection_metrics,
+                relative_table_drift=0.0,
+            )
         ),
-        "minimum_required_base_interface_raw_centered_logit_retained_energy_fraction": (
-            behavior_retention
-        ),
-        "mapped_parent_behavior_eligible": True,
         "selection_behavior_score": list(
-            behavior_score(
+            diagnostic_score(
                 base_selection_metrics,
                 relative_table_drift=0.0,
             )
@@ -907,29 +1031,87 @@ def fit_tied_causal_interface_anchor_residual(
         "validation_split_read": False,
     }
     candidate_reports = [base_candidate_report]
-    candidates = [
-        (
-            behavior_score(
-                base_selection_metrics,
-                relative_table_drift=0.0,
-            ),
-            0,
-            zero_residual,
-            base_weight,
-        )
-    ]
+    analytic_candidates = []
     for ridge in ridges:
         for margin in margins:
-            residual, fit_report = _fit_residual(
+            candidate_index = len(candidate_reports)
+            try:
+                residual, fit_report = _fit_residual(
+                    base_weight,
+                    fit_coordinates,
+                    splits["fit"].target_next_token_ids,
+                    fit_competitors,
+                    ridge=ridge,
+                    margin=margin,
+                    maximum_relative_table_drift=drift_limit,
+                )
+            except TiedCausalAnchorFoldError as exc:
+                _repaired, structure = _residual_candidate_structure(
+                    base_weight,
+                    None,
+                )
+                candidate_reports.append(
+                    {
+                        "candidate_index": candidate_index,
+                        "candidate_kind": "anchor_residual",
+                        "is_base_control": False,
+                        "ridge_fraction": ridge,
+                        "ridge_absolute": None,
+                        "requested_margin": margin,
+                        "fit_solver_succeeded": False,
+                        "fit_solver_error": str(exc),
+                        "selection_metrics": None,
+                        "selection_metrics_computed": False,
+                        **structure,
+                        "base_fallback_eligible": False,
+                        "candidate_eligible_for_selection": False,
+                        "selection_diagnostic_score": None,
+                        "selection_behavior_score": None,
+                        "mapped_parent_behavior_retention_review_goal": (
+                            behavior_review_goal
+                        ),
+                        "mapped_parent_behavior_review_goal_used_as_eligibility_gate": (
+                            False
+                        ),
+                        "target_anchor_metrics_used_for_candidate_selection": False,
+                        "selection_split_used_for_candidate_parameters": False,
+                        "validation_split_read": False,
+                    }
+                )
+                continue
+            repaired, structure = _residual_candidate_structure(
                 base_weight,
-                fit_coordinates,
-                splits["fit"].target_next_token_ids,
-                fit_competitors,
-                ridge=ridge,
-                margin=margin,
-                maximum_relative_table_drift=drift_limit,
+                residual,
             )
-            repaired = base_weight + residual
+            common_report = {
+                "candidate_index": candidate_index,
+                "candidate_kind": "anchor_residual",
+                "is_base_control": False,
+                **fit_report,
+                "fit_solver_succeeded": True,
+                **structure,
+                "base_fallback_eligible": False,
+                "candidate_eligible_for_selection": bool(
+                    structure["structurally_eligible"]
+                ),
+                "mapped_parent_behavior_retention_review_goal": (behavior_review_goal),
+                "mapped_parent_behavior_review_goal_used_as_eligibility_gate": False,
+                "target_anchor_metrics_used_for_candidate_selection": False,
+                "selection_split_used_for_candidate_parameters": False,
+                "validation_split_read": False,
+            }
+            if not structure["structurally_eligible"]:
+                candidate_reports.append(
+                    {
+                        **common_report,
+                        "selection_metrics": None,
+                        "selection_metrics_computed": False,
+                        "selection_diagnostic_score": None,
+                        "selection_behavior_score": None,
+                    }
+                )
+                continue
+            assert repaired is not None
             selection_metrics = _split_metrics(
                 splits["selection"],
                 source_table,
@@ -939,53 +1121,33 @@ def fit_tied_causal_interface_anchor_residual(
                 norm_epsilon=norm_epsilon,
                 chunk_rows=chunk_rows,
             )
-            candidate_index = len(candidate_reports)
-            parent_top1 = float(selection_metrics["mapped_parent_top1_agreement"])
-            parent_energy = float(
-                selection_metrics[
-                    "mapped_parent_raw_centered_logit_retained_energy_fraction"
-                ]
-            )
-            base_energy = float(
-                selection_metrics[
-                    "base_interface_raw_centered_logit_retained_energy_fraction"
-                ]
-            )
-            eligible = (
-                parent_top1 + 1e-12 >= required_parent_top1
-                and parent_energy + 1e-12 >= required_parent_energy
-                and base_energy + 1e-12 >= behavior_retention
-            )
-            score = behavior_score(
+            score = diagnostic_score(
                 selection_metrics,
                 relative_table_drift=float(fit_report["relative_table_drift"]),
             )
             candidate_report = {
-                "candidate_index": candidate_index,
-                "candidate_kind": "anchor_residual",
-                "is_base_control": False,
-                **fit_report,
+                **common_report,
                 "selection_metrics": selection_metrics,
-                "minimum_required_mapped_parent_top1_agreement": (required_parent_top1),
-                "minimum_required_mapped_parent_raw_centered_logit_retained_energy_fraction": (
-                    required_parent_energy
-                ),
-                "minimum_required_base_interface_raw_centered_logit_retained_energy_fraction": (
-                    behavior_retention
-                ),
-                "mapped_parent_behavior_eligible": eligible,
+                "selection_metrics_computed": True,
+                **behavior_review(selection_metrics),
+                "selection_diagnostic_score": list(score),
                 "selection_behavior_score": list(score),
-                "target_anchor_metrics_used_for_candidate_selection": False,
-                "selection_split_used_for_candidate_parameters": False,
-                "validation_split_read": False,
             }
             candidate_reports.append(candidate_report)
-            if eligible:
-                candidates.append((score, candidate_index, residual, repaired))
-    _score, selected_index, selected_residual, selected_weight = max(
-        candidates,
+            analytic_candidates.append((score, candidate_index, residual, repaired))
+    diagnostic_order = sorted(
+        analytic_candidates,
         key=lambda value: (value[0], -value[1]),
+        reverse=True,
     )
+    if diagnostic_order:
+        _score, selected_index, selected_residual, selected_weight = diagnostic_order[0]
+    else:
+        selected_index = 0
+        selected_residual = zero_residual
+        selected_weight = base_weight
+        base_candidate_report["base_fallback_eligible"] = True
+        base_candidate_report["candidate_eligible_for_selection"] = True
 
     # Validation is intentionally first touched after the winner is frozen.
     split_metrics = {
@@ -1036,6 +1198,8 @@ def fit_tied_causal_interface_anchor_residual(
         "fit_split_used_for_residual_parameters": True,
         "selection_split_used_for_residual_parameters": False,
         "selection_split_used_for_ridge_margin_selection": True,
+        "selection_split_used_for_diagnostic_ordering": True,
+        "selection_split_used_for_numeric_eligibility_gating": False,
         "validation_split_used_for_residual_parameters": False,
         "validation_split_used_for_ridge_margin_selection": False,
         "validation_values_used_for_parameters_or_selection": False,
@@ -1044,18 +1208,54 @@ def fit_tied_causal_interface_anchor_residual(
         "margin_candidates": list(margins),
         "base_control_candidate_included": True,
         "base_control_candidate_index": 0,
-        "minimum_mapped_parent_behavior_retention": behavior_retention,
-        "candidate_selection_policy": (
-            "eligible_if_same_row_parent_top1_parent_raw_centered_energy_and_"
-            "base_raw_centered_energy_preserve_configured_fraction_then_rank_"
-            "by_parent_raw_centered_energy_parent_top1_base_energy_and_drift"
+        "base_control_used_only_for_structural_fallback": True,
+        "base_control_fallback_triggered": not bool(diagnostic_order),
+        "base_control_fallback_reason": (
+            "all_analytic_residual_candidates_structurally_invalid_or_tensor_identical"
+            if not diagnostic_order
+            else None
         ),
+        "minimum_mapped_parent_behavior_retention": behavior_review_goal,
+        "minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal": True,
+        "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate": (
+            False
+        ),
+        "candidate_selection_policy": (
+            "all_finite_dense_shape_dtype_device_correct_effectful_analytic_"
+            "residuals_eligible_then_deterministic_diagnostic_ordering_by_"
+            "parent_raw_centered_energy_parent_top1_base_energy_and_drift_"
+            "with_base_only_if_all_analytic_candidates_invalid_or_identical"
+        ),
+        "structural_safety_is_only_candidate_veto": True,
+        "numeric_metrics_used_for_structural_eligibility": False,
+        "numeric_thresholds_used_for_candidate_eligibility": False,
+        "numeric_metrics_used_for_base_fallback": False,
+        "numeric_metrics_used_for_deterministic_diagnostic_ordering": True,
+        "diagnostic_ordering_tie_break": "lowest_candidate_index",
+        "diagnostic_candidate_indices_best_to_worst": [
+            int(candidate[1]) for candidate in diagnostic_order
+        ],
         "target_anchor_metrics_diagnostic_only": True,
         "target_anchor_metrics_used_for_candidate_selection": False,
+        "structurally_eligible_candidate_indices": [
+            int(candidate["candidate_index"])
+            for candidate in candidate_reports
+            if candidate["structurally_eligible"]
+        ],
         "eligible_candidate_indices": [
             int(candidate["candidate_index"])
             for candidate in candidate_reports
-            if candidate["mapped_parent_behavior_eligible"]
+            if candidate["candidate_eligible_for_selection"]
+        ],
+        "structurally_rejected_candidate_indices": [
+            int(candidate["candidate_index"])
+            for candidate in candidate_reports[1:]
+            if not candidate["structurally_valid"]
+        ],
+        "tensor_identical_candidate_indices": [
+            int(candidate["candidate_index"])
+            for candidate in candidate_reports[1:]
+            if candidate["tensor_identical_to_base"]
         ],
         "candidate_reports": candidate_reports,
         "selected_candidate_index": selected_index,
@@ -1065,7 +1265,14 @@ def fit_tied_causal_interface_anchor_residual(
         "selected_requested_margin": selected_report["requested_margin"],
         "relative_table_drift": selected_relative_drift,
         "maximum_relative_table_drift": drift_limit,
+        "maximum_relative_table_drift_is_diagnostic_review_goal": True,
+        "maximum_relative_table_drift_used_as_candidate_eligibility_gate": False,
+        "maximum_relative_table_drift_used_to_clip_candidate": False,
+        "relative_table_drift_review_goal_met": (
+            selected_relative_drift <= drift_limit + 1e-12
+        ),
         "drift_bound_satisfied": (selected_relative_drift <= drift_limit + 1e-12),
+        "drift_bound_enforced": False,
         "split_metrics": split_metrics,
         "target_norm_epsilon": norm_epsilon,
         "metric_chunk_rows": chunk_rows,

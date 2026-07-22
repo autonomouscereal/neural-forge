@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -199,6 +200,62 @@ def _verify_sealed(
     if canonical_sha256(body) != claimed:
         raise Lfm2SemanticFoundationError(f"{label} seal is invalid.")
     return {**body, field: claimed}
+
+
+def _causal_anchor_selection_contract(
+    anchor_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind foundation receipts to structural-only anchor eligibility."""
+
+    goal = anchor_report.get("minimum_mapped_parent_behavior_retention")
+    drift_goal = anchor_report.get("maximum_relative_table_drift")
+    if (
+        isinstance(goal, bool)
+        or not isinstance(goal, (int, float))
+        or not math.isfinite(float(goal))
+        or not 0.0 <= float(goal) <= 1.0
+        or isinstance(drift_goal, bool)
+        or not isinstance(drift_goal, (int, float))
+        or not math.isfinite(float(drift_goal))
+        or not 0.0 < float(drift_goal) <= 1.0
+        or anchor_report.get("structural_safety_is_only_candidate_veto") is not True
+        or anchor_report.get("numeric_thresholds_used_for_candidate_eligibility")
+        is not False
+        or anchor_report.get("numeric_metrics_used_for_base_fallback") is not False
+        or anchor_report.get("base_control_used_only_for_structural_fallback")
+        is not True
+        or anchor_report.get(
+            "minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal"
+        )
+        is not True
+        or anchor_report.get(
+            "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate"
+        )
+        is not False
+        or anchor_report.get("maximum_relative_table_drift_is_diagnostic_review_goal")
+        is not True
+        or anchor_report.get(
+            "maximum_relative_table_drift_used_as_candidate_eligibility_gate"
+        )
+        is not False
+    ):
+        raise Lfm2SemanticFoundationError(
+            "Foundation causal-anchor eligibility is not structural-only."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-foundation-anchor-selection-contract-v1",
+        "candidate_eligibility_basis": (
+            "finite_dense_shape_dtype_device_correct_effectful_residual"
+        ),
+        "mapped_parent_behavior_retention_review_goal": float(goal),
+        "mapped_parent_behavior_retention_review_goal_is_hard_gate": False,
+        "relative_table_drift_review_goal": float(drift_goal),
+        "relative_table_drift_review_goal_is_hard_gate": False,
+        "numeric_metrics_role": "deterministic_diagnostic_ordering_only",
+        "numeric_metrics_may_restore_base_control": False,
+        "base_control_only_if_all_analytic_residuals_invalid_or_identical": True,
+    }
+    return _sealed(body, "contract_sha256")
 
 
 def _ordinary_file(value: str | os.PathLike[str], label: str) -> Path:
@@ -630,6 +687,7 @@ def fit_lfm2_semantic_foundation_interface(
 
     base = dict(boundary_compiler.base_interface.report)
     anchor = dict(boundary_compiler.anchor_fold.report)
+    anchor_selection_contract = _causal_anchor_selection_contract(anchor)
     active = dict(interface.report)
     body = {
         "schema": LFM2_SEMANTIC_FOUNDATION_INTERFACE_SCHEMA,
@@ -653,6 +711,7 @@ def fit_lfm2_semantic_foundation_interface(
         "base_interface_report_sha256": base["report_sha256"],
         "causal_anchor_report": anchor,
         "causal_anchor_report_sha256": anchor["report_sha256"],
+        "causal_anchor_selection_contract": anchor_selection_contract,
         "active_interface_report": active,
         "active_interface_report_sha256": active["report_sha256"],
         "source_tied_table_sha256": _tensor_sha256(source_selected_tied_table),
@@ -1034,6 +1093,22 @@ def materialize_lfm2_semantic_foundation(
             source_selected_tied_table=source_table,
             target_model=target,
         )
+        solve_report = _verify_sealed(
+            interface_solve.report,
+            field="result_sha256",
+            label="foundation interface solve",
+        )
+        solve_anchor = _verify_sealed(
+            solve_report.get("causal_anchor_report"),
+            field="report_sha256",
+            label="foundation causal-anchor report",
+        )
+        if solve_report.get("causal_anchor_selection_contract") != (
+            _causal_anchor_selection_contract(solve_anchor)
+        ):
+            raise Lfm2SemanticFoundationError(
+                "Foundation interface solve lacks the structural-only anchor contract."
+            )
         interface_install = dict(
             install_lfm2_cpcf_tied_interface(target, interface_solve.interface)
         )
@@ -1304,6 +1379,21 @@ def authenticate_lfm2_semantic_foundation_receipt(
         field="result_sha256",
         label="foundation interface solve",
     )
+    interface_anchor = _verify_sealed(
+        interface_solve.get("causal_anchor_report"),
+        field="report_sha256",
+        label="foundation causal-anchor report",
+    )
+    expected_anchor_selection_contract = _causal_anchor_selection_contract(
+        interface_anchor
+    )
+    if (
+        interface_solve.get("causal_anchor_selection_contract")
+        != expected_anchor_selection_contract
+    ):
+        raise Lfm2SemanticFoundationError(
+            "Foundation causal-anchor review contract is missing or divergent."
+        )
     interface_install = _verify_sealed(
         receipt.get("interface_install"),
         field="report_sha256",

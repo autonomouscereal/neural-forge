@@ -111,6 +111,9 @@ def _fixture():
         "base_interface_report_sha256": base.report["report_sha256"],
         "causal_anchor_report": dict(anchor.report),
         "causal_anchor_report_sha256": anchor.report["report_sha256"],
+        "causal_anchor_selection_contract": (
+            foundation._causal_anchor_selection_contract(anchor.report)
+        ),
         "active_interface_report": dict(active.report),
         "active_interface_report_sha256": active.report["report_sha256"],
         "source_tied_table_sha256": statistics_module._foundation_tensor_sha256(table),
@@ -209,6 +212,26 @@ def test_compact_statistics_round_trip_replays_exact_interface(monkeypatch, tmp_
     assert dict(replayed_self_dual.report) == dict(full_self_dual.report)
     assert artifact.path.name == artifact.artifact_sha256
     assert artifact.manifest["payload_file_bytes"] < 32 * 1024
+    anchor_policy = artifact.manifest["anchor_policy"]
+    assert anchor_policy["minimum_mapped_parent_behavior_retention"] == 0.90
+    assert (
+        anchor_policy[
+            "minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal"
+        ]
+        is True
+    )
+    assert (
+        anchor_policy[
+            "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate"
+        ]
+        is False
+    )
+    assert anchor_policy["maximum_relative_table_drift_is_diagnostic_review_goal"]
+    assert (
+        anchor_policy["maximum_relative_table_drift_used_as_candidate_eligibility_gate"]
+        is False
+    )
+    assert anchor_policy["base_control_used_only_for_structural_fallback"] is True
     descriptors = {
         value["name"]: value for value in artifact.manifest["payload_tensors"]
     }

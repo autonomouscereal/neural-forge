@@ -109,7 +109,7 @@ _BINDING_FIELDS = frozenset(
         "producer_encoder_sha256",
     }
 )
-_ANCHOR_POLICY_FIELDS = frozenset(
+_ANCHOR_CALL_FIELDS = frozenset(
     {
         "ridge_candidates",
         "margin_candidates",
@@ -120,6 +120,17 @@ _ANCHOR_POLICY_FIELDS = frozenset(
         "minimum_mapped_parent_behavior_retention",
     }
 )
+_ANCHOR_POLICY_SEMANTIC_FIELDS = frozenset(
+    {
+        "minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal",
+        "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate",
+        "maximum_relative_table_drift_is_diagnostic_review_goal",
+        "maximum_relative_table_drift_used_as_candidate_eligibility_gate",
+        "base_control_used_only_for_structural_fallback",
+        "structural_safety_is_only_candidate_veto",
+    }
+)
+_ANCHOR_POLICY_FIELDS = _ANCHOR_CALL_FIELDS | _ANCHOR_POLICY_SEMANTIC_FIELDS
 
 
 class Lfm2SemanticFoundationStatisticsError(ValueError):
@@ -449,6 +460,22 @@ def _foundation_bindings(
             "Foundation statistics bindings differ from the immutable schema."
         )
     policy = {name: anchor[name] for name in sorted(_ANCHOR_POLICY_FIELDS)}
+    if (
+        policy["minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal"]
+        is not True
+        or policy[
+            "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate"
+        ]
+        is not False
+        or policy["maximum_relative_table_drift_is_diagnostic_review_goal"] is not True
+        or policy["maximum_relative_table_drift_used_as_candidate_eligibility_gate"]
+        is not False
+        or policy["base_control_used_only_for_structural_fallback"] is not True
+        or policy["structural_safety_is_only_candidate_veto"] is not True
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Foundation anchor policy restored a numeric eligibility gate."
+        )
     return bindings, policy, anchor
 
 
@@ -727,6 +754,29 @@ def open_lfm2_semantic_foundation_interface_statistics(
         raise Lfm2SemanticFoundationStatisticsError(
             "Statistics bindings or anchor policy are invalid."
         )
+    anchor_policy = authenticated["anchor_policy"]
+    if (
+        anchor_policy.get(
+            "minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal"
+        )
+        is not True
+        or anchor_policy.get(
+            "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate"
+        )
+        is not False
+        or anchor_policy.get("maximum_relative_table_drift_is_diagnostic_review_goal")
+        is not True
+        or anchor_policy.get(
+            "maximum_relative_table_drift_used_as_candidate_eligibility_gate"
+        )
+        is not False
+        or anchor_policy.get("base_control_used_only_for_structural_fallback")
+        is not True
+        or anchor_policy.get("structural_safety_is_only_candidate_veto") is not True
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Statistics anchor policy restored a numeric eligibility gate."
+        )
     if verify_runtime and authenticated.get("runtime") != _runtime_fingerprint():
         raise Lfm2SemanticFoundationStatisticsError(
             "Statistics solver runtime differs from the producing runtime."
@@ -886,7 +936,7 @@ def replay_lfm2_semantic_foundation_interface_statistics(
         selection_split=artifact.anchor_splits["selection"],
         fit_split=artifact.anchor_splits["fit"],
         validation_split=artifact.anchor_splits["validation"],
-        **dict(artifact.anchor_policy),
+        **{name: artifact.anchor_policy[name] for name in sorted(_ANCHOR_CALL_FIELDS)},
     )
     interface = anchor.interface
     if (

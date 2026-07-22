@@ -8,6 +8,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+import neural_forge.hf_tied_causal_interface_anchor_fold as anchor_module  # noqa: E402
 from neural_forge.hf_tied_causal_interface_anchor_fold import (  # noqa: E402
     TiedCausalAnchorFoldError,
     TiedCausalAnchorSplit,
@@ -157,22 +158,41 @@ def _fold(
     )
 
 
-def test_base_control_rejects_anchor_flip_that_destroys_parent_behavior() -> None:
+def test_effectful_anchor_survives_when_every_numeric_review_goal_regresses() -> None:
     result = _fold()
     report = result.as_dict()
 
-    assert report["selected_candidate_index"] == 0
-    assert report["selected_candidate_is_base_control"] is True
-    assert report["active_anchor_residual_selected"] is False
+    assert (
+        report["selected_candidate_index"]
+        == (report["diagnostic_candidate_indices_best_to_worst"][0])
+    )
+    assert report["selected_candidate_is_base_control"] is False
+    assert report["active_anchor_residual_selected"] is True
     assert report["base_control_candidate_included"] is True
-    assert report["eligible_candidate_indices"] == [0]
+    assert report["base_control_fallback_triggered"] is False
+    assert report["base_control_used_only_for_structural_fallback"] is True
+    assert report["eligible_candidate_indices"] == [1, 2, 3, 4]
+    assert report["structurally_eligible_candidate_indices"] == [1, 2, 3, 4]
+    assert report["numeric_thresholds_used_for_candidate_eligibility"] is False
+    assert report["numeric_metrics_used_for_base_fallback"] is False
     assert report["target_anchor_metrics_diagnostic_only"] is True
     assert report["target_anchor_metrics_used_for_candidate_selection"] is False
-    assert torch.count_nonzero(result.residual_weight).item() == 0
-    assert torch.equal(result.interface.target_weight, _interface().target_weight)
+    assert (
+        report["minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal"]
+        is True
+    )
+    assert (
+        report[
+            "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate"
+        ]
+        is False
+    )
+    assert torch.count_nonzero(result.residual_weight).item() > 0
+    assert not torch.equal(result.interface.target_weight, _interface().target_weight)
     base_candidate = report["candidate_reports"][0]
     assert base_candidate["candidate_kind"] == "unmodified_base_interface"
-    assert base_candidate["mapped_parent_behavior_eligible"] is True
+    assert base_candidate["candidate_eligible_for_selection"] is False
+    assert base_candidate["tensor_identical_to_base"] is True
     assert base_candidate["selection_metrics"]["mapped_parent_top1_agreement"] == 1.0
     assert (
         base_candidate["selection_metrics"][
@@ -180,13 +200,30 @@ def test_base_control_rejects_anchor_flip_that_destroys_parent_behavior() -> Non
         ]
         == 1.0
     )
+    analytic = report["candidate_reports"][1:]
+    assert all(candidate["candidate_eligible_for_selection"] for candidate in analytic)
+    assert all(candidate["effectful_residual"] for candidate in analytic)
     assert all(
-        candidate["mapped_parent_behavior_eligible"] is False
-        for candidate in report["candidate_reports"][1:]
+        candidate["all_mapped_parent_behavior_review_goals_met"] is False
+        for candidate in analytic
     )
-    assert any(
+    assert all(
+        candidate["selection_metrics"]["mapped_parent_top1_agreement"]
+        < base_candidate["selection_metrics"]["mapped_parent_top1_agreement"]
+        for candidate in analytic
+    )
+    assert all(
+        candidate["selection_metrics"][
+            "mapped_parent_raw_centered_logit_retained_energy_fraction"
+        ]
+        < base_candidate["selection_metrics"][
+            "mapped_parent_raw_centered_logit_retained_energy_fraction"
+        ]
+        for candidate in analytic
+    )
+    assert all(
         candidate["selection_metrics"]["target_anchor_top1_fraction"] == 1.0
-        for candidate in report["candidate_reports"][1:]
+        for candidate in analytic
     )
     assert report["producer_encoder_fixed"] is True
     assert report["additional_runtime_parameter_count"] == 0
@@ -254,14 +291,21 @@ def test_validation_cannot_select_or_change_the_residual() -> None:
     assert first.report["validation_values_used_for_parameters_or_selection"] is False
 
 
-def test_drift_is_bounded_and_fold_is_deterministic_and_sealed() -> None:
+def test_drift_is_diagnostic_only_and_fold_is_deterministic_and_sealed() -> None:
     first = _fold(drift=0.05)
     second = _fold(drift=0.05)
 
-    assert first.report["relative_table_drift"] <= 0.05 + 1e-12
-    assert first.report["drift_bound_satisfied"] is True
-    assert any(
-        candidate["drift_clipped"] for candidate in first.report["candidate_reports"]
+    assert first.report["relative_table_drift"] > 0.05
+    assert first.report["relative_table_drift_review_goal_met"] is False
+    assert first.report["drift_bound_satisfied"] is False
+    assert first.report["drift_bound_enforced"] is False
+    assert (
+        first.report["maximum_relative_table_drift_used_as_candidate_eligibility_gate"]
+        is False
+    )
+    assert all(
+        candidate["drift_clipped"] is False
+        for candidate in first.report["candidate_reports"]
     )
     assert torch.equal(first.residual_weight, second.residual_weight)
     assert first.report == second.report
@@ -275,6 +319,79 @@ def test_drift_is_bounded_and_fold_is_deterministic_and_sealed() -> None:
         assert "base_interface_raw_centered_logit_retained_energy_fraction" in metrics
         assert "mapped_parent_top1_agreement" in metrics
         assert "mean_target_anchor_margin" in metrics
+
+
+def test_base_fallback_requires_every_analytic_candidate_to_be_identical() -> None:
+    def zero_coordinate_split(name: str) -> TiedCausalAnchorSplit:
+        rows = torch.tensor(
+            [[0.0, 0.0, 1.0], [0.0, 0.0, -1.0]],
+            dtype=torch.float64,
+        )
+        return TiedCausalAnchorSplit(
+            name=name,
+            row_ids=(f"{name}:0", f"{name}:1"),
+            prefix_positions=torch.tensor([7, 8]),
+            source_producer_rows=rows,
+            target_next_token_ids=torch.tensor([1, 0]),
+        )
+
+    result = fit_tied_causal_interface_anchor_residual(
+        _interface(),
+        _source_table(),
+        selection_split=zero_coordinate_split("selection"),
+        fit_split=zero_coordinate_split("fit"),
+        validation_split=zero_coordinate_split("validation"),
+        ridge_candidates=(1e-8, 1e-4),
+        margin_candidates=(0.25, 1.0),
+        metric_chunk_rows=2,
+    )
+
+    assert result.report["selected_candidate_is_base_control"] is True
+    assert result.report["base_control_fallback_triggered"] is True
+    assert result.report["structurally_rejected_candidate_indices"] == []
+    assert result.report["tensor_identical_candidate_indices"] == [1, 2, 3, 4]
+    assert result.report["eligible_candidate_indices"] == [0]
+    assert all(
+        candidate["structurally_valid"] is True
+        and candidate["tensor_identical_to_base"] is True
+        and candidate["effectful_residual"] is False
+        for candidate in result.report["candidate_reports"][1:]
+    )
+    assert torch.equal(result.interface.target_weight, _interface().target_weight)
+
+
+def test_base_fallback_requires_every_analytic_candidate_to_be_invalid(
+    monkeypatch,
+) -> None:
+    def wrong_dtype_residual(
+        base_weight,
+        _fit_coordinates,
+        _target_ids,
+        _competitor_ids,
+        *,
+        ridge,
+        margin,
+        maximum_relative_table_drift,
+    ):
+        return torch.ones_like(base_weight, dtype=torch.float32), {
+            "ridge_fraction": ridge,
+            "requested_margin": margin,
+            "relative_table_drift": maximum_relative_table_drift,
+        }
+
+    monkeypatch.setattr(anchor_module, "_fit_residual", wrong_dtype_residual)
+    result = _fold()
+
+    assert result.report["selected_candidate_is_base_control"] is True
+    assert result.report["base_control_fallback_triggered"] is True
+    assert result.report["structurally_rejected_candidate_indices"] == [1, 2, 3, 4]
+    assert result.report["tensor_identical_candidate_indices"] == []
+    assert result.report["eligible_candidate_indices"] == [0]
+    assert all(
+        candidate["structural_rejection_reason"] == "residual_dtype_differs_from_base"
+        for candidate in result.report["candidate_reports"][1:]
+    )
+    assert torch.equal(result.interface.target_weight, _interface().target_weight)
 
 
 def test_split_ids_must_be_disjoint_and_target_ids_must_fit_vocabulary() -> None:

@@ -76,6 +76,28 @@ def _parameter_inventory():
     return _seal(body, "inventory_sha256")
 
 
+def _structural_anchor_report():
+    return _seal(
+        {
+            "minimum_mapped_parent_behavior_retention": 0.90,
+            "maximum_relative_table_drift": 0.25,
+            "structural_safety_is_only_candidate_veto": True,
+            "numeric_thresholds_used_for_candidate_eligibility": False,
+            "numeric_metrics_used_for_base_fallback": False,
+            "base_control_used_only_for_structural_fallback": True,
+            "minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal": (
+                True
+            ),
+            "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate": (
+                False
+            ),
+            "maximum_relative_table_drift_is_diagnostic_review_goal": True,
+            "maximum_relative_table_drift_used_as_candidate_eligibility_gate": False,
+        },
+        "report_sha256",
+    )
+
+
 def _foundation_fixture_receipt(parent_directory, parent_inventory, attention_lineage):
     parent_sha = "a" * 64
     cache_key = "b" * 64
@@ -100,9 +122,14 @@ def _foundation_fixture_receipt(parent_directory, parent_inventory, attention_li
         },
         "report_sha256",
     )
+    anchor_report = _structural_anchor_report()
     interface_solve = _seal(
         {
             "schema": foundation.LFM2_SEMANTIC_FOUNDATION_INTERFACE_SCHEMA,
+            "causal_anchor_report": anchor_report,
+            "causal_anchor_selection_contract": (
+                foundation._causal_anchor_selection_contract(anchor_report)
+            ),
             "legacy_layer_compiler_calls": 0,
             "training_steps": 0,
         }
@@ -654,11 +681,16 @@ def test_materializer_saves_and_freshly_reloads_twice(monkeypatch, tmp_path):
         producer_encoder=torch.eye(4),
         report=interface_report,
     )
+    anchor_report = _structural_anchor_report()
     solve = foundation.Lfm2SemanticFoundationInterfaceSolve(
         interface=interface,
         report=MappingProxyType(
             _seal(
                 {
+                    "causal_anchor_report": anchor_report,
+                    "causal_anchor_selection_contract": (
+                        foundation._causal_anchor_selection_contract(anchor_report)
+                    ),
                     "legacy_layer_compiler_calls": 0,
                     "training_steps": 0,
                 }
@@ -780,3 +812,10 @@ def test_materializer_saves_and_freshly_reloads_twice(monkeypatch, tmp_path):
     assert receipt["standalone_artifact"]["staged_reload_verified"] is True
     assert receipt["standalone_artifact"]["published_reload_verified"] is True
     assert receipt["operation_audit"]["training_steps"] == 0
+    contract = receipt["interface_solve"]["causal_anchor_selection_contract"]
+    assert contract["mapped_parent_behavior_retention_review_goal"] == 0.90
+    assert (
+        contract["mapped_parent_behavior_retention_review_goal_is_hard_gate"] is False
+    )
+    assert contract["relative_table_drift_review_goal_is_hard_gate"] is False
+    assert contract["numeric_metrics_may_restore_base_control"] is False

@@ -3076,8 +3076,28 @@ class _SelectiveBoundaryCompiler:
                     }
                 )
         layers = tuple(self.layer_results)
+        anchor_report = dict(self.anchor_fold.report)
+        if (
+            anchor_report.get("structural_safety_is_only_candidate_veto") is not True
+            or anchor_report.get("numeric_thresholds_used_for_candidate_eligibility")
+            is not False
+            or anchor_report.get("numeric_metrics_used_for_base_fallback") is not False
+            or anchor_report.get("base_control_used_only_for_structural_fallback")
+            is not True
+            or anchor_report.get(
+                "minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal"
+            )
+            is not True
+            or anchor_report.get(
+                "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate"
+            )
+            is not False
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "The causal-anchor receipt restored numeric eligibility gating."
+            )
         anchor_residual_selected = bool(
-            self.anchor_fold.report["active_anchor_residual_selected"]
+            anchor_report["active_anchor_residual_selected"]
         )
         phase_counts = {split: len(self.split_phases[split]) for split in _SPLITS}
         row_counts = dict(self.split_rows)
