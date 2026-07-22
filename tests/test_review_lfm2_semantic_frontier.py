@@ -184,6 +184,55 @@ def test_response_diagnostics_never_returns_a_verdict() -> None:
     assert diagnostics["interpretation"].startswith("diagnostic-only")
 
 
+def test_review_one_child_uses_materialization_state_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    expected = "a" * 64
+    model = object()
+
+    monkeypatch.setattr(review.residual, "_torch_dtype", lambda _dtype: object())
+    monkeypatch.setattr(
+        review.residual,
+        "load_local_tokenizer",
+        lambda _checkpoint: object(),
+    )
+    monkeypatch.setattr(
+        review.residual,
+        "load_local_lfm2_model",
+        lambda _checkpoint, **_kwargs: model,
+    )
+    monkeypatch.setattr(
+        review.residual,
+        "model_state_sha256",
+        lambda _model: (_ for _ in ()).throw(
+            AssertionError("reviewer used the residual-runner hash domain")
+        ),
+    )
+    monkeypatch.setattr(review, "fingerprint_model_state", lambda _model: expected)
+    monkeypatch.setattr(review, "_generate_rows", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(review.residual, "unique_parameter_count", lambda _model: 57)
+
+    result = review._review_one_child(
+        {
+            "candidate_id": "candidate-a",
+            "candidate_state_sha256": "b" * 64,
+            "model_state_sha256": expected,
+            "checkpoint_path": str(checkpoint),
+        },
+        (),
+        device="cpu",
+        dtype="bfloat16",
+        maximum_prompt_tokens=1024,
+        maximum_new_tokens=256,
+    )
+
+    assert result["model_state_sha256"] == expected
+    assert result["unique_parameters"] == 57
+
+
 def test_cached_parent_text_is_attached_without_running_parent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

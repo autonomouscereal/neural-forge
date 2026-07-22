@@ -34,6 +34,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from experiments import run_lfm2_residual_attention_fold as residual  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.dynamic_fold_executor import fingerprint_model_state  # noqa: E402
 
 
 DOSSIER_SCHEMA = "neural-forge-lfm2-semantic-frontier-manual-review-v1"
@@ -434,7 +435,10 @@ def _review_one_child(
         dtype=torch_dtype,
     )
     try:
-        state_sha256 = residual.model_state_sha256(model)
+        # Materialization receipts use the canonical dynamic-fold state
+        # fingerprint.  The residual-attention runner's similarly named helper
+        # hashes a different document and cannot authenticate this receipt.
+        state_sha256 = fingerprint_model_state(model)
         if state_sha256 != materialization.get("model_state_sha256"):
             raise Lfm2SemanticFrontierReviewError(
                 "Freshly loaded candidate differs from its materialization receipt."
