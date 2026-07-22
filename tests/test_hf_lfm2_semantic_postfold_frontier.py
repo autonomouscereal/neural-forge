@@ -151,7 +151,8 @@ def _terminal_result():
     )
 
 
-def _capsule_reference(tmp_path, result):
+def _capsule_reference(tmp_path, result, *, recipe_id="fit_guided"):
+    recipe = postfold.resolve_lfm2_semantic_body_recipe(recipe_id)
     reference = Lfm2SemanticPreterminalCapsuleReference(
         path=tmp_path / "capsule",
         receipt_sha256=_sha("capsule-receipt"),
@@ -183,6 +184,15 @@ def _capsule_reference(tmp_path, result):
     layer_receipt = {
         "result_sha256": _sha("layer-result"),
         "cache_selective_session_sha256": _sha("layer-session"),
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+    }
+    attention_authentication = {
+        "result_sha256": _sha("attention-authentication"),
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
     }
     interface_authentication = {
         "result_sha256": _sha("interface-authentication"),
@@ -193,6 +203,7 @@ def _capsule_reference(tmp_path, result):
             "model": model,
             "bindings": bindings,
             "semantic_layer_stack_receipt": layer_receipt,
+            "attention_receipt_authentication": attention_authentication,
             "active_interface_authentication": interface_authentication,
         }
     }
@@ -282,8 +293,12 @@ def compiled_result():
     return _terminal_result()
 
 
-def _publish_bank(tmp_path, monkeypatch, result):
-    reference, opened, context = _capsule_reference(tmp_path, result)
+def _publish_bank(tmp_path, monkeypatch, result, *, recipe_id="fit_guided"):
+    reference, opened, context = _capsule_reference(
+        tmp_path,
+        result,
+        recipe_id=recipe_id,
+    )
     monkeypatch.setattr(frontier, "_open_outer_capsule", lambda *_a, **_k: opened)
     bank_reference = frontier.publish_lfm2_semantic_terminal_frontier_bank(
         result,
@@ -320,6 +335,14 @@ def test_bank_persists_every_candidate_without_metric_elimination(
     assert bank.manifest["candidate_metric_threshold_used_for_export"] is False
     assert bank.manifest["candidate_metric_threshold_used_for_eligibility"] is False
     assert bank.manifest["numeric_metrics_have_final_intelligence_authority"] is False
+    assert bank.manifest["body_recipe_id"] == "fit_guided"
+    assert bank.receipt["body_recipe_id"] == "fit_guided"
+    assert tuple(bank.manifest["complete_body_recipe_candidate_ids"]) == (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+    )
+    assert bank.manifest["body_recipe_candidates_remain_lazily_materializable"] is True
     assert bank.manifest["holistic_whole_response_review_required"] is True
     assert bank.manifest["exact_zero_cold_start"] is True
     assert bank.manifest["incumbent_matches_preterminal_capsule_final_w2"] is True
@@ -391,6 +414,7 @@ def test_bank_never_substitutes_semantic_hash_for_terminal_action_hash(
         "tied_interface_authentication_sha256",
         "terminal_cache_compatibility_sha256",
         "terminal_cache_payload_binding_sha256",
+        "body_recipe_sha256",
     ),
 )
 def test_bank_rejects_resealed_compiler_context_live_fact_relabel(
@@ -469,6 +493,11 @@ class _TinyModel(torch.nn.Module):
 
 def _loaded_capsule(reference, bank):
     model = _TinyModel()
+    recipe_fields = {
+        "body_recipe": frontier._deep_thaw(bank.manifest["body_recipe"]),
+        "body_recipe_sha256": bank.manifest["body_recipe_sha256"],
+        "body_recipe_id": bank.manifest["body_recipe_id"],
+    }
     manifest = {
         "model": {
             "model_state_sha256": fingerprint_model_state(model),
@@ -478,9 +507,9 @@ def _loaded_capsule(reference, bank):
         path=reference.path,
         target_model=model,
         target_tokenizer=SimpleNamespace(name="tiny-tokenizer"),
-        layer_stack=None,
+        layer_stack=SimpleNamespace(receipt=MappingProxyType(recipe_fields)),
         interface=None,
-        attention_receipt_authentication=MappingProxyType({}),
+        attention_receipt_authentication=MappingProxyType(dict(recipe_fields)),
         bindings=None,
         manifest=MappingProxyType(manifest),
         receipt=MappingProxyType({}),
@@ -520,15 +549,21 @@ def _fake_checkpoint_publisher(*, target_model, output_directory, **kwargs):
     return reloaded, MappingProxyType(checkpoint)
 
 
+@pytest.mark.parametrize(
+    "recipe_id",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
 def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
     tmp_path,
     monkeypatch,
     compiled_result,
+    recipe_id,
 ) -> None:
     capsule_reference, _bank_reference, bank = _publish_bank(
         tmp_path,
         monkeypatch,
         compiled_result,
+        recipe_id=recipe_id,
     )
     capsule = _loaded_capsule(capsule_reference, bank)
     monkeypatch.setattr(
@@ -574,12 +609,64 @@ def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
     assert receipt["holistic_all_64_whole_response_review_required"] is True
     assert receipt["holistic_review_complete"] is False
     assert receipt["materialization_is_not_intelligence_acceptance"] is True
+    assert receipt["body_recipe_id"] == recipe_id
+    assert receipt["complete_body_recipe_candidate_count"] == 3
+    assert receipt["body_recipe_candidates_remain_lazily_materializable"] is True
     assert receipt["standalone_child"] is True
     assert receipt["sidecar_required_for_inference"] is False
     assert receipt["training_performed"] is False
     assert receipt["parameters_pruned"] == 0
     assert receipt["parameters_quantized"] == 0
     assert receipt["parameters_sparsified"] == 0
+
+    checkpoint = receipt["checkpoint"]
+    metadata = {
+        "model_state_sha256": receipt["materialized_model_state_sha256"],
+        "parameter_inventory_sha256": checkpoint["parameter_inventory_sha256"],
+        "tokenizer_semantics_sha256": checkpoint["tokenizer_semantics_sha256"],
+        "context_binding_sha256": receipt["context_binding"]["context_sha256"],
+    }
+
+    def reloader(*_args, **_kwargs):
+        return copy.deepcopy(capsule.target_model), capsule.target_tokenizer, metadata
+
+    monkeypatch.setattr(
+        frontier,
+        "load_lfm2_cpcf_v5_standalone_child",
+        reloader,
+    )
+    loaded = frontier.load_lfm2_semantic_terminal_frontier_materialization(
+        reference.path,
+        expected_receipt_file_sha256=reference.receipt_file_sha256,
+        expected_receipt_sha256=reference.receipt_sha256,
+        expected_candidate_id=reference.candidate_id,
+        expected_candidate_state_sha256=reference.candidate_state_sha256,
+        device="cpu",
+    )
+    assert loaded.receipt["body_recipe_id"] == recipe_id
+
+    wrong_metadata = {**metadata, "context_binding_sha256": _sha("wrong-context")}
+    monkeypatch.setattr(
+        frontier,
+        "load_lfm2_cpcf_v5_standalone_child",
+        lambda *_args, **_kwargs: (
+            copy.deepcopy(capsule.target_model),
+            capsule.target_tokenizer,
+            wrong_metadata,
+        ),
+    )
+    with pytest.raises(
+        frontier.Lfm2SemanticTerminalFrontierError,
+        match="differs from its provenance",
+    ):
+        frontier.load_lfm2_semantic_terminal_frontier_materialization(
+            reference.path,
+            expected_receipt_file_sha256=reference.receipt_file_sha256,
+            expected_receipt_sha256=reference.receipt_sha256,
+            expected_candidate_id=reference.candidate_id,
+            expected_candidate_state_sha256=reference.candidate_state_sha256,
+            device="cpu",
+        )
 
 
 def test_materialization_refuses_unknown_candidate(
@@ -689,6 +776,9 @@ def test_capsule_resume_orchestrator_uses_two_argument_export_seam(
         layer_stack=SimpleNamespace(
             receipt=opened["manifest"]["semantic_layer_stack_receipt"]
         ),
+        attention_receipt_authentication=opened["manifest"][
+            "attention_receipt_authentication"
+        ],
         interface=object(),
         reference=capsule_reference,
     )
@@ -766,6 +856,9 @@ def test_capsule_resume_orchestrator_uses_two_argument_export_seam(
         calls.update(kwargs)
         assert kwargs["authenticated_cache_session"] is None
         assert kwargs["preterminal_resume_mode"] is True
+        assert kwargs["body_recipe"] == postfold.resolve_lfm2_semantic_body_recipe(
+            "fit_guided"
+        )
         reference = kwargs["terminal_frontier_exporter"](
             compiled_result,
             export_context,

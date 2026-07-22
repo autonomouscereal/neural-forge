@@ -990,7 +990,8 @@ def test_all_zero_bfloat16_qkvo_is_compulsorily_planted_with_full_axis_coverage(
 
 def test_blank_structural_and_residual_writer_attention_lanes_are_distinct() -> None:
     state_by_recipe: dict[str, dict[str, str]] = {}
-    for recipe_id in ("full_strength_structural", "residual_writer"):
+    recipe_ids = ("fit_guided", "full_strength_structural", "residual_writer")
+    for recipe_id in recipe_ids:
         model = _Model()
         attention = model.model.layers[0].self_attn
         with torch.no_grad():
@@ -1010,10 +1011,36 @@ def test_blank_structural_and_residual_writer_attention_lanes_are_distinct() -> 
             body_recipe=recipe_id,
         )
         gate = receipt["analytic_refold"]["value_output_candidate_gate"]
+        authenticated = (
+            postfold._authenticate_lfm2_semantic_attention_operator_receipt(
+                receipt,
+                layer_index=0,
+                body_recipe=recipe_id,
+            )
+        )
         assert receipt["body_recipe_id"] == recipe_id
+        assert authenticated["body_recipe_id"] == recipe_id
+        assert (
+            authenticated[
+                "recipe_bound_publication_with_diagnostic_heldout_authenticated"
+            ]
+            is True
+        )
         assert gate["body_recipe_id"] == recipe_id
-        assert gate["fit_metrics_used_for_candidate_ordering"] is False
+        assert gate["fit_metrics_used_for_candidate_ordering"] is (
+            recipe_id == "fit_guided"
+        )
         assert receipt["heldout_metrics_are_diagnostic_only"] is True
+        foreign_recipe = next(value for value in recipe_ids if value != recipe_id)
+        with pytest.raises(
+            postfold.Lfm2SemanticPostfoldError,
+            match="body recipe",
+        ):
+            postfold._authenticate_lfm2_semantic_attention_operator_receipt(
+                receipt,
+                layer_index=0,
+                body_recipe=foreign_recipe,
+            )
         assert all(
             int(torch.count_nonzero(projection.weight).item()) > 0
             for projection in (

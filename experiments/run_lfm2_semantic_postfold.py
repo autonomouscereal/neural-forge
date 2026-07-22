@@ -37,6 +37,9 @@ from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
     TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
     run_lfm2_semantic_postfold,
 )
+from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
+    LFM2_SEMANTIC_BODY_RECIPE_IDS,
+)
 
 
 def _new_file(value: str, name: str) -> Path:
@@ -204,6 +207,16 @@ def _parser() -> argparse.ArgumentParser:
             "CUDA device such as cuda:0; arithmetic remains float64."
         ),
     )
+    parser.add_argument(
+        "--body-recipe",
+        choices=LFM2_SEMANTIC_BODY_RECIPE_IDS,
+        default="fit_guided",
+        help=(
+            "Authenticated complete-body folding lane. Run the same sealed "
+            "foundation once per recipe to lazily retain every body candidate "
+            "for decoded manual review; metrics never authorize promotion."
+        ),
+    )
     parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")
     parser.add_argument(
         "--parent-final-norm-tensor-key",
@@ -275,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             dtype=args.dtype,
             fold_compute_device=args.fold_compute_device,
+            body_recipe=args.body_recipe,
             parent_final_norm_tensor_key=(args.parent_final_norm_tensor_key),
             parent_norm_epsilon_config_key=(args.parent_norm_epsilon_config_key),
             parent_tied_tensor_key=args.parent_tied_tensor_key,

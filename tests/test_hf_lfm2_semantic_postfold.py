@@ -461,8 +461,9 @@ def _synthetic_terminal_lineages(
     return source, composite
 
 
-def _frontier_export_context(terminal, *, resume_mode=False):
+def _frontier_export_context(terminal, *, resume_mode=False, body_recipe=None):
     session_sha256 = "9" * 64
+    recipe = postfold.resolve_lfm2_semantic_body_recipe("fit_guided")
 
     def seal(body, name):
         return {**body, name: canonical_sha256(body)}
@@ -508,6 +509,9 @@ def _frontier_export_context(terminal, *, resume_mode=False):
         layer_receipt={
             "result_sha256": "5" * 64,
             "cache_selective_session_sha256": session_sha256,
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
         },
         terminal_interface_authentication=interface_authentication,
         terminal_cache_compatibility=compatibility,
@@ -517,6 +521,7 @@ def _frontier_export_context(terminal, *, resume_mode=False):
         same_live_cache_session_as_layer_stack=not resume_mode,
         cache_content_identity_matches_layer_stack=True,
         preterminal_resume_mode=resume_mode,
+        body_recipe=body_recipe,
     )
 
 
@@ -1090,6 +1095,20 @@ def test_terminal_frontier_export_seam_receives_full_bank_once_before_w2_install
     )
 
 
+def test_terminal_export_context_rejects_explicit_wrong_body_recipe() -> None:
+    _seed, _evidence, terminal = _compiled_exact_zero_terminal_result()
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="did not bind the authenticated semantic body recipe",
+    ):
+        _frontier_export_context(
+            terminal,
+            resume_mode=True,
+            body_recipe="residual_writer",
+        )
+
+
 @pytest.mark.parametrize(
     "field_name",
     (
@@ -1097,6 +1116,7 @@ def test_terminal_frontier_export_seam_receives_full_bank_once_before_w2_install
         "tied_interface_authentication_sha256",
         "terminal_cache_compatibility_sha256",
         "terminal_cache_payload_binding_sha256",
+        "body_recipe_sha256",
     ),
 )
 def test_terminal_frontier_export_context_rejects_resealed_live_fact_relabel(
@@ -1126,6 +1146,7 @@ def test_terminal_frontier_export_context_rejects_resealed_live_fact_relabel(
         "tied_interface_authentication_sha256",
         "terminal_cache_compatibility_sha256",
         "terminal_cache_payload_binding_sha256",
+        "body_recipe_sha256",
     ),
 )
 def test_terminal_frontier_exporter_cannot_reassign_issued_context_state(
@@ -2486,6 +2507,68 @@ def test_complete_layer_stack_fails_closed_on_conv_and_mlp_gaps(
     assert seal == canonical_sha256(body)
 
 
+@pytest.mark.parametrize(
+    "recipe_id",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
+def test_layer_stack_stage_forwards_exact_authenticated_body_recipe(
+    monkeypatch,
+    recipe_id: str,
+) -> None:
+    captured = {}
+    target = object()
+
+    def compiler(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop-after-body-recipe-forwarding")
+
+    monkeypatch.setattr(postfold, "_resolve_layer_stack_installer", lambda _value: compiler)
+    monkeypatch.setattr(postfold, "_resolve_attention_installer", lambda _value: None)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256="a" * 64),
+    )
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 1)
+    monkeypatch.setattr(
+        postfold,
+        "_final_w2_parameter",
+        lambda _model: torch.zeros((1, 1), dtype=torch.bfloat16),
+    )
+
+    with pytest.raises(RuntimeError, match="stop-after-body-recipe-forwarding"):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=target,
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            body_recipe=recipe_id,
+        )
+
+    recipe = postfold.resolve_lfm2_semantic_body_recipe(recipe_id)
+    assert captured["body_recipe"] == recipe
+    assert captured["body_recipe"].recipe_sha256 == recipe.recipe_sha256
+
+
+def test_body_recipe_public_api_defaults_remain_fit_guided() -> None:
+    assert (
+        inspect.signature(
+            postfold.compile_install_lfm2_semantic_layer_stack_stage
+        ).parameters["body_recipe"].default
+        == "fit_guided"
+    )
+    assert (
+        inspect.signature(postfold.run_lfm2_semantic_postfold)
+        .parameters["body_recipe"]
+        .default
+        == "fit_guided"
+    )
+
+
 def _minimal_postfold_run_arguments(tmp_path: Path) -> dict[str, object]:
     return {
         "input_checkpoint_directory": tmp_path / "input",
@@ -2831,12 +2914,18 @@ def test_top_level_rejects_statistics_for_nonfoundation_before_output_dispatch(
 
 
 @pytest.mark.parametrize("use_foundation_statistics", (False, True))
+@pytest.mark.parametrize(
+    "body_recipe_id",
+    ("fit_guided", "full_strength_structural", "residual_writer"),
+)
 def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     tmp_path: Path,
     monkeypatch,
     use_foundation_statistics: bool,
+    body_recipe_id: str,
 ) -> None:
     events = []
+    recipe = postfold.resolve_lfm2_semantic_body_recipe(body_recipe_id)
     cache = SimpleNamespace(cache_key="1" * 64, parent_fingerprint="2" * 64)
     bridge = SimpleNamespace(artifact_sha256="3" * 64)
     model = object()
@@ -3103,6 +3192,9 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "diagnostic_sha256": canonical_sha256(heldout_diagnostic_body),
     }
     layer_body = {
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
         "complete_causal_layer_stack_adjudicated": True,
         "complete_causal_layer_stack_installed": False,
         "whole_stage_contains_meaningful_parameter_changes": True,
@@ -3181,6 +3273,25 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "published_w2_structural_coverage": published_coverage,
         "published_w2_structural_coverage_sha256": published_coverage["result_sha256"],
     }
+    terminal_frontier_context_body = {
+        "schema": postfold.LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA,
+        "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
+        "terminal_result_sha256": terminal_action_report["result_sha256"],
+        "terminal_cache_compatibility_sha256": terminal_cache_compatibility[
+            "authentication_sha256"
+        ],
+        "terminal_cache_payload_binding_sha256": payload_binding[
+            "authentication_sha256"
+        ],
+        "terminal_cache_session_sha256": session_receipt["session_sha256"],
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+    }
+    terminal_frontier_context = {
+        **terminal_frontier_context_body,
+        "context_sha256": canonical_sha256(terminal_frontier_context_body),
+    }
     terminal_body = {
         "schema": postfold.LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA,
         "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
@@ -3209,6 +3320,10 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
             "semantic_published_w2_sha256"
         ],
         "terminal_publication_decision": dict(terminal_publication_decision),
+        "terminal_frontier_export_context": terminal_frontier_context,
+        "terminal_frontier_export_context_sha256": terminal_frontier_context[
+            "context_sha256"
+        ],
         "installation": terminal_installation,
         "final_mlp_producer_coverage_before_terminal": coverage_before,
         "final_mlp_full_coverage_after_terminal": coverage_after,
@@ -3275,6 +3390,47 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     assert not hasattr(terminal, "__dict__")
     with pytest.raises(postfold.Lfm2SemanticPostfoldError):
         postfold._CompilerIssuedFusedSemanticTerminalReceipt()
+
+    foreign_recipe_id = next(
+        value
+        for value in postfold.LFM2_SEMANTIC_BODY_RECIPE_IDS
+        if value != recipe.recipe_id
+    )
+    foreign_recipe = postfold.resolve_lfm2_semantic_body_recipe(foreign_recipe_id)
+    foreign_context_body = dict(terminal_frontier_context)
+    foreign_context_body.pop("context_sha256")
+    foreign_context_body.update(
+        {
+            "body_recipe": foreign_recipe.as_dict(),
+            "body_recipe_sha256": foreign_recipe.recipe_sha256,
+            "body_recipe_id": foreign_recipe.recipe_id,
+        }
+    )
+    foreign_context = {
+        **foreign_context_body,
+        "context_sha256": canonical_sha256(foreign_context_body),
+    }
+    foreign_terminal_body = dict(terminal)
+    foreign_terminal_body.pop("result_sha256")
+    foreign_terminal_body["terminal_frontier_export_context"] = foreign_context
+    foreign_terminal_body["terminal_frontier_export_context_sha256"] = foreign_context[
+        "context_sha256"
+    ]
+    foreign_terminal = postfold._issue_fused_semantic_terminal_receipt(
+        {
+            **foreign_terminal_body,
+            "result_sha256": canonical_sha256(foreign_terminal_body),
+        }
+    )
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="did not bind the authenticated semantic body recipe",
+    ):
+        postfold._validate_fused_semantic_terminal_receipt(
+            foreign_terminal,
+            layer_receipt=layer_receipt,
+            current_model_state_sha256="e" * 64,
+        )
 
     reconstructed_terminal = copy.deepcopy(dict(terminal))
     with pytest.raises(
@@ -3510,6 +3666,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         assert _kwargs["interface"] is self_dual_interface
         assert _kwargs["fold_compute_device"] == "cuda:1"
         assert _kwargs["authenticated_cache_session"] is pipeline_cache_session
+        assert _kwargs["body_recipe"] == recipe
         return layer_stack
 
     def terminal_compiler(**_kwargs):
@@ -3518,6 +3675,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         assert _kwargs["interface"] is self_dual_interface
         assert _kwargs["terminal_cache_compatibility"] is (terminal_cache_compatibility)
         assert _kwargs["authenticated_cache_session"] is pipeline_cache_session
+        assert _kwargs["body_recipe"] == recipe
         return terminal
 
     def publish(**_kwargs):
@@ -3530,6 +3688,9 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         layer_stack_compiler,
     )
     attention_authentication_body = {
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
         "attention_receipt_count": 6,
         "complete_six_tensor_bundle_count": 6,
     }
@@ -3542,7 +3703,11 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     monkeypatch.setattr(
         postfold,
         "authenticate_lfm2_semantic_layer_stack_attention_receipts",
-        lambda _receipt: attention_authentication,
+        lambda _receipt, *, body_recipe: (
+            attention_authentication
+            if body_recipe == recipe
+            else pytest.fail("top-level postfold forwarded the wrong body recipe")
+        ),
     )
     monkeypatch.setattr(
         postfold,
@@ -3587,6 +3752,7 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         expected_compiler_diagnostic_sha256="e" * 64,
         device="cpu",
         fold_compute_device="cuda:1",
+        body_recipe=body_recipe_id,
         fused_terminal_compiler=terminal_compiler,
         **(
             {
@@ -3611,6 +3777,10 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     ]
     assert result["compiler_cache_key"] == "8" * 64
     assert result["semantic_evidence_cache_key"] == cache.cache_key
+    assert result["body_recipe_id"] == body_recipe_id
+    assert result["body_recipe_sha256"] == recipe.recipe_sha256
+    assert result["materialized_body_recipe_id"] == body_recipe_id
+    assert result["body_recipe_candidates_remain_lazily_materializable"] is True
     assert result["context_binding"]["fold_compute_device"] == "cuda:1"
     assert (
         result["context_binding"][

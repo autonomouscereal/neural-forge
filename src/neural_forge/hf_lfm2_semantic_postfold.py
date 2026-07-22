@@ -109,6 +109,11 @@ from neural_forge.hf_lfm2_long_horizon_terminal_refold import (
 from neural_forge.hf_lfm2_semantic_attention_refold_adapter import (
     Lfm2SemanticAttentionReplayEndpoint,
 )
+from neural_forge.hf_lfm2_semantic_body_recipe import (
+    LFM2_SEMANTIC_BODY_RECIPE_IDS,
+    Lfm2SemanticBodyRecipe,
+    resolve_lfm2_semantic_body_recipe,
+)
 from neural_forge.hf_lfm2_semantic_foundation import (
     LFM2_SEMANTIC_FOUNDATION_LINEAGE_SCHEMA,
     LFM2_SEMANTIC_FOUNDATION_SCHEMA,
@@ -208,6 +213,7 @@ _TERMINAL_FRONTIER_LIVE_FACT_NAMES = (
     "tied_interface_authentication_sha256",
     "terminal_cache_compatibility_sha256",
     "terminal_cache_payload_binding_sha256",
+    "body_recipe_sha256",
 )
 
 
@@ -383,6 +389,44 @@ def _verify_sealed(
     if supplied != canonical_sha256(result):
         raise Lfm2SemanticPostfoldError(f"{label} self-seal is invalid.")
     return {**result, seal_name: supplied}
+
+
+def _authenticate_body_recipe_binding(
+    value: Mapping[str, Any],
+    *,
+    body_recipe: str | Lfm2SemanticBodyRecipe | None = None,
+    component: str | None = None,
+    label: str,
+) -> Lfm2SemanticBodyRecipe:
+    """Authenticate one complete-body recipe and, optionally, its component lane."""
+
+    declared_id = value.get("body_recipe_id")
+    try:
+        recipe = resolve_lfm2_semantic_body_recipe(
+            declared_id if body_recipe is None else body_recipe
+        )
+    except (TypeError, ValueError) as exc:
+        raise Lfm2SemanticPostfoldError(
+            f"{label} names an invalid semantic body recipe."
+        ) from exc
+    expected_lane = (
+        None if component is None else recipe.component_lanes.get(component)
+    )
+    if (
+        declared_id != recipe.recipe_id
+        or value.get("body_recipe_sha256") != recipe.recipe_sha256
+        or value.get("body_recipe") != recipe.as_dict()
+        or (component is not None and expected_lane is None)
+        or (
+            component is not None
+            and value.get("recipe_component_lane") != expected_lane
+        )
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"{label} did not bind the authenticated semantic body recipe"
+            + (" and component lane." if component is not None else ".")
+        )
+    return recipe
 
 
 def _tensor_sha256(value: Any) -> str:
@@ -3935,12 +3979,19 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
     value: Mapping[str, Any],
     *,
     layer_index: int,
+    body_recipe: str | Lfm2SemanticBodyRecipe | None = None,
 ) -> Mapping[str, Any]:
     """Authenticate one persisted six-tensor attention transaction receipt."""
 
     receipt = _verify_sealed(
         value,
         seal_name="result_sha256",
+        label=f"semantic attention layer {layer_index} operator receipt",
+    )
+    recipe = _authenticate_body_recipe_binding(
+        receipt,
+        body_recipe=body_recipe,
+        component="qk",
         label=f"semantic attention layer {layer_index} operator receipt",
     )
     analytic_value = receipt.get("analytic_refold")
@@ -4007,6 +4058,23 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
         seal_name="gate_sha256",
         label=f"semantic attention layer {layer_index} value/output candidate gate",
     )
+    _authenticate_body_recipe_binding(
+        value_output_gate,
+        body_recipe=recipe,
+        component="value_output",
+        label=f"semantic attention layer {layer_index} value/output candidate gate",
+    )
+    if (
+        analytic.get("body_recipe") != recipe.as_dict()
+        or analytic.get("body_recipe_sha256") != recipe.recipe_sha256
+        or analytic.get("body_recipe_id") != recipe.recipe_id
+        or analytic.get("recipe_qk_lane") != recipe.component_lanes["qk"]
+        or analytic.get("recipe_value_output_lane")
+        != recipe.component_lanes["value_output"]
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Attention layer {layer_index} analytic Q/K/V/O recipe binding changed."
+        )
     changed_keys = receipt.get("changed_state_keys")
     installed = receipt.get("installed")
     before_sha256 = receipt.get("model_state_before_sha256")
@@ -4179,8 +4247,10 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
                 != _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS
                 or report.get("numeric_metric_used_for_eligibility") is not False
                 or not isinstance(fit, Mapping)
-                or fit.get("diagnostic_only") is not False
-                or fit.get("used_for_candidate_ordering") is not eligible
+                or fit.get("diagnostic_only")
+                is not (not recipe.fit_metrics_order_candidates)
+                or fit.get("used_for_candidate_ordering")
+                is not (eligible and recipe.fit_metrics_order_candidates)
                 or fit.get("used_for_structural_eligibility") is not False
                 or fit.get("used_for_publication_threshold") is not False
                 or fit.get("used_for_publication") is not False
@@ -4215,7 +4285,7 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
             or value_output_gate.get("structural_safety_is_only_candidate_veto")
             is not True
             or value_output_gate.get("fit_metrics_used_for_candidate_ordering")
-            is not True
+            is not recipe.fit_metrics_order_candidates
             or value_output_gate.get("fit_ordering_metrics")
             != [
                 "endpoint_relative_rmse",
@@ -4232,7 +4302,7 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
             )
             is not False
             or value_output_gate.get("numeric_metric_used_for_candidate_selection")
-            is not (eligible_count > 1)
+            is not (recipe.fit_metrics_order_candidates and eligible_count > 1)
             or value_output_gate.get("incumbent_noop_fallback_used")
             is not (eligible_count == 0)
             or value_output_gate.get("incumbent_noop_fallback_reason")
@@ -4246,8 +4316,46 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
             )
             is not True
             or (published_candidate == "incumbent") is not (eligible_count == 0)
-            or fit_ordering_invalid
-            or (eligible_count > 0 and published_candidate != fit_selected_candidate)
+            or (recipe.fit_metrics_order_candidates and fit_ordering_invalid)
+            or (
+                recipe.recipe_id == "fit_guided"
+                and eligible_count > 0
+                and published_candidate != fit_selected_candidate
+            )
+            or (
+                recipe.recipe_id == "full_strength_structural"
+                and published_candidate
+                != (
+                    "joint_value_output"
+                    if "joint_value_output" in eligible_names
+                    else (
+                        "fixed_v_output_only"
+                        if "fixed_v_output_only" in eligible_names
+                        else "incumbent"
+                    )
+                )
+            )
+            or (
+                recipe.recipe_id == "residual_writer"
+                and published_candidate
+                != (
+                    "fixed_v_output_only"
+                    if "fixed_v_output_only" in eligible_names
+                    else (
+                        "joint_value_output"
+                        if "joint_value_output" in eligible_names
+                        else "incumbent"
+                    )
+                )
+            )
+            or value_output_gate.get(
+                "component_selection_policy_equivalent_recipe_ids"
+            )
+            != [recipe.recipe_id]
+            or value_output_gate.get(
+                "component_selection_policy_equivalent_to_other_recipe"
+            )
+            is not False
             or (
                 published_candidate != "incumbent"
                 and candidate_reports[published_candidate].get("eligible") is not True
@@ -4301,7 +4409,8 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
         or receipt.get("candidate_eligibility_basis")
         != _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS
         or receipt.get("structural_safety_is_only_candidate_veto") is not True
-        or receipt.get("fit_metrics_used_for_candidate_ordering") is not True
+        or receipt.get("fit_metrics_used_for_candidate_ordering")
+        is not recipe.fit_metrics_order_candidates
         or receipt.get("fit_metrics_used_for_structural_eligibility") is not False
         or receipt.get("incumbent_selected_by_heldout_gates") is not False
         or receipt.get("validation_publication_veto_applied") is not False
@@ -4450,7 +4559,15 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
             "output_writer_gate_sha256": output_writer["gate_sha256"],
             "joint_value_output_proposal_sha256": joint["proposal_sha256"],
             "value_output_candidate_gate_sha256": value_output_gate["gate_sha256"],
-            "fit_only_publication_with_diagnostic_heldout_authenticated": True,
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_qk_lane": recipe.component_lanes["qk"],
+            "recipe_value_output_lane": recipe.component_lanes["value_output"],
+            "recipe_bound_publication_with_diagnostic_heldout_authenticated": True,
+            "fit_only_publication_with_diagnostic_heldout_authenticated": (
+                recipe.recipe_id == "fit_guided"
+            ),
             "numeric_behavior_gate_used": False,
         }
     )
@@ -4458,12 +4575,19 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
 
 def authenticate_lfm2_semantic_layer_stack_attention_receipts(
     value: Mapping[str, Any],
+    *,
+    body_recipe: str | Lfm2SemanticBodyRecipe | None = None,
 ) -> Mapping[str, Any]:
-    """Authenticate all persisted attention decisions in a sealed layer stack."""
+    """Authenticate every persisted body component against one complete recipe."""
 
     stack = _verify_sealed(
         value,
         seal_name="result_sha256",
+        label="semantic layer-stack receipt",
+    )
+    recipe = _authenticate_body_recipe_binding(
+        stack,
+        body_recipe=body_recipe,
         label="semantic layer-stack receipt",
     )
     layers = stack.get("layer_installations")
@@ -4499,6 +4623,11 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
         layer = _verify_sealed(
             layer_value,
             seal_name="result_sha256",
+            label=f"semantic layer {layer_index} transaction",
+        )
+        _authenticate_body_recipe_binding(
+            layer,
+            body_recipe=recipe,
             label=f"semantic layer {layer_index} transaction",
         )
         if (
@@ -4551,6 +4680,54 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
         mlp_installed_by_layer.append(mlp_installed)
         expected_layer_before_sha256 = layer_after_mlp_sha256
         verified_layers.append(layer)
+        operator_frontier_value = layer.get(
+            "operator_complete_candidate_frontier_receipt"
+        )
+        mlp_frontier_value = layer.get("mlp_complete_candidate_frontier_receipt")
+        if not isinstance(operator_frontier_value, Mapping) or not isinstance(
+            mlp_frontier_value,
+            Mapping,
+        ):
+            raise Lfm2SemanticPostfoldError(
+                f"Semantic layer {layer_index} omitted its complete body frontiers."
+            )
+        operator_frontier = _verify_sealed(
+            operator_frontier_value,
+            seal_name="result_sha256",
+            label=f"semantic layer {layer_index} operator frontier",
+        )
+        mlp_frontier = _verify_sealed(
+            mlp_frontier_value,
+            seal_name="result_sha256",
+            label=f"semantic layer {layer_index} MLP frontier",
+        )
+        _authenticate_body_recipe_binding(
+            operator_frontier,
+            body_recipe=recipe,
+            component="qk" if is_attention else "short_conv",
+            label=f"semantic layer {layer_index} operator frontier",
+        )
+        _authenticate_body_recipe_binding(
+            mlp_frontier,
+            body_recipe=recipe,
+            component="mlp",
+            label=f"semantic layer {layer_index} MLP frontier",
+        )
+        if (
+            operator_frontier.get("result_sha256")
+            != layer.get("operator_decision_sha256")
+            or operator_frontier.get("result_sha256")
+            != layer.get("operator_installation_sha256")
+            or mlp_frontier.get("result_sha256")
+            != layer.get("mlp_decision_sha256")
+            or mlp_frontier.get("result_sha256")
+            != layer.get("mlp_installation_sha256")
+            or operator_frontier.get("installed") is not operator_installed
+            or mlp_frontier.get("installed") is not mlp_installed
+        ):
+            raise Lfm2SemanticPostfoldError(
+                f"Semantic layer {layer_index} body frontier bindings disagree."
+            )
         decision_value = layer.get("attention_operator_decision_receipt")
         installation_value = layer.get("attention_operator_installation_receipt")
         if not is_attention:
@@ -4569,13 +4746,16 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
         decision = _authenticate_lfm2_semantic_attention_operator_receipt(
             decision_value,
             layer_index=layer_index,
+            body_recipe=recipe,
         )
         installation = _authenticate_lfm2_semantic_attention_operator_receipt(
             installation_value,
             layer_index=layer_index,
+            body_recipe=recipe,
         )
         if (
             dict(decision_value) != dict(installation_value)
+            or dict(decision_value) != dict(operator_frontier_value)
             or layer.get("operator_kind") != "full_attention"
             or layer.get("operator_decision_sha256")
             != decision["operator_receipt_sha256"]
@@ -4677,6 +4857,16 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
     ]
     body = {
         "schema": "neural-forge-lfm2-semantic-attention-receipt-persistence-v1",
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "complete_body_recipe_candidate_ids": list(
+            LFM2_SEMANTIC_BODY_RECIPE_IDS
+        ),
+        "complete_body_recipe_candidate_count": len(
+            LFM2_SEMANTIC_BODY_RECIPE_IDS
+        ),
+        "materialized_body_recipe_id": recipe.recipe_id,
         "semantic_layer_stack_result_sha256": stack["result_sha256"],
         "model_state_before_sha256": stack_before_sha256,
         "model_state_after_sha256": stack_after_sha256,
@@ -4697,11 +4887,16 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
         "full_operator_receipts_embedded": True,
         "full_installation_receipts_embedded": True,
         "all_six_tensor_transactions_authenticated": True,
+        "all_short_conv_receipts_recipe_authenticated": True,
+        "all_mlp_receipts_recipe_authenticated": True,
+        "all_component_frontiers_recipe_authenticated": True,
         "causal_model_state_chain_authenticated": True,
         "changed_state_keys_authenticated": True,
         "parameter_invariants_authenticated": True,
         "heldout_metrics_are_diagnostic_only": True,
         "numeric_behavior_gate_used": False,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "body_recipe_candidates_remain_lazily_materializable": True,
     }
     return MappingProxyType(_sealed(body, "result_sha256"))
 
@@ -5684,9 +5879,11 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     semantic_layer_stack_compiler: Callable[..., Any] | None = None,
     fold_compute_device: str = "cpu",
     authenticated_cache_session: Any | None = None,
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     compiler = _resolve_layer_stack_installer(semantic_layer_stack_compiler)
     if compiler is None:
         topology = cache.manifest.get("layer_topology", {}).get("layers", [])
@@ -5713,6 +5910,9 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 "required_attention_operator_count": attention_count,
                 "required_short_conv_operator_count": (len(topology) - attention_count),
                 "required_replay_fresh_mlp_count": len(topology),
+                "body_recipe": recipe.as_dict(),
+                "body_recipe_sha256": recipe.recipe_sha256,
+                "body_recipe_id": recipe.recipe_id,
                 "missing_callable": (
                     "neural_forge.hf_lfm2_semantic_layer_stack_refold_adapter."
                     + SEMANTIC_LAYER_STACK_INSTALLER_CALLABLE
@@ -5744,6 +5944,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         donor_tokenizer=donor_tokenizer,
         target_tokenizer=target_tokenizer,
         attention_installer=_resolve_attention_installer(attention_installer),
+        body_recipe=recipe,
         **(
             {"authenticated_cache_session": authenticated_cache_session}
             if authenticated_cache_session is not None
@@ -5767,7 +5968,10 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     after = fingerprint_lfm2_parent(target_model).identity_sha256
     final_w2_after = _tensor_sha256(_final_w2_parameter(target_model))
     if (
-        verified.get("complete_causal_layer_stack_adjudicated") is not True
+        verified.get("body_recipe") != recipe.as_dict()
+        or verified.get("body_recipe_sha256") != recipe.recipe_sha256
+        or verified.get("body_recipe_id") != recipe.recipe_id
+        or verified.get("complete_causal_layer_stack_adjudicated") is not True
         or (
             fold_compute_device != "cpu"
             and (
@@ -5847,6 +6051,10 @@ def compile_install_lfm2_semantic_layer_stack_stage(
             "Semantic layer-stack compiler returned an incomplete receipt."
         )
     _validate_live_layer_stack_producer_coverage(target_model, verified)
+    authenticate_lfm2_semantic_layer_stack_attention_receipts(
+        verified,
+        body_recipe=recipe,
+    )
     return Lfm2SemanticLayerStackInstallation(
         receipt=verified,
         final_layer_mlp_evidence=result.final_layer_mlp_evidence,
@@ -7451,6 +7659,7 @@ def _build_terminal_frontier_export_context(
     same_live_cache_session_as_layer_stack: bool,
     cache_content_identity_matches_layer_stack: bool,
     preterminal_resume_mode: bool,
+    body_recipe: str | Lfm2SemanticBodyRecipe | None = None,
 ) -> Mapping[str, Any]:
     """Seal the live provenance a frontier publisher cannot reconstruct."""
 
@@ -7510,6 +7719,11 @@ def _build_terminal_frontier_export_context(
     layer_result_sha256 = _digest(
         layer_receipt.get("result_sha256"),
         "semantic layer-stack result",
+    )
+    recipe = _authenticate_body_recipe_binding(
+        layer_receipt,
+        body_recipe=body_recipe,
+        label="terminal frontier semantic layer-stack receipt",
     )
     interface_result_sha256 = _digest(
         interface_authentication.get("result_sha256"),
@@ -7587,6 +7801,9 @@ def _build_terminal_frontier_export_context(
             "mapped tied-table interface report",
         ),
         "semantic_layer_stack_result_sha256": layer_result_sha256,
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
         "tied_interface_authentication_sha256": interface_result_sha256,
         "preterminal_resume_mode": preterminal_resume_mode,
         "same_live_cache_session_as_layer_stack": (
@@ -7634,6 +7851,10 @@ def _authenticate_terminal_frontier_export_context(
             "Terminal frontier context has invalid composite lineage."
         ) from exc
     composite_inputs = composite.document["compiler_inputs"]
+    recipe = _authenticate_body_recipe_binding(
+        authenticated,
+        label="terminal frontier export context",
+    )
     if (
         authenticated.get("schema")
         != LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA
@@ -7651,6 +7872,7 @@ def _authenticate_terminal_frontier_export_context(
         != composite.compiler_binding_sha256
         or authenticated.get("terminal_source_lineage_sha256")
         != composite_inputs.get("source_lineage_sha256")
+        or authenticated.get("body_recipe_sha256") != recipe.recipe_sha256
         or authenticated.get("terminal_cache_session_sha256")
         != composite_inputs.get("cache_session_sha256")
         or authenticated.get("terminal_cache_compatibility_sha256")
@@ -7770,6 +7992,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     parent_final_norm: Lfm2LocalParentFinalRmsNormLoad,
     donor_tokenizer: Any,
     target_tokenizer: Any,
+    body_recipe: str | Lfm2SemanticBodyRecipe | None = None,
     split_plan: Lfm2LongHorizonTrajectorySplitPlan | None = None,
     policy: Lfm2CpcfTerminalActionPolicy | None = None,
     terminal_cache_compatibility: Mapping[str, Any] | None = None,
@@ -7828,6 +8051,11 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
             "evidence cache."
         )
     layer_receipt = layer_stack.receipt
+    recipe = _authenticate_body_recipe_binding(
+        layer_receipt,
+        body_recipe=body_recipe,
+        label="fused terminal semantic layer-stack receipt",
+    )
     terminal_interface_authentication = _authenticate_fused_terminal_tied_interface(
         target_model=target_model,
         interface=interface,
@@ -8129,6 +8357,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
             cache_content_identity_matches_layer_stack
         ),
         preterminal_resume_mode=preterminal_resume_mode,
+        body_recipe=recipe,
     )
     terminal_frontier_export = _export_authenticated_terminal_frontier(
         terminal,
@@ -8885,7 +9114,26 @@ def _validate_fused_semantic_terminal_receipt(
     current_model_state_sha256: str,
 ) -> Mapping[str, Any]:
     receipt = _authenticate_fused_semantic_terminal_receipt_lineage(receipt)
-    _authenticate_fused_terminal_cache_evidence(receipt)
+    cache_evidence = _authenticate_fused_terminal_cache_evidence(receipt)
+    recipe = _authenticate_body_recipe_binding(
+        layer_receipt,
+        label="fused terminal semantic layer-stack receipt",
+    )
+    terminal_context_value = receipt.get("terminal_frontier_export_context")
+    if not isinstance(terminal_context_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Fused semantic terminal omitted its recipe-bound export context."
+        )
+    terminal_context = _verify_sealed(
+        terminal_context_value,
+        seal_name="context_sha256",
+        label="fused semantic terminal export context",
+    )
+    _authenticate_body_recipe_binding(
+        terminal_context,
+        body_recipe=recipe,
+        label="fused semantic terminal export context",
+    )
     installation = receipt.get("installation")
     if not isinstance(installation, Mapping):
         raise Lfm2SemanticPostfoldError(
@@ -8955,6 +9203,22 @@ def _validate_fused_semantic_terminal_receipt(
         terminal_result_value,
         seal_name="result_sha256",
         label="terminal-action result",
+    )
+    terminal_context_invalid = bool(
+        terminal_context.get("schema")
+        != LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA
+        or terminal_context.get("semantic_layer_stack_result_sha256")
+        != layer_receipt.get("result_sha256")
+        or terminal_context.get("terminal_result_sha256")
+        != terminal_result.get("result_sha256")
+        or receipt.get("terminal_frontier_export_context_sha256")
+        != terminal_context.get("context_sha256")
+        or terminal_context.get("terminal_cache_compatibility_sha256")
+        != cache_evidence.get("terminal_cache_compatibility_sha256")
+        or terminal_context.get("terminal_cache_payload_binding_sha256")
+        != cache_evidence.get("terminal_cache_payload_binding_sha256")
+        or terminal_context.get("terminal_cache_session_sha256")
+        != cache_evidence.get("terminal_cache_session_sha256")
     )
     terminal_validation = terminal_result.get("validation")
     terminal_output_hashes = terminal_result.get("output_state_sha256")
@@ -9274,6 +9538,7 @@ def _validate_fused_semantic_terminal_receipt(
         )
     invalid = bool(
         receipt.get("schema") != LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA
+        or terminal_context_invalid
         or receipt.get("semantic_layer_stack_result_sha256")
         != layer_receipt.get("result_sha256")
         or receipt.get("accepted") is not True
@@ -9576,6 +9841,7 @@ def run_lfm2_semantic_postfold(
     device: str,
     dtype: str = "bfloat16",
     fold_compute_device: str = "cpu",
+    body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     parent_final_norm_tensor_key: str = "model.embedding_norm.weight",
     parent_norm_epsilon_config_key: str = "norm_eps",
     parent_tied_tensor_key: str = "model.embed_tokens.weight",
@@ -9592,6 +9858,7 @@ def run_lfm2_semantic_postfold(
 ) -> Mapping[str, Any]:
     """Execute the complete saved-child semantic postfold transaction."""
 
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     statistics_requested = interface_statistics_directory is not None
     if statistics_requested != (expected_interface_statistics_sha256 is not None):
         raise Lfm2SemanticPostfoldError(
@@ -9816,10 +10083,12 @@ def run_lfm2_semantic_postfold(
             semantic_layer_stack_compiler=semantic_layer_stack_compiler,
             fold_compute_device=fold_compute_device,
             authenticated_cache_session=pipeline_cache_session,
+            body_recipe=recipe,
         )
         attention_receipt_authentication = (
             authenticate_lfm2_semantic_layer_stack_attention_receipts(
-                layer_stack.receipt
+                layer_stack.receipt,
+                body_recipe=recipe,
             )
         )
         capsule_publisher = None
@@ -9883,6 +10152,7 @@ def run_lfm2_semantic_postfold(
                     "target_tokenizer": target_tokenizer,
                     "terminal_cache_compatibility": terminal_cache_compatibility,
                     "authenticated_cache_session": pipeline_cache_session,
+                    "body_recipe": recipe,
                 },
             )
         )
@@ -9963,6 +10233,11 @@ def run_lfm2_semantic_postfold(
         "pipeline_cache_session_reuse_sha256": pipeline_cache_session_reuse[
             "result_sha256"
         ],
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "complete_body_recipe_candidate_ids": list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        "materialized_body_recipe_id": recipe.recipe_id,
         "fold_compute_device": fold_compute_device,
         "common_parent_fingerprint": cache.parent_fingerprint,
         "compiler_and_semantic_cache_identities_bound_separately": True,
@@ -10027,6 +10302,13 @@ def run_lfm2_semantic_postfold(
         "compiler_ancestry_schema": context_body["compiler_ancestry_schema"],
         "compiler_cache_key": interface_rehydration["compiler_cache_key"],
         "semantic_evidence_cache_key": cache.cache_key,
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "complete_body_recipe_candidate_ids": list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        "complete_body_recipe_candidate_count": len(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        "materialized_body_recipe_id": recipe.recipe_id,
+        "body_recipe_candidates_remain_lazily_materializable": True,
         "terminal_cache_compatibility": dict(terminal_cache_compatibility),
         "pipeline_cache_session_reuse": dict(pipeline_cache_session_reuse),
         "cache_parent_fingerprint": cache.parent_fingerprint,
@@ -10130,6 +10412,9 @@ def run_lfm2_semantic_postfold(
                 terminal_receipt["terminal_writer_install_count"] == 1
             ),
             "terminal_w2_heldout_diagnosed_without_publication_gate": True,
+            "body_recipe_authenticated_across_attention_short_conv_and_mlp": True,
+            "numeric_metrics_have_final_intelligence_authority": False,
+            "all_body_recipe_candidates_remain_available_for_manual_review": True,
             "overall_postfold_contains_meaningful_parameter_changes": True,
             "standalone_child": True,
             "parameter_count_compaction_changed_by_postfold": False,

@@ -135,6 +135,8 @@ def test_cli_forwards_exact_compact_statistics_pair(
             str(statistics_directory),
             "--expected-interface-statistics-sha256",
             "a" * 64,
+            "--body-recipe",
+            "residual_writer",
         ]
     )
 
@@ -142,6 +144,7 @@ def test_cli_forwards_exact_compact_statistics_pair(
     assert len(calls) == 1
     assert calls[0]["interface_statistics_directory"] == str(statistics_directory)
     assert calls[0]["expected_interface_statistics_sha256"] == "a" * 64
+    assert calls[0]["body_recipe"] == "residual_writer"
     assert written == [(tmp_path / "receipt.json", {"result_sha256": "f" * 64})]
 
 
@@ -179,3 +182,4 @@ def test_cli_omits_compact_statistics_keywords_by_default() -> None:
 
     assert args.interface_statistics_directory is None
     assert args.expected_interface_statistics_sha256 is None
+    assert args.body_recipe == "fit_guided"

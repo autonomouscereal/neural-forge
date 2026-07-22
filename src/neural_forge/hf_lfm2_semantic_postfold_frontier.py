@@ -78,6 +78,11 @@ from neural_forge.hf_lfm2_semantic_postfold import (
     load_lfm2_mapped_parent_tied_table_from_local_safetensors,
     publish_lfm2_semantic_postfold_checkpoint,
 )
+from neural_forge.hf_lfm2_semantic_body_recipe import (
+    LFM2_SEMANTIC_BODY_RECIPE_IDS,
+    Lfm2SemanticBodyRecipe,
+    resolve_lfm2_semantic_body_recipe,
+)
 from neural_forge.hf_lfm2_semantic_preterminal_capsule import (
     Lfm2SemanticPreterminalCapsule,
     Lfm2SemanticPreterminalCapsuleReference,
@@ -178,6 +183,33 @@ def _verify_seal(
     if supplied != canonical_sha256(body):
         raise Lfm2SemanticTerminalFrontierError(f"{label} self-seal is invalid.")
     return normalized
+
+
+def _authenticated_body_recipe(
+    value: Mapping[str, Any],
+    *,
+    expected: str | Lfm2SemanticBodyRecipe | None = None,
+    label: str,
+) -> Lfm2SemanticBodyRecipe:
+    """Resolve and authenticate a complete-body recipe embedded in provenance."""
+
+    try:
+        recipe = resolve_lfm2_semantic_body_recipe(
+            value.get("body_recipe_id") if expected is None else expected
+        )
+    except (TypeError, ValueError) as exc:
+        raise Lfm2SemanticTerminalFrontierError(
+            f"{label} names an invalid semantic body recipe."
+        ) from exc
+    if (
+        value.get("body_recipe") != recipe.as_dict()
+        or value.get("body_recipe_sha256") != recipe.recipe_sha256
+        or value.get("body_recipe_id") != recipe.recipe_id
+    ):
+        raise Lfm2SemanticTerminalFrontierError(
+            f"{label} changed its authenticated semantic body recipe."
+        )
+    return recipe
 
 
 def _absolute_new_output(
@@ -357,7 +389,31 @@ def _authenticated_export_context(
     bindings = capsule_manifest.get("bindings")
     model = capsule_manifest.get("model")
     layer_receipt = capsule_manifest.get("semantic_layer_stack_receipt")
+    attention_receipt_authentication = capsule_manifest.get(
+        "attention_receipt_authentication"
+    )
     interface_authentication = capsule_manifest.get("active_interface_authentication")
+    if not isinstance(layer_receipt, Mapping) or not isinstance(
+        attention_receipt_authentication,
+        Mapping,
+    ):
+        raise Lfm2SemanticTerminalFrontierError(
+            "Preterminal capsule omitted its recipe-bound body receipts."
+        )
+    recipe = _authenticated_body_recipe(
+        layer_receipt,
+        label="preterminal semantic layer stack",
+    )
+    _authenticated_body_recipe(
+        attention_receipt_authentication,
+        expected=recipe,
+        label="preterminal attention receipt authentication",
+    )
+    _authenticated_body_recipe(
+        context,
+        expected=recipe,
+        label="fused terminal export context",
+    )
     if (
         context.get("schema") != LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA
         or context.get("terminal_result_sha256") != terminal_report.get("result_sha256")
@@ -375,7 +431,6 @@ def _authenticated_export_context(
         or not isinstance(model, Mapping)
         or context.get("terminal_incumbent_down_weight_terminal_action_sha256")
         != model.get("final_w2_terminal_action_sha256")
-        or not isinstance(layer_receipt, Mapping)
         or context.get("semantic_layer_stack_result_sha256")
         != layer_receipt.get("result_sha256")
         or context.get("layer_stack_cache_session_sha256")
@@ -937,6 +992,10 @@ def publish_lfm2_semantic_terminal_frontier_bank(
         capsule_manifest=capsule_manifest,
         terminal_report=report,
     )
+    recipe = _authenticated_body_recipe(
+        authenticated_export_context,
+        label="authenticated terminal frontier export context",
+    )
     compiler_binding = getattr(result, "_compiler_input_binding", None)
     if not isinstance(compiler_binding, Mapping):
         raise Lfm2SemanticTerminalFrontierError(
@@ -973,6 +1032,17 @@ def publish_lfm2_semantic_terminal_frontier_bank(
             "terminal_frontier_export_context_sha256": authenticated_export_context[
                 "context_sha256"
             ],
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "complete_body_recipe_candidate_ids": list(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "complete_body_recipe_candidate_count": len(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "materialized_body_recipe_id": recipe.recipe_id,
+            "body_recipe_candidates_remain_lazily_materializable": True,
             "terminal_result_report": report,
             "terminal_result_sha256": result.result_sha256,
             "terminal_policy_sha256": result.policy.authentication_sha256,
@@ -1030,6 +1100,17 @@ def publish_lfm2_semantic_terminal_frontier_bank(
             "terminal_frontier_export_context_sha256": authenticated_export_context[
                 "context_sha256"
             ],
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "complete_body_recipe_candidate_ids": list(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "complete_body_recipe_candidate_count": len(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "materialized_body_recipe_id": recipe.recipe_id,
+            "body_recipe_candidates_remain_lazily_materializable": True,
             "terminal_result_sha256": result.result_sha256,
             "terminal_policy_sha256": result.policy.authentication_sha256,
             "terminal_compiler_input_binding_sha256": compiler_binding_sha,
@@ -1144,6 +1225,10 @@ def _open_terminal_frontier_bank(
     receipt_source_roots = _authenticate_source_roots_mapping(
         receipt_source_roots_value
     )
+    receipt_recipe = _authenticated_body_recipe(
+        receipt,
+        label="terminal frontier bank receipt",
+    )
     if (
         receipt_file_sha != expected_file_sha
         or receipt.get("receipt_sha256") != expected_receipt_sha
@@ -1161,6 +1246,13 @@ def _open_terminal_frontier_bank(
         or receipt.get("exact_zero_cold_start") is not True
         or receipt.get("incumbent_matches_preterminal_capsule_final_w2") is not True
         or receipt.get("candidate_metric_threshold_used_for_export") is not False
+        or receipt.get("complete_body_recipe_candidate_ids")
+        != list(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or receipt.get("complete_body_recipe_candidate_count")
+        != len(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or receipt.get("materialized_body_recipe_id") != receipt_recipe.recipe_id
+        or receipt.get("body_recipe_candidates_remain_lazily_materializable")
+        is not True
         or receipt.get("numeric_metrics_have_final_intelligence_authority") is not False
         or receipt.get("holistic_whole_response_review_required") is not True
         or receipt.get("exported_before_any_frontier_writer_installation") is not True
@@ -1191,6 +1283,11 @@ def _open_terminal_frontier_bank(
         field_name="manifest_sha256",
         label="terminal frontier bank manifest",
     )
+    manifest_recipe = _authenticated_body_recipe(
+        manifest,
+        expected=receipt_recipe,
+        label="terminal frontier bank manifest",
+    )
     report = _verify_seal(
         manifest.get("terminal_result_report"),
         field_name="result_sha256",
@@ -1219,6 +1316,13 @@ def _open_terminal_frontier_bank(
         or manifest.get("candidate_count") != len(candidate_ids)
         or receipt.get("candidate_ids") != list(candidate_ids)
         or receipt.get("candidate_count") != len(candidate_ids)
+        or manifest.get("complete_body_recipe_candidate_ids")
+        != list(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or manifest.get("complete_body_recipe_candidate_count")
+        != len(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or manifest.get("materialized_body_recipe_id") != manifest_recipe.recipe_id
+        or manifest.get("body_recipe_candidates_remain_lazily_materializable")
+        is not True
         or manifest.get("candidate_state_sha256")
         != {
             candidate_id: records[candidate_id]["state_sha256"]
@@ -1287,6 +1391,11 @@ def _open_terminal_frontier_bank(
         raise Lfm2SemanticTerminalFrontierError(
             "Terminal frontier bank export context is invalid."
         )
+    _authenticated_body_recipe(
+        export_context,
+        expected=manifest_recipe,
+        label="terminal frontier bank export context",
+    )
     export_body = dict(export_context)
     export_sha = export_body.pop("context_sha256", None)
     if export_sha != canonical_sha256(export_body):
@@ -1418,12 +1527,23 @@ class Lfm2SemanticTerminalFrontierCompilation:
             label="fused semantic terminal receipt",
         )
         terminal_result = receipt.get("terminal_result")
+        export_context = receipt.get("terminal_frontier_export_context")
+        export_reference = receipt.get("terminal_frontier_export")
         if (
             not isinstance(terminal_result, Mapping)
+            or not isinstance(export_context, Mapping)
+            or not isinstance(export_reference, Mapping)
             or self.bank_reference.preterminal_capsule_receipt_sha256
             != self.preterminal_capsule_reference.receipt_sha256
             or terminal_result.get("result_sha256")
             != self.bank_reference.terminal_result_sha256
+            or dict(export_reference) != self.bank_reference.as_dict()
+            or receipt.get("terminal_frontier_export_sha256")
+            != canonical_sha256(self.bank_reference.as_dict())
+            or export_context.get("terminal_result_sha256")
+            != self.bank_reference.terminal_result_sha256
+            or receipt.get("terminal_frontier_export_context_sha256")
+            != export_context.get("context_sha256")
         ):
             raise Lfm2SemanticTerminalFrontierError(
                 "Terminal frontier compilation references different capsule phases."
@@ -1435,9 +1555,25 @@ class Lfm2SemanticTerminalFrontierCompilation:
         )
 
     def as_dict(self) -> dict[str, Any]:
+        context = self.terminal_receipt["terminal_frontier_export_context"]
+        recipe = _authenticated_body_recipe(
+            context,
+            label="terminal frontier compilation export context",
+        )
         return {
             "preterminal_capsule": self.preterminal_capsule_reference.as_dict(),
             "terminal_frontier_bank": self.bank_reference.as_dict(),
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "complete_body_recipe_candidate_ids": list(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "complete_body_recipe_candidate_count": len(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "materialized_body_recipe_id": recipe.recipe_id,
+            "body_recipe_candidates_remain_lazily_materializable": True,
             "terminal_receipt_sha256": self.terminal_receipt["result_sha256"],
             "terminal_result_sha256": self.bank_reference.terminal_result_sha256,
             "preterminal_resume_mode": True,
@@ -1575,6 +1711,15 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         device=device,
         dtype=dtype,
     )
+    recipe = _authenticated_body_recipe(
+        capsule.layer_stack.receipt,
+        label="loaded preterminal semantic layer stack",
+    )
+    _authenticated_body_recipe(
+        capsule.attention_receipt_authentication,
+        expected=recipe,
+        label="loaded preterminal attention receipt authentication",
+    )
     capsule_tokenizer_sources = _local_tokenizer_source_directories(
         capsule.target_tokenizer
     )
@@ -1690,6 +1835,7 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         "terminal_cache_compatibility_sha256": terminal_cache_compatibility[
             "authentication_sha256"
         ],
+        "body_recipe_sha256": recipe.recipe_sha256,
     }
 
     exported: list[
@@ -1732,6 +1878,7 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         parent_final_norm=parent_final_norm,
         donor_tokenizer=donor_tokenizer,
         target_tokenizer=capsule.target_tokenizer,
+        body_recipe=recipe,
         split_plan=split_plan,
         policy=policy,
         terminal_cache_compatibility=terminal_cache_compatibility,
@@ -2039,6 +2186,25 @@ def _materialize_loaded_candidate(
     except ImportError as exc:  # pragma: no cover - optional boundary
         raise RuntimeError("PyTorch is required for frontier materialization.") from exc
     _capsule_bank_binding(capsule, bank)
+    recipe = _authenticated_body_recipe(
+        capsule.layer_stack.receipt,
+        label="materialization preterminal semantic layer stack",
+    )
+    _authenticated_body_recipe(
+        capsule.attention_receipt_authentication,
+        expected=recipe,
+        label="materialization preterminal attention authentication",
+    )
+    _authenticated_body_recipe(
+        bank.receipt,
+        expected=recipe,
+        label="materialization terminal frontier bank receipt",
+    )
+    _authenticated_body_recipe(
+        bank.manifest,
+        expected=recipe,
+        label="materialization terminal frontier bank manifest",
+    )
     record = _candidate_record(bank, candidate_id)
     candidate = bank.candidate_weights[candidate_id]
     candidate_sha = _digest(record.get("state_sha256"), "candidate state SHA-256")
@@ -2126,6 +2292,11 @@ def _materialize_loaded_candidate(
         ),
         "terminal_frontier_bank_receipt_sha256": bank.reference.receipt_sha256,
         "terminal_frontier_bank_manifest_sha256": bank.reference.manifest_sha256,
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "complete_body_recipe_candidate_ids": list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        "materialized_body_recipe_id": recipe.recipe_id,
         "authenticated_source_roots_sha256": bank.reference.source_roots_sha256,
         "terminal_result_sha256": bank.reference.terminal_result_sha256,
         "candidate_id": candidate_id,
@@ -2175,6 +2346,17 @@ def _materialize_loaded_candidate(
             **_NONPROMOTABLE_FLAGS,
             "preterminal_capsule": capsule.reference.as_dict(),
             "terminal_frontier_bank": bank.reference.as_dict(),
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "complete_body_recipe_candidate_ids": list(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "complete_body_recipe_candidate_count": len(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "materialized_body_recipe_id": recipe.recipe_id,
+            "body_recipe_candidates_remain_lazily_materializable": True,
             "terminal_result_report": _deep_thaw(bank.terminal_result_report),
             "candidate_id": candidate_id,
             "candidate_state_sha256": candidate_sha,
@@ -2394,6 +2576,10 @@ def _open_terminal_frontier_materialization(
         field_name="receipt_sha256",
         label="terminal frontier materialization receipt",
     )
+    recipe = _authenticated_body_recipe(
+        receipt,
+        label="terminal frontier materialization receipt",
+    )
     checkpoint = receipt.get("checkpoint")
     context = receipt.get("context_binding")
     state_change = receipt.get("state_change_proof")
@@ -2422,6 +2608,13 @@ def _open_terminal_frontier_materialization(
         or receipt.get("holistic_all_64_whole_response_review_required") is not True
         or receipt.get("holistic_review_complete") is not False
         or receipt.get("materialization_is_not_intelligence_acceptance") is not True
+        or receipt.get("complete_body_recipe_candidate_ids")
+        != list(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or receipt.get("complete_body_recipe_candidate_count")
+        != len(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or receipt.get("materialized_body_recipe_id") != recipe.recipe_id
+        or receipt.get("body_recipe_candidates_remain_lazily_materializable")
+        is not True
         or receipt.get("exactly_one_state_tensor_changed") is not True
         or receipt.get("only_final_layer_w2_changed") is not True
         or receipt.get("parameter_count_changed") is not False
@@ -2449,6 +2642,11 @@ def _open_terminal_frontier_materialization(
         )
     context_body = dict(context)
     context_sha = context_body.pop("context_sha256", None)
+    _authenticated_body_recipe(
+        context,
+        expected=recipe,
+        label="terminal frontier materialization context",
+    )
     if (
         context_sha != canonical_sha256(context_body)
         or context.get("schema") != LFM2_SEMANTIC_TERMINAL_FRONTIER_CONTEXT_SCHEMA
@@ -2456,6 +2654,9 @@ def _open_terminal_frontier_materialization(
         or context.get("same_live_cache_session_claimed") is not False
         or context.get("candidate_id") != expected_candidate_id
         or context.get("candidate_state_sha256") != expected_state_sha
+        or context.get("complete_body_recipe_candidate_ids")
+        != list(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or context.get("materialized_body_recipe_id") != recipe.recipe_id
         or context.get("authenticated_source_roots_sha256")
         != bank.get("source_roots_sha256")
         or checkpoint.get("context_binding_sha256") != context_sha
@@ -2545,6 +2746,10 @@ def load_lfm2_semantic_terminal_frontier_materialization(
     if (
         metadata.get("model_state_sha256")
         != receipt.get("materialized_model_state_sha256")
+        or metadata.get("context_binding_sha256")
+        != receipt["context_binding"].get("context_sha256")
+        or checkpoint.get("context_binding_sha256")
+        != metadata.get("context_binding_sha256")
         or fingerprint_model_state(model)
         != receipt.get("fresh_reload_parent_free_state_sha256")
         or _terminal_tensor_sha256(_final_w2_parameter(model)) != candidate_sha
