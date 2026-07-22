@@ -306,6 +306,42 @@ class _TinyTarget(torch.nn.Module):
         self._neural_forge_quarantine_tokenizer = object()
 
 
+class _ReceiptStateLayer(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.operator_norm = torch.nn.Module()
+        self.operator_norm.weight = torch.nn.Parameter(
+            torch.ones((1,), dtype=torch.float64)
+        )
+        self.self_attn = torch.nn.Module()
+        self.self_attn.q_proj = torch.nn.Module()
+        self.self_attn.q_proj.weight = torch.nn.Parameter(
+            torch.ones((1,), dtype=torch.float64)
+        )
+        self.conv = torch.nn.Module()
+        self.conv.in_proj = torch.nn.Module()
+        self.conv.in_proj.weight = torch.nn.Parameter(
+            torch.ones((1,), dtype=torch.float64)
+        )
+        self.feed_forward = torch.nn.Module()
+        self.feed_forward.w1 = torch.nn.Module()
+        self.feed_forward.w1.weight = torch.nn.Parameter(
+            torch.ones((1,), dtype=torch.float64)
+        )
+
+
+class _FourteenLayerReceiptStateTarget(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.model = torch.nn.Module()
+        self.model.layers = torch.nn.ModuleList(
+            [_ReceiptStateLayer() for _ in range(14)]
+        )
+        self.config = SimpleNamespace(norm_eps=1e-5)
+        self.final_w2 = torch.nn.Parameter(torch.tensor([7.0], dtype=torch.float64))
+        self._neural_forge_quarantine_tokenizer = object()
+
+
 class _DenseCoverageLayer(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -340,6 +376,22 @@ def _state_identity(model: _TinyTarget) -> str:
             name: stack._tensor_sha256(value)
             for name, value in sorted(model.state_dict().items())
         }
+    )
+
+
+def test_changed_state_keys_canonicalizes_fourteen_layer_model_order() -> None:
+    names = [
+        f"model.layers.{layer_index}.feed_forward.w1.weight"
+        for layer_index in range(14)
+    ]
+    before = {name: "before" for name in names}
+    after = {name: "after" for name in sorted(names)}
+
+    changed = stack._changed_state_keys(before, after)
+
+    assert changed == tuple(sorted(names))
+    assert changed.index("model.layers.10.feed_forward.w1.weight") < changed.index(
+        "model.layers.2.feed_forward.w1.weight"
     )
 
 
@@ -422,6 +474,7 @@ def _persistable_attention_operator_receipt(
     before: str,
     after: str,
     installed: bool,
+    parameter_count: int = 2,
 ) -> dict[str, object]:
     roles = (
         "q_proj.weight",
@@ -575,8 +628,8 @@ def _persistable_attention_operator_receipt(
         "model_state_after_sha256": after,
         "transport_evidence_sha256": [canonical_sha256(["attention", layer_index])],
         "changed_state_keys": changed,
-        "parameter_element_count_before": 2,
-        "parameter_element_count_after": 2,
+        "parameter_element_count_before": parameter_count,
+        "parameter_element_count_after": parameter_count,
         "parameter_count_changed": False,
         "target_topology_sha256_before": topology,
         "target_topology_sha256_after": topology,
@@ -606,6 +659,7 @@ def _patch_complete_transaction(
     blank_mlp_layers: frozenset[int] = frozenset(),
     incomplete_operator_after_layers: frozenset[int] = frozenset(),
     incomplete_mlp_after_layers: frozenset[int] = frozenset(),
+    use_live_fourteen_layer_state_chain: bool = False,
 ):
     events: list[str] = []
 
@@ -715,11 +769,12 @@ def _patch_complete_transaction(
             synthetic_changed_state_keys.append(
                 f"model.layers.{layer_index}.feed_forward.w1.weight"
             )
-    monkeypatch.setattr(
-        stack,
-        "_changed_state_keys",
-        lambda _before, _after: tuple(sorted(synthetic_changed_state_keys)),
-    )
+    if not use_live_fourteen_layer_state_chain:
+        monkeypatch.setattr(
+            stack,
+            "_changed_state_keys",
+            lambda _before, _after: tuple(sorted(synthetic_changed_state_keys)),
+        )
     coverage_calls: dict[tuple[int, str], int] = {}
 
     def producer_coverage(
@@ -870,7 +925,16 @@ def _patch_complete_transaction(
         installed = layer_index not in noop_operator_layers
         if installed:
             with torch.no_grad():
-                model.mutable.add_(1.0)
+                if use_live_fourteen_layer_state_chain:
+                    layer = model.model.layers[layer_index]
+                    parameter = (
+                        layer.self_attn.q_proj.weight
+                        if kind == "full_attention"
+                        else layer.conv.in_proj.weight
+                    )
+                    parameter.add_(1.0)
+                else:
+                    model.mutable.add_(1.0)
         if failing_layer == layer_index:
             raise RuntimeError("injected partial operator failure")
         after = _state_identity(model)
@@ -892,6 +956,7 @@ def _patch_complete_transaction(
                 before=before,
                 after=after,
                 installed=installed,
+                parameter_count=stack._parameter_count(model),
             )
         if kind == "short_conv" and fold_compute_device != "cpu":
             receipt.update(
@@ -957,7 +1022,12 @@ def _patch_complete_transaction(
         installed = layer_index < 13 and layer_index not in noop_mlp_layers
         if installed:
             with torch.no_grad():
-                target_model.mutable.add_(1.0)
+                if use_live_fourteen_layer_state_chain:
+                    target_model.model.layers[layer_index].feed_forward.w1.weight.add_(
+                        1.0
+                    )
+                else:
+                    target_model.mutable.add_(1.0)
         after = _state_identity(target_model)
         fold_compute_device = _kwargs.get("fold_compute_device", "cpu")
         source_derived_planting = {
@@ -998,7 +1068,11 @@ def _patch_complete_transaction(
         return MappingProxyType({0: f"after:{bank.layer_index}"})
 
     monkeypatch.setattr(stack, "_next_residual_bank", next_bank)
-    target = _TinyTarget()
+    target = (
+        _FourteenLayerReceiptStateTarget()
+        if use_live_fourteen_layer_state_chain
+        else _TinyTarget()
+    )
     return target, Cache(), Bridge(), events
 
 
@@ -1073,6 +1147,40 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
             f"{layer_index}:next",
         ]
         assert observed == expected
+
+
+def test_complete_transaction_canonicalizes_real_fourteen_layer_state_chain(
+    monkeypatch,
+) -> None:
+    target, cache, bridge, _events = _patch_complete_transaction(
+        monkeypatch,
+        use_live_fourteen_layer_state_chain=True,
+    )
+
+    result = stack.compile_install_lfm2_semantic_layer_stack_postfold(
+        cache=cache,
+        bridge=bridge,
+        target_model=target,
+        interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+        compiler_lineage={
+            index: object() for index in stack._EXPECTED_ATTENTION_INDICES
+        },
+        parent_model_directory="unused",
+        donor_tokenizer=object(),
+        target_tokenizer=object(),
+        attention_installer=lambda **_kwargs: None,
+    )
+
+    changed = result.receipt["changed_state_keys"]
+    assert changed == sorted(set(changed))
+    assert changed.index("model.layers.10.feed_forward.w1.weight") < changed.index(
+        "model.layers.2.feed_forward.w1.weight"
+    )
+    authenticated = authenticate_lfm2_semantic_layer_stack_attention_receipts(
+        result.receipt
+    )
+    assert authenticated["causal_model_state_chain_authenticated"] is True
+    assert authenticated["layer_stack_changed_state_key_count"] == len(changed)
 
 
 def test_complete_transaction_routes_and_authenticates_cuda_mlp_folding(
@@ -1270,6 +1378,24 @@ def test_attention_receipt_persistence_rejects_resealed_unowned_changed_state_ke
     with pytest.raises(
         Lfm2SemanticPostfoldError,
         match="changed-key or parameter mutation bindings changed",
+    ):
+        authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
+
+
+def test_attention_receipt_persistence_names_noncanonical_stack_state_keys(
+    monkeypatch,
+) -> None:
+    document = _complete_attention_receipt_document(monkeypatch)
+    document.pop("result_sha256")
+    document["changed_state_keys"] = list(reversed(document["changed_state_keys"]))
+    resealed_stack = {
+        **document,
+        "result_sha256": canonical_sha256(document),
+    }
+
+    with pytest.raises(
+        Lfm2SemanticPostfoldError,
+        match="changed_state_keys_canonical",
     ):
         authenticate_lfm2_semantic_layer_stack_attention_receipts(resealed_stack)
 

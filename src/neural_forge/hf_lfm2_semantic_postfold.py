@@ -513,7 +513,55 @@ def _changed_state_keys(
         raise Lfm2SemanticPostfoldError(
             "Analytic attention installation changed the child state topology."
         )
-    return tuple(name for name in before if before[name] != after[name])
+    return tuple(name for name in sorted(before) if before[name] != after[name])
+
+
+def _semantic_layer_stack_state_invariant_failures(
+    stack: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Name every failed top-level structural invariant in a stack receipt."""
+
+    before = stack.get("model_state_before_sha256")
+    after = stack.get("model_state_after_sha256")
+    changed = stack.get("changed_state_keys")
+    parameter_count = stack.get("parameter_element_count")
+
+    def is_digest(value: Any) -> bool:
+        return bool(
+            isinstance(value, str)
+            and len(value) == 64
+            and all(character in "0123456789abcdef" for character in value)
+        )
+
+    failures: list[str] = []
+    if not is_digest(before):
+        failures.append("model_state_before_sha256")
+    if not is_digest(after):
+        failures.append("model_state_after_sha256")
+    if is_digest(before) and is_digest(after) and before == after:
+        failures.append("model_state_changed")
+    if not isinstance(changed, list) or not changed:
+        failures.append("changed_state_keys_nonempty_list")
+    elif any(not isinstance(name, str) or not name for name in changed):
+        failures.append("changed_state_keys_nonempty_strings")
+    elif changed != sorted(set(changed)):
+        failures.append("changed_state_keys_canonical")
+    if type(parameter_count) is not int or parameter_count <= 0:
+        failures.append("parameter_element_count_positive_int")
+    if stack.get("parameter_count_changed") is not False:
+        failures.append("parameter_count_changed_false")
+    if stack.get("parameter_topology_changed") is not False:
+        failures.append("parameter_topology_changed_false")
+    if stack.get("whole_stage_contains_meaningful_parameter_changes") is not True:
+        failures.append("whole_stage_contains_meaningful_parameter_changes_true")
+    if stack.get("complete_causal_layer_stack_adjudicated") is not True:
+        failures.append("complete_causal_layer_stack_adjudicated_true")
+    if (
+        stack.get("causal_install_order")
+        != "operator_then_replay_fresh_mlp_then_next_layer"
+    ):
+        failures.append("causal_install_order")
+    return tuple(failures)
 
 
 def _parameter_runtime_snapshot(model: Any) -> Mapping[str, Any]:
@@ -3788,29 +3836,12 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
     stack_after_sha256 = stack.get("model_state_after_sha256")
     stack_changed_keys = stack.get("changed_state_keys")
     parameter_element_count = stack.get("parameter_element_count")
-    if (
-        not isinstance(stack_before_sha256, str)
-        or not isinstance(stack_after_sha256, str)
-        or _digest(stack_before_sha256, "semantic layer-stack state before")
-        != stack_before_sha256
-        or _digest(stack_after_sha256, "semantic layer-stack state after")
-        != stack_after_sha256
-        or stack_before_sha256 == stack_after_sha256
-        or not isinstance(stack_changed_keys, list)
-        or not stack_changed_keys
-        or any(not isinstance(name, str) or not name for name in stack_changed_keys)
-        or stack_changed_keys != sorted(set(stack_changed_keys))
-        or type(parameter_element_count) is not int
-        or parameter_element_count <= 0
-        or stack.get("parameter_count_changed") is not False
-        or stack.get("parameter_topology_changed") is not False
-        or stack.get("whole_stage_contains_meaningful_parameter_changes") is not True
-        or stack.get("complete_causal_layer_stack_adjudicated") is not True
-        or stack.get("causal_install_order")
-        != "operator_then_replay_fresh_mlp_then_next_layer"
-    ):
+    invariant_failures = _semantic_layer_stack_state_invariant_failures(stack)
+    if invariant_failures:
         raise Lfm2SemanticPostfoldError(
-            "Semantic layer-stack state or parameter invariants changed."
+            "Semantic layer-stack state or parameter invariants changed: "
+            + ", ".join(invariant_failures)
+            + "."
         )
     authenticated = []
     verified_layers: list[Mapping[str, Any]] = []
