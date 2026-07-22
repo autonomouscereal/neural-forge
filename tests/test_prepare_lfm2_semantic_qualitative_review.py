@@ -107,11 +107,15 @@ def _write_dossier(
     return review._file_sha256(path), document["dossier_sha256"]
 
 
-def _prepare_inputs(tmp_path: Path) -> tuple[list[Path], list[str], list[str]]:
+def _prepare_inputs(
+    tmp_path: Path,
+    *,
+    count: int = 3,
+) -> tuple[list[Path], list[str], list[str]]:
     paths = []
     file_hashes = []
     dossier_hashes = []
-    for index in range(3):
+    for index in range(count):
         path = tmp_path / f"dossier-{index}.json"
         file_sha, dossier_sha = _write_dossier(
             path,
@@ -127,7 +131,7 @@ def _prepare_inputs(tmp_path: Path) -> tuple[list[Path], list[str], list[str]]:
 def test_prepare_authenticates_merges_renders_and_seals_template(
     tmp_path: Path,
 ) -> None:
-    paths, file_hashes, dossier_hashes = _prepare_inputs(tmp_path)
+    paths, file_hashes, dossier_hashes = _prepare_inputs(tmp_path, count=4)
     merged_path = tmp_path / "merged.json"
     markdown_path = tmp_path / "review.md"
     template_path = tmp_path / "verdict-template.json"
@@ -136,7 +140,12 @@ def test_prepare_authenticates_merges_renders_and_seals_template(
         dossier_paths=paths,
         expected_dossier_file_sha256s=file_hashes,
         expected_dossier_sha256s=dossier_hashes,
-        lane_labels=("fit_guided", "full_strength_structural", "residual_writer"),
+        lane_labels=(
+            "fit_guided",
+            "full_strength_structural",
+            "residual_writer",
+            "source_producer_residual_writer",
+        ),
         merged_json=merged_path,
         markdown_path=markdown_path,
         verdict_template_json=template_path,
@@ -145,13 +154,13 @@ def test_prepare_authenticates_merges_renders_and_seals_template(
     merged = json.loads(merged_path.read_text(encoding="ascii"))
     merged_body = dict(merged)
     assert merged_body.pop("merged_sha256") == review._canonical_sha256(merged_body)
-    assert merged["source_dossier_count"] == 3
-    assert merged["candidate_count"] == 3
+    assert merged["source_dossier_count"] == 4
+    assert merged["candidate_count"] == 4
     assert [row["file_sha256"] for row in merged["source_dossiers"]] == file_hashes
     assert [row["dossier_sha256"] for row in merged["source_dossiers"]] == (
         dossier_hashes
     )
-    assert len({row["candidate_key"] for row in merged["candidates"]}) == 3
+    assert len({row["candidate_key"] for row in merged["candidates"]}) == 4
     assert (
         merged["evaluation_policy"]["numeric_diagnostics_have_decision_authority"]
         is False
@@ -178,7 +187,7 @@ def test_prepare_authenticates_merges_renders_and_seals_template(
     )
     assert template["source_merged_evidence_sha256"] == merged["merged_sha256"]
     assert template["allowed_prompt_statuses"] == list(review.PROMPT_STATUSES)
-    assert len(template["candidate_reviews"]) == 3
+    assert len(template["candidate_reviews"]) == 4
     for candidate in template["candidate_reviews"]:
         assert candidate["candidate_conclusion"] == ""
         assert candidate["candidate_conclusion_reason"] == ""
@@ -243,7 +252,7 @@ def test_prepare_rejects_resealed_but_inconsistent_parent_evidence(
         )
 
 
-def test_prepare_requires_three_unique_lane_bindings(tmp_path: Path) -> None:
+def test_prepare_requires_unique_lane_bindings(tmp_path: Path) -> None:
     paths, file_hashes, dossier_hashes = _prepare_inputs(tmp_path)
     with pytest.raises(
         review.Lfm2SemanticQualitativeReviewError,
@@ -260,8 +269,8 @@ def test_prepare_requires_three_unique_lane_bindings(tmp_path: Path) -> None:
         )
 
 
-def test_cli_writes_all_three_outputs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    paths, file_hashes, dossier_hashes = _prepare_inputs(tmp_path)
+def test_cli_writes_all_outputs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    paths, file_hashes, dossier_hashes = _prepare_inputs(tmp_path, count=4)
     merged = tmp_path / "cli-merged.json"
     markdown = tmp_path / "cli-review.md"
     template = tmp_path / "cli-template.json"
@@ -272,7 +281,7 @@ def test_cli_writes_all_three_outputs(tmp_path: Path, capsys: pytest.CaptureFixt
         argv.extend(("--expected-dossier-file-sha256", value))
     for value in dossier_hashes:
         argv.extend(("--expected-dossier-sha256", value))
-    for value in ("fit", "structural", "residual"):
+    for value in ("fit", "structural", "residual", "producer-writer"):
         argv.extend(("--lane-label", value))
     argv.extend(
         (
@@ -287,6 +296,6 @@ def test_cli_writes_all_three_outputs(tmp_path: Path, capsys: pytest.CaptureFixt
 
     assert review.main(argv) == 0
     summary = json.loads(capsys.readouterr().out)
-    assert summary["candidate_count"] == 3
+    assert summary["candidate_count"] == 4
     assert summary["automatic_decision_performed"] is False
     assert merged.is_file() and markdown.is_file() and template.is_file()

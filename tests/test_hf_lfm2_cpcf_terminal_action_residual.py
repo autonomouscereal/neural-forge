@@ -289,16 +289,16 @@ def _evidence_for_zero_writer(evidence, seed):
     )
 
 
-def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None:
+def test_exact_bfloat16_frontier_defers_selection_and_validates_diagnostic_lead() -> None:
     seed, evidence_banks, _ = _synthetic_terminal_problem()
     original = seed.down_weight.clone()
 
     result = _compile(seed, evidence_banks)
     report = result.as_dict()
 
-    assert result.accepted is True
-    assert result.changed is True
-    assert result.selected_candidate_id != "incumbent"
+    assert result.accepted is False
+    assert result.changed is False
+    assert result.selected_candidate_id == "incumbent"
     assert result.verify_authentication() is True
     assert torch.equal(seed.down_weight, original)
     assert result.incumbent_down_weight.dtype == torch.bfloat16
@@ -326,10 +326,10 @@ def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None
         assert tensor.is_contiguous()
         assert torch.isfinite(tensor).all().item() is True
         assert terminal._tensor_sha256(tensor) == candidate["state_sha256"]
-    assert torch.equal(
-        result.frontier_down_weights[result.selected_candidate_id],
-        result.selected_down_weight,
-    )
+    diagnostic_lead_id = report["diagnostic_lead_candidate_id"]
+    assert diagnostic_lead_id in result.frontier_down_weights
+    assert torch.equal(result.selected_down_weight, result.incumbent_down_weight)
+    assert torch.equal(result.published_down_weight, result.incumbent_down_weight)
 
     assert report["frontier_count"] == 37
     assert report["frontier_count"] == report["expected_frontier_count"]
@@ -343,13 +343,15 @@ def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None
     assert report["fit_weighted_ridge"]["selection_rows_used"] == 0
     assert report["fit_weighted_ridge"]["validation_rows_used"] == 0
     assert report["validation"]["candidate_count"] == 1
-    assert report["validation"]["used_for_candidate_ranking"] is False
+    assert report["validation"]["used_for_diagnostic_ordering"] is False
     assert (
-        report["validation"]["accessed_only_after_selected_id_and_state_sha256_frozen"]
+        report["validation"][
+            "accessed_only_after_diagnostic_lead_id_and_state_sha256_frozen"
+        ]
         is True
     )
     assert (
-        report["validation"]["evaluated_candidate_id"] == result.selected_candidate_id
+        report["validation"]["evaluated_candidate_id"] == diagnostic_lead_id
     )
     assert report["validation"]["passed"] is True
     assert report["rollback_performed"] is False
@@ -357,15 +359,29 @@ def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None
     assert report["parameter_count_before"] == report["parameter_count_after"]
     assert set(report["operation_audit"].values()) == {0}
     assert "exact_zero_cold_start" not in report
+    assert report["final_selection_status"] == (
+        "deferred-to-manual-whole-response-review"
+    )
+    assert report["final_selected_candidate_id"] is None
+    assert report["final_selection_performed"] is False
+    assert report["automatic_candidate_acceptance_performed"] is False
+    assert report["candidate_published_before_manual_review"] is False
+    assert report["manual_whole_response_review_required"] is True
+    assert report["diagnostic_order_candidate_ids"][0] == diagnostic_lead_id
+    assert report["diagnostic_order_candidate_count"] == len(
+        report["diagnostic_order_candidate_ids"]
+    )
+    assert report["diagnostic_order_has_final_selection_authority"] is False
+    assert report["diagnostic_order_is_provisional"] is True
 
     for split in ("fit", "fit_check", "selection"):
         incumbent_rmse = report["incumbent_metrics"][split]["oracle"][
             "centered_logit_relative_rmse"
         ]
-        selected_rmse = report["selected_metrics_before_validation"][split]["oracle"][
+        diagnostic_lead_rmse = report["diagnostic_lead_metrics"][split]["oracle"][
             "centered_logit_relative_rmse"
         ]
-        assert selected_rmse < incumbent_rmse
+        assert diagnostic_lead_rmse < incumbent_rmse
     assert (
         report["validation"]["metrics"]["oracle"]["centered_logit_relative_rmse"]
         < report["incumbent_metrics"]["validation"]["oracle"][
@@ -374,7 +390,7 @@ def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None
     )
 
 
-def test_exact_zero_writer_uses_structural_eligibility_then_fit_ordering(
+def test_exact_zero_writer_uses_structural_eligibility_for_diagnostic_ordering(
     monkeypatch,
 ):
     source_seed, evidence_banks, _ = _synthetic_terminal_problem()
@@ -398,24 +414,30 @@ def test_exact_zero_writer_uses_structural_eligibility_then_fit_ordering(
 
     result = _compile(seed, heldout_rejecting)
     report = result.as_dict()
-    coverage = report["selected_writer_structural_coverage"]
+    diagnostic_lead_id = report["diagnostic_lead_candidate_id"]
+    diagnostic_lead_weight = result.frontier_down_weights[diagnostic_lead_id]
+    coverage = report["diagnostic_lead_writer_structural_coverage"]
     prepared_fit = terminal._prepare_split(heldout_rejecting["fit"], seed)
     fitted_branch_output = (
-        prepared_fit.features @ result.published_down_weight.to(torch.float64).T
+        prepared_fit.features @ diagnostic_lead_weight.to(torch.float64).T
     )
 
     assert torch.count_nonzero(seed.down_weight).item() == 0
-    assert result.accepted is True
-    assert result.changed is True
-    assert result.selected_candidate_id != "incumbent"
-    assert result.selected_candidate_id == fit_reference.selected_candidate_id
-    assert torch.equal(result.selected_down_weight, fit_reference.selected_down_weight)
-    assert torch.equal(result.published_down_weight, result.selected_down_weight)
-    assert not torch.equal(result.published_down_weight, result.incumbent_down_weight)
+    assert result.accepted is False
+    assert result.changed is False
+    assert result.selected_candidate_id == "incumbent"
+    assert diagnostic_lead_id == fit_reference.report["diagnostic_lead_candidate_id"]
+    assert torch.equal(
+        diagnostic_lead_weight,
+        fit_reference.frontier_down_weights[diagnostic_lead_id],
+    )
+    assert torch.equal(result.selected_down_weight, result.incumbent_down_weight)
+    assert torch.equal(result.published_down_weight, result.incumbent_down_weight)
     assert report["exact_zero_cold_start"] is True
-    assert report["incumbent_noop_publication_forbidden"] is True
-    assert report["published_is_incumbent"] is False
-    assert report["candidate_selection_evidence_scope"] == (
+    assert report["incumbent_is_noncandidate_control"] is True
+    assert report["candidate_publication_deferred_until_manual_review"] is True
+    assert report["published_is_incumbent"] is True
+    assert report["candidate_diagnostic_ordering_evidence_scope"] == (
         "finite-dense-structural-eligibility-plus-fit-ordering"
     )
     assert report["candidate_eligibility_basis"] == (
@@ -424,14 +446,14 @@ def test_exact_zero_writer_uses_structural_eligibility_then_fit_ordering(
     assert report["fit_metrics_role"] == (
         "ordering-among-structurally-eligible-not-threshold-gating"
     )
-    assert report["fit_metrics_used_for_candidate_ordering"] is True
-    assert report["fit_metrics_used_for_pre_review_candidate_selection"] is True
+    assert report["fit_metrics_used_for_diagnostic_ordering"] is True
+    assert report["fit_metrics_used_for_pre_review_candidate_selection"] is False
     assert report["fit_metrics_used_for_structural_eligibility"] is False
     assert report["fit_metrics_have_final_intelligence_authority"] is False
     assert report["fit_metric_thresholds_used_for_candidate_eligibility"] is False
     assert report["fit_metric_thresholds_used_for_publication"] is False
     assert report["relative_to_zero_weight_delta_gate_applied"] is False
-    assert report["selected_before_any_heldout_publication_diagnostic"] is True
+    assert report["diagnostic_lead_frozen_before_any_heldout_diagnostic"] is True
     first_heldout = next(
         index for index, split in enumerate(evaluated_splits) if split != "fit"
     )
@@ -440,9 +462,9 @@ def test_exact_zero_writer_uses_structural_eligibility_then_fit_ordering(
     assert evaluated_splits.count("fit_check") == 2
     assert evaluated_splits.count("selection") == 2
     assert evaluated_splits.count("validation") == 2
-    assert report["heldout_candidate_evaluation_count_before_fit_freeze"] == 0
-    assert report["heldout_candidate_evaluation_count_after_fit_freeze"] == 6
-    assert report["heldout_candidate_count_evaluated_after_fit_freeze"] == 2
+    assert report["heldout_candidate_evaluation_count_before_lead_freeze"] == 0
+    assert report["heldout_candidate_evaluation_count_after_lead_freeze"] == 6
+    assert report["heldout_candidate_count_evaluated_after_lead_freeze"] == 2
     assert report["validation"]["passed"] is False
     assert report["validation"]["heldout_diagnostic_only"] is True
     assert report["validation"]["publication_gate_applied"] is False
@@ -459,7 +481,7 @@ def test_exact_zero_writer_uses_structural_eligibility_then_fit_ordering(
     assert torch.count_nonzero(fitted_branch_output).item() > 0
     assert fitted_branch_output.ne(0).any(dim=0).all().item() is True
     assert (
-        report["selected_metrics_before_validation"]["fit"]["oracle"][
+        report["diagnostic_lead_metrics"]["fit"]["oracle"][
             "centered_logit_relative_rmse"
         ]
         < report["incumbent_metrics"]["fit"]["oracle"]["centered_logit_relative_rmse"]
@@ -469,21 +491,20 @@ def test_exact_zero_writer_uses_structural_eligibility_then_fit_ordering(
     assert report["zero_training_pruning_quantization"] is True
     assert set(report["operation_audit"].values()) == {0}
     assert result.verify_authentication() is True
-    selected_id = result.selected_candidate_id
     for candidate in report["frontier"]:
-        if candidate["candidate_id"] in {"incumbent", selected_id}:
+        if candidate["candidate_id"] in {"incumbent", diagnostic_lead_id}:
             continue
         assert candidate["fit_check_metrics"] is None
         assert candidate["selection_metrics"] is None
         assert candidate["fit_check_gates"] == {
-            "not_evaluated_before_fit_selection_freeze": True
+            "not_evaluated_before_diagnostic_lead_freeze": True
         }
         assert candidate["selection_gates"] == {
-            "not_evaluated_before_fit_selection_freeze": True
+            "not_evaluated_before_diagnostic_lead_freeze": True
         }
 
 
-def test_exact_zero_dense_candidate_publishes_despite_fit_proxy_gate_miss() -> None:
+def test_exact_zero_dense_candidate_remains_reviewable_despite_fit_proxy_gate_miss() -> None:
     source_seed, evidence_banks, _ = _synthetic_terminal_problem()
     seed = _zero_terminal_seed(source_seed)
     policy = Lfm2CpcfTerminalActionPolicy(
@@ -492,33 +513,34 @@ def test_exact_zero_dense_candidate_publishes_despite_fit_proxy_gate_miss() -> N
 
     result = _compile(seed, evidence_banks, policy=policy)
     report = result.as_dict()
-    selected = next(
+    diagnostic_lead = next(
         value
         for value in report["frontier"]
-        if value["candidate_id"] == result.selected_candidate_id
+        if value["candidate_id"] == report["diagnostic_lead_candidate_id"]
     )
 
-    assert result.accepted is True
-    assert result.changed is True
-    assert result.selected_candidate_id != "incumbent"
-    assert selected["structurally_eligible"] is True
-    assert selected["eligible"] is True
-    assert selected["fit_metric_gates_passed"] is False
-    assert selected["fit_gates"]["post_layer_norm"] is False
-    assert selected["fit_metrics_used_for_candidate_ordering"] is True
-    assert selected["fit_metrics_used_for_pre_review_candidate_selection"] is True
-    assert selected["fit_metrics_used_for_structural_eligibility"] is False
-    assert selected["fit_metric_thresholds_used_for_publication"] is False
-    assert selected["fit_metrics_have_final_intelligence_authority"] is False
-    assert "fit_metrics_used_for_candidate_ordering_only" not in selected
-    assert "fit_metrics_used_for_publication_gate" not in selected
+    assert result.accepted is False
+    assert result.changed is False
+    assert result.selected_candidate_id == "incumbent"
+    assert diagnostic_lead["structurally_eligible"] is True
+    assert diagnostic_lead["eligible"] is True
+    assert diagnostic_lead["fit_metric_gates_passed"] is False
+    assert diagnostic_lead["fit_gates"]["post_layer_norm"] is False
+    assert diagnostic_lead["fit_metrics_used_for_diagnostic_ordering"] is True
+    assert (
+        diagnostic_lead["fit_metrics_used_for_pre_review_candidate_selection"]
+        is False
+    )
+    assert diagnostic_lead["fit_metrics_used_for_structural_eligibility"] is False
+    assert diagnostic_lead["fit_metric_thresholds_used_for_publication"] is False
+    assert diagnostic_lead["fit_metrics_have_final_intelligence_authority"] is False
     assert report["structurally_eligible_fit_metric_gate_miss_count"] > 0
     assert report["fit_metric_gate_miss_can_exclude_structural_candidate"] is False
-    assert report["published_writer_is_finite_dense_nonzero_structural_plant"]
+    assert report["published_writer_is_finite_dense_nonzero_structural_plant"] is False
     assert result.verify_authentication() is True
 
 
-def test_nonzero_dense_candidate_publishes_despite_all_numeric_diagnostics_and_validation() -> (
+def test_nonzero_dense_candidate_remains_reviewable_despite_numeric_diagnostics() -> (
     None
 ):
     seed, evidence_banks, rejecting_validation = _synthetic_terminal_problem()
@@ -537,23 +559,23 @@ def test_nonzero_dense_candidate_publishes_despite_all_numeric_diagnostics_and_v
         policy=policy,
     )
     report = result.as_dict()
-    selected = next(
+    diagnostic_lead = next(
         value
         for value in report["frontier"]
-        if value["candidate_id"] == result.selected_candidate_id
+        if value["candidate_id"] == report["diagnostic_lead_candidate_id"]
     )
 
-    assert result.selected_candidate_id != "incumbent"
-    assert result.accepted is True
-    assert result.changed is True
-    assert selected["eligible"] is True
-    assert selected["structurally_eligible"] is True
-    assert selected["numeric_diagnostic_gate_miss"] is True
-    assert selected["legacy_weight_delta_threshold_would_pass"] is False
-    assert selected["fit_thresholds_used_for_eligibility"] is False
-    assert selected["fit_check_thresholds_used_for_eligibility"] is False
-    assert selected["selection_thresholds_used_for_eligibility"] is False
-    assert selected["numeric_thresholds_used_for_publication"] is False
+    assert result.selected_candidate_id == "incumbent"
+    assert result.accepted is False
+    assert result.changed is False
+    assert diagnostic_lead["eligible"] is True
+    assert diagnostic_lead["structurally_eligible"] is True
+    assert diagnostic_lead["numeric_diagnostic_gate_miss"] is True
+    assert diagnostic_lead["legacy_weight_delta_threshold_would_pass"] is False
+    assert diagnostic_lead["fit_thresholds_used_for_eligibility"] is False
+    assert diagnostic_lead["fit_check_thresholds_used_for_eligibility"] is False
+    assert diagnostic_lead["selection_thresholds_used_for_eligibility"] is False
+    assert diagnostic_lead["numeric_thresholds_used_for_publication"] is False
     assert report["numeric_thresholds_used_for_candidate_eligibility"] is False
     assert report["numeric_thresholds_used_for_publication"] is False
     assert report["structural_safety_is_only_candidate_veto"] is True
@@ -561,8 +583,51 @@ def test_nonzero_dense_candidate_publishes_despite_all_numeric_diagnostics_and_v
     assert report["validation"]["heldout_diagnostic_only"] is True
     assert report["validation"]["publication_gate_applied"] is False
     assert report["rollback_performed"] is False
-    assert report["published_is_incumbent"] is False
-    assert torch.equal(result.published_down_weight, result.selected_down_weight)
+    assert report["published_is_incumbent"] is True
+    assert torch.equal(result.published_down_weight, result.incumbent_down_weight)
+    assert result.verify_authentication() is True
+
+
+@pytest.mark.parametrize("exact_zero", (False, True), ids=("nonzero", "exact-zero"))
+def test_proxy_metrics_only_create_a_provisional_review_order(exact_zero) -> None:
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    if exact_zero:
+        seed = _zero_terminal_seed(seed)
+
+    result = _compile(seed, evidence_banks)
+    report = result.as_dict()
+    eligible = [
+        record
+        for record in report["frontier"][1:]
+        if record["structurally_eligible"] is True
+    ]
+    expected_order = [
+        record["candidate_id"]
+        for record in sorted(
+            eligible,
+            key=lambda record: (
+                tuple(record["diagnostic_ordering_key"]),
+                record["candidate_id"],
+            ),
+        )
+    ]
+
+    assert len(result.frontier_down_weights) == 36
+    assert report["diagnostic_order_candidate_ids"] == expected_order
+    assert report["diagnostic_lead_candidate_id"] == expected_order[0]
+    assert report["diagnostic_order_is_provisional"] is True
+    assert report["diagnostic_order_has_final_selection_authority"] is False
+    assert report["diagnostic_lead_has_final_selection_authority"] is False
+    assert report["final_selected_candidate_id"] is None
+    assert report["final_selection_performed"] is False
+    assert report["automatic_candidate_selection_performed"] is False
+    assert report["automatic_candidate_acceptance_performed"] is False
+    assert report["candidate_published_before_manual_review"] is False
+    assert result.selected_candidate_id == "incumbent"
+    assert result.accepted is False
+    assert result.changed is False
+    assert torch.equal(result.selected_down_weight, result.incumbent_down_weight)
+    assert torch.equal(result.published_down_weight, result.incumbent_down_weight)
     assert result.verify_authentication() is True
 
 
@@ -692,7 +757,9 @@ def test_nonzero_result_cannot_downgrade_compiler_authentication_by_resealing(
         body["method"] = "caller-relabeled-legacy-result"
         body.pop("structural_nonveto_schema")
         body.pop("frontier")
+        body["accepted"] = True
         frontier_down_weights = None
+        accepted = True
     else:
         body["method"] = "caller-relabeled-legacy-result"
         body.pop("structural_nonveto_schema")
@@ -968,13 +1035,17 @@ def test_forged_resealed_binding_and_report_cannot_replace_compiler_lineage(
     (
         ("used_for_fit", True),
         ("used_for_fit_check_veto", True),
-        ("used_for_candidate_ranking", True),
-        ("used_to_change_selected_candidate_id", True),
-        ("used_only_for_frozen_candidate_acceptance", True),
+        ("used_for_diagnostic_ordering", True),
+        ("used_for_final_selection", True),
+        ("used_for_candidate_acceptance", True),
         ("heldout_diagnostic_only", False),
         ("publication_gate_applied", True),
         ("numeric_thresholds_diagnostic_only", False),
-        ("accessed_only_after_selected_id_and_state_sha256_frozen", False),
+        (
+            "accessed_only_after_diagnostic_lead_id_and_state_sha256_frozen",
+            False,
+        ),
+        ("frozen_diagnostic_lead_state_sha256", "0" * 64),
         ("__omit_used_for_fit", None),
         ("__extra_role", True),
     ),
@@ -1092,33 +1163,44 @@ def test_terminal_frontier_writer_bank_is_privately_owned_and_reauthenticated() 
     assert result.verify_authentication() is False
 
 
-def test_terminal_frontier_rejects_resealed_incumbent_selection_with_other_state() -> (
+def test_terminal_frontier_rejects_resealed_metric_lead_as_final_selection() -> (
     None
 ):
     seed, evidence_banks, _ = _synthetic_terminal_problem()
     result = _compile(seed, evidence_banks)
-    assert result.selected_candidate_id != "incumbent"
+    assert result.selected_candidate_id == "incumbent"
+    diagnostic_lead_id = result.report["diagnostic_lead_candidate_id"]
+    diagnostic_lead_weight = result.frontier_down_weights[diagnostic_lead_id]
     body = copy.deepcopy(result.as_dict())
     body.pop("result_sha256")
-    body["selected_candidate_id"] = "incumbent"
-    body["selected_nonincumbent"] = False
-    body["accepted"] = False
-    body["published_is_incumbent"] = True
-    body["output_state_sha256"]["published"] = body["output_state_sha256"]["incumbent"]
+    body["selected_candidate_id"] = diagnostic_lead_id
+    body["selected_nonincumbent"] = True
+    body["accepted"] = True
+    body["published_is_incumbent"] = False
+    body["final_selection_performed"] = True
+    body["automatic_candidate_selection_performed"] = True
+    body["automatic_candidate_acceptance_performed"] = True
+    body["candidate_published_before_manual_review"] = True
+    body["output_state_sha256"]["selected"] = body[
+        "diagnostic_lead_state_sha256"
+    ]
+    body["output_state_sha256"]["published"] = body[
+        "diagnostic_lead_state_sha256"
+    ]
     forged_sha256 = terminal._canonical_sha256(body)
 
     with pytest.raises(
         Lfm2CpcfTerminalActionAuthenticationError,
-        match="selected frontier record|exact incumbent",
+        match="compiler-issued|decision semantics|selected frontier record",
     ):
         terminal.Lfm2CpcfTerminalActionResidualResult(
             policy=result.policy,
             incumbent_down_weight=result.incumbent_down_weight,
-            selected_down_weight=result.selected_down_weight,
-            published_down_weight=result.incumbent_down_weight,
+            selected_down_weight=diagnostic_lead_weight,
+            published_down_weight=diagnostic_lead_weight,
             frontier_down_weights=result.frontier_down_weights,
-            selected_candidate_id="incumbent",
-            accepted=False,
+            selected_candidate_id=diagnostic_lead_id,
+            accepted=True,
             report={**body, "result_sha256": forged_sha256},
             result_sha256=forged_sha256,
         )
@@ -1147,14 +1229,14 @@ def test_terminal_frontier_rejects_distinct_views_into_shared_storage() -> None:
 def test_terminal_frontier_rejects_bank_storage_alias_to_main_selected_tensor() -> None:
     seed, evidence_banks, _ = _synthetic_terminal_problem()
     result = _compile(seed, evidence_banks)
-    assert result.selected_candidate_id != "incumbent"
+    assert result.selected_candidate_id == "incumbent"
+    diagnostic_lead_id = result.report["diagnostic_lead_candidate_id"]
     forged_bank = dict(result.frontier_down_weights)
-    forged_bank[result.selected_candidate_id] = result.selected_down_weight
+    forged_bank[diagnostic_lead_id] = result.selected_down_weight
     object.__setattr__(result, "frontier_down_weights", forged_bank)
 
-    assert torch.equal(
-        result.frontier_down_weights[result.selected_candidate_id],
-        result.selected_down_weight,
+    assert forged_bank[diagnostic_lead_id].data_ptr() == (
+        result.selected_down_weight.data_ptr()
     )
     assert result.verify_authentication() is False
 
@@ -1163,12 +1245,12 @@ def test_terminal_frontier_rejects_bank_storage_alias_to_main_selected_tensor() 
     "tamper",
     (
         lambda body: body.__setitem__("schema", "caller-forged"),
-        lambda body: body.__setitem__("selected_nonincumbent", False),
+        lambda body: body.__setitem__("selected_nonincumbent", True),
         lambda body: body["operation_audit"].pop("training_steps"),
         lambda body: next(
             value
             for value in body["frontier"]
-            if value["candidate_id"] == body["selected_candidate_id"]
+            if value["candidate_id"] == body["diagnostic_lead_candidate_id"]
         ).__setitem__("state_sha256", "0" * 64),
     ),
 )
@@ -1205,15 +1287,15 @@ def test_exact_zero_result_rejects_resealed_internal_lineage_tamper(tamper) -> N
         lambda body: next(
             value
             for value in body["frontier"]
-            if value["candidate_id"] == body["selected_candidate_id"]
+            if value["candidate_id"] == body["diagnostic_lead_candidate_id"]
         ).__setitem__("eligible", False),
         lambda body: next(
             value
             for value in body["frontier"]
-            if value["candidate_id"] == body["selected_candidate_id"]
+            if value["candidate_id"] == body["diagnostic_lead_candidate_id"]
         ).__setitem__("numeric_thresholds_used_for_publication", True),
         lambda body: body["validation"].__setitem__("publication_gate_applied", True),
-        lambda body: body["selected_writer_structural_coverage"].__setitem__(
+        lambda body: body["diagnostic_lead_writer_structural_coverage"].__setitem__(
             "state_sha256", "0" * 64
         ),
     ),
@@ -1243,9 +1325,9 @@ def test_nonzero_result_rejects_resealed_structural_nonveto_tamper(tamper) -> No
         )
 
 
-def test_validation_cannot_reselect_or_veto_structural_publication() -> None:
+def test_validation_cannot_make_a_final_selection_or_publication_decision() -> None:
     seed, evidence_banks, rejecting_validation = _synthetic_terminal_problem()
-    accepted = _compile(seed, evidence_banks)
+    reference = _compile(seed, evidence_banks)
     rejected_banks = {
         **evidence_banks,
         "validation": rejecting_validation,
@@ -1254,23 +1336,27 @@ def test_validation_cannot_reselect_or_veto_structural_publication() -> None:
     rejected = _compile(seed, rejected_banks)
     report = rejected.as_dict()
 
-    assert accepted.selected_candidate_id != "incumbent"
-    assert rejected.selected_candidate_id == accepted.selected_candidate_id
+    assert reference.selected_candidate_id == "incumbent"
+    assert rejected.selected_candidate_id == "incumbent"
+    assert rejected.report["diagnostic_lead_candidate_id"] == (
+        reference.report["diagnostic_lead_candidate_id"]
+    )
     assert torch.equal(
         rejected.selected_down_weight,
-        accepted.selected_down_weight,
+        reference.selected_down_weight,
     )
-    assert rejected.accepted is True
-    assert rejected.changed is True
+    assert rejected.accepted is False
+    assert rejected.changed is False
     assert report["validation"]["passed"] is False
     assert report["validation"]["candidate_count"] == 1
-    assert report["validation"]["used_for_candidate_ranking"] is False
-    assert report["validation"]["used_to_change_selected_candidate_id"] is False
+    assert report["validation"]["used_for_diagnostic_ordering"] is False
+    assert report["validation"]["used_for_final_selection"] is False
+    assert report["validation"]["used_for_candidate_acceptance"] is False
     assert report["validation"]["heldout_diagnostic_only"] is True
     assert report["validation"]["publication_gate_applied"] is False
     assert report["rollback_performed"] is False
     assert report["rollback_exact"] is True
-    assert report["published_is_incumbent"] is False
+    assert report["published_is_incumbent"] is True
     assert torch.equal(
         rejected.published_down_weight,
         rejected.selected_down_weight,

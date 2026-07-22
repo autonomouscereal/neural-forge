@@ -13,6 +13,7 @@ torch = pytest.importorskip("torch")
 
 import neural_forge.hf_lfm2_semantic_postfold_frontier as frontier  # noqa: E402
 import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
+import neural_forge.hf_lfm2_cpcf_terminal_action_residual as terminal_action  # noqa: E402
 
 from neural_forge.dynamic_fold_executor import fingerprint_model_state  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_model_fold import (  # noqa: E402
@@ -266,6 +267,32 @@ def _terminal_result():
     )
 
 
+def _terminal_result_with_invalid_first_ridge(monkeypatch, *, mode: str):
+    original = terminal_action._ridge_delta
+    calls = 0
+
+    def adversarial_delta(*args, **kwargs):
+        nonlocal calls
+        value = original(*args, **kwargs)
+        calls += 1
+        if calls != 1:
+            return value
+        if mode == "no-op":
+            return torch.zeros_like(value)
+        if mode == "incomplete-coverage":
+            sparse = torch.zeros_like(value)
+            sparse[0, 0] = 1.0
+            return sparse
+        if mode == "nonfinite":
+            nonfinite = value.clone()
+            nonfinite[0, 0] = torch.nan
+            return nonfinite
+        raise AssertionError(f"unsupported adversarial mode {mode!r}")
+
+    monkeypatch.setattr(terminal_action, "_ridge_delta", adversarial_delta)
+    return _terminal_result()
+
+
 def _capsule_reference(
     tmp_path,
     result,
@@ -470,16 +497,34 @@ def test_bank_persists_every_candidate_without_metric_elimination(
     assert len(reference.candidate_ids) == 36
     assert reference.candidate_ids == tuple(compiled_result.frontier_down_weights)
     assert set(bank.candidate_weights) == set(compiled_result.frontier_down_weights)
+    assert bank.manifest["complete_terminal_frontier_candidate_count"] == 36
+    assert bank.manifest["structurally_eligible_candidate_count"] == 36
+    assert bank.manifest["structurally_ineligible_candidate_ids"] == ()
+    assert bank.manifest["structurally_ineligible_candidate_count"] == 0
+    assert bank.manifest["all_structurally_eligible_candidates_exported"] is True
+    assert bank.manifest["structurally_ineligible_candidates_exported"] is False
+    assert bank.manifest["structural_safety_is_only_candidate_veto"] is True
     assert bank.manifest["all_retained_candidates_exported"] is True
     assert bank.manifest["candidate_metric_threshold_used_for_export"] is False
     assert bank.manifest["candidate_metric_threshold_used_for_eligibility"] is False
     assert bank.manifest["numeric_metrics_have_final_intelligence_authority"] is False
+    assert bank.manifest["final_selection_status"] == (
+        "deferred-to-manual-whole-response-review"
+    )
+    assert bank.manifest["final_selected_candidate_id"] is None
+    assert bank.manifest["diagnostic_order_is_provisional"] is True
+    assert bank.manifest["diagnostic_order_has_final_selection_authority"] is False
+    assert bank.receipt["final_selection_status"] == (
+        "deferred-to-manual-whole-response-review"
+    )
+    assert bank.receipt["final_selected_candidate_id"] is None
     assert bank.manifest["body_recipe_id"] == "fit_guided"
     assert bank.receipt["body_recipe_id"] == "fit_guided"
     assert tuple(bank.manifest["complete_body_recipe_candidate_ids"]) == (
         "fit_guided",
         "full_strength_structural",
         "residual_writer",
+        "source_producer_residual_writer",
     )
     assert bank.manifest["one_terminal_frontier_bank_contains_one_body_recipe"] is True
     assert bank.manifest["other_body_recipes_require_sealed_foundation_replay"] is True
@@ -499,6 +544,76 @@ def test_bank_persists_every_candidate_without_metric_elimination(
             if value["candidate_id"] == candidate_id
         )
         assert frontier._terminal_tensor_sha256(tensor) == record["state_sha256"]
+
+
+@pytest.mark.parametrize("mode", ("no-op", "incomplete-coverage"))
+def test_bank_exports_exact_structural_subset_without_numeric_elimination(
+    tmp_path,
+    monkeypatch,
+    mode,
+) -> None:
+    result = _terminal_result_with_invalid_first_ridge(monkeypatch, mode=mode)
+    report_records = {
+        value["candidate_id"]: value for value in result.report["frontier"][1:]
+    }
+    structurally_eligible = tuple(
+        candidate_id
+        for candidate_id in result.frontier_down_weights
+        if report_records[candidate_id]["structurally_eligible"] is True
+    )
+    structurally_ineligible = tuple(
+        candidate_id
+        for candidate_id in result.frontier_down_weights
+        if report_records[candidate_id]["structurally_eligible"] is False
+    )
+
+    assert len(result.frontier_down_weights) == 36
+    assert len(structurally_ineligible) == len(result.policy.alpha_frontier) - 1
+    assert any(
+        report_records[candidate_id]["numeric_diagnostic_gate_miss"] is True
+        for candidate_id in structurally_eligible
+    )
+    if mode == "no-op":
+        assert all(
+            report_records[candidate_id]["effectful_nonincumbent"] is False
+            for candidate_id in structurally_ineligible
+        )
+    else:
+        assert all(
+            report_records[candidate_id]["effectful_nonincumbent"] is True
+            and report_records[candidate_id]["structural_safety_passed"] is False
+            for candidate_id in structurally_ineligible
+        )
+
+    _capsule, reference, bank = _publish_bank(tmp_path, monkeypatch, result)
+
+    assert reference.candidate_ids == structurally_eligible
+    assert set(bank.candidate_weights) == set(structurally_eligible)
+    assert bank.manifest["complete_terminal_frontier_candidate_count"] == 36
+    assert tuple(bank.manifest["complete_terminal_frontier_candidate_ids"]) == tuple(
+        result.frontier_down_weights
+    )
+    assert tuple(bank.manifest["structurally_eligible_candidate_ids"]) == (
+        structurally_eligible
+    )
+    assert tuple(bank.manifest["structurally_ineligible_candidate_ids"]) == (
+        structurally_ineligible
+    )
+    assert bank.manifest["all_structurally_eligible_candidates_exported"] is True
+    assert bank.manifest["structurally_ineligible_candidates_exported"] is False
+    assert bank.manifest["structural_safety_is_only_candidate_veto"] is True
+    assert bank.manifest["candidate_metric_threshold_used_for_export"] is False
+    assert bank.manifest["candidate_metric_threshold_used_for_eligibility"] is False
+
+
+def test_nonfinite_frontier_writer_fails_before_bank_export(
+    monkeypatch,
+) -> None:
+    with pytest.raises(
+        terminal_action.Lfm2CpcfTerminalActionResidualError,
+        match="nonfinite",
+    ):
+        _terminal_result_with_invalid_first_ridge(monkeypatch, mode="nonfinite")
 
 
 def test_bank_rejects_capsule_relabeling(
@@ -608,6 +723,76 @@ def test_bank_rejects_changed_payload_bytes(
         )
 
 
+def test_bank_rejects_fully_resealed_structural_inventory_omission(
+    tmp_path,
+    monkeypatch,
+    compiled_result,
+) -> None:
+    capsule, reference, _bank = _publish_bank(
+        tmp_path,
+        monkeypatch,
+        compiled_result,
+    )
+    manifest_path = reference.path / "frontier-manifest.json"
+    receipt_path = reference.path / "frontier-receipt.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    omitted = manifest["candidate_ids"].pop()
+    manifest["candidate_count"] -= 1
+    manifest["structurally_eligible_candidate_ids"].remove(omitted)
+    manifest["structurally_eligible_candidate_count"] -= 1
+    manifest["candidate_state_sha256"].pop(omitted)
+    manifest.pop("manifest_sha256")
+    manifest["manifest_sha256"] = frontier.canonical_sha256(manifest)
+    manifest_raw = (
+        json.dumps(
+            manifest,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        + b"\n"
+    )
+    manifest_path.write_bytes(manifest_raw)
+
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["manifest_file"] = {
+        "path": "frontier-manifest.json",
+        "size_bytes": len(manifest_raw),
+        "sha256": hashlib.sha256(manifest_raw).hexdigest(),
+    }
+    receipt["manifest_sha256"] = manifest["manifest_sha256"]
+    receipt["candidate_ids"].remove(omitted)
+    receipt["candidate_count"] -= 1
+    receipt["structurally_eligible_candidate_ids"].remove(omitted)
+    receipt["structurally_eligible_candidate_count"] -= 1
+    receipt.pop("receipt_sha256")
+    receipt["receipt_sha256"] = frontier.canonical_sha256(receipt)
+    receipt_raw = (
+        json.dumps(
+            receipt,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        + b"\n"
+    )
+    receipt_path.write_bytes(receipt_raw)
+
+    with pytest.raises(
+        frontier.Lfm2SemanticTerminalFrontierError,
+        match="manifest contract",
+    ):
+        frontier.load_lfm2_semantic_terminal_frontier_bank(
+            reference.path,
+            expected_receipt_file_sha256=hashlib.sha256(receipt_raw).hexdigest(),
+            expected_receipt_sha256=receipt["receipt_sha256"],
+            expected_preterminal_capsule_receipt_sha256=capsule.receipt_sha256,
+            expected_terminal_result_sha256=compiled_result.result_sha256,
+        )
+
+
 class _TinyFeedForward(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -708,8 +893,96 @@ def _fake_checkpoint_publisher(*, target_model, output_directory, **kwargs):
 
 
 @pytest.mark.parametrize(
+    "mode",
+    ("nonfinite", "incomplete-coverage", "no-op"),
+)
+def test_materializer_reauthenticates_structural_eligibility_before_copy(
+    tmp_path,
+    monkeypatch,
+    compiled_result,
+    mode,
+) -> None:
+    capsule_reference, _bank_reference, bank = _publish_bank(
+        tmp_path,
+        monkeypatch,
+        compiled_result,
+    )
+    capsule = _loaded_capsule(capsule_reference, bank)
+    candidate_id = bank.reference.candidate_ids[0]
+    candidate = bank.candidate_weights[candidate_id].clone()
+    if mode == "nonfinite":
+        candidate[0, 0] = torch.nan
+    elif mode == "incomplete-coverage":
+        candidate.zero_()
+        candidate[0, 0] = 1.0
+    else:
+        candidate.zero_()
+    report = frontier._deep_thaw(bank.terminal_result_report)
+    record = next(
+        value
+        for value in report["frontier"]
+        if value["candidate_id"] == candidate_id
+    )
+    coverage = terminal_action._terminal_writer_structural_coverage(candidate)
+    record.update(
+        {
+            "state_sha256": frontier._terminal_tensor_sha256(candidate),
+            "eligible": True,
+            "structurally_eligible": True,
+            "effectful_nonincumbent": True,
+            "structural_safety_passed": True,
+            "weight_norm_gate_passed": True,
+            "structural_coverage": dict(coverage),
+            "structural_coverage_sha256": coverage["coverage_sha256"],
+        }
+    )
+    corrupted_weights = dict(bank.candidate_weights)
+    corrupted_weights[candidate_id] = candidate
+    corrupted_bank = frontier.Lfm2SemanticTerminalFrontierBank(
+        path=bank.path,
+        candidate_weights=MappingProxyType(corrupted_weights),
+        terminal_result_report=MappingProxyType(report),
+        manifest=bank.manifest,
+        receipt=bank.receipt,
+        reference=bank.reference,
+    )
+    monkeypatch.setattr(
+        frontier,
+        "publish_lfm2_semantic_postfold_checkpoint",
+        lambda **_kwargs: pytest.fail(
+            "structurally invalid candidate reached checkpoint publication"
+        ),
+    )
+
+    with pytest.raises(
+        frontier.Lfm2SemanticTerminalFrontierError,
+        match="structural eligibility veto",
+    ):
+        frontier._materialize_loaded_candidate(
+            capsule=capsule,
+            bank=corrupted_bank,
+            candidate_id=candidate_id,
+            output_directory=tmp_path / "invalid-candidate",
+            device="cpu",
+            dtype="bfloat16",
+        )
+
+    assert not (tmp_path / "invalid-candidate").exists()
+    assert int(
+        torch.count_nonzero(
+            capsule.target_model.model.layers[-1].feed_forward.w2.weight
+        ).item()
+    ) == 0
+
+
+@pytest.mark.parametrize(
     "recipe_id",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
 )
 def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
     tmp_path,
@@ -768,7 +1041,7 @@ def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
     assert receipt["holistic_review_complete"] is False
     assert receipt["materialization_is_not_intelligence_acceptance"] is True
     assert receipt["body_recipe_id"] == recipe_id
-    assert receipt["complete_body_recipe_candidate_count"] == 3
+    assert receipt["complete_body_recipe_candidate_count"] == 4
     assert receipt["one_terminal_frontier_bank_contains_one_body_recipe"] is True
     assert receipt["other_body_recipes_require_sealed_foundation_replay"] is True
     assert receipt["standalone_child"] is True
@@ -1120,6 +1393,19 @@ def test_capsule_resume_orchestrator_uses_two_argument_export_seam(
         )
         body = {
             "terminal_result": compiled_result.as_dict(),
+            "terminal_review_pending_schema": (
+                compiled_result.report["review_pending_schema"]
+            ),
+            "final_selection_status": "deferred-to-manual-whole-response-review",
+            "final_selected_candidate_id": None,
+            "final_selection_performed": False,
+            "automatic_candidate_acceptance_performed": False,
+            "candidate_published_before_manual_review": False,
+            "manual_whole_response_review_required": True,
+            "terminal_writer_install_count": 0,
+            "terminal_writer_mutation_count": 0,
+            "accepted": False,
+            "terminal_publication_decision_accepted": False,
             "terminal_frontier_export_context": dict(export_context),
             "terminal_frontier_export_context_sha256": export_context["context_sha256"],
             "terminal_frontier_export": reference.as_dict(),

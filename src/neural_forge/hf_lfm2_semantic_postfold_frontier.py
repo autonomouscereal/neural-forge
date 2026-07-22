@@ -52,6 +52,7 @@ from neural_forge.hf_lfm2_cpcf_resume_artifact import (
     _write_canonical_json,
 )
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+    LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA,
     LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA,
     LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA,
     Lfm2CpcfTerminalActionPolicy,
@@ -82,6 +83,7 @@ from neural_forge.hf_lfm2_semantic_postfold import (
 from neural_forge.hf_lfm2_semantic_body_recipe import (
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
     Lfm2SemanticBodyRecipe,
+    is_supported_lfm2_semantic_body_recipe_inventory,
     resolve_lfm2_semantic_body_recipe,
 )
 from neural_forge.hf_lfm2_semantic_preterminal_capsule import (
@@ -364,6 +366,181 @@ def _frontier_records(
     return ids, records
 
 
+def _structural_candidate_inventory(
+    report: Mapping[str, Any],
+) -> tuple[
+    tuple[str, ...],
+    tuple[str, ...],
+    tuple[str, ...],
+    dict[str, dict[str, Any]],
+]:
+    """Return the complete frontier and the exact structural-review subset."""
+
+    all_candidate_ids, records = _frontier_records(report)
+    structurally_eligible_ids = tuple(
+        candidate_id
+        for candidate_id in all_candidate_ids
+        if records[candidate_id].get("structurally_eligible") is True
+    )
+    structurally_ineligible_ids = tuple(
+        candidate_id
+        for candidate_id in all_candidate_ids
+        if candidate_id not in set(structurally_eligible_ids)
+    )
+    diagnostic_order = report.get("diagnostic_order_candidate_ids")
+    if (
+        report.get("structural_safety_is_only_candidate_veto") is not True
+        or report.get("numeric_metrics_used_for_candidate_eligibility") is not False
+        or report.get("numeric_thresholds_used_for_candidate_eligibility") is not False
+        or report.get("numeric_thresholds_used_for_publication") is not False
+        or report.get("fit_metrics_used_for_structural_eligibility") is not False
+        or report.get("fit_metric_thresholds_used_for_candidate_eligibility")
+        is not False
+        or report.get("fit_metric_thresholds_used_for_publication") is not False
+        or report.get("structurally_eligible_frontier_count")
+        != len(structurally_eligible_ids)
+        or not isinstance(diagnostic_order, list)
+        or len(diagnostic_order) != len(structurally_eligible_ids)
+        or len(set(diagnostic_order)) != len(diagnostic_order)
+        or set(diagnostic_order) != set(structurally_eligible_ids)
+        or report.get("diagnostic_order_candidate_count")
+        != len(structurally_eligible_ids)
+        or not structurally_eligible_ids
+    ):
+        raise Lfm2SemanticTerminalFrontierError(
+            "Terminal frontier does not expose one exact structural-only review "
+            "inventory."
+        )
+    for candidate_id in all_candidate_ids:
+        record = records[candidate_id]
+        eligible = candidate_id in structurally_eligible_ids
+        if (
+            record.get("eligible") is not eligible
+            or record.get("structurally_eligible") is not eligible
+            or (
+                eligible
+                and (
+                    record.get("effectful_nonincumbent") is not True
+                    or record.get("structural_safety_passed") is not True
+                    or record.get("weight_norm_gate_passed") is not True
+                )
+            )
+            or record.get("weight_delta_threshold_used_for_eligibility") is not False
+            or record.get("fit_thresholds_used_for_eligibility") is not False
+            or record.get("fit_check_thresholds_used_for_eligibility") is not False
+            or record.get("selection_thresholds_used_for_eligibility") is not False
+            or record.get("numeric_thresholds_used_for_publication") is not False
+            or record.get("numeric_metrics_used_for_final_selection") is not False
+            or record.get("numeric_metrics_have_final_intelligence_authority")
+            is not False
+        ):
+            raise Lfm2SemanticTerminalFrontierError(
+                f"Terminal candidate {candidate_id!r} has inconsistent structural "
+                "eligibility provenance."
+            )
+    return (
+        all_candidate_ids,
+        structurally_eligible_ids,
+        structurally_ineligible_ids,
+        records,
+    )
+
+
+def _authenticate_retained_structural_candidate(
+    candidate_id: str,
+    tensor: Any,
+    record: Mapping[str, Any],
+    *,
+    expected_shape: tuple[int, int] | None = None,
+    incumbent_state_sha256: str | None = None,
+) -> None:
+    """Prove a persisted/materialized writer passes the sole structural veto."""
+
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - optional boundary
+        raise RuntimeError("PyTorch is required for frontier banks.") from exc
+    coverage_value = record.get("structural_coverage")
+    if not isinstance(coverage_value, Mapping):
+        raise Lfm2SemanticTerminalFrontierError(
+            f"Retained terminal candidate {candidate_id!r} omitted structural proof."
+        )
+    coverage = dict(coverage_value)
+    coverage_sha256 = coverage.pop("coverage_sha256", None)
+    if not isinstance(tensor, torch.Tensor) or tensor.ndim != 2:
+        raise Lfm2SemanticTerminalFrontierError(
+            f"Retained terminal candidate {candidate_id!r} is not a dense matrix."
+        )
+    shape = tuple(int(size) for size in tensor.shape)
+    required_shape = shape if expected_shape is None else expected_shape
+    actual_finite_count = int(torch.isfinite(tensor).sum().item())
+    actual_nonzero = tensor.ne(0)
+    actual_nonzero_count = int(actual_nonzero.sum().item())
+    actual_output_coverage = int(actual_nonzero.any(dim=1).sum().item())
+    actual_source_coverage = int(actual_nonzero.any(dim=0).sum().item())
+    expected_storage_bytes = int(tensor.numel() * tensor.element_size())
+    exact_private_storage = bool(
+        tensor.device.type == "cpu"
+        and tensor.layout == torch.strided
+        and tensor.dtype == torch.bfloat16
+        and tensor.is_contiguous()
+        and int(tensor.storage_offset()) == 0
+        and int(tensor.untyped_storage().nbytes()) == expected_storage_bytes
+        and tensor.requires_grad is False
+        and tensor.grad_fn is None
+    )
+    state_sha256 = _terminal_tensor_sha256(tensor)
+    complete = bool(
+        shape == required_shape
+        and actual_finite_count == int(tensor.numel())
+        and actual_nonzero_count > 0
+        and actual_output_coverage == required_shape[0]
+        and actual_source_coverage == required_shape[1]
+        and exact_private_storage
+    )
+    if (
+        not complete
+        or (incumbent_state_sha256 is not None and state_sha256 == incumbent_state_sha256)
+        or record.get("state_sha256") != state_sha256
+        or record.get("eligible") is not True
+        or record.get("structurally_eligible") is not True
+        or record.get("effectful_nonincumbent") is not True
+        or record.get("structural_safety_passed") is not True
+        or record.get("weight_norm_gate_passed") is not True
+        or coverage_sha256 != canonical_sha256(coverage)
+        or record.get("structural_coverage_sha256") != coverage_sha256
+        or coverage_value.get("schema")
+        != "neural-forge-lfm2-terminal-w2-cold-start-coverage-v1"
+        or coverage_value.get("tensor_sha256") != state_sha256
+        or coverage_value.get("shape") != list(required_shape)
+        or coverage_value.get("dtype") != "bfloat16"
+        or coverage_value.get("element_count") != int(tensor.numel())
+        or coverage_value.get("finite_element_count") != actual_finite_count
+        or coverage_value.get("all_elements_finite") is not True
+        or coverage_value.get("nonzero_element_count") != actual_nonzero_count
+        or coverage_value.get("covered_target_output_count")
+        != actual_output_coverage
+        or coverage_value.get("all_target_outputs_covered") is not True
+        or coverage_value.get("covered_source_feature_count")
+        != actual_source_coverage
+        or coverage_value.get("all_source_features_covered") is not True
+        or coverage_value.get("contiguous_cpu_storage") is not True
+        or coverage_value.get("storage_offset") != 0
+        or coverage_value.get("storage_bytes") != expected_storage_bytes
+        or coverage_value.get("expected_storage_bytes") != expected_storage_bytes
+        or coverage_value.get("detached_without_grad") is not True
+        or coverage_value.get("owns_exact_storage_allocation") is not True
+        or coverage_value.get("complete_dense_writer_coverage") is not True
+        or coverage_value.get("complete_dense_writer_structural_safety") is not True
+        or coverage_value.get("numeric_parent_child_weight_equality_required")
+        is not False
+    ):
+        raise Lfm2SemanticTerminalFrontierError(
+            f"Retained terminal candidate {candidate_id!r} fails the sole "
+            "finite/dense/effectful structural eligibility veto."
+        )
+
+
 def _authenticated_export_context(
     value: Mapping[str, Any],
     *,
@@ -522,8 +699,9 @@ def _authenticate_exact_zero_capsule_frontier(
         or terminal_report.get("candidate_eligibility_basis")
         != "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
         or terminal_report.get("structural_safety_is_only_candidate_veto") is not True
-        or terminal_report.get("numeric_metrics_used_for_candidate_ordering")
+        or terminal_report.get("numeric_metrics_used_for_diagnostic_ordering")
         is not True
+        or terminal_report.get("numeric_metrics_used_for_final_selection") is not False
         or terminal_report.get("numeric_metrics_used_for_candidate_eligibility")
         is not False
         or terminal_report.get("numeric_thresholds_used_for_candidate_eligibility")
@@ -550,11 +728,29 @@ def _authenticate_exact_zero_capsule_frontier(
         or terminal_report.get(
             "published_writer_is_structurally_safe_effectful_nonincumbent"
         )
+        is not False
+        or terminal_report.get("published_writer_is_incumbent_pending_manual_review")
         is not True
-        or terminal_report.get("selected_nonincumbent") is not True
-        or terminal_report.get("accepted") is not True
+        or terminal_report.get("selected_candidate_id") != "incumbent"
+        or terminal_report.get("selected_nonincumbent") is not False
+        or terminal_report.get("accepted") is not False
         or terminal_report.get("rollback_performed") is not False
-        or terminal_report.get("published_is_incumbent") is not False
+        or terminal_report.get("published_is_incumbent") is not True
+        or output_hashes.get("selected") != terminal_zero_sha
+        or output_hashes.get("published") != terminal_zero_sha
+        or terminal_report.get("final_selection_status")
+        != "deferred-to-manual-whole-response-review"
+        or terminal_report.get("review_pending_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+        or terminal_report.get("final_selected_candidate_id") is not None
+        or terminal_report.get("final_selection_performed") is not False
+        or terminal_report.get("automatic_candidate_selection_performed") is not False
+        or terminal_report.get("automatic_candidate_acceptance_performed") is not False
+        or terminal_report.get("candidate_published_before_manual_review") is not False
+        or terminal_report.get("manual_whole_response_review_required") is not True
+        or terminal_report.get("diagnostic_order_has_final_selection_authority")
+        is not False
+        or terminal_report.get("diagnostic_order_is_provisional") is not True
         or terminal_report.get("fit_metrics_used_for_structural_eligibility")
         is not False
         or terminal_report.get("fit_metric_thresholds_used_for_candidate_eligibility")
@@ -572,7 +768,8 @@ def _authenticate_exact_zero_capsule_frontier(
         or not isinstance(validation, Mapping)
         or validation.get("heldout_diagnostic_only") is not True
         or validation.get("publication_gate_applied") is not False
-        or validation.get("used_only_for_frozen_candidate_acceptance") is not False
+        or validation.get("used_for_final_selection") is not False
+        or validation.get("used_for_candidate_acceptance") is not False
         or not isinstance(frontier, list)
         or not frontier
         or not isinstance(frontier[0], Mapping)
@@ -680,7 +877,8 @@ def _authenticate_exact_zero_capsule_frontier(
             or record.get("fit_check_thresholds_used_for_eligibility") is not False
             or record.get("selection_thresholds_used_for_eligibility") is not False
             or record.get("numeric_thresholds_used_for_publication") is not False
-            or record.get("numeric_metrics_used_for_candidate_ordering") is not True
+            or record.get("numeric_metrics_used_for_diagnostic_ordering") is not True
+            or record.get("numeric_metrics_used_for_final_selection") is not False
             or record.get("numeric_metrics_have_final_intelligence_authority")
             is not False
         ):
@@ -688,22 +886,47 @@ def _authenticate_exact_zero_capsule_frontier(
                 f"Terminal frontier writer {candidate_id!r} has invalid structural "
                 "nonveto provenance."
             )
-    selected_id = terminal_report.get("selected_candidate_id")
-    selected_record = records.get(str(selected_id))
+    eligible_records = [
+        record for record in records.values() if record.get("structurally_eligible") is True
+    ]
+    try:
+        diagnostic_order = [
+            str(record["candidate_id"])
+            for record in sorted(
+                eligible_records,
+                key=lambda record: (
+                    tuple(record["diagnostic_ordering_key"]),
+                    str(record["candidate_id"]),
+                ),
+            )
+        ]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise Lfm2SemanticTerminalFrontierError(
+            "Terminal frontier diagnostic ordering is malformed."
+        ) from exc
+    diagnostic_lead_id = terminal_report.get("diagnostic_lead_candidate_id")
+    diagnostic_lead_record = records.get(str(diagnostic_lead_id))
     if (
         len(records) != len(candidate_weights)
         or terminal_report.get("structurally_eligible_frontier_count")
         != structurally_eligible_count
-        or not isinstance(selected_record, Mapping)
-        or selected_record.get("eligible") is not True
-        or selected_record.get("effectful_nonincumbent") is not True
-        or selected_record.get("structural_safety_passed") is not True
-        or output_hashes.get("selected") != selected_record.get("state_sha256")
-        or output_hashes.get("published") != selected_record.get("state_sha256")
+        or terminal_report.get("diagnostic_order_candidate_ids") != diagnostic_order
+        or terminal_report.get("diagnostic_order_candidate_count")
+        != len(diagnostic_order)
+        or not diagnostic_order
+        or diagnostic_lead_id != diagnostic_order[0]
+        or not isinstance(diagnostic_lead_record, Mapping)
+        or diagnostic_lead_record.get("eligible") is not True
+        or diagnostic_lead_record.get("effectful_nonincumbent") is not True
+        or diagnostic_lead_record.get("structural_safety_passed") is not True
+        or terminal_report.get("diagnostic_lead_state_sha256")
+        != diagnostic_lead_record.get("state_sha256")
+        or terminal_report.get("diagnostic_lead_has_final_selection_authority")
+        is not False
     ):
         raise Lfm2SemanticTerminalFrontierError(
-            "Terminal frontier selected writer is not the authenticated structural "
-            "nonveto publication."
+            "Terminal frontier diagnostic order is not the authenticated structural "
+            "review queue."
         )
 
 
@@ -958,34 +1181,40 @@ def publish_lfm2_semantic_terminal_frontier_bank(
         load_payload=False,
     )
     report = _terminal_report(result)
-    candidate_ids, records = _frontier_records(report)
-    if tuple(result.frontier_down_weights) != candidate_ids:
+    (
+        complete_frontier_candidate_ids,
+        candidate_ids,
+        structurally_ineligible_candidate_ids,
+        records,
+    ) = _structural_candidate_inventory(report)
+    if tuple(result.frontier_down_weights) != complete_frontier_candidate_ids:
         raise Lfm2SemanticTerminalFrontierError(
             "Terminal result tensor bank order differs from its report."
         )
-    payload, entries = _normalize_tensors(
-        result.frontier_down_weights,
-        name="terminal frontier writer bank",
-        clone=True,
-    )
-    if set(payload) != set(candidate_ids):
-        raise Lfm2SemanticTerminalFrontierError(
-            "Terminal frontier tensor bank is incomplete."
-        )
-    for candidate_id in candidate_ids:
-        if (
-            _terminal_tensor_sha256(payload[candidate_id])
-            != records[candidate_id]["state_sha256"]
-        ):
-            raise Lfm2SemanticTerminalFrontierError(
-                f"Terminal candidate {candidate_id!r} differs from its result report."
-            )
     capsule_manifest = opened_capsule["manifest"]
     _authenticate_exact_zero_capsule_frontier(
         capsule_manifest=capsule_manifest,
         terminal_report=report,
-        candidate_weights=payload,
+        candidate_weights=result.frontier_down_weights,
     )
+    payload, entries = _normalize_tensors(
+        {
+            candidate_id: result.frontier_down_weights[candidate_id]
+            for candidate_id in candidate_ids
+        },
+        name="structurally eligible terminal frontier writer bank",
+        clone=True,
+    )
+    incumbent_state_sha256 = report["output_state_sha256"]["incumbent"]
+    expected_shape = tuple(capsule_manifest["model"]["final_w2_shape"])
+    for candidate_id in candidate_ids:
+        _authenticate_retained_structural_candidate(
+            candidate_id,
+            payload[candidate_id],
+            records[candidate_id],
+            expected_shape=expected_shape,
+            incumbent_state_sha256=incumbent_state_sha256,
+        )
     authenticated_export_context = _authenticated_export_context(
         export_context,
         terminal_result=result,
@@ -1070,6 +1299,13 @@ def publish_lfm2_semantic_terminal_frontier_bank(
             ),
             "terminal_result_report": report,
             "terminal_result_sha256": result.result_sha256,
+            "terminal_review_pending_schema": (
+                LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+            ),
+            "final_selection_status": "deferred-to-manual-whole-response-review",
+            "final_selected_candidate_id": None,
+            "diagnostic_order_is_provisional": True,
+            "diagnostic_order_has_final_selection_authority": False,
             "terminal_policy_sha256": result.policy.authentication_sha256,
             "terminal_compiler_input_binding_sha256": compiler_binding_sha,
             "frontier_payload": payload_record,
@@ -1079,10 +1315,27 @@ def publish_lfm2_semantic_terminal_frontier_bank(
                 for candidate_id in candidate_ids
             },
             "candidate_count": len(candidate_ids),
+            "complete_terminal_frontier_candidate_ids": list(
+                complete_frontier_candidate_ids
+            ),
+            "complete_terminal_frontier_candidate_count": len(
+                complete_frontier_candidate_ids
+            ),
+            "structurally_eligible_candidate_ids": list(candidate_ids),
+            "structurally_eligible_candidate_count": len(candidate_ids),
+            "structurally_ineligible_candidate_ids": list(
+                structurally_ineligible_candidate_ids
+            ),
+            "structurally_ineligible_candidate_count": len(
+                structurally_ineligible_candidate_ids
+            ),
             "incumbent_exported": False,
             "exact_zero_cold_start": True,
             "incumbent_matches_preterminal_capsule_final_w2": True,
             "all_retained_candidates_exported": True,
+            "all_structurally_eligible_candidates_exported": True,
+            "structurally_ineligible_candidates_exported": False,
+            "structural_safety_is_only_candidate_veto": True,
             "candidate_metric_threshold_used_for_export": False,
             "candidate_metric_threshold_used_for_eligibility": False,
             "numeric_metrics_preserved_as_diagnostics": True,
@@ -1144,11 +1397,35 @@ def publish_lfm2_semantic_terminal_frontier_bank(
                 else {}
             ),
             "terminal_result_sha256": result.result_sha256,
+            "terminal_review_pending_schema": (
+                LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+            ),
+            "final_selection_status": "deferred-to-manual-whole-response-review",
+            "final_selected_candidate_id": None,
+            "diagnostic_order_is_provisional": True,
+            "diagnostic_order_has_final_selection_authority": False,
             "terminal_policy_sha256": result.policy.authentication_sha256,
             "terminal_compiler_input_binding_sha256": compiler_binding_sha,
             "candidate_ids": list(candidate_ids),
             "candidate_count": len(candidate_ids),
+            "complete_terminal_frontier_candidate_ids": list(
+                complete_frontier_candidate_ids
+            ),
+            "complete_terminal_frontier_candidate_count": len(
+                complete_frontier_candidate_ids
+            ),
+            "structurally_eligible_candidate_ids": list(candidate_ids),
+            "structurally_eligible_candidate_count": len(candidate_ids),
+            "structurally_ineligible_candidate_ids": list(
+                structurally_ineligible_candidate_ids
+            ),
+            "structurally_ineligible_candidate_count": len(
+                structurally_ineligible_candidate_ids
+            ),
             "all_retained_candidates_exported": True,
+            "all_structurally_eligible_candidates_exported": True,
+            "structurally_ineligible_candidates_exported": False,
+            "structural_safety_is_only_candidate_veto": True,
             "exact_zero_cold_start": True,
             "incumbent_matches_preterminal_capsule_final_w2": True,
             "candidate_metric_threshold_used_for_export": False,
@@ -1274,6 +1551,13 @@ def _open_terminal_frontier_bank(
         or receipt.get("artifact_kind") != _BANK_ARTIFACT_KIND
         or receipt.get("preterminal_capsule_receipt_sha256") != expected_capsule_sha
         or receipt.get("terminal_result_sha256") != expected_result_sha
+        or receipt.get("terminal_review_pending_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+        or receipt.get("final_selection_status")
+        != "deferred-to-manual-whole-response-review"
+        or receipt.get("final_selected_candidate_id") is not None
+        or receipt.get("diagnostic_order_is_provisional") is not True
+        or receipt.get("diagnostic_order_has_final_selection_authority") is not False
         or receipt.get("authenticated_source_roots_sha256")
         != receipt_source_roots.get("source_roots_sha256")
         or any(
@@ -1284,10 +1568,11 @@ def _open_terminal_frontier_bank(
         or receipt.get("exact_zero_cold_start") is not True
         or receipt.get("incumbent_matches_preterminal_capsule_final_w2") is not True
         or receipt.get("candidate_metric_threshold_used_for_export") is not False
-        or receipt.get("complete_body_recipe_candidate_ids")
-        != list(LFM2_SEMANTIC_BODY_RECIPE_IDS)
-        or receipt.get("complete_body_recipe_candidate_count")
-        != len(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or not is_supported_lfm2_semantic_body_recipe_inventory(
+            receipt.get("complete_body_recipe_candidate_ids"),
+            receipt.get("complete_body_recipe_candidate_count"),
+            materialized_recipe_id=receipt.get("materialized_body_recipe_id"),
+        )
         or receipt.get("materialized_body_recipe_id") != receipt_recipe.recipe_id
         or receipt.get("one_terminal_frontier_bank_contains_one_body_recipe")
         is not True
@@ -1341,7 +1626,12 @@ def _open_terminal_frontier_bank(
         field_name="result_sha256",
         label="persisted terminal action result",
     )
-    candidate_ids, records = _frontier_records(report)
+    (
+        complete_frontier_candidate_ids,
+        candidate_ids,
+        structurally_ineligible_candidate_ids,
+        records,
+    ) = _structural_candidate_inventory(report)
     export_context = manifest.get("terminal_frontier_export_context")
     manifest_source_roots_value = manifest.get("authenticated_source_roots")
     if not isinstance(manifest_source_roots_value, Mapping):
@@ -1356,7 +1646,25 @@ def _open_terminal_frontier_bank(
         or manifest.get("artifact_kind") != _BANK_ARTIFACT_KIND
         or manifest.get("manifest_sha256") != receipt.get("manifest_sha256")
         or manifest.get("terminal_result_sha256") != expected_result_sha
+        or manifest.get("terminal_review_pending_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+        or manifest.get("final_selection_status")
+        != "deferred-to-manual-whole-response-review"
+        or manifest.get("final_selected_candidate_id") is not None
+        or manifest.get("diagnostic_order_is_provisional") is not True
+        or manifest.get("diagnostic_order_has_final_selection_authority") is not False
         or report.get("result_sha256") != expected_result_sha
+        or report.get("review_pending_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+        or report.get("final_selection_status")
+        != "deferred-to-manual-whole-response-review"
+        or report.get("final_selected_candidate_id") is not None
+        or report.get("final_selection_performed") is not False
+        or report.get("automatic_candidate_selection_performed") is not False
+        or report.get("automatic_candidate_acceptance_performed") is not False
+        or report.get("candidate_published_before_manual_review") is not False
+        or report.get("diagnostic_order_is_provisional") is not True
+        or report.get("diagnostic_order_has_final_selection_authority") is not False
         or manifest_source_roots != receipt_source_roots
         or manifest.get("authenticated_source_roots_sha256")
         != manifest_source_roots.get("source_roots_sha256")
@@ -1364,10 +1672,35 @@ def _open_terminal_frontier_bank(
         or manifest.get("candidate_count") != len(candidate_ids)
         or receipt.get("candidate_ids") != list(candidate_ids)
         or receipt.get("candidate_count") != len(candidate_ids)
-        or manifest.get("complete_body_recipe_candidate_ids")
-        != list(LFM2_SEMANTIC_BODY_RECIPE_IDS)
-        or manifest.get("complete_body_recipe_candidate_count")
-        != len(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or manifest.get("complete_terminal_frontier_candidate_ids")
+        != list(complete_frontier_candidate_ids)
+        or manifest.get("complete_terminal_frontier_candidate_count")
+        != len(complete_frontier_candidate_ids)
+        or receipt.get("complete_terminal_frontier_candidate_ids")
+        != list(complete_frontier_candidate_ids)
+        or receipt.get("complete_terminal_frontier_candidate_count")
+        != len(complete_frontier_candidate_ids)
+        or manifest.get("structurally_eligible_candidate_ids")
+        != list(candidate_ids)
+        or manifest.get("structurally_eligible_candidate_count")
+        != len(candidate_ids)
+        or receipt.get("structurally_eligible_candidate_ids")
+        != list(candidate_ids)
+        or receipt.get("structurally_eligible_candidate_count")
+        != len(candidate_ids)
+        or manifest.get("structurally_ineligible_candidate_ids")
+        != list(structurally_ineligible_candidate_ids)
+        or manifest.get("structurally_ineligible_candidate_count")
+        != len(structurally_ineligible_candidate_ids)
+        or receipt.get("structurally_ineligible_candidate_ids")
+        != list(structurally_ineligible_candidate_ids)
+        or receipt.get("structurally_ineligible_candidate_count")
+        != len(structurally_ineligible_candidate_ids)
+        or not is_supported_lfm2_semantic_body_recipe_inventory(
+            manifest.get("complete_body_recipe_candidate_ids"),
+            manifest.get("complete_body_recipe_candidate_count"),
+            materialized_recipe_id=manifest.get("materialized_body_recipe_id"),
+        )
         or manifest.get("materialized_body_recipe_id") != manifest_recipe.recipe_id
         or manifest.get("one_terminal_frontier_bank_contains_one_body_recipe")
         is not True
@@ -1392,6 +1725,12 @@ def _open_terminal_frontier_bank(
         or manifest.get("exact_zero_cold_start") is not True
         or manifest.get("incumbent_matches_preterminal_capsule_final_w2") is not True
         or manifest.get("all_retained_candidates_exported") is not True
+        or manifest.get("all_structurally_eligible_candidates_exported") is not True
+        or manifest.get("structurally_ineligible_candidates_exported") is not False
+        or manifest.get("structural_safety_is_only_candidate_veto") is not True
+        or receipt.get("all_structurally_eligible_candidates_exported") is not True
+        or receipt.get("structurally_ineligible_candidates_exported") is not False
+        or receipt.get("structural_safety_is_only_candidate_veto") is not True
         or manifest.get("candidate_metric_threshold_used_for_export") is not False
         or manifest.get("candidate_metric_threshold_used_for_eligibility") is not False
         or manifest.get("numeric_metrics_preserved_as_diagnostics") is not True
@@ -1496,32 +1835,22 @@ def _open_terminal_frontier_bank(
             "Terminal frontier tensor inventory is incomplete."
         )
     if load_payload:
-        try:
-            import torch
-        except ImportError as exc:  # pragma: no cover - optional boundary
-            raise RuntimeError("PyTorch is required for frontier banks.") from exc
         if set(tensors) != set(candidate_ids):
             raise Lfm2SemanticTerminalFrontierError(
                 "Loaded terminal frontier tensor names are incomplete."
             )
         for candidate_id in candidate_ids:
             tensor = tensors[candidate_id]
-            if (
-                not isinstance(tensor, torch.Tensor)
-                or tensor.device.type != "cpu"
-                or tensor.dtype != torch.bfloat16
-                or tensor.layout != torch.strided
-                or tensor.ndim != 2
-                or not tensor.is_contiguous()
-                or tensor.requires_grad
-                or tensor.grad_fn is not None
-                or not bool(torch.isfinite(tensor).all().item())
-                or _terminal_tensor_sha256(tensor)
-                != records[candidate_id]["state_sha256"]
-            ):
-                raise Lfm2SemanticTerminalFrontierError(
-                    f"Loaded terminal candidate {candidate_id!r} is invalid."
-                )
+            _authenticate_retained_structural_candidate(
+                candidate_id,
+                tensor,
+                records[candidate_id],
+                expected_shape=tuple(
+                    int(size)
+                    for size in records[candidate_id]["structural_coverage"]["shape"]
+                ),
+                incumbent_state_sha256=report["output_state_sha256"]["incumbent"],
+            )
     _recheck_root(
         root,
         root_identity,
@@ -2013,6 +2342,19 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         or not isinstance(receipt_export, Mapping)
         or not isinstance(terminal_result, Mapping)
         or not isinstance(receipt_tied_interface, Mapping)
+        or terminal_receipt.get("terminal_review_pending_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+        or terminal_receipt.get("final_selection_status")
+        != "deferred-to-manual-whole-response-review"
+        or terminal_receipt.get("final_selected_candidate_id") is not None
+        or terminal_receipt.get("final_selection_performed") is not False
+        or terminal_receipt.get("automatic_candidate_acceptance_performed") is not False
+        or terminal_receipt.get("candidate_published_before_manual_review") is not False
+        or terminal_receipt.get("manual_whole_response_review_required") is not True
+        or terminal_receipt.get("terminal_writer_install_count") != 0
+        or terminal_receipt.get("terminal_writer_mutation_count") != 0
+        or terminal_receipt.get("accepted") is not False
+        or terminal_receipt.get("terminal_publication_decision_accepted") is not False
         or dict(receipt_context) != dict(callback_context)
         or receipt_context.get("context_sha256")
         != terminal_receipt.get("terminal_frontier_export_context_sha256")
@@ -2334,6 +2676,15 @@ def _materialize_loaded_candidate(
     model = capsule.target_model
     tokenizer = capsule.target_tokenizer
     final_w2 = _final_w2_parameter(model)
+    _authenticate_retained_structural_candidate(
+        candidate_id,
+        candidate,
+        record,
+        expected_shape=tuple(int(size) for size in final_w2.shape),
+        incumbent_state_sha256=bank.terminal_result_report["output_state_sha256"][
+            "incumbent"
+        ],
+    )
     if (
         final_w2.dtype != torch.bfloat16
         or final_w2.layout != torch.strided
@@ -2502,6 +2853,21 @@ def _materialize_loaded_candidate(
             "candidate_frontier_record": record,
             "all_authenticated_candidate_ids": list(bank.reference.candidate_ids),
             "all_authenticated_candidate_count": len(bank.reference.candidate_ids),
+            "complete_terminal_frontier_candidate_ids": list(
+                bank.manifest["complete_terminal_frontier_candidate_ids"]
+            ),
+            "complete_terminal_frontier_candidate_count": bank.manifest[
+                "complete_terminal_frontier_candidate_count"
+            ],
+            "structurally_ineligible_candidate_ids": list(
+                bank.manifest["structurally_ineligible_candidate_ids"]
+            ),
+            "structurally_ineligible_candidate_count": bank.manifest[
+                "structurally_ineligible_candidate_count"
+            ],
+            "all_structurally_eligible_candidates_exported": True,
+            "structurally_ineligible_candidates_exported": False,
+            "structural_safety_is_only_candidate_veto": True,
             "candidate_materialized_without_metric_threshold": True,
             "candidate_metric_fields_read_for_materialization": False,
             "numeric_metrics_preserved_as_diagnostics": True,
@@ -2753,10 +3119,11 @@ def _open_terminal_frontier_materialization(
         or receipt.get("holistic_all_64_whole_response_review_required") is not True
         or receipt.get("holistic_review_complete") is not False
         or receipt.get("materialization_is_not_intelligence_acceptance") is not True
-        or receipt.get("complete_body_recipe_candidate_ids")
-        != list(LFM2_SEMANTIC_BODY_RECIPE_IDS)
-        or receipt.get("complete_body_recipe_candidate_count")
-        != len(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or not is_supported_lfm2_semantic_body_recipe_inventory(
+            receipt.get("complete_body_recipe_candidate_ids"),
+            receipt.get("complete_body_recipe_candidate_count"),
+            materialized_recipe_id=receipt.get("materialized_body_recipe_id"),
+        )
         or receipt.get("materialized_body_recipe_id") != recipe.recipe_id
         or receipt.get("one_terminal_frontier_bank_contains_one_body_recipe")
         is not True
@@ -2809,8 +3176,10 @@ def _open_terminal_frontier_materialization(
         or context.get("same_live_cache_session_claimed") is not False
         or context.get("candidate_id") != expected_candidate_id
         or context.get("candidate_state_sha256") != expected_state_sha
-        or context.get("complete_body_recipe_candidate_ids")
-        != list(LFM2_SEMANTIC_BODY_RECIPE_IDS)
+        or not is_supported_lfm2_semantic_body_recipe_inventory(
+            context.get("complete_body_recipe_candidate_ids"),
+            materialized_recipe_id=context.get("materialized_body_recipe_id"),
+        )
         or context.get("materialized_body_recipe_id") != recipe.recipe_id
         or context.get("authenticated_source_roots_sha256")
         != bank.get("source_roots_sha256")
@@ -2842,11 +3211,28 @@ def _open_terminal_frontier_materialization(
         field_name="result_sha256",
         label="materialized terminal result report",
     )
-    candidate_ids, records = _frontier_records(terminal_report)
+    (
+        complete_frontier_candidate_ids,
+        candidate_ids,
+        structurally_ineligible_candidate_ids,
+        records,
+    ) = _structural_candidate_inventory(terminal_report)
     if (
         receipt.get("all_authenticated_candidate_ids") != list(candidate_ids)
         or receipt.get("all_authenticated_candidate_count") != len(candidate_ids)
+        or receipt.get("complete_terminal_frontier_candidate_ids")
+        != list(complete_frontier_candidate_ids)
+        or receipt.get("complete_terminal_frontier_candidate_count")
+        != len(complete_frontier_candidate_ids)
+        or receipt.get("structurally_ineligible_candidate_ids")
+        != list(structurally_ineligible_candidate_ids)
+        or receipt.get("structurally_ineligible_candidate_count")
+        != len(structurally_ineligible_candidate_ids)
+        or receipt.get("all_structurally_eligible_candidates_exported") is not True
+        or receipt.get("structurally_ineligible_candidates_exported") is not False
+        or receipt.get("structural_safety_is_only_candidate_veto") is not True
         or expected_candidate_id not in records
+        or expected_candidate_id not in candidate_ids
         or records[expected_candidate_id].get("state_sha256") != expected_state_sha
         or receipt.get("candidate_frontier_record") != records[expected_candidate_id]
         or bank.get("terminal_result_sha256") != terminal_report["result_sha256"]

@@ -348,7 +348,7 @@ def test_writer_only_competes_with_full_source_structural_and_installs() -> None
         )
 
 
-def test_three_recipes_materialize_distinct_effectful_nonblank_states(
+def test_four_recipes_materialize_the_declared_effectful_nonblank_states(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def deterministic_tiebreakers_only(
@@ -367,6 +367,7 @@ def test_three_recipes_materialize_distinct_effectful_nonblank_states(
         "fit_guided",
         "full_strength_structural",
         "residual_writer",
+        "source_producer_residual_writer",
     ):
         model = _ToyModel()
         receipts[recipe_id] = _compile(
@@ -386,6 +387,13 @@ def test_three_recipes_materialize_distinct_effectful_nonblank_states(
         "incumbent-producer-output-writer"
     )
     assert receipts["residual_writer"]["writer_fit_proposal"]["selected_alpha"] == 1.0
+    assert receipts["source_producer_residual_writer"]["selected_candidate"] == (
+        "full-source-structural"
+    )
+    assert (
+        receipts["source_producer_residual_writer"]["model_state_after_sha256"]
+        == receipts["full_strength_structural"]["model_state_after_sha256"]
+    )
     assert (
         len({receipt["model_state_after_sha256"] for receipt in receipts.values()}) == 3
     )
@@ -399,7 +407,11 @@ def test_three_recipes_materialize_distinct_effectful_nonblank_states(
 
 def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     receipts: dict[str, dict[str, object]] = {}
-    for recipe_id in ("full_strength_structural", "residual_writer"):
+    for recipe_id in (
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ):
         evidence_source = _ToyModel()
         source_evidence = _evidence_bank(evidence_source)
         model = _ToyModel()
@@ -430,6 +442,9 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     assert receipts["residual_writer"]["selected_candidate"] == (
         "full-source-producer-output-writer"
     )
+    assert receipts["source_producer_residual_writer"]["selected_candidate"] == (
+        "full-source-structural"
+    )
     assert (
         receipts["residual_writer"][
             "cold_start_residual_writer_component_equivalent_to_structural"
@@ -439,6 +454,10 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     assert (
         receipts["full_strength_structural"]["model_state_after_sha256"]
         != receipts["residual_writer"]["model_state_after_sha256"]
+    )
+    assert (
+        receipts["full_strength_structural"]["model_state_after_sha256"]
+        == receipts["source_producer_residual_writer"]["model_state_after_sha256"]
     )
 
 
@@ -857,7 +876,12 @@ def test_validation_diagnostic_cannot_restore_authenticated_incumbent_noop() -> 
 
 @pytest.mark.parametrize(
     "body_recipe",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
 )
 def test_effectful_structural_candidate_survives_fit_diagnostic_miss(
     monkeypatch: pytest.MonkeyPatch,
@@ -915,7 +939,12 @@ def test_effectful_structural_candidate_survives_fit_diagnostic_miss(
 
 @pytest.mark.parametrize(
     "body_recipe",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
 )
 def test_structurally_invalid_only_proposal_uses_authenticated_incumbent_control(
     monkeypatch: pytest.MonkeyPatch,
@@ -975,7 +1004,12 @@ def test_structurally_invalid_only_proposal_uses_authenticated_incumbent_control
 
 @pytest.mark.parametrize(
     "body_recipe",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
 )
 def test_identical_analytic_candidate_resolves_to_sealed_noop(
     monkeypatch: pytest.MonkeyPatch,

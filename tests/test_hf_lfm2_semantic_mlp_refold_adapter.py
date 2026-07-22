@@ -838,7 +838,11 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
 def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     prepared_by_recipe: dict[str, adapter.Lfm2PreparedSemanticMlpRefold] = {}
     state_sha256: dict[str, str] = {}
-    for recipe_id in ("full_strength_structural", "residual_writer"):
+    for recipe_id in (
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ):
         model = _Target()
         with torch.no_grad():
             for parameter in model.model.layers[0].feed_forward.parameters():
@@ -878,6 +882,14 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
         is False
     )
     assert state_sha256["full_strength_structural"] != state_sha256["residual_writer"]
+    hybrid = prepared_by_recipe["source_producer_residual_writer"]
+    assert hybrid.selected_role == "incumbent-producer-w2"
+    assert hybrid.writer_candidate.solver_receipt["fixed_producer_state_source"] == (
+        "full-source-structural-w1-w3"
+    )
+    assert state_sha256["source_producer_residual_writer"] == state_sha256[
+        "residual_writer"
+    ]
 
 
 def test_prepared_recipe_and_selected_lane_cannot_be_resealed_independently() -> None:
@@ -885,6 +897,7 @@ def test_prepared_recipe_and_selected_lane_cannot_be_resealed_independently() ->
         "fit_guided",
         "full_strength_structural",
         "residual_writer",
+        "source_producer_residual_writer",
     )
     for source_recipe_id in recipe_ids:
         model = _Target()
@@ -1426,6 +1439,7 @@ def test_regressing_metrics_do_not_veto_structurally_valid_effectful_candidate(
         ("fit_guided", "full-w1-w3-w2"),
         ("full_strength_structural", "full-w1-w3-w2"),
         ("residual_writer", "incumbent-producer-w2"),
+        ("source_producer_residual_writer", "incumbent-producer-w2"),
     ),
 )
 def test_recipe_priority_survives_poor_heldout_diagnostics(
@@ -1482,7 +1496,12 @@ def test_recipe_priority_survives_poor_heldout_diagnostics(
 
 @pytest.mark.parametrize(
     "body_recipe",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
 )
 def test_identical_mlp_candidates_select_incumbent_and_perform_no_copy(
     monkeypatch,
@@ -1597,7 +1616,12 @@ def test_metric_evaluation_failure_is_diagnostic_not_structural_veto(
 
 @pytest.mark.parametrize(
     "body_recipe",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
 )
 def test_invalid_mlp_proposals_are_sealed_and_use_structural_incumbent_fallback(
     monkeypatch,

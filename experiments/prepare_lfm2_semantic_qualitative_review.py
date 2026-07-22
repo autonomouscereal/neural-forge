@@ -3,7 +3,7 @@
 
 This utility is deliberately standard-library-only.  It does not load a model,
 run inference, calculate an intelligence score, or turn numeric diagnostics into
-an acceptance decision.  It authenticates exactly three complete response
+an acceptance decision.  It authenticates a nonempty set of complete response
 dossiers, merges their review evidence, renders a compact side-by-side Markdown
 view, and writes a sealed *blank* qualitative-verdict template for a human or
 agent reviewer to complete.
@@ -566,7 +566,7 @@ def prepare_qualitative_review(
     markdown_path: Path,
     verdict_template_json: Path,
 ) -> dict[str, Any]:
-    """Authenticate three dossiers and publish review-only derived artifacts."""
+    """Authenticate equally sized dossier lanes and publish review artifacts."""
 
     cardinalities = {
         len(dossier_paths),
@@ -574,14 +574,15 @@ def prepare_qualitative_review(
         len(expected_dossier_sha256s),
         len(lane_labels),
     }
-    if cardinalities != {3}:
+    if len(cardinalities) != 1 or not cardinalities or next(iter(cardinalities)) < 1:
         raise Lfm2SemanticQualitativeReviewError(
-            "Exactly three dossier paths, file pins, canonical pins, and lane "
-            "labels are required."
+            "A nonempty equal number of dossier paths, file pins, canonical pins, "
+            "and lane labels is required."
         )
+    lane_count = next(iter(cardinalities))
     normalized_labels = tuple(str(value).strip() for value in lane_labels)
     if (
-        len(set(normalized_labels)) != 3
+        len(set(normalized_labels)) != lane_count
         or any(not _LANE_LABEL.fullmatch(value) for value in normalized_labels)
     ):
         raise Lfm2SemanticQualitativeReviewError(
@@ -723,7 +724,7 @@ def prepare_qualitative_review(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Authenticate and merge exactly three LFM2 whole-response dossiers, "
+            "Authenticate and merge LFM2 whole-response dossiers, "
             "render side-by-side Markdown, and emit a sealed blank qualitative "
             "verdict template without numeric gating."
         )

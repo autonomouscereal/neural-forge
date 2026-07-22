@@ -2557,13 +2557,14 @@ def prepare_lfm2_semantic_mlp_postfold(
         for candidate in (writer, full)
         if structural_reports[candidate.role]["structurally_eligible"] is True
     )
+    mlp_lane = recipe.component_lanes["mlp"]
     if exact_zero_incumbent:
         if not any(candidate is full for candidate in analytic_frontier):
             raise Lfm2SemanticMlpRefoldError(
                 "The compulsory cold-start full W1/W3/W2 proposal is not finite, "
                 "dense, target-shaped, target-dtype, and effectful."
             )
-        if recipe.recipe_id == "residual_writer" and any(
+        if mlp_lane == "uncapped_w2_residual_writer_priority" and any(
             candidate is writer for candidate in analytic_frontier
         ):
             selected = writer
@@ -2577,7 +2578,7 @@ def prepare_lfm2_semantic_mlp_postfold(
                 "blank-target-complete-structural-plant-continues-to-whole-"
                 "response-evaluation"
             )
-    elif recipe.recipe_id == "fit_guided" and analytic_frontier:
+    elif recipe.fit_metrics_order_candidates and analytic_frontier:
         selected = min(
             analytic_frontier,
             key=_fit_metric_ordering_key,
@@ -2586,7 +2587,7 @@ def prepare_lfm2_semantic_mlp_postfold(
             "deterministic-fit-order-among-structurally-eligible-effectful-"
             "analytic-proposals"
         )
-    elif recipe.recipe_id == "full_strength_structural" and analytic_frontier:
+    elif mlp_lane == "full_source_w1_w3_w2_structural_priority" and analytic_frontier:
         selected = (
             full
             if any(candidate is full for candidate in analytic_frontier)
@@ -2595,7 +2596,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         rationale = (
             "recipe-full-source-w1-w3-w2-structural-priority-without-numeric-ordering"
         )
-    elif recipe.recipe_id == "residual_writer" and analytic_frontier:
+    elif mlp_lane == "uncapped_w2_residual_writer_priority" and analytic_frontier:
         selected = (
             writer
             if any(candidate is writer for candidate in analytic_frontier)

@@ -18,6 +18,9 @@ import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
 import neural_forge.hf_lfm2_cpcf_terminal_action_residual as terminal_action  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_fold_artifact import DynamicFoldArtifactError  # noqa: E402
+from neural_forge.hf_lfm2_long_horizon_terminal_refold import (  # noqa: E402
+    Lfm2SealedParentFinalRmsNorm,
+)
 
 
 class _TiedModel:
@@ -618,155 +621,76 @@ def test_final_w2_changed_publication_mutates_only_the_writer(monkeypatch) -> No
     assert receipt["published_w2_structurally_nonzero"] is True
 
 
-def test_exact_zero_structural_fit_ordered_plant_installs_transactionally(
+def test_exact_zero_structural_frontier_waits_for_whole_response_review(
     monkeypatch,
 ) -> None:
     seed, evidence, terminal = _compiled_exact_zero_terminal_result()
     target = _TerminalTarget(seed.down_weight)
     parameter = target.model.layers[-1].feed_forward.w2.weight
-    parameter.grad = torch.full_like(parameter, 0.25)
-    before_parameter_id = id(parameter)
-    before_storage = int(parameter.data_ptr())
-    before_gradient_id = id(parameter.grad)
+    before = parameter.detach().clone()
     monkeypatch.setattr(
         postfold,
         "fingerprint_lfm2_parent",
         lambda model: SimpleNamespace(identity_sha256=_terminal_target_state(model)),
     )
 
-    published, decision = postfold._terminal_publication_decision(
-        terminal,
-        expected_seed=seed,
-        expected_evidence=evidence,
-    )
-    receipt = postfold._install_final_w2_once(
-        target,
-        published_down_weight=published,
-        terminal_publication_decision=decision,
-    )
-
     assert torch.count_nonzero(seed.down_weight).item() == 0
-    assert decision["publication_decision"] == (
-        "exact-zero-structural-fit-ordered-plant"
+    assert terminal.accepted is False
+    assert terminal.changed is False
+    assert terminal.selected_candidate_id == "incumbent"
+    assert terminal.report["final_selection_status"] == (
+        "deferred-to-manual-whole-response-review"
     )
-    assert decision["structural_candidate_eligibility_authenticated"] is True
-    assert decision["fit_metrics_used_for_candidate_ordering"] is True
-    assert decision["fit_metrics_used_for_pre_review_candidate_selection"] is True
-    assert decision["fit_metrics_used_for_structural_eligibility"] is False
-    assert decision["fit_metric_thresholds_used_for_candidate_eligibility"] is False
-    assert decision["fit_metric_thresholds_used_for_publication"] is False
-    assert decision["fit_metrics_have_final_intelligence_authority"] is False
-    assert decision["terminal_exact_zero_cold_start"] is True
-    assert decision["heldout_metrics_diagnostic_only"] is True
-    assert decision["terminal_incumbent_retained"] is False
-    assert decision["terminal_action_result_sha256"] == terminal.result_sha256
-    assert (
-        decision["terminal_action_selected_w2_sha256"]
-        == terminal.as_dict()["output_state_sha256"]["selected"]
-    )
-    assert (
-        receipt["terminal_action_selected_w2_sha256"]
-        == decision["terminal_action_selected_w2_sha256"]
-    )
-    assert (
-        receipt["semantic_selected_w2_sha256"]
-        == decision["semantic_selected_w2_sha256"]
-    )
-    assert (
-        decision["terminal_action_selected_w2_sha256"]
-        != decision["semantic_selected_w2_sha256"]
-    )
-    assert receipt["exact_zero_cold_start"] is True
-    assert receipt["incumbent_all_elements_zero"] is True
-    assert receipt["incumbent_noop_publication_forbidden"] is True
-    assert receipt["transactional_dense_cold_start_plant"] is True
-    assert receipt["installed"] is True
-    assert receipt["install_count"] == 1
-    assert receipt["incumbent_retention_count"] == 0
-    assert receipt["published_w2_all_elements_finite"] is True
-    assert receipt["published_w2_all_output_units_covered"] is True
-    assert receipt["published_w2_all_input_units_covered"] is True
-    assert receipt["parameter_topology_preserved"] is True
-    assert receipt["parameter_identities_preserved"] is True
-    assert receipt["parameter_storage_preserved"] is True
-    assert receipt["gradient_state_preserved"] is True
-    assert receipt["parameter_count_changed"] is False
-    assert set(receipt["operation_audit"].values()) == {0}
-    assert torch.equal(parameter.detach().cpu(), published)
-    assert id(parameter) == before_parameter_id
-    assert int(parameter.data_ptr()) == before_storage
-    assert id(parameter.grad) == before_gradient_id
+    assert terminal.report["diagnostic_order_candidate_count"] == 36
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="review-pending",
+    ):
+        postfold._terminal_publication_decision(
+            terminal,
+            expected_seed=seed,
+            expected_evidence=evidence,
+        )
+    torch.testing.assert_close(parameter.detach(), before, rtol=0, atol=0)
 
 
-def test_exact_zero_semantic_publication_accepts_fit_proxy_gate_miss() -> None:
+def test_exact_zero_proxy_gate_miss_does_not_force_a_publication() -> None:
     policy = terminal_action.Lfm2CpcfTerminalActionPolicy(
         maximum_post_layer_rms_ratio=1e-12,
     )
     seed, evidence, terminal = _compiled_exact_zero_terminal_result(policy=policy)
     report = terminal.as_dict()
-    selected = next(
+    diagnostic_lead = next(
         value
         for value in report["frontier"]
-        if value["candidate_id"] == terminal.selected_candidate_id
+        if value["candidate_id"] == report["diagnostic_lead_candidate_id"]
     )
 
-    published, decision = postfold._terminal_publication_decision(
-        terminal,
-        expected_seed=seed,
-        expected_evidence=evidence,
-    )
-
-    assert selected["structurally_eligible"] is True
-    assert selected["fit_metric_gates_passed"] is False
-    assert selected["fit_gates"]["post_layer_norm"] is False
-    assert torch.equal(published, terminal.selected_down_weight)
-    assert decision["terminal_publication_decision_accepted"] is True
-    assert decision["terminal_nonincumbent_candidate_accepted"] is True
-    assert decision["structural_candidate_eligibility_authenticated"] is True
-    assert decision["fit_metrics_used_for_candidate_ordering"] is True
-    assert decision["fit_metrics_used_for_pre_review_candidate_selection"] is True
-    assert decision["fit_metrics_used_for_structural_eligibility"] is False
-    assert decision["fit_metric_thresholds_used_for_candidate_eligibility"] is False
-    assert decision["fit_metric_thresholds_used_for_publication"] is False
-    assert decision["fit_metrics_have_final_intelligence_authority"] is False
+    assert diagnostic_lead["structurally_eligible"] is True
+    assert diagnostic_lead["fit_metric_gates_passed"] is False
+    assert diagnostic_lead["fit_gates"]["post_layer_norm"] is False
+    assert report["fit_metrics_used_for_diagnostic_ordering"] is True
+    assert report["fit_metrics_used_for_pre_review_candidate_selection"] is False
+    assert terminal.accepted is False
+    assert torch.equal(terminal.published_down_weight, terminal.incumbent_down_weight)
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="review-pending",
+    ):
+        postfold._terminal_publication_decision(
+            terminal,
+            expected_seed=seed,
+            expected_evidence=evidence,
+        )
 
 
 def test_exact_zero_publication_rejects_authenticated_then_mutated_dense_forgery() -> (
     None
 ):
     seed, evidence, terminal = _compiled_exact_zero_terminal_result()
-    forged_weight = terminal.selected_down_weight.clone()
+    diagnostic_lead_id = terminal.report["diagnostic_lead_candidate_id"]
+    forged_weight = terminal.frontier_down_weights[diagnostic_lead_id].clone()
     forged_weight[0, 0] = forged_weight[0, 0] + 1.0
-    assert not torch.equal(forged_weight, terminal.selected_down_weight)
-    forged_hash = terminal_action._tensor_sha256(forged_weight)
-    forged_coverage = dict(
-        terminal_action._terminal_writer_structural_coverage(forged_weight)
-    )
-    body = copy.deepcopy(terminal.as_dict())
-    body.pop("result_sha256")
-    body["output_state_sha256"]["selected"] = forged_hash
-    body["output_state_sha256"]["published"] = forged_hash
-    body["selected_state_sha256"] = forged_hash
-    body["selected_selection_key"][-1] = forged_hash
-    body["selected_writer_structural_coverage"] = forged_coverage
-    body["selected_writer_structural_coverage_sha256"] = forged_coverage[
-        "coverage_sha256"
-    ]
-    body["selected_writer_all_elements_nonzero"] = forged_coverage[
-        "all_elements_nonzero"
-    ]
-    body["validation"]["frozen_candidate_state_sha256"] = forged_hash
-    selected_frontier = next(
-        value
-        for value in body["frontier"]
-        if value["candidate_id"] == body["selected_candidate_id"]
-    )
-    selected_frontier["state_sha256"] = forged_hash
-    selected_frontier["selection_key"][-1] = forged_hash
-    selected_frontier["structural_coverage"] = forged_coverage
-    selected_frontier["structural_coverage_sha256"] = forged_coverage["coverage_sha256"]
-    selected_frontier["frozen_candidate_state_sha256"] = forged_hash
-    forged_sha256 = terminal_action._canonical_sha256(body)
     forged = terminal_action.Lfm2CpcfTerminalActionResidualResult(
         policy=terminal.policy,
         incumbent_down_weight=terminal.incumbent_down_weight,
@@ -782,18 +706,14 @@ def test_exact_zero_publication_rejects_authenticated_then_mutated_dense_forgery
         _compiler_lineage_receipt=terminal._compiler_lineage_token,
     )
     assert forged.verify_authentication() is True
-    object.__setattr__(forged, "selected_down_weight", forged_weight.clone())
-    object.__setattr__(forged, "published_down_weight", forged_weight.clone())
     object.__setattr__(
         forged,
         "frontier_down_weights",
         {
             **terminal.frontier_down_weights,
-            terminal.selected_candidate_id: forged_weight.clone(),
+            diagnostic_lead_id: forged_weight,
         },
     )
-    object.__setattr__(forged, "report", {**body, "result_sha256": forged_sha256})
-    object.__setattr__(forged, "result_sha256", forged_sha256)
     assert forged.verify_authentication() is False
 
     with pytest.raises(
@@ -862,32 +782,31 @@ def test_legacy_validation_rollback_to_incumbent_is_rejected() -> None:
         postfold._terminal_publication_decision(terminal)
 
 
-def test_nonzero_structural_publication_ignores_failed_validation_diagnostic() -> None:
+def test_nonzero_failed_validation_remains_diagnostic_without_publication() -> None:
     _seed, _evidence, terminal = (
         _compiled_nonzero_terminal_result_with_failed_validation()
     )
     report = terminal.as_dict()
 
-    published, decision = postfold._terminal_publication_decision(terminal)
-
     assert report["validation"]["passed"] is False
     assert report["validation"]["heldout_diagnostic_only"] is True
     assert report["validation"]["publication_gate_applied"] is False
-    assert report["validation"]["used_only_for_frozen_candidate_acceptance"] is False
+    assert report["validation"]["used_for_final_selection"] is False
+    assert report["validation"]["used_for_candidate_acceptance"] is False
     assert report["validation_publication_veto_applied"] is False
     assert report["rollback_authorized"] is False
     assert report["rollback_performed"] is False
-    assert terminal.accepted is True
-    assert terminal.changed is True
-    assert torch.equal(published, terminal.selected_down_weight)
-    assert not torch.equal(published, terminal.incumbent_down_weight)
-    assert decision["terminal_publication_decision_accepted"] is True
-    assert decision["terminal_nonincumbent_candidate_accepted"] is True
-    assert decision["terminal_incumbent_retained"] is False
-    assert decision["validation_diagnostics_passed"] is False
-    assert decision["validation_publication_gate_applied"] is False
-    assert decision["heldout_metrics_diagnostic_only"] is True
-    assert decision["numeric_metrics_have_final_intelligence_authority"] is False
+    assert terminal.accepted is False
+    assert terminal.changed is False
+    assert torch.equal(
+        terminal.published_down_weight,
+        terminal.incumbent_down_weight,
+    )
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="review-pending",
+    ):
+        postfold._terminal_publication_decision(terminal)
 
 
 def test_exact_zero_writer_cannot_use_legacy_validation_rollback() -> None:
@@ -930,12 +849,14 @@ def test_exact_zero_writer_cannot_use_legacy_validation_rollback() -> None:
         postfold._terminal_publication_decision(forged)
 
 
-def test_fused_terminal_never_gates_or_installs_the_private_selected_tensor() -> None:
+def test_fused_terminal_frontier_path_defers_installation_until_manual_review() -> None:
     source = inspect.getsource(
         postfold.compile_install_lfm2_fused_semantic_terminal_refold
     )
 
-    assert "terminal.selected_down_weight" not in source
+    assert '"final_selection_status": "deferred-to-manual-whole-response-review"' in source
+    assert '"terminal_writer_install_count": 0' in source
+    assert '"candidate_published_before_manual_review": False' in source
     assert "published_down_weight=published_down_weight" in source
 
 
@@ -2512,7 +2433,12 @@ def test_complete_layer_stack_fails_closed_on_conv_and_mlp_gaps(
 
 @pytest.mark.parametrize(
     "recipe_id",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
 )
 def test_layer_stack_stage_forwards_exact_authenticated_body_recipe(
     monkeypatch,
@@ -2917,556 +2843,655 @@ def test_top_level_rejects_statistics_for_nonfoundation_before_output_dispatch(
 
 
 @pytest.mark.parametrize("use_foundation_statistics", (False, True))
-@pytest.mark.parametrize(
-    "body_recipe_id",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
-)
-def test_top_level_orders_layer_stack_terminal_and_checkpoint(
+def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
     tmp_path: Path,
     monkeypatch,
     use_foundation_statistics: bool,
-    body_recipe_id: str,
 ) -> None:
-    events = []
-    recipe = postfold.resolve_lfm2_semantic_body_recipe(body_recipe_id)
-    cache = SimpleNamespace(cache_key="1" * 64, parent_fingerprint="2" * 64)
-    bridge = SimpleNamespace(artifact_sha256="3" * 64)
-    model = object()
-    tokenizer = object()
-    parent_norm = object()
-    source_table = torch.ones((2, 2), dtype=torch.bfloat16)
-    interface = SimpleNamespace(report={"report_sha256": "6" * 64})
-    self_dual_interface = SimpleNamespace(report={"report_sha256": "f" * 64})
-    statistics_artifact_sha256 = "a" * 64
-    statistics_manifest_sha256 = "b" * 64
-    statistics_replay_sha256 = "c" * 64
-    if use_foundation_statistics:
-        rehydration_body = {
-            "schema": (
-                "neural-forge-lfm2-semantic-foundation-interface-rehydration-v2"
-            ),
-            "compiler_cache_key": "8" * 64,
-            "semantic_evidence_cache_key": cache.cache_key,
-            "interface_statistics_artifact_sha256": (statistics_artifact_sha256),
-            "interface_statistics_manifest_file_sha256": (statistics_manifest_sha256),
-            "interface_statistics_replay_sha256": statistics_replay_sha256,
-            "compiler_cache_open_calls": 0,
-            "trace_safetensor_open_calls": 0,
-            "selective_provider_open_calls": 0,
-        }
-        interface_rehydration = MappingProxyType(
-            {
-                **rehydration_body,
-                "result_sha256": canonical_sha256(rehydration_body),
-            }
+    events: list[str] = []
+    recipe = postfold.resolve_lfm2_semantic_body_recipe(
+        "source_producer_residual_writer"
+    )
+    seed, evidence, _fixture_result = _compiled_exact_zero_terminal_result()
+    cache_key = "1" * 64
+    cache_parent = "2" * 64
+    cache_topology = "3" * 64
+    bridge_sha256 = "4" * 64
+    session_sha256 = "5" * 64
+    layer_state_before = "6" * 64
+    layer_state_after = "7" * 64
+    target_model = _TerminalTarget(seed.down_weight)
+    target_state_before = _terminal_target_state(target_model)
+    target_parameter_identity_before = tuple(
+        (
+            name,
+            id(parameter),
+            int(parameter.data_ptr()),
+            int(parameter.untyped_storage().data_ptr()),
+            id(parameter.grad),
         )
-    else:
-        interface_rehydration = MappingProxyType(
-            {
-                "compiler_cache_key": "8" * 64,
-                "semantic_evidence_cache_key": cache.cache_key,
-                "result_sha256": "9" * 64,
-            }
-        )
-    _terminal_seed, _terminal_evidence, terminal_action_result = (
-        _compiled_nonzero_terminal_result_with_failed_validation()
+        for name, parameter in target_model.named_parameters()
     )
-    _published_terminal_weight, terminal_publication_decision = (
-        postfold._terminal_publication_decision(terminal_action_result)
+    target_tokenizer = SimpleNamespace(name="target-tokenizer")
+    saved_tokenizer = SimpleNamespace(name="saved-tokenizer")
+    bridge = SimpleNamespace(artifact_sha256=bridge_sha256)
+    source_table = seed.source_tied_table.detach().clone()
+    interface_report = {
+        "report_sha256": "8" * 64,
+    }
+    interface = postfold.TiedCausalInterfaceFold(
+        target_weight=seed.target_tied_weight.to(torch.float64),
+        producer_encoder=torch.eye(seed.target_hidden_size, dtype=torch.float64),
+        report=interface_report,
     )
-    terminal_action_report = terminal_action_result.as_dict()
-    w1_sha = "1" * 64
-    w3_sha = "2" * 64
-    incumbent_w2_sha = terminal_publication_decision["incumbent_w2_sha256"]
-    w2_sha = terminal_publication_decision["published_w2_sha256"]
-
-    def sealed(body):
-        return {**body, "result_sha256": canonical_sha256(body)}
-
-    manifest_sha256 = "4" * 64
-    completion_sha256 = "5" * 64
-    record_sha256 = "6" * 64
-    record_file_sha256 = "7" * 64
-    session_batch = {
-        "batch_index": 0,
-        "record_sha256": record_sha256,
-        "record_file_sha256": record_file_sha256,
-        "tensor_count": 2,
-        "logical_bytes": 128,
-    }
-    session_body = {
-        "cache_key": cache.cache_key,
-        "manifest_sha256": manifest_sha256,
-        "completion_sha256": completion_sha256,
-        "ordered_authenticated_batches": [session_batch],
-    }
-    session_receipt = MappingProxyType(
-        {
-            **session_body,
-            "session_sha256": canonical_sha256(session_body),
-        }
-    )
-    cache_authentication = {
-        "session": dict(session_receipt),
-        "selected_payloads": [
-            {
-                "batch_index": 0,
-                "authenticated_tensor_count": 2,
-                "authenticated_logical_bytes": 128,
-                "selective_payload": {
-                    "selected_tensor_count": 2,
-                    "selected_logical_bytes": 128,
-                },
-            }
-        ],
-    }
-    payload_load_audit = postfold._summarize_terminal_cache_payload_loads(
-        cache_authentication
-    )
-    compatibility_batch = {
-        "batch_index": 0,
-        "decode_trace_mode": "full_prefix_canonical",
-        "verification_phase_count": 0,
-        "top1_disagreement_count": 0,
-        "all_top1_disagreements_numeric_envelope_verified": True,
-    }
     compatibility_body = {
         "schema": postfold.LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA,
-        "cache_key": cache.cache_key,
-        "manifest_sha256": manifest_sha256,
-        "completion_sha256": completion_sha256,
-        "batch_count": 1,
-        "decode_trace_mode": "full_prefix_canonical",
-        "ordered_batch_record_sha256": [record_sha256],
-        "ordered_batch_record_file_sha256": [record_file_sha256],
-        "batch_compatibility": [compatibility_batch],
-        "all_cached_logits_numerically_verified": None,
-        "cached_top1_disagreement_count": 0,
-        "terminal_trajectory_compatibility_verified": True,
-        "forced_decode_tokens_are_caller_supplied": True,
-        "top1_exactness_is_diagnostic_only": True,
-        "top1_exactness_is_publication_gate": False,
-        "all_top1_disagreements_numeric_envelope_verified": True,
-        "full_prefix_recache_required": False,
-        "preflight_io_contract": {
-            "trace_file_sha256_passes": 0,
-            "trace_payload_bytes_read": 0,
-            "trace_tensor_payloads_materialized": 0,
-        },
+        "cache_key": cache_key,
     }
-    terminal_cache_compatibility = MappingProxyType(
-        {
-            **compatibility_body,
-            "authentication_sha256": canonical_sha256(compatibility_body),
-        }
-    )
+    compatibility = {
+        **compatibility_body,
+        "authentication_sha256": canonical_sha256(compatibility_body),
+    }
     payload_binding_body = {
-        "compatibility_authentication_sha256": terminal_cache_compatibility[
+        "compatibility_authentication_sha256": compatibility[
             "authentication_sha256"
         ],
-        "payload_session_sha256": session_receipt["session_sha256"],
-        "manifest_completion_and_ordered_records_exact": True,
-        "large_trace_file_sha256_authenticated_once_by_consuming_session": True,
+        "payload_session_sha256": session_sha256,
     }
-    payload_binding = MappingProxyType(
-        {
-            **payload_binding_body,
-            "authentication_sha256": canonical_sha256(payload_binding_body),
-        }
-    )
-    raw_body = {
-        "batch_index": 0,
-        "decode_trace_mode": "full_prefix_canonical",
-        "raw_cached_full_prefix_pair_count": 0,
-        "raw_logit_rows_verified": 0,
-        "top1_disagreement_count": 0,
-        "all_logits_numerically_close": True,
-        "all_top1_disagreements_within_numeric_error_envelope": True,
-        "top1_exactness_is_diagnostic_only": True,
+    payload_binding = {
+        **payload_binding_body,
+        "authentication_sha256": canonical_sha256(payload_binding_body),
     }
-    raw_receipt = MappingProxyType(
-        {
-            **raw_body,
-            "authentication_sha256": canonical_sha256(raw_body),
-        }
-    )
-    io_body = {
-        "metadata_preflight_trace_file_sha256_passes": 0,
-        "metadata_preflight_trace_payload_bytes_read": 0,
-        "consuming_trace_file_sha256_passes_per_batch": 1,
-        "consuming_trace_file_sha256_passes_total": 1,
-        "same_consuming_session_reused_by_semantic_collector": True,
-        "same_consuming_session_reused_from_layer_stack": True,
-        "same_live_cache_session_as_layer_stack": True,
-        "cache_content_identity_matches_layer_stack": True,
-        "preterminal_resume_mode": False,
-        "fused_terminal_selective_session_constructions": 0,
-        "end_to_end_selective_session_constructions": 1,
-        "additional_full_trace_file_sha256_passes_performed_by_fused_terminal": 0,
-        "selected_tensor_payload_loads_total": 1,
-        "selected_tensor_payload_logical_bytes_total": 128,
-        "full_tensor_inventory_payload_loads_per_batch": 1,
-        "full_tensor_inventory_payload_loads_total": 1,
-        "full_tensor_inventory_payload_logical_bytes_total": 128,
-    }
-    terminal_cache_io = MappingProxyType(sealed(io_body))
-    terminal_source_lineage, terminal_composite_lineage = _synthetic_terminal_lineages(
-        cache_key=cache.cache_key,
-        cache_parent_fingerprint=cache.parent_fingerprint,
-        bridge_artifact_sha256=bridge.artifact_sha256,
-        compatibility_sha256=terminal_cache_compatibility["authentication_sha256"],
+    source_lineage, composite_lineage = _synthetic_terminal_lineages(
+        cache_key=cache_key,
+        cache_parent_fingerprint=cache_parent,
+        bridge_artifact_sha256=bridge_sha256,
+        compatibility_sha256=compatibility["authentication_sha256"],
         payload_binding_sha256=payload_binding["authentication_sha256"],
-        session_sha256=session_receipt["session_sha256"],
+        session_sha256=session_sha256,
+        interface_report_sha256=interface_report["report_sha256"],
     )
+    parent_final_norm = Lfm2SealedParentFinalRmsNorm(
+        cache_key=cache_key,
+        parent_fingerprint=cache_parent,
+        layer_topology_fingerprint=cache_topology,
+        weight=seed.final_norm_weight,
+        epsilon=seed.norm_epsilon,
+    )
+    parent_load_body = {
+        "cache_key": cache_key,
+        "cache_parent_fingerprint": cache_parent,
+        "final_norm_authentication_sha256": (
+            parent_final_norm.authentication_sha256
+        ),
+        "operation_audit": {
+            "parent_model_objects_constructed": 0,
+            "parent_model_forward_calls": 0,
+            "parent_model_generate_calls": 0,
+            "network_access_performed": False,
+            "direct_local_json_and_safetensors_only": True,
+        },
+    }
+    parent_load_sha256 = canonical_sha256(parent_load_body)
+    parent_norm = postfold.Lfm2LocalParentFinalRmsNormLoad(
+        final_norm=parent_final_norm,
+        report={**parent_load_body, "result_sha256": parent_load_sha256},
+        result_sha256=parent_load_sha256,
+    )
+    coverage_body = {
+        "schema": "neural-forge-lfm2-dense-producer-chain-coverage-v1",
+        "layer_index": 13,
+        "producer_kind": "mlp",
+        "deferred_roles": ["feed_forward.w2.weight"],
+        "all_required_roles_structurally_nonzero": True,
+        "blank_or_partially_blank_required_role_count": 0,
+    }
+    coverage = {
+        **coverage_body,
+        "result_sha256": canonical_sha256(coverage_body),
+    }
+    evidence_sha256 = {
+        split: evidence[split].authentication_sha256 for split in sorted(evidence)
+    }
+    deferred_w2_sha256 = postfold._tensor_sha256(
+        target_model.model.layers[-1].feed_forward.w2.weight
+    )
+    layer_body = {
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "interface_anchor_selection_sha256": None,
+        "final_layer_mlp_w2_deferred_to_fused_terminal": True,
+        "final_layer_mlp_w2_install_count": 0,
+        "final_layer_mlp_evidence_sha256": evidence_sha256,
+        "cache_selective_session_sha256": session_sha256,
+        "model_state_before_sha256": layer_state_before,
+        "model_state_after_sha256": layer_state_after,
+        "deferred_final_w2_sha256": deferred_w2_sha256,
+        "complete_causal_layer_stack_adjudicated": True,
+        "complete_causal_layer_stack_installed": False,
+        "whole_stage_contains_meaningful_parameter_changes": True,
+        "changed_state_keys": ["model.layers.0.synthetic-folded-writer"],
+        "complete_nonzero_structural_producer_coverage": True,
+        "blank_or_partially_blank_producer_chain_count": 0,
+        "attention_operator_decision_count": 6,
+        "attention_operator_install_count": 5,
+        "short_conv_operator_decision_count": 8,
+        "short_conv_operator_install_count": 8,
+        "layer_installations": [
+            {
+                "mlp_producer_coverage_decision": {
+                    "coverage_after_sha256": coverage["result_sha256"]
+                }
+            }
+        ],
+    }
+    layer_receipt = {
+        **layer_body,
+        "result_sha256": canonical_sha256(layer_body),
+    }
+    layer_stack = postfold.Lfm2SemanticLayerStackInstallation(
+        receipt=layer_receipt,
+        final_layer_mlp_evidence=evidence,
+    )
+    attention_body = {
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "attention_receipt_count": 6,
+        "complete_six_tensor_bundle_count": 6,
+    }
+    attention_authentication = {
+        **attention_body,
+        "result_sha256": canonical_sha256(attention_body),
+    }
+    gauge_body = {
+        "schema": "neural-forge-lfm2-self-dual-tied-gauge-install-v1",
+        "global_residual_gauge_frozen": True,
+    }
+    gauge_receipt = {
+        **gauge_body,
+        "result_sha256": canonical_sha256(gauge_body),
+    }
+    tied_authentication_body = {
+        "schema": "neural-forge-lfm2-fused-terminal-tied-interface-v1",
+        "interface_report_sha256": interface_report["report_sha256"],
+    }
+    tied_authentication = {
+        **tied_authentication_body,
+        "result_sha256": canonical_sha256(tied_authentication_body),
+    }
 
-    selective_session_calls = []
+    session_receipt = {
+        "session_sha256": session_sha256,
+        "cache_key": cache_key,
+    }
 
     class PipelineCacheSession:
         def __enter__(self):
-            events.append("cache_session_open")
+            events.append("cache-session-open")
             return self
 
         def __exit__(self, *_args):
-            events.append("cache_session_close")
+            events.append("cache-session-close")
             return None
 
         def verify(self):
+            events.append("cache-session-verify")
             return self
 
         def as_dict(self):
             return session_receipt
 
     pipeline_cache_session = PipelineCacheSession()
-
-    def selective_authenticated_session():
-        selective_session_calls.append("constructed")
-        return pipeline_cache_session
-
-    cache.selective_authenticated_session = selective_authenticated_session
-
-    gauge_receipt = MappingProxyType(
-        sealed(
-            {
-                "schema": "neural-forge-lfm2-self-dual-tied-gauge-install-v1",
-                "global_residual_gauge_frozen": True,
-            }
-        )
+    cache = SimpleNamespace(
+        cache_key=cache_key,
+        parent_fingerprint=cache_parent,
+        layer_topology_fingerprint=cache_topology,
+        batch_count=4,
+        manifest={"manifest_sha256": "9" * 64},
+        selective_authenticated_session=lambda: pipeline_cache_session,
     )
-
-    coverage_before_body = {
-        "schema": "neural-forge-lfm2-dense-producer-chain-coverage-v1",
-        "layer_index": 13,
-        "producer_kind": "mlp",
-        "deferred_roles": ["feed_forward.w2.weight"],
-        "role_receipts": {
-            "feed_forward.w1.weight": {"tensor_sha256": w1_sha},
-            "feed_forward.w3.weight": {"tensor_sha256": w3_sha},
-            "feed_forward.w2.weight": {"tensor_sha256": incumbent_w2_sha},
+    plan = SimpleNamespace(
+        assignments={
+            0: "fit",
+            1: "fit_check",
+            2: "selection",
+            3: "validation",
         },
-        "all_required_roles_structurally_nonzero": True,
-        "blank_or_partially_blank_required_role_count": 0,
-    }
-    coverage_before = sealed(coverage_before_body)
-    coverage_after_body = {
-        **coverage_before_body,
-        "deferred_roles": [],
-        "role_receipts": {
-            **coverage_before_body["role_receipts"],
-            "feed_forward.w2.weight": {"tensor_sha256": w2_sha},
-        },
-    }
-    coverage_after = sealed(coverage_after_body)
-    published_coverage_body = {
-        "schema": "neural-forge-dense-weight-structural-coverage-v1",
-        "tensor_sha256": w2_sha,
-        "structurally_nonzero": True,
-    }
-    published_coverage = sealed(published_coverage_body)
-    heldout_diagnostic_body = {
-        "incumbent": {"finite": True},
-        "published": {"finite": True},
-        "gates": {"diagnostic_threshold": False},
-        "passed": False,
-        "role": "diagnostic-only-after-frozen-terminal-publication-decision",
-        "publication_gate_applied": False,
-    }
-    heldout_diagnostic = {
-        **heldout_diagnostic_body,
-        "diagnostic_sha256": canonical_sha256(heldout_diagnostic_body),
-    }
-    layer_body = {
-        "body_recipe": recipe.as_dict(),
-        "body_recipe_sha256": recipe.recipe_sha256,
-        "body_recipe_id": recipe.recipe_id,
-        "complete_causal_layer_stack_adjudicated": True,
-        "complete_causal_layer_stack_installed": False,
-        "whole_stage_contains_meaningful_parameter_changes": True,
-        "model_state_before_sha256": "b" * 64,
-        "model_state_after_sha256": "d" * 64,
-        "changed_state_keys": ["model.layers.0.mutable"],
-        "attention_operator_decision_count": 6,
-        "attention_operator_install_count": 5,
-        "attention_operator_incumbent_noop_count": 1,
-        "short_conv_operator_decision_count": 8,
-        "short_conv_operator_install_count": 8,
-        "short_conv_operator_incumbent_noop_count": 0,
-        "replay_fresh_mlp_evidence_compile_count": 14,
-        "nonterminal_mlp_writer_decision_count": 13,
-        "nonterminal_mlp_writer_install_count": 12,
-        "nonterminal_mlp_writer_incumbent_noop_count": 1,
-        "final_mlp_producer_install_count": 0,
-        "final_mlp_producer_incumbent_noop_count": 1,
-        "attention_producer_structural_coverage_count": 6,
-        "short_conv_producer_structural_coverage_count": 8,
-        "nonterminal_mlp_producer_structural_coverage_count": 13,
-        "final_mlp_producer_structural_coverage_count": 1,
-        "installed_complete_producer_chain_count": 25,
-        "authenticated_nonzero_folded_seed_retained_noop_count": 3,
-        "blank_or_partially_blank_producer_chain_count": 0,
-        "complete_nonzero_structural_producer_coverage": True,
-        "all_producer_chains_installed_or_retained_nonzero_seed": True,
-        "layer_installations": [
-            {
-                "mlp_producer_coverage_decision": {
-                    "coverage_after_sha256": coverage_before["result_sha256"]
-                }
-            }
-        ],
-        "operator_parameter_mutation_count": 13,
-        "mlp_parameter_mutation_count": 12,
-        "cache_selective_session_sha256": session_receipt["session_sha256"],
-    }
-    layer_receipt = MappingProxyType(
-        {**layer_body, "result_sha256": canonical_sha256(layer_body)}
-    )
-    layer_stack = SimpleNamespace(receipt=layer_receipt)
-    terminal_installation = {
-        "decision_count": 1,
-        "installed": True,
-        "install_count": 1,
-        "mutation_count": 1,
-        "incumbent_retention_count": 0,
-        "exact_zero_copy_noop": False,
-        "parameter_copy_calls": 1,
-        "changed_state_keys": ["model.layers.13.feed_forward.w2.weight"],
-        "parameter_topology_preserved": True,
-        "parameter_identities_preserved": True,
-        "parameter_storage_preserved": True,
-        "gradient_state_preserved": True,
-        "parameter_count_changed": False,
-        "model_state_before_sha256": "d" * 64,
-        "model_state_after_sha256": "e" * 64,
-        "terminal_action_result_sha256": terminal_publication_decision[
-            "terminal_action_result_sha256"
-        ],
-        "terminal_action_selected_w2_sha256": terminal_publication_decision[
-            "terminal_action_selected_w2_sha256"
-        ],
-        "terminal_action_published_w2_sha256": terminal_publication_decision[
-            "terminal_action_published_w2_sha256"
-        ],
-        "semantic_selected_w2_sha256": terminal_publication_decision[
-            "semantic_selected_w2_sha256"
-        ],
-        "semantic_published_w2_sha256": terminal_publication_decision[
-            "semantic_published_w2_sha256"
-        ],
-        "published_w2_sha256": w2_sha,
-        "published_w2_structurally_nonzero": True,
-        "published_w2_structural_coverage": published_coverage,
-        "published_w2_structural_coverage_sha256": published_coverage["result_sha256"],
-    }
-    terminal_frontier_context_body = {
-        "schema": postfold.LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA,
-        "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
-        "terminal_result_sha256": terminal_action_report["result_sha256"],
-        "terminal_cache_compatibility_sha256": terminal_cache_compatibility[
-            "authentication_sha256"
-        ],
-        "terminal_cache_payload_binding_sha256": payload_binding[
-            "authentication_sha256"
-        ],
-        "terminal_cache_session_sha256": session_receipt["session_sha256"],
-        "body_recipe": recipe.as_dict(),
-        "body_recipe_sha256": recipe.recipe_sha256,
-        "body_recipe_id": recipe.recipe_id,
-    }
-    terminal_frontier_context = {
-        **terminal_frontier_context_body,
-        "context_sha256": canonical_sha256(terminal_frontier_context_body),
-    }
-    terminal_body = {
-        "schema": postfold.LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA,
-        "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
-        "accepted": True,
-        "terminal_publication_decision_accepted": True,
-        "terminal_nonincumbent_candidate_accepted": True,
-        "terminal_incumbent_retained": False,
-        "terminal_writer_decision_count": 1,
-        "terminal_writer_install_count": 1,
-        "terminal_writer_mutation_count": 1,
-        "terminal_writer_incumbent_retention_count": 0,
-        "terminal_result": terminal_action_report,
-        "terminal_action_result_sha256": terminal_publication_decision[
-            "terminal_action_result_sha256"
-        ],
-        "terminal_action_selected_w2_sha256": terminal_publication_decision[
-            "terminal_action_selected_w2_sha256"
-        ],
-        "terminal_action_published_w2_sha256": terminal_publication_decision[
-            "terminal_action_published_w2_sha256"
-        ],
-        "semantic_selected_w2_sha256": terminal_publication_decision[
-            "semantic_selected_w2_sha256"
-        ],
-        "semantic_published_w2_sha256": terminal_publication_decision[
-            "semantic_published_w2_sha256"
-        ],
-        "terminal_publication_decision": dict(terminal_publication_decision),
-        "terminal_frontier_export_context": terminal_frontier_context,
-        "terminal_frontier_export_context_sha256": terminal_frontier_context[
-            "context_sha256"
-        ],
-        "installation": terminal_installation,
-        "final_mlp_producer_coverage_before_terminal": coverage_before,
-        "final_mlp_full_coverage_after_terminal": coverage_after,
-        "complete_nonzero_final_mlp_structural_coverage": True,
-        "cache_key": cache.cache_key,
-        "cache_parent_fingerprint": cache.parent_fingerprint,
-        "bridge_artifact_sha256": bridge.artifact_sha256,
-        "terminal_cache_compatibility": dict(terminal_cache_compatibility),
-        "terminal_cache_compatibility_sha256": terminal_cache_compatibility[
-            "authentication_sha256"
-        ],
-        "terminal_cache_payload_binding": dict(payload_binding),
-        "terminal_source_lineage": terminal_source_lineage.as_dict(),
-        "terminal_source_lineage_sha256": (
-            terminal_source_lineage.authentication_sha256
+        verify_for=lambda observed_cache: (
+            None
+            if observed_cache is cache
+            else pytest.fail("split plan received the wrong cache")
         ),
-        "terminal_composite_lineage": terminal_composite_lineage.as_dict(),
-        "terminal_composite_lineage_sha256": (
-            terminal_composite_lineage.authentication_sha256
-        ),
-        "terminal_compiler_binding_sha256": (
-            terminal_composite_lineage.compiler_binding_sha256
-        ),
-        "parent_action_projection_sha256": [],
-        "parent_action_projection_diagnostics": [],
-        "parent_action_projection_numeric_threshold_applied": False,
-        "parent_action_projection_metrics_diagnostic_only": True,
-        "parent_cache_authentication": cache_authentication,
-        "terminal_cache_tensor_payload_load_audit": payload_load_audit,
-        "cached_full_prefix_payload_verification": [dict(raw_receipt)],
-        "cached_full_prefix_payload_verification_sha256": [
-            raw_receipt["authentication_sha256"]
-        ],
-        "terminal_cache_io_audit": dict(terminal_cache_io),
-        "fused_heldout_diagnostics": {
-            "selection": dict(heldout_diagnostic),
-            "validation": dict(heldout_diagnostic),
-        },
-        "separate_heldout_lane_diagnostics": {
-            lane: {
-                "selection": dict(heldout_diagnostic),
-                "validation": dict(heldout_diagnostic),
-            }
-            for lane in ("parent_endpoint", "lexical", "final_layer_mlp")
-        },
-        "terminal_heldout_metrics_diagnostic_only": True,
-        "terminal_heldout_publication_gate_applied": False,
-        "operation_audit": dict(postfold._ZERO_OPERATIONS),
-    }
-    terminal = postfold._issue_fused_semantic_terminal_receipt(
-        MappingProxyType(
-            {**terminal_body, "result_sha256": canonical_sha256(terminal_body)}
-        )
     )
 
-    validated_terminal = postfold._validate_fused_semantic_terminal_receipt(
-        terminal,
-        layer_receipt=layer_receipt,
-        current_model_state_sha256="e" * 64,
-    )
-    assert validated_terminal["result_sha256"] == terminal["result_sha256"]
-    assert type(terminal) is postfold._CompilerIssuedFusedSemanticTerminalReceipt
-    assert type(terminal).__slots__ == ("__weakref__",)
-    assert not hasattr(terminal, "__dict__")
-    with pytest.raises(postfold.Lfm2SemanticPostfoldError):
-        postfold._CompilerIssuedFusedSemanticTerminalReceipt()
-
-    foreign_recipe_id = next(
-        value
-        for value in postfold.LFM2_SEMANTIC_BODY_RECIPE_IDS
-        if value != recipe.recipe_id
-    )
-    foreign_recipe = postfold.resolve_lfm2_semantic_body_recipe(foreign_recipe_id)
-    foreign_context_body = dict(terminal_frontier_context)
-    foreign_context_body.pop("context_sha256")
-    foreign_context_body.update(
-        {
-            "body_recipe": foreign_recipe.as_dict(),
-            "body_recipe_sha256": foreign_recipe.recipe_sha256,
-            "body_recipe_id": foreign_recipe.recipe_id,
+    cached = []
+    semantic_bridges = []
+    split_order = ("fit", "fit_check", "selection", "validation")
+    for batch_index, split in enumerate(split_order):
+        raw_body = {
+            "batch_index": batch_index,
+            "split": split,
         }
-    )
-    foreign_context = {
-        **foreign_context_body,
-        "context_sha256": canonical_sha256(foreign_context_body),
-    }
-    foreign_terminal_body = dict(terminal)
-    foreign_terminal_body.pop("result_sha256")
-    foreign_terminal_body["terminal_frontier_export_context"] = foreign_context
-    foreign_terminal_body["terminal_frontier_export_context_sha256"] = foreign_context[
-        "context_sha256"
-    ]
-    foreign_terminal = postfold._issue_fused_semantic_terminal_receipt(
-        {
-            **foreign_terminal_body,
-            "result_sha256": canonical_sha256(foreign_terminal_body),
+        raw = {
+            **raw_body,
+            "authentication_sha256": canonical_sha256(raw_body),
         }
-    )
-    with pytest.raises(
-        postfold.Lfm2SemanticPostfoldError,
-        match="did not bind the authenticated semantic body recipe",
-    ):
-        postfold._validate_fused_semantic_terminal_receipt(
-            foreign_terminal,
-            layer_receipt=layer_receipt,
-            current_model_state_sha256="e" * 64,
-        )
-
-    reconstructed_terminal = copy.deepcopy(dict(terminal))
-    with pytest.raises(
-        postfold.Lfm2SemanticPostfoldError,
-        match="not compiler-issued",
-    ):
-        postfold._validate_fused_semantic_terminal_receipt(
-            reconstructed_terminal,
-            layer_receipt=layer_receipt,
-            current_model_state_sha256="e" * 64,
-        )
-
-    for copied_terminal in (copy.copy(terminal), copy.deepcopy(terminal)):
-        with pytest.raises(
-            postfold.Lfm2SemanticPostfoldError,
-            match="unregistered",
-        ):
-            postfold._validate_fused_semantic_terminal_receipt(
-                copied_terminal,
-                layer_receipt=layer_receipt,
-                current_model_state_sha256="e" * 64,
+        projection_body = {
+            "batch_index": batch_index,
+            "diagnostic_only": True,
+        }
+        projection = {
+            **projection_body,
+            "authentication_sha256": canonical_sha256(projection_body),
+        }
+        cached.append(
+            SimpleNamespace(
+                parent_final_norm_endpoint={
+                    "runtime_replay_to_cached_output_verified": True,
+                    "authenticated_cached_output_used_as_compiler_target": True,
+                    "cached_output_endpoint_available": False,
+                },
+                cached_full_prefix_payload=raw,
+                parent_action_projection=projection,
             )
+        )
+        semantic_bridges.append(
+            SimpleNamespace(
+                source_batch_index=batch_index,
+                target_position_origin=0,
+                phases=(
+                    SimpleNamespace(target_full_prefix_length=1),
+                    SimpleNamespace(
+                        target_full_prefix_length=2,
+                        target_full_prefix_token_ids=(batch_index,),
+                    ),
+                ),
+            )
+        )
+
+    cache_receipt = {
+        "session": session_receipt,
+        "selected_payloads": [],
+    }
+    payload_audit = {
+        "every_batch_loaded_full_tensor_inventory_once": True,
+        "full_tensor_inventory_payload_load_count": cache.batch_count,
+        "full_tensor_inventory_payload_logical_bytes_total": 512,
+        "selected_tensor_payload_load_count": cache.batch_count,
+        "selected_tensor_payload_logical_bytes_total": 512,
+    }
+    replay_splits = iter(split_order)
+
+    def replay_lexical_rows(*_args, **_kwargs):
+        split = next(replay_splits)
+        bank = evidence[split]
+        return (
+            bank.mlp_input[:1].clone(),
+            bank.pre_mlp_residual[:1].clone(),
+            {"replay_sha256": canonical_sha256({"split": split})},
+        )
+
+    compiler_calls = 0
+    real_terminal_compiler = postfold.compile_lfm2_cpcf_terminal_action_residual
+
+    def compile_terminal(**kwargs):
+        nonlocal compiler_calls
+        compiler_calls += 1
+        events.append("closed-form-terminal-compiler")
+        return real_terminal_compiler(**kwargs)
+
+    exported: list[tuple[object, object]] = []
+    issued_terminal_receipts: list[object] = []
+
+    def export_frontier(result, export_context):
+        events.append("frontier-export")
+        assert int(
+            torch.count_nonzero(
+                target_model.model.layers[-1].feed_forward.w2.weight
+            ).item()
+        ) == 0
+        assert result.accepted is False
+        assert result.selected_candidate_id == "incumbent"
+        assert len(result.frontier_down_weights) == 36
+        exported.append((result, export_context))
+        reference_body = {
+            "schema": "fixture-authenticated-terminal-frontier-reference-v1",
+            "terminal_result_sha256": result.result_sha256,
+            "complete_candidate_count": len(result.frontier_down_weights),
+        }
+        return {
+            **reference_body,
+            "receipt_sha256": canonical_sha256(reference_body),
+        }
+
+    monkeypatch.setattr(
+        postfold,
+        "open_lfm2_circuit_trace_cache",
+        lambda *_args, **_kwargs: cache,
+    )
+
+    def preflight(observed_cache):
+        assert observed_cache is cache
+        events.append("metadata-preflight")
+        return compatibility
+
+    monkeypatch.setattr(
+        postfold,
+        "preflight_lfm2_long_horizon_terminal_cache",
+        preflight,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "load_strict_tokenizer_bridge_artifact",
+        lambda *_args, **_kwargs: bridge,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "load_lfm2_cpcf_v5_standalone_child",
+        lambda *_args, **_kwargs: (
+            target_model,
+            saved_tokenizer,
+            {
+                "artifact_sha256": "a" * 64,
+                "model_state_sha256": "b" * 64,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_hf_tokenizer_semantics",
+        lambda _tokenizer: "c" * 64,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "load_lfm2_parent_final_rmsnorm_from_local_safetensors",
+        lambda *_args, **_kwargs: parent_norm,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "load_lfm2_mapped_parent_tied_table_from_local_safetensors",
+        lambda *_args, **_kwargs: (
+            source_table,
+            {"result_sha256": "d" * 64},
+        ),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "load_lfm2_semantic_compiler_lineage",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        postfold,
+        "rehydrate_lfm2_c61_tied_interface",
+        lambda *_args, **_kwargs: (
+            interface,
+            {
+                "compiler_cache_key": "e" * 64,
+                "semantic_evidence_cache_key": cache_key,
+                "result_sha256": "f" * 64,
+            },
+        ),
+    )
+    statistics_sha256 = "0" * 64
+    statistics_manifest_sha256 = "1" * 64
+    statistics_replay_sha256 = "2" * 64
+    foundation_rehydration_body = {
+        "schema": "neural-forge-lfm2-semantic-foundation-interface-rehydration-v2",
+        "compiler_cache_key": "e" * 64,
+        "semantic_evidence_cache_key": cache_key,
+        "interface_statistics_artifact_sha256": statistics_sha256,
+        "interface_statistics_manifest_file_sha256": statistics_manifest_sha256,
+        "interface_statistics_replay_sha256": statistics_replay_sha256,
+        "compiler_cache_open_calls": 0,
+        "trace_safetensor_open_calls": 0,
+        "selective_provider_open_calls": 0,
+    }
+    foundation_rehydration = {
+        **foundation_rehydration_body,
+        "result_sha256": canonical_sha256(foundation_rehydration_body),
+    }
+    foundation_calls: list[dict[str, object]] = []
+
+    def rehydrate_foundation(*_args, **kwargs):
+        foundation_calls.append(kwargs)
+        return interface, foundation_rehydration
+
+    monkeypatch.setattr(
+        postfold,
+        "rehydrate_lfm2_semantic_foundation_interface",
+        rehydrate_foundation,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "install_lfm2_tied_residual_congruence_gauge",
+        lambda *_args, **_kwargs: (
+            events.append("tied-residual-gauge") or (interface, gauge_receipt)
+        ),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "build_lfm2_long_horizon_terminal_source_lineage",
+        lambda **_kwargs: source_lineage,
+    )
+    monkeypatch.setattr(
+        postfold.Lfm2LongHorizonTerminalSourceLineage,
+        "verify_for",
+        lambda self, **_kwargs: self,
+    )
+
+    def compile_layer_stack(**kwargs):
+        events.append("layer-stack")
+        assert kwargs["body_recipe"] == recipe
+        assert kwargs["authenticated_cache_session"] is pipeline_cache_session
+        assert kwargs["fold_compute_device"] == "cuda:1"
+        return layer_stack
+
+    monkeypatch.setattr(
+        postfold,
+        "compile_install_lfm2_semantic_layer_stack_stage",
+        compile_layer_stack,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "authenticate_lfm2_semantic_layer_stack_attention_receipts",
+        lambda _receipt, *, body_recipe: (
+            attention_authentication
+            if body_recipe == recipe
+            else pytest.fail("top-level changed the body recipe")
+        ),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256=layer_state_after),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_lfm2_dense_producer_chain_coverage",
+        lambda *_args, **_kwargs: coverage,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_authenticate_fused_terminal_tied_interface",
+        lambda **_kwargs: tied_authentication,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_target_runtime_seed",
+        lambda *_args, **_kwargs: (seed, seed.down_weight, (), seed.norm_epsilon),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_collect_cached_semantic_trajectories",
+        lambda *_args, **_kwargs: (
+            cached,
+            semantic_bridges,
+            cache_receipt,
+        ),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_bind_terminal_cache_compatibility_to_payload_session",
+        lambda *_args, **_kwargs: payload_binding,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_build_terminal_composite_lineage",
+        lambda **_kwargs: composite_lineage,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_summarize_terminal_cache_payload_loads",
+        lambda _receipt: payload_audit,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_build_split_evidence",
+        lambda *_args, **_kwargs: (
+            tuple(SimpleNamespace(split=split) for split in split_order),
+            (),
+            (),
+            0,
+        ),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_convert_parent_terminal_evidence",
+        lambda value, _encoder: evidence[value.split],
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_append_only_lexical_supervision_coordinates",
+        lambda semantic: (
+            (0,),
+            (semantic.source_batch_index % 2,),
+            (f"lexical:{semantic.source_batch_index}",),
+            (1,),
+        ),
+    )
+    monkeypatch.setattr(postfold, "_replay_lexical_rows", replay_lexical_rows)
+    monkeypatch.setattr(
+        postfold,
+        "compile_lfm2_cpcf_terminal_action_residual",
+        compile_terminal,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_authenticate_fused_terminal_cache_evidence",
+        lambda _receipt: {
+            "terminal_cache_compatibility_sha256": compatibility[
+                "authentication_sha256"
+            ],
+            "terminal_cache_payload_binding_sha256": payload_binding[
+                "authentication_sha256"
+            ],
+            "terminal_cache_session_sha256": session_sha256,
+        },
+    )
+    real_receipt_validator = postfold._validate_fused_semantic_terminal_receipt
+
+    def validate_issued_terminal_receipt(receipt, **kwargs):
+        issued_terminal_receipts.append(receipt)
+        return real_receipt_validator(receipt, **kwargs)
+
+    monkeypatch.setattr(
+        postfold,
+        "_validate_fused_semantic_terminal_receipt",
+        validate_issued_terminal_receipt,
+    )
+    monkeypatch.setattr(
+        postfold,
+        "_install_final_w2_once",
+        lambda *_args, **_kwargs: pytest.fail(
+            "review-pending orchestration installed final W2"
+        ),
+    )
+    monkeypatch.setattr(
+        postfold,
+        "publish_lfm2_semantic_postfold_checkpoint",
+        lambda **_kwargs: pytest.fail(
+            "review-pending orchestration published a checkpoint"
+        ),
+    )
+
+    for name in ("input", "cache", "bridge", "parent"):
+        (tmp_path / name).mkdir()
+    compiler_diagnostic = tmp_path / "compiler.json"
+    compiler_diagnostic.write_text(
+        (
+            json.dumps({"schema": postfold.LFM2_SEMANTIC_FOUNDATION_SCHEMA})
+            if use_foundation_statistics
+            else "{}"
+        ),
+        encoding="utf-8",
+    )
+    statistics_arguments = {}
+    if use_foundation_statistics:
+        (tmp_path / "statistics").mkdir()
+        statistics_arguments = {
+            "interface_statistics_directory": tmp_path / "statistics",
+            "expected_interface_statistics_sha256": statistics_sha256,
+        }
+
+    result = postfold.run_lfm2_semantic_postfold(
+        input_checkpoint_directory=tmp_path / "input",
+        expected_input_artifact_sha256="a" * 64,
+        output_checkpoint_directory=tmp_path / "output",
+        cache_directory=tmp_path / "cache",
+        expected_cache_key=cache_key,
+        bridge_directory=tmp_path / "bridge",
+        expected_bridge_artifact_sha256=bridge_sha256,
+        donor_tokenizer=SimpleNamespace(name="donor-tokenizer"),
+        target_tokenizer=target_tokenizer,
+        parent_model_directory=tmp_path / "parent",
+        compiler_diagnostic_json=compiler_diagnostic,
+        expected_compiler_diagnostic_sha256="3" * 64,
+        device="cpu",
+        fold_compute_device="cuda:1",
+        body_recipe=recipe,
+        fused_terminal_compiler=(
+            postfold.compile_install_lfm2_fused_semantic_terminal_refold
+        ),
+        terminal_frontier_exporter=export_frontier,
+        split_plan=plan,
+        **statistics_arguments,
+    )
+
+    assert compiler_calls == 1
+    assert len(exported) == 1
+    assert len(issued_terminal_receipts) == 1
+    issued_receipt = issued_terminal_receipts[0]
+    assert type(issued_receipt) is postfold._CompilerIssuedFusedSemanticTerminalReceipt
+    assert not hasattr(issued_receipt, "__dict__")
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match="not compiler-issued"):
+        real_receipt_validator(
+            dict(issued_receipt),
+            layer_receipt=layer_stack.receipt,
+            current_model_state_sha256=layer_state_after,
+        )
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match="unregistered"):
+        real_receipt_validator(
+            copy.copy(issued_receipt),
+            layer_receipt=layer_stack.receipt,
+            current_model_state_sha256=layer_state_after,
+        )
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match="real compiler"):
+        postfold._CompilerIssuedFusedSemanticTerminalReceipt()
 
     gc.collect()
     registry_size_before = postfold._fused_semantic_terminal_receipt_registry_size()
-    temporary_terminal = postfold._issue_fused_semantic_terminal_receipt(dict(terminal))
-    temporary_reference = weakref.ref(temporary_terminal)
-    assert temporary_reference() is temporary_terminal
+    temporary_receipt = postfold._issue_fused_semantic_terminal_receipt(
+        dict(issued_receipt)
+    )
+    temporary_reference = weakref.ref(temporary_receipt)
+    assert temporary_reference() is temporary_receipt
     assert (
         postfold._fused_semantic_terminal_receipt_registry_size()
         == registry_size_before + 1
     )
-    del temporary_terminal
+    del temporary_receipt
     gc.collect()
     assert temporary_reference() is None
     assert (
@@ -3474,61 +3499,116 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         == registry_size_before
     )
 
-    def reseal_terminal_result(receipt):
-        result = receipt.get("terminal_result")
-        if isinstance(result, dict):
-            result.pop("result_sha256", None)
-            result["result_sha256"] = canonical_sha256(result)
-        receipt.pop("result_sha256", None)
-        receipt["result_sha256"] = canonical_sha256(receipt)
-        return receipt
+    foreign_recipe_id = next(
+        value
+        for value in postfold.LFM2_SEMANTIC_BODY_RECIPE_IDS
+        if value != recipe.recipe_id
+    )
+    foreign_recipe = postfold.resolve_lfm2_semantic_body_recipe(foreign_recipe_id)
+    foreign_receipt_body = copy.deepcopy(dict(issued_receipt))
+    foreign_receipt_body.pop("result_sha256")
+    foreign_context = foreign_receipt_body["terminal_frontier_export_context"]
+    foreign_context.pop("context_sha256")
+    foreign_context.update(
+        {
+            "body_recipe": foreign_recipe.as_dict(),
+            "body_recipe_sha256": foreign_recipe.recipe_sha256,
+            "body_recipe_id": foreign_recipe.recipe_id,
+        }
+    )
+    foreign_context["context_sha256"] = canonical_sha256(foreign_context)
+    foreign_receipt_body["terminal_frontier_export_context_sha256"] = (
+        foreign_context["context_sha256"]
+    )
+    foreign_receipt = postfold._issue_fused_semantic_terminal_receipt(
+        {
+            **foreign_receipt_body,
+            "result_sha256": canonical_sha256(foreign_receipt_body),
+        }
+    )
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="did not bind the authenticated semantic body recipe",
+    ):
+        real_receipt_validator(
+            foreign_receipt,
+            layer_receipt=layer_stack.receipt,
+            current_model_state_sha256=layer_state_after,
+        )
 
-    def replace_terminal_selected_and_published_state(receipt):
-        result = receipt["terminal_result"]
-        replacement_sha256 = "f" * 64
+    def issue_coherently_resealed_terminal_tamper(tamper):
+        forged = copy.deepcopy(dict(issued_receipt))
+        forged.pop("result_sha256")
+        tamper(forged)
+        terminal_result = forged.get("terminal_result")
+        if isinstance(terminal_result, dict):
+            terminal_result.pop("result_sha256", None)
+            terminal_result["result_sha256"] = canonical_sha256(terminal_result)
+            forged["terminal_action_result_sha256"] = terminal_result[
+                "result_sha256"
+            ]
+            context = forged["terminal_frontier_export_context"]
+            context.pop("context_sha256", None)
+            context["terminal_result_sha256"] = terminal_result["result_sha256"]
+            context["context_sha256"] = canonical_sha256(context)
+            forged["terminal_frontier_export_context_sha256"] = context[
+                "context_sha256"
+            ]
+            export = forged["terminal_frontier_export"]
+            export.pop("receipt_sha256", None)
+            export["terminal_result_sha256"] = terminal_result["result_sha256"]
+            export["receipt_sha256"] = canonical_sha256(export)
+            forged["terminal_frontier_export_sha256"] = canonical_sha256(export)
+        return postfold._issue_fused_semantic_terminal_receipt(
+            {**forged, "result_sha256": canonical_sha256(forged)}
+        )
+
+    def replace_terminal_selected_and_published_state(value):
+        result = value["terminal_result"]
+        selected_record = next(
+            record
+            for record in result["frontier"][1:]
+            if record["structurally_eligible"] is True
+        )
+        replacement_id = selected_record["candidate_id"]
+        replacement_sha256 = selected_record["state_sha256"]
+        result.update(
+            {
+                "selected_candidate_id": replacement_id,
+                "selected_state_sha256": replacement_sha256,
+                "selected_nonincumbent": True,
+                "accepted": True,
+                "published_is_incumbent": False,
+                "final_selected_candidate_id": replacement_id,
+                "final_selection_performed": True,
+                "candidate_published_before_manual_review": True,
+                "published_writer_is_incumbent_pending_manual_review": False,
+                "published_writer_is_structurally_safe_effectful_nonincumbent": True,
+            }
+        )
         result["output_state_sha256"]["selected"] = replacement_sha256
         result["output_state_sha256"]["published"] = replacement_sha256
-        result["selected_state_sha256"] = replacement_sha256
-        result["selected_selection_key"][-1] = replacement_sha256
-
-        selected_coverage = result["selected_writer_structural_coverage"]
-        selected_coverage.pop("coverage_sha256", None)
-        selected_coverage["tensor_sha256"] = replacement_sha256
-        selected_coverage["coverage_sha256"] = terminal_action._canonical_sha256(
-            selected_coverage
-        )
-        result["selected_writer_structural_coverage_sha256"] = selected_coverage[
-            "coverage_sha256"
-        ]
-
-        selected_record = next(
-            value
-            for value in result["frontier"]
-            if value["candidate_id"] == result["selected_candidate_id"]
-        )
-        selected_record["state_sha256"] = replacement_sha256
-        selected_record["selection_key"][-1] = replacement_sha256
-        record_coverage = selected_record["structural_coverage"]
-        record_coverage.pop("coverage_sha256", None)
-        record_coverage["tensor_sha256"] = replacement_sha256
-        record_coverage["coverage_sha256"] = terminal_action._canonical_sha256(
-            record_coverage
-        )
-        selected_record["structural_coverage_sha256"] = record_coverage[
-            "coverage_sha256"
-        ]
+        value["terminal_action_selected_w2_sha256"] = replacement_sha256
+        value["terminal_action_published_w2_sha256"] = replacement_sha256
+        value["final_selected_candidate_id"] = replacement_id
+        value["final_selection_performed"] = True
+        value["candidate_published_before_manual_review"] = True
+        value["accepted"] = True
+        value["terminal_publication_decision_accepted"] = True
+        value["terminal_writer_install_count"] = 1
+        value["terminal_writer_mutation_count"] = 1
 
     tamper_cases = {
         "missing-terminal-result": lambda value: value.pop("terminal_result"),
-        "result-not-accepted": lambda value: value["terminal_result"].__setitem__(
-            "accepted", False
+        "result-accepted": lambda value: value["terminal_result"].__setitem__(
+            "accepted", True
         ),
-        "result-selected-incumbent": lambda value: value["terminal_result"].__setitem__(
-            "selected_nonincumbent", False
-        ),
-        "result-published-incumbent": lambda value: value[
+        "result-selected-nonincumbent": lambda value: value[
             "terminal_result"
-        ].__setitem__("published_is_incumbent", True),
+        ].__setitem__("selected_nonincumbent", True),
+        "result-published-nonincumbent": lambda value: value[
+            "terminal_result"
+        ].__setitem__("published_is_incumbent", False),
         "result-rollback": lambda value: value["terminal_result"].__setitem__(
             "rollback_performed", True
         ),
@@ -3541,310 +3621,145 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "validation-publication-gate": lambda value: value["terminal_result"][
             "validation"
         ].__setitem__("publication_gate_applied", True),
-        "validation-frozen-acceptance": lambda value: value["terminal_result"][
-            "validation"
-        ].__setitem__("used_only_for_frozen_candidate_acceptance", True),
-        "receipt-retention-count": lambda value: value.__setitem__(
-            "terminal_writer_incumbent_retention_count", 1
+        "validation-candidate-acceptance": lambda value: value[
+            "terminal_result"
+        ]["validation"].__setitem__("used_for_candidate_acceptance", True),
+        "receipt-writer-install": lambda value: value.__setitem__(
+            "terminal_writer_install_count", 1
         ),
-        "decision-retains-incumbent": lambda value: value[
-            "terminal_publication_decision"
-        ].__setitem__("terminal_incumbent_retained", True),
+        "receipt-publication-accepted": lambda value: value.__setitem__(
+            "terminal_publication_decision_accepted", True
+        ),
         "coherent-terminal-state-replacement": (
             replace_terminal_selected_and_published_state
         ),
     }
+    accepted_tampers = []
     for tamper_name, tamper in tamper_cases.items():
-        tampered = copy.deepcopy(dict(terminal))
-        tamper(tampered)
-        reseal_terminal_result(tampered)
-        with pytest.raises(
-            postfold.Lfm2SemanticPostfoldError,
-            match="terminal|receipt",
-        ):
-            postfold._validate_fused_semantic_terminal_receipt(
-                tampered,
-                layer_receipt=layer_receipt,
-                current_model_state_sha256="e" * 64,
+        forged_receipt = issue_coherently_resealed_terminal_tamper(tamper)
+        try:
+            real_receipt_validator(
+                forged_receipt,
+                layer_receipt=layer_stack.receipt,
+                current_model_state_sha256=layer_state_after,
             )
-
-    cache_open_calls = []
-
-    def open_cache(*_args, **kwargs):
-        cache_open_calls.append(kwargs.get("verify"))
-        return cache
-
-    monkeypatch.setattr(postfold, "open_lfm2_circuit_trace_cache", open_cache)
-    monkeypatch.setattr(
-        postfold,
-        "preflight_lfm2_long_horizon_terminal_cache",
-        lambda observed_cache: (
-            events.append("metadata_preflight")
-            or (
-                terminal_cache_compatibility
-                if observed_cache is cache
-                else pytest.fail("preflight received the wrong semantic cache")
-            )
-        ),
+        except postfold.Lfm2SemanticPostfoldError:
+            continue
+        accepted_tampers.append(tamper_name)
+    assert not accepted_tampers, (
+        "Coherently resealed terminal tamper(s) were accepted: "
+        + ", ".join(accepted_tampers)
     )
-    monkeypatch.setattr(
-        postfold,
-        "load_strict_tokenizer_bridge_artifact",
-        lambda *_a, **_k: bridge,
-    )
-    monkeypatch.setattr(
-        postfold,
-        "load_lfm2_cpcf_v5_standalone_child",
-        lambda *_a, **_k: (
-            model,
-            tokenizer,
-            MappingProxyType(
-                {
-                    "artifact_sha256": "4" * 64,
-                    "model_state_sha256": "5" * 64,
-                }
-            ),
-        ),
-    )
-    monkeypatch.setattr(
-        postfold,
-        "fingerprint_hf_tokenizer_semantics",
-        lambda _tokenizer: "a" * 64,
-    )
-    monkeypatch.setattr(
-        postfold,
-        "load_lfm2_parent_final_rmsnorm_from_local_safetensors",
-        lambda *_a, **_k: parent_norm,
-    )
-    monkeypatch.setattr(
-        postfold,
-        "load_lfm2_mapped_parent_tied_table_from_local_safetensors",
-        lambda *_a, **_k: (
-            source_table,
-            MappingProxyType({"result_sha256": "7" * 64}),
-        ),
-    )
-    monkeypatch.setattr(
-        postfold,
-        "build_lfm2_long_horizon_terminal_source_lineage",
-        lambda **_kwargs: terminal_source_lineage,
-    )
-    monkeypatch.setattr(
-        postfold,
-        "rehydrate_lfm2_c61_tied_interface",
-        lambda *_a, **_k: (interface, interface_rehydration),
-    )
-    foundation_rehydration_calls = []
-
-    def rehydrate_foundation(*_args, **kwargs):
-        foundation_rehydration_calls.append(kwargs)
-        return interface, interface_rehydration
-
-    monkeypatch.setattr(
-        postfold,
-        "rehydrate_lfm2_semantic_foundation_interface",
-        rehydrate_foundation,
-    )
-    monkeypatch.setattr(
-        postfold,
-        "load_lfm2_semantic_compiler_lineage",
-        lambda *_a, **_k: MappingProxyType({}),
-    )
-
-    def install_gauge(_model, source_interface, mapped_table, *, mode):
-        events.append("tied_residual_gauge")
-        assert source_interface is interface
-        assert mapped_table is source_table
-        assert mode == postfold.TIED_RESIDUAL_STRONG_CONGRUENCE_MODE
-        return self_dual_interface, gauge_receipt
-
-    monkeypatch.setattr(
-        postfold,
-        "install_lfm2_tied_residual_congruence_gauge",
-        install_gauge,
-    )
-
-    def layer_stack_compiler(**_kwargs):
-        events.append("layer_stack")
-        assert _kwargs["interface"] is self_dual_interface
-        assert _kwargs["fold_compute_device"] == "cuda:1"
-        assert _kwargs["authenticated_cache_session"] is pipeline_cache_session
-        assert _kwargs["body_recipe"] == recipe
-        return layer_stack
-
-    def terminal_compiler(**_kwargs):
-        events.append("terminal")
-        assert _kwargs["layer_stack"] is layer_stack
-        assert _kwargs["interface"] is self_dual_interface
-        assert _kwargs["terminal_cache_compatibility"] is (terminal_cache_compatibility)
-        assert _kwargs["authenticated_cache_session"] is pipeline_cache_session
-        assert _kwargs["body_recipe"] == recipe
-        return terminal
-
-    def publish(**_kwargs):
-        events.append("checkpoint")
-        return object(), MappingProxyType({"result_sha256": "c" * 64})
-
-    monkeypatch.setattr(
-        postfold,
-        "compile_install_lfm2_semantic_layer_stack_stage",
-        layer_stack_compiler,
-    )
-    attention_authentication_body = {
-        "body_recipe": recipe.as_dict(),
-        "body_recipe_sha256": recipe.recipe_sha256,
-        "body_recipe_id": recipe.recipe_id,
-        "attention_receipt_count": 6,
-        "complete_six_tensor_bundle_count": 6,
-    }
-    attention_authentication = MappingProxyType(
-        {
-            **attention_authentication_body,
-            "result_sha256": canonical_sha256(attention_authentication_body),
-        }
-    )
-    monkeypatch.setattr(
-        postfold,
-        "authenticate_lfm2_semantic_layer_stack_attention_receipts",
-        lambda _receipt, *, body_recipe: (
-            attention_authentication
-            if body_recipe == recipe
-            else pytest.fail("top-level postfold forwarded the wrong body recipe")
-        ),
-    )
-    monkeypatch.setattr(
-        postfold,
-        "publish_lfm2_semantic_postfold_checkpoint",
-        publish,
-    )
-    monkeypatch.setattr(
-        postfold,
-        "fingerprint_lfm2_parent",
-        lambda _model: SimpleNamespace(identity_sha256="e" * 64),
-    )
-    input_checkpoint = tmp_path / "input"
-    input_checkpoint.mkdir()
-    parent_directory = tmp_path / "parent"
-    parent_directory.mkdir()
-    bridge_directory = tmp_path / "bridge"
-    bridge_directory.mkdir()
-    cache_directory = tmp_path / "cache"
-    cache_directory.mkdir()
-    compiler_diagnostic = tmp_path / "compiler.json"
-    compiler_diagnostic.write_text(
-        (
-            json.dumps({"schema": postfold.LFM2_SEMANTIC_FOUNDATION_SCHEMA})
-            if use_foundation_statistics
-            else "{}"
-        ),
-        encoding="utf-8",
-    )
-
-    result = postfold.run_lfm2_semantic_postfold(
-        input_checkpoint_directory=input_checkpoint,
-        expected_input_artifact_sha256="4" * 64,
-        output_checkpoint_directory=tmp_path / "output",
-        cache_directory=cache_directory,
-        expected_cache_key=cache.cache_key,
-        bridge_directory=bridge_directory,
-        expected_bridge_artifact_sha256=bridge.artifact_sha256,
-        donor_tokenizer=object(),
-        target_tokenizer=tokenizer,
-        parent_model_directory=parent_directory,
-        compiler_diagnostic_json=compiler_diagnostic,
-        expected_compiler_diagnostic_sha256="e" * 64,
-        device="cpu",
-        fold_compute_device="cuda:1",
-        body_recipe=body_recipe_id,
-        fused_terminal_compiler=terminal_compiler,
-        **(
-            {
-                "interface_statistics_directory": tmp_path / "statistics",
-                "expected_interface_statistics_sha256": (statistics_artifact_sha256),
-            }
-            if use_foundation_statistics
-            else {}
-        ),
-    )
-
-    assert cache_open_calls == [False]
-    assert selective_session_calls == ["constructed"]
     assert events == [
-        "metadata_preflight",
-        "cache_session_open",
-        "tied_residual_gauge",
-        "layer_stack",
-        "terminal",
-        "cache_session_close",
-        "checkpoint",
+        "metadata-preflight",
+        "cache-session-open",
+        "tied-residual-gauge",
+        "layer-stack",
+        "metadata-preflight",
+        "cache-session-verify",
+        "closed-form-terminal-compiler",
+        "frontier-export",
+        "cache-session-verify",
+        "cache-session-close",
     ]
-    assert result["compiler_cache_key"] == "8" * 64
-    assert result["semantic_evidence_cache_key"] == cache.cache_key
-    assert result["body_recipe_id"] == body_recipe_id
+    assert result["status"] == "terminal-frontier-exported-review-pending"
+    assert result["final_selection_status"] == (
+        "deferred-to-manual-whole-response-review"
+    )
+    assert result["final_selected_candidate_id"] is None
+    assert result["terminal_publication_decision_accepted"] is False
+    assert result["terminal_nonincumbent_candidate_accepted"] is False
+    assert result["terminal_incumbent_retained"] is True
+    assert result["terminal_writer_install_count"] == 0
+    assert result["terminal_writer_mutation_count"] == 0
+    assert result["checkpoint_published"] is False
+    assert result["body_recipe_id"] == recipe.recipe_id
     assert result["body_recipe_sha256"] == recipe.recipe_sha256
-    assert result["materialized_body_recipe_id"] == body_recipe_id
-    assert result["one_checkpoint_contains_one_materialized_body_recipe"] is True
-    assert result["other_body_recipes_require_sealed_foundation_replay"] is True
+    assert result["compiler_cache_key"] == "e" * 64
+    assert result["semantic_evidence_cache_key"] == cache_key
     assert result["context_binding"]["fold_compute_device"] == "cuda:1"
-    assert (
-        result["context_binding"][
-            "compiler_and_semantic_cache_identities_bound_separately"
-        ]
-        is True
-    )
+    assert result["context_binding"]["terminal_review_pending"] is True
+    assert result["pipeline_cache_session_reuse"][
+        "same_pipeline_session_reused_by_layer_stack_and_terminal"
+    ] is True
     assert result["claims"]["training_performed"] is False
-    assert result["claims"]["attention_correction_installed"] is True
-    assert result["claims"]["complete_causal_layer_stack_installed"] is False
-    assert result["claims"]["attention_correction_install_count"] == 5
-    assert result["claims"]["terminal_writer_install_count"] == 1
-    assert result["terminal_incumbent_retained"] is False
-    assert (
-        result["tied_interface_mode"] == postfold.TIED_RESIDUAL_STRONG_CONGRUENCE_MODE
-    )
-    assert result["tied_residual_interface_gauge"] == dict(gauge_receipt)
-    assert result["self_dual_tied_gauge"] == dict(gauge_receipt)
-    session_reuse = result["pipeline_cache_session_reuse"]
-    assert (
-        session_reuse["pipeline_cache_session_sha256"]
-        == session_receipt["session_sha256"]
-    )
-    assert (
-        session_reuse["same_pipeline_session_reused_by_layer_stack_and_terminal"]
-        is True
-    )
-    assert session_reuse["trace_file_sha256_passes_per_batch"] == 1
-    assert session_reuse["additional_full_trace_file_sha256_passes_in_pipeline"] == 0
-    assert session_reuse["terminal_full_tensor_inventory_payload_loads_total"] == 1
-    assert (
-        session_reuse["terminal_full_tensor_inventory_payload_logical_bytes_total"]
-        == 128
-    )
+    assert result["claims"]["optimizer_steps"] == 0
+    assert result["claims"]["backward_calls"] == 0
+    assert result["claims"]["parameters_pruned"] == 0
+    assert result["claims"]["parameters_quantized"] == 0
+    assert result["claims"]["parameters_sparsified"] == 0
+    assert result["claims"]["numeric_metrics_have_final_intelligence_authority"] is False
+    assert result["claims"]["manual_whole_response_review_required"] is True
+    assert not (tmp_path / "output").exists()
+    assert _terminal_target_state(target_model) == target_state_before
+    assert tuple(
+        (
+            name,
+            id(parameter),
+            int(parameter.data_ptr()),
+            int(parameter.untyped_storage().data_ptr()),
+            id(parameter.grad),
+        )
+        for name, parameter in target_model.named_parameters()
+    ) == target_parameter_identity_before
+    assert int(
+        torch.count_nonzero(
+            target_model.model.layers[-1].feed_forward.w2.weight
+        ).item()
+    ) == 0
     if use_foundation_statistics:
-        assert len(foundation_rehydration_calls) == 1
-        assert foundation_rehydration_calls[0]["interface_statistics_directory"] == (
-            tmp_path / "statistics"
+        assert len(foundation_calls) == 1
+        assert result["interface_statistics_replay"]["artifact_sha256"] == (
+            statistics_sha256
         )
-        assert (
-            foundation_rehydration_calls[0]["expected_interface_statistics_sha256"]
-            == statistics_artifact_sha256
-        )
-        statistics_binding = result["interface_statistics_replay"]
-        assert statistics_binding["artifact_sha256"] == statistics_artifact_sha256
-        assert statistics_binding["manifest_file_sha256"] == (
-            statistics_manifest_sha256
-        )
-        assert statistics_binding["replay_sha256"] == statistics_replay_sha256
-        assert statistics_binding["semantic_evidence_cache_open_calls"] == 1
-        assert statistics_binding["compiler_cache_open_calls"] == 0
-        assert statistics_binding["trace_safetensor_open_calls"] == 0
-        assert statistics_binding["selective_provider_open_calls"] == 0
-        assert result["context_binding"]["interface_statistics_replay"] == (
-            statistics_binding
+        assert result["interface_statistics_replay"]["replay_sha256"] == (
+            statistics_replay_sha256
         )
     else:
-        assert foundation_rehydration_calls == []
+        assert foundation_calls == []
         assert "interface_statistics_replay" not in result
-        assert "interface_statistics_replay" not in result["context_binding"]
-    body = dict(result)
-    seal = body.pop("result_sha256")
-    assert seal == canonical_sha256(body)
+
+
+@pytest.mark.parametrize("exact_zero", (False, True), ids=("nonzero", "exact-zero"))
+def test_terminal_publication_stops_at_manual_whole_response_review(
+    exact_zero,
+) -> None:
+    if exact_zero:
+        seed, evidence, terminal = _compiled_exact_zero_terminal_result()
+    else:
+        seed, evidence, terminal = (
+            _compiled_nonzero_terminal_result_with_failed_validation()
+        )
+    report = terminal.as_dict()
+
+    assert report["review_pending_schema"] == (
+        terminal_action.LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+    )
+    assert report["final_selection_status"] == (
+        "deferred-to-manual-whole-response-review"
+    )
+    assert report["final_selected_candidate_id"] is None
+    assert report["final_selection_performed"] is False
+    assert report["automatic_candidate_selection_performed"] is False
+    assert report["automatic_candidate_acceptance_performed"] is False
+    assert report["candidate_published_before_manual_review"] is False
+    assert report["diagnostic_order_is_provisional"] is True
+    assert report["diagnostic_order_has_final_selection_authority"] is False
+    assert report["diagnostic_order_candidate_count"] == 36
+    assert terminal.selected_candidate_id == "incumbent"
+    assert terminal.accepted is False
+    assert terminal.changed is False
+    assert torch.equal(
+        terminal.published_down_weight,
+        terminal.incumbent_down_weight,
+    )
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="review-pending",
+    ):
+        postfold._terminal_publication_decision(
+            terminal,
+            expected_seed=seed,
+            expected_evidence=evidence,
+        )

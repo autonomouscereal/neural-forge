@@ -1893,12 +1893,13 @@ def _select_candidate(
         return incumbent[0]
 
     by_name = {candidate.name: candidate for candidate in eligible}
-    if recipe.recipe_id == "full_strength_structural":
+    short_conv_lane = recipe.component_lanes["short_conv"]
+    if short_conv_lane == "full_source_structural_priority":
         return by_name.get(
             "full-source-structural",
             by_name.get("incumbent-producer-output-writer", eligible[0]),
         )
-    if recipe.recipe_id == "residual_writer":
+    if short_conv_lane == "alpha_one_residual_writer_priority":
         return by_name.get(
             "full-source-producer-output-writer",
             by_name.get(
@@ -2182,7 +2183,8 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     if exact_zero_incumbent:
         cold_start_axis_coverage = _validate_cold_start_structural_plant(structural)
     blank_residual_writer = bool(
-        exact_zero_incumbent and recipe.recipe_id == "residual_writer"
+        exact_zero_incumbent
+        and recipe.component_lanes["short_conv"] == "alpha_one_residual_writer_priority"
     )
     writer, writer_fit_report = _compile_writer_candidate(
         banks["fit"],

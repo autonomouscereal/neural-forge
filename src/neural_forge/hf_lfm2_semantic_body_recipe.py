@@ -1,6 +1,6 @@
 """Authenticated, non-Cartesian body-recipe lanes for semantic LFM2 folding.
 
-The body compiler deliberately exposes three complete recipes rather than a
+The body compiler deliberately exposes four complete recipes rather than a
 Cartesian product of every component proposal.  A recipe is selection policy,
 not a quality gate: component candidates are eligible only by structural
 safety and effect, FIT values may order ``fit_guided``, and held-out values are
@@ -9,6 +9,7 @@ always diagnostics for later whole-response review.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal
@@ -21,11 +22,20 @@ Lfm2SemanticBodyRecipeId = Literal[
     "fit_guided",
     "full_strength_structural",
     "residual_writer",
+    "source_producer_residual_writer",
 ]
-LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     "fit_guided",
     "full_strength_structural",
     "residual_writer",
+)
+LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+    *LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS,
+    "source_producer_residual_writer",
+)
+LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES = (
+    LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS,
+    LFM2_SEMANTIC_BODY_RECIPE_IDS,
 )
 
 
@@ -56,6 +66,14 @@ _RECIPE_COMPONENT_LANES = MappingProxyType(
                 "qk": ("maximum_trust_radius_full_alpha_source_derived_residual"),
                 "value_output": "fixed_writer_then_joint_residual_priority",
                 "short_conv": "alpha_one_residual_writer_priority",
+                "mlp": "uncapped_w2_residual_writer_priority",
+            }
+        ),
+        "source_producer_residual_writer": MappingProxyType(
+            {
+                "qk": ("maximum_trust_radius_full_alpha_source_derived_residual"),
+                "value_output": "fixed_writer_then_joint_residual_priority",
+                "short_conv": "full_source_structural_priority",
                 "mlp": "uncapped_w2_residual_writer_priority",
             }
         ),
@@ -145,11 +163,96 @@ def resolve_lfm2_semantic_body_recipe(
     return Lfm2SemanticBodyRecipe(value)  # type: ignore[arg-type]
 
 
+def is_supported_lfm2_semantic_body_recipe_inventory(
+    candidate_ids: object,
+    candidate_count: object | None = None,
+    *,
+    materialized_recipe_id: object | None = None,
+) -> bool:
+    """Accept sealed legacy-three receipts while writers emit the current four."""
+
+    if (
+        not isinstance(candidate_ids, Sequence)
+        or isinstance(candidate_ids, (str, bytes, bytearray))
+        or any(not isinstance(value, str) for value in candidate_ids)
+    ):
+        return False
+    normalized = tuple(candidate_ids)
+    if normalized not in LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES:
+        return False
+    if candidate_count is not None and (
+        isinstance(candidate_count, bool)
+        or not isinstance(candidate_count, int)
+        or candidate_count != len(normalized)
+    ):
+        return False
+    return materialized_recipe_id is None or materialized_recipe_id in normalized
+
+
+def lfm2_semantic_body_recipe_ids_for_component_lane(
+    component: str,
+    lane: str,
+) -> tuple[Lfm2SemanticBodyRecipeId, ...]:
+    """Return every complete recipe that authenticates the same component lane."""
+
+    if component not in {"qk", "value_output", "short_conv", "mlp"}:
+        raise Lfm2SemanticBodyRecipeError(
+            f"Unknown semantic body recipe component {component!r}."
+        )
+    return tuple(
+        recipe_id
+        for recipe_id in LFM2_SEMANTIC_BODY_RECIPE_IDS
+        if _RECIPE_COMPONENT_LANES[recipe_id][component] == lane
+    )
+
+
+def is_supported_lfm2_semantic_component_equivalence_inventory(
+    component: object,
+    lane: object,
+    candidate_ids: object,
+    candidate_equivalent_to_other_recipe: object,
+    *,
+    materialized_recipe_id: object,
+) -> bool:
+    """Accept legacy/current lane equivalence without admitting a foreign recipe."""
+
+    if (
+        not isinstance(component, str)
+        or component not in {"qk", "value_output", "short_conv", "mlp"}
+        or not isinstance(lane, str)
+        or not isinstance(candidate_ids, Sequence)
+        or isinstance(candidate_ids, (str, bytes, bytearray))
+        or any(not isinstance(value, str) for value in candidate_ids)
+        or type(candidate_equivalent_to_other_recipe) is not bool
+        or not isinstance(materialized_recipe_id, str)
+    ):
+        return False
+    normalized = tuple(candidate_ids)
+    accepted = tuple(
+        tuple(
+            recipe_id
+            for recipe_id in inventory
+            if _RECIPE_COMPONENT_LANES[recipe_id][component] == lane
+        )
+        for inventory in LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES
+    )
+    return bool(
+        normalized in accepted
+        and materialized_recipe_id in normalized
+        and candidate_equivalent_to_other_recipe is (len(normalized) > 1)
+    )
+
+
 __all__ = [
     "LFM2_SEMANTIC_BODY_RECIPE_IDS",
+    "LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS",
+    "LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES",
     "LFM2_SEMANTIC_BODY_RECIPE_SCHEMA",
     "Lfm2SemanticBodyRecipe",
     "Lfm2SemanticBodyRecipeError",
     "Lfm2SemanticBodyRecipeId",
+    "is_supported_lfm2_semantic_component_equivalence_inventory",
+    "is_supported_lfm2_semantic_body_recipe_inventory",
+    "lfm2_semantic_body_recipe_ids_for_component_lane",
     "resolve_lfm2_semantic_body_recipe",
 ]

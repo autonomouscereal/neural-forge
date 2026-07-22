@@ -46,6 +46,7 @@ from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
 from neural_forge.hf_lfm2_circuit_trace_cache import fingerprint_lfm2_parent
 from neural_forge.hf_lfm2_semantic_body_recipe import (
     Lfm2SemanticBodyRecipe,
+    lfm2_semantic_body_recipe_ids_for_component_lane,
     resolve_lfm2_semantic_body_recipe,
 )
 from neural_forge.hf_lfm2_semantic_span_cpcf_alignment import (
@@ -2654,8 +2655,8 @@ def _qk_policy_for_body_recipe(
     # Keeping alpha zero alongside alpha one authenticates the incumbent
     # control while making the only effectful proposal the full residual step
     # under the compiler's largest authenticated trust radius. FIT metrics are
-    # still emitted, but cannot choose a weaker alpha in either structural
-    # recipe. This is deliberately named as maximum-trust, not uncapped.
+    # still emitted, but cannot choose a weaker alpha in any non-FIT recipe.
+    # This is deliberately named as maximum-trust, not uncapped.
     return replace(
         policy,
         trust_radius=2.0,
@@ -4225,7 +4226,10 @@ def _select_and_validate_vo_candidate(
         selected = min(eligible, key=lambda value: value[0])[1]
     else:
         structural_by_name = {str(value[1]["name"]): value[1] for value in eligible}
-        if recipe.recipe_id == "residual_writer":
+        if (
+            recipe.component_lanes["value_output"]
+            == "fixed_writer_then_joint_residual_priority"
+        ):
             selected = structural_by_name.get(
                 "fixed_v_output_only",
                 structural_by_name.get("joint_value_output"),
@@ -4356,13 +4360,27 @@ def _select_and_validate_vo_candidate(
             else (
                 "exclude-incumbent-then-fixed-output-writer-before-joint-value-"
                 "output-by-authenticated-residual-writer-priority"
-                if recipe.recipe_id == "residual_writer"
+                if recipe.component_lanes["value_output"]
+                == "fixed_writer_then_joint_residual_priority"
                 else "exclude-incumbent-then-joint-value-output-before-fixed-"
                 "writer-by-authenticated-structural-priority"
             )
         ),
-        "component_selection_policy_equivalent_recipe_ids": [recipe.recipe_id],
-        "component_selection_policy_equivalent_to_other_recipe": False,
+        "component_selection_policy_equivalent_recipe_ids": list(
+            lfm2_semantic_body_recipe_ids_for_component_lane(
+                "value_output",
+                recipe.component_lanes["value_output"],
+            )
+        ),
+        "component_selection_policy_equivalent_to_other_recipe": (
+            len(
+                lfm2_semantic_body_recipe_ids_for_component_lane(
+                    "value_output",
+                    recipe.component_lanes["value_output"],
+                )
+            )
+            > 1
+        ),
         "fit_ordering_metrics": [
             "endpoint_relative_rmse",
             "endpoint_rmse",
@@ -5241,13 +5259,20 @@ def _publish_complete_attention_cold_start_unprotected(
             "body_recipe_id": recipe.recipe_id,
             "recipe_qk_lane": recipe.component_lanes["qk"],
             "recipe_value_output_lane": recipe.component_lanes["value_output"],
-            "qk_component_selection_policy_equivalent_recipe_ids": (
-                ["full_strength_structural", "residual_writer"]
-                if not recipe.fit_metrics_order_candidates
-                else ["fit_guided"]
+            "qk_component_selection_policy_equivalent_recipe_ids": list(
+                lfm2_semantic_body_recipe_ids_for_component_lane(
+                    "qk",
+                    recipe.component_lanes["qk"],
+                )
             ),
             "qk_component_selection_policy_equivalent_to_other_recipe": (
-                not recipe.fit_metrics_order_candidates
+                len(
+                    lfm2_semantic_body_recipe_ids_for_component_lane(
+                        "qk",
+                        recipe.component_lanes["qk"],
+                    )
+                )
+                > 1
             ),
             "qk_component_equivalence_does_not_claim_complete_body_equivalence": (True),
             "cache_key": cache_key,

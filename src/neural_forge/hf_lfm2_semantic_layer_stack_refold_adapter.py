@@ -48,6 +48,7 @@ from neural_forge.hf_lfm2_semantic_attention_refold_adapter import (
 )
 from neural_forge.hf_lfm2_semantic_body_recipe import (
     Lfm2SemanticBodyRecipe,
+    is_supported_lfm2_semantic_component_equivalence_inventory,
     resolve_lfm2_semantic_body_recipe,
 )
 from neural_forge.hf_lfm2_semantic_postfold import (
@@ -241,7 +242,8 @@ def _require_attention_body_recipe_binding(
         if isinstance(reports.get(name), Mapping)
         and reports[name].get("eligible") is True
     )
-    if recipe.recipe_id == "full_strength_structural":
+    value_output_lane = recipe.component_lanes["value_output"]
+    if value_output_lane == "joint_then_fixed_structural_priority":
         expected = (
             "joint_value_output"
             if "joint_value_output" in eligible_names
@@ -251,7 +253,7 @@ def _require_attention_body_recipe_binding(
                 else "incumbent"
             )
         )
-    elif recipe.recipe_id == "residual_writer":
+    elif value_output_lane == "fixed_writer_then_joint_residual_priority":
         expected = (
             "fixed_v_output_only"
             if "fixed_v_output_only" in eligible_names
@@ -270,9 +272,13 @@ def _require_attention_body_recipe_binding(
         or gate.get("structurally_eligible_candidate_count") != len(eligible_names)
         or gate.get("fit_metrics_used_for_candidate_ordering")
         is not recipe.fit_metrics_order_candidates
-        or gate.get("component_selection_policy_equivalent_recipe_ids")
-        != [recipe.recipe_id]
-        or gate.get("component_selection_policy_equivalent_to_other_recipe") is not False
+        or not is_supported_lfm2_semantic_component_equivalence_inventory(
+            "value_output",
+            value_output_lane,
+            gate.get("component_selection_policy_equivalent_recipe_ids"),
+            gate.get("component_selection_policy_equivalent_to_other_recipe"),
+            materialized_recipe_id=recipe.recipe_id,
+        )
         or published != expected
         or (published == "incumbent") is not (not eligible_names)
         or (
@@ -4337,7 +4343,7 @@ def _layer_receipt(
     short_conv_compute_fields: dict[str, Any] = {}
     attention_receipt_fields: dict[str, Any] = {}
     if operator_kind == "full_attention":
-        if recipe.recipe_id == "fit_guided":
+        if recipe.fit_metrics_order_candidates:
             _authenticate_lfm2_semantic_attention_operator_receipt(
                 operator_receipt,
                 layer_index=layer_index,

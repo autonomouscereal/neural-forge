@@ -15,6 +15,9 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     Lfm2CpcfTerminalActionEvidence,
 )
+from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
+    lfm2_semantic_body_recipe_ids_for_component_lane,
+)
 from neural_forge.hf_lfm2_semantic_mlp_refold_adapter import (  # noqa: E402
     Lfm2DirectLocalMlpSourceInventory,
     Lfm2SemanticMlpEndpointEvidence,
@@ -625,9 +628,24 @@ def _persistable_attention_operator_receipt(
             "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
         ),
         "structural_safety_is_only_candidate_veto": True,
-        "fit_metrics_used_for_candidate_ordering": True,
-        "component_selection_policy_equivalent_recipe_ids": [recipe.recipe_id],
-        "component_selection_policy_equivalent_to_other_recipe": False,
+        "fit_metrics_used_for_candidate_ordering": (
+            recipe.fit_metrics_order_candidates
+        ),
+        "component_selection_policy_equivalent_recipe_ids": list(
+            lfm2_semantic_body_recipe_ids_for_component_lane(
+                "value_output",
+                recipe.component_lanes["value_output"],
+            )
+        ),
+        "component_selection_policy_equivalent_to_other_recipe": (
+            len(
+                lfm2_semantic_body_recipe_ids_for_component_lane(
+                    "value_output",
+                    recipe.component_lanes["value_output"],
+                )
+            )
+            > 1
+        ),
         "fit_ordering_metrics": [
             "endpoint_relative_rmse",
             "endpoint_rmse",
@@ -799,6 +817,68 @@ def _persistable_attention_operator_receipt(
     return {**body, "result_sha256": canonical_sha256(body)}
 
 
+@pytest.mark.parametrize(
+    "body_recipe",
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
+)
+def test_attention_binding_authenticates_complete_recipe_component_equivalence(
+    body_recipe: str,
+) -> None:
+    recipe = stack.resolve_lfm2_semantic_body_recipe(body_recipe)
+    receipt = _persistable_attention_operator_receipt(
+        layer_index=2,
+        before="1" * 64,
+        after="1" * 64,
+        installed=False,
+        body_recipe=body_recipe,
+    )
+
+    stack._require_attention_body_recipe_binding(
+        receipt,
+        recipe,
+        label="test attention receipt",
+    )
+
+    gate = receipt["analytic_refold"]["value_output_candidate_gate"]
+    equivalent = list(
+        lfm2_semantic_body_recipe_ids_for_component_lane(
+            "value_output",
+            recipe.component_lanes["value_output"],
+        )
+    )
+    assert gate["component_selection_policy_equivalent_recipe_ids"] == equivalent
+    assert gate["component_selection_policy_equivalent_to_other_recipe"] is (
+        len(equivalent) > 1
+    )
+
+
+def test_attention_binding_accepts_legacy_residual_writer_equivalence_receipt() -> None:
+    recipe = stack.resolve_lfm2_semantic_body_recipe("residual_writer")
+    receipt = _persistable_attention_operator_receipt(
+        layer_index=2,
+        before="1" * 64,
+        after="1" * 64,
+        installed=False,
+        body_recipe=recipe.recipe_id,
+    )
+    gate = receipt["analytic_refold"]["value_output_candidate_gate"]
+    gate.pop("gate_sha256")
+    gate["component_selection_policy_equivalent_recipe_ids"] = ["residual_writer"]
+    gate["component_selection_policy_equivalent_to_other_recipe"] = False
+    gate["gate_sha256"] = canonical_sha256(gate)
+
+    stack._require_attention_body_recipe_binding(
+        receipt,
+        recipe,
+        label="legacy residual-writer attention receipt",
+    )
+
+
 def _patch_complete_transaction(
     monkeypatch,
     *,
@@ -889,7 +969,7 @@ def _patch_complete_transaction(
     monkeypatch.setattr(
         stack,
         "_validated_interface_lineage",
-        lambda *_args: {
+        lambda *_args, **_kwargs: {
             "interface_report_sha256": "5" * 64,
             "producer_encoder_sha256": "6" * 64,
         },

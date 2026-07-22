@@ -988,9 +988,14 @@ def test_all_zero_bfloat16_qkvo_is_compulsorily_planted_with_full_axis_coverage(
     assert canonical_sha256(sealed) == digest
 
 
-def test_blank_structural_and_residual_writer_attention_lanes_are_distinct() -> None:
+def test_blank_attention_recipes_materialize_the_declared_component_lanes() -> None:
     state_by_recipe: dict[str, dict[str, str]] = {}
-    recipe_ids = ("fit_guided", "full_strength_structural", "residual_writer")
+    recipe_ids = (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    )
     for recipe_id in recipe_ids:
         model = _Model()
         attention = model.model.layers[0].self_attn
@@ -1056,6 +1061,9 @@ def test_blank_structural_and_residual_writer_attention_lanes_are_distinct() -> 
         }
 
     assert state_by_recipe["full_strength_structural"] != state_by_recipe[
+        "residual_writer"
+    ]
+    assert state_by_recipe["source_producer_residual_writer"] == state_by_recipe[
         "residual_writer"
     ]
 
@@ -2322,7 +2330,12 @@ def test_vo_structural_eligibility_is_the_exact_nonmetric_conjunction() -> None:
 
 @pytest.mark.parametrize(
     "body_recipe",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
 )
 def test_vo_incumbent_is_used_only_when_proposals_are_invalid_or_identical(
     body_recipe: str,
@@ -2385,7 +2398,12 @@ def test_vo_incumbent_is_used_only_when_proposals_are_invalid_or_identical(
 
 @pytest.mark.parametrize(
     "body_recipe",
-    ("fit_guided", "full_strength_structural", "residual_writer"),
+    (
+        "fit_guided",
+        "full_strength_structural",
+        "residual_writer",
+        "source_producer_residual_writer",
+    ),
 )
 def test_vo_heldout_metric_regression_cannot_veto_frozen_fit_selection(
     body_recipe: str,
@@ -2470,7 +2488,7 @@ def test_vo_heldout_metric_regression_cannot_veto_frozen_fit_selection(
     assert gate["body_recipe_id"] == body_recipe
     if body_recipe == "full_strength_structural":
         assert selected == "joint_value_output"
-    elif body_recipe == "residual_writer":
+    elif body_recipe in {"residual_writer", "source_producer_residual_writer"}:
         assert selected == "fixed_v_output_only"
     assert gate["validation"]["endpoint_nonregressing"] is False
     assert gate["validation"]["route_nonregressing"] is False

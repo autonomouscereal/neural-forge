@@ -70,6 +70,7 @@ from neural_forge.hf_lfm2_cpcf_selective_evidence import (
 )
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
     LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA,
+    LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA,
     LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA,
     LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA,
     Lfm2CpcfTerminalActionEvidence,
@@ -112,6 +113,7 @@ from neural_forge.hf_lfm2_semantic_attention_refold_adapter import (
 from neural_forge.hf_lfm2_semantic_body_recipe import (
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
     Lfm2SemanticBodyRecipe,
+    is_supported_lfm2_semantic_component_equivalence_inventory,
     resolve_lfm2_semantic_body_recipe,
 )
 from neural_forge.hf_lfm2_semantic_foundation import (
@@ -181,6 +183,9 @@ LFM2_SEMANTIC_COMPILER_LINEAGE_SCHEMA = "neural-forge-lfm2-semantic-compiler-lin
 LFM2_SEMANTIC_RESIDUAL_CHART_SCHEMA = "neural-forge-lfm2-semantic-residual-chart-v1"
 LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA = (
     "neural-forge-lfm2-semantic-lexical-completion-v1"
+)
+LFM2_SEMANTIC_TERMINAL_REVIEW_PENDING_SCHEMA = (
+    "neural-forge-lfm2-fused-semantic-terminal-review-pending-v1"
 )
 LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA = (
     "neural-forge-lfm2-semantic-terminal-frontier-export-context-v1"
@@ -4595,12 +4600,14 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
             or (published_candidate == "incumbent") is not (eligible_count == 0)
             or (recipe.fit_metrics_order_candidates and fit_ordering_invalid)
             or (
-                recipe.recipe_id == "fit_guided"
+                recipe.component_lanes["value_output"]
+                == "fit_ordered_structural_frontier"
                 and eligible_count > 0
                 and published_candidate != fit_selected_candidate
             )
             or (
-                recipe.recipe_id == "full_strength_structural"
+                recipe.component_lanes["value_output"]
+                == "joint_then_fixed_structural_priority"
                 and published_candidate
                 != (
                     "joint_value_output"
@@ -4613,7 +4620,8 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
                 )
             )
             or (
-                recipe.recipe_id == "residual_writer"
+                recipe.component_lanes["value_output"]
+                == "fixed_writer_then_joint_residual_priority"
                 and published_candidate
                 != (
                     "fixed_v_output_only"
@@ -4625,14 +4633,17 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
                     )
                 )
             )
-            or value_output_gate.get(
-                "component_selection_policy_equivalent_recipe_ids"
+            or not is_supported_lfm2_semantic_component_equivalence_inventory(
+                "value_output",
+                recipe.component_lanes["value_output"],
+                value_output_gate.get(
+                    "component_selection_policy_equivalent_recipe_ids"
+                ),
+                value_output_gate.get(
+                    "component_selection_policy_equivalent_to_other_recipe"
+                ),
+                materialized_recipe_id=recipe.recipe_id,
             )
-            != [recipe.recipe_id]
-            or value_output_gate.get(
-                "component_selection_policy_equivalent_to_other_recipe"
-            )
-            is not False
             or (
                 published_candidate != "incumbent"
                 and candidate_reports[published_candidate].get("eligible") is not True
@@ -4843,7 +4854,7 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
             "recipe_value_output_lane": recipe.component_lanes["value_output"],
             "recipe_bound_publication_with_diagnostic_heldout_authenticated": True,
             "fit_only_publication_with_diagnostic_heldout_authenticated": (
-                recipe.recipe_id == "fit_guided"
+                recipe.fit_metrics_order_candidates
             ),
             "numeric_behavior_gate_used": False,
         }
@@ -7618,7 +7629,7 @@ def _terminal_publication_decision(
     expected_seed: Lfm2CpcfTerminalActionSeed | None = None,
     expected_evidence: Mapping[str, Lfm2CpcfTerminalActionEvidence] | None = None,
 ) -> tuple[Any, Mapping[str, Any]]:
-    """Authenticate a structurally safe nonincumbent terminal publication."""
+    """Authenticate an externally reviewed terminal publication."""
 
     torch = _torch()
     if not isinstance(terminal, Lfm2CpcfTerminalActionResidualResult):
@@ -7628,6 +7639,17 @@ def _terminal_publication_decision(
             "Fused terminal result changed after authentication."
         )
     report = terminal.as_dict()
+    if (
+        report.get("final_selection_status")
+        == "deferred-to-manual-whole-response-review"
+        and report.get("final_selection_performed") is False
+        and report.get("accepted") is False
+        and report.get("published_is_incumbent") is True
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier is review-pending; no metric-ordered candidate may "
+            "be installed before manual whole-response review."
+        )
     operation_audit = report.get("operation_audit")
     if not isinstance(operation_audit, Mapping) or operation_audit != dict(
         _TERMINAL_ZERO_OPERATION_AUDIT
@@ -8871,6 +8893,156 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         terminal_frontier_export_context,
         terminal_frontier_exporter,
     )
+    terminal_cache_io_audit = _sealed(
+        {
+            "metadata_preflight_trace_file_sha256_passes": 0,
+            "metadata_preflight_trace_payload_bytes_read": 0,
+            "fused_terminal_selective_session_constructions": (
+                0 if authenticated_cache_session is not None else 1
+            ),
+            "end_to_end_selective_session_constructions": (
+                1 if same_live_cache_session_as_layer_stack else 2
+            ),
+            "consuming_trace_file_sha256_passes_per_batch": 1,
+            "consuming_trace_file_sha256_passes_total": cache.batch_count,
+            "same_consuming_session_reused_by_semantic_collector": True,
+            "same_consuming_session_reused_from_layer_stack": (
+                same_live_cache_session_as_layer_stack
+            ),
+            "same_live_cache_session_as_layer_stack": (
+                same_live_cache_session_as_layer_stack
+            ),
+            "cache_content_identity_matches_layer_stack": (
+                cache_content_identity_matches_layer_stack
+            ),
+            "preterminal_resume_mode": preterminal_resume_mode,
+            "additional_full_trace_file_sha256_passes_performed_by_fused_terminal": 0,
+            "selected_tensor_payload_loads_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "selected_tensor_payload_load_count"
+                ]
+            ),
+            "selected_tensor_payload_logical_bytes_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "selected_tensor_payload_logical_bytes_total"
+                ]
+            ),
+            "full_tensor_inventory_payload_loads_per_batch": 1,
+            "full_tensor_inventory_payload_loads_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "full_tensor_inventory_payload_load_count"
+                ]
+            ),
+            "full_tensor_inventory_payload_logical_bytes_total": (
+                terminal_cache_tensor_payload_load_audit[
+                    "full_tensor_inventory_payload_logical_bytes_total"
+                ]
+            ),
+        },
+        "result_sha256",
+    )
+    if terminal_frontier_export is not None:
+        terminal_action_selected_sha256 = _terminal_action_tensor_sha256(
+            terminal.selected_down_weight,
+            "terminal.selected_down_weight",
+        )
+        terminal_action_published_sha256 = _terminal_action_tensor_sha256(
+            terminal.published_down_weight,
+            "terminal.published_down_weight",
+        )
+        semantic_selected_sha256 = _tensor_sha256(terminal.selected_down_weight)
+        semantic_published_sha256 = _tensor_sha256(terminal.published_down_weight)
+        deferred_body = {
+            "schema": LFM2_SEMANTIC_TERMINAL_REVIEW_PENDING_SCHEMA,
+            "cache_key": cache.cache_key,
+            "cache_parent_fingerprint": cache.parent_fingerprint,
+            "bridge_artifact_sha256": bridge.artifact_sha256,
+            "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
+            "interface_anchor_selection_sha256": (
+                None
+                if layer_anchor_selection is None
+                else layer_anchor_selection["selection_sha256"]
+            ),
+            **(
+                {"interface_anchor_selection": dict(layer_anchor_selection)}
+                if layer_anchor_selection is not None
+                else {}
+            ),
+            "tied_interface_authentication": dict(
+                terminal_interface_authentication
+            ),
+            "tied_interface_authentication_sha256": (
+                terminal_interface_authentication["result_sha256"]
+            ),
+            "parent_cache_authentication": cache_receipt,
+            "terminal_cache_compatibility": current_terminal_cache_compatibility,
+            "terminal_cache_compatibility_sha256": (
+                current_terminal_cache_compatibility["authentication_sha256"]
+            ),
+            "terminal_cache_payload_binding": terminal_cache_payload_binding,
+            "terminal_source_lineage": source_lineage.as_dict(),
+            "terminal_source_lineage_sha256": source_lineage.authentication_sha256,
+            "terminal_composite_lineage": terminal_composite_lineage.as_dict(),
+            "terminal_composite_lineage_sha256": (
+                terminal_composite_lineage.authentication_sha256
+            ),
+            "terminal_compiler_binding_sha256": (
+                terminal_composite_lineage.compiler_binding_sha256
+            ),
+            "terminal_cache_tensor_payload_load_audit": (
+                terminal_cache_tensor_payload_load_audit
+            ),
+            "cached_full_prefix_payload_verification": [
+                dict(value.cached_full_prefix_payload) for value in cached
+            ],
+            "cached_full_prefix_payload_verification_sha256": [
+                value.cached_full_prefix_payload["authentication_sha256"]
+                for value in cached
+            ],
+            "terminal_cache_io_audit": terminal_cache_io_audit,
+            "parent_action_projection_sha256": [
+                value.parent_action_projection["authentication_sha256"]
+                for value in cached
+            ],
+            "parent_action_projection_diagnostics": [
+                dict(value.parent_action_projection) for value in cached
+            ],
+            "parent_action_projection_numeric_threshold_applied": False,
+            "parent_action_projection_metrics_diagnostic_only": True,
+            "terminal_result": terminal.as_dict(),
+            "terminal_action_result_sha256": terminal.result_sha256,
+            "terminal_action_selected_w2_sha256": (
+                terminal_action_selected_sha256
+            ),
+            "terminal_action_published_w2_sha256": (
+                terminal_action_published_sha256
+            ),
+            "semantic_selected_w2_sha256": semantic_selected_sha256,
+            "semantic_published_w2_sha256": semantic_published_sha256,
+            **_terminal_frontier_export_receipt_fields(
+                terminal_frontier_export,
+                terminal_frontier_export_context,
+            ),
+            "final_selection_status": "deferred-to-manual-whole-response-review",
+            "terminal_review_pending_schema": (
+                LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+            ),
+            "final_selected_candidate_id": None,
+            "final_selection_performed": False,
+            "automatic_candidate_selection_performed": False,
+            "automatic_candidate_acceptance_performed": False,
+            "candidate_published_before_manual_review": False,
+            "manual_whole_response_review_required": True,
+            "diagnostic_order_has_final_selection_authority": False,
+            "terminal_writer_install_count": 0,
+            "terminal_writer_mutation_count": 0,
+            "accepted": False,
+            "terminal_publication_decision_accepted": False,
+            "operation_audit": dict(_ZERO_OPERATIONS),
+        }
+        return _issue_fused_semantic_terminal_receipt(
+            _sealed(deferred_body, "result_sha256")
+        )
     published_down_weight, publication_decision = _terminal_publication_decision(
         terminal,
         expected_seed=seed,
@@ -9624,6 +9796,263 @@ def _authenticate_fused_terminal_cache_evidence(
     return MappingProxyType(_sealed(body, "result_sha256"))
 
 
+def _validate_review_pending_fused_terminal_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    layer_receipt: Mapping[str, Any],
+    current_model_state_sha256: str,
+    cache_evidence: Mapping[str, Any],
+    terminal_context: Mapping[str, Any],
+    layer_anchor_selection: Mapping[str, Any] | None,
+    receipt_anchor_selection: Mapping[str, Any] | None,
+    context_anchor_selection: Mapping[str, Any] | None,
+) -> Mapping[str, Any]:
+    """Authenticate the no-install boundary emitted before human review."""
+
+    terminal_result_value = receipt.get("terminal_result")
+    if not isinstance(terminal_result_value, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Review-pending fused terminal omitted its terminal result."
+        )
+    terminal_result = _verify_sealed(
+        terminal_result_value,
+        seal_name="result_sha256",
+        label="review-pending terminal-action result",
+    )
+    output_hashes = terminal_result.get("output_state_sha256")
+    validation = terminal_result.get("validation")
+    frontier = terminal_result.get("frontier")
+    export_reference = receipt.get("terminal_frontier_export")
+    if not isinstance(frontier, list) or not all(
+        isinstance(value, Mapping) for value in frontier
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Review-pending fused terminal omitted its complete frontier."
+        )
+    candidate_records = frontier[1:]
+    candidate_ids = [str(value.get("candidate_id")) for value in candidate_records]
+    eligible_ids = [
+        str(value.get("candidate_id"))
+        for value in candidate_records
+        if value.get("structurally_eligible") is True
+    ]
+    diagnostic_order = terminal_result.get("diagnostic_order_candidate_ids")
+    split_roles = terminal_result.get("split_roles")
+    records_by_id = {
+        str(value.get("candidate_id")): value for value in candidate_records
+    }
+
+    def structurally_authenticates_candidate(record: Mapping[str, Any]) -> bool:
+        coverage_value = record.get("structural_coverage")
+        if not isinstance(coverage_value, Mapping):
+            return False
+        coverage = dict(coverage_value)
+        coverage_sha256 = coverage.pop("coverage_sha256", None)
+        structural_safety = bool(
+            coverage_sha256 == canonical_sha256(coverage)
+            and record.get("structural_coverage_sha256") == coverage_sha256
+            and coverage_value.get("tensor_sha256") == record.get("state_sha256")
+            and coverage_value.get("all_elements_finite") is True
+            and coverage_value.get("owns_exact_storage_allocation") is True
+            and coverage_value.get("complete_dense_writer_structural_safety")
+            is True
+        )
+        effectful = record.get("effectful_nonincumbent") is True
+        eligible = bool(structural_safety and effectful)
+        return bool(
+            record.get("structural_safety_passed") is structural_safety
+            and record.get("weight_norm_gate_passed") is structural_safety
+            and record.get("structurally_eligible") is eligible
+            and record.get("eligible") is eligible
+            and record.get("candidate_eligibility_basis")
+            == "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+            and record.get("weight_delta_threshold_used_for_eligibility") is False
+            and record.get("fit_thresholds_used_for_eligibility") is False
+            and record.get("fit_check_thresholds_used_for_eligibility") is False
+            and record.get("selection_thresholds_used_for_eligibility") is False
+            and record.get("numeric_thresholds_used_for_publication") is False
+            and record.get("numeric_metrics_used_for_final_selection") is False
+            and record.get("numeric_metrics_have_final_intelligence_authority")
+            is False
+        )
+
+    candidate_contract_valid = all(
+        structurally_authenticates_candidate(record) for record in candidate_records
+    )
+    diagnostic_lead_id = terminal_result.get("diagnostic_lead_candidate_id")
+    diagnostic_lead_record = records_by_id.get(str(diagnostic_lead_id))
+    anchors_match = (
+        None if layer_anchor_selection is None else dict(layer_anchor_selection)
+    ) == (
+        None if receipt_anchor_selection is None else dict(receipt_anchor_selection)
+    ) == (
+        None if context_anchor_selection is None else dict(context_anchor_selection)
+    )
+    incumbent_sha256 = (
+        output_hashes.get("incumbent") if isinstance(output_hashes, Mapping) else None
+    )
+    invalid = bool(
+        receipt.get("schema") != LFM2_SEMANTIC_TERMINAL_REVIEW_PENDING_SCHEMA
+        or receipt.get("semantic_layer_stack_result_sha256")
+        != layer_receipt.get("result_sha256")
+        or receipt.get("final_selection_status")
+        != "deferred-to-manual-whole-response-review"
+        or receipt.get("terminal_review_pending_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+        or receipt.get("final_selected_candidate_id") is not None
+        or receipt.get("final_selection_performed") is not False
+        or receipt.get("automatic_candidate_selection_performed") is not False
+        or receipt.get("automatic_candidate_acceptance_performed") is not False
+        or receipt.get("candidate_published_before_manual_review") is not False
+        or receipt.get("manual_whole_response_review_required") is not True
+        or receipt.get("diagnostic_order_has_final_selection_authority") is not False
+        or receipt.get("terminal_writer_install_count") != 0
+        or receipt.get("terminal_writer_mutation_count") != 0
+        or receipt.get("accepted") is not False
+        or receipt.get("terminal_publication_decision_accepted") is not False
+        or receipt.get("operation_audit") != dict(_ZERO_OPERATIONS)
+        or layer_receipt.get("model_state_after_sha256")
+        != current_model_state_sha256
+        or layer_receipt.get("whole_stage_contains_meaningful_parameter_changes")
+        is not True
+        or layer_receipt.get("model_state_before_sha256")
+        == current_model_state_sha256
+        or terminal_context.get("schema")
+        != LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA
+        or terminal_context.get("semantic_layer_stack_result_sha256")
+        != layer_receipt.get("result_sha256")
+        or terminal_context.get("terminal_result_sha256")
+        != terminal_result.get("result_sha256")
+        or receipt.get("terminal_frontier_export_context_sha256")
+        != terminal_context.get("context_sha256")
+        or terminal_context.get("terminal_cache_compatibility_sha256")
+        != cache_evidence.get("terminal_cache_compatibility_sha256")
+        or terminal_context.get("terminal_cache_payload_binding_sha256")
+        != cache_evidence.get("terminal_cache_payload_binding_sha256")
+        or terminal_context.get("terminal_cache_session_sha256")
+        != cache_evidence.get("terminal_cache_session_sha256")
+        or not anchors_match
+        or receipt.get("interface_anchor_selection_sha256")
+        != (
+            None
+            if layer_anchor_selection is None
+            else layer_anchor_selection["selection_sha256"]
+        )
+        or terminal_result.get("schema") != LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA
+        or terminal_result.get("method") != _TERMINAL_ACTION_RESULT_METHOD
+        or terminal_result.get("review_pending_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+        or terminal_result.get("final_selection_status")
+        != "deferred-to-manual-whole-response-review"
+        or terminal_result.get("final_selected_candidate_id") is not None
+        or terminal_result.get("final_selection_performed") is not False
+        or terminal_result.get("automatic_candidate_selection_performed") is not False
+        or terminal_result.get("automatic_candidate_acceptance_performed") is not False
+        or terminal_result.get("candidate_published_before_manual_review") is not False
+        or terminal_result.get("manual_whole_response_review_required") is not True
+        or terminal_result.get("diagnostic_order_is_provisional") is not True
+        or terminal_result.get("diagnostic_order_has_final_selection_authority")
+        is not False
+        or terminal_result.get("structural_nonveto_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA
+        or terminal_result.get("candidate_eligibility_basis")
+        != "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+        or terminal_result.get("structural_safety_is_only_candidate_veto") is not True
+        or terminal_result.get("numeric_metrics_used_for_diagnostic_ordering") is not True
+        or terminal_result.get("numeric_metrics_used_for_final_selection") is not False
+        or terminal_result.get("numeric_metrics_used_for_candidate_eligibility")
+        is not False
+        or terminal_result.get("numeric_thresholds_used_for_candidate_eligibility")
+        is not False
+        or terminal_result.get("numeric_thresholds_used_for_publication") is not False
+        or terminal_result.get("validation_publication_veto_applied") is not False
+        or terminal_result.get("rollback_authorized") is not False
+        or terminal_result.get("numeric_metrics_have_final_intelligence_authority")
+        is not False
+        or terminal_result.get(
+            "behavioral_intelligence_review_outside_terminal_compiler"
+        )
+        is not True
+        or terminal_result.get("selected_candidate_id") != "incumbent"
+        or terminal_result.get("accepted") is not False
+        or terminal_result.get("selected_nonincumbent") is not False
+        or terminal_result.get("published_is_incumbent") is not True
+        or terminal_result.get("rollback_performed") is not False
+        or terminal_result.get("rollback_exact") is not True
+        or terminal_result.get("source_seed_writer_unchanged") is not True
+        or terminal_result.get("parameter_identity_or_topology_mutation") is not False
+        or terminal_result.get("parameter_count_before")
+        != terminal_result.get("parameter_count_after")
+        or terminal_result.get("published_writer_is_incumbent_pending_manual_review")
+        is not True
+        or terminal_result.get(
+            "published_writer_is_structurally_safe_effectful_nonincumbent"
+        )
+        is not False
+        or terminal_result.get("numeric_diagnostic_miss_can_exclude_structural_candidate")
+        is not False
+        or not isinstance(output_hashes, Mapping)
+        or terminal_result.get("selected_state_sha256") != incumbent_sha256
+        or output_hashes.get("selected") != incumbent_sha256
+        or output_hashes.get("published") != incumbent_sha256
+        or receipt.get("terminal_action_result_sha256")
+        != terminal_result.get("result_sha256")
+        or receipt.get("terminal_action_selected_w2_sha256") != incumbent_sha256
+        or receipt.get("terminal_action_published_w2_sha256") != incumbent_sha256
+        or receipt.get("semantic_selected_w2_sha256")
+        != receipt.get("semantic_published_w2_sha256")
+        or not isinstance(validation, Mapping)
+        or validation.get("heldout_diagnostic_only") is not True
+        or validation.get("publication_gate_applied") is not False
+        or validation.get("used_for_final_selection") is not False
+        or validation.get("used_for_candidate_acceptance") is not False
+        or validation.get("used_for_fit") is not False
+        or validation.get("used_for_diagnostic_ordering") is not False
+        or not isinstance(split_roles, Mapping)
+        or split_roles.get("candidate_eligibility_uses_only_structural_safety")
+        is not True
+        or split_roles.get("numeric_metrics_used_for_diagnostic_ordering") is not True
+        or split_roles.get("numeric_metrics_used_for_final_selection") is not False
+        or split_roles.get("manual_whole_response_review_required") is not True
+        or split_roles.get("validation_diagnostic_only") is not True
+        or split_roles.get("validation_publication_gate_applied") is not False
+        or len(frontier) < 2
+        or terminal_result.get("frontier_count") != len(frontier)
+        or terminal_result.get("expected_frontier_count") != len(frontier)
+        or frontier[0].get("candidate_id") != "incumbent"
+        or frontier[0].get("eligible") is not False
+        or frontier[0].get("structurally_eligible") is not False
+        or frontier[0].get("effectful_nonincumbent") is not False
+        or len(candidate_ids) != len(set(candidate_ids))
+        or not candidate_contract_valid
+        or not eligible_ids
+        or not isinstance(diagnostic_order, list)
+        or set(diagnostic_order) != set(eligible_ids)
+        or len(diagnostic_order) != len(eligible_ids)
+        or terminal_result.get("diagnostic_order_candidate_count")
+        != len(eligible_ids)
+        or diagnostic_lead_id != diagnostic_order[0]
+        or not isinstance(diagnostic_lead_record, Mapping)
+        or diagnostic_lead_record.get("structurally_eligible") is not True
+        or diagnostic_lead_record.get("state_sha256")
+        != terminal_result.get("diagnostic_lead_state_sha256")
+        or terminal_result.get("diagnostic_lead_has_final_selection_authority")
+        is not False
+        or not isinstance(export_reference, Mapping)
+        or not export_reference
+        or receipt.get("terminal_frontier_export_sha256")
+        != canonical_sha256(export_reference)
+        or receipt.get("terminal_frontier_exported_before_w2_installation") is not True
+        or terminal_result.get("operation_audit")
+        != dict(_TERMINAL_ZERO_OPERATION_AUDIT)
+    )
+    if invalid:
+        raise Lfm2SemanticPostfoldError(
+            "Review-pending fused semantic terminal receipt is incomplete or false."
+        )
+    return MappingProxyType(dict(receipt))
+
+
 def _validate_fused_semantic_terminal_receipt(
     receipt: Mapping[str, Any],
     *,
@@ -9669,6 +10098,17 @@ def _validate_fused_semantic_terminal_receipt(
         if context_anchor_value is None
         else _authenticate_foundation_anchor_selection(context_anchor_value)
     )
+    if receipt.get("schema") == LFM2_SEMANTIC_TERMINAL_REVIEW_PENDING_SCHEMA:
+        return _validate_review_pending_fused_terminal_receipt(
+            receipt,
+            layer_receipt=layer_receipt,
+            current_model_state_sha256=current_model_state_sha256,
+            cache_evidence=cache_evidence,
+            terminal_context=terminal_context,
+            layer_anchor_selection=layer_anchor_selection,
+            receipt_anchor_selection=receipt_anchor_selection,
+            context_anchor_selection=context_anchor_selection,
+        )
     installation = receipt.get("installation")
     if not isinstance(installation, Mapping):
         raise Lfm2SemanticPostfoldError(
@@ -10431,11 +10871,20 @@ def run_lfm2_semantic_postfold(
     fused_terminal_compiler: Callable[..., Mapping[str, Any]] = (
         compile_install_lfm2_fused_semantic_terminal_refold
     ),
+    terminal_frontier_exporter: Callable[
+        [Lfm2CpcfTerminalActionResidualResult, Mapping[str, Any]],
+        Any,
+    ]
+    | None = None,
     split_plan: Lfm2LongHorizonTrajectorySplitPlan | None = None,
 ) -> Mapping[str, Any]:
     """Execute the complete saved-child semantic postfold transaction."""
 
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    if terminal_frontier_exporter is not None and not callable(
+        terminal_frontier_exporter
+    ):
+        raise TypeError("terminal_frontier_exporter must be callable or None.")
     statistics_requested = interface_statistics_directory is not None
     if statistics_requested != (expected_interface_statistics_sha256 is not None):
         raise Lfm2SemanticPostfoldError(
@@ -10936,6 +11385,11 @@ def run_lfm2_semantic_postfold(
                     "authenticated_cache_session": pipeline_cache_session,
                     "body_recipe": recipe,
                     **(
+                        {"terminal_frontier_exporter": terminal_frontier_exporter}
+                        if terminal_frontier_exporter is not None
+                        else {}
+                    ),
+                    **(
                         {
                             "anchor_transport_witness": anchor_transport_witness,
                         }
@@ -10953,6 +11407,10 @@ def run_lfm2_semantic_postfold(
                 layer_receipt=layer_stack.receipt,
                 current_model_state_sha256=state_after_terminal,
             )
+        )
+        terminal_review_pending = bool(
+            terminal_receipt.get("schema")
+            == LFM2_SEMANTIC_TERMINAL_REVIEW_PENDING_SCHEMA
         )
         pipeline_cache_session.verify()
         pipeline_cache_session_receipt = pipeline_cache_session.as_dict()
@@ -11074,9 +11532,15 @@ def run_lfm2_semantic_postfold(
         "complete_nonzero_structural_producer_coverage": layer_stack.receipt[
             "complete_nonzero_structural_producer_coverage"
         ],
-        "complete_nonzero_final_mlp_structural_coverage": terminal_receipt[
-            "complete_nonzero_final_mlp_structural_coverage"
-        ],
+        "complete_nonzero_final_mlp_structural_coverage": terminal_receipt.get(
+            "complete_nonzero_final_mlp_structural_coverage",
+            False,
+        ),
+        "terminal_review_pending": terminal_review_pending,
+        "terminal_writer_install_count": terminal_receipt.get(
+            "terminal_writer_install_count",
+            0,
+        ),
         **(
             {"interface_statistics_replay": dict(interface_statistics_replay)}
             if interface_statistics_replay is not None
@@ -11084,6 +11548,147 @@ def run_lfm2_semantic_postfold(
         ),
     }
     context_sha = canonical_sha256(context_body)
+    if terminal_review_pending:
+        if (
+            state_after_terminal != layer_stack.receipt.get("model_state_after_sha256")
+            or terminal_receipt.get("terminal_writer_install_count") != 0
+            or terminal_receipt.get("terminal_writer_mutation_count") != 0
+            or terminal_receipt.get("candidate_published_before_manual_review")
+            is not False
+            or terminal_receipt.get("terminal_frontier_export") is None
+            or output.exists()
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Review-pending top-level orchestration changed or published the "
+                "child before whole-response review."
+            )
+        pending_body = {
+            "schema": LFM2_SEMANTIC_POSTFOLD_SCHEMA,
+            "status": "terminal-frontier-exported-review-pending",
+            "terminal_review_pending_schema": (
+                LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+            ),
+            "final_selection_status": "deferred-to-manual-whole-response-review",
+            "final_selected_candidate_id": None,
+            "final_selection_performed": False,
+            "automatic_candidate_selection_performed": False,
+            "automatic_candidate_acceptance_performed": False,
+            "candidate_published_before_manual_review": False,
+            "manual_whole_response_review_required": True,
+            "diagnostic_order_has_final_selection_authority": False,
+            "checkpoint_published": False,
+            "requested_output_checkpoint_directory": str(output),
+            "input_child": {
+                "checkpoint_directory": str(
+                    _ordinary_directory(
+                        input_checkpoint_directory,
+                        "input checkpoint",
+                    )
+                ),
+                "artifact_sha256": input_metadata["artifact_sha256"],
+                "model_state_sha256": input_metadata["model_state_sha256"],
+            },
+            "compiler_ancestry_schema": context_body["compiler_ancestry_schema"],
+            "compiler_cache_key": interface_rehydration["compiler_cache_key"],
+            "semantic_evidence_cache_key": cache.cache_key,
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "complete_body_recipe_candidate_ids": list(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "complete_body_recipe_candidate_count": len(
+                LFM2_SEMANTIC_BODY_RECIPE_IDS
+            ),
+            "materialized_body_recipe_id": recipe.recipe_id,
+            "one_checkpoint_contains_one_materialized_body_recipe": False,
+            "one_frontier_bank_contains_one_body_recipe": True,
+            "other_body_recipes_require_sealed_foundation_replay": True,
+            "terminal_cache_compatibility": dict(terminal_cache_compatibility),
+            "pipeline_cache_session_reuse": dict(pipeline_cache_session_reuse),
+            "cache_parent_fingerprint": cache.parent_fingerprint,
+            "bridge_artifact_sha256": bridge.artifact_sha256,
+            "mapped_parent_tied_table": dict(source_table_report),
+            "rehydrated_interface": rehydrated_interface_report,
+            "active_tied_interface": dict(interface.report),
+            "interface_rehydration": dict(interface_rehydration),
+            **(
+                {"interface_statistics_replay": dict(interface_statistics_replay)}
+                if interface_statistics_replay is not None
+                else {}
+            ),
+            "requested_tied_interface_mode": tied_interface_mode,
+            "tied_interface_mode": effective_tied_interface_mode,
+            "tied_residual_interface_gauge": dict(
+                tied_residual_interface_gauge
+            ),
+            "self_dual_tied_gauge": dict(tied_residual_interface_gauge),
+            "compiler_lineage": {
+                str(index): dict(value.report) for index, value in lineage.items()
+            },
+            "semantic_layer_stack": dict(layer_stack.receipt),
+            "attention_receipt_authentication": dict(
+                attention_receipt_authentication
+            ),
+            **(
+                {"preterminal_capsule": preterminal_capsule_reference.as_dict()}
+                if preterminal_capsule_reference is not None
+                else {}
+            ),
+            "fused_semantic_terminal": terminal_receipt,
+            "terminal_frontier_export": terminal_receipt[
+                "terminal_frontier_export"
+            ],
+            "terminal_publication_decision_accepted": False,
+            "terminal_nonincumbent_candidate_accepted": False,
+            "terminal_incumbent_retained": True,
+            "terminal_writer_install_count": 0,
+            "terminal_writer_mutation_count": 0,
+            "current_child_model_state_sha256": state_after_terminal,
+            "context_binding": {**context_body, "context_sha256": context_sha},
+            "training_replaced_by": (
+                "sealed-cache semantic lattice transport plus closed-form linear "
+                "solves"
+            ),
+            "operation_audit": dict(_ZERO_OPERATIONS),
+            "claims": {
+                "complete_causal_layer_stack_adjudicated": True,
+                "complete_nonzero_structural_producer_coverage": (
+                    layer_stack.receipt[
+                        "complete_nonzero_structural_producer_coverage"
+                    ]
+                ),
+                "complete_nonzero_final_mlp_structural_coverage": False,
+                "attention_operator_decision_count": layer_stack.receipt.get(
+                    "attention_operator_decision_count",
+                    0,
+                ),
+                "attention_correction_install_count": layer_stack.receipt.get(
+                    "attention_operator_install_count",
+                    0,
+                ),
+                "short_conv_operator_decision_count": layer_stack.receipt.get(
+                    "short_conv_operator_decision_count",
+                    0,
+                ),
+                "short_conv_correction_install_count": layer_stack.receipt.get(
+                    "short_conv_operator_install_count",
+                    0,
+                ),
+                "terminal_writer_install_count": 0,
+                "terminal_writer_mutation_count": 0,
+                "checkpoint_published": False,
+                "training_performed": False,
+                "optimizer_steps": 0,
+                "backward_calls": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+                "parameters_sparsified": 0,
+                "numeric_metrics_have_final_intelligence_authority": False,
+                "manual_whole_response_review_required": True,
+            },
+        }
+        return MappingProxyType(_sealed(pending_body, "result_sha256"))
     reloaded, checkpoint = publish_lfm2_semantic_postfold_checkpoint(
         target_model=target_model,
         target_tokenizer=target_tokenizer,
@@ -11259,6 +11864,7 @@ __all__ = [
     "LFM2_SEMANTIC_POSTFOLD_FAILURE_SCHEMA",
     "LFM2_SEMANTIC_POSTFOLD_SCHEMA",
     "LFM2_SEMANTIC_RESIDUAL_CHART_SCHEMA",
+    "LFM2_SEMANTIC_TERMINAL_REVIEW_PENDING_SCHEMA",
     "Lfm2SemanticAttentionTransportEvidence",
     "Lfm2SemanticCompilerLayerLineage",
     "Lfm2SemanticLayerStackInstallation",
