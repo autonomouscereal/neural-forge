@@ -74,6 +74,7 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
     LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA,
     LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA,
     Lfm2CpcfTerminalActionEvidence,
+    Lfm2CpcfTerminalActionDownWeightPrior,
     Lfm2CpcfTerminalActionPolicy,
     Lfm2CpcfTerminalActionResidualResult,
     Lfm2CpcfTerminalActionSeed,
@@ -4128,6 +4129,9 @@ class Lfm2SemanticLayerStackInstallation:
         str,
         Lfm2CpcfTerminalActionEvidence,
     ] = field(repr=False, compare=False)
+    final_layer_mlp_down_weight_prior: (
+        Lfm2CpcfTerminalActionDownWeightPrior | None
+    ) = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         receipt = _verify_sealed(
@@ -4157,12 +4161,61 @@ class Lfm2SemanticLayerStackInstallation:
             raise Lfm2SemanticPostfoldError(
                 "Layer-stack receipt does not authenticate its deferred final W2."
             )
+        recipe = receipt.get("body_recipe")
+        component_lanes = (
+            recipe.get("component_lanes") if isinstance(recipe, Mapping) else None
+        )
+        qdeim_lane = bool(
+            isinstance(component_lanes, Mapping)
+            and component_lanes.get("mlp")
+            in {
+                "nonlinear_qdeim_structural_priority",
+                "nonlinear_qdeim_fit_corrected_priority",
+            }
+        )
+        prior = self.final_layer_mlp_down_weight_prior
+        if qdeim_lane:
+            if (
+                not isinstance(prior, Lfm2CpcfTerminalActionDownWeightPrior)
+                or not prior.verify_authentication()
+                or prior.body_recipe_id != receipt.get("body_recipe_id")
+                or prior.body_recipe_sha256 != receipt.get("body_recipe_sha256")
+                or prior.mlp_lane != component_lanes.get("mlp")
+                or receipt.get(
+                    "final_layer_mlp_down_weight_prior_authentication_sha256"
+                )
+                != prior.authentication_sha256
+                or receipt.get(
+                    "final_layer_mlp_down_weight_prior_tensor_sha256"
+                )
+                != _terminal_action_tensor_sha256(
+                    prior.down_weight,
+                    "final_layer_mlp_down_weight_prior",
+                )
+                or receipt.get(
+                    "final_layer_mlp_down_weight_prior_live_w2_sha256"
+                )
+                != prior.live_deferred_w2_sha256
+                or receipt.get(
+                    "final_layer_mlp_down_weight_prior_installed_before_terminal"
+                )
+                is not False
+                or receipt.get("final_layer_mlp_down_weight_prior_install_count") != 0
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Layer-stack receipt does not authenticate its Q-DEIM W2 prior."
+                )
+        elif prior is not None:
+            raise Lfm2SemanticPostfoldError(
+                "A legacy layer-stack result unexpectedly carries a Q-DEIM W2 prior."
+            )
         object.__setattr__(self, "receipt", MappingProxyType(receipt))
         object.__setattr__(
             self,
             "final_layer_mlp_evidence",
             MappingProxyType(evidence),
         )
+        object.__setattr__(self, "final_layer_mlp_down_weight_prior", prior)
 
 
 def seal_lfm2_semantic_attention_installation_receipt(
@@ -6496,6 +6549,9 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     return Lfm2SemanticLayerStackInstallation(
         receipt=verified,
         final_layer_mlp_evidence=result.final_layer_mlp_evidence,
+        final_layer_mlp_down_weight_prior=(
+            result.final_layer_mlp_down_weight_prior
+        ),
     )
 
 
@@ -8234,6 +8290,44 @@ def _build_terminal_frontier_export_context(
         "terminal cache session",
     )
     mapped_table_sha256 = _tensor_sha256(mapped_parent_tied_table)
+    terminal_prior_authentication_sha256 = terminal.report.get(
+        "down_weight_prior_authentication_sha256"
+    )
+    terminal_prior_tensor_sha256 = terminal.report.get(
+        "down_weight_prior_tensor_sha256"
+    )
+    layer_prior_authentication_sha256 = layer_receipt.get(
+        "final_layer_mlp_down_weight_prior_authentication_sha256"
+    )
+    layer_prior_tensor_sha256 = layer_receipt.get(
+        "final_layer_mlp_down_weight_prior_tensor_sha256"
+    )
+    prior_bound = terminal_prior_authentication_sha256 is not None
+    if prior_bound:
+        _digest(
+            terminal_prior_authentication_sha256,
+            "terminal down-weight prior authentication",
+        )
+        _digest(
+            terminal_prior_tensor_sha256,
+            "terminal down-weight prior tensor",
+        )
+        if (
+            terminal_prior_authentication_sha256
+            != layer_prior_authentication_sha256
+            or terminal_prior_tensor_sha256 != layer_prior_tensor_sha256
+            or terminal.report.get(
+                "frontier_centered_on_authenticated_down_weight_prior"
+            )
+            is not True
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Terminal frontier prior differs from the layer-stack Q-DEIM prior."
+            )
+    elif layer_prior_authentication_sha256 is not None:
+        raise Lfm2SemanticPostfoldError(
+            "Layer-stack Q-DEIM prior was dropped before terminal frontier export."
+        )
     if (
         terminal.report.get("incumbent_seed_writer_sha256") != terminal_incumbent_sha256
         or compatibility.get("schema")
@@ -8313,6 +8407,19 @@ def _build_terminal_frontier_export_context(
         "frontier_export_occurs_before_final_w2_installation": True,
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
+    if prior_bound:
+        body.update(
+            {
+                "down_weight_prior_authentication_sha256": (
+                    terminal_prior_authentication_sha256
+                ),
+                "down_weight_prior_tensor_sha256": terminal_prior_tensor_sha256,
+                "down_weight_prior_bound_from_layer_stack_into_terminal": True,
+                "pure_down_weight_prior_frontier_candidate_id": (
+                    "qdeim-prior-alpha-00"
+                ),
+            }
+        )
     sealed = _sealed(body, "context_sha256")
     issued_facts = {name: sealed[name] for name in _TERMINAL_FRONTIER_LIVE_FACT_NAMES}
     return _CompilerIssuedTerminalFrontierExportContext(
@@ -8359,6 +8466,27 @@ def _authenticate_terminal_frontier_export_context(
         if anchor_selection_value is None
         else _authenticate_foundation_anchor_selection(anchor_selection_value)
     )
+    terminal_prior_authentication_sha256 = terminal.report.get(
+        "down_weight_prior_authentication_sha256"
+    )
+    terminal_prior_tensor_sha256 = terminal.report.get(
+        "down_weight_prior_tensor_sha256"
+    )
+    prior_context_valid = (
+        authenticated.get("down_weight_prior_authentication_sha256")
+        == terminal_prior_authentication_sha256
+        and authenticated.get("down_weight_prior_tensor_sha256")
+        == terminal_prior_tensor_sha256
+        and authenticated.get(
+            "down_weight_prior_bound_from_layer_stack_into_terminal"
+        )
+        is True
+        and authenticated.get("pure_down_weight_prior_frontier_candidate_id")
+        == "qdeim-prior-alpha-00"
+    ) if terminal_prior_authentication_sha256 is not None else (
+        "down_weight_prior_authentication_sha256" not in authenticated
+        and "down_weight_prior_tensor_sha256" not in authenticated
+    )
     if (
         authenticated.get("schema")
         != LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA
@@ -8391,6 +8519,7 @@ def _authenticate_terminal_frontier_export_context(
         != composite_inputs.get("cache_payload_binding_sha256")
         or authenticated.get("frontier_export_occurs_before_final_w2_installation")
         is not True
+        or prior_context_valid is not True
         or authenticated.get("cache_content_identity_matches_layer_stack") is not True
         or type(authenticated.get("same_live_cache_session_as_layer_stack")) is not bool
         or type(authenticated.get("preterminal_resume_mode")) is not bool
@@ -8868,6 +8997,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         selection_evidence=fused["selection"],
         validation_evidence=fused["validation"],
         policy=selected_policy,
+        down_weight_prior=layer_stack.final_layer_mlp_down_weight_prior,
     )
     terminal_frontier_export_context = _build_terminal_frontier_export_context(
         terminal=terminal,
@@ -9040,6 +9170,28 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
             "terminal_publication_decision_accepted": False,
             "operation_audit": dict(_ZERO_OPERATIONS),
         }
+        terminal_prior = layer_stack.final_layer_mlp_down_weight_prior
+        if terminal_prior is not None:
+            deferred_body.update(
+                {
+                    "final_layer_mlp_down_weight_prior_authentication_sha256": (
+                        terminal_prior.authentication_sha256
+                    ),
+                    "final_layer_mlp_down_weight_prior_tensor_sha256": (
+                        _terminal_action_tensor_sha256(
+                            terminal_prior.down_weight,
+                            "review_pending.final_layer_mlp_down_weight_prior",
+                        )
+                    ),
+                    "final_layer_mlp_down_weight_prior_used_as_frontier_center": (
+                        True
+                    ),
+                    "pure_down_weight_prior_candidate_id": (
+                        "qdeim-prior-alpha-00"
+                    ),
+                    "final_layer_mlp_down_weight_prior_install_count": 0,
+                }
+            )
         return _issue_fused_semantic_terminal_receipt(
             _sealed(deferred_body, "result_sha256")
         )
@@ -9356,6 +9508,25 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "terminal_heldout_publication_gate_applied": False,
         "operation_audit": dict(_ZERO_OPERATIONS),
     }
+    terminal_prior = layer_stack.final_layer_mlp_down_weight_prior
+    if terminal_prior is not None:
+        body.update(
+            {
+                "final_layer_mlp_down_weight_prior_authentication_sha256": (
+                    terminal_prior.authentication_sha256
+                ),
+                "final_layer_mlp_down_weight_prior_tensor_sha256": (
+                    _terminal_action_tensor_sha256(
+                        terminal_prior.down_weight,
+                        "fused.final_layer_mlp_down_weight_prior",
+                    )
+                ),
+                "final_layer_mlp_down_weight_prior_used_as_frontier_center": True,
+                "pure_down_weight_prior_candidate_in_terminal_frontier": True,
+                "pure_down_weight_prior_candidate_id": "qdeim-prior-alpha-00",
+                "final_layer_mlp_down_weight_prior_install_count": 0,
+            }
+        )
     if exact_zero_cold_start:
         body.update(
             {

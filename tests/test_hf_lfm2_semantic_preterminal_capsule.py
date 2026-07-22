@@ -19,7 +19,9 @@ import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
 import neural_forge.hf_lfm2_semantic_postfold_frontier as frontier  # noqa: E402
 import neural_forge.hf_lfm2_semantic_preterminal_capsule as capsule  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
+    Lfm2CpcfTerminalActionDownWeightPrior,
     Lfm2CpcfTerminalActionEvidence,
+    lfm2_cpcf_terminal_action_tensor_sha256,
 )
 from neural_forge.hf_lfm2_cpcf_v5_quarantine import (  # noqa: E402
     LFM2_CPCF_V5_ARTIFACT_METADATA,
@@ -52,6 +54,7 @@ def _problem(
     *,
     mutate_during_rename: bool = False,
     hybrid: bool = False,
+    qdeim_prior: bool = False,
 ):
     evidence = {}
     for split_index, split in enumerate(
@@ -85,9 +88,55 @@ def _problem(
             split: evidence[split].authentication_sha256 for split in sorted(evidence)
         },
     }
+    down_weight_prior = None
+    if qdeim_prior:
+        recipe = postfold.resolve_lfm2_semantic_body_recipe(
+            "nonlinear_qdeim_fit_corrected"
+        )
+        live_w2 = torch.zeros((2, 4), dtype=torch.bfloat16)
+        down_weight_prior = Lfm2CpcfTerminalActionDownWeightPrior(
+            down_weight=torch.tensor(
+                [
+                    [0.25, -0.50, 0.75, -1.00],
+                    [1.25, -1.50, 1.75, -2.00],
+                ],
+                dtype=torch.bfloat16,
+            ),
+            body_recipe_id=recipe.recipe_id,
+            body_recipe_sha256=recipe.recipe_sha256,
+            mlp_lane=recipe.component_lanes["mlp"],
+            selected_role="full-w1-w3-w2",
+            selected_candidate_sha256="3" * 64,
+            preparation_sha256="4" * 64,
+            mlp_installation_core_sha256="5" * 64,
+            live_deferred_w2_sha256=(
+                lfm2_cpcf_terminal_action_tensor_sha256(live_w2)
+            ),
+        )
+        layer_body.update(
+            {
+                "body_recipe": recipe.as_dict(),
+                "body_recipe_id": recipe.recipe_id,
+                "body_recipe_sha256": recipe.recipe_sha256,
+                "final_layer_mlp_down_weight_prior_authentication_sha256": (
+                    down_weight_prior.authentication_sha256
+                ),
+                "final_layer_mlp_down_weight_prior_tensor_sha256": (
+                    lfm2_cpcf_terminal_action_tensor_sha256(
+                        down_weight_prior.down_weight
+                    )
+                ),
+                "final_layer_mlp_down_weight_prior_live_w2_sha256": (
+                    down_weight_prior.live_deferred_w2_sha256
+                ),
+                "final_layer_mlp_down_weight_prior_installed_before_terminal": False,
+                "final_layer_mlp_down_weight_prior_install_count": 0,
+            }
+        )
     layer_stack = Lfm2SemanticLayerStackInstallation(
         receipt=_sealed(layer_body, "result_sha256"),
         final_layer_mlp_evidence=evidence,
+        final_layer_mlp_down_weight_prior=down_weight_prior,
     )
     source_table = None
     anchor_transport_witness = None
@@ -150,6 +199,7 @@ def _problem(
         layer_stack = Lfm2SemanticLayerStackInstallation(
             receipt=_sealed(layer_body, "result_sha256"),
             final_layer_mlp_evidence=evidence,
+            final_layer_mlp_down_weight_prior=down_weight_prior,
         )
     else:
         interface_body = {"schema": "synthetic-interface-v1"}
@@ -386,6 +436,50 @@ def test_preterminal_capsule_round_trip_exact_banks_and_zero_w2(
     assert loaded.receipt["terminal_complete"] is False
     assert loaded.receipt["promotion_authorized"] is False
     assert loaded.receipt["behavior_capability_proven"] is False
+
+
+def test_qdeim_terminal_prior_round_trip_reconstructs_owned_authenticated_prior(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    problem = _problem(tmp_path, monkeypatch, qdeim_prior=True)
+    loaded = _load(problem)
+
+    expected = problem.layer_stack.final_layer_mlp_down_weight_prior
+    actual = loaded.layer_stack.final_layer_mlp_down_weight_prior
+    assert expected is not None
+    assert actual is not None
+    assert actual is not expected
+    assert actual.verify_authentication()
+    assert actual.authentication_sha256 == expected.authentication_sha256
+    assert actual.as_dict() == expected.as_dict()
+    assert torch.equal(actual.down_weight, expected.down_weight)
+    assert actual.down_weight.data_ptr() != expected.down_weight.data_ptr()
+    assert loaded.manifest["payload_tensor_count"] == 19
+    assert "terminal_prior.final_layer_mlp_w2" in loaded.manifest[
+        "payload_tensor_names"
+    ]
+    assert loaded.manifest[
+        "final_layer_mlp_down_weight_prior_persisted"
+    ] is True
+    assert loaded.receipt[
+        "final_layer_mlp_down_weight_prior_authentication_sha256"
+    ] == expected.authentication_sha256
+    assert int(torch.count_nonzero(loaded.target_model.final_w2).item()) == 0
+
+
+def test_qdeim_terminal_prior_payload_tamper_fails_closed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    problem = _problem(tmp_path, monkeypatch, qdeim_prior=True)
+    payload_path = problem.output / "preterminal-seam.safetensors"
+    payload = load_file(str(payload_path), device="cpu")
+    payload["terminal_prior.final_layer_mlp_w2"][0, 0] += 0.5
+    save_file(payload, str(payload_path))
+
+    with pytest.raises(Exception):
+        _load(problem)
 
 
 def test_hybrid_capsule_round_trip_persists_typed_witness_and_rejects_tamper(

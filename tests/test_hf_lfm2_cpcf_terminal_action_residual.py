@@ -14,12 +14,14 @@ import neural_forge.hf_lfm2_cpcf_terminal_action_residual as terminal  # noqa: E
 
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     Lfm2CpcfTerminalActionAuthenticationError,
+    Lfm2CpcfTerminalActionDownWeightPrior,
     Lfm2CpcfTerminalActionEvidence,
     Lfm2CpcfTerminalActionPolicy,
     Lfm2CpcfTerminalActionResidualError,
     Lfm2CpcfTerminalActionSeed,
     compile_lfm2_cpcf_terminal_action_residual,
     damped_rmsnorm_gauss_newton_target,
+    lfm2_cpcf_terminal_action_tensor_sha256,
     rmsnorm_jvp,
 )
 
@@ -251,7 +253,7 @@ def _synthetic_terminal_problem():
     return seed, evidence_banks, rejecting_validation
 
 
-def _compile(seed, evidence_banks, *, policy=None):
+def _compile(seed, evidence_banks, *, policy=None, down_weight_prior=None):
     return compile_lfm2_cpcf_terminal_action_residual(
         seed=seed,
         fit_evidence=evidence_banks["fit"],
@@ -259,6 +261,7 @@ def _compile(seed, evidence_banks, *, policy=None):
         selection_evidence=evidence_banks["selection"],
         validation_evidence=evidence_banks["validation"],
         policy=policy,
+        down_weight_prior=down_weight_prior,
     )
 
 
@@ -287,6 +290,189 @@ def _evidence_for_zero_writer(evidence, seed):
         parent_final_norm_output=target.to(torch.bfloat16),
         authentication_sha256="",
     )
+
+
+def _qdeim_down_weight_prior(seed, down_weight):
+    return Lfm2CpcfTerminalActionDownWeightPrior(
+        down_weight=down_weight,
+        body_recipe_id="nonlinear_qdeim_structural",
+        body_recipe_sha256="1" * 64,
+        mlp_lane="nonlinear_qdeim_structural_priority",
+        selected_role="full-w1-w3-w2",
+        selected_candidate_sha256="2" * 64,
+        preparation_sha256="3" * 64,
+        mlp_installation_core_sha256="4" * 64,
+        live_deferred_w2_sha256=lfm2_cpcf_terminal_action_tensor_sha256(
+            seed.down_weight
+        ),
+    )
+
+
+def test_qdeim_prior_is_a_pure_frontier_state_and_center_for_generated_deltas(
+    monkeypatch,
+) -> None:
+    source_seed, evidence_banks, _ = _synthetic_terminal_problem()
+    seed = _zero_terminal_seed(source_seed)
+    prior = _qdeim_down_weight_prior(seed, source_seed.down_weight)
+    captured_deltas = []
+    original_ridge_delta = terminal._ridge_delta
+
+    def capture_ridge_delta(*args, **kwargs):
+        delta = original_ridge_delta(*args, **kwargs)
+        captured_deltas.append(delta.detach().clone())
+        return delta
+
+    monkeypatch.setattr(terminal, "_ridge_delta", capture_ridge_delta)
+
+    result = _compile(
+        seed,
+        evidence_banks,
+        down_weight_prior=prior,
+    )
+    report = result.as_dict()
+    pure_prior_id = "qdeim-prior-alpha-00"
+    pure_prior = result.frontier_down_weights[pure_prior_id]
+    generated_records = [
+        record
+        for record in report["frontier"]
+        if record["candidate_id"].startswith("gn-")
+    ]
+
+    assert prior.verify_authentication() is True
+    assert torch.equal(pure_prior, prior.down_weight)
+    assert pure_prior.data_ptr() != prior.down_weight.data_ptr()
+    assert report["pure_prior_frontier_candidate_id"] == pure_prior_id
+    assert report["authenticated_pure_prior_frontier_candidate_count"] == 1
+    assert report["down_weight_prior_tensor_sha256"] == (
+        lfm2_cpcf_terminal_action_tensor_sha256(prior.down_weight)
+    )
+    assert report["frontier_centered_on_authenticated_down_weight_prior"] is True
+    assert report["live_seed_w2_retained_as_separate_incumbent_control"] is True
+    assert report["down_weight_prior_installed_before_terminal"] is False
+    assert report["down_weight_prior_installation_count_before_terminal"] == 0
+
+    ridge_count = len(Lfm2CpcfTerminalActionPolicy().ridge_frontier)
+    assert len(captured_deltas) == (
+        len(Lfm2CpcfTerminalActionPolicy().gauss_newton_damping_frontier)
+        * ridge_count
+    )
+    assert len(generated_records) == 36
+    for record in generated_records:
+        candidate_id = record["candidate_id"]
+        _, damping_index, _, ridge_index, _, _ = candidate_id.split("-")
+        delta = captured_deltas[
+            int(damping_index) * ridge_count + int(ridge_index)
+        ]
+        expected = (
+            prior.down_weight.to(torch.float32)
+            + record["alpha"] * delta.to(torch.float32)
+        ).to(torch.bfloat16)
+        candidate = result.frontier_down_weights[candidate_id]
+
+        assert torch.equal(candidate, expected)
+        assert record["candidate_centered_on_authenticated_down_weight_prior"] is True
+        assert record["down_weight_prior_authentication_sha256"] == (
+            prior.authentication_sha256
+        )
+        assert record["down_weight_prior_tensor_sha256"] == (
+            lfm2_cpcf_terminal_action_tensor_sha256(prior.down_weight)
+        )
+        assert record["live_incumbent_remains_separate_control"] is True
+
+    assert any(
+        not torch.equal(result.frontier_down_weights[record["candidate_id"]], pure_prior)
+        for record in generated_records
+    )
+    assert torch.count_nonzero(seed.down_weight).item() == 0
+    assert torch.count_nonzero(result.incumbent_down_weight).item() == 0
+    assert torch.equal(result.incumbent_down_weight, seed.down_weight)
+    assert torch.equal(result.selected_down_weight, seed.down_weight)
+    assert torch.equal(result.published_down_weight, seed.down_weight)
+    assert result.verify_authentication() is True
+
+
+def test_qdeim_prior_adds_one_candidate_without_changing_legacy_frontier_ids() -> None:
+    source_seed, evidence_banks, _ = _synthetic_terminal_problem()
+    seed = _zero_terminal_seed(source_seed)
+    prior = _qdeim_down_weight_prior(seed, source_seed.down_weight)
+
+    legacy = _compile(seed, evidence_banks)
+    with_prior = _compile(seed, evidence_banks, down_weight_prior=prior)
+    legacy_ids = [record["candidate_id"] for record in legacy.report["frontier"]]
+    prior_ids = [record["candidate_id"] for record in with_prior.report["frontier"]]
+    expected_generated_ids = [
+        f"gn-{damping:02d}-ridge-{ridge:02d}-alpha-{alpha:02d}"
+        for damping in range(3)
+        for ridge in range(3)
+        for alpha in range(1, 5)
+    ]
+
+    assert legacy_ids == ["incumbent", *expected_generated_ids]
+    assert legacy.report["frontier_count"] == 37
+    assert legacy.report["expected_frontier_count"] == 37
+    assert list(legacy.frontier_down_weights) == expected_generated_ids
+    assert "down_weight_prior" not in legacy.report
+    assert "pure_prior_frontier_candidate_id" not in legacy.report
+
+    assert prior_ids == [
+        "incumbent",
+        "qdeim-prior-alpha-00",
+        *expected_generated_ids,
+    ]
+    assert with_prior.report["frontier_count"] == 38
+    assert with_prior.report["expected_frontier_count"] == 38
+    assert prior_ids[2:] == legacy_ids[1:]
+    assert list(with_prior.frontier_down_weights) == prior_ids[1:]
+    assert torch.count_nonzero(seed.down_weight).item() == 0
+    assert legacy.verify_authentication() is True
+    assert with_prior.verify_authentication() is True
+
+
+@pytest.mark.parametrize(
+    "tamper_kind",
+    ("prior-tensor", "live-incumbent-lineage"),
+)
+def test_qdeim_prior_tamper_or_live_incumbent_mismatch_fails_closed(
+    tamper_kind,
+) -> None:
+    source_seed, evidence_banks, _ = _synthetic_terminal_problem()
+    seed = _zero_terminal_seed(source_seed)
+    prior = _qdeim_down_weight_prior(seed, source_seed.down_weight)
+    if tamper_kind == "prior-tensor":
+        prior.down_weight.reshape(-1)[0] += torch.tensor(
+            1.0,
+            dtype=torch.bfloat16,
+        )
+        assert prior.verify_authentication() is False
+    else:
+        prior = replace(
+            prior,
+            live_deferred_w2_sha256="f" * 64,
+            authentication_sha256="",
+        )
+        assert prior.verify_authentication() is True
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="prior|live deferred-W2 lineage",
+    ):
+        _compile(seed, evidence_banks, down_weight_prior=prior)
+
+
+def test_qdeim_prior_rejects_cross_recipe_lane_mismatch() -> None:
+    source_seed, _evidence_banks, _ = _synthetic_terminal_problem()
+    seed = _zero_terminal_seed(source_seed)
+    prior = _qdeim_down_weight_prior(seed, source_seed.down_weight)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionResidualError,
+        match="exact selected nonlinear Q-DEIM recipe/lane pair",
+    ):
+        replace(
+            prior,
+            mlp_lane="nonlinear_qdeim_fit_corrected_priority",
+            authentication_sha256="",
+        )
 
 
 def test_exact_bfloat16_frontier_defers_selection_and_validates_diagnostic_lead() -> None:

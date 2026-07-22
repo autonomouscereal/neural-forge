@@ -46,6 +46,7 @@ from neural_forge.hf_lfm2_cpcf_resume_artifact import (
     _write_canonical_json,
 )
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+    Lfm2CpcfTerminalActionDownWeightPrior,
     Lfm2CpcfTerminalActionEvidence,
     _tensor_sha256 as _terminal_action_tensor_sha256,
 )
@@ -112,6 +113,7 @@ _ANCHOR_TRANSPORT_TENSOR_NAMES = (
     "anchor_base.target_weight",
     "anchor_source.residual_weight",
 )
+_DOWN_WEIGHT_PRIOR_TENSOR_NAME = "terminal_prior.final_layer_mlp_w2"
 _NONPROMOTABLE_FLAGS = {
     "status": "quarantined-preterminal-resume-only",
     "terminal_complete": False,
@@ -325,7 +327,11 @@ def _verify_seal(
     return normalized
 
 
-def _expected_payload_names(*, anchor_transport: bool = False) -> tuple[str, ...]:
+def _expected_payload_names(
+    *,
+    anchor_transport: bool = False,
+    down_weight_prior: bool = False,
+) -> tuple[str, ...]:
     return tuple(
         [
             f"evidence.{split}.{role}"
@@ -334,6 +340,7 @@ def _expected_payload_names(*, anchor_transport: bool = False) -> tuple[str, ...
         ]
         + list(_INTERFACE_TENSOR_NAMES)
         + (list(_ANCHOR_TRANSPORT_TENSOR_NAMES) if anchor_transport else [])
+        + ([_DOWN_WEIGHT_PRIOR_TENSOR_NAME] if down_weight_prior else [])
     )
 
 
@@ -382,6 +389,16 @@ def _payload_tensors(
                 ),
             }
         )
+    prior = layer_stack.final_layer_mlp_down_weight_prior
+    if prior is not None:
+        if (
+            not isinstance(prior, Lfm2CpcfTerminalActionDownWeightPrior)
+            or not prior.verify_authentication()
+        ):
+            raise Lfm2SemanticPreterminalCapsuleError(
+                "Preterminal layer stack has an invalid final-W2 prior."
+            )
+        tensors[_DOWN_WEIGHT_PRIOR_TENSOR_NAME] = prior.down_weight
     return tensors
 
 
@@ -781,7 +798,7 @@ def _validate_live_seam(
         raise Lfm2SemanticPreterminalCapsuleError(
             "Preterminal parameter count differs from the layer-stack receipt."
         )
-    return {
+    result = {
         "model_identity_sha256": model_identity,
         "model_state_sha256": fingerprint_model_state(target_model),
         "parameter_inventory": inventory,
@@ -805,6 +822,23 @@ def _validate_live_seam(
         "interface_authentication": dict(interface_authentication),
         "attention_receipt_authentication": supplied_attention,
     }
+    prior = layer_stack.final_layer_mlp_down_weight_prior
+    if prior is not None:
+        result.update(
+            {
+                "final_layer_mlp_down_weight_prior": prior.as_dict(),
+                "final_layer_mlp_down_weight_prior_authentication_sha256": (
+                    prior.authentication_sha256
+                ),
+                "final_layer_mlp_down_weight_prior_tensor_sha256": (
+                    _terminal_action_tensor_sha256(
+                        prior.down_weight,
+                        "preterminal.final_layer_mlp_down_weight_prior",
+                    )
+                ),
+            }
+        )
+    return result
 
 
 def _canonical_parameter_inventory(target_model: Any) -> dict[str, Any]:
@@ -823,7 +857,7 @@ def _context_body(
     layer_stack: Lfm2SemanticLayerStackInstallation,
     interface: TiedCausalInterfaceFold,
 ) -> dict[str, Any]:
-    return {
+    body = {
         "schema": LFM2_SEMANTIC_PRETERMINAL_CAPSULE_CONTEXT_SCHEMA,
         "bindings_sha256": bindings.bindings_sha256,
         "semantic_layer_stack_result_sha256": layer_stack.receipt["result_sha256"],
@@ -850,6 +884,25 @@ def _context_body(
         "deferred_final_w2_exact_zero": True,
         "terminal_compiler_called": False,
     }
+    prior = layer_stack.final_layer_mlp_down_weight_prior
+    if prior is not None:
+        body.update(
+            {
+                "final_layer_mlp_down_weight_prior_authentication_sha256": (
+                    prior.authentication_sha256
+                ),
+                "final_layer_mlp_down_weight_prior_tensor_sha256": (
+                    _terminal_action_tensor_sha256(
+                        prior.down_weight,
+                        "preterminal.context.final_layer_mlp_down_weight_prior",
+                    )
+                ),
+                "final_layer_mlp_down_weight_prior_installed_before_terminal": (
+                    False
+                ),
+            }
+        )
+    return body
 
 
 def publish_lfm2_semantic_preterminal_capsule(
@@ -896,8 +949,10 @@ def publish_lfm2_semantic_preterminal_capsule(
         clone=True,
     )
     anchor_transport = anchor_transport_witness is not None
+    down_weight_prior = layer_stack.final_layer_mlp_down_weight_prior is not None
     expected_payload_names = _expected_payload_names(
-        anchor_transport=anchor_transport
+        anchor_transport=anchor_transport,
+        down_weight_prior=down_weight_prior,
     )
     if tuple(payload) != tuple(sorted(expected_payload_names)):
         raise Lfm2SemanticPreterminalCapsuleError(
@@ -994,6 +1049,19 @@ def publish_lfm2_semantic_preterminal_capsule(
             "no_pickle_files": True,
             "operation_audit": dict(_ZERO_OPERATION_AUDIT),
         }
+        if down_weight_prior:
+            prior = layer_stack.final_layer_mlp_down_weight_prior
+            if prior is None:  # pragma: no cover - narrowed above
+                raise AssertionError("Q-DEIM prior disappeared during publication.")
+            manifest_body.update(
+                {
+                    "final_layer_mlp_down_weight_prior": prior.as_dict(),
+                    "final_layer_mlp_down_weight_prior_persisted": True,
+                    "final_layer_mlp_down_weight_prior_tensor_name": (
+                        _DOWN_WEIGHT_PRIOR_TENSOR_NAME
+                    ),
+                }
+            )
         manifest = _sealed(manifest_body, "manifest_sha256")
         manifest_path = stage / _MANIFEST_NAME
         manifest_raw = _write_canonical_json(manifest_path, manifest)
@@ -1023,6 +1091,18 @@ def publish_lfm2_semantic_preterminal_capsule(
             "terminal_compiler_called_before_publication": False,
             "operation_audit": dict(_ZERO_OPERATION_AUDIT),
         }
+        if down_weight_prior:
+            prior = layer_stack.final_layer_mlp_down_weight_prior
+            if prior is None:  # pragma: no cover - narrowed above
+                raise AssertionError("Q-DEIM prior disappeared during receipt seal.")
+            receipt_body.update(
+                {
+                    "final_layer_mlp_down_weight_prior_authentication_sha256": (
+                        prior.authentication_sha256
+                    ),
+                    "final_layer_mlp_down_weight_prior_persisted": True,
+                }
+            )
         receipt = _sealed(receipt_body, "receipt_sha256")
         receipt_path = stage / _RECEIPT_NAME
         receipt_raw = _write_canonical_json(receipt_path, receipt)
@@ -1142,8 +1222,43 @@ def _open_outer_capsule(
         raise Lfm2SemanticPreterminalCapsuleError(
             "Preterminal capsule omitted its anchor transport inventory mode."
         )
+    prior_document = manifest.get("final_layer_mlp_down_weight_prior")
+    down_weight_prior = isinstance(prior_document, Mapping)
+    if down_weight_prior:
+        prior_body = dict(prior_document)
+        prior_authentication_sha256 = prior_body.pop(
+            "authentication_sha256",
+            None,
+        )
+        if (
+            prior_authentication_sha256 != canonical_sha256(prior_body)
+            or manifest.get("final_layer_mlp_down_weight_prior_persisted") is not True
+            or manifest.get("final_layer_mlp_down_weight_prior_tensor_name")
+            != _DOWN_WEIGHT_PRIOR_TENSOR_NAME
+            or receipt.get(
+                "final_layer_mlp_down_weight_prior_authentication_sha256"
+            )
+            != prior_authentication_sha256
+            or receipt.get("final_layer_mlp_down_weight_prior_persisted") is not True
+        ):
+            raise Lfm2SemanticPreterminalCapsuleError(
+                "Preterminal capsule W2 prior document is unauthenticated."
+            )
+    elif (
+        manifest.get("final_layer_mlp_down_weight_prior_persisted") is not None
+        or manifest.get("final_layer_mlp_down_weight_prior_tensor_name") is not None
+        or receipt.get(
+            "final_layer_mlp_down_weight_prior_authentication_sha256"
+        )
+        is not None
+        or receipt.get("final_layer_mlp_down_weight_prior_persisted") is not None
+    ):
+        raise Lfm2SemanticPreterminalCapsuleError(
+            "Legacy capsule has a partial final-layer W2 prior."
+        )
     expected_payload_names = _expected_payload_names(
-        anchor_transport=anchor_transport
+        anchor_transport=anchor_transport,
+        down_weight_prior=down_weight_prior,
     )
     if (
         manifest.get("schema") != LFM2_SEMANTIC_PRETERMINAL_CAPSULE_MANIFEST_SCHEMA
@@ -1302,9 +1417,45 @@ def load_lfm2_semantic_preterminal_capsule(
             raise Lfm2SemanticPreterminalCapsuleError(
                 f"Reconstructed {split} evidence differs from its manifest."
             )
+    prior_document = manifest.get("final_layer_mlp_down_weight_prior")
+    down_weight_prior = None
+    if prior_document is not None:
+        if not isinstance(prior_document, Mapping):
+            raise Lfm2SemanticPreterminalCapsuleError(
+                "Persisted final-layer W2 prior document is invalid."
+            )
+        down_weight_prior = Lfm2CpcfTerminalActionDownWeightPrior(
+            down_weight=tensors[_DOWN_WEIGHT_PRIOR_TENSOR_NAME],
+            body_recipe_id=prior_document.get("body_recipe_id", ""),
+            body_recipe_sha256=prior_document.get("body_recipe_sha256", ""),
+            mlp_lane=prior_document.get("mlp_lane", ""),
+            selected_role=prior_document.get("selected_role", ""),
+            selected_candidate_sha256=prior_document.get(
+                "selected_candidate_sha256",
+                "",
+            ),
+            preparation_sha256=prior_document.get("preparation_sha256", ""),
+            mlp_installation_core_sha256=prior_document.get(
+                "mlp_installation_core_sha256",
+                "",
+            ),
+            live_deferred_w2_sha256=prior_document.get(
+                "live_deferred_w2_sha256",
+                "",
+            ),
+            authentication_sha256=prior_document.get(
+                "authentication_sha256",
+                "",
+            ),
+        )
+        if down_weight_prior.as_dict() != dict(prior_document):
+            raise Lfm2SemanticPreterminalCapsuleError(
+                "Reconstructed final-layer W2 prior differs from its manifest."
+            )
     layer_stack = Lfm2SemanticLayerStackInstallation(
         receipt=manifest["semantic_layer_stack_receipt"],
         final_layer_mlp_evidence=evidence,
+        final_layer_mlp_down_weight_prior=down_weight_prior,
     )
     interface = TiedCausalInterfaceFold(
         target_weight=tensors["interface.target_weight"],

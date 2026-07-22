@@ -206,7 +206,7 @@ def _terminal_result(
     )
 
 
-def _compiled_exact_zero_terminal_result(*, policy=None):
+def _compiled_exact_zero_terminal_result(*, policy=None, qdeim_prior=False):
     generator = torch.Generator().manual_seed(1_901)
     hidden = 2
     intermediate = 3
@@ -272,6 +272,26 @@ def _compiled_exact_zero_terminal_result(*, policy=None):
         "selection": evidence("selection", 16, 3),
         "validation": evidence("validation", 16, 4),
     }
+    prior = None
+    if qdeim_prior:
+        recipe = postfold.resolve_lfm2_semantic_body_recipe(
+            "nonlinear_qdeim_fit_corrected"
+        )
+        prior = terminal_action.Lfm2CpcfTerminalActionDownWeightPrior(
+            down_weight=target,
+            body_recipe_id=recipe.recipe_id,
+            body_recipe_sha256=recipe.recipe_sha256,
+            mlp_lane=recipe.component_lanes["mlp"],
+            selected_role="full-w1-w3-w2",
+            selected_candidate_sha256="1" * 64,
+            preparation_sha256="2" * 64,
+            mlp_installation_core_sha256="3" * 64,
+            live_deferred_w2_sha256=(
+                terminal_action.lfm2_cpcf_terminal_action_tensor_sha256(
+                    seed.down_weight
+                )
+            ),
+        )
     result = terminal_action.compile_lfm2_cpcf_terminal_action_residual(
         seed=seed,
         fit_evidence=banks["fit"],
@@ -279,6 +299,7 @@ def _compiled_exact_zero_terminal_result(*, policy=None):
         selection_evidence=banks["selection"],
         validation_evidence=banks["validation"],
         policy=policy,
+        down_weight_prior=prior,
     )
     return seed, banks, result
 
@@ -466,7 +487,10 @@ def _synthetic_terminal_lineages(
 
 def _frontier_export_context(terminal, *, resume_mode=False, body_recipe=None):
     session_sha256 = "9" * 64
-    recipe = postfold.resolve_lfm2_semantic_body_recipe("fit_guided")
+    prior_bound = terminal.report.get("down_weight_prior_authentication_sha256") is not None
+    recipe = postfold.resolve_lfm2_semantic_body_recipe(
+        "nonlinear_qdeim_fit_corrected" if prior_bound else "fit_guided"
+    )
 
     def seal(body, name):
         return {**body, name: canonical_sha256(body)}
@@ -503,19 +527,31 @@ def _frontier_export_context(terminal, *, resume_mode=False, body_recipe=None):
         session_sha256=session_sha256,
         direct_local=False,
     )
+    layer_receipt = {
+        "result_sha256": "5" * 64,
+        "cache_selective_session_sha256": session_sha256,
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+    }
+    if prior_bound:
+        layer_receipt.update(
+            {
+                "final_layer_mlp_down_weight_prior_authentication_sha256": (
+                    terminal.report["down_weight_prior_authentication_sha256"]
+                ),
+                "final_layer_mlp_down_weight_prior_tensor_sha256": (
+                    terminal.report["down_weight_prior_tensor_sha256"]
+                ),
+            }
+        )
     return postfold._build_terminal_frontier_export_context(
         terminal=terminal,
         cache=SimpleNamespace(cache_key="1" * 64, parent_fingerprint="2" * 64),
         bridge=SimpleNamespace(artifact_sha256="3" * 64),
         parent_final_norm=SimpleNamespace(result_sha256="4" * 64),
         mapped_parent_tied_table=torch.eye(2, dtype=torch.bfloat16),
-        layer_receipt={
-            "result_sha256": "5" * 64,
-            "cache_selective_session_sha256": session_sha256,
-            "body_recipe": recipe.as_dict(),
-            "body_recipe_sha256": recipe.recipe_sha256,
-            "body_recipe_id": recipe.recipe_id,
-        },
+        layer_receipt=layer_receipt,
         terminal_interface_authentication=interface_authentication,
         terminal_cache_compatibility=compatibility,
         terminal_cache_payload_binding=payload_binding,
@@ -1017,6 +1053,38 @@ def test_terminal_frontier_export_seam_receives_full_bank_once_before_w2_install
     assert source.index("_export_authenticated_terminal_frontier") < source.index(
         "_install_final_w2_once"
     )
+
+
+def test_qdeim_prior_is_bound_into_compiler_issued_frontier_export_context() -> None:
+    seed, _evidence, terminal = _compiled_exact_zero_terminal_result(
+        qdeim_prior=True
+    )
+    context = _frontier_export_context(terminal)
+
+    assert torch.count_nonzero(seed.down_weight).item() == 0
+    assert terminal.report["frontier_count"] == 38
+    assert "qdeim-prior-alpha-00" in terminal.frontier_down_weights
+    assert context["body_recipe_id"] == "nonlinear_qdeim_fit_corrected"
+    assert context["down_weight_prior_authentication_sha256"] == terminal.report[
+        "down_weight_prior_authentication_sha256"
+    ]
+    assert context["down_weight_prior_tensor_sha256"] == terminal.report[
+        "down_weight_prior_tensor_sha256"
+    ]
+    assert context[
+        "down_weight_prior_bound_from_layer_stack_into_terminal"
+    ] is True
+    assert context["pure_down_weight_prior_frontier_candidate_id"] == (
+        "qdeim-prior-alpha-00"
+    )
+    assert (
+        postfold._authenticate_terminal_frontier_export_context(terminal, context)
+        is context
+    )
+    source = inspect.getsource(
+        postfold.compile_install_lfm2_fused_semantic_terminal_refold
+    )
+    assert "down_weight_prior=layer_stack.final_layer_mlp_down_weight_prior" in source
 
 
 def test_terminal_export_context_rejects_explicit_wrong_body_recipe() -> None:
@@ -2433,13 +2501,7 @@ def test_complete_layer_stack_fails_closed_on_conv_and_mlp_gaps(
 
 @pytest.mark.parametrize(
     "recipe_id",
-    (
-        "fit_guided",
-        "full_strength_structural",
-        "residual_writer",
-        "source_producer_residual_writer",
-        "structural_sequence_residual_mlp_writer",
-    ),
+    postfold.LFM2_SEMANTIC_BODY_RECIPE_IDS,
 )
 def test_layer_stack_stage_forwards_exact_authenticated_body_recipe(
     monkeypatch,

@@ -38,6 +38,10 @@ from neural_forge.hf_lfm2_cpcf_macrocell_replay import (
     Lfm2CpcfMacrocellReplay,
     replay_lfm2_cpcf_macrocell,
 )
+from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+    Lfm2CpcfTerminalActionDownWeightPrior,
+    lfm2_cpcf_terminal_action_tensor_sha256,
+)
 from neural_forge.hf_lfm2_cpcf_model_compiler import _rope_from_target
 from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
     seal_lfm2_dense_qkvo_source_inventory,
@@ -2316,7 +2320,13 @@ def _authenticated_mlp_unchanged_state(
         and receipt.get("parameter_storage_preserved") is True
         and receipt.get("gradient_state_preserved") is True
         and receipt.get("exact_noop_state_proven") is True
-        and receipt.get("analytic_linear_and_cluster_solves_only") is True
+        and (
+            receipt.get("analytic_linear_and_cluster_solves_only") is True
+            or receipt.get(
+                "analytic_linear_cluster_tangent_and_qdeim_solves_only"
+            )
+            is True
+        )
         and _is_zero_operation_audit(receipt.get("operation_audit"))
     )
 
@@ -3886,7 +3896,11 @@ def _install_mlp(
     parameter_count: int,
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
-) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+) -> tuple[
+    Mapping[str, Any],
+    Mapping[str, Any],
+    Lfm2CpcfTerminalActionDownWeightPrior | None,
+]:
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
@@ -3918,6 +3932,7 @@ def _install_mlp(
     )
     receipt_value = getattr(result, "receipt", None)
     terminal_evidence = dict(getattr(result, "final_layer_mlp_evidence", {}))
+    deferred_prior = getattr(result, "deferred_selected_w2_prior", None)
     if not isinstance(receipt_value, Mapping):
         raise Lfm2SemanticLayerStackRefoldError(
             "MLP installer returned no authenticated receipt."
@@ -3988,6 +4003,45 @@ def _install_mlp(
             raise Lfm2SemanticLayerStackRefoldError(
                 "Final MLP did not defer W2 with four authenticated banks."
             )
+        qdeim_lane = recipe.component_lanes["mlp"] in {
+            "nonlinear_qdeim_structural_priority",
+            "nonlinear_qdeim_fit_corrected_priority",
+        }
+        if qdeim_lane:
+            if (
+                not isinstance(
+                    deferred_prior,
+                    Lfm2CpcfTerminalActionDownWeightPrior,
+                )
+                or not deferred_prior.verify_authentication()
+                or deferred_prior.body_recipe_id != recipe.recipe_id
+                or deferred_prior.body_recipe_sha256 != recipe.recipe_sha256
+                or deferred_prior.mlp_lane != recipe.component_lanes["mlp"]
+                or receipt.get(
+                    "deferred_selected_w2_prior_authentication_sha256"
+                )
+                != deferred_prior.authentication_sha256
+                or receipt.get("deferred_selected_w2_prior_sha256")
+                != _tensor_sha256(deferred_prior.down_weight)
+                or receipt.get(
+                    "deferred_selected_w2_prior_terminal_action_sha256"
+                )
+                != lfm2_cpcf_terminal_action_tensor_sha256(
+                    deferred_prior.down_weight
+                )
+                or deferred_prior.live_deferred_w2_sha256
+                != lfm2_cpcf_terminal_action_tensor_sha256(w2)
+                or receipt.get("deferred_selected_w2_prior_installed_before_terminal")
+                is not False
+            ):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Final Q-DEIM MLP did not carry its selected W2 as an "
+                    "authenticated uninstalled terminal prior."
+                )
+        elif deferred_prior is not None:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "A legacy final MLP unexpectedly returned a terminal W2 prior."
+            )
     elif structural_mlp_noop:
         if (
             receipt.get("install_count") != 0
@@ -4011,7 +4065,11 @@ def _install_mlp(
         raise Lfm2SemanticLayerStackRefoldError(
             "Nonterminal MLP did not install one accepted complete writer."
         )
-    return MappingProxyType(receipt), MappingProxyType(terminal_evidence)
+    return (
+        MappingProxyType(receipt),
+        MappingProxyType(terminal_evidence),
+        deferred_prior,
+    )
 
 
 def _validated_operator_topology(
@@ -4525,6 +4583,19 @@ def _layer_receipt(
             if isinstance(execution, Mapping)
             else None
         ),
+        **(
+            {
+                "mlp_requested_fold_compute_device_applies_to_normalized_decoder_control": (True),
+                "mlp_qdeim_pod_and_pivot_compute_device": "cpu",
+                "mlp_qdeim_cpu_execution_explicitly_receipted": True,
+            }
+            if recipe.component_lanes["mlp"]
+            in {
+                "nonlinear_qdeim_structural_priority",
+                "nonlinear_qdeim_fit_corrected_priority",
+            }
+            else {}
+        ),
         **short_conv_compute_fields,
         "fir_equivalence_sha256": (
             None if fir_receipt is None else fir_receipt["result_sha256"]
@@ -4687,6 +4758,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             retained_nonzero_seed_noop_count = 0
             blank_or_partially_blank_producer_chain_count = 0
             final_terminal_evidence: Mapping[str, Any] = MappingProxyType({})
+            final_terminal_w2_prior: (
+                Lfm2CpcfTerminalActionDownWeightPrior | None
+            ) = None
             for layer_index, operator_kind in enumerate(kinds):
                 before_operator_replay = _replay_current_layer(
                     target_model,
@@ -4930,7 +5004,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     producer_kind="mlp",
                     defer_down_weight=layer_index == 13,
                 )
-                mlp_receipt, terminal_evidence = _install_mlp(
+                mlp_receipt, terminal_evidence, terminal_w2_prior = _install_mlp(
                     target_model=target_model,
                     layer_index=layer_index,
                     evidence=mlp_evidence,
@@ -4988,6 +5062,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 else:
                     final_mlp_producer_coverage_count = 1
                     final_terminal_evidence = terminal_evidence
+                    final_terminal_w2_prior = terminal_w2_prior
                     final_mlp_producer_install_count = int(
                         mlp_receipt.get("installed") is True
                     )
@@ -5264,6 +5339,27 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "parameter_count_changed": False,
             "parameter_topology_changed": False,
             "deferred_final_w2_sha256": final_w2_before,
+            **(
+                {
+                    "final_layer_mlp_down_weight_prior_authentication_sha256": (
+                        final_terminal_w2_prior.authentication_sha256
+                    ),
+                    "final_layer_mlp_down_weight_prior_tensor_sha256": (
+                        lfm2_cpcf_terminal_action_tensor_sha256(
+                            final_terminal_w2_prior.down_weight
+                        )
+                    ),
+                    "final_layer_mlp_down_weight_prior_live_w2_sha256": (
+                        final_terminal_w2_prior.live_deferred_w2_sha256
+                    ),
+                    "final_layer_mlp_down_weight_prior_installed_before_terminal": (
+                        False
+                    ),
+                    "final_layer_mlp_down_weight_prior_install_count": 0,
+                }
+                if final_terminal_w2_prior is not None
+                else {}
+            ),
             "one_selective_cache_session_for_complete_stack": True,
             "selective_cache_session_owned_by_layer_stack": (
                 authenticated_cache_session is None
@@ -5279,6 +5375,20 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "stack_compute_device_router_present": True,
             "fold_compute_device": fold_compute_device,
             "all_mlp_layers_proved_requested_fold_compute_device": True,
+            **(
+                {
+                    "all_mlp_qdeim_pod_and_pivot_layers_proved_cpu_execution": True,
+                    "requested_fold_compute_device_scope_for_qdeim_mlp": (
+                        "normalized_decoder_control_only"
+                    ),
+                }
+                if recipe.component_lanes["mlp"]
+                in {
+                    "nonlinear_qdeim_structural_priority",
+                    "nonlinear_qdeim_fit_corrected_priority",
+                }
+                else {}
+            ),
             **(
                 {"all_short_conv_layers_proved_requested_fold_compute_device": True}
                 if fold_compute_device != "cpu"
@@ -5299,6 +5409,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         result = Lfm2SemanticLayerStackInstallation(
             receipt=receipt,
             final_layer_mlp_evidence=final_terminal_evidence,
+            final_layer_mlp_down_weight_prior=final_terminal_w2_prior,
         )
     except BaseException as exc:
         try:

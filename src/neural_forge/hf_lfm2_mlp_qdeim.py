@@ -506,43 +506,56 @@ def _canonicalize_pod_signs(basis: Any) -> Any:
 
 
 def _deterministic_pivoted_qr_indices(basis: Any) -> tuple[tuple[int, ...], Any]:
-    """Column-pivoted modified QR of ``basis.T`` with stable index ties."""
+    """Incremental column-pivoted modified QR with stable index ties.
+
+    The selected pivot column is still explicitly reorthogonalized twice.  The
+    remaining-column norms are updated by the resulting rank-one projection,
+    avoiding a full residual-matrix reconstruction at every pivot.
+    """
 
     torch = _torch()
     source_neurons, modes = map(int, basis.shape)
     matrix = basis.T.contiguous()
     selected: list[int] = []
-    q_columns = torch.empty((modes, 0), dtype=torch.float64)
+    q_columns = torch.empty(
+        (modes, modes),
+        dtype=torch.float64,
+        device=matrix.device,
+    )
+    scores = matrix.square().sum(dim=0)
+    selected_mask = torch.zeros(
+        source_neurons,
+        dtype=torch.bool,
+        device=matrix.device,
+    )
     pivot_residual_norms: list[float] = []
     epsilon = torch.finfo(torch.float64).eps
-    for _step in range(modes):
-        if q_columns.shape[1]:
-            residual = matrix - q_columns @ (q_columns.T @ matrix)
-            residual = residual - q_columns @ (q_columns.T @ residual)
-        else:
-            residual = matrix
-        scores = residual.square().sum(dim=0)
-        if selected:
-            scores[torch.tensor(selected, dtype=torch.long)] = -1.0
-        maximum = float(scores.max().item())
+    for step in range(modes):
+        eligible_scores = scores.masked_fill(selected_mask, -1.0)
+        maximum = float(eligible_scores.max().item())
         tie_tolerance = 128.0 * epsilon * max(1.0, abs(maximum))
-        candidates = [
-            index
-            for index in range(source_neurons)
-            if index not in selected
-            and float(scores[index].item()) >= maximum - tie_tolerance
-        ]
-        if not candidates:
+        candidates = torch.nonzero(
+            (~selected_mask) & (scores >= maximum - tie_tolerance),
+            as_tuple=False,
+        ).flatten()
+        if not int(candidates.numel()):
             raise Lfm2MlpQdeimError("Pivoted QR found no remaining source neuron.")
-        pivot = min(candidates)
-        vector = residual[:, pivot].contiguous()
+        pivot = int(candidates.min().item())
+        vector = matrix[:, pivot].contiguous().clone()
+        if step:
+            prior = q_columns[:, :step]
+            vector.sub_(prior @ (prior.T @ vector))
+            vector.sub_(prior @ (prior.T @ vector))
         norm = float(torch.linalg.vector_norm(vector).item())
         if not math.isfinite(norm) or norm <= epsilon:
             raise Lfm2MlpQdeimError(
                 "Pivoted QR encountered a structurally singular POD interpolation."
             )
-        q = (vector / norm).unsqueeze(1)
-        q_columns = torch.cat((q_columns, q), dim=1).contiguous()
+        q = vector / norm
+        q_columns[:, step].copy_(q)
+        projection = q @ matrix
+        scores.sub_(projection.square()).clamp_min_(0.0)
+        selected_mask[pivot] = True
         selected.append(pivot)
         pivot_residual_norms.append(norm)
     return tuple(selected), torch.tensor(pivot_residual_norms, dtype=torch.float64)
@@ -1308,8 +1321,31 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         "selected_source_neurons": list(selected),
         "selected_source_neuron_count": len(selected),
         "selection_method": (
-            "deterministic_column_pivoted_modified_qr_of_functional_pod_transpose"
+            "deterministic_incremental_column_pivoted_modified_qr_of_"
+            "functional_pod_transpose"
         ),
+        "selection_compute_diagnostic": {
+            "schema": "neural-forge-lfm2-mlp-qdeim-selection-compute-v1",
+            "basis_transpose_shape": [target_intermediate, source_intermediate],
+            "preallocated_q_shape": [target_intermediate, target_intermediate],
+            "pivot_step_count": target_intermediate,
+            "initial_full_score_pass_count": 1,
+            "rank_one_score_update_count": target_intermediate,
+            "full_residual_matrix_reconstruction_count": 0,
+            "selected_pivot_reorthogonalization_pass_count": (
+                2 * max(0, target_intermediate - 1)
+            ),
+            "asymptotic_time_bound": (
+                "O(pivot_steps*pod_modes*source_neurons)"
+            ),
+            "asymptotic_auxiliary_storage_bound": (
+                "O(pod_modes*source_neurons+pod_modes^2+source_neurons)"
+            ),
+            "wall_clock_timing_recorded": False,
+            "timing_used_for_candidate_selection": False,
+            "timing_used_for_semantic_acceptance_or_veto": False,
+            "performance_diagnostics_have_semantic_authority": False,
+        },
         "selection_sha256": canonical_sha256(list(selected)),
         "pivot_residual_norms_sha256": _tensor_hash(
             pivot_residual_norms,

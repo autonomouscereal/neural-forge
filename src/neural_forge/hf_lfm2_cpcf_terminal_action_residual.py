@@ -46,6 +46,9 @@ LFM2_CPCF_TERMINAL_ACTION_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-cpcf-terminal-action-evidence-v1"
 )
 LFM2_CPCF_TERMINAL_ACTION_SEED_SCHEMA = "neural-forge-lfm2-cpcf-terminal-action-seed-v1"
+LFM2_CPCF_TERMINAL_ACTION_DOWN_WEIGHT_PRIOR_SCHEMA = (
+    "neural-forge-lfm2-cpcf-terminal-action-down-weight-prior-v1"
+)
 LFM2_CPCF_TERMINAL_ACTION_POLICY_SCHEMA = (
     "neural-forge-lfm2-cpcf-terminal-action-policy-v1"
 )
@@ -71,6 +74,14 @@ _TERMINAL_RESULT_COMPILER_ISSUER = object()
 _TERMINAL_ACTION_RESULT_METHOD = (
     "closed_form_rmsnorm_gauss_newton_then_weighted_ridge_"
     "exact_bfloat16_terminal_writer_frontier"
+)
+_QDEIM_PRIOR_RECIPE_LANE = MappingProxyType(
+    {
+        "nonlinear_qdeim_structural": "nonlinear_qdeim_structural_priority",
+        "nonlinear_qdeim_fit_corrected": (
+            "nonlinear_qdeim_fit_corrected_priority"
+        ),
+    }
 )
 
 TerminalActionSplit = Literal["fit", "fit_check", "selection", "validation"]
@@ -199,6 +210,12 @@ def _state_sha256(values: Mapping[str, Any]) -> str:
     return _canonical_sha256(
         {name: _tensor_sha256(value, name) for name, value in sorted(values.items())}
     )
+
+
+def lfm2_cpcf_terminal_action_tensor_sha256(value: Any) -> str:
+    """Public hash contract used to bind deferred W2 priors across adapters."""
+
+    return _tensor_sha256(value, "terminal_action_tensor")
 
 
 def _finite_number(
@@ -724,6 +741,95 @@ class Lfm2CpcfTerminalActionSeed:
             "exact_bfloat16_runtime_parameters": True,
             "tied_output_interface_fixed": True,
             "parameter_count": int(self.down_weight.numel()),
+            "operation_audit": dict(_ZERO_OPERATION_AUDIT),
+        }
+
+    def verify_authentication(self) -> bool:
+        return self.authentication_sha256 == _canonical_sha256(
+            self.authentication_body()
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            **self.authentication_body(),
+            "authentication_sha256": self.authentication_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfTerminalActionDownWeightPrior:
+    """Selected, uninstalled final-MLP W2 carried into the terminal frontier."""
+
+    down_weight: Any
+    body_recipe_id: str
+    body_recipe_sha256: str
+    mlp_lane: str
+    selected_role: str
+    selected_candidate_sha256: str
+    preparation_sha256: str
+    mlp_installation_core_sha256: str
+    live_deferred_w2_sha256: str
+    authentication_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        down = _owned_float_tensor(
+            self.down_weight,
+            "down_weight_prior",
+            dimensions=2,
+            exact_dtype=torch.bfloat16,
+        )
+        if (
+            not isinstance(self.body_recipe_id, str)
+            or _QDEIM_PRIOR_RECIPE_LANE.get(self.body_recipe_id) != self.mlp_lane
+            or self.selected_role != "full-w1-w3-w2"
+        ):
+            raise Lfm2CpcfTerminalActionResidualError(
+                "A terminal W2 prior must identify the exact selected nonlinear "
+                "Q-DEIM recipe/lane pair."
+            )
+        for value, name in (
+            (self.body_recipe_sha256, "body_recipe_sha256"),
+            (self.selected_candidate_sha256, "selected_candidate_sha256"),
+            (self.preparation_sha256, "preparation_sha256"),
+            (
+                self.mlp_installation_core_sha256,
+                "mlp_installation_core_sha256",
+            ),
+            (self.live_deferred_w2_sha256, "live_deferred_w2_sha256"),
+        ):
+            _required_sha256(value, name)
+        object.__setattr__(self, "down_weight", down)
+        expected = _canonical_sha256(self.authentication_body())
+        supplied = str(self.authentication_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                "Terminal W2 prior authentication is invalid."
+            )
+        object.__setattr__(self, "authentication_sha256", expected)
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_CPCF_TERMINAL_ACTION_DOWN_WEIGHT_PRIOR_SCHEMA,
+            "body_recipe_id": self.body_recipe_id,
+            "body_recipe_sha256": self.body_recipe_sha256,
+            "mlp_lane": self.mlp_lane,
+            "selected_role": self.selected_role,
+            "selected_candidate_sha256": self.selected_candidate_sha256,
+            "preparation_sha256": self.preparation_sha256,
+            "mlp_installation_core_sha256": (
+                self.mlp_installation_core_sha256
+            ),
+            "live_deferred_w2_sha256": self.live_deferred_w2_sha256,
+            "down_weight_sha256": _tensor_sha256(
+                self.down_weight,
+                "down_weight_prior",
+            ),
+            "shape": [int(value) for value in self.down_weight.shape],
+            "dtype": "bfloat16",
+            "installed_before_terminal": False,
+            "installation_count_before_terminal": 0,
+            "terminal_frontier_role": "authenticated-prior-center",
             "operation_audit": dict(_ZERO_OPERATION_AUDIT),
         }
 
@@ -1517,6 +1623,7 @@ def _terminal_compiler_input_binding(
     evidence: Sequence[Lfm2CpcfTerminalActionEvidence],
     policy: Lfm2CpcfTerminalActionPolicy,
     incumbent: Any,
+    down_weight_prior: Lfm2CpcfTerminalActionDownWeightPrior | None = None,
 ) -> Mapping[str, Any]:
     """Bind a result to the exact authenticated compiler inputs that issued it."""
 
@@ -1536,6 +1643,21 @@ def _terminal_compiler_input_binding(
             value.split: _canonical_sha256(list(value.row_ids)) for value in evidence
         },
     }
+    if down_weight_prior is not None:
+        body.update(
+            {
+                "down_weight_prior_authentication_sha256": (
+                    down_weight_prior.authentication_sha256
+                ),
+                "down_weight_prior_tensor_sha256": _tensor_sha256(
+                    down_weight_prior.down_weight,
+                    "compiler_binding.down_weight_prior",
+                ),
+                "down_weight_prior_live_incumbent_sha256": (
+                    down_weight_prior.live_deferred_w2_sha256
+                ),
+            }
+        )
     return MappingProxyType({**body, "binding_sha256": _canonical_sha256(body)})
 
 
@@ -1580,7 +1702,7 @@ def _terminal_compiler_lineage_facts(
             )
         row_facts.append((split, rows))
 
-    return (
+    facts: tuple[tuple[str, Any], ...] = (
         (
             "seed_sha256",
             _required_sha256(value.get("seed_sha256"), f"{context}.seed_sha256"),
@@ -1603,6 +1725,25 @@ def _terminal_compiler_lineage_facts(
         ("split_rows", tuple(row_facts)),
         ("split_row_ids_sha256", split_sha256_facts("split_row_ids_sha256")),
     )
+    prior_names = (
+        "down_weight_prior_authentication_sha256",
+        "down_weight_prior_tensor_sha256",
+        "down_weight_prior_live_incumbent_sha256",
+    )
+    present_prior_names = tuple(name for name in prior_names if name in value)
+    if present_prior_names and present_prior_names != prior_names:
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            f"{context} has a partial terminal down-weight prior binding."
+        )
+    if present_prior_names:
+        facts = facts + tuple(
+            (
+                name,
+                _required_sha256(value.get(name), f"{context}.{name}"),
+            )
+            for name in prior_names
+        )
+    return facts
 
 
 def _terminal_compiler_lineage_sha256(
@@ -1935,6 +2076,58 @@ def _authenticate_deferred_structural_frontier_compiled_result(
         raise Lfm2CpcfTerminalActionAuthenticationError(
             "Deferred terminal result is not bound to its compiler inputs."
         )
+    prior_binding_names = (
+        "down_weight_prior_authentication_sha256",
+        "down_weight_prior_tensor_sha256",
+        "down_weight_prior_live_incumbent_sha256",
+    )
+    prior_bound = all(name in binding for name in prior_binding_names)
+    prior_receipt_value = body.get("down_weight_prior")
+    if prior_bound:
+        if not isinstance(prior_receipt_value, Mapping):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                "Deferred terminal result omitted its authenticated W2 prior."
+            )
+        prior_receipt = dict(prior_receipt_value)
+        prior_authentication_sha256 = prior_receipt.pop(
+            "authentication_sha256",
+            None,
+        )
+        if (
+            prior_authentication_sha256 != _canonical_sha256(prior_receipt)
+            or prior_receipt.get("schema")
+            != LFM2_CPCF_TERMINAL_ACTION_DOWN_WEIGHT_PRIOR_SCHEMA
+            or prior_receipt.get("down_weight_sha256")
+            != binding.get("down_weight_prior_tensor_sha256")
+            or prior_receipt.get("live_deferred_w2_sha256")
+            != output_hashes["incumbent"]
+            or body.get("down_weight_prior_authentication_sha256")
+            != binding.get("down_weight_prior_authentication_sha256")
+            or body.get("down_weight_prior_authentication_sha256")
+            != prior_authentication_sha256
+            or body.get("down_weight_prior_tensor_sha256")
+            != binding.get("down_weight_prior_tensor_sha256")
+            or body.get("down_weight_prior_live_incumbent_sha256")
+            != binding.get("down_weight_prior_live_incumbent_sha256")
+            or body.get("down_weight_prior_live_incumbent_sha256")
+            != output_hashes["incumbent"]
+            or body.get("frontier_centered_on_authenticated_down_weight_prior")
+            is not True
+            or body.get("live_seed_w2_retained_as_separate_incumbent_control")
+            is not True
+            or body.get("down_weight_prior_installed_before_terminal") is not False
+            or body.get("down_weight_prior_installation_count_before_terminal") != 0
+            or body.get("authenticated_pure_prior_frontier_candidate_count") != 1
+        ):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                "Deferred terminal W2 prior differs from its compiler binding."
+            )
+    elif prior_receipt_value is not None or any(
+        name in body for name in prior_binding_names
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Legacy terminal result unexpectedly introduced a partial W2 prior."
+        )
     if (
         body.get("selected_candidate_id") != "incumbent"
         or body.get("selected_nonincumbent") is not False
@@ -1964,7 +2157,13 @@ def _authenticate_deferred_structural_frontier_compiled_result(
             "Deferred terminal result assigned pre-review decision semantics."
         )
 
-    expected_ids = ("incumbent", *_frontier_candidate_ids(policy))
+    expected_ids = (
+        "incumbent",
+        *_frontier_candidate_ids(
+            policy,
+            include_down_weight_prior=prior_bound,
+        ),
+    )
     frontier = body.get("frontier")
     if (
         not isinstance(frontier, list)
@@ -2019,6 +2218,27 @@ def _authenticate_deferred_structural_frontier_compiled_result(
         ):
             raise Lfm2CpcfTerminalActionAuthenticationError(
                 f"Deferred frontier record {candidate_id!r} is incomplete."
+            )
+        if prior_bound and (
+            record.get("candidate_centered_on_authenticated_down_weight_prior")
+            is not True
+            or record.get("down_weight_prior_authentication_sha256")
+            != binding.get("down_weight_prior_authentication_sha256")
+            or record.get("down_weight_prior_tensor_sha256")
+            != binding.get("down_weight_prior_tensor_sha256")
+            or record.get("live_incumbent_remains_separate_control") is not True
+        ):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Deferred frontier record {candidate_id!r} lost its W2 prior."
+            )
+        if candidate_id == "qdeim-prior-alpha-00" and (
+            record.get("pure_authenticated_down_weight_prior") is not True
+            or record.get("alpha") != 0.0
+            or record.get("state_sha256")
+            != binding.get("down_weight_prior_tensor_sha256")
+        ):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                "Deferred pure-prior candidate differs from the carried Q-DEIM W2."
             )
         coverage = dict(coverage_value)
         coverage_sha256 = coverage.pop("coverage_sha256", None)
@@ -2156,12 +2376,19 @@ def _authenticate_deferred_structural_frontier_compiled_result(
 
 def _frontier_candidate_ids(
     policy: Lfm2CpcfTerminalActionPolicy,
+    *,
+    include_down_weight_prior: bool = False,
 ) -> tuple[str, ...]:
-    return tuple(
+    generated = tuple(
         f"gn-{damping_index:02d}-ridge-{ridge_index:02d}-alpha-{alpha_index:02d}"
         for damping_index, _damping in enumerate(policy.gauss_newton_damping_frontier)
         for ridge_index, _ridge in enumerate(policy.ridge_frontier)
         for alpha_index, _alpha in enumerate(policy.alpha_frontier[1:], start=1)
+    )
+    return (
+        ("qdeim-prior-alpha-00", *generated)
+        if include_down_weight_prior
+        else generated
     )
 
 
@@ -2180,7 +2407,13 @@ def _authenticate_frontier_down_weights(
     """Authenticate the complete private, nonincumbent BF16 frontier bank."""
 
     torch = _torch()
-    expected_ids = _frontier_candidate_ids(policy)
+    expected_ids = _frontier_candidate_ids(
+        policy,
+        include_down_weight_prior=isinstance(
+            report_body.get("down_weight_prior"),
+            Mapping,
+        ),
+    )
     expected_id_set = set(expected_ids)
     if not isinstance(value, Mapping) or set(value) != expected_id_set:
         raise Lfm2CpcfTerminalActionAuthenticationError(
@@ -2606,6 +2839,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
     selection_evidence: Lfm2CpcfTerminalActionEvidence,
     validation_evidence: Lfm2CpcfTerminalActionEvidence,
     policy: Lfm2CpcfTerminalActionPolicy | None = None,
+    down_weight_prior: Lfm2CpcfTerminalActionDownWeightPrior | None = None,
 ) -> Lfm2CpcfTerminalActionResidualResult:
     """Compile a private exact-BF16 frontier without making a final selection."""
 
@@ -2624,6 +2858,22 @@ def compile_lfm2_cpcf_terminal_action_residual(
         raise Lfm2CpcfTerminalActionAuthenticationError(
             "Terminal-action seed changed after authentication."
         )
+    if down_weight_prior is not None and (
+        not isinstance(
+            down_weight_prior,
+            Lfm2CpcfTerminalActionDownWeightPrior,
+        )
+        or not down_weight_prior.verify_authentication()
+        or tuple(down_weight_prior.down_weight.shape)
+        != tuple(seed.down_weight.shape)
+        or down_weight_prior.down_weight.dtype != seed.down_weight.dtype
+        or down_weight_prior.live_deferred_w2_sha256
+        != _tensor_sha256(seed.down_weight, "seed.down_weight")
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Terminal down-weight prior is unauthenticated or differs from the "
+            "live deferred-W2 lineage."
+        )
     ordered_evidence = _validate_evidence_set(
         seed,
         (
@@ -2636,6 +2886,11 @@ def compile_lfm2_cpcf_terminal_action_residual(
     )
     incumbent_input_sha = _tensor_sha256(seed.down_weight, "seed.down_weight")
     incumbent = seed.down_weight.detach().clone()
+    frontier_prior = (
+        incumbent.detach().clone()
+        if down_weight_prior is None
+        else down_weight_prior.down_weight.detach().clone()
+    )
     if incumbent.data_ptr() == seed.down_weight.data_ptr():
         raise Lfm2CpcfTerminalActionResidualError(
             "Incumbent private snapshot unexpectedly aliases the seed."
@@ -2646,6 +2901,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
         evidence=ordered_evidence,
         policy=selected_policy,
         incumbent=incumbent,
+        down_weight_prior=down_weight_prior,
     )
     compiler_lineage_facts = _terminal_compiler_lineage_facts(
         compiler_input_binding,
@@ -2736,24 +2992,206 @@ def compile_lfm2_cpcf_terminal_action_residual(
     selected_id = "incumbent"
     selected_weight = incumbent.detach().clone()
     diagnostic_order_inputs: list[tuple[Any, str, dict[str, float], dict[str, Any]]] = []
+    frontier_prior_post_layer = _candidate_post_layer(
+        prepared["fit"],
+        frontier_prior,
+    )
+    frontier_prior_final_norm_output = _rmsnorm(
+        frontier_prior_post_layer,
+        seed.final_norm_weight,
+        seed.norm_epsilon,
+    )
     target_residual = (
-        prepared["fit"].oracle_hidden - prepared["fit"].incumbent_final_norm_output
+        prepared["fit"].oracle_hidden - frontier_prior_final_norm_output
     )
     fit_target_reports = []
+
+    if down_weight_prior is not None:
+        prior_candidate_id = "qdeim-prior-alpha-00"
+        prior_candidate = frontier_prior.detach().contiguous().clone()
+        prior_state_sha = _tensor_sha256(prior_candidate, prior_candidate_id)
+        prior_weight_ratio = _weight_delta_rms_ratio(
+            prior_candidate,
+            incumbent,
+            selected_policy.weight_reference_floor,
+        )
+        prior_structural_coverage = _terminal_writer_structural_coverage(
+            prior_candidate
+        )
+        prior_weight_gate = bool(
+            prior_structural_coverage.get(
+                "complete_dense_writer_structural_safety"
+            )
+            is True
+        )
+        prior_metrics = {
+            split: _evaluate_split(
+                prepared[split],
+                seed,
+                prior_candidate,
+                metric_chunk_rows=selected_policy.metric_chunk_rows,
+            )
+            for split in frontier_metric_splits
+        }
+        prior_fit_gates = _metric_gates(
+            prior_metrics["fit"],
+            incumbent_metrics["fit"],
+            selected_policy,
+            require_selection_improvement=False,
+        )
+        if exact_zero_cold_start:
+            prior_fit_check_gates = {
+                "not_evaluated_before_diagnostic_lead_freeze": True
+            }
+            prior_selection_gates = {
+                "not_evaluated_before_diagnostic_lead_freeze": True
+            }
+        else:
+            prior_fit_check_gates = _metric_gates(
+                prior_metrics["fit_check"],
+                incumbent_metrics["fit_check"],
+                selected_policy,
+                require_selection_improvement=False,
+            )
+            prior_selection_gates = _metric_gates(
+                prior_metrics["selection"],
+                incumbent_metrics["selection"],
+                selected_policy,
+                require_selection_improvement=True,
+            )
+        prior_key = _selection_key(
+            prior_metrics["fit" if exact_zero_cold_start else "selection"],
+            alpha=0.0,
+            damping=selected_policy.gauss_newton_damping_frontier[0],
+            ridge=selected_policy.ridge_frontier[0],
+            state_sha256=prior_state_sha,
+        )
+        prior_effectful = not torch.equal(prior_candidate, incumbent)
+        prior_fit_passed = _all_passed(prior_fit_gates)
+        prior_fit_check_passed = _all_passed(prior_fit_check_gates)
+        prior_selection_passed = _all_passed(prior_selection_gates)
+        prior_structurally_eligible = bool(prior_weight_gate and prior_effectful)
+        prior_numeric_miss = not bool(
+            prior_fit_passed
+            and (
+                True
+                if exact_zero_cold_start
+                else prior_fit_check_passed and prior_selection_passed
+            )
+        )
+        prior_record = {
+            "candidate_id": prior_candidate_id,
+            "gauss_newton_damping": (
+                selected_policy.gauss_newton_damping_frontier[0]
+            ),
+            "ridge": selected_policy.ridge_frontier[0],
+            "alpha": 0.0,
+            "exact_bfloat16_materialization": True,
+            "private_candidate_storage": True,
+            "state_sha256": prior_state_sha,
+            "weight_delta_rms_ratio": prior_weight_ratio,
+            "weight_norm_gate_passed": prior_weight_gate,
+            "fit_metrics": prior_metrics["fit"].as_dict(),
+            "fit_check_metrics": (
+                None
+                if exact_zero_cold_start
+                else prior_metrics["fit_check"].as_dict()
+            ),
+            "selection_metrics": (
+                None
+                if exact_zero_cold_start
+                else prior_metrics["selection"].as_dict()
+            ),
+            "fit_gates": prior_fit_gates,
+            "fit_check_gates": prior_fit_check_gates,
+            "selection_gates": prior_selection_gates,
+            "eligible": prior_structurally_eligible,
+            "diagnostic_ordering_key": _selection_key_report(prior_key),
+            "candidate_diagnostic_ordering_split": (
+                "fit" if exact_zero_cold_start else "selection"
+            ),
+            "effectful_nonincumbent": prior_effectful,
+            "structurally_eligible": prior_structurally_eligible,
+            "structural_safety_passed": prior_weight_gate,
+            "candidate_eligibility_basis": (
+                "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+            ),
+            "fit_metric_gates_passed": prior_fit_passed,
+            "fit_check_metric_gates_passed": prior_fit_check_passed,
+            "selection_metric_gates_passed": prior_selection_passed,
+            "numeric_diagnostic_gate_miss": prior_numeric_miss,
+            "legacy_weight_delta_threshold_would_pass": (
+                prior_weight_ratio
+                <= selected_policy.maximum_weight_delta_rms_ratio
+            ),
+            "weight_delta_threshold_used_for_eligibility": False,
+            "fit_thresholds_used_for_eligibility": False,
+            "fit_check_thresholds_used_for_eligibility": False,
+            "selection_thresholds_used_for_eligibility": False,
+            "numeric_thresholds_used_for_publication": False,
+            "numeric_metrics_used_for_diagnostic_ordering": True,
+            "numeric_metrics_used_for_final_selection": False,
+            "numeric_metrics_have_final_intelligence_authority": False,
+            "structural_coverage": dict(prior_structural_coverage),
+            "structural_coverage_sha256": prior_structural_coverage[
+                "coverage_sha256"
+            ],
+            "candidate_centered_on_authenticated_down_weight_prior": True,
+            "pure_authenticated_down_weight_prior": True,
+            "down_weight_prior_authentication_sha256": (
+                down_weight_prior.authentication_sha256
+            ),
+            "down_weight_prior_tensor_sha256": prior_state_sha,
+            "live_incumbent_remains_separate_control": True,
+        }
+        if exact_zero_cold_start:
+            prior_record.update(
+                {
+                    "fit_check_and_selection_metrics_diagnostic_only": True,
+                    "relative_to_zero_weight_delta_gate_applied": False,
+                    "legacy_relative_weight_delta_gate_would_pass": (
+                        prior_weight_ratio
+                        <= selected_policy.maximum_weight_delta_rms_ratio
+                    ),
+                    "fit_metric_thresholds_used_for_candidate_eligibility": False,
+                    "fit_metrics_used_for_diagnostic_ordering": True,
+                    "fit_metrics_used_for_pre_review_candidate_selection": False,
+                    "fit_metrics_used_for_structural_eligibility": False,
+                    "fit_metric_thresholds_used_for_publication": False,
+                    "fit_metrics_have_final_intelligence_authority": False,
+                }
+            )
+        frontier.append(prior_record)
+        frontier_down_weights[prior_candidate_id] = prior_candidate.detach().clone()
+        if prior_structurally_eligible:
+            diagnostic_order_inputs.append(
+                (
+                    prior_key,
+                    prior_candidate_id,
+                    {
+                        "gauss_newton_damping": (
+                            selected_policy.gauss_newton_damping_frontier[0]
+                        ),
+                        "ridge": selected_policy.ridge_frontier[0],
+                        "alpha": 0.0,
+                    },
+                    dict(prior_metrics),
+                )
+            )
 
     with torch.no_grad():
         for damping_index, damping in enumerate(
             selected_policy.gauss_newton_damping_frontier
         ):
             target_delta = damped_rmsnorm_gauss_newton_target(
-                prepared["fit"].incumbent_post_layer,
+                frontier_prior_post_layer,
                 target_residual,
                 seed.final_norm_weight,
                 epsilon=seed.norm_epsilon,
                 damping=damping,
             )
             jvp_prediction = rmsnorm_jvp(
-                prepared["fit"].incumbent_post_layer,
+                frontier_prior_post_layer,
                 target_delta,
                 seed.final_norm_weight,
                 epsilon=seed.norm_epsilon,
@@ -2797,7 +3235,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
                     )
                     candidate = (
                         (
-                            seed.down_weight.to(torch.float32)
+                            frontier_prior.to(torch.float32)
                             + alpha * delta_weight.to(torch.float32)
                         )
                         .to(torch.bfloat16)
@@ -2948,6 +3386,22 @@ def compile_lfm2_cpcf_terminal_action_residual(
                             "coverage_sha256"
                         ],
                     }
+                    if down_weight_prior is not None:
+                        candidate_report.update(
+                            {
+                                "candidate_centered_on_authenticated_down_weight_prior": (
+                                    True
+                                ),
+                                "down_weight_prior_authentication_sha256": (
+                                    down_weight_prior.authentication_sha256
+                                ),
+                                "down_weight_prior_tensor_sha256": _tensor_sha256(
+                                    frontier_prior,
+                                    "frontier_prior",
+                                ),
+                                "live_incumbent_remains_separate_control": True,
+                            }
+                        )
                     if exact_zero_cold_start:
                         candidate_report.update(
                             {
@@ -3156,7 +3610,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
         len(selected_policy.gauss_newton_damping_frontier)
         * len(selected_policy.ridge_frontier)
         * (len(selected_policy.alpha_frontier) - 1)
-    )
+    ) + int(down_weight_prior is not None)
     if (
         len(frontier) != expected_frontier_count
         or diagnostic_lead_id != diagnostic_lead_before_heldout
@@ -3365,6 +3819,29 @@ def compile_lfm2_cpcf_terminal_action_residual(
         "output_state_sha256": output_hashes,
         "operation_audit": dict(_ZERO_OPERATION_AUDIT),
     }
+    if down_weight_prior is not None:
+        prior_receipt = down_weight_prior.as_dict()
+        body.update(
+            {
+                "down_weight_prior": prior_receipt,
+                "down_weight_prior_authentication_sha256": (
+                    down_weight_prior.authentication_sha256
+                ),
+                "down_weight_prior_tensor_sha256": _tensor_sha256(
+                    frontier_prior,
+                    "frontier_prior",
+                ),
+                "down_weight_prior_live_incumbent_sha256": (
+                    down_weight_prior.live_deferred_w2_sha256
+                ),
+                "frontier_centered_on_authenticated_down_weight_prior": True,
+                "live_seed_w2_retained_as_separate_incumbent_control": True,
+                "down_weight_prior_installed_before_terminal": False,
+                "down_weight_prior_installation_count_before_terminal": 0,
+                "authenticated_pure_prior_frontier_candidate_count": 1,
+                "pure_prior_frontier_candidate_id": "qdeim-prior-alpha-00",
+            }
+        )
     if exact_zero_cold_start:
         body.update(
             {
@@ -3445,6 +3922,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
 
 __all__ = [
     "LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA",
+    "LFM2_CPCF_TERMINAL_ACTION_DOWN_WEIGHT_PRIOR_SCHEMA",
     "LFM2_CPCF_TERMINAL_ACTION_EVIDENCE_SCHEMA",
     "LFM2_CPCF_TERMINAL_ACTION_POLICY_SCHEMA",
     "LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA",
@@ -3453,6 +3931,7 @@ __all__ = [
     "LFM2_CPCF_TERMINAL_ACTION_STRUCTURAL_NONVETO_SCHEMA",
     "Lfm2CpcfTerminalActionAuthenticationError",
     "Lfm2CpcfTerminalActionEvidence",
+    "Lfm2CpcfTerminalActionDownWeightPrior",
     "Lfm2CpcfTerminalActionLogitMetrics",
     "Lfm2CpcfTerminalActionPolicy",
     "Lfm2CpcfTerminalActionResidualError",
@@ -3465,4 +3944,5 @@ __all__ = [
     "compile_lfm2_cpcf_terminal_action_residual",
     "damped_rmsnorm_gauss_newton_target",
     "rmsnorm_jvp",
+    "lfm2_cpcf_terminal_action_tensor_sha256",
 ]

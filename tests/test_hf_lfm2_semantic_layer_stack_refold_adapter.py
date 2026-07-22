@@ -1322,7 +1322,7 @@ def _patch_complete_transaction(
             **receipt_body,
             "result_sha256": canonical_sha256(receipt_body),
         }
-        return receipt, (_terminal_banks() if layer_index == 13 else {})
+        return receipt, (_terminal_banks() if layer_index == 13 else {}), None
 
     monkeypatch.setattr(stack, "_install_mlp", install_mlp)
 
@@ -3305,7 +3305,7 @@ def _invoke_mlp_noop_receipt(
         receipt=receipt,
         final_layer_mlp_evidence=terminal_evidence,
     )
-    accepted, _terminal = stack._install_mlp(
+    accepted, _terminal, terminal_prior = stack._install_mlp(
         target_model=target,
         layer_index=0,
         evidence=evidence,
@@ -3315,6 +3315,7 @@ def _invoke_mlp_noop_receipt(
         final_layer=final_layer,
         parameter_count=parameter_count,
     )
+    assert terminal_prior is None
     return accepted
 
 

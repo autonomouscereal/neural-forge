@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import math
 from typing import Any
 
 import pytest
@@ -15,6 +16,7 @@ from neural_forge.hf_lfm2_mlp_qdeim import (  # noqa: E402
     Lfm2MlpQdeimFitCase,
     Lfm2MlpQdeimFunctionalSnapshotBlock,
     Lfm2MlpQdeimInsufficientRankError,
+    _deterministic_pivoted_qr_indices,
     compile_lfm2_mlp_nonlinear_qdeim,
     lfm2_mlp_qdeim_fit_evidence_sha256,
     lfm2_mlp_qdeim_functional_snapshot_evidence_sha256,
@@ -24,6 +26,46 @@ from neural_forge.hf_lfm2_mlp_qdeim import (  # noqa: E402
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
     lfm2_authenticated_tensor_sha256,
 )
+
+
+def _reference_full_residual_pivoted_qr_indices(
+    basis: Any,
+) -> tuple[tuple[int, ...], Any]:
+    """The original full-residual implementation, retained as a test oracle."""
+
+    source_neurons, modes = map(int, basis.shape)
+    matrix = basis.T.contiguous()
+    selected: list[int] = []
+    q_columns = torch.empty((modes, 0), dtype=torch.float64)
+    pivot_residual_norms: list[float] = []
+    epsilon = torch.finfo(torch.float64).eps
+    for _step in range(modes):
+        if q_columns.shape[1]:
+            residual = matrix - q_columns @ (q_columns.T @ matrix)
+            residual = residual - q_columns @ (q_columns.T @ residual)
+        else:
+            residual = matrix
+        scores = residual.square().sum(dim=0)
+        if selected:
+            scores[torch.tensor(selected, dtype=torch.long)] = -1.0
+        maximum = float(scores.max().item())
+        tie_tolerance = 128.0 * epsilon * max(1.0, abs(maximum))
+        candidates = [
+            index
+            for index in range(source_neurons)
+            if index not in selected
+            and float(scores[index].item()) >= maximum - tie_tolerance
+        ]
+        pivot = min(candidates)
+        vector = residual[:, pivot].contiguous()
+        norm = float(torch.linalg.vector_norm(vector).item())
+        q_columns = torch.cat(
+            (q_columns, (vector / norm).unsqueeze(1)),
+            dim=1,
+        ).contiguous()
+        selected.append(pivot)
+        pivot_residual_norms.append(norm)
+    return tuple(selected), torch.tensor(pivot_residual_norms, dtype=torch.float64)
 
 
 def _fixture(*, target_intermediate: int = 2) -> dict[str, Any]:
@@ -180,6 +222,56 @@ def test_exact_low_rank_recovery_and_deterministic_qdeim_selection() -> None:
     assert first.report["observed_snapshot_rank"] == 2
     assert first.report["rank_completion"]["random_completion_modes"] == 0
     assert not first.report["rank_completion"]["silent_completion_performed"]
+    compute = first.report["selection_compute_diagnostic"]
+    assert compute == {
+        "schema": "neural-forge-lfm2-mlp-qdeim-selection-compute-v1",
+        "basis_transpose_shape": [2, 4],
+        "preallocated_q_shape": [2, 2],
+        "pivot_step_count": 2,
+        "initial_full_score_pass_count": 1,
+        "rank_one_score_update_count": 2,
+        "full_residual_matrix_reconstruction_count": 0,
+        "selected_pivot_reorthogonalization_pass_count": 2,
+        "asymptotic_time_bound": "O(pivot_steps*pod_modes*source_neurons)",
+        "asymptotic_auxiliary_storage_bound": (
+            "O(pod_modes*source_neurons+pod_modes^2+source_neurons)"
+        ),
+        "wall_clock_timing_recorded": False,
+        "timing_used_for_candidate_selection": False,
+        "timing_used_for_semantic_acceptance_or_veto": False,
+        "performance_diagnostics_have_semantic_authority": False,
+    }
+
+
+@pytest.mark.parametrize("source_neurons,modes", ((64, 4), (64, 8), (96, 12)))
+def test_incremental_qrcp_preserves_original_deterministic_pivots(
+    source_neurons: int,
+    modes: int,
+) -> None:
+    rows = torch.arange(source_neurons, dtype=torch.float64).unsqueeze(1) + 0.5
+    columns = torch.arange(modes, dtype=torch.float64).unsqueeze(0)
+    basis = torch.cos(math.pi * rows * columns / source_neurons)
+    basis[:, 0] /= math.sqrt(source_neurons)
+    if modes > 1:
+        basis[:, 1:] *= math.sqrt(2.0 / source_neurons)
+
+    expected, expected_norms = _reference_full_residual_pivoted_qr_indices(basis)
+    actual, actual_norms = _deterministic_pivoted_qr_indices(basis)
+
+    assert actual == expected
+    torch.testing.assert_close(actual_norms, expected_norms, atol=1e-14, rtol=1e-14)
+
+
+def test_incremental_qrcp_preserves_stable_low_index_ties() -> None:
+    basis = torch.tensor(
+        [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]],
+        dtype=torch.float64,
+    )
+
+    selected, norms = _deterministic_pivoted_qr_indices(basis)
+
+    assert selected == (0, 2)
+    torch.testing.assert_close(norms, torch.ones(2, dtype=torch.float64))
 
 
 def test_selected_nonlinear_producers_remain_intact_and_are_not_averaged() -> None:

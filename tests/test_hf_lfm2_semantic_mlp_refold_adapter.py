@@ -17,6 +17,9 @@ import neural_forge.hf_lfm2_semantic_layer_stack_refold_adapter as stack_adapter
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     fingerprint_lfm2_parent,
 )
+from neural_forge.hf_lfm2_mlp_qdeim import (  # noqa: E402
+    Lfm2MlpQdeimInsufficientRankError,
+)
 
 
 def _sha(label: str) -> str:
@@ -835,6 +838,179 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
     )
 
 
+def _prepared_blank_qdeim(
+    recipe_id: str,
+) -> tuple[_Target, adapter.Lfm2PreparedSemanticMlpRefold]:
+    model = _Target()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].feed_forward.parameters():
+            parameter.zero_()
+    prepared = _prepare(
+        model,
+        _cold_start_parent_endpoint_evidence(model),
+        body_recipe=recipe_id,
+    )
+    return model, prepared
+
+
+def test_blank_qdeim_recipes_select_separate_authenticated_dense_candidates() -> None:
+    structural_model, structural = _prepared_blank_qdeim(
+        "nonlinear_qdeim_structural"
+    )
+    corrected_model, corrected = _prepared_blank_qdeim(
+        "nonlinear_qdeim_fit_corrected"
+    )
+
+    assert structural.verify()
+    assert corrected.verify()
+    assert structural.selected_role == corrected.selected_role == "full-w1-w3-w2"
+    structural_solver = structural.full_candidate.solver_receipt
+    corrected_solver = corrected.full_candidate.solver_receipt
+    assert structural_solver["selected_qdeim_candidate_id"] == (
+        "qdeim_structural_prior"
+    )
+    assert corrected_solver["selected_qdeim_candidate_id"] == (
+        "qdeim_fit_residual_corrected"
+    )
+    assert structural_solver["qdeim_compiler_receipt"]["candidate_ids"] == [
+        "qdeim_structural_prior",
+        "qdeim_fit_residual_corrected",
+    ]
+    assert structural_solver["tangent_bank"]["geometry"]["anchor_count"] == 2
+    assert structural_solver["tangent_bank"]["anchor_indices"] == [0, 7]
+    assert structural_solver["qdeim_integration"][
+        "tangent_rows_used_for_endpoint_w2_correction"
+    ] == 0
+    assert structural_solver["qdeim_integration"][
+        "heldout_rows_used_for_pod_or_tangent"
+    ] == 0
+    assert structural_solver["qdeim_integration"][
+        "numeric_metrics_used_for_semantic_acceptance_or_veto"
+    ] is False
+    assert structural_solver["qdeim_integration"][
+        "whole_decoded_responses_are_primary_semantic_evidence"
+    ] is True
+    assert structural_solver["qdeim_integration"]["binary_manual_gate_created"] is False
+    assert structural_solver["child_coordinate_rms"]["structural_floor_policy"] == (
+        "sqrt_float64_machine_epsilon"
+    )
+    assert structural_solver["normalized_decoder_control"]["schema"] == (
+        "neural-forge-lfm2-normalized-input-decoder-only-v1"
+    )
+    assert structural_solver["normalized_decoder_control"]["decoder_only_scope"] is True
+    assert structural_solver["normalized_decoder_control"][
+        "cluster_or_medoid_state_constructed"
+    ] is False
+    decoder_operations = structural_solver["normalized_decoder_control"][
+        "operation_audit"
+    ]
+    assert decoder_operations["activation_cluster_plan_builds"] == 0
+    assert decoder_operations["medoid_selection_operations"] == 0
+    assert decoder_operations["producer_materializations"] == 0
+    assert decoder_operations["consumer_materializations"] == 0
+    assert structural_solver["qdeim_integration"][
+        "normalized_decoder_control_candidate_weights_used"
+    ] is False
+    assert structural_solver["rank_completion"]["random_completion_modes"] == 0
+    assert structural_solver["rank_completion"]["silent_completion_performed"] is False
+    assert structural.selection_receipt[
+        "blank_target_selected_state_uses_real_qdeim_producers"
+    ] is True
+    assert structural.selection_receipt[
+        "whole_decoded_responses_are_primary_semantic_evidence"
+    ] is True
+    assert structural.selection_receipt["binary_manual_gate_created"] is False
+    assert torch.equal(
+        structural.full_candidate.gate_weight,
+        corrected.full_candidate.gate_weight,
+    )
+    assert torch.equal(
+        structural.full_candidate.up_weight,
+        corrected.full_candidate.up_weight,
+    )
+    assert not torch.equal(
+        structural.full_candidate.down_weight,
+        corrected.full_candidate.down_weight,
+    )
+    assert all(
+        value.dtype == torch.bfloat16 and not value.requires_grad
+        for value in structural.selected_candidate.state_dict().values()
+    )
+
+    structural_repeat_model, structural_repeat = _prepared_blank_qdeim(
+        "nonlinear_qdeim_structural"
+    )
+    assert structural_repeat.full_candidate.candidate_sha256 == (
+        structural.full_candidate.candidate_sha256
+    )
+    assert structural_repeat.full_candidate.solver_receipt[
+        "qdeim_integration_sha256"
+    ] == structural_solver["qdeim_integration_sha256"]
+    assert fingerprint_lfm2_parent(structural_model).identity_sha256 == (
+        fingerprint_lfm2_parent(structural_repeat_model).identity_sha256
+    )
+    assert fingerprint_lfm2_parent(corrected_model).identity_sha256 == (
+        fingerprint_lfm2_parent(structural_model).identity_sha256
+    )
+
+
+def test_blank_qdeim_rank_deficit_propagates_without_medoid_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Target()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].feed_forward.parameters():
+            parameter.zero_()
+    report = {
+        "observed_snapshot_rank": 2,
+        "minimum_snapshot_rank": 3,
+        "snapshot_rank_deficit": 1,
+        "selected_source_neurons": [],
+        "interpolation_matrix_materialized": False,
+        "random_mode_completion_permitted": False,
+    }
+
+    def insufficient_rank(**_kwargs):
+        raise Lfm2MlpQdeimInsufficientRankError(report)
+
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_mlp_nonlinear_qdeim",
+        insufficient_rank,
+    )
+    with pytest.raises(Lfm2MlpQdeimInsufficientRankError) as caught:
+        _prepare(
+            model,
+            _cold_start_parent_endpoint_evidence(model),
+            body_recipe="nonlinear_qdeim_structural",
+        )
+    assert caught.value.report["snapshot_rank_deficit"] == 1
+    assert caught.value.report["selected_source_neurons"] == []
+
+
+def test_blank_qdeim_never_enters_legacy_medoid_or_writer_solvers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("Q-DEIM entered an unselected legacy solver.")
+
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_normalized_input_real_medoid_structural_mlp_fold",
+        forbidden,
+    )
+    monkeypatch.setattr(adapter, "_solve_writer", forbidden)
+
+    _model, prepared = _prepared_blank_qdeim("nonlinear_qdeim_structural")
+
+    assert prepared.verify()
+    assert prepared.full_candidate.solver_receipt["decoder_control_only_solve"] is True
+    assert prepared.writer_candidate.solver_receipt["residual_writer_solve_calls"] == 0
+    assert prepared.writer_candidate.solver_receipt[
+        "placeholder_state_is_exact_incumbent"
+    ] is True
+
+
 def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     prepared_by_recipe: dict[str, adapter.Lfm2PreparedSemanticMlpRefold] = {}
     state_sha256: dict[str, str] = {}
@@ -1064,7 +1240,7 @@ def test_blank_multi_weight_plant_matches_canonical_layer_stack_diff() -> None:
         for name, parameter in model.named_parameters()
     }
 
-    receipt, terminal_evidence = stack_adapter._install_mlp(
+    receipt, terminal_evidence, terminal_prior = stack_adapter._install_mlp(
         target_model=model,
         layer_index=0,
         evidence=evidence,
@@ -1095,6 +1271,7 @@ def test_blank_multi_weight_plant_matches_canonical_layer_stack_diff() -> None:
     ]
     assert live_changed == tuple(sorted(live_changed))
     assert terminal_evidence == {}
+    assert terminal_prior is None
     assert torch.equal(model.untouched.detach().cpu(), before_state["untouched"])
     assert all(
         torch.equal(value.detach().cpu(), before_state[name])
@@ -1746,6 +1923,108 @@ def test_final_w2_deferral_exports_four_banks_and_installs_selected_producers() 
             result.receipt["terminal_action_evidence_sha256"][partition]
             == bank.authentication_sha256
         )
+
+
+def test_qdeim_final_layer_keeps_terminal_w2_deferral_semantics() -> None:
+    model = _Target()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].feed_forward.parameters():
+            parameter.zero_()
+    evidence = tuple(
+        replace(
+            item,
+            parent_final_norm_output_target_space=(
+                item.parent_post_mlp_residual_target_space
+            ),
+        )
+        for item in _cold_start_parent_endpoint_evidence(model)
+    )
+    prepared = _prepare(
+        model,
+        evidence,
+        terminal=True,
+        body_recipe="nonlinear_qdeim_fit_corrected",
+    )
+    before_w2 = model.model.layers[0].feed_forward.w2.weight.detach().clone()
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+        defer_down_weight=True,
+    )
+
+    assert result.receipt["status"] == "installed-w1-w3-final-w2-deferred"
+    assert result.receipt["changed_parameter_roles"] == ["w1.weight", "w3.weight"]
+    assert result.receipt["final_layer_mlp_w2_deferred_to_fused_terminal"] is True
+    assert result.receipt[
+        "analytic_linear_cluster_tangent_and_qdeim_solves_only"
+    ] is True
+    assert result.receipt["analytic_linear_and_cluster_solves_only"] is False
+    assert torch.equal(
+        model.model.layers[0].feed_forward.w2.weight.detach(),
+        before_w2,
+    )
+    assert set(result.final_layer_mlp_evidence) == set(adapter._PARTITIONS)
+    prior = result.deferred_selected_w2_prior
+    assert prior is not None
+    assert prior.verify_authentication()
+    assert prior.body_recipe_id == "nonlinear_qdeim_fit_corrected"
+    assert prior.selected_candidate_sha256 == (
+        prepared.selected_candidate.candidate_sha256
+    )
+    assert torch.equal(prior.down_weight, prepared.selected_candidate.down_weight)
+    assert prior.live_deferred_w2_sha256 == (
+        adapter.lfm2_cpcf_terminal_action_tensor_sha256(before_w2)
+    )
+    assert result.receipt["deferred_selected_w2_prior_installed_before_terminal"] is (
+        False
+    )
+    assert result.receipt[
+        "deferred_selected_w2_prior_authentication_sha256"
+    ] == prior.authentication_sha256
+
+
+def test_layer_stack_mlp_seam_threads_qdeim_prior_without_installing_w2() -> None:
+    model = _Target()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].feed_forward.parameters():
+            parameter.zero_()
+    evidence = tuple(
+        replace(
+            item,
+            parent_final_norm_output_target_space=(
+                item.parent_post_mlp_residual_target_space
+            ),
+        )
+        for item in _cold_start_parent_endpoint_evidence(model)
+    )
+    before_w2 = model.model.layers[0].feed_forward.w2.weight.detach().clone()
+
+    receipt, terminal_evidence, prior = stack_adapter._install_mlp(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache=SimpleNamespace(
+            cache_key=_sha("cache"),
+            manifest={"manifest_sha256": _sha("cache-manifest")},
+        ),
+        bridge=SimpleNamespace(artifact_sha256=_sha("bridge")),
+        installer=adapter.compile_install_lfm2_semantic_mlp_postfold,
+        final_layer=True,
+        parameter_count=stack_adapter._parameter_count(model),
+        body_recipe="nonlinear_qdeim_fit_corrected",
+    )
+
+    assert prior is not None
+    assert prior.verify_authentication()
+    assert receipt[
+        "deferred_selected_w2_prior_authentication_sha256"
+    ] == prior.authentication_sha256
+    assert set(terminal_evidence) == set(adapter._PARTITIONS)
+    assert torch.equal(
+        model.model.layers[0].feed_forward.w2.weight.detach(),
+        before_w2,
+    )
 
 
 def test_stale_replay_fails_closed_and_copy_failure_rolls_back_exactly(

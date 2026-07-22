@@ -521,11 +521,7 @@ def test_bank_persists_every_candidate_without_metric_elimination(
     assert bank.manifest["body_recipe_id"] == "fit_guided"
     assert bank.receipt["body_recipe_id"] == "fit_guided"
     assert tuple(bank.manifest["complete_body_recipe_candidate_ids"]) == (
-        "fit_guided",
-        "full_strength_structural",
-        "residual_writer",
-        "source_producer_residual_writer",
-        "structural_sequence_residual_mlp_writer",
+        frontier.LFM2_SEMANTIC_BODY_RECIPE_IDS
     )
     assert bank.manifest["one_terminal_frontier_bank_contains_one_body_recipe"] is True
     assert bank.manifest["other_body_recipes_require_sealed_foundation_replay"] is True
@@ -978,13 +974,7 @@ def test_materializer_reauthenticates_structural_eligibility_before_copy(
 
 @pytest.mark.parametrize(
     "recipe_id",
-    (
-        "fit_guided",
-        "full_strength_structural",
-        "residual_writer",
-        "source_producer_residual_writer",
-        "structural_sequence_residual_mlp_writer",
-    ),
+    frontier.LFM2_SEMANTIC_BODY_RECIPE_IDS,
 )
 def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
     tmp_path,
@@ -1043,7 +1033,9 @@ def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
     assert receipt["holistic_review_complete"] is False
     assert receipt["materialization_is_not_intelligence_acceptance"] is True
     assert receipt["body_recipe_id"] == recipe_id
-    assert receipt["complete_body_recipe_candidate_count"] == 5
+    assert receipt["complete_body_recipe_candidate_count"] == len(
+        frontier.LFM2_SEMANTIC_BODY_RECIPE_IDS
+    )
     assert receipt["one_terminal_frontier_bank_contains_one_body_recipe"] is True
     assert receipt["other_body_recipes_require_sealed_foundation_replay"] is True
     assert receipt["standalone_child"] is True
