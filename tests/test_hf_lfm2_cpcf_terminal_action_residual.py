@@ -308,6 +308,26 @@ def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None
     assert result.selected_down_weight.requires_grad is False
     assert result.selected_down_weight.grad_fn is None
     assert result.published_down_weight.numel() == seed.down_weight.numel()
+    assert len(result.frontier_down_weights) == 36
+    nonincumbent_frontier = report["frontier"][1:]
+    assert list(result.frontier_down_weights) == [
+        candidate["candidate_id"] for candidate in nonincumbent_frontier
+    ]
+    assert (
+        len({tensor.data_ptr() for tensor in result.frontier_down_weights.values()})
+        == 36
+    )
+    for candidate in nonincumbent_frontier:
+        tensor = result.frontier_down_weights[candidate["candidate_id"]]
+        assert tensor.dtype == torch.bfloat16
+        assert tensor.device.type == "cpu"
+        assert tensor.is_contiguous()
+        assert torch.isfinite(tensor).all().item() is True
+        assert terminal._tensor_sha256(tensor) == candidate["state_sha256"]
+    assert torch.equal(
+        result.frontier_down_weights[result.selected_candidate_id],
+        result.selected_down_weight,
+    )
 
     assert report["frontier_count"] == 37
     assert report["frontier_count"] == report["expected_frontier_count"]
@@ -549,11 +569,147 @@ def test_exact_zero_result_rejects_self_sealed_caller_forgery() -> None:
             incumbent_down_weight=result.incumbent_down_weight,
             selected_down_weight=result.selected_down_weight,
             published_down_weight=result.published_down_weight,
+            frontier_down_weights=result.frontier_down_weights,
             selected_candidate_id=result.selected_candidate_id,
             accepted=result.accepted,
             report=result.as_dict(),
             result_sha256=result.result_sha256,
         )
+
+
+@pytest.mark.parametrize("tamper_kind", ("missing", "extra", "bytes", "nonfinite"))
+def test_terminal_frontier_writer_bank_fails_closed(tamper_kind) -> None:
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(seed, evidence_banks)
+    bank = {
+        candidate_id: value.detach().clone()
+        for candidate_id, value in result.frontier_down_weights.items()
+    }
+    first_id = next(iter(bank))
+    if tamper_kind == "missing":
+        bank.pop(first_id)
+    elif tamper_kind == "extra":
+        bank["unexpected"] = bank[first_id].clone()
+    elif tamper_kind == "bytes":
+        bank[first_id].reshape(-1)[0] += torch.tensor(
+            1.0,
+            dtype=torch.bfloat16,
+        )
+    else:
+        bank[first_id].reshape(-1)[0] = float("nan")
+
+    with pytest.raises(Lfm2CpcfTerminalActionResidualError):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.published_down_weight,
+            frontier_down_weights=bank,
+            selected_candidate_id=result.selected_candidate_id,
+            accepted=result.accepted,
+            report=result.as_dict(),
+            result_sha256=result.result_sha256,
+        )
+
+
+def test_terminal_frontier_writer_bank_is_privately_owned_and_reauthenticated() -> None:
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    compiled = _compile(seed, evidence_banks)
+    supplied = {
+        candidate_id: value.detach().clone()
+        for candidate_id, value in compiled.frontier_down_weights.items()
+    }
+    result = terminal.Lfm2CpcfTerminalActionResidualResult(
+        policy=compiled.policy,
+        incumbent_down_weight=compiled.incumbent_down_weight,
+        selected_down_weight=compiled.selected_down_weight,
+        published_down_weight=compiled.published_down_weight,
+        frontier_down_weights=supplied,
+        selected_candidate_id=compiled.selected_candidate_id,
+        accepted=compiled.accepted,
+        report=compiled.as_dict(),
+        result_sha256=compiled.result_sha256,
+    )
+    first_id = next(iter(supplied))
+    assert (
+        result.frontier_down_weights[first_id].data_ptr()
+        != supplied[first_id].data_ptr()
+    )
+    supplied[first_id].zero_()
+    assert result.verify_authentication() is True
+
+    result.frontier_down_weights[first_id].reshape(-1)[0] += torch.tensor(
+        1.0,
+        dtype=torch.bfloat16,
+    )
+    assert result.verify_authentication() is False
+
+
+def test_terminal_frontier_rejects_resealed_incumbent_selection_with_other_state() -> (
+    None
+):
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(seed, evidence_banks)
+    assert result.selected_candidate_id != "incumbent"
+    body = copy.deepcopy(result.as_dict())
+    body.pop("result_sha256")
+    body["selected_candidate_id"] = "incumbent"
+    body["selected_nonincumbent"] = False
+    body["accepted"] = False
+    body["published_is_incumbent"] = True
+    body["output_state_sha256"]["published"] = body["output_state_sha256"]["incumbent"]
+    forged_sha256 = terminal._canonical_sha256(body)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionAuthenticationError,
+        match="selected frontier record|exact incumbent",
+    ):
+        terminal.Lfm2CpcfTerminalActionResidualResult(
+            policy=result.policy,
+            incumbent_down_weight=result.incumbent_down_weight,
+            selected_down_weight=result.selected_down_weight,
+            published_down_weight=result.incumbent_down_weight,
+            frontier_down_weights=result.frontier_down_weights,
+            selected_candidate_id="incumbent",
+            accepted=False,
+            report={**body, "result_sha256": forged_sha256},
+            result_sha256=forged_sha256,
+        )
+
+
+def test_terminal_frontier_rejects_distinct_views_into_shared_storage() -> None:
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(seed, evidence_banks)
+    candidate_ids = tuple(result.frontier_down_weights)[:2]
+    shape = tuple(result.incumbent_down_weight.shape)
+    shared = torch.empty((2, *shape), dtype=torch.bfloat16)
+    shared[0].copy_(result.frontier_down_weights[candidate_ids[0]])
+    shared[1].copy_(result.frontier_down_weights[candidate_ids[1]])
+    assert shared[0].data_ptr() != shared[1].data_ptr()
+    assert (
+        shared[0].untyped_storage().data_ptr() == shared[1].untyped_storage().data_ptr()
+    )
+    forged_bank = dict(result.frontier_down_weights)
+    forged_bank[candidate_ids[0]] = shared[0]
+    forged_bank[candidate_ids[1]] = shared[1]
+    object.__setattr__(result, "frontier_down_weights", forged_bank)
+
+    assert result.verify_authentication() is False
+
+
+def test_terminal_frontier_rejects_bank_storage_alias_to_main_selected_tensor() -> None:
+    seed, evidence_banks, _ = _synthetic_terminal_problem()
+    result = _compile(seed, evidence_banks)
+    assert result.selected_candidate_id != "incumbent"
+    forged_bank = dict(result.frontier_down_weights)
+    forged_bank[result.selected_candidate_id] = result.selected_down_weight
+    object.__setattr__(result, "frontier_down_weights", forged_bank)
+
+    assert torch.equal(
+        result.frontier_down_weights[result.selected_candidate_id],
+        result.selected_down_weight,
+    )
+    assert result.verify_authentication() is False
 
 
 @pytest.mark.parametrize(
@@ -583,6 +739,7 @@ def test_exact_zero_result_rejects_resealed_internal_lineage_tamper(tamper) -> N
             incumbent_down_weight=result.incumbent_down_weight,
             selected_down_weight=result.selected_down_weight,
             published_down_weight=result.published_down_weight,
+            frontier_down_weights=result.frontier_down_weights,
             selected_candidate_id=result.selected_candidate_id,
             accepted=result.accepted,
             report={**body, "result_sha256": forged_sha256},

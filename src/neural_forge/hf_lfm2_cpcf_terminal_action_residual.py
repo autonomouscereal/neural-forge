@@ -1686,10 +1686,11 @@ def _authenticate_exact_zero_compiled_result(
             raise Lfm2CpcfTerminalActionAuthenticationError(
                 f"Cold-start frontier coverage gate for {candidate_id!r} is invalid."
             )
-        if not fit_gates or any(type(value) is not bool for value in fit_gates.values()):
+        if not fit_gates or any(
+            type(value) is not bool for value in fit_gates.values()
+        ):
             raise Lfm2CpcfTerminalActionAuthenticationError(
-                f"Cold-start frontier FIT diagnostics for {candidate_id!r} are "
-                "invalid."
+                f"Cold-start frontier FIT diagnostics for {candidate_id!r} are invalid."
             )
         fit_passed = all(value is True for value in fit_gates.values())
         effectful_nonincumbent = (
@@ -1708,9 +1709,7 @@ def _authenticate_exact_zero_compiled_result(
             or record.get("candidate_eligibility_basis")
             != "finite_dense_coverage_and_nonincumbent_effect"
             or record.get("fit_metric_gates_passed") is not fit_passed
-            or record.get(
-                "fit_metric_thresholds_used_for_candidate_eligibility"
-            )
+            or record.get("fit_metric_thresholds_used_for_candidate_eligibility")
             is not False
             or record.get("fit_metrics_used_for_candidate_ordering") is not True
             or record.get("fit_metrics_used_for_pre_review_candidate_selection")
@@ -1778,8 +1777,7 @@ def _authenticate_exact_zero_compiled_result(
         or body.get("fit_metrics_have_final_intelligence_authority") is not False
         or body.get("fit_metric_thresholds_used_for_candidate_eligibility") is not False
         or body.get("fit_metric_thresholds_used_for_publication") is not False
-        or body.get("structurally_eligible_frontier_count")
-        != len(eligible_records)
+        or body.get("structurally_eligible_frontier_count") != len(eligible_records)
         or body.get("structurally_eligible_fit_metric_gate_miss_count")
         != structurally_eligible_fit_misses
         or body.get("fit_metric_gate_miss_can_exclude_structural_candidate")
@@ -1792,8 +1790,7 @@ def _authenticate_exact_zero_compiled_result(
         or split_roles.get("candidate_eligibility_uses_only_finite_dense_structure")
         is not True
         or split_roles.get("fit_used_for_candidate_eligibility") is not False
-        or split_roles.get("only_fit_rows_used_for_candidate_ordering")
-        is not True
+        or split_roles.get("only_fit_rows_used_for_candidate_ordering") is not True
         or split_roles.get("fit_metrics_used_for_pre_review_candidate_selection")
         is not True
         or split_roles.get("fit_metrics_have_final_intelligence_authority") is not False
@@ -1811,6 +1808,163 @@ def _authenticate_exact_zero_compiled_result(
     return MappingProxyType({**binding, "binding_sha256": binding_sha256})
 
 
+def _frontier_candidate_ids(
+    policy: Lfm2CpcfTerminalActionPolicy,
+) -> tuple[str, ...]:
+    return tuple(
+        f"gn-{damping_index:02d}-ridge-{ridge_index:02d}-alpha-{alpha_index:02d}"
+        for damping_index, _damping in enumerate(policy.gauss_newton_damping_frontier)
+        for ridge_index, _ridge in enumerate(policy.ridge_frontier)
+        for alpha_index, _alpha in enumerate(policy.alpha_frontier[1:], start=1)
+    )
+
+
+def _authenticate_frontier_down_weights(
+    value: Any,
+    *,
+    policy: Lfm2CpcfTerminalActionPolicy,
+    report_body: Mapping[str, Any],
+    expected_shape: tuple[int, ...],
+    selected_candidate_id: str,
+    incumbent_down_weight: Any,
+    selected_down_weight: Any,
+    published_down_weight: Any,
+    own_tensors: bool,
+) -> Mapping[str, Any]:
+    """Authenticate the complete private, nonincumbent BF16 frontier bank."""
+
+    torch = _torch()
+    expected_ids = _frontier_candidate_ids(policy)
+    expected_id_set = set(expected_ids)
+    if not isinstance(value, Mapping) or set(value) != expected_id_set:
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Terminal frontier writer bank must contain exactly the "
+            "nonincumbent candidate IDs derived from its authenticated policy."
+        )
+    raw_frontier = report_body.get("frontier")
+    if (
+        not isinstance(raw_frontier, list)
+        or report_body.get("frontier_count") != len(raw_frontier)
+        or report_body.get("expected_frontier_count") != len(expected_ids) + 1
+        or len(raw_frontier) != len(expected_ids) + 1
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Terminal report frontier cardinality is invalid."
+        )
+    report_ids = [
+        record.get("candidate_id") if isinstance(record, Mapping) else None
+        for record in raw_frontier
+    ]
+    if report_ids != ["incumbent", *expected_ids]:
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Terminal report frontier order differs from the fixed policy frontier."
+        )
+    records = {
+        str(record["candidate_id"]): record
+        for record in raw_frontier[1:]
+        if isinstance(record, Mapping)
+    }
+    if set(records) != expected_id_set:
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Terminal report does not cover the exact private frontier bank."
+        )
+    selected_state_sha256 = _tensor_sha256(
+        selected_down_weight,
+        "selected_down_weight",
+    )
+    selected_record = (
+        raw_frontier[0]
+        if selected_candidate_id == "incumbent"
+        else (records.get(selected_candidate_id))
+    )
+    if (
+        not isinstance(selected_record, Mapping)
+        or selected_record.get("state_sha256") != selected_state_sha256
+        or report_body.get("selected_state_sha256") != selected_state_sha256
+    ):
+        raise Lfm2CpcfTerminalActionAuthenticationError(
+            "Selected terminal writer hash differs from its selected frontier record."
+        )
+    authenticated: dict[str, Any] = {}
+    storage_pointers: set[int] = {
+        int(tensor.untyped_storage().data_ptr())
+        for tensor in (
+            incumbent_down_weight,
+            selected_down_weight,
+            published_down_weight,
+        )
+    }
+    for candidate_id in expected_ids:
+        source = value[candidate_id]
+        if own_tensors:
+            tensor = _owned_float_tensor(
+                source,
+                f"frontier_down_weights[{candidate_id!r}]",
+                dimensions=2,
+                exact_dtype=torch.bfloat16,
+            )
+        else:
+            if (
+                not isinstance(source, torch.Tensor)
+                or source.layout != torch.strided
+                or source.device.type != "cpu"
+                or source.ndim != 2
+                or source.numel() == 0
+                or source.dtype != torch.bfloat16
+                or source.requires_grad
+                or source.grad_fn is not None
+                or not source.is_contiguous()
+                or not bool(torch.isfinite(source).all().item())
+            ):
+                raise Lfm2CpcfTerminalActionAuthenticationError(
+                    f"Private terminal candidate {candidate_id!r} is no longer "
+                    "a finite detached contiguous CPU BF16 writer."
+                )
+            tensor = source
+        if tuple(tensor.shape) != expected_shape:
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Private terminal candidate {candidate_id!r} has the wrong shape."
+            )
+        storage = tensor.untyped_storage()
+        storage_pointer = int(storage.data_ptr())
+        expected_storage_bytes = int(tensor.nelement() * tensor.element_size())
+        if (
+            int(tensor.storage_offset()) != 0
+            or int(storage.nbytes()) != expected_storage_bytes
+            or storage_pointer in storage_pointers
+        ):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                "Private terminal frontier candidates must each own one exact, "
+                "unaliased storage allocation."
+            )
+        storage_pointers.add(storage_pointer)
+        record = records[candidate_id]
+        if (
+            record.get("private_candidate_storage") is not True
+            or record.get("exact_bfloat16_materialization") is not True
+            or record.get("state_sha256")
+            != _tensor_sha256(tensor, f"frontier_down_weights[{candidate_id!r}]")
+        ):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Private terminal candidate {candidate_id!r} differs from its "
+                "authenticated frontier record."
+            )
+        authenticated[candidate_id] = tensor
+    if selected_candidate_id == "incumbent":
+        if not torch.equal(selected_down_weight, incumbent_down_weight):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                "An incumbent terminal selection must retain the exact incumbent "
+                "writer as its selected state."
+            )
+    else:
+        selected = authenticated.get(selected_candidate_id)
+        if selected is None or not torch.equal(selected, selected_down_weight):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                "Selected terminal writer differs from its private frontier state."
+            )
+    return MappingProxyType(authenticated)
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2CpcfTerminalActionResidualResult:
     """Authenticated private selection and rollback-safe publication state."""
@@ -1823,6 +1977,11 @@ class Lfm2CpcfTerminalActionResidualResult:
     accepted: bool
     report: Mapping[str, Any]
     result_sha256: str
+    frontier_down_weights: Mapping[str, Any] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     _compiler_input_binding: Mapping[str, Any] | None = field(
         default=None,
         repr=False,
@@ -1894,6 +2053,30 @@ class Lfm2CpcfTerminalActionResidualResult:
                 "Terminal result tensors differ from their report."
             )
         compiler_issued = _compiler_issuer is _TERMINAL_RESULT_COMPILER_ISSUER
+        if "frontier" in body:
+            frontier_down_weights = _authenticate_frontier_down_weights(
+                self.frontier_down_weights,
+                policy=self.policy,
+                report_body=body,
+                expected_shape=tuple(owned[0].shape),
+                selected_candidate_id=self.selected_candidate_id,
+                incumbent_down_weight=owned[0],
+                selected_down_weight=owned[1],
+                published_down_weight=owned[2],
+                own_tensors=True,
+            )
+        elif compiler_issued or (
+            self.frontier_down_weights is not None
+            and len(self.frontier_down_weights) != 0
+        ):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                "A compiler-issued or populated terminal result cannot omit its "
+                "authenticated frontier report."
+            )
+        else:
+            # Backwards-compatible support for narrow hand-built test doubles.
+            # Every compiler-issued result takes the strict branch above.
+            frontier_down_weights = MappingProxyType({})
         compiler_binding = self._compiler_input_binding
         accepted_exact_zero = bool(
             self.accepted and int(torch.count_nonzero(owned[0]).item()) == 0
@@ -1911,6 +2094,7 @@ class Lfm2CpcfTerminalActionResidualResult:
         object.__setattr__(self, "incumbent_down_weight", owned[0])
         object.__setattr__(self, "selected_down_weight", owned[1])
         object.__setattr__(self, "published_down_weight", owned[2])
+        object.__setattr__(self, "frontier_down_weights", frontier_down_weights)
         object.__setattr__(self, "_compiler_input_binding", compiler_binding)
         object.__setattr__(self, "_compiler_issued", compiler_issued)
         object.__setattr__(
@@ -1953,6 +2137,23 @@ class Lfm2CpcfTerminalActionResidualResult:
             }
         )
         if not base_valid:
+            return False
+        if "frontier" in body:
+            try:
+                _authenticate_frontier_down_weights(
+                    self.frontier_down_weights,
+                    policy=self.policy,
+                    report_body=body,
+                    expected_shape=tuple(self.incumbent_down_weight.shape),
+                    selected_candidate_id=self.selected_candidate_id,
+                    incumbent_down_weight=self.incumbent_down_weight,
+                    selected_down_weight=self.selected_down_weight,
+                    published_down_weight=self.published_down_weight,
+                    own_tensors=False,
+                )
+            except Lfm2CpcfTerminalActionResidualError:
+                return False
+        elif self.frontier_down_weights:
             return False
         if (
             self.accepted
@@ -2097,6 +2298,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
             }
         )
     frontier: list[dict[str, Any]] = [incumbent_frontier]
+    frontier_down_weights: dict[str, Any] = {}
     selected_id = "incumbent"
     selected_key = None if exact_zero_cold_start else incumbent_key
     selected_weight = incumbent.detach().clone()
@@ -2250,9 +2452,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
                     effectful_nonincumbent = not torch.equal(candidate, incumbent)
                     fit_metric_gates_passed = _all_passed(fit_gates)
                     cold_start_structurally_eligible = bool(
-                        exact_zero_cold_start
-                        and weight_gate
-                        and effectful_nonincumbent
+                        exact_zero_cold_start and weight_gate and effectful_nonincumbent
                     )
                     eligible = bool(
                         weight_gate
@@ -2310,9 +2510,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
                                 "candidate_eligibility_basis": (
                                     "finite_dense_coverage_and_nonincumbent_effect"
                                 ),
-                                "fit_metric_gates_passed": (
-                                    fit_metric_gates_passed
-                                ),
+                                "fit_metric_gates_passed": (fit_metric_gates_passed),
                                 "fit_metric_thresholds_used_for_candidate_eligibility": (
                                     False
                                 ),
@@ -2330,6 +2528,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
                             }
                         )
                     frontier.append(candidate_report)
+                    frontier_down_weights[candidate_id] = candidate.detach().clone()
                     if eligible and (selected_key is None or key < selected_key):
                         selected_id = candidate_id
                         selected_key = key
@@ -2708,6 +2907,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
         incumbent_down_weight=incumbent,
         selected_down_weight=selected_weight,
         published_down_weight=published,
+        frontier_down_weights=frontier_down_weights,
         selected_candidate_id=selected_id,
         accepted=accepted,
         report=report,

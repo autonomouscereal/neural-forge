@@ -77,6 +77,7 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
     _evaluate_split,
     _metric_gates,
     _prepare_split,
+    _tensor_sha256 as _terminal_action_tensor_sha256,
     compile_lfm2_cpcf_terminal_action_residual,
 )
 from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
@@ -158,6 +159,9 @@ LFM2_SEMANTIC_COMPILER_LINEAGE_SCHEMA = "neural-forge-lfm2-semantic-compiler-lin
 LFM2_SEMANTIC_RESIDUAL_CHART_SCHEMA = "neural-forge-lfm2-semantic-residual-chart-v1"
 LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA = (
     "neural-forge-lfm2-semantic-lexical-completion-v1"
+)
+LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA = (
+    "neural-forge-lfm2-semantic-terminal-frontier-export-context-v1"
 )
 SEMANTIC_ATTENTION_INSTALLER_CALLABLE = (
     "compile_install_lfm2_semantic_attention_postfold"
@@ -1071,6 +1075,97 @@ def _new_output_path(value: str | os.PathLike[str]) -> Path:
             "Output checkpoint parent must be a real existing directory."
         )
     return path
+
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left in right.parents or right in left.parents
+
+
+def _local_tokenizer_source_paths(tokenizer: Any) -> tuple[Path, ...]:
+    """Collect already-local tokenizer roots without invoking tokenizer code."""
+
+    attributes = getattr(tokenizer, "__dict__", None)
+    if not isinstance(attributes, Mapping):
+        return ()
+    candidates = []
+    for name in (
+        "name_or_path",
+        "tokenizer_file",
+        "vocab_file",
+        "merges_file",
+        "sp_model_file",
+    ):
+        candidates.append(attributes.get(name))
+    init_kwargs = attributes.get("init_kwargs")
+    if isinstance(init_kwargs, Mapping):
+        candidates.extend(
+            init_kwargs.get(name)
+            for name in (
+                "name_or_path",
+                "tokenizer_file",
+                "vocab_file",
+                "merges_file",
+                "sp_model_file",
+            )
+        )
+    paths = set()
+    for value in candidates:
+        if not isinstance(value, (str, os.PathLike)):
+            continue
+        path = Path(value).expanduser().resolve()
+        if path.exists() or path.is_symlink():
+            paths.add(path)
+    return tuple(sorted(paths, key=str))
+
+
+def _validate_preterminal_capsule_path_disjointness(
+    *,
+    output_checkpoint_directory: str | os.PathLike[str],
+    preterminal_capsule_directory: str | os.PathLike[str] | None,
+    input_checkpoint_directory: str | os.PathLike[str],
+    cache_directory: str | os.PathLike[str],
+    bridge_directory: str | os.PathLike[str],
+    parent_model_directory: str | os.PathLike[str],
+    compiler_diagnostic_json: str | os.PathLike[str],
+    interface_statistics_directory: str | os.PathLike[str] | None,
+    donor_tokenizer: Any,
+    target_tokenizer: Any,
+) -> tuple[Path, Path | None]:
+    """Reject capsule/output ancestry collisions before any artifact is loaded."""
+
+    output = Path(output_checkpoint_directory).expanduser().resolve()
+    if preterminal_capsule_directory is None:
+        return output, None
+    capsule = Path(preterminal_capsule_directory).expanduser().resolve()
+    readonly = {
+        "input checkpoint": Path(input_checkpoint_directory).expanduser().resolve(),
+        "trace cache": Path(cache_directory).expanduser().resolve(),
+        "tokenizer bridge": Path(bridge_directory).expanduser().resolve(),
+        "parent checkpoint": Path(parent_model_directory).expanduser().resolve(),
+        "compiler diagnostic": Path(compiler_diagnostic_json).expanduser().resolve(),
+    }
+    if interface_statistics_directory is not None:
+        readonly["interface statistics"] = (
+            Path(interface_statistics_directory).expanduser().resolve()
+        )
+    for index, path in enumerate(
+        (
+            *_local_tokenizer_source_paths(donor_tokenizer),
+            *_local_tokenizer_source_paths(target_tokenizer),
+        )
+    ):
+        readonly[f"local tokenizer source {index}"] = path
+    collisions = [
+        label
+        for label, path in (("final output", output), *readonly.items())
+        if _paths_overlap(capsule, path)
+    ]
+    if collisions:
+        raise Lfm2SemanticPostfoldError(
+            "Preterminal capsule path must be disjoint from every input and "
+            f"output path; overlaps {', '.join(collisions)}."
+        )
+    return output, capsule
 
 
 def _read_json(path: Path, label: str) -> dict[str, Any]:
@@ -6105,8 +6200,7 @@ def _authenticated_exact_zero_terminal_plant(
         )
         coverage_authenticated = bool(
             candidate_coverage_sha256 == canonical_sha256(candidate_coverage)
-            and record.get("structural_coverage_sha256")
-            == candidate_coverage_sha256
+            and record.get("structural_coverage_sha256") == candidate_coverage_sha256
             and candidate_coverage_value.get("tensor_sha256")
             == record.get("state_sha256")
         )
@@ -6120,13 +6214,9 @@ def _authenticated_exact_zero_terminal_plant(
             record.get("state_sha256") != output_hashes["incumbent"]
         )
         structurally_eligible = bool(
-            coverage_authenticated
-            and coverage_complete
-            and effectful_nonincumbent
+            coverage_authenticated and coverage_complete and effectful_nonincumbent
         )
-        fit_metric_gates_passed = all(
-            value is True for value in fit_gates.values()
-        )
+        fit_metric_gates_passed = all(value is True for value in fit_gates.values())
         if (
             record.get("candidate_ranking_split") != "fit"
             or record.get("relative_to_zero_weight_delta_gate_applied") is not False
@@ -6136,11 +6226,8 @@ def _authenticated_exact_zero_terminal_plant(
             or record.get("eligible") is not structurally_eligible
             or record.get("candidate_eligibility_basis")
             != "finite_dense_coverage_and_nonincumbent_effect"
-            or record.get("fit_metric_gates_passed")
-            is not fit_metric_gates_passed
-            or record.get(
-                "fit_metric_thresholds_used_for_candidate_eligibility"
-            )
+            or record.get("fit_metric_gates_passed") is not fit_metric_gates_passed
+            or record.get("fit_metric_thresholds_used_for_candidate_eligibility")
             is not False
             or record.get("fit_metrics_used_for_candidate_ordering") is not True
             or record.get("fit_metrics_used_for_pre_review_candidate_selection")
@@ -6192,13 +6279,10 @@ def _authenticated_exact_zero_terminal_plant(
         and report.get("fit_metrics_used_for_pre_review_candidate_selection") is True
         and report.get("fit_metrics_used_for_structural_eligibility") is False
         and report.get("fit_metrics_have_final_intelligence_authority") is False
-        and report.get("fit_metric_thresholds_used_for_candidate_eligibility")
-        is False
+        and report.get("fit_metric_thresholds_used_for_candidate_eligibility") is False
         and report.get("fit_metric_thresholds_used_for_publication") is False
-        and report.get("fit_metric_gate_miss_can_exclude_structural_candidate")
-        is False
-        and report.get("structurally_eligible_frontier_count")
-        == len(eligible_keys)
+        and report.get("fit_metric_gate_miss_can_exclude_structural_candidate") is False
+        and report.get("structurally_eligible_frontier_count") == len(eligible_keys)
         and report.get("structurally_eligible_fit_metric_gate_miss_count")
         == structurally_eligible_fit_metric_gate_miss_count
         and report.get("relative_to_zero_weight_delta_gate_applied") is False
@@ -6692,6 +6776,238 @@ def _terminal_heldout_diagnostic(
     return _sealed(body, "diagnostic_sha256")
 
 
+def _build_terminal_frontier_export_context(
+    *,
+    terminal: Lfm2CpcfTerminalActionResidualResult,
+    cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    parent_final_norm: Lfm2LocalParentFinalRmsNormLoad,
+    mapped_parent_tied_table: Any,
+    layer_receipt: Mapping[str, Any],
+    terminal_interface_authentication: Mapping[str, Any],
+    terminal_cache_compatibility: Mapping[str, Any],
+    terminal_cache_payload_binding: Mapping[str, Any],
+    terminal_cache_session_sha256: str,
+    same_live_cache_session_as_layer_stack: bool,
+    cache_content_identity_matches_layer_stack: bool,
+    preterminal_resume_mode: bool,
+) -> Mapping[str, Any]:
+    """Seal the live provenance a frontier publisher cannot reconstruct."""
+
+    if not isinstance(terminal, Lfm2CpcfTerminalActionResidualResult):
+        raise TypeError("terminal must be a typed terminal-action result.")
+    if not terminal.verify_authentication():
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier changed before export-context construction."
+        )
+    if any(
+        type(value) is not bool
+        for value in (
+            same_live_cache_session_as_layer_stack,
+            cache_content_identity_matches_layer_stack,
+            preterminal_resume_mode,
+        )
+    ):
+        raise TypeError("Terminal frontier cache-session facts must be bools.")
+    if not cache_content_identity_matches_layer_stack or (
+        preterminal_resume_mode and same_live_cache_session_as_layer_stack
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier export context has contradictory cache-session facts."
+        )
+    compatibility_sha256 = _digest(
+        terminal_cache_compatibility.get("authentication_sha256"),
+        "terminal cache compatibility authentication",
+    )
+    payload_binding_sha256 = _digest(
+        terminal_cache_payload_binding.get("authentication_sha256"),
+        "terminal cache payload binding authentication",
+    )
+    layer_result_sha256 = _digest(
+        layer_receipt.get("result_sha256"),
+        "semantic layer-stack result",
+    )
+    interface_result_sha256 = _digest(
+        terminal_interface_authentication.get("result_sha256"),
+        "terminal tied-interface authentication",
+    )
+    terminal_seed_sha256 = _digest(
+        terminal.report.get("seed_sha256"),
+        "terminal seed authentication",
+    )
+    terminal_incumbent_sha256 = _terminal_action_tensor_sha256(
+        terminal.incumbent_down_weight,
+        "terminal.incumbent_down_weight",
+    )
+    if terminal.report.get("incumbent_seed_writer_sha256") != terminal_incumbent_sha256:
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier incumbent differs from its authenticated seed."
+        )
+    body = {
+        "schema": LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA,
+        "terminal_result_sha256": terminal.result_sha256,
+        "terminal_seed_sha256": terminal_seed_sha256,
+        "terminal_incumbent_down_weight_terminal_action_sha256": (
+            terminal_incumbent_sha256
+        ),
+        "terminal_cache_compatibility_sha256": compatibility_sha256,
+        "terminal_cache_payload_binding_sha256": payload_binding_sha256,
+        "terminal_cache_session_sha256": _digest(
+            terminal_cache_session_sha256,
+            "terminal cache session",
+        ),
+        "layer_stack_cache_session_sha256": _digest(
+            layer_receipt.get("cache_selective_session_sha256"),
+            "layer-stack cache session",
+        ),
+        "cache_key": _digest(cache.cache_key, "semantic cache key"),
+        "cache_parent_fingerprint": _digest(
+            cache.parent_fingerprint,
+            "semantic cache parent fingerprint",
+        ),
+        "bridge_artifact_sha256": _digest(
+            bridge.artifact_sha256,
+            "tokenizer bridge artifact",
+        ),
+        "parent_final_norm_receipt_sha256": _digest(
+            parent_final_norm.result_sha256,
+            "parent final norm receipt",
+        ),
+        "mapped_parent_tied_table_sha256": _tensor_sha256(mapped_parent_tied_table),
+        "mapped_parent_tied_table_interface_report_sha256": _digest(
+            terminal_interface_authentication.get("interface_report_sha256"),
+            "mapped tied-table interface report",
+        ),
+        "semantic_layer_stack_result_sha256": layer_result_sha256,
+        "tied_interface_authentication_sha256": interface_result_sha256,
+        "preterminal_resume_mode": preterminal_resume_mode,
+        "same_live_cache_session_as_layer_stack": (
+            same_live_cache_session_as_layer_stack
+        ),
+        "cache_content_identity_matches_layer_stack": (
+            cache_content_identity_matches_layer_stack
+        ),
+        "frontier_export_occurs_before_final_w2_installation": True,
+        "operation_audit": dict(_ZERO_OPERATIONS),
+    }
+    return MappingProxyType(_sealed(body, "context_sha256"))
+
+
+def _authenticate_terminal_frontier_export_context(
+    terminal: Lfm2CpcfTerminalActionResidualResult,
+    context: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    authenticated = _verify_sealed(
+        context,
+        seal_name="context_sha256",
+        label="terminal frontier export context",
+    )
+    if (
+        authenticated.get("schema")
+        != LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA
+        or authenticated.get("terminal_result_sha256") != terminal.result_sha256
+        or authenticated.get("terminal_seed_sha256")
+        != terminal.report.get("seed_sha256")
+        or authenticated.get("terminal_incumbent_down_weight_terminal_action_sha256")
+        != _terminal_action_tensor_sha256(
+            terminal.incumbent_down_weight,
+            "terminal.incumbent_down_weight",
+        )
+        or authenticated.get("frontier_export_occurs_before_final_w2_installation")
+        is not True
+        or authenticated.get("cache_content_identity_matches_layer_stack") is not True
+        or type(authenticated.get("same_live_cache_session_as_layer_stack")) is not bool
+        or type(authenticated.get("preterminal_resume_mode")) is not bool
+        or (
+            authenticated.get("preterminal_resume_mode") is True
+            and authenticated.get("same_live_cache_session_as_layer_stack") is True
+        )
+        or authenticated.get("operation_audit") != dict(_ZERO_OPERATIONS)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier export context does not authenticate the live result."
+        )
+    return MappingProxyType(authenticated)
+
+
+def _export_authenticated_terminal_frontier(
+    terminal: Lfm2CpcfTerminalActionResidualResult,
+    context: Mapping[str, Any],
+    exporter: Callable[
+        [Lfm2CpcfTerminalActionResidualResult, Mapping[str, Any]],
+        Any,
+    ]
+    | None,
+) -> dict[str, Any] | None:
+    """Expose the full private bank once, before any final-W2 installation."""
+
+    if not isinstance(terminal, Lfm2CpcfTerminalActionResidualResult):
+        raise TypeError("terminal must be a typed terminal-action result.")
+    if not terminal.verify_authentication():
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal frontier changed before its export seam."
+        )
+    authenticated_context = _authenticate_terminal_frontier_export_context(
+        terminal,
+        context,
+    )
+    if exporter is None:
+        return None
+    if not callable(exporter):
+        raise TypeError("terminal_frontier_exporter must be callable.")
+    exported = exporter(terminal, authenticated_context)
+    if not terminal.verify_authentication():
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier exporter mutated the authenticated result."
+        )
+    _authenticate_terminal_frontier_export_context(terminal, authenticated_context)
+    as_dict = getattr(exported, "as_dict", None)
+    raw_export = as_dict() if callable(as_dict) else exported
+    if not isinstance(raw_export, Mapping) or not raw_export:
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier exporter returned no authenticated reference."
+        )
+    try:
+        return json.loads(
+            json.dumps(
+                dict(raw_export),
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier export reference is not canonical JSON."
+        ) from exc
+
+
+def _terminal_frontier_export_receipt_fields(
+    reference: Mapping[str, Any] | None,
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    authenticated_context = dict(
+        _verify_sealed(
+            context,
+            seal_name="context_sha256",
+            label="terminal frontier export receipt context",
+        )
+    )
+    normalized = None if reference is None else dict(reference)
+    return {
+        "terminal_frontier_export_context": authenticated_context,
+        "terminal_frontier_export_context_sha256": authenticated_context[
+            "context_sha256"
+        ],
+        "terminal_frontier_export": normalized,
+        "terminal_frontier_export_sha256": (
+            None if normalized is None else canonical_sha256(normalized)
+        ),
+        "terminal_frontier_exported_before_w2_installation": (normalized is not None),
+    }
+
+
 def compile_install_lfm2_fused_semantic_terminal_refold(
     *,
     cache: Lfm2CircuitTraceCache,
@@ -6707,10 +7023,28 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     policy: Lfm2CpcfTerminalActionPolicy | None = None,
     terminal_cache_compatibility: Mapping[str, Any] | None = None,
     authenticated_cache_session: Any | None = None,
+    preterminal_resume_mode: bool = False,
+    terminal_frontier_exporter: Callable[
+        [Lfm2CpcfTerminalActionResidualResult, Mapping[str, Any]],
+        Any,
+    ]
+    | None = None,
 ) -> Mapping[str, Any]:
     """Jointly compile final-MLP, parent, and lexical lanes into one final W2."""
 
     torch = _torch()
+    if type(preterminal_resume_mode) is not bool:
+        raise TypeError("preterminal_resume_mode must be bool.")
+    if preterminal_resume_mode and authenticated_cache_session is not None:
+        raise Lfm2SemanticPostfoldError(
+            "Preterminal resume must open and authenticate a distinct terminal "
+            "cache session internally."
+        )
+    if not preterminal_resume_mode and authenticated_cache_session is None:
+        raise Lfm2SemanticPostfoldError(
+            "Continuous fused terminal compilation requires the live cache "
+            "session used by the semantic layer stack."
+        )
     current_terminal_cache_compatibility = preflight_lfm2_long_horizon_terminal_cache(
         cache
     )
@@ -6842,16 +7176,14 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "cache_selective_session_sha256"
     )
     terminal_cache_session_sha256 = cache_receipt["session"]["session_sha256"]
-    same_layer_stack_terminal_cache_session = (
+    cache_content_identity_matches_layer_stack = (
         layer_stack_cache_session_sha256 == terminal_cache_session_sha256
     )
-    if (
-        authenticated_cache_session is not None
-        and not same_layer_stack_terminal_cache_session
-    ):
+    same_live_cache_session_as_layer_stack = not preterminal_resume_mode
+    if not cache_content_identity_matches_layer_stack:
         raise Lfm2SemanticPostfoldError(
-            "Externally supplied terminal cache session is not the exact "
-            "session authenticated by the layer-stack receipt."
+            "Terminal cache content identity differs from the session "
+            "authenticated by the layer-stack receipt."
         )
     if not all(
         value.parent_final_norm_endpoint.get("runtime_replay_to_cached_output_verified")
@@ -6994,6 +7326,28 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         validation_evidence=fused["validation"],
         policy=selected_policy,
     )
+    terminal_frontier_export_context = _build_terminal_frontier_export_context(
+        terminal=terminal,
+        cache=cache,
+        bridge=bridge,
+        parent_final_norm=parent_final_norm,
+        mapped_parent_tied_table=source_selected_tied_table,
+        layer_receipt=layer_receipt,
+        terminal_interface_authentication=terminal_interface_authentication,
+        terminal_cache_compatibility=current_terminal_cache_compatibility,
+        terminal_cache_payload_binding=terminal_cache_payload_binding,
+        terminal_cache_session_sha256=terminal_cache_session_sha256,
+        same_live_cache_session_as_layer_stack=(same_live_cache_session_as_layer_stack),
+        cache_content_identity_matches_layer_stack=(
+            cache_content_identity_matches_layer_stack
+        ),
+        preterminal_resume_mode=preterminal_resume_mode,
+    )
+    terminal_frontier_export = _export_authenticated_terminal_frontier(
+        terminal,
+        terminal_frontier_export_context,
+        terminal_frontier_exporter,
+    )
     published_down_weight, publication_decision = _terminal_publication_decision(
         terminal,
         expected_seed=seed,
@@ -7096,14 +7450,21 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
                 0 if authenticated_cache_session is not None else 1
             ),
             "end_to_end_selective_session_constructions": (
-                1 if same_layer_stack_terminal_cache_session else 2
+                1 if same_live_cache_session_as_layer_stack else 2
             ),
             "consuming_trace_file_sha256_passes_per_batch": 1,
             "consuming_trace_file_sha256_passes_total": cache.batch_count,
             "same_consuming_session_reused_by_semantic_collector": True,
             "same_consuming_session_reused_from_layer_stack": (
-                same_layer_stack_terminal_cache_session
+                same_live_cache_session_as_layer_stack
             ),
+            "same_live_cache_session_as_layer_stack": (
+                same_live_cache_session_as_layer_stack
+            ),
+            "cache_content_identity_matches_layer_stack": (
+                cache_content_identity_matches_layer_stack
+            ),
+            "preterminal_resume_mode": preterminal_resume_mode,
             "additional_full_trace_file_sha256_passes_performed_by_fused_terminal": 0,
             "selected_tensor_payload_loads_total": (
                 terminal_cache_tensor_payload_load_audit[
@@ -7214,6 +7575,10 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "observed_trace_is_not_global_lexical_proof": True,
         "lexical_teacher": dict(teacher_report),
         "terminal_result": terminal.as_dict(),
+        **_terminal_frontier_export_receipt_fields(
+            terminal_frontier_export,
+            terminal_frontier_export_context,
+        ),
         "terminal_publication_decision": dict(publication_decision),
         "fused_heldout_diagnostics": fused_heldout_gates,
         "separate_heldout_lane_diagnostics": lane_gates,
@@ -7349,6 +7714,7 @@ def _authenticate_fused_terminal_cache_evidence(
     same_pipeline_session = io_audit.get(
         "same_consuming_session_reused_from_layer_stack"
     )
+    resume_mode = io_audit.get("preterminal_resume_mode")
     if (
         compatibility.get("schema")
         != LFM2_LONG_HORIZON_TERMINAL_CACHE_COMPATIBILITY_SCHEMA
@@ -7399,6 +7765,11 @@ def _authenticate_fused_terminal_cache_evidence(
         or io_audit.get("same_consuming_session_reused_by_semantic_collector")
         is not True
         or type(same_pipeline_session) is not bool
+        or io_audit.get("same_live_cache_session_as_layer_stack")
+        is not same_pipeline_session
+        or io_audit.get("cache_content_identity_matches_layer_stack") is not True
+        or type(resume_mode) is not bool
+        or (resume_mode and same_pipeline_session)
         or io_audit.get("fused_terminal_selective_session_constructions")
         != (0 if same_pipeline_session else 1)
         or io_audit.get("end_to_end_selective_session_constructions")
@@ -7702,9 +8073,7 @@ def _validate_fused_semantic_terminal_receipt(
         cold_receipt_invalid = bool(
             receipt.get("terminal_exact_zero_cold_start") is not True
             or receipt.get("terminal_incumbent_noop_publication_forbidden") is not True
-            or receipt.get(
-                "terminal_structural_candidate_eligibility_authenticated"
-            )
+            or receipt.get("terminal_structural_candidate_eligibility_authenticated")
             is not True
             or receipt.get(
                 "terminal_fit_metric_ordering_frozen_before_heldout_diagnostics"
@@ -7724,9 +8093,7 @@ def _validate_fused_semantic_terminal_receipt(
             is not False
             or receipt.get("terminal_fit_metric_thresholds_used_for_publication")
             is not False
-            or receipt.get(
-                "terminal_fit_metrics_have_final_intelligence_authority"
-            )
+            or receipt.get("terminal_fit_metrics_have_final_intelligence_authority")
             is not False
             or receipt.get("terminal_heldout_metrics_diagnostic_only") is not True
             or receipt.get("terminal_heldout_publication_gate_applied") is not False
@@ -7736,9 +8103,7 @@ def _validate_fused_semantic_terminal_receipt(
             or not isinstance(terminal_decision, Mapping)
             or terminal_decision.get("terminal_exact_zero_cold_start") is not True
             or terminal_decision.get("incumbent_noop_publication_forbidden") is not True
-            or terminal_decision.get(
-                "structural_candidate_eligibility_authenticated"
-            )
+            or terminal_decision.get("structural_candidate_eligibility_authenticated")
             is not True
             or terminal_decision.get(
                 "fit_metric_ordering_frozen_before_heldout_diagnostics"
@@ -8100,6 +8465,29 @@ def publish_lfm2_semantic_postfold_checkpoint(
     return reloaded, MappingProxyType(_sealed(body, "result_sha256"))
 
 
+def publish_preterminal_capsule_then_compile_fused_terminal(
+    *,
+    capsule_publisher: Callable[[], Any] | None,
+    fused_terminal_compiler: Callable[..., Mapping[str, Any]],
+    terminal_arguments: Mapping[str, Any],
+) -> tuple[Any | None, Mapping[str, Any]]:
+    """Publish a durable seam first, then call the fallible terminal compiler."""
+
+    if capsule_publisher is not None and not callable(capsule_publisher):
+        raise TypeError("capsule_publisher must be callable or None.")
+    if not callable(fused_terminal_compiler):
+        raise TypeError("fused_terminal_compiler must be callable.")
+    if not isinstance(terminal_arguments, Mapping):
+        raise TypeError("terminal_arguments must be a mapping.")
+    capsule_reference = None if capsule_publisher is None else capsule_publisher()
+    terminal = fused_terminal_compiler(**dict(terminal_arguments))
+    if not isinstance(terminal, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal compiler returned no receipt mapping."
+        )
+    return capsule_reference, terminal
+
+
 def run_lfm2_semantic_postfold(
     *,
     input_checkpoint_directory: str | os.PathLike[str],
@@ -8125,6 +8513,7 @@ def run_lfm2_semantic_postfold(
     expected_interface_statistics_sha256: str | None = None,
     attention_installer: Callable[..., Mapping[str, Any]] | None = None,
     semantic_layer_stack_compiler: Callable[..., Any] | None = None,
+    preterminal_capsule_directory: str | os.PathLike[str] | None = None,
     fused_terminal_compiler: Callable[..., Mapping[str, Any]] = (
         compile_install_lfm2_fused_semantic_terminal_refold
     ),
@@ -8146,13 +8535,28 @@ def run_lfm2_semantic_postfold(
         if statistics_requested
         else None
     )
+    output, validated_capsule_output = _validate_preterminal_capsule_path_disjointness(
+        output_checkpoint_directory=output_checkpoint_directory,
+        preterminal_capsule_directory=preterminal_capsule_directory,
+        input_checkpoint_directory=input_checkpoint_directory,
+        cache_directory=cache_directory,
+        bridge_directory=bridge_directory,
+        parent_model_directory=parent_model_directory,
+        compiler_diagnostic_json=compiler_diagnostic_json,
+        interface_statistics_directory=interface_statistics_directory,
+        donor_tokenizer=donor_tokenizer,
+        target_tokenizer=target_tokenizer,
+    )
+    preterminal_capsule_directory = validated_capsule_output
     foundation_ancestry = _claims_semantic_foundation_schema(compiler_diagnostic_json)
     if statistics_requested and not foundation_ancestry:
         raise Lfm2SemanticPostfoldError(
             "Compact interface statistics are supported only for "
             "semantic-foundation ancestry."
         )
-    output = _new_output_path(output_checkpoint_directory)
+    output = _new_output_path(output)
+    if preterminal_capsule_directory is not None:
+        preterminal_capsule_directory = _new_output_path(preterminal_capsule_directory)
     # Record compatibility is authenticated before any child is loaded or
     # mutated.  Each trace file receives one whole-file SHA pass when the pipeline
     # selective session opens immediately before the first target mutation.
@@ -8300,6 +8704,7 @@ def run_lfm2_semantic_postfold(
             }
         )
     rehydrated_interface_report = dict(interface.report)
+    preterminal_capsule_reference = None
     # The single whole-file SHA authentication pass happens before the first
     # target mutation (the tied residual gauge).  This exact session remains open
     # while the layer stack reads selected tensors and the terminal collector
@@ -8332,19 +8737,68 @@ def run_lfm2_semantic_postfold(
                 layer_stack.receipt
             )
         )
-        terminal = fused_terminal_compiler(
-            cache=cache,
-            bridge=bridge,
-            target_model=target_model,
-            layer_stack=layer_stack,
-            interface=interface,
-            source_selected_tied_table=source_table,
-            parent_final_norm=parent_norm,
-            split_plan=split_plan,
-            donor_tokenizer=donor_tokenizer,
-            target_tokenizer=target_tokenizer,
-            terminal_cache_compatibility=terminal_cache_compatibility,
-            authenticated_cache_session=pipeline_cache_session,
+        capsule_publisher = None
+        if preterminal_capsule_directory is not None:
+            from neural_forge.hf_lfm2_semantic_preterminal_capsule import (
+                Lfm2SemanticPreterminalCapsuleBindings,
+                publish_lfm2_semantic_preterminal_capsule,
+            )
+
+            capsule_bindings = Lfm2SemanticPreterminalCapsuleBindings(
+                input_artifact_sha256=input_metadata["artifact_sha256"],
+                compiler_diagnostic_sha256=_digest(
+                    expected_compiler_diagnostic_sha256,
+                    "expected compiler diagnostic SHA-256",
+                ),
+                compiler_cache_key=interface_rehydration["compiler_cache_key"],
+                semantic_cache_key=cache.cache_key,
+                semantic_cache_manifest_sha256=cache.manifest["manifest_sha256"],
+                cache_parent_fingerprint=cache.parent_fingerprint,
+                bridge_artifact_sha256=bridge.artifact_sha256,
+                mapped_parent_tied_table_receipt_sha256=(
+                    source_table_report["result_sha256"]
+                ),
+                parent_final_norm_receipt_sha256=parent_norm.result_sha256,
+                interface_rehydration_sha256=interface_rehydration["result_sha256"],
+                tied_residual_interface_gauge_sha256=(
+                    tied_residual_interface_gauge["result_sha256"]
+                ),
+                cache_selective_session_sha256=layer_stack.receipt[
+                    "cache_selective_session_sha256"
+                ],
+                interface_statistics_artifact_sha256=expected_statistics_sha256,
+            )
+
+            def capsule_publisher() -> Any:
+                return publish_lfm2_semantic_preterminal_capsule(
+                    target_model=target_model,
+                    target_tokenizer=target_tokenizer,
+                    layer_stack=layer_stack,
+                    interface=interface,
+                    attention_receipt_authentication=(attention_receipt_authentication),
+                    bindings=capsule_bindings,
+                    output_directory=preterminal_capsule_directory,
+                )
+
+        preterminal_capsule_reference, terminal = (
+            publish_preterminal_capsule_then_compile_fused_terminal(
+                capsule_publisher=capsule_publisher,
+                fused_terminal_compiler=fused_terminal_compiler,
+                terminal_arguments={
+                    "cache": cache,
+                    "bridge": bridge,
+                    "target_model": target_model,
+                    "layer_stack": layer_stack,
+                    "interface": interface,
+                    "source_selected_tied_table": source_table,
+                    "parent_final_norm": parent_norm,
+                    "split_plan": split_plan,
+                    "donor_tokenizer": donor_tokenizer,
+                    "target_tokenizer": target_tokenizer,
+                    "terminal_cache_compatibility": terminal_cache_compatibility,
+                    "authenticated_cache_session": pipeline_cache_session,
+                },
+            )
         )
         terminal_receipt = _verify_sealed(
             terminal,
@@ -8451,6 +8905,11 @@ def run_lfm2_semantic_postfold(
         "attention_receipt_authentication_sha256": (
             attention_receipt_authentication["result_sha256"]
         ),
+        **(
+            {"preterminal_capsule": (preterminal_capsule_reference.as_dict())}
+            if preterminal_capsule_reference is not None
+            else {}
+        ),
         "fused_semantic_terminal_refold_sha256": terminal_receipt["result_sha256"],
         "complete_nonzero_structural_producer_coverage": layer_stack.receipt[
             "complete_nonzero_structural_producer_coverage"
@@ -8508,6 +8967,11 @@ def run_lfm2_semantic_postfold(
         },
         "semantic_layer_stack": dict(layer_stack.receipt),
         "attention_receipt_authentication": dict(attention_receipt_authentication),
+        **(
+            {"preterminal_capsule": (preterminal_capsule_reference.as_dict())}
+            if preterminal_capsule_reference is not None
+            else {}
+        ),
         "fused_semantic_terminal": terminal_receipt,
         "terminal_publication_decision_accepted": True,
         "terminal_nonincumbent_candidate_accepted": terminal_receipt[
@@ -8625,6 +9089,7 @@ __all__ = [
     "load_lfm2_parent_qkvo_inventory_from_local_safetensors",
     "load_lfm2_semantic_compiler_lineage",
     "publish_lfm2_semantic_postfold_checkpoint",
+    "publish_preterminal_capsule_then_compile_fused_terminal",
     "rehydrate_lfm2_c61_tied_interface",
     "reconstruct_lfm2_saved_tied_interface",
     "run_lfm2_semantic_postfold",

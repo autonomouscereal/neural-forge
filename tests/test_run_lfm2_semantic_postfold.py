@@ -40,6 +40,12 @@ def _required_arguments(tmp_path: Path) -> list[str]:
     ]
 
 
+def _replace_argument(arguments: list[str], name: str, value: Path) -> list[str]:
+    updated = list(arguments)
+    updated[updated.index(name) + 1] = str(value)
+    return updated
+
+
 @pytest.mark.parametrize(
     "unpaired",
     (
@@ -64,6 +70,37 @@ def test_cli_rejects_unpaired_statistics_before_loading_assets(
 
     with pytest.raises(ValueError, match="must be supplied together"):
         runner.main([*_required_arguments(tmp_path), *unpaired])
+
+
+@pytest.mark.parametrize("collision", ("same-output", "nested-source", "receipt"))
+def test_cli_rejects_capsule_and_receipt_path_collisions_before_asset_load(
+    tmp_path: Path,
+    monkeypatch,
+    collision: str,
+) -> None:
+    def unexpected_asset_load(*_args, **_kwargs):
+        pytest.fail("path collision reached tokenizer or artifact loading")
+
+    monkeypatch.setattr(runner, "load_local_tokenizer", unexpected_asset_load)
+    monkeypatch.setattr(
+        runner,
+        "run_lfm2_semantic_postfold",
+        unexpected_asset_load,
+    )
+    arguments = _required_arguments(tmp_path)
+    if collision == "same-output":
+        arguments.extend(["--preterminal-capsule", str(tmp_path / "output")])
+    elif collision == "nested-source":
+        arguments.extend(["--preterminal-capsule", str(tmp_path / "input" / "capsule")])
+    else:
+        arguments = _replace_argument(
+            arguments,
+            "--receipt-json",
+            tmp_path / "output",
+        )
+
+    with pytest.raises(ValueError, match="must be disjoint"):
+        runner.main(arguments)
 
 
 def test_cli_forwards_exact_compact_statistics_pair(

@@ -48,6 +48,57 @@ def _new_file(value: str, name: str) -> Path:
     return path
 
 
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left in right.parents or right in left.parents
+
+
+def _validate_cli_path_disjointness(args: argparse.Namespace) -> tuple[Path, Path]:
+    """Reject write/read ancestry collisions before loading either tokenizer."""
+
+    output = Path(args.output_checkpoint).expanduser().resolve()
+    receipt = Path(args.receipt_json).expanduser().resolve()
+    capsule = (
+        None
+        if args.preterminal_capsule is None
+        else Path(args.preterminal_capsule).expanduser().resolve()
+    )
+    readonly = {
+        "input checkpoint": Path(args.input_checkpoint).expanduser().resolve(),
+        "trace cache": Path(args.trace_cache).expanduser().resolve(),
+        "tokenizer bridge": Path(args.bridge_directory).expanduser().resolve(),
+        "donor tokenizer": Path(args.donor_tokenizer_directory).expanduser().resolve(),
+        "target tokenizer": Path(args.target_tokenizer_directory)
+        .expanduser()
+        .resolve(),
+        "parent checkpoint": Path(args.parent_model_directory).expanduser().resolve(),
+        "compiler diagnostic": Path(args.compiler_diagnostic_json)
+        .expanduser()
+        .resolve(),
+    }
+    if args.interface_statistics_directory is not None:
+        readonly["interface statistics"] = (
+            Path(args.interface_statistics_directory).expanduser().resolve()
+        )
+    writes = {"final output": output, "receipt JSON": receipt}
+    if capsule is not None:
+        writes["preterminal capsule"] = capsule
+    write_items = tuple(writes.items())
+    collisions = []
+    for index, (left_label, left) in enumerate(write_items):
+        for right_label, right in write_items[index + 1 :]:
+            if _paths_overlap(left, right):
+                collisions.append(f"{left_label}/{right_label}")
+        for right_label, right in readonly.items():
+            if _paths_overlap(left, right):
+                collisions.append(f"{left_label}/{right_label}")
+    if collisions:
+        raise ValueError(
+            "Output, capsule, receipt, and read-only artifact paths must be "
+            f"disjoint; overlaps {', '.join(collisions)}."
+        )
+    return output, receipt
+
+
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     payload = (
         json.dumps(
@@ -99,6 +150,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--input-checkpoint", required=True)
     parser.add_argument("--expected-input-artifact-sha256", required=True)
     parser.add_argument("--output-checkpoint", required=True)
+    parser.add_argument(
+        "--preterminal-capsule",
+        help=(
+            "Optional new directory for an authenticated resume capsule saved "
+            "after the causal layer stack and before fused terminal compilation."
+        ),
+    )
     parser.add_argument("--receipt-json", required=True)
     parser.add_argument(
         "--trace-cache",
@@ -192,8 +250,8 @@ def main(argv: list[str] | None = None) -> int:
             "--interface-statistics-directory and "
             "--expected-interface-statistics-sha256 must be supplied together."
         )
-    receipt = _new_file(args.receipt_json, "receipt JSON")
-    output = Path(args.output_checkpoint).expanduser().resolve()
+    output, receipt_path = _validate_cli_path_disjointness(args)
+    receipt = _new_file(str(receipt_path), "receipt JSON")
     if output.exists() or output.is_symlink():
         raise ValueError(f"output checkpoint already exists: {output}")
     donor = load_local_tokenizer(args.donor_tokenizer_directory)
@@ -241,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.semantic_layer_stack_compiler_module,
                 SEMANTIC_LAYER_STACK_INSTALLER_CALLABLE,
             ),
+            preterminal_capsule_directory=args.preterminal_capsule,
         )
     except Lfm2SemanticPostfoldBlockedError as exc:
         _atomic_json(receipt, dict(exc.report))

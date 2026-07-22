@@ -278,6 +278,31 @@ def _compiled_exact_zero_terminal_result(*, policy=None):
     return seed, banks, result
 
 
+def _frontier_export_context(terminal, *, resume_mode=False):
+    session_sha256 = "9" * 64
+    return postfold._build_terminal_frontier_export_context(
+        terminal=terminal,
+        cache=SimpleNamespace(cache_key="1" * 64, parent_fingerprint="2" * 64),
+        bridge=SimpleNamespace(artifact_sha256="3" * 64),
+        parent_final_norm=SimpleNamespace(result_sha256="4" * 64),
+        mapped_parent_tied_table=torch.eye(2, dtype=torch.bfloat16),
+        layer_receipt={
+            "result_sha256": "5" * 64,
+            "cache_selective_session_sha256": session_sha256,
+        },
+        terminal_interface_authentication={
+            "result_sha256": "6" * 64,
+            "interface_report_sha256": "7" * 64,
+        },
+        terminal_cache_compatibility={"authentication_sha256": "8" * 64},
+        terminal_cache_payload_binding={"authentication_sha256": "a" * 64},
+        terminal_cache_session_sha256=session_sha256,
+        same_live_cache_session_as_layer_stack=not resume_mode,
+        cache_content_identity_matches_layer_stack=True,
+        preterminal_resume_mode=resume_mode,
+    )
+
+
 def test_final_w2_incumbent_retention_is_an_exact_zero_copy_decision(
     monkeypatch,
 ) -> None:
@@ -489,6 +514,10 @@ def test_exact_zero_publication_recomputes_fit_and_rejects_dense_forgery() -> No
         incumbent_down_weight=terminal.incumbent_down_weight,
         selected_down_weight=forged_weight,
         published_down_weight=forged_weight,
+        frontier_down_weights={
+            **terminal.frontier_down_weights,
+            terminal.selected_candidate_id: forged_weight,
+        },
         selected_candidate_id=terminal.selected_candidate_id,
         accepted=True,
         report={**body, "result_sha256": forged_sha256},
@@ -614,6 +643,135 @@ def test_fused_terminal_never_gates_or_installs_the_private_selected_tensor() ->
 
     assert "terminal.selected_down_weight" not in source
     assert "published_down_weight=published_down_weight" in source
+
+
+@pytest.mark.parametrize("collision", ("same-output", "nested-source"))
+def test_preterminal_capsule_path_guard_rejects_overlap_before_loading(
+    tmp_path: Path,
+    collision: str,
+) -> None:
+    sources = {
+        name: tmp_path / name
+        for name in ("input", "cache", "bridge", "parent", "statistics")
+    }
+    for path in sources.values():
+        path.mkdir()
+    diagnostic = tmp_path / "compiler.json"
+    diagnostic.write_text("{}", encoding="ascii")
+    output = tmp_path / "output"
+    capsule = output if collision == "same-output" else sources["input"] / "capsule"
+
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match="disjoint"):
+        postfold._validate_preterminal_capsule_path_disjointness(
+            output_checkpoint_directory=output,
+            preterminal_capsule_directory=capsule,
+            input_checkpoint_directory=sources["input"],
+            cache_directory=sources["cache"],
+            bridge_directory=sources["bridge"],
+            parent_model_directory=sources["parent"],
+            compiler_diagnostic_json=diagnostic,
+            interface_statistics_directory=sources["statistics"],
+            donor_tokenizer=SimpleNamespace(),
+            target_tokenizer=SimpleNamespace(),
+        )
+
+
+def test_terminal_frontier_export_seam_receives_full_bank_once_before_w2_install() -> (
+    None
+):
+    _seed, _evidence, terminal = _compiled_exact_zero_terminal_result()
+    live_final_w2 = torch.zeros_like(terminal.incumbent_down_weight)
+    context = _frontier_export_context(terminal)
+    calls = []
+
+    def exporter(result, export_context):
+        calls.append(result.result_sha256)
+        assert result is terminal
+        assert export_context == context
+        assert export_context["terminal_seed_sha256"] == result.report["seed_sha256"]
+        assert (
+            export_context["terminal_incumbent_down_weight_terminal_action_sha256"]
+            == result.report["incumbent_seed_writer_sha256"]
+        )
+        assert result.verify_authentication() is True
+        assert len(result.frontier_down_weights) == 36
+        assert int(torch.count_nonzero(live_final_w2).item()) == 0
+        frontier_records = {
+            row["candidate_id"]: row
+            for row in result.report["frontier"]
+            if row["candidate_id"] != "incumbent"
+        }
+        assert set(frontier_records) == set(result.frontier_down_weights)
+        for candidate_id, weight in result.frontier_down_weights.items():
+            assert (
+                terminal_action._tensor_sha256(weight)
+                == frontier_records[candidate_id]["state_sha256"]
+            )
+        return {"receipt_sha256": "a" * 64, "bank_count": 36}
+
+    reference = postfold._export_authenticated_terminal_frontier(
+        terminal,
+        context,
+        exporter,
+    )
+    fields = postfold._terminal_frontier_export_receipt_fields(reference, context)
+
+    assert calls == [terminal.result_sha256]
+    assert fields["terminal_frontier_export"] == reference
+    assert fields["terminal_frontier_export_sha256"] == canonical_sha256(reference)
+    assert fields["terminal_frontier_export_context"] == dict(context)
+    assert (
+        fields["terminal_frontier_export_context_sha256"] == context["context_sha256"]
+    )
+    assert fields["terminal_frontier_exported_before_w2_installation"] is True
+    source = inspect.getsource(
+        postfold.compile_install_lfm2_fused_semantic_terminal_refold
+    )
+    assert source.index("_export_authenticated_terminal_frontier") < source.index(
+        "_install_final_w2_once"
+    )
+
+
+def test_terminal_frontier_exporter_exception_or_mutation_precedes_w2_install() -> None:
+    _seed, _evidence, terminal = _compiled_exact_zero_terminal_result()
+    live_final_w2 = torch.zeros_like(terminal.incumbent_down_weight)
+    context = _frontier_export_context(terminal)
+
+    def fail_export(_result, _context):
+        assert int(torch.count_nonzero(live_final_w2).item()) == 0
+        raise RuntimeError("export failed")
+
+    with pytest.raises(RuntimeError, match="export failed"):
+        postfold._export_authenticated_terminal_frontier(
+            terminal,
+            context,
+            fail_export,
+        )
+    assert int(torch.count_nonzero(live_final_w2).item()) == 0
+
+    _seed, _evidence, mutation_terminal = _compiled_exact_zero_terminal_result()
+    mutation_context = _frontier_export_context(mutation_terminal, resume_mode=True)
+
+    def mutate_export(result, export_context):
+        assert export_context["preterminal_resume_mode"] is True
+        assert export_context["same_live_cache_session_as_layer_stack"] is False
+        candidate_id = next(iter(result.frontier_down_weights))
+        result.frontier_down_weights[candidate_id].reshape(-1)[0] += torch.tensor(
+            1.0,
+            dtype=torch.bfloat16,
+        )
+        return {"receipt_sha256": "b" * 64}
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="mutated",
+    ):
+        postfold._export_authenticated_terminal_frontier(
+            mutation_terminal,
+            mutation_context,
+            mutate_export,
+        )
+    assert int(torch.count_nonzero(live_final_w2).item()) == 0
 
 
 def test_nonzero_heldout_regression_is_a_sealed_diagnostic_only(
@@ -2029,6 +2187,9 @@ def _cached_fused_terminal_evidence() -> dict[str, object]:
         "consuming_trace_file_sha256_passes_total": 1,
         "same_consuming_session_reused_by_semantic_collector": True,
         "same_consuming_session_reused_from_layer_stack": True,
+        "same_live_cache_session_as_layer_stack": True,
+        "cache_content_identity_matches_layer_stack": True,
+        "preterminal_resume_mode": False,
         "fused_terminal_selective_session_constructions": 0,
         "end_to_end_selective_session_constructions": 1,
         "additional_full_trace_file_sha256_passes_performed_by_fused_terminal": 0,
@@ -2336,6 +2497,9 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
         "consuming_trace_file_sha256_passes_total": 1,
         "same_consuming_session_reused_by_semantic_collector": True,
         "same_consuming_session_reused_from_layer_stack": True,
+        "same_live_cache_session_as_layer_stack": True,
+        "cache_content_identity_matches_layer_stack": True,
+        "preterminal_resume_mode": False,
         "fused_terminal_selective_session_constructions": 0,
         "end_to_end_selective_session_constructions": 1,
         "additional_full_trace_file_sha256_passes_performed_by_fused_terminal": 0,
