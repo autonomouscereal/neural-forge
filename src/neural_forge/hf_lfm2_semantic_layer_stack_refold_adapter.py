@@ -107,6 +107,7 @@ _SHORT_CONV_INSTALLATION_SCHEMA = (
 )
 _SHORT_CONV_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
 _MLP_INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-mlp-installation-v1"
+_MLP_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
 _MLP_FUNCTIONAL_PROVENANCE_SCHEMA = (
     "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v2"
 )
@@ -1584,6 +1585,117 @@ def _authenticated_short_conv_incumbent_noop(
     )
 
 
+def _authenticated_mlp_unchanged_state(
+    receipt: Mapping[str, Any],
+    *,
+    before_sha256: str,
+    after_sha256: str,
+    changed_state_keys: Sequence[str],
+) -> bool:
+    """Authenticate one MLP receipt that performed no local parameter copy."""
+
+    return bool(
+        receipt.get("installed") is False
+        and receipt.get("candidate_frozen_before_validation") is True
+        and receipt.get("validation_triggered_refit") is False
+        and receipt.get("model_state_before_sha256") == before_sha256
+        and receipt.get("model_state_after_sha256") == after_sha256
+        and before_sha256 == after_sha256
+        and receipt.get(
+            "changed_state_keys",
+            receipt.get("changed_parameter_roles"),
+        )
+        == []
+        and not changed_state_keys
+        and receipt.get("parameter_count_changed") is False
+        and receipt.get("topology_changed") is False
+        and receipt.get("parameter_identities_preserved") is True
+        and receipt.get("parameter_storage_preserved") is True
+        and receipt.get("gradient_state_preserved") is True
+        and receipt.get("exact_noop_state_proven") is True
+        and receipt.get("analytic_linear_and_cluster_solves_only") is True
+        and _is_zero_operation_audit(receipt.get("operation_audit"))
+    )
+
+
+def _authenticated_mlp_incumbent_noop(
+    receipt: Mapping[str, Any],
+    *,
+    before_sha256: str,
+    after_sha256: str,
+    changed_state_keys: Sequence[str],
+) -> bool:
+    """Require the MLP adapter's structural no-candidate/no-effect reason."""
+
+    return bool(
+        receipt.get("status") == _MLP_STRUCTURAL_NOOP_STATUS
+        and receipt.get("selected_candidate") == "incumbent-noop"
+        and receipt.get("selected_candidate_state_identical_to_incumbent") is True
+        and receipt.get("incumbent_noop_fallback_used") is True
+        and receipt.get("incumbent_noop_fallback_reason")
+        == "all-analytic-proposals-structurally-invalid-or-identical"
+        and receipt.get("incumbent_selected_by_heldout_gates") is False
+        and receipt.get("structurally_eligible_candidate_count") == 0
+        and receipt.get("candidate_eligibility_basis")
+        == "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+        and receipt.get("structural_safety_is_only_candidate_veto") is True
+        and receipt.get("fit_metrics_used_for_candidate_ordering") is True
+        and receipt.get("fit_metrics_used_for_structural_eligibility") is False
+        and receipt.get("heldout_metrics_are_diagnostic_only") is True
+        and receipt.get("validation_publication_veto_applied") is False
+        and receipt.get("rollback_authorized") is False
+        and receipt.get("numeric_metrics_have_final_intelligence_authority") is False
+        and receipt.get("validation_rejected_candidate") is None
+        and _authenticated_mlp_unchanged_state(
+            receipt,
+            before_sha256=before_sha256,
+            after_sha256=after_sha256,
+            changed_state_keys=changed_state_keys,
+        )
+    )
+
+
+def _authenticated_final_mlp_analytic_deferral(
+    receipt: Mapping[str, Any],
+    *,
+    before_sha256: str,
+    after_sha256: str,
+    changed_state_keys: Sequence[str],
+) -> bool:
+    """Allow a safe analytic candidate whose only local change is deferred W2."""
+
+    eligible_count = receipt.get("structurally_eligible_candidate_count")
+    return bool(
+        receipt.get("status") == "prepared-final-w2-deferred"
+        and receipt.get("selected_candidate")
+        in {"incumbent-producer-w2", "full-w1-w3-w2"}
+        and receipt.get("selected_candidate_state_identical_to_incumbent") is False
+        and receipt.get("incumbent_noop_fallback_used") is False
+        and receipt.get("incumbent_noop_fallback_reason") is None
+        and receipt.get("incumbent_selected_by_heldout_gates") is False
+        and type(eligible_count) is int
+        and eligible_count > 0
+        and receipt.get("candidate_eligibility_basis")
+        == "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+        and receipt.get("structural_safety_is_only_candidate_veto") is True
+        and receipt.get("fit_metrics_used_for_candidate_ordering") is True
+        and receipt.get("fit_metrics_used_for_structural_eligibility") is False
+        and receipt.get("heldout_metrics_are_diagnostic_only") is True
+        and receipt.get("validation_publication_veto_applied") is False
+        and receipt.get("rollback_authorized") is False
+        and receipt.get("numeric_metrics_have_final_intelligence_authority") is False
+        and receipt.get("validation_rejected_candidate") is None
+        and receipt.get("final_layer_mlp_w2_deferred_to_fused_terminal") is True
+        and receipt.get("downstream_terminal_replay_and_validation_required") is True
+        and _authenticated_mlp_unchanged_state(
+            receipt,
+            before_sha256=before_sha256,
+            after_sha256=after_sha256,
+            changed_state_keys=changed_state_keys,
+        )
+    )
+
+
 def _install_attention_operator(
     *,
     target_model: Any,
@@ -2954,6 +3066,18 @@ def _install_mlp(
         raise Lfm2SemanticLayerStackRefoldError(
             "Semantic MLP receipt is stale or changed model topology."
         )
+    structural_mlp_noop = _authenticated_mlp_incumbent_noop(
+        receipt,
+        before_sha256=before,
+        after_sha256=after,
+        changed_state_keys=changed,
+    )
+    analytic_final_deferral = _authenticated_final_mlp_analytic_deferral(
+        receipt,
+        before_sha256=before,
+        after_sha256=after,
+        changed_state_keys=changed,
+    )
     if final_layer:
         evidence_sha = {
             split: value.authentication_sha256
@@ -2971,6 +3095,10 @@ def _install_mlp(
             or w2_after != w2_before
             or (receipt.get("install_count") == 0 and after != before)
             or (
+                receipt.get("install_count") == 0
+                and not (structural_mlp_noop or analytic_final_deferral)
+            )
+            or (
                 receipt.get("install_count") == 1
                 and (receipt.get("installed") is not True or after == before)
             )
@@ -2978,12 +3106,7 @@ def _install_mlp(
             raise Lfm2SemanticLayerStackRefoldError(
                 "Final MLP did not defer W2 with four authenticated banks."
             )
-    elif _authenticated_heldout_incumbent_noop(
-        receipt,
-        before_sha256=before,
-        after_sha256=after,
-        changed_state_keys=changed,
-    ):
+    elif structural_mlp_noop:
         if (
             receipt.get("install_count") != 0
             or receipt.get("final_layer_mlp_w2_deferred_to_fused_terminal") is not False
@@ -3449,7 +3572,7 @@ def _layer_receipt(
             != propagation_replay.captured_child_model_state_sha256
         ),
         "mlp_incumbent_noop_selected": (
-            mlp_receipt.get("status") == "heldout-selected-incumbent-noop"
+            mlp_receipt.get("status") == _MLP_STRUCTURAL_NOOP_STATUS
         ),
         "propagation_replay_bank_sha256": propagation_replay.bank_sha256,
         "fit_only_residual_chart_sha256": chart_receipt["result_sha256"],
@@ -3914,6 +4037,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     )
                     nonterminal_mlp_incumbent_noop_count += int(
                         mlp_receipt.get("installed") is False
+                        and mlp_receipt.get("status") == _MLP_STRUCTURAL_NOOP_STATUS
                     )
                 else:
                     final_mlp_producer_coverage_count = 1
@@ -3923,6 +4047,11 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     )
                     final_mlp_producer_incumbent_noop_count = int(
                         mlp_receipt.get("installed") is False
+                        and mlp_receipt.get("status")
+                        in {
+                            _MLP_STRUCTURAL_NOOP_STATUS,
+                            "prepared-final-w2-deferred",
+                        }
                     )
                 mlp_parameter_mutation_count += int(
                     mlp_receipt["model_state_before_sha256"]

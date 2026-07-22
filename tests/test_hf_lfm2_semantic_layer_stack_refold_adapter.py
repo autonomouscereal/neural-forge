@@ -1051,7 +1051,7 @@ def _patch_complete_transaction(
             "status": (
                 "installed-frozen-semantic-mlp-candidate"
                 if installed
-                else "heldout-selected-incumbent-noop"
+                else stack._MLP_STRUCTURAL_NOOP_STATUS
             ),
             "installed": installed,
             "install_count": int(installed),
@@ -1110,6 +1110,11 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
     assert result.receipt["tokenizer_session_receipt_sha256"] == "8" * 64
     assert result.receipt["tokenizer_session"] == {"receipt_sha256": "8" * 64}
     assert result.receipt["authenticated_nonzero_folded_seed_retained_noop_count"] == 1
+    assert result.receipt["final_mlp_producer_incumbent_noop_count"] == 1
+    assert result.receipt["heldout_selected_incumbent_noop_count"] == 1
+    assert (
+        result.receipt["layer_installations"][13]["mlp_incumbent_noop_selected"] is True
+    )
     attention_authentication = (
         authenticate_lfm2_semantic_layer_stack_attention_receipts(result.receipt)
     )
@@ -1584,6 +1589,10 @@ def test_complete_transaction_truthfully_counts_mixed_incumbent_noops(
     assert receipt["nonterminal_mlp_writer_decision_count"] == 13
     assert receipt["nonterminal_mlp_writer_install_count"] == 12
     assert receipt["nonterminal_mlp_writer_incumbent_noop_count"] == 1
+    assert receipt["final_mlp_producer_incumbent_noop_count"] == 1
+    assert receipt["heldout_selected_incumbent_noop_count"] == 4
+    assert receipt["layer_installations"][1]["mlp_incumbent_noop_selected"] is True
+    assert receipt["layer_installations"][13]["mlp_incumbent_noop_selected"] is True
     assert receipt["complete_causal_layer_stack_adjudicated"] is True
     assert receipt["complete_causal_layer_stack_installed"] is False
     assert receipt["whole_stage_contains_meaningful_parameter_changes"] is True
@@ -2576,67 +2585,193 @@ def test_direct_parent_mlp_inventory_rejects_self_labeled_wrong_w2() -> None:
         )
 
 
-def test_heldout_selected_incumbent_noop_contract_is_strict() -> None:
-    state = "4" * 64
-    receipt = {
-        "status": "heldout-selected-incumbent-noop",
+def _invoke_mlp_noop_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    status: str,
+    final_layer: bool,
+) -> MappingProxyType | dict[str, object]:
+    target = _DenseCoverageTarget()
+    state = _state_identity(target)
+    monkeypatch.setattr(
+        stack,
+        "fingerprint_lfm2_parent",
+        lambda model: SimpleNamespace(identity_sha256=_state_identity(model)),
+    )
+    cache = SimpleNamespace(
+        cache_key="a" * 64,
+        manifest={"manifest_sha256": "c" * 64},
+    )
+    bridge = SimpleNamespace(artifact_sha256="b" * 64)
+    evidence = (SimpleNamespace(captured_child_model_state_sha256=state),)
+    parameter_count = stack._parameter_count(target)
+    terminal_evidence = _terminal_banks() if final_layer else {}
+    body: dict[str, object] = {
+        "schema": stack._MLP_INSTALLATION_SCHEMA,
+        "status": status,
         "installed": False,
-        "incumbent_selected_by_heldout_gates": True,
-        "fit_check_nonregression_passed": True,
-        "selection_nonregression_passed": True,
-        "validation_nonregression_passed": True,
-        "candidate_frozen_before_validation": True,
-        "validation_triggered_refit": False,
+        "install_count": 0,
+        "layer_index": 0,
         "model_state_before_sha256": state,
         "model_state_after_sha256": state,
-        "changed_state_keys": [],
+        "parameter_count_before": parameter_count,
+        "parameter_count_after": parameter_count,
         "parameter_count_changed": False,
         "topology_changed": False,
         "parameter_identities_preserved": True,
         "parameter_storage_preserved": True,
         "gradient_state_preserved": True,
         "exact_noop_state_proven": True,
-        "analytic_cached_evidence_only": True,
+        "changed_parameter_roles": [],
+        "candidate_frozen_before_validation": True,
+        "validation_triggered_refit": False,
+        "analytic_linear_and_cluster_solves_only": True,
+        "final_layer_mlp_w2_deferred_to_fused_terminal": final_layer,
+        "downstream_terminal_replay_and_validation_required": final_layer,
+        "terminal_action_evidence_sha256": {
+            split: value.authentication_sha256
+            for split, value in terminal_evidence.items()
+        },
+        "cache_key": cache.cache_key,
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "evidence_endpoint_count": len(evidence),
         "operation_audit": dict(stack._ZERO_OPERATIONS),
     }
+    if status == stack._MLP_STRUCTURAL_NOOP_STATUS:
+        body.update(
+            {
+                "selected_candidate": "incumbent-noop",
+                "selected_candidate_state_identical_to_incumbent": True,
+                "incumbent_noop_fallback_used": True,
+                "incumbent_noop_fallback_reason": (
+                    "all-analytic-proposals-structurally-invalid-or-identical"
+                ),
+                "incumbent_selected_by_heldout_gates": False,
+                "structurally_eligible_candidate_count": 0,
+                "candidate_eligibility_basis": (
+                    "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+                ),
+                "structural_safety_is_only_candidate_veto": True,
+                "fit_metrics_used_for_candidate_ordering": True,
+                "fit_metrics_used_for_structural_eligibility": False,
+                "heldout_metrics_are_diagnostic_only": True,
+                "validation_publication_veto_applied": False,
+                "rollback_authorized": False,
+                "numeric_metrics_have_final_intelligence_authority": False,
+                "validation_rejected_candidate": None,
+            }
+        )
+    elif status == "heldout-selected-incumbent-noop":
+        body.update(
+            {
+                "incumbent_selected_by_heldout_gates": True,
+                "fit_check_nonregression_passed": True,
+                "selection_nonregression_passed": True,
+                "validation_nonregression_passed": True,
+            }
+        )
+    elif status == "deterministic-fit-correction-rounded-to-incumbent-noop":
+        body.update(
+            {
+                "incumbent_selected_by_heldout_gates": False,
+                "heldout_metrics_are_diagnostic_only": True,
+                "numeric_metric_used_for_publication_or_rollback": False,
+            }
+        )
+    elif status == "prepared-final-w2-deferred" and final_layer:
+        body.update(
+            {
+                "selected_candidate": "incumbent-producer-w2",
+                "selected_candidate_state_identical_to_incumbent": False,
+                "incumbent_noop_fallback_used": False,
+                "incumbent_noop_fallback_reason": None,
+                "incumbent_selected_by_heldout_gates": False,
+                "structurally_eligible_candidate_count": 2,
+                "candidate_eligibility_basis": (
+                    "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
+                ),
+                "structural_safety_is_only_candidate_veto": True,
+                "fit_metrics_used_for_candidate_ordering": True,
+                "fit_metrics_used_for_structural_eligibility": False,
+                "heldout_metrics_are_diagnostic_only": True,
+                "validation_publication_veto_applied": False,
+                "rollback_authorized": False,
+                "numeric_metrics_have_final_intelligence_authority": False,
+                "validation_rejected_candidate": None,
+            }
+        )
+    else:  # pragma: no cover - constrained by focused callers below
+        raise AssertionError(f"unsupported test status: {status}")
+    receipt = {**body, "result_sha256": canonical_sha256(body)}
+    result = SimpleNamespace(
+        receipt=receipt,
+        final_layer_mlp_evidence=terminal_evidence,
+    )
+    accepted, _terminal = stack._install_mlp(
+        target_model=target,
+        layer_index=0,
+        evidence=evidence,
+        cache=cache,
+        bridge=bridge,
+        installer=lambda **_kwargs: result,
+        final_layer=final_layer,
+        parameter_count=parameter_count,
+    )
+    return accepted
 
-    assert stack._authenticated_heldout_incumbent_noop(
-        receipt,
-        before_sha256=state,
-        after_sha256=state,
-        changed_state_keys=(),
+
+@pytest.mark.parametrize("final_layer", (False, True))
+def test_mlp_install_accepts_only_structural_no_candidate_noop_reason(
+    monkeypatch: pytest.MonkeyPatch,
+    final_layer: bool,
+) -> None:
+    receipt = _invoke_mlp_noop_receipt(
+        monkeypatch,
+        status=stack._MLP_STRUCTURAL_NOOP_STATUS,
+        final_layer=final_layer,
     )
-    assert stack._authenticated_heldout_incumbent_noop(
-        {
-            **receipt,
-            "operation_audit": {
-                **receipt["operation_audit"],
-                "parameters_sparsified": 0,
-                "parameter_aliases_created": 0,
-            },
-        },
-        before_sha256=state,
-        after_sha256=state,
-        changed_state_keys=(),
+
+    assert receipt["status"] == stack._MLP_STRUCTURAL_NOOP_STATUS
+    assert receipt["incumbent_noop_fallback_used"] is True
+    assert receipt["structurally_eligible_candidate_count"] == 0
+
+
+def test_final_mlp_install_accepts_structurally_eligible_analytic_w2_deferral(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    receipt = _invoke_mlp_noop_receipt(
+        monkeypatch,
+        status="prepared-final-w2-deferred",
+        final_layer=True,
     )
-    assert not stack._authenticated_heldout_incumbent_noop(
-        {**receipt, "validation_nonregression_passed": False},
-        before_sha256=state,
-        after_sha256=state,
-        changed_state_keys=(),
-    )
-    assert not stack._authenticated_heldout_incumbent_noop(
-        {
-            **receipt,
-            "operation_audit": {
-                **receipt["operation_audit"],
-                "parameters_sparsified": 1,
-            },
-        },
-        before_sha256=state,
-        after_sha256=state,
-        changed_state_keys=(),
-    )
+
+    assert receipt["selected_candidate"] == "incumbent-producer-w2"
+    assert receipt["incumbent_noop_fallback_used"] is False
+    assert receipt["structurally_eligible_candidate_count"] == 2
+
+
+@pytest.mark.parametrize("final_layer", (False, True))
+@pytest.mark.parametrize(
+    "status",
+    (
+        "heldout-selected-incumbent-noop",
+        "deterministic-fit-correction-rounded-to-incumbent-noop",
+    ),
+)
+def test_mlp_install_rejects_legacy_noop_reasons(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    final_layer: bool,
+) -> None:
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="MLP.*(?:defer|install)",
+    ):
+        _invoke_mlp_noop_receipt(
+            monkeypatch,
+            status=status,
+            final_layer=final_layer,
+        )
 
 
 def _invoke_short_conv_noop_receipt(

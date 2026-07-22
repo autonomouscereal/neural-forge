@@ -1134,7 +1134,7 @@ def test_transactional_install_preserves_topology_identity_and_gradients() -> No
     assert all(value == 0 for value in result.receipt["operation_audit"].values())
 
 
-def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
+def test_regressing_metrics_do_not_veto_structurally_valid_effectful_candidate(
     monkeypatch,
 ) -> None:
     model = _Target()
@@ -1168,11 +1168,26 @@ def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
     monkeypatch.setattr(adapter, "_solve_writer", regressing_writer)
     monkeypatch.setattr(adapter, "_full_candidate_state", regressing_full)
     prepared = _prepare(model, evidence)
-    assert prepared.selected_role == "incumbent"
-    assert prepared.selection_receipt["incumbent_noop_fallback_used"] is True
+    assert prepared.selected_role == "full-w1-w3-w2"
+    assert prepared.selection_receipt["incumbent_noop_fallback_used"] is False
+    assert prepared.selection_receipt["structurally_eligible_candidate_count"] == 2
+    assert prepared.selection_receipt["structural_safety_is_only_candidate_veto"]
+    assert prepared.selection_receipt["heldout_metrics_are_diagnostic_only"]
+    assert prepared.selection_receipt["validation_publication_veto_applied"] is False
+    assert prepared.selection_receipt["rollback_authorized"] is False
+    assert prepared.selection_receipt["validation_rejected_role"] is None
     assert (
-        prepared.selection_receipt["heldout_nonregression"]["incumbent-producer-w2"][
-            "selection"
+        prepared.selection_receipt["fit_ordering_keys"]["full-w1-w3-w2"]
+        < (prepared.selection_receipt["fit_ordering_keys"]["incumbent-producer-w2"])
+    )
+    for role in ("incumbent-producer-w2", "full-w1-w3-w2"):
+        report = prepared.selection_receipt["candidate_reports"][role]
+        assert report["structurally_eligible"] is True
+        assert report["numeric_diagnostic_miss"] is True
+        assert report["numeric_diagnostic_miss_can_exclude_candidate"] is False
+    assert (
+        prepared.selection_receipt["heldout_nonregression"]["full-w1-w3-w2"][
+            "validation"
         ]
         is False
     )
@@ -1184,21 +1199,23 @@ def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
     receipt = dict(result.receipt)
     seal = receipt.pop("result_sha256")
     assert adapter.canonical_sha256(receipt) == seal
-    assert receipt["status"] == "heldout-selected-incumbent-noop"
-    assert receipt["incumbent_selected_by_heldout_gates"] is True
-    assert receipt["fit_check_nonregression_passed"] is True
-    assert receipt["selection_nonregression_passed"] is True
-    assert receipt["validation_nonregression_passed"] is True
-    assert stack_adapter._authenticated_heldout_incumbent_noop(
-        receipt,
-        before_sha256=receipt["model_state_before_sha256"],
-        after_sha256=receipt["model_state_after_sha256"],
-        changed_state_keys=receipt["changed_parameter_roles"],
-    )
-    assert receipt["installed"] is False
-    assert receipt["install_count"] == 0
-    assert receipt["changed_parameter_roles"] == []
-    assert receipt["exact_noop_state_proven"] is True
+    assert receipt["status"] == "installed-frozen-semantic-mlp-candidate"
+    assert receipt["selected_role"] == "full-w1-w3-w2"
+    assert receipt["incumbent_selected_by_heldout_gates"] is False
+    assert receipt["fit_check_nonregression_passed"] is False
+    assert receipt["selection_nonregression_passed"] is False
+    assert receipt["validation_nonregression_passed"] is False
+    assert receipt["validation_diagnostic_would_have_failed_legacy_gate"] is True
+    assert receipt["validation_publication_veto_applied"] is False
+    assert receipt["rollback_authorized"] is False
+    assert receipt["numeric_metrics_have_final_intelligence_authority"] is False
+    assert receipt["installed"] is True
+    assert receipt["install_count"] == 1
+    assert receipt["changed_parameter_roles"] == [
+        "w1.weight",
+        "w2.weight",
+        "w3.weight",
+    ]
     assert receipt["parameter_identities_preserved"] is True
     assert receipt["parameter_storage_preserved"] is True
     assert receipt["gradient_state_preserved"] is True
@@ -1215,10 +1232,17 @@ def test_regressing_candidates_fall_back_to_authenticated_incumbent_noop(
     assert receipt["bridge_artifact_sha256"] == _sha("bridge")
     assert receipt["evidence_sha256"] == [item.evidence_sha256 for item in evidence]
     assert all(value == 0 for value in receipt["operation_audit"].values())
-    assert fingerprint_lfm2_parent(model).identity_sha256 == before
+    assert fingerprint_lfm2_parent(model).identity_sha256 != before
     assert tuple(id(parameter) for parameter in model.parameters()) == identities
     assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
     assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
+    assert all(
+        torch.equal(
+            parameter.detach().cpu(),
+            torch.full_like(parameter, -64.0).cpu(),
+        )
+        for parameter in model.model.layers[0].feed_forward.parameters()
+    )
     assert not result.final_layer_mlp_evidence
 
 
@@ -1256,6 +1280,15 @@ def test_identical_mlp_candidates_select_incumbent_and_perform_no_copy(
         "incumbent-producer-w2": False,
         "full-w1-w3-w2": False,
     }
+    assert prepared.selection_receipt["structurally_eligible_candidate_count"] == 0
+    assert prepared.selection_receipt["incumbent_noop_fallback_reason"] == (
+        "all-analytic-proposals-structurally-invalid-or-identical"
+    )
+    for role in ("incumbent-producer-w2", "full-w1-w3-w2"):
+        report = prepared.selection_receipt["candidate_reports"][role]
+        assert report["structural_safety_passed"] is True
+        assert report["effectful_nonincumbent"] is False
+        assert report["structurally_eligible"] is False
 
     result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
         target_model=model,
@@ -1266,6 +1299,132 @@ def test_identical_mlp_candidates_select_incumbent_and_perform_no_copy(
     assert result.receipt["selected_role"] == "incumbent"
     assert result.receipt["selected_install_roles_identical_to_live_state"] is True
     assert result.receipt["incumbent_noop_fallback_used"] is True
+    assert result.receipt["status"] == adapter._STRUCTURAL_NOOP_STATUS
+    assert result.receipt["selected_candidate"] == "incumbent-noop"
+    assert result.receipt["incumbent_selected_by_heldout_gates"] is False
+    assert result.receipt["heldout_metrics_are_diagnostic_only"] is True
+    assert result.receipt["numeric_metric_used_for_publication_or_rollback"] is False
+    assert stack_adapter._authenticated_heldout_incumbent_noop(
+        result.receipt,
+        before_sha256=before,
+        after_sha256=before,
+        changed_state_keys=(),
+    )
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before
+
+
+def test_metric_evaluation_failure_is_diagnostic_not_structural_veto(
+    monkeypatch,
+) -> None:
+    model = _Target()
+    evidence = _evidence(model)
+
+    def unavailable_metrics(*_args, **_kwargs):
+        raise ArithmeticError("injected diagnostic overflow")
+
+    monkeypatch.setattr(adapter, "_metrics", unavailable_metrics)
+    prepared = _prepare(model, evidence)
+
+    assert prepared.verify()
+    assert prepared.selected_role == "incumbent-producer-w2"
+    assert prepared.selection_receipt["structurally_eligible_candidate_count"] == 2
+    assert (
+        prepared.selection_receipt[
+            "metric_evaluation_failure_can_exclude_structural_candidate"
+        ]
+        is False
+    )
+    for role in ("incumbent", "incumbent-producer-w2", "full-w1-w3-w2"):
+        errors = prepared.selection_receipt["partition_metric_errors"][role]
+        assert set(errors) == {"fit", "fit_check", "selection", "validation"}
+        assert all("injected diagnostic overflow" in error for error in errors.values())
+    assert prepared.writer_candidate.metrics["fit"].endpoint_relative_rmse == (
+        adapter._MAX_FINITE_FLOAT
+    )
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+    assert result.receipt["installed"] is True
+    assert result.receipt["selected_role"] == "incumbent-producer-w2"
+    assert (
+        result.receipt["metric_evaluation_failure_can_exclude_structural_candidate"]
+        is False
+    )
+
+
+def test_invalid_mlp_proposals_are_sealed_and_use_structural_incumbent_fallback(
+    monkeypatch,
+) -> None:
+    model = _Target()
+    evidence = _evidence(model)
+    before = fingerprint_lfm2_parent(model).identity_sha256
+
+    def wrong_dtype_writer(_fit, incumbent, **_policy):
+        state = {
+            name: value.detach().cpu().clone() for name, value in incumbent.items()
+        }
+        state["w2.weight"] = state["w2.weight"].to(torch.float32).add_(1.0)
+        return state, {
+            "solver": "test-wrong-dtype-writer",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    def nonfinite_full(_fit, _inventory, incumbent, **_policy):
+        state = {
+            name: value.detach().cpu().clone() for name, value in incumbent.items()
+        }
+        state["w1.weight"][0, 0] = torch.nan
+        return state, {
+            "solver": "test-nonfinite-full",
+            "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        }
+
+    monkeypatch.setattr(adapter, "_solve_writer", wrong_dtype_writer)
+    monkeypatch.setattr(adapter, "_full_candidate_state", nonfinite_full)
+    prepared = _prepare(model, evidence)
+
+    assert prepared.verify()
+    assert prepared.selected_role == "incumbent"
+    assert prepared.selection_receipt["structurally_eligible_candidate_count"] == 0
+    assert prepared.selection_receipt["incumbent_noop_fallback_reason"] == (
+        "all-analytic-proposals-structurally-invalid-or-identical"
+    )
+    assert prepared.selection_receipt["invalid_proposal_metric_placeholder_roles"] == [
+        "incumbent-producer-w2",
+        "full-w1-w3-w2",
+    ]
+    for candidate in (prepared.writer_candidate, prepared.full_candidate):
+        report = prepared.selection_receipt["candidate_reports"][candidate.role]
+        assert report["structural_safety_passed"] is False
+        assert report["structurally_eligible"] is False
+        assert report["frozen_candidate_uses_incumbent_placeholder"] is True
+        assert report["partition_metrics_represent_original_analytic_proposal"] is False
+        assert candidate.solver_receipt[
+            "invalid_proposal_materialized_as_incumbent_placeholder"
+        ]
+        assert all(
+            torch.equal(
+                candidate.state_dict()[name], prepared.incumbent.state_dict()[name]
+            )
+            for name in candidate.state_dict()
+        )
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+    assert result.receipt["status"] == adapter._STRUCTURAL_NOOP_STATUS
+    assert result.receipt["installed"] is False
+    assert result.receipt["install_count"] == 0
+    assert result.receipt["incumbent_selected_by_heldout_gates"] is False
+    assert stack_adapter._authenticated_heldout_incumbent_noop(
+        result.receipt,
+        before_sha256=before,
+        after_sha256=before,
+        changed_state_keys=(),
+    )
     assert fingerprint_lfm2_parent(model).identity_sha256 == before
 
 
