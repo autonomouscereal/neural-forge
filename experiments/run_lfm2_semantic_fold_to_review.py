@@ -531,7 +531,7 @@ def _materialize_complete_structural_frontier(
     manifest_eligible = bank.manifest.get("structurally_eligible_candidate_ids")
     if (
         bank.reference.as_dict() != bank_reference.as_dict()
-        or manifest_eligible != list(candidate_ids)
+        or tuple(manifest_eligible or ()) != candidate_ids
         or bank.manifest.get("structurally_eligible_candidate_count")
         != len(candidate_ids)
         or bank.manifest.get("all_structurally_eligible_candidates_exported")

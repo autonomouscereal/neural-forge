@@ -341,7 +341,10 @@ def test_one_command_driver_exports_once_materializes_all_and_stops_for_review(
         return SimpleNamespace(
             reference=bank,
             manifest={
-                "structurally_eligible_candidate_ids": list(candidate_ids),
+                # Production loader deep-freezes JSON arrays to tuples.  Keep
+                # the integration fixture faithful so list/tuple comparisons
+                # cannot strand an already-exported frontier after a long fold.
+                "structurally_eligible_candidate_ids": tuple(candidate_ids),
                 "structurally_eligible_candidate_count": len(candidate_ids),
                 "all_structurally_eligible_candidates_exported": True,
                 "structurally_ineligible_candidates_exported": False,
