@@ -70,9 +70,19 @@ def _companion(receipt_sha256: str, receipt_file_sha256: str):
 
 
 def _args(tmp_path: Path) -> tuple[argparse.Namespace, dict[str, object]]:
+    interface_solve = _seal(
+        {
+            "cache_parent_fingerprint": PARENT,
+            "bridge_artifact_sha256": BRIDGE,
+        },
+        "result_sha256",
+    )
     legacy_body = {
         "schema": "fixture-legacy-foundation-v1",
-        "interface_solve": {"fixture": True},
+        "parent_identity_sha256": PARENT,
+        "cache_parent_fingerprint": PARENT,
+        "bridge_artifact_sha256": BRIDGE,
+        "interface_solve": interface_solve,
     }
     legacy = _seal(legacy_body, "receipt_sha256")
     legacy_path = tmp_path / "legacy-foundation.json"
@@ -134,6 +144,12 @@ def _install_fakes(monkeypatch, args, fixture):
     )
     source_report = _seal(
         {
+            "cache_key": CACHE,
+            "cache_manifest_sha256": CACHE_MANIFEST,
+            "cache_parent_fingerprint": PARENT,
+            "bridge_artifact_sha256": BRIDGE,
+            "bridge_transport_profile_fingerprint": BRIDGE_PROFILE,
+            "parent_final_norm_load_sha256": FINAL_NORM,
             "source_checkpoint_exactly_matches_authenticated_parent": True,
             "parent_model_objects_constructed": 0,
             "parent_model_forward_calls": 0,
@@ -410,6 +426,63 @@ def test_existing_output_is_never_replaced(monkeypatch, tmp_path) -> None:
 
     assert args.output_companion_json.read_bytes() == b"user-owned\n"
     assert calls == []
+
+
+def test_output_inside_authenticated_input_tree_is_rejected_before_asset_load(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    args, fixture = _args(tmp_path)
+    calls, _companion_value = _install_fakes(monkeypatch, args, fixture)
+    args.output_companion_json = args.semantic_cache_directory / "companion.json"
+
+    with pytest.raises(
+        cli.Lfm2SemanticFoundationFrontierMigrationCliError,
+        match="disjoint from every authenticated input",
+    ):
+        cli.run(args)
+
+    assert calls == []
+    assert not args.output_companion_json.exists()
+
+
+def test_legacy_foundation_must_match_live_cache_and_bridge_lineage(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    args, fixture = _args(tmp_path)
+    bad_solve = _seal(
+        {
+            "cache_parent_fingerprint": PARENT,
+            "bridge_artifact_sha256": "0" * 64,
+        },
+        "result_sha256",
+    )
+    bad_body = {
+        "schema": "fixture-legacy-foundation-v1",
+        "parent_identity_sha256": PARENT,
+        "cache_parent_fingerprint": PARENT,
+        "bridge_artifact_sha256": "0" * 64,
+        "interface_solve": bad_solve,
+    }
+    bad_receipt = _seal(bad_body, "receipt_sha256")
+    bad_file_sha256 = _canonical_file(
+        args.legacy_foundation_receipt_json,
+        bad_receipt,
+    )
+    args.expected_legacy_foundation_receipt_sha256 = bad_receipt["receipt_sha256"]
+    args.expected_legacy_foundation_receipt_file_sha256 = bad_file_sha256
+    fixture["legacy"] = bad_receipt
+    fixture["legacy_file_sha256"] = bad_file_sha256
+    _calls, _companion_value = _install_fakes(monkeypatch, args, fixture)
+
+    with pytest.raises(
+        cli.Lfm2SemanticFoundationFrontierMigrationCliError,
+        match="differs from the legacy foundation",
+    ):
+        cli.run(args)
+
+    assert not args.output_companion_json.exists()
 
 
 @pytest.mark.parametrize("mode", ("noncanonical", "tampered"))

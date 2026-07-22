@@ -69,6 +69,7 @@ from neural_forge.hf_lfm2_semantic_postfold import (
     _ZERO_OPERATIONS as _SEMANTIC_ZERO_OPERATIONS,
     _authenticate_fused_terminal_cache_evidence,
     _authenticate_fused_terminal_tied_interface,
+    _authenticate_foundation_anchor_selection,
     _authenticate_terminal_frontier_export_context,
     _final_w2_parameter,
     _parameter_count,
@@ -996,6 +997,23 @@ def publish_lfm2_semantic_terminal_frontier_bank(
         authenticated_export_context,
         label="authenticated terminal frontier export context",
     )
+    anchor_selection_value = authenticated_export_context.get(
+        "interface_anchor_selection"
+    )
+    anchor_selection = (
+        None
+        if anchor_selection_value is None
+        else _authenticate_foundation_anchor_selection(anchor_selection_value)
+    )
+    anchor_selection_sha256 = (
+        None if anchor_selection is None else anchor_selection["selection_sha256"]
+    )
+    if authenticated_export_context.get("interface_anchor_selection_sha256") != (
+        anchor_selection_sha256
+    ):
+        raise Lfm2SemanticTerminalFrontierError(
+            "Terminal frontier export context has a mismatched anchor selection."
+        )
     compiler_binding = getattr(result, "_compiler_input_binding", None)
     if not isinstance(compiler_binding, Mapping):
         raise Lfm2SemanticTerminalFrontierError(
@@ -1042,7 +1060,14 @@ def publish_lfm2_semantic_terminal_frontier_bank(
                 LFM2_SEMANTIC_BODY_RECIPE_IDS
             ),
             "materialized_body_recipe_id": recipe.recipe_id,
-            "body_recipe_candidates_remain_lazily_materializable": True,
+            "one_terminal_frontier_bank_contains_one_body_recipe": True,
+            "other_body_recipes_require_sealed_foundation_replay": True,
+            "interface_anchor_selection_sha256": anchor_selection_sha256,
+            **(
+                {"interface_anchor_selection": dict(anchor_selection)}
+                if anchor_selection is not None
+                else {}
+            ),
             "terminal_result_report": report,
             "terminal_result_sha256": result.result_sha256,
             "terminal_policy_sha256": result.policy.authentication_sha256,
@@ -1110,7 +1135,14 @@ def publish_lfm2_semantic_terminal_frontier_bank(
                 LFM2_SEMANTIC_BODY_RECIPE_IDS
             ),
             "materialized_body_recipe_id": recipe.recipe_id,
-            "body_recipe_candidates_remain_lazily_materializable": True,
+            "one_terminal_frontier_bank_contains_one_body_recipe": True,
+            "other_body_recipes_require_sealed_foundation_replay": True,
+            "interface_anchor_selection_sha256": anchor_selection_sha256,
+            **(
+                {"interface_anchor_selection": dict(anchor_selection)}
+                if anchor_selection is not None
+                else {}
+            ),
             "terminal_result_sha256": result.result_sha256,
             "terminal_policy_sha256": result.policy.authentication_sha256,
             "terminal_compiler_input_binding_sha256": compiler_binding_sha,
@@ -1229,6 +1261,12 @@ def _open_terminal_frontier_bank(
         receipt,
         label="terminal frontier bank receipt",
     )
+    receipt_anchor_value = receipt.get("interface_anchor_selection")
+    receipt_anchor = (
+        None
+        if receipt_anchor_value is None
+        else _authenticate_foundation_anchor_selection(receipt_anchor_value)
+    )
     if (
         receipt_file_sha != expected_file_sha
         or receipt.get("receipt_sha256") != expected_receipt_sha
@@ -1251,8 +1289,12 @@ def _open_terminal_frontier_bank(
         or receipt.get("complete_body_recipe_candidate_count")
         != len(LFM2_SEMANTIC_BODY_RECIPE_IDS)
         or receipt.get("materialized_body_recipe_id") != receipt_recipe.recipe_id
-        or receipt.get("body_recipe_candidates_remain_lazily_materializable")
+        or receipt.get("one_terminal_frontier_bank_contains_one_body_recipe")
         is not True
+        or receipt.get("other_body_recipes_require_sealed_foundation_replay")
+        is not True
+        or receipt.get("interface_anchor_selection_sha256")
+        != (None if receipt_anchor is None else receipt_anchor["selection_sha256"])
         or receipt.get("numeric_metrics_have_final_intelligence_authority") is not False
         or receipt.get("holistic_whole_response_review_required") is not True
         or receipt.get("exported_before_any_frontier_writer_installation") is not True
@@ -1288,6 +1330,12 @@ def _open_terminal_frontier_bank(
         expected=receipt_recipe,
         label="terminal frontier bank manifest",
     )
+    manifest_anchor_value = manifest.get("interface_anchor_selection")
+    manifest_anchor = (
+        None
+        if manifest_anchor_value is None
+        else _authenticate_foundation_anchor_selection(manifest_anchor_value)
+    )
     report = _verify_seal(
         manifest.get("terminal_result_report"),
         field_name="result_sha256",
@@ -1321,8 +1369,16 @@ def _open_terminal_frontier_bank(
         or manifest.get("complete_body_recipe_candidate_count")
         != len(LFM2_SEMANTIC_BODY_RECIPE_IDS)
         or manifest.get("materialized_body_recipe_id") != manifest_recipe.recipe_id
-        or manifest.get("body_recipe_candidates_remain_lazily_materializable")
+        or manifest.get("one_terminal_frontier_bank_contains_one_body_recipe")
         is not True
+        or manifest.get("other_body_recipes_require_sealed_foundation_replay")
+        is not True
+        or manifest.get("interface_anchor_selection_sha256")
+        != (None if manifest_anchor is None else manifest_anchor["selection_sha256"])
+        or (
+            None if receipt_anchor is None else dict(receipt_anchor)
+        )
+        != (None if manifest_anchor is None else dict(manifest_anchor))
         or manifest.get("candidate_state_sha256")
         != {
             candidate_id: records[candidate_id]["state_sha256"]
@@ -1396,6 +1452,21 @@ def _open_terminal_frontier_bank(
         expected=manifest_recipe,
         label="terminal frontier bank export context",
     )
+    export_anchor_value = export_context.get("interface_anchor_selection")
+    export_anchor = (
+        None
+        if export_anchor_value is None
+        else _authenticate_foundation_anchor_selection(export_anchor_value)
+    )
+    if (
+        export_context.get("interface_anchor_selection_sha256")
+        != (None if export_anchor is None else export_anchor["selection_sha256"])
+        or (None if export_anchor is None else dict(export_anchor))
+        != (None if manifest_anchor is None else dict(manifest_anchor))
+    ):
+        raise Lfm2SemanticTerminalFrontierError(
+            "Terminal frontier bank changed its selected anchor binding."
+        )
     export_body = dict(export_context)
     export_sha = export_body.pop("context_sha256", None)
     if export_sha != canonical_sha256(export_body):
@@ -1560,6 +1631,12 @@ class Lfm2SemanticTerminalFrontierCompilation:
             context,
             label="terminal frontier compilation export context",
         )
+        anchor_selection_value = context.get("interface_anchor_selection")
+        anchor_selection = (
+            None
+            if anchor_selection_value is None
+            else _authenticate_foundation_anchor_selection(anchor_selection_value)
+        )
         return {
             "preterminal_capsule": self.preterminal_capsule_reference.as_dict(),
             "terminal_frontier_bank": self.bank_reference.as_dict(),
@@ -1573,7 +1650,18 @@ class Lfm2SemanticTerminalFrontierCompilation:
                 LFM2_SEMANTIC_BODY_RECIPE_IDS
             ),
             "materialized_body_recipe_id": recipe.recipe_id,
-            "body_recipe_candidates_remain_lazily_materializable": True,
+            "one_terminal_frontier_bank_contains_one_body_recipe": True,
+            "other_body_recipes_require_sealed_foundation_replay": True,
+            "interface_anchor_selection_sha256": (
+                None
+                if anchor_selection is None
+                else anchor_selection["selection_sha256"]
+            ),
+            **(
+                {"interface_anchor_selection": dict(anchor_selection)}
+                if anchor_selection is not None
+                else {}
+            ),
             "terminal_receipt_sha256": self.terminal_receipt["result_sha256"],
             "terminal_result_sha256": self.bank_reference.terminal_result_sha256,
             "preterminal_resume_mode": True,
@@ -1806,6 +1894,11 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         raise Lfm2SemanticTerminalFrontierError(
             "Preterminal capsule is not bound to the supplied mapped tied table."
         )
+    anchor_transport_witness = getattr(
+        capsule,
+        "anchor_transport_witness",
+        None,
+    )
     try:
         expected_tied_interface_authentication = dict(
             _authenticate_fused_terminal_tied_interface(
@@ -1813,6 +1906,7 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
                 interface=capsule.interface,
                 mapped_parent_tied_table=mapped_parent_tied_table,
                 layer_receipt=capsule.layer_stack.receipt,
+                anchor_transport_witness=anchor_transport_witness,
             )
         )
     except Exception as exc:
@@ -1826,6 +1920,7 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         interface=capsule.interface,
         source_selected_tied_table=mapped_parent_tied_table,
         direct_local_mapped_source_report=(mapped_parent_tied_table_source_report),
+        anchor_transport_witness=anchor_transport_witness,
     )
     expected_live_context_facts = {
         "mapped_parent_tied_table_sha256": _tensor_sha256(mapped_parent_tied_table),
@@ -1885,6 +1980,7 @@ def compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
         authenticated_cache_session=None,
         preterminal_resume_mode=True,
         terminal_frontier_exporter=exporter,
+        anchor_transport_witness=anchor_transport_witness,
     )
     if not isinstance(terminal_receipt, Mapping):
         raise Lfm2SemanticTerminalFrontierError(
@@ -2205,6 +2301,29 @@ def _materialize_loaded_candidate(
         expected=recipe,
         label="materialization terminal frontier bank manifest",
     )
+    bank_anchor_value = bank.manifest.get("interface_anchor_selection")
+    bank_anchor = (
+        None
+        if bank_anchor_value is None
+        else _authenticate_foundation_anchor_selection(bank_anchor_value)
+    )
+    layer_anchor_value = capsule.layer_stack.receipt.get(
+        "interface_anchor_selection"
+    )
+    layer_anchor = (
+        None
+        if layer_anchor_value is None
+        else _authenticate_foundation_anchor_selection(layer_anchor_value)
+    )
+    if (
+        (None if bank_anchor is None else dict(bank_anchor))
+        != (None if layer_anchor is None else dict(layer_anchor))
+        or bank.receipt.get("interface_anchor_selection_sha256")
+        != (None if bank_anchor is None else bank_anchor["selection_sha256"])
+    ):
+        raise Lfm2SemanticTerminalFrontierError(
+            "Terminal frontier bank and capsule disagree on anchor selection."
+        )
     record = _candidate_record(bank, candidate_id)
     candidate = bank.candidate_weights[candidate_id]
     candidate_sha = _digest(record.get("state_sha256"), "candidate state SHA-256")
@@ -2297,6 +2416,14 @@ def _materialize_loaded_candidate(
         "body_recipe_id": recipe.recipe_id,
         "complete_body_recipe_candidate_ids": list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
         "materialized_body_recipe_id": recipe.recipe_id,
+        "interface_anchor_selection_sha256": (
+            None if bank_anchor is None else bank_anchor["selection_sha256"]
+        ),
+        **(
+            {"interface_anchor_selection": dict(bank_anchor)}
+            if bank_anchor is not None
+            else {}
+        ),
         "authenticated_source_roots_sha256": bank.reference.source_roots_sha256,
         "terminal_result_sha256": bank.reference.terminal_result_sha256,
         "candidate_id": candidate_id,
@@ -2323,6 +2450,9 @@ def _materialize_loaded_candidate(
             target_tokenizer=tokenizer,
             output_directory=stage / _MATERIALIZATION_CHECKPOINT_NAME,
             context_binding_sha256=context_sha,
+            interface_anchor_selection_sha256=(
+                None if bank_anchor is None else bank_anchor["selection_sha256"]
+            ),
             device=device,
             dtype=dtype,
         )
@@ -2356,7 +2486,16 @@ def _materialize_loaded_candidate(
                 LFM2_SEMANTIC_BODY_RECIPE_IDS
             ),
             "materialized_body_recipe_id": recipe.recipe_id,
-            "body_recipe_candidates_remain_lazily_materializable": True,
+            "one_terminal_frontier_bank_contains_one_body_recipe": True,
+            "other_body_recipes_require_sealed_foundation_replay": True,
+            "interface_anchor_selection_sha256": (
+                None if bank_anchor is None else bank_anchor["selection_sha256"]
+            ),
+            **(
+                {"interface_anchor_selection": dict(bank_anchor)}
+                if bank_anchor is not None
+                else {}
+            ),
             "terminal_result_report": _deep_thaw(bank.terminal_result_report),
             "candidate_id": candidate_id,
             "candidate_state_sha256": candidate_sha,
@@ -2576,6 +2715,12 @@ def _open_terminal_frontier_materialization(
         field_name="receipt_sha256",
         label="terminal frontier materialization receipt",
     )
+    receipt_anchor_value = receipt.get("interface_anchor_selection")
+    receipt_anchor = (
+        None
+        if receipt_anchor_value is None
+        else _authenticate_foundation_anchor_selection(receipt_anchor_value)
+    )
     recipe = _authenticated_body_recipe(
         receipt,
         label="terminal frontier materialization receipt",
@@ -2613,8 +2758,12 @@ def _open_terminal_frontier_materialization(
         or receipt.get("complete_body_recipe_candidate_count")
         != len(LFM2_SEMANTIC_BODY_RECIPE_IDS)
         or receipt.get("materialized_body_recipe_id") != recipe.recipe_id
-        or receipt.get("body_recipe_candidates_remain_lazily_materializable")
+        or receipt.get("one_terminal_frontier_bank_contains_one_body_recipe")
         is not True
+        or receipt.get("other_body_recipes_require_sealed_foundation_replay")
+        is not True
+        or receipt.get("interface_anchor_selection_sha256")
+        != (None if receipt_anchor is None else receipt_anchor["selection_sha256"])
         or receipt.get("exactly_one_state_tensor_changed") is not True
         or receipt.get("only_final_layer_w2_changed") is not True
         or receipt.get("parameter_count_changed") is not False
@@ -2647,6 +2796,12 @@ def _open_terminal_frontier_materialization(
         expected=recipe,
         label="terminal frontier materialization context",
     )
+    context_anchor_value = context.get("interface_anchor_selection")
+    context_anchor = (
+        None
+        if context_anchor_value is None
+        else _authenticate_foundation_anchor_selection(context_anchor_value)
+    )
     if (
         context_sha != canonical_sha256(context_body)
         or context.get("schema") != LFM2_SEMANTIC_TERMINAL_FRONTIER_CONTEXT_SCHEMA
@@ -2660,6 +2815,10 @@ def _open_terminal_frontier_materialization(
         or context.get("authenticated_source_roots_sha256")
         != bank.get("source_roots_sha256")
         or checkpoint.get("context_binding_sha256") != context_sha
+        or checkpoint.get("interface_anchor_selection_sha256")
+        != (None if context_anchor is None else context_anchor["selection_sha256"])
+        or (None if receipt_anchor is None else dict(receipt_anchor))
+        != (None if context_anchor is None else dict(context_anchor))
     ):
         raise Lfm2SemanticTerminalFrontierError(
             "Terminal frontier materialization context is invalid."

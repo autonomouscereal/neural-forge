@@ -140,6 +140,29 @@ def _new_output_file(value: str | os.PathLike[str]) -> Path:
     return parent.resolve() / candidate.name
 
 
+def _paths_overlap(left: Path, right: Path) -> bool:
+    left = left.resolve()
+    right = right.resolve()
+    return left == right or left in right.parents or right in left.parents
+
+
+def _validate_output_disjoint_from_inputs(
+    output: Path,
+    *,
+    readonly_paths: Sequence[str | os.PathLike[str]],
+) -> None:
+    overlaps = [
+        str(Path(value).expanduser())
+        for value in readonly_paths
+        if _paths_overlap(output, Path(value).expanduser())
+    ]
+    if overlaps:
+        raise Lfm2SemanticFoundationFrontierMigrationCliError(
+            "Companion output must be disjoint from every authenticated input; "
+            f"overlaps {', '.join(overlaps)}."
+        )
+
+
 def _read_pinned_canonical_json(
     value: str | os.PathLike[str],
     *,
@@ -351,6 +374,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "expected legacy foundation receipt file",
     )
     output = _new_output_file(args.output_companion_json)
+    _validate_output_disjoint_from_inputs(
+        output,
+        readonly_paths=(
+            args.legacy_statistics_artifact_directory,
+            args.semantic_cache_directory,
+            args.bridge_directory,
+            args.donor_tokenizer_directory,
+            args.target_tokenizer_directory,
+            args.parent_model_directory,
+            args.legacy_foundation_receipt_json,
+        ),
+    )
     foundation_receipt, observed_foundation_file_sha256 = (
         _read_pinned_canonical_json(
             args.legacy_foundation_receipt_json,
@@ -374,6 +409,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         cache_manifest.get("manifest_sha256"),
         "semantic cache manifest",
     )
+    cache_parent_fingerprint = _digest(
+        cache.parent_fingerprint,
+        "semantic cache parent fingerprint",
+    )
 
     donor_tokenizer = load_local_tokenizer(args.donor_tokenizer_directory)
     target_tokenizer = load_local_tokenizer(args.target_tokenizer_directory)
@@ -387,6 +426,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise Lfm2SemanticFoundationFrontierMigrationCliError(
             "Tokenizer bridge differs from its external artifact pin."
         )
+    bridge_profile_sha256 = _digest(
+        bridge.profile_fingerprint,
+        "tokenizer bridge profile",
+    )
 
     parent_final_norm = load_lfm2_parent_final_rmsnorm_from_local_safetensors(
         cache,
@@ -398,6 +441,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         parent_final_norm.result_sha256,
         "authenticated parent final norm load",
     )
+    foundation_solve = _verify_sealed_mapping(
+        foundation_receipt.get("interface_solve"),
+        seal_field="result_sha256",
+        name="legacy foundation interface solve",
+    )
+    if (
+        foundation_receipt.get("parent_identity_sha256")
+        != cache_parent_fingerprint
+        or foundation_receipt.get("cache_parent_fingerprint")
+        != cache_parent_fingerprint
+        or foundation_receipt.get("bridge_artifact_sha256") != bridge_sha256
+        or foundation_solve.get("cache_parent_fingerprint")
+        != cache_parent_fingerprint
+        or foundation_solve.get("bridge_artifact_sha256") != bridge_sha256
+    ):
+        raise Lfm2SemanticFoundationFrontierMigrationCliError(
+            "Pinned cache or bridge lineage differs from the legacy foundation."
+        )
     loaded_table = load_lfm2_mapped_parent_tied_table_from_local_safetensors(
         args.parent_model_directory,
         cache=cache,
@@ -424,9 +485,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if (
         mapped_receipt.get("cache_key") != cache_key
         or mapped_receipt.get("cache_parent_fingerprint")
-        != cache.parent_fingerprint
+        != cache_parent_fingerprint
         or mapped_receipt.get("bridge_artifact_sha256") != bridge_sha256
         or mapped_receipt.get("parent_final_norm_load_sha256")
+        != final_norm_sha256
+        or source_report.get("cache_key") != cache_key
+        or source_report.get("cache_manifest_sha256") != cache_manifest_sha256
+        or source_report.get("cache_parent_fingerprint")
+        != cache_parent_fingerprint
+        or source_report.get("bridge_artifact_sha256") != bridge_sha256
+        or source_report.get("bridge_transport_profile_fingerprint")
+        != bridge_profile_sha256
+        or source_report.get("parent_final_norm_load_sha256")
         != final_norm_sha256
         or source_report.get("source_checkpoint_exactly_matches_authenticated_parent")
         is not True
@@ -479,9 +549,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "legacy_statistics_artifact_sha256": artifact_sha256,
         "semantic_cache_key": cache_key,
         "semantic_cache_manifest_sha256": cache_manifest_sha256,
-        "semantic_cache_parent_fingerprint": cache.parent_fingerprint,
+        "semantic_cache_parent_fingerprint": cache_parent_fingerprint,
         "bridge_artifact_sha256": bridge_sha256,
-        "bridge_profile_sha256": bridge.profile_fingerprint,
+        "bridge_profile_sha256": bridge_profile_sha256,
         "legacy_foundation_receipt_sha256": foundation_receipt_sha256,
         "legacy_foundation_receipt_file_sha256": (
             foundation_receipt_file_sha256

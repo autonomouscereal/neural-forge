@@ -82,6 +82,10 @@ def _validate_cli_path_disjointness(args: argparse.Namespace) -> tuple[Path, Pat
         readonly["interface statistics"] = (
             Path(args.interface_statistics_directory).expanduser().resolve()
         )
+    if args.interface_frontier_companion_json is not None:
+        readonly["interface frontier companion"] = (
+            Path(args.interface_frontier_companion_json).expanduser().resolve()
+        )
     writes = {"final output": output, "receipt JSON": receipt}
     if capsule is not None:
         writes["preterminal capsule"] = capsule
@@ -124,9 +128,9 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        if path.exists() or path.is_symlink():
-            raise FileExistsError(path)
-        os.replace(temporary, path)
+        # Publish with create-if-absent semantics so a concurrent receipt can
+        # never be replaced after the preflight existence check.
+        os.link(temporary, path, follow_symlinks=False)
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -198,6 +202,29 @@ def _parser() -> argparse.ArgumentParser:
             "--interface-statistics-directory."
         ),
     )
+    parser.add_argument(
+        "--interface-frontier-companion-json",
+        help=(
+            "Canonical persisted frontier-migration companion. Requires both "
+            "external SHA pins and --anchor-candidate-index."
+        ),
+    )
+    parser.add_argument(
+        "--expected-interface-frontier-companion-file-sha256",
+        help="External SHA-256 pin for the exact canonical companion file bytes.",
+    )
+    parser.add_argument(
+        "--expected-interface-frontier-companion-sha256",
+        help="External pin for the companion receipt's canonical body seal.",
+    )
+    parser.add_argument(
+        "--anchor-candidate-index",
+        type=int,
+        help=(
+            "One lazy anchor candidate to materialize after authenticating the "
+            "saved compatibility-default child."
+        ),
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--fold-compute-device",
@@ -263,6 +290,25 @@ def main(argv: list[str] | None = None) -> int:
             "--interface-statistics-directory and "
             "--expected-interface-statistics-sha256 must be supplied together."
         )
+    companion_values = (
+        args.interface_frontier_companion_json,
+        args.expected_interface_frontier_companion_file_sha256,
+        args.expected_interface_frontier_companion_sha256,
+        args.anchor_candidate_index,
+    )
+    companion_requested = any(value is not None for value in companion_values)
+    if companion_requested and any(value is None for value in companion_values):
+        raise ValueError(
+            "--interface-frontier-companion-json, its file and canonical SHA-256 "
+            "pins, and --anchor-candidate-index must be supplied together."
+        )
+    if companion_requested and not statistics_requested:
+        raise ValueError(
+            "A frontier companion requires --interface-statistics-directory and "
+            "its pin."
+        )
+    if args.anchor_candidate_index is not None and args.anchor_candidate_index < 0:
+        raise ValueError("--anchor-candidate-index must be nonnegative.")
     output, receipt_path = _validate_cli_path_disjointness(args)
     receipt = _new_file(str(receipt_path), "receipt JSON")
     if output.exists() or output.is_symlink():
@@ -300,6 +346,22 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                     "expected_interface_statistics_sha256": (
                         args.expected_interface_statistics_sha256
+                    ),
+                    **(
+                        {
+                            "interface_frontier_companion_json": (
+                                args.interface_frontier_companion_json
+                            ),
+                            "expected_interface_frontier_companion_file_sha256": (
+                                args.expected_interface_frontier_companion_file_sha256
+                            ),
+                            "expected_interface_frontier_companion_sha256": (
+                                args.expected_interface_frontier_companion_sha256
+                            ),
+                            "anchor_candidate_index": args.anchor_candidate_index,
+                        }
+                        if companion_requested
+                        else {}
                     ),
                 }
                 if statistics_requested

@@ -12,10 +12,11 @@ import pytest
 
 torch = pytest.importorskip("torch")
 pytest.importorskip("safetensors")
-from safetensors.torch import save_file  # noqa: E402
+from safetensors.torch import load_file, save_file  # noqa: E402
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
+import neural_forge.hf_lfm2_semantic_postfold_frontier as frontier  # noqa: E402
 import neural_forge.hf_lfm2_semantic_preterminal_capsule as capsule  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     Lfm2CpcfTerminalActionEvidence,
@@ -30,13 +31,28 @@ from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
 from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
     TiedCausalInterfaceFold,
 )
+from neural_forge.hf_tied_causal_interface_anchor_fold import (  # noqa: E402
+    TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
+)
+from neural_forge.hf_tied_residual_congruence import (  # noqa: E402
+    TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE,
+    TiedResidualAnchorTransportWitness,
+    authenticate_tied_residual_congruence_interface,
+    compile_tied_residual_congruence_candidate,
+)
 
 
 def _sealed(body: dict[str, object], seal: str) -> dict[str, object]:
     return {**body, seal: canonical_sha256(body)}
 
 
-def _problem(tmp_path: Path, monkeypatch, *, mutate_during_rename: bool = False):
+def _problem(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    mutate_during_rename: bool = False,
+    hybrid: bool = False,
+):
     evidence = {}
     for split_index, split in enumerate(
         ("fit", "fit_check", "selection", "validation")
@@ -64,6 +80,7 @@ def _problem(tmp_path: Path, monkeypatch, *, mutate_during_rename: bool = False)
     layer_body = {
         "final_layer_mlp_w2_deferred_to_fused_terminal": True,
         "final_layer_mlp_w2_install_count": 0,
+        "cache_selective_session_sha256": "c" * 64,
         "final_layer_mlp_evidence_sha256": {
             split: evidence[split].authentication_sha256 for split in sorted(evidence)
         },
@@ -72,12 +89,79 @@ def _problem(tmp_path: Path, monkeypatch, *, mutate_during_rename: bool = False)
         receipt=_sealed(layer_body, "result_sha256"),
         final_layer_mlp_evidence=evidence,
     )
-    interface_body = {"schema": "synthetic-interface-v1"}
-    interface = TiedCausalInterfaceFold(
-        target_weight=torch.eye(2, dtype=torch.float64),
-        producer_encoder=torch.eye(2, dtype=torch.float64),
-        report=_sealed(interface_body, "report_sha256"),
-    )
+    source_table = None
+    anchor_transport_witness = None
+    if hybrid:
+        source_table = torch.tensor(
+            [[1.0, 0.25], [-0.5, 1.5]],
+            dtype=torch.float64,
+        )
+        base = torch.tensor(
+            [[0.5, -0.25], [0.75, 1.0]],
+            dtype=torch.float64,
+        )
+        residual = torch.tensor(
+            [[0.125, -0.0625], [-0.25, 0.1875]],
+            dtype=torch.float64,
+        )
+        encoder = torch.tensor(
+            [[1.5, 0.25], [0.125, 0.75]],
+            dtype=torch.float64,
+        )
+        selected_target = base + residual
+        source_body = {
+            "schema": TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
+            "target_weight_sha256": postfold._foundation_lineage_tensor_sha256(
+                selected_target
+            ),
+            "producer_encoder_sha256": (
+                postfold._foundation_lineage_tensor_sha256(encoder)
+            ),
+        }
+        source_interface = TiedCausalInterfaceFold(
+            target_weight=selected_target,
+            producer_encoder=encoder,
+            report=_sealed(source_body, "report_sha256"),
+        )
+        candidate = compile_tied_residual_congruence_candidate(
+            source_interface,
+            source_table,
+            mode=TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE,
+            anchor_base_target_weight=base,
+            anchor_source_residual_weight=residual,
+        )
+        interface = candidate.interface
+        anchor_transport_witness = candidate.anchor_transport_witness
+        interface_authentication = authenticate_tied_residual_congruence_interface(
+            interface,
+            mapped_parent_tied_table=source_table,
+            anchor_transport_witness=anchor_transport_witness,
+        )
+        layer_body.update(
+            {
+                "anchor_residual_transport_authentication": dict(
+                    interface_authentication
+                ),
+                "anchor_residual_transport_authentication_sha256": (
+                    interface_authentication["result_sha256"]
+                ),
+            }
+        )
+        layer_stack = Lfm2SemanticLayerStackInstallation(
+            receipt=_sealed(layer_body, "result_sha256"),
+            final_layer_mlp_evidence=evidence,
+        )
+    else:
+        interface_body = {"schema": "synthetic-interface-v1"}
+        interface = TiedCausalInterfaceFold(
+            target_weight=torch.eye(2, dtype=torch.float64),
+            producer_encoder=torch.eye(2, dtype=torch.float64),
+            report=_sealed(interface_body, "report_sha256"),
+        )
+        interface_authentication = _sealed(
+            {"schema": "synthetic-interface-authentication-v1"},
+            "result_sha256",
+        )
     attention = _sealed(
         {"schema": "synthetic-attention-authentication-v1"},
         "result_sha256",
@@ -123,10 +207,7 @@ def _problem(tmp_path: Path, monkeypatch, *, mutate_during_rename: bool = False)
         "final_w2_nonzero_element_count": 0,
         "final_w2_exact_zero": True,
         "final_mlp_producer_coverage": coverage,
-        "interface_authentication": _sealed(
-            {"schema": "synthetic-interface-authentication-v1"},
-            "result_sha256",
-        ),
+        "interface_authentication": interface_authentication,
         "attention_receipt_authentication": attention,
     }
     model = SimpleNamespace(
@@ -221,6 +302,8 @@ def _problem(tmp_path: Path, monkeypatch, *, mutate_during_rename: bool = False)
         attention_receipt_authentication=attention,
         bindings=bindings,
         output_directory=output,
+        mapped_parent_tied_table=source_table,
+        anchor_transport_witness=anchor_transport_witness,
     )
     return SimpleNamespace(
         reference=reference,
@@ -232,6 +315,8 @@ def _problem(tmp_path: Path, monkeypatch, *, mutate_during_rename: bool = False)
         interface=interface,
         attention=attention,
         bindings=bindings,
+        source_table=source_table,
+        anchor_transport_witness=anchor_transport_witness,
     )
 
 
@@ -301,6 +386,288 @@ def test_preterminal_capsule_round_trip_exact_banks_and_zero_w2(
     assert loaded.receipt["terminal_complete"] is False
     assert loaded.receipt["promotion_authorized"] is False
     assert loaded.receipt["behavior_capability_proven"] is False
+
+
+def test_hybrid_capsule_round_trip_persists_typed_witness_and_rejects_tamper(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    problem = _problem(tmp_path, monkeypatch, hybrid=True)
+    loaded = _load(problem)
+
+    assert loaded.manifest["payload_tensor_count"] == 22
+    assert loaded.manifest["anchor_residual_transport_inputs_persisted"] is True
+    assert isinstance(
+        loaded.anchor_transport_witness,
+        TiedResidualAnchorTransportWitness,
+    )
+    assert (
+        loaded.anchor_transport_witness.witness_sha256
+        == problem.anchor_transport_witness.witness_sha256
+    )
+    authentication = authenticate_tied_residual_congruence_interface(
+        loaded.interface,
+        mapped_parent_tied_table=problem.source_table,
+        anchor_transport_witness=loaded.anchor_transport_witness,
+    )
+    assert authentication["anchor_residual_formula_recomputed_exact"] is True
+
+    payload_path = problem.output / "preterminal-seam.safetensors"
+    payload = load_file(str(payload_path), device="cpu")
+    payload["anchor_source.residual_weight"][0, 0] += 0.5
+    save_file(payload, str(payload_path))
+    with pytest.raises(Exception):
+        _load(problem)
+
+
+def test_hybrid_capsule_publish_load_frontier_resume_preserves_exact_witness(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    problem = _problem(tmp_path, monkeypatch, hybrid=True)
+    recipe = postfold.resolve_lfm2_semantic_body_recipe("fit_guided")
+    cache_directory = tmp_path / "cache"
+    bridge_directory = tmp_path / "bridge"
+    parent_directory = tmp_path / "parent"
+    for directory in (cache_directory, bridge_directory, parent_directory):
+        directory.mkdir()
+
+    cache = SimpleNamespace(
+        cache_key=problem.bindings.semantic_cache_key,
+        parent_fingerprint=problem.bindings.cache_parent_fingerprint,
+        manifest={
+            "manifest_sha256": problem.bindings.semantic_cache_manifest_sha256
+        },
+    )
+    bridge = SimpleNamespace(
+        artifact_sha256=problem.bindings.bridge_artifact_sha256
+    )
+    parent_norm = SimpleNamespace(
+        result_sha256=problem.bindings.parent_final_norm_receipt_sha256
+    )
+    compatibility_sha256 = "a" * 64
+    payload_binding_sha256 = "b" * 64
+    terminal_result_sha256 = "d" * 64
+    seen: dict[str, object] = {}
+    capsule_manifest = json.loads(
+        (problem.output / "capsule-manifest.json").read_text(encoding="utf-8")
+    )
+
+    monkeypatch.setattr(
+        frontier,
+        "_authenticated_body_recipe",
+        lambda *_args, **_kwargs: recipe,
+    )
+    monkeypatch.setattr(
+        frontier,
+        "open_lfm2_circuit_trace_cache",
+        lambda *_args, **_kwargs: cache,
+    )
+    monkeypatch.setattr(
+        frontier,
+        "preflight_lfm2_long_horizon_terminal_cache",
+        lambda _cache: {"authentication_sha256": compatibility_sha256},
+    )
+    monkeypatch.setattr(
+        frontier,
+        "load_strict_tokenizer_bridge_artifact",
+        lambda *_args, **_kwargs: bridge,
+    )
+    monkeypatch.setattr(
+        frontier,
+        "load_lfm2_parent_final_rmsnorm_from_local_safetensors",
+        lambda *_args, **_kwargs: parent_norm,
+    )
+    monkeypatch.setattr(
+        frontier,
+        "load_lfm2_mapped_parent_tied_table_from_local_safetensors",
+        lambda *_args, **_kwargs: (
+            problem.source_table,
+            {
+                "result_sha256": (
+                    problem.bindings.mapped_parent_tied_table_receipt_sha256
+                )
+            },
+        ),
+    )
+
+    def authenticate_interface(**kwargs):
+        witness = kwargs["anchor_transport_witness"]
+        seen["authentication_witness"] = witness
+        exact = authenticate_tied_residual_congruence_interface(
+            kwargs["interface"],
+            mapped_parent_tied_table=kwargs["mapped_parent_tied_table"],
+            anchor_transport_witness=witness,
+        )
+        assert exact["anchor_residual_formula_recomputed_exact"] is True
+        publication_authentication = kwargs["layer_receipt"][
+            "anchor_residual_transport_authentication"
+        ]
+        assert dict(exact) == dict(publication_authentication)
+        assert dict(exact) == capsule_manifest["active_interface_authentication"]
+        assert kwargs["layer_receipt"][
+            "anchor_residual_transport_authentication_sha256"
+        ] == exact["result_sha256"]
+        seen["fresh_interface_authentication"] = dict(exact)
+        return _sealed(
+            {
+                "schema": "synthetic-terminal-interface-authentication-v1",
+                "interface_authentication_sha256": exact["result_sha256"],
+                "interface_report_sha256": exact["interface_report_sha256"],
+            },
+            "result_sha256",
+        )
+
+    monkeypatch.setattr(
+        frontier,
+        "_authenticate_fused_terminal_tied_interface",
+        authenticate_interface,
+    )
+
+    def build_source_lineage(**kwargs):
+        seen["source_lineage_witness"] = kwargs["anchor_transport_witness"]
+        return SimpleNamespace(result_sha256="c" * 64)
+
+    monkeypatch.setattr(
+        frontier,
+        "build_lfm2_long_horizon_terminal_source_lineage",
+        build_source_lineage,
+    )
+    monkeypatch.setattr(
+        frontier,
+        "_authenticate_fused_terminal_cache_evidence",
+        lambda _receipt: {
+            "terminal_cache_compatibility_sha256": compatibility_sha256,
+            "terminal_cache_payload_binding_sha256": payload_binding_sha256,
+            "terminal_cache_session_sha256": (
+                problem.bindings.cache_selective_session_sha256
+            ),
+        },
+    )
+
+    def publish_frontier(
+        _result,
+        _export_context,
+        *,
+        preterminal_capsule_reference,
+        source_roots,
+        output_directory,
+    ):
+        seen["published_capsule_reference"] = preterminal_capsule_reference
+        seen["published_source_roots"] = source_roots
+        return frontier.Lfm2SemanticTerminalFrontierBankReference(
+            path=Path(output_directory),
+            receipt_sha256="1" * 64,
+            receipt_file_sha256="2" * 64,
+            manifest_sha256="3" * 64,
+            preterminal_capsule_receipt_sha256=(
+                preterminal_capsule_reference.receipt_sha256
+            ),
+            terminal_result_sha256=terminal_result_sha256,
+            source_roots_sha256="4" * 64,
+            candidate_ids=("hybrid-frontier",),
+        )
+
+    monkeypatch.setattr(
+        frontier,
+        "publish_lfm2_semantic_terminal_frontier_bank",
+        publish_frontier,
+    )
+
+    def fused_terminal(**kwargs):
+        witness = kwargs["anchor_transport_witness"]
+        seen["compiler_witness"] = witness
+        interface_authentication = authenticate_interface(
+            target_model=kwargs["target_model"],
+            interface=kwargs["interface"],
+            mapped_parent_tied_table=kwargs["source_selected_tied_table"],
+            layer_receipt=kwargs["layer_stack"].receipt,
+            anchor_transport_witness=witness,
+        )
+        context_body = {
+            "terminal_result_sha256": terminal_result_sha256,
+            "mapped_parent_tied_table_sha256": frontier._tensor_sha256(
+                problem.source_table
+            ),
+            "tied_interface_authentication_sha256": (
+                interface_authentication["result_sha256"]
+            ),
+            "terminal_cache_compatibility_sha256": compatibility_sha256,
+            "terminal_cache_payload_binding_sha256": payload_binding_sha256,
+            "terminal_cache_session_sha256": (
+                problem.bindings.cache_selective_session_sha256
+            ),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "preterminal_resume_mode": True,
+            "same_live_cache_session_as_layer_stack": False,
+            "cache_content_identity_matches_layer_stack": True,
+            "frontier_export_occurs_before_final_w2_installation": True,
+        }
+        context = {
+            **context_body,
+            "context_sha256": canonical_sha256(context_body),
+        }
+        terminal_result = {
+            "schema": "synthetic-terminal-result-v1",
+            "result_sha256": terminal_result_sha256,
+        }
+        reference = kwargs["terminal_frontier_exporter"](
+            SimpleNamespace(result_sha256=terminal_result_sha256),
+            context,
+        )
+        body = {
+            "terminal_result": terminal_result,
+            "terminal_frontier_export_context": context,
+            "terminal_frontier_export_context_sha256": context["context_sha256"],
+            "terminal_frontier_export": reference.as_dict(),
+            "terminal_frontier_export_sha256": canonical_sha256(
+                reference.as_dict()
+            ),
+            "terminal_frontier_exported_before_w2_installation": True,
+            "tied_interface_authentication": interface_authentication,
+            "tied_interface_authentication_sha256": interface_authentication[
+                "result_sha256"
+            ],
+        }
+        return _sealed(body, "result_sha256")
+
+    result = frontier.compile_lfm2_semantic_terminal_frontier_bank_from_capsule(
+        preterminal_capsule_directory=problem.output,
+        expected_preterminal_receipt_file_sha256=(
+            problem.reference.receipt_file_sha256
+        ),
+        expected_preterminal_receipt_sha256=problem.reference.receipt_sha256,
+        expected_preterminal_bindings_sha256=problem.reference.bindings_sha256,
+        cache_directory=cache_directory,
+        expected_cache_key=problem.bindings.semantic_cache_key,
+        bridge_directory=bridge_directory,
+        expected_bridge_artifact_sha256=(
+            problem.bindings.bridge_artifact_sha256
+        ),
+        donor_tokenizer=object(),
+        parent_model_directory=parent_directory,
+        output_directory=tmp_path / "frontier",
+        device="cpu",
+        fused_terminal_compiler=fused_terminal,
+    )
+
+    loaded_witness = seen["compiler_witness"]
+    assert isinstance(loaded_witness, TiedResidualAnchorTransportWitness)
+    assert loaded_witness is not problem.anchor_transport_witness
+    assert (
+        loaded_witness.witness_sha256
+        == problem.anchor_transport_witness.witness_sha256
+    )
+    assert seen["authentication_witness"] is loaded_witness
+    assert seen["source_lineage_witness"] is loaded_witness
+    assert seen["fresh_interface_authentication"] == capsule_manifest[
+        "active_interface_authentication"
+    ]
+    assert (
+        seen["published_capsule_reference"].receipt_sha256
+        == problem.reference.receipt_sha256
+    )
+    assert result.bank_reference.candidate_ids == ("hybrid-frontier",)
 
 
 @pytest.mark.parametrize("mutation", ("missing", "extra", "payload", "receipt"))

@@ -82,6 +82,7 @@ from .hf_lfm2_tokenizer_bridge_trace_adapter import (
 from .hf_tied_causal_interface_fold import TiedCausalInterfaceFold
 from .hf_tied_residual_congruence import (
     TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+    TiedResidualAnchorTransportWitness,
     authenticate_tied_residual_congruence_interface,
 )
 from .hf_tokenizer_bridge import StrictTokenizerBridgeArtifact
@@ -894,6 +895,8 @@ def _verify_parent_norm_binding(
 def _verify_interface_report(
     interface: TiedCausalInterfaceFold,
     source_selected_tied_table: Any,
+    *,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> dict[str, Any]:
     torch = _torch()
     if not isinstance(interface, TiedCausalInterfaceFold):
@@ -940,6 +943,7 @@ def _verify_interface_report(
             authentication = authenticate_tied_residual_congruence_interface(
                 interface,
                 mapped_parent_tied_table=source,
+                anchor_transport_witness=anchor_transport_witness,
             )
         except (TypeError, ValueError) as exc:
             raise Lfm2LongHorizonTerminalRefoldError(
@@ -1574,6 +1578,7 @@ class Lfm2LongHorizonTerminalSourceLineage:
         ),
         interface: TiedCausalInterfaceFold,
         source_selected_tied_table: Any,
+        anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
     ) -> None:
         source_report = self.document.get("direct_local_mapped_source_report")
         normalized_parent = parent_final_norm
@@ -1590,6 +1595,7 @@ class Lfm2LongHorizonTerminalSourceLineage:
             direct_local_mapped_source_report=(
                 source_report if isinstance(source_report, Mapping) else None
             ),
+            anchor_transport_witness=anchor_transport_witness,
         )
         if expected.as_dict() != self.as_dict():
             raise Lfm2LongHorizonTerminalRefoldError(
@@ -1605,6 +1611,7 @@ def build_lfm2_long_horizon_terminal_source_lineage(
     interface: TiedCausalInterfaceFold,
     source_selected_tied_table: Any,
     direct_local_mapped_source_report: Mapping[str, Any] | None = None,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Lfm2LongHorizonTerminalSourceLineage:
     """Bind exact source bytes and row order without a behavioral tolerance."""
 
@@ -1630,6 +1637,7 @@ def build_lfm2_long_horizon_terminal_source_lineage(
     interface_report = _verify_interface_report(
         interface,
         source_selected_tied_table,
+        anchor_transport_witness=anchor_transport_witness,
     )
     source = source_selected_tied_table
     torch = _torch()
@@ -4792,6 +4800,7 @@ def compile_install_lfm2_long_horizon_terminal_refold(
     donor_tokenizer: Any | None = None,
     target_tokenizer: Any | None = None,
     terminal_cache_compatibility: Mapping[str, Any] | None = None,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Lfm2LongHorizonTerminalRefoldResult:
     """Compile and conditionally install one long-horizon terminal refold."""
 
@@ -4823,6 +4832,7 @@ def compile_install_lfm2_long_horizon_terminal_refold(
     interface_report = _verify_interface_report(
         interface,
         source_selected_tied_table,
+        anchor_transport_witness=anchor_transport_witness,
     )
     if not isinstance(source_lineage, Lfm2LongHorizonTerminalSourceLineage):
         raise TypeError("source_lineage must be Lfm2LongHorizonTerminalSourceLineage.")
@@ -4832,6 +4842,7 @@ def compile_install_lfm2_long_horizon_terminal_refold(
         parent_final_norm=parent_final_norm,
         interface=interface,
         source_selected_tied_table=source_selected_tied_table,
+        anchor_transport_witness=anchor_transport_witness,
     )
     selected_policy = policy or Lfm2CpcfTerminalActionPolicy()
     if (

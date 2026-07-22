@@ -24,9 +24,14 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     compile_lfm2_cpcf_terminal_action_residual as _compile_terminal_action_residual,
 )
 from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
+    TiedCausalInterfaceFold,
     fit_tied_causal_interface,
 )
+from neural_forge.hf_tied_causal_interface_anchor_fold import (  # noqa: E402
+    TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
+)
 from neural_forge.hf_tied_residual_congruence import (  # noqa: E402
+    TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE,
     TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
     compile_tied_residual_congruence_candidate,
 )
@@ -314,6 +319,67 @@ def test_interface_report_accepts_exact_tied_residual_congruence_and_rejects_sou
         match="differ from their authenticated lineage",
     ):
         refold._verify_interface_report(candidate.interface, tampered)
+
+
+def test_long_horizon_source_lineage_requires_exact_anchor_transport_witness(
+    tmp_path: Path,
+) -> None:
+    values = _fixture(tmp_path)
+    source_interface = values["interface"]
+    source_target = source_interface.target_weight.to(torch.float64)
+    base = torch.zeros_like(source_target)
+    residual = source_target.clone()
+    source_body = {
+        "schema": TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
+        "target_weight_sha256": postfold._foundation_lineage_tensor_sha256(
+            source_target
+        ),
+        "producer_encoder_sha256": postfold._foundation_lineage_tensor_sha256(
+            source_interface.producer_encoder
+        ),
+    }
+    anchored_source = TiedCausalInterfaceFold(
+        target_weight=source_target,
+        producer_encoder=source_interface.producer_encoder,
+        report={
+            **source_body,
+            "report_sha256": refold._canonical_sha256(source_body),
+        },
+    )
+    candidate = compile_tied_residual_congruence_candidate(
+        anchored_source,
+        values["source_table"],
+        mode=TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE,
+        anchor_base_target_weight=base,
+        anchor_source_residual_weight=residual,
+    )
+    witness = candidate.anchor_transport_witness
+    assert witness is not None
+
+    lineage = refold.build_lfm2_long_horizon_terminal_source_lineage(
+        cache=values["cache"],
+        bridge=values["bridge"],
+        parent_final_norm=values["parent_final_norm"],
+        interface=candidate.interface,
+        source_selected_tied_table=values["source_table"],
+        anchor_transport_witness=witness,
+    )
+    lineage.verify_for(
+        cache=values["cache"],
+        bridge=values["bridge"],
+        parent_final_norm=values["parent_final_norm"],
+        interface=candidate.interface,
+        source_selected_tied_table=values["source_table"],
+        anchor_transport_witness=witness,
+    )
+    with pytest.raises(refold.Lfm2LongHorizonTerminalRefoldError):
+        lineage.verify_for(
+            cache=values["cache"],
+            bridge=values["bridge"],
+            parent_final_norm=values["parent_final_norm"],
+            interface=candidate.interface,
+            source_selected_tied_table=values["source_table"],
+        )
 
 
 def _semantic_fixture(

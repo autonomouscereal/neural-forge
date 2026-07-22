@@ -33,6 +33,121 @@ def _sha(label: str) -> str:
     return hashlib.sha256(label.encode("utf-8")).hexdigest()
 
 
+def _anchor_selection(candidate_index: int = 9):
+    recipe_body = {
+        "schema": "fixture-lazy-anchor-candidate-recipe-v1",
+        "candidate_index": candidate_index,
+        "fixture_label": f"candidate-{candidate_index}",
+        "base_target_weight_sha256": _sha("anchor-base-target"),
+    }
+    recipe = {
+        **recipe_body,
+        "recipe_sha256": frontier.canonical_sha256(recipe_body),
+    }
+    body = {
+        "schema": postfold.LFM2_SEMANTIC_FOUNDATION_ANCHOR_SELECTION_SCHEMA,
+        "interface_frontier_companion_json": "fixture/frontier-companion.json",
+        "interface_frontier_companion_file_sha256": _sha("companion-file"),
+        "interface_frontier_companion_sha256": _sha("companion-body"),
+        "interface_statistics_artifact_sha256": _sha("statistics"),
+        "causal_anchor_frontier_sha256": _sha("anchor-frontier"),
+        "causal_anchor_materializable_candidate_indices": list(range(10)),
+        "causal_anchor_compatibility_default_candidate_index": 7,
+        "anchor_base_candidate_index": 0,
+        "anchor_base_interface_report_sha256": _sha("anchor-base-interface"),
+        "anchor_base_target_weight_sha256": _sha("anchor-base-target"),
+        "anchor_base_target_weight_foundation_sha256": _sha(
+            "anchor-base-target-foundation"
+        ),
+        "compatibility_default_interface_report_sha256": _sha(
+            "default-interface"
+        ),
+        "compatibility_default_target_weight_sha256": _sha("default-target"),
+        "saved_target_weight_sha256": _sha("saved-target"),
+        "saved_child_exactly_matches_compatibility_default": True,
+        "selected_anchor_candidate_index": candidate_index,
+        "selected_anchor_candidate_recipe": recipe,
+        "selected_anchor_candidate_recipe_sha256": recipe["recipe_sha256"],
+        "selected_interface_report_sha256": _sha(
+            f"selected-interface:{candidate_index}"
+        ),
+        "selected_target_weight_sha256": _sha(f"selected-target:{candidate_index}"),
+        "selected_target_weight_foundation_sha256": _sha(
+            f"selected-target-foundation:{candidate_index}"
+        ),
+        "selected_residual_weight_sha256": _sha(
+            f"selected-residual:{candidate_index}"
+        ),
+        "selected_residual_weight_foundation_sha256": _sha(
+            f"selected-residual-foundation:{candidate_index}"
+        ),
+        "selected_anchor_exactly_equals_base_plus_residual": True,
+        "selected_producer_encoder_sha256": _sha("producer-encoder"),
+        "selected_candidate_lazily_materialized": True,
+        "target_model_installation_deferred_until_authenticated_pipeline_session": (
+            True
+        ),
+        "dense_anchor_candidate_checkpoints_persisted": 0,
+        "numeric_metrics_have_final_intelligence_authority": False,
+    }
+    return {**body, "selection_sha256": frontier.canonical_sha256(body)}
+
+
+def test_layer_stage_rejects_mismatched_anchor_source_before_compiler(
+    monkeypatch,
+) -> None:
+    selection = _anchor_selection(7)
+    target = torch.ones((3, 2), dtype=torch.float64)
+    encoder = torch.eye(2, dtype=torch.float64)
+    report_body = {
+        "schema": postfold.TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+        "mode": postfold.TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE,
+        "source_interface_report_sha256": _sha("wrong-anchor-interface"),
+        "target_weight_sha256": postfold._interface_tensor_sha256(target),
+        "producer_encoder_sha256": postfold._interface_tensor_sha256(encoder),
+        "anchor_base_target_weight_anchor_sha256": selection[
+            "anchor_base_target_weight_sha256"
+        ],
+        "anchor_source_target_residual_anchor_sha256": selection[
+            "selected_residual_weight_sha256"
+        ],
+    }
+    interface = postfold.TiedCausalInterfaceFold(
+        target_weight=target,
+        producer_encoder=encoder,
+        report={
+            **report_body,
+            "report_sha256": frontier.canonical_sha256(report_body),
+        },
+    )
+    compiler_called = False
+
+    def resolve_compiler(_value):
+        nonlocal compiler_called
+        compiler_called = True
+        return lambda **_kwargs: None
+
+    monkeypatch.setattr(postfold, "_resolve_layer_stack_installer", resolve_compiler)
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="does not bind the residual-aware body interface",
+    ):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=object(),
+            interface=interface,
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            interface_anchor_selection=selection,
+        )
+
+    assert compiler_called is False
+
+
 def _synthetic_terminal_composite_lineage(
     *,
     cache_key: str,
@@ -151,7 +266,13 @@ def _terminal_result():
     )
 
 
-def _capsule_reference(tmp_path, result, *, recipe_id="fit_guided"):
+def _capsule_reference(
+    tmp_path,
+    result,
+    *,
+    recipe_id="fit_guided",
+    anchor_selection=None,
+):
     recipe = postfold.resolve_lfm2_semantic_body_recipe(recipe_id)
     reference = Lfm2SemanticPreterminalCapsuleReference(
         path=tmp_path / "capsule",
@@ -187,6 +308,16 @@ def _capsule_reference(tmp_path, result, *, recipe_id="fit_guided"):
         "body_recipe": recipe.as_dict(),
         "body_recipe_sha256": recipe.recipe_sha256,
         "body_recipe_id": recipe.recipe_id,
+        "interface_anchor_selection_sha256": (
+            None
+            if anchor_selection is None
+            else anchor_selection["selection_sha256"]
+        ),
+        **(
+            {"interface_anchor_selection": copy.deepcopy(anchor_selection)}
+            if anchor_selection is not None
+            else {}
+        ),
     }
     attention_authentication = {
         "result_sha256": _sha("attention-authentication"),
@@ -293,11 +424,19 @@ def compiled_result():
     return _terminal_result()
 
 
-def _publish_bank(tmp_path, monkeypatch, result, *, recipe_id="fit_guided"):
+def _publish_bank(
+    tmp_path,
+    monkeypatch,
+    result,
+    *,
+    recipe_id="fit_guided",
+    anchor_selection=None,
+):
     reference, opened, context = _capsule_reference(
         tmp_path,
         result,
         recipe_id=recipe_id,
+        anchor_selection=anchor_selection,
     )
     monkeypatch.setattr(frontier, "_open_outer_capsule", lambda *_a, **_k: opened)
     bank_reference = frontier.publish_lfm2_semantic_terminal_frontier_bank(
@@ -342,7 +481,8 @@ def test_bank_persists_every_candidate_without_metric_elimination(
         "full_strength_structural",
         "residual_writer",
     )
-    assert bank.manifest["body_recipe_candidates_remain_lazily_materializable"] is True
+    assert bank.manifest["one_terminal_frontier_bank_contains_one_body_recipe"] is True
+    assert bank.manifest["other_body_recipes_require_sealed_foundation_replay"] is True
     assert bank.manifest["holistic_whole_response_review_required"] is True
     assert bank.manifest["exact_zero_cold_start"] is True
     assert bank.manifest["incumbent_matches_preterminal_capsule_final_w2"] is True
@@ -491,13 +631,28 @@ class _TinyModel(torch.nn.Module):
             self.model.layers[-1].feed_forward.w2.weight.zero_()
 
 
-def _loaded_capsule(reference, bank):
+def _loaded_capsule(reference, bank, *, anchor_selection=None):
     model = _TinyModel()
     recipe_fields = {
         "body_recipe": frontier._deep_thaw(bank.manifest["body_recipe"]),
         "body_recipe_sha256": bank.manifest["body_recipe_sha256"],
         "body_recipe_id": bank.manifest["body_recipe_id"],
     }
+    selected_anchor = (
+        frontier._deep_thaw(bank.manifest["interface_anchor_selection"])
+        if anchor_selection is None
+        and "interface_anchor_selection" in bank.manifest
+        else anchor_selection
+    )
+    if selected_anchor is not None:
+        recipe_fields.update(
+            {
+                "interface_anchor_selection": copy.deepcopy(selected_anchor),
+                "interface_anchor_selection_sha256": selected_anchor[
+                    "selection_sha256"
+                ],
+            }
+        )
     manifest = {
         "model": {
             "model_state_sha256": fingerprint_model_state(model),
@@ -528,6 +683,9 @@ def _fake_checkpoint_publisher(*, target_model, output_directory, **kwargs):
         "schema": "neural-forge-lfm2-semantic-postfold-checkpoint-v1",
         "output_directory": str(output),
         "context_binding_sha256": kwargs["context_binding_sha256"],
+        "interface_anchor_selection_sha256": kwargs.get(
+            "interface_anchor_selection_sha256"
+        ),
         "artifact_sha256": _sha(f"artifact:{model_state}"),
         "model_state_sha256": model_state,
         "parameter_inventory_sha256": inventory["inventory_sha256"],
@@ -611,7 +769,8 @@ def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
     assert receipt["materialization_is_not_intelligence_acceptance"] is True
     assert receipt["body_recipe_id"] == recipe_id
     assert receipt["complete_body_recipe_candidate_count"] == 3
-    assert receipt["body_recipe_candidates_remain_lazily_materializable"] is True
+    assert receipt["one_terminal_frontier_bank_contains_one_body_recipe"] is True
+    assert receipt["other_body_recipes_require_sealed_foundation_replay"] is True
     assert receipt["standalone_child"] is True
     assert receipt["sidecar_required_for_inference"] is False
     assert receipt["training_performed"] is False
@@ -667,6 +826,102 @@ def test_candidate_materialization_changes_only_final_w2_and_stays_unjudged(
             expected_candidate_state_sha256=reference.candidate_state_sha256,
             device="cpu",
         )
+
+
+def test_nondefault_anchor_selection_propagates_through_frontier_materialization(
+    tmp_path,
+    monkeypatch,
+    compiled_result,
+) -> None:
+    selection = _anchor_selection(9)
+    capsule_reference, _bank_reference, bank = _publish_bank(
+        tmp_path,
+        monkeypatch,
+        compiled_result,
+        anchor_selection=selection,
+    )
+
+    assert frontier._deep_thaw(bank.manifest["interface_anchor_selection"]) == selection
+    assert frontier._deep_thaw(bank.receipt["interface_anchor_selection"]) == selection
+    assert bank.manifest["interface_anchor_selection_sha256"] == selection[
+        "selection_sha256"
+    ]
+    assert bank.receipt["interface_anchor_selection_sha256"] == selection[
+        "selection_sha256"
+    ]
+    assert bank.manifest["terminal_frontier_export_context"][
+        "interface_anchor_selection_sha256"
+    ] == selection["selection_sha256"]
+
+    capsule = _loaded_capsule(capsule_reference, bank)
+    monkeypatch.setattr(
+        frontier,
+        "publish_lfm2_semantic_postfold_checkpoint",
+        _fake_checkpoint_publisher,
+    )
+    reference = frontier._materialize_loaded_candidate(
+        capsule=capsule,
+        bank=bank,
+        candidate_id=bank.reference.candidate_ids[-1],
+        output_directory=tmp_path / "candidate-9-anchor",
+        device="cpu",
+        dtype="bfloat16",
+    )
+    receipt = json.loads(
+        (reference.path / "materialization-receipt.json").read_text(encoding="utf-8")
+    )
+    assert receipt["interface_anchor_selection"] == selection
+    assert receipt["interface_anchor_selection_sha256"] == selection[
+        "selection_sha256"
+    ]
+    assert receipt["context_binding"]["interface_anchor_selection"] == selection
+    assert receipt["checkpoint"]["interface_anchor_selection_sha256"] == selection[
+        "selection_sha256"
+    ]
+    assert receipt["numeric_metrics_have_final_intelligence_authority"] is False
+    assert receipt["holistic_review_complete"] is False
+
+
+def test_materialization_rejects_cross_candidate_anchor_substitution_before_mutation(
+    tmp_path,
+    monkeypatch,
+    compiled_result,
+) -> None:
+    selected = _anchor_selection(9)
+    substituted = _anchor_selection(8)
+    capsule_reference, _bank_reference, bank = _publish_bank(
+        tmp_path,
+        monkeypatch,
+        compiled_result,
+        anchor_selection=selected,
+    )
+    capsule = _loaded_capsule(
+        capsule_reference,
+        bank,
+        anchor_selection=substituted,
+    )
+    before = (
+        capsule.target_model.model.layers[-1].feed_forward.w2.weight.detach().clone()
+    )
+
+    with pytest.raises(
+        frontier.Lfm2SemanticTerminalFrontierError,
+        match="disagree on anchor selection",
+    ):
+        frontier._materialize_loaded_candidate(
+            capsule=capsule,
+            bank=bank,
+            candidate_id=bank.reference.candidate_ids[-1],
+            output_directory=tmp_path / "substituted-anchor",
+            device="cpu",
+            dtype="bfloat16",
+        )
+
+    assert torch.equal(
+        before,
+        capsule.target_model.model.layers[-1].feed_forward.w2.weight,
+    )
+    assert not (tmp_path / "substituted-anchor").exists()
 
 
 def test_materialization_refuses_unknown_candidate(

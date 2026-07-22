@@ -965,6 +965,7 @@ def test_preterminal_capsule_path_guard_rejects_overlap_before_loading(
             parent_model_directory=sources["parent"],
             compiler_diagnostic_json=diagnostic,
             interface_statistics_directory=sources["statistics"],
+            interface_frontier_companion_json=None,
             donor_tokenizer=SimpleNamespace(),
             target_tokenizer=SimpleNamespace(),
         )
@@ -991,6 +992,7 @@ def test_preterminal_capsule_path_guard_ignores_blank_tokenizer_path_sentinels(
         parent_model_directory=sources["parent"],
         compiler_diagnostic_json=diagnostic,
         interface_statistics_directory=sources["statistics"],
+        interface_frontier_companion_json=None,
         donor_tokenizer=SimpleNamespace(
             name_or_path="",
             tokenizer_file="   ",
@@ -1031,6 +1033,7 @@ def test_preterminal_capsule_path_guard_still_protects_real_tokenizer_source(
             parent_model_directory=sources["parent"],
             compiler_diagnostic_json=diagnostic,
             interface_statistics_directory=sources["statistics"],
+            interface_frontier_companion_json=None,
             donor_tokenizer=SimpleNamespace(
                 name_or_path=str(sources["tokenizer"]),
                 init_kwargs={"name_or_path": ""},
@@ -3780,7 +3783,8 @@ def test_top_level_orders_layer_stack_terminal_and_checkpoint(
     assert result["body_recipe_id"] == body_recipe_id
     assert result["body_recipe_sha256"] == recipe.recipe_sha256
     assert result["materialized_body_recipe_id"] == body_recipe_id
-    assert result["body_recipe_candidates_remain_lazily_materializable"] is True
+    assert result["one_checkpoint_contains_one_materialized_body_recipe"] is True
+    assert result["other_body_recipes_require_sealed_foundation_replay"] is True
     assert result["context_binding"]["fold_compute_device"] == "cuda:1"
     assert (
         result["context_binding"][

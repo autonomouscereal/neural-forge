@@ -67,6 +67,8 @@ from neural_forge.hf_lfm2_semantic_postfold import (
 )
 from neural_forge.hf_tied_causal_interface_fold import TiedCausalInterfaceFold
 from neural_forge.hf_tied_residual_congruence import (
+    TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE,
+    TiedResidualAnchorTransportWitness,
     authenticate_tied_residual_congruence_interface,
 )
 from neural_forge.hf_tokenizer_bridge import fingerprint_hf_tokenizer_semantics
@@ -103,6 +105,12 @@ _EVIDENCE_TENSOR_ROLES = (
 _INTERFACE_TENSOR_NAMES = (
     "interface.target_weight",
     "interface.producer_encoder",
+)
+_ANCHOR_TRANSPORT_TENSOR_NAMES = (
+    "anchor_source.target_weight",
+    "anchor_source.producer_encoder",
+    "anchor_base.target_weight",
+    "anchor_source.residual_weight",
 )
 _NONPROMOTABLE_FLAGS = {
     "status": "quarantined-preterminal-resume-only",
@@ -287,6 +295,11 @@ class Lfm2SemanticPreterminalCapsule:
     manifest: Mapping[str, Any]
     receipt: Mapping[str, Any]
     reference: Lfm2SemanticPreterminalCapsuleReference
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 def _sealed(body: Mapping[str, Any], field_name: str) -> dict[str, Any]:
@@ -312,7 +325,7 @@ def _verify_seal(
     return normalized
 
 
-def _expected_payload_names() -> tuple[str, ...]:
+def _expected_payload_names(*, anchor_transport: bool = False) -> tuple[str, ...]:
     return tuple(
         [
             f"evidence.{split}.{role}"
@@ -320,12 +333,15 @@ def _expected_payload_names() -> tuple[str, ...]:
             for role in _EVIDENCE_TENSOR_ROLES
         ]
         + list(_INTERFACE_TENSOR_NAMES)
+        + (list(_ANCHOR_TRANSPORT_TENSOR_NAMES) if anchor_transport else [])
     )
 
 
 def _payload_tensors(
     layer_stack: Lfm2SemanticLayerStackInstallation,
     interface: TiedCausalInterfaceFold,
+    *,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> dict[str, Any]:
     tensors = {
         f"evidence.{split}.{role}": getattr(
@@ -341,6 +357,31 @@ def _payload_tensors(
             "interface.producer_encoder": interface.producer_encoder,
         }
     )
+    if anchor_transport_witness is not None:
+        if not isinstance(
+            anchor_transport_witness,
+            TiedResidualAnchorTransportWitness,
+        ):
+            raise TypeError(
+                "anchor_transport_witness must be a typed transport witness."
+            )
+        anchor_source_interface = (
+            anchor_transport_witness.materialize_source_interface()
+        )
+        tensors.update(
+            {
+                "anchor_source.target_weight": anchor_source_interface.target_weight,
+                "anchor_source.producer_encoder": (
+                    anchor_source_interface.producer_encoder
+                ),
+                "anchor_base.target_weight": (
+                    anchor_transport_witness.anchor_base_target_weight
+                ),
+                "anchor_source.residual_weight": (
+                    anchor_transport_witness.anchor_source_residual_weight
+                ),
+            }
+        )
     return tensors
 
 
@@ -557,6 +598,9 @@ def _validate_live_seam(
     interface: TiedCausalInterfaceFold,
     attention_receipt_authentication: Mapping[str, Any],
     bindings: Lfm2SemanticPreterminalCapsuleBindings,
+    mapped_parent_tied_table: Any | None = None,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
+    pinned_interface_authentication: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     try:
         import torch
@@ -590,9 +634,78 @@ def _validate_live_seam(
         raise Lfm2SemanticPreterminalCapsuleError(
             "Preterminal attention receipt authentication changed."
         )
-    interface_authentication = authenticate_tied_residual_congruence_interface(
-        interface
+    hybrid = (
+        interface.report.get("mode")
+        == TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE
     )
+    if hybrid and not isinstance(
+        anchor_transport_witness,
+        TiedResidualAnchorTransportWitness,
+    ):
+        raise Lfm2SemanticPreterminalCapsuleError(
+            "Hybrid preterminal seam omitted its typed anchor transport witness."
+        )
+    if not hybrid and anchor_transport_witness is not None:
+        raise Lfm2SemanticPreterminalCapsuleError(
+            "Non-hybrid preterminal seam supplied an anchor transport witness."
+        )
+    if hybrid and mapped_parent_tied_table is None:
+        if pinned_interface_authentication is None:
+            raise Lfm2SemanticPreterminalCapsuleError(
+                "Reloaded hybrid seam has no pinned exact transport authentication."
+            )
+        interface_authentication = _verify_sealed(
+            pinned_interface_authentication,
+            seal_name="result_sha256",
+            label="preterminal hybrid interface authentication",
+        )
+        source_report = _verify_sealed(
+            anchor_transport_witness.source_interface_report,
+            seal_name="report_sha256",
+            label="preterminal anchor source interface",
+        )
+        anchor_transport_receipt = layer_receipt.get(
+            "anchor_residual_transport_authentication"
+        )
+        if (
+            interface_authentication.get("interface_report_sha256")
+            != interface.report.get("report_sha256")
+            or interface_authentication.get(
+                "anchor_residual_formula_recomputed_exact"
+            )
+            is not True
+            or interface_authentication.get(
+                "strong_base_recomputed_for_anchor_residual"
+            )
+            is not True
+            or source_report.get("report_sha256")
+            != interface.report.get("source_interface_report_sha256")
+            or _interface_tensor_sha256(
+                anchor_transport_witness.anchor_base_target_weight
+            )
+            != interface.report.get("anchor_base_target_weight_sha256")
+            or _interface_tensor_sha256(
+                anchor_transport_witness.anchor_source_residual_weight
+            )
+            != interface.report.get("anchor_source_target_residual_sha256")
+            or interface.report.get("anchor_transport_witness_sha256")
+            != anchor_transport_witness.witness_sha256
+            or not isinstance(anchor_transport_receipt, Mapping)
+            or dict(anchor_transport_receipt) != interface_authentication
+            or layer_receipt.get(
+                "anchor_residual_transport_authentication_sha256"
+            )
+            != interface_authentication["result_sha256"]
+        ):
+            raise Lfm2SemanticPreterminalCapsuleError(
+                "Pinned hybrid transport proof or persisted algebraic inputs changed."
+            )
+    else:
+        interface_authentication = authenticate_tied_residual_congruence_interface(
+            interface,
+            mapped_parent_tied_table=mapped_parent_tied_table,
+            anchor_transport_witness=anchor_transport_witness,
+        )
     lineage = layer_receipt.get("tied_interface_lineage")
     input_weight = getattr(target_model.get_input_embeddings(), "weight", None)
     output_weight = getattr(target_model.get_output_embeddings(), "weight", None)
@@ -748,6 +861,8 @@ def publish_lfm2_semantic_preterminal_capsule(
     attention_receipt_authentication: Mapping[str, Any],
     bindings: Lfm2SemanticPreterminalCapsuleBindings,
     output_directory: str | os.PathLike[str],
+    mapped_parent_tied_table: Any | None = None,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Lfm2SemanticPreterminalCapsuleReference:
     """Atomically publish the exact preterminal seam before terminal execution."""
 
@@ -761,6 +876,8 @@ def publish_lfm2_semantic_preterminal_capsule(
         interface=interface,
         attention_receipt_authentication=attention_receipt_authentication,
         bindings=bindings,
+        mapped_parent_tied_table=mapped_parent_tied_table,
+        anchor_transport_witness=anchor_transport_witness,
     )
     context = _context_body(
         bindings=bindings,
@@ -770,13 +887,21 @@ def publish_lfm2_semantic_preterminal_capsule(
     )
     context_sha = canonical_sha256(context)
     payload, payload_entries = _normalize_tensors(
-        _payload_tensors(layer_stack, interface),
+        _payload_tensors(
+            layer_stack,
+            interface,
+            anchor_transport_witness=anchor_transport_witness,
+        ),
         name="preterminal seam payload",
         clone=True,
     )
-    if tuple(payload) != tuple(sorted(_expected_payload_names())):
+    anchor_transport = anchor_transport_witness is not None
+    expected_payload_names = _expected_payload_names(
+        anchor_transport=anchor_transport
+    )
+    if tuple(payload) != tuple(sorted(expected_payload_names)):
         raise Lfm2SemanticPreterminalCapsuleError(
-            "Preterminal seam payload does not have the exact 18-tensor schema."
+            "Preterminal seam payload does not have its exact typed tensor schema."
         )
     stage = Path(
         tempfile.mkdtemp(
@@ -825,7 +950,19 @@ def publish_lfm2_semantic_preterminal_capsule(
                 for split in _SPLITS
             },
             "active_interface_report": dict(interface.report),
-            "active_interface_authentication": seam["interface_authentication"],
+            "active_interface_authentication": _deep_thaw(
+                seam["interface_authentication"]
+            ),
+            "anchor_source_interface_report": (
+                None
+                if anchor_transport_witness is None
+                else dict(anchor_transport_witness.source_interface_report)
+            ),
+            "anchor_transport_witness": (
+                None
+                if anchor_transport_witness is None
+                else dict(anchor_transport_witness.as_dict())
+            ),
             "seam_payload": payload_record,
             "checkpoint": checkpoint,
             "model": {
@@ -850,6 +987,7 @@ def publish_lfm2_semantic_preterminal_capsule(
             },
             "payload_tensor_count": len(payload_entries),
             "payload_tensor_names": list(sorted(payload)),
+            "anchor_residual_transport_inputs_persisted": anchor_transport,
             "exact_four_typed_evidence_banks": True,
             "active_interface_tensors_persisted": True,
             "dense_strict_local_checkpoint": True,
@@ -997,6 +1135,16 @@ def _open_outer_capsule(
     bindings = Lfm2SemanticPreterminalCapsuleBindings.from_mapping(
         manifest.get("bindings")
     )
+    anchor_transport = manifest.get(
+        "anchor_residual_transport_inputs_persisted"
+    )
+    if type(anchor_transport) is not bool:
+        raise Lfm2SemanticPreterminalCapsuleError(
+            "Preterminal capsule omitted its anchor transport inventory mode."
+        )
+    expected_payload_names = _expected_payload_names(
+        anchor_transport=anchor_transport
+    )
     if (
         manifest.get("schema") != LFM2_SEMANTIC_PRETERMINAL_CAPSULE_MANIFEST_SCHEMA
         or manifest.get("artifact_kind") != _ARTIFACT_KIND
@@ -1005,9 +1153,26 @@ def _open_outer_capsule(
         or bindings.bindings_sha256 != expected_bindings_sha
         or manifest.get("context_binding_sha256")
         != receipt.get("context_binding_sha256")
-        or manifest.get("payload_tensor_count") != 18
+        or manifest.get("payload_tensor_count") != len(expected_payload_names)
         or manifest.get("payload_tensor_names")
-        != list(sorted(_expected_payload_names()))
+        != list(sorted(expected_payload_names))
+        or (
+            anchor_transport
+            and (
+                not isinstance(
+                    manifest.get("anchor_source_interface_report"),
+                    Mapping,
+                )
+                or not isinstance(manifest.get("anchor_transport_witness"), Mapping)
+            )
+        )
+        or (
+            not anchor_transport
+            and (
+                manifest.get("anchor_source_interface_report") is not None
+                or manifest.get("anchor_transport_witness") is not None
+            )
+        )
         or manifest.get("exact_four_typed_evidence_banks") is not True
         or manifest.get("active_interface_tensors_persisted") is not True
         or manifest.get("dense_strict_local_checkpoint") is not True
@@ -1034,7 +1199,7 @@ def _open_outer_capsule(
         payload_record.get("path") != _PAYLOAD_NAME
         or payload_record.get("sha256") != receipt.get("seam_payload_file_sha256")
         or [entry.get("name") for entry in payload_record.get("tensor_entries", [])]
-        != list(sorted(_expected_payload_names()))
+        != list(sorted(expected_payload_names))
     ):
         raise Lfm2SemanticPreterminalCapsuleError(
             "Preterminal seam tensor inventory is incomplete."
@@ -1146,6 +1311,31 @@ def load_lfm2_semantic_preterminal_capsule(
         producer_encoder=tensors["interface.producer_encoder"],
         report=manifest["active_interface_report"],
     )
+    anchor_transport_witness = None
+    if manifest["anchor_residual_transport_inputs_persisted"]:
+        witness_document = manifest["anchor_transport_witness"]
+        anchor_transport_witness = TiedResidualAnchorTransportWitness(
+            source_interface_report=manifest["anchor_source_interface_report"],
+            source_encoder=tensors["anchor_source.producer_encoder"],
+            anchor_base_target_weight=tensors["anchor_base.target_weight"],
+            anchor_source_residual_weight=tensors[
+                "anchor_source.residual_weight"
+            ],
+            witness_sha256=witness_document.get("witness_sha256", ""),
+        )
+        reconstructed_source = (
+            anchor_transport_witness.materialize_source_interface()
+        )
+        if (
+            dict(anchor_transport_witness.as_dict()) != dict(witness_document)
+            or _interface_tensor_sha256(reconstructed_source.target_weight)
+            != _interface_tensor_sha256(
+                tensors["anchor_source.target_weight"]
+            )
+        ):
+            raise Lfm2SemanticPreterminalCapsuleError(
+                "Persisted anchor witness tensors do not reproduce their manifest."
+            )
     attention = manifest["attention_receipt_authentication"]
     seam = _validate_live_seam(
         target_model=model,
@@ -1154,6 +1344,10 @@ def load_lfm2_semantic_preterminal_capsule(
         interface=interface,
         attention_receipt_authentication=attention,
         bindings=bindings,
+        anchor_transport_witness=anchor_transport_witness,
+        pinned_interface_authentication=manifest[
+            "active_interface_authentication"
+        ],
     )
     if any(
         _deep_thaw(seam[name]) != model_record.get(name)
@@ -1197,6 +1391,7 @@ def load_lfm2_semantic_preterminal_capsule(
         manifest=_deep_freeze(dict(manifest)),
         receipt=_deep_freeze(dict(receipt)),
         reference=reference,
+        anchor_transport_witness=anchor_transport_witness,
     )
 
 

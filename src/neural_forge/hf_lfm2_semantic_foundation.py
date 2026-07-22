@@ -63,6 +63,7 @@ from neural_forge.hf_lfm2_cpcf_v5_quarantine import (
 from neural_forge.hf_lfm2_semantic_foundation_statistics import (
     Lfm2SemanticFoundationInterfaceStatisticsArtifact,
     Lfm2SemanticFoundationStatisticsError,
+    load_lfm2_semantic_foundation_interface_frontier_companion_json,
     migrate_lfm2_semantic_foundation_interface_statistics_frontier,
     open_lfm2_semantic_foundation_interface_statistics,
     replay_lfm2_semantic_foundation_interface_statistics,
@@ -596,6 +597,51 @@ class Lfm2SemanticFoundationInterfaceSolve:
 class Lfm2SemanticFoundationInterfaceStatisticsBackfill:
     artifact: Lfm2SemanticFoundationInterfaceStatisticsArtifact
     report: Mapping[str, Any]
+
+
+class _Lfm2SemanticFoundationFrontierRehydration(Mapping[str, Any]):
+    """Sealed JSON report plus one authenticated runtime-only anchor residual."""
+
+    __slots__ = ("_anchor_base_target", "_report", "_selected_anchor_residual")
+
+    def __init__(
+        self,
+        report: Mapping[str, Any],
+        anchor_base_target: Any,
+        selected_anchor_residual: Any,
+    ) -> None:
+        owned = MappingProxyType(dict(report))
+        base = anchor_base_target.detach().to(device="cpu").contiguous().clone()
+        residual = selected_anchor_residual.detach().to(device="cpu").contiguous().clone()
+        selection = owned.get("interface_anchor_selection")
+        if (
+            not isinstance(selection, Mapping)
+            or _tensor_sha256(base)
+            != selection.get("anchor_base_target_weight_foundation_sha256")
+            or _tensor_sha256(residual)
+            != selection.get("selected_residual_weight_foundation_sha256")
+        ):
+            raise Lfm2SemanticFoundationError(
+                "Runtime anchor residual differs from the sealed frontier selection."
+        )
+        self._report = owned
+        self._anchor_base_target = base
+        self._selected_anchor_residual = residual
+
+    def __getitem__(self, key: str) -> Any:
+        return self._report[key]
+
+    def __iter__(self):
+        return iter(self._report)
+
+    def __len__(self) -> int:
+        return len(self._report)
+
+    def materialize_selected_anchor_residual(self) -> Any:
+        return self._selected_anchor_residual.clone()
+
+    def materialize_anchor_base_target(self) -> Any:
+        return self._anchor_base_target.clone()
 
 
 def fit_lfm2_semantic_foundation_interface(
@@ -1739,11 +1785,42 @@ def rehydrate_lfm2_semantic_foundation_interface(
     expected_foundation_receipt_sha256: str,
     interface_statistics_directory: str | os.PathLike[str] | None = None,
     expected_interface_statistics_sha256: str | None = None,
-    interface_frontier_companion_receipt: Mapping[str, Any] | None = None,
+    interface_frontier_companion_json: str | os.PathLike[str] | None = None,
+    expected_interface_frontier_companion_file_sha256: str | None = None,
     expected_interface_frontier_companion_sha256: str | None = None,
+    anchor_candidate_index: int | None = None,
 ) -> tuple[TiedCausalInterfaceFold, Mapping[str, Any]]:
     """Recompute and authenticate the foundation's analytical producer map."""
 
+    statistics_requested = interface_statistics_directory is not None
+    if statistics_requested != (expected_interface_statistics_sha256 is not None):
+        raise Lfm2SemanticFoundationError(
+            "Statistics directory and external SHA-256 pin must be supplied together."
+        )
+    companion_values = (
+        interface_frontier_companion_json,
+        expected_interface_frontier_companion_file_sha256,
+        expected_interface_frontier_companion_sha256,
+        anchor_candidate_index,
+    )
+    companion_requested = any(value is not None for value in companion_values)
+    if companion_requested and any(value is None for value in companion_values):
+        raise Lfm2SemanticFoundationError(
+            "Frontier companion JSON, file pin, canonical pin, and anchor candidate "
+            "index must be supplied as one complete set."
+        )
+    if companion_requested and not statistics_requested:
+        raise Lfm2SemanticFoundationError(
+            "A frontier companion requires its pinned legacy statistics artifact."
+        )
+    if anchor_candidate_index is not None and (
+        isinstance(anchor_candidate_index, bool)
+        or not isinstance(anchor_candidate_index, int)
+        or anchor_candidate_index < 0
+    ):
+        raise Lfm2SemanticFoundationError(
+            "Anchor candidate index must be a nonnegative integer."
+        )
     receipt, file_sha256 = authenticate_lfm2_semantic_foundation_receipt(
         foundation_receipt_json,
         expected_receipt_sha256=expected_foundation_receipt_sha256,
@@ -1752,26 +1829,21 @@ def rehydrate_lfm2_semantic_foundation_interface(
         input_metadata=input_metadata,
         parent_model_directory=parent_model_directory,
     )
-    statistics_requested = interface_statistics_directory is not None
-    if statistics_requested != (expected_interface_statistics_sha256 is not None):
-        raise Lfm2SemanticFoundationError(
-            "Statistics directory and external SHA-256 pin must be supplied together."
-        )
-    companion_requested = interface_frontier_companion_receipt is not None
-    if companion_requested != (
-        expected_interface_frontier_companion_sha256 is not None
-    ):
-        raise Lfm2SemanticFoundationError(
-            "Frontier companion receipt and external SHA-256 pin must be supplied "
-            "together."
-        )
-    if companion_requested and not statistics_requested:
-        raise Lfm2SemanticFoundationError(
-            "A frontier companion requires its pinned legacy statistics artifact."
-        )
     if statistics_requested:
+        anchor_selection = None
         try:
             if companion_requested:
+                persisted_companion = (
+                    load_lfm2_semantic_foundation_interface_frontier_companion_json(
+                        interface_frontier_companion_json,
+                        expected_file_sha256=(
+                            expected_interface_frontier_companion_file_sha256
+                        ),
+                        expected_companion_sha256=(
+                            expected_interface_frontier_companion_sha256
+                        ),
+                    )
+                )
                 companion = (
                     migrate_lfm2_semantic_foundation_interface_statistics_frontier(
                         interface_statistics_directory,
@@ -1783,21 +1855,89 @@ def rehydrate_lfm2_semantic_foundation_interface(
                         legacy_foundation_receipt_file_sha256=file_sha256,
                     )
                 )
-                expected_companion_sha256 = _digest(
-                    expected_interface_frontier_companion_sha256,
-                    "interface frontier companion SHA-256",
-                )
                 if (
-                    not isinstance(interface_frontier_companion_receipt, Mapping)
-                    or dict(interface_frontier_companion_receipt)
+                    dict(persisted_companion.receipt)
                     != dict(companion.companion_receipt)
                     or companion.companion_receipt.get("companion_sha256")
-                    != expected_companion_sha256
+                    != persisted_companion.companion_sha256
                 ):
                     raise Lfm2SemanticFoundationStatisticsError(
                         "Frontier companion differs from the regenerated pinned receipt."
                     )
-                interface = companion.interface
+                frontier = companion.anchor_fold.frontier
+                if frontier is None:
+                    raise Lfm2SemanticFoundationStatisticsError(
+                        "Frontier companion omitted its lazy anchor frontier."
+                    )
+                compatibility_default_index = (
+                    frontier.compatibility_default_candidate_index
+                )
+                legacy_active = companion.legacy_solve_report.get(
+                    "active_interface_report"
+                )
+                if (
+                    not isinstance(legacy_active, Mapping)
+                    or legacy_active.get("selected_candidate_index")
+                    != compatibility_default_index
+                    or companion.companion_receipt.get(
+                        "frontier_compatibility_default_candidate_index"
+                    )
+                    != compatibility_default_index
+                ):
+                    raise Lfm2SemanticFoundationStatisticsError(
+                        "Frontier compatibility default differs from the saved legacy "
+                        "selection."
+                    )
+                compatibility_default = companion.anchor_fold.materialize_candidate(
+                    compatibility_default_index
+                )
+                if (
+                    _tensor_sha256(compatibility_default.interface.target_weight)
+                    != _tensor_sha256(companion.interface.target_weight)
+                    or compatibility_default.report.get("selected_candidate_index")
+                    != compatibility_default_index
+                    or compatibility_default.report.get("target_weight_sha256")
+                    != companion.anchor_fold.report.get("target_weight_sha256")
+                    or compatibility_default.report.get("producer_encoder_sha256")
+                    != companion.anchor_fold.report.get("producer_encoder_sha256")
+                ):
+                    raise Lfm2SemanticFoundationStatisticsError(
+                        "Frontier compatibility-default materialization changed bytes."
+                    )
+                anchor_base = companion.anchor_fold.materialize_candidate(0)
+                anchor_base_recipe = anchor_base.report.get("candidate_recipe")
+                if (
+                    anchor_base.report.get("selected_candidate_index") != 0
+                    or not isinstance(anchor_base_recipe, Mapping)
+                    or anchor_base_recipe.get("candidate_index") != 0
+                    or anchor_base.report.get("selected_candidate_is_base_control")
+                    is not True
+                    or anchor_base_recipe.get("original_tensor_identical_to_base")
+                    is not True
+                    or not bool(anchor_base.residual_weight.eq(0).all().item())
+                    or _tensor_sha256(anchor_base.interface.target_weight)
+                    != _tensor_sha256(frontier.base_interface.target_weight)
+                ):
+                    raise Lfm2SemanticFoundationStatisticsError(
+                        "Frontier candidate zero is not the exact anchor base control."
+                    )
+                selected_anchor = companion.anchor_fold.materialize_candidate(
+                    anchor_candidate_index
+                )
+                if (
+                    _tensor_sha256(selected_anchor.interface.target_weight)
+                    != _tensor_sha256(
+                        anchor_base.interface.target_weight
+                        + selected_anchor.residual_weight
+                    )
+                    or selected_anchor.report.get("base_target_weight_sha256")
+                    != _tensor_sha256(anchor_base.interface.target_weight)
+                ):
+                    raise Lfm2SemanticFoundationStatisticsError(
+                        "Selected anchor does not equal its sealed base plus residual."
+                    )
+                interface = selected_anchor.interface
+                saved_interface = companion.interface
                 solve_report = companion.legacy_solve_report
                 statistics_artifact_sha256 = companion.companion_receipt[
                     "statistics_artifact_sha256"
@@ -1818,6 +1958,7 @@ def rehydrate_lfm2_semantic_foundation_interface(
                     foundation_receipt_file_sha256=file_sha256,
                 )
                 interface = replay.interface
+                saved_interface = interface
                 solve_report = replay.solve_report
                 statistics_artifact_sha256 = artifact.artifact_sha256
                 statistics_manifest_file_sha256 = artifact.manifest_file_sha256
@@ -1828,7 +1969,7 @@ def rehydrate_lfm2_semantic_foundation_interface(
             ) from exc
         target = target_model.get_input_embeddings().weight
         output = target_model.get_output_embeddings().weight
-        expected_target = interface.target_weight.to(
+        expected_target = saved_interface.target_weight.to(
             device=target.device,
             dtype=target.dtype,
         )
@@ -1838,12 +1979,101 @@ def rehydrate_lfm2_semantic_foundation_interface(
             or solve_report.get("bridge_artifact_sha256") != bridge.artifact_sha256
             or statistics_artifact_sha256 != expected_interface_statistics_sha256
             or output is not target
-            or not bool((target == expected_target).all().item())
+            or _tensor_sha256(target) != _tensor_sha256(expected_target)
             or receipt.get("source_selected_tied_table_sha256")
             != _tensor_sha256(source_selected_tied_table)
         ):
             raise Lfm2SemanticFoundationError(
                 "Compact interface replay differs from saved child or ancestry."
+            )
+        if companion_requested:
+            selected_recipe = selected_anchor.report.get("candidate_recipe")
+            if (
+                not isinstance(selected_recipe, Mapping)
+                or selected_anchor.report.get("selected_candidate_index")
+                != anchor_candidate_index
+                or selected_anchor.report.get("candidate_recipe_sha256")
+                != selected_recipe.get("recipe_sha256")
+                or selected_anchor.report.get("anchor_frontier_sha256")
+                != frontier.frontier_sha256
+            ):
+                raise Lfm2SemanticFoundationError(
+                    "Selected lazy anchor candidate is not bound to its frontier recipe."
+                )
+            selection_body = {
+                "schema": (
+                    "neural-forge-lfm2-semantic-foundation-anchor-selection-v1"
+                ),
+                "interface_frontier_companion_json": str(
+                    persisted_companion.path
+                ),
+                "interface_frontier_companion_file_sha256": (
+                    persisted_companion.file_sha256
+                ),
+                "interface_frontier_companion_sha256": (
+                    persisted_companion.companion_sha256
+                ),
+                "interface_statistics_artifact_sha256": (
+                    statistics_artifact_sha256
+                ),
+                "causal_anchor_frontier_sha256": frontier.frontier_sha256,
+                "causal_anchor_materializable_candidate_indices": list(
+                    frontier.materializable_candidate_indices
+                ),
+                "causal_anchor_compatibility_default_candidate_index": (
+                    compatibility_default_index
+                ),
+                "anchor_base_candidate_index": 0,
+                "anchor_base_interface_report_sha256": anchor_base.report[
+                    "report_sha256"
+                ],
+                "anchor_base_target_weight_sha256": anchor_base.report[
+                    "target_weight_sha256"
+                ],
+                "anchor_base_target_weight_foundation_sha256": _tensor_sha256(
+                    anchor_base.interface.target_weight
+                ),
+                "compatibility_default_interface_report_sha256": (
+                    compatibility_default.report["report_sha256"]
+                ),
+                "compatibility_default_target_weight_sha256": (
+                    compatibility_default.report["target_weight_sha256"]
+                ),
+                "saved_target_weight_sha256": _tensor_sha256(target),
+                "saved_child_exactly_matches_compatibility_default": True,
+                "selected_anchor_candidate_index": anchor_candidate_index,
+                "selected_anchor_candidate_recipe": dict(selected_recipe),
+                "selected_anchor_candidate_recipe_sha256": (
+                    selected_anchor.report["candidate_recipe_sha256"]
+                ),
+                "selected_interface_report_sha256": (
+                    selected_anchor.report["report_sha256"]
+                ),
+                "selected_target_weight_sha256": (
+                    selected_anchor.report["target_weight_sha256"]
+                ),
+                "selected_target_weight_foundation_sha256": _tensor_sha256(
+                    selected_anchor.interface.target_weight
+                ),
+                "selected_residual_weight_sha256": (
+                    selected_anchor.report["residual_weight_sha256"]
+                ),
+                "selected_residual_weight_foundation_sha256": _tensor_sha256(
+                    selected_anchor.residual_weight
+                ),
+                "selected_anchor_exactly_equals_base_plus_residual": True,
+                "selected_producer_encoder_sha256": (
+                    selected_anchor.report["producer_encoder_sha256"]
+                ),
+                "selected_candidate_lazily_materialized": True,
+                "target_model_installation_deferred_until_authenticated_pipeline_session": (
+                    True
+                ),
+                "dense_anchor_candidate_checkpoints_persisted": 0,
+                "numeric_metrics_have_final_intelligence_authority": False,
+            }
+            anchor_selection = MappingProxyType(
+                _sealed(selection_body, "selection_sha256")
             )
         body = {
             "schema": (
@@ -1870,7 +2100,10 @@ def rehydrate_lfm2_semantic_foundation_interface(
             **(
                 {
                     "interface_frontier_companion_sha256": (
-                        expected_interface_frontier_companion_sha256
+                        persisted_companion.companion_sha256
+                    ),
+                    "interface_frontier_companion_file_sha256": (
+                        persisted_companion.file_sha256
                     ),
                     "causal_anchor_frontier_sha256": (
                         companion.companion_receipt["frontier_sha256"]
@@ -1885,6 +2118,20 @@ def rehydrate_lfm2_semantic_foundation_interface(
                             "frontier_compatibility_default_candidate_index"
                         ]
                     ),
+                    "selected_anchor_candidate_index": anchor_candidate_index,
+                    "selected_anchor_candidate_recipe_sha256": (
+                        selected_anchor.report["candidate_recipe_sha256"]
+                    ),
+                    "selected_anchor_target_weight_sha256": (
+                        selected_anchor.report["target_weight_sha256"]
+                    ),
+                    "selected_anchor_residual_weight_sha256": (
+                        selected_anchor.report["residual_weight_sha256"]
+                    ),
+                    "interface_anchor_selection": dict(anchor_selection),
+                    "interface_anchor_selection_sha256": anchor_selection[
+                        "selection_sha256"
+                    ],
                     "frontier_companion_regenerated_and_consumed": True,
                     "normal_current_artifact_replay_used": False,
                     "legacy_artifact_opened_only_by_explicit_companion_migration": (
@@ -1914,7 +2161,14 @@ def rehydrate_lfm2_semantic_foundation_interface(
             "child_model_forward_calls": 0,
             "training_steps": 0,
         }
-        return interface, MappingProxyType(_sealed(body))
+        sealed_rehydration = MappingProxyType(_sealed(body))
+        if companion_requested:
+            return interface, _Lfm2SemanticFoundationFrontierRehydration(
+                sealed_rehydration,
+                anchor_base.interface.target_weight,
+                selected_anchor.residual_weight,
+            )
+        return interface, sealed_rehydration
     compiler_cache_directory = _ordinary_directory(
         receipt.get("compiler_cache_directory"),
         "foundation compiler cache",

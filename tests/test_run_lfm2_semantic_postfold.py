@@ -46,6 +46,25 @@ def _replace_argument(arguments: list[str], name: str, value: Path) -> list[str]
     return updated
 
 
+def test_atomic_receipt_publication_never_replaces_a_concurrent_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output = tmp_path / "receipt.json"
+
+    def concurrent_publish(_source, destination, *, follow_symlinks):
+        assert follow_symlinks is False
+        Path(destination).write_bytes(b"concurrent-owner\n")
+        raise FileExistsError(destination)
+
+    monkeypatch.setattr(runner.os, "link", concurrent_publish)
+
+    with pytest.raises(FileExistsError):
+        runner._atomic_json(output, {"result_sha256": "f" * 64})
+
+    assert output.read_bytes() == b"concurrent-owner\n"
+
+
 @pytest.mark.parametrize(
     "unpaired",
     (
@@ -148,6 +167,87 @@ def test_cli_forwards_exact_compact_statistics_pair(
     assert written == [(tmp_path / "receipt.json", {"result_sha256": "f" * 64})]
 
 
+@pytest.mark.parametrize(
+    "missing",
+    (
+        "--interface-frontier-companion-json",
+        "--expected-interface-frontier-companion-file-sha256",
+        "--expected-interface-frontier-companion-sha256",
+        "--anchor-candidate-index",
+    ),
+)
+def test_cli_rejects_incomplete_frontier_companion_set_before_assets(
+    tmp_path: Path,
+    monkeypatch,
+    missing: str,
+) -> None:
+    monkeypatch.setattr(
+        runner,
+        "load_local_tokenizer",
+        lambda *_args, **_kwargs: pytest.fail("incomplete companion loaded assets"),
+    )
+    companion = [
+        "--interface-frontier-companion-json",
+        str(tmp_path / "companion.json"),
+        "--expected-interface-frontier-companion-file-sha256",
+        "b" * 64,
+        "--expected-interface-frontier-companion-sha256",
+        "c" * 64,
+        "--anchor-candidate-index",
+        "9",
+    ]
+    position = companion.index(missing)
+    del companion[position : position + 2]
+    with pytest.raises(ValueError, match="must be supplied together"):
+        runner.main(
+            [
+                *_required_arguments(tmp_path),
+                "--interface-statistics-directory",
+                str(tmp_path / "statistics"),
+                "--expected-interface-statistics-sha256",
+                "a" * 64,
+                *companion,
+            ]
+        )
+
+
+def test_cli_forwards_exact_frontier_companion_selection(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls = []
+    monkeypatch.setattr(runner, "load_local_tokenizer", lambda path: str(path))
+    monkeypatch.setattr(
+        runner,
+        "run_lfm2_semantic_postfold",
+        lambda **kwargs: calls.append(kwargs) or {"result_sha256": "f" * 64},
+    )
+    monkeypatch.setattr(runner, "_atomic_json", lambda *_args, **_kwargs: None)
+    companion_path = tmp_path / "companion.json"
+
+    assert runner.main(
+        [
+            *_required_arguments(tmp_path),
+            "--interface-statistics-directory",
+            str(tmp_path / "statistics"),
+            "--expected-interface-statistics-sha256",
+            "a" * 64,
+            "--interface-frontier-companion-json",
+            str(companion_path),
+            "--expected-interface-frontier-companion-file-sha256",
+            "b" * 64,
+            "--expected-interface-frontier-companion-sha256",
+            "c" * 64,
+            "--anchor-candidate-index",
+            "9",
+        ]
+    ) == 0
+    assert calls[0]["interface_frontier_companion_json"] == str(companion_path)
+    assert calls[0]["expected_interface_frontier_companion_file_sha256"] == "b" * 64
+    assert calls[0]["expected_interface_frontier_companion_sha256"] == "c" * 64
+    assert calls[0]["anchor_candidate_index"] == 9
+
+
 def test_cli_omits_compact_statistics_keywords_by_default() -> None:
     args = runner._parser().parse_args(
         [
@@ -182,4 +282,8 @@ def test_cli_omits_compact_statistics_keywords_by_default() -> None:
 
     assert args.interface_statistics_directory is None
     assert args.expected_interface_statistics_sha256 is None
+    assert args.interface_frontier_companion_json is None
+    assert args.expected_interface_frontier_companion_file_sha256 is None
+    assert args.expected_interface_frontier_companion_sha256 is None
+    assert args.anchor_candidate_index is None
     assert args.body_recipe == "fit_guided"

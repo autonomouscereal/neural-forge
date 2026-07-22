@@ -35,7 +35,7 @@ from types import MappingProxyType
 from typing import Any
 from weakref import WeakKeyDictionary
 
-from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_circuit_ir import canonical_json_bytes, canonical_sha256
 from neural_forge import dynamic_lfm2_cpcf_resources as cpcf_resources
 from neural_forge import hf_lfm2_cpcf_model_compiler as cpcf_model_compiler
 from neural_forge import hf_lfm2_cpcf_model_fold as cpcf_model_fold
@@ -150,7 +150,10 @@ from neural_forge.hf_tied_causal_interface_fold import (
 from neural_forge.hf_tied_residual_congruence import (
     TIED_RESIDUAL_CONGRUENCE_MODES,
     TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+    TIED_RESIDUAL_CURRENT_SELF_DUAL_MODE,
+    TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE,
     TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+    TiedResidualAnchorTransportWitness,
     authenticate_tied_residual_congruence_interface,
     compile_tied_residual_congruence_candidate,
 )
@@ -181,6 +184,9 @@ LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA = (
 )
 LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA = (
     "neural-forge-lfm2-semantic-terminal-frontier-export-context-v1"
+)
+LFM2_SEMANTIC_FOUNDATION_ANCHOR_SELECTION_SCHEMA = (
+    "neural-forge-lfm2-semantic-foundation-anchor-selection-v1"
 )
 SEMANTIC_ATTENTION_INSTALLER_CALLABLE = (
     "compile_install_lfm2_semantic_attention_postfold"
@@ -214,6 +220,7 @@ _TERMINAL_FRONTIER_LIVE_FACT_NAMES = (
     "terminal_cache_compatibility_sha256",
     "terminal_cache_payload_binding_sha256",
     "body_recipe_sha256",
+    "interface_anchor_selection_sha256",
 )
 
 
@@ -429,6 +436,121 @@ def _authenticate_body_recipe_binding(
     return recipe
 
 
+def _foundation_lineage_tensor_sha256(value: Any) -> str:
+    """Match the semantic-foundation tensor hash used by companion receipts."""
+
+    torch = _torch()
+    if not isinstance(value, torch.Tensor):
+        raise Lfm2SemanticPostfoldError(
+            "Foundation anchor selection references a non-tensor value."
+        )
+    tensor = value.detach().to(device="cpu").contiguous()
+    descriptor = {
+        "dtype": str(tensor.dtype).removeprefix("torch."),
+        "shape": [int(size) for size in tensor.shape],
+    }
+    digest = hashlib.sha256(canonical_json_bytes(descriptor))
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C"))
+    return digest.hexdigest()
+
+
+def _authenticate_foundation_anchor_selection(
+    value: Mapping[str, Any],
+    *,
+    selected_interface: TiedCausalInterfaceFold | None = None,
+) -> Mapping[str, Any]:
+    """Authenticate one explicit lazy anchor selection and its result hashes."""
+
+    selection = _verify_sealed(
+        _json_owned_receipt_value(value),
+        seal_name="selection_sha256",
+        label="semantic-foundation anchor selection",
+    )
+    indices = selection.get("causal_anchor_materializable_candidate_indices")
+    selected_index = selection.get("selected_anchor_candidate_index")
+    default_index = selection.get(
+        "causal_anchor_compatibility_default_candidate_index"
+    )
+    recipe = selection.get("selected_anchor_candidate_recipe")
+    recipe_body = dict(recipe) if isinstance(recipe, Mapping) else {}
+    recipe_sha = recipe_body.pop("recipe_sha256", None)
+    if (
+        selection.get("schema") != LFM2_SEMANTIC_FOUNDATION_ANCHOR_SELECTION_SCHEMA
+        or not isinstance(indices, list)
+        or not indices
+        or any(
+            isinstance(index, bool) or not isinstance(index, int) or index < 0
+            for index in indices
+        )
+        or len(set(indices)) != len(indices)
+        or isinstance(selected_index, bool)
+        or not isinstance(selected_index, int)
+        or selected_index not in indices
+        or isinstance(default_index, bool)
+        or not isinstance(default_index, int)
+        or default_index not in indices
+        or selection.get("anchor_base_candidate_index") != 0
+        or 0 not in indices
+        or not isinstance(recipe, Mapping)
+        or recipe.get("candidate_index") != selected_index
+        or recipe.get("base_target_weight_sha256")
+        != selection.get("anchor_base_target_weight_sha256")
+        or recipe_sha != canonical_sha256(recipe_body)
+        or selection.get("selected_anchor_candidate_recipe_sha256") != recipe_sha
+        or selection.get("saved_child_exactly_matches_compatibility_default")
+        is not True
+        or selection.get("selected_candidate_lazily_materialized") is not True
+        or selection.get(
+            "target_model_installation_deferred_until_authenticated_pipeline_session"
+        )
+        is not True
+        or selection.get("dense_anchor_candidate_checkpoints_persisted") != 0
+        or selection.get("numeric_metrics_have_final_intelligence_authority")
+        is not False
+        or selection.get("selected_anchor_exactly_equals_base_plus_residual")
+        is not True
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic-foundation anchor selection binding is invalid."
+        )
+    for name in (
+        "interface_frontier_companion_file_sha256",
+        "interface_frontier_companion_sha256",
+        "interface_statistics_artifact_sha256",
+        "causal_anchor_frontier_sha256",
+        "anchor_base_interface_report_sha256",
+        "anchor_base_target_weight_sha256",
+        "anchor_base_target_weight_foundation_sha256",
+        "compatibility_default_interface_report_sha256",
+        "compatibility_default_target_weight_sha256",
+        "saved_target_weight_sha256",
+        "selected_anchor_candidate_recipe_sha256",
+        "selected_interface_report_sha256",
+        "selected_target_weight_sha256",
+        "selected_target_weight_foundation_sha256",
+        "selected_residual_weight_sha256",
+        "selected_residual_weight_foundation_sha256",
+        "selected_producer_encoder_sha256",
+        "selection_sha256",
+    ):
+        _digest(selection.get(name), f"foundation anchor selection {name}")
+    if selected_interface is not None and (
+        not isinstance(selected_interface, TiedCausalInterfaceFold)
+        or selected_interface.report.get("report_sha256")
+        != selection.get("selected_interface_report_sha256")
+        or selected_interface.report.get("target_weight_sha256")
+        != selection.get("selected_target_weight_sha256")
+        or selected_interface.report.get("producer_encoder_sha256")
+        != selection.get("selected_producer_encoder_sha256")
+        or _foundation_lineage_tensor_sha256(selected_interface.target_weight)
+        != selection.get("selected_target_weight_foundation_sha256")
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Selected anchor interface differs from its companion binding."
+        )
+    return MappingProxyType(selection)
+
+
 def _tensor_sha256(value: Any) -> str:
     torch = _torch()
     if (
@@ -457,6 +579,16 @@ def _owned_receipt_value(value: Any) -> Any:
         return [_owned_receipt_value(item) for item in value]
     if isinstance(value, tuple):
         return tuple(_owned_receipt_value(item) for item in value)
+    return value
+
+
+def _json_owned_receipt_value(value: Any) -> Any:
+    """Own a frozen receipt while restoring its canonical JSON container types."""
+
+    if isinstance(value, Mapping):
+        return {key: _json_owned_receipt_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_owned_receipt_value(item) for item in value]
     return value
 
 
@@ -1127,12 +1259,128 @@ def install_lfm2_self_dual_tied_interface_gauge(
     return self_dual, MappingProxyType(_sealed(body, "result_sha256"))
 
 
+def install_lfm2_semantic_foundation_anchor_selection(
+    target_model: Any,
+    interface: TiedCausalInterfaceFold,
+    selection_binding: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Install exactly one authenticated lazy anchor candidate transactionally."""
+
+    torch = _torch()
+    selection = _authenticate_foundation_anchor_selection(
+        selection_binding,
+        selected_interface=interface,
+    )
+    input_weight = getattr(target_model.get_input_embeddings(), "weight", None)
+    output_weight = getattr(target_model.get_output_embeddings(), "weight", None)
+    if (
+        not isinstance(input_weight, torch.nn.Parameter)
+        or output_weight is not input_weight
+        or tuple(input_weight.shape) != tuple(interface.target_weight.shape)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Child has no native tied table matching the selected anchor candidate."
+        )
+    incumbent = input_weight.detach().to(device="cpu").contiguous().clone()
+    if _foundation_lineage_tensor_sha256(incumbent) != selection.get(
+        "saved_target_weight_sha256"
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Saved child changed after compatibility-default anchor verification."
+        )
+    materialized = interface.target_weight.to(
+        device=input_weight.device,
+        dtype=input_weight.dtype,
+    )
+    before_state = fingerprint_lfm2_parent(target_model).identity_sha256
+    before_hashes = _state_tensor_hashes(target_model)
+    before_runtime = _parameter_runtime_snapshot(target_model)
+    before_count = _parameter_count(target_model)
+    install = not torch.equal(input_weight.detach(), materialized)
+    try:
+        if install:
+            with torch.no_grad():
+                input_weight.copy_(materialized)
+        after_state = fingerprint_lfm2_parent(target_model).identity_sha256
+        after_hashes = _state_tensor_hashes(target_model)
+        runtime_proof = _parameter_runtime_proof(
+            before_runtime,
+            _parameter_runtime_snapshot(target_model),
+        )
+        changed_state_keys = _changed_state_keys(before_hashes, after_hashes)
+        tied_pointer = int(input_weight.untyped_storage().data_ptr())
+        tied_state_names = tuple(
+            sorted(
+                name
+                for name, value in target_model.state_dict(keep_vars=True).items()
+                if isinstance(value, torch.Tensor)
+                and int(value.untyped_storage().data_ptr()) == tied_pointer
+            )
+        )
+        if (
+            _parameter_count(target_model) != before_count
+            or target_model.get_output_embeddings().weight is not input_weight
+            or not all(runtime_proof.values())
+            or not torch.equal(input_weight.detach(), materialized)
+            or (
+                install
+                and (
+                    after_state == before_state
+                    or tuple(changed_state_keys) != tied_state_names
+                )
+            )
+            or (
+                not install
+                and (after_state != before_state or bool(changed_state_keys))
+            )
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Anchor selection installation changed topology, aliases, or "
+                "unexpected child state."
+            )
+    except BaseException:
+        with torch.no_grad():
+            input_weight.copy_(incumbent.to(device=input_weight.device))
+        raise
+    body = {
+        "schema": "neural-forge-lfm2-semantic-foundation-anchor-install-v1",
+        "interface_anchor_selection": dict(selection),
+        "interface_anchor_selection_sha256": selection["selection_sha256"],
+        "selected_anchor_candidate_index": selection[
+            "selected_anchor_candidate_index"
+        ],
+        "selected_anchor_candidate_recipe_sha256": selection[
+            "selected_anchor_candidate_recipe_sha256"
+        ],
+        "selected_interface_report_sha256": selection[
+            "selected_interface_report_sha256"
+        ],
+        "selected_target_weight_sha256": selection[
+            "selected_target_weight_sha256"
+        ],
+        "model_state_before_sha256": before_state,
+        "model_state_after_sha256": after_state,
+        "changed_state_keys": list(changed_state_keys),
+        "installation_performed": install,
+        "parameter_copy_calls": int(install),
+        "parameter_element_count_before": before_count,
+        "parameter_element_count_after": _parameter_count(target_model),
+        "parameter_count_changed": False,
+        "selected_candidate_installed_inside_authenticated_pipeline_session": True,
+        "numeric_metric_gate_applied": False,
+        "operation_audit": dict(_ZERO_OPERATIONS),
+    }
+    return MappingProxyType(_sealed(body, "result_sha256"))
+
+
 def install_lfm2_tied_residual_congruence_gauge(
     target_model: Any,
     interface: TiedCausalInterfaceFold,
     mapped_parent_tied_table: Any,
     *,
     mode: str = TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
+    anchor_base_target_weight: Any | None = None,
+    anchor_source_residual_weight: Any | None = None,
 ) -> tuple[TiedCausalInterfaceFold, Mapping[str, Any]]:
     """Transactionally install a self-dual control or strong tied congruence.
 
@@ -1152,6 +1400,8 @@ def install_lfm2_tied_residual_congruence_gauge(
         interface,
         mapped_parent_tied_table,
         mode=mode,
+        anchor_base_target_weight=anchor_base_target_weight,
+        anchor_source_residual_weight=anchor_source_residual_weight,
     )
     selected = candidate.interface
     input_module = target_model.get_input_embeddings()
@@ -1314,6 +1564,28 @@ def install_lfm2_tied_residual_congruence_gauge(
         "selected_producer_encoder_sha256": _interface_tensor_sha256(
             selected.producer_encoder
         ),
+        "anchor_residual_transport_applied": candidate.report[
+            "anchor_residual_transport_applied"
+        ],
+        "anchor_base_target_weight_sha256": candidate.report[
+            "anchor_base_target_weight_sha256"
+        ],
+        "anchor_base_target_weight_foundation_sha256": (
+            None
+            if anchor_base_target_weight is None
+            else _foundation_lineage_tensor_sha256(anchor_base_target_weight)
+        ),
+        "anchor_source_target_residual_sha256": candidate.report[
+            "anchor_source_target_residual_sha256"
+        ],
+        "anchor_source_target_residual_foundation_sha256": (
+            None
+            if anchor_source_residual_weight is None
+            else _foundation_lineage_tensor_sha256(anchor_source_residual_weight)
+        ),
+        "anchor_selfdual_residual_sha256": candidate.report[
+            "anchor_selfdual_residual_sha256"
+        ],
         "installed_vs_selected_fp64_relative_error": materialization_relative_error,
         "installed_vs_selected_fp64_maximum_absolute_error": (
             materialization_maximum_error
@@ -1440,6 +1712,7 @@ def _validate_preterminal_capsule_path_disjointness(
     parent_model_directory: str | os.PathLike[str],
     compiler_diagnostic_json: str | os.PathLike[str],
     interface_statistics_directory: str | os.PathLike[str] | None,
+    interface_frontier_companion_json: str | os.PathLike[str] | None,
     donor_tokenizer: Any,
     target_tokenizer: Any,
 ) -> tuple[Path, Path | None]:
@@ -1459,6 +1732,10 @@ def _validate_preterminal_capsule_path_disjointness(
     if interface_statistics_directory is not None:
         readonly["interface statistics"] = (
             Path(interface_statistics_directory).expanduser().resolve()
+        )
+    if interface_frontier_companion_json is not None:
+        readonly["interface frontier companion"] = (
+            Path(interface_frontier_companion_json).expanduser().resolve()
         )
     for index, path in enumerate(
         (
@@ -4896,7 +5173,8 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
         "heldout_metrics_are_diagnostic_only": True,
         "numeric_behavior_gate_used": False,
         "numeric_metrics_have_final_intelligence_authority": False,
-        "body_recipe_candidates_remain_lazily_materializable": True,
+        "one_authentication_receipt_covers_one_materialized_body_recipe": True,
+        "other_body_recipes_require_sealed_foundation_replay": True,
     }
     return MappingProxyType(_sealed(body, "result_sha256"))
 
@@ -5880,10 +6158,85 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     fold_compute_device: str = "cpu",
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    interface_anchor_selection: Mapping[str, Any] | None = None,
+    mapped_parent_tied_table: Any | None = None,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    anchor_selection = (
+        None
+        if interface_anchor_selection is None
+        else _authenticate_foundation_anchor_selection(interface_anchor_selection)
+    )
+    anchor_interface_report = None
+    anchor_transport_authentication = None
+    if anchor_selection is not None:
+        if not isinstance(interface, TiedCausalInterfaceFold):
+            raise Lfm2SemanticPostfoldError(
+                "Selected anchor body input is not a tied interface."
+            )
+        anchor_interface_report = _verify_sealed(
+            _json_owned_receipt_value(interface.report),
+            seal_name="report_sha256",
+            label="selected anchor residual-aware body interface",
+        )
+        residual_aware = (
+            anchor_interface_report.get("mode")
+            == TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE
+        )
+        if (
+            anchor_interface_report.get("schema")
+            != TIED_RESIDUAL_CONGRUENCE_SCHEMA
+            or anchor_interface_report.get("source_interface_report_sha256")
+            != anchor_selection["selected_interface_report_sha256"]
+            or (
+                residual_aware
+                and (
+                    anchor_interface_report.get(
+                        "anchor_base_target_weight_anchor_sha256"
+                    )
+                    != anchor_selection["anchor_base_target_weight_sha256"]
+                    or anchor_interface_report.get(
+                        "anchor_source_target_residual_anchor_sha256"
+                    )
+                    != anchor_selection["selected_residual_weight_sha256"]
+                )
+            )
+            or (
+                not residual_aware
+                and anchor_interface_report.get("mode")
+                != TIED_RESIDUAL_CURRENT_SELF_DUAL_MODE
+            )
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Selected anchor does not bind the residual-aware body interface."
+            )
+        if residual_aware:
+            try:
+                anchor_transport_authentication = (
+                    authenticate_tied_residual_congruence_interface(
+                        interface,
+                        mapped_parent_tied_table=mapped_parent_tied_table,
+                        anchor_transport_witness=anchor_transport_witness,
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise Lfm2SemanticPostfoldError(
+                    "Selected anchor residual transport failed exact algebraic "
+                    "authentication before body folding."
+                ) from exc
+            if (
+                anchor_transport_authentication.get(
+                    "anchor_residual_formula_recomputed_exact"
+                )
+                is not True
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Selected anchor residual was not exactly transported into the "
+                    "body interface."
+                )
     compiler = _resolve_layer_stack_installer(semantic_layer_stack_compiler)
     if compiler is None:
         topology = cache.manifest.get("layer_topology", {}).get("layers", [])
@@ -5953,6 +6306,14 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         **(
             {"fold_compute_device": fold_compute_device}
             if fold_compute_device != "cpu"
+            else {}
+        ),
+        **(
+            {
+                "mapped_parent_tied_table": mapped_parent_tied_table,
+                "anchor_transport_witness": anchor_transport_witness,
+            }
+            if anchor_transport_authentication is not None
             else {}
         ),
     )
@@ -6055,6 +6416,72 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         verified,
         body_recipe=recipe,
     )
+    if anchor_selection is not None:
+        tied_lineage = verified.get("tied_interface_lineage")
+        if (
+            "interface_anchor_selection" in verified
+            or "interface_anchor_selection_sha256" in verified
+            or not isinstance(tied_lineage, Mapping)
+            or tied_lineage.get("interface_report_sha256")
+            != anchor_interface_report["report_sha256"]
+            or tied_lineage.get("target_weight_sha256")
+            != anchor_interface_report["target_weight_sha256"]
+            or tied_lineage.get("producer_encoder_sha256")
+            != anchor_interface_report["producer_encoder_sha256"]
+            or (
+                anchor_transport_authentication is not None
+                and tied_lineage.get(
+                    "tied_residual_congruence_authentication_sha256"
+                )
+                != anchor_transport_authentication["result_sha256"]
+            )
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Layer-stack compiler preempted or changed the runner-owned anchor "
+                "interface binding."
+            )
+        augmented = dict(verified)
+        augmented.pop("result_sha256")
+        augmented.update(
+            {
+                "interface_anchor_selection": dict(anchor_selection),
+                "interface_anchor_selection_sha256": anchor_selection[
+                    "selection_sha256"
+                ],
+                "selected_anchor_candidate_index": anchor_selection[
+                    "selected_anchor_candidate_index"
+                ],
+                "selected_anchor_candidate_recipe_sha256": anchor_selection[
+                    "selected_anchor_candidate_recipe_sha256"
+                ],
+                "selected_anchor_target_weight_sha256": anchor_selection[
+                    "selected_target_weight_sha256"
+                ],
+                "anchor_selection_bound_before_body_and_terminal_folding": True,
+                "anchor_body_interface_report_sha256": anchor_interface_report[
+                    "report_sha256"
+                ],
+                "anchor_body_target_weight_sha256": anchor_interface_report[
+                    "target_weight_sha256"
+                ],
+                "anchor_body_producer_encoder_sha256": anchor_interface_report[
+                    "producer_encoder_sha256"
+                ],
+                **(
+                    {
+                        "anchor_residual_transport_authentication": dict(
+                            anchor_transport_authentication
+                        ),
+                        "anchor_residual_transport_authentication_sha256": (
+                            anchor_transport_authentication["result_sha256"]
+                        ),
+                    }
+                    if anchor_transport_authentication is not None
+                    else {}
+                ),
+            }
+        )
+        verified = _sealed(augmented, "result_sha256")
     return Lfm2SemanticLayerStackInstallation(
         receipt=verified,
         final_layer_mlp_evidence=result.final_layer_mlp_evidence,
@@ -7553,6 +7980,7 @@ def _authenticate_fused_terminal_tied_interface(
     interface: TiedCausalInterfaceFold,
     mapped_parent_tied_table: Any,
     layer_receipt: Mapping[str, Any],
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Mapping[str, Any]:
     """Bind terminal evidence to the live, layer-authenticated congruence."""
 
@@ -7567,12 +7995,34 @@ def _authenticate_fused_terminal_tied_interface(
         authentication = authenticate_tied_residual_congruence_interface(
             interface,
             mapped_parent_tied_table=mapped_parent_tied_table,
+            anchor_transport_witness=anchor_transport_witness,
         )
     except (TypeError, ValueError) as exc:
         raise Lfm2SemanticPostfoldError(
             "Fused terminal rejected the tied residual-congruence lineage."
         ) from exc
     lineage = layer_receipt.get("tied_interface_lineage")
+    residual_transport = (
+        authentication.get("strong_base_plus_anchor_residual_claimed") is True
+    )
+    publication_authentication = layer_receipt.get(
+        "anchor_residual_transport_authentication"
+    )
+    publication_authentication_sha256 = layer_receipt.get(
+        "anchor_residual_transport_authentication_sha256"
+    )
+    if residual_transport and (
+        not isinstance(lineage, Mapping)
+        or not isinstance(publication_authentication, Mapping)
+        or dict(publication_authentication) != dict(authentication)
+        or publication_authentication_sha256 != authentication["result_sha256"]
+        or lineage.get("tied_residual_congruence_authentication_sha256")
+        != authentication["result_sha256"]
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Fresh anchor-residual authentication differs from the publication-time "
+            "layer-stack proof."
+        )
     input_weight = getattr(target_model.get_input_embeddings(), "weight", None)
     output_weight = getattr(target_model.get_output_embeddings(), "weight", None)
     if (
@@ -7594,6 +8044,11 @@ def _authenticate_fused_terminal_tied_interface(
         or (
             authentication.get("strong_congruence_claimed") is True
             and authentication.get("strong_congruence_recomputed_exact") is not True
+        )
+        or (
+            authentication.get("strong_base_plus_anchor_residual_claimed") is True
+            and authentication.get("anchor_residual_formula_recomputed_exact")
+            is not True
         )
     ):
         raise Lfm2SemanticPostfoldError(
@@ -7725,6 +8180,21 @@ def _build_terminal_frontier_export_context(
         body_recipe=body_recipe,
         label="terminal frontier semantic layer-stack receipt",
     )
+    anchor_selection_value = layer_receipt.get("interface_anchor_selection")
+    anchor_selection = (
+        None
+        if anchor_selection_value is None
+        else _authenticate_foundation_anchor_selection(anchor_selection_value)
+    )
+    anchor_selection_sha256 = (
+        None if anchor_selection is None else anchor_selection["selection_sha256"]
+    )
+    if layer_receipt.get("interface_anchor_selection_sha256") != (
+        anchor_selection_sha256
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Terminal frontier layer receipt has a mismatched anchor selection."
+        )
     interface_result_sha256 = _digest(
         interface_authentication.get("result_sha256"),
         "terminal tied-interface authentication",
@@ -7804,6 +8274,12 @@ def _build_terminal_frontier_export_context(
         "body_recipe": recipe.as_dict(),
         "body_recipe_sha256": recipe.recipe_sha256,
         "body_recipe_id": recipe.recipe_id,
+        "interface_anchor_selection_sha256": anchor_selection_sha256,
+        **(
+            {"interface_anchor_selection": dict(anchor_selection)}
+            if anchor_selection is not None
+            else {}
+        ),
         "tied_interface_authentication_sha256": interface_result_sha256,
         "preterminal_resume_mode": preterminal_resume_mode,
         "same_live_cache_session_as_layer_stack": (
@@ -7855,6 +8331,12 @@ def _authenticate_terminal_frontier_export_context(
         authenticated,
         label="terminal frontier export context",
     )
+    anchor_selection_value = authenticated.get("interface_anchor_selection")
+    anchor_selection = (
+        None
+        if anchor_selection_value is None
+        else _authenticate_foundation_anchor_selection(anchor_selection_value)
+    )
     if (
         authenticated.get("schema")
         != LFM2_SEMANTIC_TERMINAL_FRONTIER_EXPORT_CONTEXT_SCHEMA
@@ -7873,6 +8355,12 @@ def _authenticate_terminal_frontier_export_context(
         or authenticated.get("terminal_source_lineage_sha256")
         != composite_inputs.get("source_lineage_sha256")
         or authenticated.get("body_recipe_sha256") != recipe.recipe_sha256
+        or authenticated.get("interface_anchor_selection_sha256")
+        != (
+            None
+            if anchor_selection is None
+            else anchor_selection["selection_sha256"]
+        )
         or authenticated.get("terminal_cache_session_sha256")
         != composite_inputs.get("cache_session_sha256")
         or authenticated.get("terminal_cache_compatibility_sha256")
@@ -8003,6 +8491,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         Any,
     ]
     | None = None,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Mapping[str, Any]:
     """Jointly compile final-MLP, parent, and lexical lanes into one final W2."""
 
@@ -8056,11 +8545,28 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         body_recipe=body_recipe,
         label="fused terminal semantic layer-stack receipt",
     )
+    layer_anchor_selection_value = layer_receipt.get("interface_anchor_selection")
+    layer_anchor_selection = (
+        None
+        if layer_anchor_selection_value is None
+        else _authenticate_foundation_anchor_selection(
+            layer_anchor_selection_value
+        )
+    )
+    if layer_receipt.get("interface_anchor_selection_sha256") != (
+        None
+        if layer_anchor_selection is None
+        else layer_anchor_selection["selection_sha256"]
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Fused terminal layer receipt has a mismatched anchor selection."
+        )
     terminal_interface_authentication = _authenticate_fused_terminal_tied_interface(
         target_model=target_model,
         interface=interface,
         mapped_parent_tied_table=source_selected_tied_table,
         layer_receipt=layer_receipt,
+        anchor_transport_witness=anchor_transport_witness,
     )
     source_lineage.verify_for(
         cache=cache,
@@ -8068,6 +8574,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         parent_final_norm=parent_final_norm,
         interface=interface,
         source_selected_tied_table=source_selected_tied_table,
+        anchor_transport_witness=anchor_transport_witness,
     )
     current_state = fingerprint_lfm2_parent(target_model).identity_sha256
     current_w2 = _tensor_sha256(_final_w2_parameter(target_model))
@@ -8513,6 +9020,16 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         "cache_parent_fingerprint": cache.parent_fingerprint,
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "semantic_layer_stack_result_sha256": layer_receipt["result_sha256"],
+        "interface_anchor_selection_sha256": (
+            None
+            if layer_anchor_selection is None
+            else layer_anchor_selection["selection_sha256"]
+        ),
+        **(
+            {"interface_anchor_selection": dict(layer_anchor_selection)}
+            if layer_anchor_selection is not None
+            else {}
+        ),
         "tied_interface_authentication": dict(terminal_interface_authentication),
         "tied_interface_authentication_sha256": (
             terminal_interface_authentication["result_sha256"]
@@ -9119,6 +9636,18 @@ def _validate_fused_semantic_terminal_receipt(
         layer_receipt,
         label="fused terminal semantic layer-stack receipt",
     )
+    layer_anchor_value = layer_receipt.get("interface_anchor_selection")
+    layer_anchor_selection = (
+        None
+        if layer_anchor_value is None
+        else _authenticate_foundation_anchor_selection(layer_anchor_value)
+    )
+    receipt_anchor_value = receipt.get("interface_anchor_selection")
+    receipt_anchor_selection = (
+        None
+        if receipt_anchor_value is None
+        else _authenticate_foundation_anchor_selection(receipt_anchor_value)
+    )
     terminal_context_value = receipt.get("terminal_frontier_export_context")
     if not isinstance(terminal_context_value, Mapping):
         raise Lfm2SemanticPostfoldError(
@@ -9133,6 +9662,12 @@ def _validate_fused_semantic_terminal_receipt(
         terminal_context,
         body_recipe=recipe,
         label="fused semantic terminal export context",
+    )
+    context_anchor_value = terminal_context.get("interface_anchor_selection")
+    context_anchor_selection = (
+        None
+        if context_anchor_value is None
+        else _authenticate_foundation_anchor_selection(context_anchor_value)
     )
     installation = receipt.get("installation")
     if not isinstance(installation, Mapping):
@@ -9219,6 +9754,34 @@ def _validate_fused_semantic_terminal_receipt(
         != cache_evidence.get("terminal_cache_payload_binding_sha256")
         or terminal_context.get("terminal_cache_session_sha256")
         != cache_evidence.get("terminal_cache_session_sha256")
+        or (
+            None
+            if layer_anchor_selection is None
+            else dict(layer_anchor_selection)
+        )
+        != (
+            None
+            if receipt_anchor_selection is None
+            else dict(receipt_anchor_selection)
+        )
+        or (
+            None
+            if layer_anchor_selection is None
+            else dict(layer_anchor_selection)
+        )
+        != (
+            None
+            if context_anchor_selection is None
+            else dict(context_anchor_selection)
+        )
+        or receipt.get("interface_anchor_selection_sha256")
+        != (
+            None
+            if layer_anchor_selection is None
+            else layer_anchor_selection["selection_sha256"]
+        )
+        or terminal_context.get("interface_anchor_selection_sha256")
+        != receipt.get("interface_anchor_selection_sha256")
     )
     terminal_validation = terminal_result.get("validation")
     terminal_output_hashes = terminal_result.get("output_state_sha256")
@@ -9664,6 +10227,7 @@ def publish_lfm2_semantic_postfold_checkpoint(
     target_tokenizer: Any,
     output_directory: str | os.PathLike[str],
     context_binding_sha256: str,
+    interface_anchor_selection_sha256: str | None = None,
     device: str,
     dtype: str = "bfloat16",
 ) -> tuple[Any, Mapping[str, Any]]:
@@ -9671,6 +10235,14 @@ def publish_lfm2_semantic_postfold_checkpoint(
 
     output = _new_output_path(output_directory)
     context = _digest(context_binding_sha256, "postfold context binding")
+    anchor_selection_sha256 = (
+        None
+        if interface_anchor_selection_sha256 is None
+        else _digest(
+            interface_anchor_selection_sha256,
+            "checkpoint interface anchor selection",
+        )
+    )
     model_state = fingerprint_model_state(target_model)
     inventory = independent_parameter_inventory(target_model)
     inventory_sha = _digest(
@@ -9769,6 +10341,7 @@ def publish_lfm2_semantic_postfold_checkpoint(
         "schema": LFM2_SEMANTIC_POSTFOLD_CHECKPOINT_SCHEMA,
         "output_directory": str(output),
         "context_binding_sha256": context,
+        "interface_anchor_selection_sha256": anchor_selection_sha256,
         "artifact_sha256": metadata["artifact_sha256"],
         "model_state_sha256": model_state,
         "parameter_inventory_sha256": inventory_sha,
@@ -9848,6 +10421,10 @@ def run_lfm2_semantic_postfold(
     tied_interface_mode: str = TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
     interface_statistics_directory: str | os.PathLike[str] | None = None,
     expected_interface_statistics_sha256: str | None = None,
+    interface_frontier_companion_json: str | os.PathLike[str] | None = None,
+    expected_interface_frontier_companion_file_sha256: str | None = None,
+    expected_interface_frontier_companion_sha256: str | None = None,
+    anchor_candidate_index: int | None = None,
     attention_installer: Callable[..., Mapping[str, Any]] | None = None,
     semantic_layer_stack_compiler: Callable[..., Any] | None = None,
     preterminal_capsule_directory: str | os.PathLike[str] | None = None,
@@ -9873,6 +10450,53 @@ def run_lfm2_semantic_postfold(
         if statistics_requested
         else None
     )
+    companion_values = (
+        interface_frontier_companion_json,
+        expected_interface_frontier_companion_file_sha256,
+        expected_interface_frontier_companion_sha256,
+        anchor_candidate_index,
+    )
+    companion_requested = any(value is not None for value in companion_values)
+    if companion_requested and any(value is None for value in companion_values):
+        raise Lfm2SemanticPostfoldError(
+            "Interface frontier companion JSON, file pin, canonical pin, and anchor "
+            "candidate index must be supplied as one complete set."
+        )
+    if companion_requested and not statistics_requested:
+        raise Lfm2SemanticPostfoldError(
+            "An interface frontier companion requires pinned interface statistics."
+        )
+    if anchor_candidate_index is not None and (
+        isinstance(anchor_candidate_index, bool)
+        or not isinstance(anchor_candidate_index, int)
+        or anchor_candidate_index < 0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Anchor candidate index must be a nonnegative integer."
+        )
+    if (
+        tied_interface_mode == TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE
+        and not companion_requested
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Strong-base anchor-residual mode requires a pinned frontier selection."
+        )
+    expected_companion_file_sha256 = (
+        _digest(
+            expected_interface_frontier_companion_file_sha256,
+            "expected interface frontier companion file SHA-256",
+        )
+        if companion_requested
+        else None
+    )
+    expected_companion_sha256 = (
+        _digest(
+            expected_interface_frontier_companion_sha256,
+            "expected interface frontier companion SHA-256",
+        )
+        if companion_requested
+        else None
+    )
     output, validated_capsule_output = _validate_preterminal_capsule_path_disjointness(
         output_checkpoint_directory=output_checkpoint_directory,
         preterminal_capsule_directory=preterminal_capsule_directory,
@@ -9882,6 +10506,7 @@ def run_lfm2_semantic_postfold(
         parent_model_directory=parent_model_directory,
         compiler_diagnostic_json=compiler_diagnostic_json,
         interface_statistics_directory=interface_statistics_directory,
+        interface_frontier_companion_json=interface_frontier_companion_json,
         donor_tokenizer=donor_tokenizer,
         target_tokenizer=target_tokenizer,
     )
@@ -9976,6 +10601,22 @@ def run_lfm2_semantic_postfold(
                             "expected_interface_statistics_sha256": (
                                 expected_statistics_sha256
                             ),
+                            **(
+                                {
+                                    "interface_frontier_companion_json": (
+                                        interface_frontier_companion_json
+                                    ),
+                                    "expected_interface_frontier_companion_file_sha256": (
+                                        expected_companion_file_sha256
+                                    ),
+                                    "expected_interface_frontier_companion_sha256": (
+                                        expected_companion_sha256
+                                    ),
+                                    "anchor_candidate_index": anchor_candidate_index,
+                                }
+                                if companion_requested
+                                else {}
+                            ),
                         }
                         if statistics_requested
                         else {}
@@ -9997,6 +10638,9 @@ def run_lfm2_semantic_postfold(
             expected_compiler_diagnostic_sha256=(expected_compiler_diagnostic_sha256),
         )
     interface_statistics_replay = None
+    interface_anchor_selection = None
+    interface_anchor_base_target = None
+    interface_anchor_residual = None
     if statistics_requested:
         verified_rehydration = _verify_sealed(
             interface_rehydration,
@@ -10011,14 +10655,79 @@ def run_lfm2_semantic_postfold(
             verified_rehydration.get("interface_statistics_manifest_file_sha256"),
             "rehydrated interface statistics manifest",
         )
-        replay_sha256 = _digest(
-            verified_rehydration.get("interface_statistics_replay_sha256"),
-            "interface statistics replay",
-        )
+        rehydration_schema = verified_rehydration.get("schema")
+        if companion_requested:
+            selection_value = verified_rehydration.get("interface_anchor_selection")
+            if not isinstance(selection_value, Mapping):
+                raise Lfm2SemanticPostfoldError(
+                    "Companion rehydration omitted its selected anchor binding."
+                )
+            interface_anchor_selection = _authenticate_foundation_anchor_selection(
+                selection_value,
+                selected_interface=interface,
+            )
+            residual_materializer = getattr(
+                interface_rehydration,
+                "materialize_selected_anchor_residual",
+                None,
+            )
+            base_materializer = getattr(
+                interface_rehydration,
+                "materialize_anchor_base_target",
+                None,
+            )
+            if not callable(residual_materializer) or not callable(base_materializer):
+                raise Lfm2SemanticPostfoldError(
+                    "Companion rehydration discarded its anchor base or residual."
+                )
+            interface_anchor_base_target = base_materializer()
+            interface_anchor_residual = residual_materializer()
+            if (
+                interface_anchor_selection["selected_anchor_candidate_index"]
+                != anchor_candidate_index
+                or _foundation_lineage_tensor_sha256(interface_anchor_base_target)
+                != interface_anchor_selection[
+                    "anchor_base_target_weight_foundation_sha256"
+                ]
+                or _foundation_lineage_tensor_sha256(interface_anchor_residual)
+                != interface_anchor_selection[
+                    "selected_residual_weight_foundation_sha256"
+                ]
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Returned anchor candidate or residual differs from the request."
+                )
+            replay_sha256 = None
+        else:
+            replay_sha256 = _digest(
+                verified_rehydration.get("interface_statistics_replay_sha256"),
+                "interface statistics replay",
+            )
         if (
-            verified_rehydration.get("schema")
-            != "neural-forge-lfm2-semantic-foundation-interface-rehydration-v2"
+            rehydration_schema
+            != (
+                "neural-forge-lfm2-semantic-foundation-interface-rehydration-v3"
+                if companion_requested
+                else "neural-forge-lfm2-semantic-foundation-interface-rehydration-v2"
+            )
             or artifact_sha256 != expected_statistics_sha256
+            or (
+                companion_requested
+                and (
+                    verified_rehydration.get(
+                        "interface_frontier_companion_file_sha256"
+                    )
+                    != expected_companion_file_sha256
+                    or verified_rehydration.get(
+                        "interface_frontier_companion_sha256"
+                    )
+                    != expected_companion_sha256
+                    or verified_rehydration.get(
+                        "interface_anchor_selection_sha256"
+                    )
+                    != interface_anchor_selection["selection_sha256"]
+                )
+            )
             or verified_rehydration.get("compiler_cache_open_calls") != 0
             or verified_rehydration.get("trace_safetensor_open_calls") != 0
             or verified_rehydration.get("selective_provider_open_calls") != 0
@@ -10033,7 +10742,21 @@ def run_lfm2_semantic_postfold(
             ),
             "artifact_sha256": artifact_sha256,
             "manifest_file_sha256": manifest_sha256,
-            "replay_sha256": replay_sha256,
+            **(
+                {
+                    "frontier_companion_file_sha256": (
+                        expected_companion_file_sha256
+                    ),
+                    "frontier_companion_sha256": expected_companion_sha256,
+                    "interface_anchor_selection_sha256": (
+                        interface_anchor_selection["selection_sha256"]
+                    ),
+                    "anchor_candidate_index": anchor_candidate_index,
+                    "migration_companion_consumed": True,
+                }
+                if companion_requested
+                else {"replay_sha256": replay_sha256}
+            ),
             "interface_rehydration_sha256": verified_rehydration["result_sha256"],
             "semantic_evidence_cache_key": cache.cache_key,
             "semantic_evidence_cache_open_calls": 1,
@@ -10048,18 +10771,55 @@ def run_lfm2_semantic_postfold(
             }
         )
     rehydrated_interface_report = dict(interface.report)
+    selected_anchor_source_interface = (
+        interface if interface_anchor_selection is not None else None
+    )
     preterminal_capsule_reference = None
     # The single whole-file SHA authentication pass happens before the first
     # target mutation (the tied residual gauge).  This exact session remains open
     # while the layer stack reads selected tensors and the terminal collector
     # later reads every tensor payload in each sealed batch inventory.
     with cache.selective_authenticated_session() as pipeline_cache_session:
+        anchor_selection_installation = None
+        if interface_anchor_selection is not None:
+            anchor_selection_installation = (
+                install_lfm2_semantic_foundation_anchor_selection(
+                    target_model,
+                    interface,
+                    interface_anchor_selection,
+                )
+            )
+        effective_tied_interface_mode = (
+            TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE
+            if interface_anchor_selection is not None
+            and tied_interface_mode == TIED_RESIDUAL_STRONG_CONGRUENCE_MODE
+            else tied_interface_mode
+        )
+        anchor_transport_witness = (
+            TiedResidualAnchorTransportWitness.from_source_interface(
+                selected_anchor_source_interface,
+                anchor_base_target_weight=interface_anchor_base_target,
+                anchor_source_residual_weight=interface_anchor_residual,
+            )
+            if effective_tied_interface_mode
+            == TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE
+            else None
+        )
         interface, tied_residual_interface_gauge = (
             install_lfm2_tied_residual_congruence_gauge(
                 target_model,
                 interface,
                 source_table,
-                mode=tied_interface_mode,
+                mode=effective_tied_interface_mode,
+                **(
+                    {
+                        "anchor_base_target_weight": interface_anchor_base_target,
+                        "anchor_source_residual_weight": interface_anchor_residual,
+                    }
+                    if effective_tied_interface_mode
+                    == TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE
+                    else {}
+                ),
             )
         )
         terminal_source_lineage = build_lfm2_long_horizon_terminal_source_lineage(
@@ -10069,6 +10829,7 @@ def run_lfm2_semantic_postfold(
             interface=interface,
             source_selected_tied_table=source_table,
             direct_local_mapped_source_report=source_table_lineage_report,
+            anchor_transport_witness=anchor_transport_witness,
         )
         layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
             cache=cache,
@@ -10084,7 +10845,26 @@ def run_lfm2_semantic_postfold(
             fold_compute_device=fold_compute_device,
             authenticated_cache_session=pipeline_cache_session,
             body_recipe=recipe,
+            interface_anchor_selection=interface_anchor_selection,
+            **(
+                {
+                    "mapped_parent_tied_table": source_table,
+                    "anchor_transport_witness": anchor_transport_witness,
+                }
+                if effective_tied_interface_mode
+                == TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE
+                else {}
+            ),
         )
+        if interface_anchor_selection is not None and (
+            layer_stack.receipt.get("interface_anchor_selection_sha256")
+            != interface_anchor_selection["selection_sha256"]
+            or layer_stack.receipt.get("interface_anchor_selection")
+            != dict(interface_anchor_selection)
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Semantic layer stack dropped or changed the selected anchor binding."
+            )
         attention_receipt_authentication = (
             authenticate_lfm2_semantic_layer_stack_attention_receipts(
                 layer_stack.receipt,
@@ -10129,6 +10909,8 @@ def run_lfm2_semantic_postfold(
                     target_tokenizer=target_tokenizer,
                     layer_stack=layer_stack,
                     interface=interface,
+                    mapped_parent_tied_table=source_table,
+                    anchor_transport_witness=anchor_transport_witness,
                     attention_receipt_authentication=(attention_receipt_authentication),
                     bindings=capsule_bindings,
                     output_directory=preterminal_capsule_directory,
@@ -10153,6 +10935,14 @@ def run_lfm2_semantic_postfold(
                     "terminal_cache_compatibility": terminal_cache_compatibility,
                     "authenticated_cache_session": pipeline_cache_session,
                     "body_recipe": recipe,
+                    **(
+                        {
+                            "anchor_transport_witness": anchor_transport_witness,
+                        }
+                        if effective_tied_interface_mode
+                        == TIED_RESIDUAL_STRONG_ANCHOR_RESIDUAL_MODE
+                        else {}
+                    ),
                 },
             )
         )
@@ -10248,7 +11038,21 @@ def run_lfm2_semantic_postfold(
         ],
         "active_tied_interface_report_sha256": interface.report["report_sha256"],
         "interface_rehydration_sha256": interface_rehydration["result_sha256"],
-        "tied_interface_mode": tied_interface_mode,
+        **(
+            {
+                "interface_anchor_selection": dict(interface_anchor_selection),
+                "interface_anchor_selection_sha256": interface_anchor_selection[
+                    "selection_sha256"
+                ],
+                "interface_anchor_selection_installation_sha256": (
+                    anchor_selection_installation["result_sha256"]
+                ),
+            }
+            if interface_anchor_selection is not None
+            else {}
+        ),
+        "requested_tied_interface_mode": tied_interface_mode,
+        "tied_interface_mode": effective_tied_interface_mode,
         "tied_residual_interface_gauge_sha256": (
             tied_residual_interface_gauge["result_sha256"]
         ),
@@ -10285,6 +11089,11 @@ def run_lfm2_semantic_postfold(
         target_tokenizer=target_tokenizer,
         output_directory=output,
         context_binding_sha256=context_sha,
+        interface_anchor_selection_sha256=(
+            None
+            if interface_anchor_selection is None
+            else interface_anchor_selection["selection_sha256"]
+        ),
         device=device,
         dtype=dtype,
     )
@@ -10308,7 +11117,8 @@ def run_lfm2_semantic_postfold(
         "complete_body_recipe_candidate_ids": list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
         "complete_body_recipe_candidate_count": len(LFM2_SEMANTIC_BODY_RECIPE_IDS),
         "materialized_body_recipe_id": recipe.recipe_id,
-        "body_recipe_candidates_remain_lazily_materializable": True,
+        "one_checkpoint_contains_one_materialized_body_recipe": True,
+        "other_body_recipes_require_sealed_foundation_replay": True,
         "terminal_cache_compatibility": dict(terminal_cache_compatibility),
         "pipeline_cache_session_reuse": dict(pipeline_cache_session_reuse),
         "cache_parent_fingerprint": cache.parent_fingerprint,
@@ -10318,11 +11128,22 @@ def run_lfm2_semantic_postfold(
         "active_tied_interface": dict(interface.report),
         "interface_rehydration": dict(interface_rehydration),
         **(
+            {
+                "interface_anchor_selection": dict(interface_anchor_selection),
+                "interface_anchor_selection_installation": dict(
+                    anchor_selection_installation
+                ),
+            }
+            if interface_anchor_selection is not None
+            else {}
+        ),
+        **(
             {"interface_statistics_replay": dict(interface_statistics_replay)}
             if interface_statistics_replay is not None
             else {}
         ),
-        "tied_interface_mode": tied_interface_mode,
+        "requested_tied_interface_mode": tied_interface_mode,
+        "tied_interface_mode": effective_tied_interface_mode,
         "tied_residual_interface_gauge": dict(tied_residual_interface_gauge),
         "self_dual_tied_gauge": dict(tied_residual_interface_gauge),
         "compiler_lineage": {
@@ -10414,7 +11235,9 @@ def run_lfm2_semantic_postfold(
             "terminal_w2_heldout_diagnosed_without_publication_gate": True,
             "body_recipe_authenticated_across_attention_short_conv_and_mlp": True,
             "numeric_metrics_have_final_intelligence_authority": False,
-            "all_body_recipe_candidates_remain_available_for_manual_review": True,
+            "all_body_recipe_ids_require_sealed_foundation_replay_for_manual_review": (
+                True
+            ),
             "overall_postfold_contains_meaningful_parameter_changes": True,
             "standalone_child": True,
             "parameter_count_compaction_changed_by_postfold": False,

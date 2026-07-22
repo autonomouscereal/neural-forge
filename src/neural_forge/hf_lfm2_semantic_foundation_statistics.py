@@ -217,6 +217,16 @@ class Lfm2SemanticFoundationInterfaceFrontierCompanion:
     companion_receipt: Mapping[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2SemanticFoundationInterfaceFrontierCompanionArtifact:
+    """One canonical persisted companion receipt with both external pins."""
+
+    path: Path
+    file_sha256: str
+    companion_sha256: str
+    receipt: Mapping[str, Any]
+
+
 def _digest(value: Any, name: str) -> str:
     if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
         raise Lfm2SemanticFoundationStatisticsError(
@@ -257,7 +267,8 @@ def _ordinary_file(path: Path, name: str) -> Path:
 def _read_canonical_manifest(path: Path) -> tuple[dict[str, Any], str]:
     path = _ordinary_file(path, "statistics manifest")
     try:
-        raw = path.read_bytes()
+        with path.open("rb") as handle:
+            raw = handle.read(_MAX_MANIFEST_BYTES + 1)
         value = json.loads(raw.decode("ascii"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise Lfm2SemanticFoundationStatisticsError(
@@ -272,6 +283,135 @@ def _read_canonical_manifest(path: Path) -> tuple[dict[str, Any], str]:
             "Statistics manifest is not bounded canonical JSON."
         )
     return value, hashlib.sha256(raw).hexdigest()
+
+
+def load_lfm2_semantic_foundation_interface_frontier_companion_json(
+    companion_json: str | os.PathLike[str],
+    *,
+    expected_file_sha256: str,
+    expected_companion_sha256: str,
+) -> Lfm2SemanticFoundationInterfaceFrontierCompanionArtifact:
+    """Load one bounded canonical companion using independent file/body pins."""
+
+    path = _ordinary_file(
+        Path(companion_json).expanduser(),
+        "foundation interface frontier companion",
+    )
+    expected_file = _digest(
+        expected_file_sha256,
+        "frontier companion file SHA-256",
+    )
+    expected_companion = _digest(
+        expected_companion_sha256,
+        "frontier companion canonical SHA-256",
+    )
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(_MAX_MANIFEST_BYTES + 1)
+        value = json.loads(raw.decode("ascii"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Could not parse the frontier companion receipt."
+        ) from exc
+    observed_file = hashlib.sha256(raw).hexdigest()
+    if (
+        len(raw) > _MAX_MANIFEST_BYTES
+        or not isinstance(value, dict)
+        or raw != _canonical_file_bytes(value)
+        or observed_file != expected_file
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Frontier companion is not bounded canonical JSON or differs from "
+            "its external file SHA-256 pin."
+        )
+    receipt = _verify_sealed(
+        value,
+        field="companion_sha256",
+        name="frontier companion receipt",
+    )
+    if (
+        receipt["companion_sha256"] != expected_companion
+        or receipt.get("schema")
+        != LFM2_SEMANTIC_FOUNDATION_INTERFACE_FRONTIER_COMPANION_SCHEMA
+        or receipt.get("status")
+        != "frontier-aware-companion-derived-from-legacy-compact-statistics"
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Frontier companion differs from its external canonical SHA-256 pin."
+        )
+    return Lfm2SemanticFoundationInterfaceFrontierCompanionArtifact(
+        path=path,
+        file_sha256=observed_file,
+        companion_sha256=receipt["companion_sha256"],
+        receipt=MappingProxyType(receipt),
+    )
+
+
+def write_lfm2_semantic_foundation_interface_frontier_companion_json(
+    companion_json: str | os.PathLike[str],
+    companion: (
+        Lfm2SemanticFoundationInterfaceFrontierCompanion | Mapping[str, Any]
+    ),
+) -> Lfm2SemanticFoundationInterfaceFrontierCompanionArtifact:
+    """Atomically persist one migration companion as exact canonical JSON."""
+
+    receipt_value = (
+        companion.companion_receipt
+        if isinstance(
+            companion,
+            Lfm2SemanticFoundationInterfaceFrontierCompanion,
+        )
+        else companion
+    )
+    receipt = _verify_sealed(
+        receipt_value,
+        field="companion_sha256",
+        name="frontier companion receipt",
+    )
+    if (
+        receipt.get("schema")
+        != LFM2_SEMANTIC_FOUNDATION_INTERFACE_FRONTIER_COMPANION_SCHEMA
+        or receipt.get("status")
+        != "frontier-aware-companion-derived-from-legacy-compact-statistics"
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Only an authenticated frontier-migration companion can be persisted."
+        )
+    output = Path(companion_json).expanduser().resolve()
+    if output.exists() or output.is_symlink():
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Frontier companion output must be a new ordinary file."
+        )
+    parent = _ordinary_directory(output.parent, "frontier companion parent")
+    raw = _canonical_file_bytes(receipt)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.",
+        suffix=".tmp",
+        dir=parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            # A hard link is an atomic create-if-absent operation.  Unlike
+            # ``os.replace``, it cannot silently replace a companion published
+            # by a concurrent writer after the preflight existence check.
+            os.link(temporary, output, follow_symlinks=False)
+        except FileExistsError as exc:
+            raise Lfm2SemanticFoundationStatisticsError(
+                "Frontier companion destination appeared during publication."
+            ) from exc
+    finally:
+        if temporary.exists() and not temporary.is_symlink():
+            temporary.unlink()
+    return load_lfm2_semantic_foundation_interface_frontier_companion_json(
+        output,
+        expected_file_sha256=hashlib.sha256(raw).hexdigest(),
+        expected_companion_sha256=receipt["companion_sha256"],
+    )
 
 
 def _file_sha256(path: Path) -> tuple[int, str]:
@@ -1587,12 +1727,15 @@ __all__ = [
     "LFM2_SEMANTIC_FOUNDATION_INTERFACE_STATISTICS_SCHEMA",
     "LFM2_SEMANTIC_FOUNDATION_INTERFACE_STATISTICS_STATUS",
     "Lfm2SemanticFoundationInterfaceFrontierCompanion",
+    "Lfm2SemanticFoundationInterfaceFrontierCompanionArtifact",
     "Lfm2SemanticFoundationInterfaceStatisticsArtifact",
     "Lfm2SemanticFoundationInterfaceStatisticsReplay",
     "Lfm2SemanticFoundationStatisticsError",
     "authenticate_lfm2_semantic_foundation_interface_frontier_companion",
+    "load_lfm2_semantic_foundation_interface_frontier_companion_json",
     "migrate_lfm2_semantic_foundation_interface_statistics_frontier",
     "open_lfm2_semantic_foundation_interface_statistics",
     "replay_lfm2_semantic_foundation_interface_statistics",
     "write_lfm2_semantic_foundation_interface_statistics",
+    "write_lfm2_semantic_foundation_interface_frontier_companion_json",
 ]

@@ -16,10 +16,12 @@ import neural_forge.hf_lfm2_semantic_foundation as foundation  # noqa: E402
 from neural_forge.hf_lfm2_semantic_foundation_statistics import (  # noqa: E402
     Lfm2SemanticFoundationStatisticsError,
     authenticate_lfm2_semantic_foundation_interface_frontier_companion,
+    load_lfm2_semantic_foundation_interface_frontier_companion_json,
     migrate_lfm2_semantic_foundation_interface_statistics_frontier,
     open_lfm2_semantic_foundation_interface_statistics,
     replay_lfm2_semantic_foundation_interface_statistics,
     write_lfm2_semantic_foundation_interface_statistics,
+    write_lfm2_semantic_foundation_interface_frontier_companion_json,
 )
 from neural_forge.hf_tied_causal_interface_anchor_fold import (  # noqa: E402
     TiedCausalAnchorSplit,
@@ -349,6 +351,18 @@ def test_legacy_statistics_require_explicit_frontier_companion_migration(
         legacy_foundation_receipt=legacy_receipt,
         legacy_foundation_receipt_file_sha256="f" * 64,
     )
+    persisted = write_lfm2_semantic_foundation_interface_frontier_companion_json(
+        tmp_path / "frontier-companion.json",
+        companion,
+    )
+    reopened_companion = (
+        load_lfm2_semantic_foundation_interface_frontier_companion_json(
+            persisted.path,
+            expected_file_sha256=persisted.file_sha256,
+            expected_companion_sha256=persisted.companion_sha256,
+        )
+    )
+    assert dict(reopened_companion.receipt) == dict(companion.companion_receipt)
     assert companion.anchor_fold.frontier is not None
     assert companion.anchor_fold.frontier.materializable_candidate_indices == tuple(
         range(10)
@@ -452,6 +466,10 @@ def test_foundation_rehydration_explicitly_consumes_pinned_legacy_companion(
         legacy_foundation_receipt=legacy_receipt,
         legacy_foundation_receipt_file_sha256="f" * 64,
     )
+    persisted = write_lfm2_semantic_foundation_interface_frontier_companion_json(
+        tmp_path / "rehydration-frontier-companion.json",
+        companion,
+    )
 
     class Target(torch.nn.Module):
         def __init__(self):
@@ -514,29 +532,51 @@ def test_foundation_rehydration_explicitly_consumes_pinned_legacy_companion(
             expected_interface_statistics_sha256=artifact.artifact_sha256,
         )
 
-    interface, rehydration = foundation.rehydrate_lfm2_semantic_foundation_interface(
-        Target(),
-        table,
-        semantic_cache=semantic_cache,
-        bridge=bridge,
-        target_tokenizer=object(),
-        parent_model_directory=tmp_path,
-        input_metadata={},
-        foundation_receipt_json=tmp_path / "authenticated-by-fixture.json",
-        expected_foundation_receipt_sha256=legacy_receipt["receipt_sha256"],
-        interface_statistics_directory=artifact.path,
-        expected_interface_statistics_sha256=artifact.artifact_sha256,
-        interface_frontier_companion_receipt=companion.companion_receipt,
-        expected_interface_frontier_companion_sha256=(
-            companion.companion_receipt["companion_sha256"]
-        ),
-    )
+    def rehydrate(candidate_index):
+        target = Target()
+        saved = target.weight.detach().clone()
+        result = foundation.rehydrate_lfm2_semantic_foundation_interface(
+            target,
+            table,
+            semantic_cache=semantic_cache,
+            bridge=bridge,
+            target_tokenizer=object(),
+            parent_model_directory=tmp_path,
+            input_metadata={},
+            foundation_receipt_json=tmp_path / "authenticated-by-fixture.json",
+            expected_foundation_receipt_sha256=legacy_receipt["receipt_sha256"],
+            interface_statistics_directory=artifact.path,
+            expected_interface_statistics_sha256=artifact.artifact_sha256,
+            interface_frontier_companion_json=persisted.path,
+            expected_interface_frontier_companion_file_sha256=(
+                persisted.file_sha256
+            ),
+            expected_interface_frontier_companion_sha256=(
+                persisted.companion_sha256
+            ),
+            anchor_candidate_index=candidate_index,
+        )
+        assert torch.equal(target.weight, saved)
+        return result
 
-    assert torch.equal(interface.target_weight, anchor.interface.target_weight)
+    default_interface, default_rehydration = rehydrate(7)
+    interface, rehydration = rehydrate(9)
+
+    assert torch.equal(default_interface.target_weight, anchor.interface.target_weight)
+    assert torch.equal(
+        interface.target_weight,
+        companion.anchor_fold.materialize_candidate(9).interface.target_weight,
+    )
+    assert not torch.equal(interface.target_weight, default_interface.target_weight)
     assert torch.equal(interface.producer_encoder, anchor.interface.producer_encoder)
     assert rehydration["schema"].endswith("rehydration-v3")
     assert rehydration["frontier_companion_regenerated_and_consumed"] is True
     assert rehydration["causal_anchor_compatibility_default_candidate_index"] == 7
+    assert rehydration["selected_anchor_candidate_index"] == 9
+    assert rehydration["interface_anchor_selection"][
+        "saved_child_exactly_matches_compatibility_default"
+    ] is True
+    assert default_rehydration["selected_anchor_candidate_index"] == 7
     assert rehydration["causal_anchor_materializable_candidate_indices"] == list(
         range(10)
     )
@@ -560,8 +600,12 @@ def test_foundation_rehydration_explicitly_consumes_pinned_legacy_companion(
             expected_foundation_receipt_sha256=legacy_receipt["receipt_sha256"],
             interface_statistics_directory=artifact.path,
             expected_interface_statistics_sha256=artifact.artifact_sha256,
-            interface_frontier_companion_receipt=companion.companion_receipt,
+            interface_frontier_companion_json=persisted.path,
+            expected_interface_frontier_companion_file_sha256=(
+                persisted.file_sha256
+            ),
             expected_interface_frontier_companion_sha256="0" * 64,
+            anchor_candidate_index=9,
         )
 
 

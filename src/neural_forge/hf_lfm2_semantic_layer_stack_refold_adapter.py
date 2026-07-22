@@ -93,6 +93,7 @@ from neural_forge.hf_tied_causal_interface_fold import (
 )
 from neural_forge.hf_tied_residual_congruence import (
     TIED_RESIDUAL_CONGRUENCE_SCHEMA,
+    TiedResidualAnchorTransportWitness,
     authenticate_tied_residual_congruence_interface,
 )
 from neural_forge.hf_tokenizer_bridge import (
@@ -4074,6 +4075,9 @@ def _validated_operator_topology(
 def _validated_interface_lineage(
     target_model: Any,
     interface: TiedCausalInterfaceFold,
+    *,
+    mapped_parent_tied_table: Any | None = None,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Mapping[str, Any]:
     torch = _torch()
     if not isinstance(interface, TiedCausalInterfaceFold):
@@ -4104,7 +4108,9 @@ def _validated_interface_lineage(
     if report_schema == TIED_RESIDUAL_CONGRUENCE_SCHEMA:
         try:
             congruence_authentication = authenticate_tied_residual_congruence_interface(
-                interface
+                interface,
+                mapped_parent_tied_table=mapped_parent_tied_table,
+                anchor_transport_witness=anchor_transport_witness,
             )
         except (TypeError, ValueError) as exc:
             raise Lfm2SemanticLayerStackRefoldError(
@@ -4544,6 +4550,8 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     fold_compute_device: str = "cpu",
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    mapped_parent_tied_table: Any | None = None,
+    anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete fourteen-layer child transaction.
 
@@ -4576,7 +4584,12 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "Saved child tokenizer differs from the semantic target tokenizer."
         )
     kinds = _validated_operator_topology(cache, target_model, compiler_lineage)
-    interface_lineage = _validated_interface_lineage(target_model, interface)
+    interface_lineage = _validated_interface_lineage(
+        target_model,
+        interface,
+        mapped_parent_tied_table=mapped_parent_tied_table,
+        anchor_transport_witness=anchor_transport_witness,
+    )
     short_evidence_type, default_short_installer = _resolve_short_conv_adapter()
     (
         mlp_inventory_type,
