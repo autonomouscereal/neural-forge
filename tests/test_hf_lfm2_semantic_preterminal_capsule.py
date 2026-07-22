@@ -617,6 +617,19 @@ def test_hybrid_capsule_publish_load_frontier_resume_preserves_exact_witness(
         )
         body = {
             "terminal_result": terminal_result,
+            "terminal_review_pending_schema": (
+                postfold.LFM2_CPCF_TERMINAL_ACTION_REVIEW_PENDING_SCHEMA
+            ),
+            "final_selection_status": "deferred-to-manual-whole-response-review",
+            "final_selected_candidate_id": None,
+            "final_selection_performed": False,
+            "automatic_candidate_acceptance_performed": False,
+            "candidate_published_before_manual_review": False,
+            "manual_whole_response_review_required": True,
+            "terminal_writer_install_count": 0,
+            "terminal_writer_mutation_count": 0,
+            "accepted": False,
+            "terminal_publication_decision_accepted": False,
             "terminal_frontier_export_context": context,
             "terminal_frontier_export_context_sha256": context["context_sha256"],
             "terminal_frontier_export": reference.as_dict(),
@@ -812,3 +825,88 @@ def test_capsule_remains_loadable_when_subsequent_terminal_compiler_fails(
     problem.reference = reference
     loaded = _load(problem)
     assert loaded.reference.receipt_sha256 == reference.receipt_sha256
+
+
+def test_capsule_aware_frontier_exporter_factory_receives_published_reference(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    problem = _problem(tmp_path, monkeypatch)
+    output = tmp_path / "preterminal-before-direct-frontier"
+    events: list[str] = []
+    exported: list[tuple[object, object]] = []
+
+    def publish():
+        reference = capsule.publish_lfm2_semantic_preterminal_capsule(
+            target_model=problem.model,
+            target_tokenizer=problem.tokenizer,
+            layer_stack=problem.layer_stack,
+            interface=problem.interface,
+            attention_receipt_authentication=problem.attention,
+            bindings=problem.bindings,
+            output_directory=output,
+        )
+        events.append("capsule-published")
+        return reference
+
+    def exporter_factory(reference):
+        events.append("exporter-factory")
+        assert isinstance(reference, capsule.Lfm2SemanticPreterminalCapsuleReference)
+        assert reference.path == output
+        assert (output / "capsule-receipt.json").is_file()
+
+        def exporter(result, context):
+            events.append("frontier-exported")
+            exported.append((result, context))
+            return {"bank_receipt_sha256": "9" * 64}
+
+        return exporter
+
+    def compile_terminal(**kwargs):
+        events.append("terminal-compiled")
+        reference = kwargs["terminal_frontier_exporter"](
+            "terminal-result",
+            {"context_sha256": "8" * 64},
+        )
+        return {"terminal_frontier_export": reference}
+
+    capsule_reference, terminal = (
+        postfold.publish_preterminal_capsule_then_compile_fused_terminal(
+            capsule_publisher=publish,
+            fused_terminal_compiler=compile_terminal,
+            terminal_arguments={"unrelated": True},
+            terminal_frontier_exporter_factory=exporter_factory,
+        )
+    )
+
+    assert isinstance(
+        capsule_reference,
+        capsule.Lfm2SemanticPreterminalCapsuleReference,
+    )
+    assert events == [
+        "capsule-published",
+        "exporter-factory",
+        "terminal-compiled",
+        "frontier-exported",
+    ]
+    assert exported == [
+        ("terminal-result", {"context_sha256": "8" * 64})
+    ]
+    assert terminal == {
+        "terminal_frontier_export": {"bank_receipt_sha256": "9" * 64}
+    }
+
+
+def test_capsule_aware_exporter_factory_rejects_direct_exporter_before_publish() -> (
+    None
+):
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="mutually exclusive",
+    ):
+        postfold.publish_preterminal_capsule_then_compile_fused_terminal(
+            capsule_publisher=lambda: pytest.fail("conflict published a capsule"),
+            fused_terminal_compiler=lambda **_kwargs: {},
+            terminal_arguments={"terminal_frontier_exporter": lambda *_args: {}},
+            terminal_frontier_exporter_factory=lambda _reference: lambda *_args: {},
+        )

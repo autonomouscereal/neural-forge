@@ -2819,6 +2819,56 @@ def test_top_level_rejects_unpaired_interface_statistics_before_dispatch(
         )
 
 
+def test_top_level_exporter_factory_requires_capsule_before_asset_dispatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        postfold,
+        "_claims_semantic_foundation_schema",
+        lambda *_args, **_kwargs: pytest.fail(
+            "missing capsule reached ancestry or asset dispatch"
+        ),
+    )
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="requires a preterminal capsule directory",
+    ):
+        postfold.run_lfm2_semantic_postfold(
+            **_minimal_postfold_run_arguments(tmp_path),
+            terminal_frontier_exporter_factory=(
+                lambda _reference: lambda *_args: {}
+            ),
+        )
+
+
+def test_top_level_rejects_direct_exporter_and_factory_before_asset_dispatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        postfold,
+        "_claims_semantic_foundation_schema",
+        lambda *_args, **_kwargs: pytest.fail(
+            "exporter conflict reached ancestry or asset dispatch"
+        ),
+    )
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="mutually exclusive",
+    ):
+        postfold.run_lfm2_semantic_postfold(
+            **_minimal_postfold_run_arguments(tmp_path),
+            preterminal_capsule_directory=tmp_path / "capsule",
+            terminal_frontier_exporter=lambda *_args: {},
+            terminal_frontier_exporter_factory=(
+                lambda _reference: lambda *_args: {}
+            ),
+        )
+
+
 def test_top_level_rejects_statistics_for_nonfoundation_before_output_dispatch(
     tmp_path: Path,
     monkeypatch,

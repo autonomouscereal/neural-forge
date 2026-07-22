@@ -10819,6 +10819,8 @@ def publish_preterminal_capsule_then_compile_fused_terminal(
     capsule_publisher: Callable[[], Any] | None,
     fused_terminal_compiler: Callable[..., Mapping[str, Any]],
     terminal_arguments: Mapping[str, Any],
+    terminal_frontier_exporter_factory: Callable[[Any], Callable[..., Any]]
+    | None = None,
 ) -> tuple[Any | None, Mapping[str, Any]]:
     """Publish a durable seam first, then call the fallible terminal compiler."""
 
@@ -10828,8 +10830,39 @@ def publish_preterminal_capsule_then_compile_fused_terminal(
         raise TypeError("fused_terminal_compiler must be callable.")
     if not isinstance(terminal_arguments, Mapping):
         raise TypeError("terminal_arguments must be a mapping.")
+    if terminal_frontier_exporter_factory is not None and not callable(
+        terminal_frontier_exporter_factory
+    ):
+        raise TypeError("terminal_frontier_exporter_factory must be callable or None.")
+    if terminal_frontier_exporter_factory is not None and capsule_publisher is None:
+        raise Lfm2SemanticPostfoldError(
+            "A terminal frontier exporter factory requires a preterminal capsule "
+            "publisher."
+        )
+    arguments = dict(terminal_arguments)
+    if (
+        terminal_frontier_exporter_factory is not None
+        and "terminal_frontier_exporter" in arguments
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "A direct terminal frontier exporter and capsule-aware exporter factory "
+            "are mutually exclusive."
+        )
     capsule_reference = None if capsule_publisher is None else capsule_publisher()
-    terminal = fused_terminal_compiler(**dict(terminal_arguments))
+    if terminal_frontier_exporter_factory is not None:
+        if capsule_reference is None:
+            raise Lfm2SemanticPostfoldError(
+                "The preterminal capsule publisher returned no reference for the "
+                "terminal frontier exporter factory."
+            )
+        exporter = terminal_frontier_exporter_factory(capsule_reference)
+        if not callable(exporter):
+            raise Lfm2SemanticPostfoldError(
+                "The terminal frontier exporter factory returned no callable "
+                "exporter."
+            )
+        arguments["terminal_frontier_exporter"] = exporter
+    terminal = fused_terminal_compiler(**arguments)
     if not isinstance(terminal, Mapping):
         raise Lfm2SemanticPostfoldError(
             "Fused terminal compiler returned no receipt mapping."
@@ -10876,6 +10909,8 @@ def run_lfm2_semantic_postfold(
         Any,
     ]
     | None = None,
+    terminal_frontier_exporter_factory: Callable[[Any], Callable[..., Any]]
+    | None = None,
     split_plan: Lfm2LongHorizonTrajectorySplitPlan | None = None,
 ) -> Mapping[str, Any]:
     """Execute the complete saved-child semantic postfold transaction."""
@@ -10885,6 +10920,26 @@ def run_lfm2_semantic_postfold(
         terminal_frontier_exporter
     ):
         raise TypeError("terminal_frontier_exporter must be callable or None.")
+    if terminal_frontier_exporter_factory is not None and not callable(
+        terminal_frontier_exporter_factory
+    ):
+        raise TypeError("terminal_frontier_exporter_factory must be callable or None.")
+    if (
+        terminal_frontier_exporter is not None
+        and terminal_frontier_exporter_factory is not None
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "A direct terminal frontier exporter and capsule-aware exporter factory "
+            "are mutually exclusive."
+        )
+    if (
+        terminal_frontier_exporter_factory is not None
+        and preterminal_capsule_directory is None
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "A terminal frontier exporter factory requires a preterminal capsule "
+            "directory."
+        )
     statistics_requested = interface_statistics_directory is not None
     if statistics_requested != (expected_interface_statistics_sha256 is not None):
         raise Lfm2SemanticPostfoldError(
@@ -11369,6 +11424,9 @@ def run_lfm2_semantic_postfold(
             publish_preterminal_capsule_then_compile_fused_terminal(
                 capsule_publisher=capsule_publisher,
                 fused_terminal_compiler=fused_terminal_compiler,
+                terminal_frontier_exporter_factory=(
+                    terminal_frontier_exporter_factory
+                ),
                 terminal_arguments={
                     "cache": cache,
                     "bridge": bridge,
