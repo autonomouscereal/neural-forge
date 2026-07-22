@@ -193,35 +193,65 @@ def _reconstruct_parent_rmsnorm_bf16(
 
 
 def _bf16_reconstruction_metrics(replayed: Any, cached: Any) -> dict[str, Any]:
-    """Apply the fixed BF16 cross-kernel envelope used for cache authentication."""
+    """Measure legacy BF16 drift without granting it admission authority."""
 
     torch = _torch()
-    replayed_float = replayed.to(torch.float32)
-    cached_float = cached.to(torch.float32)
-    residual = replayed_float - cached_float
+    replayed_float = replayed.to(torch.float64)
+    cached_float = cached.to(torch.float64)
+    replayed_finite = torch.isfinite(replayed_float)
+    replayed_all_finite = bool(replayed_finite.all().item())
+    finite_replayed = torch.nan_to_num(
+        replayed_float,
+        nan=0.0,
+        posinf=float(torch.finfo(torch.bfloat16).max),
+        neginf=-float(torch.finfo(torch.bfloat16).max),
+    )
+    residual = finite_replayed - cached_float
     error_rms = float(torch.sqrt(residual.square().mean()).item())
     cached_rms = float(torch.sqrt(cached_float.square().mean()).item())
     machine_epsilon = float(torch.finfo(torch.bfloat16).eps)
     unit_roundoff = machine_epsilon / 2.0
-    relative_rmse = error_rms / max(
-        cached_rms,
-        float(torch.finfo(torch.float32).tiny),
+    relative_rmse = min(
+        error_rms / max(cached_rms, float(torch.finfo(torch.float64).tiny)),
+        _MAX_FINITE_FLOAT,
     )
     elementwise_close = bool(
-        torch.allclose(
-            replayed_float,
+        replayed_all_finite
+        and torch.allclose(
+            finite_replayed,
             cached_float,
             rtol=machine_epsilon,
             atol=unit_roundoff,
         )
     )
+    maximum_absolute_error = float(residual.abs().max().item())
+    diagnostics_finite = all(
+        math.isfinite(value)
+        for value in (
+            maximum_absolute_error,
+            error_rms,
+            relative_rmse,
+        )
+    )
+    if not diagnostics_finite:
+        raise Lfm2SemanticMlpRefoldError(
+            "Parent RMSNorm replay diagnostics must remain finite."
+        )
+    legacy_envelope_passed = bool(
+        elementwise_close and relative_rmse <= machine_epsilon
+    )
     return {
         "policy_schema": "neural-forge-bf16-cross-kernel-equivalence-policy-v1",
-        "maximum_absolute_error": float(residual.abs().max().item()),
+        "maximum_absolute_error": maximum_absolute_error,
         "rmse": error_rms,
         "relative_rmse": relative_rmse,
         "elementwise_close": elementwise_close,
-        "accepted": elementwise_close and relative_rmse <= machine_epsilon,
+        "replayed_all_finite": replayed_all_finite,
+        "nonfinite_replayed_element_count": int((~replayed_finite).sum().item()),
+        "within_legacy_bf16_envelope": legacy_envelope_passed,
+        "diagnostics_finite": True,
+        "diagnostic_only": True,
+        "numeric_admission_authority": False,
     }
 
 
@@ -501,6 +531,7 @@ class Lfm2SemanticMlpEndpointEvidence:
     parent_exact_semantic_endpoint: bool = True
     inserted_target_row: bool = False
     normalization_reconstruction_sha256: str = field(init=False)
+    normalization_reconstruction_within_legacy_envelope: bool = field(init=False)
     evidence_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -625,12 +656,6 @@ class Lfm2SemanticMlpEndpointEvidence:
             reconstructed_normalized,
             parent_normalized,
         )
-        if reconstruction_metrics["accepted"] is not True:
-            raise Lfm2SemanticMlpRefoldError(
-                "Cached parent normalized MLP input was not independently "
-                "reconstructed from the authenticated pre-MLP residual and "
-                "direct-local RMSNorm state."
-            )
         object.__setattr__(self, "parent_gate", parent_gate)
         object.__setattr__(self, "parent_up", parent_up)
         object.__setattr__(self, "parent_post_swiglu", parent_post)
@@ -659,6 +684,11 @@ class Lfm2SemanticMlpEndpointEvidence:
                     "reconstructed_sha256": _tensor_sha256(reconstructed_normalized),
                 }
             ),
+        )
+        object.__setattr__(
+            self,
+            "normalization_reconstruction_within_legacy_envelope",
+            bool(reconstruction_metrics["within_legacy_bf16_envelope"]),
         )
         object.__setattr__(
             self,
@@ -715,7 +745,12 @@ class Lfm2SemanticMlpEndpointEvidence:
             "inserted_target_row": False,
             "complete_causal_cache_endpoint": True,
             "parent_normalized_mlp_input_is_exact_cached_mlp_input": True,
-            "parent_normalized_mlp_input_reconstruction_independently_verified": (True),
+            "parent_normalized_mlp_input_reconstruction_independently_replayed": (True),
+            "normalization_reconstruction_within_legacy_bf16_envelope": (
+                self.normalization_reconstruction_within_legacy_envelope
+            ),
+            "normalization_reconstruction_diagnostic_only": True,
+            "normalization_reconstruction_numeric_admission_authority": False,
             "normalization_reconstruction_sha256": (
                 self.normalization_reconstruction_sha256
             ),

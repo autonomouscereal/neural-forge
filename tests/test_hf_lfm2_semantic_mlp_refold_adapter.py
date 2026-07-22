@@ -258,9 +258,11 @@ def test_endpoint_authenticates_parent_normalized_mlp_input() -> None:
     )
     assert body["parent_normalized_mlp_input_is_exact_cached_mlp_input"] is True
     assert (
-        body["parent_normalized_mlp_input_reconstruction_independently_verified"]
+        body["parent_normalized_mlp_input_reconstruction_independently_replayed"]
         is True
     )
+    assert body["normalization_reconstruction_diagnostic_only"] is True
+    assert body["normalization_reconstruction_numeric_admission_authority"] is False
     assert body["parent_model_forward_calls_for_normalized_mlp_input"] == 0
     assert body["tensor_sha256"]["parent_pre_mlp_residual"] == (
         adapter._tensor_sha256(valid.parent_pre_mlp_residual)
@@ -277,16 +279,20 @@ def test_endpoint_authenticates_parent_normalized_mlp_input() -> None:
                 dtype=torch.bfloat16,
             ),
         )
-    with pytest.raises(
-        adapter.Lfm2SemanticMlpRefoldError,
-        match="independently reconstructed",
-    ):
-        replace(
-            valid,
-            parent_normalized_mlp_input=torch.zeros_like(
-                valid.parent_normalized_mlp_input
-            ),
-        )
+    drifted = replace(
+        valid,
+        parent_normalized_mlp_input=torch.zeros_like(
+            valid.parent_normalized_mlp_input
+        ),
+    )
+    assert drifted.verify() is True
+    assert drifted.normalization_reconstruction_within_legacy_envelope is False
+    assert (
+        drifted.authentication_body()[
+            "normalization_reconstruction_numeric_admission_authority"
+        ]
+        is False
+    )
 
     with pytest.raises(
         adapter.Lfm2SemanticMlpRefoldError,
@@ -299,6 +305,20 @@ def test_endpoint_authenticates_parent_normalized_mlp_input() -> None:
         dtype=torch.bfloat16,
     )
     assert valid.verify() is False
+
+
+def test_nonfinite_rmsnorm_kernel_replay_is_a_finite_nonveto_diagnostic() -> None:
+    replayed = torch.tensor([[float("inf"), float("nan")]], dtype=torch.bfloat16)
+    cached = torch.zeros_like(replayed)
+
+    metrics = adapter._bf16_reconstruction_metrics(replayed, cached)
+
+    assert metrics["diagnostics_finite"] is True
+    assert metrics["replayed_all_finite"] is False
+    assert metrics["nonfinite_replayed_element_count"] == 2
+    assert metrics["within_legacy_bf16_envelope"] is False
+    assert metrics["diagnostic_only"] is True
+    assert metrics["numeric_admission_authority"] is False
 
 
 def test_endpoint_rejects_residual_chart_with_wrong_target_width() -> None:

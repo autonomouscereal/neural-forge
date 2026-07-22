@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
 
 import pytest
@@ -48,7 +49,8 @@ def _body_recipe_fields(recipe_id: str = "fit_guided") -> dict[str, object]:
 def _mlp_functional_provenance_receipt(layer_index: int) -> dict[str, object]:
     policy_body = {
         "schema": "neural-forge-bf16-cross-kernel-equivalence-policy-v1",
-        "authentication_only": True,
+        "diagnostic_only": True,
+        "numeric_admission_authority": False,
         "fold_selection_or_quality_objective": False,
     }
     policy = {
@@ -68,15 +70,43 @@ def _mlp_functional_provenance_receipt(layer_index: int) -> dict[str, object]:
         "mlp.post_swiglu",
         "residual.post_layer",
     )
+    parent_identity = {
+        "schema": "neural-forge-lfm2-parent-fingerprint-v2",
+        "model_class": "tests.Parent",
+        "config_sha256": "0" * 64,
+        "state_dict_sha256": "1" * 64,
+        "state_tensor_count": 4,
+        "runtime_buffer_sha256": "2" * 64,
+        "runtime_buffer_count": 0,
+    }
+    cache_parent_fingerprint = canonical_sha256(parent_identity)
+    metric = {
+        "maximum_absolute_error": 0.0,
+        "mean_absolute_error": 0.0,
+        "error_rms": 0.0,
+        "cached_endpoint_rms": 1.0,
+        "relative_rmse": 0.0,
+        "cached_maximum_absolute_value": 1.0,
+        "maximum_elementwise_tolerance_at_cached_maximum": 0.01,
+        "replayed_all_finite": True,
+        "nonfinite_replayed_element_count": 0,
+        "within_legacy_bf16_envelope": True,
+        "diagnostics_finite": True,
+        "diagnostic_only": True,
+        "numeric_admission_authority": False,
+    }
     body = {
-        "schema": "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v2",
+        "schema": "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v3",
         "layer_index": layer_index,
         "cache_key": "4" * 64,
-        "cache_parent_fingerprint": "5" * 64,
+        "cache_parent_fingerprint": cache_parent_fingerprint,
         "cache_manifest_sha256": "6" * 64,
         "parent_checkpoint_manifest_sha256": "7" * 64,
         "parent_session_open_receipt_sha256": "8" * 64,
         "parent_config_file_sha256": "9" * 64,
+        "parent_normalized_config_sha256": "0" * 64,
+        "parent_identity_reconstruction_sha256": "f" * 64,
+        "reconstructed_parent_identity": parent_identity,
         "parent_norm_epsilon": 1e-5,
         "execution_device": "cpu",
         "direct_tensor_sha256": {name: "1" * 64 for name in direct_names},
@@ -87,20 +117,27 @@ def _mlp_functional_provenance_receipt(layer_index: int) -> dict[str, object]:
         "semantic_endpoint_row_ids_sha256": "c" * 64,
         "cross_kernel_equivalence_policy": policy,
         "endpoint_equivalence_metrics": {
-            name: {"field": name, "accepted": True} for name in endpoint_names
+            name: {"field": name, **metric} for name in endpoint_names
         },
+        "outside_legacy_bf16_envelope": {},
         "semantic_endpoint_rows": 1,
         "all_cached_endpoints_bit_exact": True,
-        "all_cached_endpoints_within_authenticated_bf16_envelope": True,
+        "all_cached_endpoints_within_legacy_bf16_envelope": True,
+        "all_cross_kernel_replay_diagnostics_finite": True,
         "cached_mlp_input_is_normalized_evidence_source_of_truth": True,
-        "reconstructed_mlp_input_is_authentication_check_only": True,
-        "direct_parent_tensors_numerically_consistent_on_cached_endpoints": True,
+        "reconstructed_mlp_input_is_diagnostic_only": True,
+        "direct_parent_tensors_within_legacy_numeric_envelope": True,
         "semantic_endpoint_scope_is_complete_tensor_identity_proof": False,
-        "cryptographic_parent_tensor_identity_proven_by_this_receipt": False,
+        "cryptographic_parent_tensor_identity_proven_by_this_receipt": True,
+        "exact_parent_identity_is_source_admission_authority": True,
+        "numeric_replay_has_source_admission_authority": False,
+        "complete_state_dict_identity_reconstructed": True,
+        "runtime_buffer_identity_reconstructed": True,
+        "normalized_config_identity_reconstructed": True,
         "parent_checkpoint_files_hashed_by_session": True,
         "direct_tensor_digests_recorded": True,
-        "expected_per_tensor_digest_comparison_performed": False,
-        "numerical_equivalence_is_provenance_only": True,
+        "complete_state_dict_digest_compared_to_cache": True,
+        "numerical_equivalence_is_diagnostic_only": True,
         "numeric_parent_child_weight_match_objective": False,
         "parent_model_forward_calls": 0,
         "training_steps": 0,
@@ -1413,6 +1450,7 @@ def _reseal_attention_operator_in_stack(
     layer.pop("result_sha256")
     layer["attention_operator_decision_receipt"] = resealed_operator
     layer["attention_operator_installation_receipt"] = resealed_operator
+    layer["operator_complete_candidate_frontier_receipt"] = resealed_operator
     layer["operator_decision_sha256"] = resealed_operator["result_sha256"]
     layer["operator_installation_sha256"] = resealed_operator["result_sha256"]
     resealed_layer = {
@@ -2325,7 +2363,6 @@ def test_mlp_evidence_expands_exact_boundaries_and_skips_insertions() -> None:
         source_inventory=inventory,
         layer_index=0,
         final_layer=True,
-        execution_device="cpu",
     )
 
     assert len(result) == 4
@@ -2424,15 +2461,61 @@ def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
         "model.layers.0.feed_forward.w2.weight": direct_down,
         "model.layers.0.ffn_norm.weight": norm,
     }
+    tensor_hashes = {
+        name: stack._cache_tensor_sha256(torch, value)
+        for name, value in tensors.items()
+    }
+    state_digest = hashlib.sha256(b"neural-forge-lfm2-parent-state-v1\0")
+    for name in sorted(tensor_hashes):
+        state_digest.update(name.encode("utf-8"))
+        state_digest.update(b"\0")
+        state_digest.update(tensor_hashes[name].encode("ascii"))
+        state_digest.update(b"\0")
+    parent_identity_body = {
+        "schema": "neural-forge-lfm2-parent-fingerprint-v2",
+        "model_class": "tests.DirectParent",
+        "config_sha256": "4" * 64,
+        "state_dict_sha256": state_digest.hexdigest(),
+        "state_tensor_count": 4,
+        "runtime_buffer_sha256": hashlib.sha256(
+            b"neural-forge-lfm2-parent-runtime-buffers-v1\0"
+        ).hexdigest(),
+        "runtime_buffer_count": 0,
+    }
+    parent_fingerprint = canonical_sha256(parent_identity_body)
+    parent_record = {
+        key: value
+        for key, value in parent_identity_body.items()
+        if key != "schema"
+    }
+    parent_record["identity_sha256"] = parent_fingerprint
+    identity_receipt_body = {
+        "schema": "neural-forge-direct-parent-exact-identity-reconstruction-v1",
+        "cache_parent_identity_sha256": parent_fingerprint,
+        "reconstructed_parent_identity_sha256": parent_fingerprint,
+        "reconstructed_parent_identity": parent_identity_body,
+        "exact_parent_identity_authenticated": True,
+    }
+    exact_identity_receipt = {
+        **identity_receipt_body,
+        "result_sha256": canonical_sha256(identity_receipt_body),
+    }
 
     class ParentSession:
         manifest_sha256 = "c" * 64
         open_receipt_sha256 = "d" * 64
         config_file_sha256 = "e" * 64
+        normalized_config_sha256 = parent_record["config_sha256"]
+        parent_identity_reconstruction_sha256 = exact_identity_receipt[
+            "result_sha256"
+        ]
         norm_epsilon = epsilon
 
         def tensor(self, key):
             return tensors[key].detach().cpu().contiguous().clone()
+
+        def identity_receipt(self):
+            return exact_identity_receipt
 
     class Layer(torch.nn.Module):
         def __init__(self):
@@ -2444,9 +2527,9 @@ def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
     )
     cache = SimpleNamespace(
         cache_key="f" * 64,
-        parent_fingerprint="0" * 64,
+        parent_fingerprint=parent_fingerprint,
         layer_topology_fingerprint="1" * 64,
-        manifest={"manifest_sha256": "2" * 64},
+        manifest={"manifest_sha256": "2" * 64, "parent": parent_record},
     )
     bridge = SimpleNamespace(artifact_sha256="3" * 64)
     chart = torch.eye(hidden, dtype=torch.float64)
@@ -2469,6 +2552,251 @@ def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
         chart,
         chart_receipt,
     )
+
+
+def _exact_parent_checkpoint_fixture(directory: Path):
+    from safetensors.torch import save_file
+    from transformers import Lfm2Config, Lfm2ForCausalLM
+
+    directory.mkdir()
+    config = Lfm2Config(
+        vocab_size=8,
+        hidden_size=4,
+        intermediate_size=6,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        head_dim=2,
+        layer_types=["full_attention"],
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=False,
+        dtype="bfloat16",
+    )
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(2117)
+        model = Lfm2ForCausalLM(config).to(dtype=torch.bfloat16).eval()
+    payload = model.config.to_dict()
+    (directory / "config.json").write_text(json.dumps(payload), encoding="utf-8")
+    tensors = {
+        name: value.detach().to(device="cpu").contiguous().clone()
+        for name, value in model.state_dict().items()
+    }
+    save_file(tensors, directory / "model.safetensors")
+    parent_record = stack.fingerprint_lfm2_parent(model).as_dict()
+    return payload, tensors, parent_record
+
+
+def test_direct_parent_session_accepts_exact_complete_parent_identity(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "parent"
+    _payload, tensors, parent_record = _exact_parent_checkpoint_fixture(directory)
+
+    with stack._DirectParentSafetensorsSession(
+        directory,
+        expected_parent_identity_sha256=parent_record["identity_sha256"],
+        expected_parent_record=parent_record,
+    ) as session:
+        torch.testing.assert_close(
+            session.tensor("model.layers.0.feed_forward.w2.weight"),
+            tensors["model.layers.0.feed_forward.w2.weight"],
+            rtol=0,
+            atol=0,
+        )
+        identity = session.identity_receipt()
+        receipt = session.receipt()
+
+    assert identity["exact_parent_identity_authenticated"] is True
+    assert identity["reconstructed_parent_identity_sha256"] == parent_record[
+        "identity_sha256"
+    ]
+    assert identity["reconstructed_state_tensor_count"] == len(tensors)
+    assert identity["reconstructed_runtime_buffer_count"] == parent_record[
+        "runtime_buffer_count"
+    ]
+    assert [
+        row["name"] for row in identity["checkpoint_tensor_records"]
+    ] == sorted(tensors)
+    assert receipt["checkpoint_files_rehashed_after_materialization"] is True
+
+
+def test_direct_parent_session_reconstructs_tied_alias_and_runtime_buffers(
+    tmp_path: Path,
+) -> None:
+    from safetensors.torch import save_file
+    from transformers import Lfm2Config, Lfm2ForCausalLM
+
+    directory = tmp_path / "parent"
+    directory.mkdir()
+    config = Lfm2Config(
+        vocab_size=8,
+        hidden_size=4,
+        intermediate_size=6,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        head_dim=2,
+        layer_types=["full_attention"],
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+        dtype="bfloat16",
+    )
+    model = Lfm2ForCausalLM(config).to(dtype=torch.bfloat16).eval()
+    (directory / "config.json").write_text(
+        json.dumps(model.config.to_dict()),
+        encoding="utf-8",
+    )
+    save_file(
+        {
+            name: value.detach().to(device="cpu").contiguous().clone()
+            for name, value in model.state_dict().items()
+            if name != "lm_head.weight"
+        },
+        directory / "model.safetensors",
+    )
+    parent_record = stack.fingerprint_lfm2_parent(model).as_dict()
+
+    with stack._DirectParentSafetensorsSession(
+        directory,
+        expected_parent_identity_sha256=parent_record["identity_sha256"],
+        expected_parent_record=parent_record,
+    ) as session:
+        identity = session.identity_receipt()
+
+    assert identity["checkpoint_tensor_count"] + 1 == parent_record[
+        "state_tensor_count"
+    ]
+    assert identity["reconstructed_state_tensor_count"] == parent_record[
+        "state_tensor_count"
+    ]
+    assert identity["reconstructed_runtime_buffer_count"] == 2
+    assert [row["name"] for row in identity["runtime_buffer_records"]] == [
+        "model.rotary_emb.inv_freq",
+        "model.rotary_emb.original_inv_freq",
+    ]
+    assert identity["reconstructed_parent_identity_sha256"] == parent_record[
+        "identity_sha256"
+    ]
+
+
+def test_direct_parent_session_rejects_one_wrong_w2_before_numeric_replay(
+    tmp_path: Path,
+) -> None:
+    from safetensors.torch import save_file
+
+    directory = tmp_path / "parent"
+    _payload, tensors, parent_record = _exact_parent_checkpoint_fixture(directory)
+    wrong = {name: value.clone() for name, value in tensors.items()}
+    wrong_w2 = wrong["model.layers.0.feed_forward.w2.weight"]
+    wrong_w2[0, 0] += torch.tensor(1.0, dtype=torch.bfloat16)
+    save_file(wrong, directory / "model.safetensors")
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="full parent model identity",
+    ):
+        with stack._DirectParentSafetensorsSession(
+            directory,
+            expected_parent_identity_sha256=parent_record["identity_sha256"],
+            expected_parent_record=parent_record,
+        ):
+            pass
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ("config", "cache_record", "model_class", "identity"),
+)
+def test_direct_parent_session_rejects_cache_manifest_or_identity_tampering(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    directory = tmp_path / "parent"
+    payload, _tensors, parent_record = _exact_parent_checkpoint_fixture(directory)
+    expected_identity = parent_record["identity_sha256"]
+    if tamper == "config":
+        payload["norm_eps"] = 0.125
+        (directory / "config.json").write_text(json.dumps(payload), encoding="utf-8")
+    elif tamper in {"cache_record", "model_class"}:
+        if tamper == "cache_record":
+            parent_record["state_dict_sha256"] = "f" * 64
+        else:
+            parent_record["model_class"] = "evil.Impostor"
+        body = {
+            "schema": "neural-forge-lfm2-parent-fingerprint-v2",
+            **{
+                key: parent_record[key]
+                for key in (
+                    "model_class",
+                    "config_sha256",
+                    "state_dict_sha256",
+                    "state_tensor_count",
+                    "runtime_buffer_sha256",
+                    "runtime_buffer_count",
+                )
+            },
+        }
+        expected_identity = canonical_sha256(body)
+        parent_record["identity_sha256"] = expected_identity
+    else:
+        expected_identity = "f" * 64
+
+    with pytest.raises(stack.Lfm2SemanticLayerStackRefoldError):
+        with stack._DirectParentSafetensorsSession(
+            directory,
+            expected_parent_identity_sha256=expected_identity,
+            expected_parent_record=parent_record,
+        ):
+            pass
+
+
+def test_direct_parent_session_rejects_file_change_after_materialization(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "parent"
+    payload, _tensors, parent_record = _exact_parent_checkpoint_fixture(directory)
+    with stack._DirectParentSafetensorsSession(
+        directory,
+        expected_parent_identity_sha256=parent_record["identity_sha256"],
+        expected_parent_record=parent_record,
+    ) as session:
+        payload["architectures"] = ["tampered-after-open"]
+        (directory / "config.json").write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(
+            stack.Lfm2SemanticLayerStackRefoldError,
+            match="changed after exact identity reconstruction",
+        ):
+            session.receipt()
+
+
+def test_direct_parent_session_rejects_index_shard_path_escape(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "parent"
+    _payload, tensors, parent_record = _exact_parent_checkpoint_fixture(directory)
+    outside = tmp_path / "outside.safetensors"
+    (directory / "model.safetensors").replace(outside)
+    (directory / "model.safetensors.index.json").write_text(
+        json.dumps(
+            {
+                "weight_map": {
+                    name: "../outside.safetensors" for name in tensors
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="must remain inside",
+    ):
+        with stack._DirectParentSafetensorsSession(
+            directory,
+            expected_parent_identity_sha256=parent_record["identity_sha256"],
+            expected_parent_record=parent_record,
+        ):
+            pass
 
 
 def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints() -> (
@@ -2494,8 +2822,8 @@ def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints()
     )
 
     assert receipt["all_cached_endpoints_bit_exact"] is True
-    assert receipt["all_cached_endpoints_within_authenticated_bf16_envelope"] is True
-    assert receipt["numerical_equivalence_is_provenance_only"] is True
+    assert receipt["all_cached_endpoints_within_legacy_bf16_envelope"] is True
+    assert receipt["numerical_equivalence_is_diagnostic_only"] is True
     assert (
         receipt["cross_kernel_equivalence_policy"][
             "fold_selection_or_quality_objective"
@@ -2503,16 +2831,23 @@ def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints()
         is False
     )
     assert (
-        receipt["direct_parent_tensors_numerically_consistent_on_cached_endpoints"]
+        receipt["direct_parent_tensors_within_legacy_numeric_envelope"]
         is True
     )
     assert receipt["semantic_endpoint_scope_is_complete_tensor_identity_proof"] is False
     assert (
-        receipt["cryptographic_parent_tensor_identity_proven_by_this_receipt"] is False
+        receipt["cryptographic_parent_tensor_identity_proven_by_this_receipt"] is True
     )
-    assert receipt["expected_per_tensor_digest_comparison_performed"] is False
+    assert receipt["complete_state_dict_digest_compared_to_cache"] is True
+    assert receipt["exact_parent_identity_is_source_admission_authority"] is True
+    assert receipt["numeric_replay_has_source_admission_authority"] is False
     assert receipt["semantic_endpoint_rows"] == 1
-    assert receipt["endpoint_equivalence_metrics"]["mlp.input"]["accepted"] is True
+    assert (
+        receipt["endpoint_equivalence_metrics"]["mlp.input"][
+            "within_legacy_bf16_envelope"
+        ]
+        is True
+    )
     assert receipt["cached_endpoint_sha256"]["mlp.input"] == stack._tensor_sha256(
         parent[0].phase_rows["prefill"]["mlp.input"].reshape(1, -1)
     )
@@ -2525,7 +2860,7 @@ def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints()
         == (receipt["reconstructed_normalized_mlp_input_sha256"])
     )
     assert receipt["cached_mlp_input_is_normalized_evidence_source_of_truth"] is True
-    assert receipt["reconstructed_mlp_input_is_authentication_check_only"] is True
+    assert receipt["reconstructed_mlp_input_is_diagnostic_only"] is True
     assert inventory.direct_local_loader_receipt_sha256 == receipt["result_sha256"]
     assert inventory.residual_assignment_sha256 == chart_receipt["result_sha256"]
     assert (
@@ -2544,7 +2879,7 @@ def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints()
     assert inventory.verify() is True
 
 
-def test_real_v2_parent_mlp_provenance_reaches_layer0_receipt() -> None:
+def test_real_v3_parent_mlp_provenance_reaches_layer0_receipt() -> None:
     target, cache, bridge, session, alignments, parent, chart, chart_receipt = (
         _parent_mlp_provenance_fixture()
     )
@@ -2617,14 +2952,14 @@ def test_real_v2_parent_mlp_provenance_reaches_layer0_receipt() -> None:
         == (provenance["result_sha256"])
     )
     assert receipt["mlp_source_functional_provenance_schema"] == (
-        "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v2"
+        "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v3"
     )
     assert (
-        receipt["mlp_source_direct_tensors_numerically_consistent_on_cached_endpoints"]
+        receipt["mlp_source_direct_tensors_within_legacy_numeric_envelope"]
         is True
     )
     assert (
-        receipt["mlp_source_all_cached_endpoints_within_authenticated_bf16_envelope"]
+        receipt["mlp_source_all_cached_endpoints_within_legacy_bf16_envelope"]
         is True
     )
     assert (
@@ -2635,9 +2970,13 @@ def test_real_v2_parent_mlp_provenance_reaches_layer0_receipt() -> None:
         receipt[
             "mlp_source_cryptographic_parent_tensor_identity_proven_by_this_receipt"
         ]
-        is False
+        is True
     )
-    assert "mlp_source_direct_tensors_functionally_bound_to_cache" not in receipt
+    assert (
+        receipt["mlp_source_exact_parent_identity_is_source_admission_authority"]
+        is True
+    )
+    assert receipt["mlp_source_numeric_replay_has_source_admission_authority"] is False
     assert stack._verify_sealed(receipt, "layer 0") == dict(receipt)
 
 
@@ -2706,33 +3045,58 @@ def test_parent_mlp_functional_provenance_accepts_bf16_backend_rounding_drift() 
     )
 
     assert receipt["all_cached_endpoints_bit_exact"] is False
-    assert receipt["all_cached_endpoints_within_authenticated_bf16_envelope"] is True
-    assert receipt["endpoint_equivalence_metrics"]["mlp.gate"]["accepted"] is True
+    assert receipt["all_cached_endpoints_within_legacy_bf16_envelope"] is True
+    assert (
+        receipt["endpoint_equivalence_metrics"]["mlp.gate"][
+            "within_legacy_bf16_envelope"
+        ]
+        is True
+    )
 
 
-def test_direct_parent_mlp_inventory_rejects_self_labeled_wrong_w2() -> None:
+def test_cross_kernel_nonfinite_replay_is_saturated_into_finite_diagnostics() -> None:
+    policy = stack._bf16_cross_kernel_equivalence_policy()
+    replayed = torch.tensor([[float("inf"), float("nan")]], dtype=torch.bfloat16)
+    cached = torch.zeros_like(replayed)
+
+    metrics = stack._bf16_cross_kernel_equivalence_metrics(
+        replayed=replayed,
+        cached=cached,
+        policy=policy,
+        field_name="mlp.gate",
+    )
+
+    assert metrics["diagnostics_finite"] is True
+    assert metrics["replayed_all_finite"] is False
+    assert metrics["nonfinite_replayed_element_count"] == 2
+    assert metrics["within_legacy_bf16_envelope"] is False
+    assert metrics["diagnostic_only"] is True
+    assert metrics["numeric_admission_authority"] is False
+
+
+def test_direct_parent_mlp_inventory_records_large_kernel_drift_without_veto() -> None:
     target, cache, bridge, session, alignments, parent, chart, chart_receipt = (
         _parent_mlp_provenance_fixture(corrupt_down=True)
     )
 
-    with pytest.raises(
-        stack.Lfm2SemanticLayerStackRefoldError,
-        match="outside the authenticated BF16 cross-kernel numerical envelope",
-    ):
-        stack._direct_mlp_inventory(
-            inventory_type=Lfm2DirectLocalMlpSourceInventory,
-            parent_session=session,
-            cache=cache,
-            bridge=bridge,
-            layer_index=0,
-            operator_kind="short_conv",
-            residual_chart=chart,
-            chart_receipt=chart_receipt,
-            attention_lineage=None,
-            alignments=alignments,
-            parent=parent,
-            target_model=target,
-        )
+    _inventory, receipt = stack._direct_mlp_inventory(
+        inventory_type=Lfm2DirectLocalMlpSourceInventory,
+        parent_session=session,
+        cache=cache,
+        bridge=bridge,
+        layer_index=0,
+        operator_kind="short_conv",
+        residual_chart=chart,
+        chart_receipt=chart_receipt,
+        attention_lineage=None,
+        alignments=alignments,
+        parent=parent,
+        target_model=target,
+    )
+    assert receipt["all_cross_kernel_replay_diagnostics_finite"] is True
+    assert receipt["all_cached_endpoints_within_legacy_bf16_envelope"] is False
+    assert receipt["numeric_replay_has_source_admission_authority"] is False
+    assert receipt["exact_parent_identity_is_source_admission_authority"] is True
 
 
 def _invoke_mlp_noop_receipt(
