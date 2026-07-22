@@ -201,7 +201,7 @@ def _terminal_result(
     )
 
 
-def _compiled_exact_zero_terminal_result():
+def _compiled_exact_zero_terminal_result(*, policy=None):
     generator = torch.Generator().manual_seed(1_901)
     hidden = 2
     intermediate = 3
@@ -273,6 +273,7 @@ def _compiled_exact_zero_terminal_result():
         fit_check_evidence=banks["fit_check"],
         selection_evidence=banks["selection"],
         validation_evidence=banks["validation"],
+        policy=policy,
     )
     return seed, banks, result
 
@@ -354,7 +355,7 @@ def test_final_w2_changed_publication_mutates_only_the_writer(monkeypatch) -> No
     assert receipt["published_w2_structurally_nonzero"] is True
 
 
-def test_exact_zero_fit_plant_is_authenticated_and_installed_transactionally(
+def test_exact_zero_structural_fit_ordered_plant_installs_transactionally(
     monkeypatch,
 ) -> None:
     seed, evidence, terminal = _compiled_exact_zero_terminal_result()
@@ -381,7 +382,16 @@ def test_exact_zero_fit_plant_is_authenticated_and_installed_transactionally(
     )
 
     assert torch.count_nonzero(seed.down_weight).item() == 0
-    assert decision["publication_decision"] == ("exact-zero-fit-only-structural-plant")
+    assert decision["publication_decision"] == (
+        "exact-zero-structural-fit-ordered-plant"
+    )
+    assert decision["structural_candidate_eligibility_authenticated"] is True
+    assert decision["fit_metrics_used_for_candidate_ordering"] is True
+    assert decision["fit_metrics_used_for_pre_review_candidate_selection"] is True
+    assert decision["fit_metrics_used_for_structural_eligibility"] is False
+    assert decision["fit_metric_thresholds_used_for_candidate_eligibility"] is False
+    assert decision["fit_metric_thresholds_used_for_publication"] is False
+    assert decision["fit_metrics_have_final_intelligence_authority"] is False
     assert decision["terminal_exact_zero_cold_start"] is True
     assert decision["heldout_metrics_diagnostic_only"] is True
     assert decision["terminal_incumbent_retained"] is False
@@ -405,6 +415,39 @@ def test_exact_zero_fit_plant_is_authenticated_and_installed_transactionally(
     assert id(parameter) == before_parameter_id
     assert int(parameter.data_ptr()) == before_storage
     assert id(parameter.grad) == before_gradient_id
+
+
+def test_exact_zero_semantic_publication_accepts_fit_proxy_gate_miss() -> None:
+    policy = terminal_action.Lfm2CpcfTerminalActionPolicy(
+        maximum_post_layer_rms_ratio=1e-12,
+    )
+    seed, evidence, terminal = _compiled_exact_zero_terminal_result(policy=policy)
+    report = terminal.as_dict()
+    selected = next(
+        value
+        for value in report["frontier"]
+        if value["candidate_id"] == terminal.selected_candidate_id
+    )
+
+    published, decision = postfold._terminal_publication_decision(
+        terminal,
+        expected_seed=seed,
+        expected_evidence=evidence,
+    )
+
+    assert selected["structurally_eligible"] is True
+    assert selected["fit_metric_gates_passed"] is False
+    assert selected["fit_gates"]["post_layer_norm"] is False
+    assert torch.equal(published, terminal.selected_down_weight)
+    assert decision["terminal_publication_decision_accepted"] is True
+    assert decision["terminal_nonincumbent_candidate_accepted"] is True
+    assert decision["structural_candidate_eligibility_authenticated"] is True
+    assert decision["fit_metrics_used_for_candidate_ordering"] is True
+    assert decision["fit_metrics_used_for_pre_review_candidate_selection"] is True
+    assert decision["fit_metrics_used_for_structural_eligibility"] is False
+    assert decision["fit_metric_thresholds_used_for_candidate_eligibility"] is False
+    assert decision["fit_metric_thresholds_used_for_publication"] is False
+    assert decision["fit_metrics_have_final_intelligence_authority"] is False
 
 
 def test_exact_zero_publication_recomputes_fit_and_rejects_dense_forgery() -> None:

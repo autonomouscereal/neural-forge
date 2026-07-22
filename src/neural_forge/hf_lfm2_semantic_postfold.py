@@ -67,6 +67,7 @@ from neural_forge.hf_lfm2_cpcf_selective_evidence import (
     open_lfm2_cpcf_selective_evidence_provider_from_catalog,
 )
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
+    LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA,
     LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA,
     Lfm2CpcfTerminalActionEvidence,
     Lfm2CpcfTerminalActionPolicy,
@@ -6078,11 +6079,83 @@ def _authenticated_exact_zero_terminal_plant(
         candidate_id: _reported_terminal_fit_key(value)
         for candidate_id, value in records.items()
     }
-    eligible_keys = [
-        (key, candidate_id)
-        for candidate_id, key in reported_keys.items()
-        if key is not None and records[candidate_id].get("eligible") is True
-    ]
+    eligible_keys = []
+    frontier_structural_authentication_valid = True
+    structurally_eligible_fit_metric_gate_miss_count = 0
+    for candidate_id, record in records.items():
+        if candidate_id == "incumbent":
+            continue
+        key = reported_keys[candidate_id]
+        candidate_coverage_value = record.get("structural_coverage")
+        fit_gates = record.get("fit_gates")
+        if (
+            key is None
+            or not isinstance(candidate_coverage_value, Mapping)
+            or not isinstance(fit_gates, Mapping)
+            or not fit_gates
+            or not isinstance(record.get("state_sha256"), str)
+            or any(type(value) is not bool for value in fit_gates.values())
+        ):
+            frontier_structural_authentication_valid = False
+            continue
+        candidate_coverage = dict(candidate_coverage_value)
+        candidate_coverage_sha256 = candidate_coverage.pop(
+            "coverage_sha256",
+            None,
+        )
+        coverage_authenticated = bool(
+            candidate_coverage_sha256 == canonical_sha256(candidate_coverage)
+            and record.get("structural_coverage_sha256")
+            == candidate_coverage_sha256
+            and candidate_coverage_value.get("tensor_sha256")
+            == record.get("state_sha256")
+        )
+        if not coverage_authenticated:
+            frontier_structural_authentication_valid = False
+            continue
+        coverage_complete = bool(
+            candidate_coverage_value.get("complete_dense_writer_coverage") is True
+        )
+        effectful_nonincumbent = (
+            record.get("state_sha256") != output_hashes["incumbent"]
+        )
+        structurally_eligible = bool(
+            coverage_authenticated
+            and coverage_complete
+            and effectful_nonincumbent
+        )
+        fit_metric_gates_passed = all(
+            value is True for value in fit_gates.values()
+        )
+        if (
+            record.get("candidate_ranking_split") != "fit"
+            or record.get("relative_to_zero_weight_delta_gate_applied") is not False
+            or record.get("weight_norm_gate_passed") is not coverage_complete
+            or record.get("effectful_nonincumbent") is not effectful_nonincumbent
+            or record.get("structurally_eligible") is not structurally_eligible
+            or record.get("eligible") is not structurally_eligible
+            or record.get("candidate_eligibility_basis")
+            != "finite_dense_coverage_and_nonincumbent_effect"
+            or record.get("fit_metric_gates_passed")
+            is not fit_metric_gates_passed
+            or record.get(
+                "fit_metric_thresholds_used_for_candidate_eligibility"
+            )
+            is not False
+            or record.get("fit_metrics_used_for_candidate_ordering") is not True
+            or record.get("fit_metrics_used_for_pre_review_candidate_selection")
+            is not True
+            or record.get("fit_metrics_used_for_structural_eligibility") is not False
+            or record.get("fit_metric_thresholds_used_for_publication") is not False
+            or record.get("fit_metrics_have_final_intelligence_authority") is not False
+        ):
+            frontier_structural_authentication_valid = False
+            continue
+        if structurally_eligible:
+            eligible_keys.append((key, candidate_id))
+            structurally_eligible_fit_metric_gate_miss_count += int(
+                not fit_metric_gates_passed
+            )
     unevaluated_marker = {"not_evaluated_before_fit_selection_freeze": True}
     nonselected_heldout_clean = all(
         value.get("fit_check_metrics") is None
@@ -6107,7 +6180,27 @@ def _authenticated_exact_zero_terminal_plant(
         and report.get("incumbent_all_elements_zero") is True
         and report.get("incumbent_nonzero_element_count") == 0
         and report.get("incumbent_noop_publication_forbidden") is True
-        and report.get("candidate_selection_evidence_scope") == "fit-only"
+        and report.get("exact_zero_candidate_eligibility_schema")
+        == LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA
+        and report.get("candidate_selection_evidence_scope")
+        == "finite-dense-structural-eligibility-plus-fit-ordering"
+        and report.get("candidate_eligibility_basis")
+        == "finite_dense_coverage_and_nonincumbent_effect"
+        and report.get("fit_metrics_role")
+        == "ordering-among-structurally-eligible-not-threshold-gating"
+        and report.get("fit_metrics_used_for_candidate_ordering") is True
+        and report.get("fit_metrics_used_for_pre_review_candidate_selection") is True
+        and report.get("fit_metrics_used_for_structural_eligibility") is False
+        and report.get("fit_metrics_have_final_intelligence_authority") is False
+        and report.get("fit_metric_thresholds_used_for_candidate_eligibility")
+        is False
+        and report.get("fit_metric_thresholds_used_for_publication") is False
+        and report.get("fit_metric_gate_miss_can_exclude_structural_candidate")
+        is False
+        and report.get("structurally_eligible_frontier_count")
+        == len(eligible_keys)
+        and report.get("structurally_eligible_fit_metric_gate_miss_count")
+        == structurally_eligible_fit_metric_gate_miss_count
         and report.get("relative_to_zero_weight_delta_gate_applied") is False
         and report.get("heldout_evidence_role")
         == "diagnostic-only-after-frozen-fit-selection"
@@ -6171,9 +6264,7 @@ def _authenticated_exact_zero_terminal_plant(
             and tuple(records[candidate_id].get("selection_key", ())) == key
             for candidate_id, key in reported_keys.items()
         )
-        and selected_fit_key < incumbent_fit_key
-        and bool(recomputed_fit_gates)
-        and _all_passed(recomputed_fit_gates)
+        and frontier_structural_authentication_valid
         and selected_frontier.get("eligible") is True
         and bool(eligible_keys)
         and min(eligible_keys)[1] == selected_id
@@ -6195,15 +6286,23 @@ def _authenticated_exact_zero_terminal_plant(
         and validation.get("accessed_only_after_selected_id_and_state_sha256_frozen")
         is True
         and validation.get("frozen_candidate_state_sha256") == output_hashes["selected"]
-        and split_roles.get("only_fit_rows_used_for_candidate_eligibility_and_ranking")
+        and split_roles.get("candidate_eligibility_uses_only_finite_dense_structure")
         is True
+        and split_roles.get("fit_used_for_candidate_eligibility") is False
+        and split_roles.get("only_fit_rows_used_for_candidate_ordering") is True
+        and split_roles.get("fit_metrics_used_for_pre_review_candidate_selection")
+        is True
+        and split_roles.get("fit_metrics_have_final_intelligence_authority") is False
+        and split_roles.get("fit_metric_thresholds_used_for_publication") is False
         and split_roles.get("fit_check_diagnostic_only") is True
         and split_roles.get("selection_diagnostic_only") is True
         and split_roles.get("validation_diagnostic_only") is True
         and report.get("selected_writer_all_elements_finite") is True
         and report.get("selected_writer_all_elements_nonzero") is all_nonzero
         and report.get("selected_writer_all_source_features_covered") is True
-        and report.get("published_writer_is_finite_dense_nonzero_fit_plant") is True
+        and report.get("published_writer_is_finite_dense_nonzero_structural_plant")
+        is True
+        and report.get("nonfinite_candidate_or_replay_is_hard_failure") is True
         and report.get("zero_training_pruning_quantization") is True
     )
 
@@ -6302,7 +6401,7 @@ def _terminal_publication_decision(
         )
     if changed_winner:
         reason = (
-            "exact-zero-fit-only-structural-plant"
+            "exact-zero-structural-fit-ordered-plant"
             if exact_zero_cold_start
             else "accepted-nonincumbent-mutation"
         )
@@ -6323,7 +6422,14 @@ def _terminal_publication_decision(
             {
                 "terminal_exact_zero_cold_start": True,
                 "incumbent_noop_publication_forbidden": True,
-                "fit_only_selection_frozen_before_heldout_diagnostics": True,
+                "structural_candidate_eligibility_authenticated": True,
+                "fit_metric_ordering_frozen_before_heldout_diagnostics": True,
+                "fit_metrics_used_for_candidate_ordering": True,
+                "fit_metrics_used_for_pre_review_candidate_selection": True,
+                "fit_metrics_used_for_structural_eligibility": False,
+                "fit_metric_thresholds_used_for_candidate_eligibility": False,
+                "fit_metric_thresholds_used_for_publication": False,
+                "fit_metrics_have_final_intelligence_authority": False,
                 "heldout_metrics_diagnostic_only": True,
                 "published_w2_complete_dense_structural_plant": True,
             }
@@ -7151,7 +7257,18 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
             {
                 "terminal_exact_zero_cold_start": True,
                 "terminal_incumbent_noop_publication_forbidden": True,
-                "terminal_fit_only_selection_frozen_before_heldout_diagnostics": (True),
+                "terminal_structural_candidate_eligibility_authenticated": True,
+                "terminal_fit_metric_ordering_frozen_before_heldout_diagnostics": (
+                    True
+                ),
+                "terminal_fit_metrics_used_for_candidate_ordering": True,
+                "terminal_fit_metrics_used_for_pre_review_candidate_selection": True,
+                "terminal_fit_metrics_used_for_structural_eligibility": False,
+                "terminal_fit_metric_thresholds_used_for_candidate_eligibility": (
+                    False
+                ),
+                "terminal_fit_metric_thresholds_used_for_publication": False,
+                "terminal_fit_metrics_have_final_intelligence_authority": False,
                 "terminal_dense_structural_plant_installed_transactionally": True,
                 "zero_training_pruning_quantization": True,
             }
@@ -7586,9 +7703,31 @@ def _validate_fused_semantic_terminal_receipt(
             receipt.get("terminal_exact_zero_cold_start") is not True
             or receipt.get("terminal_incumbent_noop_publication_forbidden") is not True
             or receipt.get(
-                "terminal_fit_only_selection_frozen_before_heldout_diagnostics"
+                "terminal_structural_candidate_eligibility_authenticated"
             )
             is not True
+            or receipt.get(
+                "terminal_fit_metric_ordering_frozen_before_heldout_diagnostics"
+            )
+            is not True
+            or receipt.get("terminal_fit_metrics_used_for_candidate_ordering")
+            is not True
+            or receipt.get(
+                "terminal_fit_metrics_used_for_pre_review_candidate_selection"
+            )
+            is not True
+            or receipt.get("terminal_fit_metrics_used_for_structural_eligibility")
+            is not False
+            or receipt.get(
+                "terminal_fit_metric_thresholds_used_for_candidate_eligibility"
+            )
+            is not False
+            or receipt.get("terminal_fit_metric_thresholds_used_for_publication")
+            is not False
+            or receipt.get(
+                "terminal_fit_metrics_have_final_intelligence_authority"
+            )
+            is not False
             or receipt.get("terminal_heldout_metrics_diagnostic_only") is not True
             or receipt.get("terminal_heldout_publication_gate_applied") is not False
             or receipt.get("terminal_dense_structural_plant_installed_transactionally")
@@ -7598,21 +7737,68 @@ def _validate_fused_semantic_terminal_receipt(
             or terminal_decision.get("terminal_exact_zero_cold_start") is not True
             or terminal_decision.get("incumbent_noop_publication_forbidden") is not True
             or terminal_decision.get(
-                "fit_only_selection_frozen_before_heldout_diagnostics"
+                "structural_candidate_eligibility_authenticated"
             )
             is not True
+            or terminal_decision.get(
+                "fit_metric_ordering_frozen_before_heldout_diagnostics"
+            )
+            is not True
+            or terminal_decision.get("fit_metrics_used_for_candidate_ordering")
+            is not True
+            or terminal_decision.get(
+                "fit_metrics_used_for_pre_review_candidate_selection"
+            )
+            is not True
+            or terminal_decision.get("fit_metrics_used_for_structural_eligibility")
+            is not False
+            or terminal_decision.get(
+                "fit_metric_thresholds_used_for_candidate_eligibility"
+            )
+            is not False
+            or terminal_decision.get("fit_metric_thresholds_used_for_publication")
+            is not False
+            or terminal_decision.get("fit_metrics_have_final_intelligence_authority")
+            is not False
             or terminal_decision.get("heldout_metrics_diagnostic_only") is not True
             or terminal_decision.get("published_w2_complete_dense_structural_plant")
             is not True
             or terminal_result.get("exact_zero_cold_start") is not True
             or terminal_result.get("incumbent_all_elements_zero") is not True
             or terminal_result.get("incumbent_noop_publication_forbidden") is not True
-            or terminal_result.get("candidate_selection_evidence_scope") != "fit-only"
+            or terminal_result.get("exact_zero_candidate_eligibility_schema")
+            != LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA
+            or terminal_result.get("candidate_selection_evidence_scope")
+            != "finite-dense-structural-eligibility-plus-fit-ordering"
+            or terminal_result.get("candidate_eligibility_basis")
+            != "finite_dense_coverage_and_nonincumbent_effect"
+            or terminal_result.get("fit_metrics_role")
+            != "ordering-among-structurally-eligible-not-threshold-gating"
+            or terminal_result.get("fit_metrics_used_for_candidate_ordering")
+            is not True
+            or terminal_result.get(
+                "fit_metrics_used_for_pre_review_candidate_selection"
+            )
+            is not True
+            or terminal_result.get("fit_metrics_used_for_structural_eligibility")
+            is not False
+            or terminal_result.get("fit_metrics_have_final_intelligence_authority")
+            is not False
+            or terminal_result.get(
+                "fit_metric_thresholds_used_for_candidate_eligibility"
+            )
+            is not False
+            or terminal_result.get("fit_metric_thresholds_used_for_publication")
+            is not False
             or terminal_result.get("relative_to_zero_weight_delta_gate_applied")
             is not False
             or terminal_result.get("selected_before_any_heldout_publication_diagnostic")
             is not True
-            or terminal_result.get("published_writer_is_finite_dense_nonzero_fit_plant")
+            or terminal_result.get(
+                "published_writer_is_finite_dense_nonzero_structural_plant"
+            )
+            is not True
+            or terminal_result.get("nonfinite_candidate_or_replay_is_hard_failure")
             is not True
             or terminal_result.get("zero_training_pruning_quantization") is not True
             or not isinstance(terminal_validation, Mapping)

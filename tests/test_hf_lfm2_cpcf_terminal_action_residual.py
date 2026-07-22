@@ -249,13 +249,14 @@ def _synthetic_terminal_problem():
     return seed, evidence_banks, rejecting_validation
 
 
-def _compile(seed, evidence_banks):
+def _compile(seed, evidence_banks, *, policy=None):
     return compile_lfm2_cpcf_terminal_action_residual(
         seed=seed,
         fit_evidence=evidence_banks["fit"],
         fit_check_evidence=evidence_banks["fit_check"],
         selection_evidence=evidence_banks["selection"],
         validation_evidence=evidence_banks["validation"],
+        policy=policy,
     )
 
 
@@ -351,7 +352,7 @@ def test_exact_bfloat16_frontier_selects_and_validates_terminal_repair() -> None
     )
 
 
-def test_exact_zero_writer_forces_fit_only_dense_plant_before_heldout_diagnostics(
+def test_exact_zero_writer_uses_structural_eligibility_then_fit_ordering(
     monkeypatch,
 ):
     source_seed, evidence_banks, _ = _synthetic_terminal_problem()
@@ -392,7 +393,21 @@ def test_exact_zero_writer_forces_fit_only_dense_plant_before_heldout_diagnostic
     assert report["exact_zero_cold_start"] is True
     assert report["incumbent_noop_publication_forbidden"] is True
     assert report["published_is_incumbent"] is False
-    assert report["candidate_selection_evidence_scope"] == "fit-only"
+    assert report["candidate_selection_evidence_scope"] == (
+        "finite-dense-structural-eligibility-plus-fit-ordering"
+    )
+    assert report["candidate_eligibility_basis"] == (
+        "finite_dense_coverage_and_nonincumbent_effect"
+    )
+    assert report["fit_metrics_role"] == (
+        "ordering-among-structurally-eligible-not-threshold-gating"
+    )
+    assert report["fit_metrics_used_for_candidate_ordering"] is True
+    assert report["fit_metrics_used_for_pre_review_candidate_selection"] is True
+    assert report["fit_metrics_used_for_structural_eligibility"] is False
+    assert report["fit_metrics_have_final_intelligence_authority"] is False
+    assert report["fit_metric_thresholds_used_for_candidate_eligibility"] is False
+    assert report["fit_metric_thresholds_used_for_publication"] is False
     assert report["relative_to_zero_weight_delta_gate_applied"] is False
     assert report["selected_before_any_heldout_publication_diagnostic"] is True
     first_heldout = next(
@@ -440,6 +455,85 @@ def test_exact_zero_writer_forces_fit_only_dense_plant_before_heldout_diagnostic
         assert candidate["selection_gates"] == {
             "not_evaluated_before_fit_selection_freeze": True
         }
+
+
+def test_exact_zero_dense_candidate_publishes_despite_fit_proxy_gate_miss() -> None:
+    source_seed, evidence_banks, _ = _synthetic_terminal_problem()
+    seed = _zero_terminal_seed(source_seed)
+    policy = Lfm2CpcfTerminalActionPolicy(
+        maximum_post_layer_rms_ratio=1e-12,
+    )
+
+    result = _compile(seed, evidence_banks, policy=policy)
+    report = result.as_dict()
+    selected = next(
+        value
+        for value in report["frontier"]
+        if value["candidate_id"] == result.selected_candidate_id
+    )
+
+    assert result.accepted is True
+    assert result.changed is True
+    assert result.selected_candidate_id != "incumbent"
+    assert selected["structurally_eligible"] is True
+    assert selected["eligible"] is True
+    assert selected["fit_metric_gates_passed"] is False
+    assert selected["fit_gates"]["post_layer_norm"] is False
+    assert selected["fit_metrics_used_for_candidate_ordering"] is True
+    assert selected["fit_metrics_used_for_pre_review_candidate_selection"] is True
+    assert selected["fit_metrics_used_for_structural_eligibility"] is False
+    assert selected["fit_metric_thresholds_used_for_publication"] is False
+    assert selected["fit_metrics_have_final_intelligence_authority"] is False
+    assert "fit_metrics_used_for_candidate_ordering_only" not in selected
+    assert "fit_metrics_used_for_publication_gate" not in selected
+    assert report["structurally_eligible_fit_metric_gate_miss_count"] > 0
+    assert report["fit_metric_gate_miss_can_exclude_structural_candidate"] is False
+    assert report["published_writer_is_finite_dense_nonzero_structural_plant"]
+    assert result.verify_authentication() is True
+
+
+def test_exact_zero_incomplete_frontier_fails_closed(monkeypatch) -> None:
+    source_seed, evidence_banks, _ = _synthetic_terminal_problem()
+    seed = _zero_terminal_seed(source_seed)
+
+    def incomplete_delta(*_args, **_kwargs):
+        value = torch.zeros_like(seed.down_weight, dtype=torch.float64)
+        value[0, 0] = 1.0
+        return value
+
+    monkeypatch.setattr(terminal, "_ridge_delta", incomplete_delta)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionResidualError,
+        match="no finite, fully dense effectful",
+    ):
+        _compile(seed, evidence_banks)
+
+
+def test_exact_zero_nonfinite_frontier_and_malformed_writer_fail_closed(
+    monkeypatch,
+) -> None:
+    source_seed, evidence_banks, _ = _synthetic_terminal_problem()
+    seed = _zero_terminal_seed(source_seed)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionResidualError,
+        match="materialized dense BF16 matrix",
+    ):
+        terminal._terminal_writer_structural_coverage(
+            torch.ones_like(seed.down_weight, dtype=torch.float32)
+        )
+
+    def nonfinite_delta(*_args, **_kwargs):
+        return torch.full_like(seed.down_weight, float("nan"), dtype=torch.float64)
+
+    monkeypatch.setattr(terminal, "_ridge_delta", nonfinite_delta)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionResidualError,
+        match="nonfinite",
+    ):
+        _compile(seed, evidence_banks)
 
 
 def test_exact_zero_result_rejects_self_sealed_caller_forgery() -> None:

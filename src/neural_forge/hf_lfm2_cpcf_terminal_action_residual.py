@@ -22,8 +22,10 @@ optimizer, trace capture, parent call, new parameter, pruning, or quantization.
 Rejected validation returns an exact clone of a functional incumbent BF16
 writer.  An exact-zero incumbent is instead an authenticated cold start: the
 incumbent/noop is ineligible, the relative-to-incumbent weight cap is undefined,
-and one finite fully dense FIT-selected writer is frozen before the other
-splits are evaluated diagnostically.
+and one finite fully dense writer is frozen before the other splits are
+evaluated diagnostically.  FIT metrics order structurally admissible cold-start
+writers and select the sole pre-review tensor; their proxy thresholds never
+decide structural eligibility or veto that selection.
 """
 
 from __future__ import annotations
@@ -46,6 +48,9 @@ LFM2_CPCF_TERMINAL_ACTION_POLICY_SCHEMA = (
 )
 LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA = (
     "neural-forge-lfm2-cpcf-terminal-action-result-v1"
+)
+LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA = (
+    "neural-forge-lfm2-cpcf-terminal-action-exact-zero-eligibility-v1"
 )
 _LFM2_CPCF_TERMINAL_ACTION_COMPILER_BINDING_SCHEMA = (
     "neural-forge-lfm2-cpcf-terminal-action-compiler-binding-v1"
@@ -1681,18 +1686,38 @@ def _authenticate_exact_zero_compiled_result(
             raise Lfm2CpcfTerminalActionAuthenticationError(
                 f"Cold-start frontier coverage gate for {candidate_id!r} is invalid."
             )
-        fit_passed = bool(fit_gates) and all(
-            value is True for value in fit_gates.values()
+        if not fit_gates or any(type(value) is not bool for value in fit_gates.values()):
+            raise Lfm2CpcfTerminalActionAuthenticationError(
+                f"Cold-start frontier FIT diagnostics for {candidate_id!r} are "
+                "invalid."
+            )
+        fit_passed = all(value is True for value in fit_gates.values())
+        effectful_nonincumbent = (
+            record.get("state_sha256") != expected_output_hashes["incumbent"]
         )
         derived_eligible = bool(
             record.get("weight_norm_gate_passed") is True
             and coverage_complete
-            and fit_passed
-            and tuple(reported_key) < tuple(incumbent_key)
+            and effectful_nonincumbent
         )
         if (
             record.get("candidate_ranking_split") != "fit"
             or record.get("relative_to_zero_weight_delta_gate_applied") is not False
+            or record.get("effectful_nonincumbent") is not effectful_nonincumbent
+            or record.get("structurally_eligible") is not derived_eligible
+            or record.get("candidate_eligibility_basis")
+            != "finite_dense_coverage_and_nonincumbent_effect"
+            or record.get("fit_metric_gates_passed") is not fit_passed
+            or record.get(
+                "fit_metric_thresholds_used_for_candidate_eligibility"
+            )
+            is not False
+            or record.get("fit_metrics_used_for_candidate_ordering") is not True
+            or record.get("fit_metrics_used_for_pre_review_candidate_selection")
+            is not True
+            or record.get("fit_metrics_used_for_structural_eligibility") is not False
+            or record.get("fit_metric_thresholds_used_for_publication") is not False
+            or record.get("fit_metrics_have_final_intelligence_authority") is not False
             or record.get("eligible") is not derived_eligible
         ):
             raise Lfm2CpcfTerminalActionAuthenticationError(
@@ -1702,7 +1727,7 @@ def _authenticate_exact_zero_compiled_result(
             eligible_records.append((tuple(reported_key), candidate_id, record))
     if not eligible_records:
         raise Lfm2CpcfTerminalActionAuthenticationError(
-            "Exact-zero terminal frontier has no eligible FIT candidate."
+            "Exact-zero terminal frontier has no structurally eligible candidate."
         )
     _winning_key, winning_id, selected_record = min(eligible_records)
     selected_metrics = body.get("selected_metrics_before_validation")
@@ -1734,18 +1759,51 @@ def _authenticate_exact_zero_compiled_result(
             "A nonselected cold-start frontier state consumed held-out evidence."
         )
     split_roles = body.get("split_roles")
+    structurally_eligible_fit_misses = sum(
+        int(record.get("fit_metric_gates_passed") is False)
+        for _key, _candidate_id, record in eligible_records
+    )
     if (
-        body.get("candidate_selection_evidence_scope") != "fit-only"
+        body.get("exact_zero_candidate_eligibility_schema")
+        != LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA
+        or body.get("candidate_selection_evidence_scope")
+        != "finite-dense-structural-eligibility-plus-fit-ordering"
+        or body.get("candidate_eligibility_basis")
+        != "finite_dense_coverage_and_nonincumbent_effect"
+        or body.get("fit_metrics_role")
+        != "ordering-among-structurally-eligible-not-threshold-gating"
+        or body.get("fit_metrics_used_for_candidate_ordering") is not True
+        or body.get("fit_metrics_used_for_pre_review_candidate_selection") is not True
+        or body.get("fit_metrics_used_for_structural_eligibility") is not False
+        or body.get("fit_metrics_have_final_intelligence_authority") is not False
+        or body.get("fit_metric_thresholds_used_for_candidate_eligibility") is not False
+        or body.get("fit_metric_thresholds_used_for_publication") is not False
+        or body.get("structurally_eligible_frontier_count")
+        != len(eligible_records)
+        or body.get("structurally_eligible_fit_metric_gate_miss_count")
+        != structurally_eligible_fit_misses
+        or body.get("fit_metric_gate_miss_can_exclude_structural_candidate")
+        is not False
         or body.get("selected_before_any_heldout_publication_diagnostic") is not True
         or body.get("heldout_candidate_evaluation_count_before_fit_freeze") != 0
         or body.get("heldout_candidate_evaluation_count_after_fit_freeze") != 6
         or body.get("heldout_candidate_count_evaluated_after_fit_freeze") != 2
         or not isinstance(split_roles, Mapping)
-        or split_roles.get("only_fit_rows_used_for_candidate_eligibility_and_ranking")
+        or split_roles.get("candidate_eligibility_uses_only_finite_dense_structure")
         is not True
+        or split_roles.get("fit_used_for_candidate_eligibility") is not False
+        or split_roles.get("only_fit_rows_used_for_candidate_ordering")
+        is not True
+        or split_roles.get("fit_metrics_used_for_pre_review_candidate_selection")
+        is not True
+        or split_roles.get("fit_metrics_have_final_intelligence_authority") is not False
+        or split_roles.get("fit_metric_thresholds_used_for_publication") is not False
         or split_roles.get("fit_check_diagnostic_only") is not True
         or split_roles.get("selection_diagnostic_only") is not True
         or split_roles.get("validation_diagnostic_only") is not True
+        or body.get("published_writer_is_finite_dense_nonzero_structural_plant")
+        is not True
+        or body.get("nonfinite_candidate_or_replay_is_hard_failure") is not True
     ):
         raise Lfm2CpcfTerminalActionAuthenticationError(
             "Exact-zero held-out diagnostic ordering is not authenticated."
@@ -2189,13 +2247,20 @@ def compile_lfm2_cpcf_terminal_action_residual(
                         ridge=ridge,
                         state_sha256=state_sha,
                     )
+                    effectful_nonincumbent = not torch.equal(candidate, incumbent)
+                    fit_metric_gates_passed = _all_passed(fit_gates)
+                    cold_start_structurally_eligible = bool(
+                        exact_zero_cold_start
+                        and weight_gate
+                        and effectful_nonincumbent
+                    )
                     eligible = bool(
                         weight_gate
-                        and _all_passed(fit_gates)
                         and (
-                            key < incumbent_key
+                            effectful_nonincumbent
                             if exact_zero_cold_start
-                            else _all_passed(fit_check_gates)
+                            else fit_metric_gates_passed
+                            and _all_passed(fit_check_gates)
                             and _all_passed(selection_gates)
                         )
                     )
@@ -2238,6 +2303,26 @@ def compile_lfm2_cpcf_terminal_action_residual(
                                     weight_ratio
                                     <= selected_policy.maximum_weight_delta_rms_ratio
                                 ),
+                                "effectful_nonincumbent": effectful_nonincumbent,
+                                "structurally_eligible": (
+                                    cold_start_structurally_eligible
+                                ),
+                                "candidate_eligibility_basis": (
+                                    "finite_dense_coverage_and_nonincumbent_effect"
+                                ),
+                                "fit_metric_gates_passed": (
+                                    fit_metric_gates_passed
+                                ),
+                                "fit_metric_thresholds_used_for_candidate_eligibility": (
+                                    False
+                                ),
+                                "fit_metrics_used_for_candidate_ordering": True,
+                                "fit_metrics_used_for_pre_review_candidate_selection": (
+                                    True
+                                ),
+                                "fit_metrics_used_for_structural_eligibility": False,
+                                "fit_metric_thresholds_used_for_publication": False,
+                                "fit_metrics_have_final_intelligence_authority": False,
                                 "structural_coverage": dict(structural_coverage),
                                 "structural_coverage_sha256": structural_coverage[
                                     "coverage_sha256"
@@ -2261,8 +2346,8 @@ def compile_lfm2_cpcf_terminal_action_residual(
         if selected_id == "incumbent" or selected_key is None:
             raise Lfm2CpcfTerminalActionResidualError(
                 "Exact-zero terminal cold start found no finite, fully dense "
-                "FIT-improving closed-form W2 candidate; incumbent publication "
-                "is forbidden."
+                "effectful closed-form W2 candidate; incumbent publication is "
+                "forbidden."
             )
         selected_structural_coverage = _terminal_writer_structural_coverage(
             selected_weight
@@ -2304,8 +2389,9 @@ def compile_lfm2_cpcf_terminal_action_residual(
                 )
         except Exception as exc:
             raise Lfm2CpcfTerminalActionResidualError(
-                "A held-out terminal diagnostic failed after the FIT-only W2 "
-                "candidate was frozen; no result was issued."
+                "A held-out terminal diagnostic failed after the structurally "
+                "eligible, FIT-ordered W2 candidate was frozen; no result was "
+                "issued."
             ) from exc
         selected_split_metrics.update(
             {
@@ -2422,6 +2508,28 @@ def compile_lfm2_cpcf_terminal_action_residual(
         raise Lfm2CpcfTerminalActionResidualError(
             "Terminal frontier cardinality or frozen selection changed."
         )
+    cold_start_structurally_eligible_count = 0
+    cold_start_fit_metric_gate_miss_count = 0
+    if exact_zero_cold_start:
+        cold_start_candidates = tuple(
+            value for value in frontier if value["candidate_id"] != "incumbent"
+        )
+        cold_start_structurally_eligible_count = sum(
+            int(value["structurally_eligible"] is True)
+            for value in cold_start_candidates
+        )
+        cold_start_fit_metric_gate_miss_count = sum(
+            int(
+                value["structurally_eligible"] is True
+                and value["fit_metric_gates_passed"] is False
+            )
+            for value in cold_start_candidates
+        )
+        if cold_start_structurally_eligible_count <= 0:
+            raise Lfm2CpcfTerminalActionResidualError(
+                "Exact-zero terminal frontier lost every structurally eligible "
+                "candidate."
+            )
     output_hashes = {
         "incumbent": _tensor_sha256(incumbent, "incumbent"),
         "selected": _tensor_sha256(selected_weight, "selected"),
@@ -2468,7 +2576,12 @@ def compile_lfm2_cpcf_terminal_action_residual(
                 "selection_used_for_candidate_ranking": False,
                 "selection_diagnostic_only": True,
                 "validation_diagnostic_only": True,
-                "only_fit_rows_used_for_candidate_eligibility_and_ranking": True,
+                "candidate_eligibility_uses_only_finite_dense_structure": True,
+                "fit_used_for_candidate_eligibility": False,
+                "only_fit_rows_used_for_candidate_ordering": True,
+                "fit_metrics_used_for_pre_review_candidate_selection": True,
+                "fit_metrics_have_final_intelligence_authority": False,
+                "fit_metric_thresholds_used_for_publication": False,
             }
         )
     body = {
@@ -2541,7 +2654,31 @@ def compile_lfm2_cpcf_terminal_action_residual(
                 "incumbent_all_elements_zero": True,
                 "incumbent_nonzero_element_count": 0,
                 "incumbent_noop_publication_forbidden": True,
-                "candidate_selection_evidence_scope": "fit-only",
+                "exact_zero_candidate_eligibility_schema": (
+                    LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA
+                ),
+                "candidate_selection_evidence_scope": (
+                    "finite-dense-structural-eligibility-plus-fit-ordering"
+                ),
+                "candidate_eligibility_basis": (
+                    "finite_dense_coverage_and_nonincumbent_effect"
+                ),
+                "fit_metrics_role": (
+                    "ordering-among-structurally-eligible-not-threshold-gating"
+                ),
+                "fit_metrics_used_for_candidate_ordering": True,
+                "fit_metrics_used_for_pre_review_candidate_selection": True,
+                "fit_metrics_used_for_structural_eligibility": False,
+                "fit_metrics_have_final_intelligence_authority": False,
+                "fit_metric_thresholds_used_for_candidate_eligibility": False,
+                "fit_metric_thresholds_used_for_publication": False,
+                "structurally_eligible_frontier_count": (
+                    cold_start_structurally_eligible_count
+                ),
+                "structurally_eligible_fit_metric_gate_miss_count": (
+                    cold_start_fit_metric_gate_miss_count
+                ),
+                "fit_metric_gate_miss_can_exclude_structural_candidate": False,
                 "relative_to_zero_weight_delta_gate_applied": False,
                 "heldout_evidence_role": ("diagnostic-only-after-frozen-fit-selection"),
                 "selected_before_any_heldout_publication_diagnostic": True,
@@ -2559,7 +2696,8 @@ def compile_lfm2_cpcf_terminal_action_residual(
                     selected_structural_coverage["all_elements_nonzero"]
                 ),
                 "selected_writer_all_source_features_covered": True,
-                "published_writer_is_finite_dense_nonzero_fit_plant": True,
+                "published_writer_is_finite_dense_nonzero_structural_plant": True,
+                "nonfinite_candidate_or_replay_is_hard_failure": True,
                 "zero_training_pruning_quantization": True,
             }
         )
@@ -2580,6 +2718,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
 
 
 __all__ = [
+    "LFM2_CPCF_TERMINAL_ACTION_EXACT_ZERO_ELIGIBILITY_SCHEMA",
     "LFM2_CPCF_TERMINAL_ACTION_EVIDENCE_SCHEMA",
     "LFM2_CPCF_TERMINAL_ACTION_POLICY_SCHEMA",
     "LFM2_CPCF_TERMINAL_ACTION_RESULT_SCHEMA",
