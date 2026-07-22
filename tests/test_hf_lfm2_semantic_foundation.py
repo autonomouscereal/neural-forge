@@ -481,6 +481,11 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
         lambda _cache: {"authentication_sha256": "a" * 64},
     )
     monkeypatch.setattr(
+        postfold,
+        "build_lfm2_long_horizon_terminal_source_lineage",
+        lambda **_k: object(),
+    )
+    monkeypatch.setattr(
         postfold, "load_strict_tokenizer_bridge_artifact", lambda *_a, **_k: bridge
     )
     monkeypatch.setattr(
@@ -546,7 +551,7 @@ def test_run_dispatches_foundation_interface_without_legacy_c61(monkeypatch, tmp
     monkeypatch.setattr(
         postfold,
         "authenticate_lfm2_semantic_layer_stack_attention_receipts",
-        lambda _receipt: {
+        lambda _receipt, **_k: {
             "result_sha256": "1" * 64,
             "attention_receipt_count": 0,
             "complete_six_tensor_bundle_count": 0,

@@ -63,6 +63,7 @@ from neural_forge.hf_lfm2_cpcf_v5_quarantine import (
 from neural_forge.hf_lfm2_semantic_foundation_statistics import (
     Lfm2SemanticFoundationInterfaceStatisticsArtifact,
     Lfm2SemanticFoundationStatisticsError,
+    migrate_lfm2_semantic_foundation_interface_statistics_frontier,
     open_lfm2_semantic_foundation_interface_statistics,
     replay_lfm2_semantic_foundation_interface_statistics,
     write_lfm2_semantic_foundation_interface_statistics,
@@ -76,7 +77,10 @@ from neural_forge.hf_tied_causal_interface_fold import (
     TiedCausalInterfaceSufficientStatistics,
     whiten_tied_causal_interface,
 )
-from neural_forge.hf_tied_causal_interface_anchor_fold import TiedCausalAnchorSplit
+from neural_forge.hf_tied_causal_interface_anchor_fold import (
+    TiedCausalAnchorResidualFold,
+    TiedCausalAnchorSplit,
+)
 from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     fingerprint_hf_tokenizer_semantics,
@@ -585,6 +589,7 @@ class Lfm2SemanticFoundationInterfaceSolve:
     report: Mapping[str, Any]
     base_statistics: TiedCausalInterfaceSufficientStatistics | None = None
     anchor_splits: Mapping[str, TiedCausalAnchorSplit] | None = None
+    anchor_fold: TiedCausalAnchorResidualFold | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -730,6 +735,7 @@ def fit_lfm2_semantic_foundation_interface(
         report=MappingProxyType(_sealed(body)),
         base_statistics=boundary_compiler.base_statistics,
         anchor_splits=boundary_compiler.anchor_splits,
+        anchor_fold=boundary_compiler.anchor_fold,
     )
 
 
@@ -1733,6 +1739,8 @@ def rehydrate_lfm2_semantic_foundation_interface(
     expected_foundation_receipt_sha256: str,
     interface_statistics_directory: str | os.PathLike[str] | None = None,
     expected_interface_statistics_sha256: str | None = None,
+    interface_frontier_companion_receipt: Mapping[str, Any] | None = None,
+    expected_interface_frontier_companion_sha256: str | None = None,
 ) -> tuple[TiedCausalInterfaceFold, Mapping[str, Any]]:
     """Recompute and authenticate the foundation's analytical producer map."""
 
@@ -1749,32 +1757,86 @@ def rehydrate_lfm2_semantic_foundation_interface(
         raise Lfm2SemanticFoundationError(
             "Statistics directory and external SHA-256 pin must be supplied together."
         )
+    companion_requested = interface_frontier_companion_receipt is not None
+    if companion_requested != (
+        expected_interface_frontier_companion_sha256 is not None
+    ):
+        raise Lfm2SemanticFoundationError(
+            "Frontier companion receipt and external SHA-256 pin must be supplied "
+            "together."
+        )
+    if companion_requested and not statistics_requested:
+        raise Lfm2SemanticFoundationError(
+            "A frontier companion requires its pinned legacy statistics artifact."
+        )
     if statistics_requested:
         try:
-            artifact = open_lfm2_semantic_foundation_interface_statistics(
-                interface_statistics_directory,
-                expected_artifact_sha256=expected_interface_statistics_sha256,
-            )
-            replay = replay_lfm2_semantic_foundation_interface_statistics(
-                artifact,
-                source_selected_tied_table,
-                foundation_receipt=receipt,
-                foundation_receipt_file_sha256=file_sha256,
-            )
+            if companion_requested:
+                companion = (
+                    migrate_lfm2_semantic_foundation_interface_statistics_frontier(
+                        interface_statistics_directory,
+                        source_selected_tied_table,
+                        expected_artifact_sha256=(
+                            expected_interface_statistics_sha256
+                        ),
+                        legacy_foundation_receipt=receipt,
+                        legacy_foundation_receipt_file_sha256=file_sha256,
+                    )
+                )
+                expected_companion_sha256 = _digest(
+                    expected_interface_frontier_companion_sha256,
+                    "interface frontier companion SHA-256",
+                )
+                if (
+                    not isinstance(interface_frontier_companion_receipt, Mapping)
+                    or dict(interface_frontier_companion_receipt)
+                    != dict(companion.companion_receipt)
+                    or companion.companion_receipt.get("companion_sha256")
+                    != expected_companion_sha256
+                ):
+                    raise Lfm2SemanticFoundationStatisticsError(
+                        "Frontier companion differs from the regenerated pinned receipt."
+                    )
+                interface = companion.interface
+                solve_report = companion.legacy_solve_report
+                statistics_artifact_sha256 = companion.companion_receipt[
+                    "statistics_artifact_sha256"
+                ]
+                statistics_manifest_file_sha256 = companion.companion_receipt[
+                    "statistics_manifest_file_sha256"
+                ]
+                statistics_replay_sha256 = None
+            else:
+                artifact = open_lfm2_semantic_foundation_interface_statistics(
+                    interface_statistics_directory,
+                    expected_artifact_sha256=expected_interface_statistics_sha256,
+                )
+                replay = replay_lfm2_semantic_foundation_interface_statistics(
+                    artifact,
+                    source_selected_tied_table,
+                    foundation_receipt=receipt,
+                    foundation_receipt_file_sha256=file_sha256,
+                )
+                interface = replay.interface
+                solve_report = replay.solve_report
+                statistics_artifact_sha256 = artifact.artifact_sha256
+                statistics_manifest_file_sha256 = artifact.manifest_file_sha256
+                statistics_replay_sha256 = replay.replay_report["result_sha256"]
         except Lfm2SemanticFoundationStatisticsError as exc:
             raise Lfm2SemanticFoundationError(
                 "Compact foundation-interface statistics failed authentication."
             ) from exc
         target = target_model.get_input_embeddings().weight
         output = target_model.get_output_embeddings().weight
-        expected_target = replay.interface.target_weight.to(
+        expected_target = interface.target_weight.to(
             device=target.device,
             dtype=target.dtype,
         )
         if (
-            artifact.bindings.get("cache_parent_fingerprint")
+            solve_report.get("cache_parent_fingerprint")
             != semantic_cache.parent_fingerprint
-            or artifact.bindings.get("bridge_artifact_sha256") != bridge.artifact_sha256
+            or solve_report.get("bridge_artifact_sha256") != bridge.artifact_sha256
+            or statistics_artifact_sha256 != expected_interface_statistics_sha256
             or output is not target
             or not bool((target == expected_target).all().item())
             or receipt.get("source_selected_tied_table_sha256")
@@ -1785,25 +1847,57 @@ def rehydrate_lfm2_semantic_foundation_interface(
             )
         body = {
             "schema": (
-                "neural-forge-lfm2-semantic-foundation-interface-rehydration-v2"
+                "neural-forge-lfm2-semantic-foundation-interface-rehydration-v3"
+                if companion_requested
+                else "neural-forge-lfm2-semantic-foundation-interface-rehydration-v2"
             ),
             "foundation_receipt_sha256": receipt["receipt_sha256"],
             "foundation_receipt_file_sha256": file_sha256,
-            "compiler_cache_key": artifact.bindings["compiler_cache_key"],
+            "compiler_cache_key": solve_report["compiler_cache_key"],
             "semantic_evidence_cache_key": semantic_cache.cache_key,
             "common_parent_fingerprint": semantic_cache.parent_fingerprint,
             "bridge_artifact_sha256": bridge.artifact_sha256,
-            "interface_solve_sha256": replay.solve_report["result_sha256"],
-            "active_interface_report_sha256": replay.interface.report["report_sha256"],
+            "interface_solve_sha256": solve_report["result_sha256"],
+            "active_interface_report_sha256": interface.report["report_sha256"],
             "saved_target_weight_sha256": _tensor_sha256(target),
             "producer_encoder_sha256": _tensor_sha256(
-                replay.interface.producer_encoder
+                interface.producer_encoder
             ),
-            "interface_statistics_artifact_sha256": artifact.artifact_sha256,
+            "interface_statistics_artifact_sha256": statistics_artifact_sha256,
             "interface_statistics_manifest_file_sha256": (
-                artifact.manifest_file_sha256
+                statistics_manifest_file_sha256
             ),
-            "interface_statistics_replay_sha256": replay.replay_report["result_sha256"],
+            **(
+                {
+                    "interface_frontier_companion_sha256": (
+                        expected_interface_frontier_companion_sha256
+                    ),
+                    "causal_anchor_frontier_sha256": (
+                        companion.companion_receipt["frontier_sha256"]
+                    ),
+                    "causal_anchor_materializable_candidate_indices": (
+                        companion.companion_receipt[
+                            "frontier_materializable_candidate_indices"
+                        ]
+                    ),
+                    "causal_anchor_compatibility_default_candidate_index": (
+                        companion.companion_receipt[
+                            "frontier_compatibility_default_candidate_index"
+                        ]
+                    ),
+                    "frontier_companion_regenerated_and_consumed": True,
+                    "normal_current_artifact_replay_used": False,
+                    "legacy_artifact_opened_only_by_explicit_companion_migration": (
+                        True
+                    ),
+                }
+                if companion_requested
+                else {
+                    "interface_statistics_replay_sha256": (
+                        statistics_replay_sha256
+                    )
+                }
+            ),
             "compiler_and_semantic_cache_identities_bound_separately": True,
             "producer_encoder_recomputed_from_authenticated_final_norm_evidence": (
                 False
@@ -1820,7 +1914,7 @@ def rehydrate_lfm2_semantic_foundation_interface(
             "child_model_forward_calls": 0,
             "training_steps": 0,
         }
-        return replay.interface, MappingProxyType(_sealed(body))
+        return interface, MappingProxyType(_sealed(body))
     compiler_cache_directory = _ordinary_directory(
         receipt.get("compiler_cache_directory"),
         "foundation compiler cache",

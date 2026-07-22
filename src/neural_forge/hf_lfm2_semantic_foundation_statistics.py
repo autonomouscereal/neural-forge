@@ -25,6 +25,7 @@ from typing import Any
 
 from neural_forge.dynamic_circuit_ir import canonical_json_bytes, canonical_sha256
 from neural_forge.hf_tied_causal_interface_anchor_fold import (
+    TiedCausalAnchorResidualFold,
     TiedCausalAnchorSplit,
     fit_tied_causal_interface_anchor_residual,
 )
@@ -44,6 +45,9 @@ LFM2_SEMANTIC_FOUNDATION_INTERFACE_STATISTICS_STATUS = (
 )
 LFM2_SEMANTIC_FOUNDATION_INTERFACE_STATISTICS_PAYLOAD_SCHEMA = (
     "neural-forge-lfm2-semantic-foundation-interface-statistics-payload-v1"
+)
+LFM2_SEMANTIC_FOUNDATION_INTERFACE_FRONTIER_COMPANION_SCHEMA = (
+    "neural-forge-lfm2-semantic-foundation-interface-frontier-companion-v1"
 )
 
 _FILES = frozenset({"manifest.json", "statistics.safetensors"})
@@ -131,6 +135,51 @@ _ANCHOR_POLICY_SEMANTIC_FIELDS = frozenset(
     }
 )
 _ANCHOR_POLICY_FIELDS = _ANCHOR_CALL_FIELDS | _ANCHOR_POLICY_SEMANTIC_FIELDS
+_FRONTIER_ONLY_ANCHOR_REPORT_FIELDS = frozenset(
+    {
+        "anchor_frontier",
+        "anchor_frontier_sha256",
+        "candidate_recipe",
+        "candidate_recipe_sha256",
+        "compatibility_default_candidate_index",
+        "materializable_candidate_indices",
+        "whole_response_review_order_candidate_indices",
+        "all_structurally_valid_candidates_retained",
+        "numeric_metrics_used_for_candidate_admission",
+        "numeric_metrics_used_for_review_order_only",
+        "numeric_metrics_have_final_intelligence_authority",
+        "whole_response_review_selects_final_candidate",
+        "lazy_candidate_materialization_supported",
+        "selection_split_selects_compatibility_default_only",
+        "selection_split_discards_nondefault_structural_candidates",
+        "structurally_valid_candidate_indices",
+        "maximum_fit_anchor_rows_is_per_solver_batch_scheduling_bound",
+        "maximum_fit_anchor_rows_is_legacy_diagnostic_only",
+        "global_solution_independent_of_maximum_fit_anchor_rows",
+        "maximum_fit_anchor_rows_used_as_evidence_rejection_gate",
+        "fit_anchor_rows_scheduled",
+        "fit_anchor_rows_rejected",
+        "fit_solver_batch_count",
+    }
+)
+_FRONTIER_ONLY_CANDIDATE_REPORT_FIELDS = frozenset(
+    {
+        "fit_solver_schedule",
+        "fit_solver_batch_count",
+        "fit_solver_batch_row_counts",
+        "maximum_fit_anchor_rows_per_solver_batch",
+        "fit_rows_rejected_by_solver_batch_bound",
+        "fit_solver_batch_bound_is_resource_scheduling_only",
+        "maximum_fit_anchor_rows_is_legacy_diagnostic_only",
+        "global_solution_independent_of_maximum_fit_anchor_rows",
+    }
+)
+_LEGACY_ANCHOR_CANDIDATE_SELECTION_POLICY = (
+    "all_finite_dense_shape_dtype_device_correct_effectful_analytic_"
+    "residuals_eligible_then_deterministic_diagnostic_ordering_by_"
+    "parent_raw_centered_energy_parent_top1_base_energy_and_drift_"
+    "with_base_only_if_all_analytic_candidates_invalid_or_identical"
+)
 
 
 class Lfm2SemanticFoundationStatisticsError(ValueError):
@@ -153,8 +202,19 @@ class Lfm2SemanticFoundationInterfaceStatisticsArtifact:
 @dataclass(frozen=True, slots=True)
 class Lfm2SemanticFoundationInterfaceStatisticsReplay:
     interface: TiedCausalInterfaceFold
+    anchor_fold: TiedCausalAnchorResidualFold
     solve_report: Mapping[str, Any]
     replay_report: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SemanticFoundationInterfaceFrontierCompanion:
+    """A frontier-aware derivative of one immutable legacy foundation receipt."""
+
+    interface: TiedCausalInterfaceFold
+    anchor_fold: TiedCausalAnchorResidualFold
+    legacy_solve_report: Mapping[str, Any]
+    companion_receipt: Mapping[str, Any]
 
 
 def _digest(value: Any, name: str) -> str:
@@ -479,6 +539,108 @@ def _foundation_bindings(
     return bindings, policy, anchor
 
 
+def _legacy_anchor_report_from_frontier(
+    frontier_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project a frontier-aware report onto the exact pre-frontier v1 receipt."""
+
+    report = _verify_sealed(
+        frontier_report,
+        field="report_sha256",
+        name="frontier causal-anchor report",
+    )
+    if (
+        report.get("anchor_frontier_sha256") is None
+        or report.get("fit_anchor_row_ceiling_satisfied") is not True
+        or report.get("fit_solver_batch_count") != 1
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Only a single-batch frontier report has an exact legacy projection."
+        )
+    body = dict(report)
+    body.pop("report_sha256")
+    for name in _FRONTIER_ONLY_ANCHOR_REPORT_FIELDS:
+        body.pop(name, None)
+    reports = body.get("candidate_reports")
+    if not isinstance(reports, list):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Frontier causal-anchor candidate reports are invalid."
+        )
+    legacy_candidates = []
+    for value in reports:
+        if not isinstance(value, Mapping):
+            raise Lfm2SemanticFoundationStatisticsError(
+                "Frontier causal-anchor candidate report is invalid."
+            )
+        candidate = dict(value)
+        for name in _FRONTIER_ONLY_CANDIDATE_REPORT_FIELDS:
+            candidate.pop(name, None)
+        legacy_candidates.append(candidate)
+    body["candidate_reports"] = legacy_candidates
+    body["candidate_selection_policy"] = (
+        _LEGACY_ANCHOR_CANDIDATE_SELECTION_POLICY
+    )
+    return {**body, "report_sha256": canonical_sha256(body)}
+
+
+def _reauthenticate_artifact_splits(
+    artifact: Lfm2SemanticFoundationInterfaceStatisticsArtifact,
+) -> Mapping[str, TiedCausalAnchorSplit]:
+    splits: dict[str, TiedCausalAnchorSplit] = {}
+    if set(artifact.anchor_splits) != set(_SPLITS):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Statistics artifact anchor split inventory is invalid."
+        )
+    for name in _SPLITS:
+        supplied = artifact.anchor_splits[name]
+        if not isinstance(supplied, TiedCausalAnchorSplit):
+            raise Lfm2SemanticFoundationStatisticsError(
+                "Statistics artifact anchor split type is invalid."
+            )
+        splits[name] = TiedCausalAnchorSplit(
+            name=name,
+            row_ids=supplied.row_ids,
+            prefix_positions=supplied.prefix_positions,
+            source_producer_rows=supplied.source_producer_rows,
+            target_next_token_ids=supplied.target_next_token_ids,
+            split_sha256=supplied.split_sha256,
+        )
+    return MappingProxyType(splits)
+
+
+def _reauthenticate_base_statistics(
+    artifact: Lfm2SemanticFoundationInterfaceStatisticsArtifact,
+) -> TiedCausalInterfaceSufficientStatistics:
+    supplied = artifact.base_statistics
+    if not isinstance(supplied, TiedCausalInterfaceSufficientStatistics):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Statistics artifact base statistics type is invalid."
+        )
+    try:
+        return TiedCausalInterfaceSufficientStatistics(
+            fit_second_moment=supplied.fit_second_moment,
+            fit_metric_witness=supplied.fit_metric_witness,
+            validation_metric_witness=supplied.validation_metric_witness,
+            source_table_sha256=supplied.source_table_sha256,
+            fit_producer_rows_sha256=supplied.fit_producer_rows_sha256,
+            validation_producer_rows_sha256=(
+                supplied.validation_producer_rows_sha256
+            ),
+            target_width=supplied.target_width,
+            preserve_vocabulary_mean=supplied.preserve_vocabulary_mean,
+            target_norm_epsilon=supplied.target_norm_epsilon,
+            minimum_validation_top1_agreement=(
+                supplied.minimum_validation_top1_agreement
+            ),
+            metric_chunk_rows=supplied.metric_chunk_rows,
+            statistics_sha256=supplied.statistics_sha256,
+        )
+    except (TypeError, ValueError) as exc:
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Statistics artifact base evidence failed reauthentication."
+        ) from exc
+
+
 def _payload_tensors(
     base_statistics: TiedCausalInterfaceSufficientStatistics,
     anchor_splits: Mapping[str, TiedCausalAnchorSplit],
@@ -709,11 +871,12 @@ def write_lfm2_semantic_foundation_interface_statistics(
             shutil.rmtree(staging)
 
 
-def open_lfm2_semantic_foundation_interface_statistics(
+def _open_lfm2_semantic_foundation_interface_statistics(
     artifact_directory: str | os.PathLike[str],
     *,
     expected_artifact_sha256: str,
     verify_runtime: bool = True,
+    allow_legacy_implementation_for_frontier_migration: bool = False,
 ) -> Lfm2SemanticFoundationInterfaceStatisticsArtifact:
     """Open and fully authenticate a compact interface-statistics artifact."""
 
@@ -781,7 +944,14 @@ def open_lfm2_semantic_foundation_interface_statistics(
         raise Lfm2SemanticFoundationStatisticsError(
             "Statistics solver runtime differs from the producing runtime."
         )
-    if authenticated.get("implementation") != _implementation_fingerprint():
+    if type(allow_legacy_implementation_for_frontier_migration) is not bool:
+        raise TypeError(
+            "allow_legacy_implementation_for_frontier_migration must be boolean."
+        )
+    if (
+        authenticated.get("implementation") != _implementation_fingerprint()
+        and not allow_legacy_implementation_for_frontier_migration
+    ):
         raise Lfm2SemanticFoundationStatisticsError(
             "Statistics solver implementation differs from the producing implementation."
         )
@@ -892,6 +1062,22 @@ def open_lfm2_semantic_foundation_interface_statistics(
     )
 
 
+def open_lfm2_semantic_foundation_interface_statistics(
+    artifact_directory: str | os.PathLike[str],
+    *,
+    expected_artifact_sha256: str,
+    verify_runtime: bool = True,
+) -> Lfm2SemanticFoundationInterfaceStatisticsArtifact:
+    """Open a current artifact; legacy implementations require migration."""
+
+    return _open_lfm2_semantic_foundation_interface_statistics(
+        artifact_directory,
+        expected_artifact_sha256=expected_artifact_sha256,
+        verify_runtime=verify_runtime,
+        allow_legacy_implementation_for_frontier_migration=False,
+    )
+
+
 def replay_lfm2_semantic_foundation_interface_statistics(
     artifact: Lfm2SemanticFoundationInterfaceStatisticsArtifact,
     source_selected_tied_table: Any,
@@ -953,6 +1139,17 @@ def replay_lfm2_semantic_foundation_interface_statistics(
         raise Lfm2SemanticFoundationStatisticsError(
             "Replayed interface differs from the authenticated full-cache solve."
         )
+    frontier = anchor.frontier
+    if (
+        frontier is None
+        or anchor.report.get("anchor_frontier_sha256")
+        != frontier.frontier_sha256
+        or anchor.report.get("materializable_candidate_indices")
+        != list(frontier.materializable_candidate_indices)
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Replayed interface discarded or altered its anchor frontier."
+        )
     body = {
         "schema": (
             "neural-forge-lfm2-semantic-foundation-interface-statistics-replay-v1"
@@ -971,6 +1168,19 @@ def replay_lfm2_semantic_foundation_interface_statistics(
         "producer_encoder_sha256": _foundation_tensor_sha256(
             interface.producer_encoder
         ),
+        "causal_anchor_frontier_sha256": frontier.frontier_sha256,
+        "causal_anchor_candidate_recipe_sha256": [
+            recipe.recipe_sha256 for recipe in frontier.recipes
+        ],
+        "causal_anchor_materializable_candidate_indices": list(
+            frontier.materializable_candidate_indices
+        ),
+        "causal_anchor_compatibility_default_candidate_index": (
+            frontier.compatibility_default_candidate_index
+        ),
+        "causal_anchor_frontier_bound_to_statistics_and_foundation": True,
+        "causal_anchor_numeric_metrics_have_final_intelligence_authority": False,
+        "causal_anchor_dense_candidate_checkpoints_persisted": 0,
         "compiler_cache_open_calls": 0,
         "trace_safetensor_open_calls": 0,
         "selective_provider_open_calls": 0,
@@ -984,17 +1194,404 @@ def replay_lfm2_semantic_foundation_interface_statistics(
     report = {**body, "result_sha256": canonical_sha256(body)}
     return Lfm2SemanticFoundationInterfaceStatisticsReplay(
         interface=interface,
+        anchor_fold=anchor,
         solve_report=MappingProxyType(dict(expected_solve)),
         replay_report=MappingProxyType(report),
     )
 
 
+def authenticate_lfm2_semantic_foundation_interface_frontier_companion(
+    companion_receipt: Mapping[str, Any],
+    *,
+    expected_companion_sha256: str,
+    artifact: Lfm2SemanticFoundationInterfaceStatisticsArtifact,
+    legacy_foundation_receipt: Mapping[str, Any],
+    legacy_foundation_receipt_file_sha256: str,
+    source_selected_tied_table: Any,
+    anchor_fold: TiedCausalAnchorResidualFold | None = None,
+) -> Mapping[str, Any]:
+    """Authenticate a derived frontier receipt against immutable old evidence."""
+
+    if not isinstance(artifact, Lfm2SemanticFoundationInterfaceStatisticsArtifact):
+        raise TypeError(
+            "artifact must be Lfm2SemanticFoundationInterfaceStatisticsArtifact."
+        )
+    bindings, policy, legacy_anchor = _foundation_bindings(
+        legacy_foundation_receipt,
+        foundation_receipt_file_sha256=(
+            legacy_foundation_receipt_file_sha256
+        ),
+    )
+    if dict(artifact.bindings) != bindings or dict(artifact.anchor_policy) != policy:
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Frontier companion artifact differs from its legacy receipt."
+        )
+    legacy_receipt = _verify_sealed(
+        legacy_foundation_receipt,
+        field="receipt_sha256",
+        name="legacy foundation receipt",
+    )
+    legacy_solve = _verify_sealed(
+        legacy_receipt.get("interface_solve"),
+        field="result_sha256",
+        name="legacy foundation interface solve",
+    )
+    legacy_active = _verify_sealed(
+        legacy_solve.get("active_interface_report"),
+        field="report_sha256",
+        name="legacy active interface report",
+    )
+    authenticated = _verify_sealed(
+        companion_receipt,
+        field="companion_sha256",
+        name="frontier companion receipt",
+    )
+    if authenticated["companion_sha256"] != _digest(
+        expected_companion_sha256,
+        "frontier companion external SHA-256 pin",
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Frontier companion differs from its external SHA-256 pin."
+        )
+    new_anchor = _verify_sealed(
+        authenticated.get("frontier_causal_anchor_report"),
+        field="report_sha256",
+        name="frontier causal-anchor report",
+    )
+    frontier_record = new_anchor.get("anchor_frontier")
+    operation_audit = authenticated.get("operation_audit")
+    expected_zero_audit = {
+        "compiler_cache_open_calls": 0,
+        "trace_safetensor_open_calls": 0,
+        "selective_provider_open_calls": 0,
+        "parent_model_forward_calls": 0,
+        "parent_model_generation_calls": 0,
+        "child_model_forward_calls": 0,
+        "child_model_generation_calls": 0,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "dense_candidate_checkpoints_persisted": 0,
+    }
+    source_sha256 = _foundation_tensor_sha256(source_selected_tied_table)
+    legacy_projection = _legacy_anchor_report_from_frontier(new_anchor)
+    recipe_hashes = (
+        frontier_record.get("candidate_recipe_sha256")
+        if isinstance(frontier_record, Mapping)
+        else None
+    )
+    if (
+        authenticated.get("schema")
+        != LFM2_SEMANTIC_FOUNDATION_INTERFACE_FRONTIER_COMPANION_SCHEMA
+        or authenticated.get("status")
+        != "frontier-aware-companion-derived-from-legacy-compact-statistics"
+        or authenticated.get("statistics_artifact_sha256")
+        != artifact.artifact_sha256
+        or authenticated.get("statistics_manifest_file_sha256")
+        != artifact.manifest_file_sha256
+        or authenticated.get("statistics_implementation_sha256")
+        != artifact.manifest.get("implementation", {}).get(
+            "implementation_sha256"
+        )
+        or authenticated.get("frontier_implementation_sha256")
+        != _implementation_fingerprint()["implementation_sha256"]
+        or authenticated.get("legacy_foundation_receipt_sha256")
+        != legacy_receipt["receipt_sha256"]
+        or authenticated.get("legacy_foundation_receipt_file_sha256")
+        != legacy_foundation_receipt_file_sha256
+        or authenticated.get("legacy_interface_solve_sha256")
+        != legacy_solve["result_sha256"]
+        or authenticated.get("legacy_base_interface_report_sha256")
+        != legacy_solve.get("base_interface_report_sha256")
+        or legacy_solve.get("base_interface_report_sha256")
+        != legacy_solve.get("base_interface_report", {}).get("report_sha256")
+        or authenticated.get("legacy_causal_anchor_report_sha256")
+        != legacy_anchor["report_sha256"]
+        or legacy_solve.get("causal_anchor_report_sha256")
+        != legacy_anchor["report_sha256"]
+        or authenticated.get("legacy_active_interface_report_sha256")
+        != legacy_active["report_sha256"]
+        or legacy_solve.get("active_interface_report_sha256")
+        != legacy_active["report_sha256"]
+        or authenticated.get("source_selected_tied_table_sha256") != source_sha256
+        or authenticated.get("legacy_active_target_weight_sha256")
+        != legacy_solve.get("active_target_weight_sha256")
+        or authenticated.get("frontier_active_target_weight_sha256")
+        != legacy_solve.get("active_target_weight_sha256")
+        or authenticated.get("frontier_causal_anchor_report_sha256")
+        != new_anchor["report_sha256"]
+        or authenticated.get("legacy_producer_encoder_sha256")
+        != legacy_solve.get("producer_encoder_sha256")
+        or authenticated.get("frontier_producer_encoder_sha256")
+        != legacy_solve.get("producer_encoder_sha256")
+        or legacy_projection != legacy_anchor
+        or legacy_active != legacy_anchor
+        or new_anchor.get("target_weight_sha256")
+        != legacy_anchor.get("target_weight_sha256")
+        or new_anchor.get("producer_encoder_sha256")
+        != legacy_anchor.get("producer_encoder_sha256")
+        or not isinstance(frontier_record, Mapping)
+        or authenticated.get("frontier_sha256")
+        != frontier_record.get("frontier_sha256")
+        or authenticated.get("frontier_candidate_recipe_sha256") != recipe_hashes
+        or authenticated.get("frontier_materializable_candidate_indices")
+        != frontier_record.get("materializable_candidate_indices")
+        or authenticated.get("frontier_compatibility_default_candidate_index")
+        != frontier_record.get("compatibility_default_candidate_index")
+        or authenticated.get("frontier_whole_response_review_order_candidate_indices")
+        != frontier_record.get("whole_response_review_order_candidate_indices")
+        or authenticated.get("legacy_report_projection_exact") is not True
+        or authenticated.get("active_target_tensor_exactly_byte_identical")
+        is not True
+        or authenticated.get("numeric_metrics_have_final_intelligence_authority")
+        is not False
+        or authenticated.get("whole_response_review_selects_final_candidate")
+        is not True
+        or operation_audit != expected_zero_audit
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Frontier companion receipt bindings are invalid."
+        )
+    if anchor_fold is not None:
+        if not isinstance(anchor_fold, TiedCausalAnchorResidualFold):
+            raise TypeError("anchor_fold must be TiedCausalAnchorResidualFold.")
+        frontier = anchor_fold.frontier
+        if (
+            frontier is None
+            or dict(anchor_fold.report) != new_anchor
+            or frontier.frontier_sha256
+            != authenticated.get("frontier_sha256")
+            or _foundation_tensor_sha256(anchor_fold.interface.target_weight)
+            != authenticated.get("frontier_active_target_weight_sha256")
+            or _foundation_tensor_sha256(anchor_fold.interface.producer_encoder)
+            != authenticated.get("frontier_producer_encoder_sha256")
+        ):
+            raise Lfm2SemanticFoundationStatisticsError(
+                "Frontier companion runtime fold differs from its receipt."
+            )
+    return MappingProxyType(authenticated)
+
+
+def migrate_lfm2_semantic_foundation_interface_statistics_frontier(
+    artifact: (
+        Lfm2SemanticFoundationInterfaceStatisticsArtifact
+        | str
+        | os.PathLike[str]
+    ),
+    source_selected_tied_table: Any,
+    *,
+    expected_artifact_sha256: str | None = None,
+    verify_runtime: bool = True,
+    legacy_foundation_receipt: Mapping[str, Any],
+    legacy_foundation_receipt_file_sha256: str,
+) -> Lfm2SemanticFoundationInterfaceFrontierCompanion:
+    """Derive a full lazy anchor frontier from authenticated legacy statistics."""
+
+    if expected_artifact_sha256 is None:
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Frontier migration requires an external legacy artifact SHA-256 pin."
+        )
+    if isinstance(artifact, Lfm2SemanticFoundationInterfaceStatisticsArtifact):
+        if expected_artifact_sha256 != artifact.artifact_sha256:
+            raise Lfm2SemanticFoundationStatisticsError(
+                "Loaded legacy artifact differs from its external SHA-256 pin."
+            )
+        artifact_directory = artifact.path
+    else:
+        artifact_directory = artifact
+    artifact = _open_lfm2_semantic_foundation_interface_statistics(
+        artifact_directory,
+        expected_artifact_sha256=expected_artifact_sha256,
+        verify_runtime=verify_runtime,
+        allow_legacy_implementation_for_frontier_migration=True,
+    )
+    bindings, policy, legacy_anchor = _foundation_bindings(
+        legacy_foundation_receipt,
+        foundation_receipt_file_sha256=(
+            legacy_foundation_receipt_file_sha256
+        ),
+    )
+    if dict(artifact.bindings) != bindings or dict(artifact.anchor_policy) != policy:
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Legacy statistics artifact differs from its foundation receipt."
+        )
+    if legacy_anchor.get("anchor_frontier_sha256") is not None:
+        raise Lfm2SemanticFoundationStatisticsError(
+            "A frontier-aware receipt must use normal replay, not migration."
+        )
+    manifest, manifest_file_sha256 = _read_canonical_manifest(
+        artifact.path / "manifest.json"
+    )
+    verified_manifest = _verify_sealed(
+        manifest,
+        field="artifact_sha256",
+        name="statistics manifest",
+    )
+    if (
+        manifest != dict(artifact.manifest)
+        or verified_manifest["artifact_sha256"] != artifact.artifact_sha256
+        or manifest_file_sha256 != artifact.manifest_file_sha256
+        or verified_manifest.get("bindings") != bindings
+        or verified_manifest.get("anchor_policy") != policy
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Legacy statistics artifact object differs from its sealed manifest."
+        )
+    statistics = _reauthenticate_base_statistics(artifact)
+    splits = _reauthenticate_artifact_splits(artifact)
+    legacy_receipt = _verify_sealed(
+        legacy_foundation_receipt,
+        field="receipt_sha256",
+        name="legacy foundation receipt",
+    )
+    legacy_solve = _verify_sealed(
+        legacy_receipt.get("interface_solve"),
+        field="result_sha256",
+        name="legacy foundation interface solve",
+    )
+    legacy_base = _verify_sealed(
+        legacy_solve.get("base_interface_report"),
+        field="report_sha256",
+        name="legacy base interface report",
+    )
+    legacy_active = _verify_sealed(
+        legacy_solve.get("active_interface_report"),
+        field="report_sha256",
+        name="legacy active interface report",
+    )
+    table = source_selected_tied_table
+    base = fit_tied_causal_interface_from_statistics(table, statistics)
+    anchor = fit_tied_causal_interface_anchor_residual(
+        base,
+        table,
+        selection_split=splits["selection"],
+        fit_split=splits["fit"],
+        validation_split=splits["validation"],
+        **{name: policy[name] for name in sorted(_ANCHOR_CALL_FIELDS)},
+    )
+    frontier = anchor.frontier
+    new_report = dict(anchor.report)
+    legacy_projection = _legacy_anchor_report_from_frontier(new_report)
+    source_sha256 = _foundation_tensor_sha256(table)
+    active_target_sha256 = _foundation_tensor_sha256(
+        anchor.interface.target_weight
+    )
+    producer_sha256 = _foundation_tensor_sha256(
+        anchor.interface.producer_encoder
+    )
+    if (
+        frontier is None
+        or dict(base.report) != legacy_base
+        or legacy_projection != legacy_anchor
+        or legacy_active != legacy_anchor
+        or source_sha256 != legacy_solve.get("source_tied_table_sha256")
+        or active_target_sha256
+        != legacy_solve.get("active_target_weight_sha256")
+        or producer_sha256 != legacy_solve.get("producer_encoder_sha256")
+    ):
+        raise Lfm2SemanticFoundationStatisticsError(
+            "Frontier migration changed legacy reports or active tensor bytes."
+        )
+    operation_audit = {
+        "compiler_cache_open_calls": 0,
+        "trace_safetensor_open_calls": 0,
+        "selective_provider_open_calls": 0,
+        "parent_model_forward_calls": 0,
+        "parent_model_generation_calls": 0,
+        "child_model_forward_calls": 0,
+        "child_model_generation_calls": 0,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "dense_candidate_checkpoints_persisted": 0,
+    }
+    body = {
+        "schema": LFM2_SEMANTIC_FOUNDATION_INTERFACE_FRONTIER_COMPANION_SCHEMA,
+        "status": (
+            "frontier-aware-companion-derived-from-legacy-compact-statistics"
+        ),
+        "statistics_artifact_sha256": artifact.artifact_sha256,
+        "statistics_manifest_file_sha256": artifact.manifest_file_sha256,
+        "statistics_implementation_sha256": artifact.manifest["implementation"][
+            "implementation_sha256"
+        ],
+        "frontier_implementation_sha256": _implementation_fingerprint()[
+            "implementation_sha256"
+        ],
+        "legacy_foundation_receipt_sha256": legacy_receipt["receipt_sha256"],
+        "legacy_foundation_receipt_file_sha256": (
+            legacy_foundation_receipt_file_sha256
+        ),
+        "legacy_interface_solve_sha256": legacy_solve["result_sha256"],
+        "legacy_base_interface_report_sha256": legacy_base["report_sha256"],
+        "legacy_causal_anchor_report_sha256": legacy_anchor["report_sha256"],
+        "legacy_active_interface_report_sha256": legacy_active["report_sha256"],
+        "source_selected_tied_table_sha256": source_sha256,
+        "legacy_active_target_weight_sha256": legacy_solve[
+            "active_target_weight_sha256"
+        ],
+        "legacy_producer_encoder_sha256": legacy_solve[
+            "producer_encoder_sha256"
+        ],
+        "frontier_causal_anchor_report": new_report,
+        "frontier_causal_anchor_report_sha256": new_report["report_sha256"],
+        "frontier_sha256": frontier.frontier_sha256,
+        "frontier_candidate_recipe_sha256": [
+            recipe.recipe_sha256 for recipe in frontier.recipes
+        ],
+        "frontier_materializable_candidate_indices": list(
+            frontier.materializable_candidate_indices
+        ),
+        "frontier_compatibility_default_candidate_index": (
+            frontier.compatibility_default_candidate_index
+        ),
+        "frontier_whole_response_review_order_candidate_indices": list(
+            frontier.whole_response_review_order_candidate_indices
+        ),
+        "frontier_active_target_weight_sha256": active_target_sha256,
+        "frontier_producer_encoder_sha256": producer_sha256,
+        "legacy_report_projection_exact": True,
+        "active_target_tensor_exactly_byte_identical": True,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "whole_response_review_selects_final_candidate": True,
+        "operation_audit": operation_audit,
+    }
+    companion = {**body, "companion_sha256": canonical_sha256(body)}
+    authenticated = (
+        authenticate_lfm2_semantic_foundation_interface_frontier_companion(
+            companion,
+            expected_companion_sha256=companion["companion_sha256"],
+            artifact=artifact,
+            legacy_foundation_receipt=legacy_foundation_receipt,
+            legacy_foundation_receipt_file_sha256=(
+                legacy_foundation_receipt_file_sha256
+            ),
+            source_selected_tied_table=table,
+            anchor_fold=anchor,
+        )
+    )
+    return Lfm2SemanticFoundationInterfaceFrontierCompanion(
+        interface=anchor.interface,
+        anchor_fold=anchor,
+        legacy_solve_report=MappingProxyType(dict(legacy_solve)),
+        companion_receipt=authenticated,
+    )
+
+
 __all__ = [
+    "LFM2_SEMANTIC_FOUNDATION_INTERFACE_FRONTIER_COMPANION_SCHEMA",
     "LFM2_SEMANTIC_FOUNDATION_INTERFACE_STATISTICS_SCHEMA",
     "LFM2_SEMANTIC_FOUNDATION_INTERFACE_STATISTICS_STATUS",
+    "Lfm2SemanticFoundationInterfaceFrontierCompanion",
     "Lfm2SemanticFoundationInterfaceStatisticsArtifact",
     "Lfm2SemanticFoundationInterfaceStatisticsReplay",
     "Lfm2SemanticFoundationStatisticsError",
+    "authenticate_lfm2_semantic_foundation_interface_frontier_companion",
+    "migrate_lfm2_semantic_foundation_interface_statistics_frontier",
     "open_lfm2_semantic_foundation_interface_statistics",
     "replay_lfm2_semantic_foundation_interface_statistics",
     "write_lfm2_semantic_foundation_interface_statistics",

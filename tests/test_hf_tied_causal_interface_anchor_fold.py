@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -10,9 +11,13 @@ torch = pytest.importorskip("torch")
 
 import neural_forge.hf_tied_causal_interface_anchor_fold as anchor_module  # noqa: E402
 from neural_forge.hf_tied_causal_interface_anchor_fold import (  # noqa: E402
+    TiedCausalAnchorCandidateRecipe,
     TiedCausalAnchorFoldError,
+    TiedCausalAnchorFrontier,
     TiedCausalAnchorSplit,
+    enumerate_tied_causal_anchor_candidates,
     fit_tied_causal_interface_anchor_residual,
+    materialize_tied_causal_anchor_candidate,
 )
 from neural_forge.hf_tied_causal_interface_fold import (  # noqa: E402
     TiedCausalInterfaceFold,
@@ -432,19 +437,228 @@ def test_split_ids_must_be_disjoint_and_target_ids_must_fit_vocabulary() -> None
         )
 
 
-def test_fit_rows_above_dense_solver_safety_ceiling_fail_closed() -> None:
-    with pytest.raises(TiedCausalAnchorFoldError, match="safety ceiling"):
-        fit_tied_causal_interface_anchor_residual(
-            _interface(),
-            _source_table(),
-            selection_split=_split("selection", "selection"),
-            fit_split=_split("fit", "fit"),
-            validation_split=_split(
-                "validation",
-                "validation",
-                validation_variant=True,
-            ),
-            maximum_fit_anchor_rows=1,
+def test_fit_rows_above_legacy_ceiling_use_one_global_solve_without_rejection() -> None:
+    result = fit_tied_causal_interface_anchor_residual(
+        _interface(),
+        _source_table(),
+        selection_split=_split("selection", "selection"),
+        fit_split=_split("fit", "fit"),
+        validation_split=_split(
+            "validation",
+            "validation",
+            validation_variant=True,
+        ),
+        maximum_fit_anchor_rows=1,
+    )
+
+    assert result.report["fit_anchor_row_ceiling_satisfied"] is False
+    assert result.report["fit_solver_batch_count"] == 1
+    assert result.report["fit_anchor_rows_scheduled"] == 2
+    assert result.report["fit_anchor_rows_rejected"] == 0
+    assert (
+        result.report["maximum_fit_anchor_rows_used_as_evidence_rejection_gate"]
+        is False
+    )
+    assert result.report["materializable_candidate_indices"] == list(range(10))
+    analytic = result.report["candidate_reports"][1:]
+    assert len(analytic) == 9
+    assert all(candidate["fit_solver_batch_count"] == 1 for candidate in analytic)
+    assert all(
+        candidate["fit_solver_batch_row_counts"] == [2]
+        for candidate in analytic
+    )
+    assert all(
+        candidate["fit_rows_rejected_by_solver_batch_bound"] == 0
+        for candidate in analytic
+    )
+    assert all(
+        candidate["global_solution_independent_of_maximum_fit_anchor_rows"] is True
+        and candidate["maximum_fit_anchor_rows_is_legacy_diagnostic_only"] is True
+        for candidate in analytic
+    )
+
+
+def test_legacy_fit_row_ceiling_cannot_change_candidate_bytes_or_order() -> None:
+    arguments = {
+        "selection_split": _split("selection", "selection"),
+        "fit_split": _split("fit", "fit"),
+        "validation_split": _split("validation", "validation"),
+        "ridge_candidates": (1e-8, 1e-4),
+        "margin_candidates": (0.25, 1.0),
+        "maximum_relative_table_drift": 1.0,
+        "metric_chunk_rows": 2,
+    }
+    below_ceiling = fit_tied_causal_interface_anchor_residual(
+        _interface(),
+        _source_table(),
+        maximum_fit_anchor_rows=2,
+        **arguments,
+    )
+    above_ceiling = fit_tied_causal_interface_anchor_residual(
+        _interface(),
+        _source_table(),
+        maximum_fit_anchor_rows=1,
+        **arguments,
+    )
+
+    assert (
+        below_ceiling.report["selected_candidate_index"]
+        == above_ceiling.report["selected_candidate_index"]
+    )
+    assert torch.equal(
+        below_ceiling.interface.target_weight,
+        above_ceiling.interface.target_weight,
+    )
+    assert (
+        below_ceiling.report["diagnostic_candidate_indices_best_to_worst"]
+        == above_ceiling.report["diagnostic_candidate_indices_best_to_worst"]
+    )
+    for index in below_ceiling.frontier.materializable_candidate_indices:
+        assert torch.equal(
+            below_ceiling.materialize_candidate(index).interface.target_weight,
+            above_ceiling.materialize_candidate(index).interface.target_weight,
+        )
+
+
+def test_complete_structural_frontier_is_lazy_and_materializable() -> None:
+    result = _fold()
+    frontier = result.frontier
+
+    assert isinstance(frontier, TiedCausalAnchorFrontier)
+    assert result.report["materializable_candidate_indices"] == [0, 1, 2, 3, 4]
+    assert frontier.materializable_candidate_indices == (0, 1, 2, 3, 4)
+    assert result.report["all_structurally_valid_candidates_retained"] is True
+    assert result.report["numeric_metrics_used_for_candidate_admission"] is False
+    assert result.report["numeric_metrics_have_final_intelligence_authority"] is False
+    assert result.report["whole_response_review_selects_final_candidate"] is True
+    assert all(
+        isinstance(recipe, TiedCausalAnchorCandidateRecipe)
+        for recipe in frontier.recipes
+    )
+
+    numeric_order = enumerate_tied_causal_anchor_candidates(
+        result,
+        review_order=False,
+    )
+    review_order = result.enumerate_candidate_recipes(review_order=True)
+    assert [recipe["candidate_index"] for recipe in numeric_order] == list(range(5))
+    assert {recipe["candidate_index"] for recipe in review_order} == set(range(5))
+    assert [recipe["candidate_index"] for recipe in review_order[:4]] == (
+        result.report["diagnostic_candidate_indices_best_to_worst"]
+    )
+    assert all("target_weight" not in recipe for recipe in numeric_order)
+    assert all("residual_weight" not in recipe for recipe in numeric_order)
+
+    materialized = {
+        index: materialize_tied_causal_anchor_candidate(result, index)
+        for index in frontier.materializable_candidate_indices
+    }
+    assert torch.equal(
+        materialized[result.report["selected_candidate_index"]].residual_weight,
+        result.residual_weight,
+    )
+    assert torch.equal(materialized[0].interface.target_weight, _interface().target_weight)
+    assert all(
+        tuple(candidate.interface.target_weight.shape) == (4, 2)
+        and candidate.report["selected_candidate_index"] == index
+        and candidate.report["operation_audit"]["training_step_count"] == 0
+        and candidate.report["operation_audit"]["parent_forward_count"] == 0
+        for index, candidate in materialized.items()
+    )
+    assert len(
+        {
+            candidate.report["candidate_recipe_sha256"]
+            for candidate in materialized.values()
+        }
+    ) == 5
+
+
+def test_tensor_identical_analytic_recipes_are_preserved_for_review() -> None:
+    def zero_coordinate_split(name: str) -> TiedCausalAnchorSplit:
+        rows = torch.tensor(
+            [[0.0, 0.0, 1.0], [0.0, 0.0, -1.0]],
+            dtype=torch.float64,
+        )
+        return TiedCausalAnchorSplit(
+            name=name,
+            row_ids=(f"{name}:0", f"{name}:1"),
+            prefix_positions=torch.tensor([7, 8]),
+            source_producer_rows=rows,
+            target_next_token_ids=torch.tensor([1, 0]),
+        )
+
+    result = fit_tied_causal_interface_anchor_residual(
+        _interface(),
+        _source_table(),
+        selection_split=zero_coordinate_split("selection"),
+        fit_split=zero_coordinate_split("fit"),
+        validation_split=zero_coordinate_split("validation"),
+        ridge_candidates=(1e-8, 1e-4),
+        margin_candidates=(0.25, 1.0),
+        metric_chunk_rows=2,
+    )
+
+    assert result.report["selected_candidate_index"] == 0
+    assert result.report["materializable_candidate_indices"] == [0, 1, 2, 3, 4]
+    assert result.report["tensor_identical_candidate_indices"] == [1, 2, 3, 4]
+    assert all(
+        recipe["original_tensor_identical_to_base"] is True
+        for recipe in result.enumerate_candidate_recipes(review_order=False)[1:]
+    )
+    assert all(
+        torch.equal(
+            result.materialize_candidate(index).interface.target_weight,
+            result.interface.target_weight,
+        )
+        for index in range(1, 5)
+    )
+
+
+def test_frontier_and_recipe_authentication_fail_closed() -> None:
+    result = _fold()
+    frontier = result.frontier
+    assert isinstance(frontier, TiedCausalAnchorFrontier)
+
+    with pytest.raises(TiedCausalAnchorFoldError, match="recipe authentication"):
+        replace(frontier.recipes[1], recipe_sha256="0" * 64)
+    with pytest.raises(TiedCausalAnchorFoldError, match="frontier authentication"):
+        replace(frontier, frontier_sha256="0" * 64)
+    with pytest.raises(TiedCausalAnchorFoldError, match="not materializable"):
+        result.materialize_candidate(999)
+
+    wrong_output_recipe = replace(
+        frontier.recipes[1],
+        original_target_weight_sha256="0" * 64,
+        recipe_sha256="",
+    )
+    wrong_output_frontier = replace(
+        frontier,
+        recipes=(frontier.recipes[0], wrong_output_recipe, *frontier.recipes[2:]),
+        frontier_sha256="",
+    )
+    with pytest.raises(
+        TiedCausalAnchorFoldError,
+        match="changed the authenticated candidate bytes",
+    ):
+        wrong_output_frontier.materialize(1)
+
+    tampered_report = copy.deepcopy(dict(result.report))
+    selected_index = tampered_report["selected_candidate_index"]
+    tampered_report["candidate_reports"][selected_index]["requested_margin"] += 0.5
+    tampered_body = dict(tampered_report)
+    tampered_body.pop("report_sha256")
+    tampered_report["report_sha256"] = _canonical_sha256(tampered_body)
+    tampered_interface = TiedCausalInterfaceFold(
+        target_weight=result.interface.target_weight,
+        producer_encoder=result.interface.producer_encoder,
+        report=tampered_report,
+    )
+    with pytest.raises(TiedCausalAnchorFoldError, match="candidate frontier"):
+        type(result)(
+            interface=tampered_interface,
+            residual_weight=result.residual_weight,
+            report=tampered_report,
+            frontier=frontier,
         )
 
 

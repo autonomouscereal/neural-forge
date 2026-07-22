@@ -13,10 +13,12 @@ competitor by a candidate margin.  The sparse linear constraints are solved in
 observation space with deterministic FP64 ridge regression.  Every finite,
 dense, shape/dtype-correct residual that changes the tied table remains
 eligible.  Mapped-parent behavior, table drift, and the configured 90% value
-are diagnostic guidance for deterministic ordering, never eligibility gates.
-The unmodified base interface is used only when every analytic candidate is
-structurally invalid or tensor-identical.  Target-anchor metrics remain
-diagnostics.  Validation is evaluated only after the winner is frozen.
+are diagnostic guidance for deterministic review ordering, never eligibility
+gates.  Every structurally valid analytic candidate is retained as an
+authenticated deterministic recipe and can be materialized lazily.  The
+historical metric-ranked candidate remains only the compatibility default; it
+has no final intelligence authority.  Target-anchor metrics remain diagnostics.
+Validation is evaluated only after that compatibility default is frozen.
 
 No optimizer, backward pass, parent execution, pruning, quantization, or
 additional runtime parameter is used.  The result replaces a ``V x H`` tied
@@ -41,6 +43,10 @@ from neural_forge.hf_tied_causal_interface_fold import (
 
 TIED_CAUSAL_ANCHOR_SPLIT_SCHEMA = "neural-forge-tied-causal-anchor-split-v1"
 TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA = "neural-forge-tied-causal-anchor-residual-v1"
+TIED_CAUSAL_ANCHOR_CANDIDATE_RECIPE_SCHEMA = (
+    "neural-forge-tied-causal-anchor-candidate-recipe-v1"
+)
+TIED_CAUSAL_ANCHOR_FRONTIER_SCHEMA = "neural-forge-tied-causal-anchor-frontier-v1"
 _BASE_INTERFACE_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
 _SPLITS = ("selection", "fit", "validation")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -183,6 +189,20 @@ def _positive_float(value: Any, name: str) -> float:
         raise TiedCausalAnchorFoldError(f"{name} must be positive and finite.") from exc
     if not math.isfinite(result) or result <= 0.0:
         raise TiedCausalAnchorFoldError(f"{name} must be positive and finite.")
+    return result
+
+
+def _nonnegative_float(value: Any, name: str) -> float:
+    if isinstance(value, bool):
+        raise TiedCausalAnchorFoldError(f"{name} must be nonnegative and finite.")
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise TiedCausalAnchorFoldError(
+            f"{name} must be nonnegative and finite."
+        ) from exc
+    if not math.isfinite(result) or result < 0.0:
+        raise TiedCausalAnchorFoldError(f"{name} must be nonnegative and finite.")
     return result
 
 
@@ -538,6 +558,58 @@ def _fit_residual(
     return residual, report
 
 
+def _fit_residual_scheduled(
+    base_weight: Any,
+    fit_coordinates: Any,
+    target_ids: Any,
+    competitor_ids: Any,
+    *,
+    ridge: float,
+    margin: float,
+    maximum_relative_table_drift: float,
+    maximum_solver_rows: int,
+) -> tuple[Any, dict[str, Any]]:
+    """Run one global solve without rejecting evidence at the legacy row ceiling.
+
+    Sequentially solving row blocks changes the analytic problem and makes the
+    folded table depend on an operational chunk size.  ``maximum_solver_rows``
+    therefore remains authenticated as a legacy diagnostic ceiling only; it
+    never truncates evidence and never partitions the mathematical solve.
+    """
+
+    row_count = int(target_ids.numel())
+    if (
+        int(fit_coordinates.shape[0]) != row_count
+        or int(competitor_ids.numel()) != row_count
+        or row_count <= 0
+    ):
+        raise TiedCausalAnchorFoldError(
+            "Scheduled causal-anchor solve has inconsistent row evidence."
+        )
+    maximum_rows = _positive_int(maximum_solver_rows, "maximum_solver_rows")
+    residual, report = _fit_residual(
+        base_weight,
+        fit_coordinates,
+        target_ids,
+        competitor_ids,
+        ridge=ridge,
+        margin=margin,
+        maximum_relative_table_drift=maximum_relative_table_drift,
+    )
+    report = {
+        **report,
+        "fit_solver_schedule": "single-global-dense-observation-solve-v1",
+        "fit_solver_batch_count": 1,
+        "fit_solver_batch_row_counts": [row_count],
+        "maximum_fit_anchor_rows_per_solver_batch": maximum_rows,
+        "fit_rows_rejected_by_solver_batch_bound": 0,
+        "fit_solver_batch_bound_is_resource_scheduling_only": False,
+        "maximum_fit_anchor_rows_is_legacy_diagnostic_only": True,
+        "global_solution_independent_of_maximum_fit_anchor_rows": True,
+    }
+    return residual, report
+
+
 def _residual_candidate_structure(
     base_weight: Any,
     residual: Any,
@@ -739,12 +811,630 @@ def _split_metrics(
 
 
 @dataclass(frozen=True, slots=True)
+class TiedCausalAnchorCandidateRecipe:
+    """Compact authenticated instructions for one structural anchor candidate."""
+
+    candidate_index: int
+    candidate_kind: str
+    ridge_fraction: float
+    requested_margin: float
+    base_interface_report_sha256: str
+    base_target_weight_sha256: str
+    producer_encoder_sha256: str
+    source_tied_table_sha256: str
+    fit_split_sha256: str
+    fit_coordinates_sha256: str
+    fit_target_token_ids_sha256: str
+    fit_competitor_token_ids_sha256: str
+    candidate_report_sha256: str
+    original_residual_weight_sha256: str
+    original_target_weight_sha256: str
+    original_effectful_residual: bool
+    original_tensor_identical_to_base: bool
+    maximum_relative_table_drift: float
+    maximum_fit_anchor_rows_per_solver_batch: int
+    recipe_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.candidate_index, bool)
+            or not isinstance(self.candidate_index, int)
+            or self.candidate_index < 0
+        ):
+            raise TiedCausalAnchorFoldError(
+                "Anchor candidate index must be a nonnegative integer."
+            )
+        if not isinstance(self.candidate_kind, str) or not self.candidate_kind:
+            raise TiedCausalAnchorFoldError(
+                "Anchor candidate kind must be nonempty text."
+            )
+        ridge = _nonnegative_float(self.ridge_fraction, "ridge_fraction")
+        margin = _nonnegative_float(self.requested_margin, "requested_margin")
+        drift = _fraction(
+            self.maximum_relative_table_drift,
+            "maximum_relative_table_drift",
+            positive=True,
+        )
+        maximum_rows = _positive_int(
+            self.maximum_fit_anchor_rows_per_solver_batch,
+            "maximum_fit_anchor_rows_per_solver_batch",
+        )
+        for name in (
+            "base_interface_report_sha256",
+            "base_target_weight_sha256",
+            "producer_encoder_sha256",
+            "source_tied_table_sha256",
+            "fit_split_sha256",
+            "fit_coordinates_sha256",
+            "fit_target_token_ids_sha256",
+            "fit_competitor_token_ids_sha256",
+            "candidate_report_sha256",
+            "original_residual_weight_sha256",
+            "original_target_weight_sha256",
+        ):
+            _digest(getattr(self, name), name)
+        if (
+            type(self.original_effectful_residual) is not bool
+            or type(self.original_tensor_identical_to_base) is not bool
+            or self.original_effectful_residual
+            is self.original_tensor_identical_to_base
+        ):
+            raise TiedCausalAnchorFoldError(
+                "A structural anchor recipe must record exactly one of "
+                "effectful or tensor-identical."
+            )
+        body = {
+            "schema": TIED_CAUSAL_ANCHOR_CANDIDATE_RECIPE_SCHEMA,
+            "candidate_index": self.candidate_index,
+            "candidate_kind": self.candidate_kind,
+            "ridge_fraction": ridge,
+            "requested_margin": margin,
+            "base_interface_report_sha256": self.base_interface_report_sha256,
+            "base_target_weight_sha256": self.base_target_weight_sha256,
+            "producer_encoder_sha256": self.producer_encoder_sha256,
+            "source_tied_table_sha256": self.source_tied_table_sha256,
+            "fit_split_sha256": self.fit_split_sha256,
+            "fit_coordinates_sha256": self.fit_coordinates_sha256,
+            "fit_target_token_ids_sha256": self.fit_target_token_ids_sha256,
+            "fit_competitor_token_ids_sha256": (
+                self.fit_competitor_token_ids_sha256
+            ),
+            "candidate_report_sha256": self.candidate_report_sha256,
+            "original_residual_weight_sha256": (
+                self.original_residual_weight_sha256
+            ),
+            "original_target_weight_sha256": self.original_target_weight_sha256,
+            "original_effectful_residual": self.original_effectful_residual,
+            "original_tensor_identical_to_base": (
+                self.original_tensor_identical_to_base
+            ),
+            "maximum_relative_table_drift": drift,
+            "maximum_fit_anchor_rows_per_solver_batch": maximum_rows,
+            "fit_solver_schedule": "single-global-dense-observation-solve-v1",
+            "maximum_fit_anchor_rows_is_legacy_diagnostic_only": True,
+            "global_solution_independent_of_maximum_fit_anchor_rows": True,
+            "structurally_valid_candidate_retained": True,
+            "numeric_metrics_used_for_recipe_admission": False,
+            "original_output_hashes_are_replay_diagnostics_only": True,
+            "parent_model_forward_calls": 0,
+            "training_steps": 0,
+        }
+        expected = _sha(body)
+        supplied = str(self.recipe_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise TiedCausalAnchorFoldError(
+                "Anchor candidate recipe authentication is invalid."
+            )
+        object.__setattr__(self, "ridge_fraction", ridge)
+        object.__setattr__(self, "requested_margin", margin)
+        object.__setattr__(self, "maximum_relative_table_drift", drift)
+        object.__setattr__(
+            self,
+            "maximum_fit_anchor_rows_per_solver_batch",
+            maximum_rows,
+        )
+        object.__setattr__(self, "recipe_sha256", expected)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": TIED_CAUSAL_ANCHOR_CANDIDATE_RECIPE_SCHEMA,
+            "candidate_index": self.candidate_index,
+            "candidate_kind": self.candidate_kind,
+            "ridge_fraction": self.ridge_fraction,
+            "requested_margin": self.requested_margin,
+            "base_interface_report_sha256": self.base_interface_report_sha256,
+            "base_target_weight_sha256": self.base_target_weight_sha256,
+            "producer_encoder_sha256": self.producer_encoder_sha256,
+            "source_tied_table_sha256": self.source_tied_table_sha256,
+            "fit_split_sha256": self.fit_split_sha256,
+            "fit_coordinates_sha256": self.fit_coordinates_sha256,
+            "fit_target_token_ids_sha256": self.fit_target_token_ids_sha256,
+            "fit_competitor_token_ids_sha256": (
+                self.fit_competitor_token_ids_sha256
+            ),
+            "candidate_report_sha256": self.candidate_report_sha256,
+            "original_residual_weight_sha256": (
+                self.original_residual_weight_sha256
+            ),
+            "original_target_weight_sha256": self.original_target_weight_sha256,
+            "original_effectful_residual": self.original_effectful_residual,
+            "original_tensor_identical_to_base": (
+                self.original_tensor_identical_to_base
+            ),
+            "maximum_relative_table_drift": self.maximum_relative_table_drift,
+            "maximum_fit_anchor_rows_per_solver_batch": (
+                self.maximum_fit_anchor_rows_per_solver_batch
+            ),
+            "fit_solver_schedule": "single-global-dense-observation-solve-v1",
+            "maximum_fit_anchor_rows_is_legacy_diagnostic_only": True,
+            "global_solution_independent_of_maximum_fit_anchor_rows": True,
+            "structurally_valid_candidate_retained": True,
+            "numeric_metrics_used_for_recipe_admission": False,
+            "original_output_hashes_are_replay_diagnostics_only": True,
+            "parent_model_forward_calls": 0,
+            "training_steps": 0,
+            "recipe_sha256": self.recipe_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TiedCausalAnchorFrontier:
+    """Authenticated complete anchor-recipe bank with lazy materialization."""
+
+    base_interface: TiedCausalInterfaceFold
+    source_tied_table_sha256: str
+    fit_split_sha256: str
+    fit_coordinates: Any
+    fit_target_token_ids: Any
+    fit_competitor_token_ids: Any
+    recipes: tuple[TiedCausalAnchorCandidateRecipe, ...]
+    compatibility_default_candidate_index: int
+    diagnostic_order_candidate_indices: tuple[int, ...]
+    maximum_relative_table_drift: float
+    minimum_mapped_parent_behavior_retention: float
+    target_norm_epsilon: float
+    maximum_fit_anchor_rows_per_solver_batch: int
+    frontier_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.base_interface, TiedCausalInterfaceFold):
+            raise TypeError("base_interface must be TiedCausalInterfaceFold.")
+        base_report = _verified_report(
+            self.base_interface.report,
+            "anchor_frontier.base_interface",
+        )
+        base_report_sha256 = _digest(
+            base_report.get("report_sha256"),
+            "anchor_frontier.base_interface.report_sha256",
+        )
+        base_target_sha256 = _tensor_sha256(self.base_interface.target_weight)
+        producer_sha256 = _tensor_sha256(self.base_interface.producer_encoder)
+        if (
+            base_report.get("target_weight_sha256")
+            != _interface_tensor_sha256(self.base_interface.target_weight)
+            or base_report.get("producer_encoder_sha256")
+            != _interface_tensor_sha256(self.base_interface.producer_encoder)
+        ):
+            raise TiedCausalAnchorFoldError(
+                "Anchor frontier base interface tensor lineage is invalid."
+            )
+        source_sha256 = _digest(
+            self.source_tied_table_sha256,
+            "source_tied_table_sha256",
+        )
+        fit_split_sha256 = _digest(self.fit_split_sha256, "fit_split_sha256")
+        coordinates = _float_matrix(
+            self.fit_coordinates,
+            "fit_coordinates",
+            width=self.base_interface.target_width,
+        )
+        targets = _integer_vector(self.fit_target_token_ids, "fit_target_token_ids")
+        competitors = _integer_vector(
+            self.fit_competitor_token_ids,
+            "fit_competitor_token_ids",
+        )
+        if (
+            int(coordinates.shape[0]) != int(targets.numel())
+            or int(competitors.numel()) != int(targets.numel())
+            or bool((targets >= self.base_interface.vocabulary_size).any().item())
+            or bool((competitors >= self.base_interface.vocabulary_size).any().item())
+        ):
+            raise TiedCausalAnchorFoldError(
+                "Anchor frontier fit evidence has incompatible geometry."
+            )
+        recipes = tuple(self.recipes)
+        if not recipes or any(
+            not isinstance(value, TiedCausalAnchorCandidateRecipe)
+            for value in recipes
+        ):
+            raise TiedCausalAnchorFoldError(
+                "Anchor frontier requires authenticated candidate recipes."
+            )
+        candidate_indices = tuple(value.candidate_index for value in recipes)
+        if candidate_indices != tuple(sorted(set(candidate_indices))) or 0 not in set(
+            candidate_indices
+        ):
+            raise TiedCausalAnchorFoldError(
+                "Anchor frontier candidate indices must be unique, sorted, and include base."
+            )
+        evidence_hashes = {
+            "fit_coordinates_sha256": _tensor_sha256(coordinates),
+            "fit_target_token_ids_sha256": _tensor_sha256(targets),
+            "fit_competitor_token_ids_sha256": _tensor_sha256(competitors),
+        }
+        drift = _fraction(
+            self.maximum_relative_table_drift,
+            "maximum_relative_table_drift",
+            positive=True,
+        )
+        behavior_goal = _fraction(
+            self.minimum_mapped_parent_behavior_retention,
+            "minimum_mapped_parent_behavior_retention",
+        )
+        norm_epsilon = _positive_float(self.target_norm_epsilon, "target_norm_epsilon")
+        maximum_rows = _positive_int(
+            self.maximum_fit_anchor_rows_per_solver_batch,
+            "maximum_fit_anchor_rows_per_solver_batch",
+        )
+        if any(
+            recipe.base_interface_report_sha256 != base_report_sha256
+            or recipe.base_target_weight_sha256 != base_target_sha256
+            or recipe.producer_encoder_sha256 != producer_sha256
+            or recipe.source_tied_table_sha256 != source_sha256
+            or recipe.fit_split_sha256 != fit_split_sha256
+            or recipe.fit_coordinates_sha256
+            != evidence_hashes["fit_coordinates_sha256"]
+            or recipe.fit_target_token_ids_sha256
+            != evidence_hashes["fit_target_token_ids_sha256"]
+            or recipe.fit_competitor_token_ids_sha256
+            != evidence_hashes["fit_competitor_token_ids_sha256"]
+            or recipe.maximum_relative_table_drift != drift
+            or recipe.maximum_fit_anchor_rows_per_solver_batch != maximum_rows
+            for recipe in recipes
+        ):
+            raise TiedCausalAnchorFoldError(
+                "Anchor candidate recipe is not bound to the frontier evidence."
+            )
+        default_index = self.compatibility_default_candidate_index
+        if (
+            isinstance(default_index, bool)
+            or not isinstance(default_index, int)
+            or default_index not in set(candidate_indices)
+        ):
+            raise TiedCausalAnchorFoldError(
+                "Anchor compatibility default is not materializable."
+            )
+        diagnostic_order = tuple(self.diagnostic_order_candidate_indices)
+        if (
+            len(set(diagnostic_order)) != len(diagnostic_order)
+            or any(index not in set(candidate_indices) for index in diagnostic_order)
+        ):
+            raise TiedCausalAnchorFoldError(
+                "Anchor diagnostic review order is invalid."
+            )
+        review_order = diagnostic_order + tuple(
+            index for index in candidate_indices if index not in set(diagnostic_order)
+        )
+        body = {
+            "schema": TIED_CAUSAL_ANCHOR_FRONTIER_SCHEMA,
+            "base_interface_report_sha256": base_report_sha256,
+            "base_target_weight_sha256": base_target_sha256,
+            "producer_encoder_sha256": producer_sha256,
+            "source_tied_table_sha256": source_sha256,
+            "fit_split_sha256": fit_split_sha256,
+            **evidence_hashes,
+            "fit_evidence_row_count": int(targets.numel()),
+            "candidate_recipes": [value.as_dict() for value in recipes],
+            "candidate_recipe_sha256": [value.recipe_sha256 for value in recipes],
+            "materializable_candidate_indices": list(candidate_indices),
+            "compatibility_default_candidate_index": default_index,
+            "diagnostic_order_candidate_indices": list(diagnostic_order),
+            "whole_response_review_order_candidate_indices": list(review_order),
+            "maximum_relative_table_drift": drift,
+            "minimum_mapped_parent_behavior_retention": behavior_goal,
+            "target_norm_epsilon": norm_epsilon,
+            "maximum_fit_anchor_rows_per_solver_batch": maximum_rows,
+            "maximum_fit_anchor_rows_is_legacy_diagnostic_only": True,
+            "global_solution_independent_of_maximum_fit_anchor_rows": True,
+            "all_structurally_valid_candidates_retained": True,
+            "numeric_metrics_used_for_candidate_admission": False,
+            "numeric_metrics_used_for_review_order_only": True,
+            "numeric_metrics_have_final_intelligence_authority": False,
+            "whole_response_review_selects_final_candidate": True,
+            "lazy_materialization_supported": True,
+            "parent_model_forward_calls": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        expected = _sha(body)
+        supplied = str(self.frontier_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise TiedCausalAnchorFoldError(
+                "Anchor frontier authentication is invalid."
+            )
+        object.__setattr__(self, "fit_coordinates", coordinates)
+        object.__setattr__(self, "fit_target_token_ids", targets)
+        object.__setattr__(self, "fit_competitor_token_ids", competitors)
+        object.__setattr__(self, "recipes", recipes)
+        object.__setattr__(
+            self,
+            "diagnostic_order_candidate_indices",
+            diagnostic_order,
+        )
+        object.__setattr__(self, "maximum_relative_table_drift", drift)
+        object.__setattr__(
+            self,
+            "minimum_mapped_parent_behavior_retention",
+            behavior_goal,
+        )
+        object.__setattr__(self, "target_norm_epsilon", norm_epsilon)
+        object.__setattr__(
+            self,
+            "maximum_fit_anchor_rows_per_solver_batch",
+            maximum_rows,
+        )
+        object.__setattr__(self, "frontier_sha256", expected)
+
+    @property
+    def materializable_candidate_indices(self) -> tuple[int, ...]:
+        return tuple(value.candidate_index for value in self.recipes)
+
+    @property
+    def whole_response_review_order_candidate_indices(self) -> tuple[int, ...]:
+        diagnostic = self.diagnostic_order_candidate_indices
+        return diagnostic + tuple(
+            index
+            for index in self.materializable_candidate_indices
+            if index not in set(diagnostic)
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": TIED_CAUSAL_ANCHOR_FRONTIER_SCHEMA,
+            "base_interface_report_sha256": self.base_interface.report[
+                "report_sha256"
+            ],
+            "base_target_weight_sha256": _tensor_sha256(
+                self.base_interface.target_weight
+            ),
+            "producer_encoder_sha256": _tensor_sha256(
+                self.base_interface.producer_encoder
+            ),
+            "source_tied_table_sha256": self.source_tied_table_sha256,
+            "fit_split_sha256": self.fit_split_sha256,
+            "fit_coordinates_sha256": _tensor_sha256(self.fit_coordinates),
+            "fit_target_token_ids_sha256": _tensor_sha256(
+                self.fit_target_token_ids
+            ),
+            "fit_competitor_token_ids_sha256": _tensor_sha256(
+                self.fit_competitor_token_ids
+            ),
+            "fit_evidence_row_count": int(self.fit_target_token_ids.numel()),
+            "candidate_recipes": [value.as_dict() for value in self.recipes],
+            "candidate_recipe_sha256": [
+                value.recipe_sha256 for value in self.recipes
+            ],
+            "materializable_candidate_indices": list(
+                self.materializable_candidate_indices
+            ),
+            "compatibility_default_candidate_index": (
+                self.compatibility_default_candidate_index
+            ),
+            "diagnostic_order_candidate_indices": list(
+                self.diagnostic_order_candidate_indices
+            ),
+            "whole_response_review_order_candidate_indices": list(
+                self.whole_response_review_order_candidate_indices
+            ),
+            "maximum_relative_table_drift": self.maximum_relative_table_drift,
+            "minimum_mapped_parent_behavior_retention": (
+                self.minimum_mapped_parent_behavior_retention
+            ),
+            "target_norm_epsilon": self.target_norm_epsilon,
+            "maximum_fit_anchor_rows_per_solver_batch": (
+                self.maximum_fit_anchor_rows_per_solver_batch
+            ),
+            "maximum_fit_anchor_rows_is_legacy_diagnostic_only": True,
+            "global_solution_independent_of_maximum_fit_anchor_rows": True,
+            "all_structurally_valid_candidates_retained": True,
+            "numeric_metrics_used_for_candidate_admission": False,
+            "numeric_metrics_used_for_review_order_only": True,
+            "numeric_metrics_have_final_intelligence_authority": False,
+            "whole_response_review_selects_final_candidate": True,
+            "lazy_materialization_supported": True,
+            "parent_model_forward_calls": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+            "frontier_sha256": self.frontier_sha256,
+        }
+
+    def enumerate_recipes(
+        self,
+        *,
+        review_order: bool = True,
+    ) -> tuple[Mapping[str, Any], ...]:
+        if type(review_order) is not bool:
+            raise TypeError("review_order must be boolean.")
+        by_index = {value.candidate_index: value for value in self.recipes}
+        order = (
+            self.whole_response_review_order_candidate_indices
+            if review_order
+            else self.materializable_candidate_indices
+        )
+        return tuple(MappingProxyType(by_index[index].as_dict()) for index in order)
+
+    def materialize(self, candidate_index: int) -> "TiedCausalAnchorResidualFold":
+        if isinstance(candidate_index, bool) or not isinstance(candidate_index, int):
+            raise TiedCausalAnchorFoldError(
+                "Anchor materialization candidate index must be an integer."
+            )
+        by_index = {value.candidate_index: value for value in self.recipes}
+        recipe = by_index.get(candidate_index)
+        if recipe is None:
+            raise TiedCausalAnchorFoldError(
+                f"Anchor candidate {candidate_index} is not materializable."
+            )
+        torch = _torch()
+        base_weight = self.base_interface.target_weight
+        if recipe.candidate_index == 0:
+            residual = torch.zeros_like(base_weight)
+            solver_report: Mapping[str, Any] = MappingProxyType(
+                {
+                    "fit_solver_schedule": "base-control-no-solve",
+                    "fit_solver_batch_count": 0,
+                    "fit_rows_rejected_by_solver_batch_bound": 0,
+                }
+            )
+        else:
+            residual, solver_report = _fit_residual_scheduled(
+                base_weight,
+                self.fit_coordinates,
+                self.fit_target_token_ids,
+                self.fit_competitor_token_ids,
+                ridge=recipe.ridge_fraction,
+                margin=recipe.requested_margin,
+                maximum_relative_table_drift=(
+                    recipe.maximum_relative_table_drift
+                ),
+                maximum_solver_rows=(
+                    recipe.maximum_fit_anchor_rows_per_solver_batch
+                ),
+            )
+        target_weight, structure = _residual_candidate_structure(
+            base_weight,
+            residual,
+        )
+        if target_weight is None or structure["structurally_valid"] is not True:
+            raise TiedCausalAnchorFoldError(
+                "Lazy anchor materialization violated structural safety."
+            )
+        base_report = dict(self.base_interface.report)
+        base_report_sha256 = base_report["report_sha256"]
+        residual_sha256 = _tensor_sha256(residual)
+        target_sha256 = _tensor_sha256(target_weight)
+        if (
+            residual_sha256 != recipe.original_residual_weight_sha256
+            or target_sha256 != recipe.original_target_weight_sha256
+        ):
+            raise TiedCausalAnchorFoldError(
+                "Lazy anchor materialization changed the authenticated candidate bytes."
+            )
+        frontier = self.as_dict()
+        body = {
+            "schema": TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA,
+            "method": "authenticated-lazy-anchor-frontier-recipe-materialization",
+            "source_width": self.base_interface.source_width,
+            "target_width": self.base_interface.target_width,
+            "vocabulary_size": self.base_interface.vocabulary_size,
+            "base_dense_tied_parameter_count": int(base_weight.numel()),
+            "repaired_dense_tied_parameter_count": int(target_weight.numel()),
+            "additional_runtime_parameter_count": 0,
+            "dense_same_shape_tied_table": True,
+            "base_interface_report_sha256": base_report_sha256,
+            "base_interface_lineage": {
+                "report": base_report,
+                "report_sha256": base_report_sha256,
+                "target_weight_sha256": base_report["target_weight_sha256"],
+                "producer_encoder_sha256": base_report[
+                    "producer_encoder_sha256"
+                ],
+                "source_table_sha256": base_report["source_table_sha256"],
+                "tensor_identity_verified": True,
+            },
+            "producer_encoder_fixed": True,
+            "producer_encoder_sha256": _tensor_sha256(
+                self.base_interface.producer_encoder
+            ),
+            "source_tied_table_sha256": self.source_tied_table_sha256,
+            "base_target_weight_sha256": _tensor_sha256(base_weight),
+            "residual_weight_sha256": residual_sha256,
+            "target_weight_sha256": target_sha256,
+            "anchor_frontier": frontier,
+            "anchor_frontier_sha256": self.frontier_sha256,
+            "candidate_recipe": recipe.as_dict(),
+            "candidate_recipe_sha256": recipe.recipe_sha256,
+            "selected_candidate_index": recipe.candidate_index,
+            "compatibility_default_candidate_index": (
+                self.compatibility_default_candidate_index
+            ),
+            "selected_candidate_is_base_control": recipe.candidate_index == 0,
+            "active_anchor_residual_selected": bool(
+                structure["effectful_residual"]
+            ),
+            "selected_ridge_fraction": recipe.ridge_fraction,
+            "selected_requested_margin": recipe.requested_margin,
+            "original_residual_weight_sha256": (
+                recipe.original_residual_weight_sha256
+            ),
+            "original_target_weight_sha256": recipe.original_target_weight_sha256,
+            "materialized_residual_matches_original_hash_diagnostic": (
+                True
+            ),
+            "materialized_target_matches_original_hash_diagnostic": (
+                True
+            ),
+            "original_output_hashes_used_as_admission_gate": False,
+            "original_output_hashes_used_as_materialization_authentication": True,
+            "materialization_structure": structure,
+            "solver_report": dict(solver_report),
+            "maximum_relative_table_drift": self.maximum_relative_table_drift,
+            "maximum_relative_table_drift_is_diagnostic_review_goal": True,
+            "maximum_relative_table_drift_used_as_candidate_eligibility_gate": False,
+            "minimum_mapped_parent_behavior_retention": (
+                self.minimum_mapped_parent_behavior_retention
+            ),
+            "minimum_mapped_parent_behavior_retention_is_diagnostic_review_goal": (
+                True
+            ),
+            "minimum_mapped_parent_behavior_retention_used_as_candidate_eligibility_gate": (
+                False
+            ),
+            "base_control_used_only_for_structural_fallback": True,
+            "structural_safety_is_only_candidate_veto": True,
+            "numeric_thresholds_used_for_candidate_eligibility": False,
+            "numeric_metrics_used_for_base_fallback": False,
+            "numeric_metrics_used_for_review_order_only": True,
+            "numeric_metrics_have_final_intelligence_authority": False,
+            "whole_response_review_selects_final_candidate": True,
+            "lazy_frontier_materialization": True,
+            "operation_audit": {
+                "parent_forward_count": 0,
+                "parent_generation_count": 0,
+                "parent_cache_regeneration_count": 0,
+                "target_model_forward_count": 0,
+                "training_step_count": 0,
+                "optimizer_step_count": 0,
+                "backward_call_count": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+            },
+            "numeric_parent_weight_matching_objective": False,
+            "exact_output_text_or_token_sequence_matching_objective": False,
+        }
+        report = {**body, "report_sha256": _sha(body)}
+        interface = TiedCausalInterfaceFold(
+            target_weight=target_weight,
+            producer_encoder=self.base_interface.producer_encoder,
+            report=report,
+        )
+        return TiedCausalAnchorResidualFold(
+            interface=interface,
+            residual_weight=residual,
+            report=report,
+            frontier=self,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class TiedCausalAnchorResidualFold:
     """A repaired interface plus its same-shaped tied-table residual."""
 
     interface: TiedCausalInterfaceFold
     residual_weight: Any
     report: Mapping[str, Any]
+    frontier: TiedCausalAnchorFrontier | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.interface, TiedCausalInterfaceFold):
@@ -811,11 +1501,92 @@ class TiedCausalAnchorResidualFold:
                 "Causal-anchor residual report, tensor seal, or base "
                 "ancestry is invalid."
             )
+        frontier = self.frontier
+        if frontier is not None:
+            if not isinstance(frontier, TiedCausalAnchorFrontier):
+                raise TypeError("frontier must be TiedCausalAnchorFrontier.")
+            frontier_report = report.get("anchor_frontier")
+            candidate_index = report.get("selected_candidate_index")
+            recipes = {
+                recipe.candidate_index: recipe for recipe in frontier.recipes
+            }
+            recipe = recipes.get(candidate_index)
+            supplied_recipe = report.get("candidate_recipe")
+            candidate_reports = report.get("candidate_reports")
+            candidate_report_bound = True
+            if candidate_reports is not None:
+                candidate_report_bound = False
+                if (
+                    isinstance(candidate_reports, Sequence)
+                    and not isinstance(candidate_reports, (str, bytes))
+                    and recipe is not None
+                ):
+                    matching_reports = [
+                        value
+                        for value in candidate_reports
+                        if isinstance(value, Mapping)
+                        and value.get("candidate_index") == candidate_index
+                    ]
+                    candidate_report_bound = bool(
+                        len(matching_reports) == 1
+                        and _sha(dict(matching_reports[0]))
+                        == recipe.candidate_report_sha256
+                    )
+            if (
+                not isinstance(frontier_report, Mapping)
+                or dict(frontier_report) != frontier.as_dict()
+                or report.get("anchor_frontier_sha256")
+                != frontier.frontier_sha256
+                or recipe is None
+                or report.get("candidate_recipe_sha256")
+                != recipe.recipe_sha256
+                or not isinstance(supplied_recipe, Mapping)
+                or dict(supplied_recipe) != recipe.as_dict()
+                or not candidate_report_bound
+                or report.get("compatibility_default_candidate_index")
+                != frontier.compatibility_default_candidate_index
+                or base_report_sha256
+                != frontier.base_interface.report.get("report_sha256")
+                or report.get("source_tied_table_sha256")
+                != frontier.source_tied_table_sha256
+                or producer_sha256
+                != _interface_tensor_sha256(
+                    frontier.base_interface.producer_encoder
+                )
+            ):
+                raise TiedCausalAnchorFoldError(
+                    "Causal-anchor result is not bound to its candidate frontier."
+                )
         object.__setattr__(self, "residual_weight", residual)
         object.__setattr__(self, "report", MappingProxyType(report))
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self.report)
+
+    def enumerate_candidate_recipes(
+        self,
+        *,
+        review_order: bool = True,
+    ) -> tuple[Mapping[str, Any], ...]:
+        """Enumerate every retained recipe without allocating target tables."""
+
+        if self.frontier is None:
+            raise TiedCausalAnchorFoldError(
+                "This compatibility result does not carry an anchor frontier."
+            )
+        return self.frontier.enumerate_recipes(review_order=review_order)
+
+    def materialize_candidate(
+        self,
+        candidate_index: int,
+    ) -> "TiedCausalAnchorResidualFold":
+        """Materialize one retained candidate while leaving all others compact."""
+
+        if self.frontier is None:
+            raise TiedCausalAnchorFoldError(
+                "This compatibility result does not carry an anchor frontier."
+            )
+        return self.frontier.materialize(candidate_index)
 
 
 def fit_tied_causal_interface_anchor_residual(
@@ -899,12 +1670,6 @@ def fit_tied_causal_interface_anchor_residual(
         minimum_mapped_parent_behavior_retention,
         "minimum_mapped_parent_behavior_retention",
     )
-    if splits["fit"].row_count > maximum_fit_rows:
-        raise TiedCausalAnchorFoldError(
-            "Fit anchor count exceeds the dense observation-space safety "
-            f"ceiling: {splits['fit'].row_count} > {maximum_fit_rows}."
-        )
-
     fit_coordinates = _coordinates(
         splits["fit"],
         encoder,
@@ -1036,7 +1801,7 @@ def fit_tied_causal_interface_anchor_residual(
         for margin in margins:
             candidate_index = len(candidate_reports)
             try:
-                residual, fit_report = _fit_residual(
+                residual, fit_report = _fit_residual_scheduled(
                     base_weight,
                     fit_coordinates,
                     splits["fit"].target_next_token_ids,
@@ -1044,6 +1809,7 @@ def fit_tied_causal_interface_anchor_residual(
                     ridge=ridge,
                     margin=margin,
                     maximum_relative_table_drift=drift_limit,
+                    maximum_solver_rows=maximum_fit_rows,
                 )
             except TiedCausalAnchorFoldError as exc:
                 _repaired, structure = _residual_candidate_structure(
@@ -1149,6 +1915,66 @@ def fit_tied_causal_interface_anchor_residual(
         base_candidate_report["base_fallback_eligible"] = True
         base_candidate_report["candidate_eligible_for_selection"] = True
 
+    source_tied_table_sha256 = _tensor_sha256(source_table)
+    base_target_weight_sha256 = _tensor_sha256(base_weight)
+    producer_encoder_sha256 = _tensor_sha256(encoder)
+    fit_coordinates_sha256 = _tensor_sha256(fit_coordinates)
+    fit_target_token_ids_sha256 = _tensor_sha256(
+        splits["fit"].target_next_token_ids
+    )
+    fit_competitor_token_ids_sha256 = _tensor_sha256(fit_competitors)
+    recipes = tuple(
+        TiedCausalAnchorCandidateRecipe(
+            candidate_index=int(candidate["candidate_index"]),
+            candidate_kind=str(candidate["candidate_kind"]),
+            ridge_fraction=float(candidate["ridge_fraction"]),
+            requested_margin=float(candidate["requested_margin"]),
+            base_interface_report_sha256=base_report_sha256,
+            base_target_weight_sha256=base_target_weight_sha256,
+            producer_encoder_sha256=producer_encoder_sha256,
+            source_tied_table_sha256=source_tied_table_sha256,
+            fit_split_sha256=splits["fit"].split_sha256,
+            fit_coordinates_sha256=fit_coordinates_sha256,
+            fit_target_token_ids_sha256=fit_target_token_ids_sha256,
+            fit_competitor_token_ids_sha256=(
+                fit_competitor_token_ids_sha256
+            ),
+            candidate_report_sha256=_sha(candidate),
+            original_residual_weight_sha256=str(
+                candidate["residual_weight_sha256"]
+            ),
+            original_target_weight_sha256=str(candidate["target_weight_sha256"]),
+            original_effectful_residual=bool(candidate["effectful_residual"]),
+            original_tensor_identical_to_base=bool(
+                candidate["tensor_identical_to_base"]
+            ),
+            maximum_relative_table_drift=drift_limit,
+            maximum_fit_anchor_rows_per_solver_batch=maximum_fit_rows,
+        )
+        for candidate in candidate_reports
+        if candidate["structurally_valid"]
+    )
+    frontier = TiedCausalAnchorFrontier(
+        base_interface=base_interface,
+        source_tied_table_sha256=source_tied_table_sha256,
+        fit_split_sha256=splits["fit"].split_sha256,
+        fit_coordinates=fit_coordinates,
+        fit_target_token_ids=splits["fit"].target_next_token_ids,
+        fit_competitor_token_ids=fit_competitors,
+        recipes=recipes,
+        compatibility_default_candidate_index=selected_index,
+        diagnostic_order_candidate_indices=tuple(
+            int(candidate[1]) for candidate in diagnostic_order
+        ),
+        maximum_relative_table_drift=drift_limit,
+        minimum_mapped_parent_behavior_retention=behavior_review_goal,
+        target_norm_epsilon=norm_epsilon,
+        maximum_fit_anchor_rows_per_solver_batch=maximum_fit_rows,
+    )
+    selected_recipe = {
+        recipe.candidate_index: recipe for recipe in recipes
+    }[selected_index]
+
     # Validation is intentionally first touched after the winner is frozen.
     split_metrics = {
         name: _split_metrics(
@@ -1188,16 +2014,35 @@ def fit_tied_causal_interface_anchor_residual(
             "tensor_identity_verified": True,
         },
         "producer_encoder_fixed": True,
-        "producer_encoder_sha256": _tensor_sha256(encoder),
-        "source_tied_table_sha256": _tensor_sha256(source_table),
-        "base_target_weight_sha256": _tensor_sha256(base_weight),
+        "producer_encoder_sha256": producer_encoder_sha256,
+        "source_tied_table_sha256": source_tied_table_sha256,
+        "base_target_weight_sha256": base_target_weight_sha256,
         "residual_weight_sha256": _tensor_sha256(selected_residual),
         "target_weight_sha256": _tensor_sha256(selected_weight),
+        "anchor_frontier": frontier.as_dict(),
+        "anchor_frontier_sha256": frontier.frontier_sha256,
+        "candidate_recipe": selected_recipe.as_dict(),
+        "candidate_recipe_sha256": selected_recipe.recipe_sha256,
+        "compatibility_default_candidate_index": selected_index,
+        "materializable_candidate_indices": list(
+            frontier.materializable_candidate_indices
+        ),
+        "whole_response_review_order_candidate_indices": list(
+            frontier.whole_response_review_order_candidate_indices
+        ),
+        "all_structurally_valid_candidates_retained": True,
+        "numeric_metrics_used_for_candidate_admission": False,
+        "numeric_metrics_used_for_review_order_only": True,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "whole_response_review_selects_final_candidate": True,
+        "lazy_candidate_materialization_supported": True,
         "split_inventory": {name: splits[name].as_dict() for name in _SPLITS},
         "split_row_ids_disjoint": True,
         "fit_split_used_for_residual_parameters": True,
         "selection_split_used_for_residual_parameters": False,
         "selection_split_used_for_ridge_margin_selection": True,
+        "selection_split_selects_compatibility_default_only": True,
+        "selection_split_discards_nondefault_structural_candidates": False,
         "selection_split_used_for_diagnostic_ordering": True,
         "selection_split_used_for_numeric_eligibility_gating": False,
         "validation_split_used_for_residual_parameters": False,
@@ -1224,7 +2069,8 @@ def fit_tied_causal_interface_anchor_residual(
             "all_finite_dense_shape_dtype_device_correct_effectful_analytic_"
             "residuals_eligible_then_deterministic_diagnostic_ordering_by_"
             "parent_raw_centered_energy_parent_top1_base_energy_and_drift_"
-            "with_base_only_if_all_analytic_candidates_invalid_or_identical"
+            "with_base_only_if_all_analytic_candidates_invalid_or_identical_"
+            "for_compatibility_default_only_all_structural_recipes_retained"
         ),
         "structural_safety_is_only_candidate_veto": True,
         "numeric_metrics_used_for_structural_eligibility": False,
@@ -1241,6 +2087,11 @@ def fit_tied_causal_interface_anchor_residual(
             int(candidate["candidate_index"])
             for candidate in candidate_reports
             if candidate["structurally_eligible"]
+        ],
+        "structurally_valid_candidate_indices": [
+            int(candidate["candidate_index"])
+            for candidate in candidate_reports
+            if candidate["structurally_valid"]
         ],
         "eligible_candidate_indices": [
             int(candidate["candidate_index"])
@@ -1277,7 +2128,16 @@ def fit_tied_causal_interface_anchor_residual(
         "target_norm_epsilon": norm_epsilon,
         "metric_chunk_rows": chunk_rows,
         "maximum_fit_anchor_rows": maximum_fit_rows,
-        "fit_anchor_row_ceiling_satisfied": True,
+        "maximum_fit_anchor_rows_is_per_solver_batch_scheduling_bound": False,
+        "maximum_fit_anchor_rows_is_legacy_diagnostic_only": True,
+        "global_solution_independent_of_maximum_fit_anchor_rows": True,
+        "maximum_fit_anchor_rows_used_as_evidence_rejection_gate": False,
+        "fit_anchor_row_ceiling_satisfied": (
+            splits["fit"].row_count <= maximum_fit_rows
+        ),
+        "fit_anchor_rows_scheduled": splits["fit"].row_count,
+        "fit_anchor_rows_rejected": 0,
+        "fit_solver_batch_count": 1,
         "operation_audit": {
             "parent_forward_count": 0,
             "parent_generation_count": 0,
@@ -1304,14 +2164,52 @@ def fit_tied_causal_interface_anchor_residual(
         interface=repaired_interface,
         residual_weight=selected_residual,
         report=report,
+        frontier=frontier,
+    )
+
+
+def enumerate_tied_causal_anchor_candidates(
+    value: TiedCausalAnchorResidualFold | TiedCausalAnchorFrontier,
+    *,
+    review_order: bool = True,
+) -> tuple[Mapping[str, Any], ...]:
+    """Enumerate compact anchor recipes without materializing their tables."""
+
+    if isinstance(value, TiedCausalAnchorResidualFold):
+        return value.enumerate_candidate_recipes(review_order=review_order)
+    if isinstance(value, TiedCausalAnchorFrontier):
+        return value.enumerate_recipes(review_order=review_order)
+    raise TypeError(
+        "value must be TiedCausalAnchorResidualFold or TiedCausalAnchorFrontier."
+    )
+
+
+def materialize_tied_causal_anchor_candidate(
+    value: TiedCausalAnchorResidualFold | TiedCausalAnchorFrontier,
+    candidate_index: int,
+) -> TiedCausalAnchorResidualFold:
+    """Materialize one retained anchor candidate for decoded review."""
+
+    if isinstance(value, TiedCausalAnchorResidualFold):
+        return value.materialize_candidate(candidate_index)
+    if isinstance(value, TiedCausalAnchorFrontier):
+        return value.materialize(candidate_index)
+    raise TypeError(
+        "value must be TiedCausalAnchorResidualFold or TiedCausalAnchorFrontier."
     )
 
 
 __all__ = [
+    "TIED_CAUSAL_ANCHOR_CANDIDATE_RECIPE_SCHEMA",
+    "TIED_CAUSAL_ANCHOR_FRONTIER_SCHEMA",
     "TIED_CAUSAL_ANCHOR_RESIDUAL_SCHEMA",
     "TIED_CAUSAL_ANCHOR_SPLIT_SCHEMA",
+    "TiedCausalAnchorCandidateRecipe",
     "TiedCausalAnchorFoldError",
+    "TiedCausalAnchorFrontier",
     "TiedCausalAnchorResidualFold",
     "TiedCausalAnchorSplit",
+    "enumerate_tied_causal_anchor_candidates",
     "fit_tied_causal_interface_anchor_residual",
+    "materialize_tied_causal_anchor_candidate",
 ]

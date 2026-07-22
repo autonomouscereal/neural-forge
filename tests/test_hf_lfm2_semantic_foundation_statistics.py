@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +15,8 @@ import neural_forge.hf_lfm2_semantic_foundation_statistics as statistics_module 
 import neural_forge.hf_lfm2_semantic_foundation as foundation  # noqa: E402
 from neural_forge.hf_lfm2_semantic_foundation_statistics import (  # noqa: E402
     Lfm2SemanticFoundationStatisticsError,
+    authenticate_lfm2_semantic_foundation_interface_frontier_companion,
+    migrate_lfm2_semantic_foundation_interface_statistics_frontier,
     open_lfm2_semantic_foundation_interface_statistics,
     replay_lfm2_semantic_foundation_interface_statistics,
     write_lfm2_semantic_foundation_interface_statistics,
@@ -145,6 +148,26 @@ def _fixture():
     return table, statistics, splits, base, anchor, receipt
 
 
+def _legacy_receipt(receipt, anchor):
+    legacy_anchor = statistics_module._legacy_anchor_report_from_frontier(
+        anchor.report
+    )
+    solve_body = copy.deepcopy(dict(receipt["interface_solve"]))
+    solve_body.pop("result_sha256")
+    solve_body["causal_anchor_report"] = legacy_anchor
+    solve_body["causal_anchor_report_sha256"] = legacy_anchor["report_sha256"]
+    solve_body["causal_anchor_selection_contract"] = (
+        foundation._causal_anchor_selection_contract(legacy_anchor)
+    )
+    solve_body["active_interface_report"] = legacy_anchor
+    solve_body["active_interface_report_sha256"] = legacy_anchor["report_sha256"]
+    legacy_solve = _seal(solve_body, "result_sha256")
+    receipt_body = copy.deepcopy(dict(receipt))
+    receipt_body.pop("receipt_sha256")
+    receipt_body["interface_solve"] = legacy_solve
+    return _seal(receipt_body, "receipt_sha256")
+
+
 def test_compact_statistics_round_trip_replays_exact_interface(monkeypatch, tmp_path):
     table, statistics, splits, base, anchor, receipt = _fixture()
 
@@ -199,6 +222,43 @@ def test_compact_statistics_round_trip_replays_exact_interface(monkeypatch, tmp_
         anchor.interface.producer_encoder,
     )
     assert dict(replay.interface.report) == dict(anchor.interface.report)
+    assert replay.anchor_fold.frontier is not None
+    assert anchor.frontier is not None
+    assert (
+        replay.anchor_fold.frontier.frontier_sha256
+        == anchor.frontier.frontier_sha256
+    )
+    assert replay.anchor_fold.frontier.materializable_candidate_indices == tuple(
+        range(10)
+    )
+    assert replay.replay_report["causal_anchor_frontier_sha256"] == (
+        anchor.frontier.frontier_sha256
+    )
+    assert replay.replay_report[
+        "causal_anchor_materializable_candidate_indices"
+    ] == list(range(10))
+    assert (
+        replay.replay_report[
+            "causal_anchor_frontier_bound_to_statistics_and_foundation"
+        ]
+        is True
+    )
+    assert replay.replay_report["causal_anchor_dense_candidate_checkpoints_persisted"] == 0
+    nondefault_index = next(
+        index
+        for index in replay.anchor_fold.frontier.materializable_candidate_indices
+        if index != replay.anchor_fold.report["selected_candidate_index"]
+    )
+    replayed_nondefault = replay.anchor_fold.materialize_candidate(nondefault_index)
+    original_nondefault = anchor.materialize_candidate(nondefault_index)
+    assert torch.equal(
+        replayed_nondefault.interface.target_weight,
+        original_nondefault.interface.target_weight,
+    )
+    assert (
+        replayed_nondefault.report["candidate_recipe_sha256"]
+        == original_nondefault.report["candidate_recipe_sha256"]
+    )
     assert dict(replay.solve_report) == receipt["interface_solve"]
     assert replay.replay_report["compiler_cache_open_calls"] == 0
     assert replay.replay_report["trace_safetensor_open_calls"] == 0
@@ -237,6 +297,313 @@ def test_compact_statistics_round_trip_replays_exact_interface(monkeypatch, tmp_
     }
     assert descriptors["anchor.source_rows_bfloat16"]["dtype"] == "torch.bfloat16"
     assert trace_accesses == []
+
+
+def test_legacy_statistics_require_explicit_frontier_companion_migration(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    table, statistics, splits, _base, anchor, receipt = _fixture()
+    legacy_receipt = _legacy_receipt(receipt, anchor)
+    artifact = write_lfm2_semantic_foundation_interface_statistics(
+        tmp_path / "legacy-statistics-store",
+        base_statistics=statistics,
+        anchor_splits=splits,
+        foundation_receipt=legacy_receipt,
+        foundation_receipt_file_sha256="f" * 64,
+    )
+    frontier_implementation = copy.deepcopy(
+        artifact.manifest["implementation"]
+    )
+    frontier_implementation["implementation_sha256"] = "e" * 64
+    monkeypatch.setattr(
+        statistics_module,
+        "_implementation_fingerprint",
+        lambda: copy.deepcopy(frontier_implementation),
+    )
+
+    with pytest.raises(
+        Lfm2SemanticFoundationStatisticsError,
+        match="implementation differs",
+    ):
+        open_lfm2_semantic_foundation_interface_statistics(
+            artifact.path,
+            expected_artifact_sha256=artifact.artifact_sha256,
+        )
+
+    with pytest.raises(
+        Lfm2SemanticFoundationStatisticsError,
+        match="differs from the authenticated full-cache solve",
+    ):
+        replay_lfm2_semantic_foundation_interface_statistics(
+            artifact,
+            table,
+            foundation_receipt=legacy_receipt,
+            foundation_receipt_file_sha256="f" * 64,
+        )
+
+    companion = migrate_lfm2_semantic_foundation_interface_statistics_frontier(
+        artifact.path,
+        table,
+        expected_artifact_sha256=artifact.artifact_sha256,
+        legacy_foundation_receipt=legacy_receipt,
+        legacy_foundation_receipt_file_sha256="f" * 64,
+    )
+    assert companion.anchor_fold.frontier is not None
+    assert companion.anchor_fold.frontier.materializable_candidate_indices == tuple(
+        range(10)
+    )
+    assert companion.anchor_fold.frontier.compatibility_default_candidate_index == 7
+    assert companion.anchor_fold.report["selected_candidate_index"] == 7
+    assert torch.equal(
+        companion.interface.target_weight,
+        anchor.interface.target_weight,
+    )
+    assert torch.equal(
+        companion.anchor_fold.materialize_candidate(7).interface.target_weight,
+        anchor.interface.target_weight,
+    )
+    assert companion.companion_receipt[
+        "legacy_causal_anchor_report_sha256"
+    ] == legacy_receipt["interface_solve"]["causal_anchor_report_sha256"]
+    assert companion.companion_receipt[
+        "frontier_causal_anchor_report_sha256"
+    ] == companion.anchor_fold.report["report_sha256"]
+    assert (
+        companion.companion_receipt["active_target_tensor_exactly_byte_identical"]
+        is True
+    )
+    assert set(companion.companion_receipt["operation_audit"].values()) == {0}
+
+    tampered_legacy = copy.deepcopy(legacy_receipt)
+    tampered_solve_body = dict(tampered_legacy["interface_solve"])
+    tampered_solve_body.pop("result_sha256")
+    tampered_solve_body["causal_anchor_report_sha256"] = "0" * 64
+    tampered_legacy_body = dict(tampered_legacy)
+    tampered_legacy_body.pop("receipt_sha256")
+    tampered_legacy_body["interface_solve"] = _seal(
+        tampered_solve_body,
+        "result_sha256",
+    )
+    tampered_legacy = _seal(tampered_legacy_body, "receipt_sha256")
+    with pytest.raises(Lfm2SemanticFoundationStatisticsError):
+        migrate_lfm2_semantic_foundation_interface_statistics_frontier(
+            artifact,
+            table,
+            expected_artifact_sha256=artifact.artifact_sha256,
+            legacy_foundation_receipt=tampered_legacy,
+            legacy_foundation_receipt_file_sha256="f" * 64,
+        )
+
+    tampered_companion_body = dict(companion.companion_receipt)
+    tampered_companion_body.pop("companion_sha256")
+    tampered_companion_body["frontier_sha256"] = "0" * 64
+    tampered_companion = {
+        **tampered_companion_body,
+        "companion_sha256": canonical_sha256(tampered_companion_body),
+    }
+    with pytest.raises(
+        Lfm2SemanticFoundationStatisticsError,
+        match="external SHA-256 pin",
+    ):
+        authenticate_lfm2_semantic_foundation_interface_frontier_companion(
+            tampered_companion,
+            expected_companion_sha256=companion.companion_receipt[
+                "companion_sha256"
+            ],
+            artifact=artifact,
+            legacy_foundation_receipt=legacy_receipt,
+            legacy_foundation_receipt_file_sha256="f" * 64,
+            source_selected_tied_table=table,
+            anchor_fold=companion.anchor_fold,
+        )
+    with pytest.raises(
+        Lfm2SemanticFoundationStatisticsError,
+        match="bindings are invalid",
+    ):
+        authenticate_lfm2_semantic_foundation_interface_frontier_companion(
+            tampered_companion,
+            expected_companion_sha256=tampered_companion["companion_sha256"],
+            artifact=artifact,
+            legacy_foundation_receipt=legacy_receipt,
+            legacy_foundation_receipt_file_sha256="f" * 64,
+            source_selected_tied_table=table,
+            anchor_fold=companion.anchor_fold,
+        )
+
+
+def test_foundation_rehydration_explicitly_consumes_pinned_legacy_companion(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    table, statistics, splits, _base, anchor, receipt = _fixture()
+    legacy_receipt = _legacy_receipt(receipt, anchor)
+    artifact = write_lfm2_semantic_foundation_interface_statistics(
+        tmp_path / "legacy-statistics-store",
+        base_statistics=statistics,
+        anchor_splits=splits,
+        foundation_receipt=legacy_receipt,
+        foundation_receipt_file_sha256="f" * 64,
+    )
+    companion = migrate_lfm2_semantic_foundation_interface_statistics_frontier(
+        artifact.path,
+        table,
+        expected_artifact_sha256=artifact.artifact_sha256,
+        legacy_foundation_receipt=legacy_receipt,
+        legacy_foundation_receipt_file_sha256="f" * 64,
+    )
+
+    class Target(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(
+                anchor.interface.target_weight.to(dtype=torch.bfloat16)
+            )
+
+        def get_input_embeddings(self):
+            return SimpleNamespace(weight=self.weight)
+
+        def get_output_embeddings(self):
+            return SimpleNamespace(weight=self.weight)
+
+    solve = legacy_receipt["interface_solve"]
+    semantic_cache = SimpleNamespace(
+        cache_key="e" * 64,
+        parent_fingerprint=solve["cache_parent_fingerprint"],
+    )
+    bridge = SimpleNamespace(artifact_sha256=solve["bridge_artifact_sha256"])
+    access_attempts = []
+
+    def reject_full_cache_access(*args, **kwargs):
+        access_attempts.append((args, kwargs))
+        pytest.fail("companion rehydration attempted to open full-cache evidence")
+
+    monkeypatch.setattr(
+        foundation,
+        "authenticate_lfm2_semantic_foundation_receipt",
+        lambda *_args, **_kwargs: (legacy_receipt, "f" * 64),
+    )
+    monkeypatch.setattr(
+        foundation,
+        "fit_lfm2_semantic_foundation_interface",
+        reject_full_cache_access,
+    )
+    import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache
+
+    monkeypatch.setattr(
+        trace_cache,
+        "open_lfm2_circuit_trace_cache",
+        reject_full_cache_access,
+    )
+
+    with pytest.raises(
+        foundation.Lfm2SemanticFoundationError,
+        match="failed authentication",
+    ):
+        foundation.rehydrate_lfm2_semantic_foundation_interface(
+            Target(),
+            table,
+            semantic_cache=semantic_cache,
+            bridge=bridge,
+            target_tokenizer=object(),
+            parent_model_directory=tmp_path,
+            input_metadata={},
+            foundation_receipt_json=tmp_path / "authenticated-by-fixture.json",
+            expected_foundation_receipt_sha256=legacy_receipt["receipt_sha256"],
+            interface_statistics_directory=artifact.path,
+            expected_interface_statistics_sha256=artifact.artifact_sha256,
+        )
+
+    interface, rehydration = foundation.rehydrate_lfm2_semantic_foundation_interface(
+        Target(),
+        table,
+        semantic_cache=semantic_cache,
+        bridge=bridge,
+        target_tokenizer=object(),
+        parent_model_directory=tmp_path,
+        input_metadata={},
+        foundation_receipt_json=tmp_path / "authenticated-by-fixture.json",
+        expected_foundation_receipt_sha256=legacy_receipt["receipt_sha256"],
+        interface_statistics_directory=artifact.path,
+        expected_interface_statistics_sha256=artifact.artifact_sha256,
+        interface_frontier_companion_receipt=companion.companion_receipt,
+        expected_interface_frontier_companion_sha256=(
+            companion.companion_receipt["companion_sha256"]
+        ),
+    )
+
+    assert torch.equal(interface.target_weight, anchor.interface.target_weight)
+    assert torch.equal(interface.producer_encoder, anchor.interface.producer_encoder)
+    assert rehydration["schema"].endswith("rehydration-v3")
+    assert rehydration["frontier_companion_regenerated_and_consumed"] is True
+    assert rehydration["causal_anchor_compatibility_default_candidate_index"] == 7
+    assert rehydration["causal_anchor_materializable_candidate_indices"] == list(
+        range(10)
+    )
+    assert rehydration["compiler_cache_open_calls"] == 0
+    assert rehydration["trace_safetensor_open_calls"] == 0
+    assert access_attempts == []
+
+    with pytest.raises(
+        foundation.Lfm2SemanticFoundationError,
+        match="failed authentication",
+    ):
+        foundation.rehydrate_lfm2_semantic_foundation_interface(
+            Target(),
+            table,
+            semantic_cache=semantic_cache,
+            bridge=bridge,
+            target_tokenizer=object(),
+            parent_model_directory=tmp_path,
+            input_metadata={},
+            foundation_receipt_json=tmp_path / "authenticated-by-fixture.json",
+            expected_foundation_receipt_sha256=legacy_receipt["receipt_sha256"],
+            interface_statistics_directory=artifact.path,
+            expected_interface_statistics_sha256=artifact.artifact_sha256,
+            interface_frontier_companion_receipt=companion.companion_receipt,
+            expected_interface_frontier_companion_sha256="0" * 64,
+        )
+
+
+def test_frontier_migration_reopens_loaded_artifact_and_requires_external_pin(
+    tmp_path,
+) -> None:
+    table, statistics, splits, _base, anchor, receipt = _fixture()
+    legacy_receipt = _legacy_receipt(receipt, anchor)
+    artifact = write_lfm2_semantic_foundation_interface_statistics(
+        tmp_path / "legacy-statistics-store",
+        base_statistics=statistics,
+        anchor_splits=splits,
+        foundation_receipt=legacy_receipt,
+        foundation_receipt_file_sha256="f" * 64,
+    )
+
+    with pytest.raises(
+        Lfm2SemanticFoundationStatisticsError,
+        match="external legacy artifact SHA-256 pin",
+    ):
+        migrate_lfm2_semantic_foundation_interface_statistics_frontier(
+            artifact,
+            table,
+            legacy_foundation_receipt=legacy_receipt,
+            legacy_foundation_receipt_file_sha256="f" * 64,
+        )
+
+    payload = Path(artifact.path) / "statistics.safetensors"
+    data = bytearray(payload.read_bytes())
+    data[-1] ^= 1
+    payload.write_bytes(data)
+    with pytest.raises(
+        Lfm2SemanticFoundationStatisticsError,
+        match="payload differs",
+    ):
+        migrate_lfm2_semantic_foundation_interface_statistics_frontier(
+            artifact,
+            table,
+            expected_artifact_sha256=artifact.artifact_sha256,
+            legacy_foundation_receipt=legacy_receipt,
+            legacy_foundation_receipt_file_sha256="f" * 64,
+        )
 
 
 def test_compact_statistics_rejects_one_payload_byte_change(tmp_path):
