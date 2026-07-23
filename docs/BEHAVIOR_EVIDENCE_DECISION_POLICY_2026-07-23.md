@@ -106,3 +106,46 @@ evaluation or transaction machinery. The active three-file path above imports
 none of those behavioral decision engines. They remain readable so earlier
 reports can be reproduced, but they must not be registered as the behavioral
 decision policy for new dynamic-fold experiments.
+
+## Same-body token-interface control retained on 2026-07-23
+
+The authenticated bridge-only control held the complete 14-layer LFM2 body
+fixed and changed only the vocabulary interface from 65,536 parent tokens to
+4,096 child tokens. The parent has 229,693,184 unique dense parameters and the
+freshly reloaded child has 166,778,624, a 1.377233955x reduction. All 133 body
+tensors were byte-identical to the parent; input/output tying remained native;
+and the run performed zero parent forward passes, backward calls, optimizer
+steps, and training steps. The whole-response dossier has file SHA-256
+`f4aab740297f78e7272e9d161149c0b81077acf73b9afa7f831c105e2a149dff`
+and logical dossier SHA-256
+`fdc27135ac7a581dc6ba4d91d1f476cd7420840ebc79267a9c6e8e729055cb4b`.
+
+Direct review of all 16 continuations found a qualitatively different failure
+from the exact-4x body-fold frontier: recognizable English, prompt topic, and
+some useful behavior survived. The greeting was coherent and the supplier
+summary was substantially useful. However, arithmetic, ordering, explanation,
+instruction following, code, safety, context use, and multi-turn behavior were
+wrong or unstable; repetition remained common; and three tasks terminated with
+an empty response. Therefore the 4,096-token bridge is a real secondary
+bottleneck, while the additional lexical-soup collapse in the exact-4x children
+shows that body folding is a separate and larger bottleneck. This observation
+does not impose a score cutoff. It motivates a dynamic interface frontier:
+compositional parent-subtoken input synthesis, asymmetric input/output maps,
+closed-form cached activation/logit fitting, and EOS/norm calibration before
+the interface is recombined with the corrected body fold.
+
+## Residual-closure materialization finding retained on 2026-07-23
+
+Receipt and checkpoint comparison found that the structural rank-128/scale-1,
+fit rank-128/scale-0.5, fit rank-776/scale-1, fit rank-128/scale-1, and
+consequence scale-0 closure artifacts all installed no physical parameter
+changes. The FP64 analytic coefficients were nonzero, but adding their deltas
+and casting the result back to BF16 rounded every corrected value to its seed:
+`changed_physical_parameter_ids` was empty and every live before/after hash was
+identical. Those runs consequently did not test residual closure at all, and
+their similar decoded behavior cannot be interpreted as evidence against the
+analytic mechanism. The active repair derives representable dense corrections
+from target-dtype and weight geometry, records pre-cast versus installed
+deltas, and forbids publication of a nonzero analytic correction as a silent
+physical no-op. This is a transaction-authenticity requirement, not a
+behavioral threshold.
