@@ -115,16 +115,27 @@ def _config_topology(config: Any) -> dict[str, Any]:
     layer_types = getattr(config, "layer_types", None)
     if not isinstance(layer_types, (list, tuple)) or not layer_types:
         raise Lfm2BridgeOnlyControlError("LFM2 config has no layer topology.")
+    hidden_size = int(getattr(config, "hidden_size"))
+    query_heads = int(getattr(config, "num_attention_heads"))
+    configured_head_dim = getattr(config, "head_dim", None)
+    if configured_head_dim is None:
+        if hidden_size % query_heads:
+            raise Lfm2BridgeOnlyControlError(
+                "LFM2 hidden width is not divisible by its query-head count."
+            )
+        head_dim = hidden_size // query_heads
+    else:
+        head_dim = int(configured_head_dim)
     return {
         "model_type": getattr(config, "model_type", None),
         "vocabulary_size": int(getattr(config, "vocab_size")),
-        "hidden_size": int(getattr(config, "hidden_size")),
+        "hidden_size": hidden_size,
         "intermediate_size": int(getattr(config, "intermediate_size")),
         "layer_count": int(getattr(config, "num_hidden_layers")),
         "layer_types": [str(value) for value in layer_types],
-        "query_heads": int(getattr(config, "num_attention_heads")),
+        "query_heads": query_heads,
         "key_value_heads": int(getattr(config, "num_key_value_heads")),
-        "head_dim": int(getattr(config, "head_dim")),
+        "head_dim": head_dim,
         "conv_L_cache": int(getattr(config, "conv_L_cache")),
         "conv_bias": bool(getattr(config, "conv_bias")),
         "tie_word_embeddings": bool(getattr(config, "tie_word_embeddings")),

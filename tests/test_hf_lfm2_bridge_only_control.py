@@ -170,3 +170,18 @@ def test_bridge_only_control_rejects_nonblank_target(tmp_path: Path) -> None:
             bridge=bridge,
             blank_target_receipt=blank.as_dict(),
         )
+
+
+def test_bridge_only_control_derives_legacy_lfm2_head_dimension(
+    tmp_path: Path,
+) -> None:
+    parent, blank, bridge = _case(tmp_path)
+    delattr(parent.config, "head_dim")
+    delattr(blank.model.config, "head_dim")
+    result = fold_lfm2_bridge_only_control(
+        parent,
+        blank.model,
+        bridge=bridge,
+        blank_target_receipt=blank.as_dict(),
+    )
+    assert result.as_dict()["target_topology"]["head_dim"] == 8
