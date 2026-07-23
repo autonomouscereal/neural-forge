@@ -3688,6 +3688,62 @@ def _validate_cached_fir(
     return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
 
 
+def _build_short_conv_fhvr_source(
+    *,
+    parent_session: Any,
+    cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    layer_index: int,
+    source_fir_weight: Any,
+    source_fir_bias: Any | None,
+    residual_chart: Any,
+    residual_chart_receipt: Mapping[str, Any],
+) -> Any:
+    from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
+        Lfm2SemanticShortConvFhvrSource,
+    )
+
+    identity = _verify_sealed(
+        parent_session.identity_receipt(),
+        "short-conv FHVR direct parent identity",
+    )
+    if (
+        identity.get("exact_parent_identity_authenticated") is not True
+        or identity.get("cache_parent_identity_sha256") != cache.parent_fingerprint
+        or identity.get("reconstructed_parent_identity_sha256")
+        != cache.parent_fingerprint
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "FHVR direct tensors are not bound to the cache parent identity."
+        )
+    prefix = f"model.layers.{layer_index}.conv."
+    source = Lfm2SemanticShortConvFhvrSource(
+        layer_index=layer_index,
+        cache_key=cache.cache_key,
+        bridge_artifact_sha256=bridge.artifact_sha256,
+        source_model_identity_sha256=cache.parent_fingerprint,
+        parent_session_open_receipt_sha256=parent_session.open_receipt_sha256,
+        parent_identity_reconstruction_sha256=identity["result_sha256"],
+        residual_chart_sha256=residual_chart_receipt["result_sha256"],
+        norm_epsilon=parent_session.norm_epsilon,
+        source_operator_norm_weight=parent_session.tensor(
+            f"model.layers.{layer_index}.operator_norm.weight"
+        ),
+        source_in_proj_weight=parent_session.tensor(prefix + "in_proj.weight"),
+        source_in_proj_bias=parent_session.optional_tensor(prefix + "in_proj.bias"),
+        source_fir_weight=source_fir_weight,
+        source_fir_bias=source_fir_bias,
+        source_out_proj_weight=parent_session.tensor(prefix + "out_proj.weight"),
+        source_out_proj_bias=parent_session.optional_tensor(prefix + "out_proj.bias"),
+        residual_output_chart=residual_chart,
+    )
+    if not source.verify():
+        raise Lfm2SemanticLayerStackRefoldError(
+            "FHVR direct source failed final authentication."
+        )
+    return source
+
+
 def _resolve_short_conv_adapter() -> tuple[type[Any], Callable[..., Mapping[str, Any]]]:
     from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
         Lfm2SemanticShortConvReplayEvidence,
@@ -3698,6 +3754,14 @@ def _resolve_short_conv_adapter() -> tuple[type[Any], Callable[..., Mapping[str,
         Lfm2SemanticShortConvReplayEvidence,
         compile_install_lfm2_semantic_short_conv_postfold,
     )
+
+
+def _resolve_short_conv_construction(value: Any) -> Any:
+    from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
+        resolve_lfm2_semantic_short_conv_construction,
+    )
+
+    return resolve_lfm2_semantic_short_conv_construction(value)
 
 
 def _build_short_conv_evidence(
@@ -3711,6 +3775,7 @@ def _build_short_conv_evidence(
     chart: Any,
     chart_receipt: Mapping[str, Any],
     layer_index: int,
+    fhvr_source: Any | None = None,
 ) -> tuple[Any, ...]:
     torch = _torch()
     lineage = canonical_sha256(
@@ -3763,6 +3828,50 @@ def _build_short_conv_evidence(
                     "contractions_supported": False,
                 }
             )
+            future_observable_fields: dict[str, Any] = {}
+            if fhvr_source is not None:
+                if (
+                    not callable(getattr(fhvr_source, "verify", None))
+                    or not fhvr_source.verify()
+                    or fhvr_source.layer_index != layer_index
+                    or fhvr_source.cache_key != cache.cache_key
+                    or fhvr_source.bridge_artifact_sha256 != bridge.artifact_sha256
+                ):
+                    raise Lfm2SemanticLayerStackRefoldError(
+                        "FHVR source changed before parent-input reconstruction."
+                    )
+                residual = histories["residual.pre"]
+                parent_input = _reconstruct_parent_normalized_mlp_input(
+                    residual.reshape(-1, int(residual.shape[-1])),
+                    ffn_norm_weight=(fhvr_source.source_operator_norm_weight),
+                    norm_epsilon=fhvr_source.norm_epsilon,
+                    execution_device="cpu",
+                ).reshape_as(residual)
+                parent_input_provenance = canonical_sha256(
+                    {
+                        "schema": (
+                            "neural-forge-lfm2-short-conv-parent-input-"
+                            "reconstruction-v1"
+                        ),
+                        "fhvr_source_sha256": fhvr_source.source_sha256,
+                        "parent_trajectory_sha256": trajectory.evidence_sha256,
+                        "batch_index": batch,
+                        "phase_index": phase_index,
+                        "cached_residual_pre_sha256": _tensor_sha256(residual),
+                        "parent_operator_input_sha256": _tensor_sha256(parent_input),
+                        "rms_norm_formula": (
+                            "weight*(x.float()*rsqrt(mean(x.float()^2)+norm_eps))"
+                            ".to(bfloat16)"
+                        ),
+                        "parent_forward_calls": 0,
+                    }
+                )
+                future_observable_fields = {
+                    "parent_operator_input_history": parent_input,
+                    "parent_operator_input_provenance_sha256": (
+                        parent_input_provenance
+                    ),
+                }
             result.append(
                 evidence_type(
                     batch_index=batch,
@@ -3794,6 +3903,7 @@ def _build_short_conv_evidence(
                         1.0 / math.sqrt(len(alignment.phases)),
                         dtype=torch.float64,
                     ),
+                    **future_observable_fields,
                 )
             )
     return tuple(result)
@@ -3812,8 +3922,11 @@ def _install_short_conv_operator(
     parameter_count: int,
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    short_conv_construction: Any = "full-source-structural-v1",
+    fhvr_source: Any | None = None,
 ) -> Mapping[str, Any]:
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    construction = _resolve_short_conv_construction(short_conv_construction)
     before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
     if any(item.captured_child_model_state_sha256 != before for item in evidence):
@@ -3831,6 +3944,14 @@ def _install_short_conv_operator(
         source_model_identity_sha256=cache.parent_fingerprint,
         body_recipe=recipe,
         **(
+            {
+                "short_conv_construction": construction,
+                "fhvr_source": fhvr_source,
+            }
+            if construction.uses_fhvr_full_coverage
+            else {}
+        ),
+        **(
             {"fold_compute_device": fold_compute_device}
             if fold_compute_device != "cpu"
             else {}
@@ -3843,6 +3964,32 @@ def _install_short_conv_operator(
         component="short_conv",
         label="Short-conv installer",
     )
+    if construction.uses_fhvr_full_coverage:
+        if (
+            receipt.get("short_conv_construction") != construction.as_dict()
+            or receipt.get("short_conv_construction_id") != construction.construction_id
+            or receipt.get("short_conv_construction_sha256")
+            != construction.construction_sha256
+            or receipt.get("fhvr_source_sha256")
+            != getattr(fhvr_source, "source_sha256", None)
+            or receipt.get("full_history_future_observable_full_coverage_hybrid")
+            is not True
+            or receipt.get("requested_fhvr_compute_route_proved") is not True
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Short-conv installer dropped its authenticated FHVR construction."
+            )
+    elif any(
+        key in receipt
+        for key in (
+            "short_conv_construction",
+            "fhvr_source_sha256",
+            "fhvr_candidate_state_sha256",
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Structural short-conv receipt contains an unrequested FHVR source."
+        )
     if fold_compute_device != "cpu":
         structural_execution = receipt.get("structural_cluster_compute_execution")
         writer_execution = receipt.get("writer_compute_execution")
@@ -5520,6 +5667,7 @@ def _layer_receipt(
             f"Layer {layer_index} MLP did not prove the requested CUDA fold backend."
         )
     short_conv_compute_fields: dict[str, Any] = {}
+    short_conv_construction_fields: dict[str, Any] = {}
     attention_receipt_fields: dict[str, Any] = {}
     if operator_kind == "full_attention":
         if (
@@ -5594,6 +5742,33 @@ def _layer_receipt(
             "short_conv_writer_compute_execution_sha256": (
                 writer_execution.get("execution_sha256")
             ),
+        }
+    if operator_kind == "short_conv" and "short_conv_construction" in operator_receipt:
+        construction = _resolve_short_conv_construction(
+            operator_receipt.get("short_conv_construction_id")
+        )
+        source_value = operator_receipt.get("fhvr_source")
+        source_body = dict(source_value) if isinstance(source_value, Mapping) else {}
+        source_sha256 = source_body.pop("source_sha256", None)
+        if (
+            not construction.uses_fhvr_full_coverage
+            or operator_receipt.get("short_conv_construction") != construction.as_dict()
+            or operator_receipt.get("short_conv_construction_sha256")
+            != construction.construction_sha256
+            or source_sha256 != canonical_sha256(source_body)
+            or operator_receipt.get("fhvr_source_sha256") != source_sha256
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Layer {layer_index} FHVR construction/source binding is invalid."
+            )
+        short_conv_construction_fields = {
+            "short_conv_construction": construction.as_dict(),
+            "short_conv_construction_id": construction.construction_id,
+            "short_conv_construction_sha256": construction.construction_sha256,
+            "short_conv_fhvr_source_sha256": source_sha256,
+            "short_conv_fhvr_candidate_state_sha256": operator_receipt[
+                "fhvr_candidate_state_sha256"
+            ],
         }
     operator_noop_status = (
         _SHORT_CONV_STRUCTURAL_NOOP_STATUS
@@ -5750,6 +5925,7 @@ def _layer_receipt(
             else {}
         ),
         **short_conv_compute_fields,
+        **short_conv_construction_fields,
         "fir_equivalence_sha256": (
             None if fir_receipt is None else fir_receipt["result_sha256"]
         ),
@@ -5785,6 +5961,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     global_residual_basis_rank: int | None = None,
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    short_conv_construction: Any = "full-source-structural-v1",
     mapped_parent_tied_table: Any | None = None,
     anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
@@ -5803,6 +5980,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     if not isinstance(compiler_lineage, Mapping):
         raise TypeError("compiler_lineage must be a mapping.")
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    construction = _resolve_short_conv_construction(short_conv_construction)
     coupled_attention_recipe = bool(
         recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
         and recipe.component_lanes["value_output"] == _COUPLED_ATTENTION_QDEIM_LANE
@@ -6225,6 +6403,20 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         source_bias=source_fir_bias,
                         layer_index=layer_index,
                     )
+                    fhvr_source = (
+                        _build_short_conv_fhvr_source(
+                            parent_session=parent_session,
+                            cache=cache,
+                            bridge=bridge,
+                            layer_index=layer_index,
+                            source_fir_weight=source_fir_weight,
+                            source_fir_bias=source_fir_bias,
+                            residual_chart=chart,
+                            residual_chart_receipt=chart_receipt,
+                        )
+                        if construction.uses_fhvr_full_coverage
+                        else None
+                    )
                     operator_evidence = _build_short_conv_evidence(
                         evidence_type=short_evidence_type,
                         cache=cache,
@@ -6235,6 +6427,11 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         chart=chart,
                         chart_receipt=chart_receipt,
                         layer_index=layer_index,
+                        **(
+                            {"fhvr_source": fhvr_source}
+                            if fhvr_source is not None
+                            else {}
+                        ),
                     )
                     operator_evidence_sha256 = tuple(
                         item.evidence_sha256 for item in operator_evidence
@@ -6250,6 +6447,8 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         installer=selected_short_installer,
                         parameter_count=parameter_count,
                         body_recipe=recipe,
+                        short_conv_construction=construction,
+                        fhvr_source=fhvr_source,
                         **(
                             {"fold_compute_device": fold_compute_device}
                             if fold_compute_device != "cpu"
@@ -6874,11 +7073,38 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             raise Lfm2SemanticLayerStackRefoldError(
                 "Complete layer-stack postconditions were not satisfied."
             )
+        if construction.uses_fhvr_full_coverage and any(
+            value.get("short_conv_construction") != construction.as_dict()
+            or value.get("short_conv_construction_sha256")
+            != construction.construction_sha256
+            or not isinstance(value.get("short_conv_fhvr_source_sha256"), str)
+            or not isinstance(
+                value.get("short_conv_fhvr_candidate_state_sha256"),
+                str,
+            )
+            for value in layer_receipts
+            if value.get("operator_kind") == "short_conv"
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Complete layer stack dropped an FHVR short-conv construction root."
+            )
         body = {
             "schema": LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA,
             "body_recipe": recipe.as_dict(),
             "body_recipe_sha256": recipe.recipe_sha256,
             "body_recipe_id": recipe.recipe_id,
+            **(
+                {
+                    "short_conv_construction": construction.as_dict(),
+                    "short_conv_construction_id": construction.construction_id,
+                    "short_conv_construction_sha256": (
+                        construction.construction_sha256
+                    ),
+                    "all_short_conv_layers_bound_to_requested_construction": True,
+                }
+                if construction.uses_fhvr_full_coverage
+                else {}
+            ),
             "status": "complete-causal-layer-stack-adjudicated-final-w2-deferred",
             "cache_key": cache.cache_key,
             "cache_parent_fingerprint": cache.parent_fingerprint,

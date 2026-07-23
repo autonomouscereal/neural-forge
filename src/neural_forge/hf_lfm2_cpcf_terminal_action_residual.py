@@ -87,6 +87,9 @@ _QDEIM_PRIOR_RECIPE_LANE = MappingProxyType(
         "nonlinear_qdeim_coupled_attention_fit_corrected": (
             "nonlinear_qdeim_fit_corrected_priority"
         ),
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer": (
+            "nonlinear_qdeim_structural_priority"
+        ),
     }
 )
 

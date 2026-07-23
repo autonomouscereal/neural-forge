@@ -2624,6 +2624,52 @@ def test_layer_stack_stage_forwards_exact_authenticated_body_recipe(
     assert captured["global_residual_basis_rank"] == 776
 
 
+def test_layer_stack_stage_forwards_exact_fhvr_short_conv_construction(
+    monkeypatch,
+) -> None:
+    captured = {}
+    target = object()
+    construction = postfold._resolve_short_conv_construction(
+        "fhvr-mf-cap10k-sweeps1-full-history-full-coverage-v1"
+    )
+
+    def compiler(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop-after-fhvr-construction-forwarding")
+
+    monkeypatch.setattr(
+        postfold, "_resolve_layer_stack_installer", lambda _value: compiler
+    )
+    monkeypatch.setattr(postfold, "_resolve_attention_installer", lambda _value: None)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256="a" * 64),
+    )
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 1)
+    monkeypatch.setattr(
+        postfold,
+        "_final_w2_parameter",
+        lambda _model: torch.zeros((1, 1), dtype=torch.bfloat16),
+    )
+
+    with pytest.raises(RuntimeError, match="stop-after-fhvr-construction-forwarding"):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=target,
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            short_conv_construction=construction,
+        )
+
+    assert captured["short_conv_construction"] == construction
+    assert captured["short_conv_construction"].verify() is True
+
+
 def test_body_recipe_public_api_defaults_remain_fit_guided() -> None:
     assert (
         inspect.signature(postfold.compile_install_lfm2_semantic_layer_stack_stage)

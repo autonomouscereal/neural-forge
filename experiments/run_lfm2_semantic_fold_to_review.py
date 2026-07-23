@@ -93,6 +93,12 @@ from neural_forge.hf_lfm2_semantic_postfold_frontier import (  # noqa: E402
 from neural_forge.hf_lfm2_semantic_preterminal_capsule import (  # noqa: E402
     Lfm2SemanticPreterminalCapsuleReference,
 )
+from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (  # noqa: E402
+    LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS,
+    LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
+    Lfm2SemanticShortConvConstruction,
+    resolve_lfm2_semantic_short_conv_construction,
+)
 
 
 PIPELINE_SCHEMA = "neural-forge-lfm2-semantic-fold-to-review-v1"
@@ -291,6 +297,25 @@ def _digest(value: Any, *, label: str) -> str:
             f"{label} must be one lowercase SHA-256 digest."
         )
     return normalized
+
+
+def _authenticate_short_conv_construction_pin(
+    construction: Lfm2SemanticShortConvConstruction,
+    expected_sha256: str | None,
+) -> None:
+    if expected_sha256 is None:
+        if construction.uses_fhvr_full_coverage:
+            raise Lfm2SemanticFoldToReviewError(
+                "FHVR short-conv construction requires an external SHA-256 pin."
+            )
+        return
+    if construction.construction_sha256 != _digest(
+        expected_sha256,
+        label="expected short-conv construction SHA-256",
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "Selected short-conv construction differs from its external pin."
+        )
 
 
 def _file_sha256(path: Path) -> str:
@@ -962,6 +987,8 @@ def _run_fold_to_review_scale(
     correction_scale: float = 1.0,
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
+    short_conv_construction: str = LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
+    expected_short_conv_construction_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Run one pinned recipe through its sealed decoded-evidence flow."""
 
@@ -1012,6 +1039,9 @@ def _run_fold_to_review_scale(
         label: _existing_file(path, label=label) for label, path in files.items()
     }
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    construction = resolve_lfm2_semantic_short_conv_construction(
+        short_conv_construction
+    )
     closure_version = str(global_residual_closure_version).strip().lower()
     if closure_version not in {
         "producer_aware_v2a",
@@ -1045,6 +1075,10 @@ def _run_fold_to_review_scale(
         raise Lfm2SemanticFoldToReviewError(
             "Selected semantic body recipe differs from its external pin."
         )
+    _authenticate_short_conv_construction_pin(
+        construction,
+        expected_short_conv_construction_sha256,
+    )
     behavior_flow = resolve_lfm2_semantic_nonblocking_behavior_flow(recipe)
     if isinstance(anchor_candidate_index, bool) or anchor_candidate_index < 0:
         raise Lfm2SemanticFoldToReviewError(
@@ -1160,6 +1194,11 @@ def _run_fold_to_review_scale(
             global_residual_backend=closure_policy.backend,
             global_residual_basis_rank=global_residual_basis_rank,
             body_recipe=recipe,
+            **(
+                {"short_conv_construction": construction}
+                if construction.uses_fhvr_full_coverage
+                else {}
+            ),
             dtype=dtype,
             tied_interface_mode=tied_interface_mode,
             preterminal_capsule_directory=capsule_output,
@@ -1301,6 +1340,15 @@ def _run_fold_to_review_scale(
         "body_recipe": recipe.as_dict(),
         "body_recipe_sha256": recipe.recipe_sha256,
         "body_recipe_id": recipe.recipe_id,
+        **(
+            {
+                "short_conv_construction": construction.as_dict(),
+                "short_conv_construction_id": construction.construction_id,
+                "short_conv_construction_sha256": (construction.construction_sha256),
+            }
+            if construction.uses_fhvr_full_coverage
+            else {}
+        ),
         "global_residual_closure_version": closure_version,
         "global_residual_backend": closure_policy.backend,
         "global_residual_requested_basis_rank": postfold[
@@ -1486,6 +1534,8 @@ def run_fold_to_review(
     correction_scale: float | None = None,
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
+    short_conv_construction: str = LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
+    expected_short_conv_construction_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Fold, decode, and retain every requested correction-scale member."""
 
@@ -1501,10 +1551,17 @@ def run_fold_to_review(
         closure_policy = Lfm2GlobalResidualClosurePolicy(
             backend=str(global_residual_backend).strip().lower()
         )
+        construction = resolve_lfm2_semantic_short_conv_construction(
+            short_conv_construction
+        )
     except (TypeError, ValueError, RuntimeError) as exc:
         raise Lfm2SemanticFoldToReviewError(
             "Correction-scale frontier or global residual backend is invalid."
         ) from exc
+    _authenticate_short_conv_construction_pin(
+        construction,
+        expected_short_conv_construction_sha256,
+    )
     closure_version = str(global_residual_closure_version).strip().lower()
     if global_residual_basis_rank is not None and (
         isinstance(global_residual_basis_rank, bool)
@@ -1569,6 +1626,10 @@ def run_fold_to_review(
         "correction_scale_frontier": scale_policy.materialization_frontier,
         "global_residual_backend": closure_policy.backend,
         "global_residual_basis_rank": global_residual_basis_rank,
+        "short_conv_construction": short_conv_construction,
+        "expected_short_conv_construction_sha256": (
+            expected_short_conv_construction_sha256
+        ),
     }
     if len(scale_policy.materialization_frontier) == 1:
         return _run_fold_to_review_scale(
@@ -1653,6 +1714,14 @@ def run_fold_to_review(
         "schema": CORRECTION_SCALE_FRONTIER_SCHEMA,
         "status": "all-correction-scales-folded-decoded-retained",
         "run_directory": str(outer),
+        **(
+            {
+                "short_conv_construction": construction.as_dict(),
+                "short_conv_construction_sha256": (construction.construction_sha256),
+            }
+            if construction.uses_fhvr_full_coverage
+            else {}
+        ),
         "global_residual_closure_version": closure_version,
         "global_residual_backend": closure_policy.backend,
         "global_residual_closure_policy_sha256": (closure_policy.authentication_sha256),
@@ -1743,6 +1812,20 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--expected-body-recipe-sha256", required=True)
     parser.add_argument(
+        "--short-conv-construction",
+        choices=LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS,
+        default=LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
+        help=(
+            "Select the authenticated short-conv construction while leaving "
+            "the pinned body recipe's other component lanes unchanged."
+        ),
+    )
+    parser.add_argument(
+        "--expected-short-conv-construction-sha256",
+        default=None,
+        help="Required external identity pin for the FHVR construction.",
+    )
+    parser.add_argument(
         "--tied-interface-mode",
         choices=TIED_RESIDUAL_CONGRUENCE_MODES,
         default=TIED_RESIDUAL_STRONG_CONGRUENCE_MODE,
@@ -1827,6 +1910,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         anchor_candidate_index=args.anchor_candidate_index,
         body_recipe=args.body_recipe,
         expected_body_recipe_sha256=args.expected_body_recipe_sha256,
+        short_conv_construction=args.short_conv_construction,
+        expected_short_conv_construction_sha256=(
+            args.expected_short_conv_construction_sha256
+        ),
         tied_interface_mode=args.tied_interface_mode,
         device=args.device,
         fold_compute_device=args.fold_compute_device,

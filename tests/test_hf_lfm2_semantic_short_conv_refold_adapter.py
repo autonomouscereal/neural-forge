@@ -12,6 +12,7 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge import hf_lfm2_cpcf_short_conv_fold as short_conv_fold
 from neural_forge import hf_lfm2_semantic_short_conv_refold_adapter as adapter
 from neural_forge import hf_lfm2_semantic_layer_stack_refold_adapter as stack_adapter
+from neural_forge.hf_lfm2_cpcf_short_conv_v4 import causal_depthwise_context
 from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
     Lfm2SemanticShortConvRefoldError,
     Lfm2SemanticShortConvReplayEvidence,
@@ -248,6 +249,127 @@ def _source_fir() -> tuple[torch.Tensor, torch.Tensor]:
     return weight, bias
 
 
+def _fhvr_source_and_evidence(
+    model: _ToyModel,
+) -> tuple[
+    adapter.Lfm2SemanticShortConvFhvrSource,
+    tuple[Lfm2SemanticShortConvReplayEvidence, ...],
+]:
+    generator = torch.Generator().manual_seed(20260723)
+    source_hidden = 4
+    source_in_weight = (
+        torch.randn(
+            (3 * source_hidden, source_hidden),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.2
+    ).to(torch.bfloat16)
+    source_in_bias = (
+        torch.randn(
+            (3 * source_hidden,),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.03
+    ).to(torch.bfloat16)
+    source_out_weight = (
+        torch.randn(
+            (source_hidden, source_hidden),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.2
+    ).to(torch.bfloat16)
+    source_out_bias = (
+        torch.randn(
+            (source_hidden,),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * 0.01
+    ).to(torch.bfloat16)
+    residual_chart = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [0.5, -0.25],
+            [-0.125, 0.375],
+        ],
+        dtype=torch.float64,
+    )
+    source_fir_weight, source_fir_bias = _source_fir()
+    source = adapter.Lfm2SemanticShortConvFhvrSource(
+        layer_index=0,
+        cache_key=_CACHE,
+        bridge_artifact_sha256=_BRIDGE,
+        source_model_identity_sha256=_SOURCE_MODEL,
+        parent_session_open_receipt_sha256=_digest("parent-session"),
+        parent_identity_reconstruction_sha256=_digest("parent-identity"),
+        residual_chart_sha256=_digest("residual-chart"),
+        norm_epsilon=1e-5,
+        source_operator_norm_weight=torch.ones((source_hidden,), dtype=torch.bfloat16),
+        source_in_proj_weight=source_in_weight,
+        source_in_proj_bias=source_in_bias,
+        source_fir_weight=source_fir_weight,
+        source_fir_bias=source_fir_bias,
+        source_out_proj_weight=source_out_weight,
+        source_out_proj_bias=source_out_bias,
+        residual_output_chart=residual_chart,
+    )
+    evidence = []
+    for item in _evidence_bank(model):
+        parent_input = torch.randn(
+            tuple(item.parent_b_history.shape),
+            generator=generator,
+            dtype=torch.float64,
+        ).to(torch.bfloat16)
+        projected = parent_input.to(torch.float64) @ source_in_weight.to(
+            torch.float64
+        ).T + source_in_bias.to(torch.float64)
+        parent_b, parent_c, parent_x = (
+            value.to(torch.bfloat16) for value in projected.chunk(3, dim=-1)
+        )
+        parent_context = causal_depthwise_context(
+            parent_b,
+            parent_c,
+            parent_x,
+            source_fir_weight[:, 0, :],
+            source_fir_bias,
+        )
+        parent_branch = (
+            parent_context.to(torch.float64) @ source_out_weight.to(torch.float64).T
+            + source_out_bias.to(torch.float64)
+        ) @ residual_chart
+        endpoint = item.endpoint_target_positions[0]
+        parent_post = (
+            item.actual_child_pre_operator_residual_history[
+                :, endpoint : endpoint + 1
+            ].to(torch.float64)
+            + parent_branch[:, -1:, :]
+        ).to(torch.float32)
+        provenance = canonical_sha256(
+            {
+                "schema": "test-full-parent-operator-input-v1",
+                "batch_index": item.batch_index,
+                "history_sha256": adapter._tensor_sha256(parent_input),
+                "direct_source_sha256": source.source_sha256,
+            }
+        )
+        evidence.append(
+            replace(
+                item,
+                parent_b_history=parent_b,
+                parent_c_history=parent_c,
+                parent_x_history=parent_x,
+                parent_post_operator_residual_target_space=parent_post,
+                parent_operator_input_history=parent_input,
+                parent_operator_input_provenance_sha256=provenance,
+            )
+        )
+    return source, tuple(evidence)
+
+
 def _compile(
     model: _ToyModel,
     evidence: tuple[Lfm2SemanticShortConvReplayEvidence, ...],
@@ -303,6 +425,102 @@ def _cpu_writer_report(status: str) -> dict[str, object]:
             "execution_sha256": canonical_sha256(execution_body),
         },
     }
+
+
+def test_fhvr_full_history_construction_installs_one_dense_child_state() -> None:
+    model = _ToyModel()
+    source, evidence = _fhvr_source_and_evidence(model)
+    source_fir_weight, source_fir_bias = _source_fir()
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
+
+    receipt = dict(
+        compile_install_lfm2_semantic_short_conv_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            source_fir_weight=source_fir_weight,
+            source_fir_bias=source_fir_bias,
+            cache_key=_CACHE,
+            bridge_artifact_sha256=_BRIDGE,
+            source_model_identity_sha256=_SOURCE_MODEL,
+            short_conv_construction=(
+                adapter.LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
+            ),
+            fhvr_source=source,
+            fold_compute_device="cpu",
+        )
+    )
+
+    seal = receipt.pop("result_sha256")
+    assert canonical_sha256(receipt) == seal
+    assert receipt["installed"] is True
+    assert receipt["selected_candidate"] == ("full-history-fhvr-full-coverage-hybrid")
+    assert (
+        receipt["short_conv_construction"]["construction_sha256"]
+        == (receipt["short_conv_construction_sha256"])
+    )
+    assert receipt["short_conv_construction_sha256"] == (
+        adapter.resolve_lfm2_semantic_short_conv_construction(
+            adapter.LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
+        ).construction_sha256
+    )
+    assert receipt["fhvr_source"]["source_sha256"] == source.source_sha256
+    assert receipt["fhvr_source_sha256"] == source.source_sha256
+    writer_control = receipt["fhvr_candidate_report"]["writer_control_report"]
+    assert writer_control["candidate_id"] == (
+        "semantic-full-source-structural-control-writer"
+    )
+    assert writer_control["method_provenance"][
+        "numeric_metrics_used_to_choose_writer_control"
+    ] is False
+    assert receipt["full_history_fhvr_full_coverage_candidate_competed"] is True
+    assert receipt["complete_parent_bcx_history_consumed"] is True
+    assert receipt["fit_metrics_role"] == "diagnostic-only"
+    assert receipt["fit_metrics_used_for_pre_review_candidate_selection"] is False
+    assert receipt["numeric_metrics_have_final_intelligence_authority"] is False
+    assert receipt["behavioral_intelligence_review_outside_short_conv_compiler"] is True
+    assert receipt["parameter_count_changed"] is False
+    assert receipt["parameter_element_count"] == parameter_count
+    assert receipt["operation_audit"]["training_steps"] == 0
+    assert receipt["operation_audit"]["backward_calls"] == 0
+    assert receipt["operation_audit"]["optimizer_steps"] == 0
+    assert model.forward_calls == 0
+
+
+def test_fhvr_source_tensor_tamper_fails_before_child_mutation() -> None:
+    model = _ToyModel()
+    source, evidence = _fhvr_source_and_evidence(model)
+    source_fir_weight, source_fir_bias = _source_fir()
+    before = {
+        name: parameter.detach().clone() for name, parameter in model.named_parameters()
+    }
+    source.source_in_proj_weight[0, 0].add_(1.0)
+
+    with pytest.raises(
+        Lfm2SemanticShortConvRefoldError,
+        match="authenticated direct source",
+    ):
+        compile_install_lfm2_semantic_short_conv_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            source_fir_weight=source_fir_weight,
+            source_fir_bias=source_fir_bias,
+            cache_key=_CACHE,
+            bridge_artifact_sha256=_BRIDGE,
+            source_model_identity_sha256=_SOURCE_MODEL,
+            short_conv_construction=(
+                adapter.LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
+            ),
+            fhvr_source=source,
+            fold_compute_device="cpu",
+        )
+
+    assert all(
+        torch.equal(before[name], parameter)
+        for name, parameter in model.named_parameters()
+    )
+    assert model.forward_calls == 0
 
 
 def test_writer_only_competes_with_full_source_structural_and_installs() -> None:
@@ -424,13 +642,12 @@ def test_five_recipes_materialize_the_declared_effectful_nonblank_states(
         receipts["source_producer_residual_writer"]["model_state_after_sha256"]
         == receipts["full_strength_structural"]["model_state_after_sha256"]
     )
-    assert receipts["structural_sequence_residual_mlp_writer"][
-        "selected_candidate"
-    ] == "full-source-structural"
     assert (
-        receipts["structural_sequence_residual_mlp_writer"][
-            "model_state_after_sha256"
-        ]
+        receipts["structural_sequence_residual_mlp_writer"]["selected_candidate"]
+        == "full-source-structural"
+    )
+    assert (
+        receipts["structural_sequence_residual_mlp_writer"]["model_state_after_sha256"]
         == receipts["full_strength_structural"]["model_state_after_sha256"]
     )
     assert (
@@ -451,6 +668,7 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
         "residual_writer",
         "source_producer_residual_writer",
         "structural_sequence_residual_mlp_writer",
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
     ):
         evidence_source = _ToyModel()
         source_evidence = _evidence_bank(evidence_source)
@@ -482,6 +700,9 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     assert receipts["residual_writer"]["selected_candidate"] == (
         "full-source-producer-output-writer"
     )
+    assert receipts[
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
+    ]["selected_candidate"] == "full-source-producer-output-writer"
     assert receipts["source_producer_residual_writer"]["selected_candidate"] == (
         "full-source-structural"
     )
@@ -494,6 +715,12 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     assert (
         receipts["full_strength_structural"]["model_state_after_sha256"]
         != receipts["residual_writer"]["model_state_after_sha256"]
+    )
+    assert (
+        receipts[
+            "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
+        ]["model_state_after_sha256"]
+        == receipts["residual_writer"]["model_state_after_sha256"]
     )
     assert (
         receipts["full_strength_structural"]["model_state_after_sha256"]
@@ -1117,9 +1344,7 @@ def test_identical_analytic_candidate_resolves_to_sealed_noop(
         )
 
     def no_writer(*_args: object, **_kwargs: object) -> tuple[None, dict[str, object]]:
-        return None, _cpu_writer_report(
-            "test-identical-writer-rounded-to-incumbent"
-        )
+        return None, _cpu_writer_report("test-identical-writer-rounded-to-incumbent")
 
     monkeypatch.setattr(adapter, "_compile_structural_candidate", identical_structural)
     monkeypatch.setattr(adapter, "_compile_writer_candidate", no_writer)

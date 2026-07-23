@@ -333,6 +333,10 @@ def _qdeim_down_weight_prior(
             "nonlinear_qdeim_coupled_attention_fit_corrected",
             "nonlinear_qdeim_fit_corrected_priority",
         ),
+        (
+            "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
+            "nonlinear_qdeim_structural_priority",
+        ),
     ),
 )
 def test_qdeim_prior_accepts_exact_base_and_coupled_recipe_lane_pairs(

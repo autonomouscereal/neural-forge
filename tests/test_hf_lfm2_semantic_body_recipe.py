@@ -18,6 +18,7 @@ from neural_forge.hf_lfm2_semantic_body_recipe import (
     LFM2_SEMANTIC_BODY_RECIPE_V4_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V5_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V7_IDS,
+    LFM2_SEMANTIC_BODY_RECIPE_V9_IDS,
     LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS,
     LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_SCHEMA,
     Lfm2SemanticBodyRecipe,
@@ -28,9 +29,12 @@ from neural_forge.hf_lfm2_semantic_body_recipe import (
     resolve_lfm2_semantic_body_recipe,
     resolve_lfm2_semantic_nonblocking_behavior_flow,
 )
+from neural_forge.hf_lfm2_producer_aware_semantic_integration import (
+    Lfm2ProducerAwareCorrectionScalePolicy,
+)
 
 
-def test_exact_nine_body_recipes_are_sealed_and_non_cartesian() -> None:
+def test_exact_ten_body_recipes_are_sealed_and_non_cartesian() -> None:
     assert LFM2_SEMANTIC_BODY_RECIPE_IDS == (
         "fit_guided",
         "full_strength_structural",
@@ -41,13 +45,14 @@ def test_exact_nine_body_recipes_are_sealed_and_non_cartesian() -> None:
         "nonlinear_qdeim_fit_corrected",
         "nonlinear_qdeim_coupled_attention_structural",
         "nonlinear_qdeim_coupled_attention_fit_corrected",
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
     )
     recipes = tuple(
         resolve_lfm2_semantic_body_recipe(recipe_id)
         for recipe_id in LFM2_SEMANTIC_BODY_RECIPE_IDS
     )
 
-    assert len({recipe.recipe_sha256 for recipe in recipes}) == 9
+    assert len({recipe.recipe_sha256 for recipe in recipes}) == 10
     assert all(recipe.verify() for recipe in recipes)
     assert all(recipe.as_dict()["cartesian_product"] is False for recipe in recipes)
     assert all(
@@ -104,6 +109,48 @@ def test_exact_nine_body_recipes_are_sealed_and_non_cartesian() -> None:
         **dict(coupled_structural.component_lanes),
         "mlp": "nonlinear_qdeim_fit_corrected_priority",
     }
+    short_conv_writer = resolve_lfm2_semantic_body_recipe(
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
+    )
+    assert dict(short_conv_writer.component_lanes) == {
+        **dict(coupled_structural.component_lanes),
+        "short_conv": "alpha_one_residual_writer_priority",
+    }
+    assert (
+        short_conv_writer.component_lanes["qk"]
+        == (coupled_structural.component_lanes["qk"])
+    )
+    assert (
+        short_conv_writer.component_lanes["value_output"]
+        == (coupled_structural.component_lanes["value_output"])
+    )
+    assert (
+        short_conv_writer.component_lanes["mlp"]
+        == (coupled_structural.component_lanes["mlp"])
+    )
+
+
+def test_coupled_tangent_body_short_conv_writer_composes_with_closure_scale_zero() -> (
+    None
+):
+    recipe = resolve_lfm2_semantic_body_recipe(
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
+    )
+    scale = Lfm2ProducerAwareCorrectionScalePolicy(
+        materialization_frontier=(0.0,),
+        materialization_scale=0.0,
+    )
+
+    assert recipe.verify() is True
+    assert recipe.component_lanes == {
+        "qk": "intact_gqa_group_qdeim_coupled_qkvo",
+        "value_output": "intact_gqa_group_qdeim_coupled_qkvo",
+        "short_conv": "alpha_one_residual_writer_priority",
+        "mlp": "nonlinear_qdeim_structural_priority",
+    }
+    assert scale.verify_authentication() is True
+    assert scale.materialization_frontier == (0.0,)
+    assert scale.materialization_scale == 0.0
 
 
 def test_recipe_rejects_unknown_or_resealed_identity() -> None:
@@ -125,6 +172,7 @@ def test_nonblocking_behavior_flow_is_separate_sealed_and_coupled_only() -> None
         "nonlinear_qdeim_fit_corrected": "6897bb34f76223e46919be696031e0afeb703c92c6ab7836f6fba23c330356ac",
         "nonlinear_qdeim_coupled_attention_structural": "2725779d70161592345868bad2270ca5dbeaecbb1416a3c129b32fe3449235dc",
         "nonlinear_qdeim_coupled_attention_fit_corrected": "0c37f95ad809c83a1a34df61afcf080a64e228bbe19a7465d300d36a541334ce",
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer": "f5b2219783f61ec33a235cad46e3ec66530cd51696868f51671addcfbd966311",
     }
     assert {
         recipe_id: resolve_lfm2_semantic_body_recipe(recipe_id).recipe_sha256
@@ -133,6 +181,7 @@ def test_nonblocking_behavior_flow_is_separate_sealed_and_coupled_only() -> None
     assert LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS == (
         "nonlinear_qdeim_coupled_attention_structural",
         "nonlinear_qdeim_coupled_attention_fit_corrected",
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
     )
     assert resolve_lfm2_semantic_nonblocking_behavior_flow("fit_guided") is None
 
@@ -166,9 +215,7 @@ def test_nonblocking_behavior_flow_is_separate_sealed_and_coupled_only() -> None
             replace(policy, policy_sha256="0" * 64)
 
 
-def test_receipt_inventory_accepts_sealed_three_four_five_seven_and_current_nine() -> (
-    None
-):
+def test_receipt_inventory_accepts_historical_and_current_recipe_sets() -> None:
     assert is_supported_lfm2_semantic_body_recipe_inventory(
         list(LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS),
         3,
@@ -190,9 +237,16 @@ def test_receipt_inventory_accepts_sealed_three_four_five_seven_and_current_nine
         materialized_recipe_id="nonlinear_qdeim_fit_corrected",
     )
     assert is_supported_lfm2_semantic_body_recipe_inventory(
-        list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        list(LFM2_SEMANTIC_BODY_RECIPE_V9_IDS),
         9,
         materialized_recipe_id="nonlinear_qdeim_coupled_attention_fit_corrected",
+    )
+    assert is_supported_lfm2_semantic_body_recipe_inventory(
+        list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        10,
+        materialized_recipe_id=(
+            "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
+        ),
     )
     assert not is_supported_lfm2_semantic_body_recipe_inventory(
         ["fit_guided", "residual_writer"],
@@ -299,6 +353,7 @@ def test_component_equivalence_accepts_sealed_legacy_and_current_claims_only() -
     coupled_recipe_ids = [
         "nonlinear_qdeim_coupled_attention_structural",
         "nonlinear_qdeim_coupled_attention_fit_corrected",
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
     ]
     assert is_supported_lfm2_semantic_component_equivalence_inventory(
         "qk",

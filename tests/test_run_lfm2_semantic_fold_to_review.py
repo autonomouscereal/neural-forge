@@ -187,6 +187,50 @@ def test_global_residual_basis_rank_must_be_positive_or_omitted(
         )
 
 
+def test_fhvr_construction_requires_exact_external_pin_and_is_forwarded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _sources(tmp_path)
+    arguments = _arguments(tmp_path, paths)
+    construction = runner.resolve_lfm2_semantic_short_conv_construction(
+        runner.LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS[-1]
+    )
+    arguments["short_conv_construction"] = construction.construction_id
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        runner,
+        "_run_fold_to_review_scale",
+        lambda **kwargs: calls.append(kwargs) or {"status": "forwarded"},
+    )
+
+    with pytest.raises(
+        runner.Lfm2SemanticFoldToReviewError,
+        match="requires an external SHA-256 pin",
+    ):
+        runner.run_fold_to_review(**arguments)
+    assert calls == []
+
+    arguments["expected_short_conv_construction_sha256"] = "0" * 64
+    with pytest.raises(
+        runner.Lfm2SemanticFoldToReviewError,
+        match="differs from its external pin",
+    ):
+        runner.run_fold_to_review(**arguments)
+    assert calls == []
+
+    arguments["expected_short_conv_construction_sha256"] = (
+        construction.construction_sha256
+    )
+    result = runner.run_fold_to_review(**arguments)
+    assert result == {"status": "forwarded"}
+    assert len(calls) == 1
+    assert calls[0]["short_conv_construction"] == construction.construction_id
+    assert calls[0]["expected_short_conv_construction_sha256"] == (
+        construction.construction_sha256
+    )
+
+
 @pytest.mark.parametrize(
     "malformation",
     ("no-candidates", "review-incomplete", "checkpoints-not-retained"),

@@ -31,7 +31,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_lfm2_circuit_trace_cache import fingerprint_lfm2_parent
@@ -53,6 +53,26 @@ LFM2_SEMANTIC_SHORT_CONV_REFOLD_SCHEMA = (
 )
 LFM2_SEMANTIC_SHORT_CONV_REPLAY_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-semantic-short-conv-replay-evidence-v1"
+)
+LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-construction-v1"
+)
+LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-fhvr-source-v1"
+)
+LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION = "full-source-structural-v1"
+LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION = (
+    "fhvr-mf-cap10k-sweeps1-full-history-full-coverage-v1"
+)
+Lfm2SemanticShortConvConstructionId = Literal[
+    "full-source-structural-v1",
+    "fhvr-mf-cap10k-sweeps1-full-history-full-coverage-v1",
+]
+LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS: tuple[
+    Lfm2SemanticShortConvConstructionId, ...
+] = (
+    LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
+    LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION,
 )
 _INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-short-conv-installation-v1"
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
@@ -296,6 +316,304 @@ def _tensor_sha256(value: Any) -> str:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2SemanticShortConvConstruction:
+    """One sealed construction choice; metrics cannot rewrite this choice."""
+
+    construction_id: Lfm2SemanticShortConvConstructionId
+    construction_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if self.construction_id not in LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS:
+            raise Lfm2SemanticShortConvRefoldError(
+                "Unknown semantic short-conv construction."
+            )
+        expected = canonical_sha256(self.authentication_body())
+        supplied = str(self.construction_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise Lfm2SemanticShortConvRefoldError(
+                "Semantic short-conv construction authentication is invalid."
+            )
+        object.__setattr__(self, "construction_sha256", expected)
+
+    @property
+    def uses_fhvr_full_coverage(self) -> bool:
+        return (
+            self.construction_id
+            == LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
+        )
+
+    def authentication_body(self) -> dict[str, Any]:
+        fhvr = self.uses_fhvr_full_coverage
+        return {
+            "schema": LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA,
+            "construction_id": self.construction_id,
+            "construction_kind": (
+                "future_hankel_volterra_matrix_free_full_coverage_hybrid"
+                if fhvr
+                else "existing_full_source_structural"
+            ),
+            "full_parent_causal_history_required": fhvr,
+            "future_observable_realization": fhvr,
+            "ordinary_dense_child_b_c_x_fir_output_tensors": True,
+            "fit_only_analytic_construction": True,
+            "cached_evidence_and_direct_local_weights_only": True,
+            "numeric_metrics_are_diagnostic_only": True,
+            "numeric_or_binary_behavioral_hard_gate": False,
+            "whole_decoded_behavior_is_primary_intelligence_evidence": True,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+            "parameters_shared": 0,
+            "parent_sidecars": 0,
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            **self.authentication_body(),
+            "construction_sha256": self.construction_sha256,
+        }
+
+    def verify(self) -> bool:
+        return self.construction_sha256 == canonical_sha256(self.authentication_body())
+
+
+def resolve_lfm2_semantic_short_conv_construction(
+    value: str | Lfm2SemanticShortConvConstruction | None = None,
+) -> Lfm2SemanticShortConvConstruction:
+    """Normalize an externally selectable construction without metric choice."""
+
+    if value is None:
+        return Lfm2SemanticShortConvConstruction(
+            LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION
+        )
+    if isinstance(value, Lfm2SemanticShortConvConstruction):
+        if not value.verify():
+            raise Lfm2SemanticShortConvRefoldError(
+                "Semantic short-conv construction changed after authentication."
+            )
+        return value
+    if not isinstance(value, str):
+        raise TypeError(
+            "short_conv_construction must be an ID or authenticated construction."
+        )
+    return Lfm2SemanticShortConvConstruction(value)  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SemanticShortConvFhvrSource:
+    """Exact local source weights plus the fitted source-to-child chart.
+
+    The direct checkpoint identity admits the weights; cached trajectories
+    provide behavior.  The derived context encoder is recomputed here so a
+    caller cannot substitute an unrelated source/output chart product.
+    """
+
+    layer_index: int
+    cache_key: str
+    bridge_artifact_sha256: str
+    source_model_identity_sha256: str
+    parent_session_open_receipt_sha256: str
+    parent_identity_reconstruction_sha256: str
+    residual_chart_sha256: str
+    norm_epsilon: float
+    source_operator_norm_weight: Any = field(repr=False, compare=False)
+    source_in_proj_weight: Any = field(repr=False, compare=False)
+    source_in_proj_bias: Any | None = field(repr=False, compare=False)
+    source_fir_weight: Any = field(repr=False, compare=False)
+    source_fir_bias: Any | None = field(repr=False, compare=False)
+    source_out_proj_weight: Any = field(repr=False, compare=False)
+    source_out_proj_bias: Any | None = field(repr=False, compare=False)
+    residual_output_chart: Any = field(repr=False, compare=False)
+    output_encoder: Any = field(init=False, repr=False, compare=False)
+    source_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        if (
+            isinstance(self.layer_index, bool)
+            or not isinstance(self.layer_index, int)
+            or self.layer_index < 0
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR source layer_index must be a nonnegative integer."
+            )
+        for value, name in (
+            (self.cache_key, "cache key"),
+            (self.bridge_artifact_sha256, "bridge artifact SHA-256"),
+            (self.source_model_identity_sha256, "source model identity SHA-256"),
+            (
+                self.parent_session_open_receipt_sha256,
+                "parent session open receipt SHA-256",
+            ),
+            (
+                self.parent_identity_reconstruction_sha256,
+                "parent identity reconstruction SHA-256",
+            ),
+            (self.residual_chart_sha256, "residual chart SHA-256"),
+        ):
+            _digest(value, name)
+        epsilon = self.norm_epsilon
+        if (
+            isinstance(epsilon, bool)
+            or not isinstance(epsilon, (int, float))
+            or not math.isfinite(float(epsilon))
+            or float(epsilon) <= 0.0
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR source requires one positive finite parent norm epsilon."
+            )
+        norm = _finite_cpu_tensor(
+            self.source_operator_norm_weight,
+            "source_operator_norm_weight",
+            ndim=1,
+        )
+        in_weight = _finite_cpu_tensor(
+            self.source_in_proj_weight,
+            "source_in_proj_weight",
+            ndim=2,
+        )
+        raw_fir = _finite_cpu_tensor(
+            self.source_fir_weight,
+            "source_fir_weight",
+            ndim=int(getattr(self.source_fir_weight, "ndim", -1)),
+        )
+        if raw_fir.ndim == 3:
+            if int(raw_fir.shape[1]) != 1:
+                raise Lfm2SemanticShortConvRefoldError(
+                    "FHVR source FIR must be depthwise [source,1,length]."
+                )
+            fir = raw_fir[:, 0, :].contiguous()
+        elif raw_fir.ndim == 2:
+            fir = raw_fir
+        else:
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR source FIR must have rank two or three."
+            )
+        out_weight = _finite_cpu_tensor(
+            self.source_out_proj_weight,
+            "source_out_proj_weight",
+            ndim=2,
+        )
+        chart = _finite_cpu_tensor(
+            self.residual_output_chart,
+            "residual_output_chart",
+            ndim=2,
+        )
+        source_hidden = int(fir.shape[0])
+        target_hidden = int(chart.shape[1])
+        if (
+            target_hidden <= 0
+            or target_hidden >= source_hidden
+            or tuple(norm.shape) != (source_hidden,)
+            or tuple(in_weight.shape) != (3 * source_hidden, source_hidden)
+            or tuple(out_weight.shape) != (source_hidden, source_hidden)
+            or tuple(chart.shape) != (source_hidden, target_hidden)
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR source weights/chart do not describe one smaller dense child."
+            )
+        optional = {
+            "source_in_proj_bias": (self.source_in_proj_bias, 3 * source_hidden),
+            "source_fir_bias": (self.source_fir_bias, source_hidden),
+            "source_out_proj_bias": (self.source_out_proj_bias, source_hidden),
+        }
+        normalized_optional: dict[str, Any | None] = {}
+        for name, (value, width) in optional.items():
+            normalized = (
+                None if value is None else _finite_cpu_tensor(value, name, ndim=1)
+            )
+            if normalized is not None and tuple(normalized.shape) != (width,):
+                raise Lfm2SemanticShortConvRefoldError(
+                    f"{name} differs from its source topology."
+                )
+            normalized_optional[name] = normalized
+        output_encoder = (
+            out_weight.to(torch.float64).T @ chart.to(torch.float64)
+        ).contiguous()
+        if not bool(torch.isfinite(output_encoder).all().item()):
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR source output encoder is non-finite."
+            )
+        object.__setattr__(self, "norm_epsilon", float(epsilon))
+        object.__setattr__(self, "source_operator_norm_weight", norm)
+        object.__setattr__(self, "source_in_proj_weight", in_weight)
+        object.__setattr__(
+            self, "source_in_proj_bias", normalized_optional["source_in_proj_bias"]
+        )
+        object.__setattr__(self, "source_fir_weight", fir)
+        object.__setattr__(
+            self, "source_fir_bias", normalized_optional["source_fir_bias"]
+        )
+        object.__setattr__(self, "source_out_proj_weight", out_weight)
+        object.__setattr__(
+            self, "source_out_proj_bias", normalized_optional["source_out_proj_bias"]
+        )
+        object.__setattr__(self, "residual_output_chart", chart)
+        object.__setattr__(self, "output_encoder", output_encoder)
+        object.__setattr__(self, "source_sha256", canonical_sha256(self._body()))
+
+    @property
+    def source_hidden_size(self) -> int:
+        return int(self.source_fir_weight.shape[0])
+
+    @property
+    def target_hidden_size(self) -> int:
+        return int(self.residual_output_chart.shape[1])
+
+    def _body(self) -> dict[str, Any]:
+        tensors = {
+            "operator_norm_weight": self.source_operator_norm_weight,
+            "in_proj_weight": self.source_in_proj_weight,
+            "in_proj_bias": self.source_in_proj_bias,
+            "fir_weight": self.source_fir_weight,
+            "fir_bias": self.source_fir_bias,
+            "out_proj_weight": self.source_out_proj_weight,
+            "out_proj_bias": self.source_out_proj_bias,
+            "residual_output_chart": self.residual_output_chart,
+            "output_encoder": self.output_encoder,
+        }
+        return {
+            "schema": LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA,
+            "layer_index": self.layer_index,
+            "cache_key": self.cache_key,
+            "bridge_artifact_sha256": self.bridge_artifact_sha256,
+            "source_model_identity_sha256": self.source_model_identity_sha256,
+            "parent_session_open_receipt_sha256": (
+                self.parent_session_open_receipt_sha256
+            ),
+            "parent_identity_reconstruction_sha256": (
+                self.parent_identity_reconstruction_sha256
+            ),
+            "residual_chart_sha256": self.residual_chart_sha256,
+            "norm_epsilon": self.norm_epsilon,
+            "tensor_sha256": {
+                name: None if value is None else _tensor_sha256(value)
+                for name, value in tensors.items()
+            },
+            "source_hidden_size": self.source_hidden_size,
+            "target_hidden_size": self.target_hidden_size,
+            "output_encoder_formula": "source_out_proj_weight.T@residual_output_chart",
+            "exact_local_parent_identity_is_source_admission_authority": True,
+            "cached_behavior_is_functional_evidence_source": True,
+            "parent_model_objects_constructed": 0,
+            "parent_forward_calls": 0,
+            "network_access_performed": False,
+        }
+
+    def verify(self) -> bool:
+        return self.source_sha256 == canonical_sha256(self._body())
+
+    def as_dict(self) -> dict[str, Any]:
+        if not self.verify():
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR source changed after authentication."
+            )
+        return {**self._body(), "source_sha256": self.source_sha256}
+
+
 def _parameter_count(model: Any) -> int:
     seen: set[int] = set()
     total = 0
@@ -367,6 +685,12 @@ class Lfm2SemanticShortConvReplayEvidence:
         compare=False,
     )
     endpoint_row_sqrt_weights: Any = field(repr=False, compare=False)
+    parent_operator_input_history: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    parent_operator_input_provenance_sha256: str | None = None
     evidence_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -423,6 +747,25 @@ class Lfm2SemanticShortConvReplayEvidence:
             "endpoint_row_sqrt_weights",
             ndim=2,
         ).to(torch.float64)
+        parent_input = (
+            None
+            if self.parent_operator_input_history is None
+            else _finite_cpu_tensor(
+                self.parent_operator_input_history,
+                "parent_operator_input_history",
+                ndim=3,
+            )
+        )
+        parent_input_provenance = self.parent_operator_input_provenance_sha256
+        if (parent_input is None) != (parent_input_provenance is None):
+            raise Lfm2SemanticShortConvRefoldError(
+                "Parent operator-input history and provenance must appear together."
+            )
+        if parent_input_provenance is not None:
+            _digest(
+                parent_input_provenance,
+                "parent operator-input provenance SHA-256",
+            )
         batch, target_length, target_hidden = map(int, child_input.shape)
         parent_length = int(parent_b.shape[1])
         source_hidden = int(parent_b.shape[2])
@@ -445,6 +788,10 @@ class Lfm2SemanticShortConvReplayEvidence:
             tuple(child_pre.shape) != tuple(child_input.shape)
             or tuple(parent_c.shape) != tuple(parent_b.shape)
             or tuple(parent_x.shape) != tuple(parent_b.shape)
+            or (
+                parent_input is not None
+                and tuple(parent_input.shape) != tuple(parent_b.shape)
+            )
             or int(parent_b.shape[0]) != batch
             or parent_length <= 0
             or source_hidden <= 0
@@ -484,6 +831,12 @@ class Lfm2SemanticShortConvReplayEvidence:
             parent_post,
         )
         object.__setattr__(self, "endpoint_row_sqrt_weights", weights)
+        object.__setattr__(self, "parent_operator_input_history", parent_input)
+        object.__setattr__(
+            self,
+            "parent_operator_input_provenance_sha256",
+            parent_input_provenance,
+        )
         object.__setattr__(self, "evidence_sha256", canonical_sha256(self._body()))
 
     @property
@@ -500,7 +853,7 @@ class Lfm2SemanticShortConvReplayEvidence:
         )
 
     def _body(self) -> dict[str, Any]:
-        return {
+        body = {
             "schema": LFM2_SEMANTIC_SHORT_CONV_REPLAY_EVIDENCE_SCHEMA,
             "batch_index": self.batch_index,
             "phase": self.phase,
@@ -545,6 +898,15 @@ class Lfm2SemanticShortConvReplayEvidence:
             "numeric_parent_child_weight_match_objective": False,
             "operation_audit": dict(_ZERO_OPERATIONS),
         }
+        if self.parent_operator_input_history is not None:
+            body["future_observable_parent_input"] = {
+                "history_sha256": _tensor_sha256(self.parent_operator_input_history),
+                "provenance_sha256": (self.parent_operator_input_provenance_sha256),
+                "complete_parent_causal_history": True,
+                "reconstructed_from_cached_residual_and_direct_local_rmsnorm": True,
+                "parent_forward_calls": 0,
+            }
+        return body
 
     def verify(self) -> str:
         return canonical_sha256(self._body())
@@ -644,6 +1006,7 @@ class _Candidate:
             "full-source-structural",
             "incumbent-producer-output-writer",
             "full-source-producer-output-writer",
+            "full-history-fhvr-full-coverage-hybrid",
         }:
             raise Lfm2SemanticShortConvRefoldError("Unknown short-conv candidate.")
         normalized = {
@@ -1760,6 +2123,301 @@ def _compile_writer_candidate(
     )
 
 
+@contextmanager
+def _fhvr_compute_device_context(
+    fold_compute_device: str,
+) -> Any:
+    """Hold an explicit CUDA index while the existing FHVR kernel runs."""
+
+    torch = _torch()
+    if fold_compute_device == "cpu":
+        yield {
+            "backend": "cpu",
+            "requested_device": "cpu",
+            "resolved_device": "cpu",
+            "device_index": None,
+        }
+        return
+    device, device_index = _indexed_cuda_device(torch, fold_compute_device)
+    workspace_config = os.environ.get("CUBLAS_WORKSPACE_CONFIG", "")
+    if workspace_config not in {":4096:8", ":16:8"}:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Deterministic CUDA FHVR folding requires "
+            "CUBLAS_WORKSPACE_CONFIG=:4096:8 or :16:8."
+        )
+    properties = torch.cuda.get_device_properties(device)
+    with _SHORT_CONV_TORCH_STATE_LOCK, torch.cuda.device(device):
+        yield {
+            "backend": "cuda",
+            "requested_device": fold_compute_device,
+            "resolved_device": str(device),
+            "device_index": device_index,
+            "device_name": str(properties.name),
+            "compute_capability": [int(properties.major), int(properties.minor)],
+            "cublas_workspace_config": workspace_config,
+        }
+
+
+def _fhvr_fit_cases(
+    evidence: Sequence[Lfm2SemanticShortConvReplayEvidence],
+) -> tuple[Any, ...]:
+    torch = _torch()
+    from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
+        Lfm2CpcfShortConvV4FoldCase,
+    )
+
+    result = []
+    for item in evidence:
+        if item.parent_operator_input_history is None:
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR construction requires authenticated parent operator-input "
+                "history for every FIT case."
+            )
+        owners = torch.tensor(
+            item.target_to_parent_span_owner_positions,
+            dtype=torch.long,
+        )
+        endpoints = torch.tensor(item.endpoint_target_positions, dtype=torch.long)
+        batch = int(item.actual_child_operator_input_history.shape[0])
+        sequence = int(item.actual_child_operator_input_history.shape[1])
+        valid = torch.zeros((batch, sequence), dtype=torch.bool)
+        valid[:, list(item.semantic_span_boundary_positions)] = True
+        result.append(
+            Lfm2CpcfShortConvV4FoldCase(
+                case_id=(
+                    f"fhvr-batch-{item.batch_index}-phase-{item.phase}-"
+                    f"{item.evidence_sha256[:16]}"
+                ),
+                split="fit",
+                suffix_start=item.endpoint_target_positions[0],
+                actual_child_operator_input_history=(
+                    item.actual_child_operator_input_history
+                ),
+                parent_operator_input_history=(
+                    item.parent_operator_input_history.index_select(1, owners)
+                ),
+                parent_b_history=item.parent_b_history.index_select(1, owners),
+                parent_c_history=item.parent_c_history.index_select(1, owners),
+                parent_x_history=item.parent_x_history.index_select(1, owners),
+                parent_post_operator_residual_target_space_suffix=(
+                    item.parent_post_operator_residual_target_space
+                ),
+                actual_child_pre_operator_residual_suffix=(
+                    item.actual_child_pre_operator_residual_history.index_select(
+                        1,
+                        endpoints,
+                    )
+                ),
+                valid_prefix_mask=valid,
+            )
+        )
+    return tuple(result)
+
+
+def _compile_fhvr_full_coverage_candidate(
+    *,
+    construction: Lfm2SemanticShortConvConstruction,
+    source: Lfm2SemanticShortConvFhvrSource,
+    fit: Sequence[Lfm2SemanticShortConvReplayEvidence],
+    incumbent_state: Mapping[str, Any],
+    writer_control_candidate: _Candidate,
+    fold_compute_device: str,
+) -> _Candidate:
+    """Construct the existing FHVR hybrid and adapt it to semantic state names."""
+
+    from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
+        Lfm2CpcfShortConvV4SolverPolicy,
+        causal_depthwise_context,
+    )
+    from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
+        Lfm2CpcfShortConvNumericalFrontierRequest,
+        Lfm2CpcfShortConvNumericalRawCandidate,
+    )
+    from neural_forge.hf_lfm2_cpcf_short_conv_v5_fhvr_mf import (
+        FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+        FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID,
+        FHVR_MF_FULL_COVERAGE_HYBRID_KIND,
+        Lfm2CpcfFhvrMfPolicy,
+        build_lfm2_cpcf_fhvr_mf_candidate,
+        build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate,
+    )
+
+    if not construction.uses_fhvr_full_coverage or not source.verify():
+        raise Lfm2SemanticShortConvRefoldError(
+            "FHVR construction or source authentication is invalid."
+        )
+    fit_cases = _fhvr_fit_cases(fit)
+    parent_contexts = {
+        case.case_id: causal_depthwise_context(
+            case.parent_b_history,
+            case.parent_c_history,
+            case.parent_x_history,
+            source.source_fir_weight,
+            source.source_fir_bias,
+        )
+        for case in fit_cases
+    }
+    target_dtype = str(incumbent_state["in_proj.weight"].dtype).removeprefix("torch.")
+    solver_policy = Lfm2CpcfShortConvV4SolverPolicy(target_dtype=target_dtype)
+    request = Lfm2CpcfShortConvNumericalFrontierRequest(
+        source_tensors={
+            "source_in_proj_weight": source.source_in_proj_weight,
+            "source_in_proj_bias": source.source_in_proj_bias,
+            "source_fir_kernel": source.source_fir_weight,
+            "source_fir_bias": source.source_fir_bias,
+            "source_out_proj_weight": source.source_out_proj_weight,
+            "source_out_proj_bias": source.source_out_proj_bias,
+            "output_encoder": source.output_encoder,
+        },
+        cases=fit_cases,
+        parent_contexts=parent_contexts,
+        target_templates={
+            "in_proj_weight": incumbent_state["in_proj.weight"],
+            "in_proj_bias": incumbent_state.get("in_proj.bias"),
+            "fir_kernel": incumbent_state["conv.weight"][:, 0, :],
+            "fir_bias": incumbent_state.get("conv.bias"),
+            "writer_weight": incumbent_state["out_proj.weight"],
+            "writer_bias": incumbent_state.get("out_proj.bias"),
+        },
+        policy=solver_policy,
+    )
+    writer_state = writer_control_candidate.state
+    raw_writer = Lfm2CpcfShortConvNumericalRawCandidate(
+        request_sha256=request.request_sha256,
+        candidate_id="semantic-full-source-structural-control-writer",
+        candidate_kind="accepted_fit_projection_path_anchor",
+        in_proj_weight=writer_state["in_proj.weight"],
+        in_proj_bias=writer_state.get("in_proj.bias"),
+        fir_kernel=writer_state["conv.weight"][:, 0, :],
+        fir_bias=writer_state.get("conv.bias"),
+        writer_weight=writer_state["out_proj.weight"],
+        writer_bias=writer_state.get("out_proj.bias"),
+        method_provenance={
+            "method": "semantic_full_source_structural_writer_control",
+            "request_sha256": request.request_sha256,
+            "semantic_candidate_state_sha256": (
+                writer_control_candidate.state_sha256
+            ),
+            "semantic_candidate_provenance_sha256": canonical_sha256(
+                dict(writer_control_candidate.provenance)
+            ),
+            "numeric_metrics_used_to_choose_writer_control": False,
+            "external_construction_choice_is_final_selection_authority": True,
+            "fit_only": True,
+            "selection_cases_consumed": 0,
+            "validation_cases_consumed": 0,
+            "execution": dict(_ZERO_OPERATIONS),
+        },
+    )
+    backend = "cpu" if fold_compute_device == "cpu" else "cuda"
+    fhvr_policy = Lfm2CpcfFhvrMfPolicy(
+        condition_cap=10_000.0,
+        factor_sweeps=1,
+        backend=backend,
+    )
+    with _fhvr_compute_device_context(fold_compute_device) as device_receipt:
+        pure = build_lfm2_cpcf_fhvr_mf_candidate(
+            request,
+            context_encoder=source.output_encoder,
+            policy=fhvr_policy,
+            candidate_id=FHVR_MF_CAP10K_SWEEPS1_CANDIDATE_ID,
+        )
+        hybrid = build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate(
+            request,
+            context_encoder=source.output_encoder,
+            writer_candidate=raw_writer,
+            fhvr_candidate=pure,
+            policy=fhvr_policy,
+            candidate_id=(FHVR_MF_CAP10K_SWEEPS1_FULL_COVERAGE_HYBRID_ID),
+        )
+    if (
+        not request.verify_authentication()
+        or not raw_writer.verify_authentication()
+        or not pure.verify_authentication()
+        or not hybrid.verify_authentication()
+        or hybrid.candidate_kind != FHVR_MF_FULL_COVERAGE_HYBRID_KIND
+        or hybrid.request_sha256 != request.request_sha256
+        or hybrid.method_provenance.get("source_writer_candidate_state_sha256")
+        != raw_writer.state_sha256
+        or hybrid.method_provenance.get("source_fhvr_candidate_state_sha256")
+        != pure.state_sha256
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "FHVR full-coverage hybrid lost request or source authentication."
+        )
+    raw_state = hybrid.state_dict()
+    target_state = {
+        "in_proj.weight": raw_state["in_proj_weight"],
+        "conv.weight": raw_state["fir_kernel"].unsqueeze(1),
+        "out_proj.weight": raw_state["writer_weight"],
+    }
+    for local_name, raw_name in (
+        ("in_proj.bias", "in_proj_bias"),
+        ("conv.bias", "fir_bias"),
+        ("out_proj.bias", "writer_bias"),
+    ):
+        if raw_state[raw_name] is not None:
+            target_state[local_name] = raw_state[raw_name]
+    if set(target_state) != set(incumbent_state):
+        raise Lfm2SemanticShortConvRefoldError(
+            "FHVR hybrid differs from the existing six-role short-conv topology."
+        )
+    materialized = {
+        name: value.detach()
+        .to(device="cpu", dtype=incumbent_state[name].dtype)
+        .contiguous()
+        .clone()
+        for name, value in target_state.items()
+    }
+    execution_body = {
+        "schema": "neural-forge-lfm2-semantic-short-conv-fhvr-execution-v1",
+        **device_receipt,
+        "compute_dtype": hybrid.method_provenance["compute_dtype"],
+        "fhvr_policy_sha256": fhvr_policy.authentication_sha256,
+        "request_sha256": request.request_sha256,
+        "pure_candidate_state_sha256": pure.state_sha256,
+        "hybrid_candidate_state_sha256": hybrid.state_sha256,
+        "canonical_input_authentication_device": "cpu",
+        "canonical_result_materialization_device": "cpu",
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    execution = {
+        **execution_body,
+        "execution_sha256": canonical_sha256(execution_body),
+    }
+    return _Candidate(
+        name="full-history-fhvr-full-coverage-hybrid",
+        state=materialized,
+        provenance={
+            "method": "semantic_full_history_fhvr_full_coverage_hybrid",
+            "construction": construction.as_dict(),
+            "construction_sha256": construction.construction_sha256,
+            "source": source.as_dict(),
+            "source_sha256": source.source_sha256,
+            "numerical_frontier_request": request.as_dict(),
+            "numerical_frontier_request_sha256": request.request_sha256,
+            "writer_control_report": raw_writer.as_dict(),
+            "writer_control_report_sha256": raw_writer.report["report_sha256"],
+            "pure_fhvr_report": pure.as_dict(),
+            "pure_fhvr_report_sha256": pure.report["report_sha256"],
+            "hybrid_report": hybrid.as_dict(),
+            "hybrid_report_sha256": hybrid.report["report_sha256"],
+            "fhvr_compute_execution": execution,
+            "fhvr_compute_execution_sha256": execution["execution_sha256"],
+            "full_parent_causal_history_consumed": True,
+            "future_observable_realization": True,
+            "full_source_channel_coverage": True,
+            "target_native_dense_weights": True,
+            "selection_cases_consumed": 0,
+            "validation_cases_consumed": 0,
+            "fit_only": True,
+            "operation_audit": dict(_ZERO_OPERATIONS),
+        },
+    )
+
+
 def _candidate_report(
     candidate: _Candidate,
     *,
@@ -1814,6 +2472,7 @@ def _candidate_report(
         "incumbent-producer-output-writer": 0,
         "full-source-producer-output-writer": 0,
         "full-source-structural": 1,
+        "full-history-fhvr-full-coverage-hybrid": 2,
     }
     fit_ordering_key = (
         None
@@ -2088,6 +2747,10 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     source_fir_bias: Any | None = None,
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    short_conv_construction: (
+        str | Lfm2SemanticShortConvConstruction
+    ) = LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
+    fhvr_source: Lfm2SemanticShortConvFhvrSource | None = None,
 ) -> Mapping[str, Any]:
     """Compile, gate, freeze, and atomically install one short-conv operator."""
 
@@ -2099,6 +2762,9 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "source model identity SHA-256",
     )
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    construction = resolve_lfm2_semantic_short_conv_construction(
+        short_conv_construction
+    )
     raw = tuple(evidence)
     if not raw or any(
         not isinstance(item, Lfm2SemanticShortConvReplayEvidence) for item in raw
@@ -2109,6 +2775,24 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     if any(item.verify() != item.evidence_sha256 for item in raw):
         raise Lfm2SemanticShortConvRefoldError(
             "Short-conv evidence changed after authentication."
+        )
+    if construction.uses_fhvr_full_coverage:
+        if (
+            not isinstance(fhvr_source, Lfm2SemanticShortConvFhvrSource)
+            or not fhvr_source.verify()
+            or any(
+                item.parent_operator_input_history is None
+                or item.parent_operator_input_provenance_sha256 is None
+                for item in raw
+            )
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR construction requires an authenticated direct source and "
+                "full parent operator-input histories."
+            )
+    elif fhvr_source is not None:
+        raise Lfm2SemanticShortConvRefoldError(
+            "The structural construction cannot consume an FHVR source side input."
         )
     current_child_state = fingerprint_lfm2_parent(target_model).identity_sha256
     target_topology_sha256 = _topology_sha256(target_model)
@@ -2123,6 +2807,15 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     ):
         raise Lfm2SemanticShortConvRefoldError(
             "Replay layer/cache/bridge/lineage or captured child state diverged."
+        )
+    if construction.uses_fhvr_full_coverage and (
+        fhvr_source.layer_index != layer_index
+        or fhvr_source.cache_key != cache
+        or fhvr_source.bridge_artifact_sha256 != bridge
+        or fhvr_source.source_model_identity_sha256 != source_identity
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "FHVR direct source differs from layer/cache/bridge/parent lineage."
         )
     parameters = _parameter_bundle(target_model, layer_index)
     incumbent_state = _suffix_state(parameters, layer_index)
@@ -2139,8 +2832,10 @@ def compile_install_lfm2_semantic_short_conv_postfold(
                 "Source FIR must be depthwise [source, 1, length]."
             )
         source_hidden = int(source_kernel.shape[0])
+        normalized_source_kernel = source_kernel[:, 0, :].contiguous()
     elif source_kernel.ndim == 2:
         source_hidden = int(source_kernel.shape[0])
+        normalized_source_kernel = source_kernel
     else:
         raise Lfm2SemanticShortConvRefoldError(
             "Source FIR must have rank two or three."
@@ -2163,6 +2858,22 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     ):
         raise Lfm2SemanticShortConvRefoldError(
             "Evidence widths do not match one smaller dense child and parent FIR."
+        )
+    if construction.uses_fhvr_full_coverage and (
+        fhvr_source.source_hidden_size != source_hidden
+        or fhvr_source.target_hidden_size != target_hidden
+        or not torch.equal(
+            fhvr_source.source_fir_weight,
+            normalized_source_kernel,
+        )
+        or (fhvr_source.source_fir_bias is None) != (source_bias is None)
+        or (
+            source_bias is not None
+            and not torch.equal(fhvr_source.source_fir_bias, source_bias)
+        )
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "FHVR direct source and the cache-authenticated FIR disagree."
         )
     partitions = _split_evidence(raw)
     balanced_pairs = {
@@ -2209,21 +2920,36 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         exact_zero_incumbent
         and recipe.component_lanes["short_conv"] == "alpha_one_residual_writer_priority"
     )
+    fhvr_construction = construction.uses_fhvr_full_coverage
     writer, writer_fit_report = _compile_writer_candidate(
         banks["fit"],
         incumbent_state,
-        fixed_producer_state=(structural.state if blank_residual_writer else None),
+        fixed_producer_state=(
+            structural.state if blank_residual_writer or fhvr_construction else None
+        ),
         candidate_name=(
             "full-source-producer-output-writer"
-            if blank_residual_writer
+            if blank_residual_writer or fhvr_construction
             else "incumbent-producer-output-writer"
         ),
         fixed_producer_provenance=(
-            structural.provenance if blank_residual_writer else None
+            structural.provenance
+            if blank_residual_writer or fhvr_construction
+            else None
         ),
         body_recipe=recipe,
         fold_compute_device=fold_compute_device,
     )
+    fhvr_candidate = None
+    if fhvr_construction:
+        fhvr_candidate = _compile_fhvr_full_coverage_candidate(
+            construction=construction,
+            source=fhvr_source,
+            fit=partitions["fit"],
+            incumbent_state=incumbent_state,
+            writer_control_candidate=structural,
+            fold_compute_device=fold_compute_device,
+        )
     compute_proofs: dict[str, Any] = {}
     if fold_compute_device == "cpu":
         writer_execution = writer_fit_report.get("compute_execution")
@@ -2291,7 +3017,36 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             "writer_compute_execution_sha256": writer_execution["execution_sha256"],
             "requested_cuda_short_conv_routes_proved": True,
         }
-    candidates = [incumbent, structural, *([] if writer is None else [writer])]
+    if fhvr_candidate is not None:
+        fhvr_execution = fhvr_candidate.provenance.get("fhvr_compute_execution")
+        if not isinstance(fhvr_execution, Mapping):
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR hybrid returned no authenticated compute execution."
+            )
+        execution_body = dict(fhvr_execution)
+        execution_sha256 = execution_body.pop("execution_sha256", None)
+        if (
+            execution_sha256 != canonical_sha256(execution_body)
+            or fhvr_execution.get("requested_device") != fold_compute_device
+            or fhvr_execution.get("backend")
+            != ("cpu" if fold_compute_device == "cpu" else "cuda")
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR hybrid compute execution is stale or device-mismatched."
+            )
+        compute_proofs.update(
+            {
+                "fhvr_compute_execution": dict(fhvr_execution),
+                "fhvr_compute_execution_sha256": execution_sha256,
+                "requested_fhvr_compute_route_proved": True,
+            }
+        )
+    candidates = [
+        incumbent,
+        structural,
+        *([] if writer is None else [writer]),
+        *([] if fhvr_candidate is None else [fhvr_candidate]),
+    ]
     tolerance = 1e-8
     reports = {
         candidate.name: _candidate_report(
@@ -2311,13 +3066,24 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         raise Lfm2SemanticShortConvRefoldError(
             "The compulsory cold-start structural plant is not effectful and safe."
         )
+    if (
+        fhvr_construction
+        and reports[fhvr_candidate.name]["structurally_eligible"] is not True
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "The authenticated FHVR hybrid is not one finite effectful dense state."
+        )
     prevalidation_choice = (
-        _select_candidate(candidates, reports, body_recipe=recipe)
-        if blank_residual_writer
+        fhvr_candidate
+        if fhvr_construction
         else (
-            structural
-            if exact_zero_incumbent
-            else _select_candidate(candidates, reports, body_recipe=recipe)
+            _select_candidate(candidates, reports, body_recipe=recipe)
+            if blank_residual_writer
+            else (
+                structural
+                if exact_zero_incumbent
+                else _select_candidate(candidates, reports, body_recipe=recipe)
+            )
         )
     )
     if exact_zero_incumbent:
@@ -2416,6 +3182,20 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "body_recipe_sha256": recipe.recipe_sha256,
         "body_recipe_id": recipe.recipe_id,
         "recipe_component_lane": recipe.component_lanes["short_conv"],
+        **(
+            {
+                "short_conv_construction": construction.as_dict(),
+                "short_conv_construction_id": construction.construction_id,
+                "short_conv_construction_sha256": (construction.construction_sha256),
+                "fhvr_source": fhvr_source.as_dict(),
+                "fhvr_source_sha256": fhvr_source.source_sha256,
+                "fhvr_candidate_report": dict(fhvr_candidate.provenance),
+                "fhvr_candidate_state_sha256": fhvr_candidate.state_sha256,
+                "full_history_future_observable_full_coverage_hybrid": True,
+            }
+            if fhvr_candidate is not None and fhvr_source is not None
+            else {}
+        ),
         "status": (
             "installed-frozen-semantic-short-conv-candidate"
             if changed
@@ -2518,9 +3298,13 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             validation_nonregression is not True
         ),
         "candidate_selection_evidence_scope": (
-            "finite-dense-structural-eligibility-plus-fit-ordering"
-            if recipe.fit_metrics_order_candidates
-            else "finite-dense-structural-eligibility-plus-recipe-priority"
+            "finite-dense-structural-eligibility-plus-external-construction-choice"
+            if fhvr_construction
+            else (
+                "finite-dense-structural-eligibility-plus-fit-ordering"
+                if recipe.fit_metrics_order_candidates
+                else "finite-dense-structural-eligibility-plus-recipe-priority"
+            )
         ),
         "candidate_eligibility_basis": _CANDIDATE_ELIGIBILITY_BASIS,
         "structural_safety_is_only_candidate_veto": True,
@@ -2530,15 +3314,19 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             if name != "incumbent-noop"
         ),
         "fit_metrics_role": (
-            "ordering-among-structurally-eligible-not-threshold-gating"
-            if recipe.fit_metrics_order_candidates
-            else "diagnostic-only"
+            "diagnostic-only"
+            if fhvr_construction
+            else (
+                "ordering-among-structurally-eligible-not-threshold-gating"
+                if recipe.fit_metrics_order_candidates
+                else "diagnostic-only"
+            )
         ),
         "fit_metrics_used_for_candidate_ordering": (
-            recipe.fit_metrics_order_candidates
+            recipe.fit_metrics_order_candidates and not fhvr_construction
         ),
         "fit_metrics_used_for_pre_review_candidate_selection": (
-            recipe.fit_metrics_order_candidates
+            recipe.fit_metrics_order_candidates and not fhvr_construction
         ),
         "fit_metrics_used_for_structural_eligibility": False,
         "fit_thresholds_used_for_candidate_eligibility": False,
@@ -2571,6 +3359,9 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "full_source_producer_output_writer_candidate_competed": bool(
             writer is not None and writer.name == "full-source-producer-output-writer"
         ),
+        "full_history_fhvr_full_coverage_candidate_competed": (
+            fhvr_candidate is not None
+        ),
         "inserted_target_row_count": inserted_count,
         "semantic_boundary_bcx_row_count": boundary_count,
         "parent_exact_endpoint_row_count": endpoint_count,
@@ -2597,6 +3388,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
                     in {
                         "full-source-structural",
                         "full-source-producer-output-writer",
+                        "full-history-fhvr-full-coverage-hybrid",
                     }
                 ),
                 "cold_start_residual_writer_component_equivalent_to_structural": (
@@ -2628,10 +3420,19 @@ def compile_install_lfm2_semantic_short_conv_postfold(
 
 
 __all__ = [
+    "LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS",
+    "LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA",
+    "LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION",
+    "LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA",
     "LFM2_SEMANTIC_SHORT_CONV_REFOLD_SCHEMA",
     "LFM2_SEMANTIC_SHORT_CONV_REPLAY_EVIDENCE_SCHEMA",
+    "LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION",
+    "Lfm2SemanticShortConvConstruction",
+    "Lfm2SemanticShortConvConstructionId",
     "Lfm2SemanticShortConvEndpointMetrics",
+    "Lfm2SemanticShortConvFhvrSource",
     "Lfm2SemanticShortConvRefoldError",
     "Lfm2SemanticShortConvReplayEvidence",
     "compile_install_lfm2_semantic_short_conv_postfold",
+    "resolve_lfm2_semantic_short_conv_construction",
 ]

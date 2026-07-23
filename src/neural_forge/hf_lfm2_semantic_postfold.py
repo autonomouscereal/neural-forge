@@ -7829,6 +7829,14 @@ def _resolve_layer_stack_installer(
     return value if callable(value) else None
 
 
+def _resolve_short_conv_construction(value: Any) -> Any:
+    from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
+        resolve_lfm2_semantic_short_conv_construction,
+    )
+
+    return resolve_lfm2_semantic_short_conv_construction(value)
+
+
 def _final_w2_parameter(target_model: Any) -> Any:
     torch = _torch()
     layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
@@ -7992,6 +8000,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     global_residual_basis_rank: int | None = None,
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    short_conv_construction: Any = "full-source-structural-v1",
     interface_anchor_selection: Mapping[str, Any] | None = None,
     mapped_parent_tied_table: Any | None = None,
     anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
@@ -7999,6 +8008,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     """Require causal operator->MLP layer order before terminal publication."""
 
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    construction = _resolve_short_conv_construction(short_conv_construction)
     closure_version = str(global_residual_closure_version).strip().lower()
     closure_policy = Lfm2GlobalResidualClosurePolicy(
         backend=str(global_residual_backend).strip().lower()
@@ -8165,6 +8175,11 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         target_tokenizer=target_tokenizer,
         attention_installer=_resolve_attention_installer(attention_installer),
         body_recipe=recipe,
+        **(
+            {"short_conv_construction": construction}
+            if construction.uses_fhvr_full_coverage
+            else {}
+        ),
         global_residual_closure_version=closure_version,
         correction_scale_frontier=scale_policy.materialization_frontier,
         correction_scale=scale_policy.materialization_scale,
@@ -8224,6 +8239,18 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         verified.get("body_recipe") != recipe.as_dict()
         or verified.get("body_recipe_sha256") != recipe.recipe_sha256
         or verified.get("body_recipe_id") != recipe.recipe_id
+        or (
+            construction.uses_fhvr_full_coverage
+            and (
+                verified.get("short_conv_construction") != construction.as_dict()
+                or verified.get("short_conv_construction_id")
+                != construction.construction_id
+                or verified.get("short_conv_construction_sha256")
+                != construction.construction_sha256
+                or verified.get("all_short_conv_layers_bound_to_requested_construction")
+                is not True
+            )
+        )
         or verified.get("complete_causal_layer_stack_adjudicated") is not True
         or (
             fold_compute_device != "cpu"
@@ -12893,6 +12920,7 @@ def run_lfm2_semantic_postfold(
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    short_conv_construction: Any = "full-source-structural-v1",
     parent_final_norm_tensor_key: str = "model.embedding_norm.weight",
     parent_norm_epsilon_config_key: str = "norm_eps",
     parent_tied_tensor_key: str = "model.embed_tokens.weight",
@@ -12921,6 +12949,7 @@ def run_lfm2_semantic_postfold(
     """Execute the complete saved-child semantic postfold transaction."""
 
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    construction = _resolve_short_conv_construction(short_conv_construction)
     closure_version = str(global_residual_closure_version).strip().lower()
     closure_policy = Lfm2GlobalResidualClosurePolicy(
         backend=str(global_residual_backend).strip().lower()
@@ -13385,6 +13414,11 @@ def run_lfm2_semantic_postfold(
             global_residual_basis_rank=global_residual_basis_rank,
             authenticated_cache_session=pipeline_cache_session,
             body_recipe=recipe,
+            **(
+                {"short_conv_construction": construction}
+                if construction.uses_fhvr_full_coverage
+                else {}
+            ),
             interface_anchor_selection=interface_anchor_selection,
             **(
                 {
@@ -13403,6 +13437,14 @@ def run_lfm2_semantic_postfold(
             raise Lfm2SemanticPostfoldError(
                 "Semantic layer stack dropped or changed the requested global "
                 "residual basis rank."
+            )
+        if construction.uses_fhvr_full_coverage and (
+            layer_stack.receipt.get("short_conv_construction") != construction.as_dict()
+            or layer_stack.receipt.get("short_conv_construction_sha256")
+            != construction.construction_sha256
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Semantic layer stack dropped the requested FHVR construction."
             )
         if interface_anchor_selection is not None and (
             layer_stack.receipt.get("interface_anchor_selection_sha256")
@@ -13622,6 +13664,15 @@ def run_lfm2_semantic_postfold(
         "body_recipe": recipe.as_dict(),
         "body_recipe_sha256": recipe.recipe_sha256,
         "body_recipe_id": recipe.recipe_id,
+        **(
+            {
+                "short_conv_construction": construction.as_dict(),
+                "short_conv_construction_id": construction.construction_id,
+                "short_conv_construction_sha256": (construction.construction_sha256),
+            }
+            if construction.uses_fhvr_full_coverage
+            else {}
+        ),
         "complete_body_recipe_candidate_ids": list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
         "materialized_body_recipe_id": recipe.recipe_id,
         "fold_compute_device": fold_compute_device,

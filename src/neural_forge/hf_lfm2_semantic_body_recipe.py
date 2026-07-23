@@ -1,6 +1,6 @@
 """Authenticated, non-Cartesian body-recipe lanes for semantic LFM2 folding.
 
-The body compiler deliberately exposes nine complete recipes rather than a
+The body compiler deliberately exposes ten complete recipes rather than a
 Cartesian product of every component proposal.  A recipe is selection policy,
 not a quality gate: component candidates are eligible only by structural
 safety and effect, FIT values may order ``fit_guided``, and held-out values are
@@ -31,6 +31,7 @@ Lfm2SemanticBodyRecipeId = Literal[
     "nonlinear_qdeim_fit_corrected",
     "nonlinear_qdeim_coupled_attention_structural",
     "nonlinear_qdeim_coupled_attention_fit_corrected",
+    "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
 ]
 LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     "fit_guided",
@@ -50,16 +51,21 @@ LFM2_SEMANTIC_BODY_RECIPE_V7_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     "nonlinear_qdeim_structural",
     "nonlinear_qdeim_fit_corrected",
 )
-LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+LFM2_SEMANTIC_BODY_RECIPE_V9_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     *LFM2_SEMANTIC_BODY_RECIPE_V7_IDS,
     "nonlinear_qdeim_coupled_attention_structural",
     "nonlinear_qdeim_coupled_attention_fit_corrected",
+)
+LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+    *LFM2_SEMANTIC_BODY_RECIPE_V9_IDS,
+    "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
 )
 LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES = (
     LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V4_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V5_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V7_IDS,
+    LFM2_SEMANTIC_BODY_RECIPE_V9_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
 )
 LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS: tuple[
@@ -67,6 +73,7 @@ LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS: tuple[
 ] = (
     "nonlinear_qdeim_coupled_attention_structural",
     "nonlinear_qdeim_coupled_attention_fit_corrected",
+    "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
 )
 
 
@@ -147,6 +154,16 @@ _RECIPE_COMPONENT_LANES = MappingProxyType(
                 "short_conv": "full_source_structural_priority",
                 "mlp": "nonlinear_qdeim_fit_corrected_priority",
             }
+        ),
+        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer": (
+            MappingProxyType(
+                {
+                    "qk": "intact_gqa_group_qdeim_coupled_qkvo",
+                    "value_output": "intact_gqa_group_qdeim_coupled_qkvo",
+                    "short_conv": "alpha_one_residual_writer_priority",
+                    "mlp": "nonlinear_qdeim_structural_priority",
+                }
+            )
         ),
     }
 )
@@ -320,7 +337,7 @@ def is_supported_lfm2_semantic_body_recipe_inventory(
     *,
     materialized_recipe_id: object | None = None,
 ) -> bool:
-    """Accept every sealed historical inventory while writers emit nine."""
+    """Accept every sealed historical inventory while writers emit ten."""
 
     if (
         not isinstance(candidate_ids, Sequence)
@@ -402,6 +419,7 @@ __all__ = [
     "LFM2_SEMANTIC_BODY_RECIPE_V4_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_V5_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_V7_IDS",
+    "LFM2_SEMANTIC_BODY_RECIPE_V9_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES",
     "LFM2_SEMANTIC_BODY_RECIPE_SCHEMA",
     "Lfm2SemanticBodyRecipe",
