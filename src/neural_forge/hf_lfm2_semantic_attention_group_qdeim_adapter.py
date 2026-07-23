@@ -8,14 +8,17 @@ Enhanced caches can additionally contain
 ``attention.probabilities`` plus ``attention.value_history`` from which that
 context can be reconstructed.
 
-Captured ``attention.context`` remains the empirical FIT context.  When every
-FIT phase also exposes the causal circuit bundle, this adapter analytically
-builds query-local and sampled-suffix historical K/V tangent snapshots in all
-authenticated child decoder directions.  The full bank is reduced to a
-covariance-equivalent context block and passed through the standalone
-compiler's authenticated ``functional_snapshot_blocks`` seam.  Older history
-is never perturbed without its missing pre-normalization K anchor, and that
-partial scope is reported explicitly.  If captured context itself is absent,
+Captured ``attention.context`` remains the empirical FIT context and the
+standalone reconstruction diagnostic.  For intact-group selection it is now
+mapped group-by-group through the real source O writer and child residual
+chart, covariance-factored, and energy-balanced against the aggregate causal
+tangent family.  When every FIT phase also exposes the causal circuit bundle,
+this adapter analytically builds query-local and sampled-suffix historical K/V
+tangent snapshots in all authenticated child decoder directions.  The full
+bank is reduced to covariance-equivalent joint-QKV and older-prefix-KV blocks
+and passed through the standalone compiler's authenticated
+``functional_snapshot_blocks`` seam.  Older history is never perturbed without
+its pre-normalization K anchor.  If captured context itself is absent,
 compilation still stops with a typed evidence-deficit result.
 
 The normalized-input decoder and residual chart are accepted only with the
@@ -34,6 +37,7 @@ from typing import Any
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_lfm2_attention_group_qdeim import (
+    LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC,
     Lfm2AttentionGroupQdeimSnapshotBlock,
     Lfm2AttentionGroupQdeimInsufficientRankError,
     Lfm2CompiledAttentionGroupQdeim,
@@ -888,8 +892,7 @@ def _context_from_probabilities(
             "normalization": float(row_sum_error.mean().item()),
             "cached_probability_row_sum_max_absolute_deviation_before_"
             "normalization": float(row_sum_error.max().item()),
-            "cached_probability_row_sum_diagnostics_have_no_acceptance_"
-            "authority": True,
+            "cached_probability_row_sum_diagnostics_have_no_acceptance_authority": True,
         },
     )
 
@@ -1824,6 +1827,9 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
             expected_functional_snapshot_evidence_sha256=(
                 functional_snapshot_evidence_sha256
             ),
+            functional_pod_group_metric=(
+                LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC
+            ),
             pod_rank_relative_tolerance=pod_rank_relative_tolerance,
             compute_device=fold_compute_device,
         )
@@ -1932,6 +1938,24 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
         ),
         "functional_snapshot_block_count": len(functional_snapshot_blocks),
         "functional_snapshot_evidence_sha256": (functional_snapshot_evidence_sha256),
+        "functional_pod_group_metric": (
+            compiled.report["evidence"]["functional_pod_group_metric"]
+        ),
+        "residual_output_balanced_functional_pod": _deep_thaw(
+            compiled.report["evidence"]["functional_pod_receipt"]
+        ),
+        "residual_output_balanced_functional_pod_sha256": (
+            compiled.report["evidence"]["functional_pod_receipt_sha256"]
+        ),
+        "empirical_post_softmax_context_mapped_through_source_o_and_child_"
+        "residual_chart_before_group_selection": True,
+        "raw_empirical_context_used_directly_for_group_selection": False,
+        "raw_empirical_context_retained_for_reconstruction_diagnostics": True,
+        "empirical_to_aggregate_causal_tangent_energy_balance_applied": (
+            compiled.report["evidence"]["functional_pod_receipt"][
+                "empirical_to_aggregate_tangent_energy_balance_applied"
+            ]
+        ),
         "query_local_and_sampled_suffix_history_kv_tangents_separate": (
             tangent_bank is not None
         ),

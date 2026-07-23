@@ -531,6 +531,27 @@ def test_enhanced_fit_cache_invokes_authenticated_causal_tangents_in_real_adapte
     assert report["analytic_attention_tangent_evidence_complete"] is True
     assert report["attention_tangent_bank_materialized"] is True
     assert report["functional_snapshot_block_count"] == 2
+    assert report["functional_pod_group_metric"] == (
+        "residual-output-balanced-empirical-and-causal-tangent"
+    )
+    assert report[
+        "empirical_post_softmax_context_mapped_through_source_o_and_child_"
+        "residual_chart_before_group_selection"
+    ]
+    assert report["raw_empirical_context_used_directly_for_group_selection"] is False
+    residual_pod = report["residual_output_balanced_functional_pod"]
+    assert residual_pod["empirical_post_softmax_context_mapped_through_source_o"]
+    assert residual_pod[
+        "empirical_post_softmax_context_mapped_through_residual_output_chart"
+    ]
+    assert residual_pod["empirical_covariance_factor"]["covariance_equality_proved"]
+    assert residual_pod["causal_tangent_balanced_covariance_factor"][
+        "covariance_equality_proved"
+    ]
+    assert (
+        report["residual_output_balanced_functional_pod_sha256"]
+        == (result.compiled.report["evidence"]["functional_pod_receipt_sha256"])
+    )
     assert report["missing_analytic_attention_tangent_tensor_names"] == []
     assert report["query_local_and_sampled_suffix_history_kv_tangents_separate"]
     assert report["cross_phase_older_key_anchor_stitch_implemented"] is True
@@ -826,12 +847,14 @@ def test_cached_probability_row_sum_drift_is_normalized_not_hard_gated() -> None
         "phase_materializations"
     ][0]
     assert phase["cached_probability_row_normalization_applied"] is True
-    assert phase[
-        "cached_probability_row_sum_max_absolute_deviation_before_normalization"
-    ] > 0.009
-    assert phase[
-        "cached_probability_row_sum_diagnostics_have_no_acceptance_authority"
-    ] is True
+    assert (
+        phase["cached_probability_row_sum_max_absolute_deviation_before_normalization"]
+        > 0.009
+    )
+    assert (
+        phase["cached_probability_row_sum_diagnostics_have_no_acceptance_authority"]
+        is True
+    )
 
 
 def test_missing_tangent_precedes_context_rank_materialization() -> None:

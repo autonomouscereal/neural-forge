@@ -6,6 +6,7 @@ torch = pytest.importorskip("torch")
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_attention_group_qdeim import (  # noqa: E402
+    LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC,
     Lfm2AttentionGroupQdeimError,
     Lfm2AttentionGroupQdeimInsufficientRankError,
     Lfm2AttentionGroupQdeimSnapshotBlock,
@@ -424,6 +425,90 @@ def test_authentication_fails_closed_and_snapshot_blocks_are_separate() -> None:
     assert evidence["structural_tangent_snapshot_block_count"] == 1
     assert evidence["heldout_rows_used"] is False
     assert evidence["snapshot_blocks"][0]["generator_receipt_sha256"] == "a" * 64
+
+
+def test_residual_output_metric_covariance_factors_and_energy_balances_before_pod() -> (
+    None
+):
+    arguments = _small_case()
+    contexts = arguments["parent_post_softmax_context_rows"]
+    blocks = (
+        Lfm2AttentionGroupQdeimSnapshotBlock(
+            block_id="joint-sampled-token-qkv",
+            snapshot_kind="analytic_child_lifted_parent_attention_tangent",
+            parent_post_softmax_context_rows=contexts.mul(0.25),
+            row_sample_weights=(1.0, 1.0, 2.0, 2.0),
+            generator_receipt_sha256="a" * 64,
+        ),
+        Lfm2AttentionGroupQdeimSnapshotBlock(
+            block_id="older-prefix-kv",
+            snapshot_kind="analytic_child_lifted_parent_attention_tangent",
+            parent_post_softmax_context_rows=torch.roll(contexts, shifts=1, dims=1).mul(
+                0.125
+            ),
+            row_sample_weights=(2.0, 1.0, 1.0, 2.0),
+            generator_receipt_sha256="b" * 64,
+        ),
+    )
+    result = compile_lfm2_attention_group_qdeim(
+        **arguments,
+        functional_snapshot_blocks=blocks,
+        expected_functional_snapshot_evidence_sha256=(
+            lfm2_attention_group_qdeim_snapshot_evidence_sha256(blocks)
+        ),
+        functional_pod_group_metric=(
+            LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC
+        ),
+    )
+
+    evidence = result.report["evidence"]
+    receipt = evidence["functional_pod_receipt"]
+    empirical = receipt["empirical_covariance_factor"]
+    tangent = receipt["causal_tangent_balanced_covariance_factor"]
+    assert evidence["raw_fit_context_used_directly_for_group_selection"] is False
+    assert receipt["empirical_post_softmax_context_mapped_through_source_o"]
+    assert receipt[
+        "empirical_post_softmax_context_mapped_through_residual_output_chart"
+    ]
+    assert receipt["empirical_to_aggregate_tangent_energy_balance_applied"]
+    assert empirical["covariance_equality_proved"]
+    assert tangent["covariance_equality_proved"]
+    assert tangent["covariance_trace"] == pytest.approx(
+        empirical["covariance_trace"],
+        rel=2e-12,
+        abs=2e-12,
+    )
+    assert receipt["covariance_factoring_changes_group_pod_gram_matrix"] is False
+    assert (
+        result.report["authentication"]["functional_pod_receipt_sha256"]
+        == (receipt["result_sha256"])
+    )
+
+
+def test_residual_output_metric_requires_both_authenticated_causal_families() -> None:
+    arguments = _small_case()
+    contexts = arguments["parent_post_softmax_context_rows"]
+    block = Lfm2AttentionGroupQdeimSnapshotBlock(
+        block_id="joint-sampled-token-qkv",
+        snapshot_kind="analytic_child_lifted_parent_attention_tangent",
+        parent_post_softmax_context_rows=contexts,
+        row_sample_weights=(1.0, 1.0, 1.0, 1.0),
+        generator_receipt_sha256="a" * 64,
+    )
+    with pytest.raises(
+        Lfm2AttentionGroupQdeimError,
+        match="exactly the separately authenticated",
+    ):
+        compile_lfm2_attention_group_qdeim(
+            **arguments,
+            functional_snapshot_blocks=(block,),
+            expected_functional_snapshot_evidence_sha256=(
+                lfm2_attention_group_qdeim_snapshot_evidence_sha256((block,))
+            ),
+            functional_pod_group_metric=(
+                LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC
+            ),
+        )
 
 
 def test_real_lfm2_16_8_to_10_5_head_shapes_are_derived_not_hardcoded() -> None:
