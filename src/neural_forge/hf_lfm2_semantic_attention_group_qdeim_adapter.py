@@ -8,11 +8,15 @@ Enhanced caches can additionally contain
 ``attention.probabilities`` plus ``attention.value_history`` from which that
 context can be reconstructed.
 
-Only the captured ``attention.context`` route is admitted as functional FIT
-evidence by this adapter.  If any required phase lacks it, compilation stops
-with a typed evidence-deficit result.  A separately labelled nearest
-cache-derived structural context is materialized when possible, but is never
-silently substituted into the compiler.
+Captured ``attention.context`` remains the empirical FIT context.  When every
+FIT phase also exposes the causal circuit bundle, this adapter analytically
+builds query-local and sampled-suffix historical K/V tangent snapshots in all
+authenticated child decoder directions.  The full bank is reduced to a
+covariance-equivalent context block and passed through the standalone
+compiler's authenticated ``functional_snapshot_blocks`` seam.  Older history
+is never perturbed without its missing pre-normalization K anchor, and that
+partial scope is reported explicitly.  If captured context itself is absent,
+compilation still stops with a typed evidence-deficit result.
 
 The normalized-input decoder and residual chart are accepted only with the
 existing layer-stack receipts that created them.  This module does not refit
@@ -30,12 +34,20 @@ from typing import Any
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_lfm2_attention_group_qdeim import (
+    Lfm2AttentionGroupQdeimSnapshotBlock,
     Lfm2AttentionGroupQdeimInsufficientRankError,
     Lfm2CompiledAttentionGroupQdeim,
     compile_lfm2_attention_group_qdeim,
     lfm2_attention_group_qdeim_context_evidence_sha256,
+    lfm2_attention_group_qdeim_snapshot_evidence_sha256,
     lfm2_attention_group_qdeim_source_state_sha256,
     lfm2_attention_group_qdeim_target_template_sha256,
+)
+from neural_forge.hf_lfm2_attention_tangent_bank import (
+    Lfm2AttentionTangentBankError,
+    Lfm2AttentionTangentFitCase,
+    build_lfm2_attention_tangent_bank,
+    lfm2_attention_tangent_case_evidence_sha256,
 )
 from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
     Lfm2DenseQkvoSourceInventory,
@@ -62,6 +74,20 @@ LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_EVIDENCE_DEFICIT_SCHEMA = (
 
 _RESIDUAL_CHART_SCHEMA = "neural-forge-lfm2-layer-stack-residual-chart-v1"
 _NORMALIZED_DECODER_SCHEMA = "neural-forge-lfm2-normalized-operator-input-decoder-v1"
+_TANGENT_TENSOR_SUFFIXES = (
+    "q_linear",
+    "k_linear",
+    "q_normalized_pre_rope",
+    "k_normalized_pre_rope",
+    "rope_cos",
+    "rope_sin",
+    "q",
+    "key_history",
+    "value_history",
+    "qk_scores",
+    "probabilities",
+    "additive_mask",
+)
 _ZERO_OPERATIONS = MappingProxyType(
     {
         "parent_model_objects_constructed": 0,
@@ -452,6 +478,42 @@ def _context_plans(
     return tuple(plans)
 
 
+def _tangent_tensor_names(*, phase: str, layer_index: int) -> tuple[str, ...]:
+    prefix = f"{phase}.layer.{layer_index:03d}.attention."
+    return tuple(prefix + suffix for suffix in _TANGENT_TENSOR_SUFFIXES)
+
+
+def _missing_tangent_tensor_names(
+    references: Sequence[Any],
+    *,
+    plans: Sequence[_BatchContextPlan],
+    layer_index: int,
+) -> tuple[str, ...]:
+    reference_by_index = {int(reference.index): reference for reference in references}
+    missing = []
+    for plan in plans:
+        inventory = set(reference_by_index[plan.batch_index].ordered_tensor_names)
+        missing.extend(
+            name
+            for name in ("input.input_ids", "input.forced_decode_ids")
+            if name not in inventory
+        )
+        for phase in plan.phases:
+            missing.extend(
+                name
+                for name in _tangent_tensor_names(
+                    phase=phase,
+                    layer_index=layer_index,
+                )
+                if name not in inventory
+            )
+            if phase.startswith("decode."):
+                forced_name = f"{phase}.forced_token_ids"
+                if forced_name not in inventory:
+                    missing.append(forced_name)
+    return tuple(sorted(set(missing)))
+
+
 def inspect_lfm2_semantic_attention_group_qdeim_cache(
     *,
     session: Any,
@@ -497,6 +559,47 @@ def inspect_lfm2_semantic_attention_group_qdeim_cache(
         for route in plan.routes
         if route.nearest_method is None
     ]
+    missing_tangent = _missing_tangent_tensor_names(
+        references,
+        plans=plans,
+        layer_index=layer_index,
+    )
+    reference_by_index = {int(value.index): value for value in references}
+    required_stitch_identity_names = sorted(
+        {
+            name
+            for plan in plans
+            for name in (
+                "input.input_ids",
+                "input.forced_decode_ids",
+                *(
+                    f"{phase}.forced_token_ids"
+                    for phase in plan.phases
+                    if phase.startswith("decode.")
+                ),
+            )
+        }
+    )
+    missing_stitch_identity_names = sorted(
+        {
+            name
+            for plan in plans
+            for name in (
+                "input.input_ids",
+                "input.forced_decode_ids",
+                *(
+                    f"{phase}.forced_token_ids"
+                    for phase in plan.phases
+                    if phase.startswith("decode.")
+                ),
+            )
+            if name
+            not in set(reference_by_index[plan.batch_index].ordered_tensor_names)
+        }
+    )
+    cross_phase_key_stitch_required = any(
+        route.phase != "prefill" for plan in plans for route in plan.routes
+    )
     body = {
         "schema": LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_CAPABILITY_SCHEMA,
         "cache_key": manifest["cache_key"],
@@ -522,6 +625,35 @@ def inspect_lfm2_semantic_attention_group_qdeim_cache(
         "missing_true_post_softmax_context_tensor_names": missing_true,
         "nearest_structural_context_complete": not missing_nearest,
         "missing_nearest_structural_context_routes": missing_nearest,
+        "analytic_attention_tangent_phase_bundle_complete": not missing_tangent,
+        "analytic_attention_tangent_evidence_complete": not missing_tangent,
+        "missing_analytic_attention_tangent_tensor_names": list(missing_tangent),
+        "cross_phase_stitch_required_identity_tensor_names": (
+            required_stitch_identity_names
+        ),
+        "missing_cross_phase_stitch_identity_tensor_names": (
+            missing_stitch_identity_names
+        ),
+        "cross_phase_stitch_identity_evidence_complete": (
+            not missing_stitch_identity_names
+        ),
+        "cross_phase_position_identity_policy": (
+            "use authenticated input.position_ids when present; otherwise use "
+            "the collector's canonical zero-based contiguous prompt positions "
+            "and ordered decode increments"
+        ),
+        "input_position_ids_optional_and_never_invented_when_present": True,
+        "analytic_attention_tangent_scope": (
+            "joint-sampled-token-qkv-plus-nonoverlapping-cross-phase-stitched-"
+            "older-prefix-key-value"
+        ),
+        "cross_phase_older_key_anchor_stitch_required": (
+            cross_phase_key_stitch_required
+        ),
+        "cross_phase_older_key_anchor_stitch_feasible_without_recapture": True,
+        "cross_phase_older_key_anchor_stitch_implemented": not missing_tangent,
+        "older_prefix_key_without_current_phase_pre_norm_anchor_is_not_"
+        "synthesized": True,
         "captured_true_context_semantics": (
             "actual-pre-o-input-after-softmax-value-aggregation"
         ),
@@ -700,7 +832,7 @@ def _context_from_probabilities(
     source_query_heads: int,
     source_key_value_heads: int,
     head_dim: int,
-) -> Any:
+) -> tuple[Any, Mapping[str, Any]]:
     torch = _torch()
     probability = _finite_tensor(
         probabilities,
@@ -718,32 +850,47 @@ def _context_from_probabilities(
         )
     q_per_kv = source_query_heads // source_key_value_heads
     batch, query_heads, query_rows, key_rows = map(int, probability.shape)
+    row_sums = probability.sum(dim=-1, keepdim=True)
     if (
         query_heads != source_query_heads
         or tuple(values.shape) != (batch, source_key_value_heads, key_rows, head_dim)
         or bool((probability < 0.0).any().item())
-        or not bool(
-            torch.allclose(
-                probability.sum(dim=-1),
-                torch.ones(
-                    (batch, source_query_heads, query_rows),
-                    dtype=torch.float64,
-                ),
-                rtol=2e-3,
-                atol=2e-4,
-            )
-        )
+        or not bool(torch.isfinite(row_sums).all().item())
+        or bool((row_sums <= 0.0).any().item())
     ):
         raise Lfm2SemanticAttentionGroupQdeimAdapterError(
             f"{label} probability/value history is not one valid cached GQA route."
         )
+    # Cached probabilities are frequently stored in a lower precision than the
+    # sealed score/mask route.  Their row sums are therefore useful diagnostics,
+    # not semantic acceptance thresholds.  Normalize every structurally valid
+    # row deterministically before reconstructing the cached context.
+    row_sum_error = (row_sums - 1.0).abs()
+    probability = probability / row_sums
     repeated_values = values.repeat_interleave(q_per_kv, dim=1)
     context = probability @ repeated_values
-    return _normalized_context(
-        context,
-        label=f"{label} reconstructed context",
-        source_query_heads=source_query_heads,
-        head_dim=head_dim,
+    return (
+        _normalized_context(
+            context,
+            label=f"{label} reconstructed context",
+            source_query_heads=source_query_heads,
+            head_dim=head_dim,
+        ),
+        {
+            "cached_probability_row_normalization_applied": True,
+            "cached_probability_row_sum_min_before_normalization": float(
+                row_sums.min().item()
+            ),
+            "cached_probability_row_sum_max_before_normalization": float(
+                row_sums.max().item()
+            ),
+            "cached_probability_row_sum_mean_absolute_deviation_before_"
+            "normalization": float(row_sum_error.mean().item()),
+            "cached_probability_row_sum_max_absolute_deviation_before_"
+            "normalization": float(row_sum_error.max().item()),
+            "cached_probability_row_sum_diagnostics_have_no_acceptance_"
+            "authority": True,
+        },
     )
 
 
@@ -826,9 +973,10 @@ def _load_context_rows(
                     if route == "captured_true"
                     else phase_route.nearest_method
                 )
+                probability_diagnostics: Mapping[str, Any] = {}
                 if method == "probabilities_matmul_repeated_value_history":
                     probability_name, value_name = phase_route.nearest_tensor_names
-                    rows = _context_from_probabilities(
+                    rows, probability_diagnostics = _context_from_probabilities(
                         tensors[probability_name],
                         tensors[value_name],
                         label=f"batch {plan.batch_index} phase {phase_route.phase}",
@@ -880,6 +1028,7 @@ def _load_context_rows(
                             rows,
                             label="materialized context rows",
                         ),
+                        **probability_diagnostics,
                     }
                 )
             concatenated = torch.cat(batch_rows, dim=0).contiguous()
@@ -930,6 +1079,345 @@ def _load_context_rows(
     )
 
 
+def _load_attention_tangent_cases(
+    *,
+    session: Any,
+    plans: Sequence[_BatchContextPlan],
+    batch_weights: Mapping[int, float],
+    layer_index: int,
+) -> tuple[
+    tuple[Lfm2AttentionTangentFitCase, ...],
+    str,
+    Mapping[str, Any],
+]:
+    """Load only authenticated FIT causal tensors and seal typed phase cases."""
+
+    cases = []
+    payload_receipts = []
+    phase_receipts = []
+    reference_by_index = {
+        int(reference.index): reference for reference in session.batch_references
+    }
+    torch = _torch()
+    for plan in plans:
+        inventory = set(reference_by_index[plan.batch_index].ordered_tensor_names)
+        phase_names = {
+            phase: _tangent_tensor_names(phase=phase, layer_index=layer_index)
+            for phase in plan.phases
+        }
+        identity_names = {"input.input_ids", "input.forced_decode_ids"}
+        if "input.position_ids" in inventory:
+            identity_names.add("input.position_ids")
+        identity_names.update(
+            f"{phase}.forced_token_ids"
+            for phase in plan.phases
+            if phase.startswith("decode.")
+        )
+        names = tuple(
+            sorted(
+                {name for values in phase_names.values() for name in values}.union(
+                    identity_names
+                )
+            )
+        )
+        payload = session.load_selected_tensors(plan.batch_index, names)
+        try:
+            payload_receipt = _payload_receipt(payload, expected_names=names)
+            if (
+                payload_receipt["batch_index"] != plan.batch_index
+                or payload_receipt["input_sha256"] != plan.input_sha256
+                or payload_receipt["session_sha256"] != session.evidence_sha256
+            ):
+                raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                    "Selected attention tangent payload changed cache/session lineage."
+                )
+            tensors = payload.tensors
+            phase_weight = batch_weights[plan.batch_index] / len(plan.phases)
+            input_ids = tensors["input.input_ids"]
+            forced_decode_ids = tensors["input.forced_decode_ids"]
+            if (
+                not isinstance(input_ids, torch.Tensor)
+                or not isinstance(forced_decode_ids, torch.Tensor)
+                or input_ids.ndim != 2
+                or forced_decode_ids.ndim != 2
+                or input_ids.shape[0] != forced_decode_ids.shape[0]
+                or input_ids.dtype.is_floating_point
+                or forced_decode_ids.dtype.is_floating_point
+            ):
+                raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                    "Attention tangent phase stitch lacks integer token identity."
+                )
+            prompt_positions = tensors.get("input.position_ids")
+            if prompt_positions is None:
+                prompt_positions = (
+                    torch.arange(
+                        int(input_ids.shape[1]),
+                        dtype=torch.long,
+                    )
+                    .reshape(1, -1)
+                    .expand(int(input_ids.shape[0]), -1)
+                )
+            elif (
+                not isinstance(prompt_positions, torch.Tensor)
+                or prompt_positions.ndim != 2
+                or tuple(prompt_positions.shape) != tuple(input_ids.shape)
+                or prompt_positions.dtype.is_floating_point
+            ):
+                raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                    "Attention tangent phase stitch has invalid position identity."
+                )
+            anchor_k_linear = []
+            anchor_k_pre = []
+            anchor_cos = []
+            anchor_sin = []
+            anchor_token_ids = []
+            anchor_position_ids = []
+            anchor_source_sha256 = []
+            for phase_ordinal, phase in enumerate(plan.phases):
+                selected = phase_names[phase]
+                suffix_values = {
+                    suffix: tensors[
+                        f"{phase}.layer.{layer_index:03d}.attention.{suffix}"
+                    ]
+                    for suffix in _TANGENT_TENSOR_SUFFIXES
+                }
+                suffix_count = int(suffix_values["k_linear"].shape[2])
+                if suffix_count <= 0:
+                    raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                        "Attention tangent phase has no K anchor rows."
+                    )
+                if phase == "prefill":
+                    if phase_ordinal != 0 or suffix_count > int(input_ids.shape[1]):
+                        raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                            "Prefill K anchors do not align to prompt token identity."
+                        )
+                    phase_token_ids = input_ids[:, -suffix_count:]
+                    phase_position_ids = prompt_positions[:, -suffix_count:]
+                    forced_identity_names: tuple[str, ...] = ()
+                else:
+                    expected_phase = f"decode.{phase_ordinal - 1:03d}"
+                    decode_index = phase_ordinal - 1
+                    forced_name = f"{phase}.forced_token_ids"
+                    if (
+                        phase != expected_phase
+                        or suffix_count != 1
+                        or decode_index >= int(forced_decode_ids.shape[1])
+                        or not torch.equal(
+                            tensors[forced_name],
+                            forced_decode_ids[:, decode_index : decode_index + 1],
+                        )
+                    ):
+                        raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                            "Decode K anchor phase/token identity is not contiguous."
+                        )
+                    phase_token_ids = forced_decode_ids[
+                        :,
+                        decode_index : decode_index + 1,
+                    ]
+                    phase_position_ids = prompt_positions[:, -1:] + decode_index + 1
+                    forced_identity_names = (forced_name,)
+                if (
+                    int(suffix_values["rope_cos"].shape[1]) < suffix_count
+                    or int(suffix_values["rope_sin"].shape[1]) < suffix_count
+                    or int(suffix_values["k_normalized_pre_rope"].shape[2])
+                    < suffix_count
+                ):
+                    raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                        "K anchor phase omits aligned pre-RoPE/RoPE rows."
+                    )
+                phase_k_linear = suffix_values["k_linear"][:, :, -suffix_count:, :]
+                phase_k_pre = suffix_values["k_normalized_pre_rope"][
+                    :,
+                    :,
+                    -suffix_count:,
+                    :,
+                ]
+                phase_cos = suffix_values["rope_cos"][:, -suffix_count:, :]
+                phase_sin = suffix_values["rope_sin"][:, -suffix_count:, :]
+                anchor_k_linear.append(phase_k_linear)
+                anchor_k_pre.append(phase_k_pre)
+                anchor_cos.append(phase_cos)
+                anchor_sin.append(phase_sin)
+                anchor_token_ids.append(phase_token_ids)
+                anchor_position_ids.append(phase_position_ids)
+                anchor_body = {
+                    "phase": phase,
+                    "k_linear_sha256": _tensor_sha256(
+                        phase_k_linear,
+                        label=f"{phase} stitched K linear",
+                    ),
+                    "k_pre_rope_sha256": _tensor_sha256(
+                        phase_k_pre,
+                        label=f"{phase} stitched K pre-RoPE",
+                    ),
+                    "rope_cos_sha256": _tensor_sha256(
+                        phase_cos,
+                        label=f"{phase} stitched RoPE cosine",
+                    ),
+                    "rope_sin_sha256": _tensor_sha256(
+                        phase_sin,
+                        label=f"{phase} stitched RoPE sine",
+                    ),
+                    "token_ids_sha256": _tensor_sha256(
+                        phase_token_ids,
+                        label=f"{phase} stitched token IDs",
+                    ),
+                    "position_ids_sha256": _tensor_sha256(
+                        phase_position_ids,
+                        label=f"{phase} stitched position IDs",
+                    ),
+                }
+                anchor_source_sha256.append(canonical_sha256(anchor_body))
+                complete_k_linear = torch.cat(anchor_k_linear, dim=2)
+                complete_k_pre = torch.cat(anchor_k_pre, dim=2)
+                complete_cos = torch.cat(anchor_cos, dim=1)
+                complete_sin = torch.cat(anchor_sin, dim=1)
+                complete_tokens = torch.cat(anchor_token_ids, dim=1)
+                complete_positions = torch.cat(anchor_position_ids, dim=1)
+                history_count = int(suffix_values["key_history"].shape[2])
+                if history_count > int(complete_k_linear.shape[2]):
+                    raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                        "Cached K history exceeds authenticated phase anchors."
+                    )
+                history_k_linear = complete_k_linear[:, :, -history_count:, :]
+                history_k_pre = complete_k_pre[:, :, -history_count:, :]
+                history_cos = complete_cos[:, -history_count:, :]
+                history_sin = complete_sin[:, -history_count:, :]
+                history_tokens = complete_tokens[:, -history_count:]
+                history_positions = complete_positions[:, -history_count:]
+                lineage_names = tuple(
+                    sorted(
+                        set(selected)
+                        .union(
+                            {
+                                "input.input_ids",
+                                "input.forced_decode_ids",
+                            }
+                        )
+                        .union(forced_identity_names)
+                        .union(
+                            {"input.position_ids"}
+                            if "input.position_ids" in tensors
+                            else set()
+                        )
+                    )
+                )
+                phase_body = {
+                    "schema": (
+                        "neural-forge-lfm2-semantic-attention-tangent-phase-source-v1"
+                    ),
+                    "cache_selective_session_sha256": payload_receipt["session_sha256"],
+                    "selection_sha256": payload_receipt["selection_sha256"],
+                    "batch_index": plan.batch_index,
+                    "batch_record_sha256": plan.record_sha256,
+                    "phase": phase,
+                    "phase_weight": phase_weight,
+                    "source_tensor_names": list(lineage_names),
+                    "source_tensor_sha256": {
+                        name: _tensor_sha256(
+                            tensors[name],
+                            label=f"attention tangent source {name}",
+                        )
+                        for name in lineage_names
+                    },
+                    "cross_phase_k_anchor_stitch": {
+                        "implemented": True,
+                        "recapture_used": False,
+                        "ordered_contributing_anchor_source_sha256": list(
+                            anchor_source_sha256
+                        ),
+                        "history_count": history_count,
+                        "history_k_linear_sha256": _tensor_sha256(
+                            history_k_linear,
+                            label=f"{phase} history K linear",
+                        ),
+                        "history_k_pre_rope_sha256": _tensor_sha256(
+                            history_k_pre,
+                            label=f"{phase} history K pre-RoPE",
+                        ),
+                        "history_rope_cos_sha256": _tensor_sha256(
+                            history_cos,
+                            label=f"{phase} history RoPE cosine",
+                        ),
+                        "history_rope_sin_sha256": _tensor_sha256(
+                            history_sin,
+                            label=f"{phase} history RoPE sine",
+                        ),
+                        "history_token_ids_sha256": _tensor_sha256(
+                            history_tokens,
+                            label=f"{phase} history token identity",
+                        ),
+                        "history_position_ids_sha256": _tensor_sha256(
+                            history_positions,
+                            label=f"{phase} history position identity",
+                        ),
+                        "phase_order_and_forced_token_identity_verified": True,
+                    },
+                    "heldout_payload": False,
+                }
+                phase_receipt = {
+                    **phase_body,
+                    "result_sha256": canonical_sha256(phase_body),
+                }
+                phase_receipts.append(phase_receipt)
+                cases.append(
+                    Lfm2AttentionTangentFitCase(
+                        case_id=f"batch-{plan.batch_index}:{phase}",
+                        phase_weight=phase_weight,
+                        query_linear_suffix=suffix_values["q_linear"],
+                        key_linear_suffix=suffix_values["k_linear"],
+                        query_normalized_pre_rope=suffix_values[
+                            "q_normalized_pre_rope"
+                        ],
+                        key_normalized_pre_rope=suffix_values["k_normalized_pre_rope"],
+                        rope_cos=suffix_values["rope_cos"],
+                        rope_sin=suffix_values["rope_sin"],
+                        query_rotary_suffix=suffix_values["q"],
+                        key_linear_history=history_k_linear,
+                        key_normalized_pre_rope_history=history_k_pre,
+                        key_rope_cos_history=history_cos,
+                        key_rope_sin_history=history_sin,
+                        key_history=suffix_values["key_history"],
+                        value_history=suffix_values["value_history"],
+                        qk_scores=suffix_values["qk_scores"],
+                        probabilities=suffix_values["probabilities"],
+                        additive_mask=suffix_values["additive_mask"],
+                        source_receipt_sha256=phase_receipt["result_sha256"],
+                    )
+                )
+            payload_receipts.append(payload_receipt)
+        finally:
+            session.release_selected_tensors(payload)
+    case_digests = [lfm2_attention_tangent_case_evidence_sha256(case) for case in cases]
+    evidence_sha256 = canonical_sha256(
+        {
+            "schema": "neural-forge-lfm2-attention-tangent-fit-bank-v1",
+            "case_sha256": case_digests,
+        }
+    )
+    body = {
+        "schema": "neural-forge-lfm2-semantic-attention-tangent-fit-loader-v1",
+        "layer_index": layer_index,
+        "fit_batch_indices": [plan.batch_index for plan in plans],
+        "fit_case_evidence_sha256": evidence_sha256,
+        "case_evidence_sha256": case_digests,
+        "phase_sources": phase_receipts,
+        "cross_phase_k_anchor_stitch_implemented": True,
+        "cross_phase_k_anchor_stitch_uses_token_position_phase_lineage": True,
+        "cross_phase_k_anchor_stitch_recaptures": 0,
+        "selected_payloads": payload_receipts,
+        "heldout_tensor_payload_loads": 0,
+        "parent_forward_calls": 0,
+        "trace_recaptures": 0,
+        "training_steps": 0,
+    }
+    return (
+        tuple(cases),
+        evidence_sha256,
+        MappingProxyType({**body, "result_sha256": canonical_sha256(body)}),
+    )
+
+
 def _deficit(
     *,
     layer_index: int,
@@ -958,6 +1446,7 @@ def _deficit(
         "deficit_kind": deficit_kind,
         "layer_index": layer_index,
         "cache_capability_sha256": capability["result_sha256"],
+        "cache_capability_receipt": _deep_thaw(capability),
         "source_inventory_sha256": source_inventory.inventory_sha256,
         "residual_chart_receipt_sha256": chart_receipt["result_sha256"],
         "normalized_input_decoder_receipt_sha256": decoder_receipt["decoder_sha256"],
@@ -1019,6 +1508,10 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
     source_value_weight: Any,
     source_out_weight: Any,
     source_inventory: Lfm2DenseQkvoSourceInventory,
+    source_query_norm_weight: Any | None = None,
+    source_key_norm_weight: Any | None = None,
+    expected_source_query_norm_weight_sha256: str | None = None,
+    expected_source_key_norm_weight_sha256: str | None = None,
     target_query_weight_template: Any,
     target_key_weight_template: Any,
     target_value_weight_template: Any,
@@ -1118,6 +1611,156 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
         head_dim=head_dim,
         route="captured_true",
     )
+    if capability["analytic_attention_tangent_phase_bundle_complete"] is not True:
+        session.verify()
+        if session.evidence_sha256 != session_receipt["session_sha256"]:
+            raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                "Cache session lineage changed while materializing the tangent "
+                "capability deficit."
+            )
+        return _deficit(
+            layer_index=layer_index,
+            deficit_kind=(
+                "missing-authenticated-causal-attention-tangent-or-cross-phase-"
+                "identity-evidence"
+            ),
+            capability=capability,
+            source_inventory=inventory,
+            chart_receipt=chart_receipt,
+            decoder_receipt=decoder_receipt,
+            structural_context_rows=None,
+            structural_row_weights=(),
+            structural_context_receipt=None,
+            true_context_receipt=context_receipt,
+        )
+    functional_snapshot_blocks: tuple[Lfm2AttentionGroupQdeimSnapshotBlock, ...]
+    tangent_bank = None
+    tangent_loader_receipt = None
+    if capability["analytic_attention_tangent_phase_bundle_complete"] is True:
+        if (
+            source_query_norm_weight is None
+            or source_key_norm_weight is None
+            or expected_source_query_norm_weight_sha256 is None
+            or expected_source_key_norm_weight_sha256 is None
+        ):
+            raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                "Complete cached attention tangent evidence requires authenticated "
+                "direct-parent Q/K norm tensors."
+            )
+        query_norm_sha = _tensor_sha256(
+            source_query_norm_weight,
+            label="source query norm weight",
+        )
+        key_norm_sha = _tensor_sha256(
+            source_key_norm_weight,
+            label="source key norm weight",
+        )
+        if query_norm_sha != _digest(
+            expected_source_query_norm_weight_sha256,
+            label="expected source query norm weight SHA-256",
+        ) or key_norm_sha != _digest(
+            expected_source_key_norm_weight_sha256,
+            label="expected source key norm weight SHA-256",
+        ):
+            raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                "Direct-parent Q/K norm weights differ from their authenticated lineage."
+            )
+        norm_epsilon = decoder_receipt.get("parent_norm_epsilon")
+        if (
+            isinstance(norm_epsilon, bool)
+            or not isinstance(norm_epsilon, (int, float))
+            or not math.isfinite(float(norm_epsilon))
+            or float(norm_epsilon) <= 0.0
+        ):
+            raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                "Normalized-input decoder receipt omits the authenticated parent "
+                "RMSNorm epsilon required by causal attention tangents."
+            )
+        tangent_cases, tangent_case_sha, tangent_loader_receipt = (
+            _load_attention_tangent_cases(
+                session=session,
+                plans=plans,
+                batch_weights=batch_weights,
+                layer_index=layer_index,
+            )
+        )
+        try:
+            tangent_bank = build_lfm2_attention_tangent_bank(
+                site_id=f"semantic-attention-layer-{layer_index}",
+                source_query_weight=source_query_weight,
+                expected_source_query_weight_sha256=_tensor_sha256(
+                    source_query_weight,
+                    label="source query weight",
+                ),
+                source_key_weight=source_key_weight,
+                expected_source_key_weight_sha256=_tensor_sha256(
+                    source_key_weight,
+                    label="source key weight",
+                ),
+                source_value_weight=source_value_weight,
+                expected_source_value_weight_sha256=_tensor_sha256(
+                    source_value_weight,
+                    label="source value weight",
+                ),
+                source_out_weight=source_out_weight,
+                expected_source_out_weight_sha256=_tensor_sha256(
+                    source_out_weight,
+                    label="source out weight",
+                ),
+                source_query_norm_weight=source_query_norm_weight,
+                expected_source_query_norm_weight_sha256=query_norm_sha,
+                source_key_norm_weight=source_key_norm_weight,
+                expected_source_key_norm_weight_sha256=key_norm_sha,
+                normalized_input_decoder=decoder,
+                expected_normalized_input_decoder_sha256=_tensor_sha256(
+                    decoder,
+                    label="normalized input decoder",
+                ),
+                residual_output_chart=chart,
+                expected_residual_output_chart_sha256=_tensor_sha256(
+                    chart,
+                    label="residual output chart",
+                ),
+                norm_epsilon=float(norm_epsilon),
+                source_query_head_count=source_q_heads,
+                source_key_value_head_count=source_kv_heads,
+                fit_cases=tangent_cases,
+                expected_fit_case_evidence_sha256=tangent_case_sha,
+                compute_device=fold_compute_device,
+            )
+        except Lfm2AttentionTangentBankError as exc:
+            raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                f"Authenticated causal attention tangent construction failed: {exc}"
+            ) from exc
+        functional_snapshot_blocks = (
+            Lfm2AttentionGroupQdeimSnapshotBlock(
+                block_id=tangent_bank.joint_sampled_token_query_key_value.block_id,
+                snapshot_kind=("analytic_child_lifted_parent_attention_tangent"),
+                parent_post_softmax_context_rows=(
+                    tangent_bank.joint_sampled_token_query_key_value.context_rows
+                ),
+                row_sample_weights=(
+                    tangent_bank.joint_sampled_token_query_key_value.row_sample_weights
+                ),
+                generator_receipt_sha256=tangent_bank.bank_sha256,
+            ),
+            Lfm2AttentionGroupQdeimSnapshotBlock(
+                block_id=tangent_bank.older_prefix_key_value.block_id,
+                snapshot_kind=("analytic_child_lifted_parent_attention_tangent"),
+                parent_post_softmax_context_rows=(
+                    tangent_bank.older_prefix_key_value.context_rows
+                ),
+                row_sample_weights=(
+                    tangent_bank.older_prefix_key_value.row_sample_weights
+                ),
+                generator_receipt_sha256=tangent_bank.bank_sha256,
+            ),
+        )
+    else:
+        functional_snapshot_blocks = ()
+    functional_snapshot_evidence_sha256 = (
+        lfm2_attention_group_qdeim_snapshot_evidence_sha256(functional_snapshot_blocks)
+    )
     session.verify()
     if session.evidence_sha256 != session_receipt["session_sha256"]:
         raise Lfm2SemanticAttentionGroupQdeimAdapterError(
@@ -1177,6 +1820,10 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
             parent_post_softmax_context_rows=context_rows,
             row_sample_weights=row_weights,
             expected_context_evidence_sha256=context_evidence_sha,
+            functional_snapshot_blocks=functional_snapshot_blocks,
+            expected_functional_snapshot_evidence_sha256=(
+                functional_snapshot_evidence_sha256
+            ),
             pod_rank_relative_tolerance=pod_rank_relative_tolerance,
             compute_device=fold_compute_device,
         )
@@ -1248,10 +1895,77 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
         "fit_batch_indices": list(fit_indices),
         "heldout_batch_indices": capability["heldout_batch_indices"],
         "heldout_tensor_payload_loads": 0,
-        "captured_true_post_softmax_context_only": True,
+        "captured_true_post_softmax_empirical_context_route": True,
+        "functional_analytic_tangent_blocks_are_additional_to_empirical_route": (
+            tangent_bank is not None
+        ),
         "context_bank_receipt": _deep_thaw(context_receipt),
         "context_bank_receipt_sha256": context_receipt["result_sha256"],
         "standalone_context_evidence_sha256": context_evidence_sha,
+        "analytic_attention_tangent_phase_bundle_complete": capability[
+            "analytic_attention_tangent_phase_bundle_complete"
+        ],
+        "analytic_attention_tangent_evidence_complete": (
+            False
+            if tangent_bank is None
+            else tangent_bank.report["complete_key_value_history_tangent_coverage"]
+        ),
+        "missing_analytic_attention_tangent_tensor_names": capability[
+            "missing_analytic_attention_tangent_tensor_names"
+        ],
+        "attention_tangent_bank_materialized": tangent_bank is not None,
+        "attention_tangent_fit_loader_receipt": (
+            None
+            if tangent_loader_receipt is None
+            else _deep_thaw(tangent_loader_receipt)
+        ),
+        "attention_tangent_fit_loader_receipt_sha256": (
+            None
+            if tangent_loader_receipt is None
+            else tangent_loader_receipt["result_sha256"]
+        ),
+        "attention_tangent_bank": (
+            None if tangent_bank is None else tangent_bank.as_dict()
+        ),
+        "attention_tangent_bank_sha256": (
+            None if tangent_bank is None else tangent_bank.bank_sha256
+        ),
+        "functional_snapshot_block_count": len(functional_snapshot_blocks),
+        "functional_snapshot_evidence_sha256": (functional_snapshot_evidence_sha256),
+        "query_local_and_sampled_suffix_history_kv_tangents_separate": (
+            tangent_bank is not None
+        ),
+        "functional_tangent_blocks_are_joint_qkv_and_older_prefix_key_value": (
+            tangent_bank is not None
+        ),
+        "partial_query_and_suffix_kv_blocks_used_by_functional_pod": False,
+        "older_prefix_key_without_current_phase_pre_norm_anchor_synthesized": False,
+        "cross_phase_older_key_anchor_stitch_required": capability[
+            "cross_phase_older_key_anchor_stitch_required"
+        ],
+        "cross_phase_older_key_anchor_stitch_feasible_without_recapture": capability[
+            "cross_phase_older_key_anchor_stitch_feasible_without_recapture"
+        ],
+        "cross_phase_older_key_anchor_stitch_implemented": capability[
+            "cross_phase_older_key_anchor_stitch_implemented"
+        ],
+        "complete_key_value_history_tangent_coverage": (
+            False
+            if tangent_bank is None
+            else tangent_bank.report["complete_key_value_history_tangent_coverage"]
+        ),
+        "unsupported_historical_prefix_key_position_count": (
+            None
+            if tangent_bank is None
+            else tangent_bank.report["unsupported_historical_prefix_key_position_count"]
+        ),
+        "precise_missing_cached_evidence_field_for_older_history_key_tangent": (
+            None
+            if tangent_bank is None
+            else tangent_bank.report[
+                "precise_missing_cached_evidence_field_for_older_history_key_tangent"
+            ]
+        ),
         "standalone_compiler_result_sha256": compiled.report["result_sha256"],
         "qdeim_compute_execution": _deep_thaw(compute_execution),
         "fold_compute_device": fold_compute_device,

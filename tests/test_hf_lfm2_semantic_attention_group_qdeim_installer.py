@@ -359,7 +359,7 @@ def _candidate(**kwargs: object) -> Lfm2SemanticAttentionGroupQdeimCandidate:
         "normalized_input_decoder_sha256": decoder_sha,
         "heldout_tensor_payload_loads": 0,
         "fit_batch_indices": list(kwargs.get("fit_batch_indices", (0,))),
-        "captured_true_post_softmax_context_only": True,
+        "captured_true_post_softmax_empirical_context_route": True,
         "context_bank_receipt_sha256": "6" * 64,
         "standalone_context_evidence_sha256": context_sha,
         "standalone_compiler_result_sha256": compiled_report["result_sha256"],

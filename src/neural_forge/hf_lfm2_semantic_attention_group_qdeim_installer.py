@@ -921,6 +921,44 @@ def _candidate_state(
         seal_name="result_sha256",
         label="semantic attention group-QDEIM true-context bank",
     )
+    tangent_bank_value = adapter_report.get("attention_tangent_bank")
+    tangent_loader_value = adapter_report.get("attention_tangent_fit_loader_receipt")
+    tangent_bank_report = None
+    tangent_loader_report = None
+    if tangent_bank_value is not None or tangent_loader_value is not None:
+        if not isinstance(tangent_bank_value, Mapping) or not isinstance(
+            tangent_loader_value,
+            Mapping,
+        ):
+            raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+                "Cache adapter emitted an incomplete attention tangent lineage."
+            )
+        tangent_bank_report = _self_sealed_report(
+            tangent_bank_value,
+            seal_name="bank_sha256",
+            label="semantic attention causal tangent bank",
+        )
+        tangent_loader_report = _self_sealed_report(
+            tangent_loader_value,
+            seal_name="result_sha256",
+            label="semantic attention tangent FIT loader",
+        )
+        for name in (
+            "query_local_reduction_receipt",
+            "sampled_suffix_history_key_value_reduction_receipt",
+            "joint_sampled_token_query_key_value_reduction_receipt",
+            "older_prefix_key_value_reduction_receipt",
+        ):
+            reduction = tangent_bank_report.get(name)
+            if not isinstance(reduction, Mapping):
+                raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+                    "Attention tangent bank omitted a covariance reduction receipt."
+                )
+            _self_sealed_report(
+                reduction,
+                seal_name="result_sha256",
+                label=f"semantic attention tangent {name}",
+            )
     compiled_report = _self_sealed_report(
         candidate.compiled.report,
         seal_name="result_sha256",
@@ -1029,6 +1067,11 @@ def _candidate_state(
             compiler_authentication.get("functional_snapshot_evidence_sha256"),
             label="compiler functional snapshot evidence SHA-256",
         )
+    compiler_snapshot_sha256 = (
+        None
+        if not isinstance(compiler_authentication, Mapping)
+        else compiler_authentication.get("functional_snapshot_evidence_sha256")
+    )
     source_contract = adapter_report.get("source_attention_contract")
     if not isinstance(source_contract, Mapping):
         raise Lfm2SemanticAttentionGroupQdeimInstallationError(
@@ -1082,6 +1125,7 @@ def _candidate_state(
         for offset in range(queries_per_key_value)
     )
     selected_payloads = context_bank_report.get("selected_payloads")
+    tangent_contract_declared = "attention_tangent_bank_materialized" in adapter_report
     if (
         adapter_report.get("schema")
         != LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_ADAPTER_SCHEMA
@@ -1104,6 +1148,90 @@ def _candidate_state(
         or capability_report.get("parent_forward_calls") != 0
         or capability_report.get("trace_recaptures") != 0
         or capability_report.get("training_steps") != 0
+        or (
+            tangent_contract_declared
+            and (
+                capability_report.get(
+                    "analytic_attention_tangent_phase_bundle_complete"
+                )
+                is not adapter_report.get("attention_tangent_bank_materialized")
+                or adapter_report.get("functional_snapshot_block_count")
+                != (2 if tangent_bank_report is not None else 0)
+                or adapter_report.get("attention_tangent_bank_sha256")
+                != (
+                    None
+                    if tangent_bank_report is None
+                    else tangent_bank_report.get("bank_sha256")
+                )
+                or adapter_report.get("attention_tangent_fit_loader_receipt_sha256")
+                != (
+                    None
+                    if tangent_loader_report is None
+                    else tangent_loader_report.get("result_sha256")
+                )
+                or adapter_report.get("functional_snapshot_evidence_sha256")
+                != compiler_snapshot_sha256
+                or adapter_report.get("cross_phase_older_key_anchor_stitch_required")
+                != capability_report.get("cross_phase_older_key_anchor_stitch_required")
+                or adapter_report.get(
+                    "cross_phase_older_key_anchor_stitch_feasible_without_recapture"
+                )
+                is not True
+                or adapter_report.get("cross_phase_older_key_anchor_stitch_implemented")
+                != capability_report.get(
+                    "cross_phase_older_key_anchor_stitch_implemented"
+                )
+                or (
+                    tangent_bank_report is not None
+                    and (
+                        tangent_bank_report.get("fit_case_evidence_sha256")
+                        != tangent_loader_report.get("fit_case_evidence_sha256")
+                        or tangent_bank_report.get(
+                            "query_local_and_history_key_value_evidence_"
+                            "separately_labelled"
+                        )
+                        is not True
+                        or tangent_bank_report.get(
+                            "cross_phase_older_key_anchor_stitch_implemented"
+                        )
+                        is not True
+                        or tangent_bank_report.get(
+                            "partial_diagnostic_family_scope_is_explicit_and_not_"
+                            "promoted_to_functional_complete"
+                        )
+                        is not True
+                        or tangent_bank_report.get(
+                            "functional_pod_uses_joint_sampled_token_qkv_cross_terms"
+                        )
+                        is not True
+                        or tangent_bank_report.get(
+                            "functional_pod_double_counts_partial_q_or_kv_covariance"
+                        )
+                        is not False
+                        or tangent_bank_report.get(
+                            "complete_value_history_tangent_coverage"
+                        )
+                        is not True
+                        or tangent_bank_report.get(
+                            "source_o_and_residual_chart_applied_before_group_"
+                            "covariance"
+                        )
+                        is not True
+                        or tangent_bank_report.get(
+                            "functional_group_pod_is_residual_output_attention_aware"
+                        )
+                        is not True
+                        or adapter_report.get(
+                            "analytic_attention_tangent_evidence_complete"
+                        )
+                        is not tangent_bank_report.get(
+                            "complete_key_value_history_tangent_coverage"
+                        )
+                        or tangent_bank_report.get("heldout_tensor_payloads_used") != 0
+                    )
+                )
+            )
+        )
         or context_bank_report.get("schema")
         != "neural-forge-lfm2-semantic-attention-qdeim-context-bank-v1"
         or context_bank_report.get("result_sha256")
@@ -1139,7 +1267,8 @@ def _candidate_state(
         or adapter_report.get("candidate_dense_bfloat16_standalone") is not True
         or adapter_report.get("qkv_producer_averaging_performed") is not False
         or adapter_report.get("dense_all_parent_output_columns_used") is not True
-        or adapter_report.get("captured_true_post_softmax_context_only") is not True
+        or adapter_report.get("captured_true_post_softmax_empirical_context_route")
+        is not True
         or adapter_report.get("heldout_tensor_payload_loads") != 0
         or adapter_report.get("selected_source_key_value_groups")
         != list(selected_groups)
@@ -1660,6 +1789,14 @@ def prepare_lfm2_semantic_attention_group_qdeim_installation(
             source_value_weight=source_value_weight,
             source_out_weight=source_out_weight,
             source_inventory=source_inventory,
+            source_query_norm_weight=source_query_norm_weight,
+            source_key_norm_weight=source_key_norm_weight,
+            expected_source_query_norm_weight_sha256=(
+                source_norm_inventory.query_norm_receipt["tensor_sha256"]
+            ),
+            expected_source_key_norm_weight_sha256=(
+                source_norm_inventory.key_norm_receipt["tensor_sha256"]
+            ),
             target_query_weight_template=templates["q_proj.weight"],
             target_key_weight_template=templates["k_proj.weight"],
             target_value_weight_template=templates["v_proj.weight"],

@@ -24,6 +24,7 @@ from neural_forge.hf_lfm2_semantic_attention_group_qdeim_adapter import (  # noq
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
     lfm2_authenticated_tensor_sha256,
 )
+import neural_forge.hf_lfm2_semantic_attention_group_qdeim_installer as qdeim_installer  # noqa: E402, I001
 
 
 def _sealed(body: dict[str, object], seal: str) -> dict[str, object]:
@@ -217,6 +218,8 @@ def _source_and_maps() -> dict[str, object]:
         "residual_chart_sha256": chart_receipt["result_sha256"],
         "residual_chart_observed_sha256": lfm2_authenticated_tensor_sha256(chart),
         "published_decoder_sha256": lfm2_authenticated_tensor_sha256(decoder),
+        "parent_norm_epsilon": 1e-5,
+        "target_norm_epsilon": 1e-5,
         "trajectory_batch_indices": [0, 1, 2, 3],
         "fit_batch_indices": [0],
         "heldout_batch_indices": [1, 2, 3],
@@ -242,6 +245,8 @@ def _source_and_maps() -> dict[str, object]:
         "target_value_weight_template": torch.empty(6, 3, dtype=torch.bfloat16),
         "target_out_weight_template": torch.empty(3, 12, dtype=torch.bfloat16),
     }
+    query_norm = torch.tensor([1.125, 0.875], dtype=torch.float64)
+    key_norm = torch.tensor([0.75, 1.25], dtype=torch.float64)
     return {
         "source_query_weight": source_q,
         "source_key_weight": source_k,
@@ -253,11 +258,106 @@ def _source_and_maps() -> dict[str, object]:
             source_value_weight=source_v,
             source_output_weight=source_o,
         ),
+        "source_query_norm_weight": query_norm,
+        "source_key_norm_weight": key_norm,
+        "expected_source_query_norm_weight_sha256": (
+            lfm2_authenticated_tensor_sha256(query_norm)
+        ),
+        "expected_source_key_norm_weight_sha256": (
+            lfm2_authenticated_tensor_sha256(key_norm)
+        ),
         **templates,
         "normalized_input_decoder": decoder,
         "normalized_input_decoder_receipt": decoder_receipt,
         "residual_output_chart": chart,
         "residual_chart_receipt": chart_receipt,
+    }
+
+
+def _enhanced_causal_phase(prefix: str) -> dict[str, torch.Tensor]:
+    epsilon = 1e-5
+    query_heads = 10
+    key_value_heads = 5
+    head_dim = 2
+    query_rows = 4
+    query_norm = torch.tensor([1.125, 0.875], dtype=torch.float64)
+    key_norm = torch.tensor([0.75, 1.25], dtype=torch.float64)
+    q_linear = (
+        torch.arange(
+            query_heads * query_rows * head_dim,
+            dtype=torch.float64,
+        )
+        .reshape(1, query_heads, query_rows, head_dim)
+        .sub(17.0)
+        .div(13.0)
+    )
+    k_linear = (
+        torch.arange(
+            key_value_heads * query_rows * head_dim,
+            dtype=torch.float64,
+        )
+        .reshape(1, key_value_heads, query_rows, head_dim)
+        .sub(11.0)
+        .div(9.0)
+    )
+    q_pre = (
+        q_linear
+        * torch.rsqrt(q_linear.square().mean(dim=-1, keepdim=True) + epsilon)
+        * query_norm
+    )
+    k_pre = (
+        k_linear
+        * torch.rsqrt(k_linear.square().mean(dim=-1, keepdim=True) + epsilon)
+        * key_norm
+    )
+    angle = torch.linspace(0.1, 0.7, query_rows, dtype=torch.float64)
+    angle = angle.reshape(1, query_rows, 1).repeat(1, 1, head_dim)
+    cos = torch.cos(angle)
+    sin = torch.sin(angle)
+
+    def rotate_half(value: torch.Tensor) -> torch.Tensor:
+        return torch.cat((-value[..., 1:], value[..., :1]), dim=-1)
+
+    def rope(value: torch.Tensor) -> torch.Tensor:
+        rows_first = value.permute(0, 2, 1, 3)
+        rotated = rows_first * cos.unsqueeze(2) + rotate_half(
+            rows_first
+        ) * sin.unsqueeze(2)
+        return rotated.permute(0, 2, 1, 3).contiguous()
+
+    query = rope(q_pre)
+    key_history = rope(k_pre)
+    value_history = (
+        torch.arange(
+            key_value_heads * query_rows * head_dim,
+            dtype=torch.float64,
+        )
+        .reshape(1, key_value_heads, query_rows, head_dim)
+        .add(3.0)
+        .div(19.0)
+    )
+    mask = torch.zeros((1, 1, query_rows, query_rows), dtype=torch.float64)
+    qk_scores = (
+        query
+        @ key_history.repeat_interleave(2, dim=1).transpose(2, 3)
+        / (head_dim**0.5)
+    )
+    probability = torch.softmax(qk_scores + mask, dim=-1)
+    return {
+        "input.input_ids": torch.tensor([[11, 12, 13, 14]], dtype=torch.long),
+        "input.forced_decode_ids": torch.empty((1, 0), dtype=torch.long),
+        f"{prefix}.q_linear": q_linear,
+        f"{prefix}.k_linear": k_linear,
+        f"{prefix}.q_normalized_pre_rope": q_pre,
+        f"{prefix}.k_normalized_pre_rope": k_pre,
+        f"{prefix}.rope_cos": cos,
+        f"{prefix}.rope_sin": sin,
+        f"{prefix}.q": query,
+        f"{prefix}.key_history": key_history,
+        f"{prefix}.value_history": value_history,
+        f"{prefix}.qk_scores": qk_scores,
+        f"{prefix}.probabilities": probability,
+        f"{prefix}.additive_mask": mask,
     }
 
 
@@ -271,9 +371,99 @@ def _arguments(session: _Session) -> dict[str, object]:
     }
 
 
-def test_true_context_cache_route_emits_dense_candidate_and_never_loads_holdout() -> (
-    None
-):
+def _enhanced_prefill_decode_batch() -> dict[str, torch.Tensor]:
+    prefill_prefix = "prefill.layer.000.attention"
+    decode_prefix = "decode.000.layer.000.attention"
+    batch = _enhanced_causal_phase(prefill_prefix)
+    batch[f"{prefill_prefix}.context"] = _contexts()
+    batch["input.forced_decode_ids"] = torch.tensor([[21]], dtype=torch.long)
+    batch["decode.000.forced_token_ids"] = torch.tensor([[21]], dtype=torch.long)
+    query_heads = 10
+    key_value_heads = 5
+    head_dim = 2
+    epsilon = 1e-5
+    query_norm = torch.tensor([1.125, 0.875], dtype=torch.float64)
+    key_norm = torch.tensor([0.75, 1.25], dtype=torch.float64)
+    q_linear = (
+        torch.arange(query_heads * head_dim, dtype=torch.float64)
+        .reshape(1, query_heads, 1, head_dim)
+        .sub(7.0)
+        .div(11.0)
+    )
+    k_linear = (
+        torch.arange(key_value_heads * head_dim, dtype=torch.float64)
+        .reshape(1, key_value_heads, 1, head_dim)
+        .sub(4.0)
+        .div(7.0)
+    )
+    q_pre = (
+        q_linear
+        * torch.rsqrt(q_linear.square().mean(dim=-1, keepdim=True) + epsilon)
+        * query_norm
+    )
+    k_pre = (
+        k_linear
+        * torch.rsqrt(k_linear.square().mean(dim=-1, keepdim=True) + epsilon)
+        * key_norm
+    )
+    angle = torch.full((1, 1, head_dim), 0.9, dtype=torch.float64)
+    cos = torch.cos(angle)
+    sin = torch.sin(angle)
+
+    def rotate_half(value: torch.Tensor) -> torch.Tensor:
+        return torch.cat((-value[..., 1:], value[..., :1]), dim=-1)
+
+    def rope(value: torch.Tensor) -> torch.Tensor:
+        rows_first = value.permute(0, 2, 1, 3)
+        result = rows_first * cos.unsqueeze(2) + rotate_half(
+            rows_first
+        ) * sin.unsqueeze(2)
+        return result.permute(0, 2, 1, 3).contiguous()
+
+    query = rope(q_pre)
+    key = rope(k_pre)
+    key_history = torch.cat(
+        (batch[f"{prefill_prefix}.key_history"], key),
+        dim=2,
+    )
+    decode_value = (
+        torch.arange(key_value_heads * head_dim, dtype=torch.float64)
+        .reshape(1, key_value_heads, 1, head_dim)
+        .add(5.0)
+        .div(17.0)
+    )
+    value_history = torch.cat(
+        (batch[f"{prefill_prefix}.value_history"], decode_value),
+        dim=2,
+    )
+    qk_scores = (
+        query
+        @ key_history.repeat_interleave(2, dim=1).transpose(2, 3)
+        / (head_dim**0.5)
+    )
+    mask = torch.zeros((1, 1, 1, int(key_history.shape[2])), dtype=torch.float64)
+    probability = torch.softmax(qk_scores + mask, dim=-1)
+    batch.update(
+        {
+            f"{decode_prefix}.q_linear": q_linear,
+            f"{decode_prefix}.k_linear": k_linear,
+            f"{decode_prefix}.q_normalized_pre_rope": q_pre,
+            f"{decode_prefix}.k_normalized_pre_rope": k_pre,
+            f"{decode_prefix}.rope_cos": cos,
+            f"{decode_prefix}.rope_sin": sin,
+            f"{decode_prefix}.q": query,
+            f"{decode_prefix}.key_history": key_history,
+            f"{decode_prefix}.value_history": value_history,
+            f"{decode_prefix}.qk_scores": qk_scores,
+            f"{decode_prefix}.probabilities": probability,
+            f"{decode_prefix}.additive_mask": mask,
+            f"{decode_prefix}.context": _contexts(),
+        }
+    )
+    return batch
+
+
+def test_legacy_context_cache_returns_typed_tangent_capability_deficit() -> None:
     context = _contexts()
     fit = {
         "prefill.layer.000.attention.q": torch.zeros(1, 10, 3, 2),
@@ -291,7 +481,11 @@ def test_true_context_cache_route_emits_dense_candidate_and_never_loads_holdout(
     result = compile_lfm2_semantic_attention_group_qdeim_from_cache(
         **_arguments(session)
     )
-    assert isinstance(result, Lfm2SemanticAttentionGroupQdeimCandidate)
+    assert isinstance(result, Lfm2SemanticAttentionGroupQdeimEvidenceDeficit)
+    assert result.deficit_kind == (
+        "missing-authenticated-causal-attention-tangent-or-cross-phase-identity-"
+        "evidence"
+    )
     assert session.loaded == [
         (
             0,
@@ -302,54 +496,241 @@ def test_true_context_cache_route_emits_dense_candidate_and_never_loads_holdout(
         ),
     ]
     assert session.released == 1
-    state = result.state_dict()
-    assert set(state) == {
-        "q_proj.weight",
-        "k_proj.weight",
-        "v_proj.weight",
-        "out_proj.weight",
-    }
-    assert all(value.dtype == torch.bfloat16 for value in state.values())
-    assert all(value.layout == torch.strided for value in state.values())
     receipt = result.report
-    assert receipt["captured_true_post_softmax_context_only"] is True
-    assert receipt["heldout_batch_indices"] == [1]
-    assert receipt["heldout_tensor_payload_loads"] == 0
-    assert receipt["qkv_producer_averaging_performed"] is False
-    assert receipt["dense_all_parent_output_columns_used"] is True
-    assert receipt["fold_compute_device"] == "cpu"
-    assert receipt["qdeim_compute_execution"]["requested_device"] == "cpu"
-    assert receipt["qdeim_compute_execution"]["resolved_device"] == "cpu"
+    assert receipt["dense_qkvo_candidate_materialized"] is False
+    capability = receipt["cache_capability_receipt"]
+    assert capability["analytic_attention_tangent_phase_bundle_complete"] is False
     assert (
-        receipt["qdeim_compute_execution"]["authenticated_source_archive_device"]
-        == "cpu"
+        "input.input_ids"
+        in capability["missing_cross_phase_stitch_identity_tensor_names"]
     )
-    assert receipt["qdeim_compute_execution"]["materialized_candidate_device"] == (
-        "cpu"
+    assert capability["cross_phase_stitch_identity_evidence_complete"] is False
+
+
+def test_enhanced_fit_cache_invokes_authenticated_causal_tangents_in_real_adapter() -> (
+    None
+):
+    prefix = "prefill.layer.000.attention"
+    fit = {
+        f"{prefix}.context": _contexts(),
+        **_enhanced_causal_phase(prefix),
+    }
+    heldout = {
+        f"{prefix}.context": _contexts().mul(9.0),
+        **{
+            name: value.mul(0.5)
+            for name, value in _enhanced_causal_phase(prefix).items()
+        },
+    }
+    session = _Session([fit, heldout])
+    result = compile_lfm2_semantic_attention_group_qdeim_from_cache(
+        **_arguments(session)
     )
-    assert receipt["numeric_metrics_have_semantic_decision_authority"] is False
-    assert receipt["binary_manual_threshold_has_iteration_veto_authority"] is False
-    assert receipt["binary_manual_acceptance_gate_required"] is False
-    assert receipt["intelligence_retention_target_is_objective_not_numeric_cutoff"]
-    weights = receipt["context_bank_receipt"]["row_sample_weights"]
-    assert weights == pytest.approx([1 / 3, 1 / 3, 1 / 3, 1.0])
-    assert receipt["context_bank_receipt"]["phase_weight_sums"] == [
-        {
-            "batch_index": 0,
-            "phase": "prefill",
-            "phase_weight_budget": 1.0,
-            "materialized_row_weight_sum": 1.0,
-        },
-        {
-            "batch_index": 0,
-            "phase": "decode.000",
-            "phase_weight_budget": 1.0,
-            "materialized_row_weight_sum": 1.0,
-        },
+    assert isinstance(result, Lfm2SemanticAttentionGroupQdeimCandidate)
+    report = result.report
+    assert report["analytic_attention_tangent_evidence_complete"] is True
+    assert report["attention_tangent_bank_materialized"] is True
+    assert report["functional_snapshot_block_count"] == 2
+    assert report["missing_analytic_attention_tangent_tensor_names"] == []
+    assert report["query_local_and_sampled_suffix_history_kv_tangents_separate"]
+    assert report["cross_phase_older_key_anchor_stitch_implemented"] is True
+    assert report["functional_tangent_blocks_are_joint_qkv_and_older_prefix_key_value"]
+    tangent = report["attention_tangent_bank"]
+    assert tangent["geometry"]["authenticated_child_decoder_direction_count"] == 3
+    assert tangent["heldout_tensor_payloads_used"] == 0
+    assert tangent["query_local_reduction_receipt"]["covariance_equality_proved"]
+    assert tangent["sampled_suffix_history_key_value_reduction_receipt"][
+        "covariance_equality_proved"
     ]
-    sealed = dict(receipt)
-    digest = sealed.pop("result_sha256")
-    assert digest == canonical_sha256(sealed)
+    assert (
+        report["functional_snapshot_evidence_sha256"]
+        == result.compiled.report["authentication"][
+            "functional_snapshot_evidence_sha256"
+        ]
+    )
+    assert {index for index, _names in session.loaded} == {0}
+    assert len(session.loaded) == 2
+
+
+def test_cross_dtype_probability_replay_is_diagnostic_not_numeric_veto() -> None:
+    prefix = "prefill.layer.000.attention"
+    phase = _enhanced_causal_phase(prefix)
+    probability_name = f"{prefix}.probabilities"
+    phase[probability_name] = torch.full_like(
+        phase[probability_name],
+        1.0 / int(phase[probability_name].shape[-1]),
+    )
+    session = _Session([{f"{prefix}.context": _contexts(), **phase}])
+    result = compile_lfm2_semantic_attention_group_qdeim_from_cache(
+        **_arguments(session)
+    )
+    assert isinstance(result, Lfm2SemanticAttentionGroupQdeimCandidate)
+    tangent = result.report["attention_tangent_bank"]
+    diagnostic = tangent["cross_dtype_fp64_replay_diagnostic_summary"][
+        "cached_probability_from_sealed_qk_scores_mask"
+    ]
+    assert diagnostic["outside_legacy_allclose_envelope_count"] == 1
+    assert diagnostic["hard_authentication_authority"] is False
+    assert tangent["fp64_replay_mismatch_does_not_reject_authenticated_capture"]
+
+
+def test_decode_history_k_anchors_are_stitched_from_authenticated_prior_phases() -> (
+    None
+):
+    session = _Session([_enhanced_prefill_decode_batch()])
+    result = compile_lfm2_semantic_attention_group_qdeim_from_cache(
+        **_arguments(session)
+    )
+    assert isinstance(result, Lfm2SemanticAttentionGroupQdeimCandidate)
+    report = result.report
+    assert report["cross_phase_older_key_anchor_stitch_required"] is True
+    assert report["cross_phase_older_key_anchor_stitch_implemented"] is True
+    tangent = report["attention_tangent_bank"]
+    assert tangent["complete_key_history_tangent_coverage"] is True
+    assert tangent["unsupported_historical_prefix_key_position_count"] == 0
+    assert tangent["cross_phase_stitched_historical_prefix_key_position_count"] == 4
+    loader = report["attention_tangent_fit_loader_receipt"]
+    assert loader["cross_phase_k_anchor_stitch_implemented"] is True
+    decode_source = next(
+        value for value in loader["phase_sources"] if value["phase"] == "decode.000"
+    )
+    stitch = decode_source["cross_phase_k_anchor_stitch"]
+    assert stitch["history_count"] == 5
+    assert len(stitch["ordered_contributing_anchor_source_sha256"]) == 2
+    assert stitch["phase_order_and_forced_token_identity_verified"] is True
+
+
+def test_cross_phase_stitch_rejects_forced_token_identity_tamper() -> None:
+    batch = _enhanced_prefill_decode_batch()
+    batch["decode.000.forced_token_ids"] = torch.tensor([[22]], dtype=torch.long)
+    session = _Session([batch])
+    with pytest.raises(
+        Lfm2SemanticAttentionGroupQdeimAdapterError,
+        match="phase/token identity is not contiguous",
+    ):
+        compile_lfm2_semantic_attention_group_qdeim_from_cache(**_arguments(session))
+
+
+class _InstallerConfig:
+    model_type = "lfm2"
+    norm_eps = 1e-5
+
+    def to_dict(self) -> dict[str, object]:
+        return {"model_type": self.model_type, "norm_eps": self.norm_eps}
+
+
+class _InstallerNorm(torch.nn.Module):
+    def __init__(self, width: int) -> None:
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.zeros(width, dtype=torch.bfloat16))
+
+
+class _InstallerAttention(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.head_dim = 2
+        self.q_proj = torch.nn.Linear(3, 12, bias=False, dtype=torch.bfloat16)
+        self.k_proj = torch.nn.Linear(3, 6, bias=False, dtype=torch.bfloat16)
+        self.v_proj = torch.nn.Linear(3, 6, bias=False, dtype=torch.bfloat16)
+        self.out_proj = torch.nn.Linear(12, 3, bias=False, dtype=torch.bfloat16)
+        self.q_layernorm = _InstallerNorm(2)
+        self.k_layernorm = _InstallerNorm(2)
+        with torch.no_grad():
+            self.q_proj.weight.zero_()
+            self.k_proj.weight.zero_()
+            self.v_proj.weight.zero_()
+            self.out_proj.weight.zero_()
+
+
+class _InstallerLayer(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.self_attn = _InstallerAttention()
+
+
+class _InstallerBackbone(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.layers = torch.nn.ModuleList([_InstallerLayer()])
+
+
+class _InstallerModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.config = _InstallerConfig()
+        self.model = _InstallerBackbone()
+
+    def forward(self, *_args: object, **_kwargs: object) -> object:
+        raise AssertionError("The analytic installer must not execute the child model.")
+
+
+def test_enhanced_cache_runs_real_compile_and_six_parameter_installer() -> None:
+    prefix = "prefill.layer.000.attention"
+    session = _Session(
+        [
+            {
+                f"{prefix}.context": _contexts(),
+                **_enhanced_causal_phase(prefix),
+            }
+        ]
+    )
+    maps = _source_and_maps()
+    source_q = maps["source_query_weight"].to(torch.bfloat16)
+    source_k = maps["source_key_weight"].to(torch.bfloat16)
+    source_v = maps["source_value_weight"].to(torch.bfloat16)
+    source_o = maps["source_out_weight"].to(torch.bfloat16)
+    source_inventory = seal_lfm2_dense_qkvo_source_inventory(
+        source_query_weight=source_q,
+        source_key_weight=source_k,
+        source_value_weight=source_v,
+        source_output_weight=source_o,
+    )
+    query_norm = torch.tensor([1.125, 0.875], dtype=torch.bfloat16)
+    key_norm = torch.tensor([0.75, 1.25], dtype=torch.bfloat16)
+    norm_inventory = (
+        qdeim_installer.seal_lfm2_semantic_attention_group_qdeim_norm_inventory(
+            layer_index=0,
+            source_parent_identity_sha256="d" * 64,
+            source_inventory=source_inventory,
+            source_query_norm_weight=query_norm,
+            source_key_norm_weight=key_norm,
+        )
+    )
+    model = _InstallerModel()
+    result = qdeim_installer.compile_install_lfm2_semantic_attention_group_qdeim(
+        target_model=model,
+        session=session,
+        layer_index=0,
+        fit_batch_indices=(0,),
+        fit_batch_sample_weights={0: 1.0},
+        source_query_weight=source_q,
+        source_key_weight=source_k,
+        source_value_weight=source_v,
+        source_out_weight=source_o,
+        source_inventory=source_inventory,
+        source_query_norm_weight=query_norm,
+        source_key_norm_weight=key_norm,
+        source_norm_inventory=norm_inventory,
+        normalized_input_decoder=maps["normalized_input_decoder"],
+        normalized_input_decoder_receipt=maps["normalized_input_decoder_receipt"],
+        residual_output_chart=maps["residual_output_chart"],
+        residual_chart_receipt=maps["residual_chart_receipt"],
+    )
+    receipt = result.receipt
+    assert receipt["status"] == "installed-coupled-intact-group-qdeim-attention"
+    assert len(receipt["changed_state_keys"]) == 6
+    assert result.prepared.candidate.report["attention_tangent_bank_materialized"]
+    assert result.prepared.candidate.report["functional_snapshot_block_count"] == 2
+    attention = model.model.layers[0].self_attn
+    for value in (
+        attention.q_proj.weight,
+        attention.k_proj.weight,
+        attention.v_proj.weight,
+        attention.out_proj.weight,
+        attention.q_layernorm.weight,
+        attention.k_layernorm.weight,
+    ):
+        assert int(torch.count_nonzero(value).item()) > 0
 
 
 def test_capability_and_missing_true_context_return_explicit_structural_proxy() -> None:
@@ -420,7 +801,40 @@ def test_nearest_structural_context_can_be_derived_only_from_cached_probability_
     assert result.report["dense_qkvo_candidate_materialized"] is False
 
 
-def test_true_context_rank_deficit_is_typed_and_does_not_complete_randomly() -> None:
+def test_cached_probability_row_sum_drift_is_normalized_not_hard_gated() -> None:
+    torch.manual_seed(37)
+    logits = torch.randn(1, 10, 2, 3, dtype=torch.float64)
+    normalized_probabilities = torch.softmax(logits, dim=-1)
+    cached_probabilities = normalized_probabilities * 1.01
+    values = torch.randn(1, 5, 3, 2, dtype=torch.float64)
+    batch = {
+        "prefill.layer.000.attention.q": torch.zeros(1, 10, 2, 2),
+        "prefill.layer.000.attention.probabilities": cached_probabilities,
+        "prefill.layer.000.attention.value_history": values,
+    }
+    result = compile_lfm2_semantic_attention_group_qdeim_from_cache(
+        **_arguments(_Session([batch]))
+    )
+    assert isinstance(result, Lfm2SemanticAttentionGroupQdeimEvidenceDeficit)
+    expected = (
+        (normalized_probabilities @ values.repeat_interleave(2, dim=1))
+        .permute(0, 2, 1, 3)
+        .reshape(2, 10, 2)
+    )
+    assert torch.allclose(result.structural_context_rows, expected)
+    phase = result.report["nearest_structural_context_receipt"][
+        "phase_materializations"
+    ][0]
+    assert phase["cached_probability_row_normalization_applied"] is True
+    assert phase[
+        "cached_probability_row_sum_max_absolute_deviation_before_normalization"
+    ] > 0.009
+    assert phase[
+        "cached_probability_row_sum_diagnostics_have_no_acceptance_authority"
+    ] is True
+
+
+def test_missing_tangent_precedes_context_rank_materialization() -> None:
     batch = {
         "prefill.layer.000.attention.q": torch.zeros(1, 10, 4, 2),
         "prefill.layer.000.attention.context": _contexts(rank_deficient=True),
@@ -430,12 +844,11 @@ def test_true_context_rank_deficit_is_typed_and_does_not_complete_randomly() -> 
         **_arguments(session)
     )
     assert isinstance(result, Lfm2SemanticAttentionGroupQdeimEvidenceDeficit)
-    assert result.deficit_kind == "insufficient-authenticated-true-context-group-rank"
-    deficit = result.report["compiler_rank_deficit"]
-    assert deficit["observed_context_group_rank"] == 1
-    assert deficit["minimum_context_group_rank"] == 3
-    assert deficit["random_rank_completion_permitted"] is False
-    assert deficit["heldout_rank_completion_permitted"] is False
+    assert result.deficit_kind == (
+        "missing-authenticated-causal-attention-tangent-or-cross-phase-identity-"
+        "evidence"
+    )
+    assert result.report["compiler_rank_deficit"] is None
     assert result.report["dense_qkvo_candidate_materialized"] is False
 
 
