@@ -81,6 +81,9 @@ not a successful intelligent compaction. A coherent child is described with
 its observed strengths, regressions, and compression ratio rather than reduced
 to a pass/fail score.
 
+The executable policy and active-path boundary are recorded in
+[`BEHAVIOR_EVIDENCE_DECISION_POLICY_2026-07-23.md`](BEHAVIOR_EVIDENCE_DECISION_POLICY_2026-07-23.md).
+
 ## Current exact dense topology frontier
 
 For the real 229,693,184-parameter LFM2.5-230M parent, the capability-aware
@@ -131,7 +134,9 @@ The completed dense LFM2 child is:
 BF16 dense learned state
 ```
 
-It is not coherent and is therefore rejected:
+It is not coherent, so it is behavioral failure evidence rather than a
+successful intelligent compaction. The checkpoint and complete outputs remain
+retained for diagnosis; this observation does not close the folding lane:
 
 | Basis/candidate | Parent-nonempty retention | New empties | New generation-limit saturations | Task retention |
 |---|---:|---:|---:|---:|
@@ -165,18 +170,22 @@ The active zero-training lane combines:
 
 1. a circuit-balanced residual basis;
 2. cached parent top-1/top-k vocabulary-margin observability so the basis
-   preserves token decision directions instead of only raw embedding energy;
-3. a candidate-level vocabulary-margin replay gate that rolls back any fold
-   crossing too many held-out top-token boundaries;
+   represents token decision directions instead of only raw embedding energy;
+3. candidate-level vocabulary-margin replay diagnostics that identify where a
+   fold crosses held-out token boundaries without automatically rolling back or
+   deleting the candidate;
 4. score-aware Q/K folding;
 5. coupled closed-form V/O fitting with fixed Q/K and exact rollback;
 6. an explicitly identity-preserved tied embedding/output-head control;
-7. macro-cell whole-output acceptance relative to the current incumbent; and
-8. promotion only after the independent free-running behavior gate.
+7. complete macro-cell whole-output evidence relative to the current incumbent;
+   and
+8. retained standalone candidates reviewed across coherence, competence,
+   reasoning, task behavior, instruction following, safety, breadth, and
+   concrete failure modes, without a scalar or binary promotion gate.
 
-The active compiler executes the 100x target directly.  Smaller ratios may be
-run only as diagnostic controls when a rejected 100x component needs an
-isolated capacity comparison; they do not replace the severe target.  Rejected
-whole-output evidence updates operator fitting, boundary coordinates, and
-topology ranking.  Arithmetic feasibility alone never advances or completes a
-ratio.
+The active compiler first executes the exact 4x real-model control, then pushes
+larger ratios. Smaller or larger variants remain useful diagnostic controls;
+none is deleted or stopped merely because one score, threshold, or manual label
+looks poor. Observed whole-output regressions update operator fitting, boundary
+coordinates, and topology ranking. Arithmetic feasibility alone never
+establishes intelligence retention.

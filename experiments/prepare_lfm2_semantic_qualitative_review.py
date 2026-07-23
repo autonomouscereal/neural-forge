@@ -5,8 +5,9 @@ This utility is deliberately standard-library-only.  It does not load a model,
 run inference, calculate an intelligence score, or turn numeric diagnostics into
 an acceptance decision.  It authenticates a nonempty set of complete response
 dossiers, merges their review evidence, renders a compact side-by-side Markdown
-view, and writes a sealed *blank* qualitative-verdict template for a human or
-agent reviewer to complete.
+view, and writes a sealed *blank* multidimensional observation worksheet.  The
+worksheet records strengths, regressions, and failure modes without reducing the
+evidence to one binary verdict or winner.
 """
 
 from __future__ import annotations
@@ -25,10 +26,33 @@ from typing import Any
 
 DOSSIER_SCHEMA = "neural-forge-lfm2-semantic-frontier-manual-review-v1"
 MERGED_SCHEMA = "neural-forge-lfm2-semantic-qualitative-review-merge-v1"
-VERDICT_TEMPLATE_SCHEMA = (
-    "neural-forge-lfm2-semantic-qualitative-verdict-template-v1"
+OBSERVATION_TEMPLATE_SCHEMA = (
+    "neural-forge-lfm2-semantic-behavior-observation-template-v2"
 )
-PROMPT_STATUSES = ("successful", "partial", "failed", "unsafe")
+# Compatibility alias for callers whose path/argument still says "verdict".
+VERDICT_TEMPLATE_SCHEMA = OBSERVATION_TEMPLATE_SCHEMA
+OBSERVATION_DIMENSIONS = (
+    "coherence",
+    "task_correctness",
+    "reasoning",
+    "instruction_following",
+    "usefulness",
+    "safety",
+    "context_and_truncation",
+    "retained_capability",
+)
+FAILURE_MODE_CATEGORIES = (
+    "incoherence",
+    "incorrectness",
+    "reasoning_failure",
+    "instruction_miss",
+    "context_loss",
+    "hallucination",
+    "repetition",
+    "premature_termination",
+    "unsafe_content",
+    "other",
+)
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _LANE_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 
@@ -97,9 +121,7 @@ def _new_file(value: Path, *, label: str) -> Path:
     try:
         parent = lexical.parent.resolve(strict=True)
     except OSError as exc:
-        raise Lfm2SemanticQualitativeReviewError(
-            f"{label} parent is missing."
-        ) from exc
+        raise Lfm2SemanticQualitativeReviewError(f"{label} parent is missing.") from exc
     if parent != lexical.parent or not parent.is_dir() or parent.is_symlink():
         raise Lfm2SemanticQualitativeReviewError(
             f"{label} parent must be one canonical real directory."
@@ -173,7 +195,11 @@ def _load_authenticated_dossier(
     )
     if (
         dossier.get("schema") != DOSSIER_SCHEMA
-        or dossier.get("status") != "ready-for-manual-intelligence-review"
+        or dossier.get("status")
+        not in {
+            "ready-for-manual-intelligence-review",
+            "decoded-whole-response-evidence-complete",
+        }
         or supplied_sha256 != expected_dossier
         or supplied_sha256 != _canonical_sha256(body)
     ):
@@ -182,7 +208,20 @@ def _load_authenticated_dossier(
         )
 
     policy = _json_object(dossier.get("evaluation_policy"), label="evaluation policy")
-    required_policy = {
+    current_policy = {
+        "decoded_whole_responses_are_primary_evidence": True,
+        "complete_decoded_responses_preserved": True,
+        "diagnostic_numbers_may_guide_navigation": True,
+        "diagnostic_numbers_have_decision_authority": False,
+        "automatic_acceptance_or_rejection_performed": False,
+        "exact_parent_token_match_required": False,
+        "multidimensional_behavior_observations_encouraged": True,
+        "manual_observations_required_for_continuation": False,
+        "single_binary_manual_verdict_has_decision_authority": False,
+        "retention_target_is_objective_not_cutoff": True,
+        "parent_comparison_uses_cached_text_only": True,
+    }
+    legacy_policy = {
         "decoded_whole_responses_are_authoritative": True,
         "diagnostic_numbers_may_guide_navigation": True,
         "diagnostic_numbers_have_decision_authority": False,
@@ -191,7 +230,13 @@ def _load_authenticated_dossier(
         "manual_intelligence_judgment_required": True,
         "parent_comparison_uses_cached_text_only": True,
     }
-    if any(policy.get(key) is not expected for key, expected in required_policy.items()):
+    current_matches = all(
+        policy.get(key) is expected for key, expected in current_policy.items()
+    )
+    legacy_matches = all(
+        policy.get(key) is expected for key, expected in legacy_policy.items()
+    )
+    if not current_matches and not legacy_matches:
         raise Lfm2SemanticQualitativeReviewError(
             f"Response dossier evaluation policy is incompatible: {source}."
         )
@@ -217,8 +262,7 @@ def _load_authenticated_dossier(
         not isinstance(prompt_count, int)
         or isinstance(prompt_count, bool)
         or prompt_count <= 0
-        or prompt_set_sha256
-        != _digest(prompt_set_sha256, label="prompt set SHA-256")
+        or prompt_set_sha256 != _digest(prompt_set_sha256, label="prompt set SHA-256")
         or not isinstance(requested, list)
         or not requested
         or len(requested) != len(set(requested))
@@ -422,9 +466,11 @@ def render_markdown(merged: Mapping[str, Any]) -> str:
         f"Merged evidence SHA-256: `{merged['merged_sha256']}`",
         "",
         (
-            "Decoded whole responses are authoritative. Numeric diagnostics are "
-            "shown only to help navigate the evidence; they never accept, reject, "
-            "promote, rank, or estimate intelligence retention."
+            "Complete decoded responses are the primary behavioral evidence. "
+            "Numeric diagnostics only help navigate that evidence; they never "
+            "accept, reject, promote, rank, or estimate intelligence retention. "
+            "Record observations across dimensions instead of assigning one "
+            "binary verdict."
         ),
         "",
     ]
@@ -468,39 +514,40 @@ def render_markdown(merged: Mapping[str, Any]) -> str:
                         f"{_diagnostic_summary(response['diagnostics'])}"
                     ),
                     "",
-                    (
-                        "Manual status: choose `successful`, `partial`, `failed`, "
-                        "or `unsafe` in the bound verdict template."
-                    ),
+                    "Behavior observations (optional, nonbinary):",
                     "",
-                    "Manual reason: explain the semantic judgment in free text.",
+                    (
+                        "Describe coherence, task correctness, reasoning, instruction "
+                        "following, usefulness, safety, context/truncation, retained "
+                        "capability, and any concrete failure modes."
+                    ),
                     "",
                 ]
             )
         lines.extend(
             [
-                "Candidate conclusion (manual):",
+                "Candidate strengths (observed):",
                 "",
-                "Candidate conclusion reason (manual):",
+                "Candidate limitations/regressions (observed):",
+                "",
+                "Next folding hypotheses suggested by this evidence:",
                 "",
             ]
         )
     lines.extend(
         [
-            "## Cross-candidate conclusion",
+            "## Cross-candidate observations",
             "",
-            "Selected candidate keys (manual):",
+            "Comparative strengths and regressions:",
             "",
-            "Conclusion (manual):",
-            "",
-            "Reason (manual):",
+            "Next experiment hypotheses:",
             "",
         ]
     )
     return "\n".join(lines)
 
 
-def _verdict_template(
+def _observation_template(
     merged: Mapping[str, Any],
     *,
     markdown_sha256: str,
@@ -514,46 +561,67 @@ def _verdict_template(
                 "source_dossier_sha256": candidate["source_dossier_sha256"],
                 "candidate_id": candidate["candidate_id"],
                 "prompt_reviews": [
-                    {"prompt_id": prompt_id, "status": None, "reason": ""}
+                    {
+                        "prompt_id": prompt_id,
+                        "full_parent_and_child_responses_reviewed": False,
+                        "dimension_observations": {
+                            dimension: "" for dimension in OBSERVATION_DIMENSIONS
+                        },
+                        "failure_modes": [],
+                        "additional_observations": [],
+                    }
                     for prompt_id in prompt_ids
                 ],
-                "candidate_conclusion": "",
-                "candidate_conclusion_reason": "",
+                "observed_strengths": [],
+                "observed_limitations_and_regressions": [],
+                "next_folding_hypotheses": [],
             }
         )
     body = {
-        "schema": VERDICT_TEMPLATE_SCHEMA,
-        "status": "blank-manual-qualitative-review-template",
+        "schema": OBSERVATION_TEMPLATE_SCHEMA,
+        "status": "blank-multidimensional-behavior-observation-template",
         "source_merged_evidence_sha256": merged["merged_sha256"],
         "source_dossiers": list(merged["source_dossiers"]),
         "rendered_markdown_sha256": markdown_sha256,
-        "allowed_prompt_statuses": list(PROMPT_STATUSES),
+        "observation_dimensions": list(OBSERVATION_DIMENSIONS),
+        "failure_mode_categories": list(FAILURE_MODE_CATEGORIES),
         "instructions": {
-            "every_prompt_status_must_be_selected_manually": True,
-            "every_prompt_reason_must_be_nonempty_free_text": True,
-            "candidate_conclusions_are_manual_free_text": True,
-            "cross_candidate_conclusion_is_manual": True,
+            "observations_are_optional_but_should_be_case_specific": True,
+            "review_full_parent_and_child_responses_before_observing": True,
+            "record_dimensions_independently": True,
+            "record_strengths_regressions_and_failure_modes": True,
             "exact_parent_wording_is_not_a_criterion": True,
             "numeric_diagnostics_may_guide_navigation": True,
             "numeric_diagnostics_have_decision_authority": False,
-            "no_formula_computes_acceptance_rejection_promotion_retention_or_verdict": (
-                True
-            ),
+            "single_binary_manual_verdict_requested": False,
+            "single_binary_manual_verdict_has_decision_authority": False,
+            "no_formula_computes_acceptance_rejection_promotion_or_retention": True,
+            "retention_target_is_objective_not_cutoff": True,
         },
         "candidate_reviews": candidate_reviews,
-        "cross_candidate_conclusion": {
-            "selected_candidate_keys": [],
-            "conclusion": "",
-            "reason": "",
+        "cross_candidate_observations": {
+            "comparative_strengths": [],
+            "comparative_regressions": [],
+            "next_experiment_hypotheses": [],
         },
         "completion_requirements": {
-            "replace_every_null_status_with_one_allowed_prompt_status": True,
-            "write_a_concrete_reason_for_every_prompt": True,
-            "write_candidate_and_cross_candidate_conclusions_manually": True,
+            "binary_or_scalar_completion_gate": False,
+            "worksheet_completion_required_for_continuation": False,
+            "preserve_all_source_decoded_responses": True,
             "automatic_completion_or_decision_performed": False,
         },
     }
     return {**body, "template_sha256": _canonical_sha256(body)}
+
+
+def _verdict_template(
+    merged: Mapping[str, Any],
+    *,
+    markdown_sha256: str,
+) -> dict[str, Any]:
+    """Compatibility wrapper returning the nonbinary observation worksheet."""
+
+    return _observation_template(merged, markdown_sha256=markdown_sha256)
 
 
 def prepare_qualitative_review(
@@ -581,9 +649,8 @@ def prepare_qualitative_review(
         )
     lane_count = next(iter(cardinalities))
     normalized_labels = tuple(str(value).strip() for value in lane_labels)
-    if (
-        len(set(normalized_labels)) != lane_count
-        or any(not _LANE_LABEL.fullmatch(value) for value in normalized_labels)
+    if len(set(normalized_labels)) != lane_count or any(
+        not _LANE_LABEL.fullmatch(value) for value in normalized_labels
     ):
         raise Lfm2SemanticQualitativeReviewError(
             "Lane labels must be unique stable identifiers."
@@ -672,7 +739,7 @@ def prepare_qualitative_review(
 
     body = {
         "schema": MERGED_SCHEMA,
-        "status": "ready-for-manual-qualitative-review",
+        "status": "decoded-evidence-ready-for-multidimensional-observation",
         "source_dossiers": source_dossiers,
         "source_dossier_count": len(source_dossiers),
         "prompt_set_sha256": reference_prompt_set,
@@ -683,13 +750,17 @@ def prepare_qualitative_review(
         "candidate_count": len(merged_candidates),
         "candidates": merged_candidates,
         "evaluation_policy": {
-            "decoded_whole_responses_are_authoritative": True,
+            "decoded_whole_responses_are_primary_evidence": True,
+            "complete_decoded_responses_preserved": True,
             "exact_parent_text_or_token_match_required": False,
             "numeric_diagnostics_may_guide_navigation": True,
             "numeric_diagnostics_have_decision_authority": False,
             "automatic_acceptance_rejection_promotion_or_retention_computed": False,
-            "candidate_conclusions_are_manual": True,
-            "cross_candidate_conclusion_is_manual": True,
+            "multidimensional_observations_supported": True,
+            "observation_completion_required_for_continuation": False,
+            "single_binary_manual_verdict_has_decision_authority": False,
+            "candidate_winner_selection_requested": False,
+            "retention_target_is_objective_not_cutoff": True,
         },
     }
     merged = {**body, "merged_sha256": _canonical_sha256(body)}
@@ -711,6 +782,11 @@ def prepare_qualitative_review(
         "merged_sha256": merged["merged_sha256"],
         "markdown": str(outputs[1]),
         "markdown_file_sha256": hashlib.sha256(markdown_bytes).hexdigest(),
+        "observation_template_json": str(outputs[2]),
+        "observation_template_file_sha256": hashlib.sha256(template_bytes).hexdigest(),
+        "observation_template_sha256": template["template_sha256"],
+        # Compatibility aliases for callers that still name the third output
+        # "verdict template".  Its contents are explicitly nonbinary.
         "verdict_template_json": str(outputs[2]),
         "verdict_template_file_sha256": hashlib.sha256(template_bytes).hexdigest(),
         "verdict_template_sha256": template["template_sha256"],
@@ -725,8 +801,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Authenticate and merge LFM2 whole-response dossiers, "
-            "render side-by-side Markdown, and emit a sealed blank qualitative "
-            "verdict template without numeric gating."
+            "render side-by-side Markdown, and emit a sealed blank multidimensional "
+            "observation worksheet without numeric or binary gating."
         )
     )
     parser.add_argument("--dossier", action="append", required=True, type=Path)

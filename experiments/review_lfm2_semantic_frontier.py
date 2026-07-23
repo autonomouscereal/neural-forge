@@ -3,8 +3,10 @@
 
 The output deliberately contains no automatic acceptance or rejection field.
 Heuristics such as repetition, empty output, and generation-limit saturation are
-diagnostics for navigating the candidate bank; the decoded responses remain the
-authoritative evidence for human intelligence review.
+diagnostics for navigating the candidate bank.  Complete decoded responses are
+the primary behavioral evidence.  Optional human or agent observations describe
+coherence, competence, regressions, and failure modes across dimensions; neither
+one scalar nor one binary manual verdict controls continuation or retention.
 """
 
 from __future__ import annotations
@@ -561,7 +563,9 @@ def review_frontier(
             "maximum_prompt_tokens": maximum_prompt_tokens,
             "maximum_new_tokens": maximum_new_tokens,
             "automatic_acceptance_or_rejection_performed": False,
-            "whole_response_manual_review_required": True,
+            "complete_decoded_responses_preserved": True,
+            "multidimensional_observations_optional": True,
+            "binary_manual_verdict_required": False,
         }
         _atomic_json(
             progress,
@@ -569,7 +573,7 @@ def review_frontier(
         )
     body = {
         "schema": DOSSIER_SCHEMA,
-        "status": "ready-for-manual-intelligence-review",
+        "status": "decoded-whole-response-evidence-complete",
         "frontier_run_receipt": str(frontier_run_receipt.absolute()),
         "frontier_run_sha256": run["run_sha256"],
         "prompt_source": str(prompts_json.absolute()),
@@ -598,12 +602,16 @@ def review_frontier(
         "reviewed_candidate_count": len(completed),
         "candidate_reviews": completed,
         "evaluation_policy": {
-            "decoded_whole_responses_are_authoritative": True,
+            "decoded_whole_responses_are_primary_evidence": True,
+            "complete_decoded_responses_preserved": True,
             "diagnostic_numbers_may_guide_navigation": True,
             "diagnostic_numbers_have_decision_authority": False,
             "automatic_acceptance_or_rejection_performed": False,
             "exact_parent_token_match_required": False,
-            "manual_intelligence_judgment_required": True,
+            "multidimensional_behavior_observations_encouraged": True,
+            "manual_observations_required_for_continuation": False,
+            "single_binary_manual_verdict_has_decision_authority": False,
+            "retention_target_is_objective_not_cutoff": True,
             "parent_comparison_uses_cached_text_only": parent is not None,
         },
         "operation_audit": {
@@ -623,7 +631,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Generate long-form outputs from standalone folded children for "
-            "manual intelligence review; diagnostics never veto a child."
+            "holistic behavioral review; diagnostics and binary verdicts never "
+            "veto a child."
         )
     )
     parser.add_argument("--frontier-run-receipt", required=True, type=Path)

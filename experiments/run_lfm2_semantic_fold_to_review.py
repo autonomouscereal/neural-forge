@@ -4,9 +4,11 @@
 The transaction publishes a preterminal capsule, exports the terminal W2 bank
 from the same live cache session, materializes every structurally eligible
 writer as a standalone dense child, and generates whole responses.  Historical
-recipes retain the v1 qualitative-review handoff.  Opted-in coupled-attention
-recipes use a separately sealed v2 flow in which metrics and optional human
-observations guide investigation but cannot gate continuation or publication.
+recipe identities remain byte-stable, while the outer orchestration interprets
+their review artifacts as evidence rather than release gates.  Coupled-attention
+recipes additionally bind a sealed v2 flow.  In every outer path, metrics and
+optional multidimensional observations guide investigation but cannot gate
+continuation, retention, or publication.
 """
 
 from __future__ import annotations
@@ -801,7 +803,8 @@ def _materialize_complete_structural_frontier(
         "all_and_only_structurally_eligible_candidates_materialized": True,
         "candidate_metric_threshold_used_for_materialization": False,
         "numeric_metrics_are_diagnostics_only": True,
-        "whole_response_intelligence_review_is_authoritative": True,
+        "decoded_whole_response_evidence_is_primary": True,
+        "single_binary_manual_verdict_has_decision_authority": False,
         "operation_audit": dict(_ZERO_OPERATION_AUDIT),
     }
     document = {**body, "run_sha256": canonical_sha256(body)}
@@ -1071,7 +1074,7 @@ def _run_fold_to_review_scale(
     dossier_path = run_root / "whole-response-dossier.json"
     merged_path = run_root / "qualitative-merged.json"
     markdown_path = run_root / "qualitative-review.md"
-    verdict_path = run_root / "manual-verdict-template.json"
+    verdict_path = run_root / "behavior-observation-template.json"
     observations_path = run_root / "optional-behavior-observations.json"
     pipeline_receipt = run_root / "pipeline-receipt.json"
 
@@ -1228,7 +1231,7 @@ def _run_fold_to_review_scale(
         or dossier_parent.get("maximum_new_tokens") != preflight.maximum_new_tokens
         or dossier_parent.get("response_bank_sha256") != preflight.response_bank_sha256
         or dossier.get("evaluation_policy", {}).get(
-            "decoded_whole_responses_are_authoritative"
+            "decoded_whole_responses_are_primary_evidence"
         )
         is not True
         or dossier.get("evaluation_policy", {}).get(
@@ -1346,6 +1349,17 @@ def _run_fold_to_review_scale(
         "automatic_candidate_acceptance_performed": False,
         "operation_audit": dict(_ZERO_OPERATION_AUDIT),
     }
+    retained_candidate_ids = _retained_candidate_checkpoint_ids(frontier)
+    common_body.update(
+        {
+            "all_materialized_candidate_checkpoints_retained": True,
+            "retained_candidate_checkpoint_count": len(retained_candidate_ids),
+            "retained_candidate_checkpoint_ids": list(retained_candidate_ids),
+            "candidate_checkpoint_retention_depends_on_numeric_or_manual_verdict": (
+                False
+            ),
+        }
+    )
     if behavior_flow is None:
         qualitative = prepare_qualitative_review(
             dossier_paths=(dossier_path,),
@@ -1358,17 +1372,22 @@ def _run_fold_to_review_scale(
         )
         body = {
             "schema": PIPELINE_SCHEMA,
-            "status": "ready-for-manual-whole-response-intelligence-review",
+            "status": "decoded-behavior-evidence-ready-for-observation",
             **common_body,
             "qualitative_review": dict(qualitative),
             "numeric_metrics_are_diagnostics_only": True,
             "numeric_metrics_have_final_intelligence_authority": False,
-            "candidate_published_before_manual_review": False,
-            "blank_manual_verdict_prepared": True,
-            "manual_whole_response_intelligence_review_is_authoritative": True,
+            "candidate_retention_depends_on_observation_completion": False,
+            "behavior_observation_template_prepared": True,
+            "blank_manual_verdict_prepared": False,
+            "decoded_complete_behavior_is_primary_intelligence_evidence": True,
+            "multidimensional_observations_may_guide_next_hypothesis": True,
+            "single_binary_manual_verdict_has_decision_authority": False,
+            "observation_completion_required_for_continuation": False,
+            "retention_target_is_objective_not_cutoff": True,
+            "continuation_unblocked": True,
         }
     else:
-        retained_candidate_ids = _retained_candidate_checkpoint_ids(frontier)
         observations = _prepare_optional_behavior_observations(
             output_json=observations_path,
             recipe=recipe,
@@ -1503,12 +1522,9 @@ def run_fold_to_review(
             "global_residual_closure_version must be producer_aware_v2a or "
             "output_writer_v1_diagnostic."
         )
-    if (
-        closure_version == "output_writer_v1_diagnostic"
-        and (
-            scale_policy.materialization_frontier != (1.0,)
-            or global_residual_basis_rank is not None
-        )
+    if closure_version == "output_writer_v1_diagnostic" and (
+        scale_policy.materialization_frontier != (1.0,)
+        or global_residual_basis_rank is not None
     ):
         raise Lfm2SemanticFoldToReviewError(
             "The output-writer v1 diagnostic supports only its canonical scale "

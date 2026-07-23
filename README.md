@@ -8,6 +8,8 @@ Current real LFM compaction evidence is summarized in
 The current strict objective, large-ratio dense topology frontier, and
 behavioral status are tracked in
 [`docs/DYNAMIC_COMPACTION_GOAL_AND_FRONTIER_2026-07-17.md`](docs/DYNAMIC_COMPACTION_GOAL_AND_FRONTIER_2026-07-17.md).
+The active nonbinary behavioral evidence policy is specified in
+[`docs/BEHAVIOR_EVIDENCE_DECISION_POLICY_2026-07-23.md`](docs/BEHAVIOR_EVIDENCE_DECISION_POLICY_2026-07-23.md).
 
 The new automatic system path is implemented by
 `dynamic_target_synthesis.py`, `dynamic_fold_compiler.py`,
@@ -20,8 +22,10 @@ parent model(s), an exact family/modality/size objective, immutable cached
 evidence, and an output-behavior contract without per-layer surgery. The
 system selects the adapters, constructs the blank child, performs fold-only
 transactions, rejects observed out-of-transaction mutation or training APIs,
-and publishes only a positively compacted, freshly reloaded standalone
-artifact with a sealed certificate. The compiler audits hidden/unregistered
+and retains positively compacted, freshly reloaded standalone artifacts with
+sealed structural certificates. Behavioral measurements and observations do
+not decide whether those structurally valid artifacts are retained. The
+compiler audits hidden/unregistered
 tensor state, requires compiler-reviewed structural-buffer policies,
 content-binds cached evidence, observes zero live-parent forwards, requires
 root-child execution, and reloads the child from its retained final path
@@ -59,6 +63,16 @@ intelligence retention is the objective, not a hard score cutoff; metrics
 diagnose and rank evidence but never substitute for holistic review of
 coherence and competence.
 
+For the active exact-4x and later dynamic-fold lanes, complete decoded outputs
+are the primary behavioral evidence. Review records observations separately for
+coherence, task correctness, reasoning, instruction following, usefulness,
+safety, context/truncation, retained capability, and failure modes. Neither a
+numeric threshold nor one binary human/agent verdict may stop continuation,
+delete a candidate, or declare intelligence retention. Historical utilities
+whose names include `gate`, `accepted`, `rejected`, or `promotion` remain in the
+repository for reproducibility; their old threshold decisions are not imported
+as decision authority by the active fold-to-decoded-behavior orchestration.
+
 This repository is the canonical source tree only for the Neural Forge folding
 project. Historical Neural Forge experiment copies and deployment packets are
 preserved under immutable archive tags/refs. `chimera-omni`, the 2026 frontier
@@ -91,9 +105,11 @@ larger requested architecture without discarding its learned function. Native
 raw image, audio, video, OCR, and 3D token paths remain part of the target; an
 external frozen modality encoder, projector, adapter, or bridge is not assumed.
 
-A mechanically valid shape is not a successful fold. Promotion requires cached
-parent-relative behavior and generation benchmarks plus manual output inspection
-with zero-recovery results reported separately from any later cleanup training.
+A mechanically valid shape is not evidence of retained intelligence. Cached
+parent-relative behavior, full standalone generations, and multidimensional
+output observations are reported together, with zero-recovery results separated
+from any later cleanup training. They guide the next folding experiment rather
+than acting as a scalar or binary promotion gate.
 
 The recovered project objective, evidence lineage, accepted incumbents, and
 closed retry lanes are recorded in
@@ -105,7 +121,12 @@ The experiment catalog and the active cache-aware folding branch are in
 and
 [`docs/RESIDUAL_ATTENTION_FOLDING_2026-07-11.md`](docs/RESIDUAL_ATTENTION_FOLDING_2026-07-11.md).
 
-## What works now
+## Legacy and general-purpose toolkit reference
+
+The commands below include older threshold-gated surgery workflows. They remain
+available for reproducibility and general toolkit use, but their behavioral
+pass/fail decisions do not govern the active blank-target fold-to-decoded-
+behavior path described above.
 
 - `shrink`: reduce hidden widths by clustering similar neurons, averaging incoming
   weights/biases, and summing outgoing paths.

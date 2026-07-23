@@ -72,7 +72,7 @@ def _write_dossier(
     }
     body = {
         "schema": review.DOSSIER_SCHEMA,
-        "status": "ready-for-manual-intelligence-review",
+        "status": "decoded-whole-response-evidence-complete",
         "frontier_run_receipt": "/sealed/frontier-run.json",
         "frontier_run_sha256": "9" * 64,
         "prompt_source": "/sealed/prompts.json",
@@ -86,12 +86,16 @@ def _write_dossier(
         "reviewed_candidate_count": 1,
         "candidate_reviews": [candidate],
         "evaluation_policy": {
-            "decoded_whole_responses_are_authoritative": True,
+            "decoded_whole_responses_are_primary_evidence": True,
+            "complete_decoded_responses_preserved": True,
             "diagnostic_numbers_may_guide_navigation": True,
             "diagnostic_numbers_have_decision_authority": False,
             "automatic_acceptance_or_rejection_performed": False,
             "exact_parent_token_match_required": False,
-            "manual_intelligence_judgment_required": True,
+            "multidimensional_behavior_observations_encouraged": True,
+            "manual_observations_required_for_continuation": False,
+            "single_binary_manual_verdict_has_decision_authority": False,
+            "retention_target_is_objective_not_cutoff": True,
             "parent_comparison_uses_cached_text_only": True,
         },
         "operation_audit": {
@@ -172,6 +176,13 @@ def test_prepare_authenticates_merges_renders_and_seals_template(
         ]
         is False
     )
+    assert (
+        merged["evaluation_policy"][
+            "single_binary_manual_verdict_has_decision_authority"
+        ]
+        is False
+    )
+    assert merged["evaluation_policy"]["candidate_winner_selection_requested"] is False
 
     markdown = markdown_path.read_text(encoding="utf-8")
     assert "<table>" in markdown
@@ -180,6 +191,7 @@ def test_prepare_authenticates_merges_renders_and_seals_template(
     assert "Child lane 2 gives a coherent explanation." in markdown
     assert "Navigation diagnostics only" in markdown
     assert "never accept, reject, promote, rank, or estimate" in markdown
+    assert "Record observations across dimensions" in markdown
 
     template = json.loads(template_path.read_text(encoding="ascii"))
     template_body = dict(template)
@@ -187,25 +199,42 @@ def test_prepare_authenticates_merges_renders_and_seals_template(
         template_body
     )
     assert template["source_merged_evidence_sha256"] == merged["merged_sha256"]
-    assert template["allowed_prompt_statuses"] == list(review.PROMPT_STATUSES)
+    assert template["observation_dimensions"] == list(review.OBSERVATION_DIMENSIONS)
+    assert template["failure_mode_categories"] == list(review.FAILURE_MODE_CATEGORIES)
     assert len(template["candidate_reviews"]) == 5
     for candidate in template["candidate_reviews"]:
-        assert candidate["candidate_conclusion"] == ""
-        assert candidate["candidate_conclusion_reason"] == ""
+        assert candidate["observed_strengths"] == []
+        assert candidate["observed_limitations_and_regressions"] == []
+        assert candidate["next_folding_hypotheses"] == []
         assert candidate["prompt_reviews"] == [
-            {"prompt_id": "reasoning-one", "status": None, "reason": ""}
+            {
+                "prompt_id": "reasoning-one",
+                "full_parent_and_child_responses_reviewed": False,
+                "dimension_observations": {
+                    dimension: "" for dimension in review.OBSERVATION_DIMENSIONS
+                },
+                "failure_modes": [],
+                "additional_observations": [],
+            }
         ]
-    assert template["cross_candidate_conclusion"] == {
-        "selected_candidate_keys": [],
-        "conclusion": "",
-        "reason": "",
+    assert template["cross_candidate_observations"] == {
+        "comparative_strengths": [],
+        "comparative_regressions": [],
+        "next_experiment_hypotheses": [],
     }
     assert (
-        template["instructions"]["numeric_diagnostics_have_decision_authority"]
+        template["instructions"]["numeric_diagnostics_have_decision_authority"] is False
+    )
+    assert template["instructions"]["single_binary_manual_verdict_requested"] is False
+    assert (
+        template["completion_requirements"][
+            "worksheet_completion_required_for_continuation"
+        ]
         is False
     )
     assert result["automatic_decision_performed"] is False
     assert result["verdict_template_sha256"] == template["template_sha256"]
+    assert result["observation_template_sha256"] == template["template_sha256"]
 
 
 def test_prepare_rejects_changed_dossier_bytes(tmp_path: Path) -> None:
@@ -270,7 +299,9 @@ def test_prepare_requires_unique_lane_bindings(tmp_path: Path) -> None:
         )
 
 
-def test_cli_writes_all_outputs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_writes_all_outputs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     paths, file_hashes, dossier_hashes = _prepare_inputs(tmp_path, count=5)
     merged = tmp_path / "cli-merged.json"
     markdown = tmp_path / "cli-review.md"

@@ -58,7 +58,7 @@ def _write_prompts(path: Path) -> None:
     )
 
 
-def test_review_frontier_preserves_all_outputs_for_manual_judgment(
+def test_review_frontier_preserves_all_outputs_for_multidimensional_observation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -110,17 +110,21 @@ def test_review_frontier_preserves_all_outputs_for_manual_judgment(
     )
 
     assert calls == list(candidate_ids)
-    assert document["status"] == "ready-for-manual-intelligence-review"
+    assert document["status"] == "decoded-whole-response-evidence-complete"
     assert document["requested_candidate_ids"] == list(candidate_ids)
     assert document["reviewed_candidate_count"] == len(candidate_ids)
     assert document["maximum_new_tokens"] == 256
     assert document["evaluation_policy"] == {
-        "decoded_whole_responses_are_authoritative": True,
+        "decoded_whole_responses_are_primary_evidence": True,
+        "complete_decoded_responses_preserved": True,
         "diagnostic_numbers_may_guide_navigation": True,
         "diagnostic_numbers_have_decision_authority": False,
         "automatic_acceptance_or_rejection_performed": False,
         "exact_parent_token_match_required": False,
-        "manual_intelligence_judgment_required": True,
+        "multidimensional_behavior_observations_encouraged": True,
+        "manual_observations_required_for_continuation": False,
+        "single_binary_manual_verdict_has_decision_authority": False,
+        "retention_target_is_objective_not_cutoff": True,
         "parent_comparison_uses_cached_text_only": False,
     }
     assert document["operation_audit"]["training_steps"] == 0
@@ -131,6 +135,9 @@ def test_review_frontier_preserves_all_outputs_for_manual_judgment(
     )
     assert progress["status"] == "complete"
     assert progress["completed_candidate_ids"] == list(candidate_ids)
+    assert progress["complete_decoded_responses_preserved"] is True
+    assert progress["multidimensional_observations_optional"] is True
+    assert progress["binary_manual_verdict_required"] is False
 
 
 def test_review_frontier_can_review_named_subset_without_numeric_selection(

@@ -605,7 +605,7 @@ def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
                 "response_bank_sha256": response_bank_sha256,
             },
             "evaluation_policy": {
-                "decoded_whole_responses_are_authoritative": True,
+                "decoded_whole_responses_are_primary_evidence": True,
                 "diagnostic_numbers_have_decision_authority": False,
             },
         }
@@ -673,7 +673,7 @@ def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
     )
     assert compaction["counts_recomputed_from_authenticated_values"] is True
     assert compaction["dense_parameter_compaction_is_quality_gate"] is False
-    assert result["blank_manual_verdict_prepared"] is (not nonblocking)
+    assert result["blank_manual_verdict_prepared"] is False
     if nonblocking:
         assert "candidate_published_before_manual_review" not in result
         assert result["schema"] == runner.NONBLOCKING_PIPELINE_SCHEMA
@@ -736,11 +736,16 @@ def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
             Path(arguments["run_directory"]) / "manual-verdict-template.json"
         ).exists()
     else:
-        assert result["candidate_published_before_manual_review"] is False
         assert result["schema"] == runner.PIPELINE_SCHEMA
-        assert result["status"] == (
-            "ready-for-manual-whole-response-intelligence-review"
-        )
+        assert result["status"] == "decoded-behavior-evidence-ready-for-observation"
+        assert result["behavior_observation_template_prepared"] is True
+        assert result["candidate_retention_depends_on_observation_completion"] is False
+        assert result["single_binary_manual_verdict_has_decision_authority"] is False
+        assert result["observation_completion_required_for_continuation"] is False
+        assert result["continuation_unblocked"] is True
+        assert (
+            Path(arguments["run_directory"]) / "behavior-observation-template.json"
+        ).exists()
     assert not (Path(arguments["run_directory"]) / "unselected-checkpoint").exists()
     persisted = json.loads(
         (Path(arguments["run_directory"]) / "pipeline-receipt.json").read_text(
