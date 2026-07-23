@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -44,6 +45,7 @@ from neural_forge.hf_lfm2_producer_aware_global_linearization import (
     Lfm2ProducerAwareDenseTransaction,
     Lfm2ProducerAwareInstallationReceipt,
     Lfm2ProducerAwareLayerSeedWeights,
+    Lfm2ProducerAwareLinearizationNormEvidence,
     Lfm2ProducerAwareWholeStackLinearizationKernel,
     build_lfm2_producer_aware_writer_topology,
     install_lfm2_producer_aware_dense_transaction,
@@ -71,6 +73,110 @@ class Lfm2ProducerAwareSemanticAuthenticationError(
     Lfm2ProducerAwareSemanticIntegrationError
 ):
     """Producer-aware semantic evidence failed byte authentication."""
+
+
+_MAX_FINITE_NORM_EVIDENCE = sys.float_info.max
+_LOG_MAX_FINITE_NORM_EVIDENCE = math.log(_MAX_FINITE_NORM_EVIDENCE)
+
+
+@dataclass(frozen=True, slots=True)
+class _FiniteEvidenceArithmetic:
+    value: float
+    saturated: bool = False
+
+
+def _finite_evidence_arithmetic(
+    value: float | _FiniteEvidenceArithmetic,
+) -> _FiniteEvidenceArithmetic:
+    if isinstance(value, _FiniteEvidenceArithmetic):
+        numeric = value.value
+    else:
+        numeric = float(value)
+    if not math.isfinite(numeric) or numeric < 0.0:
+        raise Lfm2ProducerAwareSemanticIntegrationError(
+            "Producer-aware weighted evidence has a non-finite operand."
+        )
+    return (
+        value
+        if isinstance(value, _FiniteEvidenceArithmetic)
+        else _FiniteEvidenceArithmetic(numeric)
+    )
+
+
+def _finite_saturating_evidence_product(
+    left: float | _FiniteEvidenceArithmetic,
+    right: float | _FiniteEvidenceArithmetic,
+) -> _FiniteEvidenceArithmetic:
+    left_item = _finite_evidence_arithmetic(left)
+    right_item = _finite_evidence_arithmetic(right)
+    left_value = left_item.value
+    right_value = right_item.value
+    if not all(
+        math.isfinite(value) and value >= 0.0
+        for value in (left_value, right_value)
+    ):
+        raise Lfm2ProducerAwareSemanticIntegrationError(
+            "Producer-aware weighted evidence has a non-finite operand."
+        )
+    product = left_value * right_value
+    operation_saturated = not math.isfinite(product)
+    return _FiniteEvidenceArithmetic(
+        _MAX_FINITE_NORM_EVIDENCE if operation_saturated else product,
+        left_item.saturated or right_item.saturated or operation_saturated,
+    )
+
+
+def _finite_saturating_evidence_fsum(
+    values: tuple[float | _FiniteEvidenceArithmetic, ...],
+) -> _FiniteEvidenceArithmetic:
+    checked = tuple(_finite_evidence_arithmetic(value) for value in values)
+    try:
+        total = math.fsum(value.value for value in checked)
+    except OverflowError:
+        return _FiniteEvidenceArithmetic(_MAX_FINITE_NORM_EVIDENCE, True)
+    return _FiniteEvidenceArithmetic(
+        total,
+        any(value.saturated for value in checked),
+    )
+
+
+def _weighted_log_evidence(
+    log_value: float | None,
+    weight: float,
+) -> float | None:
+    if log_value is None or weight == 0.0:
+        return None
+    return log_value + math.log(weight)
+
+
+def _log_evidence_sum(values: tuple[float | None, ...]) -> float | None:
+    total = None
+    for value in values:
+        if value is None:
+            continue
+        if total is None:
+            total = value
+            continue
+        high = max(total, value)
+        low = min(total, value)
+        total = high + math.log1p(math.exp(low - high))
+    return total
+
+
+def _finite_proxy_from_log_evidence(log_value: float | None) -> tuple[float, bool]:
+    if log_value is None:
+        return 0.0, False
+    if log_value >= _LOG_MAX_FINITE_NORM_EVIDENCE:
+        return _MAX_FINITE_NORM_EVIDENCE, True
+    try:
+        proxy = math.exp(log_value)
+    except OverflowError:
+        return _MAX_FINITE_NORM_EVIDENCE, True
+    return (
+        (proxy, False)
+        if math.isfinite(proxy)
+        else (_MAX_FINITE_NORM_EVIDENCE, True)
+    )
 
 
 def _torch() -> Any:
@@ -446,19 +552,65 @@ def _weighted_norm_evidence(
         evidence.snapshot,
         basis.output_basis,
     )
+    if not isinstance(certified, Lfm2ProducerAwareLinearizationNormEvidence):
+        raise Lfm2ProducerAwareSemanticIntegrationError(
+            "Producer-aware norm evidence omitted its overflow contract."
+        )
     maximum_coordinate_weight = max(
         float(boundary.row_mass.max().item()) for boundary in boundaries.boundaries
     ) / (len(boundaries.boundaries) * evidence.snapshot.hidden_size)
-    block_scales = tuple(
-        float(value) * maximum_coordinate_weight
+    block_scale_arithmetic = tuple(
+        _finite_saturating_evidence_product(value, maximum_coordinate_weight)
         for value in conditioning.block_squared_scales
     )
-    operator_scale = math.fsum(block_scales)
-    certified_blocks = tuple(
-        float(value) * maximum_coordinate_weight
-        for value in certified.block_squared_norm_upper_bounds
+    block_scales = tuple(value.value for value in block_scale_arithmetic)
+    operator_scale_arithmetic = _finite_saturating_evidence_fsum(
+        block_scale_arithmetic
     )
-    certified_operator = math.fsum(certified_blocks)
+    operator_scale = operator_scale_arithmetic.value
+    weighted_block_logs = tuple(
+        _weighted_log_evidence(value, maximum_coordinate_weight)
+        for value in certified.block_log_squared_norm_evidence
+    )
+    weighted_operator_log = _log_evidence_sum(weighted_block_logs)
+    weighted_overflow_observed = certified.finite_float_overflow_observed
+    weighted_bound_arithmetic: tuple[_FiniteEvidenceArithmetic, ...] = ()
+    weighted_operator_arithmetic = _FiniteEvidenceArithmetic(0.0)
+    if not weighted_overflow_observed:
+        weighted_bound_arithmetic = tuple(
+            _finite_saturating_evidence_product(
+                value,
+                maximum_coordinate_weight,
+            )
+            for value in certified.block_squared_norm_upper_bounds
+        )
+        weighted_operator_arithmetic = _finite_saturating_evidence_fsum(
+            weighted_bound_arithmetic
+        )
+        weighted_overflow_observed = (
+            weighted_operator_arithmetic.saturated
+            or any(value.saturated for value in weighted_bound_arithmetic)
+        )
+    if weighted_overflow_observed:
+        block_proxy_pairs = tuple(
+            _finite_proxy_from_log_evidence(value) for value in weighted_block_logs
+        )
+        certified_blocks = tuple(value for value, _ in block_proxy_pairs)
+        certified_operator, operator_proxy_saturated = (
+            _finite_proxy_from_log_evidence(weighted_operator_log)
+        )
+        certified_operator = max(certified_operator, *certified_blocks)
+        finite_proxy_saturated = operator_proxy_saturated or any(
+            saturated for _, saturated in block_proxy_pairs
+        )
+        finite_bound_fields_are_certified = False
+    else:
+        certified_blocks = tuple(
+            value.value for value in weighted_bound_arithmetic
+        )
+        certified_operator = weighted_operator_arithmetic.value
+        finite_proxy_saturated = False
+        finite_bound_fields_are_certified = True
     values = (*block_scales, operator_scale, *certified_blocks, certified_operator)
     if not all(math.isfinite(value) and value >= 0.0 for value in values):
         raise Lfm2ProducerAwareSemanticIntegrationError(
@@ -475,6 +627,24 @@ def _weighted_norm_evidence(
             "block_squared_conditioning_scales": list(block_scales),
             "operator_squared_norm_upper_bound": certified_operator,
             "block_squared_norm_upper_bounds": list(certified_blocks),
+            "finite_norm_bound_fields_are_certified": (
+                finite_bound_fields_are_certified
+            ),
+            "downstream_norm_bound_float_overflow_observed": (
+                weighted_overflow_observed
+            ),
+            "finite_norm_bound_proxy_saturated": finite_proxy_saturated,
+            "operator_log_squared_norm_evidence": weighted_operator_log,
+            "block_log_squared_norm_evidence": list(weighted_block_logs),
+            "log_squared_norm_evidence_base": "natural",
+            "overflow_norm_bound_evidence_is_advisory_only": (
+                not finite_bound_fields_are_certified
+            ),
+            "finite_norm_bound_proxy_used_for_conditioning": False,
+            "conditioning_float_overflow_observed": (
+                operator_scale_arithmetic.saturated
+                or any(value.saturated for value in block_scale_arithmetic)
+            ),
             "conditioning_scale_separate_from_certified_bound": True,
             "numeric_scale_used_for_candidate_selection": False,
             "numeric_scale_used_for_auto_veto": False,
@@ -636,6 +806,21 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         operator_squared_conditioning_scale=operator_scale,
         block_squared_conditioning_scales=block_scales,
         conditioning_scale_method=("max-W-weighted-producer-aware-local-direct-energy"),
+        finite_norm_bound_fields_are_certified=scale_report[
+            "finite_norm_bound_fields_are_certified"
+        ],
+        downstream_norm_bound_float_overflow_observed=scale_report[
+            "downstream_norm_bound_float_overflow_observed"
+        ],
+        finite_norm_bound_proxy_saturated=scale_report[
+            "finite_norm_bound_proxy_saturated"
+        ],
+        operator_log_squared_norm_evidence=scale_report[
+            "operator_log_squared_norm_evidence"
+        ],
+        block_log_squared_norm_evidence=scale_report[
+            "block_log_squared_norm_evidence"
+        ],
     )
     kernel = Lfm2ProducerAwareWholeStackLinearizationKernel(
         topology,

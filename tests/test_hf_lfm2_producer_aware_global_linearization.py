@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+import sys
 from dataclasses import replace
 
 import pytest
@@ -624,6 +626,135 @@ def test_producer_aware_whole_stack_finite_difference_adjoint_and_causality() ->
     assert float(torch.linalg.vector_norm(causal_effects[17]).item()) > 0.0
     assert kernel.supports_bundle_linearization
     assert kernel.verify_authentication(force_raw=True)
+
+
+def test_producer_aware_norm_evidence_saturates_huge_finite_products(
+    monkeypatch,
+) -> None:
+    fixture = _build_v2_stack_fixture(layer_count=2)
+    huge = 1e200
+    monkeypatch.setattr(
+        producer_module,
+        "_macrocell_norm_factors",
+        lambda _macrocell, _basis: (huge, huge, huge, huge),
+    )
+    monkeypatch.setattr(
+        producer_module,
+        "_producer_input_direct_norm_factors",
+        lambda _macrocell, _basis: (huge, huge),
+    )
+    monkeypatch.setattr(
+        producer_module,
+        "_terminal_transfer_norm_upper",
+        lambda _terminal: huge,
+    )
+
+    conditioning, certified = lfm2_producer_aware_whole_stack_norm_evidence(
+        fixture["snapshot"],
+        fixture["basis"],
+    )
+
+    maximum = producer_module._MAX_FINITE_NORM_EVIDENCE
+    assert certified.finite_float_overflow_observed is True
+    assert certified.operator_log_squared_norm_evidence is not None
+    assert (
+        certified.operator_log_squared_norm_evidence
+        > producer_module._LOG_MAX_FINITE_NORM_EVIDENCE
+    )
+    assert all(
+        value is not None
+        and value > producer_module._LOG_MAX_FINITE_NORM_EVIDENCE
+        for value in certified.block_log_squared_norm_evidence
+    )
+    assert conditioning.operator_squared_scale == maximum
+    assert certified.operator_squared_norm_upper_bound == maximum
+    assert conditioning.block_squared_scales == (maximum,) * 8
+    assert certified.block_squared_norm_upper_bounds == (maximum,) * 8
+    assert all(
+        math.isfinite(value)
+        for value in (
+            conditioning.operator_squared_scale,
+            *conditioning.block_squared_scales,
+            certified.operator_squared_norm_upper_bound,
+            *certified.block_squared_norm_upper_bounds,
+        )
+    )
+
+
+def test_producer_aware_norm_evidence_tracks_exact_log_boundary_saturation(
+    monkeypatch,
+) -> None:
+    fixture = _build_v2_stack_fixture(layer_count=2)
+    first, second = fixture["snapshot"].batches[0].macrocells
+    just_over_square_limit = math.sqrt(sys.float_info.max) * math.nextafter(
+        1.0,
+        math.inf,
+    )
+
+    def boundary_factors(macrocell, _basis):
+        if macrocell is first:
+            return (1.0, 1.0, 0.0, 1.0)
+        assert macrocell is second
+        return (just_over_square_limit, 0.0, 0.0, 0.0)
+
+    monkeypatch.setattr(
+        producer_module,
+        "_macrocell_norm_factors",
+        boundary_factors,
+    )
+    monkeypatch.setattr(
+        producer_module,
+        "_producer_input_direct_norm_factors",
+        lambda _macrocell, _basis: (0.0, 0.0),
+    )
+    monkeypatch.setattr(
+        producer_module,
+        "_terminal_transfer_norm_upper",
+        lambda _terminal: 0.0,
+    )
+
+    conditioning, certified = lfm2_producer_aware_whole_stack_norm_evidence(
+        fixture["snapshot"],
+        fixture["basis"],
+    )
+
+    assert certified.block_log_squared_norm_evidence[3] == math.log(
+        sys.float_info.max
+    )
+    assert certified.operator_log_squared_norm_evidence == math.log(
+        sys.float_info.max
+    )
+    assert certified.block_squared_norm_upper_bounds[3] == sys.float_info.max
+    assert certified.operator_squared_norm_upper_bound == sys.float_info.max
+    assert certified.finite_float_overflow_observed is True
+    assert conditioning.operator_squared_scale == 1.0
+
+
+@pytest.mark.parametrize("nonfinite", [float("inf"), float("nan")])
+def test_producer_aware_norm_evidence_still_rejects_nonfinite_factors(
+    monkeypatch,
+    nonfinite: float,
+) -> None:
+    fixture = _build_v2_stack_fixture(layer_count=1)
+    monkeypatch.setattr(
+        producer_module,
+        "_macrocell_norm_factors",
+        lambda _macrocell, _basis: (1.0, 1.0, 1.0, 1.0),
+    )
+    monkeypatch.setattr(
+        producer_module,
+        "_producer_input_direct_norm_factors",
+        lambda _macrocell, _basis: (nonfinite, 1.0),
+    )
+
+    with pytest.raises(
+        Lfm2ProducerAwareLinearizationError,
+        match="non-finite or negative factor",
+    ):
+        lfm2_producer_aware_whole_stack_norm_evidence(
+            fixture["snapshot"],
+            fixture["basis"],
+        )
 
 
 def test_every_producer_aware_site_is_block_lower_triangular() -> None:

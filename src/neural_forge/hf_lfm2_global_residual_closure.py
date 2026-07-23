@@ -230,6 +230,17 @@ def _finite_nonnegative(value: Any, name: str) -> float:
     return result
 
 
+def _finite_number_or_none(value: Any, name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise Lfm2GlobalResidualClosureError(f"{name} must be finite or null.")
+    result = float(value)
+    if not math.isfinite(result):
+        raise Lfm2GlobalResidualClosureError(f"{name} must be finite or null.")
+    return result
+
+
 def _finite_positive(value: Any, name: str) -> float:
     result = _finite_nonnegative(value, name)
     if result == 0.0:
@@ -1110,15 +1121,20 @@ def seal_lfm2_global_residual_linearization_receipt(
     operator_squared_conditioning_scale: float | None = None,
     block_squared_conditioning_scales: Sequence[float] | None = None,
     conditioning_scale_method: str = "certified_norm_bound_fallback",
+    finite_norm_bound_fields_are_certified: bool = True,
+    downstream_norm_bound_float_overflow_observed: bool = False,
+    finite_norm_bound_proxy_saturated: bool = False,
+    operator_log_squared_norm_evidence: float | None = None,
+    block_log_squared_norm_evidence: Sequence[float | None] | None = None,
 ) -> Mapping[str, Any]:
     """Seal the adapter-owned analytic JVP/VJP contract consumed by the core.
 
-    Certified norm bounds and useful numerical conditioning scales are separate
-    quantities.  A deep residual stack can have a mathematically valid but
-    extremely loose product bound; using that product as a ridge scale can
-    erase the correction.  Callers may therefore supply deterministic scales
-    in the weighted normal-operator units used by the solve.  Those scales tune
-    ridge/preconditioning only and never admit, veto, or publish a candidate.
+    Representable certified norm bounds and useful numerical conditioning
+    scales are separate quantities.  A deep residual stack can exceed the
+    finite-float range; callers then authenticate advisory log-domain evidence
+    plus finite compatibility proxies and must supply independent conditioning.
+    Conditioning scales tune ridge/preconditioning only and never admit, veto,
+    or publish a candidate.
     """
 
     if not topology.verify_authentication() or not boundaries.verify_authentication():
@@ -1155,6 +1171,51 @@ def seal_lfm2_global_residual_linearization_receipt(
         raise Lfm2GlobalResidualClosureError(
             "A block norm bound cannot exceed the global operator bound."
         )
+    for value, name in (
+        (
+            finite_norm_bound_fields_are_certified,
+            "finite_norm_bound_fields_are_certified",
+        ),
+        (
+            downstream_norm_bound_float_overflow_observed,
+            "downstream_norm_bound_float_overflow_observed",
+        ),
+        (finite_norm_bound_proxy_saturated, "finite_norm_bound_proxy_saturated"),
+    ):
+        if not isinstance(value, bool):
+            raise Lfm2GlobalResidualClosureError(f"{name} must be boolean.")
+    operator_log_evidence = _finite_number_or_none(
+        operator_log_squared_norm_evidence,
+        "operator_log_squared_norm_evidence",
+    )
+    if block_log_squared_norm_evidence is None:
+        block_log_evidence: tuple[float | None, ...] = ()
+    else:
+        block_log_evidence = tuple(
+            _finite_number_or_none(value, f"block_log_squared_norm_evidence[{index}]")
+            for index, value in enumerate(block_log_squared_norm_evidence)
+        )
+        if len(block_log_evidence) != len(topology.sites):
+            raise Lfm2GlobalResidualClosureError(
+                "block_log_squared_norm_evidence must have one value per writer site."
+            )
+    if finite_norm_bound_fields_are_certified:
+        if (
+            downstream_norm_bound_float_overflow_observed
+            or finite_norm_bound_proxy_saturated
+        ):
+            raise Lfm2GlobalResidualClosureError(
+                "Overflowed finite norm fields cannot be declared certified."
+            )
+    elif (
+        not downstream_norm_bound_float_overflow_observed
+        or operator_log_evidence is None
+        or len(block_log_evidence) != len(topology.sites)
+    ):
+        raise Lfm2GlobalResidualClosureError(
+            "Advisory finite norm proxies require authenticated log-domain overflow "
+            "evidence."
+        )
     if (operator_squared_conditioning_scale is None) != (
         block_squared_conditioning_scales is None
     ):
@@ -1162,6 +1223,10 @@ def seal_lfm2_global_residual_linearization_receipt(
             "Global and per-block conditioning scales must be supplied together."
         )
     if operator_squared_conditioning_scale is None:
+        if not finite_norm_bound_fields_are_certified:
+            raise Lfm2GlobalResidualClosureError(
+                "An advisory overflow proxy cannot be reused as solver conditioning."
+            )
         operator_scale = operator_bound
         block_scales = block_bounds
         scale_method = "certified_norm_bound_fallback"
@@ -1190,6 +1255,11 @@ def seal_lfm2_global_residual_linearization_receipt(
                 "method."
             )
         certified_scale = False
+    norm_bound_representation = (
+        "finite_float64_certified_bound"
+        if finite_norm_bound_fields_are_certified
+        else "log_domain_overflow_evidence_with_finite_advisory_proxy"
+    )
     body = {
         "schema": LFM2_GLOBAL_RESIDUAL_LINEARIZATION_SCHEMA,
         "kind": "analytic_global_causal_writer_to_boundary_linearization",
@@ -1205,6 +1275,24 @@ def seal_lfm2_global_residual_linearization_receipt(
         "analytic_vjp": True,
         "operator_squared_norm_upper_bound": operator_bound,
         "block_squared_norm_upper_bounds": list(block_bounds),
+        "finite_norm_bound_fields_are_certified": (
+            finite_norm_bound_fields_are_certified
+        ),
+        "downstream_norm_bound_float_overflow_observed": (
+            downstream_norm_bound_float_overflow_observed
+        ),
+        "finite_norm_bound_proxy_saturated": finite_norm_bound_proxy_saturated,
+        "operator_log_squared_norm_evidence": operator_log_evidence,
+        "block_log_squared_norm_evidence": list(block_log_evidence),
+        "log_squared_norm_evidence_base": "natural",
+        "norm_bound_representation": norm_bound_representation,
+        "overflow_norm_bound_evidence_is_advisory_only": (
+            not finite_norm_bound_fields_are_certified
+        ),
+        "finite_norm_bound_proxy_has_solver_authority": (
+            finite_norm_bound_fields_are_certified and certified_scale
+        ),
+        "norm_bound_has_quality_gate_authority": False,
         "operator_squared_conditioning_scale": operator_scale,
         "block_squared_conditioning_scales": list(block_scales),
         "conditioning_scale_method": scale_method,
@@ -2202,6 +2290,20 @@ class Lfm2GlobalResidualClosureOperator:
         block_scales = tuple(
             receipt.get("block_squared_conditioning_scales", block_bounds)
         )
+        finite_bounds_certified = receipt.get(
+            "finite_norm_bound_fields_are_certified",
+            True,
+        )
+        overflow_observed = receipt.get(
+            "downstream_norm_bound_float_overflow_observed",
+            False,
+        )
+        operator_log_evidence = receipt.get(
+            "operator_log_squared_norm_evidence"
+        )
+        block_log_evidence = tuple(
+            receipt.get("block_log_squared_norm_evidence", ())
+        )
         if (
             len(block_bounds) != len(topology.sites)
             or len(block_scales) != len(topology.sites)
@@ -2209,6 +2311,38 @@ class Lfm2GlobalResidualClosureOperator:
             raise Lfm2GlobalResidualClosureAuthenticationError(
                 "linearization receipt has the wrong block-bound or conditioning-"
                 "scale inventory."
+            )
+        if (
+            not isinstance(finite_bounds_certified, bool)
+            or not isinstance(overflow_observed, bool)
+            or (
+                not finite_bounds_certified
+                and (
+                    not overflow_observed
+                    or receipt.get("conditioning_scale_is_certified_norm_bound")
+                    is not False
+                    or receipt.get("overflow_norm_bound_evidence_is_advisory_only")
+                    is not True
+                    or receipt.get("finite_norm_bound_proxy_has_solver_authority")
+                    is not False
+                    or not isinstance(operator_log_evidence, (int, float))
+                    or isinstance(operator_log_evidence, bool)
+                    or not math.isfinite(float(operator_log_evidence))
+                    or len(block_log_evidence) != len(topology.sites)
+                    or any(
+                        value is not None
+                        and (
+                            isinstance(value, bool)
+                            or not isinstance(value, (int, float))
+                            or not math.isfinite(float(value))
+                        )
+                        for value in block_log_evidence
+                    )
+                )
+            )
+        ):
+            raise Lfm2GlobalResidualClosureAuthenticationError(
+                "linearization receipt has an invalid norm-overflow authority contract."
             )
         if (
             kernel.topology.topology_sha256 != topology.topology_sha256
@@ -2274,12 +2408,15 @@ class Lfm2GlobalResidualClosureOperator:
             self.policy.absolute_ridge_floor,
             operator_scale / (self.policy.condition_cap - 1.0),
         )
+        self.finite_norm_bound_fields_are_certified = finite_bounds_certified
         self.regularized_condition_upper_bound = (
-            operator_bound + self.ridge
-        ) / self.ridge
+            1.0 + operator_bound / self.ridge
+            if finite_bounds_certified
+            else None
+        )
         self.regularization_scale_ratio = (
-            operator_scale + self.ridge
-        ) / self.ridge
+            1.0 + operator_scale / self.ridge
+        )
         block_preconditioners = tuple(
             self.ridge + value
             for value in self.block_squared_conditioning_scales
@@ -3140,6 +3277,54 @@ def solve_lfm2_global_residual_closure(
         "conditioning": {
             "condition_cap": operator.policy.condition_cap,
             "operator_squared_norm_upper_bound": operator_bound,
+            "finite_norm_bound_fields_are_certified": (
+                operator.finite_norm_bound_fields_are_certified
+            ),
+            "downstream_norm_bound_float_overflow_observed": (
+                operator.linearization_receipt.get(
+                    "downstream_norm_bound_float_overflow_observed",
+                    False,
+                )
+            ),
+            "finite_norm_bound_proxy_saturated": (
+                operator.linearization_receipt.get(
+                    "finite_norm_bound_proxy_saturated",
+                    False,
+                )
+            ),
+            "operator_log_squared_norm_evidence": (
+                operator.linearization_receipt.get(
+                    "operator_log_squared_norm_evidence"
+                )
+            ),
+            "block_log_squared_norm_evidence": list(
+                operator.linearization_receipt.get(
+                    "block_log_squared_norm_evidence",
+                    (),
+                )
+            ),
+            "log_squared_norm_evidence_base": (
+                operator.linearization_receipt.get(
+                    "log_squared_norm_evidence_base",
+                    "natural",
+                )
+            ),
+            "norm_bound_representation": operator.linearization_receipt.get(
+                "norm_bound_representation",
+                "finite_float64_certified_bound",
+            ),
+            "overflow_norm_bound_evidence_is_advisory_only": (
+                operator.linearization_receipt.get(
+                    "overflow_norm_bound_evidence_is_advisory_only",
+                    False,
+                )
+            ),
+            "finite_norm_bound_proxy_has_solver_authority": (
+                operator.linearization_receipt.get(
+                    "finite_norm_bound_proxy_has_solver_authority",
+                    True,
+                )
+            ),
             "operator_squared_conditioning_scale": (
                 operator.operator_squared_conditioning_scale
             ),
@@ -3170,10 +3355,17 @@ def solve_lfm2_global_residual_closure(
                 operator.regularized_condition_upper_bound
             ),
             "condition_cap_passed": (
-                operator.regularized_condition_upper_bound
+                None
+                if operator.regularized_condition_upper_bound is None
+                else operator.regularized_condition_upper_bound
                 <= operator.policy.condition_cap * (1.0 + 1e-12)
             ),
-            "certified_bound_condition_cap_is_diagnostic_only": True,
+            "certified_bound_condition_cap_is_diagnostic_only": (
+                operator.finite_norm_bound_fields_are_certified
+            ),
+            "advisory_log_bound_has_no_condition_cap_claim": (
+                not operator.finite_norm_bound_fields_are_certified
+            ),
             "conditioning_scale_has_quality_gate_authority": False,
             "block_preconditioner": (
                 "authenticated-block-conditioning-scale-plus-ridge"

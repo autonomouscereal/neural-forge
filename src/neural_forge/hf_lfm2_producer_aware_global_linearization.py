@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType, SimpleNamespace
@@ -87,6 +88,166 @@ class Lfm2ProducerAwareLinearizationError(Lfm2GlobalLinearizationError):
 
 class Lfm2ProducerAwareAuthenticationError(Lfm2ProducerAwareLinearizationError):
     """Producer-aware immutable evidence changed after capture."""
+
+
+_MAX_FINITE_NORM_EVIDENCE = sys.float_info.max
+_LOG_MAX_FINITE_NORM_EVIDENCE = math.log(_MAX_FINITE_NORM_EVIDENCE)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2ProducerAwareLinearizationNormEvidence(Lfm2LinearizationNormBounds):
+    """Finite proxies plus advisory log-domain evidence for deep-stack bounds.
+
+    ``Lfm2LinearizationNormBounds`` is retained as the compatibility surface.
+    When ``finite_float_overflow_observed`` is true, those inherited float
+    fields are max-float sentinels rather than certified upper bounds.  The
+    log-domain fields authenticate the untruncated analytic evidence without
+    giving it solver or quality-gate authority.
+    """
+
+    operator_log_squared_norm_evidence: float | None
+    block_log_squared_norm_evidence: tuple[float | None, ...]
+    finite_float_overflow_observed: bool
+
+
+def _require_finite_nonnegative_norm_operand(value: float) -> float:
+    """Validate one operand before finite-saturating diagnostic arithmetic."""
+
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric < 0.0:
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware norm evidence contains a non-finite or negative factor."
+        )
+    return numeric
+
+
+@dataclass(frozen=True, slots=True)
+class _FiniteNormArithmetic:
+    value: float
+    saturated: bool = False
+
+
+def _finite_norm_arithmetic(
+    value: float | _FiniteNormArithmetic,
+) -> _FiniteNormArithmetic:
+    if isinstance(value, _FiniteNormArithmetic):
+        _require_finite_nonnegative_norm_operand(value.value)
+        return value
+    return _FiniteNormArithmetic(_require_finite_nonnegative_norm_operand(value))
+
+
+def _finite_saturating_norm_product(
+    left: float | _FiniteNormArithmetic,
+    right: float | _FiniteNormArithmetic,
+) -> _FiniteNormArithmetic:
+    """Multiply finite norm factors, using max-float as an overflow sentinel."""
+
+    left_item = _finite_norm_arithmetic(left)
+    right_item = _finite_norm_arithmetic(right)
+    product = left_item.value * right_item.value
+    operation_saturated = not math.isfinite(product)
+    return _FiniteNormArithmetic(
+        (
+            _MAX_FINITE_NORM_EVIDENCE
+            if operation_saturated
+            else product
+        ),
+        left_item.saturated or right_item.saturated or operation_saturated,
+    )
+
+
+def _finite_saturating_norm_square(
+    value: float | _FiniteNormArithmetic,
+) -> _FiniteNormArithmetic:
+    """Square a finite norm factor without allowing Python ``**`` overflow."""
+
+    item = _finite_norm_arithmetic(value)
+    try:
+        squared = item.value**2
+    except OverflowError:
+        return _FiniteNormArithmetic(_MAX_FINITE_NORM_EVIDENCE, True)
+    operation_saturated = not math.isfinite(squared)
+    return _FiniteNormArithmetic(
+        _MAX_FINITE_NORM_EVIDENCE if operation_saturated else squared,
+        item.saturated or operation_saturated,
+    )
+
+
+def _finite_saturating_norm_sum(
+    left: float | _FiniteNormArithmetic,
+    right: float | _FiniteNormArithmetic,
+) -> _FiniteNormArithmetic:
+    """Add finite nonnegative evidence, saturating only representational overflow."""
+
+    left_item = _finite_norm_arithmetic(left)
+    right_item = _finite_norm_arithmetic(right)
+    total = left_item.value + right_item.value
+    operation_saturated = not math.isfinite(total)
+    return _FiniteNormArithmetic(
+        _MAX_FINITE_NORM_EVIDENCE if operation_saturated else total,
+        left_item.saturated or right_item.saturated or operation_saturated,
+    )
+
+
+def _finite_saturating_norm_fsum(
+    values: Sequence[float | _FiniteNormArithmetic],
+) -> _FiniteNormArithmetic:
+    """Retain ``math.fsum`` precision while making an over-range sum finite."""
+
+    checked = tuple(_finite_norm_arithmetic(value) for value in values)
+    try:
+        total = math.fsum(value.value for value in checked)
+    except OverflowError:
+        return _FiniteNormArithmetic(_MAX_FINITE_NORM_EVIDENCE, True)
+    return _FiniteNormArithmetic(
+        total,
+        any(value.saturated for value in checked),
+    )
+
+
+def _finite_norm_log(value: float) -> float | None:
+    """Return a natural-log norm amplitude, with ``None`` representing zero."""
+
+    numeric = _require_finite_nonnegative_norm_operand(value)
+    return None if numeric == 0.0 else math.log(numeric)
+
+
+def _log_norm_product(
+    log_left: float | None,
+    right: float,
+) -> float | None:
+    """Multiply a log-domain amplitude by one finite nonnegative factor."""
+
+    right_value = _require_finite_nonnegative_norm_operand(right)
+    if log_left is None or right_value == 0.0:
+        return None
+    return log_left + math.log(right_value)
+
+
+def _log_norm_square(log_value: float | None) -> float | None:
+    return None if log_value is None else 2.0 * log_value
+
+
+def _log_norm_sum(
+    log_left: float | None,
+    log_right: float | None,
+) -> float | None:
+    """Add nonnegative quantities represented by natural logarithms."""
+
+    if log_left is None:
+        return log_right
+    if log_right is None:
+        return log_left
+    high = max(log_left, log_right)
+    low = min(log_left, log_right)
+    return high + math.log1p(math.exp(low - high))
+
+
+def _log_norm_fsum(values: Sequence[float | None]) -> float | None:
+    total = None
+    for value in values:
+        total = _log_norm_sum(total, value)
+    return total
 
 
 def lfm2_producer_aware_site_causal_orders(
@@ -808,12 +969,17 @@ def _producer_input_direct_norm_factors(
 def lfm2_producer_aware_whole_stack_norm_evidence(
     snapshot: Lfm2WholeStackPrimalSnapshot,
     output_basis: Any,
-) -> tuple[Lfm2WholeStackConditioningScales, Lfm2LinearizationNormBounds]:
-    """Return separate unweighted local scales and global certified bounds.
+) -> tuple[
+    Lfm2WholeStackConditioningScales,
+    Lfm2ProducerAwareLinearizationNormEvidence,
+]:
+    """Return separate local scales and authenticated downstream norm evidence.
 
     Conditioning values are diagnostic numerical scales, never gates.  A
     closure adapter must multiply both scale families by its authenticated
     maximum coordinate weight before using them in weighted normal units.
+    Representable downstream bounds retain their finite certified fields;
+    over-range bounds use explicit finite sentinels plus advisory log evidence.
     """
 
     if not isinstance(snapshot, Lfm2WholeStackPrimalSnapshot) or not (
@@ -828,8 +994,9 @@ def lfm2_producer_aware_whole_stack_norm_evidence(
         snapshot.batches[0].macrocells[0].operator.residual.device,
     )
     layer_count = snapshot.layer_count
-    conditioning_blocks = [0.0] * (4 * layer_count)
-    certified_blocks = [0.0] * (4 * layer_count)
+    conditioning_blocks = [_FiniteNormArithmetic(0.0)] * (4 * layer_count)
+    certified_blocks = [_FiniteNormArithmetic(0.0)] * (4 * layer_count)
+    certified_log_blocks: list[float | None] = [None] * (4 * layer_count)
     for batch in snapshot.batches:
         factors = []
         for macrocell in batch.macrocells:
@@ -857,28 +1024,115 @@ def lfm2_producer_aware_whole_stack_norm_evidence(
             site_offset = 4 * layer_index
             for local_index, direct in enumerate(directs):
                 is_operator_site = local_index < 2
-                conditioning_blocks[site_offset + local_index] += (
-                    direct**2 * (1.0 + mlp_transfer**2)
-                    if is_operator_site
-                    else direct**2
-                )
-                amplitude = direct
-                energy = 0.0
+                direct_log = _finite_norm_log(direct)
+                direct_square = _finite_saturating_norm_square(direct)
+                conditioning = direct_square
                 if is_operator_site:
-                    energy += amplitude**2
-                    amplitude *= mlp_transfer
-                energy += amplitude**2
+                    conditioning = _finite_saturating_norm_product(
+                        direct_square,
+                        _finite_saturating_norm_sum(
+                            1.0,
+                            _finite_saturating_norm_square(mlp_transfer),
+                        ),
+                    )
+                block_index = site_offset + local_index
+                conditioning_blocks[block_index] = _finite_saturating_norm_sum(
+                    conditioning_blocks[block_index],
+                    conditioning,
+                )
+                amplitude = _FiniteNormArithmetic(direct)
+                amplitude_log = direct_log
+                energy = 0.0
+                energy_log = None
+                if is_operator_site:
+                    energy = _finite_saturating_norm_sum(
+                        energy,
+                        _finite_saturating_norm_square(amplitude),
+                    )
+                    energy_log = _log_norm_sum(
+                        energy_log,
+                        _log_norm_square(amplitude_log),
+                    )
+                    amplitude = _finite_saturating_norm_product(
+                        amplitude,
+                        mlp_transfer,
+                    )
+                    amplitude_log = _log_norm_product(
+                        amplitude_log,
+                        mlp_transfer,
+                    )
+                energy = _finite_saturating_norm_sum(
+                    energy,
+                    _finite_saturating_norm_square(amplitude),
+                )
+                energy_log = _log_norm_sum(
+                    energy_log,
+                    _log_norm_square(amplitude_log),
+                )
                 for later_layer in range(layer_index + 1, layer_count):
                     later_operator, later_mlp, *_ = factors[later_layer]
-                    amplitude *= later_operator
-                    energy += amplitude**2
-                    amplitude *= later_mlp
-                    energy += amplitude**2
+                    amplitude = _finite_saturating_norm_product(
+                        amplitude,
+                        later_operator,
+                    )
+                    amplitude_log = _log_norm_product(
+                        amplitude_log,
+                        later_operator,
+                    )
+                    energy = _finite_saturating_norm_sum(
+                        energy,
+                        _finite_saturating_norm_square(amplitude),
+                    )
+                    energy_log = _log_norm_sum(
+                        energy_log,
+                        _log_norm_square(amplitude_log),
+                    )
+                    amplitude = _finite_saturating_norm_product(
+                        amplitude,
+                        later_mlp,
+                    )
+                    amplitude_log = _log_norm_product(
+                        amplitude_log,
+                        later_mlp,
+                    )
+                    energy = _finite_saturating_norm_sum(
+                        energy,
+                        _finite_saturating_norm_square(amplitude),
+                    )
+                    energy_log = _log_norm_sum(
+                        energy_log,
+                        _log_norm_square(amplitude_log),
+                    )
                 if snapshot.terminal_present:
-                    energy += (amplitude * terminal_transfer) ** 2
-                certified_blocks[site_offset + local_index] += energy
-    conditioning_tuple = tuple(conditioning_blocks)
-    certified_tuple = tuple(certified_blocks)
+                    terminal_amplitude = _finite_saturating_norm_product(
+                        amplitude,
+                        terminal_transfer,
+                    )
+                    terminal_amplitude_log = _log_norm_product(
+                        amplitude_log,
+                        terminal_transfer,
+                    )
+                    energy = _finite_saturating_norm_sum(
+                        energy,
+                        _finite_saturating_norm_square(terminal_amplitude),
+                    )
+                    energy_log = _log_norm_sum(
+                        energy_log,
+                        _log_norm_square(terminal_amplitude_log),
+                    )
+                certified_blocks[block_index] = _finite_saturating_norm_sum(
+                    certified_blocks[block_index],
+                    energy,
+                )
+                certified_log_blocks[block_index] = _log_norm_sum(
+                    certified_log_blocks[block_index],
+                    energy_log,
+                )
+    conditioning_arithmetic = tuple(conditioning_blocks)
+    certified_arithmetic = tuple(certified_blocks)
+    conditioning_tuple = tuple(value.value for value in conditioning_arithmetic)
+    certified_tuple = tuple(value.value for value in certified_arithmetic)
+    certified_log_tuple = tuple(certified_log_blocks)
     if not all(
         math.isfinite(value) and value >= 0.0
         for value in (*conditioning_tuple, *certified_tuple)
@@ -901,17 +1155,26 @@ def lfm2_producer_aware_whole_stack_norm_evidence(
         for _ in range(layer_count)
         for kind in ("post_operator_residual", "post_layer_residual")
     ) + (("terminal_observable",) if snapshot.terminal_present else ())
+    conditioning_total = _finite_saturating_norm_fsum(conditioning_arithmetic)
     conditioning = Lfm2WholeStackConditioningScales(
-        operator_squared_scale=math.fsum(conditioning_tuple),
+        operator_squared_scale=conditioning_total.value,
         block_squared_scales=conditioning_tuple,
         site_order=site_order,
         method="producer_aware_local_direct_energy_without_downstream_product",
     )
-    certified = Lfm2LinearizationNormBounds(
-        operator_squared_norm_upper_bound=math.fsum(certified_tuple),
+    operator_log_evidence = _log_norm_fsum(certified_log_tuple)
+    certified_total = _finite_saturating_norm_fsum(certified_arithmetic)
+    finite_float_overflow_observed = certified_total.saturated or any(
+        value.saturated for value in certified_arithmetic
+    )
+    certified = Lfm2ProducerAwareLinearizationNormEvidence(
+        operator_squared_norm_upper_bound=certified_total.value,
         block_squared_norm_upper_bounds=certified_tuple,
         site_order=site_order,
         boundary_order=boundary_order,
+        operator_log_squared_norm_evidence=operator_log_evidence,
+        block_log_squared_norm_evidence=certified_log_tuple,
+        finite_float_overflow_observed=finite_float_overflow_observed,
     )
     if not snapshot.verify_authentication():
         raise Lfm2ProducerAwareAuthenticationError(

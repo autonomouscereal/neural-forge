@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import math
+import sys
 
 import pytest
 
@@ -352,6 +354,114 @@ def test_explicit_residual_basis_rank_reaches_the_physical_closure() -> None:
     assert result.report["topology_receipt"]["topology_basis_rank_formula"] == (
         "explicit_requested_basis_rank"
     )
+
+
+def test_downstream_bound_overflow_is_advisory_and_keeps_local_conditioning(
+    monkeypatch,
+) -> None:
+    problem = _problem(layer_count=2)
+    evidence = problem["evidence"]
+    topology = build_lfm2_producer_aware_semantic_topology(evidence)
+    boundaries = build_lfm2_producer_aware_semantic_boundaries(evidence)
+    basis = build_lfm2_producer_aware_semantic_basis(
+        evidence,
+        topology,
+        boundaries,
+    )
+    operator_transfer = {"value": 1.0}
+
+    def fixed_factors(_macrocell, _basis):
+        return (operator_transfer["value"], 1.25, 2.0, 3.0)
+
+    monkeypatch.setattr(
+        producer_module,
+        "_macrocell_norm_factors",
+        fixed_factors,
+    )
+    monkeypatch.setattr(
+        producer_module,
+        "_producer_input_direct_norm_factors",
+        lambda _macrocell, _basis: (4.0, 5.0),
+    )
+    monkeypatch.setattr(
+        producer_module,
+        "_terminal_transfer_norm_upper",
+        lambda _terminal: 1.0,
+    )
+    control_scale, control_blocks, *_ = semantic_module._weighted_norm_evidence(
+        evidence,
+        basis,
+        boundaries,
+    )
+
+    operator_transfer["value"] = 1e200
+    result = _solve(problem)
+    conditioning = result.closure_result.report["conditioning"]
+
+    assert result.verify_authentication()
+    assert conditioning["operator_squared_conditioning_scale"] == control_scale
+    assert tuple(conditioning["block_squared_conditioning_scales"]) == control_blocks
+    assert conditioning["finite_norm_bound_fields_are_certified"] is False
+    assert (
+        conditioning["downstream_norm_bound_float_overflow_observed"] is True
+    )
+    assert conditioning["finite_norm_bound_proxy_saturated"] is True
+    assert conditioning["overflow_norm_bound_evidence_is_advisory_only"] is True
+    assert conditioning["finite_norm_bound_proxy_has_solver_authority"] is False
+    assert conditioning["regularized_condition_upper_bound"] is None
+    assert conditioning["condition_cap_passed"] is None
+    assert math.isfinite(conditioning["operator_squared_norm_upper_bound"])
+    assert conditioning["operator_log_squared_norm_evidence"] > math.log(
+        sys.float_info.max
+    )
+
+
+def test_exact_log_boundary_overflow_receipt_remains_advisory(
+    monkeypatch,
+) -> None:
+    problem = _problem(layer_count=2)
+    evidence = problem["evidence"]
+    first, second = evidence.snapshot.batches[0].macrocells
+    just_over_square_limit = math.sqrt(sys.float_info.max) * math.nextafter(
+        1.0,
+        math.inf,
+    )
+
+    def boundary_factors(macrocell, _basis):
+        if macrocell is first:
+            return (1.0, 1.0, 0.0, 1.0)
+        assert macrocell is second
+        return (just_over_square_limit, 0.0, 0.0, 0.0)
+
+    monkeypatch.setattr(
+        producer_module,
+        "_macrocell_norm_factors",
+        boundary_factors,
+    )
+    monkeypatch.setattr(
+        producer_module,
+        "_producer_input_direct_norm_factors",
+        lambda _macrocell, _basis: (0.0, 0.0),
+    )
+    monkeypatch.setattr(
+        producer_module,
+        "_terminal_transfer_norm_upper",
+        lambda _terminal: 0.0,
+    )
+
+    result = _solve(problem)
+    conditioning = result.closure_result.report["conditioning"]
+
+    assert result.verify_authentication()
+    assert conditioning["finite_norm_bound_fields_are_certified"] is False
+    assert (
+        conditioning["downstream_norm_bound_float_overflow_observed"] is True
+    )
+    assert conditioning["overflow_norm_bound_evidence_is_advisory_only"] is True
+    assert conditioning["finite_norm_bound_proxy_has_solver_authority"] is False
+    assert conditioning["conditioning_scale_is_certified_norm_bound"] is False
+    assert conditioning["regularized_condition_upper_bound"] is None
+    assert conditioning["condition_cap_passed"] is None
 
 
 def test_resealed_nested_topology_rank_claim_cannot_authenticate() -> None:
