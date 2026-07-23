@@ -624,6 +624,124 @@ def test_typed_tangent_role_rejects_reduction_receipt_swapped_from_bank(
         compile_lfm2_semantic_attention_group_qdeim_from_cache(**_arguments(session))
 
 
+def test_typed_tangent_role_rejects_fully_resealed_wrong_perturbation_kind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prefix = "prefill.layer.000.attention"
+    session = _Session(
+        [{f"{prefix}.context": _contexts(), **_enhanced_causal_phase(prefix)}]
+    )
+    original_builder = qdeim_adapter.build_lfm2_attention_tangent_bank
+
+    def tampered_builder(**kwargs):
+        bank = original_builder(**kwargs)
+        receipt_body = dict(bank.joint_sampled_token_query_key_value.reduction_receipt)
+        receipt_body.pop("result_sha256")
+        receipt_body["perturbation_kind"] = "older_prefix_key_value"
+        tampered_receipt = MappingProxyType(
+            {
+                **receipt_body,
+                "result_sha256": canonical_sha256(receipt_body),
+            }
+        )
+        tampered_joint = replace(
+            bank.joint_sampled_token_query_key_value,
+            reduction_receipt=tampered_receipt,
+        )
+        bank_body = bank.as_dict()
+        bank_body.pop("bank_sha256")
+        bank_body["joint_sampled_token_query_key_value_reduction_receipt"] = dict(
+            tampered_receipt
+        )
+        bank_body["joint_sampled_token_query_key_value_reduction_sha256"] = (
+            tampered_receipt["result_sha256"]
+        )
+        tampered_bank_report = MappingProxyType(
+            {
+                **bank_body,
+                "bank_sha256": canonical_sha256(bank_body),
+            }
+        )
+        return replace(
+            bank,
+            joint_sampled_token_query_key_value=tampered_joint,
+            report=tampered_bank_report,
+        )
+
+    monkeypatch.setattr(
+        qdeim_adapter,
+        "build_lfm2_attention_tangent_bank",
+        tampered_builder,
+    )
+    with pytest.raises(
+        Lfm2SemanticAttentionGroupQdeimAdapterError,
+        match="does not match its bank/reduction evidence",
+    ):
+        compile_lfm2_semantic_attention_group_qdeim_from_cache(**_arguments(session))
+
+
+def test_typed_tangent_role_rejects_resealed_nonfactor_context_coordinate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prefix = "prefill.layer.000.attention"
+    session = _Session(
+        [{f"{prefix}.context": _contexts(), **_enhanced_causal_phase(prefix)}]
+    )
+    original_builder = qdeim_adapter.build_lfm2_attention_tangent_bank
+
+    def tampered_builder(**kwargs):
+        bank = original_builder(**kwargs)
+        joint = bank.joint_sampled_token_query_key_value
+        tampered_context = joint.context_rows.clone()
+        tampered_context[0, 0, 1] += 1.0
+        receipt_body = dict(joint.reduction_receipt)
+        receipt_body.pop("result_sha256")
+        receipt_body["reduced_context_rows_sha256"] = lfm2_authenticated_tensor_sha256(
+            tampered_context
+        )
+        tampered_receipt = MappingProxyType(
+            {
+                **receipt_body,
+                "result_sha256": canonical_sha256(receipt_body),
+            }
+        )
+        tampered_joint = replace(
+            joint,
+            context_rows=tampered_context,
+            reduction_receipt=tampered_receipt,
+        )
+        bank_body = bank.as_dict()
+        bank_body.pop("bank_sha256")
+        bank_body["joint_sampled_token_query_key_value_reduction_receipt"] = dict(
+            tampered_receipt
+        )
+        bank_body["joint_sampled_token_query_key_value_reduction_sha256"] = (
+            tampered_receipt["result_sha256"]
+        )
+        tampered_bank_report = MappingProxyType(
+            {
+                **bank_body,
+                "bank_sha256": canonical_sha256(bank_body),
+            }
+        )
+        return replace(
+            bank,
+            joint_sampled_token_query_key_value=tampered_joint,
+            report=tampered_bank_report,
+        )
+
+    monkeypatch.setattr(
+        qdeim_adapter,
+        "build_lfm2_attention_tangent_bank",
+        tampered_builder,
+    )
+    with pytest.raises(
+        Lfm2SemanticAttentionGroupQdeimAdapterError,
+        match="does not match its bank/reduction evidence",
+    ):
+        compile_lfm2_semantic_attention_group_qdeim_from_cache(**_arguments(session))
+
+
 def test_cross_dtype_probability_replay_is_diagnostic_not_numeric_veto() -> None:
     prefix = "prefill.layer.000.attention"
     phase = _enhanced_causal_phase(prefix)

@@ -1522,34 +1522,92 @@ def _verified_functional_tangent_role_receipts(
             LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE,
             tangent_bank.joint_sampled_token_query_key_value,
             "joint_sampled_token_query_key_value_reduction_sha256",
+            "joint_sampled_token_query_key_value_reduction_receipt",
         ),
         (
             LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE,
             tangent_bank.older_prefix_key_value,
             "older_prefix_key_value_reduction_sha256",
+            "older_prefix_key_value_reduction_receipt",
         ),
     )
     result: dict[str, str] = {}
-    for role, snapshot, bank_receipt_key in bindings:
+    torch = _torch()
+    for role, snapshot, bank_receipt_sha_key, bank_embedded_receipt_key in bindings:
         receipt = _verify_self_sealed(
             snapshot.reduction_receipt,
             seal_name="result_sha256",
             label=f"{role} tangent reduction receipt",
         )
         receipt_sha256 = receipt["result_sha256"]
+        context = _finite_tensor(
+            snapshot.context_rows,
+            label=f"{role} covariance-equivalent context rows",
+            ndim=3,
+        )
+        covariance = _finite_tensor(
+            snapshot.covariance,
+            label=f"{role} source group covariance",
+            ndim=2,
+        )
+        group_count = int(covariance.shape[0])
+        query_heads = int(context.shape[1])
         if (
-            bank_report.get(bank_receipt_key) != receipt_sha256
+            tuple(covariance.shape) != (group_count, group_count)
+            or query_heads % group_count
+        ):
+            raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                f"Typed tangent role {role!r} has malformed reduction geometry."
+            )
+        queries_per_group = query_heads // group_count
+        factor = context[
+            :,
+            torch.arange(group_count, dtype=torch.long) * queries_per_group,
+            0,
+        ].contiguous()
+        factor_only_context = torch.zeros_like(context)
+        factor_only_context[
+            :,
+            torch.arange(group_count, dtype=torch.long) * queries_per_group,
+            0,
+        ] = factor
+        full_group_features = (
+            context.reshape(
+                int(context.shape[0]),
+                group_count,
+                queries_per_group,
+                int(context.shape[2]),
+            )
+            .permute(0, 2, 3, 1)
+            .reshape(-1, group_count)
+            .contiguous()
+        )
+        actual_reduced_covariance = (
+            full_group_features.T @ full_group_features
+        ).contiguous()
+        if (
+            snapshot.perturbation_kind != role
+            or receipt.get("perturbation_kind") != role
+            or receipt.get("block_id") != snapshot.block_id
+            or bank_report.get(bank_receipt_sha_key) != receipt_sha256
+            or bank_report.get(bank_embedded_receipt_key) != receipt
             or receipt.get("reduced_context_rows_sha256")
             != _tensor_sha256(
-                snapshot.context_rows,
-                label=f"{role} covariance-equivalent context rows",
+                context, label=f"{role} covariance-equivalent context rows"
             )
             or receipt.get("source_group_covariance_sha256")
-            != _tensor_sha256(
-                snapshot.covariance,
-                label=f"{role} source group covariance",
-            )
+            != _tensor_sha256(covariance, label=f"{role} source group covariance")
             or receipt.get("row_sample_weights") != list(snapshot.row_sample_weights)
+            or receipt.get("reduced_context_row_count") != int(context.shape[0])
+            or len(snapshot.row_sample_weights) != int(context.shape[0])
+            or receipt.get("factor_sha256")
+            != _tensor_sha256(factor, label=f"{role} covariance factor")
+            or not torch.equal(context, factor_only_context)
+            or receipt.get("reduced_group_covariance_sha256")
+            != _tensor_sha256(
+                actual_reduced_covariance,
+                label=f"{role} full-context reduced group covariance",
+            )
         ):
             raise Lfm2SemanticAttentionGroupQdeimAdapterError(
                 f"Typed tangent role {role!r} does not match its bank/reduction evidence."
