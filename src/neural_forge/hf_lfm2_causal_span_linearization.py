@@ -179,19 +179,363 @@ def _tensor_hashes(values: Sequence[Any]) -> list[str]:
     return [fingerprint_lfm2_global_residual_tensor(value) for value in values]
 
 
+def _owned_parameter_state(value: Any, label: str) -> Mapping[str, Any]:
+    torch = _torch()
+    if not isinstance(value, Mapping) or not value:
+        raise Lfm2CausalSpanLinearizationError(
+            f"{label} must be one nonempty parameter-state mapping."
+        )
+    result = {}
+    for raw_name, raw_tensor in sorted(value.items(), key=lambda item: str(item[0])):
+        name = str(raw_name).strip()
+        if (
+            not name
+            or name in result
+            or not isinstance(raw_tensor, torch.Tensor)
+            or raw_tensor.layout != torch.strided
+            or raw_tensor.device.type == "meta"
+            or raw_tensor.numel() <= 0
+            or raw_tensor.requires_grad
+            or raw_tensor.grad_fn is not None
+            or (
+                (torch.is_floating_point(raw_tensor) or raw_tensor.is_complex())
+                and not bool(torch.isfinite(raw_tensor.detach()).all().item())
+            )
+        ):
+            raise Lfm2CausalSpanLinearizationError(
+                f"{label} contains an invalid parameter tensor."
+            )
+        tensor = raw_tensor.detach().to(device="cpu").contiguous().clone()
+        tensor.requires_grad_(False)
+        result[name] = tensor
+    return MappingProxyType(result)
+
+
+def _parameter_state_sha256(value: Mapping[str, Any]) -> str:
+    return _canonical_sha256(
+        {
+            name: fingerprint_lfm2_global_residual_tensor(tensor)
+            for name, tensor in sorted(value.items())
+        }
+    )
+
+
+def _owned_json_mapping(value: Any, label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise Lfm2CausalSpanLinearizationError(
+            f"{label} must be one canonical JSON mapping."
+        )
+    try:
+        copied = json.loads(
+            json.dumps(
+                dict(value),
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise Lfm2CausalSpanLinearizationError(
+            f"{label} must be one canonical finite JSON mapping."
+        ) from exc
+    return MappingProxyType(copied)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SourceSpanDirectLayerRecord:
+    """One absolute checkpoint layer and its independently owned parameters."""
+
+    source_layer_index: int
+    operator_kind: str
+    parameter_state: Mapping[str, Any] = field(repr=False, compare=False)
+    authentication_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.source_layer_index, bool)
+            or not isinstance(self.source_layer_index, int)
+            or self.source_layer_index < 0
+        ):
+            raise Lfm2CausalSpanLinearizationError(
+                "source_layer_index must be a nonnegative integer."
+            )
+        kind = str(self.operator_kind).strip().lower()
+        if kind not in {"full_attention", "short_conv"}:
+            raise Lfm2CausalSpanLinearizationError(
+                "operator_kind must be full_attention or short_conv."
+            )
+        object.__setattr__(self, "operator_kind", kind)
+        object.__setattr__(
+            self,
+            "parameter_state",
+            _owned_parameter_state(
+                self.parameter_state,
+                f"direct layer {self.source_layer_index} parameter_state",
+            ),
+        )
+        expected = self.recompute_authentication_sha256()
+        supplied = str(self.authentication_sha256).strip().lower()
+        if supplied and supplied != expected:
+            raise Lfm2CausalSpanAuthenticationError(
+                "Direct layer record authentication_sha256 is incorrect."
+            )
+        object.__setattr__(self, "authentication_sha256", expected)
+
+    @property
+    def parameter_state_sha256(self) -> str:
+        return _parameter_state_sha256(self.parameter_state)
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+            "kind": "direct_parent_layer_record",
+            "source_layer_index": self.source_layer_index,
+            "operator_kind": self.operator_kind,
+            "parameter_state_sha256": self.parameter_state_sha256,
+            "parameter_tensor_sha256": {
+                name: fingerprint_lfm2_global_residual_tensor(value)
+                for name, value in sorted(self.parameter_state.items())
+            },
+        }
+
+    def recompute_authentication_sha256(self) -> str:
+        return _canonical_sha256(self.authentication_body())
+
+    def verify_authentication(self) -> bool:
+        try:
+            replayed = Lfm2SourceSpanDirectLayerRecord(
+                source_layer_index=self.source_layer_index,
+                operator_kind=self.operator_kind,
+                parameter_state=self.parameter_state,
+            )
+            return replayed.authentication_sha256 == self.authentication_sha256
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SourceSpanDirectParentReceipt:
+    """Replayable whole-parent checkpoint identity with absolute layer records."""
+
+    parent_graph_fingerprint: str
+    checkpoint_configuration: Mapping[str, Any]
+    layers: tuple[Lfm2SourceSpanDirectLayerRecord, ...] = field(
+        repr=False,
+        compare=False,
+    )
+    parent_model_identity_sha256: str = field(init=False)
+    checkpoint_manifest_sha256: str = field(init=False)
+    session_sha256: str = field(init=False)
+    authentication_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        graph = _digest(self.parent_graph_fingerprint, "parent graph fingerprint")
+        configuration = _owned_json_mapping(
+            self.checkpoint_configuration,
+            "checkpoint_configuration",
+        )
+        layers = tuple(self.layers)
+        if (
+            not layers
+            or any(
+                not isinstance(value, Lfm2SourceSpanDirectLayerRecord)
+                or not value.verify_authentication()
+                for value in layers
+            )
+            or tuple(value.source_layer_index for value in layers)
+            != tuple(range(len(layers)))
+        ):
+            raise Lfm2CausalSpanAuthenticationError(
+                "Direct parent layers must exactly cover the checkpoint in order."
+            )
+        configured_depth = configuration.get("num_hidden_layers")
+        if configured_depth is not None and configured_depth != len(layers):
+            raise Lfm2CausalSpanAuthenticationError(
+                "Direct parent checkpoint depth differs from its layer records."
+            )
+        object.__setattr__(self, "parent_graph_fingerprint", graph)
+        object.__setattr__(self, "checkpoint_configuration", configuration)
+        object.__setattr__(self, "layers", layers)
+        manifest_body = {
+            "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+            "kind": "direct_parent_checkpoint_manifest",
+            "parent_graph_fingerprint": graph,
+            "checkpoint_configuration": dict(configuration),
+            "ordered_layer_sha256": [value.authentication_sha256 for value in layers],
+        }
+        manifest = _canonical_sha256(manifest_body)
+        identity = _canonical_sha256(
+            {
+                "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+                "kind": "direct_parent_model_identity",
+                "checkpoint_manifest_sha256": manifest,
+                "ordered_layer_parameter_sha256": [
+                    value.parameter_state_sha256 for value in layers
+                ],
+            }
+        )
+        session = _canonical_sha256(
+            {
+                "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+                "kind": "direct_parent_replay_session",
+                "parent_model_identity_sha256": identity,
+                "checkpoint_manifest_sha256": manifest,
+                "loaded_absolute_layer_indices": list(range(len(layers))),
+                "operation_audit": dict(_ZERO_OPERATION_AUDIT),
+            }
+        )
+        object.__setattr__(self, "checkpoint_manifest_sha256", manifest)
+        object.__setattr__(self, "parent_model_identity_sha256", identity)
+        object.__setattr__(self, "session_sha256", session)
+        object.__setattr__(
+            self,
+            "authentication_sha256",
+            self.recompute_authentication_sha256(),
+        )
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+            "kind": "direct_parent_receipt",
+            "parent_graph_fingerprint": self.parent_graph_fingerprint,
+            "parent_model_identity_sha256": self.parent_model_identity_sha256,
+            "checkpoint_manifest_sha256": self.checkpoint_manifest_sha256,
+            "session_sha256": self.session_sha256,
+            "checkpoint_configuration": dict(self.checkpoint_configuration),
+            "ordered_layer_sha256": [
+                value.authentication_sha256 for value in self.layers
+            ],
+            "ordered_layer_parameter_sha256": [
+                value.parameter_state_sha256 for value in self.layers
+            ],
+            "operation_audit": dict(_ZERO_OPERATION_AUDIT),
+        }
+
+    def recompute_authentication_sha256(self) -> str:
+        return _canonical_sha256(self.authentication_body())
+
+    def verify_authentication(self) -> bool:
+        try:
+            replayed = Lfm2SourceSpanDirectParentReceipt(
+                parent_graph_fingerprint=self.parent_graph_fingerprint,
+                checkpoint_configuration=self.checkpoint_configuration,
+                layers=self.layers,
+            )
+            return (
+                all(value.verify_authentication() for value in self.layers)
+                and replayed.parent_model_identity_sha256
+                == self.parent_model_identity_sha256
+                and replayed.checkpoint_manifest_sha256
+                == self.checkpoint_manifest_sha256
+                and replayed.session_sha256 == self.session_sha256
+                and replayed.authentication_sha256 == self.authentication_sha256
+            )
+        except (RuntimeError, TypeError, ValueError):
+            return False
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SourceSpanPlanReceipt:
+    """Replayable complete depth plan bound to one parent identity."""
+
+    parent_model_identity_sha256: str
+    parent_graph_fingerprint: str
+    ordered_source_spans: tuple[tuple[int, ...], ...]
+    target_configuration: Mapping[str, Any]
+    authentication_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        identity = _digest(
+            self.parent_model_identity_sha256,
+            "plan parent model identity",
+        )
+        graph = _digest(self.parent_graph_fingerprint, "plan parent graph")
+        spans = tuple(tuple(span) for span in self.ordered_source_spans)
+        flattened = tuple(index for span in spans for index in span)
+        if (
+            not spans
+            or any(not span for span in spans)
+            or any(
+                isinstance(index, bool) or not isinstance(index, int) or index < 0
+                for index in flattened
+            )
+            or flattened != tuple(range(len(flattened)))
+        ):
+            raise Lfm2CausalSpanLinearizationError(
+                "Plan spans must exactly partition every source layer in order."
+            )
+        configuration = _owned_json_mapping(
+            self.target_configuration,
+            "target_configuration",
+        )
+        configured_depth = configuration.get("num_hidden_layers")
+        if configured_depth is not None and configured_depth != len(spans):
+            raise Lfm2CausalSpanLinearizationError(
+                "Target configuration depth differs from the source-span plan."
+            )
+        object.__setattr__(self, "parent_model_identity_sha256", identity)
+        object.__setattr__(self, "parent_graph_fingerprint", graph)
+        object.__setattr__(self, "ordered_source_spans", spans)
+        object.__setattr__(self, "target_configuration", configuration)
+        object.__setattr__(
+            self,
+            "authentication_sha256",
+            self.recompute_authentication_sha256(),
+        )
+
+    @property
+    def source_layer_count(self) -> int:
+        return sum(len(value) for value in self.ordered_source_spans)
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+            "kind": "source_span_plan_receipt",
+            "parent_model_identity_sha256": self.parent_model_identity_sha256,
+            "parent_graph_fingerprint": self.parent_graph_fingerprint,
+            "ordered_source_spans": [
+                list(value) for value in self.ordered_source_spans
+            ],
+            "source_layer_count": self.source_layer_count,
+            "target_configuration": dict(self.target_configuration),
+        }
+
+    def recompute_authentication_sha256(self) -> str:
+        return _canonical_sha256(self.authentication_body())
+
+    def verify_authentication(self) -> bool:
+        try:
+            replayed = Lfm2SourceSpanPlanReceipt(
+                parent_model_identity_sha256=self.parent_model_identity_sha256,
+                parent_graph_fingerprint=self.parent_graph_fingerprint,
+                ordered_source_spans=self.ordered_source_spans,
+                target_configuration=self.target_configuration,
+            )
+            return replayed.authentication_sha256 == self.authentication_sha256
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2SourceSpanBatchChain:
-    """Exact cached full-history residual chain for one source batch.
+    """Owned cache history for one batch and one absolute source span.
 
-    ``layer_pre_residuals`` and ``layer_post_residuals`` remain in the cache's
-    runtime dtype.  Exact adjacency is therefore authenticated before any
-    conversion to the continuous FP64 linearization surrogate.
+    Every absolute layer identifier, operator kind, pre-operator residual,
+    post-operator residual, and post-layer residual participates in the seal.
+    The final post-layer residual is intentionally included even though it has
+    no following adjacency edge.
     """
 
     batch_index: int
     semantic_alignment_sha256: str
-    cache_payload_sha256: str
+    source_layer_indices: tuple[int, ...]
+    operator_kinds: tuple[str, ...]
     layer_pre_residuals: tuple[Any, ...] = field(repr=False, compare=False)
+    layer_post_operator_residuals: tuple[Any, ...] = field(
+        repr=False,
+        compare=False,
+    )
     layer_post_residuals: tuple[Any, ...] = field(repr=False, compare=False)
     authentication_sha256: str = ""
 
@@ -210,28 +554,49 @@ class Lfm2SourceSpanBatchChain:
             "semantic_alignment_sha256",
             _digest(self.semantic_alignment_sha256, "semantic alignment"),
         )
-        object.__setattr__(
-            self,
-            "cache_payload_sha256",
-            _digest(self.cache_payload_sha256, "cache payload"),
-        )
+        source = tuple(self.source_layer_indices)
+        if (
+            not source
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in source
+            )
+            or source != tuple(range(source[0], source[-1] + 1))
+        ):
+            raise Lfm2CausalSpanLinearizationError(
+                "source_layer_indices must be one nonempty contiguous absolute span."
+            )
+        kinds = tuple(str(value).strip().lower() for value in self.operator_kinds)
+        if len(kinds) != len(source) or any(
+            value not in {"full_attention", "short_conv"} for value in kinds
+        ):
+            raise Lfm2CausalSpanLinearizationError(
+                "operator_kinds must identify every absolute source layer."
+            )
         pre = tuple(
             _owned_runtime_history(value, f"layer_pre_residuals[{index}]")
             for index, value in enumerate(self.layer_pre_residuals)
+        )
+        post_operator = tuple(
+            _owned_runtime_history(
+                value,
+                f"layer_post_operator_residuals[{index}]",
+            )
+            for index, value in enumerate(self.layer_post_operator_residuals)
         )
         post = tuple(
             _owned_runtime_history(value, f"layer_post_residuals[{index}]")
             for index, value in enumerate(self.layer_post_residuals)
         )
-        if not pre or len(pre) != len(post):
+        if not pre or not (len(pre) == len(post_operator) == len(post) == len(source)):
             raise Lfm2CausalSpanLinearizationError(
-                "A source batch chain needs equal nonempty pre/post histories."
+                "A source batch chain needs complete pre/operator/post history."
             )
         reference_shape = tuple(pre[0].shape)
         reference_dtype = pre[0].dtype
         if any(
             tuple(value.shape) != reference_shape or value.dtype != reference_dtype
-            for value in (*pre, *post)
+            for value in (*pre, *post_operator, *post)
         ):
             raise Lfm2CausalSpanLinearizationError(
                 "Source batch chain histories disagree on runtime shape or dtype."
@@ -242,7 +607,10 @@ class Lfm2SourceSpanBatchChain:
                     "Cached source histories do not form one exact adjacent "
                     f"residual chain at local layer {layer_index}."
                 )
+        object.__setattr__(self, "source_layer_indices", source)
+        object.__setattr__(self, "operator_kinds", kinds)
         object.__setattr__(self, "layer_pre_residuals", pre)
+        object.__setattr__(self, "layer_post_operator_residuals", post_operator)
         object.__setattr__(self, "layer_post_residuals", post)
         expected = self.recompute_authentication_sha256()
         supplied = str(self.authentication_sha256).strip().lower()
@@ -254,7 +622,7 @@ class Lfm2SourceSpanBatchChain:
 
     @property
     def layer_count(self) -> int:
-        return len(self.layer_pre_residuals)
+        return len(self.source_layer_indices)
 
     def authentication_body(self) -> dict[str, Any]:
         return {
@@ -262,14 +630,19 @@ class Lfm2SourceSpanBatchChain:
             "kind": "source_span_batch_chain",
             "batch_index": self.batch_index,
             "semantic_alignment_sha256": self.semantic_alignment_sha256,
-            "cache_payload_sha256": self.cache_payload_sha256,
+            "source_layer_indices": list(self.source_layer_indices),
+            "operator_kinds": list(self.operator_kinds),
             "layer_count": self.layer_count,
             "runtime_dtype": str(self.layer_pre_residuals[0].dtype),
             "runtime_shape": [
                 int(value) for value in self.layer_pre_residuals[0].shape
             ],
             "layer_pre_residual_sha256": _tensor_hashes(self.layer_pre_residuals),
+            "layer_post_operator_residual_sha256": _tensor_hashes(
+                self.layer_post_operator_residuals
+            ),
             "layer_post_residual_sha256": _tensor_hashes(self.layer_post_residuals),
+            "terminal_post_layer_residual_included": True,
             "exact_adjacent_runtime_chain": True,
         }
 
@@ -279,8 +652,22 @@ class Lfm2SourceSpanBatchChain:
     def verify_authentication(self) -> bool:
         torch = _torch()
         try:
+            replayed = Lfm2SourceSpanBatchChain(
+                batch_index=self.batch_index,
+                semantic_alignment_sha256=self.semantic_alignment_sha256,
+                source_layer_indices=self.source_layer_indices,
+                operator_kinds=self.operator_kinds,
+                layer_pre_residuals=self.layer_pre_residuals,
+                layer_post_operator_residuals=self.layer_post_operator_residuals,
+                layer_post_residuals=self.layer_post_residuals,
+            )
             return (
-                all(
+                self.layer_count > 0
+                and len(self.operator_kinds) == self.layer_count
+                and len(self.layer_pre_residuals) == self.layer_count
+                and len(self.layer_post_operator_residuals) == self.layer_count
+                and len(self.layer_post_residuals) == self.layer_count
+                and all(
                     bool(
                         torch.equal(
                             self.layer_post_residuals[index],
@@ -289,15 +676,203 @@ class Lfm2SourceSpanBatchChain:
                     )
                     for index in range(self.layer_count - 1)
                 )
-                and self.authentication_sha256 == self.recompute_authentication_sha256()
+                and replayed.authentication_sha256 == self.authentication_sha256
             )
-        except (RuntimeError, TypeError, ValueError):
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return False
+
+
+def _clone_source_span_batch_chain(
+    value: Lfm2SourceSpanBatchChain,
+) -> Lfm2SourceSpanBatchChain:
+    if not isinstance(value, Lfm2SourceSpanBatchChain) or not (
+        value.verify_authentication()
+    ):
+        raise Lfm2CausalSpanAuthenticationError(
+            "A cache receipt can only own authenticated source batch chains."
+        )
+    return Lfm2SourceSpanBatchChain(
+        batch_index=value.batch_index,
+        semantic_alignment_sha256=value.semantic_alignment_sha256,
+        source_layer_indices=value.source_layer_indices,
+        operator_kinds=value.operator_kinds,
+        layer_pre_residuals=value.layer_pre_residuals,
+        layer_post_operator_residuals=value.layer_post_operator_residuals,
+        layer_post_residuals=value.layer_post_residuals,
+        authentication_sha256=value.authentication_sha256,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SourceSpanCacheReceipt:
+    """Independently replayable cache authority for one absolute source span."""
+
+    parent_model_identity_sha256: str
+    layer_topology: tuple[str, ...]
+    batch_chains: tuple[Lfm2SourceSpanBatchChain, ...] = field(
+        repr=False,
+        compare=False,
+    )
+    cache_key: str = field(init=False)
+    manifest_sha256: str = field(init=False)
+    session_sha256: str = field(init=False)
+    authentication_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        identity = _digest(
+            self.parent_model_identity_sha256,
+            "cache parent model identity",
+        )
+        topology = tuple(str(value).strip().lower() for value in self.layer_topology)
+        if not topology or any(
+            value not in {"full_attention", "short_conv"} for value in topology
+        ):
+            raise Lfm2CausalSpanLinearizationError(
+                "layer_topology must identify every parent operator in order."
+            )
+        chains = tuple(
+            _clone_source_span_batch_chain(value) for value in self.batch_chains
+        )
+        if (
+            not chains
+            or tuple(value.batch_index for value in chains) != tuple(range(len(chains)))
+            or any(
+                value.source_layer_indices != chains[0].source_layer_indices
+                for value in chains
+            )
+        ):
+            raise Lfm2CausalSpanAuthenticationError(
+                "Cache batch chains must be canonical and share one absolute span."
+            )
+        source = chains[0].source_layer_indices
+        if source[-1] >= len(topology) or any(
+            chain.operator_kinds
+            != tuple(topology[index] for index in chain.source_layer_indices)
+            for chain in chains
+        ):
+            raise Lfm2CausalSpanAuthenticationError(
+                "Cache histories do not join the declared absolute layer topology."
+            )
+        object.__setattr__(self, "parent_model_identity_sha256", identity)
+        object.__setattr__(self, "layer_topology", topology)
+        object.__setattr__(self, "batch_chains", chains)
+        cache_key = _canonical_sha256(
+            {
+                "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+                "kind": "source_span_cache_key",
+                "parent_model_identity_sha256": identity,
+                "source_layer_indices": list(source),
+                "semantic_alignment_sha256": [
+                    value.semantic_alignment_sha256 for value in chains
+                ],
+            }
+        )
+        manifest = _canonical_sha256(
+            {
+                "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+                "kind": "source_span_cache_manifest",
+                "cache_key": cache_key,
+                "parent_model_identity_sha256": identity,
+                "layer_topology": list(topology),
+                "ordered_batch_chain_sha256": [
+                    value.authentication_sha256 for value in chains
+                ],
+            }
+        )
+        session = _canonical_sha256(
+            {
+                "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+                "kind": "source_span_cache_replay_session",
+                "cache_key": cache_key,
+                "manifest_sha256": manifest,
+                "source_layer_indices": list(source),
+                "operation_audit": dict(_ZERO_OPERATION_AUDIT),
+            }
+        )
+        object.__setattr__(self, "cache_key", cache_key)
+        object.__setattr__(self, "manifest_sha256", manifest)
+        object.__setattr__(self, "session_sha256", session)
+        object.__setattr__(
+            self,
+            "authentication_sha256",
+            self.recompute_authentication_sha256(),
+        )
+
+    @property
+    def source_layer_indices(self) -> tuple[int, ...]:
+        return self.batch_chains[0].source_layer_indices
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+            "kind": "source_span_cache_receipt",
+            "parent_model_identity_sha256": self.parent_model_identity_sha256,
+            "layer_topology": list(self.layer_topology),
+            "source_layer_indices": list(self.source_layer_indices),
+            "cache_key": self.cache_key,
+            "manifest_sha256": self.manifest_sha256,
+            "session_sha256": self.session_sha256,
+            "ordered_batch_chain_sha256": [
+                value.authentication_sha256 for value in self.batch_chains
+            ],
+            "operation_audit": dict(_ZERO_OPERATION_AUDIT),
+        }
+
+    def recompute_authentication_sha256(self) -> str:
+        return _canonical_sha256(self.authentication_body())
+
+    def verify_authentication(self) -> bool:
+        try:
+            replayed = Lfm2SourceSpanCacheReceipt(
+                parent_model_identity_sha256=self.parent_model_identity_sha256,
+                layer_topology=self.layer_topology,
+                batch_chains=self.batch_chains,
+            )
+            return (
+                replayed.cache_key == self.cache_key
+                and replayed.manifest_sha256 == self.manifest_sha256
+                and replayed.session_sha256 == self.session_sha256
+                and replayed.authentication_sha256 == self.authentication_sha256
+            )
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
+
+
+def lfm2_source_span_provenance_root_sha256(
+    plan_receipt: Lfm2SourceSpanPlanReceipt,
+    cache_receipt: Lfm2SourceSpanCacheReceipt,
+    direct_parent_receipt: Lfm2SourceSpanDirectParentReceipt,
+) -> str:
+    """Compute the externally pinned root of three replayable authorities."""
+
+    receipts = (
+        (plan_receipt, Lfm2SourceSpanPlanReceipt, "plan"),
+        (cache_receipt, Lfm2SourceSpanCacheReceipt, "cache"),
+        (direct_parent_receipt, Lfm2SourceSpanDirectParentReceipt, "direct parent"),
+    )
+    if any(
+        not isinstance(value, expected) or not value.verify_authentication()
+        for value, expected, _label in receipts
+    ):
+        raise Lfm2CausalSpanAuthenticationError(
+            "A provenance root requires three authenticated replay receipts."
+        )
+    return _canonical_sha256(
+        {
+            "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
+            "kind": "source_span_provenance_root",
+            "plan_receipt_sha256": plan_receipt.authentication_sha256,
+            "cache_receipt_sha256": cache_receipt.authentication_sha256,
+            "direct_parent_receipt_sha256": (
+                direct_parent_receipt.authentication_sha256
+            ),
+        }
+    )
 
 
 @dataclass(frozen=True, slots=True)
 class Lfm2SourceSpanPrimalEvidence:
-    """A sealed source-depth plan joined to full-history analytic primals."""
+    """A source span joined to replayed plan, cache, and parent authorities."""
 
     span: Lfm2ModelFoldSpan
     snapshot: Lfm2WholeStackPrimalSnapshot = field(repr=False, compare=False)
@@ -305,15 +880,16 @@ class Lfm2SourceSpanPrimalEvidence:
         repr=False,
         compare=False,
     )
-    source_plan_sha256: str
-    cache_key: str
-    cache_manifest_sha256: str
-    cache_session_sha256: str
-    direct_parent_session_sha256: str
+    plan_receipt: Lfm2SourceSpanPlanReceipt
+    cache_receipt: Lfm2SourceSpanCacheReceipt = field(repr=False, compare=False)
+    direct_parent_receipt: Lfm2SourceSpanDirectParentReceipt = field(
+        repr=False,
+        compare=False,
+    )
+    expected_provenance_root_sha256: str
     authentication_sha256: str = ""
 
     def __post_init__(self) -> None:
-        torch = _torch()
         if not isinstance(self.span, Lfm2ModelFoldSpan):
             raise TypeError("span must be Lfm2ModelFoldSpan.")
         snapshot = self.snapshot
@@ -327,59 +903,19 @@ class Lfm2SourceSpanPrimalEvidence:
             raise Lfm2CausalSpanLinearizationError(
                 "A source span ends at post-layer residual, before terminal norm."
             )
-        if snapshot.layer_count != len(self.span.source_layer_indices):
-            raise Lfm2CausalSpanLinearizationError(
-                "Source span and local primal snapshot disagree on layer count."
-            )
-        chains = tuple(self.batch_chains)
-        if (
-            len(chains) != len(snapshot.batches)
-            or not all(
-                isinstance(value, Lfm2SourceSpanBatchChain)
-                and value.verify_authentication()
-                for value in chains
-            )
-            or tuple(value.batch_index for value in chains) != tuple(range(len(chains)))
-        ):
-            raise Lfm2CausalSpanAuthenticationError(
-                "batch_chains must match snapshot batches in canonical order."
-            )
-        for batch_index, (chain, batch) in enumerate(
-            zip(chains, snapshot.batches, strict=True)
-        ):
-            if chain.layer_count != snapshot.layer_count:
-                raise Lfm2CausalSpanLinearizationError(
-                    f"Source chain {batch_index} has the wrong layer count."
-                )
-            for local_index, (cached_pre, macrocell) in enumerate(
-                zip(
-                    chain.layer_pre_residuals,
-                    batch.macrocells,
-                    strict=True,
-                )
-            ):
-                analytic_pre = macrocell.operator.residual
-                converted = cached_pre.to(
-                    device="cpu",
-                    dtype=torch.float64,
-                )
-                if tuple(converted.shape) != tuple(analytic_pre.shape) or not bool(
-                    torch.equal(converted, analytic_pre)
-                ):
-                    raise Lfm2CausalSpanAuthenticationError(
-                        "Analytic source primal is not centered on cached "
-                        f"residual.pre for batch {batch_index}, local layer "
-                        f"{local_index}."
-                    )
+        chains = tuple(
+            _clone_source_span_batch_chain(value) for value in self.batch_chains
+        )
         object.__setattr__(self, "batch_chains", chains)
-        for name in (
-            "source_plan_sha256",
-            "cache_key",
-            "cache_manifest_sha256",
-            "cache_session_sha256",
-            "direct_parent_session_sha256",
-        ):
-            object.__setattr__(self, name, _digest(getattr(self, name), name))
+        object.__setattr__(
+            self,
+            "expected_provenance_root_sha256",
+            _digest(
+                self.expected_provenance_root_sha256,
+                "expected provenance root",
+            ),
+        )
+        self._require_replayed_joins()
         expected = self.recompute_authentication_sha256()
         supplied = str(self.authentication_sha256).strip().lower()
         if supplied and supplied != expected:
@@ -397,6 +933,109 @@ class Lfm2SourceSpanPrimalEvidence:
             }
         )
 
+    def _require_replayed_joins(self) -> None:
+        torch = _torch()
+        plan = self.plan_receipt
+        cache = self.cache_receipt
+        direct = self.direct_parent_receipt
+        if (
+            not isinstance(plan, Lfm2SourceSpanPlanReceipt)
+            or not plan.verify_authentication()
+            or not isinstance(cache, Lfm2SourceSpanCacheReceipt)
+            or not cache.verify_authentication()
+            or not isinstance(direct, Lfm2SourceSpanDirectParentReceipt)
+            or not direct.verify_authentication()
+        ):
+            raise Lfm2CausalSpanAuthenticationError(
+                "Source span evidence requires replayable authenticated receipts."
+            )
+        root = lfm2_source_span_provenance_root_sha256(plan, cache, direct)
+        if root != self.expected_provenance_root_sha256:
+            raise Lfm2CausalSpanAuthenticationError(
+                "Replayed receipts differ from the externally pinned provenance root."
+            )
+        identity = direct.parent_model_identity_sha256
+        if (
+            plan.parent_model_identity_sha256 != identity
+            or cache.parent_model_identity_sha256 != identity
+            or plan.parent_graph_fingerprint != direct.parent_graph_fingerprint
+            or plan.source_layer_count != len(direct.layers)
+            or len(cache.layer_topology) != len(direct.layers)
+        ):
+            raise Lfm2CausalSpanAuthenticationError(
+                "Plan, cache, and direct-parent receipts do not describe one parent."
+            )
+        if (
+            self.span.target_layer_index >= len(plan.ordered_source_spans)
+            or plan.ordered_source_spans[self.span.target_layer_index]
+            != self.span.source_layer_indices
+            or cache.source_layer_indices != self.span.source_layer_indices
+        ):
+            raise Lfm2CausalSpanAuthenticationError(
+                "The requested span does not join the replayed complete fold plan."
+            )
+        snapshot = self.snapshot
+        if (
+            snapshot.layer_count != len(self.span.source_layer_indices)
+            or len(self.batch_chains) != len(snapshot.batches)
+            or len(self.batch_chains) != len(cache.batch_chains)
+            or tuple(value.batch_index for value in self.batch_chains)
+            != tuple(range(len(self.batch_chains)))
+        ):
+            raise Lfm2CausalSpanAuthenticationError(
+                "Local primals, histories, and cache receipt have different geometry."
+            )
+        for local_index, absolute_index in enumerate(self.span.source_layer_indices):
+            direct_layer = direct.layers[absolute_index]
+            cache_kind = cache.layer_topology[absolute_index]
+            if (
+                direct_layer.source_layer_index != absolute_index
+                or direct_layer.operator_kind != cache_kind
+                or direct_layer.parameter_state_sha256
+                != snapshot.layer_parameter_sha256[local_index]
+                or any(
+                    batch.macrocells[local_index].operator_kind != cache_kind
+                    for batch in snapshot.batches
+                )
+            ):
+                raise Lfm2CausalSpanAuthenticationError(
+                    "Direct parameters or operator topology do not join the local "
+                    f"snapshot at absolute layer {absolute_index}."
+                )
+        for batch_index, (chain, authoritative, batch) in enumerate(
+            zip(
+                self.batch_chains,
+                cache.batch_chains,
+                snapshot.batches,
+                strict=True,
+            )
+        ):
+            if (
+                not chain.verify_authentication()
+                or chain.authentication_sha256 != authoritative.authentication_sha256
+                or chain.source_layer_indices != self.span.source_layer_indices
+                or chain.operator_kinds
+                != tuple(
+                    cache.layer_topology[index]
+                    for index in self.span.source_layer_indices
+                )
+            ):
+                raise Lfm2CausalSpanAuthenticationError(
+                    f"Batch {batch_index} is not the authoritative cached span."
+                )
+            for local_index, (cached_pre, macrocell) in enumerate(
+                zip(chain.layer_pre_residuals, batch.macrocells, strict=True)
+            ):
+                converted = cached_pre.to(device="cpu", dtype=torch.float64)
+                if tuple(converted.shape) != tuple(
+                    macrocell.operator.residual.shape
+                ) or not bool(torch.equal(converted, macrocell.operator.residual)):
+                    raise Lfm2CausalSpanAuthenticationError(
+                        "Analytic source primal is not centered on cached "
+                        f"residual.pre for batch {batch_index}, local layer "
+                        f"{local_index}."
+                    )
+
     def authentication_body(self) -> dict[str, Any]:
         return {
             "schema": LFM2_CAUSAL_SPAN_LINEARIZATION_SCHEMA,
@@ -412,11 +1051,12 @@ class Lfm2SourceSpanPrimalEvidence:
             "batch_chain_sha256": [
                 value.authentication_sha256 for value in self.batch_chains
             ],
-            "source_plan_sha256": self.source_plan_sha256,
-            "cache_key": self.cache_key,
-            "cache_manifest_sha256": self.cache_manifest_sha256,
-            "cache_session_sha256": self.cache_session_sha256,
-            "direct_parent_session_sha256": self.direct_parent_session_sha256,
+            "plan_receipt_sha256": self.plan_receipt.authentication_sha256,
+            "cache_receipt_sha256": self.cache_receipt.authentication_sha256,
+            "direct_parent_receipt_sha256": (
+                self.direct_parent_receipt.authentication_sha256
+            ),
+            "expected_provenance_root_sha256": (self.expected_provenance_root_sha256),
             "primal_semantics": (
                 "authenticated_runtime_history_centered_continuous_fp64_"
                 "linearization_with_inter_layer_cast_straight_through_identity"
@@ -429,36 +1069,12 @@ class Lfm2SourceSpanPrimalEvidence:
         return _canonical_sha256(self.authentication_body())
 
     def verify_authentication(self) -> bool:
-        torch = _torch()
         try:
-            if (
-                not self.snapshot.verify_authentication()
-                or any(not value.verify_authentication() for value in self.batch_chains)
-                or self.snapshot.layer_count != len(self.span.source_layer_indices)
-                or len(self.snapshot.batches) != len(self.batch_chains)
-            ):
+            if not self.snapshot.verify_authentication():
                 return False
-            for chain, batch in zip(
-                self.batch_chains,
-                self.snapshot.batches,
-                strict=True,
-            ):
-                if any(
-                    not bool(
-                        torch.equal(
-                            cached.to(device="cpu", dtype=torch.float64),
-                            macrocell.operator.residual,
-                        )
-                    )
-                    for cached, macrocell in zip(
-                        chain.layer_pre_residuals,
-                        batch.macrocells,
-                        strict=True,
-                    )
-                ):
-                    return False
+            self._require_replayed_joins()
             return self.authentication_sha256 == self.recompute_authentication_sha256()
-        except (RuntimeError, TypeError, ValueError):
+        except (AttributeError, IndexError, RuntimeError, TypeError, ValueError):
             return False
 
 
@@ -996,5 +1612,10 @@ __all__ = [
     "Lfm2CausalSpanLinearizationError",
     "Lfm2CausalSpanSeed",
     "Lfm2SourceSpanBatchChain",
+    "Lfm2SourceSpanCacheReceipt",
+    "Lfm2SourceSpanDirectLayerRecord",
+    "Lfm2SourceSpanDirectParentReceipt",
+    "Lfm2SourceSpanPlanReceipt",
     "Lfm2SourceSpanPrimalEvidence",
+    "lfm2_source_span_provenance_root_sha256",
 ]
