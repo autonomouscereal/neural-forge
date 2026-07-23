@@ -50,6 +50,30 @@ def test_compiler_and_writer_share_one_reentrant_torch_state_lock() -> None:
         lock.release()
 
 
+def test_cpu_fhvr_context_serializes_process_global_torch_state() -> None:
+    acquired_from_other_thread: list[bool] = []
+
+    with adapter._fhvr_compute_device_context("cpu") as execution:
+        assert execution == {
+            "backend": "cpu",
+            "requested_device": "cpu",
+            "resolved_device": "cpu",
+            "device_index": None,
+        }
+
+        def try_acquire() -> None:
+            acquired = adapter._SHORT_CONV_TORCH_STATE_LOCK.acquire(blocking=False)
+            acquired_from_other_thread.append(acquired)
+            if acquired:
+                adapter._SHORT_CONV_TORCH_STATE_LOCK.release()
+
+        worker = threading.Thread(target=try_acquire)
+        worker.start()
+        worker.join()
+
+    assert acquired_from_other_thread == [False]
+
+
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -485,6 +509,52 @@ def test_fhvr_full_history_construction_installs_one_dense_child_state() -> None
     assert receipt["operation_audit"]["backward_calls"] == 0
     assert receipt["operation_audit"]["optimizer_steps"] == 0
     assert model.forward_calls == 0
+
+
+def test_fhvr_replays_parent_fir_before_owner_expansion() -> None:
+    model = _ToyModel()
+    source, evidence = _fhvr_source_and_evidence(model)
+    selected = evidence[:2]
+    fit_cases = adapter._fhvr_fit_cases(selected)
+
+    contexts, receipt = adapter._fhvr_parent_contexts(
+        selected,
+        fit_cases,
+        source=source,
+    )
+
+    assert receipt["causal_fir_replayed_before_target_owner_expansion"] is True
+    assert receipt["complete_donor_causal_history_consumed"] is True
+    assert receipt["valid_mask_admits_each_donor_semantic_boundary_once"] is True
+    receipt_body = dict(receipt)
+    seal = receipt_body.pop("result_sha256")
+    assert canonical_sha256(receipt_body) == seal
+    for item, case in zip(selected, fit_cases, strict=True):
+        owners = torch.tensor(
+            item.target_to_parent_span_owner_positions,
+            dtype=torch.long,
+        )
+        donor_context = causal_depthwise_context(
+            item.parent_b_history,
+            item.parent_c_history,
+            item.parent_x_history,
+            source.source_fir_weight,
+            source.source_fir_bias,
+        )
+        expected = donor_context.index_select(1, owners)
+        expanded_then_filtered = causal_depthwise_context(
+            item.parent_b_history.index_select(1, owners),
+            item.parent_c_history.index_select(1, owners),
+            item.parent_x_history.index_select(1, owners),
+            source.source_fir_weight,
+            source.source_fir_bias,
+        )
+        assert torch.equal(contexts[case.case_id], expected)
+        assert not torch.allclose(contexts[case.case_id], expanded_then_filtered)
+        assert case.valid_prefix_mask.tolist() == [[True, False, True, True]]
+        assert int(case.valid_prefix_mask.sum().item()) == int(
+            item.parent_b_history.shape[1]
+        )
 
 
 def test_fhvr_source_tensor_tamper_fails_before_child_mutation() -> None:

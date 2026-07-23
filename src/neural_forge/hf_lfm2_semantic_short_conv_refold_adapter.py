@@ -2131,12 +2131,18 @@ def _fhvr_compute_device_context(
 
     torch = _torch()
     if fold_compute_device == "cpu":
-        yield {
-            "backend": "cpu",
-            "requested_device": "cpu",
-            "resolved_device": "cpu",
-            "device_index": None,
-        }
+        # The FHVR kernel's deterministic scope calls
+        # torch.use_deterministic_algorithms even for CPU work.  That flag is
+        # process-global, so serialize the complete kernel invocation just as
+        # the CUDA route does instead of exposing a transient global policy to
+        # concurrent folds.
+        with _SHORT_CONV_TORCH_STATE_LOCK:
+            yield {
+                "backend": "cpu",
+                "requested_device": "cpu",
+                "resolved_device": "cpu",
+                "device_index": None,
+            }
         return
     device, device_index = _indexed_cuda_device(torch, fold_compute_device)
     workspace_config = os.environ.get("CUBLAS_WORKSPACE_CONFIG", "")
@@ -2214,6 +2220,101 @@ def _fhvr_fit_cases(
     return tuple(result)
 
 
+def _fhvr_parent_contexts(
+    evidence: Sequence[Lfm2SemanticShortConvReplayEvidence],
+    fit_cases: Sequence[Any],
+    *,
+    source: Lfm2SemanticShortConvFhvrSource,
+) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    """Replay the true donor FIR before aligning its outputs to child rows.
+
+    Token expansion duplicates donor rows in the target timeline.  A causal
+    convolution does not commute with that duplication, so B/C/x must remain
+    on the complete donor timeline until after the parent context is replayed.
+    The resulting contexts may then be owner-selected into target positions;
+    the case mask admits exactly one boundary row for every donor token.
+    """
+
+    torch = _torch()
+    from neural_forge.hf_lfm2_cpcf_short_conv_v4 import causal_depthwise_context
+
+    items = tuple(evidence)
+    cases = tuple(fit_cases)
+    if (
+        not source.verify()
+        or len(items) != len(cases)
+        or any(
+            case.case_id
+            != (
+                f"fhvr-batch-{item.batch_index}-phase-{item.phase}-"
+                f"{item.evidence_sha256[:16]}"
+            )
+            for item, case in zip(items, cases, strict=True)
+        )
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "FHVR donor histories and target-aligned fit cases are reordered."
+        )
+    contexts: dict[str, Any] = {}
+    case_receipts: dict[str, Any] = {}
+    for item, case in zip(items, cases, strict=True):
+        owners = torch.tensor(
+            item.target_to_parent_span_owner_positions,
+            dtype=torch.long,
+        )
+        donor_context = causal_depthwise_context(
+            item.parent_b_history,
+            item.parent_c_history,
+            item.parent_x_history,
+            source.source_fir_weight,
+            source.source_fir_bias,
+        )
+        aligned_context = donor_context.index_select(1, owners).contiguous()
+        boundary_count = len(item.semantic_span_boundary_positions)
+        if (
+            tuple(donor_context.shape) != tuple(item.parent_b_history.shape)
+            or tuple(aligned_context.shape[:2])
+            != tuple(case.actual_child_operator_input_history.shape[:2])
+            or int(aligned_context.shape[-1]) != source.source_hidden_size
+            or boundary_count != int(item.parent_b_history.shape[1])
+            or int(case.valid_prefix_mask.sum().item())
+            != int(item.parent_b_history.shape[0]) * boundary_count
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR donor-first causal context lost full-history alignment."
+            )
+        contexts[case.case_id] = aligned_context
+        case_receipts[case.case_id] = {
+            "evidence_sha256": item.evidence_sha256,
+            "case_authentication_sha256": case.authentication_sha256,
+            "donor_history_length": int(item.parent_b_history.shape[1]),
+            "target_history_length": int(aligned_context.shape[1]),
+            "semantic_boundary_count": boundary_count,
+            "inserted_target_proxy_count": len(item.inserted_target_positions),
+            "donor_context_sha256": _tensor_sha256(donor_context),
+            "target_aligned_context_sha256": _tensor_sha256(aligned_context),
+        }
+    receipt_body = {
+        "schema": "neural-forge-lfm2-short-conv-fhvr-parent-context-alignment-v1",
+        "source_sha256": source.source_sha256,
+        "formula": (
+            "owner_select(causal_depthwise_context(parent_b_donor_history,"
+            "parent_c_donor_history,parent_x_donor_history,source_fir))"
+        ),
+        "causal_fir_replayed_before_target_owner_expansion": True,
+        "complete_donor_causal_history_consumed": True,
+        "inserted_target_rows_are_alignment_proxies_not_parent_timesteps": True,
+        "valid_mask_admits_each_donor_semantic_boundary_once": True,
+        "case_receipts": case_receipts,
+        "operation_audit": dict(_ZERO_OPERATIONS),
+    }
+    receipt = {
+        **receipt_body,
+        "result_sha256": canonical_sha256(receipt_body),
+    }
+    return MappingProxyType(contexts), MappingProxyType(receipt)
+
+
 def _compile_fhvr_full_coverage_candidate(
     *,
     construction: Lfm2SemanticShortConvConstruction,
@@ -2227,7 +2328,6 @@ def _compile_fhvr_full_coverage_candidate(
 
     from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
         Lfm2CpcfShortConvV4SolverPolicy,
-        causal_depthwise_context,
     )
     from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
         Lfm2CpcfShortConvNumericalFrontierRequest,
@@ -2247,16 +2347,11 @@ def _compile_fhvr_full_coverage_candidate(
             "FHVR construction or source authentication is invalid."
         )
     fit_cases = _fhvr_fit_cases(fit)
-    parent_contexts = {
-        case.case_id: causal_depthwise_context(
-            case.parent_b_history,
-            case.parent_c_history,
-            case.parent_x_history,
-            source.source_fir_weight,
-            source.source_fir_bias,
-        )
-        for case in fit_cases
-    }
+    parent_contexts, parent_context_alignment = _fhvr_parent_contexts(
+        fit,
+        fit_cases,
+        source=source,
+    )
     target_dtype = str(incumbent_state["in_proj.weight"].dtype).removeprefix("torch.")
     solver_policy = Lfm2CpcfShortConvV4SolverPolicy(target_dtype=target_dtype)
     request = Lfm2CpcfShortConvNumericalFrontierRequest(
@@ -2398,6 +2493,10 @@ def _compile_fhvr_full_coverage_candidate(
             "source_sha256": source.source_sha256,
             "numerical_frontier_request": request.as_dict(),
             "numerical_frontier_request_sha256": request.request_sha256,
+            "parent_context_alignment": dict(parent_context_alignment),
+            "parent_context_alignment_sha256": parent_context_alignment[
+                "result_sha256"
+            ],
             "writer_control_report": raw_writer.as_dict(),
             "writer_control_report_sha256": raw_writer.report["report_sha256"],
             "pure_fhvr_report": pure.as_dict(),

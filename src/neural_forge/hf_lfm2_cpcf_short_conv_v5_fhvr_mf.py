@@ -753,7 +753,11 @@ def _prepare_evidence(
             device=device,
             dtype=dtype,
         )
-        child = child * mask.unsqueeze(-1).to(dtype)
+        # `valid_prefix_mask` identifies rows with an exact parent semantic
+        # target; it is an objective-weight mask, not a causal-input mask.
+        # Target-only tokenizer expansion rows are real child timesteps and
+        # must remain in B/x FIR warmup so later parent-exact boundaries see
+        # the state the deployed child will actually produce.
         if include_bias:
             features = torch.cat(
                 (

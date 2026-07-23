@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import torch
 
+from neural_forge import hf_lfm2_cpcf_short_conv_v5_fhvr_mf as fhvr_mf
 from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
     Lfm2CpcfShortConvV4SolverPolicy,
     causal_depthwise_context,
@@ -192,6 +195,45 @@ def _request() -> tuple[Lfm2CpcfShortConvNumericalFrontierRequest, torch.Tensor]
         ),
     )
     return request, context_encoder
+
+
+def test_invalid_objective_rows_still_warm_the_child_causal_history() -> None:
+    request, context_encoder = _request()
+    original = request.cases[0]
+    mask = original.valid_prefix_mask.clone()
+    mask[:, 2] = False
+    case = replace(
+        original,
+        valid_prefix_mask=mask,
+        authentication_sha256="",
+    )
+    remasked_request = Lfm2CpcfShortConvNumericalFrontierRequest(
+        source_tensors=request.source_tensors,
+        cases=(case,),
+        parent_contexts={case.case_id: request.parent_contexts[case.case_id]},
+        target_templates=request.target_templates,
+        policy=request.policy,
+    )
+    policy = Lfm2CpcfFhvrMfPolicy(backend="cpu")
+    prepared = fhvr_mf._prepare_evidence(
+        remasked_request,
+        context_encoder=context_encoder,
+        device=torch.device("cpu"),
+        dtype=torch.float64,
+        policy=policy,
+        audit=fhvr_mf._WorkspaceAudit(
+            row_cap=policy.row_chunk_size,
+            channel_cap=policy.channel_chunk_size,
+        ),
+    )[0]
+
+    assert prepared.valid_mask[0, 2].item() is False
+    assert prepared.prefix_weight[0, 2].item() == 0.0
+    assert torch.equal(
+        prepared.features[0, 2, :2],
+        case.actual_child_operator_input_history[0, 2],
+    )
+    assert torch.count_nonzero(prepared.features[0, 2, :2]).item() > 0
 
 
 def test_conditional_matrix_free_solve_matches_explicit_oracle() -> None:
