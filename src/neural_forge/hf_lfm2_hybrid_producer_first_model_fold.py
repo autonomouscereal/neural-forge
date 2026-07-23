@@ -55,6 +55,12 @@ from .hf_lfm2_producer_first_model_fold import (
 
 HYBRID_PRODUCER_FIRST_METHOD = "lfm2_hybrid_residual_attention_model"
 HYBRID_PRODUCER_FIRST_SCHEMA = "neural-forge-lfm2-hybrid-producer-first-model-fold-v1"
+_SPAN_COUPLED_PRODUCTION_RECEIPT_V1 = (
+    "neural-forge-lfm2-span-coupled-production-receipt-v1"
+)
+_SPAN_COUPLED_PRODUCTION_RECEIPT_V2 = (
+    "neural-forge-lfm2-span-coupled-production-receipt-v2"
+)
 
 
 class Lfm2HybridProducerFirstFoldError(RuntimeError):
@@ -611,6 +617,53 @@ def _rows_identical(value: Any) -> bool:
     )
 
 
+def _selected_cached_attention_head_rows(
+    *,
+    rows: Any,
+    row_indices: tuple[int, ...],
+    selected_lineage: tuple[tuple[int, int], ...],
+    field_name: str,
+    label: str,
+) -> Any:
+    """Assemble cached per-head rows in the span compiler's selected order."""
+
+    torch = _torch()
+    by_layer: dict[int, Any] = {}
+    selected = []
+    for source_layer_index, source_head_index in selected_lineage:
+        if source_layer_index not in by_layer:
+            try:
+                value = rows.field(source_layer_index, field_name)
+            except (AttributeError, KeyError) as exc:
+                raise Lfm2HybridProducerFirstFoldError(
+                    f"{label} requires sealed cache field {field_name!r} for source "
+                    f"layer {source_layer_index}."
+                ) from exc
+            by_layer[source_layer_index] = _index_rows(
+                value,
+                row_indices,
+                f"source layer {source_layer_index} {label}",
+            )
+        layer_rows = by_layer[source_layer_index]
+        if (
+            layer_rows.ndim != 3
+            or source_head_index < 0
+            or source_head_index >= int(layer_rows.shape[1])
+        ):
+            raise Lfm2HybridProducerFirstFoldError(
+                f"{label} differs from the selected attention-head topology."
+            )
+        selected.append(layer_rows[:, source_head_index, :].unsqueeze(1))
+    if not selected:
+        raise Lfm2HybridProducerFirstFoldError(
+            f"{label} has no selected source-head lineage."
+        )
+    result = torch.cat(selected, dim=1).contiguous()
+    if not bool(torch.isfinite(result).all().item()):
+        raise Lfm2HybridProducerFirstFoldError(f"{label} contains NaN or infinity.")
+    return result
+
+
 def _compile_span_coupled_candidate_overlays(
     *,
     parent: Any,
@@ -620,6 +673,7 @@ def _compile_span_coupled_candidate_overlays(
     capture: Lfm2ProducerFirstCapture,
     producer_state_sha256: str,
     capture_rows_identity_sha256: str,
+    config: Lfm2ModelFoldConfig,
 ) -> tuple[
     Mapping[int, Mapping[str, Any]],
     Mapping[int, Mapping[str, Any]],
@@ -636,6 +690,7 @@ def _compile_span_coupled_candidate_overlays(
         lfm2_attention_group_qdeim_target_template_sha256,
     )
     from .hf_lfm2_canonical import Lfm2AttentionContract
+    from .hf_lfm2_cpcf_attention_dimension_fold import lfm2_runtime_rms_norm
     from .hf_lfm2_mlp_qdeim import (
         Lfm2MlpQdeimSpanSource,
         assemble_lfm2_mlp_qdeim_span_sources,
@@ -643,6 +698,9 @@ def _compile_span_coupled_candidate_overlays(
         lfm2_mlp_qdeim_source_state_sha256,
         lfm2_mlp_qdeim_span_functional_evidence_sha256,
         lfm2_mlp_qdeim_target_template_sha256,
+    )
+    from .hf_lfm2_span_shared_qk_norm_refit import (
+        compile_lfm2_span_shared_qk_norm_refit,
     )
 
     torch = _torch()
@@ -663,6 +721,7 @@ def _compile_span_coupled_candidate_overlays(
         }
     )
     for span in depth_spans:
+        receipt_schema = _SPAN_COUPLED_PRODUCTION_RECEIPT_V1
         target_index = span.target_layer_index
         target_layer = child_layers[target_index]
         target_local_state = target_layer.state_dict()
@@ -677,7 +736,7 @@ def _compile_span_coupled_candidate_overlays(
             for name in target_mlp_names
         ):
             body = {
-                "schema": "neural-forge-lfm2-span-coupled-production-receipt-v1",
+                "schema": receipt_schema,
                 "span": span.as_dict(),
                 "parent_identity_sha256": evidence.parent_identity_sha256,
                 "parent_cache_fingerprint": evidence.parent_cache_fingerprint,
@@ -977,16 +1036,135 @@ def _compile_span_coupled_candidate_overlays(
                         },
                     }
                 else:
-                    attention_report = {
-                        "installed": False,
-                        "reason": (
-                            "selected-source-qk-norms-not-representable-by-"
-                            "one-shared-lfm2-qk-norm"
+                    child_selection_inputs = lfm2_runtime_rms_norm(
+                        _index_rows(
+                            capture.rows.field(target_index, "residual.pre"),
+                            evidence.selection_indices,
+                            (f"target layer {target_index} attention selection input"),
                         ),
+                        _layer_norm_weight(target_layer, "operator_norm"),
+                        _norm_epsilon(child, "child"),
+                    )
+                    query_selection_targets = _selected_cached_attention_head_rows(
+                        rows=evidence.parent_rows,
+                        row_indices=evidence.selection_indices,
+                        selected_lineage=(
+                            compiled_attention.selected_source_query_heads
+                        ),
+                        field_name="attention.q_normalized_pre_rope",
+                        label="cached normalized pre-RoPE query rows",
+                    )
+                    key_selection_targets = _selected_cached_attention_head_rows(
+                        rows=evidence.parent_rows,
+                        row_indices=evidence.selection_indices,
+                        selected_lineage=(
+                            compiled_attention.selected_source_key_value_groups
+                        ),
+                        field_name="attention.k_normalized_pre_rope",
+                        label="cached normalized pre-RoPE key rows",
+                    )
+                    diagnostic_inputs = None
+                    diagnostic_query_targets = None
+                    diagnostic_key_targets = None
+                    if evidence.validation_indices:
+                        diagnostic_inputs = lfm2_runtime_rms_norm(
+                            _index_rows(
+                                capture.rows.field(target_index, "residual.pre"),
+                                evidence.validation_indices,
+                                (
+                                    f"target layer {target_index} attention diagnostic "
+                                    "input"
+                                ),
+                            ),
+                            _layer_norm_weight(target_layer, "operator_norm"),
+                            _norm_epsilon(child, "child"),
+                        )
+                        diagnostic_query_targets = _selected_cached_attention_head_rows(
+                            rows=evidence.parent_rows,
+                            row_indices=evidence.validation_indices,
+                            selected_lineage=(
+                                compiled_attention.selected_source_query_heads
+                            ),
+                            field_name="attention.q_normalized_pre_rope",
+                            label=("diagnostic normalized pre-RoPE query rows"),
+                        )
+                        diagnostic_key_targets = _selected_cached_attention_head_rows(
+                            rows=evidence.parent_rows,
+                            row_indices=evidence.validation_indices,
+                            selected_lineage=(
+                                compiled_attention.selected_source_key_value_groups
+                            ),
+                            field_name="attention.k_normalized_pre_rope",
+                            label="diagnostic normalized pre-RoPE key rows",
+                        )
+                    compiled_attention_state = compiled_attention.state_dict()
+                    norm_refit = compile_lfm2_span_shared_qk_norm_refit(
+                        transported_query_weight=(
+                            compiled_attention_state["q_proj.weight"]
+                        ),
+                        transported_key_weight=(
+                            compiled_attention_state["k_proj.weight"]
+                        ),
+                        unchanged_value_weight=(
+                            compiled_attention_state["v_proj.weight"]
+                        ),
+                        unchanged_out_weight=(
+                            compiled_attention_state["out_proj.weight"]
+                        ),
+                        selected_query_source_norm_rows=q_norm_rows,
+                        selected_key_source_norm_rows=k_norm_rows,
+                        cached_child_normalized_input_rows=(child_selection_inputs),
+                        cached_query_normalized_pre_rope_rows=(query_selection_targets),
+                        cached_key_normalized_pre_rope_rows=(key_selection_targets),
+                        target_query_norm_weight_template=(
+                            target_attention.q_layernorm.weight
+                        ),
+                        target_key_norm_weight_template=(
+                            target_attention.k_layernorm.weight
+                        ),
+                        child_norm_epsilon=_norm_epsilon(child, "child"),
+                        ridge=config.layer_config.endpoint_ridge,
+                        selected_source_query_heads=(
+                            compiled_attention.selected_source_query_heads
+                        ),
+                        selected_source_key_value_groups=(
+                            compiled_attention.selected_source_key_value_groups
+                        ),
+                        parent_attention_compiler_result_sha256=(
+                            raw_attention_report["result_sha256"]
+                        ),
+                        diagnostic_child_normalized_input_rows=diagnostic_inputs,
+                        diagnostic_query_normalized_pre_rope_rows=(
+                            diagnostic_query_targets
+                        ),
+                        diagnostic_key_normalized_pre_rope_rows=(
+                            diagnostic_key_targets
+                        ),
+                    )
+                    local_override.update(
+                        {
+                            f"self_attn.{name}": value
+                            for name, value in compiled_attention_state.items()
+                        }
+                    )
+                    local_override.update(
+                        {
+                            f"self_attn.{name}": value
+                            for name, value in norm_refit.state_dict().items()
+                        }
+                    )
+                    receipt_schema = _SPAN_COUPLED_PRODUCTION_RECEIPT_V2
+                    attention_report = {
+                        "installed": True,
                         "shared_qk_norm_directly_representable": False,
                         "heterogeneous_norm_rows_averaged": False,
-                        "legacy_anchor_attention_preserved": True,
+                        "shared_qk_norm_refit": norm_refit.as_dict(),
+                        "legacy_anchor_attention_preserved": False,
                         "compiler": raw_attention_report,
+                        "decoder_receipt_sha256_by_source": {
+                            str(index): value["decoder_receipt_sha256"]
+                            for index, value in attention_decoder_receipts.items()
+                        },
                     }
             else:
                 attention_report = {
@@ -1000,7 +1178,7 @@ def _compile_span_coupled_candidate_overlays(
             for name, value in sorted(local_override.items())
         }
         body = {
-            "schema": "neural-forge-lfm2-span-coupled-production-receipt-v1",
+            "schema": receipt_schema,
             "span": span.as_dict(),
             "parent_identity_sha256": evidence.parent_identity_sha256,
             "parent_cache_fingerprint": evidence.parent_cache_fingerprint,
@@ -1019,9 +1197,7 @@ def _compile_span_coupled_candidate_overlays(
             },
             "attention": attention_report,
             "installed_local_state_sha256": installed_state_sha256,
-            "installed_local_state_hash_scheme": (
-                MODEL_FOLD_TENSOR_HASH_SCHEME
-            ),
+            "installed_local_state_hash_scheme": (MODEL_FOLD_TENSOR_HASH_SCHEME),
             "installed": True,
             "installed_any": True,
             "installed_all": bool(
@@ -1309,6 +1485,7 @@ def install_lfm2_hybrid_producer_first_model_fold(
                 capture=capture,
                 producer_state_sha256=producer_state,
                 capture_rows_identity_sha256=capture_rows_identity_sha256,
+                config=selected,
             )
             model_plan = overlay_lfm2_span_coupled_candidates(
                 child,

@@ -59,6 +59,18 @@ MODEL_FOLD_SCHEMA = "neural-forge-lfm2-hybrid-model-fold-v1"
 MODEL_FOLD_TRANSACTION_SCHEMA = "neural-forge-lfm2-hybrid-model-fold-transaction-v1"
 MODEL_FOLD_EVIDENCE_SCHEMA = "neural-forge-lfm2-hybrid-model-evidence-v1"
 MODEL_FOLD_TENSOR_HASH_SCHEME = "neural-forge-lfm2-model-fold-tensor-sha256-v1"
+_SPAN_COUPLED_PRODUCTION_RECEIPT_V1 = (
+    "neural-forge-lfm2-span-coupled-production-receipt-v1"
+)
+_SPAN_COUPLED_PRODUCTION_RECEIPT_V2 = (
+    "neural-forge-lfm2-span-coupled-production-receipt-v2"
+)
+_SPAN_COUPLED_PRODUCTION_RECEIPT_SCHEMAS = frozenset(
+    {
+        _SPAN_COUPLED_PRODUCTION_RECEIPT_V1,
+        _SPAN_COUPLED_PRODUCTION_RECEIPT_V2,
+    }
+)
 
 
 class Lfm2ModelFoldError(ValueError):
@@ -2515,6 +2527,104 @@ class Lfm2ModelFoldTransaction:
         return False
 
 
+def _validate_span_shared_qk_norm_refit_receipt(
+    receipt: Mapping[str, Any],
+    installed_local_state_sha256: Mapping[str, str] | None,
+) -> None:
+    """Authenticate the versioned heterogeneous shared-Q/K installation seam."""
+
+    schema = receipt.get("schema")
+    attention = receipt.get("attention")
+    if schema == _SPAN_COUPLED_PRODUCTION_RECEIPT_V1:
+        if (
+            isinstance(attention, Mapping)
+            and attention.get("shared_qk_norm_refit") is not None
+        ):
+            raise Lfm2ModelFoldInvariantError(
+                "A v1 span-overlay receipt cannot claim a shared-Q/K norm refit."
+            )
+        return
+    if not isinstance(attention, Mapping):
+        raise Lfm2ModelFoldInvariantError(
+            "A span-overlay receipt has no authenticated attention branch."
+        )
+    refit = attention.get("shared_qk_norm_refit")
+    if schema != _SPAN_COUPLED_PRODUCTION_RECEIPT_V2:
+        raise Lfm2ModelFoldInvariantError(
+            "A span-overlay receipt uses an unsupported production schema."
+        )
+    if (
+        attention.get("installed") is not True
+        or attention.get("shared_qk_norm_directly_representable") is not False
+        or attention.get("heterogeneous_norm_rows_averaged") is not False
+        or attention.get("legacy_anchor_attention_preserved") is not False
+        or not isinstance(refit, Mapping)
+        or not isinstance(installed_local_state_sha256, Mapping)
+    ):
+        raise Lfm2ModelFoldInvariantError(
+            "A v2 span-overlay receipt lacks its heterogeneous shared-Q/K install."
+        )
+    compiler = attention.get("compiler")
+    if not isinstance(compiler, Mapping):
+        raise Lfm2ModelFoldInvariantError(
+            "A shared-Q/K refit is not bound to its span attention compiler."
+        )
+    expected_query_lineage = [
+        [item.get("source_layer_index"), item.get("source_query_head_index")]
+        for item in compiler.get("selected_source_query_heads", ())
+        if isinstance(item, Mapping)
+    ]
+    expected_key_lineage = [
+        [item.get("source_layer_index"), item.get("source_key_value_group_index")]
+        for item in compiler.get("selected_source_key_value_groups", ())
+        if isinstance(item, Mapping)
+    ]
+    qk_norm_lineage = compiler.get("qk_norm_lineage")
+    if (
+        not isinstance(qk_norm_lineage, Mapping)
+        or refit.get("parent_attention_compiler_result_sha256")
+        != compiler.get("result_sha256")
+        or refit.get("selected_source_query_heads") != expected_query_lineage
+        or refit.get("selected_source_key_value_groups") != expected_key_lineage
+        or refit.get("selected_query_source_norm_rows_semantic_sha256")
+        != qk_norm_lineage.get("selected_query_norm_rows_sha256")
+        or refit.get("selected_key_source_norm_rows_semantic_sha256")
+        != qk_norm_lineage.get("selected_key_norm_rows_sha256")
+    ):
+        raise Lfm2ModelFoldInvariantError(
+            "A shared-Q/K refit changed its selected span-attention lineage."
+        )
+    attention_names = (
+        "q_proj.weight",
+        "k_proj.weight",
+        "v_proj.weight",
+        "out_proj.weight",
+        "q_layernorm.weight",
+        "k_layernorm.weight",
+    )
+    installed_attention = {
+        name: installed_local_state_sha256.get(f"self_attn.{name}")
+        for name in attention_names
+    }
+    if any(value is None for value in installed_attention.values()):
+        raise Lfm2ModelFoldInvariantError(
+            "A shared-Q/K refit does not cover all six dense attention tensors."
+        )
+    try:
+        from .hf_lfm2_span_shared_qk_norm_refit import (
+            verify_lfm2_span_shared_qk_norm_refit_receipt,
+        )
+
+        verify_lfm2_span_shared_qk_norm_refit_receipt(
+            refit,
+            installed_attention_state_sha256=installed_attention,
+        )
+    except (TypeError, ValueError) as exc:
+        raise Lfm2ModelFoldInvariantError(
+            "A shared-Q/K refit receipt failed nested authentication."
+        ) from exc
+
+
 def _validate_span_coupled_overlay_plan(
     plan: Lfm2ModelFoldPlan,
     candidate: Mapping[str, Any],
@@ -2583,10 +2693,8 @@ def _validate_span_coupled_overlay_plan(
                 "A span-overlay receipt is bound to the wrong depth span."
             )
         if (
-            normalized.get("schema")
-            != "neural-forge-lfm2-span-coupled-production-receipt-v1"
-            or normalized.get("parent_cache_fingerprint")
-            != plan.cache_fingerprint
+            normalized.get("schema") not in _SPAN_COUPLED_PRODUCTION_RECEIPT_SCHEMAS
+            or normalized.get("parent_cache_fingerprint") != plan.cache_fingerprint
             or normalized.get("captured_producer_state_sha256")
             != plan.child_feature_state_sha256
         ):
@@ -2609,6 +2717,10 @@ def _validate_span_coupled_overlay_plan(
             receipt_installed_state_hashes[str(target_index)] = normalized.get(
                 "installed_local_state_sha256"
             )
+        _validate_span_shared_qk_norm_refit_receipt(
+            normalized,
+            normalized.get("installed_local_state_sha256"),
+        )
         normalized["receipt_sha256"] = claimed
         receipt_identity[str(target_index)] = normalized
         receipt_hashes[str(target_index)] = claimed
@@ -2624,8 +2736,7 @@ def _validate_span_coupled_overlay_plan(
             "Span-overlay provenance root changed after planning."
         )
     if (
-        provenance.get("schema")
-        != "neural-forge-lfm2-span-coupled-production-root-v1"
+        provenance.get("schema") != "neural-forge-lfm2-span-coupled-production-root-v1"
         or provenance.get("parent_cache_fingerprint") != plan.cache_fingerprint
         or provenance.get("captured_producer_state_sha256")
         != plan.child_feature_state_sha256
@@ -2876,10 +2987,8 @@ def overlay_lfm2_span_coupled_candidates(
                 "A span-coupled receipt is bound to the wrong source span."
             )
         if (
-            normalized.get("schema")
-            != "neural-forge-lfm2-span-coupled-production-receipt-v1"
-            or normalized.get("parent_cache_fingerprint")
-            != plan.cache_fingerprint
+            normalized.get("schema") not in _SPAN_COUPLED_PRODUCTION_RECEIPT_SCHEMAS
+            or normalized.get("parent_cache_fingerprint") != plan.cache_fingerprint
             or normalized.get("captured_producer_state_sha256")
             != plan.child_feature_state_sha256
         ):
@@ -2893,8 +3002,10 @@ def overlay_lfm2_span_coupled_candidates(
             raise Lfm2ModelFoldEvidenceError(
                 "A span receipt's installed decision differs from its dense override."
             )
-        if installed_any and normalized.get("installed_local_state_sha256") != (
-            overlay_manifest[str(target_index)]["local_state_sha256"]
+        if (
+            installed_any
+            and normalized.get("installed_local_state_sha256")
+            != (overlay_manifest[str(target_index)]["local_state_sha256"])
         ):
             raise Lfm2ModelFoldEvidenceError(
                 "A span receipt does not root its installed dense local tensors."
@@ -2905,6 +3016,10 @@ def overlay_lfm2_span_coupled_candidates(
             raise Lfm2ModelFoldEvidenceError(
                 "A span receipt uses the wrong installed-tensor hash scheme."
             )
+        _validate_span_shared_qk_norm_refit_receipt(
+            normalized,
+            normalized.get("installed_local_state_sha256"),
+        )
         normalized["receipt_sha256"] = claimed
         frozen = _freeze_json_identity(normalized)
         assert isinstance(frozen, Mapping)

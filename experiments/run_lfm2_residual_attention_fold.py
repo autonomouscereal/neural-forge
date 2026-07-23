@@ -101,7 +101,11 @@ _TRACE_FIELDS = frozenset(
     {
         "attention.context",
         "attention.k",
+        "attention.k_linear",
+        "attention.k_normalized_pre_rope",
         "attention.q",
+        "attention.q_linear",
+        "attention.q_normalized_pre_rope",
         "attention.v",
         "mlp.gate",
         "mlp.post_swiglu",
@@ -109,6 +113,14 @@ _TRACE_FIELDS = frozenset(
         "residual.post_layer",
         "residual.post_operator",
         "residual.pre",
+    }
+)
+_OPTIONAL_ATTENTION_TRACE_FIELDS = frozenset(
+    {
+        "attention.k_linear",
+        "attention.k_normalized_pre_rope",
+        "attention.q_linear",
+        "attention.q_normalized_pre_rope",
     }
 )
 _ATTENTION_FOLDED_KEYS = (
@@ -808,8 +820,15 @@ def extract_trace_rows(
                         f"Trace phase {phase}, layer {layer_index} is missing "
                         f"fields: {missing}."
                     )
-                for field in sorted(required):
+                retained = required | _OPTIONAL_ATTENTION_TRACE_FIELDS.intersection(
+                    found
+                )
+                for field in sorted(retained):
                     rows = _row_major_trace(found[field], field)
+                    if field in _OPTIONAL_ATTENTION_TRACE_FIELDS and int(
+                        rows.shape[0]
+                    ) > len(phase_paths):
+                        rows = rows[-len(phase_paths) :].contiguous()
                     if int(rows.shape[0]) != len(phase_paths):
                         raise Lfm2ResidualAttentionRunnerError(
                             f"Trace row count differs for {phase}, layer "
@@ -1940,9 +1959,7 @@ def _residual_metrics(parent: Tensor, child: Tensor) -> dict[str, float]:
             left_rows: Tensor,
             right_rows: Tensor,
         ) -> tuple[float, float]:
-            cross_energy = torch.sum(
-                (left_rows.T @ right_rows).square()
-            )
+            cross_energy = torch.sum((left_rows.T @ right_rows).square())
             left_energy = torch.sum((left_rows.T @ left_rows).square())
             right_energy = torch.sum((right_rows.T @ right_rows).square())
             denominator = torch.sqrt(left_energy * right_energy)
@@ -2191,14 +2208,11 @@ def evaluate_trajectory_gate(
     free_reports = []
     child_manifest = getattr(child_cache, "manifest", {})
     child_capture = (
-        child_manifest.get("capture", {})
-        if isinstance(child_manifest, Mapping)
-        else {}
+        child_manifest.get("capture", {}) if isinstance(child_manifest, Mapping) else {}
     )
     child_full_prefix_canonical = bool(
         isinstance(child_capture, Mapping)
-        and child_capture.get("decode_trace_mode")
-        == FULL_PREFIX_CANONICAL_TRACE_MODE
+        and child_capture.get("decode_trace_mode") == FULL_PREFIX_CANONICAL_TRACE_MODE
     )
     if child_full_prefix_canonical and (
         child_capture.get("cached_logits_accepted") is not False
@@ -2236,21 +2250,13 @@ def evaluate_trajectory_gate(
             for step in range(int(parent_batch.forced_decode_ids.shape[1]))
         )
         for parent_key, child_key in phase_pairs:
-            if (
-                parent_key not in parent_tensors
-                or child_key not in child_tensors
-            ):
+            if parent_key not in parent_tensors or child_key not in child_tensors:
                 raise Lfm2ResidualAttentionRunnerError(
                     "Missing canonical trajectory logits for "
                     f"parent={parent_key}, child={child_key}."
                 )
-            logit_pairs.append(
-                (parent_tensors[parent_key], child_tensors[child_key])
-            )
-            if (
-                child_key.startswith("decode.")
-                and not child_full_prefix_canonical
-            ):
+            logit_pairs.append((parent_tensors[parent_key], child_tensors[child_key]))
+            if child_key.startswith("decode.") and not child_full_prefix_canonical:
                 full_key = child_key.replace(".logits", ".full_prefix_logits")
                 if full_key not in child_tensors:
                     raise Lfm2ResidualAttentionRunnerError(

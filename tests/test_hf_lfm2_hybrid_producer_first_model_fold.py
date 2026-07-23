@@ -34,6 +34,7 @@ from neural_forge.hf_lfm2_model_fold import (
     Lfm2ModelFoldEvidenceError,
     Lfm2ModelFoldInvariantError,
     Lfm2ModelFoldSpan,
+    fingerprint_lfm2_model_fold_tensor,
     fingerprint_lfm2_model_feature_state,
 )
 from neural_forge.hf_lfm2_producer_first_model_fold import (
@@ -144,6 +145,38 @@ def _parent_rows(parent) -> _Rows:
             "mlp.post_swiglu": torch.nn.functional.silu(gate) * up,
         }
         if contract.kind == "full_attention":
+            head_dim = int(parent.config.head_dim)
+            query_heads = int(contract.operator.query_heads)
+            key_value_heads = int(contract.operator.key_value_heads)
+            epsilon = float(parent.config.norm_eps)
+            operator_input = residual_pre / torch.sqrt(
+                residual_pre.square().mean(dim=-1, keepdim=True) + epsilon
+            )
+            operator_input = operator_input * layer.operator_norm.weight.detach().to(
+                torch.float64
+            )
+            query_linear = torch.nn.functional.linear(
+                operator_input,
+                layer.self_attn.q_proj.weight.detach().to(torch.float64),
+            ).reshape(row_count, query_heads, head_dim)
+            key_linear = torch.nn.functional.linear(
+                operator_input,
+                layer.self_attn.k_proj.weight.detach().to(torch.float64),
+            ).reshape(row_count, key_value_heads, head_dim)
+            query_pre_rope = query_linear / torch.sqrt(
+                query_linear.square().mean(dim=-1, keepdim=True) + epsilon
+            )
+            query_pre_rope = (
+                query_pre_rope
+                * layer.self_attn.q_layernorm.weight.detach().to(torch.float64)
+            )
+            key_pre_rope = key_linear / torch.sqrt(
+                key_linear.square().mean(dim=-1, keepdim=True) + epsilon
+            )
+            key_pre_rope = (
+                key_pre_rope
+                * layer.self_attn.k_layernorm.weight.detach().to(torch.float64)
+            )
             values.update(
                 {
                     "attention.q": torch.randn(
@@ -174,6 +207,10 @@ def _parent_rows(parent) -> _Rows:
                         generator=generator,
                         dtype=torch.float64,
                     ),
+                    "attention.q_linear": query_linear,
+                    "attention.k_linear": key_linear,
+                    "attention.q_normalized_pre_rope": query_pre_rope,
+                    "attention.k_normalized_pre_rope": key_pre_rope,
                 }
             )
         fields[layer_index] = values
@@ -403,11 +440,14 @@ def test_active_bf16_depth_overlay_leaves_singleton_candidate_unchanged():
 @pytest.mark.parametrize(
     "heterogeneous_norms",
     (False, True),
-    ids=("shared-qk-norm-installed", "heterogeneous-qk-norm-preserves-anchor"),
+    ids=("shared-qk-norm-installed", "heterogeneous-qk-norm-closed-form-refit"),
 )
 def test_hybrid_bf16_two_attention_layers_invoke_span_compilers_atomically(
     heterogeneous_norms,
+    monkeypatch,
 ):
+    import neural_forge.hf_lfm2_attention_group_qdeim as attention_qdeim
+
     parent = _model(
         120,
         layer_types=("full_attention", "full_attention"),
@@ -485,13 +525,28 @@ def test_hybrid_bf16_two_attention_layers_invoke_span_compilers_atomically(
     )
     config = Lfm2ModelFoldConfig(
         layer_config=Lfm2ClosedLoopFoldConfig(
-            endpoint_ridge=1e-8,
+            endpoint_ridge=0.0 if heterogeneous_norms else 1e-8,
             max_endpoint_relative_rmse=0.0,
             min_endpoint_cosine_similarity=1.0,
             max_endpoint_prior_delta_ratio=1e12,
         ),
         max_span_correction_anchors=4,
         max_span_endpoint_prior_delta_ratio=1e12,
+    )
+    original_attention_compiler = (
+        attention_qdeim.compile_lfm2_attention_group_span_qdeim
+    )
+    compiled_attention = {}
+
+    def capture_compiled_attention(*args, **kwargs):
+        result = original_attention_compiler(*args, **kwargs)
+        compiled_attention["result"] = result
+        return result
+
+    monkeypatch.setattr(
+        attention_qdeim,
+        "compile_lfm2_attention_group_span_qdeim",
+        capture_compiled_attention,
     )
     transaction = install_lfm2_hybrid_producer_first_model_fold(
         parent,
@@ -507,13 +562,14 @@ def test_hybrid_bf16_two_attention_layers_invoke_span_compilers_atomically(
     receipt = dict(plan.span_coupled_overlay_receipts[0][1])
     assert receipt["installed"] is True
     assert receipt["installed_any"] is True
-    assert receipt["installed_all"] is (not heterogeneous_norms)
+    assert receipt["installed_all"] is True
     assert receipt["mlp"]["installed"] is True
-    assert receipt["attention"]["installed"] is (not heterogeneous_norms)
+    assert receipt["attention"]["installed"] is True
     assert receipt["attention"]["shared_qk_norm_directly_representable"] is (
         not heterogeneous_norms
     )
     assert receipt["attention"]["heterogeneous_norm_rows_averaged"] is False
+    assert ("shared_qk_norm_refit" in receipt["attention"]) is heterogeneous_norms
     endpoint = plan.span_plans[0].layer_plan.mlp.endpoint_fit
     assert endpoint.gate.accepted is False
     assert endpoint.accepted is True
@@ -536,21 +592,78 @@ def test_hybrid_bf16_two_attention_layers_invoke_span_compilers_atomically(
         for item in branch["compiler"]["writer_transport"]["source_contributions"]
     )
     assert plan.as_dict()["span_coupled_dense_state_installed"] is True
-    assert plan.as_dict()["span_coupled_all_requested_operators_installed"] is (
-        not heterogeneous_norms
-    )
+    assert plan.as_dict()["span_coupled_all_requested_operators_installed"] is True
+    span_attention = compiled_attention["result"]
+    span_state = span_attention.state_dict()
+    installed = child.model.layers[0].state_dict()
+    for name in ("v_proj.weight", "out_proj.weight"):
+        assert torch.equal(
+            installed[f"self_attn.{name}"].detach().cpu(),
+            span_state[name],
+        )
     if heterogeneous_norms:
+        import neural_forge.hf_lfm2_model_fold as model_fold
+
         legacy = plan.span_plans[0].layer_plan.candidate_state_dict()
-        installed = child.model.layers[0].state_dict()
+        refit = receipt["attention"]["shared_qk_norm_refit"]
+        assert receipt["schema"].endswith("production-receipt-v2")
+        assert refit["heterogeneous_source_norms_averaged"] is False
+        assert refit["numeric_diagnostics_have_install_authority"] is False
+        assert refit["rowspace_ridge"] == 0.0
+        assert refit["zero_ridge_uses_minimum_frobenius_norm_pseudoinverse"] is True
+        assert (
+            refit["query_refit"]["analytic_precast_rowspace_solver"]["method"]
+            == "zero-ridge-moore-penrose-minimum-frobenius-norm"
+        )
         for name in (
             "self_attn.q_proj.weight",
             "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
-            "self_attn.out_proj.weight",
             "self_attn.q_layernorm.weight",
             "self_attn.k_layernorm.weight",
         ):
-            assert torch.equal(installed[name].detach().cpu(), legacy[name]), name
+            assert not torch.equal(installed[name].detach().cpu(), legacy[name]), name
+        for name in ("v_proj.weight", "out_proj.weight"):
+            assert (
+                fingerprint_lfm2_model_fold_tensor(
+                    installed[f"self_attn.{name}"].detach().cpu()
+                )
+                == refit["unchanged_state_sha256"][name]
+            )
+        tampered_receipt = plan.as_dict()["span_coupled_overlay_receipts"]["0"]
+        tampered_refit = tampered_receipt["attention"]["shared_qk_norm_refit"]
+        tampered_refit["installed_attention_state_sha256"]["q_proj.weight"] = "0" * 64
+        tampered_refit["refit_state_sha256"]["q_proj.weight"] = "0" * 64
+        tampered_refit.pop("result_sha256")
+        tampered_refit["result_sha256"] = canonical_sha256(tampered_refit)
+        tampered_receipt.pop("receipt_sha256")
+        tampered_receipt["receipt_sha256"] = canonical_sha256(tampered_receipt)
+        tampered_plan = replace(
+            plan,
+            span_coupled_overlay_receipts=((0, MappingProxyType(tampered_receipt)),),
+        )
+        with pytest.raises(
+            Lfm2ModelFoldInvariantError,
+            match="failed nested authentication",
+        ):
+            model_fold._validate_span_coupled_overlay_plan(
+                tampered_plan,
+                plan.candidate_state_dict(),
+            )
+    else:
+        assert receipt["schema"].endswith("production-receipt-v1")
+        for name in ("q_proj.weight", "k_proj.weight"):
+            assert torch.equal(
+                installed[f"self_attn.{name}"].detach().cpu(),
+                span_state[name],
+            )
+        assert torch.equal(
+            installed["self_attn.q_layernorm.weight"].detach().cpu(),
+            span_attention.selected_query_norm_weight_rows[0],
+        )
+        assert torch.equal(
+            installed["self_attn.k_layernorm.weight"].detach().cpu(),
+            span_attention.selected_key_norm_weight_rows[0],
+        )
     _assert_state_equal(parent_state, _state(parent))
 
     report = transaction.rollback()

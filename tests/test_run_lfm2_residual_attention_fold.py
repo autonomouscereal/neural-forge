@@ -329,9 +329,14 @@ def test_trace_extraction_permutes_attention_and_evidence_uses_residual_endpoint
     None
 ):
     q = torch.arange(1 * 2 * 3 * 2, dtype=torch.float64).reshape(1, 2, 3, 2)
+    optional_q = torch.arange(1 * 2 * 4 * 2, dtype=torch.float64).reshape(1, 2, 4, 2)
     tensors = {
         "prefill.layer.000.attention.q": q,
+        "prefill.layer.000.attention.q_linear": optional_q + 10.0,
+        "prefill.layer.000.attention.q_normalized_pre_rope": optional_q + 20.0,
         "prefill.layer.000.attention.k": q[:, :1],
+        "prefill.layer.000.attention.k_linear": optional_q[:, :1] + 30.0,
+        "prefill.layer.000.attention.k_normalized_pre_rope": (optional_q[:, :1] + 40.0),
         "prefill.layer.000.attention.v": q[:, :1],
         "prefill.layer.000.attention.context": q,
         "prefill.layer.000.mlp.gate": torch.ones(1, 3, 6),
@@ -343,7 +348,16 @@ def test_trace_extraction_permutes_attention_and_evidence_uses_residual_endpoint
     }
     extracted = MODULE.extract_trace_rows(_TraceCache(tensors))
     expected_q = q.permute(0, 2, 1, 3).reshape(3, 2, 2)
+    expected_optional_q = optional_q.permute(0, 2, 1, 3).reshape(4, 2, 2)[-3:]
     torch.testing.assert_close(extracted.field(0, "attention.q"), expected_q)
+    torch.testing.assert_close(
+        extracted.field(0, "attention.q_normalized_pre_rope"),
+        expected_optional_q + 20.0,
+    )
+    torch.testing.assert_close(
+        extracted.field(0, "attention.k_normalized_pre_rope"),
+        expected_optional_q[:, :1] + 40.0,
+    )
 
     parent = _trace_rows(51)
     child = _trace_rows(52)
@@ -523,10 +537,7 @@ def test_cross_width_residual_metrics_use_representation_geometry() -> None:
         torch.zeros_like(latent),
     )
 
-    assert (
-        preserved["comparison_mode"]
-        == "cross_width_centered_linear_cka"
-    )
+    assert preserved["comparison_mode"] == "cross_width_centered_linear_cka"
     assert preserved["parent_width"] == 4
     assert preserved["child_width"] == 2
     assert preserved["centered_linear_cka"] == pytest.approx(1.0)
@@ -729,9 +740,7 @@ def test_layer_transaction_base_exception_restores_exact_state_and_objects(
     before_state = MODULE.model_state_sha256(child)
     before_parameters = tuple(
         (name, id(parameter))
-        for name, parameter in child.named_parameters(
-            remove_duplicate=False
-        )
+        for name, parameter in child.named_parameters(remove_duplicate=False)
     )
     producer = SimpleNamespace(layer_index=0)
     split = SimpleNamespace(validation_indices=(0,))
@@ -774,17 +783,13 @@ def test_layer_transaction_base_exception_restores_exact_state_and_objects(
             child_cache_root=tmp_path / "cache",
             capture_config=object(),
             fold_config=object(),
-            runtime_config=MODULE.LayerFoldRuntimeConfig(
-                endpoint_refinement_passes=2
-            ),
+            runtime_config=MODULE.LayerFoldRuntimeConfig(endpoint_refinement_passes=2),
             gate_config=object(),
         )
 
     after_parameters = tuple(
         (name, id(parameter))
-        for name, parameter in child.named_parameters(
-            remove_duplicate=False
-        )
+        for name, parameter in child.named_parameters(remove_duplicate=False)
     )
     assert MODULE.model_state_sha256(child) == before_state
     assert after_parameters == before_parameters
