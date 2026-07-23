@@ -353,7 +353,9 @@ def _valid_global_transition_document() -> tuple[dict[str, object], object]:
         "final_layer_mlp_down_weight_prior_authentication_sha256": prior_sha,
         "final_layer_mlp_down_weight_prior_tensor_sha256": prior_tensor_sha,
         "final_layer_mlp_down_weight_prior_closure_lineage_sha256": lineage_sha,
-        "global_residual_tied_table_source": "mapped_parent_tied_table",
+        "global_residual_tied_table_source": (
+            "authenticated_live_interface_target_weight_child_coordinates"
+        ),
         "causal_layer_stack_model_state_after_sha256": "a" * 64,
         "causal_layer_stack_changed_state_keys": local_changed,
         "global_residual_closure_model_state_before_sha256": "a" * 64,

@@ -5852,21 +5852,20 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         mapped_parent_tied_table=mapped_parent_tied_table,
         anchor_transport_witness=anchor_transport_witness,
     )
-    effective_global_residual_tied_table = mapped_parent_tied_table
-    global_residual_tied_table_source = (
-        "mapped_parent_tied_table"
-        if mapped_parent_tied_table is not None
-        else "not_applicable"
-    )
-    if (
-        global_residual_closure_required
-        and effective_global_residual_tied_table is None
-    ):
-        # The interface table is already byte-authenticated against the live
-        # tied child above.  It is a safe basis fallback when the stronger
-        # residual-congruence mode did not supply its mapped parent table.
+    effective_global_residual_tied_table = None
+    global_residual_tied_table_source = "not_applicable"
+    if global_residual_closure_required:
+        # The closure's terminal directions live in the child residual space.
+        # ``mapped_parent_tied_table`` is deliberately retained above only for
+        # source-coordinate congruence authentication; in strong-congruence
+        # modes it has shape [target_vocab, parent_hidden] and must never be
+        # routed into a child-hidden closure.  ``interface.target_weight`` is
+        # byte-authenticated against the live tied child and is exactly the
+        # mapped terminal table in child coordinates.
         effective_global_residual_tied_table = interface.target_weight
-        global_residual_tied_table_source = "authenticated_interface_target_weight"
+        global_residual_tied_table_source = (
+            "authenticated_live_interface_target_weight_child_coordinates"
+        )
     short_evidence_type, default_short_installer = _resolve_short_conv_adapter()
     (
         mlp_inventory_type,

@@ -4024,7 +4024,7 @@ def _patch_coupled_global_closure_transaction(
     closure_calls = []
 
     def closure(_accumulators, **_kwargs):
-        closure_calls.append("called")
+        closure_calls.append(_kwargs["mapped_parent_tied_table"].detach().clone())
         before = stack._tensor_sha256(closure_writer)
         with torch.no_grad():
             closure_writer.add_(0.5)
@@ -4154,12 +4154,20 @@ def test_coupled_stack_invokes_global_closure_and_returns_corrected_prior(
     )
     before_final_w2 = target.final_w2.detach().clone()
     before_writer = closure_writer.detach().clone()
+    child_tied_table = torch.tensor(
+        [[1.0, 2.0], [3.0, 4.0]],
+        dtype=torch.float64,
+    )
+    parent_coordinate_table = torch.ones((2, 3), dtype=torch.float64)
 
     result = stack.compile_install_lfm2_semantic_layer_stack_postfold(
         cache=cache,
         bridge=bridge,
         target_model=target,
-        interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+        interface=SimpleNamespace(
+            producer_encoder=torch.ones((3, 2), dtype=torch.float64),
+            target_weight=child_tied_table,
+        ),
         compiler_lineage={
             index: SimpleNamespace(source_inventory=object())
             for index in stack._EXPECTED_ATTENTION_INDICES
@@ -4170,10 +4178,14 @@ def test_coupled_stack_invokes_global_closure_and_returns_corrected_prior(
         attention_installer=None,
         fold_compute_device=fold_compute_device,
         body_recipe=recipe,
-        mapped_parent_tied_table=torch.eye(2),
+        mapped_parent_tied_table=parent_coordinate_table,
     )
 
-    assert closure_calls == ["called"]
+    assert len(closure_calls) == 1
+    torch.testing.assert_close(closure_calls[0], child_tied_table, rtol=0, atol=0)
+    assert result.receipt["global_residual_tied_table_source"] == (
+        "authenticated_live_interface_target_weight_child_coordinates"
+    )
     assert result.receipt["global_residual_closure_applied"] is True
     assert result.receipt["global_residual_closure_numeric_quality_gate"] is False
     assert result.receipt["global_residual_closure_manual_quality_gate"] is False
@@ -4221,6 +4233,7 @@ def test_global_closure_failure_rolls_back_local_and_closure_mutations(
     before = {
         name: value.detach().clone() for name, value in target.state_dict().items()
     }
+    child_tied_table = torch.eye(2, dtype=torch.float64)
 
     with pytest.raises(
         stack.Lfm2SemanticLayerStackRefoldError,
@@ -4230,7 +4243,10 @@ def test_global_closure_failure_rolls_back_local_and_closure_mutations(
             cache=cache,
             bridge=bridge,
             target_model=target,
-            interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+            interface=SimpleNamespace(
+                producer_encoder=torch.ones((3, 2), dtype=torch.float64),
+                target_weight=child_tied_table,
+            ),
             compiler_lineage={
                 index: SimpleNamespace(source_inventory=object())
                 for index in stack._EXPECTED_ATTENTION_INDICES
@@ -4240,9 +4256,10 @@ def test_global_closure_failure_rolls_back_local_and_closure_mutations(
             target_tokenizer=object(),
             attention_installer=None,
             body_recipe=recipe,
-            mapped_parent_tied_table=torch.eye(2),
+            mapped_parent_tied_table=torch.ones((2, 3), dtype=torch.float64),
         )
 
-    assert closure_calls == ["called"]
+    assert len(closure_calls) == 1
+    torch.testing.assert_close(closure_calls[0], child_tied_table, rtol=0, atol=0)
     for name, value in target.state_dict().items():
         torch.testing.assert_close(value, before[name], rtol=0, atol=0)
