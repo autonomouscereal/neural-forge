@@ -41,6 +41,64 @@ _BASE_INTERFACE_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
 _ANCHOR_INTERFACE_SCHEMA = "neural-forge-tied-causal-anchor-residual-v1"
 
 
+@pytest.mark.parametrize(
+    "operator_kinds",
+    (
+        ("short_conv", "full_attention"),
+        (
+            "short_conv",
+            "full_attention",
+            "short_conv",
+            "full_attention",
+            "short_conv",
+        ),
+        tuple(
+            "full_attention" if index in {2, 4, 6, 8, 10, 12} else "short_conv"
+            for index in range(14)
+        ),
+    ),
+    ids=("depth-2", "depth-5", "depth-14"),
+)
+def test_operator_topology_is_derived_for_multiple_blank_child_depths(
+    monkeypatch: pytest.MonkeyPatch,
+    operator_kinds: tuple[str, ...],
+) -> None:
+    class Lineage:
+        def __init__(self, layer_index: int) -> None:
+            self.layer_index = layer_index
+
+    monkeypatch.setattr(stack, "Lfm2SemanticCompilerLayerLineage", Lineage)
+    topology = [
+        {"contract": {"kind": operator_kind}} for operator_kind in operator_kinds
+    ]
+    target = SimpleNamespace(
+        model=SimpleNamespace(
+            layers=tuple(
+                SimpleNamespace(is_attention_layer=kind == "full_attention")
+                for kind in operator_kinds
+            )
+        ),
+        config=SimpleNamespace(
+            layer_types=tuple(
+                "conv" if kind == "short_conv" else kind for kind in operator_kinds
+            )
+        ),
+    )
+    attention_indices = tuple(
+        index for index, kind in enumerate(operator_kinds) if kind == "full_attention"
+    )
+    lineage = {index: Lineage(index) for index in attention_indices}
+
+    assert (
+        stack._validated_operator_topology(
+            SimpleNamespace(manifest={"layer_topology": {"layers": topology}}),
+            target,
+            lineage,
+        )
+        == operator_kinds
+    )
+
+
 def test_normalized_operator_decoder_uses_exact_residual_chart_fit_batch_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1507,16 +1565,6 @@ def _patch_complete_transaction(
         fold_compute_device = _kwargs.get("fold_compute_device", "cpu")
         source_derived_planting = {
             "fold_compute_device": fold_compute_device,
-            "weight_complete_signature_compute_execution": (
-                None
-                if fold_compute_device == "cpu"
-                else {
-                    "backend": "cuda",
-                    "requested_device": fold_compute_device,
-                    "compute_dtype": "float64",
-                    "execution_sha256": "9" * 64,
-                }
-            ),
         }
         if recipe.component_lanes["mlp"] in stack._GLOBAL_RESIDUAL_MLP_LANES:
             source_derived_planting.update(
@@ -1527,6 +1575,17 @@ def _patch_complete_transaction(
                         schema="neural-forge-lfm2-mlp-qdeim-compute-v1",
                         requested_device=fold_compute_device,
                     ),
+                }
+            )
+        else:
+            source_derived_planting["weight_complete_signature_compute_execution"] = (
+                None
+                if fold_compute_device == "cpu"
+                else {
+                    "backend": "cuda",
+                    "requested_device": fold_compute_device,
+                    "compute_dtype": "float64",
+                    "execution_sha256": "9" * 64,
                 }
             )
         receipt_body = {
@@ -4134,6 +4193,10 @@ def test_coupled_stack_invokes_global_closure_and_returns_corrected_prior(
     assert all(
         layer["mlp_qdeim_pod_and_pivot_compute_device"] == fold_compute_device
         and layer["mlp_normalized_decoder_control_compute_device"] == "cpu"
+        for layer in result.receipt["layer_installations"]
+    )
+    assert all(
+        layer["mlp_weight_signature_compute_execution_sha256"] is None
         for layer in result.receipt["layer_installations"]
     )
     assert all(

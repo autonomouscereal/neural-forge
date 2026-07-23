@@ -47,6 +47,81 @@ class _TiedModel:
         return {"model.embed_tokens.weight": self.weight}
 
 
+@pytest.mark.parametrize(
+    "operator_kinds",
+    (
+        ("short_conv", "full_attention"),
+        (
+            "short_conv",
+            "full_attention",
+            "short_conv",
+            "full_attention",
+            "short_conv",
+        ),
+        tuple(
+            "full_attention" if index in {2, 4, 6, 8, 10, 12} else "short_conv"
+            for index in range(14)
+        ),
+    ),
+    ids=("depth-2", "depth-5", "depth-14"),
+)
+def test_authenticated_stack_topology_and_live_child_depth_are_dynamic(
+    operator_kinds: tuple[str, ...],
+) -> None:
+    attention_indices = tuple(
+        index for index, kind in enumerate(operator_kinds) if kind == "full_attention"
+    )
+    short_conv_indices = tuple(
+        index for index, kind in enumerate(operator_kinds) if kind == "short_conv"
+    )
+    layer_values = [{"operator_kind": kind} for kind in operator_kinds]
+    stack_receipt = {
+        "layer_count": len(operator_kinds),
+        "operator_layer_kinds": list(operator_kinds),
+        "attention_layer_indices": list(attention_indices),
+        "short_conv_layer_indices": list(short_conv_indices),
+        "terminal_layer_index": len(operator_kinds) - 1,
+        "dynamic_layer_count_derived_from_authenticated_cache_and_child_topology": (
+            True
+        ),
+    }
+    target = SimpleNamespace(
+        model=SimpleNamespace(
+            layers=tuple(
+                SimpleNamespace(is_attention_layer=kind == "full_attention")
+                for kind in operator_kinds
+            )
+        ),
+        config=SimpleNamespace(
+            layer_types=tuple(
+                "conv" if kind == "short_conv" else kind for kind in operator_kinds
+            )
+        ),
+    )
+    cache = SimpleNamespace(
+        manifest={
+            "layer_topology": {
+                "layers": [{"contract": {"kind": kind}} for kind in operator_kinds]
+            }
+        }
+    )
+
+    assert postfold._authenticated_layer_stack_operator_topology(
+        stack_receipt,
+        layer_values,
+    ) == (operator_kinds, attention_indices, short_conv_indices)
+    assert postfold._operator_layer_kinds(cache, target) == operator_kinds
+
+
+def test_fused_terminal_coverage_uses_authenticated_terminal_layer() -> None:
+    source = inspect.getsource(
+        postfold.compile_install_lfm2_fused_semantic_terminal_refold
+    )
+
+    assert source.count("layer_index=terminal_layer_index") == 2
+    assert "layer_index=13" not in source
+
+
 class _GaugeTiedModel(torch.nn.Module):
     def __init__(self, weight):
         super().__init__()
@@ -406,8 +481,7 @@ def _synthetic_terminal_lineages(
         }
         reconstruction_body = {
             "schema": (
-                "neural-forge-lfm2-direct-local-mapped-tied-table-"
-                "reconstruction-v1"
+                "neural-forge-lfm2-direct-local-mapped-tied-table-reconstruction-v1"
             ),
             "cache_key": cache_key,
             "cache_parent_fingerprint": cache_parent_fingerprint,
@@ -449,9 +523,7 @@ def _synthetic_terminal_lineages(
         "compiler_source_binding_sha256": "8" * 64,
         "parent_final_norm_direct_local_source_sha256": parent_source_sha256,
         "direct_local_mapped_source_report_sha256": mapped_source_sha256,
-        "direct_local_mapped_reconstruction_sha256": (
-            mapped_reconstruction_sha256
-        ),
+        "direct_local_mapped_reconstruction_sha256": (mapped_reconstruction_sha256),
         "parent_final_norm_direct_local_source": parent_source,
         "direct_local_mapped_source_report": mapped_source,
         "direct_local_mapped_reconstruction": mapped_reconstruction,
@@ -487,7 +559,9 @@ def _synthetic_terminal_lineages(
 
 def _frontier_export_context(terminal, *, resume_mode=False, body_recipe=None):
     session_sha256 = "9" * 64
-    prior_bound = terminal.report.get("down_weight_prior_authentication_sha256") is not None
+    prior_bound = (
+        terminal.report.get("down_weight_prior_authentication_sha256") is not None
+    )
     recipe = postfold.resolve_lfm2_semantic_body_recipe(
         "nonlinear_qdeim_fit_corrected" if prior_bound else "fit_guided"
     )
@@ -890,7 +964,9 @@ def test_fused_terminal_frontier_path_defers_installation_until_manual_review() 
         postfold.compile_install_lfm2_fused_semantic_terminal_refold
     )
 
-    assert '"final_selection_status": "deferred-to-manual-whole-response-review"' in source
+    assert (
+        '"final_selection_status": "deferred-to-manual-whole-response-review"' in source
+    )
     assert '"terminal_writer_install_count": 0' in source
     assert '"candidate_published_before_manual_review": False' in source
     assert "published_down_weight=published_down_weight" in source
@@ -1056,24 +1132,22 @@ def test_terminal_frontier_export_seam_receives_full_bank_once_before_w2_install
 
 
 def test_qdeim_prior_is_bound_into_compiler_issued_frontier_export_context() -> None:
-    seed, _evidence, terminal = _compiled_exact_zero_terminal_result(
-        qdeim_prior=True
-    )
+    seed, _evidence, terminal = _compiled_exact_zero_terminal_result(qdeim_prior=True)
     context = _frontier_export_context(terminal)
 
     assert torch.count_nonzero(seed.down_weight).item() == 0
     assert terminal.report["frontier_count"] == 38
     assert "qdeim-prior-alpha-00" in terminal.frontier_down_weights
     assert context["body_recipe_id"] == "nonlinear_qdeim_fit_corrected"
-    assert context["down_weight_prior_authentication_sha256"] == terminal.report[
-        "down_weight_prior_authentication_sha256"
-    ]
-    assert context["down_weight_prior_tensor_sha256"] == terminal.report[
-        "down_weight_prior_tensor_sha256"
-    ]
-    assert context[
-        "down_weight_prior_bound_from_layer_stack_into_terminal"
-    ] is True
+    assert (
+        context["down_weight_prior_authentication_sha256"]
+        == terminal.report["down_weight_prior_authentication_sha256"]
+    )
+    assert (
+        context["down_weight_prior_tensor_sha256"]
+        == terminal.report["down_weight_prior_tensor_sha256"]
+    )
+    assert context["down_weight_prior_bound_from_layer_stack_into_terminal"] is True
     assert context["pure_down_weight_prior_frontier_candidate_id"] == (
         "qdeim-prior-alpha-00"
     )
@@ -2514,7 +2588,9 @@ def test_layer_stack_stage_forwards_exact_authenticated_body_recipe(
         captured.update(kwargs)
         raise RuntimeError("stop-after-body-recipe-forwarding")
 
-    monkeypatch.setattr(postfold, "_resolve_layer_stack_installer", lambda _value: compiler)
+    monkeypatch.setattr(
+        postfold, "_resolve_layer_stack_installer", lambda _value: compiler
+    )
     monkeypatch.setattr(postfold, "_resolve_attention_installer", lambda _value: None)
     monkeypatch.setattr(
         postfold,
@@ -2548,9 +2624,9 @@ def test_layer_stack_stage_forwards_exact_authenticated_body_recipe(
 
 def test_body_recipe_public_api_defaults_remain_fit_guided() -> None:
     assert (
-        inspect.signature(
-            postfold.compile_install_lfm2_semantic_layer_stack_stage
-        ).parameters["body_recipe"].default
+        inspect.signature(postfold.compile_install_lfm2_semantic_layer_stack_stage)
+        .parameters["body_recipe"]
+        .default
         == "fit_guided"
     )
     assert (
@@ -2900,9 +2976,7 @@ def test_top_level_exporter_factory_requires_capsule_before_asset_dispatch(
     ):
         postfold.run_lfm2_semantic_postfold(
             **_minimal_postfold_run_arguments(tmp_path),
-            terminal_frontier_exporter_factory=(
-                lambda _reference: lambda *_args: {}
-            ),
+            terminal_frontier_exporter_factory=(lambda _reference: lambda *_args: {}),
         )
 
 
@@ -2926,9 +3000,7 @@ def test_top_level_rejects_direct_exporter_and_factory_before_asset_dispatch(
             **_minimal_postfold_run_arguments(tmp_path),
             preterminal_capsule_directory=tmp_path / "capsule",
             terminal_frontier_exporter=lambda *_args: {},
-            terminal_frontier_exporter_factory=(
-                lambda _reference: lambda *_args: {}
-            ),
+            terminal_frontier_exporter_factory=(lambda _reference: lambda *_args: {}),
         )
 
 
@@ -3006,9 +3078,7 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
         "authentication_sha256": canonical_sha256(compatibility_body),
     }
     payload_binding_body = {
-        "compatibility_authentication_sha256": compatibility[
-            "authentication_sha256"
-        ],
+        "compatibility_authentication_sha256": compatibility["authentication_sha256"],
         "payload_session_sha256": session_sha256,
     }
     payload_binding = {
@@ -3034,9 +3104,7 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
     parent_load_body = {
         "cache_key": cache_key,
         "cache_parent_fingerprint": cache_parent,
-        "final_norm_authentication_sha256": (
-            parent_final_norm.authentication_sha256
-        ),
+        "final_norm_authentication_sha256": (parent_final_norm.authentication_sha256),
         "operation_audit": {
             "parent_model_objects_constructed": 0,
             "parent_model_forward_calls": 0,
@@ -3053,7 +3121,7 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
     )
     coverage_body = {
         "schema": "neural-forge-lfm2-dense-producer-chain-coverage-v1",
-        "layer_index": 13,
+        "layer_index": 0,
         "producer_kind": "mlp",
         "deferred_roles": ["feed_forward.w2.weight"],
         "all_required_roles_structurally_nonzero": True,
@@ -3091,11 +3159,20 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
         "attention_operator_install_count": 5,
         "short_conv_operator_decision_count": 8,
         "short_conv_operator_install_count": 8,
+        "layer_count": 1,
+        "operator_layer_kinds": ["full_attention"],
+        "attention_layer_indices": [0],
+        "short_conv_layer_indices": [],
+        "terminal_layer_index": 0,
+        "dynamic_layer_count_derived_from_authenticated_cache_and_child_topology": (
+            True
+        ),
         "layer_installations": [
             {
+                "operator_kind": "full_attention",
                 "mlp_producer_coverage_decision": {
                     "coverage_after_sha256": coverage["result_sha256"]
-                }
+                },
             }
         ],
     }
@@ -3260,11 +3337,14 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
 
     def export_frontier(result, export_context):
         events.append("frontier-export")
-        assert int(
-            torch.count_nonzero(
-                target_model.model.layers[-1].feed_forward.w2.weight
-            ).item()
-        ) == 0
+        assert (
+            int(
+                torch.count_nonzero(
+                    target_model.model.layers[-1].feed_forward.w2.weight
+                ).item()
+            )
+            == 0
+        )
         assert result.accepted is False
         assert result.selected_candidate_id == "incumbent"
         assert len(result.frontier_down_weights) == 36
@@ -3630,9 +3710,9 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
         }
     )
     foreign_context["context_sha256"] = canonical_sha256(foreign_context)
-    foreign_receipt_body["terminal_frontier_export_context_sha256"] = (
-        foreign_context["context_sha256"]
-    )
+    foreign_receipt_body["terminal_frontier_export_context_sha256"] = foreign_context[
+        "context_sha256"
+    ]
     foreign_receipt = postfold._issue_fused_semantic_terminal_receipt(
         {
             **foreign_receipt_body,
@@ -3657,9 +3737,7 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
         if isinstance(terminal_result, dict):
             terminal_result.pop("result_sha256", None)
             terminal_result["result_sha256"] = canonical_sha256(terminal_result)
-            forged["terminal_action_result_sha256"] = terminal_result[
-                "result_sha256"
-            ]
+            forged["terminal_action_result_sha256"] = terminal_result["result_sha256"]
             context = forged["terminal_frontier_export_context"]
             context.pop("context_sha256", None)
             context["terminal_result_sha256"] = terminal_result["result_sha256"]
@@ -3734,9 +3812,9 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
         "validation-publication-gate": lambda value: value["terminal_result"][
             "validation"
         ].__setitem__("publication_gate_applied", True),
-        "validation-candidate-acceptance": lambda value: value[
-            "terminal_result"
-        ]["validation"].__setitem__("used_for_candidate_acceptance", True),
+        "validation-candidate-acceptance": lambda value: value["terminal_result"][
+            "validation"
+        ].__setitem__("used_for_candidate_acceptance", True),
         "receipt-writer-install": lambda value: value.__setitem__(
             "terminal_writer_install_count", 1
         ),
@@ -3792,34 +3870,45 @@ def test_top_level_real_fused_terminal_exports_frontier_then_stops_for_review(
     assert result["semantic_evidence_cache_key"] == cache_key
     assert result["context_binding"]["fold_compute_device"] == "cuda:1"
     assert result["context_binding"]["terminal_review_pending"] is True
-    assert result["pipeline_cache_session_reuse"][
-        "same_pipeline_session_reused_by_layer_stack_and_terminal"
-    ] is True
+    assert (
+        result["pipeline_cache_session_reuse"][
+            "same_pipeline_session_reused_by_layer_stack_and_terminal"
+        ]
+        is True
+    )
     assert result["claims"]["training_performed"] is False
     assert result["claims"]["optimizer_steps"] == 0
     assert result["claims"]["backward_calls"] == 0
     assert result["claims"]["parameters_pruned"] == 0
     assert result["claims"]["parameters_quantized"] == 0
     assert result["claims"]["parameters_sparsified"] == 0
-    assert result["claims"]["numeric_metrics_have_final_intelligence_authority"] is False
+    assert (
+        result["claims"]["numeric_metrics_have_final_intelligence_authority"] is False
+    )
     assert result["claims"]["manual_whole_response_review_required"] is True
     assert not (tmp_path / "output").exists()
     assert _terminal_target_state(target_model) == target_state_before
-    assert tuple(
-        (
-            name,
-            id(parameter),
-            int(parameter.data_ptr()),
-            int(parameter.untyped_storage().data_ptr()),
-            id(parameter.grad),
+    assert (
+        tuple(
+            (
+                name,
+                id(parameter),
+                int(parameter.data_ptr()),
+                int(parameter.untyped_storage().data_ptr()),
+                id(parameter.grad),
+            )
+            for name, parameter in target_model.named_parameters()
         )
-        for name, parameter in target_model.named_parameters()
-    ) == target_parameter_identity_before
-    assert int(
-        torch.count_nonzero(
-            target_model.model.layers[-1].feed_forward.w2.weight
-        ).item()
-    ) == 0
+        == target_parameter_identity_before
+    )
+    assert (
+        int(
+            torch.count_nonzero(
+                target_model.model.layers[-1].feed_forward.w2.weight
+            ).item()
+        )
+        == 0
+    )
     if use_foundation_statistics:
         assert len(foundation_calls) == 1
         assert result["interface_statistics_replay"]["artifact_sha256"] == (

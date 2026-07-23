@@ -38,6 +38,11 @@ os.environ["HF_DATASETS_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# CUDA folding is analytic but still uses cuBLAS.  Establish PyTorch's
+# deterministic workspace contract before any imported module can initialize
+# CUDA; an explicitly supplied value remains authoritative and is validated by
+# the CUDA folding stages themselves.
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 from experiments.prepare_lfm2_semantic_qualitative_review import (  # noqa: E402
     prepare_qualitative_review,

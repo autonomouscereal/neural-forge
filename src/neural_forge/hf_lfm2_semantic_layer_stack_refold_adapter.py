@@ -1,7 +1,7 @@
 """Executable, transactional semantic refold of the complete LFM2 layer stack.
 
 The adapter is deliberately narrower than the model-family-independent planner:
-it executes the authenticated fourteen-layer LFM2 child transaction whose
+it executes an authenticated LFM2 child transaction whose dynamic layer topology
 inputs were already normalized by :mod:`hf_lfm2_semantic_postfold`.  Parent
 modules are never constructed or called.  Parent activations come only from
 the complete sealed cache and parent weights come only from local safetensors.
@@ -141,6 +141,8 @@ LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA = (
     "neural-forge-lfm2-semantic-layer-stack-refold-v1"
 )
 _TIED_CAUSAL_INTERFACE_FOLD_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
+# Retained only as the historical LFM2-230M fixture topology used by older tests.
+# Runtime topology admission and all transaction counts are derived dynamically.
 _EXPECTED_ATTENTION_INDICES = (2, 4, 6, 8, 10, 12)
 _EXPECTED_SHORT_CONV_INDICES = (0, 1, 3, 5, 7, 9, 11, 13)
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
@@ -5162,9 +5164,10 @@ def _validated_operator_topology(
 ) -> tuple[str, ...]:
     topology = cache.manifest.get("layer_topology", {}).get("layers")
     layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
-    if not isinstance(topology, list) or len(topology) != 14 or len(layers) != 14:
+    if not isinstance(topology, list) or not topology or len(topology) != len(layers):
         raise Lfm2SemanticLayerStackRefoldError(
-            "The executable LFM2 transaction requires exactly fourteen layers."
+            "The executable LFM2 transaction requires one nonempty cache topology "
+            "that exactly matches the blank child's layer count."
         )
     kinds = []
     for index, value in enumerate(topology):
@@ -5185,16 +5188,9 @@ def _validated_operator_topology(
     attention = tuple(
         index for index, kind in enumerate(kinds) if kind == "full_attention"
     )
-    short_conv = tuple(
-        index for index, kind in enumerate(kinds) if kind == "short_conv"
-    )
-    if (
-        attention != _EXPECTED_ATTENTION_INDICES
-        or short_conv != _EXPECTED_SHORT_CONV_INDICES
-    ):
+    if not attention:
         raise Lfm2SemanticLayerStackRefoldError(
-            "Cache does not have the authenticated 6-attention/8-short-conv "
-            "LFM2 topology."
+            "The authenticated LFM2 topology contains no attention operator."
         )
     child_types = tuple(
         getattr(getattr(target_model, "config", None), "layer_types", ())
@@ -5208,13 +5204,14 @@ def _validated_operator_topology(
             raise Lfm2SemanticLayerStackRefoldError(
                 "Child config layer types differ from its cached topology."
             )
-    if set(compiler_lineage) != set(_EXPECTED_ATTENTION_INDICES) or any(
+    if set(compiler_lineage) != set(attention) or any(
         not isinstance(compiler_lineage[index], Lfm2SemanticCompilerLayerLineage)
         or compiler_lineage[index].layer_index != index
-        for index in _EXPECTED_ATTENTION_INDICES
+        for index in attention
     ):
         raise Lfm2SemanticLayerStackRefoldError(
-            "Attention compiler lineage must cover the exact six attention layers."
+            "Attention compiler lineage must cover the exact topology-derived "
+            "attention layer indices."
         )
     return tuple(kinds)
 
@@ -5362,7 +5359,11 @@ def _final_w2_parameter(target_model: Any) -> Any:
             "The final child MLP has no ordinary dense W2 Parameter."
         )
     named = dict(target_model.named_parameters(remove_duplicate=False))
-    if named.get("model.layers.13.feed_forward.w2.weight") is not parameter:
+    terminal_layer_index = len(layers) - 1
+    if (
+        named.get(f"model.layers.{terminal_layer_index}.feed_forward.w2.weight")
+        is not parameter
+    ):
         raise Lfm2SemanticLayerStackRefoldError(
             "The final child W2 is renamed, missing, or not independently addressable."
         )
@@ -5374,7 +5375,7 @@ def _validate_direct_attention_sources(
     compiler_lineage: Mapping[int, Lfm2SemanticCompilerLayerLineage],
 ) -> Mapping[int, Mapping[str, Any]]:
     receipts = {}
-    for layer_index in _EXPECTED_ATTENTION_INDICES:
+    for layer_index in sorted(compiler_lineage):
         prefix = f"model.layers.{layer_index}.self_attn."
         tensors = {
             "q": parent_session.tensor(prefix + "q_proj.weight"),
@@ -5489,13 +5490,21 @@ def _layer_receipt(
             schema="neural-forge-lfm2-mlp-qdeim-compute-v1",
             label=f"Layer {layer_index} MLP",
         )
-    if fold_compute_device != "cpu" and (
-        not isinstance(planting, Mapping)
-        or planting.get("fold_compute_device") != fold_compute_device
-        or not isinstance(execution, Mapping)
-        or execution.get("requested_device") != fold_compute_device
-        or execution.get("backend") != "cuda"
-        or execution.get("compute_dtype") != "float64"
+    # Q-DEIM lanes authenticate their own POD/pivot CUDA receipt immediately
+    # above.  They intentionally do not compile the legacy weight-complete
+    # signature, so requiring that unrelated receipt here rejects valid CUDA
+    # Q-DEIM work after it has already executed.
+    if (
+        fold_compute_device != "cpu"
+        and not mlp_qdeim_lane
+        and (
+            not isinstance(planting, Mapping)
+            or planting.get("fold_compute_device") != fold_compute_device
+            or not isinstance(execution, Mapping)
+            or execution.get("requested_device") != fold_compute_device
+            or execution.get("backend") != "cuda"
+            or execution.get("compute_dtype") != "float64"
+        )
     ):
         raise Lfm2SemanticLayerStackRefoldError(
             f"Layer {layer_index} MLP did not prove the requested CUDA fold backend."
@@ -5768,7 +5777,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     mapped_parent_tied_table: Any | None = None,
     anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
-    """Compile and install the complete fourteen-layer child transaction.
+    """Compile and install the complete topology-derived child transaction.
 
     This is a no-training compiler.  It consumes an immutable parent trace
     cache and direct local parent tensors, then replays only individual child
@@ -5827,7 +5836,16 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "Saved child tokenizer differs from the semantic target tokenizer."
         )
     kinds = _validated_operator_topology(cache, target_model, compiler_lineage)
+    layer_count = len(kinds)
     terminal_layer_index = len(kinds) - 1
+    attention_layer_indices = tuple(
+        index for index, kind in enumerate(kinds) if kind == "full_attention"
+    )
+    short_conv_layer_indices = tuple(
+        index for index, kind in enumerate(kinds) if kind == "short_conv"
+    )
+    nonterminal_layer_count = layer_count - 1
+    producer_chain_count = 2 * layer_count
     interface_lineage = _validated_interface_lineage(
         target_model,
         interface,
@@ -5963,7 +5981,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     alignments=alignments,
                     layer_index=layer_index,
                     operator_kind=operator_kind,
-                    include_final_norm=layer_index == 13,
+                    include_final_norm=layer_index == terminal_layer_index,
                 )
                 chart, chart_receipt = _fit_residual_chart(
                     alignments=alignments,
@@ -6302,14 +6320,14 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     chart=chart,
                     source_inventory=source_inventory,
                     layer_index=layer_index,
-                    final_layer=layer_index == 13,
+                    final_layer=layer_index == terminal_layer_index,
                 )
                 mlp_evidence_compile_count += 1
                 mlp_coverage_before = _lfm2_dense_producer_chain_coverage(
                     target_model,
                     layer_index=layer_index,
                     producer_kind="mlp",
-                    defer_down_weight=layer_index == 13,
+                    defer_down_weight=layer_index == terminal_layer_index,
                 )
                 mlp_receipt, terminal_evidence, terminal_w2_prior = _install_mlp(
                     target_model=target_model,
@@ -6318,7 +6336,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     cache=cache,
                     bridge=bridge,
                     installer=selected_mlp_installer,
-                    final_layer=layer_index == 13,
+                    final_layer=layer_index == terminal_layer_index,
                     parameter_count=parameter_count,
                     fold_compute_device=fold_compute_device,
                     body_recipe=recipe,
@@ -6327,7 +6345,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     target_model,
                     layer_index=layer_index,
                     producer_kind="mlp",
-                    defer_down_weight=layer_index == 13,
+                    defer_down_weight=layer_index == terminal_layer_index,
                 )
                 mlp_coverage_decision = _validate_producer_coverage_decision(
                     layer_index=layer_index,
@@ -6335,7 +6353,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     before=mlp_coverage_before,
                     after=mlp_coverage_after,
                     installation=mlp_receipt,
-                    defer_down_weight=layer_index == 13,
+                    defer_down_weight=layer_index == terminal_layer_index,
                 )
                 cold_start_producer_chain_count += int(
                     mlp_coverage_decision["cold_start_or_partial_seed_at_entry"]
@@ -6356,7 +6374,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     ]
                     > 0
                 )
-                if layer_index < 13:
+                if layer_index < terminal_layer_index:
                     nonterminal_mlp_producer_coverage_count += 1
                     nonterminal_mlp_decision_count += 1
                     nonterminal_mlp_install_count += int(
@@ -6663,27 +6681,29 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     is False
                 )
         if (
-            attention_decision_count != 6
-            or attention_install_count + attention_incumbent_noop_count != 6
-            or short_conv_decision_count != 8
-            or short_conv_install_count + short_conv_incumbent_noop_count != 8
-            or mlp_evidence_compile_count != 14
-            or nonterminal_mlp_decision_count != 13
+            attention_decision_count != len(attention_layer_indices)
+            or attention_install_count + attention_incumbent_noop_count
+            != len(attention_layer_indices)
+            or short_conv_decision_count != len(short_conv_layer_indices)
+            or short_conv_install_count + short_conv_incumbent_noop_count
+            != len(short_conv_layer_indices)
+            or mlp_evidence_compile_count != layer_count
+            or nonterminal_mlp_decision_count != nonterminal_layer_count
             or (
                 nonterminal_mlp_install_count + nonterminal_mlp_incumbent_noop_count
-                != 13
+                != nonterminal_layer_count
             )
             or final_mlp_producer_install_count
             + final_mlp_producer_incumbent_noop_count
             != 1
-            or attention_producer_coverage_count != 6
-            or short_conv_producer_coverage_count != 8
-            or nonterminal_mlp_producer_coverage_count != 13
+            or attention_producer_coverage_count != len(attention_layer_indices)
+            or short_conv_producer_coverage_count != len(short_conv_layer_indices)
+            or nonterminal_mlp_producer_coverage_count != nonterminal_layer_count
             or final_mlp_producer_coverage_count != 1
             or blank_or_partially_blank_producer_chain_count != 0
             or installed_complete_producer_chain_count
             + retained_nonzero_seed_noop_count
-            != 28
+            != producer_chain_count
             or retained_nonzero_seed_noop_count
             != (
                 attention_incumbent_noop_count
@@ -6802,6 +6822,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             )
             or (
                 fold_compute_device != "cpu"
+                and recipe.component_lanes["mlp"] not in _GLOBAL_RESIDUAL_MLP_LANES
                 and any(
                     not isinstance(
                         value.get("mlp_weight_signature_compute_execution_sha256"),
@@ -6859,13 +6880,20 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             ],
             "direct_attention_source_receipt_sha256": {
                 str(index): direct_attention_receipts[index]["result_sha256"]
-                for index in _EXPECTED_ATTENTION_INDICES
+                for index in attention_layer_indices
             },
             "layer_installation_sha256": [
                 value["result_sha256"] for value in layer_receipts
             ],
             "layer_installations": [dict(value) for value in layer_receipts],
-            "layer_count": 14,
+            "layer_count": layer_count,
+            "operator_layer_kinds": list(kinds),
+            "attention_layer_indices": list(attention_layer_indices),
+            "short_conv_layer_indices": list(short_conv_layer_indices),
+            "terminal_layer_index": terminal_layer_index,
+            "dynamic_layer_count_derived_from_authenticated_cache_and_child_topology": (
+                True
+            ),
             "attention_operator_decision_count": attention_decision_count,
             "attention_operator_install_count": attention_install_count,
             "attention_operator_incumbent_noop_count": (attention_incumbent_noop_count),
@@ -7118,7 +7146,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         True
                     ),
                     "requested_fold_compute_device_scope_for_qdeim_mlp": (
-                        "weight-signature-and-qdeim-pod-pivot"
+                        "qdeim-pod-pivot-and-dense-materialization"
                     ),
                     "mlp_normalized_decoder_control_compute_device": "cpu",
                 }

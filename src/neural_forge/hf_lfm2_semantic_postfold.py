@@ -332,7 +332,6 @@ _TERMINAL_ACTION_RESULT_METHOD = (
     "closed_form_rmsnorm_gauss_newton_then_weighted_ridge_"
     "exact_bfloat16_terminal_writer_frontier"
 )
-_EXPECTED_SEMANTIC_ATTENTION_LAYERS = (2, 4, 6, 8, 10, 12)
 _ATTENTION_SIX_TENSOR_ROLES = (
     "q_proj.weight",
     "k_proj.weight",
@@ -6166,6 +6165,7 @@ def _authenticate_lfm2_coupled_attention_stack_root_binding(
 
     layer_index = operator.get("layer_index")
     direct_by_layer = stack.get("direct_attention_source_receipt_sha256")
+    attention_layer_indices = stack.get("attention_layer_indices")
     cache_key = stack.get("cache_key")
     cache_session_sha256 = stack.get("cache_selective_session_sha256")
     cache_session_value = stack.get("cache_selective_session")
@@ -6412,7 +6412,8 @@ def _authenticate_lfm2_coupled_attention_stack_root_binding(
         operator.get("coupled_attention_group_qdeim") is not True
         or isinstance(layer_index, bool)
         or not isinstance(layer_index, int)
-        or layer_index not in _EXPECTED_SEMANTIC_ATTENTION_LAYERS
+        or not isinstance(attention_layer_indices, list)
+        or layer_index not in attention_layer_indices
         or not isinstance(cache_key, str)
         or not cache_key
         or _digest(cache_session_sha256, "layer-stack selective cache session")
@@ -6499,6 +6500,64 @@ def _authenticate_lfm2_coupled_attention_stack_root_binding(
     )
 
 
+def _authenticated_layer_stack_operator_topology(
+    stack: Mapping[str, Any],
+    layer_values: Any,
+) -> tuple[tuple[str, ...], tuple[int, ...], tuple[int, ...]]:
+    """Recover the sealed dynamic operator topology without a depth constant."""
+
+    layer_count = stack.get("layer_count")
+    recorded_kinds = stack.get("operator_layer_kinds")
+    recorded_attention = stack.get("attention_layer_indices")
+    recorded_short_conv = stack.get("short_conv_layer_indices")
+    terminal_layer_index = stack.get("terminal_layer_index")
+    if (
+        isinstance(layer_count, bool)
+        or not isinstance(layer_count, int)
+        or layer_count <= 0
+        or not isinstance(layer_values, list)
+        or len(layer_values) != layer_count
+        or not isinstance(recorded_kinds, list)
+        or len(recorded_kinds) != layer_count
+        or any(kind not in {"full_attention", "short_conv"} for kind in recorded_kinds)
+        or not isinstance(recorded_attention, list)
+        or not isinstance(recorded_short_conv, list)
+        or terminal_layer_index != layer_count - 1
+        or stack.get(
+            "dynamic_layer_count_derived_from_authenticated_cache_and_child_topology"
+        )
+        is not True
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic layer stack has no authenticated dynamic operator topology."
+        )
+    if any(not isinstance(value, Mapping) for value in layer_values):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic layer stack contains a non-mapping layer transaction."
+        )
+    kinds = tuple(str(kind) for kind in recorded_kinds)
+    nested_kinds = tuple(str(value.get("operator_kind")) for value in layer_values)
+    attention = tuple(
+        index for index, kind in enumerate(kinds) if kind == "full_attention"
+    )
+    short_conv = tuple(
+        index for index, kind in enumerate(kinds) if kind == "short_conv"
+    )
+    if (
+        not attention
+        or nested_kinds != kinds
+        or recorded_attention != list(attention)
+        or recorded_short_conv != list(short_conv)
+        or set(attention).intersection(short_conv)
+        or set(attention).union(short_conv) != set(range(layer_count))
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic layer stack dynamic operator indices disagree with its "
+            "sealed per-layer transactions."
+        )
+    return kinds, attention, short_conv
+
+
 def authenticate_lfm2_semantic_layer_stack_attention_receipts(
     value: Mapping[str, Any],
     *,
@@ -6518,16 +6577,21 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
     )
     layers = stack.get("layer_installations")
     layer_sha256 = stack.get("layer_installation_sha256")
+    (
+        operator_layer_kinds,
+        attention_layer_indices,
+        short_conv_layer_indices,
+    ) = _authenticated_layer_stack_operator_topology(stack, layers)
+    layer_count = len(operator_layer_kinds)
+    terminal_layer_index = layer_count - 1
     if (
         stack.get("schema") != "neural-forge-lfm2-semantic-layer-stack-refold-v1"
-        or stack.get("layer_count") != 14
         or not isinstance(layers, list)
-        or len(layers) != 14
         or not isinstance(layer_sha256, list)
-        or len(layer_sha256) != 14
+        or len(layer_sha256) != layer_count
     ):
         raise Lfm2SemanticPostfoldError(
-            "Semantic layer stack omitted its fourteen layer transactions."
+            "Semantic layer stack omitted its topology-derived layer transactions."
         )
     stack_before_sha256 = stack.get("model_state_before_sha256")
     stack_after_sha256 = stack.get("model_state_after_sha256")
@@ -6579,8 +6643,8 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
             raise Lfm2SemanticPostfoldError(
                 f"Semantic layer {layer_index} transaction binding changed."
             )
-        is_attention = layer_index in _EXPECTED_SEMANTIC_ATTENTION_LAYERS
-        expected_operator_kind = "full_attention" if is_attention else "short_conv"
+        expected_operator_kind = operator_layer_kinds[layer_index]
+        is_attention = expected_operator_kind == "full_attention"
         layer_before_sha256 = layer.get("model_state_before_operator_sha256")
         layer_after_operator_sha256 = layer.get("model_state_after_operator_sha256")
         layer_after_mlp_sha256 = layer.get("model_state_after_mlp_sha256")
@@ -6736,7 +6800,7 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
     owned_changed_keys: set[str] = set()
     changed_key_bindings_invalid = False
     for layer_index, layer in enumerate(verified_layers):
-        is_attention = layer_index in _EXPECTED_SEMANTIC_ATTENTION_LAYERS
+        is_attention = operator_layer_kinds[layer_index] == "full_attention"
         operator_prefix = (
             f"model.layers.{layer_index}.self_attn."
             if is_attention
@@ -6764,23 +6828,22 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
         owned_changed_keys.update(operator_changed_keys)
         owned_changed_keys.update(mlp_changed_keys)
     short_conv_install_count = sum(
-        int(operator_installed_by_layer[index])
-        for index in range(14)
-        if index not in _EXPECTED_SEMANTIC_ATTENTION_LAYERS
+        int(operator_installed_by_layer[index]) for index in short_conv_layer_indices
     )
     if (
         changed_key_bindings_invalid
         or owned_changed_keys != set(causal_stack_changed_keys)
-        or stack.get("short_conv_operator_decision_count") != 8
+        or stack.get("short_conv_operator_decision_count")
+        != len(short_conv_layer_indices)
         or stack.get("short_conv_operator_install_count") != short_conv_install_count
         or stack.get("operator_parameter_mutation_count")
         != sum(int(value) for value in operator_installed_by_layer)
-        or stack.get("replay_fresh_mlp_evidence_compile_count") != 14
-        or stack.get("nonterminal_mlp_writer_decision_count") != 13
+        or stack.get("replay_fresh_mlp_evidence_compile_count") != layer_count
+        or stack.get("nonterminal_mlp_writer_decision_count") != terminal_layer_index
         or stack.get("nonterminal_mlp_writer_install_count")
-        != sum(int(value) for value in mlp_installed_by_layer[:13])
+        != sum(int(value) for value in mlp_installed_by_layer[:terminal_layer_index])
         or stack.get("final_mlp_producer_install_count")
-        != int(mlp_installed_by_layer[13])
+        != int(mlp_installed_by_layer[terminal_layer_index])
         or stack.get("mlp_parameter_mutation_count")
         != sum(int(value) for value in mlp_installed_by_layer)
     ):
@@ -6788,8 +6851,7 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
             "Semantic layer-stack changed-key or parameter mutation bindings changed."
         )
     if (
-        tuple(item["layer_index"] for item in authenticated)
-        != _EXPECTED_SEMANTIC_ATTENTION_LAYERS
+        tuple(item["layer_index"] for item in authenticated) != attention_layer_indices
         or stack.get("attention_operator_decision_count") != len(authenticated)
         or stack.get("attention_operator_install_count")
         != sum(int(item["installed"]) for item in authenticated)
@@ -6817,7 +6879,7 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
         "layer_stack_changed_state_keys_sha256": canonical_sha256(stack_changed_keys),
         "layer_stack_changed_state_key_count": len(stack_changed_keys),
         "parameter_element_count": parameter_element_count,
-        "attention_layer_indices": list(_EXPECTED_SEMANTIC_ATTENTION_LAYERS),
+        "attention_layer_indices": list(attention_layer_indices),
         "attention_receipt_count": len(authenticated),
         "attention_install_count": sum(
             int(item["installed"]) for item in authenticated
@@ -6863,45 +6925,59 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
     return MappingProxyType(_sealed(body, "result_sha256"))
 
 
+def _operator_layer_kinds(
+    cache: Lfm2CircuitTraceCache,
+    target_model: Any,
+) -> tuple[str, ...]:
+    topology = cache.manifest.get("layer_topology", {}).get("layers")
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    if not isinstance(topology, list) or not topology or len(topology) != len(layers):
+        raise Lfm2SemanticPostfoldError(
+            "Cache and target model do not expose one matching nonempty LFM2 "
+            "layer topology."
+        )
+    kinds = []
+    for index, value in enumerate(topology):
+        contract = value.get("contract") if isinstance(value, Mapping) else None
+        kind = contract.get("kind") if isinstance(contract, Mapping) else None
+        if kind not in {"full_attention", "short_conv"}:
+            raise Lfm2SemanticPostfoldError(
+                f"Cache layer {index} has no supported LFM2 operator contract."
+            )
+        child_is_attention = getattr(layers[index], "is_attention_layer", None)
+        if not isinstance(child_is_attention, bool) or child_is_attention != (
+            kind == "full_attention"
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Parent-cache and saved-child operator topology differs at layer "
+                f"{index}."
+            )
+        kinds.append(str(kind))
+    if "full_attention" not in kinds:
+        raise Lfm2SemanticPostfoldError(
+            "Parent-cache topology contains no attention operator."
+        )
+    child_types = tuple(getattr(target_model.config, "layer_types", ()))
+    normalized_child_types = tuple(
+        "short_conv" if value in {"conv", "short_conv"} else str(value)
+        for value in child_types
+    )
+    if child_types and normalized_child_types != tuple(kinds):
+        raise Lfm2SemanticPostfoldError(
+            "Saved child layer types differ from the complete cache topology."
+        )
+    return tuple(kinds)
+
+
 def _attention_layer_indices(
     cache: Lfm2CircuitTraceCache,
     target_model: Any,
 ) -> tuple[int, ...]:
-    topology = cache.manifest.get("layer_topology", {}).get("layers")
-    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
-    if not isinstance(topology, list) or not layers:
-        raise Lfm2SemanticPostfoldError(
-            "Cache or target model has no LFM2 layer topology."
-        )
-    indices = tuple(
+    return tuple(
         index
-        for index, value in enumerate(topology)
-        if isinstance(value, Mapping)
-        and isinstance(value.get("contract"), Mapping)
-        and value["contract"].get("kind") == "full_attention"
+        for index, kind in enumerate(_operator_layer_kinds(cache, target_model))
+        if kind == "full_attention"
     )
-    if (
-        not indices
-        or len(topology) != len(layers)
-        or any(index >= len(layers) for index in indices)
-    ):
-        raise Lfm2SemanticPostfoldError(
-            "Parent-cache and saved-child attention layer topology differs."
-        )
-    child_types = tuple(getattr(target_model.config, "layer_types", ()))
-    if (
-        child_types
-        and tuple(
-            index
-            for index, value in enumerate(child_types)
-            if value == "full_attention"
-        )
-        != indices
-    ):
-        raise Lfm2SemanticPostfoldError(
-            "Saved child attention placement differs from the complete cache."
-        )
-    return indices
 
 
 def _target_rope(target_model: Any) -> tuple[Any, float]:
@@ -7714,10 +7790,15 @@ def _validate_live_layer_stack_producer_coverage(
     """Cross-check every nested coverage proof against the live folded child."""
 
     layer_values = receipt.get("layer_installations")
-    if not isinstance(layer_values, list) or len(layer_values) != 14:
+    operator_layer_kinds, _attention_indices, _short_conv_indices = (
+        _authenticated_layer_stack_operator_topology(receipt, layer_values)
+    )
+    target_layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    if len(target_layers) != len(operator_layer_kinds):
         raise Lfm2SemanticPostfoldError(
-            "Layer-stack receipt omitted its fourteen producer coverage decisions."
+            "Layer-stack receipt depth differs from the live folded child."
         )
+    terminal_layer_index = len(operator_layer_kinds) - 1
     for layer_index, raw_layer in enumerate(layer_values):
         if not isinstance(raw_layer, Mapping):
             raise Lfm2SemanticPostfoldError(
@@ -7728,12 +7809,15 @@ def _validate_live_layer_stack_producer_coverage(
             seal_name="result_sha256",
             label=f"semantic layer {layer_index} transaction",
         )
-        expected_operator_kind = (
-            "full_attention" if layer_index in (2, 4, 6, 8, 10, 12) else "short_conv"
+        expected_operator_kind = operator_layer_kinds[layer_index]
+        live_is_attention = getattr(
+            target_layers[layer_index], "is_attention_layer", None
         )
         if (
             layer.get("layer_index") != layer_index
             or layer.get("operator_kind") != expected_operator_kind
+            or not isinstance(live_is_attention, bool)
+            or live_is_attention != (expected_operator_kind == "full_attention")
             or layer.get("operator_and_mlp_producer_chains_structurally_nonzero")
             is not True
         ):
@@ -7742,7 +7826,7 @@ def _validate_live_layer_stack_producer_coverage(
             )
         for lane, producer_kind, defer_down_weight in (
             ("operator", expected_operator_kind, False),
-            ("mlp", "mlp", layer_index == 13),
+            ("mlp", "mlp", layer_index == terminal_layer_index),
         ):
             decision_value = layer.get(f"{lane}_producer_coverage_decision")
             if not isinstance(decision_value, Mapping):
@@ -8041,6 +8125,18 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         verified,
         recipe,
     )
+    expected_operator_layer_kinds = _operator_layer_kinds(cache, target_model)
+    (
+        receipt_operator_layer_kinds,
+        attention_layer_indices,
+        short_conv_layer_indices,
+    ) = _authenticated_layer_stack_operator_topology(
+        verified,
+        verified.get("layer_installations"),
+    )
+    layer_count = len(expected_operator_layer_kinds)
+    terminal_layer_index = layer_count - 1
+    producer_chain_count = 2 * layer_count
     if (
         verified.get("body_recipe") != recipe.as_dict()
         or verified.get("body_recipe_sha256") != recipe.recipe_sha256
@@ -8058,37 +8154,43 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 is not True
             )
         )
+        or receipt_operator_layer_kinds != expected_operator_layer_kinds
         or verified.get("all_attention_operator_decisions_completed") is not True
-        or verified.get("attention_operator_decision_count") != 6
+        or verified.get("attention_operator_decision_count")
+        != len(attention_layer_indices)
         or verified.get("attention_operator_install_count", -1)
         + verified.get("attention_operator_incumbent_noop_count", -1)
-        != 6
+        != len(attention_layer_indices)
         or verified.get("all_short_conv_operator_decisions_completed") is not True
-        or verified.get("short_conv_operator_decision_count") != 8
+        or verified.get("short_conv_operator_decision_count")
+        != len(short_conv_layer_indices)
         or verified.get("short_conv_operator_install_count", -1)
         + verified.get("short_conv_operator_incumbent_noop_count", -1)
-        != 8
+        != len(short_conv_layer_indices)
         or verified.get("all_replay_fresh_mlp_evidence_compiled") is not True
-        or verified.get("replay_fresh_mlp_evidence_compile_count") != 14
+        or verified.get("replay_fresh_mlp_evidence_compile_count") != layer_count
         or verified.get("all_nonterminal_mlp_writer_decisions_completed") is not True
-        or verified.get("nonterminal_mlp_writer_decision_count") != 13
+        or verified.get("nonterminal_mlp_writer_decision_count") != terminal_layer_index
         or verified.get("nonterminal_mlp_writer_install_count", -1)
         + verified.get("nonterminal_mlp_writer_incumbent_noop_count", -1)
-        != 13
+        != terminal_layer_index
         or verified.get("final_mlp_producer_install_count", -1)
         + verified.get("final_mlp_producer_incumbent_noop_count", -1)
         != 1
         or verified.get("complete_nonzero_structural_producer_coverage") is not True
         or verified.get("all_producer_chains_installed_or_retained_nonzero_seed")
         is not True
-        or verified.get("attention_producer_structural_coverage_count") != 6
-        or verified.get("short_conv_producer_structural_coverage_count") != 8
-        or verified.get("nonterminal_mlp_producer_structural_coverage_count") != 13
+        or verified.get("attention_producer_structural_coverage_count")
+        != len(attention_layer_indices)
+        or verified.get("short_conv_producer_structural_coverage_count")
+        != len(short_conv_layer_indices)
+        or verified.get("nonterminal_mlp_producer_structural_coverage_count")
+        != terminal_layer_index
         or verified.get("final_mlp_producer_structural_coverage_count") != 1
         or verified.get("blank_or_partially_blank_producer_chain_count") != 0
         or verified.get("installed_complete_producer_chain_count", -1)
         + verified.get("authenticated_nonzero_folded_seed_retained_noop_count", -1)
-        != 28
+        != producer_chain_count
         or verified.get("authenticated_nonzero_folded_seed_retained_noop_count", -1)
         != (
             verified.get("attention_operator_incumbent_noop_count", -2)
@@ -10382,15 +10484,20 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
         source_selected_tied_table=source_selected_tied_table,
         anchor_transport_witness=anchor_transport_witness,
     )
+    layer_installations = layer_receipt.get("layer_installations")
+    operator_layer_kinds, _, _ = _authenticated_layer_stack_operator_topology(
+        layer_receipt,
+        layer_installations,
+    )
+    terminal_layer_index = len(operator_layer_kinds) - 1
     current_state = fingerprint_lfm2_parent(target_model).identity_sha256
     current_w2 = _tensor_sha256(_final_w2_parameter(target_model))
     final_mlp_producer_coverage_before_terminal = _lfm2_dense_producer_chain_coverage(
         target_model,
-        layer_index=13,
+        layer_index=terminal_layer_index,
         producer_kind="mlp",
         defer_down_weight=True,
     )
-    layer_installations = layer_receipt.get("layer_installations")
     final_layer_installation = (
         layer_installations[-1]
         if isinstance(layer_installations, list) and layer_installations
@@ -10912,7 +11019,7 @@ def compile_install_lfm2_fused_semantic_terminal_refold(
     )
     final_mlp_full_coverage_after_terminal = _lfm2_dense_producer_chain_coverage(
         target_model,
-        layer_index=13,
+        layer_index=terminal_layer_index,
         producer_kind="mlp",
         defer_down_weight=False,
     )
@@ -11918,6 +12025,16 @@ def _validate_fused_semantic_terminal_receipt(
             receipt_anchor_selection=receipt_anchor_selection,
             context_anchor_selection=context_anchor_selection,
         )
+    layer_count = layer_receipt.get("layer_count")
+    if (
+        isinstance(layer_count, bool)
+        or not isinstance(layer_count, int)
+        or layer_count <= 0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Fused semantic terminal has no authenticated dynamic layer count."
+        )
+    terminal_layer_index = layer_count - 1
     installation = receipt.get("installation")
     if not isinstance(installation, Mapping):
         raise Lfm2SemanticPostfoldError(
@@ -12370,11 +12487,11 @@ def _validate_fused_semantic_terminal_receipt(
         != installation.get("published_w2_sha256")
         or receipt.get("complete_nonzero_final_mlp_structural_coverage") is not True
         or coverage_before.get("producer_kind") != "mlp"
-        or coverage_before.get("layer_index") != 13
+        or coverage_before.get("layer_index") != terminal_layer_index
         or coverage_before.get("deferred_roles") != ["feed_forward.w2.weight"]
         or coverage_before.get("all_required_roles_structurally_nonzero") is not True
         or coverage_after.get("producer_kind") != "mlp"
-        or coverage_after.get("layer_index") != 13
+        or coverage_after.get("layer_index") != terminal_layer_index
         or coverage_after.get("deferred_roles") != []
         or coverage_after.get("all_required_roles_structurally_nonzero") is not True
         or coverage_after.get("blank_or_partially_blank_required_role_count") != 0

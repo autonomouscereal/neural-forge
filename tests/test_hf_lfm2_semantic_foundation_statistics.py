@@ -151,9 +151,7 @@ def _fixture():
 
 
 def _legacy_receipt(receipt, anchor):
-    legacy_anchor = statistics_module._legacy_anchor_report_from_frontier(
-        anchor.report
-    )
+    legacy_anchor = statistics_module._legacy_anchor_report_from_frontier(anchor.report)
     solve_body = copy.deepcopy(dict(receipt["interface_solve"]))
     solve_body.pop("result_sha256")
     solve_body["causal_anchor_report"] = legacy_anchor
@@ -227,8 +225,7 @@ def test_compact_statistics_round_trip_replays_exact_interface(monkeypatch, tmp_
     assert replay.anchor_fold.frontier is not None
     assert anchor.frontier is not None
     assert (
-        replay.anchor_fold.frontier.frontier_sha256
-        == anchor.frontier.frontier_sha256
+        replay.anchor_fold.frontier.frontier_sha256 == anchor.frontier.frontier_sha256
     )
     assert replay.anchor_fold.frontier.materializable_candidate_indices == tuple(
         range(10)
@@ -245,7 +242,9 @@ def test_compact_statistics_round_trip_replays_exact_interface(monkeypatch, tmp_
         ]
         is True
     )
-    assert replay.replay_report["causal_anchor_dense_candidate_checkpoints_persisted"] == 0
+    assert (
+        replay.replay_report["causal_anchor_dense_candidate_checkpoints_persisted"] == 0
+    )
     nondefault_index = next(
         index
         for index in replay.anchor_fold.frontier.materializable_candidate_indices
@@ -314,9 +313,7 @@ def test_legacy_statistics_require_explicit_frontier_companion_migration(
         foundation_receipt=legacy_receipt,
         foundation_receipt_file_sha256="f" * 64,
     )
-    frontier_implementation = copy.deepcopy(
-        artifact.manifest["implementation"]
-    )
+    frontier_implementation = copy.deepcopy(artifact.manifest["implementation"])
     frontier_implementation["implementation_sha256"] = "e" * 64
     monkeypatch.setattr(
         statistics_module,
@@ -377,12 +374,14 @@ def test_legacy_statistics_require_explicit_frontier_companion_migration(
         companion.anchor_fold.materialize_candidate(7).interface.target_weight,
         anchor.interface.target_weight,
     )
-    assert companion.companion_receipt[
-        "legacy_causal_anchor_report_sha256"
-    ] == legacy_receipt["interface_solve"]["causal_anchor_report_sha256"]
-    assert companion.companion_receipt[
-        "frontier_causal_anchor_report_sha256"
-    ] == companion.anchor_fold.report["report_sha256"]
+    assert (
+        companion.companion_receipt["legacy_causal_anchor_report_sha256"]
+        == legacy_receipt["interface_solve"]["causal_anchor_report_sha256"]
+    )
+    assert (
+        companion.companion_receipt["frontier_causal_anchor_report_sha256"]
+        == companion.anchor_fold.report["report_sha256"]
+    )
     assert (
         companion.companion_receipt["active_target_tensor_exactly_byte_identical"]
         is True
@@ -422,9 +421,7 @@ def test_legacy_statistics_require_explicit_frontier_companion_migration(
     ):
         authenticate_lfm2_semantic_foundation_interface_frontier_companion(
             tampered_companion,
-            expected_companion_sha256=companion.companion_receipt[
-                "companion_sha256"
-            ],
+            expected_companion_sha256=companion.companion_receipt["companion_sha256"],
             artifact=artifact,
             legacy_foundation_receipt=legacy_receipt,
             legacy_foundation_receipt_file_sha256="f" * 64,
@@ -469,6 +466,15 @@ def test_foundation_rehydration_explicitly_consumes_pinned_legacy_companion(
     persisted = write_lfm2_semantic_foundation_interface_frontier_companion_json(
         tmp_path / "rehydration-frontier-companion.json",
         companion,
+    )
+    import neural_forge.hf_lfm2_semantic_foundation_statistics as statistics_module
+
+    drifted_runtime = dict(artifact.runtime)
+    drifted_runtime["torch_num_threads"] = int(drifted_runtime["torch_num_threads"]) + 1
+    monkeypatch.setattr(
+        statistics_module,
+        "_runtime_fingerprint",
+        lambda: dict(drifted_runtime),
     )
 
     class Target(torch.nn.Module):
@@ -548,12 +554,8 @@ def test_foundation_rehydration_explicitly_consumes_pinned_legacy_companion(
             interface_statistics_directory=artifact.path,
             expected_interface_statistics_sha256=artifact.artifact_sha256,
             interface_frontier_companion_json=persisted.path,
-            expected_interface_frontier_companion_file_sha256=(
-                persisted.file_sha256
-            ),
-            expected_interface_frontier_companion_sha256=(
-                persisted.companion_sha256
-            ),
+            expected_interface_frontier_companion_file_sha256=(persisted.file_sha256),
+            expected_interface_frontier_companion_sha256=(persisted.companion_sha256),
             anchor_candidate_index=candidate_index,
         )
         assert torch.equal(target.weight, saved)
@@ -573,15 +575,33 @@ def test_foundation_rehydration_explicitly_consumes_pinned_legacy_companion(
     assert rehydration["frontier_companion_regenerated_and_consumed"] is True
     assert rehydration["causal_anchor_compatibility_default_candidate_index"] == 7
     assert rehydration["selected_anchor_candidate_index"] == 9
-    assert rehydration["interface_anchor_selection"][
-        "saved_child_exactly_matches_compatibility_default"
-    ] is True
+    assert (
+        rehydration["interface_anchor_selection"][
+            "saved_child_exactly_matches_compatibility_default"
+        ]
+        is True
+    )
     assert default_rehydration["selected_anchor_candidate_index"] == 7
     assert rehydration["causal_anchor_materializable_candidate_indices"] == list(
         range(10)
     )
     assert rehydration["compiler_cache_open_calls"] == 0
     assert rehydration["trace_safetensor_open_calls"] == 0
+    assert rehydration["interface_statistics_producing_runtime_equality_required"] is (
+        False
+    )
+    assert (
+        rehydration[
+            "interface_statistics_exact_replay_bytes_and_sealed_reports_are_runtime_compatibility_authority"
+        ]
+        is True
+    )
+    assert (
+        rehydration[
+            "interface_statistics_runtime_drift_cannot_bypass_exact_replay_authentication"
+        ]
+        is True
+    )
     assert access_attempts == []
 
     with pytest.raises(
@@ -601,9 +621,7 @@ def test_foundation_rehydration_explicitly_consumes_pinned_legacy_companion(
             interface_statistics_directory=artifact.path,
             expected_interface_statistics_sha256=artifact.artifact_sha256,
             interface_frontier_companion_json=persisted.path,
-            expected_interface_frontier_companion_file_sha256=(
-                persisted.file_sha256
-            ),
+            expected_interface_frontier_companion_file_sha256=(persisted.file_sha256),
             expected_interface_frontier_companion_sha256="0" * 64,
             anchor_candidate_index=9,
         )
@@ -686,6 +704,15 @@ def test_foundation_rehydration_sidecar_path_never_opens_full_cache(
         foundation_receipt=receipt,
         foundation_receipt_file_sha256="f" * 64,
     )
+    import neural_forge.hf_lfm2_semantic_foundation_statistics as statistics_module
+
+    drifted_runtime = dict(artifact.runtime)
+    drifted_runtime["torch_num_threads"] = int(drifted_runtime["torch_num_threads"]) + 1
+    monkeypatch.setattr(
+        statistics_module,
+        "_runtime_fingerprint",
+        lambda: dict(drifted_runtime),
+    )
 
     class Target(torch.nn.Module):
         def __init__(self):
@@ -759,6 +786,15 @@ def test_foundation_rehydration_sidecar_path_never_opens_full_cache(
     assert rehydration["compiler_cache_open_calls"] == 0
     assert rehydration["trace_safetensor_open_calls"] == 0
     assert rehydration["selective_provider_open_calls"] == 0
+    assert rehydration["interface_statistics_producing_runtime_equality_required"] is (
+        False
+    )
+    assert (
+        rehydration[
+            "interface_statistics_exact_replay_bytes_and_sealed_reports_are_runtime_compatibility_authority"
+        ]
+        is True
+    )
     assert access_attempts == []
 
 

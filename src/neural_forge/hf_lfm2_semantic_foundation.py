@@ -612,7 +612,9 @@ class _Lfm2SemanticFoundationFrontierRehydration(Mapping[str, Any]):
     ) -> None:
         owned = MappingProxyType(dict(report))
         base = anchor_base_target.detach().to(device="cpu").contiguous().clone()
-        residual = selected_anchor_residual.detach().to(device="cpu").contiguous().clone()
+        residual = (
+            selected_anchor_residual.detach().to(device="cpu").contiguous().clone()
+        )
         selection = owned.get("interface_anchor_selection")
         if (
             not isinstance(selection, Mapping)
@@ -623,7 +625,7 @@ class _Lfm2SemanticFoundationFrontierRehydration(Mapping[str, Any]):
         ):
             raise Lfm2SemanticFoundationError(
                 "Runtime anchor residual differs from the sealed frontier selection."
-        )
+            )
         self._report = owned
         self._anchor_base_target = base
         self._selected_anchor_residual = residual
@@ -1848,9 +1850,8 @@ def rehydrate_lfm2_semantic_foundation_interface(
                     migrate_lfm2_semantic_foundation_interface_statistics_frontier(
                         interface_statistics_directory,
                         source_selected_tied_table,
-                        expected_artifact_sha256=(
-                            expected_interface_statistics_sha256
-                        ),
+                        expected_artifact_sha256=(expected_interface_statistics_sha256),
+                        verify_runtime=False,
                         legacy_foundation_receipt=receipt,
                         legacy_foundation_receipt_file_sha256=file_sha256,
                     )
@@ -1924,15 +1925,14 @@ def rehydrate_lfm2_semantic_foundation_interface(
                 selected_anchor = companion.anchor_fold.materialize_candidate(
                     anchor_candidate_index
                 )
-                if (
-                    _tensor_sha256(selected_anchor.interface.target_weight)
-                    != _tensor_sha256(
-                        anchor_base.interface.target_weight
-                        + selected_anchor.residual_weight
-                    )
-                    or selected_anchor.report.get("base_target_weight_sha256")
-                    != _tensor_sha256(anchor_base.interface.target_weight)
-                ):
+                if _tensor_sha256(
+                    selected_anchor.interface.target_weight
+                ) != _tensor_sha256(
+                    anchor_base.interface.target_weight
+                    + selected_anchor.residual_weight
+                ) or selected_anchor.report.get(
+                    "base_target_weight_sha256"
+                ) != _tensor_sha256(anchor_base.interface.target_weight):
                     raise Lfm2SemanticFoundationStatisticsError(
                         "Selected anchor does not equal its sealed base plus residual."
                     )
@@ -1950,6 +1950,7 @@ def rehydrate_lfm2_semantic_foundation_interface(
                 artifact = open_lfm2_semantic_foundation_interface_statistics(
                     interface_statistics_directory,
                     expected_artifact_sha256=expected_interface_statistics_sha256,
+                    verify_runtime=False,
                 )
                 replay = replay_lfm2_semantic_foundation_interface_statistics(
                     artifact,
@@ -2001,21 +2002,15 @@ def rehydrate_lfm2_semantic_foundation_interface(
                     "Selected lazy anchor candidate is not bound to its frontier recipe."
                 )
             selection_body = {
-                "schema": (
-                    "neural-forge-lfm2-semantic-foundation-anchor-selection-v1"
-                ),
-                "interface_frontier_companion_json": str(
-                    persisted_companion.path
-                ),
+                "schema": ("neural-forge-lfm2-semantic-foundation-anchor-selection-v1"),
+                "interface_frontier_companion_json": str(persisted_companion.path),
                 "interface_frontier_companion_file_sha256": (
                     persisted_companion.file_sha256
                 ),
                 "interface_frontier_companion_sha256": (
                     persisted_companion.companion_sha256
                 ),
-                "interface_statistics_artifact_sha256": (
-                    statistics_artifact_sha256
-                ),
+                "interface_statistics_artifact_sha256": (statistics_artifact_sha256),
                 "causal_anchor_frontier_sha256": frontier.frontier_sha256,
                 "causal_anchor_materializable_candidate_indices": list(
                     frontier.materializable_candidate_indices
@@ -2090,12 +2085,17 @@ def rehydrate_lfm2_semantic_foundation_interface(
             "interface_solve_sha256": solve_report["result_sha256"],
             "active_interface_report_sha256": interface.report["report_sha256"],
             "saved_target_weight_sha256": _tensor_sha256(target),
-            "producer_encoder_sha256": _tensor_sha256(
-                interface.producer_encoder
-            ),
+            "producer_encoder_sha256": _tensor_sha256(interface.producer_encoder),
             "interface_statistics_artifact_sha256": statistics_artifact_sha256,
             "interface_statistics_manifest_file_sha256": (
                 statistics_manifest_file_sha256
+            ),
+            "interface_statistics_producing_runtime_equality_required": False,
+            "interface_statistics_exact_replay_bytes_and_sealed_reports_are_runtime_compatibility_authority": (
+                True
+            ),
+            "interface_statistics_runtime_drift_cannot_bypass_exact_replay_authentication": (
+                True
             ),
             **(
                 {
@@ -2139,11 +2139,7 @@ def rehydrate_lfm2_semantic_foundation_interface(
                     ),
                 }
                 if companion_requested
-                else {
-                    "interface_statistics_replay_sha256": (
-                        statistics_replay_sha256
-                    )
-                }
+                else {"interface_statistics_replay_sha256": (statistics_replay_sha256)}
             ),
             "compiler_and_semantic_cache_identities_bound_separately": True,
             "producer_encoder_recomputed_from_authenticated_final_norm_evidence": (
