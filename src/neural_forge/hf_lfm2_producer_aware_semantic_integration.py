@@ -197,6 +197,8 @@ def _v2_site_ids(
 
 def build_lfm2_producer_aware_semantic_topology(
     evidence: Lfm2SemanticGlobalResidualEvidencePackage,
+    *,
+    requested_basis_rank: int | None = None,
 ) -> Lfm2GlobalResidualWriterTopology:
     """Build the authenticated semantic four-sites-per-layer topology."""
 
@@ -210,6 +212,7 @@ def build_lfm2_producer_aware_semantic_topology(
         evidence.snapshot,
         head_dimension=evidence.head_dimension,
         site_ids=_v2_site_ids(evidence),
+        requested_basis_rank=requested_basis_rank,
     )
 
 
@@ -557,6 +560,7 @@ def compile_install_lfm2_producer_aware_semantic_closure(
     closure_policy: Lfm2GlobalResidualClosurePolicy | None = None,
     correction_scale_policy: Lfm2ProducerAwareCorrectionScalePolicy | None = None,
     materialization_compute_device: str = "cpu",
+    requested_basis_rank: int | None = None,
 ) -> Lfm2ProducerAwareSemanticInstallation:
     """Solve v2a, install every nonfinal role, and return corrected final W2."""
 
@@ -581,7 +585,10 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         live_physical_parameters,
         deferred_final_writer_parameter,
     )
-    topology = build_lfm2_producer_aware_semantic_topology(evidence)
+    topology = build_lfm2_producer_aware_semantic_topology(
+        evidence,
+        requested_basis_rank=requested_basis_rank,
+    )
     boundaries = build_lfm2_producer_aware_semantic_boundaries(evidence)
     basis = build_lfm2_producer_aware_semantic_basis(
         evidence,
@@ -883,6 +890,7 @@ def integrate_lfm2_producer_aware_global_closure(
     closure_policy: Lfm2GlobalResidualClosurePolicy | None = None,
     correction_scale_policy: Lfm2ProducerAwareCorrectionScalePolicy | None = None,
     materialization_compute_device: str = "cpu",
+    requested_basis_rank: int | None = None,
 ) -> Lfm2ProducerAwareSemanticInstallation:
     """Canonical named entrypoint for producer-aware physical residual closure."""
 
@@ -893,6 +901,7 @@ def integrate_lfm2_producer_aware_global_closure(
         closure_policy=closure_policy,
         correction_scale_policy=correction_scale_policy,
         materialization_compute_device=materialization_compute_device,
+        requested_basis_rank=requested_basis_rank,
     )
 
 

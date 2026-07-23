@@ -122,6 +122,7 @@ def test_correction_scale_frontier_folds_decodes_and_retains_every_member(
     paths = _sources(tmp_path)
     arguments = _arguments(tmp_path, paths)
     scales_seen: list[float] = []
+    basis_ranks_seen: list[int | None] = []
     compaction = {
         "parent_unique_parameters": 1_000_000,
         "child_parameter_element_count": 250_000,
@@ -134,6 +135,7 @@ def test_correction_scale_frontier_folds_decodes_and_retains_every_member(
     def run_member(**kwargs):
         scale = float(kwargs["correction_scale"])
         scales_seen.append(scale)
+        basis_ranks_seen.append(kwargs["global_residual_basis_rank"])
         member = Path(kwargs["run_directory"])
         member.mkdir()
         body = {
@@ -154,9 +156,11 @@ def test_correction_scale_frontier_folds_decodes_and_retains_every_member(
         correction_scale_frontier=(0.25, 0.5, 1.0),
         correction_scale=0.5,
         global_residual_backend="cpu",
+        global_residual_basis_rank=776,
     )
 
     assert scales_seen == [0.25, 0.5, 1.0]
+    assert basis_ranks_seen == [776, 776, 776]
     assert result["scale_run_count"] == 3
     assert result["every_requested_scale_separately_folded"] is True
     assert result["every_requested_scale_separately_decoded"] is True
@@ -165,6 +169,22 @@ def test_correction_scale_frontier_folds_decodes_and_retains_every_member(
     assert result["numeric_or_manual_quality_gate"] is False
     assert result["dense_parameter_compaction"] == compaction
     assert all(run["selected_as_winner"] is False for run in result["scale_runs"])
+
+
+@pytest.mark.parametrize("invalid_rank", (0, -1, True))
+def test_global_residual_basis_rank_must_be_positive_or_omitted(
+    tmp_path: Path,
+    invalid_rank: object,
+) -> None:
+    paths = _sources(tmp_path)
+    with pytest.raises(
+        runner.Lfm2SemanticFoldToReviewError,
+        match="global_residual_basis_rank",
+    ):
+        runner.run_fold_to_review(
+            **_arguments(tmp_path, paths),
+            global_residual_basis_rank=invalid_rank,
+        )
 
 
 @pytest.mark.parametrize(

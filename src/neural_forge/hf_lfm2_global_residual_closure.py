@@ -288,12 +288,13 @@ class Lfm2GlobalResidualWriterSite:
 
 @dataclass(frozen=True, slots=True)
 class Lfm2GlobalResidualWriterTopology:
-    """Authenticated writer inventory and topology-derived basis rank."""
+    """Authenticated writer inventory and residual-basis rank policy."""
 
     hidden_size: int
     head_dimension: int
     sites: tuple[Lfm2GlobalResidualWriterSite, ...]
     topology_sha256: str = ""
+    requested_basis_rank: int | None = None
 
     def __post_init__(self) -> None:
         hidden = _positive_int(self.hidden_size, "hidden_size")
@@ -321,6 +322,13 @@ class Lfm2GlobalResidualWriterTopology:
         object.__setattr__(self, "hidden_size", hidden)
         object.__setattr__(self, "head_dimension", head)
         object.__setattr__(self, "sites", site_values)
+        requested_rank = self.requested_basis_rank
+        if requested_rank is not None:
+            requested_rank = _positive_int(
+                requested_rank,
+                "requested_basis_rank",
+            )
+        object.__setattr__(self, "requested_basis_rank", requested_rank)
         expected = _sha256(self.authentication_body())
         supplied = str(self.topology_sha256).strip().lower()
         if supplied and supplied != expected:
@@ -331,9 +339,23 @@ class Lfm2GlobalResidualWriterTopology:
 
     @property
     def topology_basis_rank(self) -> int:
-        """Return ``2 * head_dimension`` before hidden-width clipping."""
+        """Return the requested rank before hidden-width clipping.
 
+        The historical LFM2 default remains ``2 * head_dimension``.  An
+        explicit rank removes that attention-shape heuristic when broader
+        residual coverage is required; it does not change model topology or
+        add a runtime sidecar.
+        """
+
+        if self.requested_basis_rank is not None:
+            return self.requested_basis_rank
         return 2 * self.head_dimension
+
+    @property
+    def topology_basis_rank_formula(self) -> str:
+        if self.requested_basis_rank is not None:
+            return "explicit_requested_basis_rank"
+        return "2*head_dimension"
 
     @property
     def effective_basis_rank(self) -> int:
@@ -353,7 +375,8 @@ class Lfm2GlobalResidualWriterTopology:
             "kind": "writer_topology",
             "hidden_size": self.hidden_size,
             "head_dimension": self.head_dimension,
-            "topology_basis_rank_formula": "2*head_dimension",
+            "requested_basis_rank": self.requested_basis_rank,
+            "topology_basis_rank_formula": self.topology_basis_rank_formula,
             "topology_basis_rank": self.topology_basis_rank,
             "effective_basis_rank": self.effective_basis_rank,
             "sites": [site.as_dict() for site in self.sites],
@@ -831,7 +854,8 @@ def build_lfm2_global_residual_basis(
         "topology_sha256": topology.topology_sha256,
         "hidden_size": hidden,
         "head_dimension": topology.head_dimension,
-        "topology_rank_formula": "2*head_dimension",
+        "topology_rank_formula": topology.topology_basis_rank_formula,
+        "requested_basis_rank": topology.requested_basis_rank,
         "topology_rank_before_hidden_clip": topology.topology_basis_rank,
         "basis_rank": rank,
         "canonical_lfm2_rank_128": topology.topology_basis_rank == 128,
@@ -3043,7 +3067,8 @@ def solve_lfm2_global_residual_closure(
         "policy_sha256": operator.policy.authentication_sha256,
         "site_ids": [site.site_id for site in operator.topology.sites],
         "basis_rank": operator.basis.rank,
-        "topology_rank_formula": "2*head_dimension",
+        "topology_rank_formula": operator.topology.topology_basis_rank_formula,
+        "requested_basis_rank": operator.topology.requested_basis_rank,
         "coefficient_coordinate_count": (
             operator.topology.coefficient_coordinate_count
         ),

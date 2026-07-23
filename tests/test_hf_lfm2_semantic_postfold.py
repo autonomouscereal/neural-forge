@@ -2615,11 +2615,13 @@ def test_layer_stack_stage_forwards_exact_authenticated_body_recipe(
             donor_tokenizer=object(),
             target_tokenizer=object(),
             body_recipe=recipe_id,
+            global_residual_basis_rank=776,
         )
 
     recipe = postfold.resolve_lfm2_semantic_body_recipe(recipe_id)
     assert captured["body_recipe"] == recipe
     assert captured["body_recipe"].recipe_sha256 == recipe.recipe_sha256
+    assert captured["global_residual_basis_rank"] == 776
 
 
 def test_body_recipe_public_api_defaults_remain_fit_guided() -> None:

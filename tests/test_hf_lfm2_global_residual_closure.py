@@ -10,6 +10,7 @@ torch = pytest.importorskip("torch")
 from neural_forge.hf_lfm2_global_residual_closure import (  # noqa: E402
     Lfm2GlobalResidualBoundaryBundle,
     Lfm2GlobalResidualClosureAuthenticationError,
+    Lfm2GlobalResidualClosureError,
     Lfm2GlobalResidualClosureOperator,
     Lfm2GlobalResidualClosurePolicy,
     Lfm2GlobalResidualLinearizationKernel,
@@ -537,6 +538,42 @@ def test_canonical_topology_builds_exact_rank_128_mixed_basis() -> None:
     assert torch.equal(first.output_basis, second.output_basis)
     assert first.qdeim_coordinates == second.qdeim_coordinates
     assert first.report["report_sha256"] == second.report["report_sha256"]
+
+
+def test_explicit_basis_rank_can_cover_the_complete_residual_width() -> None:
+    hidden = 6
+    topology = Lfm2GlobalResidualWriterTopology(
+        hidden_size=hidden,
+        head_dimension=2,
+        sites=_topology(hidden=hidden, head_dimension=2).sites,
+        requested_basis_rank=hidden,
+    )
+    basis = _basis(topology, seed=82)
+
+    assert topology.topology_basis_rank_formula == "explicit_requested_basis_rank"
+    assert topology.topology_basis_rank == hidden
+    assert topology.effective_basis_rank == hidden
+    assert topology.authentication_body()["requested_basis_rank"] == hidden
+    assert basis.output_basis.shape == (hidden, hidden)
+    assert basis.report["topology_rank_formula"] == (
+        "explicit_requested_basis_rank"
+    )
+    assert basis.report["requested_basis_rank"] == hidden
+    assert basis.verify_authentication()
+
+
+def test_explicit_basis_rank_is_authenticated_and_must_be_positive() -> None:
+    topology = _topology()
+    explicit = replace(topology, requested_basis_rank=3, topology_sha256="")
+
+    assert explicit.topology_sha256 != topology.topology_sha256
+    assert explicit.effective_basis_rank == 3
+    assert explicit.verify_authentication()
+    with pytest.raises(
+        Lfm2GlobalResidualClosureError,
+        match="requested_basis_rank",
+    ):
+        replace(topology, requested_basis_rank=0, topology_sha256="")
 
 
 def test_basis_authenticates_sources_and_detects_result_tampering() -> None:

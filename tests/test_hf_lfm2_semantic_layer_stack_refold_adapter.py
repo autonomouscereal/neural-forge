@@ -4024,7 +4024,12 @@ def _patch_coupled_global_closure_transaction(
     closure_calls = []
 
     def closure(_accumulators, **_kwargs):
-        closure_calls.append(_kwargs["mapped_parent_tied_table"].detach().clone())
+        closure_calls.append(
+            (
+                _kwargs["mapped_parent_tied_table"].detach().clone(),
+                _kwargs["requested_basis_rank"],
+            )
+        )
         before = stack._tensor_sha256(closure_writer)
         with torch.no_grad():
             closure_writer.add_(0.5)
@@ -4177,12 +4182,15 @@ def test_coupled_stack_invokes_global_closure_and_returns_corrected_prior(
         target_tokenizer=object(),
         attention_installer=None,
         fold_compute_device=fold_compute_device,
+        global_residual_basis_rank=2,
         body_recipe=recipe,
         mapped_parent_tied_table=parent_coordinate_table,
     )
 
     assert len(closure_calls) == 1
-    torch.testing.assert_close(closure_calls[0], child_tied_table, rtol=0, atol=0)
+    torch.testing.assert_close(closure_calls[0][0], child_tied_table, rtol=0, atol=0)
+    assert closure_calls[0][1] == 2
+    assert result.receipt["global_residual_requested_basis_rank"] == 2
     assert result.receipt["global_residual_tied_table_source"] == (
         "authenticated_live_interface_target_weight_child_coordinates"
     )
@@ -4260,6 +4268,7 @@ def test_global_closure_failure_rolls_back_local_and_closure_mutations(
         )
 
     assert len(closure_calls) == 1
-    torch.testing.assert_close(closure_calls[0], child_tied_table, rtol=0, atol=0)
+    torch.testing.assert_close(closure_calls[0][0], child_tied_table, rtol=0, atol=0)
+    assert closure_calls[0][1] is None
     for name, value in target.state_dict().items():
         torch.testing.assert_close(value, before[name], rtol=0, atol=0)

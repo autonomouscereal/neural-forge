@@ -130,6 +130,7 @@ def build_lfm2_producer_aware_writer_topology(
     *,
     head_dimension: int,
     site_ids: Sequence[str] | None = None,
+    requested_basis_rank: int | None = None,
 ) -> Lfm2GlobalResidualWriterTopology:
     """Derive the canonical four-sites-per-layer topology from primals."""
 
@@ -205,6 +206,7 @@ def build_lfm2_producer_aware_writer_topology(
         hidden_size=snapshot.hidden_size,
         head_dimension=head_dimension,
         sites=tuple(sites),
+        requested_basis_rank=requested_basis_rank,
     )
 
 

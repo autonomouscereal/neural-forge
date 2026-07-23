@@ -7928,6 +7928,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     correction_scale_frontier: Sequence[float] = (1.0,),
     correction_scale: float = 1.0,
     global_residual_backend: str = "auto",
+    global_residual_basis_rank: int | None = None,
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     interface_anchor_selection: Mapping[str, Any] | None = None,
@@ -7947,6 +7948,14 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         ),
         materialization_scale=float(correction_scale),
     )
+    if global_residual_basis_rank is not None and (
+        isinstance(global_residual_basis_rank, bool)
+        or not isinstance(global_residual_basis_rank, int)
+        or global_residual_basis_rank <= 0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "global_residual_basis_rank must be a positive integer or None."
+        )
     if closure_version not in {
         "producer_aware_v2a",
         "output_writer_v1_diagnostic",
@@ -8091,6 +8100,11 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         correction_scale_frontier=scale_policy.materialization_frontier,
         correction_scale=scale_policy.materialization_scale,
         global_residual_backend=closure_policy.backend,
+        **(
+            {"global_residual_basis_rank": global_residual_basis_rank}
+            if global_residual_basis_rank is not None
+            else {}
+        ),
         **(
             {"authenticated_cache_session": authenticated_cache_session}
             if authenticated_cache_session is not None
@@ -12804,6 +12818,7 @@ def run_lfm2_semantic_postfold(
     correction_scale_frontier: Sequence[float] = (1.0,),
     correction_scale: float = 1.0,
     global_residual_backend: str = "auto",
+    global_residual_basis_rank: int | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     parent_final_norm_tensor_key: str = "model.embedding_norm.weight",
     parent_norm_epsilon_config_key: str = "norm_eps",
@@ -12843,6 +12858,14 @@ def run_lfm2_semantic_postfold(
         ),
         materialization_scale=float(correction_scale),
     )
+    if global_residual_basis_rank is not None and (
+        isinstance(global_residual_basis_rank, bool)
+        or not isinstance(global_residual_basis_rank, int)
+        or global_residual_basis_rank <= 0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "global_residual_basis_rank must be a positive integer or None."
+        )
     if closure_version not in {
         "producer_aware_v2a",
         "output_writer_v1_diagnostic",
@@ -13278,6 +13301,7 @@ def run_lfm2_semantic_postfold(
             correction_scale_frontier=scale_policy.materialization_frontier,
             correction_scale=scale_policy.materialization_scale,
             global_residual_backend=closure_policy.backend,
+            global_residual_basis_rank=global_residual_basis_rank,
             authenticated_cache_session=pipeline_cache_session,
             body_recipe=recipe,
             interface_anchor_selection=interface_anchor_selection,

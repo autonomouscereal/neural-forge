@@ -283,7 +283,12 @@ def _problem(
     }
 
 
-def _solve(problem, *, materialization_compute_device="cpu"):
+def _solve(
+    problem,
+    *,
+    materialization_compute_device="cpu",
+    requested_basis_rank=None,
+):
     return compile_install_lfm2_producer_aware_semantic_closure(
         problem["evidence"],
         live_physical_parameters=problem["live"],
@@ -294,6 +299,7 @@ def _solve(problem, *, materialization_compute_device="cpu"):
             boundary_chunk_rows=4,
         ),
         materialization_compute_device=materialization_compute_device,
+        requested_basis_rank=requested_basis_rank,
     )
 
 
@@ -326,6 +332,18 @@ def test_builds_authenticated_producer_aware_semantic_problem_without_gate() -> 
             "all_candidates_eligible_for_decoded_behavioral_review"
         ]
         is True
+    )
+
+
+def test_explicit_residual_basis_rank_reaches_the_physical_closure() -> None:
+    result = _solve(_problem(layer_count=2), requested_basis_rank=3)
+
+    assert result.verify_authentication()
+    assert result.topology.requested_basis_rank == 3
+    assert result.topology.effective_basis_rank == 3
+    assert result.basis.rank == 3
+    assert result.report["topology_receipt"]["topology_basis_rank_formula"] == (
+        "explicit_requested_basis_rank"
     )
 
 

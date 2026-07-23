@@ -380,6 +380,18 @@ def _build_v2_stack_fixture(layer_count: int = 14):
         site_ids=tuple(site.site_id for site in sites),
     )
     assert derived_topology.topology_sha256 == topology.topology_sha256
+    full_rank_topology = build_lfm2_producer_aware_writer_topology(
+        snapshot,
+        head_dimension=2,
+        site_ids=tuple(site.site_id for site in sites),
+        requested_basis_rank=hidden,
+    )
+    assert full_rank_topology.requested_basis_rank == hidden
+    assert full_rank_topology.effective_basis_rank == hidden
+    assert full_rank_topology.topology_basis_rank_formula == (
+        "explicit_requested_basis_rank"
+    )
+    assert full_rank_topology.topology_sha256 != topology.topology_sha256
     boundaries = []
     for layer_index in range(layer_count):
         for boundary_offset, kind in enumerate(

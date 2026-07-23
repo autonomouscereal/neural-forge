@@ -958,6 +958,7 @@ def _run_fold_to_review_scale(
     correction_scale_frontier: Sequence[float] = (1.0,),
     correction_scale: float = 1.0,
     global_residual_backend: str = "auto",
+    global_residual_basis_rank: int | None = None,
 ) -> dict[str, Any]:
     """Run one pinned recipe through its sealed decoded-evidence flow."""
 
@@ -976,6 +977,14 @@ def _run_fold_to_review_scale(
     ):
         raise Lfm2SemanticFoldToReviewError(
             "maximum_new_tokens must be between 16 and 2048."
+        )
+    if global_residual_basis_rank is not None and (
+        isinstance(global_residual_basis_rank, bool)
+        or not isinstance(global_residual_basis_rank, int)
+        or global_residual_basis_rank <= 0
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "global_residual_basis_rank must be a positive integer or None."
         )
     directories = {
         "input checkpoint": input_checkpoint,
@@ -1018,6 +1027,14 @@ def _run_fold_to_review_scale(
         ),
         materialization_scale=float(correction_scale),
     )
+    if (
+        closure_version == "output_writer_v1_diagnostic"
+        and global_residual_basis_rank is not None
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "The output-writer v1 diagnostic does not support an explicit "
+            "residual basis rank."
+        )
     if recipe.recipe_sha256 != _digest(
         expected_body_recipe_sha256,
         label="expected body recipe SHA-256",
@@ -1138,6 +1155,7 @@ def _run_fold_to_review_scale(
             correction_scale_frontier=scale_policy.materialization_frontier,
             correction_scale=scale_policy.materialization_scale,
             global_residual_backend=closure_policy.backend,
+            global_residual_basis_rank=global_residual_basis_rank,
             body_recipe=recipe,
             dtype=dtype,
             tied_interface_mode=tied_interface_mode,
@@ -1279,6 +1297,7 @@ def _run_fold_to_review_scale(
         "body_recipe_id": recipe.recipe_id,
         "global_residual_closure_version": closure_version,
         "global_residual_backend": closure_policy.backend,
+        "global_residual_requested_basis_rank": global_residual_basis_rank,
         "global_residual_closure_policy_sha256": (closure_policy.authentication_sha256),
         "global_residual_correction_scale_frontier": list(
             scale_policy.materialization_frontier
@@ -1442,6 +1461,7 @@ def run_fold_to_review(
     correction_scale_frontier: Sequence[float] = (1.0,),
     correction_scale: float | None = None,
     global_residual_backend: str = "auto",
+    global_residual_basis_rank: int | None = None,
 ) -> dict[str, Any]:
     """Fold, decode, and retain every requested correction-scale member."""
 
@@ -1462,6 +1482,14 @@ def run_fold_to_review(
             "Correction-scale frontier or global residual backend is invalid."
         ) from exc
     closure_version = str(global_residual_closure_version).strip().lower()
+    if global_residual_basis_rank is not None and (
+        isinstance(global_residual_basis_rank, bool)
+        or not isinstance(global_residual_basis_rank, int)
+        or global_residual_basis_rank <= 0
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "global_residual_basis_rank must be a positive integer or None."
+        )
     if closure_version not in {
         "producer_aware_v2a",
         "output_writer_v1_diagnostic",
@@ -1472,10 +1500,14 @@ def run_fold_to_review(
         )
     if (
         closure_version == "output_writer_v1_diagnostic"
-        and scale_policy.materialization_frontier != (1.0,)
+        and (
+            scale_policy.materialization_frontier != (1.0,)
+            or global_residual_basis_rank is not None
+        )
     ):
         raise Lfm2SemanticFoldToReviewError(
-            "The output-writer v1 diagnostic supports only its canonical scale 1.0."
+            "The output-writer v1 diagnostic supports only its canonical scale "
+            "1.0 and legacy topology-derived residual basis rank."
         )
     arguments = {
         "input_checkpoint": input_checkpoint,
@@ -1515,6 +1547,7 @@ def run_fold_to_review(
         "global_residual_closure_version": closure_version,
         "correction_scale_frontier": scale_policy.materialization_frontier,
         "global_residual_backend": closure_policy.backend,
+        "global_residual_basis_rank": global_residual_basis_rank,
     }
     if len(scale_policy.materialization_frontier) == 1:
         return _run_fold_to_review_scale(
@@ -1720,6 +1753,16 @@ def _parser() -> argparse.ArgumentParser:
         choices=("auto", "cpu", "cuda"),
         default="auto",
     )
+    parser.add_argument(
+        "--global-residual-basis-rank",
+        type=int,
+        default=None,
+        help=(
+            "Optional explicit whole-stack residual basis rank. Omit to retain "
+            "the legacy 2*attention-head-dimension rank; use the child hidden "
+            "width for full residual coverage."
+        ),
+    )
     parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")
     parser.add_argument("--prompts-json", required=True, type=Path)
     parser.add_argument("--expected-prompts-file-sha256", required=True)
@@ -1770,6 +1813,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         correction_scale_frontier=args.correction_scale_frontier,
         correction_scale=args.correction_scale,
         global_residual_backend=args.global_residual_backend,
+        global_residual_basis_rank=args.global_residual_basis_rank,
         dtype=args.dtype,
         prompts_json=args.prompts_json,
         expected_prompts_file_sha256=args.expected_prompts_file_sha256,
