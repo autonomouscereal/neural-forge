@@ -47,6 +47,9 @@ from neural_forge.hf_lfm2_canonical import (
     Lfm2ShortConvContract,
     inspect_lfm2_layer,
 )
+from neural_forge.hf_lfm2_circuit_trace_cache_compatibility import (
+    permits_explicit_implementation_compatibility,
+)
 
 
 CACHE_SCHEMA = "neural-forge-lfm2-parent-circuit-trace-cache-v1"
@@ -73,36 +76,6 @@ CHILD_REPLAY_PREFIX_BY_PREFIX_MODE = "prefix_by_prefix_canonical"
 CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE = "single_pass_causal"
 
 _FORCED_IDS = "forced_decode_ids"
-_COMPATIBLE_COLLECTOR_SOURCE_SHA256 = frozenset(
-    {
-        # Sealed 2026-07-16 parent/child caches. Later collector changes only
-        # added orchestration and verification plumbing; the captured tensor
-        # schema and LFM2 canonical/runtime contracts are unchanged.
-        "02fc790bc0d5f447bb39f3484a1c318ff28850b4e60843d9a21daac54691af31",
-        # Production parent cache bound to the sealed whole-output envelope.
-        # Its manifest was compared field-by-field with the hardened collector
-        # request: parent, corpus, topology, capture, execution, runtime, and
-        # storage identities are byte-identical; only this collector hash and
-        # its derived implementation/cache digests differ.
-        "93da3605e25482b092ee2a23ee7d45cadf26b1a86dcd56db8b2046aee7450eaa",
-        # Sealed 64-step parent cache used by the measured variable-width
-        # frontier.  The new collector mode is opt-in; the legacy/default
-        # cached-verified request and its tensor schema remain byte-identical.
-        "7486bfc0712cc9bb3a918407daa46a688ecf8da6737cc7b2f2488aba6acdc8c2",
-        # Frozen CPCF v4r2r1 broad-256 parent cache.  The later source revision
-        # adds read-only selective authenticated-session and residency APIs;
-        # it does not alter capture, tensor inventory, record construction,
-        # parent execution, canonical LFM2 contracts, or runtime algebra.
-        "71e99ee9b1c22ae893b76df90a3de93341e1b894ea7c39606f98d62e18aa13bf",
-        # Exact collector source used to create the current 16-batch complete
-        # causal evidence cache and by the authenticated 9f18ad1 postfold run.
-        # The successor revision changes only source formatting and read-only
-        # cache-consumption wording; `git diff -w` leaves the capture/runtime
-        # algebra, tensor inventory, batch records, and manifest construction
-        # unchanged.
-        "2c3fc8a337da325564369976f056337de197e3c573203a250cfd5fe626daf349",
-    }
-)
 _ALLOWED_BATCH_FIELDS = frozenset(
     {"input_ids", "attention_mask", "position_ids", _FORCED_IDS}
 )
@@ -384,20 +357,44 @@ def implementation_identity() -> dict[str, Any]:
     return {**body, "implementation_sha256": _json_sha256(body)}
 
 
+def _implementation_identity_is_internally_consistent(
+    value: Mapping[str, Any],
+) -> bool:
+    body = dict(value)
+    implementation_sha256 = body.pop("implementation_sha256", None)
+    if (
+        not isinstance(implementation_sha256, str)
+        or len(implementation_sha256) != _SHA256_LENGTH
+    ):
+        return False
+    try:
+        return _json_sha256(body) == implementation_sha256
+    except Lfm2CircuitTraceCacheError:
+        return False
+
+
 def _compatible_implementation_identity(
     stored: Mapping[str, Any],
     current: Mapping[str, Any],
 ) -> bool:
-    """Accept one explicitly audited collector revision with identical runtime."""
+    """Accept identical identities or one exact directional policy receipt."""
 
+    if not _implementation_identity_is_internally_consistent(
+        stored
+    ) or not _implementation_identity_is_internally_consistent(current):
+        return False
     if stored.get("implementation_sha256") == current.get("implementation_sha256"):
         return True
-    if stored.get("collector_source_sha256") not in _COMPATIBLE_COLLECTOR_SOURCE_SHA256:
+    try:
+        actual_current_source_sha256 = _source_file_sha256(
+            Path(__file__).resolve(),
+            "collector",
+        )
+    except Lfm2CircuitTraceCacheError:
         return False
-    ignored = {"collector_source_sha256", "implementation_sha256"}
-    return {key: value for key, value in stored.items() if key not in ignored} == {
-        key: value for key, value in current.items() if key not in ignored
-    }
+    if current.get("collector_source_sha256") != actual_current_source_sha256:
+        return False
+    return permits_explicit_implementation_compatibility(stored, current)
 
 
 @dataclass(frozen=True, slots=True)
@@ -4462,7 +4459,7 @@ def _find_compatible_committed_cache(
     root: Path,
     requested_manifest: Mapping[str, Any],
 ) -> Lfm2CircuitTraceCache | None:
-    """Reuse an audited sealed cache across collector-only revisions."""
+    """Reuse a sealed cache only through an exact directional policy receipt."""
 
     for candidate in sorted(root.iterdir(), key=lambda value: value.name):
         if (

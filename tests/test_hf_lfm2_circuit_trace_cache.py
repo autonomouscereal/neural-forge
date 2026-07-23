@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import MethodType
 
 import pytest
@@ -634,38 +635,64 @@ def test_cache_reuses_without_parent_forward_and_identity_changes_split_paths(
     assert changed_parent.parent_fingerprint != first.parent_fingerprint
 
 
-@pytest.mark.parametrize(
-    "audited_collector_sha256",
-    (
-        "02fc790bc0d5f447bb39f3484a1c318ff28850b4e60843d9a21daac54691af31",
-        "93da3605e25482b092ee2a23ee7d45cadf26b1a86dcd56db8b2046aee7450eaa",
-        "71e99ee9b1c22ae893b76df90a3de93341e1b894ea7c39606f98d62e18aa13bf",
-        "2c3fc8a337da325564369976f056337de197e3c573203a250cfd5fe626daf349",
-    ),
-)
-def test_audited_collector_revision_reuses_sealed_cache_without_forward(
+def _sealed_complete_causal_cache_implementation() -> dict[str, str]:
+    return {
+        "schema": "neural-forge-lfm2-circuit-implementation-v1",
+        "collector_source_sha256": (
+            "2c3fc8a337da325564369976f056337de197e3c573203a250cfd5fe626daf349"
+        ),
+        "canonical_contract_source_sha256": (
+            "5956f90939ab57dcabb32377d795b00eda0d948666c63b5688259b5680aa738a"
+        ),
+        "transformers_lfm2_source_sha256": (
+            "2ec8be8af6b65482f54d29e52da9765b863ce37b65846423dfbfda72f944f150"
+        ),
+        "torch_version": "2.11.0+cu128",
+        "transformers_version": "5.12.1",
+        "safetensors_version": "0.8.0",
+        "implementation_sha256": (
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5"
+        ),
+    }
+
+
+def _rehashed_implementation(
+    value: dict[str, str],
+    **changes: str,
+) -> dict[str, str]:
+    body = {
+        key: item
+        for key, item in value.items()
+        if key != "implementation_sha256"
+    }
+    body.update(changes)
+    return {
+        **body,
+        "implementation_sha256": trace_cache._json_sha256(body),
+    }
+
+
+def _runtime_reader_implementation(torch_version: str) -> dict[str, str]:
+    return _rehashed_implementation(
+        _sealed_complete_causal_cache_implementation(),
+        collector_source_sha256=trace_cache._source_file_sha256(
+            Path(trace_cache.__file__).resolve(),
+            "collector",
+        ),
+        torch_version=torch_version,
+    )
+
+
+@pytest.mark.parametrize("torch_version", ("2.11.0+cu128", "2.6.0+cu118"))
+def test_exact_reader_pair_reuses_sealed_cache_without_parent_forward(
     tmp_path,
     monkeypatch,
-    audited_collector_sha256,
+    torch_version,
 ) -> None:
     model = _parent(seed=203)
     calls = _instrument_forwards(model)
-    current = trace_cache.implementation_identity()
-
-    def identity_with_collector(collector_sha256):
-        body = {
-            key: value
-            for key, value in current.items()
-            if key != "implementation_sha256"
-        }
-        body["collector_source_sha256"] = collector_sha256
-        return {
-            **body,
-            "implementation_sha256": trace_cache._json_sha256(body),
-        }
-
-    legacy = identity_with_collector(audited_collector_sha256)
-    monkeypatch.setattr(trace_cache, "implementation_identity", lambda: legacy)
+    stored = _sealed_complete_causal_cache_implementation()
+    monkeypatch.setattr(trace_cache, "implementation_identity", lambda: stored)
     config = Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2)
     first = build_lfm2_circuit_trace_cache(
         tmp_path,
@@ -675,8 +702,8 @@ def test_audited_collector_revision_reuses_sealed_cache_without_forward(
     )
     first_call_count = len(calls)
 
-    revised = identity_with_collector("f" * 64)
-    monkeypatch.setattr(trace_cache, "implementation_identity", lambda: revised)
+    current = _runtime_reader_implementation(torch_version)
+    monkeypatch.setattr(trace_cache, "implementation_identity", lambda: current)
     reused = build_lfm2_circuit_trace_cache(
         tmp_path,
         model,
@@ -686,7 +713,87 @@ def test_audited_collector_revision_reuses_sealed_cache_without_forward(
 
     assert reused.path == first.path
     assert len(calls) == first_call_count
-    assert reused.implementation_fingerprint == legacy["implementation_sha256"]
+    assert reused.implementation_fingerprint == stored["implementation_sha256"]
+
+
+def test_exact_implementation_identity_remains_compatible() -> None:
+    current = trace_cache.implementation_identity()
+
+    assert trace_cache._compatible_implementation_identity(current, current)
+
+
+@pytest.mark.parametrize("torch_version", ("2.11.0+cu128", "2.6.0+cu118"))
+def test_sealed_complete_causal_cache_allows_only_exact_readers(
+    torch_version,
+) -> None:
+    stored = _sealed_complete_causal_cache_implementation()
+    stored_body = dict(stored)
+    stored_sha256 = stored_body.pop("implementation_sha256")
+    assert trace_cache._json_sha256(stored_body) == stored_sha256
+    current = _runtime_reader_implementation(torch_version)
+
+    assert trace_cache._compatible_implementation_identity(stored, current)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("torch_version", "2.6.1+cu118"),
+        ("canonical_contract_source_sha256", "a" * 64),
+        ("transformers_lfm2_source_sha256", "b" * 64),
+        ("transformers_version", "5.12.2"),
+        ("safetensors_version", "0.8.1"),
+    ),
+)
+@pytest.mark.parametrize("torch_version", ("2.11.0+cu128", "2.6.0+cu118"))
+def test_explicit_reader_pair_rejects_unaudited_runtime_changes(
+    torch_version,
+    field,
+    value,
+) -> None:
+    stored = _sealed_complete_causal_cache_implementation()
+    current = _rehashed_implementation(
+        _runtime_reader_implementation(torch_version),
+        **{field: value},
+    )
+
+    assert not trace_cache._compatible_implementation_identity(stored, current)
+
+
+@pytest.mark.parametrize("torch_version", ("2.11.0+cu128", "2.6.0+cu118"))
+@pytest.mark.parametrize("collector_sha256", ("a" * 64, "b" * 64))
+def test_explicit_reader_pair_rejects_unrelated_current_collectors(
+    torch_version,
+    collector_sha256,
+) -> None:
+    stored = _sealed_complete_causal_cache_implementation()
+    current = _rehashed_implementation(
+        _runtime_reader_implementation(torch_version),
+        collector_source_sha256=collector_sha256,
+    )
+
+    assert not trace_cache._compatible_implementation_identity(stored, current)
+
+
+@pytest.mark.parametrize("torch_version", ("2.11.0+cu128", "2.6.0+cu118"))
+def test_explicit_reader_pair_rejects_current_implementation_tamper(
+    torch_version,
+) -> None:
+    stored = _sealed_complete_causal_cache_implementation()
+    current = _runtime_reader_implementation(torch_version)
+    current["implementation_sha256"] = "c" * 64
+
+    assert not trace_cache._compatible_implementation_identity(stored, current)
+
+
+def test_explicit_reader_pair_rejects_a_different_stored_implementation() -> None:
+    stored = _rehashed_implementation(
+        _sealed_complete_causal_cache_implementation(),
+        torch_version="2.11.1+cu128",
+    )
+    current = _runtime_reader_implementation("2.6.0+cu118")
+
+    assert not trace_cache._compatible_implementation_identity(stored, current)
 
 
 def test_bfloat16_runtime_algebra_is_checked_in_runtime_dtype(tmp_path) -> None:
