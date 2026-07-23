@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -12,8 +13,10 @@ from neural_forge.hf_activation_cluster import (  # noqa: E402
     build_gated_mlp_activation_cluster_plan,
 )
 from neural_forge.hf_lfm2_closed_loop_fold import (  # noqa: E402
+    ENDPOINT_METRIC_POLICY_DIAGNOSTIC_ONLY,
     Lfm2AttentionFoldEvidence,
     Lfm2ClosedLoopEvidenceError,
+    Lfm2ClosedLoopFitRejected,
     Lfm2ClosedLoopFoldConfig,
     Lfm2ClosedLoopFoldEvidence,
     Lfm2ClosedLoopTopologyError,
@@ -491,6 +494,54 @@ def test_real_16q8kv_to_14q7kv_transaction_is_coupled_and_endpoint_fitted() -> N
     assert report.zero_gradient is True
     assert report.as_dict()["optimizer_steps"] == 0
     assert report.as_dict()["parameter_gradients_written"] is False
+
+
+def test_endpoint_metrics_are_diagnostic_only_when_explicitly_requested() -> None:
+    source, target, evidence, _config, _output, _down = (
+        _attention_transaction_fixture(seed=115)
+    )
+    bad_evidence = replace(
+        evidence,
+        mlp=replace(
+            evidence.mlp,
+            child_post_swiglu_rows=torch.zeros_like(
+                evidence.mlp.child_post_swiglu_rows
+            ),
+        ),
+    )
+    strict = Lfm2ClosedLoopFoldConfig(
+        endpoint_ridge=0.0,
+        max_endpoint_relative_rmse=0.0,
+        min_endpoint_cosine_similarity=1.0,
+    )
+
+    with pytest.raises(Lfm2ClosedLoopFitRejected, match="endpoint fit was rejected"):
+        build_lfm2_closed_loop_fold_plan(
+            source,
+            target,
+            bad_evidence,
+            config=strict,
+        )
+
+    diagnostic = replace(
+        strict,
+        endpoint_metric_policy=ENDPOINT_METRIC_POLICY_DIAGNOSTIC_ONLY,
+    )
+    plan = build_lfm2_closed_loop_fold_plan(
+        source,
+        target,
+        bad_evidence,
+        config=diagnostic,
+    )
+    endpoint = plan.mlp.endpoint_fit
+    assert endpoint.gate.accepted is False
+    assert endpoint.accepted is True
+    report = endpoint.as_dict()
+    assert report["endpoint_metric_policy"] == "diagnostic_only"
+    assert report["threshold_gate_passed"] is False
+    assert report["threshold_gate_blocking"] is False
+    assert report["threshold_metrics_used_for_selection"] is False
+    assert report["accepted_for_construction"] is True
 
 
 def test_endpoint_correction_can_be_bounded_to_the_cluster_prior() -> None:

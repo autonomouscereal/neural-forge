@@ -44,6 +44,7 @@ from neural_forge.hf_lfm2_canonical import (
     inspect_lfm2_layer,
 )
 from neural_forge.hf_lfm2_closed_loop_fold import (
+    ENDPOINT_METRIC_POLICY_DIAGNOSTIC_ONLY,
     Lfm2AttentionFoldEvidence,
     Lfm2ClosedLoopFoldConfig,
     Lfm2ClosedLoopFoldEvidence,
@@ -55,10 +56,9 @@ from neural_forge.hf_lfm2_closed_loop_fold import (
 
 MODEL_FOLD_METHOD = "lfm2_hybrid_residual_attention_model"
 MODEL_FOLD_SCHEMA = "neural-forge-lfm2-hybrid-model-fold-v1"
-MODEL_FOLD_TRANSACTION_SCHEMA = (
-    "neural-forge-lfm2-hybrid-model-fold-transaction-v1"
-)
+MODEL_FOLD_TRANSACTION_SCHEMA = "neural-forge-lfm2-hybrid-model-fold-transaction-v1"
 MODEL_FOLD_EVIDENCE_SCHEMA = "neural-forge-lfm2-hybrid-model-evidence-v1"
+MODEL_FOLD_TENSOR_HASH_SCHEME = "neural-forge-lfm2-model-fold-tensor-sha256-v1"
 
 
 class Lfm2ModelFoldError(ValueError):
@@ -91,9 +91,7 @@ def _nonnegative_int(value: Any, name: str) -> int:
     try:
         result = operator.index(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise Lfm2ModelFoldError(
-            f"{name} must be a non-negative integer."
-        ) from exc
+        raise Lfm2ModelFoldError(f"{name} must be a non-negative integer.") from exc
     if result < 0:
         raise Lfm2ModelFoldError(f"{name} must be a non-negative integer.")
     return int(result)
@@ -124,9 +122,7 @@ def _sha256_digest(value: Any, name: str) -> str:
         or len(value) != 64
         or any(character not in "0123456789abcdef" for character in value)
     ):
-        raise Lfm2ModelFoldEvidenceError(
-            f"{name} must be a lowercase SHA-256 digest."
-        )
+        raise Lfm2ModelFoldEvidenceError(f"{name} must be a lowercase SHA-256 digest.")
     return value
 
 
@@ -168,6 +164,12 @@ def _tensor_sha256(value: Any) -> str:
     digest.update(b"\0")
     digest.update(tensor.view(torch.uint8).reshape(-1).numpy().tobytes(order="C"))
     return digest.hexdigest()
+
+
+def fingerprint_lfm2_model_fold_tensor(value: Any) -> str:
+    """Hash one dense tensor in the model-fold candidate digest domain."""
+
+    return _tensor_sha256(value)
 
 
 def _clone_tensor(value: Any, name: str) -> Any:
@@ -224,9 +226,7 @@ def _state_items(module: Any) -> tuple[tuple[str, Any], ...]:
     result = []
     for name in sorted(state):
         if not isinstance(name, str):
-            raise Lfm2ModelFoldInvariantError(
-                "Model state names must be strings."
-            )
+            raise Lfm2ModelFoldInvariantError("Model state names must be strings.")
         result.append((name, _clone_tensor(state[name], f"state[{name!r}]")))
     return tuple(result)
 
@@ -396,6 +396,25 @@ def _evidence_identity(value: Any) -> Any:
     )
 
 
+def _freeze_json_identity(value: Any) -> Any:
+    """Recursively freeze an already-normalized JSON identity."""
+
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {
+                str(key): _freeze_json_identity(item)
+                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            }
+        )
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return tuple(_freeze_json_identity(item) for item in value)
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    raise Lfm2ModelFoldEvidenceError(
+        f"Unsupported normalized identity value type: {type(value)!r}."
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2ModelFoldSpan:
     """One ordered source-layer span assigned to one target layer."""
@@ -512,8 +531,7 @@ class Lfm2CachedSpanFoldEvidence:
                 "layers must be a cached layer evidence sequence."
             ) from exc
         if any(
-            not isinstance(value, Lfm2CachedLayerFoldEvidence)
-            for value in layer_values
+            not isinstance(value, Lfm2CachedLayerFoldEvidence) for value in layer_values
         ):
             raise Lfm2ModelFoldEvidenceError(
                 "layers must contain Lfm2CachedLayerFoldEvidence values."
@@ -563,12 +581,9 @@ class Lfm2ModelFoldEvidence:
                 "spans must be a cached span evidence sequence."
             ) from exc
         if not span_values or any(
-            not isinstance(value, Lfm2CachedSpanFoldEvidence)
-            for value in span_values
+            not isinstance(value, Lfm2CachedSpanFoldEvidence) for value in span_values
         ):
-            raise Lfm2ModelFoldEvidenceError(
-                "spans must contain cached span evidence."
-            )
+            raise Lfm2ModelFoldEvidenceError("spans must contain cached span evidence.")
         targets = tuple(value.span.target_layer_index for value in span_values)
         if len(set(targets)) != len(targets):
             raise Lfm2ModelFoldEvidenceError(
@@ -736,10 +751,7 @@ def _validated_trace_indices(
     allow_empty: bool,
 ) -> tuple[int, ...]:
     try:
-        result = tuple(
-            _nonnegative_int(value, f"{name} row index")
-            for value in values
-        )
+        result = tuple(_nonnegative_int(value, f"{name} row index") for value in values)
     except TypeError as exc:
         raise Lfm2ModelFoldEvidenceError(
             f"{name} must be an integer row-index sequence."
@@ -750,9 +762,7 @@ def _validated_trace_indices(
             f"{name} must contain {qualifier} row indices."
         )
     if any(value >= row_count for value in result):
-        raise Lfm2ModelFoldEvidenceError(
-            f"{name} contains an out-of-range row index."
-        )
+        raise Lfm2ModelFoldEvidenceError(f"{name} contains an out-of-range row index.")
     return result
 
 
@@ -806,11 +816,9 @@ def assemble_lfm2_model_fold_evidence_from_trace_rows(
     if not span_values or any(
         not isinstance(value, Lfm2ModelFoldSpan) for value in span_values
     ):
-        raise Lfm2ModelFoldEvidenceError(
-            "spans must contain Lfm2ModelFoldSpan values."
-        )
-    parent_paths, parent_splits, parent_corpus, parent_kinds = (
-        _trace_rows_metadata(parent_rows, "parent_rows")
+        raise Lfm2ModelFoldEvidenceError("spans must contain Lfm2ModelFoldSpan values.")
+    parent_paths, parent_splits, parent_corpus, parent_kinds = _trace_rows_metadata(
+        parent_rows, "parent_rows"
     )
     child_paths, child_splits, child_corpus, child_kinds = _trace_rows_metadata(
         child_rows,
@@ -935,10 +943,7 @@ def assemble_lfm2_model_fold_evidence_from_trace_rows(
                 else _index_trace_rows(
                     child_rows.field(target_index, "residual.post_operator"),
                     validation,
-                    (
-                        f"target layer {target_index} validation "
-                        "residual.post_operator"
-                    ),
+                    (f"target layer {target_index} validation residual.post_operator"),
                 )
             ),
         )
@@ -990,10 +995,7 @@ def assemble_lfm2_model_fold_evidence_from_trace_rows(
                     else _index_trace_rows(
                         child_rows.field(target_index, "attention.context"),
                         validation,
-                        (
-                            f"target layer {target_index} validation "
-                            "attention.context"
-                        ),
+                        (f"target layer {target_index} validation attention.context"),
                     )
                 ),
                 validation_parent_branch_output_rows=(
@@ -1029,12 +1031,8 @@ def assemble_lfm2_model_fold_evidence_from_trace_rows(
         layer_fold_evidence=layer_evidence,
         parent_pre_residual_rows=parent_pre,
         parent_post_residual_rows=parent_post,
-        validation_parent_pre_residual_rows=(
-            validation_pre if validation else None
-        ),
-        validation_parent_post_residual_rows=(
-            validation_post if validation else None
-        ),
+        validation_parent_pre_residual_rows=(validation_pre if validation else None),
+        validation_parent_post_residual_rows=(validation_post if validation else None),
     )
 
 
@@ -1050,9 +1048,7 @@ class Lfm2ModelFoldConfig:
 
     def __post_init__(self) -> None:
         if not isinstance(self.layer_config, Lfm2ClosedLoopFoldConfig):
-            raise TypeError(
-                "layer_config must be Lfm2ClosedLoopFoldConfig."
-            )
+            raise TypeError("layer_config must be Lfm2ClosedLoopFoldConfig.")
         object.__setattr__(
             self,
             "max_span_correction_anchors",
@@ -1079,6 +1075,7 @@ class Lfm2ModelFoldConfig:
             ratio = min(ratio, existing_ratio)
         return replace(
             self.layer_config,
+            endpoint_metric_policy=ENDPOINT_METRIC_POLICY_DIAGNOSTIC_ONLY,
             max_endpoint_prior_delta_ratio=ratio,
             # With real LFM target widths and cached row counts, these guards
             # force the bounded survivor-anchor branch. Degenerate width/row-1
@@ -1101,6 +1098,9 @@ class Lfm2ModelFoldConfig:
             "multi_layer_solver_policy": (
                 "real-layer-anchor-plus-bounded-survivor-residual-correction"
             ),
+            "multi_layer_endpoint_metrics_policy": (
+                ENDPOINT_METRIC_POLICY_DIAGNOSTIC_ONLY
+            ),
         }
 
 
@@ -1114,9 +1114,7 @@ class Lfm2AnchorScore:
         return {
             "source_layer_index": self.source_layer_index,
             "residual_delta_rmse": self.residual_delta_rmse,
-            "residual_delta_relative_rmse": (
-                self.residual_delta_relative_rmse
-            ),
+            "residual_delta_relative_rmse": (self.residual_delta_relative_rmse),
         }
 
 
@@ -1164,16 +1162,10 @@ class Lfm2SpanFoldPlan:
                         "residual-endpoint-correction"
                     )
                 ),
-                "fit_domain": (
-                    "cached-span-input-to-parent-last-layer-post-residual"
-                ),
+                "fit_domain": ("cached-span-input-to-parent-last-layer-post-residual"),
                 "child_side_target_design": True,
-                "endpoint_correction_bounded": (
-                    self.endpoint_correction_bounded
-                ),
-                "endpoint_correction_rank_bound": (
-                    self.endpoint_correction_rank_bound
-                ),
+                "endpoint_correction_bounded": (self.endpoint_correction_bounded),
+                "endpoint_correction_rank_bound": (self.endpoint_correction_rank_bound),
                 "endpoint_correction_prior_delta_ratio_bound": (
                     self.endpoint_correction_prior_delta_ratio_bound
                 ),
@@ -1221,6 +1213,11 @@ class Lfm2ModelFoldPlan:
     target_unique_parameters: int
     parameters_removed: int
     plan_sha256: str
+    span_coupled_overlay_receipts: tuple[tuple[int, Mapping[str, Any]], ...] = ()
+    span_coupled_provenance_receipt: Mapping[str, Any] | None = None
+    span_coupled_overlay_manifest: Mapping[str, Any] | None = None
+    span_coupled_base_plan_sha256: str | None = None
+    span_coupled_base_candidate_state_sha256: str | None = None
 
     @property
     def zero_gradient(self) -> bool:
@@ -1314,6 +1311,37 @@ class Lfm2ModelFoldPlan:
             "target_unique_parameters": self.target_unique_parameters,
             "parameters_removed": self.parameters_removed,
             "plan_sha256": self.plan_sha256,
+            "span_coupled_overlay_receipts": {
+                str(target_index): _evidence_identity(receipt)
+                for target_index, receipt in self.span_coupled_overlay_receipts
+            },
+            "span_coupled_provenance_receipt": (
+                None
+                if self.span_coupled_provenance_receipt is None
+                else _evidence_identity(self.span_coupled_provenance_receipt)
+            ),
+            "span_coupled_overlay_manifest": (
+                None
+                if self.span_coupled_overlay_manifest is None
+                else _evidence_identity(self.span_coupled_overlay_manifest)
+            ),
+            "span_coupled_base_plan_sha256": self.span_coupled_base_plan_sha256,
+            "span_coupled_base_candidate_state_sha256": (
+                self.span_coupled_base_candidate_state_sha256
+            ),
+            "span_coupled_dense_state_installed": bool(
+                any(
+                    receipt.get("installed_any", receipt.get("installed")) is True
+                    for _target_index, receipt in self.span_coupled_overlay_receipts
+                )
+            ),
+            "span_coupled_all_requested_operators_installed": bool(
+                self.span_coupled_overlay_receipts
+                and all(
+                    receipt.get("installed_all", receipt.get("installed")) is True
+                    for _target_index, receipt in self.span_coupled_overlay_receipts
+                )
+            ),
             "atomic_model_level_transaction": True,
             "cached_evidence_only": True,
             "parent_forward_count": 0,
@@ -1326,6 +1354,44 @@ class Lfm2ModelFoldPlan:
             "training_steps": 0,
             "parameter_gradients_written": False,
         }
+
+
+def _base_model_fold_plan_sha256(
+    plan: Lfm2ModelFoldPlan,
+    *,
+    candidate_state_sha256: str | None = None,
+) -> str:
+    candidate_sha256 = (
+        plan.candidate_state_sha256
+        if candidate_state_sha256 is None
+        else _sha256_digest(candidate_state_sha256, "base candidate_state_sha256")
+    )
+    provenance = {
+        "schema": MODEL_FOLD_SCHEMA,
+        "method_id": MODEL_FOLD_METHOD,
+        "spans": [value.as_dict() for value in plan.spans],
+        "span_plans": [value.as_dict() for value in plan.span_plans],
+        "config": plan.config.as_dict(),
+        "cache_fingerprint": plan.cache_fingerprint,
+        "child_feature_state_sha256": plan.child_feature_state_sha256,
+        "evidence_sha256": plan.evidence_sha256,
+        "source_contracts": [value.as_dict() for value in plan.source_layer_contracts],
+        "target_contracts": [value.as_dict() for value in plan.target_layer_contracts],
+        "target_layer_paths": list(plan.target_layer_paths),
+        "copied_non_layer_state_keys": list(plan.copied_non_layer_state_keys),
+        "source_state_sha256": plan.source_state_sha256,
+        "target_state_sha256_before": plan.target_state_sha256_before,
+        "candidate_state_sha256": candidate_sha256,
+        "source_unique_parameters": plan.source_unique_parameters,
+        "target_unique_parameters": plan.target_unique_parameters,
+        "parameters_removed": plan.parameters_removed,
+        "complete_source_span_coverage": True,
+        "complete_target_state_coverage": True,
+        "atomic_model_level_transaction": True,
+        "cached_evidence_only": True,
+        "zero_gradient": True,
+    }
+    return _canonical_sha256(provenance)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1465,9 +1531,7 @@ def _validate_span_partition(
         raise Lfm2ModelFoldTopologyError(
             "Target layers must be covered exactly once in execution order."
         )
-    flattened = tuple(
-        index for span in spans for index in span.source_layer_indices
-    )
+    flattened = tuple(index for span in spans for index in span.source_layer_indices)
     if flattened != tuple(range(source_layer_count)):
         raise Lfm2ModelFoldTopologyError(
             "Source spans must exactly partition every source layer in order."
@@ -1498,9 +1562,7 @@ def _validate_cached_span_rows(
         "parent_post_span_residual_rows",
     )
     if pre.shape != post.shape:
-        raise Lfm2ModelFoldEvidenceError(
-            "Cached span pre/post residual shapes differ."
-        )
+        raise Lfm2ModelFoldEvidenceError("Cached span pre/post residual shapes differ.")
     layer_pre: dict[int, Any] = {}
     layer_post: dict[int, Any] = {}
     previous = pre
@@ -1523,10 +1585,7 @@ def _validate_cached_span_rows(
             )
         fold_parent_post = _float64_rows(
             layer.fold_evidence.mlp.parent_branch_output_rows,
-            (
-                f"layer {layer.source_layer_index} fold parent "
-                "post residual"
-            ),
+            (f"layer {layer.source_layer_index} fold parent post residual"),
         )
         if not _rows_equal(fold_parent_post, current_post):
             raise Lfm2ModelFoldEvidenceError(
@@ -1599,10 +1658,7 @@ def _validate_cached_span_rows(
             if fold_validation_post is None or not _rows_equal(
                 _float64_rows(
                     fold_validation_post,
-                    (
-                        f"layer {layer.source_layer_index} fold validation "
-                        "post residual"
-                    ),
+                    (f"layer {layer.source_layer_index} fold validation post residual"),
                 ),
                 current_post,
             ):
@@ -1624,8 +1680,7 @@ def _validate_cached_span_rows(
             )
         validation_delta = validation_post - validation_pre
     elif any(
-        layer.validation_parent_pre_residual_rows is not None
-        for layer in value.layers
+        layer.validation_parent_pre_residual_rows is not None for layer in value.layers
     ):
         raise Lfm2ModelFoldEvidenceError(
             "Layer validation endpoints require declared span validation endpoints."
@@ -1658,9 +1713,7 @@ def _anchor_scores(
         if source_contracts[index].kind != target_contract.kind:
             continue
         layer_delta = rows.layer_post[index] - rows.layer_pre[index]
-        rmse = float(
-            torch.sqrt(torch.mean((rows.delta - layer_delta).square())).item()
-        )
+        rmse = float(torch.sqrt(torch.mean((rows.delta - layer_delta).square())).item())
         result.append(
             Lfm2AnchorScore(
                 source_layer_index=index,
@@ -1905,17 +1958,21 @@ def _authenticate_live_producer_shell(
     missing = sorted(set(required).difference(live))
     if missing:
         raise Lfm2ModelFoldTopologyError(
-            "The target layer is missing required producer state: "
-            + ", ".join(missing)
+            "The target layer is missing required producer state: " + ", ".join(missing)
         )
     mismatched = []
     torch = _torch()
     for name in required:
         observed = live[name].detach().to(device="cpu").contiguous()
-        selected = expected[name].detach().to(
-            device="cpu",
-            dtype=observed.dtype,
-        ).contiguous()
+        selected = (
+            expected[name]
+            .detach()
+            .to(
+                device="cpu",
+                dtype=observed.dtype,
+            )
+            .contiguous()
+        )
         if observed.shape != selected.shape or not bool(
             torch.equal(observed, selected)
         ):
@@ -1924,8 +1981,7 @@ def _authenticate_live_producer_shell(
         raise Lfm2ModelFoldEvidenceError(
             "The authenticated child feature state is not the selected producer "
             "shell; cached child designs from a zero/random blank cannot be used. "
-            "Mismatched producer state: "
-            + ", ".join(mismatched)
+            "Mismatched producer state: " + ", ".join(mismatched)
         )
     return required
 
@@ -1942,10 +1998,14 @@ def _assert_plan_uses_authenticated_producers(
                 f"Closed-loop plan lost authenticated producer {name!r}."
             )
         planned = candidate[name].detach().to(device="cpu").contiguous()
-        normalized = selected.detach().to(
-            device="cpu",
-            dtype=planned.dtype,
-        ).contiguous()
+        normalized = (
+            selected.detach()
+            .to(
+                device="cpu",
+                dtype=planned.dtype,
+            )
+            .contiguous()
+        )
         if planned.shape != normalized.shape or not bool(
             torch.equal(planned, normalized)
         ):
@@ -2067,9 +2127,7 @@ def build_lfm2_model_fold_plan(
     if not span_values or any(
         not isinstance(value, Lfm2ModelFoldSpan) for value in span_values
     ):
-        raise Lfm2ModelFoldTopologyError(
-            "spans must contain Lfm2ModelFoldSpan values."
-        )
+        raise Lfm2ModelFoldTopologyError("spans must contain Lfm2ModelFoldSpan values.")
 
     source_layers = _decoder_layers(parent_model)
     target_layers = _decoder_layers(child_model)
@@ -2188,9 +2246,7 @@ def build_lfm2_model_fold_plan(
                     cached_span_delta_sha256=_tensor_sha256(rows.delta),
                     cached_span_evidence_sha256=_span_evidence_sha256(cached),
                     endpoint_correction_bounded=correction_bounded,
-                    endpoint_correction_rank_bound=(
-                        endpoint.correction_rank_bound
-                    ),
+                    endpoint_correction_rank_bound=(endpoint.correction_rank_bound),
                     endpoint_correction_prior_delta_ratio_bound=ratio_bound,
                     authenticated_live_producer_state_keys=(
                         authenticated_producer_keys
@@ -2237,9 +2293,7 @@ def build_lfm2_model_fold_plan(
         "span_plans": [value.as_dict() for value in span_plan_values],
         "config": selected.as_dict(),
         "cache_fingerprint": evidence.cache_fingerprint,
-        "child_feature_state_sha256": (
-            evidence.child_feature_state_sha256
-        ),
+        "child_feature_state_sha256": (evidence.child_feature_state_sha256),
         "evidence_sha256": evidence_before,
         "source_contracts": [value.as_dict() for value in source_contracts],
         "target_contracts": [value.as_dict() for value in target_contracts],
@@ -2312,16 +2366,12 @@ class Lfm2ModelFoldTransactionReport:
             "rollback_exact": self.rollback_exact,
             "candidate_state_sha256": self.candidate_state_sha256,
             "final_state_sha256": self.final_state_sha256,
-            "parameter_identities_preserved": (
-                self.parameter_identities_preserved
-            ),
+            "parameter_identities_preserved": (self.parameter_identities_preserved),
             "gradient_state_preserved": self.gradient_state_preserved,
             "buffer_identities_preserved": self.buffer_identities_preserved,
             "module_modes_preserved": self.module_modes_preserved,
             "config_preserved": self.config_preserved,
-            "seed_erasure_by_construction": (
-                self.seed_erasure_by_construction
-            ),
+            "seed_erasure_by_construction": (self.seed_erasure_by_construction),
             "source_unique_parameters": self.source_unique_parameters,
             "target_unique_parameters": self.target_unique_parameters,
             "parameters_removed": self.parameters_removed,
@@ -2370,8 +2420,7 @@ class Lfm2ModelFoldTransaction:
     def _runtime_flags(self) -> tuple[bool, bool, bool, bool, bool]:
         return (
             _parameter_ids(self._target_model) == self.snapshot.parameter_ids,
-            _gradient_signature(self._target_model)
-            == self.snapshot.gradient_signature,
+            _gradient_signature(self._target_model) == self.snapshot.gradient_signature,
             _buffer_identity(self._target_model) == self.snapshot.buffer_identity,
             _module_mode_signature(self._target_model)
             == self.snapshot.module_mode_signature,
@@ -2401,9 +2450,7 @@ class Lfm2ModelFoldTransaction:
             target_unique_parameters=self.plan.target_unique_parameters,
             parameters_removed=self.plan.parameters_removed,
             cache_fingerprint=self.plan.cache_fingerprint,
-            child_feature_state_sha256=(
-                self.plan.child_feature_state_sha256
-            ),
+            child_feature_state_sha256=(self.plan.child_feature_state_sha256),
             evidence_sha256=self.plan.evidence_sha256,
             plan_sha256=self.plan.plan_sha256,
         )
@@ -2468,6 +2515,190 @@ class Lfm2ModelFoldTransaction:
         return False
 
 
+def _validate_span_coupled_overlay_plan(
+    plan: Lfm2ModelFoldPlan,
+    candidate: Mapping[str, Any],
+) -> None:
+    receipts = dict(plan.span_coupled_overlay_receipts)
+    overlay_fields_present = (
+        plan.span_coupled_provenance_receipt is not None,
+        plan.span_coupled_overlay_manifest is not None,
+        plan.span_coupled_base_plan_sha256 is not None,
+        plan.span_coupled_base_candidate_state_sha256 is not None,
+    )
+    if not receipts:
+        if any(overlay_fields_present):
+            raise Lfm2ModelFoldInvariantError(
+                "A model plan has span-overlay metadata without span receipts."
+            )
+        if _base_model_fold_plan_sha256(plan) != plan.plan_sha256:
+            raise Lfm2ModelFoldInvariantError(
+                "The base model-fold plan seal changed after planning."
+            )
+        return
+    if not all(overlay_fields_present):
+        raise Lfm2ModelFoldInvariantError(
+            "A span-overlay model plan is missing authenticated seal metadata."
+        )
+    assert plan.span_coupled_provenance_receipt is not None
+    assert plan.span_coupled_overlay_manifest is not None
+    assert plan.span_coupled_base_plan_sha256 is not None
+    assert plan.span_coupled_base_candidate_state_sha256 is not None
+    _sha256_digest(plan.span_coupled_base_plan_sha256, "span_coupled_base_plan_sha256")
+    if (
+        _base_model_fold_plan_sha256(
+            plan,
+            candidate_state_sha256=(plan.span_coupled_base_candidate_state_sha256),
+        )
+        != plan.span_coupled_base_plan_sha256
+    ):
+        raise Lfm2ModelFoldInvariantError(
+            "The retained base model-fold plan no longer matches its claimed seal."
+        )
+    depth_spans = {
+        span.target_layer_index: span for span in plan.spans if span.is_depth_fold
+    }
+    if set(receipts) != set(depth_spans):
+        raise Lfm2ModelFoldInvariantError(
+            "Span-overlay receipts no longer cover every depth span exactly."
+        )
+
+    receipt_identity: dict[str, Any] = {}
+    receipt_hashes: dict[str, str] = {}
+    receipt_installed_state_hashes: dict[str, Any] = {}
+    installed_targets: set[int] = set()
+    for target_index in sorted(receipts):
+        normalized = _evidence_identity(receipts[target_index])
+        if not isinstance(normalized, dict):  # pragma: no cover - defensive
+            raise Lfm2ModelFoldInvariantError(
+                "A span-overlay receipt did not normalize to a JSON object."
+            )
+        claimed = normalized.pop("receipt_sha256", None)
+        if claimed != _canonical_sha256(normalized):
+            raise Lfm2ModelFoldInvariantError(
+                "A span-overlay receipt self-hash changed after planning."
+            )
+        if normalized.get("span") != depth_spans[target_index].as_dict():
+            raise Lfm2ModelFoldInvariantError(
+                "A span-overlay receipt is bound to the wrong depth span."
+            )
+        if (
+            normalized.get("schema")
+            != "neural-forge-lfm2-span-coupled-production-receipt-v1"
+            or normalized.get("parent_cache_fingerprint")
+            != plan.cache_fingerprint
+            or normalized.get("captured_producer_state_sha256")
+            != plan.child_feature_state_sha256
+        ):
+            raise Lfm2ModelFoldInvariantError(
+                "A span-overlay receipt is not bound to this cache and child state."
+            )
+        installed_any = normalized.get("installed_any", normalized.get("installed"))
+        if not isinstance(installed_any, bool):
+            raise Lfm2ModelFoldInvariantError(
+                "A span-overlay receipt has no boolean installed-any decision."
+            )
+        if installed_any:
+            if normalized.get("installed_local_state_hash_scheme") != (
+                MODEL_FOLD_TENSOR_HASH_SCHEME
+            ):
+                raise Lfm2ModelFoldInvariantError(
+                    "A span-overlay receipt uses the wrong tensor hash scheme."
+                )
+            installed_targets.add(target_index)
+            receipt_installed_state_hashes[str(target_index)] = normalized.get(
+                "installed_local_state_sha256"
+            )
+        normalized["receipt_sha256"] = claimed
+        receipt_identity[str(target_index)] = normalized
+        receipt_hashes[str(target_index)] = claimed
+
+    provenance = _evidence_identity(plan.span_coupled_provenance_receipt)
+    if not isinstance(provenance, dict):  # pragma: no cover - defensive
+        raise Lfm2ModelFoldInvariantError(
+            "Span-overlay provenance did not normalize to a JSON object."
+        )
+    provenance_root = provenance.pop("provenance_root_sha256", None)
+    if provenance_root != _canonical_sha256(provenance):
+        raise Lfm2ModelFoldInvariantError(
+            "Span-overlay provenance root changed after planning."
+        )
+    if (
+        provenance.get("schema")
+        != "neural-forge-lfm2-span-coupled-production-root-v1"
+        or provenance.get("parent_cache_fingerprint") != plan.cache_fingerprint
+        or provenance.get("captured_producer_state_sha256")
+        != plan.child_feature_state_sha256
+        or provenance.get("depth_spans")
+        != [span.as_dict() for span in depth_spans.values()]
+        or provenance.get("span_receipt_sha256") != receipt_hashes
+    ):
+        raise Lfm2ModelFoldInvariantError(
+            "Span-overlay provenance is not bound to this cache, child, and receipts."
+        )
+
+    manifest = _evidence_identity(plan.span_coupled_overlay_manifest)
+    if not isinstance(manifest, dict):  # pragma: no cover - defensive
+        raise Lfm2ModelFoldInvariantError(
+            "Span-overlay tensor manifest did not normalize to a JSON object."
+        )
+    if set(manifest) != {str(index) for index in installed_targets}:
+        raise Lfm2ModelFoldInvariantError(
+            "Span-overlay installed decisions differ from the tensor manifest."
+        )
+    for target_index in sorted(installed_targets):
+        item = manifest[str(target_index)]
+        if not isinstance(item, dict):
+            raise Lfm2ModelFoldInvariantError(
+                "A span-overlay manifest entry is not a JSON object."
+            )
+        if item.get("target_layer_path") != plan.target_layer_paths[target_index]:
+            raise Lfm2ModelFoldInvariantError(
+                "A span-overlay manifest is bound to the wrong target layer."
+            )
+        if item.get("local_state_hash_scheme") != MODEL_FOLD_TENSOR_HASH_SCHEME:
+            raise Lfm2ModelFoldInvariantError(
+                "A span-overlay manifest uses the wrong tensor hash scheme."
+            )
+        local_hashes = item.get("local_state_sha256")
+        if not isinstance(local_hashes, dict) or not local_hashes:
+            raise Lfm2ModelFoldInvariantError(
+                "An installed span-overlay manifest has no local dense tensors."
+            )
+        if receipt_installed_state_hashes[str(target_index)] != local_hashes:
+            raise Lfm2ModelFoldInvariantError(
+                "A span-overlay receipt no longer roots its tensor manifest."
+            )
+        prefix = plan.target_layer_paths[target_index] + "."
+        for local_name, expected_sha256 in local_hashes.items():
+            full_name = prefix + local_name
+            if full_name not in candidate or _tensor_sha256(candidate[full_name]) != (
+                expected_sha256
+            ):
+                raise Lfm2ModelFoldInvariantError(
+                    "A span-overlay candidate tensor differs from its sealed manifest."
+                )
+
+    provenance["provenance_root_sha256"] = provenance_root
+    overlay_body = {
+        "schema": "neural-forge-lfm2-span-coupled-model-overlay-v1",
+        "base_plan_sha256": plan.span_coupled_base_plan_sha256,
+        "provenance_receipt": provenance,
+        "overlay_manifest": manifest,
+        "span_receipts": receipt_identity,
+        "candidate_state_sha256": plan.candidate_state_sha256,
+        "atomic_installation_deferred_to_existing_model_transaction": True,
+        "model_forward_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    if _canonical_sha256(overlay_body) != plan.plan_sha256:
+        raise Lfm2ModelFoldInvariantError(
+            "The authenticated span-overlay plan seal changed after planning."
+        )
+
+
 def install_lfm2_model_fold_plan(
     target_model: Any,
     plan: Lfm2ModelFoldPlan,
@@ -2497,6 +2728,7 @@ def install_lfm2_model_fold_plan(
         raise Lfm2ModelFoldInvariantError(
             "The immutable full-model candidate changed after planning."
         )
+    _validate_span_coupled_overlay_plan(plan, candidate)
     snapshot = snapshot_lfm2_model(target_model)
     torch = _torch()
     try:
@@ -2516,8 +2748,7 @@ def install_lfm2_model_fold_plan(
             _parameter_ids(target_model) != snapshot.parameter_ids
             or _gradient_signature(target_model) != snapshot.gradient_signature
             or _buffer_identity(target_model) != snapshot.buffer_identity
-            or _module_mode_signature(target_model)
-            != snapshot.module_mode_signature
+            or _module_mode_signature(target_model) != snapshot.module_mode_signature
             or _model_config_sha256(target_model) != snapshot.config_sha256
         ):
             raise Lfm2ModelFoldInvariantError(
@@ -2527,6 +2758,222 @@ def install_lfm2_model_fold_plan(
         snapshot.restore(target_model)
         raise
     return Lfm2ModelFoldTransaction(target_model, plan, snapshot)
+
+
+def overlay_lfm2_span_coupled_candidates(
+    target_model: Any,
+    plan: Lfm2ModelFoldPlan,
+    *,
+    local_state_overrides: Mapping[int, Mapping[str, Any]],
+    span_receipts: Mapping[int, Mapping[str, Any]],
+    provenance_receipt: Mapping[str, Any],
+) -> Lfm2ModelFoldPlan:
+    """Bind span-compiled dense state into an existing whole-model plan.
+
+    This is the narrow production installation seam for depth-span compilers.
+    It does not plan depth, execute either model, or write the child.  Instead,
+    it authenticates local dense tensors against the already-planned target
+    topology, replaces those tensors inside the immutable full-model
+    candidate, and re-seals the plan.  The normal
+    :func:`install_lfm2_model_fold_plan` transaction remains the only writer.
+    """
+
+    if not isinstance(plan, Lfm2ModelFoldPlan):
+        raise TypeError("plan must be Lfm2ModelFoldPlan.")
+    _validate_span_coupled_overlay_plan(plan, plan.candidate_state_dict())
+    if not isinstance(local_state_overrides, Mapping) or not isinstance(
+        span_receipts, Mapping
+    ):
+        raise TypeError("Span overrides and receipts must be mappings.")
+    if not isinstance(provenance_receipt, Mapping):
+        raise TypeError("provenance_receipt must be a mapping.")
+    target_layers = _decoder_layers(target_model)
+    target_paths = tuple(_module_path(target_model, layer) for layer in target_layers)
+    if target_paths != plan.target_layer_paths:
+        raise Lfm2ModelFoldTopologyError(
+            "The live target layer paths differ from the base model plan."
+        )
+    live_state = _live_state(target_model)
+    if (
+        _state_spec(live_state) != plan.target_state_spec
+        or _live_state_sha256(target_model) != plan.target_state_sha256_before
+    ):
+        raise Lfm2ModelFoldEvidenceError(
+            "Span-coupled overlays require the exact authenticated child feature state."
+        )
+    depth_targets = {
+        span.target_layer_index for span in plan.spans if span.is_depth_fold
+    }
+    if not set(local_state_overrides).issubset(depth_targets):
+        raise Lfm2ModelFoldTopologyError(
+            "Span-coupled overrides may target only declared multi-layer spans."
+        )
+    if set(span_receipts) != depth_targets:
+        raise Lfm2ModelFoldEvidenceError(
+            "Span receipts must exactly cover every declared multi-layer span."
+        )
+
+    candidate = dict(plan.candidate_state_dict())
+    overlay_manifest: dict[str, Any] = {}
+    for target_index in sorted(local_state_overrides):
+        local_values = local_state_overrides[target_index]
+        if not isinstance(local_values, Mapping) or not local_values:
+            raise Lfm2ModelFoldEvidenceError(
+                "Every installed span override must contain dense local state."
+            )
+        prefix = target_paths[target_index] + "."
+        tensor_manifest: dict[str, str] = {}
+        for local_name in sorted(local_values):
+            if not isinstance(local_name, str) or not local_name:
+                raise Lfm2ModelFoldEvidenceError(
+                    "Span-local state names must be nonempty strings."
+                )
+            full_name = prefix + local_name
+            if full_name not in candidate or full_name not in live_state:
+                raise Lfm2ModelFoldTopologyError(
+                    f"Span compiler does not own target state {full_name!r}."
+                )
+            value = _clone_tensor(
+                local_values[local_name],
+                f"span override[{full_name!r}]",
+            )
+            target = live_state[full_name]
+            if tuple(value.shape) != tuple(target.shape) or value.dtype != target.dtype:
+                raise Lfm2ModelFoldTopologyError(
+                    f"Span override {full_name!r} differs from the target state spec."
+                )
+            candidate[full_name] = value
+            tensor_manifest[local_name] = _tensor_sha256(value)
+        overlay_manifest[str(target_index)] = {
+            "target_layer_path": target_paths[target_index],
+            "local_state_hash_scheme": MODEL_FOLD_TENSOR_HASH_SCHEME,
+            "local_state_sha256": tensor_manifest,
+        }
+
+    normalized_receipts: list[tuple[int, Mapping[str, Any]]] = []
+    receipt_hashes: dict[str, str] = {}
+    for target_index in sorted(span_receipts):
+        receipt = span_receipts[target_index]
+        if not isinstance(receipt, Mapping):
+            raise Lfm2ModelFoldEvidenceError(
+                "Every span-coupled receipt must be a mapping."
+            )
+        normalized = _evidence_identity(receipt)
+        if not isinstance(normalized, dict):  # pragma: no cover - defensive
+            raise Lfm2ModelFoldEvidenceError(
+                "A span-coupled receipt did not normalize to a mapping."
+            )
+        claimed = normalized.pop("receipt_sha256", None)
+        if claimed != _canonical_sha256(normalized):
+            raise Lfm2ModelFoldEvidenceError(
+                "A span-coupled receipt failed its self-hash authentication."
+            )
+        span = next(
+            value for value in plan.spans if value.target_layer_index == target_index
+        )
+        if normalized.get("span") != span.as_dict():
+            raise Lfm2ModelFoldEvidenceError(
+                "A span-coupled receipt is bound to the wrong source span."
+            )
+        if (
+            normalized.get("schema")
+            != "neural-forge-lfm2-span-coupled-production-receipt-v1"
+            or normalized.get("parent_cache_fingerprint")
+            != plan.cache_fingerprint
+            or normalized.get("captured_producer_state_sha256")
+            != plan.child_feature_state_sha256
+        ):
+            raise Lfm2ModelFoldEvidenceError(
+                "A span-coupled receipt is not bound to this cache and child state."
+            )
+        installed_any = normalized.get("installed_any", normalized.get("installed"))
+        if not isinstance(installed_any, bool) or installed_any != (
+            target_index in local_state_overrides
+        ):
+            raise Lfm2ModelFoldEvidenceError(
+                "A span receipt's installed decision differs from its dense override."
+            )
+        if installed_any and normalized.get("installed_local_state_sha256") != (
+            overlay_manifest[str(target_index)]["local_state_sha256"]
+        ):
+            raise Lfm2ModelFoldEvidenceError(
+                "A span receipt does not root its installed dense local tensors."
+            )
+        if installed_any and normalized.get("installed_local_state_hash_scheme") != (
+            MODEL_FOLD_TENSOR_HASH_SCHEME
+        ):
+            raise Lfm2ModelFoldEvidenceError(
+                "A span receipt uses the wrong installed-tensor hash scheme."
+            )
+        normalized["receipt_sha256"] = claimed
+        frozen = _freeze_json_identity(normalized)
+        assert isinstance(frozen, Mapping)
+        normalized_receipts.append((target_index, frozen))
+        receipt_hashes[str(target_index)] = claimed
+
+    normalized_provenance = _evidence_identity(provenance_receipt)
+    if not isinstance(normalized_provenance, dict):  # pragma: no cover - defensive
+        raise Lfm2ModelFoldEvidenceError(
+            "Span-coupled provenance did not normalize to a mapping."
+        )
+    claimed_root = normalized_provenance.pop("provenance_root_sha256", None)
+    if claimed_root != _canonical_sha256(normalized_provenance):
+        raise Lfm2ModelFoldEvidenceError(
+            "Span-coupled provenance failed its root authentication."
+        )
+    if (
+        normalized_provenance.get("schema")
+        != "neural-forge-lfm2-span-coupled-production-root-v1"
+        or normalized_provenance.get("parent_cache_fingerprint")
+        != plan.cache_fingerprint
+        or normalized_provenance.get("captured_producer_state_sha256")
+        != plan.child_feature_state_sha256
+        or normalized_provenance.get("depth_spans")
+        != [span.as_dict() for span in plan.spans if span.is_depth_fold]
+        or normalized_provenance.get("span_receipt_sha256") != receipt_hashes
+    ):
+        raise Lfm2ModelFoldEvidenceError(
+            "Span-coupled provenance is not bound to this cache, child, and spans."
+        )
+    normalized_provenance["provenance_root_sha256"] = claimed_root
+    frozen_provenance = _freeze_json_identity(normalized_provenance)
+    frozen_manifest = _freeze_json_identity(overlay_manifest)
+    assert isinstance(frozen_provenance, Mapping)
+    assert isinstance(frozen_manifest, Mapping)
+
+    candidate_items = tuple(
+        (name, _clone_tensor(candidate[name], f"candidate[{name!r}]"))
+        for name in sorted(candidate)
+    )
+    candidate_sha256 = _state_sha256(_state_mapping(candidate_items))
+    receipt_identity = {
+        str(target_index): _evidence_identity(receipt)
+        for target_index, receipt in normalized_receipts
+    }
+    overlay_body = {
+        "schema": "neural-forge-lfm2-span-coupled-model-overlay-v1",
+        "base_plan_sha256": plan.plan_sha256,
+        "provenance_receipt": _evidence_identity(frozen_provenance),
+        "overlay_manifest": _evidence_identity(frozen_manifest),
+        "span_receipts": receipt_identity,
+        "candidate_state_sha256": candidate_sha256,
+        "atomic_installation_deferred_to_existing_model_transaction": True,
+        "model_forward_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    return replace(
+        plan,
+        candidate_state_items=candidate_items,
+        candidate_state_sha256=candidate_sha256,
+        plan_sha256=_canonical_sha256(overlay_body),
+        span_coupled_overlay_receipts=tuple(normalized_receipts),
+        span_coupled_provenance_receipt=frozen_provenance,
+        span_coupled_overlay_manifest=frozen_manifest,
+        span_coupled_base_plan_sha256=plan.plan_sha256,
+        span_coupled_base_candidate_state_sha256=plan.candidate_state_sha256,
+    )
 
 
 def begin_lfm2_model_fold_transaction(
@@ -2554,6 +3001,7 @@ __all__ = [
     "MODEL_FOLD_METHOD",
     "MODEL_FOLD_SCHEMA",
     "MODEL_FOLD_TRANSACTION_SCHEMA",
+    "MODEL_FOLD_TENSOR_HASH_SCHEME",
     "Lfm2AnchorScore",
     "Lfm2CachedLayerFoldEvidence",
     "Lfm2CachedSpanFoldEvidence",
@@ -2575,8 +3023,10 @@ __all__ = [
     "build_leading_pair_lfm2_span_plan",
     "build_lfm2_model_fold_plan",
     "fingerprint_lfm2_model_fold_evidence",
+    "fingerprint_lfm2_model_fold_tensor",
     "fingerprint_lfm2_model_feature_state",
     "install_lfm2_model_fold_plan",
+    "overlay_lfm2_span_coupled_candidates",
     "restore_lfm2_model_snapshot",
     "snapshot_lfm2_model",
 ]

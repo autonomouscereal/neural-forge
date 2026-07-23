@@ -57,6 +57,14 @@ from neural_forge.hf_lfm2_canonical import (
 
 _SCHEMA = "neural-forge-lfm2-closed-loop-fold-v1"
 _TRANSACTION_SCHEMA = "neural-forge-lfm2-closed-loop-fold-transaction-v1"
+ENDPOINT_METRIC_POLICY_THRESHOLD_VETO = "threshold_veto"
+ENDPOINT_METRIC_POLICY_DIAGNOSTIC_ONLY = "diagnostic_only"
+_ENDPOINT_METRIC_POLICIES = frozenset(
+    {
+        ENDPOINT_METRIC_POLICY_THRESHOLD_VETO,
+        ENDPOINT_METRIC_POLICY_DIAGNOSTIC_ONLY,
+    }
+)
 _ATTENTION_FOLDED_KEYS = frozenset(
     {
         "self_attn.q_proj.weight",
@@ -335,6 +343,7 @@ class Lfm2ClosedLoopFoldConfig:
     cluster_distance_chunk_size: int = 512
     max_endpoint_relative_rmse: float = 1.0
     min_endpoint_cosine_similarity: float = 0.0
+    endpoint_metric_policy: str = ENDPOINT_METRIC_POLICY_THRESHOLD_VETO
     max_endpoint_prior_delta_ratio: float | None = None
     max_primal_features: int = 1024
     max_dual_rows: int = 1024
@@ -380,6 +389,11 @@ class Lfm2ClosedLoopFoldConfig:
                 "min_endpoint_cosine_similarity",
             ),
         )
+        if self.endpoint_metric_policy not in _ENDPOINT_METRIC_POLICIES:
+            raise Lfm2ClosedLoopFoldError(
+                "endpoint_metric_policy must be 'threshold_veto' or "
+                "'diagnostic_only'."
+            )
         if self.max_endpoint_prior_delta_ratio is not None:
             object.__setattr__(
                 self,
@@ -416,6 +430,7 @@ class Lfm2ClosedLoopFoldConfig:
             "cluster_distance_chunk_size": self.cluster_distance_chunk_size,
             "max_endpoint_relative_rmse": self.max_endpoint_relative_rmse,
             "min_endpoint_cosine_similarity": (self.min_endpoint_cosine_similarity),
+            "endpoint_metric_policy": self.endpoint_metric_policy,
             "max_endpoint_prior_delta_ratio": (self.max_endpoint_prior_delta_ratio),
             "max_primal_features": self.max_primal_features,
             "max_dual_rows": self.max_dual_rows,
@@ -508,10 +523,13 @@ class Lfm2EndpointFit:
     endpoint_target_sha256: str
     validation_design_sha256: str | None
     validation_endpoint_target_sha256: str | None
+    endpoint_metric_policy: str
 
     @property
     def accepted(self) -> bool:
-        return self.gate.accepted
+        return self.gate.accepted or (
+            self.endpoint_metric_policy == ENDPOINT_METRIC_POLICY_DIAGNOSTIC_ONLY
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -541,6 +559,13 @@ class Lfm2EndpointFit:
                 "reasons": list(self.gate.reasons),
                 "metrics": _metrics_dict(self.gate.metrics),
             },
+            "endpoint_metric_policy": self.endpoint_metric_policy,
+            "threshold_gate_passed": self.gate.accepted,
+            "threshold_gate_blocking": (
+                self.endpoint_metric_policy == ENDPOINT_METRIC_POLICY_THRESHOLD_VETO
+            ),
+            "threshold_metrics_used_for_selection": False,
+            "accepted_for_construction": self.accepted,
             "design_sha256": self.design_sha256,
             "endpoint_target_sha256": self.endpoint_target_sha256,
             "validation_design_sha256": self.validation_design_sha256,
@@ -1005,6 +1030,7 @@ def _fit_endpoint(
         validation_endpoint_target_sha256=(
             None if validation_target is None else _tensor_sha256(validation_target)
         ),
+        endpoint_metric_policy=config.endpoint_metric_policy,
     )
     if not result.accepted:
         raise Lfm2ClosedLoopFitRejected(
@@ -1840,6 +1866,8 @@ install_lfm2_closed_loop_fold = install_lfm2_closed_loop_fold_plan
 
 
 __all__ = [
+    "ENDPOINT_METRIC_POLICY_DIAGNOSTIC_ONLY",
+    "ENDPOINT_METRIC_POLICY_THRESHOLD_VETO",
     "Lfm2AttentionFoldEvidence",
     "Lfm2AttentionGroupMerge",
     "Lfm2ClosedLoopEvidenceError",
