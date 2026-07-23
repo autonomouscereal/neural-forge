@@ -472,6 +472,10 @@ def test_fhvr_full_history_construction_installs_one_dense_child_state() -> None
             ),
             fhvr_source=source,
             fold_compute_device="cpu",
+            body_recipe=(
+                "nonlinear_qdeim_coupled_attention_"
+                "short_conv_residual_writer"
+            ),
         )
     )
 
@@ -490,13 +494,37 @@ def test_fhvr_full_history_construction_installs_one_dense_child_state() -> None
     )
     assert receipt["fhvr_source"]["source_sha256"] == source.source_sha256
     assert receipt["fhvr_source_sha256"] == source.source_sha256
-    writer_control = receipt["fhvr_candidate_report"]["writer_control_report"]
-    assert writer_control["candidate_id"] == (
-        "semantic-full-source-structural-control-writer"
+    writer_anchor = receipt["fhvr_candidate_report"]["writer_anchor_report"]
+    assert writer_anchor["candidate_id"] == (
+        "semantic-full-source-residual-writer"
     )
-    assert writer_control["method_provenance"][
-        "numeric_metrics_used_to_choose_writer_control"
+    writer_proposal = receipt["writer_fit_proposal"]
+    assert writer_proposal["selected_alpha"] == 1.0
+    assert writer_anchor["method_provenance"]["writer_selected_alpha"] == 1.0
+    assert writer_anchor["method_provenance"]["recipe_component_lane"] == (
+        "alpha_one_residual_writer_priority"
+    )
+    assert writer_anchor["method_provenance"][
+        "numeric_metrics_used_to_order_writer_frontier"
     ] is False
+    assert writer_anchor["method_provenance"][
+        "numeric_thresholds_used_to_admit_writer_anchor"
+    ] is False
+    writer_candidate = receipt["candidate_reports_before_validation"][
+        "full-source-producer-output-writer"
+    ]
+    structural_candidate = receipt["candidate_reports_before_validation"][
+        "full-source-structural"
+    ]
+    assert writer_anchor["method_provenance"][
+        "semantic_candidate_state_sha256"
+    ] == writer_candidate["candidate_state_sha256"]
+    assert writer_anchor["method_provenance"][
+        "semantic_candidate_state_sha256"
+    ] != structural_candidate["candidate_state_sha256"]
+    assert receipt["fhvr_candidate_report"][
+        "writer_anchor_uses_compiled_recipe_writer_candidate"
+    ] is True
     assert receipt["full_history_fhvr_full_coverage_candidate_competed"] is True
     assert receipt["complete_parent_bcx_history_consumed"] is True
     assert receipt["fit_metrics_role"] == "diagnostic-only"

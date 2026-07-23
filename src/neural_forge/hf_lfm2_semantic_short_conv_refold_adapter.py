@@ -2321,7 +2321,7 @@ def _compile_fhvr_full_coverage_candidate(
     source: Lfm2SemanticShortConvFhvrSource,
     fit: Sequence[Lfm2SemanticShortConvReplayEvidence],
     incumbent_state: Mapping[str, Any],
-    writer_control_candidate: _Candidate,
+    writer_anchor_candidate: _Candidate,
     fold_compute_device: str,
 ) -> _Candidate:
     """Construct the existing FHVR hybrid and adapt it to semantic state names."""
@@ -2376,10 +2376,17 @@ def _compile_fhvr_full_coverage_candidate(
         },
         policy=solver_policy,
     )
-    writer_state = writer_control_candidate.state
+    if writer_anchor_candidate.name not in {
+        "incumbent-producer-output-writer",
+        "full-source-producer-output-writer",
+    }:
+        raise Lfm2SemanticShortConvRefoldError(
+            "FHVR full coverage requires the compiled recipe writer candidate."
+        )
+    writer_state = writer_anchor_candidate.state
     raw_writer = Lfm2CpcfShortConvNumericalRawCandidate(
         request_sha256=request.request_sha256,
-        candidate_id="semantic-full-source-structural-control-writer",
+        candidate_id="semantic-full-source-residual-writer",
         candidate_kind="accepted_fit_projection_path_anchor",
         in_proj_weight=writer_state["in_proj.weight"],
         in_proj_bias=writer_state.get("in_proj.bias"),
@@ -2388,15 +2395,27 @@ def _compile_fhvr_full_coverage_candidate(
         writer_weight=writer_state["out_proj.weight"],
         writer_bias=writer_state.get("out_proj.bias"),
         method_provenance={
-            "method": "semantic_full_source_structural_writer_control",
+            "method": "semantic_full_source_residual_writer_anchor",
             "request_sha256": request.request_sha256,
+            "semantic_writer_candidate_name": writer_anchor_candidate.name,
             "semantic_candidate_state_sha256": (
-                writer_control_candidate.state_sha256
+                writer_anchor_candidate.state_sha256
             ),
             "semantic_candidate_provenance_sha256": canonical_sha256(
-                dict(writer_control_candidate.provenance)
+                dict(writer_anchor_candidate.provenance)
             ),
-            "numeric_metrics_used_to_choose_writer_control": False,
+            "writer_selected_alpha": writer_anchor_candidate.provenance.get(
+                "selected_alpha"
+            ),
+            "recipe_component_lane": writer_anchor_candidate.provenance.get(
+                "recipe_component_lane"
+            ),
+            "numeric_metrics_used_to_order_writer_frontier": bool(
+                writer_anchor_candidate.provenance.get(
+                    "fit_metrics_used_for_candidate_ordering"
+                )
+            ),
+            "numeric_thresholds_used_to_admit_writer_anchor": False,
             "external_construction_choice_is_final_selection_authority": True,
             "fit_only": True,
             "selection_cases_consumed": 0,
@@ -2497,8 +2516,9 @@ def _compile_fhvr_full_coverage_candidate(
             "parent_context_alignment_sha256": parent_context_alignment[
                 "result_sha256"
             ],
-            "writer_control_report": raw_writer.as_dict(),
-            "writer_control_report_sha256": raw_writer.report["report_sha256"],
+            "writer_anchor_report": raw_writer.as_dict(),
+            "writer_anchor_report_sha256": raw_writer.report["report_sha256"],
+            "writer_anchor_uses_compiled_recipe_writer_candidate": True,
             "pure_fhvr_report": pure.as_dict(),
             "pure_fhvr_report_sha256": pure.report["report_sha256"],
             "hybrid_report": hybrid.as_dict(),
@@ -3041,12 +3061,17 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     )
     fhvr_candidate = None
     if fhvr_construction:
+        if writer is None:
+            raise Lfm2SemanticShortConvRefoldError(
+                "FHVR full coverage has no structurally eligible recipe writer "
+                "candidate to combine with its future-history realization."
+            )
         fhvr_candidate = _compile_fhvr_full_coverage_candidate(
             construction=construction,
             source=fhvr_source,
             fit=partitions["fit"],
             incumbent_state=incumbent_state,
-            writer_control_candidate=structural,
+            writer_anchor_candidate=writer,
             fold_compute_device=fold_compute_device,
         )
     compute_proofs: dict[str, Any] = {}
