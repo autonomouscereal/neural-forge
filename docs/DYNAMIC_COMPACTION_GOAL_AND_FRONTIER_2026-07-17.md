@@ -1,6 +1,6 @@
 # Dynamic Compaction Goal and Frontier
 
-Date: 2026-07-17
+Updated: 2026-07-23
 
 ## Operational goal
 
@@ -23,21 +23,24 @@ The long-term capability envelope is:
 Registration is allowed for a new architecture or modality. Per-run manual
 neuron surgery is not.
 
-## Current severe-compaction execution objective
+## Current compaction execution objective
 
-Marginal parameter removal and small-ratio controls do not satisfy the current
-project objective.  The active real-model proof sequence is:
+Marginal parameter removal and synthetic size controls do not satisfy the
+project objective. The active real-model proof sequence is:
 
-1. fold the local 229,693,184-parameter LFM2.5 parent into a separately
-   instantiated 2,291,840-parameter dense blank child (100.222x);
+1. first establish a coherent, standalone exact-ratio control by folding the
+   local 229,693,184-parameter LFM2.5 parent into a separately instantiated
+   57,405,368-parameter dense blank child (4.001249x);
 2. save and reload that child with no parent, sidecar, sparse state, or runtime
    reconstruction dependency;
-3. require coherent free-running responses and score retained capability over
-   complete responses on disjoint evidence;
-4. after the 100x compiler path is structurally and behaviorally understood,
-   fold the same parent into the 916,928-parameter dense blank child (250.503x);
-5. generalize the proven compiler components through registered architecture,
-   tokenizer, and modality adapters rather than caller-written layer surgery.
+3. inspect complete free-running responses and parent-relative task behavior
+   on disjoint evidence, using numeric measurements as diagnostics rather than
+   automatic accept/reject authority;
+4. once the exact 4x child is coherent, increase width/depth compaction through
+   10x, 100x, 250x, and larger targets while diagnosing where behavior is lost;
+5. generalize the mechanisms proven by those real folds through registered
+   architecture, tokenizer, and modality adapters rather than caller-written
+   layer surgery.
 
 The 100x target preserves all 14 ordered LFM2 operators with hidden width 128,
 FFN width 175, two query heads, one key/value head, and head dimension 64.  The
@@ -46,10 +49,10 @@ FFN width 175, two query heads, one key/value head, and head dimension 64.  The
 sealed 4,096-row child tokenizer bridge.  Their sizes count dense learned
 parameters, not bytes.
 
-The 2x, 4x, and 10x plans remain useful controls and diagnostics.  They are not
-allowed to be reported as completion of the severe-compaction goal.
+The 4x proof is an intermediate behavioral control, not completion of the
+arbitrary-ratio, cross-architecture, cross-modality objective.
 
-## Non-negotiable acceptance
+## Non-negotiable structural validity
 
 A promoted result must satisfy all of the following:
 
@@ -60,13 +63,23 @@ A promoted result must satisfy all of the following:
 4. Folding performs zero optimizer steps, backward calls, or live parent
    forwards when sealed parent evidence is available.
 5. The saved child is standalone and survives a fresh local reload.
-6. Free-running whole responses are coherent and retain at least 90% of the
-   parent-demonstrated task capability on a sealed, disjoint evaluation.
-7. Exact token/text equality, local RMSE, first-token agreement, and parameter
+6. Exact token/text equality, local RMSE, first-token agreement, and parameter
    arithmetic are diagnostics only.
 
-Until item 6 passes, a result is an experiment or a structural proof, not a
-successful intelligent compaction.
+## Behavioral objective and review policy
+
+Roughly 90% retention of useful parent-demonstrated intelligence remains the
+quality objective, not a hard numerical cutoff. No scalar score, threshold, or
+single binary manual verdict has authority to stop or promote a folding lane.
+Complete decoded responses, coherence across turns, reasoning, factual and task
+behavior, breadth, failure modes, and parent-relative regressions are reviewed
+together. Metrics prioritize diagnosis and candidate selection; they do not
+replace judgment about whether the standalone child is intelligent.
+
+A child with valid structure but incoherent behavior is a structural proof,
+not a successful intelligent compaction. A coherent child is described with
+its observed strengths, regressions, and compression ratio rather than reduced
+to a pass/fail score.
 
 ## Current exact dense topology frontier
 

@@ -32,17 +32,18 @@ Python plugins, and opaque third-party evidence verifiers remain an explicit
 provider-trust boundary.
 
 Registered production lanes exist for curated LFM2 text, Qwen3 text, and NEO
-image+text capabilities. Registration is not certification: each concrete
-lane must still pass its exact target, behavior, artifact, and fresh-reload
-gates. The facade intentionally fails closed for unknown families, arbitrary
+image+text capabilities. Registration is not certification: each concrete lane
+must still prove its exact target and artifact/fresh-reload invariants and
+supply complete behavior evidence for holistic review. The facade intentionally
+fails closed for unknown families, arbitrary
 unregistered sizes, cross-tokenizer/cross-family transforms, and audio/video;
 those remain extension milestones rather than claimed results.
 
-The current real LFM2 structural child removes 115,625,856 learned parameters:
+The prior real LFM2 structural child removes 115,625,856 learned parameters:
 229,693,184 -> 114,067,328, or 2.014x smaller, in dense BF16 state with no
 quantization, pruning, or gradient training. It is not a successful
-intelligence result: the strict whole-output gate reports 0% retained task
-score and repetitive punctuation/whitespace collapse. A circuit-balanced
+intelligence result: whole-output review found no retained scored task answers
+and repetitive punctuation/whitespace collapse. A circuit-balanced
 basis improves parent-nonempty retention from 45.83% to 54.17%. Adding cached
 vocabulary-margin geometry raises it again to 79.17% and reduces new empty
 responses from 11 to 5, but remains repetitive and retains 0% task score. The
@@ -52,8 +53,11 @@ feasibility results only. The production transaction has separately completed
 automatic blank -> fold -> execute -> publish -> fresh-reload proofs at
 2.009x, 4.030x, 10.051x, 100.060x, 250.067x, and 1000x without training,
 pruning, or quantization. Those synthetic proofs validate the compiler across
-three orders of magnitude, not intelligence. No real LFM2 child is promoted
-until a standalone fresh reload retains coherent parent-demonstrated behavior.
+three orders of magnitude, not intelligence. The active exact-4x real fold is
+evaluated from complete standalone decoded behavior. Roughly 90% useful
+intelligence retention is the objective, not a hard score cutoff; metrics
+diagnose and rank evidence but never substitute for holistic review of
+coherence and competence.
 
 This repository is the canonical source tree only for the Neural Forge folding
 project. Historical Neural Forge experiment copies and deployment packets are
