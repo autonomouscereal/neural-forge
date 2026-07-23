@@ -6,6 +6,8 @@ torch = pytest.importorskip("torch")
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_attention_group_qdeim import (  # noqa: E402
+    LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE,
+    LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE,
     LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC,
     Lfm2AttentionGroupQdeimError,
     Lfm2AttentionGroupQdeimInsufficientRankError,
@@ -19,6 +21,7 @@ from neural_forge.hf_lfm2_attention_group_qdeim import (  # noqa: E402
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
     lfm2_authenticated_tensor_sha256,
 )
+import neural_forge.hf_lfm2_attention_group_qdeim as qdeim_module  # noqa: E402, I001
 
 
 def _contexts_from_group_features(
@@ -410,6 +413,27 @@ def test_authentication_fails_closed_and_snapshot_blocks_are_separate() -> None:
             functional_snapshot_blocks=(block,),
         )
     snapshot_digest = lfm2_attention_group_qdeim_snapshot_evidence_sha256((block,))
+    legacy_snapshot_digest = canonical_sha256(
+        {
+            "schema": (
+                "neural-forge-lfm2-attention-group-qdeim-functional-snapshots-v1"
+            ),
+            "heldout_rows_permitted": False,
+            "blocks": [
+                {
+                    "block_id": "analytic-tangent-0",
+                    "snapshot_kind": ("analytic_child_lifted_parent_attention_tangent"),
+                    "context_rows_sha256": lfm2_authenticated_tensor_sha256(
+                        snapshot_context
+                    ),
+                    "row_sample_weights": [1.0, 1.0, 2.0, 2.0],
+                    "block_weight": 0.5,
+                    "generator_receipt_sha256": "a" * 64,
+                }
+            ],
+        }
+    )
+    assert snapshot_digest == legacy_snapshot_digest
     with pytest.raises(Lfm2AttentionGroupQdeimError, match="authentication failed"):
         compile_lfm2_attention_group_qdeim(
             **arguments,
@@ -427,7 +451,40 @@ def test_authentication_fails_closed_and_snapshot_blocks_are_separate() -> None:
     assert evidence["snapshot_blocks"][0]["generator_receipt_sha256"] == "a" * 64
 
 
-def test_residual_output_metric_covariance_factors_and_energy_balances_before_pod() -> (
+@pytest.mark.parametrize(
+    ("factor", "required_positive_diagonal_count"),
+    (
+        (torch.diag(torch.tensor([1.0, 1e-13**0.5], dtype=torch.float64)), 2),
+        (torch.zeros((3, 2), dtype=torch.float64), 0),
+        (
+            torch.diag(torch.tensor([1.0, 1e-10, 1e-20], dtype=torch.float64)),
+            3,
+        ),
+    ),
+    ids=("diag-one-and-one-e-minus-thirteen", "zero", "ill-conditioned"),
+)
+def test_direct_feature_gram_never_eigentruncates_tiny_or_zero_modes(
+    factor: torch.Tensor,
+    required_positive_diagonal_count: int,
+) -> None:
+    gram, receipt = qdeim_module._direct_feature_gram_receipt(
+        factor,
+        factor_id="test-direct-factor",
+    )
+
+    expected = factor.T @ factor
+    assert torch.equal(gram, expected)
+    assert int((torch.diag(gram) > 0.0).sum().item()) == (
+        required_positive_diagonal_count
+    )
+    assert receipt["factor_sha256"] == lfm2_authenticated_tensor_sha256(factor)
+    assert receipt["gram_sha256"] == lfm2_authenticated_tensor_sha256(expected)
+    assert receipt["covariance_eigendecomposition_performed"] is False
+    assert receipt["covariance_refactor_performed"] is False
+    assert receipt["positive_finite_feature_modes_removed"] == 0
+
+
+def test_residual_output_metric_preserves_direct_features_and_energy_balances_before_pod() -> (
     None
 ):
     arguments = _small_case()
@@ -439,6 +496,8 @@ def test_residual_output_metric_covariance_factors_and_energy_balances_before_po
             parent_post_softmax_context_rows=contexts.mul(0.25),
             row_sample_weights=(1.0, 1.0, 2.0, 2.0),
             generator_receipt_sha256="a" * 64,
+            perturbation_role=(LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE),
+            perturbation_receipt_sha256="1" * 64,
         ),
         Lfm2AttentionGroupQdeimSnapshotBlock(
             block_id="older-prefix-kv",
@@ -447,7 +506,11 @@ def test_residual_output_metric_covariance_factors_and_energy_balances_before_po
                 0.125
             ),
             row_sample_weights=(2.0, 1.0, 1.0, 2.0),
-            generator_receipt_sha256="b" * 64,
+            generator_receipt_sha256="a" * 64,
+            perturbation_role=(
+                LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE
+            ),
+            perturbation_receipt_sha256="2" * 64,
         ),
     )
     result = compile_lfm2_attention_group_qdeim(
@@ -463,22 +526,31 @@ def test_residual_output_metric_covariance_factors_and_energy_balances_before_po
 
     evidence = result.report["evidence"]
     receipt = evidence["functional_pod_receipt"]
-    empirical = receipt["empirical_covariance_factor"]
-    tangent = receipt["causal_tangent_balanced_covariance_factor"]
+    empirical = receipt["empirical_direct_feature_gram"]
+    tangent = receipt["causal_tangent_balanced_direct_feature_gram"]
     assert evidence["raw_fit_context_used_directly_for_group_selection"] is False
     assert receipt["empirical_post_softmax_context_mapped_through_source_o"]
     assert receipt[
         "empirical_post_softmax_context_mapped_through_residual_output_chart"
     ]
     assert receipt["empirical_to_aggregate_tangent_energy_balance_applied"]
-    assert empirical["covariance_equality_proved"]
-    assert tangent["covariance_equality_proved"]
-    assert tangent["covariance_trace"] == pytest.approx(
-        empirical["covariance_trace"],
+    assert empirical["covariance_eigendecomposition_performed"] is False
+    assert tangent["covariance_refactor_performed"] is False
+    assert empirical["positive_finite_feature_modes_removed"] == 0
+    assert tangent["gram_trace"] == pytest.approx(
+        empirical["gram_trace"],
         rel=2e-12,
         abs=2e-12,
     )
-    assert receipt["covariance_factoring_changes_group_pod_gram_matrix"] is False
+    assert receipt["combined_gram_within_fp64_roundoff"]
+    assert receipt["covariance_eigendecomposition_or_refactor_performed"] is False
+    assert receipt["positive_finite_feature_modes_removed"] == 0
+    assert {
+        value["perturbation_role"] for value in receipt["causal_tangent_blocks"]
+    } == {
+        LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE,
+        LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE,
+    }
     assert (
         result.report["authentication"]["functional_pod_receipt_sha256"]
         == (receipt["result_sha256"])
@@ -494,10 +566,12 @@ def test_residual_output_metric_requires_both_authenticated_causal_families() ->
         parent_post_softmax_context_rows=contexts,
         row_sample_weights=(1.0, 1.0, 1.0, 1.0),
         generator_receipt_sha256="a" * 64,
+        perturbation_role=(LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE),
+        perturbation_receipt_sha256="1" * 64,
     )
     with pytest.raises(
         Lfm2AttentionGroupQdeimError,
-        match="exactly the separately authenticated",
+        match="exact distinct typed",
     ):
         compile_lfm2_attention_group_qdeim(
             **arguments,
@@ -509,6 +583,78 @@ def test_residual_output_metric_requires_both_authenticated_causal_families() ->
                 LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC
             ),
         )
+
+    duplicate = Lfm2AttentionGroupQdeimSnapshotBlock(
+        block_id="different-free-form-id",
+        snapshot_kind="analytic_child_lifted_parent_attention_tangent",
+        parent_post_softmax_context_rows=contexts.mul(0.5),
+        row_sample_weights=(1.0, 1.0, 1.0, 1.0),
+        generator_receipt_sha256="a" * 64,
+        perturbation_role=(LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE),
+        perturbation_receipt_sha256="2" * 64,
+    )
+    duplicate_blocks = (block, duplicate)
+    with pytest.raises(Lfm2AttentionGroupQdeimError, match="exact distinct typed"):
+        compile_lfm2_attention_group_qdeim(
+            **arguments,
+            functional_snapshot_blocks=duplicate_blocks,
+            expected_functional_snapshot_evidence_sha256=(
+                lfm2_attention_group_qdeim_snapshot_evidence_sha256(duplicate_blocks)
+            ),
+            functional_pod_group_metric=(
+                LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC
+            ),
+        )
+
+
+def test_snapshot_evidence_binds_typed_role_to_its_reduction_receipt() -> None:
+    contexts = _small_case()["parent_post_softmax_context_rows"]
+
+    def blocks(joint_receipt: str, prefix_receipt: str):
+        return (
+            Lfm2AttentionGroupQdeimSnapshotBlock(
+                block_id="opaque-a",
+                snapshot_kind="analytic_child_lifted_parent_attention_tangent",
+                parent_post_softmax_context_rows=contexts,
+                row_sample_weights=(1.0, 1.0, 1.0, 1.0),
+                generator_receipt_sha256="a" * 64,
+                perturbation_role=(
+                    LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE
+                ),
+                perturbation_receipt_sha256=joint_receipt,
+            ),
+            Lfm2AttentionGroupQdeimSnapshotBlock(
+                block_id="opaque-b",
+                snapshot_kind="analytic_child_lifted_parent_attention_tangent",
+                parent_post_softmax_context_rows=contexts.mul(0.5),
+                row_sample_weights=(1.0, 1.0, 1.0, 1.0),
+                generator_receipt_sha256="a" * 64,
+                perturbation_role=(
+                    LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE
+                ),
+                perturbation_receipt_sha256=prefix_receipt,
+            ),
+        )
+
+    bound = blocks("1" * 64, "2" * 64)
+    swapped = blocks("2" * 64, "1" * 64)
+    assert lfm2_attention_group_qdeim_snapshot_evidence_sha256(bound) != (
+        lfm2_attention_group_qdeim_snapshot_evidence_sha256(swapped)
+    )
+
+    invalid = Lfm2AttentionGroupQdeimSnapshotBlock(
+        block_id="opaque-invalid",
+        snapshot_kind="analytic_child_lifted_parent_attention_tangent",
+        parent_post_softmax_context_rows=contexts,
+        row_sample_weights=(1.0, 1.0, 1.0, 1.0),
+        generator_receipt_sha256="a" * 64,
+        perturbation_role="free_form_id_is_not_a_role",
+        perturbation_receipt_sha256="1" * 64,
+    )
+    with pytest.raises(
+        Lfm2AttentionGroupQdeimError, match="typed causal-attention role"
+    ):
+        lfm2_attention_group_qdeim_snapshot_evidence_sha256((invalid,))
 
 
 def test_real_lfm2_16_8_to_10_5_head_shapes_are_derived_not_hardcoded() -> None:

@@ -11,8 +11,8 @@ context can be reconstructed.
 Captured ``attention.context`` remains the empirical FIT context and the
 standalone reconstruction diagnostic.  For intact-group selection it is now
 mapped group-by-group through the real source O writer and child residual
-chart, covariance-factored, and energy-balanced against the aggregate causal
-tangent family.  When every FIT phase also exposes the causal circuit bundle,
+chart, retained as original weighted feature rows, and energy-balanced against
+the aggregate causal tangent family.  When every FIT phase also exposes the causal circuit bundle,
 this adapter analytically builds query-local and sampled-suffix historical K/V
 tangent snapshots in all authenticated child decoder directions.  The full
 bank is reduced to covariance-equivalent joint-QKV and older-prefix-KV blocks
@@ -37,6 +37,8 @@ from typing import Any
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_lfm2_attention_group_qdeim import (
+    LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE,
+    LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE,
     LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC,
     Lfm2AttentionGroupQdeimSnapshotBlock,
     Lfm2AttentionGroupQdeimInsufficientRankError,
@@ -48,6 +50,7 @@ from neural_forge.hf_lfm2_attention_group_qdeim import (
     lfm2_attention_group_qdeim_target_template_sha256,
 )
 from neural_forge.hf_lfm2_attention_tangent_bank import (
+    Lfm2AttentionTangentBank,
     Lfm2AttentionTangentBankError,
     Lfm2AttentionTangentFitCase,
     build_lfm2_attention_tangent_bank,
@@ -1500,6 +1503,61 @@ def _deficit(
     )
 
 
+def _verified_functional_tangent_role_receipts(
+    tangent_bank: Lfm2AttentionTangentBank,
+) -> Mapping[str, str]:
+    """Bind typed POD roles to the bank's exact covariance-reduction receipts."""
+
+    if not isinstance(tangent_bank, Lfm2AttentionTangentBank):
+        raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+            "Functional attention tangent bank has the wrong typed payload."
+        )
+    bank_report = _verify_self_sealed(
+        tangent_bank.report,
+        seal_name="bank_sha256",
+        label="functional attention tangent bank",
+    )
+    bindings = (
+        (
+            LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE,
+            tangent_bank.joint_sampled_token_query_key_value,
+            "joint_sampled_token_query_key_value_reduction_sha256",
+        ),
+        (
+            LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE,
+            tangent_bank.older_prefix_key_value,
+            "older_prefix_key_value_reduction_sha256",
+        ),
+    )
+    result: dict[str, str] = {}
+    for role, snapshot, bank_receipt_key in bindings:
+        receipt = _verify_self_sealed(
+            snapshot.reduction_receipt,
+            seal_name="result_sha256",
+            label=f"{role} tangent reduction receipt",
+        )
+        receipt_sha256 = receipt["result_sha256"]
+        if (
+            bank_report.get(bank_receipt_key) != receipt_sha256
+            or receipt.get("reduced_context_rows_sha256")
+            != _tensor_sha256(
+                snapshot.context_rows,
+                label=f"{role} covariance-equivalent context rows",
+            )
+            or receipt.get("source_group_covariance_sha256")
+            != _tensor_sha256(
+                snapshot.covariance,
+                label=f"{role} source group covariance",
+            )
+            or receipt.get("row_sample_weights") != list(snapshot.row_sample_weights)
+        ):
+            raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                f"Typed tangent role {role!r} does not match its bank/reduction evidence."
+            )
+        result[role] = receipt_sha256
+    return MappingProxyType(result)
+
+
 def compile_lfm2_semantic_attention_group_qdeim_from_cache(
     *,
     session: Any,
@@ -1639,6 +1697,7 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
     functional_snapshot_blocks: tuple[Lfm2AttentionGroupQdeimSnapshotBlock, ...]
     tangent_bank = None
     tangent_loader_receipt = None
+    tangent_role_receipts: Mapping[str, str] | None = None
     if capability["analytic_attention_tangent_phase_bundle_complete"] is True:
         if (
             source_query_norm_weight is None
@@ -1735,6 +1794,7 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
             raise Lfm2SemanticAttentionGroupQdeimAdapterError(
                 f"Authenticated causal attention tangent construction failed: {exc}"
             ) from exc
+        tangent_role_receipts = _verified_functional_tangent_role_receipts(tangent_bank)
         functional_snapshot_blocks = (
             Lfm2AttentionGroupQdeimSnapshotBlock(
                 block_id=tangent_bank.joint_sampled_token_query_key_value.block_id,
@@ -1746,6 +1806,12 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
                     tangent_bank.joint_sampled_token_query_key_value.row_sample_weights
                 ),
                 generator_receipt_sha256=tangent_bank.bank_sha256,
+                perturbation_role=(
+                    LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE
+                ),
+                perturbation_receipt_sha256=tangent_role_receipts[
+                    LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE
+                ],
             ),
             Lfm2AttentionGroupQdeimSnapshotBlock(
                 block_id=tangent_bank.older_prefix_key_value.block_id,
@@ -1757,6 +1823,12 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
                     tangent_bank.older_prefix_key_value.row_sample_weights
                 ),
                 generator_receipt_sha256=tangent_bank.bank_sha256,
+                perturbation_role=(
+                    LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE
+                ),
+                perturbation_receipt_sha256=tangent_role_receipts[
+                    LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE
+                ],
             ),
         )
     else:
@@ -1836,7 +1908,9 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
     except Lfm2AttentionGroupQdeimInsufficientRankError as exc:
         return _deficit(
             layer_index=layer_index,
-            deficit_kind="insufficient-authenticated-true-context-group-rank",
+            deficit_kind=(
+                "insufficient-authenticated-residual-output-functional-group-rank"
+            ),
             capability=capability,
             source_inventory=inventory,
             chart_receipt=chart_receipt,
@@ -1938,6 +2012,12 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
         ),
         "functional_snapshot_block_count": len(functional_snapshot_blocks),
         "functional_snapshot_evidence_sha256": (functional_snapshot_evidence_sha256),
+        "functional_tangent_perturbation_role_receipts": (
+            None if tangent_role_receipts is None else dict(tangent_role_receipts)
+        ),
+        "functional_tangent_roles_bound_to_bank_reduction_receipts": (
+            tangent_role_receipts is not None
+        ),
         "functional_pod_group_metric": (
             compiled.report["evidence"]["functional_pod_group_metric"]
         ),

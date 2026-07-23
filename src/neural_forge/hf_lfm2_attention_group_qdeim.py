@@ -2,9 +2,10 @@
 
 The compiler selects whole parent GQA groups from authenticated cached
 post-softmax context.  Its residual-output mode measures empirical groups
-after their real source O writer and child residual chart, covariance-factors
-that consequence metric, and balances it against the authenticated causal
-tangent family before selection.  A selected group always carries all of its
+after their real source O writer and child residual chart, feeds those original
+weighted consequence features directly to POD without covariance refactoring,
+and balances them against the authenticated causal tangent family before
+selection.  A selected group always carries all of its
 query heads and its single K/V head; Q, K, and V producers are therefore copied
 intact through the target-to-source input decoder and are never averaged before
 softmax.  A dense output projection reconstructs every parent context group
@@ -46,6 +47,9 @@ LFM2_ATTENTION_GROUP_QDEIM_RANK_DEFICIT_SCHEMA = (
     "neural-forge-lfm2-attention-intact-gqa-group-qdeim-rank-deficit-v1"
 )
 LFM2_ATTENTION_GROUP_QDEIM_SNAPSHOT_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-attention-group-qdeim-functional-snapshots-v2"
+)
+_LFM2_ATTENTION_GROUP_QDEIM_LEGACY_SNAPSHOT_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-attention-group-qdeim-functional-snapshots-v1"
 )
 LFM2_ATTENTION_GROUP_SPAN_QDEIM_SCHEMA = (
@@ -62,6 +66,16 @@ _ALLOWED_SNAPSHOT_KINDS = frozenset(
     {
         "analytic_child_lifted_parent_attention_tangent",
         "authenticated_structural",
+    }
+)
+LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE = (
+    "joint_sampled_token_query_key_value"
+)
+LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE = "older_prefix_key_value"
+_RESIDUAL_OUTPUT_POD_PERTURBATION_ROLES = frozenset(
+    {
+        LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE,
+        LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE,
     }
 )
 LFM2_ATTENTION_GROUP_QDEIM_RAW_CONTEXT_METRIC = "raw-post-softmax-context"
@@ -90,7 +104,7 @@ class Lfm2AttentionGroupQdeimInsufficientRankError(Lfm2AttentionGroupQdeimError)
     def __init__(self, report: Mapping[str, Any]) -> None:
         self.report = MappingProxyType(dict(report))
         super().__init__(
-            "Authenticated parent context group rank "
+            "Authenticated functional attention group rank "
             f"{report['observed_context_group_rank']} is below the required "
             f"rank {report['minimum_context_group_rank']}; no random, held-out, "
             "or silent interpolation completion is permitted."
@@ -104,7 +118,9 @@ class Lfm2AttentionGroupQdeimSnapshotBlock:
     ``parent_post_softmax_context_rows`` has shape
     ``[rows, source_query_heads, head_dim]``.  These rows participate only in
     functional POD and group selection.  They are not behavioral holdout rows
-    and cannot confer semantic acceptance.
+    and cannot confer semantic acceptance.  Residual-output POD additionally
+    requires a typed perturbation role bound to the exact tangent reduction
+    receipt; role-less blocks remain valid only for the legacy raw metric.
     """
 
     block_id: str
@@ -113,6 +129,8 @@ class Lfm2AttentionGroupQdeimSnapshotBlock:
     row_sample_weights: Sequence[float] = field(repr=False, compare=False)
     generator_receipt_sha256: str
     block_weight: float = 1.0
+    perturbation_role: str | None = None
+    perturbation_receipt_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -646,6 +664,29 @@ def _normalized_snapshot_blocks(
             raise Lfm2AttentionGroupQdeimError(
                 f"{prefix}.snapshot_kind is not an authenticated structural/tangent kind."
             )
+        if block.perturbation_role is None:
+            perturbation_role = None
+            if block.perturbation_receipt_sha256 is not None:
+                raise Lfm2AttentionGroupQdeimError(
+                    f"{prefix}.perturbation_receipt_sha256 requires a typed perturbation_role."
+                )
+            perturbation_receipt_sha256 = None
+        else:
+            perturbation_role = _nonempty_token(
+                block.perturbation_role,
+                label=f"{prefix}.perturbation_role",
+            )
+            if (
+                snapshot_kind != "analytic_child_lifted_parent_attention_tangent"
+                or perturbation_role not in _RESIDUAL_OUTPUT_POD_PERTURBATION_ROLES
+            ):
+                raise Lfm2AttentionGroupQdeimError(
+                    f"{prefix}.perturbation_role is not one typed causal-attention role."
+                )
+            perturbation_receipt_sha256 = _digest(
+                block.perturbation_receipt_sha256,
+                label=f"{prefix}.perturbation_receipt_sha256",
+            )
         context = _float_tensor(
             block.parent_post_softmax_context_rows,
             label=f"{prefix}.parent_post_softmax_context_rows",
@@ -660,6 +701,8 @@ def _normalized_snapshot_blocks(
             {
                 "block_id": block_id,
                 "snapshot_kind": snapshot_kind,
+                "perturbation_role": perturbation_role,
+                "perturbation_receipt_sha256": perturbation_receipt_sha256,
                 "context_source": block.parent_post_softmax_context_rows,
                 "context": context,
                 "row_sample_weights": row_weights,
@@ -682,24 +725,39 @@ def lfm2_attention_group_qdeim_snapshot_evidence_sha256(
     """Hash all separately receipted structural/tangent snapshot blocks."""
 
     normalized = _normalized_snapshot_blocks(functional_snapshot_blocks)
+    typed_roles_present = any(
+        block["perturbation_role"] is not None for block in normalized
+    )
+    blocks = []
+    for block in normalized:
+        body = {
+            "block_id": block["block_id"],
+            "snapshot_kind": block["snapshot_kind"],
+            "context_rows_sha256": _tensor_sha256(
+                block["context_source"],
+                label=f"snapshot block {block['block_id']} context",
+            ),
+            "row_sample_weights": list(block["row_sample_weights"]),
+            "block_weight": block["block_weight"],
+            "generator_receipt_sha256": block["generator_receipt_sha256"],
+        }
+        if typed_roles_present:
+            body.update(
+                {
+                    "perturbation_role": block["perturbation_role"],
+                    "perturbation_receipt_sha256": block["perturbation_receipt_sha256"],
+                }
+            )
+        blocks.append(body)
     return canonical_sha256(
         {
-            "schema": LFM2_ATTENTION_GROUP_QDEIM_SNAPSHOT_EVIDENCE_SCHEMA,
+            "schema": (
+                LFM2_ATTENTION_GROUP_QDEIM_SNAPSHOT_EVIDENCE_SCHEMA
+                if typed_roles_present
+                else _LFM2_ATTENTION_GROUP_QDEIM_LEGACY_SNAPSHOT_EVIDENCE_SCHEMA
+            ),
             "heldout_rows_permitted": False,
-            "blocks": [
-                {
-                    "block_id": block["block_id"],
-                    "snapshot_kind": block["snapshot_kind"],
-                    "context_rows_sha256": _tensor_sha256(
-                        block["context_source"],
-                        label=f"snapshot block {block['block_id']} context",
-                    ),
-                    "row_sample_weights": list(block["row_sample_weights"]),
-                    "block_weight": block["block_weight"],
-                    "generator_receipt_sha256": block["generator_receipt_sha256"],
-                }
-                for block in normalized
-            ],
+            "blocks": blocks,
         }
     )
 
@@ -834,94 +892,53 @@ def _residual_output_group_feature_matrix(
     return features.contiguous(), group_residual_maps
 
 
-def _covariance_factor(
-    covariance: Any,
+def _direct_feature_gram_receipt(
+    factor: Any,
     *,
     factor_id: str,
 ) -> tuple[Any, Mapping[str, Any]]:
-    """Return a deterministic factor whose Gram matrix equals one group covariance."""
+    """Seal the Gram matrix of original feature rows without eigentruncation."""
 
     torch = _torch()
-    covariance = ((covariance + covariance.T) * 0.5).contiguous()
     if (
-        covariance.ndim != 2
-        or int(covariance.shape[0]) != int(covariance.shape[1])
-        or not bool(torch.isfinite(covariance).all().item())
+        not isinstance(factor, torch.Tensor)
+        or factor.ndim != 2
+        or any(int(size) <= 0 for size in factor.shape)
+        or factor.dtype != torch.float64
+        or factor.requires_grad
+        or not bool(torch.isfinite(factor).all().item())
     ):
         raise Lfm2AttentionGroupQdeimError(
-            f"Functional covariance {factor_id!r} is not one finite square matrix."
+            f"Direct functional factor {factor_id!r} must be one finite FP64 matrix."
         )
-    eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
-    group_count = int(covariance.shape[0])
-    maximum = float(eigenvalues.abs().max().item())
-    psd_tolerance = (
-        4096.0
-        * torch.finfo(torch.float64).eps
-        * max(1, group_count)
-        * max(1.0, maximum)
-    )
-    minimum = float(eigenvalues.min().item())
-    if minimum < -psd_tolerance:
+    gram = (factor.T @ factor).contiguous()
+    trace = float(torch.trace(gram).item())
+    if not math.isfinite(trace) or trace < 0.0:
         raise Lfm2AttentionGroupQdeimError(
-            f"Functional covariance {factor_id!r} is not positive semidefinite."
-        )
-    retained = eigenvalues > psd_tolerance
-    if bool(retained.any().item()):
-        values = eigenvalues[retained]
-        vectors = eigenvectors[:, retained]
-        factor = (torch.sqrt(values).unsqueeze(1) * vectors.T).contiguous()
-        for row_index in range(int(factor.shape[0])):
-            row = factor[row_index]
-            pivot = int(torch.argmax(row.abs()).item())
-            if float(row[pivot].item()) < 0.0:
-                factor[row_index].neg_()
-    else:
-        factor = torch.zeros(
-            (1, group_count),
-            dtype=torch.float64,
-            device=covariance.device,
-        )
-    reduced_covariance = (factor.T @ factor).contiguous()
-    maximum_error = float((reduced_covariance - covariance).abs().max().item())
-    equality_tolerance = (
-        16384.0
-        * torch.finfo(torch.float64).eps
-        * max(1, group_count)
-        * max(1.0, maximum)
-    )
-    if maximum_error > equality_tolerance:
-        raise Lfm2AttentionGroupQdeimError(
-            f"Functional covariance factor {factor_id!r} failed exact Gram reconstruction."
-        )
-    trace = float(torch.trace(covariance).item())
-    if trace < -psd_tolerance or not math.isfinite(trace):
-        raise Lfm2AttentionGroupQdeimError(
-            f"Functional covariance {factor_id!r} has an invalid trace."
+            f"Direct functional factor {factor_id!r} has an invalid Gram trace."
         )
     body = {
-        "schema": ("neural-forge-lfm2-attention-functional-group-covariance-factor-v1"),
+        "schema": "neural-forge-lfm2-attention-direct-functional-feature-gram-v1",
         "factor_id": factor_id,
-        "group_count": group_count,
-        "covariance_sha256": _tensor_sha256(
-            covariance,
-            label=f"{factor_id} group covariance",
-        ),
-        "covariance_trace": max(0.0, trace),
         "factor_sha256": _tensor_sha256(
             factor,
-            label=f"{factor_id} covariance factor",
+            label=f"{factor_id} direct feature factor",
         ),
         "factor_row_count": int(factor.shape[0]),
-        "reduced_covariance_sha256": _tensor_sha256(
-            reduced_covariance,
-            label=f"{factor_id} reduced covariance",
+        "group_count": int(factor.shape[1]),
+        "gram_sha256": _tensor_sha256(
+            gram,
+            label=f"{factor_id} direct feature Gram matrix",
         ),
-        "covariance_maximum_absolute_error": maximum_error,
-        "covariance_equality_tolerance": equality_tolerance,
-        "covariance_equality_proved": True,
-        "numeric_covariance_check_is_structural_not_semantic_gate": True,
+        "gram_trace": trace,
+        "original_weighted_feature_rows_used_directly": True,
+        "covariance_eigendecomposition_performed": False,
+        "covariance_refactor_performed": False,
+        "positive_finite_feature_modes_removed": 0,
+        "roundoff_negative_eigenvalue_clamps_performed": 0,
+        "numeric_gram_diagnostics_have_semantic_decision_authority": False,
     }
-    return factor, MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
+    return gram, MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
 
 
 def _residual_output_balanced_functional_pod(
@@ -937,13 +954,36 @@ def _residual_output_balanced_functional_pod(
     """Balance empirical consequence covariance against the full causal tangent family."""
 
     torch = _torch()
-    if len(normalized_blocks) != 2 or any(
-        block["snapshot_kind"] != "analytic_child_lifted_parent_attention_tangent"
-        for block in normalized_blocks
+    blocks_by_role: dict[str, Mapping[str, Any]] = {}
+    for block in normalized_blocks:
+        role = block["perturbation_role"]
+        if role is None or role in blocks_by_role:
+            raise Lfm2AttentionGroupQdeimError(
+                "Residual-output-balanced attention POD requires exact distinct "
+                "typed joint-QKV and older-prefix-KV perturbation roles."
+            )
+        blocks_by_role[role] = block
+    if set(blocks_by_role) != _RESIDUAL_OUTPUT_POD_PERTURBATION_ROLES:
+        raise Lfm2AttentionGroupQdeimError(
+            "Residual-output-balanced attention POD requires exact distinct typed "
+            "joint-QKV and older-prefix-KV perturbation roles."
+        )
+    ordered_blocks = tuple(
+        blocks_by_role[role]
+        for role in (
+            LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE,
+            LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE,
+        )
+    )
+    if len({block["generator_receipt_sha256"] for block in ordered_blocks}) != 1:
+        raise Lfm2AttentionGroupQdeimError(
+            "Residual-output causal tangent roles must bind one authenticated tangent bank."
+        )
+    if len({block["perturbation_receipt_sha256"] for block in ordered_blocks}) != len(
+        ordered_blocks
     ):
         raise Lfm2AttentionGroupQdeimError(
-            "Residual-output-balanced attention POD requires exactly the separately "
-            "authenticated joint-QKV and older-prefix-KV tangent blocks."
+            "Residual-output causal tangent roles must bind distinct reduction receipts."
         )
     empirical_features, group_residual_maps = _residual_output_group_feature_matrix(
         contexts,
@@ -961,11 +1001,14 @@ def _residual_output_balanced_functional_pod(
     weighted_empirical = (
         empirical_features * torch.sqrt(empirical_weights).unsqueeze(1)
     ).contiguous()
-    empirical_covariance = (weighted_empirical.T @ weighted_empirical).contiguous()
+    empirical_gram, empirical_receipt = _direct_feature_gram_receipt(
+        weighted_empirical,
+        factor_id="empirical-post-softmax-context-in-child-residual-output-space",
+    )
 
     tangent_block_receipts: list[dict[str, Any]] = []
-    tangent_covariance = torch.zeros_like(empirical_covariance)
-    for block in normalized_blocks:
+    weighted_tangent_factors: list[Any] = []
+    for block in ordered_blocks:
         feature = _group_feature_matrix(
             block["context"].to(device=contexts.device, dtype=torch.float64),
             key_value_head_count=key_value_head_count,
@@ -981,31 +1024,38 @@ def _residual_output_balanced_functional_pod(
             * block["block_weight"]
         ).repeat_interleave(queries_per_key_value * head_dim)
         weighted = (feature * torch.sqrt(weights).unsqueeze(1)).contiguous()
-        block_covariance = (weighted.T @ weighted).contiguous()
-        tangent_covariance.add_(block_covariance)
+        block_gram, block_gram_receipt = _direct_feature_gram_receipt(
+            weighted,
+            factor_id=f"causal-tangent-role:{block['perturbation_role']}",
+        )
+        weighted_tangent_factors.append(weighted)
         tangent_block_receipts.append(
             {
                 "block_id": block["block_id"],
                 "snapshot_kind": block["snapshot_kind"],
+                "perturbation_role": block["perturbation_role"],
+                "perturbation_receipt_sha256": block["perturbation_receipt_sha256"],
                 "generator_receipt_sha256": block["generator_receipt_sha256"],
                 "natural_block_weight": block["block_weight"],
-                "weighted_group_covariance_sha256": _tensor_sha256(
-                    block_covariance,
-                    label=f"{block['block_id']} weighted group covariance",
-                ),
-                "weighted_group_covariance_trace": max(
-                    0.0,
-                    float(torch.trace(block_covariance).item()),
+                "direct_feature_gram": _deep_thaw(block_gram_receipt),
+                "direct_feature_gram_sha256": block_gram_receipt["result_sha256"],
+                "weighted_group_gram_sha256": _tensor_sha256(
+                    block_gram,
+                    label=f"{block['perturbation_role']} weighted group Gram",
                 ),
             }
         )
 
-    empirical_factor, empirical_receipt = _covariance_factor(
-        empirical_covariance,
-        factor_id="empirical-post-softmax-context-in-child-residual-output-space",
+    natural_tangent_factor = torch.cat(
+        weighted_tangent_factors,
+        dim=0,
+    ).contiguous()
+    natural_tangent_gram, natural_tangent_receipt = _direct_feature_gram_receipt(
+        natural_tangent_factor,
+        factor_id="joint-qkv-plus-older-prefix-kv-natural-causal-tangent-family",
     )
-    natural_tangent_trace = max(0.0, float(torch.trace(tangent_covariance).item()))
-    empirical_trace = float(empirical_receipt["covariance_trace"])
+    natural_tangent_trace = float(natural_tangent_receipt["gram_trace"])
+    empirical_trace = float(empirical_receipt["gram_trace"])
     scale_tolerance = (
         4096.0
         * torch.finfo(torch.float64).eps
@@ -1022,14 +1072,43 @@ def _residual_output_balanced_functional_pod(
         raise Lfm2AttentionGroupQdeimError(
             "Residual-output attention POD produced an invalid tangent-family scale."
         )
-    balanced_tangent_covariance = (
-        tangent_covariance * tangent_family_scale
+    balanced_tangent_factor = (
+        natural_tangent_factor * math.sqrt(tangent_family_scale)
     ).contiguous()
-    tangent_factor, tangent_receipt = _covariance_factor(
-        balanced_tangent_covariance,
-        factor_id="joint-qkv-plus-older-prefix-kv-causal-tangent-family",
+    balanced_tangent_gram, balanced_tangent_receipt = _direct_feature_gram_receipt(
+        balanced_tangent_factor,
+        factor_id="joint-qkv-plus-older-prefix-kv-balanced-causal-tangent-family",
     )
-    combined_factor = torch.cat((empirical_factor, tangent_factor), dim=0).contiguous()
+    combined_factor = torch.cat(
+        (weighted_empirical, balanced_tangent_factor),
+        dim=0,
+    ).contiguous()
+    combined_gram, combined_receipt = _direct_feature_gram_receipt(
+        combined_factor,
+        factor_id="combined-empirical-and-balanced-causal-tangent-family",
+    )
+    expected_combined_gram = (empirical_gram + balanced_tangent_gram).contiguous()
+    combined_gram_maximum_error = float(
+        (combined_gram - expected_combined_gram).abs().max().item()
+    )
+    combined_gram_scale = max(
+        1.0,
+        float(expected_combined_gram.abs().max().item()),
+    )
+    combined_gram_roundoff_tolerance = (
+        64.0
+        * torch.finfo(torch.float64).eps
+        * max(1, int(combined_factor.shape[0]))
+        * combined_gram_scale
+    )
+    combined_gram_exact = bool(torch.equal(combined_gram, expected_combined_gram))
+    combined_gram_within_roundoff = (
+        combined_gram_maximum_error <= combined_gram_roundoff_tolerance
+    )
+    if not combined_gram_within_roundoff:
+        raise Lfm2AttentionGroupQdeimError(
+            "Direct residual-output feature concatenation failed its Gram identity."
+        )
     combined_weights = torch.ones(
         int(combined_factor.shape[0]),
         dtype=torch.float64,
@@ -1037,7 +1116,7 @@ def _residual_output_balanced_functional_pod(
     )
     body = {
         "schema": (
-            "neural-forge-lfm2-attention-residual-output-balanced-functional-pod-v1"
+            "neural-forge-lfm2-attention-residual-output-balanced-functional-pod-v2"
         ),
         "group_metric": _RESIDUAL_OUTPUT_BALANCED_GROUP_METRIC,
         "empirical_post_softmax_context_mapped_through_source_o": True,
@@ -1048,30 +1127,47 @@ def _residual_output_balanced_functional_pod(
             group_residual_maps,
             label="empirical attention group residual maps",
         ),
-        "empirical_covariance_factor": _deep_thaw(empirical_receipt),
-        "empirical_covariance_factor_sha256": empirical_receipt["result_sha256"],
+        "empirical_direct_feature_gram": _deep_thaw(empirical_receipt),
+        "empirical_direct_feature_gram_sha256": empirical_receipt["result_sha256"],
         "causal_tangent_blocks": tangent_block_receipts,
-        "causal_tangent_natural_aggregate_covariance_sha256": _tensor_sha256(
-            tangent_covariance,
-            label="natural causal tangent aggregate covariance",
+        "causal_tangent_bank_receipt_sha256": ordered_blocks[0][
+            "generator_receipt_sha256"
+        ],
+        "causal_tangent_natural_direct_feature_gram": _deep_thaw(
+            natural_tangent_receipt
         ),
-        "causal_tangent_natural_aggregate_covariance_trace": natural_tangent_trace,
+        "causal_tangent_natural_direct_feature_gram_sha256": (
+            natural_tangent_receipt["result_sha256"]
+        ),
+        "causal_tangent_natural_aggregate_gram_trace": natural_tangent_trace,
         "causal_tangent_aggregate_scale": tangent_family_scale,
         "empirical_to_aggregate_tangent_energy_balance_applied": balance_applied,
         "balance_policy": (
             "preserve-relative-joint-and-prefix-covariance-then-match-total-"
             "tangent-trace-to-empirical-residual-output-trace"
         ),
-        "causal_tangent_balanced_covariance_factor": _deep_thaw(tangent_receipt),
-        "causal_tangent_balanced_covariance_factor_sha256": tangent_receipt[
-            "result_sha256"
-        ],
-        "combined_covariance_factor_sha256": _tensor_sha256(
-            combined_factor,
-            label="combined residual-output attention POD covariance factor",
+        "causal_tangent_balanced_direct_feature_gram": _deep_thaw(
+            balanced_tangent_receipt
         ),
-        "combined_covariance_factor_row_count": int(combined_factor.shape[0]),
-        "covariance_factoring_changes_group_pod_gram_matrix": False,
+        "causal_tangent_balanced_direct_feature_gram_sha256": (
+            balanced_tangent_receipt["result_sha256"]
+        ),
+        "combined_direct_feature_gram": _deep_thaw(combined_receipt),
+        "combined_direct_feature_gram_sha256": combined_receipt["result_sha256"],
+        "combined_feature_row_count": int(combined_factor.shape[0]),
+        "combined_gram_expected_sha256": _tensor_sha256(
+            expected_combined_gram,
+            label="expected combined residual-output functional Gram",
+        ),
+        "combined_gram_exactly_equals_empirical_plus_scaled_tangent": (
+            combined_gram_exact
+        ),
+        "combined_gram_within_fp64_roundoff": combined_gram_within_roundoff,
+        "combined_gram_maximum_absolute_error": combined_gram_maximum_error,
+        "combined_gram_roundoff_tolerance": combined_gram_roundoff_tolerance,
+        "covariance_eigendecomposition_or_refactor_performed": False,
+        "positive_finite_feature_modes_removed": 0,
+        "original_weighted_empirical_and_tangent_features_feed_group_pod": True,
         "heldout_rows_used": False,
         "training_steps": 0,
         "backward_calls": 0,
@@ -1114,9 +1210,14 @@ def _rank_deficit_report(
     functional_pod_group_metric: str,
     functional_pod_receipt: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
+    status = (
+        "insufficient-authenticated-residual-output-functional-group-rank"
+        if functional_pod_group_metric == _RESIDUAL_OUTPUT_BALANCED_GROUP_METRIC
+        else "insufficient-authenticated-context-group-rank"
+    )
     body = {
         "schema": LFM2_ATTENTION_GROUP_QDEIM_RANK_DEFICIT_SCHEMA,
-        "status": "insufficient-authenticated-context-group-rank",
+        "status": status,
         "source_state_sha256_before": source_state_sha256,
         "source_state_sha256_after": source_state_sha256_after,
         "source_state_immutable": source_state_sha256_after == source_state_sha256,
@@ -1780,6 +1881,8 @@ def compile_lfm2_attention_group_qdeim(
                 {
                     "block_id": block["block_id"],
                     "snapshot_kind": block["snapshot_kind"],
+                    "perturbation_role": block["perturbation_role"],
+                    "perturbation_receipt_sha256": block["perturbation_receipt_sha256"],
                     "generator_receipt_sha256": block["generator_receipt_sha256"],
                     "context_row_count": int(block["context"].shape[0]),
                     "block_weight": block["block_weight"],
@@ -3119,6 +3222,8 @@ def compile_lfm2_attention_group_span_qdeim(
 
 
 __all__ = [
+    "LFM2_ATTENTION_GROUP_QDEIM_JOINT_QKV_PERTURBATION_ROLE",
+    "LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE",
     "LFM2_ATTENTION_GROUP_QDEIM_RAW_CONTEXT_METRIC",
     "LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC",
     "LFM2_ATTENTION_GROUP_SPAN_QDEIM_CONTEXT_EVIDENCE_SCHEMA",

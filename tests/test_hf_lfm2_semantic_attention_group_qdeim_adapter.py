@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import MappingProxyType, SimpleNamespace
 
 import pytest
@@ -25,6 +26,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
     lfm2_authenticated_tensor_sha256,
 )
 import neural_forge.hf_lfm2_semantic_attention_group_qdeim_installer as qdeim_installer  # noqa: E402, I001
+import neural_forge.hf_lfm2_semantic_attention_group_qdeim_adapter as qdeim_adapter  # noqa: E402, I001
 
 
 def _sealed(body: dict[str, object], seal: str) -> dict[str, object]:
@@ -544,10 +546,25 @@ def test_enhanced_fit_cache_invokes_authenticated_causal_tangents_in_real_adapte
     assert residual_pod[
         "empirical_post_softmax_context_mapped_through_residual_output_chart"
     ]
-    assert residual_pod["empirical_covariance_factor"]["covariance_equality_proved"]
-    assert residual_pod["causal_tangent_balanced_covariance_factor"][
-        "covariance_equality_proved"
-    ]
+    assert (
+        residual_pod["empirical_direct_feature_gram"][
+            "covariance_eigendecomposition_performed"
+        ]
+        is False
+    )
+    assert (
+        residual_pod["causal_tangent_balanced_direct_feature_gram"][
+            "covariance_refactor_performed"
+        ]
+        is False
+    )
+    assert residual_pod["positive_finite_feature_modes_removed"] == 0
+    assert residual_pod["combined_gram_within_fp64_roundoff"]
+    assert report["functional_tangent_roles_bound_to_bank_reduction_receipts"]
+    assert set(report["functional_tangent_perturbation_role_receipts"]) == {
+        "joint_sampled_token_query_key_value",
+        "older_prefix_key_value",
+    }
     assert (
         report["residual_output_balanced_functional_pod_sha256"]
         == (result.compiled.report["evidence"]["functional_pod_receipt_sha256"])
@@ -559,9 +576,11 @@ def test_enhanced_fit_cache_invokes_authenticated_causal_tangents_in_real_adapte
     tangent = report["attention_tangent_bank"]
     assert tangent["geometry"]["authenticated_child_decoder_direction_count"] == 3
     assert tangent["heldout_tensor_payloads_used"] == 0
-    assert tangent["query_local_reduction_receipt"]["covariance_equality_proved"]
+    assert tangent["query_local_reduction_receipt"][
+        "covariance_gram_within_fp64_roundoff"
+    ]
     assert tangent["sampled_suffix_history_key_value_reduction_receipt"][
-        "covariance_equality_proved"
+        "covariance_gram_within_fp64_roundoff"
     ]
     assert (
         report["functional_snapshot_evidence_sha256"]
@@ -571,6 +590,38 @@ def test_enhanced_fit_cache_invokes_authenticated_causal_tangents_in_real_adapte
     )
     assert {index for index, _names in session.loaded} == {0}
     assert len(session.loaded) == 2
+
+
+def test_typed_tangent_role_rejects_reduction_receipt_swapped_from_bank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prefix = "prefill.layer.000.attention"
+    session = _Session(
+        [{f"{prefix}.context": _contexts(), **_enhanced_causal_phase(prefix)}]
+    )
+    original_builder = qdeim_adapter.build_lfm2_attention_tangent_bank
+
+    def tampered_builder(**kwargs):
+        bank = original_builder(**kwargs)
+        tampered_joint = replace(
+            bank.joint_sampled_token_query_key_value,
+            reduction_receipt=bank.older_prefix_key_value.reduction_receipt,
+        )
+        return replace(
+            bank,
+            joint_sampled_token_query_key_value=tampered_joint,
+        )
+
+    monkeypatch.setattr(
+        qdeim_adapter,
+        "build_lfm2_attention_tangent_bank",
+        tampered_builder,
+    )
+    with pytest.raises(
+        Lfm2SemanticAttentionGroupQdeimAdapterError,
+        match="does not match its bank/reduction evidence",
+    ):
+        compile_lfm2_semantic_attention_group_qdeim_from_cache(**_arguments(session))
 
 
 def test_cross_dtype_probability_replay_is_diagnostic_not_numeric_veto() -> None:
@@ -873,6 +924,42 @@ def test_missing_tangent_precedes_context_rank_materialization() -> None:
     )
     assert result.report["compiler_rank_deficit"] is None
     assert result.report["dense_qkvo_candidate_materialized"] is False
+
+
+def test_residual_output_rank_deficit_is_not_mislabeled_as_true_context_rank() -> None:
+    prefix = "prefill.layer.000.attention"
+    captured_context = _contexts()
+    raw_rows = captured_context.permute(0, 2, 1, 3).reshape(4, 10, 2)
+    raw_group_features = raw_rows.reshape(4, 5, 2, 2).permute(0, 2, 3, 1).reshape(16, 5)
+    assert int(torch.linalg.matrix_rank(raw_group_features).item()) >= 3
+
+    session = _Session(
+        [{f"{prefix}.context": captured_context, **_enhanced_causal_phase(prefix)}]
+    )
+    arguments = _arguments(session)
+    source_o = arguments["source_out_weight"].clone()
+    source_o[:, 8:] = 0.0
+    arguments["source_out_weight"] = source_o
+    arguments["source_inventory"] = seal_lfm2_dense_qkvo_source_inventory(
+        source_query_weight=arguments["source_query_weight"],
+        source_key_weight=arguments["source_key_weight"],
+        source_value_weight=arguments["source_value_weight"],
+        source_output_weight=source_o,
+    )
+
+    result = compile_lfm2_semantic_attention_group_qdeim_from_cache(**arguments)
+    assert isinstance(result, Lfm2SemanticAttentionGroupQdeimEvidenceDeficit)
+    assert result.deficit_kind == (
+        "insufficient-authenticated-residual-output-functional-group-rank"
+    )
+    compiler = result.report["compiler_rank_deficit"]
+    assert compiler["status"] == (
+        "insufficient-authenticated-residual-output-functional-group-rank"
+    )
+    assert compiler["functional_pod_group_metric"] == (
+        "residual-output-balanced-empirical-and-causal-tangent"
+    )
+    assert compiler["observed_context_group_rank"] <= 2
 
 
 def test_decoder_receipt_must_match_existing_chart_lineage() -> None:

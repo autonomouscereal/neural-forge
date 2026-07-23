@@ -15,6 +15,7 @@ from neural_forge.hf_lfm2_attention_tangent_bank import (  # noqa: E402
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
     lfm2_authenticated_tensor_sha256,
 )
+import neural_forge.hf_lfm2_attention_tangent_bank as tangent_module  # noqa: E402, I001
 
 
 def _rotate_half(value: torch.Tensor) -> torch.Tensor:
@@ -312,13 +313,11 @@ def test_tangent_bank_reduction_preserves_both_group_covariances_and_is_determin
     ):
         reduced = _snapshot_covariance(snapshot.context_rows, groups=2)
         torch.testing.assert_close(reduced, snapshot.covariance, rtol=1e-12, atol=1e-12)
-        assert snapshot.reduction_receipt["covariance_equality_proved"] is True
-        assert (
-            snapshot.reduction_receipt[
-                "covariance_reduction_changes_qdeim_group_pod_ftf"
-            ]
-            is False
-        )
+        receipt = snapshot.reduction_receipt
+        assert receipt["covariance_gram_within_fp64_roundoff"] is True
+        assert receipt["positive_finite_eigenmodes_removed"] == 0
+        if receipt["covariance_reduction_changes_qdeim_group_pod_ftf"]:
+            assert receipt["covariance_reduction_change_is_within_fp64_roundoff"]
     report = first.report
     assert report["geometry"]["authenticated_child_decoder_direction_count"] == 2
     assert report["query_local_and_history_key_value_evidence_separately_labelled"]
@@ -345,6 +344,48 @@ def test_tangent_bank_reduction_preserves_both_group_covariances_and_is_determin
     assert report["heldout_tensor_payloads_used"] == 0
     assert report["operation_audit"]["training_steps"] == 0
     assert report["operation_audit"]["autograd_grad_calls"] == 0
+
+
+@pytest.mark.parametrize(
+    ("covariance", "expected_factor_rows", "expected_positive_modes"),
+    (
+        (torch.diag(torch.tensor([1.0, 1e-13], dtype=torch.float64)), 2, 2),
+        (torch.zeros((2, 2), dtype=torch.float64), 1, 0),
+        (
+            torch.diag(torch.tensor([1.0, 1e-20, 1e-40], dtype=torch.float64)),
+            3,
+            3,
+        ),
+    ),
+    ids=("diag-one-and-one-e-minus-thirteen", "zero", "ill-conditioned"),
+)
+def test_covariance_snapshot_preserves_every_positive_finite_mode(
+    covariance: torch.Tensor,
+    expected_factor_rows: int,
+    expected_positive_modes: int,
+) -> None:
+    groups = int(covariance.shape[0])
+    snapshot = tangent_module._covariance_snapshot(
+        covariance,
+        block_id="tiny-mode-test",
+        perturbation_kind="tiny_mode_test",
+        query_heads=groups,
+        key_value_heads=groups,
+        head_dim=1,
+        original_tangent_context_row_count=1,
+        original_weight_sum=1.0,
+    )
+    reduced = _snapshot_covariance(snapshot.context_rows, groups=groups)
+
+    assert int(snapshot.context_rows.shape[0]) == expected_factor_rows
+    assert int((torch.linalg.eigvalsh(reduced) > 0.0).sum().item()) == (
+        expected_positive_modes
+    )
+    torch.testing.assert_close(reduced, covariance, rtol=1e-14, atol=1e-300)
+    receipt = snapshot.reduction_receipt
+    assert receipt["positive_finite_eigenmodes_removed"] == 0
+    assert receipt["covariance_gram_within_fp64_roundoff"]
+    assert receipt["negative_roundoff_eigenvalues_clamped_to_zero"] == 0
 
 
 def test_vectorized_chunks_preserve_batch_two_covariances() -> None:

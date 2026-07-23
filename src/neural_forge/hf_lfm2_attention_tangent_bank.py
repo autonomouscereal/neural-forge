@@ -15,7 +15,9 @@ V-only JVP (whose linear derivative needs no activation anchor).  Older-prefix
 K is not invented; its authenticated cross-phase stitch remains explicit.
 Every group tangent is mapped through the real source O block and residual
 chart before covariance accumulation.  Small synthetic context blocks are
-factored from those covariances and authenticated by direct equality.
+factored from those covariances without dropping any positive finite
+eigenmode; receipts distinguish bit-exact Gram equality from bounded FP64
+roundoff explicitly.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (
 LFM2_ATTENTION_TANGENT_BANK_SCHEMA = (
     "neural-forge-lfm2-cached-causal-attention-tangent-bank-v1"
 )
-_REDUCTION_SCHEMA = "neural-forge-lfm2-attention-tangent-covariance-reduction-v1"
+_REDUCTION_SCHEMA = "neural-forge-lfm2-attention-tangent-covariance-reduction-v2"
 _COMPUTE_SCHEMA = "neural-forge-lfm2-attention-tangent-compute-v1"
 _OPERATION_AUDIT = MappingProxyType(
     {
@@ -598,6 +600,10 @@ def _covariance_snapshot(
     covariance = covariance.detach().to(device="cpu", dtype=torch.float64)
     covariance = ((covariance + covariance.T) * 0.5).contiguous()
     eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
+    if not bool(torch.isfinite(eigenvalues).all().item()):
+        raise Lfm2AttentionTangentAuthenticationError(
+            f"{perturbation_kind} tangent covariance has non-finite eigenvalues."
+        )
     maximum = float(eigenvalues.abs().max().item())
     tolerance = (
         4096.0
@@ -609,13 +615,15 @@ def _covariance_snapshot(
         raise Lfm2AttentionTangentAuthenticationError(
             f"{perturbation_kind} tangent covariance is not positive semidefinite."
         )
-    retained = eigenvalues > tolerance
+    negative_roundoff = eigenvalues < 0.0
+    nonnegative_eigenvalues = eigenvalues.clamp_min(0.0)
+    retained = nonnegative_eigenvalues > 0.0
     if not bool(retained.any().item()):
         # An exact zero partial Jacobian is valid evidence.  One explicit zero
         # factor row preserves its zero covariance without fabricating rank.
         factor = torch.zeros((1, key_value_heads), dtype=torch.float64)
     else:
-        values = eigenvalues[retained]
+        values = nonnegative_eigenvalues[retained]
         vectors = eigenvectors[:, retained]
         factor = (torch.sqrt(values).unsqueeze(1) * vectors.T).contiguous()
         for row_index in range(int(factor.shape[0])):
@@ -647,6 +655,8 @@ def _covariance_snapshot(
         raise Lfm2AttentionTangentAuthenticationError(
             f"{perturbation_kind} covariance-equivalent reduction failed."
         )
+    exact_equality = bool(torch.equal(reduced_covariance, covariance))
+    within_roundoff = maximum_error <= equality_tolerance
     body = {
         "schema": _REDUCTION_SCHEMA,
         "block_id": block_id,
@@ -661,8 +671,16 @@ def _covariance_snapshot(
         "row_sample_weights": [1.0] * int(context.shape[0]),
         "covariance_maximum_absolute_error": maximum_error,
         "covariance_equality_tolerance": equality_tolerance,
-        "covariance_equality_proved": True,
-        "covariance_reduction_changes_qdeim_group_pod_ftf": False,
+        "covariance_gram_exact_equality": exact_equality,
+        "covariance_gram_within_fp64_roundoff": within_roundoff,
+        "covariance_reduction_changes_qdeim_group_pod_ftf": (not exact_equality),
+        "covariance_reduction_change_is_within_fp64_roundoff": (
+            not exact_equality and within_roundoff
+        ),
+        "positive_finite_eigenmodes_removed": 0,
+        "negative_roundoff_eigenvalues_clamped_to_zero": int(
+            negative_roundoff.sum().item()
+        ),
         "numeric_covariance_check_is_structural_not_semantic_gate": True,
     }
     receipt = MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
