@@ -1257,6 +1257,9 @@ def _run_fold_to_review_scale(
         or child_parameter_count <= 0
         or postfold.get("global_residual_closure_version") != closure_version
         or postfold.get("global_residual_backend") != closure_policy.backend
+        or "global_residual_requested_basis_rank" not in postfold
+        or postfold.get("global_residual_requested_basis_rank")
+        != global_residual_basis_rank
         or postfold.get("global_residual_correction_scale_frontier")
         != list(scale_policy.materialization_frontier)
         or postfold.get("global_residual_correction_scale")
@@ -1297,7 +1300,9 @@ def _run_fold_to_review_scale(
         "body_recipe_id": recipe.recipe_id,
         "global_residual_closure_version": closure_version,
         "global_residual_backend": closure_policy.backend,
-        "global_residual_requested_basis_rank": global_residual_basis_rank,
+        "global_residual_requested_basis_rank": postfold[
+            "global_residual_requested_basis_rank"
+        ],
         "global_residual_closure_policy_sha256": (closure_policy.authentication_sha256),
         "global_residual_correction_scale_frontier": list(
             scale_policy.materialization_frontier

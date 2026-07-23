@@ -2639,6 +2639,49 @@ def test_body_recipe_public_api_defaults_remain_fit_guided() -> None:
     )
 
 
+def test_postfold_public_entrypoints_reject_explicit_rank_for_v1(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="does not support an explicit",
+    ):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=object(),
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory=tmp_path / "parent",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            global_residual_closure_version="output_writer_v1_diagnostic",
+            global_residual_basis_rank=776,
+        )
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="does not support an explicit",
+    ):
+        postfold.run_lfm2_semantic_postfold(
+            input_checkpoint_directory=tmp_path / "input",
+            expected_input_artifact_sha256="1" * 64,
+            output_checkpoint_directory=tmp_path / "output",
+            cache_directory=tmp_path / "cache",
+            expected_cache_key="2" * 64,
+            bridge_directory=tmp_path / "bridge",
+            expected_bridge_artifact_sha256="3" * 64,
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            parent_model_directory=tmp_path / "parent",
+            compiler_diagnostic_json=tmp_path / "compiler.json",
+            expected_compiler_diagnostic_sha256="4" * 64,
+            device="cpu",
+            global_residual_closure_version="output_writer_v1_diagnostic",
+            global_residual_basis_rank=776,
+        )
+
+
 def _minimal_postfold_run_arguments(tmp_path: Path) -> dict[str, object]:
     return {
         "input_checkpoint_directory": tmp_path / "input",

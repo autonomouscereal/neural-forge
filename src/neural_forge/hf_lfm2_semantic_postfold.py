@@ -1162,9 +1162,19 @@ def _authenticate_semantic_global_residual_transition(
     correction_frontier = stack.get("global_residual_correction_scale_frontier")
     correction_scale = stack.get("global_residual_correction_scale")
     residual_backend = stack.get("global_residual_backend")
+    requested_basis_rank = stack.get("global_residual_requested_basis_rank")
     if (
         closure_version not in {"producer_aware_v2a", "output_writer_v1_diagnostic"}
         or residual_backend not in {"auto", "cpu", "cuda"}
+        or "global_residual_requested_basis_rank" not in stack
+        or (
+            requested_basis_rank is not None
+            and (
+                isinstance(requested_basis_rank, bool)
+                or not isinstance(requested_basis_rank, int)
+                or requested_basis_rank <= 0
+            )
+        )
         or not isinstance(correction_frontier, list)
         or not correction_frontier
         or any(
@@ -1203,6 +1213,14 @@ def _authenticate_semantic_global_residual_transition(
     ):
         raise Lfm2SemanticPostfoldError(
             "Global residual closure controls failed policy authentication."
+        )
+    if (
+        closure_version == "output_writer_v1_diagnostic"
+        and requested_basis_rank is not None
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "The output-writer v1 diagnostic receipt cannot claim an explicit "
+            "global residual basis rank."
         )
     before_by_writer: Mapping[str, Any]
     after_by_writer: Mapping[str, Any]
@@ -1272,6 +1290,29 @@ def _authenticate_semantic_global_residual_transition(
             )
         topology = dict(topology_value)
         topology_sha = topology.pop("topology_sha256", None)
+        topology_hidden_size = topology.get("hidden_size")
+        topology_head_dimension = topology.get("head_dimension")
+        topology_requested_basis_rank = topology.get("requested_basis_rank")
+        expected_topology_basis_rank = (
+            requested_basis_rank
+            if requested_basis_rank is not None
+            else (
+                2 * topology_head_dimension
+                if type(topology_head_dimension) is int
+                else None
+            )
+        )
+        expected_topology_basis_rank_formula = (
+            "explicit_requested_basis_rank"
+            if requested_basis_rank is not None
+            else "2*head_dimension"
+        )
+        expected_effective_basis_rank = (
+            min(topology_hidden_size, expected_topology_basis_rank)
+            if type(topology_hidden_size) is int
+            and type(expected_topology_basis_rank) is int
+            else None
+        )
         dense = dict(dense_value)
         dense_sha = dense.pop("report_sha256", None)
         installation = dict(installation_value)
@@ -1410,6 +1451,25 @@ def _authenticate_semantic_global_residual_transition(
             is not True
             or topology_sha != canonical_sha256(topology)
             or topology_sha != report.get("topology_sha256")
+            or type(topology_hidden_size) is not int
+            or topology_hidden_size <= 0
+            or type(topology_head_dimension) is not int
+            or topology_head_dimension <= 0
+            or topology_requested_basis_rank != requested_basis_rank
+            or topology.get("topology_basis_rank_formula")
+            != expected_topology_basis_rank_formula
+            or topology.get("topology_basis_rank")
+            != expected_topology_basis_rank
+            or topology.get("effective_basis_rank")
+            != expected_effective_basis_rank
+            or report.get("requested_basis_rank") != requested_basis_rank
+            or report.get("topology_basis_rank_formula")
+            != expected_topology_basis_rank_formula
+            or report.get("topology_basis_rank")
+            != expected_topology_basis_rank
+            or report.get("effective_basis_rank")
+            != expected_effective_basis_rank
+            or report.get("basis_rank") != expected_effective_basis_rank
             or topology.get("sites") != site_specifications
             or [value.get("causal_order") for value in site_specifications]
             != expected_site_orders
@@ -1605,6 +1665,7 @@ def _authenticate_semantic_global_residual_transition(
             "semantic_row_map_sha256": row_map_sha,
             "global_residual_closure_version": closure_version,
             "global_residual_backend": residual_backend,
+            "global_residual_requested_basis_rank": requested_basis_rank,
             "correction_scale_frontier": [
                 float(value) for value in correction_frontier
             ],
@@ -7964,6 +8025,14 @@ def compile_install_lfm2_semantic_layer_stack_stage(
             "global_residual_closure_version must be producer_aware_v2a or "
             "output_writer_v1_diagnostic."
         )
+    if (
+        closure_version == "output_writer_v1_diagnostic"
+        and global_residual_basis_rank is not None
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "The output-writer v1 diagnostic does not support an explicit "
+            "global residual basis rank."
+        )
     anchor_selection = (
         None
         if interface_anchor_selection is None
@@ -8243,6 +8312,10 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 != closure_version
                 or global_residual_transition.get("global_residual_backend")
                 != closure_policy.backend
+                or global_residual_transition.get(
+                    "global_residual_requested_basis_rank"
+                )
+                != global_residual_basis_rank
                 or global_residual_transition.get("correction_scale_frontier")
                 != list(scale_policy.materialization_frontier)
                 or global_residual_transition.get("correction_scale")
@@ -12874,6 +12947,14 @@ def run_lfm2_semantic_postfold(
             "global_residual_closure_version must be producer_aware_v2a or "
             "output_writer_v1_diagnostic."
         )
+    if (
+        closure_version == "output_writer_v1_diagnostic"
+        and global_residual_basis_rank is not None
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "The output-writer v1 diagnostic does not support an explicit "
+            "global residual basis rank."
+        )
     if terminal_frontier_exporter is not None and not callable(
         terminal_frontier_exporter
     ):
@@ -13315,6 +13396,14 @@ def run_lfm2_semantic_postfold(
                 else {}
             ),
         )
+        authenticated_global_residual_basis_rank = layer_stack.receipt.get(
+            "global_residual_requested_basis_rank"
+        )
+        if authenticated_global_residual_basis_rank != global_residual_basis_rank:
+            raise Lfm2SemanticPostfoldError(
+                "Semantic layer stack dropped or changed the requested global "
+                "residual basis rank."
+            )
         if interface_anchor_selection is not None and (
             layer_stack.receipt.get("interface_anchor_selection_sha256")
             != interface_anchor_selection["selection_sha256"]
@@ -13479,6 +13568,9 @@ def run_lfm2_semantic_postfold(
     global_residual_controls = {
         "global_residual_closure_version": closure_version,
         "global_residual_backend": closure_policy.backend,
+        "global_residual_requested_basis_rank": (
+            authenticated_global_residual_basis_rank
+        ),
         "global_residual_closure_policy_sha256": (closure_policy.authentication_sha256),
         "global_residual_correction_scale_frontier": list(
             scale_policy.materialization_frontier

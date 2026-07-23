@@ -525,6 +525,17 @@ class Lfm2ProducerAwareSemanticInstallation:
             and self.correction_scale_policy.verify_authentication()
             and verify_lfm2_producer_aware_semantic_report(self.report)
             and self.report.get("topology_sha256") == self.topology.topology_sha256
+            and self.report.get("topology_receipt") == self.topology.as_dict()
+            and self.report.get("requested_basis_rank")
+            == self.topology.requested_basis_rank
+            and self.report.get("topology_basis_rank_formula")
+            == self.topology.topology_basis_rank_formula
+            and self.report.get("topology_basis_rank")
+            == self.topology.topology_basis_rank
+            and self.report.get("effective_basis_rank")
+            == self.topology.effective_basis_rank
+            and self.report.get("basis_rank") == self.basis.rank
+            and self.basis.rank == self.topology.effective_basis_rank
             and self.report.get("boundary_bundle_sha256")
             == self.boundaries.bundle_sha256
             and self.report.get("basis_sha256") == self.basis.basis_sha256
@@ -767,6 +778,11 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         "kind": "producer_aware_semantic_global_residual_installation",
         "evidence_package_sha256": evidence.evidence_sha256,
         "topology_sha256": topology.topology_sha256,
+        "requested_basis_rank": topology.requested_basis_rank,
+        "topology_basis_rank_formula": topology.topology_basis_rank_formula,
+        "topology_basis_rank": topology.topology_basis_rank,
+        "effective_basis_rank": topology.effective_basis_rank,
+        "basis_rank": basis.rank,
         "boundary_bundle_sha256": boundaries.bundle_sha256,
         "basis_sha256": basis.basis_sha256,
         "linearization_receipt_sha256": linearization_receipt["report_sha256"],

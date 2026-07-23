@@ -10,6 +10,9 @@ torch = pytest.importorskip("torch")
 from neural_forge import (  # noqa: E402
     hf_lfm2_producer_aware_global_linearization as producer_module,
 )
+from neural_forge import (  # noqa: E402
+    hf_lfm2_producer_aware_semantic_integration as semantic_module,
+)
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     Lfm2CpcfTerminalActionDownWeightPrior,
     lfm2_cpcf_terminal_action_tensor_sha256,
@@ -342,9 +345,40 @@ def test_explicit_residual_basis_rank_reaches_the_physical_closure() -> None:
     assert result.topology.requested_basis_rank == 3
     assert result.topology.effective_basis_rank == 3
     assert result.basis.rank == 3
+    assert result.report["requested_basis_rank"] == 3
+    assert result.report["topology_basis_rank"] == 3
+    assert result.report["effective_basis_rank"] == 3
+    assert result.report["basis_rank"] == 3
     assert result.report["topology_receipt"]["topology_basis_rank_formula"] == (
         "explicit_requested_basis_rank"
     )
+
+
+def test_resealed_nested_topology_rank_claim_cannot_authenticate() -> None:
+    result = _solve(_problem(layer_count=2), requested_basis_rank=3)
+    report_body = dict(result.report)
+    report_body.pop("report_sha256")
+    topology_receipt = dict(report_body["topology_receipt"])
+    topology_receipt["requested_basis_rank"] = 999
+    report_body["topology_receipt"] = topology_receipt
+    tampered_report = {
+        **report_body,
+        "report_sha256": semantic_module._canonical_sha256(report_body),
+    }
+
+    with pytest.raises(Lfm2ProducerAwareSemanticAuthenticationError):
+        Lfm2ProducerAwareSemanticInstallation(
+            topology=result.topology,
+            boundaries=result.boundaries,
+            basis=result.basis,
+            closure_result=result.closure_result,
+            dense_transaction=result.dense_transaction,
+            installation_receipt=result.installation_receipt,
+            corrected_final_w2_prior=result.corrected_final_w2_prior,
+            closure_policy=result.closure_policy,
+            correction_scale_policy=result.correction_scale_policy,
+            report=tampered_report,
+        )
 
 
 @pytest.mark.parametrize("layer_count", (2, 5, 14))

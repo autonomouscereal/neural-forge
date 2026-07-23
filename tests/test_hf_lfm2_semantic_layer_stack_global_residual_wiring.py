@@ -331,6 +331,7 @@ def _valid_global_transition_document() -> tuple[dict[str, object], object]:
         "global_residual_closure_applied": True,
         "global_residual_closure_version": "output_writer_v1_diagnostic",
         "global_residual_backend": "auto",
+        "global_residual_requested_basis_rank": None,
         "global_residual_correction_scale_frontier": [1.0],
         "global_residual_correction_scale": 1.0,
         "global_residual_correction_scale_policy_sha256": (
@@ -407,6 +408,12 @@ def _valid_v2_global_transition_document() -> tuple[dict[str, object], object]:
     topology_body = {
         "schema": "test-writer-topology-v1",
         "kind": "writer_topology",
+        "hidden_size": 4,
+        "head_dimension": 2,
+        "requested_basis_rank": None,
+        "topology_basis_rank_formula": "2*head_dimension",
+        "topology_basis_rank": 4,
+        "effective_basis_rank": 4,
         "sites": site_specifications,
     }
     topology = {
@@ -558,6 +565,11 @@ def _valid_v2_global_transition_document() -> tuple[dict[str, object], object]:
         "site_specifications": site_specifications,
         "topology_receipt": topology,
         "topology_sha256": topology["topology_sha256"],
+        "requested_basis_rank": None,
+        "topology_basis_rank_formula": "2*head_dimension",
+        "topology_basis_rank": 4,
+        "effective_basis_rank": 4,
+        "basis_rank": 4,
         "dense_transaction_receipt": dense_receipt,
         "dense_transaction_sha256": dense_receipt["report_sha256"],
         "physical_installation_receipt": installation_receipt,
@@ -648,10 +660,79 @@ def test_producer_aware_v2_transition_authenticates_full_physical_update() -> No
 
     assert result is not None
     assert result["global_residual_closure_version"] == "producer_aware_v2a"
+    assert result["global_residual_requested_basis_rank"] is None
     assert result["correction_scale_frontier"] == [0.5, 1.0]
     assert result["correction_scale"] == 0.5
     assert result["materialization_compute_device"] == "cpu"
     assert result["frontier_member_selected_as_winner"] is False
+
+
+def test_v1_transition_rejects_an_explicit_residual_basis_rank_claim() -> None:
+    document, recipe = _valid_global_transition_document()
+    document["global_residual_requested_basis_rank"] = 776
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="cannot claim an explicit",
+    ):
+        postfold._authenticate_semantic_global_residual_transition(
+            document,
+            recipe,
+        )
+
+
+def test_v2_transition_rejects_rank_claim_not_bound_to_topology() -> None:
+    document, recipe = _valid_v2_global_transition_document()
+    document["global_residual_requested_basis_rank"] = 3
+
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError):
+        postfold._authenticate_semantic_global_residual_transition(
+            document,
+            recipe,
+        )
+
+
+def test_v2_transition_authenticates_explicit_rank_through_topology() -> None:
+    document, recipe = _valid_v2_global_transition_document()
+    report_body = dict(document["global_residual_closure_receipt"])
+    report_body.pop("report_sha256")
+    topology_body = dict(report_body["topology_receipt"])
+    topology_body.pop("topology_sha256")
+    topology_body.update(
+        {
+            "requested_basis_rank": 3,
+            "topology_basis_rank_formula": "explicit_requested_basis_rank",
+            "topology_basis_rank": 3,
+            "effective_basis_rank": 3,
+        }
+    )
+    topology = {
+        **topology_body,
+        "topology_sha256": canonical_sha256(topology_body),
+    }
+    report_body.update(
+        {
+            "topology_receipt": topology,
+            "topology_sha256": topology["topology_sha256"],
+            "requested_basis_rank": 3,
+            "topology_basis_rank_formula": "explicit_requested_basis_rank",
+            "topology_basis_rank": 3,
+            "effective_basis_rank": 3,
+            "basis_rank": 3,
+        }
+    )
+    report = {**report_body, "report_sha256": canonical_sha256(report_body)}
+    document["global_residual_requested_basis_rank"] = 3
+    document["global_residual_closure_receipt"] = report
+    document["global_residual_closure_receipt_sha256"] = report["report_sha256"]
+
+    result = postfold._authenticate_semantic_global_residual_transition(
+        document,
+        recipe,
+    )
+
+    assert result is not None
+    assert result["global_residual_requested_basis_rank"] == 3
 
 
 @pytest.mark.parametrize(

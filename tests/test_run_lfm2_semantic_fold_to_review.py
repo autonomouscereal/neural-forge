@@ -329,6 +329,7 @@ def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
     recipe = runner.resolve_lfm2_semantic_body_recipe(recipe_id)
     arguments["body_recipe"] = recipe.recipe_id
     arguments["expected_body_recipe_sha256"] = recipe.recipe_sha256
+    arguments["global_residual_basis_rank"] = 776 if nonblocking else None
     candidate_ids = ("writer-a", "writer-b")
     events: list[str] = []
     references: dict[str, object] = {}
@@ -503,6 +504,9 @@ def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
                 "global_residual_closure_version"
             ],
             "global_residual_backend": kwargs["global_residual_backend"],
+            "global_residual_requested_basis_rank": kwargs[
+                "global_residual_basis_rank"
+            ],
             "global_residual_correction_scale_frontier": list(
                 kwargs["correction_scale_frontier"]
             ),
@@ -644,6 +648,9 @@ def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
     assert result["automatic_candidate_selection_performed"] is False
     assert result["automatic_candidate_acceptance_performed"] is False
     assert result["global_residual_closure_version"] == "producer_aware_v2a"
+    assert result["global_residual_requested_basis_rank"] == (
+        776 if nonblocking else None
+    )
     assert result["global_residual_correction_scale_frontier"] == [1.0]
     assert result["global_residual_correction_scale"] == 1.0
     assert result["global_residual_frontier_member_selected_as_winner"] is False
