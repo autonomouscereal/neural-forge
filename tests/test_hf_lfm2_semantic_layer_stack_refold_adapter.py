@@ -13,6 +13,7 @@ torch = pytest.importorskip("torch")
 import neural_forge.hf_lfm2_semantic_layer_stack_refold_adapter as stack  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
+    Lfm2CpcfTerminalActionDownWeightPrior,
     Lfm2CpcfTerminalActionEvidence,
 )
 from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
@@ -47,9 +48,7 @@ def test_normalized_operator_decoder_uses_exact_residual_chart_fit_batch_ids(
     alignments = tuple(
         SimpleNamespace(
             source_batch_index=batch_index,
-            phases=(
-                SimpleNamespace(target_to_donor_boundary_positions=(0,)),
-            ),
+            phases=(SimpleNamespace(target_to_donor_boundary_positions=(0,)),),
         )
         for batch_index in batch_ids
     )
@@ -143,17 +142,13 @@ def test_normalized_operator_decoder_uses_exact_residual_chart_fit_batch_ids(
     assert first_receipt["fit_batch_indices_authenticated_from_residual_chart"]
 
 
-def test_real_normalized_operator_decoder_is_invariant_to_every_nonfit_split() -> (
-    None
-):
+def test_real_normalized_operator_decoder_is_invariant_to_every_nonfit_split() -> None:
     batch_ids = (10, 20, 30, 40)
     fit_batch_index = 30
     alignments = tuple(
         SimpleNamespace(
             source_batch_index=batch_index,
-            phases=(
-                SimpleNamespace(target_to_donor_boundary_positions=(0,)),
-            ),
+            phases=(SimpleNamespace(target_to_donor_boundary_positions=(0,)),),
         )
         for batch_index in batch_ids
     )
@@ -229,6 +224,39 @@ def _body_recipe_fields(recipe_id: str = "fit_guided") -> dict[str, object]:
         "body_recipe_sha256": recipe.recipe_sha256,
         "body_recipe_id": recipe.recipe_id,
     }
+
+
+def _qdeim_compute_execution(
+    *,
+    schema: str,
+    requested_device: str,
+) -> dict[str, object]:
+    cuda = requested_device != "cpu"
+    body: dict[str, object] = {
+        "schema": schema,
+        "requested_device": requested_device,
+        "resolved_device": requested_device,
+        "backend": "cuda" if cuda else "cpu",
+        "compute_dtype": "float64",
+        "authenticated_source_archive_device": "cpu",
+        "active_layer_staged_to_compute_device": cuda,
+        "materialized_candidate_device": "cpu",
+        "system_memory_is_immutable_archive": True,
+        "gpu_is_ephemeral_dense_algebra_workspace": cuda,
+        "silent_device_fallback_performed": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    if cuda:
+        body.update(
+            {
+                "device_index": int(requested_device.split(":", 1)[1]),
+                "device_name": "test CUDA device",
+                "compute_capability": [6, 1],
+            }
+        )
+    return {**body, "receipt_sha256": canonical_sha256(body)}
 
 
 def _mlp_functional_provenance_receipt(layer_index: int) -> dict[str, object]:
@@ -1380,7 +1408,11 @@ def _patch_complete_transaction(
             )
         else:
             receipt_body = {
-                **{key: value for key, value in receipt.items() if key != "result_sha256"},
+                **{
+                    key: value
+                    for key, value in receipt.items()
+                    if key != "result_sha256"
+                },
                 **_body_recipe_fields(recipe.recipe_id),
                 "recipe_component_lane": recipe.component_lanes["short_conv"],
             }
@@ -1486,6 +1518,17 @@ def _patch_complete_transaction(
                 }
             ),
         }
+        if recipe.component_lanes["mlp"] in stack._GLOBAL_RESIDUAL_MLP_LANES:
+            source_derived_planting.update(
+                {
+                    "normalized_decoder_control_compute_device": "cpu",
+                    "qdeim_pod_and_pivot_compute_device": fold_compute_device,
+                    "qdeim_compute_execution": _qdeim_compute_execution(
+                        schema="neural-forge-lfm2-mlp-qdeim-compute-v1",
+                        requested_device=fold_compute_device,
+                    ),
+                }
+            )
         receipt_body = {
             **_body_recipe_fields(recipe.recipe_id),
             "recipe_component_lane": recipe.component_lanes["mlp"],
@@ -2747,9 +2790,7 @@ def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
     }
     parent_fingerprint = canonical_sha256(parent_identity_body)
     parent_record = {
-        key: value
-        for key, value in parent_identity_body.items()
-        if key != "schema"
+        key: value for key, value in parent_identity_body.items() if key != "schema"
     }
     parent_record["identity_sha256"] = parent_fingerprint
     identity_receipt_body = {
@@ -2769,9 +2810,7 @@ def _parent_mlp_provenance_fixture(*, corrupt_down: bool = False):
         open_receipt_sha256 = "d" * 64
         config_file_sha256 = "e" * 64
         normalized_config_sha256 = parent_record["config_sha256"]
-        parent_identity_reconstruction_sha256 = exact_identity_receipt[
-            "result_sha256"
-        ]
+        parent_identity_reconstruction_sha256 = exact_identity_receipt["result_sha256"]
         norm_epsilon = epsilon
 
         def tensor(self, key):
@@ -2870,16 +2909,18 @@ def test_direct_parent_session_accepts_exact_complete_parent_identity(
         receipt = session.receipt()
 
     assert identity["exact_parent_identity_authenticated"] is True
-    assert identity["reconstructed_parent_identity_sha256"] == parent_record[
-        "identity_sha256"
-    ]
+    assert (
+        identity["reconstructed_parent_identity_sha256"]
+        == parent_record["identity_sha256"]
+    )
     assert identity["reconstructed_state_tensor_count"] == len(tensors)
-    assert identity["reconstructed_runtime_buffer_count"] == parent_record[
-        "runtime_buffer_count"
-    ]
-    assert [
-        row["name"] for row in identity["checkpoint_tensor_records"]
-    ] == sorted(tensors)
+    assert (
+        identity["reconstructed_runtime_buffer_count"]
+        == parent_record["runtime_buffer_count"]
+    )
+    assert [row["name"] for row in identity["checkpoint_tensor_records"]] == sorted(
+        tensors
+    )
     assert receipt["checkpoint_files_rehashed_after_materialization"] is True
 
 
@@ -2926,20 +2967,22 @@ def test_direct_parent_session_reconstructs_tied_alias_and_runtime_buffers(
     ) as session:
         identity = session.identity_receipt()
 
-    assert identity["checkpoint_tensor_count"] + 1 == parent_record[
-        "state_tensor_count"
-    ]
-    assert identity["reconstructed_state_tensor_count"] == parent_record[
-        "state_tensor_count"
-    ]
+    assert (
+        identity["checkpoint_tensor_count"] + 1 == parent_record["state_tensor_count"]
+    )
+    assert (
+        identity["reconstructed_state_tensor_count"]
+        == parent_record["state_tensor_count"]
+    )
     assert identity["reconstructed_runtime_buffer_count"] == 2
     assert [row["name"] for row in identity["runtime_buffer_records"]] == [
         "model.rotary_emb.inv_freq",
         "model.rotary_emb.original_inv_freq",
     ]
-    assert identity["reconstructed_parent_identity_sha256"] == parent_record[
-        "identity_sha256"
-    ]
+    assert (
+        identity["reconstructed_parent_identity_sha256"]
+        == parent_record["identity_sha256"]
+    )
 
 
 def test_direct_parent_session_rejects_one_wrong_w2_before_numeric_replay(
@@ -3041,11 +3084,7 @@ def test_direct_parent_session_rejects_index_shard_path_escape(
     (directory / "model.safetensors").replace(outside)
     (directory / "model.safetensors.index.json").write_text(
         json.dumps(
-            {
-                "weight_map": {
-                    name: "../outside.safetensors" for name in tensors
-                }
-            }
+            {"weight_map": {name: "../outside.safetensors" for name in tensors}}
         ),
         encoding="utf-8",
     )
@@ -3093,10 +3132,7 @@ def test_direct_parent_mlp_inventory_is_functionally_bound_to_cached_endpoints()
         ]
         is False
     )
-    assert (
-        receipt["direct_parent_tensors_within_legacy_numeric_envelope"]
-        is True
-    )
+    assert receipt["direct_parent_tensors_within_legacy_numeric_envelope"] is True
     assert receipt["semantic_endpoint_scope_is_complete_tensor_identity_proof"] is False
     assert (
         receipt["cryptographic_parent_tensor_identity_proven_by_this_receipt"] is True
@@ -3217,13 +3253,9 @@ def test_real_v3_parent_mlp_provenance_reaches_layer0_receipt() -> None:
     assert receipt["mlp_source_functional_provenance_schema"] == (
         "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v3"
     )
+    assert receipt["mlp_source_direct_tensors_within_legacy_numeric_envelope"] is True
     assert (
-        receipt["mlp_source_direct_tensors_within_legacy_numeric_envelope"]
-        is True
-    )
-    assert (
-        receipt["mlp_source_all_cached_endpoints_within_legacy_bf16_envelope"]
-        is True
+        receipt["mlp_source_all_cached_endpoints_within_legacy_bf16_envelope"] is True
     )
     assert (
         receipt["mlp_source_semantic_endpoint_scope_is_complete_tensor_identity_proof"]
@@ -3791,3 +3823,363 @@ def test_stack_never_implements_its_own_cuda_bf16_router() -> None:
     text = open(source, encoding="utf-8").read()
     assert "torch.cuda.is_bf16_supported" not in text
     assert "cuda.get_device_capability" not in text
+
+
+def _patch_coupled_global_closure_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    closure_raises: bool = False,
+):
+    target, cache, bridge, _events = _patch_complete_transaction(
+        monkeypatch,
+        use_live_fourteen_layer_state_chain=True,
+    )
+    target.model.layers[0].conv.out_proj = torch.nn.Module()
+    target.model.layers[0].conv.out_proj.weight = torch.nn.Parameter(
+        torch.ones((1, 1), dtype=torch.float64)
+    )
+    closure_writer = target.model.layers[0].conv.out_proj.weight
+    physical_site_id = "model.layers.0.conv.out_proj.weight"
+    monkeypatch.setattr(
+        stack,
+        "_global_live_physical_state",
+        lambda _target: MappingProxyType({physical_site_id: closure_writer}),
+    )
+    recipe = stack.resolve_lfm2_semantic_body_recipe(
+        "nonlinear_qdeim_coupled_attention_structural"
+    )
+    prior = Lfm2CpcfTerminalActionDownWeightPrior(
+        down_weight=torch.ones((1, 1), dtype=torch.bfloat16),
+        body_recipe_id=recipe.recipe_id,
+        body_recipe_sha256=recipe.recipe_sha256,
+        mlp_lane=recipe.component_lanes["mlp"],
+        selected_role="full-w1-w3-w2",
+        selected_candidate_sha256="a" * 64,
+        preparation_sha256="b" * 64,
+        mlp_installation_core_sha256="c" * 64,
+        live_deferred_w2_sha256=(
+            stack.lfm2_cpcf_terminal_action_tensor_sha256(target.final_w2)
+        ),
+    )
+
+    stack._DirectParentSafetensorsSession.norm_epsilon = 1e-5
+    original_chart = stack._fit_residual_chart
+
+    def chart_with_fit_batches(**kwargs):
+        chart, receipt = original_chart(**kwargs)
+        body = dict(receipt)
+        body.pop("result_sha256")
+        body["partition_batch_indices"] = {
+            "fit": [0],
+            "fit_check": [1],
+            "selection": [2],
+            "validation": [3],
+        }
+        return chart, {**body, "result_sha256": canonical_sha256(body)}
+
+    monkeypatch.setattr(stack, "_fit_residual_chart", chart_with_fit_batches)
+    monkeypatch.setattr(
+        stack,
+        "_fit_layer_normalized_operator_input_decoder",
+        lambda **_kwargs: (
+            torch.eye(2, dtype=torch.float64),
+            {"result_sha256": "d" * 64},
+        ),
+    )
+    monkeypatch.setattr(
+        stack,
+        "seal_lfm2_semantic_attention_group_qdeim_norm_inventory",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        stack,
+        "_require_attention_body_recipe_binding",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        stack,
+        "_authenticate_lfm2_semantic_attention_operator_receipt",
+        lambda *_args, **_kwargs: {},
+    )
+
+    def coupled_installer(**kwargs):
+        receipt = stack._install_attention_operator(
+            target_model=kwargs["target_model"],
+            layer_index=kwargs["layer_index"],
+            body_recipe=kwargs["body_recipe"],
+        )
+        fold_compute_device = kwargs.get("fold_compute_device", "cpu")
+        compute_execution = _qdeim_compute_execution(
+            schema="neural-forge-lfm2-attention-qdeim-compute-v1",
+            requested_device=fold_compute_device,
+        )
+        body = {key: value for key, value in receipt.items() if key != "result_sha256"}
+        body.update(
+            {
+                "fold_compute_device": fold_compute_device,
+                "qdeim_pod_and_pivot_compute_device": fold_compute_device,
+                "qdeim_compute_execution": compute_execution,
+                "qdeim_compute_execution_sha256": compute_execution["receipt_sha256"],
+                "requested_fold_compute_device_proven": True,
+            }
+        )
+        return stack._sealed(body)
+
+    monkeypatch.setattr(
+        stack,
+        "_install_coupled_attention_group_qdeim_operator",
+        coupled_installer,
+    )
+    original_mlp_installer = stack._install_mlp
+
+    def mlp_with_prior(**kwargs):
+        receipt, evidence, _unused_prior = original_mlp_installer(**kwargs)
+        return (
+            receipt,
+            evidence,
+            prior if kwargs["layer_index"] == 13 else None,
+        )
+
+    monkeypatch.setattr(stack, "_install_mlp", mlp_with_prior)
+    row_map = stack._sealed(
+        {
+            "schema": stack.LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA,
+            "kind": "test-global-row-map",
+        }
+    )
+    monkeypatch.setattr(
+        stack,
+        "_prepare_global_residual_accumulators",
+        lambda _alignments: (MappingProxyType({}), row_map),
+    )
+    monkeypatch.setattr(
+        stack,
+        "_capture_global_parent_layer_boundaries",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        stack,
+        "_capture_global_child_layer_primals",
+        lambda *_args, **_kwargs: None,
+    )
+    closure_calls = []
+
+    def closure(_accumulators, **_kwargs):
+        closure_calls.append("called")
+        before = stack._tensor_sha256(closure_writer)
+        with torch.no_grad():
+            closure_writer.add_(0.5)
+        if closure_raises:
+            raise RuntimeError("injected global closure failure")
+        after = stack._tensor_sha256(closure_writer)
+        scale_policy = stack.Lfm2ProducerAwareCorrectionScalePolicy(
+            materialization_frontier=tuple(_kwargs["correction_scale_frontier"]),
+            materialization_scale=_kwargs["correction_scale"],
+        )
+        closure_policy = _kwargs["closure_policy"]
+        sites = [
+            {
+                "site_id": f"test.layer.{index // 4}.site.{index % 4}",
+                "layer_index": index // 4,
+                "causal_order": 6 * (index // 4) + (0, 1, 3, 4)[index % 4],
+                "writer_kind": "test",
+                "input_width": 1,
+            }
+            for index in range(56)
+        ]
+        topology_body = {
+            "schema": "test",
+            "kind": "writer_topology",
+            "sites": sites,
+        }
+        topology = {
+            **topology_body,
+            "topology_sha256": canonical_sha256(topology_body),
+        }
+        materialization_device = _kwargs["materialization_compute_device"]
+        compute_body = {
+            "schema": ("neural-forge-lfm2-producer-aware-dense-absorption-compute-v1"),
+            "kind": "producer_aware_dense_absorption_compute_execution",
+            "requested_device": materialization_device,
+            "resolved_device": materialization_device,
+            "backend": materialization_device.partition(":")[0],
+        }
+        compute_receipt = {
+            **compute_body,
+            "report_sha256": canonical_sha256(compute_body),
+        }
+        report_body = {
+            "evidence_package_sha256": "e" * 64,
+            "closure_result_sha256": "f" * 64,
+            "closure_scope": "56_producer_aware_input_output_sites_v2a",
+            "closure_backend": "producer_aware_v2a",
+            "global_residual_backend": closure_policy.backend,
+            "closure_policy": closure_policy.as_dict(),
+            "closure_policy_sha256": closure_policy.authentication_sha256,
+            "layer_count": 14,
+            "writer_site_count": 56,
+            "four_sites_per_layer": True,
+            "dynamic_layer_count_derived_from_authenticated_evidence": True,
+            "site_specifications": sites,
+            "topology_receipt": topology,
+            "topology_sha256": topology["topology_sha256"],
+            "materialization_compute_device": materialization_device,
+            "materialization_compute_execution_receipt_sha256": compute_receipt[
+                "report_sha256"
+            ],
+            "materialization_compute_execution_receipt": compute_receipt,
+            "dense_transaction_receipt": {
+                "compute_execution_receipt_sha256": compute_receipt["report_sha256"],
+                "compute_execution_receipt": compute_receipt,
+            },
+            "installed_parameter_ids": [physical_site_id],
+            "installed_parameter_count": 1,
+            "all_nondeferred_physical_parameters_installed": True,
+            "dense_live_physical_sha256_before": {physical_site_id: before},
+            "dense_live_physical_sha256_after": {physical_site_id: after},
+            "correction_scale_policy": {
+                **scale_policy.authentication_body(),
+                "authentication_sha256": scale_policy.authentication_sha256,
+            },
+            "correction_scale_policy_sha256": scale_policy.authentication_sha256,
+            "materialization_frontier": list(scale_policy.materialization_frontier),
+            "materialization_scale": scale_policy.materialization_scale,
+            "materialization_scale_is_execution_variant_not_winner": True,
+            "frontier_member_selected_as_winner": False,
+            "separate_fold_decode_retain_required_for_each_frontier_scale": True,
+            "all_frontier_candidates_eligible_for_decoded_behavioral_review": True,
+            "numeric_or_manual_quality_gate": False,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "final_w2_parameter_id": ("model.layers.13.feed_forward.w2.weight"),
+            "final_w2_unchanged": True,
+            "final_layer_mlp_down_weight_prior_authentication_sha256": (
+                prior.authentication_sha256
+            ),
+            "final_layer_mlp_down_weight_prior_tensor_sha256": (
+                stack.lfm2_cpcf_terminal_action_tensor_sha256(prior.down_weight)
+            ),
+            "final_layer_mlp_down_weight_prior_install_count": 0,
+            "corrected_final_w2_closure_lineage_sha256": "1" * 64,
+            "final_layer_mlp_down_weight_prior_closure_lineage_sha256": "1" * 64,
+            "quality_gate": False,
+            "numeric_diagnostics_used_for_auto_veto": False,
+        }
+        report = MappingProxyType(
+            {**report_body, "report_sha256": canonical_sha256(report_body)}
+        )
+        installation = SimpleNamespace(
+            corrected_final_w2_prior=prior,
+            report=report,
+            verify_authentication=lambda: True,
+        )
+        return installation, SimpleNamespace(evidence_sha256="e" * 64)
+
+    monkeypatch.setattr(
+        stack,
+        "_compile_install_global_residual_from_accumulators",
+        closure,
+    )
+    return target, cache, bridge, recipe, closure_writer, closure_calls
+
+
+@pytest.mark.parametrize("fold_compute_device", ["cpu", "cuda:1"])
+def test_coupled_stack_invokes_global_closure_and_returns_corrected_prior(
+    monkeypatch: pytest.MonkeyPatch,
+    fold_compute_device: str,
+) -> None:
+    target, cache, bridge, recipe, closure_writer, closure_calls = (
+        _patch_coupled_global_closure_transaction(monkeypatch)
+    )
+    before_final_w2 = target.final_w2.detach().clone()
+    before_writer = closure_writer.detach().clone()
+
+    result = stack.compile_install_lfm2_semantic_layer_stack_postfold(
+        cache=cache,
+        bridge=bridge,
+        target_model=target,
+        interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+        compiler_lineage={
+            index: SimpleNamespace(source_inventory=object())
+            for index in stack._EXPECTED_ATTENTION_INDICES
+        },
+        parent_model_directory="unused",
+        donor_tokenizer=object(),
+        target_tokenizer=object(),
+        attention_installer=None,
+        fold_compute_device=fold_compute_device,
+        body_recipe=recipe,
+        mapped_parent_tied_table=torch.eye(2),
+    )
+
+    assert closure_calls == ["called"]
+    assert result.receipt["global_residual_closure_applied"] is True
+    assert result.receipt["global_residual_closure_numeric_quality_gate"] is False
+    assert result.receipt["global_residual_closure_manual_quality_gate"] is False
+    assert result.receipt["fold_compute_device"] == fold_compute_device
+    assert (
+        result.receipt[
+            "all_mlp_qdeim_pod_and_pivot_layers_proved_requested_fold_compute_device"
+        ]
+        is True
+    )
+    assert (
+        result.receipt[
+            "all_attention_qdeim_pod_and_pivot_layers_proved_requested_fold_compute_device"
+        ]
+        is True
+    )
+    assert all(
+        layer["mlp_qdeim_pod_and_pivot_compute_device"] == fold_compute_device
+        and layer["mlp_normalized_decoder_control_compute_device"] == "cpu"
+        for layer in result.receipt["layer_installations"]
+    )
+    assert all(
+        layer["attention_qdeim_pod_and_pivot_compute_device"] == fold_compute_device
+        for layer in result.receipt["layer_installations"]
+        if layer["operator_kind"] == "full_attention"
+    )
+    assert result.final_layer_mlp_down_weight_prior is not None
+    assert not torch.equal(closure_writer, before_writer)
+    torch.testing.assert_close(target.final_w2, before_final_w2, rtol=0, atol=0)
+
+
+def test_global_closure_failure_rolls_back_local_and_closure_mutations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target, cache, bridge, recipe, _closure_writer, closure_calls = (
+        _patch_coupled_global_closure_transaction(
+            monkeypatch,
+            closure_raises=True,
+        )
+    )
+    before = {
+        name: value.detach().clone() for name, value in target.state_dict().items()
+    }
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="exact entry bytes were restored",
+    ):
+        stack.compile_install_lfm2_semantic_layer_stack_postfold(
+            cache=cache,
+            bridge=bridge,
+            target_model=target,
+            interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+            compiler_lineage={
+                index: SimpleNamespace(source_inventory=object())
+                for index in stack._EXPECTED_ATTENTION_INDICES
+            },
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            attention_installer=None,
+            body_recipe=recipe,
+            mapped_parent_tied_table=torch.eye(2),
+        )
+
+    assert closure_calls == ["called"]
+    for name, value in target.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)

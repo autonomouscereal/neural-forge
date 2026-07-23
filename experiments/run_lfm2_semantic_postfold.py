@@ -40,6 +40,9 @@ from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
 from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
 )
+from neural_forge.hf_lfm2_producer_aware_semantic_integration import (  # noqa: E402
+    Lfm2ProducerAwareCorrectionScalePolicy,
+)
 
 
 def _new_file(value: str, name: str) -> Path:
@@ -146,6 +149,19 @@ def _installer(module_name: str | None, callable_name: str) -> Any | None:
     return value
 
 
+def _correction_scale_frontier(value: str) -> tuple[float, ...]:
+    try:
+        frontier = tuple(float(item.strip()) for item in value.split(","))
+        return Lfm2ProducerAwareCorrectionScalePolicy(
+            materialization_frontier=frontier,
+            materialization_scale=frontier[0],
+        ).materialization_frontier
+    except (TypeError, ValueError, RuntimeError, IndexError) as exc:
+        raise argparse.ArgumentTypeError(
+            "correction-scale frontier must be sorted unique nonnegative CSV floats"
+        ) from exc
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -233,6 +249,22 @@ def _parser() -> argparse.ArgumentParser:
             "Closed-form folding backend. Use cpu or an explicitly indexed "
             "CUDA device such as cuda:0; arithmetic remains float64."
         ),
+    )
+    parser.add_argument(
+        "--global-residual-closure-version",
+        choices=("producer_aware_v2a", "output_writer_v1_diagnostic"),
+        default="producer_aware_v2a",
+    )
+    parser.add_argument(
+        "--correction-scale-frontier",
+        type=_correction_scale_frontier,
+        default=(1.0,),
+    )
+    parser.add_argument("--correction-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--global-residual-backend",
+        choices=("auto", "cpu", "cuda"),
+        default="auto",
     )
     parser.add_argument(
         "--body-recipe",
@@ -334,6 +366,10 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             dtype=args.dtype,
             fold_compute_device=args.fold_compute_device,
+            global_residual_closure_version=args.global_residual_closure_version,
+            correction_scale_frontier=args.correction_scale_frontier,
+            correction_scale=args.correction_scale,
+            global_residual_backend=args.global_residual_backend,
             body_recipe=args.body_recipe,
             parent_final_norm_tensor_key=(args.parent_final_norm_tensor_key),
             parent_norm_epsilon_config_key=(args.parent_norm_epsilon_config_key),

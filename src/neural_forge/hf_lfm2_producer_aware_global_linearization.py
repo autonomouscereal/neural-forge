@@ -1,0 +1,2366 @@
+"""Producer-aware residual-attention folding for authenticated LFM2 stacks.
+
+This v2a linearization keeps the v1 residual output writers and adds one
+virtual hidden input transport to each pre-norm operator and MLP branch.  A
+transport is parameterized as ``A = U @ C`` and perturbs the frozen normalized
+producer input by ``normalized_input @ A.T``.  It can be absorbed into ordinary
+dense child weights without a runtime sidecar:
+
+* attention: ``delta_Wq/Wk/Wv = Wq/Wk/Wv @ A`` as one atomic group;
+* short convolution: ``delta_Win = Win @ A`` across all B/C/X rows;
+* SwiGLU: ``delta_Wgate/Wup = Wgate/Wup @ A`` as one atomic group.
+
+All derivatives are explicit continuous FP64 JVPs/VJPs.  This module performs
+no model forward, autograd, backward, optimizer step, training, pruning,
+quantization, parameter sharing, or numerical quality gating.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from types import MappingProxyType, SimpleNamespace
+from typing import Any, Literal
+
+from neural_forge.dynamic_fold_executor import run_fold_only_callback
+from neural_forge.hf_lfm2_cached_qk_score_residual_fold import (
+    apply_lfm2_finite_radius_rope,
+    apply_lfm2_finite_radius_rope_transpose,
+)
+from neural_forge.hf_lfm2_global_linearization import (
+    Lfm2AttentionPrimalSnapshot,
+    Lfm2GlobalLinearizationError,
+    Lfm2LinearizationNormBounds,
+    Lfm2MacrocellLinearization,
+    Lfm2MlpPrimalSnapshot,
+    Lfm2ResidualSegmentTangent,
+    Lfm2ShortConvPrimalSnapshot,
+    Lfm2WholeStackPrimalSnapshot,
+    Lfm2WholeStackConditioningScales,
+    _causal_fir,
+    _causal_fir_vjp,
+    _linear,
+    _macrocell_views,
+    _macrocell_norm_factors,
+    _matrix_spectral_norm_upper,
+    _masked_softmax_jvp,
+    _masked_softmax_vjp,
+    _plain_fp64,
+    _prefixed_state,
+    _repeat_gqa,
+    _rmsnorm_linearization_norm_upper,
+    _scatter_scaled_batch_cotangent,
+    _short_conv_padding_active,
+    _silu_derivative,
+    _stack_local_state,
+    _sum_gqa_repeats,
+    _terminal_transfer_norm_upper,
+    _validate_coefficient,
+    _validate_output_basis,
+    _whole_stack_tensor_state,
+    _workspace_bytes,
+    lfm2_continuous_fp64_rmsnorm_jvp,
+    lfm2_continuous_fp64_rmsnorm_vjp,
+)
+from neural_forge.hf_lfm2_global_residual_closure import (
+    Lfm2GlobalResidualBoundaryBundle,
+    Lfm2GlobalResidualLinearizationKernel,
+    Lfm2GlobalResidualWriterSite,
+    Lfm2GlobalResidualWriterTopology,
+    adjoint_lfm2_global_residual_writer_block,
+    apply_lfm2_global_residual_writer_block,
+    fingerprint_lfm2_global_residual_tensor,
+)
+
+
+LFM2_PRODUCER_AWARE_LINEARIZATION_SCHEMA = (
+    "neural-forge-lfm2-producer-aware-global-linearization-v2a"
+)
+
+
+class Lfm2ProducerAwareLinearizationError(Lfm2GlobalLinearizationError):
+    """Producer-aware geometry, authentication, or transaction is invalid."""
+
+
+class Lfm2ProducerAwareAuthenticationError(Lfm2ProducerAwareLinearizationError):
+    """Producer-aware immutable evidence changed after capture."""
+
+
+def lfm2_producer_aware_site_causal_orders(
+    layer_index: int,
+) -> tuple[int, int, int, int]:
+    """Return op-in, op-out, MLP-in, and MLP-down timeline positions."""
+
+    if (
+        isinstance(layer_index, bool)
+        or not isinstance(layer_index, int)
+        or layer_index < 0
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "layer_index must be a nonnegative integer."
+        )
+    start = 6 * layer_index
+    return (start, start + 1, start + 3, start + 4)
+
+
+def lfm2_producer_aware_boundary_causal_order(
+    layer_index: int,
+    boundary_kind: str,
+) -> int:
+    """Return the shared site/boundary timeline position for one boundary."""
+
+    site_orders = lfm2_producer_aware_site_causal_orders(layer_index)
+    kind = str(boundary_kind).strip().lower()
+    if kind == "post_operator_residual":
+        return site_orders[1] + 1
+    if kind == "post_layer_residual":
+        return site_orders[3] + 1
+    if kind == "terminal_observable":
+        return 6 * (layer_index + 1)
+    raise Lfm2ProducerAwareLinearizationError(
+        "boundary_kind is invalid for the producer-aware causal timeline."
+    )
+
+
+def build_lfm2_producer_aware_writer_topology(
+    snapshot: Lfm2WholeStackPrimalSnapshot,
+    *,
+    head_dimension: int,
+    site_ids: Sequence[str] | None = None,
+) -> Lfm2GlobalResidualWriterTopology:
+    """Derive the canonical four-sites-per-layer topology from primals."""
+
+    if not isinstance(snapshot, Lfm2WholeStackPrimalSnapshot) or not (
+        snapshot.verify_authentication()
+    ):
+        raise Lfm2ProducerAwareAuthenticationError(
+            "snapshot must be authenticated before topology construction."
+        )
+    if (
+        isinstance(head_dimension, bool)
+        or not isinstance(head_dimension, int)
+        or head_dimension <= 0
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "head_dimension must be a positive integer."
+        )
+    supplied_ids = (
+        None if site_ids is None else tuple(str(value).strip() for value in site_ids)
+    )
+    expected_site_count = 4 * snapshot.layer_count
+    if supplied_ids is not None and (
+        len(supplied_ids) != expected_site_count
+        or any(not value for value in supplied_ids)
+        or len(set(supplied_ids)) != expected_site_count
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            f"site_ids must contain {expected_site_count} unique nonempty "
+            "canonical names."
+        )
+    sites = []
+    for layer_index, macrocell in enumerate(snapshot.batches[0].macrocells):
+        kinds = (
+            (
+                "attention_input_transport"
+                if macrocell.operator_kind == "full_attention"
+                else "short_conv_input_transport"
+            ),
+            (
+                "attention_output"
+                if macrocell.operator_kind == "full_attention"
+                else "short_conv_output"
+            ),
+            "mlp_input_transport",
+            "mlp_down",
+        )
+        widths = (
+            snapshot.hidden_size,
+            macrocell.input_widths[0],
+            snapshot.hidden_size,
+            macrocell.input_widths[1],
+        )
+        causal_orders = lfm2_producer_aware_site_causal_orders(layer_index)
+        for local_index, (kind, width, causal_order) in enumerate(
+            zip(kinds, widths, causal_orders, strict=True)
+        ):
+            global_index = 4 * layer_index + local_index
+            site_id = (
+                supplied_ids[global_index]
+                if supplied_ids is not None
+                else f"layer.{layer_index}.{kind}"
+            )
+            sites.append(
+                Lfm2GlobalResidualWriterSite(
+                    site_id=site_id,
+                    layer_index=layer_index,
+                    causal_order=causal_order,
+                    writer_kind=kind,
+                    input_width=width,
+                )
+            )
+    return Lfm2GlobalResidualWriterTopology(
+        hidden_size=snapshot.hidden_size,
+        head_dimension=head_dimension,
+        sites=tuple(sites),
+    )
+
+
+def _torch() -> Any:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError(
+            "PyTorch is required for producer-aware LFM2 folding."
+        ) from exc
+    return torch
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2ProducerAwareSegmentCotangent:
+    """Transpose result for one input transport plus one output writer."""
+
+    incoming_residual: Any
+    input_transport_coefficients: Any
+    output_writer_coefficients: Any
+
+
+def _producer_transport_tangent(
+    normalized_input: Any,
+    coefficients: Any,
+    output_basis: Any,
+    *,
+    name: str,
+) -> Any:
+    basis = _validate_output_basis(
+        output_basis,
+        int(normalized_input.shape[-1]),
+        normalized_input.device,
+    )
+    block = _validate_coefficient(
+        coefficients,
+        rank=int(basis.shape[1]),
+        input_width=int(normalized_input.shape[-1]),
+        device=normalized_input.device,
+        name=name,
+    )
+    return apply_lfm2_global_residual_writer_block(
+        normalized_input,
+        basis,
+        block,
+    )
+
+
+def _producer_transport_vjp(
+    normalized_input: Any,
+    normalized_input_cotangent: Any,
+    output_basis: Any,
+) -> Any:
+    return adjoint_lfm2_global_residual_writer_block(
+        normalized_input,
+        output_basis,
+        normalized_input_cotangent,
+    )
+
+
+def lfm2_producer_aware_attention_segment_jvp(
+    snapshot: Lfm2AttentionPrimalSnapshot | SimpleNamespace,
+    incoming_residual_tangent: Any,
+    input_transport_coefficients: Any,
+    output_writer_coefficients: Any,
+    output_basis: Any,
+) -> Lfm2ResidualSegmentTangent:
+    """Attention JVP with coupled Q/K/V input transport and O correction."""
+
+    torch = _torch()
+    p = snapshot.parameters
+    incoming = _plain_fp64(
+        incoming_residual_tangent,
+        "attention_incoming_residual_tangent",
+        shape=tuple(snapshot.residual.shape),
+        device=snapshot.residual.device,
+    )
+    basis = _validate_output_basis(
+        output_basis, p.hidden_size, snapshot.residual.device
+    )
+    output_block = _validate_coefficient(
+        output_writer_coefficients,
+        rank=int(basis.shape[1]),
+        input_width=p.writer_input_width,
+        device=snapshot.residual.device,
+        name="attention_output_writer_coefficients",
+    )
+    batch, sequence, _ = map(int, snapshot.residual.shape)
+    with torch.no_grad():
+        d_normalized = lfm2_continuous_fp64_rmsnorm_jvp(
+            snapshot.residual,
+            incoming,
+            p.operator_norm_gain,
+            p.operator_norm_epsilon,
+        )
+        d_normalized = d_normalized + _producer_transport_tangent(
+            snapshot.normalized_input,
+            input_transport_coefficients,
+            basis,
+            name="attention_input_transport_coefficients",
+        )
+        dq_linear = _linear(d_normalized, p.query_weight).reshape(
+            batch,
+            sequence,
+            p.query_heads,
+            p.head_dim,
+        )
+        dk_linear = _linear(d_normalized, p.key_weight).reshape(
+            batch,
+            sequence,
+            p.key_value_heads,
+            p.head_dim,
+        )
+        d_value = (
+            _linear(d_normalized, p.value_weight)
+            .reshape(batch, sequence, p.key_value_heads, p.head_dim)
+            .transpose(1, 2)
+            .contiguous()
+        )
+        dq_pre = (
+            lfm2_continuous_fp64_rmsnorm_jvp(
+                snapshot.query_linear,
+                dq_linear,
+                p.query_norm_gain,
+                p.query_key_norm_epsilon,
+            )
+            .transpose(1, 2)
+            .contiguous()
+        )
+        dk_pre = (
+            lfm2_continuous_fp64_rmsnorm_jvp(
+                snapshot.key_linear,
+                dk_linear,
+                p.key_norm_gain,
+                p.query_key_norm_epsilon,
+            )
+            .transpose(1, 2)
+            .contiguous()
+        )
+        dq = apply_lfm2_finite_radius_rope(dq_pre, p.rope_cosine, p.rope_sine)
+        dk = apply_lfm2_finite_radius_rope(dk_pre, p.rope_cosine, p.rope_sine)
+        repeats = p.query_heads // p.key_value_heads
+        drepeated_key = _repeat_gqa(dk, repeats)
+        drepeated_value = _repeat_gqa(d_value, repeats)
+        dscores = (
+            dq @ snapshot.repeated_key.transpose(-1, -2)
+            + snapshot.query @ drepeated_key.transpose(-1, -2)
+        ) * p.scaling
+        mask = p.causal_mask.expand_as(snapshot.probabilities)
+        dprobabilities = _masked_softmax_jvp(
+            snapshot.probabilities,
+            dscores,
+            mask,
+        )
+        dcontext = (
+            dprobabilities @ snapshot.repeated_value
+            + snapshot.probabilities @ drepeated_value
+        )
+        dwriter_input = (
+            dcontext.transpose(1, 2)
+            .contiguous()
+            .reshape(batch, sequence, p.writer_input_width)
+        )
+        ddelta = _linear(dwriter_input, p.output_weight)
+        ddelta = ddelta + apply_lfm2_global_residual_writer_block(
+            snapshot.writer_input,
+            basis,
+            output_block,
+        )
+        output = incoming + ddelta
+    return Lfm2ResidualSegmentTangent(delta=ddelta, output=output)
+
+
+def lfm2_producer_aware_attention_segment_vjp(
+    snapshot: Lfm2AttentionPrimalSnapshot | SimpleNamespace,
+    output_cotangent: Any,
+    output_basis: Any,
+) -> Lfm2ProducerAwareSegmentCotangent:
+    """Exact transpose of producer-aware attention JVP."""
+
+    torch = _torch()
+    p = snapshot.parameters
+    cotangent = _plain_fp64(
+        output_cotangent,
+        "attention_output_cotangent",
+        shape=tuple(snapshot.output.shape),
+        device=snapshot.residual.device,
+    )
+    basis = _validate_output_basis(
+        output_basis, p.hidden_size, snapshot.residual.device
+    )
+    batch, sequence, _ = map(int, snapshot.residual.shape)
+    with torch.no_grad():
+        output_bar = adjoint_lfm2_global_residual_writer_block(
+            snapshot.writer_input,
+            basis,
+            cotangent,
+        )
+        writer_input_bar = cotangent @ p.output_weight
+        context_bar = (
+            writer_input_bar.reshape(batch, sequence, p.query_heads, p.head_dim)
+            .transpose(1, 2)
+            .contiguous()
+        )
+        probability_bar = context_bar @ snapshot.repeated_value.transpose(-1, -2)
+        repeated_value_bar = snapshot.probabilities.transpose(-1, -2) @ context_bar
+        mask = p.causal_mask.expand_as(snapshot.probabilities)
+        score_bar = (
+            _masked_softmax_vjp(
+                snapshot.probabilities,
+                probability_bar,
+                mask,
+            )
+            * p.scaling
+        )
+        query_bar = score_bar @ snapshot.repeated_key
+        repeated_key_bar = score_bar.transpose(-1, -2) @ snapshot.query
+        repeats = p.query_heads // p.key_value_heads
+        key_bar = _sum_gqa_repeats(
+            repeated_key_bar,
+            p.key_value_heads,
+            repeats,
+        )
+        value_bar = _sum_gqa_repeats(
+            repeated_value_bar,
+            p.key_value_heads,
+            repeats,
+        )
+        query_pre_bar = (
+            apply_lfm2_finite_radius_rope_transpose(
+                query_bar,
+                p.rope_cosine,
+                p.rope_sine,
+            )
+            .transpose(1, 2)
+            .contiguous()
+        )
+        key_pre_bar = (
+            apply_lfm2_finite_radius_rope_transpose(
+                key_bar,
+                p.rope_cosine,
+                p.rope_sine,
+            )
+            .transpose(1, 2)
+            .contiguous()
+        )
+        query_linear_bar = lfm2_continuous_fp64_rmsnorm_vjp(
+            snapshot.query_linear,
+            query_pre_bar,
+            p.query_norm_gain,
+            p.query_key_norm_epsilon,
+        ).reshape(batch, sequence, -1)
+        key_linear_bar = lfm2_continuous_fp64_rmsnorm_vjp(
+            snapshot.key_linear,
+            key_pre_bar,
+            p.key_norm_gain,
+            p.query_key_norm_epsilon,
+        ).reshape(batch, sequence, -1)
+        value_linear_bar = (
+            value_bar.transpose(1, 2).contiguous().reshape(batch, sequence, -1)
+        )
+        normalized_bar = (
+            query_linear_bar @ p.query_weight
+            + key_linear_bar @ p.key_weight
+            + value_linear_bar @ p.value_weight
+        )
+        transport_bar = _producer_transport_vjp(
+            snapshot.normalized_input,
+            normalized_bar,
+            basis,
+        )
+        incoming_bar = cotangent + lfm2_continuous_fp64_rmsnorm_vjp(
+            snapshot.residual,
+            normalized_bar,
+            p.operator_norm_gain,
+            p.operator_norm_epsilon,
+        )
+    return Lfm2ProducerAwareSegmentCotangent(
+        incoming_residual=incoming_bar,
+        input_transport_coefficients=transport_bar,
+        output_writer_coefficients=output_bar,
+    )
+
+
+def lfm2_producer_aware_short_conv_segment_jvp(
+    snapshot: Lfm2ShortConvPrimalSnapshot | SimpleNamespace,
+    incoming_residual_tangent: Any,
+    input_transport_coefficients: Any,
+    output_writer_coefficients: Any,
+    output_basis: Any,
+) -> Lfm2ResidualSegmentTangent:
+    """Short-conv JVP with one transport shared by all B/C/X rows."""
+
+    torch = _torch()
+    p = snapshot.parameters
+    incoming = _plain_fp64(
+        incoming_residual_tangent,
+        "short_conv_incoming_residual_tangent",
+        shape=tuple(snapshot.residual.shape),
+        device=snapshot.residual.device,
+    )
+    basis = _validate_output_basis(
+        output_basis, p.hidden_size, snapshot.residual.device
+    )
+    output_block = _validate_coefficient(
+        output_writer_coefficients,
+        rank=int(basis.shape[1]),
+        input_width=p.writer_input_width,
+        device=snapshot.residual.device,
+        name="short_conv_output_writer_coefficients",
+    )
+    with torch.no_grad():
+        d_normalized = lfm2_continuous_fp64_rmsnorm_jvp(
+            snapshot.residual,
+            incoming,
+            p.operator_norm_gain,
+            p.operator_norm_epsilon,
+        )
+        d_normalized = d_normalized + _producer_transport_tangent(
+            snapshot.normalized_input,
+            input_transport_coefficients,
+            basis,
+            name="short_conv_input_transport_coefficients",
+        )
+        d_masked = d_normalized
+        if _short_conv_padding_active(p.padding_mask):
+            d_masked = d_normalized * p.padding_mask.unsqueeze(-1)
+        d_projected = _linear(d_masked, p.input_weight)
+        db, dc, dx = d_projected.chunk(3, dim=-1)
+        dbx = db * snapshot.x_values + snapshot.b_values * dx
+        dfiltered = _causal_fir(dbx, p.stored_fir_kernel)
+        dwriter_input = dc * snapshot.filtered + snapshot.c_values * dfiltered
+        ddelta = _linear(dwriter_input, p.output_weight)
+        ddelta = ddelta + apply_lfm2_global_residual_writer_block(
+            snapshot.writer_input,
+            basis,
+            output_block,
+        )
+        output = incoming + ddelta
+    return Lfm2ResidualSegmentTangent(delta=ddelta, output=output)
+
+
+def lfm2_producer_aware_short_conv_segment_vjp(
+    snapshot: Lfm2ShortConvPrimalSnapshot | SimpleNamespace,
+    output_cotangent: Any,
+    output_basis: Any,
+) -> Lfm2ProducerAwareSegmentCotangent:
+    """Exact transpose of producer-aware short-conv JVP."""
+
+    torch = _torch()
+    p = snapshot.parameters
+    cotangent = _plain_fp64(
+        output_cotangent,
+        "short_conv_output_cotangent",
+        shape=tuple(snapshot.output.shape),
+        device=snapshot.residual.device,
+    )
+    basis = _validate_output_basis(
+        output_basis, p.hidden_size, snapshot.residual.device
+    )
+    with torch.no_grad():
+        output_bar = adjoint_lfm2_global_residual_writer_block(
+            snapshot.writer_input,
+            basis,
+            cotangent,
+        )
+        writer_input_bar = cotangent @ p.output_weight
+        c_bar = writer_input_bar * snapshot.filtered
+        filtered_bar = writer_input_bar * snapshot.c_values
+        bx_bar = _causal_fir_vjp(filtered_bar, p.stored_fir_kernel)
+        b_bar = bx_bar * snapshot.x_values
+        x_bar = bx_bar * snapshot.b_values
+        projected_bar = torch.cat((b_bar, c_bar, x_bar), dim=-1)
+        masked_bar = projected_bar @ p.input_weight
+        normalized_bar = masked_bar
+        if _short_conv_padding_active(p.padding_mask):
+            normalized_bar = masked_bar * p.padding_mask.unsqueeze(-1)
+        transport_bar = _producer_transport_vjp(
+            snapshot.normalized_input,
+            normalized_bar,
+            basis,
+        )
+        incoming_bar = cotangent + lfm2_continuous_fp64_rmsnorm_vjp(
+            snapshot.residual,
+            normalized_bar,
+            p.operator_norm_gain,
+            p.operator_norm_epsilon,
+        )
+    return Lfm2ProducerAwareSegmentCotangent(
+        incoming_residual=incoming_bar,
+        input_transport_coefficients=transport_bar,
+        output_writer_coefficients=output_bar,
+    )
+
+
+def lfm2_producer_aware_mlp_segment_jvp(
+    snapshot: Lfm2MlpPrimalSnapshot | SimpleNamespace,
+    incoming_residual_tangent: Any,
+    input_transport_coefficients: Any,
+    output_writer_coefficients: Any,
+    output_basis: Any,
+) -> Lfm2ResidualSegmentTangent:
+    """SwiGLU JVP with coupled gate/up input transport and W2 correction."""
+
+    torch = _torch()
+    p = snapshot.parameters
+    incoming = _plain_fp64(
+        incoming_residual_tangent,
+        "mlp_incoming_residual_tangent",
+        shape=tuple(snapshot.residual.shape),
+        device=snapshot.residual.device,
+    )
+    basis = _validate_output_basis(
+        output_basis, p.hidden_size, snapshot.residual.device
+    )
+    output_block = _validate_coefficient(
+        output_writer_coefficients,
+        rank=int(basis.shape[1]),
+        input_width=p.writer_input_width,
+        device=snapshot.residual.device,
+        name="mlp_down_writer_coefficients",
+    )
+    with torch.no_grad():
+        d_normalized = lfm2_continuous_fp64_rmsnorm_jvp(
+            snapshot.residual,
+            incoming,
+            p.norm_gain,
+            p.norm_epsilon,
+        )
+        d_normalized = d_normalized + _producer_transport_tangent(
+            snapshot.normalized_input,
+            input_transport_coefficients,
+            basis,
+            name="mlp_input_transport_coefficients",
+        )
+        dgate = _linear(d_normalized, p.gate_weight)
+        dup = _linear(d_normalized, p.up_weight)
+        dactivation = _silu_derivative(snapshot.gate) * dgate
+        dwriter_input = dactivation * snapshot.up + snapshot.activation * dup
+        ddelta = _linear(dwriter_input, p.down_weight)
+        ddelta = ddelta + apply_lfm2_global_residual_writer_block(
+            snapshot.writer_input,
+            basis,
+            output_block,
+        )
+        output = incoming + ddelta
+    return Lfm2ResidualSegmentTangent(delta=ddelta, output=output)
+
+
+def lfm2_producer_aware_mlp_segment_vjp(
+    snapshot: Lfm2MlpPrimalSnapshot | SimpleNamespace,
+    output_cotangent: Any,
+    output_basis: Any,
+) -> Lfm2ProducerAwareSegmentCotangent:
+    """Exact transpose of producer-aware SwiGLU JVP."""
+
+    torch = _torch()
+    p = snapshot.parameters
+    cotangent = _plain_fp64(
+        output_cotangent,
+        "mlp_output_cotangent",
+        shape=tuple(snapshot.output.shape),
+        device=snapshot.residual.device,
+    )
+    basis = _validate_output_basis(
+        output_basis, p.hidden_size, snapshot.residual.device
+    )
+    with torch.no_grad():
+        output_bar = adjoint_lfm2_global_residual_writer_block(
+            snapshot.writer_input,
+            basis,
+            cotangent,
+        )
+        writer_input_bar = cotangent @ p.down_weight
+        gate_bar = writer_input_bar * snapshot.up * _silu_derivative(snapshot.gate)
+        up_bar = writer_input_bar * snapshot.activation
+        normalized_bar = gate_bar @ p.gate_weight + up_bar @ p.up_weight
+        transport_bar = _producer_transport_vjp(
+            snapshot.normalized_input,
+            normalized_bar,
+            basis,
+        )
+        incoming_bar = cotangent + lfm2_continuous_fp64_rmsnorm_vjp(
+            snapshot.residual,
+            normalized_bar,
+            p.norm_gain,
+            p.norm_epsilon,
+        )
+    return Lfm2ProducerAwareSegmentCotangent(
+        incoming_residual=incoming_bar,
+        input_transport_coefficients=transport_bar,
+        output_writer_coefficients=output_bar,
+    )
+
+
+def _producer_input_direct_norm_factors(
+    macrocell: Lfm2MacrocellLinearization,
+    output_basis: Any,
+) -> tuple[float, float]:
+    """Bound direct operator/MLP transport maps at frozen primals."""
+
+    operator = macrocell.operator
+    basis_norm = _matrix_spectral_norm_upper(output_basis)
+    operator_transport_input = basis_norm * _matrix_spectral_norm_upper(
+        operator.normalized_input.reshape(-1, operator.parameters.hidden_size)
+    )
+    if isinstance(operator, Lfm2AttentionPrimalSnapshot):
+        p = operator.parameters
+        repeats = p.query_heads // p.key_value_heads
+        query_norm = _rmsnorm_linearization_norm_upper(
+            operator.query_linear,
+            p.query_norm_gain,
+            p.query_key_norm_epsilon,
+        )
+        key_norm = _rmsnorm_linearization_norm_upper(
+            operator.key_linear,
+            p.key_norm_gain,
+            p.query_key_norm_epsilon,
+        )
+        half = p.head_dim // 2
+        rope_gain = float(
+            (p.rope_cosine[..., :half].square() + p.rope_sine[..., :half].square())
+            .sqrt()
+            .amax()
+            .item()
+        )
+        query_lipschitz = (
+            _matrix_spectral_norm_upper(p.query_weight) * query_norm * rope_gain
+        )
+        repeated_key_lipschitz = (
+            _matrix_spectral_norm_upper(p.key_weight)
+            * key_norm
+            * rope_gain
+            * math.sqrt(repeats)
+        )
+        repeated_value_lipschitz = _matrix_spectral_norm_upper(
+            p.value_weight
+        ) * math.sqrt(repeats)
+        score_lipschitz = p.scaling * (
+            _matrix_spectral_norm_upper(operator.repeated_key) * query_lipschitz
+            + _matrix_spectral_norm_upper(operator.query) * repeated_key_lipschitz
+        )
+        softmax_lipschitz = float(
+            (2.0 * operator.probabilities * (1.0 - operator.probabilities))
+            .amax()
+            .item()
+        )
+        context_lipschitz = (
+            _matrix_spectral_norm_upper(operator.repeated_value)
+            * softmax_lipschitz
+            * score_lipschitz
+            + _matrix_spectral_norm_upper(operator.probabilities)
+            * repeated_value_lipschitz
+        )
+        operator_branch = (
+            _matrix_spectral_norm_upper(p.output_weight) * context_lipschitz
+        )
+    else:
+        p = operator.parameters
+        padding_gain = 1.0
+        if p.padding_mask is not None:
+            padding_gain = float(p.padding_mask.abs().amax().item())
+        projected_lipschitz = padding_gain * _matrix_spectral_norm_upper(p.input_weight)
+        fir_lipschitz = float(p.stored_fir_kernel.abs().sum(dim=-1).amax().item())
+        writer_input_lipschitz = projected_lipschitz * (
+            float(operator.filtered.abs().amax().item())
+            + float(operator.c_values.abs().amax().item())
+            * fir_lipschitz
+            * (
+                float(operator.x_values.abs().amax().item())
+                + float(operator.b_values.abs().amax().item())
+            )
+        )
+        operator_branch = (
+            _matrix_spectral_norm_upper(p.output_weight) * writer_input_lipschitz
+        )
+    mlp = macrocell.mlp
+    mp = mlp.parameters
+    mlp_transport_input = basis_norm * _matrix_spectral_norm_upper(
+        mlp.normalized_input.reshape(-1, mp.hidden_size)
+    )
+    producer_lipschitz = float(
+        (mlp.up * _silu_derivative(mlp.gate)).abs().amax().item()
+    ) * _matrix_spectral_norm_upper(mp.gate_weight) + float(
+        mlp.activation.abs().amax().item()
+    ) * _matrix_spectral_norm_upper(mp.up_weight)
+    mlp_branch = _matrix_spectral_norm_upper(mp.down_weight) * producer_lipschitz
+    result = (
+        operator_transport_input * operator_branch,
+        mlp_transport_input * mlp_branch,
+    )
+    if not all(math.isfinite(value) and value >= 0.0 for value in result):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware direct transport norm evidence is non-finite."
+        )
+    return result
+
+
+def lfm2_producer_aware_whole_stack_norm_evidence(
+    snapshot: Lfm2WholeStackPrimalSnapshot,
+    output_basis: Any,
+) -> tuple[Lfm2WholeStackConditioningScales, Lfm2LinearizationNormBounds]:
+    """Return separate unweighted local scales and global certified bounds.
+
+    Conditioning values are diagnostic numerical scales, never gates.  A
+    closure adapter must multiply both scale families by its authenticated
+    maximum coordinate weight before using them in weighted normal units.
+    """
+
+    if not isinstance(snapshot, Lfm2WholeStackPrimalSnapshot) or not (
+        snapshot.verify_authentication()
+    ):
+        raise Lfm2ProducerAwareAuthenticationError(
+            "snapshot must be authenticated before norm analysis."
+        )
+    basis = _validate_output_basis(
+        output_basis,
+        snapshot.hidden_size,
+        snapshot.batches[0].macrocells[0].operator.residual.device,
+    )
+    layer_count = snapshot.layer_count
+    conditioning_blocks = [0.0] * (4 * layer_count)
+    certified_blocks = [0.0] * (4 * layer_count)
+    for batch in snapshot.batches:
+        factors = []
+        for macrocell in batch.macrocells:
+            operator_transfer, mlp_transfer, operator_output, mlp_output = (
+                _macrocell_norm_factors(macrocell, basis)
+            )
+            operator_transport, mlp_transport = _producer_input_direct_norm_factors(
+                macrocell,
+                basis,
+            )
+            factors.append(
+                (
+                    operator_transfer,
+                    mlp_transfer,
+                    operator_transport,
+                    operator_output,
+                    mlp_transport,
+                    mlp_output,
+                )
+            )
+        terminal_transfer = _terminal_transfer_norm_upper(batch.terminal)
+        for layer_index, layer_factors in enumerate(factors):
+            operator_transfer, mlp_transfer, *directs = layer_factors
+            del operator_transfer
+            site_offset = 4 * layer_index
+            for local_index, direct in enumerate(directs):
+                is_operator_site = local_index < 2
+                conditioning_blocks[site_offset + local_index] += (
+                    direct**2 * (1.0 + mlp_transfer**2)
+                    if is_operator_site
+                    else direct**2
+                )
+                amplitude = direct
+                energy = 0.0
+                if is_operator_site:
+                    energy += amplitude**2
+                    amplitude *= mlp_transfer
+                energy += amplitude**2
+                for later_layer in range(layer_index + 1, layer_count):
+                    later_operator, later_mlp, *_ = factors[later_layer]
+                    amplitude *= later_operator
+                    energy += amplitude**2
+                    amplitude *= later_mlp
+                    energy += amplitude**2
+                if snapshot.terminal_present:
+                    energy += (amplitude * terminal_transfer) ** 2
+                certified_blocks[site_offset + local_index] += energy
+    conditioning_tuple = tuple(conditioning_blocks)
+    certified_tuple = tuple(certified_blocks)
+    if not all(
+        math.isfinite(value) and value >= 0.0
+        for value in (*conditioning_tuple, *certified_tuple)
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware downstream bound overflowed and cannot be clipped."
+        )
+    site_order = tuple(
+        f"layer.{layer_index}.{kind}"
+        for layer_index in range(layer_count)
+        for kind in (
+            "operator.input_transport",
+            "operator.output_writer",
+            "mlp.input_transport",
+            "mlp.down_writer",
+        )
+    )
+    boundary_order = tuple(
+        kind
+        for _ in range(layer_count)
+        for kind in ("post_operator_residual", "post_layer_residual")
+    ) + (("terminal_observable",) if snapshot.terminal_present else ())
+    conditioning = Lfm2WholeStackConditioningScales(
+        operator_squared_scale=math.fsum(conditioning_tuple),
+        block_squared_scales=conditioning_tuple,
+        site_order=site_order,
+        method="producer_aware_local_direct_energy_without_downstream_product",
+    )
+    certified = Lfm2LinearizationNormBounds(
+        operator_squared_norm_upper_bound=math.fsum(certified_tuple),
+        block_squared_norm_upper_bounds=certified_tuple,
+        site_order=site_order,
+        boundary_order=boundary_order,
+    )
+    if not snapshot.verify_authentication():
+        raise Lfm2ProducerAwareAuthenticationError(
+            "snapshot changed during producer-aware norm analysis."
+        )
+    return conditioning, certified
+
+
+def _validate_v2_bundle_inputs(
+    state: Mapping[str, Any],
+    coefficient_blocks: Sequence[Any],
+    output_basis: Any,
+) -> tuple[tuple[Any, ...], int, int, int, bool]:
+    layer_count = int(state["stack.layer_count"].item())
+    batch_count = int(state["stack.batch_count"].item())
+    row_count = int(state["stack.row_count"].item())
+    hidden = int(state["stack.hidden_size"].item())
+    terminal_present = bool(int(state["stack.terminal_present"].item()))
+    coefficients = tuple(coefficient_blocks)
+    if (
+        layer_count <= 0
+        or len(coefficients) != 4 * layer_count
+        or output_basis.ndim != 2
+        or int(output_basis.shape[0]) != hidden
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware coefficients, basis, or stack geometry is invalid."
+        )
+    return coefficients, batch_count, row_count, hidden, terminal_present
+
+
+def _producer_aware_stack_jvp_bundle_tensor_only(
+    state: Mapping[str, Any],
+    coefficient_blocks: Sequence[Any],
+    output_basis: Any,
+    *,
+    maximum_workspace_bytes: int,
+) -> tuple[Any, ...]:
+    """One four-sites-per-layer sweep over every variable-length batch."""
+
+    torch = _torch()
+    coefficients, batch_count, row_count, hidden, terminal_present = (
+        _validate_v2_bundle_inputs(state, coefficient_blocks, output_basis)
+    )
+    device = output_basis.device
+    effects = tuple(
+        torch.zeros((row_count, hidden), dtype=torch.float64, device="cpu")
+        for _ in range(
+            2 * int(state["stack.layer_count"].item()) + int(terminal_present)
+        )
+    )
+    incoming = [
+        torch.zeros_like(state[f"batch.{index:04d}.layer.000.operator.residual"])
+        for index in range(batch_count)
+    ]
+    with torch.no_grad():
+        layer_count = int(state["stack.layer_count"].item())
+        for layer_index in range(layer_count):
+            layer_parameters = _prefixed_state(
+                state,
+                f"layer.{layer_index:03d}.",
+                device=device,
+            )
+            site_offset = 4 * layer_index
+            for batch_index in range(batch_count):
+                local = _stack_local_state(
+                    state,
+                    batch_index=batch_index,
+                    layer_index=layer_index,
+                    layer_parameters=layer_parameters,
+                    device=device,
+                )
+                staged_incoming = incoming[batch_index].to(device=device).contiguous()
+                if (
+                    _workspace_bytes(
+                        local,
+                        staged_incoming,
+                        output_basis,
+                        *coefficients[site_offset : site_offset + 4],
+                    )
+                    > maximum_workspace_bytes
+                ):
+                    raise Lfm2ProducerAwareLinearizationError(
+                        "A producer-aware JVP batch exceeds maximum_workspace_bytes."
+                    )
+                operator, mlp = _macrocell_views(local)
+                if int(local["operator.kind"].item()) == 0:
+                    operator_tangent = lfm2_producer_aware_attention_segment_jvp(
+                        operator,
+                        staged_incoming,
+                        coefficients[site_offset],
+                        coefficients[site_offset + 1],
+                        output_basis,
+                    )
+                else:
+                    operator_tangent = lfm2_producer_aware_short_conv_segment_jvp(
+                        operator,
+                        staged_incoming,
+                        coefficients[site_offset],
+                        coefficients[site_offset + 1],
+                        output_basis,
+                    )
+                mlp_tangent = lfm2_producer_aware_mlp_segment_jvp(
+                    mlp,
+                    operator_tangent.output,
+                    coefficients[site_offset + 2],
+                    coefficients[site_offset + 3],
+                    output_basis,
+                )
+                selected = state[f"batch.{batch_index:04d}.selected_target_positions"]
+                canonical = state[
+                    f"batch.{batch_index:04d}.canonical_boundary_row_indices"
+                ]
+                effects[2 * layer_index].index_copy_(
+                    0,
+                    canonical,
+                    operator_tangent.output.detach()
+                    .to(device="cpu")
+                    .reshape(-1, hidden)
+                    .index_select(0, selected),
+                )
+                effects[2 * layer_index + 1].index_copy_(
+                    0,
+                    canonical,
+                    mlp_tangent.output.detach()
+                    .to(device="cpu")
+                    .reshape(-1, hidden)
+                    .index_select(0, selected),
+                )
+                incoming[batch_index] = mlp_tangent.output.detach().to(device="cpu")
+        if terminal_present:
+            gain = state["terminal.norm_gain"].to(device=device).contiguous()
+            epsilon = float(state["terminal.norm_epsilon"].item())
+            for batch_index in range(batch_count):
+                residual = state[f"batch.{batch_index:04d}.terminal.residual"].to(
+                    device=device
+                )
+                terminal_effect = lfm2_continuous_fp64_rmsnorm_jvp(
+                    residual,
+                    incoming[batch_index].to(device=device),
+                    gain,
+                    epsilon,
+                )
+                selected = state[f"batch.{batch_index:04d}.selected_target_positions"]
+                canonical = state[
+                    f"batch.{batch_index:04d}.canonical_boundary_row_indices"
+                ]
+                effects[-1].index_copy_(
+                    0,
+                    canonical,
+                    terminal_effect.detach()
+                    .to(device="cpu")
+                    .reshape(-1, hidden)
+                    .index_select(0, selected),
+                )
+    return tuple(value.contiguous() for value in effects)
+
+
+def _producer_aware_stack_vjp_bundle_tensor_only(
+    state: Mapping[str, Any],
+    boundary_cotangents_cpu: Sequence[Any],
+    output_basis: Any,
+    *,
+    boundary_row_scales_cpu: Sequence[Any] | None,
+    maximum_workspace_bytes: int,
+) -> tuple[Any, ...]:
+    """One exact four-sites-per-layer reverse sweep with boundary injections."""
+
+    torch = _torch()
+    layer_count = int(state["stack.layer_count"].item())
+    batch_count = int(state["stack.batch_count"].item())
+    row_count = int(state["stack.row_count"].item())
+    hidden = int(state["stack.hidden_size"].item())
+    terminal_present = bool(int(state["stack.terminal_present"].item()))
+    if (
+        layer_count <= 0
+        or output_basis.ndim != 2
+        or int(output_basis.shape[0]) != hidden
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware basis or authenticated stack geometry is invalid."
+        )
+    cotangents = tuple(boundary_cotangents_cpu)
+    boundary_count = 2 * layer_count + int(terminal_present)
+    if len(cotangents) != boundary_count or any(
+        tuple(value.shape) != (row_count, hidden) for value in cotangents
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware VJP cotangent bundle has incorrect geometry."
+        )
+    scales = None if boundary_row_scales_cpu is None else tuple(boundary_row_scales_cpu)
+    if scales is not None and (
+        len(scales) != boundary_count
+        or any(tuple(value.shape) != (row_count,) for value in scales)
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware VJP row-scale bundle has incorrect geometry."
+        )
+    device = output_basis.device
+    rank = int(output_basis.shape[1])
+    coefficient_bars: list[Any] = []
+    for layer_index in range(layer_count):
+        parameters = _prefixed_state(
+            state,
+            f"layer.{layer_index:03d}.",
+            device=device,
+        )
+        operator_width = int(
+            (
+                parameters["attention.output_weight"]
+                if int(parameters["operator.kind"].item()) == 0
+                else parameters["short_conv.output_weight"]
+            ).shape[1]
+        )
+        mlp_width = int(parameters["mlp.down_weight"].shape[1])
+        for width in (hidden, operator_width, hidden, mlp_width):
+            coefficient_bars.append(
+                torch.zeros(
+                    (rank, width),
+                    dtype=torch.float64,
+                    device=device,
+                )
+            )
+    downstream = [
+        torch.zeros_like(
+            state[f"batch.{index:04d}.layer.{layer_count - 1:03d}.mlp.output"]
+        )
+        for index in range(batch_count)
+    ]
+    with torch.no_grad():
+        if terminal_present:
+            gain = state["terminal.norm_gain"].to(device=device).contiguous()
+            epsilon = float(state["terminal.norm_epsilon"].item())
+            for batch_index in range(batch_count):
+                selected = state[f"batch.{batch_index:04d}.selected_target_positions"]
+                canonical = state[
+                    f"batch.{batch_index:04d}.canonical_boundary_row_indices"
+                ]
+                residual = state[f"batch.{batch_index:04d}.terminal.residual"]
+                terminal_bar = _scatter_scaled_batch_cotangent(
+                    cotangents[-1],
+                    None if scales is None else scales[-1],
+                    selected,
+                    canonical,
+                    batch_shape=tuple(residual.shape),
+                    device=device,
+                )
+                downstream[batch_index] = lfm2_continuous_fp64_rmsnorm_vjp(
+                    residual.to(device=device),
+                    terminal_bar,
+                    gain,
+                    epsilon,
+                ).to(device="cpu")
+        for layer_index in range(layer_count - 1, -1, -1):
+            layer_parameters = _prefixed_state(
+                state,
+                f"layer.{layer_index:03d}.",
+                device=device,
+            )
+            site_offset = 4 * layer_index
+            for batch_index in range(batch_count):
+                local = _stack_local_state(
+                    state,
+                    batch_index=batch_index,
+                    layer_index=layer_index,
+                    layer_parameters=layer_parameters,
+                    device=device,
+                )
+                if (
+                    _workspace_bytes(
+                        local,
+                        downstream[batch_index],
+                        output_basis,
+                    )
+                    > maximum_workspace_bytes
+                ):
+                    raise Lfm2ProducerAwareLinearizationError(
+                        "A producer-aware VJP batch exceeds maximum_workspace_bytes."
+                    )
+                operator, mlp = _macrocell_views(local)
+                selected = state[f"batch.{batch_index:04d}.selected_target_positions"]
+                canonical = state[
+                    f"batch.{batch_index:04d}.canonical_boundary_row_indices"
+                ]
+                operator_bar = _scatter_scaled_batch_cotangent(
+                    cotangents[2 * layer_index],
+                    None if scales is None else scales[2 * layer_index],
+                    selected,
+                    canonical,
+                    batch_shape=tuple(operator.output.shape),
+                    device=device,
+                )
+                layer_bar = _scatter_scaled_batch_cotangent(
+                    cotangents[2 * layer_index + 1],
+                    None if scales is None else scales[2 * layer_index + 1],
+                    selected,
+                    canonical,
+                    batch_shape=tuple(mlp.output.shape),
+                    device=device,
+                ) + downstream[batch_index].to(device=device)
+                mlp_result = lfm2_producer_aware_mlp_segment_vjp(
+                    mlp,
+                    layer_bar,
+                    output_basis,
+                )
+                combined_operator_bar = operator_bar + mlp_result.incoming_residual
+                if int(local["operator.kind"].item()) == 0:
+                    operator_result = lfm2_producer_aware_attention_segment_vjp(
+                        operator,
+                        combined_operator_bar,
+                        output_basis,
+                    )
+                else:
+                    operator_result = lfm2_producer_aware_short_conv_segment_vjp(
+                        operator,
+                        combined_operator_bar,
+                        output_basis,
+                    )
+                coefficient_bars[site_offset].add_(
+                    operator_result.input_transport_coefficients
+                )
+                coefficient_bars[site_offset + 1].add_(
+                    operator_result.output_writer_coefficients
+                )
+                coefficient_bars[site_offset + 2].add_(
+                    mlp_result.input_transport_coefficients
+                )
+                coefficient_bars[site_offset + 3].add_(
+                    mlp_result.output_writer_coefficients
+                )
+                downstream[batch_index] = operator_result.incoming_residual.to(
+                    device="cpu"
+                )
+    return tuple(value.contiguous() for value in coefficient_bars)
+
+
+class Lfm2ProducerAwareWholeStackLinearizationKernel(
+    Lfm2GlobalResidualLinearizationKernel
+):
+    """Authenticated dynamic-layer producer-aware bundle kernel."""
+
+    __slots__ = ()
+
+    def __init__(
+        self,
+        topology: Lfm2GlobalResidualWriterTopology,
+        boundaries: Lfm2GlobalResidualBoundaryBundle,
+        snapshot: Lfm2WholeStackPrimalSnapshot,
+        *,
+        linearization_receipt: Any,
+    ) -> None:
+        if not isinstance(snapshot, Lfm2WholeStackPrimalSnapshot) or not (
+            snapshot.verify_authentication()
+        ):
+            raise Lfm2ProducerAwareAuthenticationError(
+                "snapshot must be an authenticated whole-stack primal bank."
+            )
+        if (
+            not topology.verify_authentication()
+            or not boundaries.verify_authentication()
+        ):
+            raise Lfm2ProducerAwareAuthenticationError(
+                "Producer-aware topology and boundaries must be authenticated."
+            )
+        layer_count = snapshot.layer_count
+        expected_site_count = 4 * layer_count
+        if (
+            topology.hidden_size != snapshot.hidden_size
+            or len(topology.sites) != expected_site_count
+        ):
+            raise Lfm2ProducerAwareLinearizationError(
+                "Producer-aware topology must contain exactly four sites per layer."
+            )
+        hidden = snapshot.hidden_size
+        for layer_index in range(layer_count):
+            macrocell = snapshot.batches[0].macrocells[layer_index]
+            expected_operator_transport = (
+                "attention_input_transport"
+                if macrocell.operator_kind == "full_attention"
+                else "short_conv_input_transport"
+            )
+            expected_operator_output = (
+                "attention_output"
+                if macrocell.operator_kind == "full_attention"
+                else "short_conv_output"
+            )
+            sites = topology.sites[4 * layer_index : 4 * layer_index + 4]
+            if (
+                tuple(site.layer_index for site in sites) != (layer_index,) * 4
+                or tuple(site.writer_kind for site in sites)
+                != (
+                    expected_operator_transport,
+                    expected_operator_output,
+                    "mlp_input_transport",
+                    "mlp_down",
+                )
+                or tuple(site.input_width for site in sites)
+                != (
+                    hidden,
+                    macrocell.input_widths[0],
+                    hidden,
+                    macrocell.input_widths[1],
+                )
+            ):
+                raise Lfm2ProducerAwareLinearizationError(
+                    f"Producer-aware topology differs at layer {layer_index}."
+                )
+        expected_boundary_count = 2 * layer_count + int(snapshot.terminal_present)
+        if len(boundaries.boundaries) != expected_boundary_count:
+            raise Lfm2ProducerAwareLinearizationError(
+                "Producer-aware boundary inventory is incorrect."
+            )
+        for layer_index in range(layer_count):
+            pair = boundaries.boundaries[2 * layer_index : 2 * layer_index + 2]
+            sites = topology.sites[4 * layer_index : 4 * layer_index + 4]
+            if (
+                tuple(value.layer_index for value in pair) != (layer_index, layer_index)
+                or tuple(value.boundary_kind for value in pair)
+                != ("post_operator_residual", "post_layer_residual")
+                or not (
+                    sites[0].causal_order
+                    < sites[1].causal_order
+                    < pair[0].causal_order
+                    < sites[2].causal_order
+                    < sites[3].causal_order
+                    < pair[1].causal_order
+                )
+            ):
+                raise Lfm2ProducerAwareLinearizationError(
+                    f"Producer-aware causal timeline differs at layer {layer_index}."
+                )
+        if snapshot.terminal_present and (
+            boundaries.boundaries[-1].boundary_kind != "terminal_observable"
+            or boundaries.boundaries[-1].layer_index != layer_count - 1
+            or boundaries.boundaries[-1].causal_order
+            <= boundaries.boundaries[-2].causal_order
+        ):
+            raise Lfm2ProducerAwareLinearizationError(
+                "Terminal observable must follow the final layer residual."
+            )
+        if any(
+            boundary.defect.numel() // hidden != snapshot.row_count
+            or int(boundary.defect.shape[-1]) != hidden
+            for boundary in boundaries.boundaries
+        ):
+            raise Lfm2ProducerAwareLinearizationError(
+                "Every boundary must use the canonical donor-row archive."
+            )
+        state = _whole_stack_tensor_state(snapshot)
+        state_sha256 = {
+            name: fingerprint_lfm2_global_residual_tensor(value)
+            for name, value in state.items()
+        }
+        super().__init__(
+            topology,
+            boundaries,
+            tensor_state=state,
+            tensor_state_sha256=state_sha256,
+            linearization_receipt=linearization_receipt,
+            transpose_contract_body={
+                "kernel": "lfm2_continuous_fp64_producer_aware_stack_v2a",
+                "layers": layer_count,
+                "sites": expected_site_count,
+                "site_order_per_layer": [
+                    "operator_input_transport",
+                    "operator_output_writer",
+                    "mlp_input_transport",
+                    "mlp_down_writer",
+                ],
+                "input_transport": "A=output_basis@coefficient_block",
+                "transport_effect": "normalized_input@A.T",
+                "attention_absorption": ["Wq@A", "Wk@A", "Wv@A"],
+                "short_conv_absorption": "Win@A_all_BCX_rows",
+                "mlp_absorption": ["Wgate@A", "Wup@A"],
+                "inter_layer_runtime_cast": "straight_through_identity",
+                "token_bridge": "authenticated_gather_scatter",
+                "bundle_fast_path": True,
+                "mutable_bundle_cache": False,
+            },
+        )
+
+    def _jvp_bundle_tensor_only(
+        self,
+        state: Mapping[str, Any],
+        coefficient_blocks: tuple[Any, ...],
+        output_basis: Any,
+        *,
+        maximum_workspace_bytes: int,
+    ) -> tuple[Any, ...]:
+        return _producer_aware_stack_jvp_bundle_tensor_only(
+            state,
+            coefficient_blocks,
+            output_basis,
+            maximum_workspace_bytes=maximum_workspace_bytes,
+        )
+
+    def _vjp_bundle_tensor_only(
+        self,
+        state: Mapping[str, Any],
+        boundary_cotangents_cpu: tuple[Any, ...],
+        output_basis: Any,
+        *,
+        boundary_row_scales_cpu: tuple[Any, ...] | None,
+        maximum_workspace_bytes: int,
+    ) -> tuple[Any, ...]:
+        return _producer_aware_stack_vjp_bundle_tensor_only(
+            state,
+            boundary_cotangents_cpu,
+            output_basis,
+            boundary_row_scales_cpu=boundary_row_scales_cpu,
+            maximum_workspace_bytes=maximum_workspace_bytes,
+        )
+
+    def _jvp_chunk_tensor_only(
+        self,
+        state: Mapping[str, Any],
+        coefficient_blocks: tuple[Any, ...],
+        output_basis: Any,
+        *,
+        boundary_index: int,
+        row_start: int,
+        row_stop: int,
+    ) -> Any:
+        bundle = _producer_aware_stack_jvp_bundle_tensor_only(
+            state,
+            coefficient_blocks,
+            output_basis,
+            maximum_workspace_bytes=2**63 - 1,
+        )
+        return bundle[boundary_index][row_start:row_stop].to(device=output_basis.device)
+
+    def _vjp_chunk_tensor_only(
+        self,
+        state: Mapping[str, Any],
+        boundary_cotangent: Any,
+        output_basis: Any,
+        *,
+        boundary_index: int,
+        row_start: int,
+        row_stop: int,
+    ) -> tuple[Any, ...]:
+        torch = _torch()
+        row_count = int(state["stack.row_count"].item())
+        hidden = int(state["stack.hidden_size"].item())
+        boundary_count = 2 * int(state["stack.layer_count"].item()) + int(
+            state["stack.terminal_present"].item()
+        )
+        cotangents = [
+            torch.zeros((row_count, hidden), dtype=torch.float64, device="cpu")
+            for _ in range(boundary_count)
+        ]
+        cotangents[boundary_index][row_start:row_stop].copy_(
+            boundary_cotangent.to(device="cpu")
+        )
+        return _producer_aware_stack_vjp_bundle_tensor_only(
+            state,
+            tuple(cotangents),
+            output_basis,
+            boundary_row_scales_cpu=None,
+            maximum_workspace_bytes=2**63 - 1,
+        )
+
+
+_ATTENTION_SEED_ROLES = (
+    "query_weight",
+    "key_weight",
+    "value_weight",
+    "operator_output_weight",
+    "mlp_gate_weight",
+    "mlp_up_weight",
+    "mlp_down_weight",
+)
+_SHORT_CONV_SEED_ROLES = (
+    "operator_input_weight",
+    "operator_output_weight",
+    "mlp_gate_weight",
+    "mlp_up_weight",
+    "mlp_down_weight",
+)
+
+
+def _canonical_sha256(value: Any) -> str:
+    try:
+        payload = json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    except (TypeError, ValueError) as exc:
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware evidence must be canonical finite JSON."
+        ) from exc
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _seal_report(body: Mapping[str, Any]) -> Mapping[str, Any]:
+    detached = dict(body)
+    return MappingProxyType({**detached, "report_sha256": _canonical_sha256(detached)})
+
+
+def _verify_report(report: Mapping[str, Any]) -> bool:
+    if not isinstance(report, Mapping):
+        return False
+    try:
+        body = dict(report)
+        supplied = body.pop("report_sha256", None)
+        return isinstance(supplied, str) and supplied == _canonical_sha256(body)
+    except (TypeError, ValueError):
+        return False
+
+
+_LFM2_PRODUCER_AWARE_DENSE_COMPUTE_SCHEMA = (
+    "neural-forge-lfm2-producer-aware-dense-absorption-compute-v1"
+)
+
+
+def _resolve_dense_absorption_compute_device(torch: Any, compute_device: Any) -> Any:
+    """Resolve one canonical fold-only algebra device without fallback."""
+
+    if compute_device == "cpu":
+        return torch.device("cpu")
+    if not isinstance(compute_device, str):
+        raise Lfm2ProducerAwareLinearizationError(
+            "compute_device must be 'cpu' or an explicitly indexed CUDA device."
+        )
+    prefix, separator, index_text = compute_device.partition(":")
+    if (
+        prefix != "cuda"
+        or separator != ":"
+        or not index_text.isascii()
+        or not index_text.isdecimal()
+        or index_text != str(int(index_text))
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "CUDA compute_device must be explicitly indexed as 'cuda:N'."
+        )
+    index = int(index_text)
+    if not torch.cuda.is_available() or index >= int(torch.cuda.device_count()):
+        raise Lfm2ProducerAwareLinearizationError(
+            f"CUDA compute_device index {index} is unavailable."
+        )
+    return torch.device("cuda", index)
+
+
+def _dense_absorption_compute_receipt(
+    torch: Any,
+    requested: str,
+    resolved: Any,
+) -> Mapping[str, Any]:
+    cuda_identity = None
+    if resolved.type == "cuda":
+        properties = torch.cuda.get_device_properties(resolved)
+        cuda_identity = {
+            "device_index": int(resolved.index),
+            "device_name": str(properties.name),
+            "compute_capability": [
+                int(properties.major),
+                int(properties.minor),
+            ],
+            "total_memory_bytes": int(properties.total_memory),
+        }
+    return _seal_report(
+        {
+            "schema": _LFM2_PRODUCER_AWARE_DENSE_COMPUTE_SCHEMA,
+            "kind": "producer_aware_dense_absorption_compute_execution",
+            "requested_device": requested,
+            "resolved_device": str(resolved),
+            "backend": resolved.type,
+            "compute_dtype": "float64",
+            "archive_devices": {
+                "layer_seed_weights": "cpu",
+                "output_basis": "cpu",
+                "coefficient_blocks": "cpu",
+            },
+            "output_devices": {
+                "transaction_seed_weights": "cpu",
+                "dense_corrected_weights": "cpu",
+            },
+            "output_basis_staged_to_resolved_device": True,
+            "coefficient_blocks_staged_to_resolved_device": True,
+            "active_layer_seed_weights_staged_to_resolved_device": True,
+            "active_layers_staged_one_at_a_time": True,
+            "gpu_is_ephemeral_dense_algebra_workspace": resolved.type == "cuda",
+            "system_memory_is_immutable_archive": True,
+            "silent_device_fallback_performed": False,
+            "cuda_identity": cuda_identity,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+    )
+
+
+def _verify_dense_absorption_compute_receipt(receipt: Any) -> bool:
+    if not isinstance(receipt, Mapping) or not _verify_report(receipt):
+        return False
+    expected_archives = {
+        "layer_seed_weights": "cpu",
+        "output_basis": "cpu",
+        "coefficient_blocks": "cpu",
+    }
+    expected_outputs = {
+        "transaction_seed_weights": "cpu",
+        "dense_corrected_weights": "cpu",
+    }
+    requested = receipt.get("requested_device")
+    resolved = receipt.get("resolved_device")
+    backend = receipt.get("backend")
+    cuda_identity = receipt.get("cuda_identity")
+    counters = (
+        "autograd_grad_calls",
+        "backward_calls",
+        "optimizer_steps",
+        "training_steps",
+        "parameters_pruned",
+        "parameters_quantized",
+    )
+    if (
+        receipt.get("schema") != _LFM2_PRODUCER_AWARE_DENSE_COMPUTE_SCHEMA
+        or receipt.get("kind") != "producer_aware_dense_absorption_compute_execution"
+        or receipt.get("compute_dtype") != "float64"
+        or receipt.get("archive_devices") != expected_archives
+        or receipt.get("output_devices") != expected_outputs
+        or receipt.get("output_basis_staged_to_resolved_device") is not True
+        or receipt.get("coefficient_blocks_staged_to_resolved_device") is not True
+        or receipt.get("active_layer_seed_weights_staged_to_resolved_device")
+        is not True
+        or receipt.get("active_layers_staged_one_at_a_time") is not True
+        or receipt.get("system_memory_is_immutable_archive") is not True
+        or receipt.get("silent_device_fallback_performed") is not False
+        or any(receipt.get(counter) != 0 for counter in counters)
+    ):
+        return False
+    if requested == "cpu":
+        return (
+            resolved == "cpu"
+            and backend == "cpu"
+            and cuda_identity is None
+            and receipt.get("gpu_is_ephemeral_dense_algebra_workspace") is False
+        )
+    if not isinstance(requested, str):
+        return False
+    prefix, separator, index_text = requested.partition(":")
+    if (
+        prefix != "cuda"
+        or separator != ":"
+        or not index_text.isascii()
+        or not index_text.isdecimal()
+        or index_text != str(int(index_text))
+        or resolved != requested
+        or backend != "cuda"
+        or receipt.get("gpu_is_ephemeral_dense_algebra_workspace") is not True
+        or not isinstance(cuda_identity, Mapping)
+    ):
+        return False
+    capability = cuda_identity.get("compute_capability")
+    return (
+        cuda_identity.get("device_index") == int(index_text)
+        and isinstance(cuda_identity.get("device_name"), str)
+        and bool(cuda_identity.get("device_name"))
+        and isinstance(capability, list)
+        and len(capability) == 2
+        and all(isinstance(value, int) and value >= 0 for value in capability)
+        and isinstance(cuda_identity.get("total_memory_bytes"), int)
+        and cuda_identity.get("total_memory_bytes") > 0
+    )
+
+
+def _dense_weight(value: Any, name: str) -> Any:
+    torch = _torch()
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 2
+        or value.numel() == 0
+        or not torch.is_floating_point(value)
+        or value.is_complex()
+        or not bool(torch.isfinite(value.detach()).all().item())
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            f"{name} must be one finite nonempty dense real matrix."
+        )
+    return value.detach().to(device="cpu").contiguous().clone()
+
+
+def _storage_identity(value: Any) -> tuple[str, int | None, int]:
+    return (
+        value.device.type,
+        value.device.index,
+        int(value.untyped_storage().data_ptr()),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2ProducerAwareLayerSeedWeights:
+    """Immutable physical seed matrices and names for one child layer."""
+
+    layer_index: int
+    operator_kind: Literal["full_attention", "short_conv"]
+    parameter_ids: Mapping[str, str]
+    seed_weights: Mapping[str, Any] = field(repr=False, compare=False)
+    authentication_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.layer_index, bool)
+            or not isinstance(self.layer_index, int)
+            or self.layer_index < 0
+        ):
+            raise Lfm2ProducerAwareLinearizationError(
+                "layer_index must be a nonnegative integer."
+            )
+        kind = str(self.operator_kind).strip().lower()
+        if kind not in {"full_attention", "short_conv"}:
+            raise Lfm2ProducerAwareLinearizationError(
+                "operator_kind must be full_attention or short_conv."
+            )
+        roles = (
+            _ATTENTION_SEED_ROLES
+            if kind == "full_attention"
+            else _SHORT_CONV_SEED_ROLES
+        )
+        ids = {
+            str(role): str(value).strip() for role, value in self.parameter_ids.items()
+        }
+        sources = dict(self.seed_weights)
+        if set(ids) != set(roles) or set(sources) != set(roles):
+            raise Lfm2ProducerAwareLinearizationError(
+                "Physical parameter ids and seed weights must exactly cover the "
+                "operator and MLP absorption roles."
+            )
+        if any(not value for value in ids.values()) or len(set(ids.values())) != len(
+            ids
+        ):
+            raise Lfm2ProducerAwareLinearizationError(
+                "Physical parameter ids must be nonempty and independently addressable."
+            )
+        weights = {role: _dense_weight(sources[role], role) for role in roles}
+        source_identities = [_storage_identity(sources[role]) for role in roles]
+        if len(set(source_identities)) != len(source_identities):
+            raise Lfm2ProducerAwareLinearizationError(
+                "Seed matrices cannot share tensor storage."
+            )
+        hidden = int(weights["mlp_down_weight"].shape[0])
+        intermediate = int(weights["mlp_down_weight"].shape[1])
+        if tuple(weights["mlp_gate_weight"].shape) != (intermediate, hidden) or tuple(
+            weights["mlp_up_weight"].shape
+        ) != (intermediate, hidden):
+            raise Lfm2ProducerAwareLinearizationError(
+                "MLP gate/up/down seed geometry is inconsistent."
+            )
+        if kind == "full_attention":
+            query_width = int(weights["query_weight"].shape[0])
+            if (
+                int(weights["query_weight"].shape[1]) != hidden
+                or int(weights["key_weight"].shape[1]) != hidden
+                or int(weights["value_weight"].shape[1]) != hidden
+                or tuple(weights["key_weight"].shape)
+                != tuple(weights["value_weight"].shape)
+                or tuple(weights["operator_output_weight"].shape)
+                != (hidden, query_width)
+            ):
+                raise Lfm2ProducerAwareLinearizationError(
+                    "Attention Q/K/V/O seed geometry is inconsistent."
+                )
+        elif tuple(weights["operator_input_weight"].shape) != (
+            3 * hidden,
+            hidden,
+        ) or tuple(weights["operator_output_weight"].shape) != (hidden, hidden):
+            raise Lfm2ProducerAwareLinearizationError(
+                "Short-conv input/output seed geometry is inconsistent."
+            )
+        object.__setattr__(self, "operator_kind", kind)
+        object.__setattr__(self, "parameter_ids", MappingProxyType(ids))
+        object.__setattr__(self, "seed_weights", MappingProxyType(weights))
+        object.__setattr__(
+            self,
+            "authentication_sha256",
+            self.recompute_authentication_sha256(),
+        )
+
+    @property
+    def hidden_size(self) -> int:
+        return int(self.seed_weights["mlp_down_weight"].shape[0])
+
+    @property
+    def operator_output_width(self) -> int:
+        return int(self.seed_weights["operator_output_weight"].shape[1])
+
+    @property
+    def mlp_output_width(self) -> int:
+        return int(self.seed_weights["mlp_down_weight"].shape[1])
+
+    def recompute_authentication_sha256(self) -> str:
+        return _canonical_sha256(
+            {
+                "schema": LFM2_PRODUCER_AWARE_LINEARIZATION_SCHEMA,
+                "kind": "layer_seed_weights",
+                "layer_index": self.layer_index,
+                "operator_kind": self.operator_kind,
+                "parameter_ids": dict(self.parameter_ids),
+                "seed_sha256": {
+                    role: fingerprint_lfm2_global_residual_tensor(value)
+                    for role, value in sorted(self.seed_weights.items())
+                },
+            }
+        )
+
+    def verify_authentication(self) -> bool:
+        return self.authentication_sha256 == self.recompute_authentication_sha256()
+
+
+def capture_lfm2_producer_aware_layer_seed(
+    layer_index: int,
+    macrocell: Lfm2MacrocellLinearization,
+    *,
+    parameter_ids: Mapping[str, str],
+) -> Lfm2ProducerAwareLayerSeedWeights:
+    """Capture physical absorption seeds from one authenticated macrocell."""
+
+    if not isinstance(macrocell, Lfm2MacrocellLinearization) or not (
+        macrocell.verify_authentication()
+    ):
+        raise Lfm2ProducerAwareAuthenticationError(
+            "macrocell must be an authenticated primal linearization."
+        )
+    p = macrocell.operator.parameters
+    mp = macrocell.mlp.parameters
+    if macrocell.operator_kind == "full_attention":
+        weights = {
+            "query_weight": p.query_weight,
+            "key_weight": p.key_weight,
+            "value_weight": p.value_weight,
+            "operator_output_weight": p.output_weight,
+            "mlp_gate_weight": mp.gate_weight,
+            "mlp_up_weight": mp.up_weight,
+            "mlp_down_weight": mp.down_weight,
+        }
+    else:
+        weights = {
+            "operator_input_weight": p.input_weight,
+            "operator_output_weight": p.output_weight,
+            "mlp_gate_weight": mp.gate_weight,
+            "mlp_up_weight": mp.up_weight,
+            "mlp_down_weight": mp.down_weight,
+        }
+    return Lfm2ProducerAwareLayerSeedWeights(
+        layer_index=layer_index,
+        operator_kind=macrocell.operator_kind,
+        parameter_ids=parameter_ids,
+        seed_weights=weights,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2ProducerAwareDenseTransaction:
+    """Authenticated independently owned physical updates for one stack."""
+
+    parameter_ids: tuple[str, ...]
+    layer_indices: tuple[int, ...]
+    roles: tuple[str, ...]
+    seed_weights: tuple[Any, ...] = field(repr=False, compare=False)
+    corrected_weights: tuple[Any, ...] = field(repr=False, compare=False)
+    atomic_groups: tuple[tuple[str, ...], ...]
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        parameter_ids = tuple(self.parameter_ids)
+        layer_indices = tuple(self.layer_indices)
+        roles = tuple(self.roles)
+        seeds = tuple(
+            _dense_weight(value, "transaction.seed") for value in self.seed_weights
+        )
+        corrected = tuple(
+            _dense_weight(value, "transaction.corrected")
+            for value in self.corrected_weights
+        )
+        count = len(parameter_ids)
+        if (
+            count == 0
+            or len(set(parameter_ids)) != count
+            or any(
+                len(value) != count
+                for value in (layer_indices, roles, seeds, corrected)
+            )
+            or any(
+                tuple(seed.shape) != tuple(value.shape) or seed.dtype != value.dtype
+                for seed, value in zip(seeds, corrected, strict=True)
+            )
+        ):
+            raise Lfm2ProducerAwareLinearizationError(
+                "Dense transaction inventory or geometry is invalid."
+            )
+        groups = tuple(tuple(group) for group in self.atomic_groups)
+        flattened_groups = tuple(value for group in groups for value in group)
+        if (
+            set(flattened_groups) != set(parameter_ids)
+            or len(flattened_groups) != count
+        ):
+            raise Lfm2ProducerAwareLinearizationError(
+                "Atomic groups must partition every physical parameter exactly once."
+            )
+        object.__setattr__(self, "parameter_ids", parameter_ids)
+        object.__setattr__(self, "layer_indices", layer_indices)
+        object.__setattr__(self, "roles", roles)
+        object.__setattr__(self, "seed_weights", seeds)
+        object.__setattr__(self, "corrected_weights", corrected)
+        object.__setattr__(self, "atomic_groups", groups)
+        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+        if not self.verify_authentication():
+            raise Lfm2ProducerAwareAuthenticationError(
+                "Dense transaction report does not authenticate its tensors."
+            )
+
+    def verify_authentication(self) -> bool:
+        compute_receipt = self.report.get("compute_execution_receipt")
+        return (
+            _verify_report(self.report)
+            and _verify_dense_absorption_compute_receipt(compute_receipt)
+            and self.report.get("compute_execution_receipt_sha256")
+            == compute_receipt.get("report_sha256")
+            and self.report.get("parameter_ids") == list(self.parameter_ids)
+            and self.report.get("layer_indices") == list(self.layer_indices)
+            and self.report.get("roles") == list(self.roles)
+            and self.report.get("seed_sha256")
+            == [
+                fingerprint_lfm2_global_residual_tensor(value)
+                for value in self.seed_weights
+            ]
+            and self.report.get("corrected_sha256")
+            == [
+                fingerprint_lfm2_global_residual_tensor(value)
+                for value in self.corrected_weights
+            ]
+            and self.report.get("atomic_groups")
+            == [list(group) for group in self.atomic_groups]
+        )
+
+
+def materialize_lfm2_producer_aware_stack_transaction(
+    layer_seeds: Sequence[Lfm2ProducerAwareLayerSeedWeights],
+    output_basis: Any,
+    coefficient_blocks: Sequence[Any],
+    *,
+    compute_device: str = "cpu",
+) -> Lfm2ProducerAwareDenseTransaction:
+    """Absorb every transport/writer into ordinary dense stack weights."""
+
+    torch = _torch()
+    resolved_compute_device = _resolve_dense_absorption_compute_device(
+        torch,
+        compute_device,
+    )
+    compute_receipt = _dense_absorption_compute_receipt(
+        torch,
+        compute_device,
+        resolved_compute_device,
+    )
+    layers = tuple(layer_seeds)
+    if (
+        not layers
+        or tuple(value.layer_index for value in layers) != tuple(range(len(layers)))
+        or not all(value.verify_authentication() for value in layers)
+    ):
+        raise Lfm2ProducerAwareAuthenticationError(
+            "layer_seeds must be a nonempty authenticated contiguous stack."
+        )
+    hidden = layers[0].hidden_size
+    if any(value.hidden_size != hidden for value in layers):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware layer seeds disagree on hidden width."
+        )
+    basis = _plain_fp64(output_basis, "output_basis", device=output_basis.device)
+    if basis.ndim != 2 or tuple(basis.shape)[0] != hidden:
+        raise Lfm2ProducerAwareLinearizationError(
+            "output_basis must have shape [hidden, rank]."
+        )
+    coefficients = tuple(coefficient_blocks)
+    expected_site_count = 4 * len(layers)
+    if len(coefficients) != expected_site_count:
+        raise Lfm2ProducerAwareLinearizationError(
+            "Producer-aware materialization requires exactly four blocks per layer."
+        )
+    rank = int(basis.shape[1])
+    basis_archive = (
+        basis.detach().to(device="cpu", dtype=torch.float64).contiguous().clone()
+    )
+    coefficient_archives = []
+    for layer in layers:
+        site_offset = 4 * layer.layer_index
+        widths = (
+            hidden,
+            layer.operator_output_width,
+            hidden,
+            layer.mlp_output_width,
+        )
+        for local_index, width in enumerate(widths):
+            coefficient_archives.append(
+                _validate_coefficient(
+                    coefficients[site_offset + local_index],
+                    rank=rank,
+                    input_width=width,
+                    device=basis.device,
+                    name=f"coefficient_blocks[{site_offset + local_index}]",
+                )
+                .detach()
+                .to(device="cpu", dtype=torch.float64)
+                .contiguous()
+                .clone()
+            )
+    coefficient_archives = tuple(coefficient_archives)
+    basis_compute = basis_archive.to(
+        device=resolved_compute_device,
+        dtype=torch.float64,
+    )
+    parameter_ids: list[str] = []
+    layer_indices: list[int] = []
+    roles: list[str] = []
+    seeds: list[Any] = []
+    corrected: list[Any] = []
+    groups: list[tuple[str, ...]] = []
+
+    def append_update(
+        layer: Lfm2ProducerAwareLayerSeedWeights,
+        role: str,
+        delta: Any,
+    ) -> None:
+        seed = layer.seed_weights[role]
+        updated = (
+            seed.to(dtype=torch.float64) + delta.to(device="cpu", dtype=torch.float64)
+        ).to(dtype=seed.dtype)
+        parameter_ids.append(layer.parameter_ids[role])
+        layer_indices.append(layer.layer_index)
+        roles.append(role)
+        seeds.append(seed)
+        corrected.append(updated.contiguous().clone())
+
+    with torch.no_grad():
+        for layer in layers:
+            site_offset = 4 * layer.layer_index
+            blocks = tuple(
+                value.to(device=resolved_compute_device, dtype=torch.float64)
+                for value in coefficient_archives[site_offset : site_offset + 4]
+            )
+
+            def right_absorption_delta(role: str, coefficients_for_role: Any) -> Any:
+                active_weight = layer.seed_weights[role].to(
+                    device=resolved_compute_device,
+                    dtype=torch.float64,
+                )
+                return (active_weight @ basis_compute) @ coefficients_for_role
+
+            if layer.operator_kind == "full_attention":
+                attention_group = tuple(
+                    layer.parameter_ids[role]
+                    for role in ("query_weight", "key_weight", "value_weight")
+                )
+                groups.append(attention_group)
+                for role in ("query_weight", "key_weight", "value_weight"):
+                    append_update(layer, role, right_absorption_delta(role, blocks[0]))
+            else:
+                groups.append((layer.parameter_ids["operator_input_weight"],))
+                append_update(
+                    layer,
+                    "operator_input_weight",
+                    right_absorption_delta("operator_input_weight", blocks[0]),
+                )
+            groups.append((layer.parameter_ids["operator_output_weight"],))
+            append_update(
+                layer,
+                "operator_output_weight",
+                basis_compute @ blocks[1],
+            )
+            mlp_group = tuple(
+                layer.parameter_ids[role]
+                for role in ("mlp_gate_weight", "mlp_up_weight")
+            )
+            groups.append(mlp_group)
+            for role in ("mlp_gate_weight", "mlp_up_weight"):
+                append_update(layer, role, right_absorption_delta(role, blocks[2]))
+            groups.append((layer.parameter_ids["mlp_down_weight"],))
+            append_update(layer, "mlp_down_weight", basis_compute @ blocks[3])
+    if len(set(parameter_ids)) != len(parameter_ids):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Physical parameter ids cannot be shared across layers or roles."
+        )
+    if not all(value.verify_authentication() for value in layers):
+        raise Lfm2ProducerAwareAuthenticationError(
+            "Layer seed state changed during dense absorption."
+        )
+    report = _seal_report(
+        {
+            "schema": LFM2_PRODUCER_AWARE_LINEARIZATION_SCHEMA,
+            "kind": "producer_aware_dense_stack_transaction",
+            "layer_seed_authentication_sha256": [
+                value.authentication_sha256 for value in layers
+            ],
+            "output_basis_sha256": fingerprint_lfm2_global_residual_tensor(basis),
+            "coefficient_sha256": [
+                fingerprint_lfm2_global_residual_tensor(value)
+                for value in coefficient_archives
+            ],
+            "compute_execution_receipt_sha256": compute_receipt["report_sha256"],
+            "compute_execution_receipt": dict(compute_receipt),
+            "parameter_ids": parameter_ids,
+            "layer_indices": layer_indices,
+            "roles": roles,
+            "seed_sha256": [
+                fingerprint_lfm2_global_residual_tensor(value) for value in seeds
+            ],
+            "corrected_sha256": [
+                fingerprint_lfm2_global_residual_tensor(value) for value in corrected
+            ],
+            "atomic_groups": [list(group) for group in groups],
+            "attention_absorption": "delta_Wrole=Wrole@output_basis@C",
+            "short_conv_absorption": "delta_Win=Win@output_basis@C_all_BCX",
+            "mlp_absorption": "delta_Wgate_up=Wgate_up@output_basis@C",
+            "output_absorption": "delta_Wout=output_basis@C",
+            "seed_tensors_mutated": False,
+            "physical_parameter_sharing": False,
+            "runtime_sidecar_required": False,
+            "numerical_quality_gate": False,
+            "execution": {
+                "backward_calls": 0,
+                "autograd_grad_calls": 0,
+                "optimizer_steps": 0,
+                "training_steps": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+            },
+        }
+    )
+    return Lfm2ProducerAwareDenseTransaction(
+        parameter_ids=tuple(parameter_ids),
+        layer_indices=tuple(layer_indices),
+        roles=tuple(roles),
+        seed_weights=tuple(seeds),
+        corrected_weights=tuple(corrected),
+        atomic_groups=tuple(groups),
+        report=report,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2ProducerAwareInstallationReceipt:
+    """Authenticated successful all-or-nothing physical installation."""
+
+    post_install_sha256: Mapping[str, str]
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "post_install_sha256",
+            MappingProxyType(dict(self.post_install_sha256)),
+        )
+        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+        if not self.verify_authentication():
+            raise Lfm2ProducerAwareAuthenticationError(
+                "Installation receipt failed authentication."
+            )
+
+    def verify_authentication(self) -> bool:
+        return _verify_report(self.report) and self.report.get(
+            "post_install_sha256"
+        ) == dict(self.post_install_sha256)
+
+
+def _copy_live_parameter(parameter: Any, value: Any) -> None:
+    parameter.copy_(value.to(device=parameter.device, dtype=parameter.dtype))
+
+
+def install_lfm2_producer_aware_dense_transaction(
+    transaction: Lfm2ProducerAwareDenseTransaction,
+    live_parameters: Mapping[str, Any],
+    *,
+    deferred_parameter_ids: Sequence[str] = (),
+) -> Lfm2ProducerAwareInstallationReceipt:
+    """Install coupled roles atomically, optionally deferring singleton roles."""
+
+    torch = _torch()
+    if not isinstance(transaction, Lfm2ProducerAwareDenseTransaction) or not (
+        transaction.verify_authentication()
+    ):
+        raise Lfm2ProducerAwareAuthenticationError(
+            "transaction must be authenticated immutable evidence."
+        )
+    deferred_ids = tuple(str(value).strip() for value in deferred_parameter_ids)
+    transaction_id_set = set(transaction.parameter_ids)
+    if (
+        any(not value for value in deferred_ids)
+        or len(set(deferred_ids)) != len(deferred_ids)
+        or not set(deferred_ids).issubset(transaction_id_set)
+        or any(
+            parameter_id in group and len(group) != 1
+            for parameter_id in deferred_ids
+            for group in transaction.atomic_groups
+        )
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Deferred ids must be unique singleton atomic groups in the transaction."
+        )
+    install_ids = tuple(
+        value for value in transaction.parameter_ids if value not in set(deferred_ids)
+    )
+    if not isinstance(live_parameters, Mapping) or set(live_parameters) != set(
+        install_ids
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "live_parameters must exactly cover nondeferred physical transaction ids."
+        )
+    parameters = dict(live_parameters)
+    if any(
+        not isinstance(value, torch.nn.Parameter)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 2
+        for value in parameters.values()
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Every live target must be an ordinary dense Parameter."
+        )
+    identities = [_storage_identity(value) for value in parameters.values()]
+    if len(set(identities)) != len(identities):
+        raise Lfm2ProducerAwareLinearizationError(
+            "Live physical parameters cannot share tensor storage."
+        )
+    seed_by_id = dict(
+        zip(transaction.parameter_ids, transaction.seed_weights, strict=True)
+    )
+    corrected_by_id = dict(
+        zip(transaction.parameter_ids, transaction.corrected_weights, strict=True)
+    )
+    snapshots: dict[str, Any] = {}
+    for parameter_id, parameter in parameters.items():
+        seed = seed_by_id[parameter_id]
+        if tuple(parameter.shape) != tuple(seed.shape) or parameter.dtype != seed.dtype:
+            raise Lfm2ProducerAwareLinearizationError(
+                f"Live parameter {parameter_id} differs from seed geometry or dtype."
+            )
+        if fingerprint_lfm2_global_residual_tensor(parameter) != (
+            fingerprint_lfm2_global_residual_tensor(seed)
+        ):
+            raise Lfm2ProducerAwareAuthenticationError(
+                f"Live parameter {parameter_id} is stale relative to its seed."
+            )
+        snapshots[parameter_id] = (
+            parameter.detach().to(device="cpu").contiguous().clone()
+        )
+    installed: list[str] = []
+
+    def transaction_callback() -> Mapping[str, str]:
+        try:
+            with torch.no_grad():
+                for parameter_id in install_ids:
+                    _copy_live_parameter(
+                        parameters[parameter_id],
+                        corrected_by_id[parameter_id],
+                    )
+                    installed.append(parameter_id)
+            observed = {
+                parameter_id: fingerprint_lfm2_global_residual_tensor(
+                    parameters[parameter_id]
+                )
+                for parameter_id in install_ids
+            }
+            expected = {
+                parameter_id: fingerprint_lfm2_global_residual_tensor(
+                    corrected_by_id[parameter_id]
+                )
+                for parameter_id in install_ids
+            }
+            if observed != expected:
+                raise Lfm2ProducerAwareAuthenticationError(
+                    "Physical installation did not reproduce corrected bytes."
+                )
+            return MappingProxyType(observed)
+        except Exception as exc:
+            rollback_errors = []
+            with torch.no_grad():
+                for parameter_id in reversed(installed):
+                    try:
+                        _copy_live_parameter(
+                            parameters[parameter_id],
+                            snapshots[parameter_id],
+                        )
+                    except Exception as rollback_exc:  # pragma: no cover - hardware
+                        rollback_errors.append((parameter_id, repr(rollback_exc)))
+            if rollback_errors:
+                raise Lfm2ProducerAwareLinearizationError(
+                    f"Producer-aware install and rollback failed: {rollback_errors!r}."
+                ) from exc
+            raise Lfm2ProducerAwareLinearizationError(
+                "Producer-aware install failed and every changed parameter was restored."
+            ) from exc
+
+    post_hashes, guard = run_fold_only_callback(
+        transaction_callback,
+        phase="lfm2-producer-aware-dense-stack-transaction",
+        protected_models=(),
+        freeze_parameters=False,
+    )
+    report = _seal_report(
+        {
+            "schema": LFM2_PRODUCER_AWARE_LINEARIZATION_SCHEMA,
+            "kind": "producer_aware_dense_installation_receipt",
+            "transaction_report_sha256": transaction.report["report_sha256"],
+            "post_install_sha256": dict(post_hashes),
+            "installed_parameter_ids": list(install_ids),
+            "deferred_parameter_ids": list(deferred_ids),
+            "all_nondeferred_physical_parameters_installed": True,
+            "all_physical_parameters_installed": not deferred_ids,
+            "all_coupled_groups_atomic": True,
+            "rollback_available_for_every_parameter": True,
+            "physical_parameter_sharing": False,
+            "numerical_quality_gate": False,
+            "fold_only_guard": guard.as_dict(),
+        }
+    )
+    return Lfm2ProducerAwareInstallationReceipt(
+        post_install_sha256=post_hashes,
+        report=report,
+    )
+
+
+__all__ = [
+    "LFM2_PRODUCER_AWARE_LINEARIZATION_SCHEMA",
+    "Lfm2ProducerAwareAuthenticationError",
+    "Lfm2ProducerAwareDenseTransaction",
+    "Lfm2ProducerAwareInstallationReceipt",
+    "Lfm2ProducerAwareLayerSeedWeights",
+    "Lfm2ProducerAwareLinearizationError",
+    "Lfm2ProducerAwareSegmentCotangent",
+    "Lfm2ProducerAwareWholeStackLinearizationKernel",
+    "build_lfm2_producer_aware_writer_topology",
+    "capture_lfm2_producer_aware_layer_seed",
+    "install_lfm2_producer_aware_dense_transaction",
+    "lfm2_producer_aware_attention_segment_jvp",
+    "lfm2_producer_aware_attention_segment_vjp",
+    "lfm2_producer_aware_boundary_causal_order",
+    "lfm2_producer_aware_mlp_segment_jvp",
+    "lfm2_producer_aware_mlp_segment_vjp",
+    "lfm2_producer_aware_short_conv_segment_jvp",
+    "lfm2_producer_aware_short_conv_segment_vjp",
+    "lfm2_producer_aware_site_causal_orders",
+    "lfm2_producer_aware_whole_stack_norm_evidence",
+    "materialize_lfm2_producer_aware_stack_transaction",
+]

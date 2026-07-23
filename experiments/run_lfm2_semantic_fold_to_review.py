@@ -15,6 +15,7 @@ import argparse
 import gc
 import hashlib
 import json
+import math
 import os
 import re
 import sys
@@ -54,6 +55,12 @@ from experiments.run_lfm2_residual_attention_fold import (  # noqa: E402
     load_local_tokenizer,
 )
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.hf_lfm2_global_residual_closure import (  # noqa: E402
+    Lfm2GlobalResidualClosurePolicy,
+)
+from neural_forge.hf_lfm2_producer_aware_semantic_integration import (  # noqa: E402
+    Lfm2ProducerAwareCorrectionScalePolicy,
+)
 from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
     Lfm2SemanticBodyRecipe,
@@ -91,6 +98,9 @@ CONTINUOUS_COMPILATION_SCHEMA = (
 )
 FRONTIER_RUN_SCHEMA = "neural-forge-lfm2-semantic-terminal-frontier-run-v1"
 FRONTIER_PROGRESS_SCHEMA = "neural-forge-lfm2-semantic-terminal-frontier-progress-v1"
+CORRECTION_SCALE_FRONTIER_SCHEMA = (
+    "neural-forge-lfm2-producer-aware-correction-scale-frontier-v1"
+)
 _SAFE_COMPONENT = re.compile(r"[^A-Za-z0-9_.-]+")
 _ZERO_OPERATION_AUDIT = {
     "training_steps": 0,
@@ -141,6 +151,128 @@ class _AuthenticatedReviewPreflight:
             "maximum_prompt_tokens": self.maximum_prompt_tokens,
             "maximum_new_tokens": self.maximum_new_tokens,
         }
+
+
+def _authenticated_local_parent_parameter_inventory(
+    postfold: Mapping[str, Any],
+    *,
+    expected_parent_identity_sha256: str,
+    expected_parent_unique_parameters: int,
+) -> Mapping[str, Any]:
+    """Count the exact local parent tensors already authenticated by postfold."""
+
+    stack_value = postfold.get("semantic_layer_stack")
+    if not isinstance(stack_value, Mapping):
+        raise Lfm2SemanticFoldToReviewError(
+            "Postfold omitted its sealed semantic layer-stack receipt."
+        )
+    stack = dict(stack_value)
+    stack_result_sha256 = stack.pop("result_sha256", None)
+    session_value = (
+        stack_value.get("parent_checkpoint_session")
+        if isinstance(stack_value, Mapping)
+        else None
+    )
+    if not isinstance(session_value, Mapping):
+        raise Lfm2SemanticFoldToReviewError(
+            "Postfold omitted its authenticated direct-local parent tensor inventory."
+        )
+    session = dict(session_value)
+    session_sha256 = session.pop("session_sha256", None)
+    identity_value = session.get("parent_identity_reconstruction")
+    if not isinstance(identity_value, Mapping):
+        raise Lfm2SemanticFoldToReviewError(
+            "Direct-local parent session omitted exact identity reconstruction."
+        )
+    identity = dict(identity_value)
+    identity_sha256 = identity.pop("result_sha256", None)
+    records = identity.get("checkpoint_tensor_records")
+    expected_identity = str(expected_parent_identity_sha256).strip().lower()
+    if (
+        stack_result_sha256 != canonical_sha256(stack)
+        or session_sha256 != canonical_sha256(session)
+        or stack_value.get("parent_checkpoint_session_sha256") != session_sha256
+        or session_value.get("schema") != "neural-forge-direct-parent-session-v2"
+        or session_value.get("parent_model_identity_sha256") != expected_identity
+        or session_value.get("parent_identity_reconstruction_sha256") != identity_sha256
+        or identity_sha256 != canonical_sha256(identity)
+        or identity.get("schema")
+        != "neural-forge-direct-parent-exact-identity-reconstruction-v1"
+        or identity.get("cache_parent_identity_sha256") != expected_identity
+        or identity.get("reconstructed_parent_identity_sha256") != expected_identity
+        or identity.get("exact_parent_identity_authenticated") is not True
+        or identity.get("parent_model_objects_constructed") != 0
+        or identity.get("parent_forward_calls") != 0
+        or identity.get("network_access_performed") is not False
+        or session_value.get("exact_parent_identity_authenticated") is not True
+        or session_value.get("checkpoint_files_rehashed_after_materialization")
+        is not True
+        or session_value.get("shards_hashed_once") is not True
+        or session_value.get("shards_opened_once") is not True
+        or session_value.get("parent_model_objects_constructed") != 0
+        or session_value.get("parent_forward_calls") != 0
+        or session_value.get("network_access_performed") is not False
+        or not isinstance(records, list)
+        or not records
+        or identity.get("checkpoint_tensor_count") != len(records)
+        or identity.get("checkpoint_tensor_inventory_sha256")
+        != canonical_sha256(records)
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "Direct-local parent tensor inventory failed authentication."
+        )
+    names: set[str] = set()
+    parameter_count = 0
+    for ordinal, record in enumerate(records):
+        if not isinstance(record, Mapping):
+            raise Lfm2SemanticFoldToReviewError(
+                "Direct-local parent tensor inventory contains a malformed record."
+            )
+        name = record.get("name")
+        shape = record.get("shape")
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in names
+            or not isinstance(shape, list)
+            or any(
+                isinstance(size, bool) or not isinstance(size, int) or size < 0
+                for size in shape
+            )
+        ):
+            raise Lfm2SemanticFoldToReviewError(
+                f"Direct-local parent tensor record {ordinal} has invalid geometry."
+            )
+        names.add(name)
+        parameter_count += math.prod(shape)
+    if (
+        isinstance(expected_parent_unique_parameters, bool)
+        or not isinstance(expected_parent_unique_parameters, int)
+        or expected_parent_unique_parameters <= 0
+        or parameter_count != expected_parent_unique_parameters
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "Fresh local parent parameter count differs from the authenticated "
+            "parent response envelope."
+        )
+    body = {
+        "parent_identity_sha256": expected_identity,
+        "semantic_layer_stack_result_sha256": stack_result_sha256,
+        "parent_checkpoint_session_sha256": session_sha256,
+        "parent_identity_reconstruction_sha256": identity_sha256,
+        "checkpoint_tensor_inventory_sha256": identity[
+            "checkpoint_tensor_inventory_sha256"
+        ],
+        "checkpoint_tensor_count": len(records),
+        "unique_stored_parameter_elements": parameter_count,
+        "envelope_parent_unique_parameters": expected_parent_unique_parameters,
+        "fresh_local_count_matches_authenticated_envelope": True,
+        "count_method": "sum_product_of_authenticated_local_safetensor_shapes",
+        "parent_model_objects_constructed_for_count": 0,
+        "parent_forward_calls_for_count": 0,
+        "network_access_performed_for_count": False,
+    }
+    return {**body, "receipt_sha256": canonical_sha256(body)}
 
 
 def _digest(value: Any, *, label: str) -> str:
@@ -784,7 +916,7 @@ def _validate_pending_postfold(
     _assert_zero_mutation_policy(fused, label="fused terminal")
 
 
-def run_fold_to_review(
+def _run_fold_to_review_scale(
     *,
     run_directory: Path,
     input_checkpoint: Path,
@@ -817,6 +949,10 @@ def run_fold_to_review(
     parent_envelope: Path,
     expected_parent_envelope_sha256: str,
     expected_parent_envelope_file_sha256: str,
+    global_residual_closure_version: str = "producer_aware_v2a",
+    correction_scale_frontier: Sequence[float] = (1.0,),
+    correction_scale: float = 1.0,
+    global_residual_backend: str = "auto",
 ) -> dict[str, Any]:
     """Run one pinned recipe through its sealed decoded-evidence flow."""
 
@@ -859,6 +995,24 @@ def run_fold_to_review(
         label: _existing_file(path, label=label) for label, path in files.items()
     }
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    closure_version = str(global_residual_closure_version).strip().lower()
+    if closure_version not in {
+        "producer_aware_v2a",
+        "output_writer_v1_diagnostic",
+    }:
+        raise Lfm2SemanticFoldToReviewError(
+            "global_residual_closure_version must be producer_aware_v2a or "
+            "output_writer_v1_diagnostic."
+        )
+    closure_policy = Lfm2GlobalResidualClosurePolicy(
+        backend=str(global_residual_backend).strip().lower()
+    )
+    scale_policy = Lfm2ProducerAwareCorrectionScalePolicy(
+        materialization_frontier=tuple(
+            float(value) for value in correction_scale_frontier
+        ),
+        materialization_scale=float(correction_scale),
+    )
     if recipe.recipe_sha256 != _digest(
         expected_body_recipe_sha256,
         label="expected body recipe SHA-256",
@@ -975,6 +1129,10 @@ def run_fold_to_review(
             anchor_candidate_index=anchor_candidate_index,
             device=device,
             fold_compute_device=fold_compute_device,
+            global_residual_closure_version=closure_version,
+            correction_scale_frontier=scale_policy.materialization_frontier,
+            correction_scale=scale_policy.materialization_scale,
+            global_residual_backend=closure_policy.backend,
             body_recipe=recipe,
             dtype=dtype,
             tied_interface_mode=tied_interface_mode,
@@ -1059,11 +1217,76 @@ def run_fold_to_review(
             "Whole-response dossier did not review the complete structural bank."
         )
     _release_cuda()
+    layer_stack_receipt = postfold.get("semantic_layer_stack")
+    local_parent_inventory = _authenticated_local_parent_parameter_inventory(
+        postfold,
+        expected_parent_identity_sha256=preflight.parent_identity_sha256,
+        expected_parent_unique_parameters=preflight.parent_unique_parameters,
+    )
+    parent_parameter_count = local_parent_inventory["unique_stored_parameter_elements"]
+    child_parameter_count = (
+        layer_stack_receipt.get("parameter_element_count")
+        if isinstance(layer_stack_receipt, Mapping)
+        else None
+    )
+    if (
+        type(child_parameter_count) is not int
+        or child_parameter_count <= 0
+        or postfold.get("global_residual_closure_version") != closure_version
+        or postfold.get("global_residual_backend") != closure_policy.backend
+        or postfold.get("global_residual_correction_scale_frontier")
+        != list(scale_policy.materialization_frontier)
+        or postfold.get("global_residual_correction_scale")
+        != scale_policy.materialization_scale
+        or postfold.get("global_residual_frontier_member_selected_as_winner")
+        is not False
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "Postfold dropped the authenticated residual-closure controls or child "
+            "parameter topology."
+        )
+    parameter_reduction = parent_parameter_count - child_parameter_count
+    parameter_compaction = {
+        "parent_unique_parameters": parent_parameter_count,
+        "child_parameter_element_count": child_parameter_count,
+        "parameter_reduction": parameter_reduction,
+        "parent_to_child_parameter_ratio": (
+            parent_parameter_count / child_parameter_count
+        ),
+        "child_parameter_fraction_of_parent": (
+            child_parameter_count / parent_parameter_count
+        ),
+        "parameter_reduction_fraction": (parameter_reduction / parent_parameter_count),
+        "parent_count_source": (
+            "authenticated_direct_local_safetensor_tensor_inventory"
+        ),
+        "child_count_source": "authenticated_semantic_layer_stack_receipt",
+        "local_parent_parameter_inventory": dict(local_parent_inventory),
+        "envelope_parent_count_cross_checked": True,
+        "counts_recomputed_from_authenticated_values": True,
+        "dense_parameter_compaction_is_topology_evidence": True,
+        "dense_parameter_compaction_is_quality_gate": False,
+    }
     common_body = {
         "run_directory": str(run_root),
         "body_recipe": recipe.as_dict(),
         "body_recipe_sha256": recipe.recipe_sha256,
         "body_recipe_id": recipe.recipe_id,
+        "global_residual_closure_version": closure_version,
+        "global_residual_backend": closure_policy.backend,
+        "global_residual_closure_policy_sha256": (closure_policy.authentication_sha256),
+        "global_residual_correction_scale_frontier": list(
+            scale_policy.materialization_frontier
+        ),
+        "global_residual_correction_scale": scale_policy.materialization_scale,
+        "global_residual_correction_scale_policy_sha256": (
+            scale_policy.authentication_sha256
+        ),
+        "global_residual_frontier_member_selected_as_winner": False,
+        "global_residual_materialization_scale_is_execution_variant_not_winner": (
+            closure_version == "producer_aware_v2a"
+        ),
+        "dense_parameter_compaction": parameter_compaction,
         "authenticated_review_preflight": preflight.as_dict(),
         "postfold_receipt": {
             "path": str(postfold_receipt),
@@ -1177,6 +1400,242 @@ def run_fold_to_review(
     return document
 
 
+def run_fold_to_review(
+    *,
+    run_directory: Path,
+    input_checkpoint: Path,
+    expected_input_artifact_sha256: str,
+    trace_cache: Path,
+    expected_cache_key: str,
+    bridge_directory: Path,
+    expected_bridge_artifact_sha256: str,
+    donor_tokenizer_directory: Path,
+    target_tokenizer_directory: Path,
+    parent_model_directory: Path,
+    compiler_diagnostic_json: Path,
+    expected_compiler_diagnostic_sha256: str,
+    interface_statistics_directory: Path,
+    expected_interface_statistics_sha256: str,
+    interface_frontier_companion_json: Path,
+    expected_interface_frontier_companion_file_sha256: str,
+    expected_interface_frontier_companion_sha256: str,
+    anchor_candidate_index: int,
+    body_recipe: str,
+    expected_body_recipe_sha256: str,
+    tied_interface_mode: str,
+    device: str,
+    fold_compute_device: str,
+    dtype: str,
+    prompts_json: Path,
+    expected_prompts_file_sha256: str,
+    maximum_prompt_tokens: int,
+    maximum_new_tokens: int,
+    parent_envelope: Path,
+    expected_parent_envelope_sha256: str,
+    expected_parent_envelope_file_sha256: str,
+    global_residual_closure_version: str = "producer_aware_v2a",
+    correction_scale_frontier: Sequence[float] = (1.0,),
+    correction_scale: float | None = None,
+    global_residual_backend: str = "auto",
+) -> dict[str, Any]:
+    """Fold, decode, and retain every requested correction-scale member."""
+
+    frontier = tuple(float(value) for value in correction_scale_frontier)
+    reference_scale = (
+        frontier[0] if correction_scale is None and frontier else correction_scale
+    )
+    try:
+        scale_policy = Lfm2ProducerAwareCorrectionScalePolicy(
+            materialization_frontier=frontier,
+            materialization_scale=float(reference_scale),
+        )
+        closure_policy = Lfm2GlobalResidualClosurePolicy(
+            backend=str(global_residual_backend).strip().lower()
+        )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2SemanticFoldToReviewError(
+            "Correction-scale frontier or global residual backend is invalid."
+        ) from exc
+    closure_version = str(global_residual_closure_version).strip().lower()
+    if closure_version not in {
+        "producer_aware_v2a",
+        "output_writer_v1_diagnostic",
+    }:
+        raise Lfm2SemanticFoldToReviewError(
+            "global_residual_closure_version must be producer_aware_v2a or "
+            "output_writer_v1_diagnostic."
+        )
+    if (
+        closure_version == "output_writer_v1_diagnostic"
+        and scale_policy.materialization_frontier != (1.0,)
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "The output-writer v1 diagnostic supports only its canonical scale 1.0."
+        )
+    arguments = {
+        "input_checkpoint": input_checkpoint,
+        "expected_input_artifact_sha256": expected_input_artifact_sha256,
+        "trace_cache": trace_cache,
+        "expected_cache_key": expected_cache_key,
+        "bridge_directory": bridge_directory,
+        "expected_bridge_artifact_sha256": expected_bridge_artifact_sha256,
+        "donor_tokenizer_directory": donor_tokenizer_directory,
+        "target_tokenizer_directory": target_tokenizer_directory,
+        "parent_model_directory": parent_model_directory,
+        "compiler_diagnostic_json": compiler_diagnostic_json,
+        "expected_compiler_diagnostic_sha256": expected_compiler_diagnostic_sha256,
+        "interface_statistics_directory": interface_statistics_directory,
+        "expected_interface_statistics_sha256": expected_interface_statistics_sha256,
+        "interface_frontier_companion_json": interface_frontier_companion_json,
+        "expected_interface_frontier_companion_file_sha256": (
+            expected_interface_frontier_companion_file_sha256
+        ),
+        "expected_interface_frontier_companion_sha256": (
+            expected_interface_frontier_companion_sha256
+        ),
+        "anchor_candidate_index": anchor_candidate_index,
+        "body_recipe": body_recipe,
+        "expected_body_recipe_sha256": expected_body_recipe_sha256,
+        "tied_interface_mode": tied_interface_mode,
+        "device": device,
+        "fold_compute_device": fold_compute_device,
+        "dtype": dtype,
+        "prompts_json": prompts_json,
+        "expected_prompts_file_sha256": expected_prompts_file_sha256,
+        "maximum_prompt_tokens": maximum_prompt_tokens,
+        "maximum_new_tokens": maximum_new_tokens,
+        "parent_envelope": parent_envelope,
+        "expected_parent_envelope_sha256": expected_parent_envelope_sha256,
+        "expected_parent_envelope_file_sha256": expected_parent_envelope_file_sha256,
+        "global_residual_closure_version": closure_version,
+        "correction_scale_frontier": scale_policy.materialization_frontier,
+        "global_residual_backend": closure_policy.backend,
+    }
+    if len(scale_policy.materialization_frontier) == 1:
+        return _run_fold_to_review_scale(
+            run_directory=run_directory,
+            correction_scale=scale_policy.materialization_frontier[0],
+            **arguments,
+        )
+
+    readonly = (
+        input_checkpoint,
+        trace_cache,
+        bridge_directory,
+        donor_tokenizer_directory,
+        target_tokenizer_directory,
+        parent_model_directory,
+        compiler_diagnostic_json,
+        interface_statistics_directory,
+        interface_frontier_companion_json,
+        prompts_json,
+        parent_envelope,
+    )
+    outer = _new_run_directory(
+        run_directory,
+        readonly=tuple(path.expanduser().absolute() for path in readonly),
+    )
+    scale_runs = []
+    compaction_evidence = None
+    for index, scale in enumerate(scale_policy.materialization_frontier):
+        scale_label = _SAFE_COMPONENT.sub(
+            "-",
+            format(scale, ".12g").replace("-", "neg-").replace(".", "p"),
+        )
+        member_directory = outer / f"scale-{index:02d}-{scale_label}"
+        member = _run_fold_to_review_scale(
+            run_directory=member_directory,
+            correction_scale=scale,
+            **arguments,
+        )
+        observed_compaction = member.get("dense_parameter_compaction")
+        if (
+            not isinstance(observed_compaction, Mapping)
+            or type(member.get("candidate_count")) is not int
+            or member["candidate_count"] <= 0
+            or (
+                compaction_evidence is not None
+                and dict(observed_compaction) != compaction_evidence
+            )
+            or (
+                member.get("all_materialized_candidates_received_whole_response_review")
+                is not True
+                or member.get("all_materialized_candidate_checkpoints_retained")
+                is not True
+            )
+        ):
+            raise Lfm2SemanticFoldToReviewError(
+                "Correction-scale members must share one dense topology and each "
+                "complete decoded review with every checkpoint retained."
+            )
+        compaction_evidence = dict(observed_compaction)
+        member_receipt = member_directory / "pipeline-receipt.json"
+        scale_runs.append(
+            {
+                "correction_scale": scale,
+                "run_directory": str(member_directory),
+                "pipeline_receipt": str(member_receipt),
+                "pipeline_receipt_file_sha256": _file_sha256(member_receipt),
+                "pipeline_sha256": member["pipeline_sha256"],
+                "status": member["status"],
+                "candidate_count": member["candidate_count"],
+                "all_materialized_candidates_received_whole_response_review": member[
+                    "all_materialized_candidates_received_whole_response_review"
+                ],
+                "all_materialized_candidate_checkpoints_retained": member.get(
+                    "all_materialized_candidate_checkpoints_retained",
+                    False,
+                ),
+                "selected_as_winner": False,
+            }
+        )
+        _release_cuda()
+    body = {
+        "schema": CORRECTION_SCALE_FRONTIER_SCHEMA,
+        "status": "all-correction-scales-folded-decoded-retained",
+        "run_directory": str(outer),
+        "global_residual_closure_version": closure_version,
+        "global_residual_backend": closure_policy.backend,
+        "global_residual_closure_policy_sha256": (closure_policy.authentication_sha256),
+        "correction_scale_frontier": list(scale_policy.materialization_frontier),
+        "correction_scale_policy_reference_member": float(reference_scale),
+        "correction_scale_policy_sha256_by_member": [
+            Lfm2ProducerAwareCorrectionScalePolicy(
+                materialization_frontier=scale_policy.materialization_frontier,
+                materialization_scale=scale,
+            ).authentication_sha256
+            for scale in scale_policy.materialization_frontier
+        ],
+        "scale_run_count": len(scale_runs),
+        "scale_runs": scale_runs,
+        "dense_parameter_compaction": compaction_evidence,
+        "every_requested_scale_separately_folded": True,
+        "every_requested_scale_separately_decoded": True,
+        "every_requested_scale_retained": True,
+        "automatic_scale_winner_selected": False,
+        "numeric_or_manual_quality_gate": False,
+        "decoded_outputs_and_metrics_are_evidence_for_iteration": True,
+        "operation_audit": dict(_ZERO_OPERATION_AUDIT),
+    }
+    document = {**body, "pipeline_sha256": canonical_sha256(body)}
+    _atomic_json(outer / "pipeline-receipt.json", document)
+    return document
+
+
+def _parse_correction_scale_frontier(value: str) -> tuple[float, ...]:
+    try:
+        frontier = tuple(float(item.strip()) for item in value.split(","))
+        selected = frontier[0]
+        return Lfm2ProducerAwareCorrectionScalePolicy(
+            materialization_frontier=frontier,
+            materialization_scale=selected,
+        ).materialization_frontier
+    except (TypeError, ValueError, RuntimeError, IndexError) as exc:
+        raise argparse.ArgumentTypeError(
+            "correction-scale frontier must be sorted unique nonnegative CSV floats"
+        ) from exc
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -1231,6 +1690,31 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--fold-compute-device", default="cuda:0")
+    parser.add_argument(
+        "--global-residual-closure-version",
+        choices=("producer_aware_v2a", "output_writer_v1_diagnostic"),
+        default="producer_aware_v2a",
+    )
+    parser.add_argument(
+        "--correction-scale-frontier",
+        type=_parse_correction_scale_frontier,
+        default=(1.0,),
+        help=(
+            "Sorted unique CSV scales. Every member is independently folded, "
+            "decoded, and retained; no winner is selected."
+        ),
+    )
+    parser.add_argument(
+        "--correction-scale",
+        type=float,
+        default=None,
+        help="Optional reference member for receipt ordering; it is not a winner.",
+    )
+    parser.add_argument(
+        "--global-residual-backend",
+        choices=("auto", "cpu", "cuda"),
+        default="auto",
+    )
     parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")
     parser.add_argument("--prompts-json", required=True, type=Path)
     parser.add_argument("--expected-prompts-file-sha256", required=True)
@@ -1277,6 +1761,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         tied_interface_mode=args.tied_interface_mode,
         device=args.device,
         fold_compute_device=args.fold_compute_device,
+        global_residual_closure_version=args.global_residual_closure_version,
+        correction_scale_frontier=args.correction_scale_frontier,
+        correction_scale=args.correction_scale,
+        global_residual_backend=args.global_residual_backend,
         dtype=args.dtype,
         prompts_json=args.prompts_json,
         expected_prompts_file_sha256=args.expected_prompts_file_sha256,

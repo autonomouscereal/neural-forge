@@ -284,9 +284,7 @@ def test_endpoint_authenticates_parent_normalized_mlp_input() -> None:
         )
     drifted = replace(
         valid,
-        parent_normalized_mlp_input=torch.zeros_like(
-            valid.parent_normalized_mlp_input
-        ),
+        parent_normalized_mlp_input=torch.zeros_like(valid.parent_normalized_mlp_input),
     )
     assert drifted.verify() is True
     assert drifted.normalization_reconstruction_within_legacy_envelope is False
@@ -432,6 +430,7 @@ def _prepare(
     terminal: bool = False,
     maximum_delta_ratio: float | None = 1.0,
     body_recipe: str = "fit_guided",
+    fold_compute_device: str = "cpu",
 ) -> adapter.Lfm2PreparedSemanticMlpRefold:
     return adapter.prepare_lfm2_semantic_mlp_postfold(
         target_model=model,
@@ -445,6 +444,7 @@ def _prepare(
         cosine_tolerance=1e-5,
         require_terminal_action_evidence=terminal,
         body_recipe=body_recipe,
+        fold_compute_device=fold_compute_device,
     )
 
 
@@ -840,6 +840,8 @@ def test_exact_zero_incumbent_uses_unclipped_authenticated_structural_escape() -
 
 def _prepared_blank_qdeim(
     recipe_id: str,
+    *,
+    fold_compute_device: str = "cpu",
 ) -> tuple[_Target, adapter.Lfm2PreparedSemanticMlpRefold]:
     model = _Target()
     with torch.no_grad():
@@ -849,17 +851,14 @@ def _prepared_blank_qdeim(
         model,
         _cold_start_parent_endpoint_evidence(model),
         body_recipe=recipe_id,
+        fold_compute_device=fold_compute_device,
     )
     return model, prepared
 
 
 def test_blank_qdeim_recipes_select_separate_authenticated_dense_candidates() -> None:
-    structural_model, structural = _prepared_blank_qdeim(
-        "nonlinear_qdeim_structural"
-    )
-    corrected_model, corrected = _prepared_blank_qdeim(
-        "nonlinear_qdeim_fit_corrected"
-    )
+    structural_model, structural = _prepared_blank_qdeim("nonlinear_qdeim_structural")
+    corrected_model, corrected = _prepared_blank_qdeim("nonlinear_qdeim_fit_corrected")
 
     assert structural.verify()
     assert corrected.verify()
@@ -876,20 +875,57 @@ def test_blank_qdeim_recipes_select_separate_authenticated_dense_candidates() ->
         "qdeim_structural_prior",
         "qdeim_fit_residual_corrected",
     ]
+    compute = structural_solver["qdeim_compiler_receipt"]["compute_execution"]
+    assert compute["requested_device"] == "cpu"
+    assert compute["resolved_device"] == "cpu"
+    assert compute["authenticated_source_archive_device"] == "cpu"
+    assert compute["materialized_candidate_device"] == "cpu"
+    assert structural_solver["qdeim_integration"]["qdeim_compute_execution"] == (
+        compute
+    )
+    tangent_compute = structural_solver["tangent_bank"]["compute_execution"]
+    assert tangent_compute["requested_device"] == "cpu"
+    assert tangent_compute["resolved_device"] == "cpu"
+    assert tangent_compute["authenticated_source_archive_device"] == "cpu"
+    assert tangent_compute["materialized_tangent_bank_device"] == "cpu"
+    assert (
+        structural_solver["qdeim_integration"]["tangent_bank_compute_execution"]
+        == tangent_compute
+    )
+    assert (
+        structural_solver["source_derived_planting"][
+            "qdeim_pod_and_pivot_compute_device"
+        ]
+        == "cpu"
+    )
+    assert (
+        structural_solver["source_derived_planting"]["tangent_bank_compute_device"]
+        == "cpu"
+    )
     assert structural_solver["tangent_bank"]["geometry"]["anchor_count"] == 2
     assert structural_solver["tangent_bank"]["anchor_indices"] == [0, 7]
-    assert structural_solver["qdeim_integration"][
-        "tangent_rows_used_for_endpoint_w2_correction"
-    ] == 0
-    assert structural_solver["qdeim_integration"][
-        "heldout_rows_used_for_pod_or_tangent"
-    ] == 0
-    assert structural_solver["qdeim_integration"][
-        "numeric_metrics_used_for_semantic_acceptance_or_veto"
-    ] is False
-    assert structural_solver["qdeim_integration"][
-        "whole_decoded_responses_are_primary_semantic_evidence"
-    ] is True
+    assert (
+        structural_solver["qdeim_integration"][
+            "tangent_rows_used_for_endpoint_w2_correction"
+        ]
+        == 0
+    )
+    assert (
+        structural_solver["qdeim_integration"]["heldout_rows_used_for_pod_or_tangent"]
+        == 0
+    )
+    assert (
+        structural_solver["qdeim_integration"][
+            "numeric_metrics_used_for_semantic_acceptance_or_veto"
+        ]
+        is False
+    )
+    assert (
+        structural_solver["qdeim_integration"][
+            "whole_decoded_responses_are_primary_semantic_evidence"
+        ]
+        is True
+    )
     assert structural_solver["qdeim_integration"]["binary_manual_gate_created"] is False
     assert structural_solver["child_coordinate_rms"]["structural_floor_policy"] == (
         "sqrt_float64_machine_epsilon"
@@ -898,9 +934,12 @@ def test_blank_qdeim_recipes_select_separate_authenticated_dense_candidates() ->
         "neural-forge-lfm2-normalized-input-decoder-only-v1"
     )
     assert structural_solver["normalized_decoder_control"]["decoder_only_scope"] is True
-    assert structural_solver["normalized_decoder_control"][
-        "cluster_or_medoid_state_constructed"
-    ] is False
+    assert (
+        structural_solver["normalized_decoder_control"][
+            "cluster_or_medoid_state_constructed"
+        ]
+        is False
+    )
     decoder_operations = structural_solver["normalized_decoder_control"][
         "operation_audit"
     ]
@@ -908,17 +947,26 @@ def test_blank_qdeim_recipes_select_separate_authenticated_dense_candidates() ->
     assert decoder_operations["medoid_selection_operations"] == 0
     assert decoder_operations["producer_materializations"] == 0
     assert decoder_operations["consumer_materializations"] == 0
-    assert structural_solver["qdeim_integration"][
-        "normalized_decoder_control_candidate_weights_used"
-    ] is False
+    assert (
+        structural_solver["qdeim_integration"][
+            "normalized_decoder_control_candidate_weights_used"
+        ]
+        is False
+    )
     assert structural_solver["rank_completion"]["random_completion_modes"] == 0
     assert structural_solver["rank_completion"]["silent_completion_performed"] is False
-    assert structural.selection_receipt[
-        "blank_target_selected_state_uses_real_qdeim_producers"
-    ] is True
-    assert structural.selection_receipt[
-        "whole_decoded_responses_are_primary_semantic_evidence"
-    ] is True
+    assert (
+        structural.selection_receipt[
+            "blank_target_selected_state_uses_real_qdeim_producers"
+        ]
+        is True
+    )
+    assert (
+        structural.selection_receipt[
+            "whole_decoded_responses_are_primary_semantic_evidence"
+        ]
+        is True
+    )
     assert structural.selection_receipt["binary_manual_gate_created"] is False
     assert torch.equal(
         structural.full_candidate.gate_weight,
@@ -943,14 +991,45 @@ def test_blank_qdeim_recipes_select_separate_authenticated_dense_candidates() ->
     assert structural_repeat.full_candidate.candidate_sha256 == (
         structural.full_candidate.candidate_sha256
     )
-    assert structural_repeat.full_candidate.solver_receipt[
-        "qdeim_integration_sha256"
-    ] == structural_solver["qdeim_integration_sha256"]
+    assert (
+        structural_repeat.full_candidate.solver_receipt["qdeim_integration_sha256"]
+        == structural_solver["qdeim_integration_sha256"]
+    )
     assert fingerprint_lfm2_parent(structural_model).identity_sha256 == (
         fingerprint_lfm2_parent(structural_repeat_model).identity_sha256
     )
     assert fingerprint_lfm2_parent(corrected_model).identity_sha256 == (
         fingerprint_lfm2_parent(structural_model).identity_sha256
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_blank_qdeim_cuda_stages_tangent_and_qdeim_without_gpu_output_leak() -> None:
+    _model, prepared = _prepared_blank_qdeim(
+        "nonlinear_qdeim_structural",
+        fold_compute_device="cuda:0",
+    )
+    assert prepared.verify()
+    solver = prepared.full_candidate.solver_receipt
+    qdeim_compute = solver["qdeim_compiler_receipt"]["compute_execution"]
+    tangent_compute = solver["tangent_bank"]["compute_execution"]
+    for compute in (qdeim_compute, tangent_compute):
+        assert compute["requested_device"] == "cuda:0"
+        assert compute["resolved_device"] == "cuda:0"
+        assert compute["backend"] == "cuda"
+        assert compute["active_layer_staged_to_compute_device"] is True
+        assert compute["authenticated_source_archive_device"] == "cpu"
+        assert compute["silent_device_fallback_performed"] is False
+    assert qdeim_compute["materialized_candidate_device"] == "cpu"
+    assert tangent_compute["materialized_tangent_bank_device"] == "cpu"
+    assert solver["qdeim_integration"]["qdeim_compute_execution"] == qdeim_compute
+    assert (
+        solver["qdeim_integration"]["tangent_bank_compute_execution"] == tangent_compute
+    )
+    assert solver["source_derived_planting"]["fold_compute_device"] == "cuda:0"
+    assert all(
+        value.device.type == "cpu" and value.dtype == torch.bfloat16
+        for value in prepared.selected_candidate.state_dict().values()
     )
 
 
@@ -1006,9 +1085,10 @@ def test_blank_qdeim_never_enters_legacy_medoid_or_writer_solvers(
     assert prepared.verify()
     assert prepared.full_candidate.solver_receipt["decoder_control_only_solve"] is True
     assert prepared.writer_candidate.solver_receipt["residual_writer_solve_calls"] == 0
-    assert prepared.writer_candidate.solver_receipt[
-        "placeholder_state_is_exact_incumbent"
-    ] is True
+    assert (
+        prepared.writer_candidate.solver_receipt["placeholder_state_is_exact_incumbent"]
+        is True
+    )
 
 
 def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
@@ -1064,16 +1144,18 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     assert hybrid.writer_candidate.solver_receipt["fixed_producer_state_source"] == (
         "full-source-structural-w1-w3"
     )
-    assert state_sha256["source_producer_residual_writer"] == state_sha256[
-        "residual_writer"
-    ]
+    assert (
+        state_sha256["source_producer_residual_writer"]
+        == state_sha256["residual_writer"]
+    )
     structural_sequence_writer = prepared_by_recipe[
         "structural_sequence_residual_mlp_writer"
     ]
     assert structural_sequence_writer.selected_role == "incumbent-producer-w2"
-    assert state_sha256["structural_sequence_residual_mlp_writer"] == state_sha256[
-        "residual_writer"
-    ]
+    assert (
+        state_sha256["structural_sequence_residual_mlp_writer"]
+        == state_sha256["residual_writer"]
+    )
 
 
 def test_prepared_recipe_and_selected_lane_cannot_be_resealed_independently() -> None:
@@ -1956,9 +2038,9 @@ def test_qdeim_final_layer_keeps_terminal_w2_deferral_semantics() -> None:
     assert result.receipt["status"] == "installed-w1-w3-final-w2-deferred"
     assert result.receipt["changed_parameter_roles"] == ["w1.weight", "w3.weight"]
     assert result.receipt["final_layer_mlp_w2_deferred_to_fused_terminal"] is True
-    assert result.receipt[
-        "analytic_linear_cluster_tangent_and_qdeim_solves_only"
-    ] is True
+    assert (
+        result.receipt["analytic_linear_cluster_tangent_and_qdeim_solves_only"] is True
+    )
     assert result.receipt["analytic_linear_and_cluster_solves_only"] is False
     assert torch.equal(
         model.model.layers[0].feed_forward.w2.weight.detach(),
@@ -1979,9 +2061,10 @@ def test_qdeim_final_layer_keeps_terminal_w2_deferral_semantics() -> None:
     assert result.receipt["deferred_selected_w2_prior_installed_before_terminal"] is (
         False
     )
-    assert result.receipt[
-        "deferred_selected_w2_prior_authentication_sha256"
-    ] == prior.authentication_sha256
+    assert (
+        result.receipt["deferred_selected_w2_prior_authentication_sha256"]
+        == prior.authentication_sha256
+    )
 
 
 def test_layer_stack_mlp_seam_threads_qdeim_prior_without_installing_w2() -> None:
@@ -2017,9 +2100,10 @@ def test_layer_stack_mlp_seam_threads_qdeim_prior_without_installing_w2() -> Non
 
     assert prior is not None
     assert prior.verify_authentication()
-    assert receipt[
-        "deferred_selected_w2_prior_authentication_sha256"
-    ] == prior.authentication_sha256
+    assert (
+        receipt["deferred_selected_w2_prior_authentication_sha256"]
+        == prior.authentication_sha256
+    )
     assert set(terminal_evidence) == set(adapter._PARTITIONS)
     assert torch.equal(
         model.model.layers[0].feed_forward.w2.weight.detach(),

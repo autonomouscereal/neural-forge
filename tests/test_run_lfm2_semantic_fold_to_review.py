@@ -69,6 +69,145 @@ def _arguments(tmp_path: Path, paths: dict[str, Path]) -> dict[str, object]:
     }
 
 
+def _sealed_direct_parent_session(
+    *,
+    parent_identity_sha256: str,
+    parameter_count: int,
+) -> dict[str, object]:
+    records = [
+        {
+            "name": "model.unique_weight",
+            "shape": [parameter_count],
+        }
+    ]
+    identity_body = {
+        "schema": "neural-forge-direct-parent-exact-identity-reconstruction-v1",
+        "cache_parent_identity_sha256": parent_identity_sha256,
+        "checkpoint_tensor_inventory_sha256": runner.canonical_sha256(records),
+        "checkpoint_tensor_count": len(records),
+        "checkpoint_tensor_records": records,
+        "reconstructed_parent_identity_sha256": parent_identity_sha256,
+        "exact_parent_identity_authenticated": True,
+        "parent_model_objects_constructed": 0,
+        "parent_forward_calls": 0,
+        "network_access_performed": False,
+    }
+    identity = {
+        **identity_body,
+        "result_sha256": runner.canonical_sha256(identity_body),
+    }
+    session_body = {
+        "schema": "neural-forge-direct-parent-session-v2",
+        "parent_model_identity_sha256": parent_identity_sha256,
+        "parent_identity_reconstruction_sha256": identity["result_sha256"],
+        "parent_identity_reconstruction": identity,
+        "exact_parent_identity_authenticated": True,
+        "checkpoint_files_rehashed_after_materialization": True,
+        "shards_hashed_once": True,
+        "shards_opened_once": True,
+        "parent_model_objects_constructed": 0,
+        "parent_forward_calls": 0,
+        "network_access_performed": False,
+    }
+    return {
+        **session_body,
+        "session_sha256": runner.canonical_sha256(session_body),
+    }
+
+
+def test_correction_scale_frontier_folds_decodes_and_retains_every_member(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _sources(tmp_path)
+    arguments = _arguments(tmp_path, paths)
+    scales_seen: list[float] = []
+    compaction = {
+        "parent_unique_parameters": 1_000_000,
+        "child_parameter_element_count": 250_000,
+        "parameter_reduction": 750_000,
+        "parent_to_child_parameter_ratio": 4.0,
+        "child_parameter_fraction_of_parent": 0.25,
+        "parameter_reduction_fraction": 0.75,
+    }
+
+    def run_member(**kwargs):
+        scale = float(kwargs["correction_scale"])
+        scales_seen.append(scale)
+        member = Path(kwargs["run_directory"])
+        member.mkdir()
+        body = {
+            "status": "decoded-behavior-evidence-complete-continuation-unblocked",
+            "candidate_count": 2,
+            "all_materialized_candidates_received_whole_response_review": True,
+            "all_materialized_candidate_checkpoints_retained": True,
+            "dense_parameter_compaction": compaction,
+        }
+        result = {**body, "pipeline_sha256": runner.canonical_sha256(body)}
+        runner._atomic_json(member / "pipeline-receipt.json", result)
+        return result
+
+    monkeypatch.setattr(runner, "_run_fold_to_review_scale", run_member)
+    result = runner.run_fold_to_review(
+        **arguments,
+        global_residual_closure_version="producer_aware_v2a",
+        correction_scale_frontier=(0.25, 0.5, 1.0),
+        correction_scale=0.5,
+        global_residual_backend="cpu",
+    )
+
+    assert scales_seen == [0.25, 0.5, 1.0]
+    assert result["scale_run_count"] == 3
+    assert result["every_requested_scale_separately_folded"] is True
+    assert result["every_requested_scale_separately_decoded"] is True
+    assert result["every_requested_scale_retained"] is True
+    assert result["automatic_scale_winner_selected"] is False
+    assert result["numeric_or_manual_quality_gate"] is False
+    assert result["dense_parameter_compaction"] == compaction
+    assert all(run["selected_as_winner"] is False for run in result["scale_runs"])
+
+
+@pytest.mark.parametrize(
+    "malformation",
+    ("no-candidates", "review-incomplete", "checkpoints-not-retained"),
+)
+def test_correction_scale_frontier_refuses_to_overclaim_member_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    malformation: str,
+) -> None:
+    paths = _sources(tmp_path)
+    arguments = _arguments(tmp_path, paths)
+
+    def run_member(**_kwargs):
+        return {
+            "candidate_count": 0 if malformation == "no-candidates" else 1,
+            "all_materialized_candidates_received_whole_response_review": (
+                malformation != "review-incomplete"
+            ),
+            "all_materialized_candidate_checkpoints_retained": (
+                malformation != "checkpoints-not-retained"
+            ),
+            "dense_parameter_compaction": {
+                "parent_unique_parameters": 4,
+                "child_parameter_element_count": 1,
+            },
+        }
+
+    monkeypatch.setattr(runner, "_run_fold_to_review_scale", run_member)
+    with pytest.raises(
+        runner.Lfm2SemanticFoldToReviewError,
+        match="complete decoded review with every checkpoint retained",
+    ):
+        runner.run_fold_to_review(
+            **arguments,
+            global_residual_closure_version="producer_aware_v2a",
+            correction_scale_frontier=(0.5, 1.0),
+            correction_scale=1.0,
+            global_residual_backend="cpu",
+        )
+
+
 def _seal_review_inputs(
     paths: dict[str, Path],
     arguments: dict[str, object],
@@ -316,6 +455,19 @@ def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
             "final_selection_performed": False,
             "operation_audit": dict(runner._ZERO_OPERATION_AUDIT),
         }
+        parent_session = _sealed_direct_parent_session(
+            parent_identity_sha256=parent_identity,
+            parameter_count=parent_unique_parameters,
+        )
+        stack_body = {
+            "parameter_element_count": 250_000,
+            "parent_checkpoint_session_sha256": parent_session["session_sha256"],
+            "parent_checkpoint_session": parent_session,
+        }
+        semantic_layer_stack = {
+            **stack_body,
+            "result_sha256": runner.canonical_sha256(stack_body),
+        }
         return {
             "status": "terminal-frontier-exported-review-pending",
             "result_sha256": "7" * 64,
@@ -327,6 +479,16 @@ def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
             "candidate_published_before_manual_review": False,
             "checkpoint_published": False,
             "semantic_evidence_cache_key": arguments["expected_cache_key"],
+            "global_residual_closure_version": kwargs[
+                "global_residual_closure_version"
+            ],
+            "global_residual_backend": kwargs["global_residual_backend"],
+            "global_residual_correction_scale_frontier": list(
+                kwargs["correction_scale_frontier"]
+            ),
+            "global_residual_correction_scale": kwargs["correction_scale"],
+            "global_residual_frontier_member_selected_as_winner": False,
+            "semantic_layer_stack": semantic_layer_stack,
             "cache_parent_fingerprint": parent_identity,
             "terminal_writer_install_count": 0,
             "terminal_writer_mutation_count": 0,
@@ -461,6 +623,29 @@ def test_one_command_driver_materializes_and_decodes_the_complete_frontier(
     assert result["candidate_count"] == len(candidate_ids)
     assert result["automatic_candidate_selection_performed"] is False
     assert result["automatic_candidate_acceptance_performed"] is False
+    assert result["global_residual_closure_version"] == "producer_aware_v2a"
+    assert result["global_residual_correction_scale_frontier"] == [1.0]
+    assert result["global_residual_correction_scale"] == 1.0
+    assert result["global_residual_frontier_member_selected_as_winner"] is False
+    compaction = result["dense_parameter_compaction"]
+    assert compaction["parent_unique_parameters"] == 1_000_000
+    assert compaction["child_parameter_element_count"] == 250_000
+    assert compaction["parameter_reduction"] == 750_000
+    assert compaction["parent_to_child_parameter_ratio"] == 4.0
+    assert compaction["child_parameter_fraction_of_parent"] == 0.25
+    assert compaction["parameter_reduction_fraction"] == 0.75
+    assert compaction["parent_count_source"] == (
+        "authenticated_direct_local_safetensor_tensor_inventory"
+    )
+    assert compaction["envelope_parent_count_cross_checked"] is True
+    assert (
+        compaction["local_parent_parameter_inventory"][
+            "unique_stored_parameter_elements"
+        ]
+        == parent_unique_parameters
+    )
+    assert compaction["counts_recomputed_from_authenticated_values"] is True
+    assert compaction["dense_parameter_compaction_is_quality_gate"] is False
     assert result["blank_manual_verdict_prepared"] is (not nonblocking)
     if nonblocking:
         assert "candidate_published_before_manual_review" not in result

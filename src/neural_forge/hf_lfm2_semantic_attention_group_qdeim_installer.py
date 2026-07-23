@@ -129,6 +129,72 @@ def _digest(value: Any, *, label: str) -> str:
     return value
 
 
+def _authenticated_qdeim_compute_execution(
+    value: Any,
+    *,
+    expected_requested_device: str,
+    label: str,
+) -> Mapping[str, Any]:
+    if expected_requested_device == "cpu":
+        backend = "cpu"
+        device_index = None
+    elif isinstance(expected_requested_device, str):
+        prefix, separator, index_text = expected_requested_device.partition(":")
+        if prefix != "cuda" or separator != ":" or not index_text.isdecimal():
+            raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+                f"{label} requested an invalid fold compute device."
+            )
+        backend = "cuda"
+        device_index = int(index_text)
+    else:
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            f"{label} requested an invalid fold compute device."
+        )
+    if not isinstance(value, Mapping):
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            f"{label} omitted its Q-DEIM compute execution receipt."
+        )
+    body = dict(value)
+    supplied = body.pop("receipt_sha256", None)
+    _digest(supplied, label=f"{label} compute receipt SHA-256")
+    expected_cuda = backend == "cuda"
+    if (
+        supplied != canonical_sha256(body)
+        or body.get("schema") != "neural-forge-lfm2-attention-qdeim-compute-v1"
+        or body.get("requested_device") != expected_requested_device
+        or body.get("resolved_device") != expected_requested_device
+        or body.get("backend") != backend
+        or body.get("compute_dtype") != "float64"
+        or body.get("authenticated_source_archive_device") != "cpu"
+        or body.get("active_layer_staged_to_compute_device") is not expected_cuda
+        or body.get("materialized_candidate_device") != "cpu"
+        or body.get("system_memory_is_immutable_archive") is not True
+        or body.get("gpu_is_ephemeral_dense_algebra_workspace") is not expected_cuda
+        or body.get("silent_device_fallback_performed") is not False
+        or body.get("training_steps") != 0
+        or body.get("backward_calls") != 0
+        or body.get("optimizer_steps") != 0
+        or (
+            expected_cuda
+            and (
+                body.get("device_index") != device_index
+                or not isinstance(body.get("device_name"), str)
+                or not body.get("device_name")
+                or not isinstance(body.get("compute_capability"), list)
+                or len(body["compute_capability"]) != 2
+                or any(
+                    isinstance(part, bool) or not isinstance(part, int) or part < 0
+                    for part in body["compute_capability"]
+                )
+            )
+        )
+    ):
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            f"{label} did not authenticate requested-device FP64 Q-DEIM execution."
+        )
+    return MappingProxyType({**body, "receipt_sha256": supplied})
+
+
 def _tensor_sha256(value: Any, *, label: str) -> str:
     try:
         return lfm2_authenticated_tensor_sha256(value)
@@ -860,6 +926,21 @@ def _candidate_state(
         seal_name="result_sha256",
         label="standalone attention group-QDEIM compiler report",
     )
+    requested_fold_compute_device = adapter_report.get("fold_compute_device")
+    adapter_compute_execution = _authenticated_qdeim_compute_execution(
+        adapter_report.get("qdeim_compute_execution"),
+        expected_requested_device=requested_fold_compute_device,
+        label="semantic attention group-QDEIM adapter",
+    )
+    compiler_compute_execution = _authenticated_qdeim_compute_execution(
+        compiled_report.get("compute_execution"),
+        expected_requested_device=requested_fold_compute_device,
+        label="standalone attention group-QDEIM compiler",
+    )
+    if dict(adapter_compute_execution) != dict(compiler_compute_execution):
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            "Adapter and compiler Q-DEIM compute execution receipts differ."
+        )
     if (
         lfm2_attention_group_qdeim_target_template_sha256(
             target_templates["q_proj.weight"],
@@ -1273,6 +1354,8 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
     candidate_adapter_result_sha256: str
     candidate_compiler_result_sha256: str
     candidate_state_sha256: str
+    fold_compute_device: str
+    qdeim_compute_execution_sha256: str
     preparation_sha256: str = ""
 
     def __post_init__(self) -> None:
@@ -1300,6 +1383,10 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
             ("adapter result SHA-256", self.candidate_adapter_result_sha256),
             ("compiler result SHA-256", self.candidate_compiler_result_sha256),
             ("candidate state SHA-256", self.candidate_state_sha256),
+            (
+                "Q-DEIM compute execution SHA-256",
+                self.qdeim_compute_execution_sha256,
+            ),
         ):
             _digest(value, label=label)
         query = _detached_tensor(
@@ -1384,6 +1471,8 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
             "candidate_adapter_result_sha256": self.candidate_adapter_result_sha256,
             "candidate_compiler_result_sha256": self.candidate_compiler_result_sha256,
             "candidate_state_sha256": self.candidate_state_sha256,
+            "fold_compute_device": self.fold_compute_device,
+            "qdeim_compute_execution_sha256": (self.qdeim_compute_execution_sha256),
             "source_state_sha256": self.source_state_sha256,
             "query_norm_weight_sha256": _tensor_sha256(
                 self.query_norm_weight,
@@ -1518,6 +1607,7 @@ def prepare_lfm2_semantic_attention_group_qdeim_installation(
     residual_output_chart: Any,
     residual_chart_receipt: Mapping[str, Any],
     pod_rank_relative_tolerance: float | None = None,
+    fold_compute_device: str = "cpu",
 ) -> (
     Lfm2PreparedSemanticAttentionGroupQdeimInstallation
     | Lfm2SemanticAttentionGroupQdeimEvidenceDeficit
@@ -1579,6 +1669,7 @@ def prepare_lfm2_semantic_attention_group_qdeim_installation(
             residual_output_chart=residual_output_chart,
             residual_chart_receipt=residual_chart_receipt,
             pod_rank_relative_tolerance=pod_rank_relative_tolerance,
+            fold_compute_device=fold_compute_device,
         )
     except BaseException:
         _require_snapshot_unchanged(
@@ -1615,10 +1706,13 @@ def prepare_lfm2_semantic_attention_group_qdeim_installation(
     if (
         not isinstance(source_contract, Mapping)
         or source_contract.get("head_dim") != source_norm_inventory.head_dim
+        or adapter_report.get("fold_compute_device") != fold_compute_device
     ):
         raise Lfm2SemanticAttentionGroupQdeimInstallationError(
-            "Direct-parent norm head dimension differs from the cache attention contract."
+            "Direct-parent norm head dimension or fold compute device differs "
+            "from the cache attention contract."
         )
+    qdeim_compute_execution = adapter_report["qdeim_compute_execution"]
     del state
     return Lfm2PreparedSemanticAttentionGroupQdeimInstallation(
         layer_index=layer_index,
@@ -1642,6 +1736,8 @@ def prepare_lfm2_semantic_attention_group_qdeim_installation(
         candidate_adapter_result_sha256=adapter_report["result_sha256"],
         candidate_compiler_result_sha256=compiler_report["result_sha256"],
         candidate_state_sha256=adapter_report["candidate_state_sha256"],
+        fold_compute_device=fold_compute_device,
+        qdeim_compute_execution_sha256=qdeim_compute_execution["receipt_sha256"],
     )
 
 
@@ -1700,6 +1796,9 @@ def install_lfm2_prepared_semantic_attention_group_qdeim(
         != prepared.normalized_input_decoder_receipt_sha256
         or adapter_report["context_bank_receipt_sha256"]
         != prepared.context_bank_receipt_sha256
+        or adapter_report.get("fold_compute_device") != prepared.fold_compute_device
+        or adapter_report.get("qdeim_compute_execution", {}).get("receipt_sha256")
+        != prepared.qdeim_compute_execution_sha256
     ):
         raise Lfm2SemanticAttentionGroupQdeimInstallationError(
             "Prepared candidate state or compiler lineage is stale."
@@ -1802,6 +1901,9 @@ def install_lfm2_prepared_semantic_attention_group_qdeim(
         "candidate_adapter_result_sha256": adapter_report["result_sha256"],
         "candidate_compiler_result_sha256": compiler_report["result_sha256"],
         "candidate_state_sha256": prepared.candidate_state_sha256,
+        "fold_compute_device": prepared.fold_compute_device,
+        "qdeim_compute_execution": dict(adapter_report["qdeim_compute_execution"]),
+        "qdeim_compute_execution_sha256": (prepared.qdeim_compute_execution_sha256),
         "source_norm_inventory_sha256": (
             prepared.source_norm_inventory.inventory_sha256
         ),

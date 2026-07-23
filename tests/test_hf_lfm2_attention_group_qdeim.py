@@ -4,6 +4,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_attention_group_qdeim import (  # noqa: E402
     Lfm2AttentionGroupQdeimError,
     Lfm2AttentionGroupQdeimInsufficientRankError,
@@ -311,6 +312,63 @@ def test_candidate_is_deterministic_dense_bf16_and_standalone() -> None:
     assert torch.count_nonzero(first.query_weight).item() > 0
 
 
+def test_compute_device_is_explicit_receipted_and_returns_cpu_candidate() -> None:
+    arguments = _small_case()
+
+    result = compile_lfm2_attention_group_qdeim(
+        **arguments,
+        compute_device="cpu",
+    )
+
+    execution = result.report["compute_execution"]
+    execution_body = dict(execution)
+    receipt_sha256 = execution_body.pop("receipt_sha256")
+    assert execution["requested_device"] == "cpu"
+    assert execution["resolved_device"] == "cpu"
+    assert execution["backend"] == "cpu"
+    assert execution["authenticated_source_archive_device"] == "cpu"
+    assert execution["materialized_candidate_device"] == "cpu"
+    assert execution["silent_device_fallback_performed"] is False
+    assert receipt_sha256 == canonical_sha256(execution_body)
+    assert all(value.device.type == "cpu" for value in result.state_dict().values())
+
+    for invalid in ("cuda", "cuda:00", "cuda:\u0660"):
+        with pytest.raises(
+            Lfm2AttentionGroupQdeimError,
+            match="explicitly indexed",
+        ):
+            compile_lfm2_attention_group_qdeim(
+                **arguments,
+                compute_device=invalid,
+            )
+    unavailable = f"cuda:{torch.cuda.device_count()}"
+    with pytest.raises(Lfm2AttentionGroupQdeimError, match="unavailable"):
+        compile_lfm2_attention_group_qdeim(
+            **arguments,
+            compute_device=unavailable,
+        )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_cuda_stages_fp64_qdeim_and_returns_standalone_cpu_bf16() -> None:
+    result = compile_lfm2_attention_group_qdeim(
+        **_small_case(),
+        compute_device="cuda:0",
+    )
+
+    execution = result.report["compute_execution"]
+    assert execution["requested_device"] == "cuda:0"
+    assert execution["resolved_device"] == "cuda:0"
+    assert execution["backend"] == "cuda"
+    assert execution["active_layer_staged_to_compute_device"] is True
+    assert execution["gpu_is_ephemeral_dense_algebra_workspace"] is True
+    assert execution["compute_dtype"] == "float64"
+    assert all(
+        value.device.type == "cpu" and value.dtype == torch.bfloat16
+        for value in result.state_dict().values()
+    )
+
+
 def test_authenticated_rank_deficit_has_no_silent_completion() -> None:
     arguments = _small_case(rank_deficient=True)
     with pytest.raises(Lfm2AttentionGroupQdeimInsufficientRankError) as captured:
@@ -324,6 +382,8 @@ def test_authenticated_rank_deficit_has_no_silent_completion() -> None:
     assert report["heldout_rank_completion_permitted"] is False
     assert report["silent_pseudoinverse_completion_permitted"] is False
     assert report["source_state_immutable"] is True
+    assert report["compute_execution"]["requested_device"] == "cpu"
+    assert report["compute_execution"]["resolved_device"] == "cpu"
     assert len(report["result_sha256"]) == 64
 
 

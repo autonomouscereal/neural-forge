@@ -935,8 +935,7 @@ class Lfm2PreparedSemanticMlpRefold:
             isinstance(self.body_recipe, Lfm2SemanticBodyRecipe)
             and self.body_recipe.verify()
             and isinstance(self.selection_receipt, Mapping)
-            and self.selection_receipt.get("body_recipe")
-            == self.body_recipe.as_dict()
+            and self.selection_receipt.get("body_recipe") == self.body_recipe.as_dict()
             and self.selection_receipt.get("body_recipe_sha256")
             == self.body_recipe.recipe_sha256
             and self.selection_receipt.get("body_recipe_id")
@@ -1128,10 +1127,8 @@ class Lfm2SemanticMlpPostfoldResult:
                 or self.receipt.get("deferred_selected_w2_prior_carried_to_terminal")
                 is not True
                 or prior.body_recipe_id != self.prepared.body_recipe.recipe_id
-                or prior.body_recipe_sha256
-                != self.prepared.body_recipe.recipe_sha256
-                or prior.mlp_lane
-                != self.prepared.body_recipe.component_lanes["mlp"]
+                or prior.body_recipe_sha256 != self.prepared.body_recipe.recipe_sha256
+                or prior.mlp_lane != self.prepared.body_recipe.component_lanes["mlp"]
                 or prior.selected_role != self.prepared.selected_role
                 or prior.selected_candidate_sha256
                 != self.prepared.selected_candidate.candidate_sha256
@@ -1140,9 +1137,7 @@ class Lfm2SemanticMlpPostfoldResult:
                 != self.receipt.get(
                     "deferred_selected_w2_prior_mlp_installation_core_sha256"
                 )
-                or self.receipt.get(
-                    "deferred_selected_w2_prior_authentication_sha256"
-                )
+                or self.receipt.get("deferred_selected_w2_prior_authentication_sha256")
                 != prior.authentication_sha256
             ):
                 raise Lfm2SemanticMlpRefoldError(
@@ -1605,6 +1600,7 @@ def _compile_qdeim_full_candidate(
     normalized_control: Lfm2CompiledNormalizedInputDecoder,
     mlp_lane: str,
     ridge: float,
+    fold_compute_device: str,
 ) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     """Compile the lane-selected Q-DEIM state from one sealed decoder control."""
 
@@ -1641,13 +1637,9 @@ def _compile_qdeim_full_candidate(
             "fixed-two-anchor-child-lifted-tangent"
         ),
         parent_w1=inventory.gate_weight,
-        parent_w1_sha256=fingerprint_lfm2_swiglu_tangent_tensor(
-            inventory.gate_weight
-        ),
+        parent_w1_sha256=fingerprint_lfm2_swiglu_tangent_tensor(inventory.gate_weight),
         parent_w3=inventory.up_weight,
-        parent_w3_sha256=fingerprint_lfm2_swiglu_tangent_tensor(
-            inventory.up_weight
-        ),
+        parent_w3_sha256=fingerprint_lfm2_swiglu_tangent_tensor(inventory.up_weight),
         cached_gate_rows=fit_gate,
         cached_gate_rows_sha256=fingerprint_lfm2_swiglu_tangent_tensor(fit_gate),
         cached_up_rows=fit_up,
@@ -1667,6 +1659,7 @@ def _compile_qdeim_full_candidate(
             fingerprint_lfm2_swiglu_tangent_tensor(coordinate_rms)
         ),
         anchor_count=_QDEIM_TANGENT_ANCHOR_COUNT,
+        compute_device=fold_compute_device,
     )
     if len(tangent_bank.anchor_indices) != _QDEIM_TANGENT_ANCHOR_COUNT:
         raise Lfm2SemanticMlpRefoldError(
@@ -1706,8 +1699,8 @@ def _compile_qdeim_full_candidate(
         qdeim_cases,
         case_weights,
     )
-    snapshot_evidence_sha256 = (
-        lfm2_mlp_qdeim_functional_snapshot_evidence_sha256(snapshot_blocks)
+    snapshot_evidence_sha256 = lfm2_mlp_qdeim_functional_snapshot_evidence_sha256(
+        snapshot_blocks
     )
     compiled = compile_lfm2_mlp_nonlinear_qdeim(
         source_gate_weight=inventory.gate_weight,
@@ -1733,6 +1726,7 @@ def _compile_qdeim_full_candidate(
         expected_functional_snapshot_evidence_sha256=(snapshot_evidence_sha256),
         compute_fit_residual_correction=True,
         fit_correction_ridge=ridge,
+        compute_device=fold_compute_device,
     )
     if candidate_id not in compiled.candidate_ids:
         raise Lfm2SemanticMlpRefoldError(
@@ -1759,18 +1753,17 @@ def _compile_qdeim_full_candidate(
         "normalized_decoder_control_used_only_for_decoder_and_receipt": True,
         "normalized_decoder_control_medoid_or_cluster_plan_compiled": False,
         "normalized_decoder_control_legacy_residual_writer_compiled": False,
-        "child_coordinate_rms_receipt_sha256": coordinate_rms_receipt[
-            "receipt_sha256"
-        ],
+        "child_coordinate_rms_receipt_sha256": coordinate_rms_receipt["receipt_sha256"],
         "tangent_bank_sha256": tangent_bank.bank_sha256,
+        "tangent_bank_compute_execution": dict(tangent_receipt["compute_execution"]),
         "tangent_decoder_sha256": tangent_bank.source_hashes[
             "target_to_parent_decoder"
         ],
         "qdeim_fit_evidence_sha256": fit_evidence_sha256,
-        "qdeim_functional_snapshot_evidence_sha256": (
-            snapshot_evidence_sha256
-        ),
+        "qdeim_functional_snapshot_evidence_sha256": (snapshot_evidence_sha256),
         "qdeim_result_sha256": qdeim_receipt["result_sha256"],
+        "qdeim_compute_execution": dict(qdeim_receipt["compute_execution"]),
+        "fold_compute_device": fold_compute_device,
         "selected_state_sha256": _state_sha256(state),
         "selected_state_tensor_sha256": {
             name: lfm2_authenticated_tensor_sha256(value)
@@ -1855,10 +1848,22 @@ def _authenticate_qdeim_full_solver(
     rms_body = dict(coordinate_rms)
     rms_receipt_sha256 = rms_body.pop("receipt_sha256", None)
     operation_audit = full_solver.get("operation_audit")
-    control_fold_compute_device = "cpu"
-    candidate_report = qdeim.get("materialized_candidates", {}).get(
-        expected_candidate
-    ) if isinstance(qdeim.get("materialized_candidates"), Mapping) else None
+    qdeim_compute = qdeim.get("compute_execution")
+    qdeim_compute_body = (
+        dict(qdeim_compute) if isinstance(qdeim_compute, Mapping) else {}
+    )
+    qdeim_compute_sha256 = qdeim_compute_body.pop("receipt_sha256", None)
+    tangent_compute = tangent.get("compute_execution")
+    tangent_compute_body = (
+        dict(tangent_compute) if isinstance(tangent_compute, Mapping) else {}
+    )
+    tangent_compute_sha256 = tangent_compute_body.pop("receipt_sha256", None)
+    requested_fold_compute_device = integration.get("fold_compute_device")
+    candidate_report = (
+        qdeim.get("materialized_candidates", {}).get(expected_candidate)
+        if isinstance(qdeim.get("materialized_candidates"), Mapping)
+        else None
+    )
     if (
         expected_candidate is None
         or full_solver.get("selected_qdeim_candidate_id") != expected_candidate
@@ -1875,9 +1880,7 @@ def _authenticate_qdeim_full_solver(
         or qdeim.get("source_state_immutable") is not True
         or qdeim.get("source_state_sha256_before")
         != qdeim.get("source_state_sha256_after")
-        or qdeim.get("writer_transport", {}).get(
-            "all_source_writer_columns_consumed"
-        )
+        or qdeim.get("writer_transport", {}).get("all_source_writer_columns_consumed")
         is not True
         or qdeim.get("producer_transport", {}).get("producer_averaging") is not False
         or qdeim.get("selected_source_neuron_count")
@@ -1888,22 +1891,29 @@ def _authenticate_qdeim_full_solver(
         or qdeim.get("rank_completion", {}).get("random_completion_modes") != 0
         or qdeim.get("rank_completion", {}).get("silent_completion_performed")
         is not False
-        or qdeim.get("functional_snapshot_blocks_enter_fit_w2_correction")
-        is not False
+        or qdeim.get("functional_snapshot_blocks_enter_fit_w2_correction") is not False
+        or not isinstance(qdeim_compute, Mapping)
+        or qdeim_compute.get("schema") != "neural-forge-lfm2-mlp-qdeim-compute-v1"
+        or qdeim_compute_sha256 != canonical_sha256(qdeim_compute_body)
+        or not isinstance(requested_fold_compute_device, str)
+        or not requested_fold_compute_device
+        or qdeim_compute.get("requested_device") != requested_fold_compute_device
+        or qdeim_compute.get("resolved_device") != requested_fold_compute_device
+        or qdeim_compute.get("backend")
+        != ("cpu" if requested_fold_compute_device == "cpu" else "cuda")
+        or qdeim_compute.get("compute_dtype") != "float64"
+        or qdeim_compute.get("authenticated_source_archive_device") != "cpu"
+        or qdeim_compute.get("materialized_candidate_device") != "cpu"
+        or qdeim_compute.get("silent_device_fallback_performed") is not False
+        or integration.get("qdeim_compute_execution") != dict(qdeim_compute)
         or control.get("schema") != LFM2_NORMALIZED_INPUT_DECODER_SCHEMA
         or control_receipt_sha256 != canonical_sha256(control_body)
         or control.get("decoder_only_scope") is not True
         or control.get("cluster_or_medoid_state_constructed") is not False
-        or control.get("operation_audit", {}).get(
-            "activation_cluster_plan_builds"
-        )
-        != 0
-        or control.get("operation_audit", {}).get("medoid_selection_operations")
-        != 0
-        or control.get("operation_audit", {}).get("producer_materializations")
-        != 0
-        or control.get("operation_audit", {}).get("consumer_materializations")
-        != 0
+        or control.get("operation_audit", {}).get("activation_cluster_plan_builds") != 0
+        or control.get("operation_audit", {}).get("medoid_selection_operations") != 0
+        or control.get("operation_audit", {}).get("producer_materializations") != 0
+        or control.get("operation_audit", {}).get("consumer_materializations") != 0
         or full_solver.get("normalized_decoder_control_receipt_sha256")
         != control_receipt_sha256
         or integration.get("normalized_decoder_control_receipt_sha256")
@@ -1914,13 +1924,9 @@ def _authenticate_qdeim_full_solver(
             "normalized_decoder_control_used_only_for_decoder_and_receipt"
         )
         is not True
-        or integration.get(
-            "normalized_decoder_control_medoid_or_cluster_plan_compiled"
-        )
+        or integration.get("normalized_decoder_control_medoid_or_cluster_plan_compiled")
         is not False
-        or integration.get(
-            "normalized_decoder_control_legacy_residual_writer_compiled"
-        )
+        or integration.get("normalized_decoder_control_legacy_residual_writer_compiled")
         is not False
         or rms_receipt_sha256 != canonical_sha256(rms_body)
         or coordinate_rms.get("structural_floor_policy")
@@ -1937,15 +1943,26 @@ def _authenticate_qdeim_full_solver(
         or tangent.get("anchor_values_or_numeric_metrics_used_for_selection")
         is not False
         or tangent.get("sample_weights_used_for_anchor_selection") is not False
+        or not isinstance(tangent_compute, Mapping)
+        or tangent_compute.get("schema")
+        != "neural-forge-lfm2-swiglu-tangent-compute-v1"
+        or tangent_compute_sha256 != canonical_sha256(tangent_compute_body)
+        or tangent_compute.get("requested_device") != requested_fold_compute_device
+        or tangent_compute.get("resolved_device") != requested_fold_compute_device
+        or tangent_compute.get("backend")
+        != ("cpu" if requested_fold_compute_device == "cpu" else "cuda")
+        or tangent_compute.get("compute_dtype") != "float64"
+        or tangent_compute.get("authenticated_source_archive_device") != "cpu"
+        or tangent_compute.get("materialized_tangent_bank_device") != "cpu"
+        or tangent_compute.get("silent_device_fallback_performed") is not False
+        or integration.get("tangent_bank_compute_execution") != dict(tangent_compute)
         or tangent.get("operation_audit", {}).get("training_steps") != 0
         or tangent.get("operation_audit", {}).get(
             "numeric_diagnostics_used_for_semantic_decision"
         )
         is not False
-        or full_solver.get("qdeim_integration_sha256")
-        != canonical_sha256(integration)
-        or integration.get("fixed_tangent_anchor_count")
-        != _QDEIM_TANGENT_ANCHOR_COUNT
+        or full_solver.get("qdeim_integration_sha256") != canonical_sha256(integration)
+        or integration.get("fixed_tangent_anchor_count") != _QDEIM_TANGENT_ANCHOR_COUNT
         or integration.get("heldout_rows_used_for_pod_or_tangent") != 0
         or integration.get("tangent_rows_used_for_endpoint_w2_correction") != 0
         or integration.get("numeric_metrics_used_for_semantic_acceptance_or_veto")
@@ -1956,7 +1973,10 @@ def _authenticate_qdeim_full_solver(
         or integration.get("source_inventory_sha256") != inventory.inventory_sha256
         or integration.get("selected_state_sha256") != _state_sha256(full_state)
         or not isinstance(operation_audit, Mapping)
-        or any(operation_audit.get(name) != value for name, value in _ZERO_OPERATIONS.items())
+        or any(
+            operation_audit.get(name) != value
+            for name, value in _ZERO_OPERATIONS.items()
+        )
         or full_solver.get("heldout_rows_used_by_solver") != 0
         or full_solver.get("heldout_rows_used_for_plan") != 0
         or full_solver.get("all_source_writer_columns_consumed") is not True
@@ -2001,19 +2021,20 @@ def _authenticate_qdeim_full_solver(
                 "normalized_decoder_control_receipt_sha256": full_solver[
                     "normalized_decoder_control_receipt_sha256"
                 ],
-                "fold_compute_device": control_fold_compute_device,
+                "fold_compute_device": requested_fold_compute_device,
                 "normalized_decoder_control_compute_device": "cpu",
                 "normalized_decoder_control_medoid_or_cluster_plan_compiled": False,
                 "normalized_decoder_control_legacy_residual_writer_compiled": False,
-                "qdeim_pod_and_pivot_compute_device": "cpu",
+                "qdeim_pod_and_pivot_compute_device": (requested_fold_compute_device),
+                "qdeim_compute_execution": dict(qdeim_compute),
                 "child_coordinate_rms_receipt_sha256": integration[
                     "child_coordinate_rms_receipt_sha256"
                 ],
                 "tangent_bank_sha256": full_solver["tangent_bank_sha256"],
+                "tangent_bank_compute_execution": dict(tangent_compute),
+                "tangent_bank_compute_device": requested_fold_compute_device,
                 "qdeim_result_sha256": qdeim_result_sha256,
-                "qdeim_integration_sha256": full_solver[
-                    "qdeim_integration_sha256"
-                ],
+                "qdeim_integration_sha256": full_solver["qdeim_integration_sha256"],
                 "selected_qdeim_candidate_id": expected_candidate,
                 "full_source_coverage": True,
                 "producer_averaging": False,
@@ -2123,6 +2144,7 @@ def _full_candidate_state(
                 normalized_control=normalized_control,
                 mlp_lane=mlp_lane,
                 ridge=ridge,
+                fold_compute_device=fold_compute_device,
             )
         compiled = compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
             source_gate_weight=inventory.gate_weight,
@@ -3036,9 +3058,7 @@ def prepare_lfm2_semantic_mlp_postfold(
                 "fixed_producer_state_sha256": _state_sha256(
                     writer_fixed_producer_state
                 ),
-                "blank_compatible_full_source_producer_plant": (
-                    exact_zero_incumbent
-                ),
+                "blank_compatible_full_source_producer_plant": (exact_zero_incumbent),
                 "legacy_candidate_role_name_describes_nonblank_lane": (
                     exact_zero_incumbent
                 ),
@@ -3441,8 +3461,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         selection_body.update(
             {
                 "blank_target_selected_state_uses_real_qdeim_producers": (
-                    exact_zero_incumbent
-                    and selected.role == "full-w1-w3-w2"
+                    exact_zero_incumbent and selected.role == "full-w1-w3-w2"
                 ),
                 "whole_decoded_responses_are_primary_semantic_evidence": True,
                 "binary_manual_gate_created": False,
@@ -3595,10 +3614,20 @@ def _analytic_construction_receipt_fields(
     """Describe the lane's closed-form construction without changing old receipts."""
 
     if prepared.body_recipe.component_lanes["mlp"] in _QDEIM_MLP_LANE_TO_CANDIDATE:
+        planting = prepared.selection_receipt.get("source_derived_planting", {})
+        compute_device = (
+            planting.get("qdeim_pod_and_pivot_compute_device")
+            if isinstance(planting, Mapping)
+            else None
+        )
+        if not isinstance(compute_device, str) or not compute_device:
+            raise Lfm2SemanticMlpRefoldError(
+                "Q-DEIM installation lacks its authenticated algebra device."
+            )
         return {
             "analytic_linear_and_cluster_solves_only": False,
             "analytic_linear_cluster_tangent_and_qdeim_solves_only": True,
-            "qdeim_pod_and_pivot_compute_device": "cpu",
+            "qdeim_pod_and_pivot_compute_device": compute_device,
             "qdeim_numeric_diagnostics_are_advisory_only": True,
             "qdeim_numeric_thresholds_can_accept_veto_or_block_progression": False,
         }

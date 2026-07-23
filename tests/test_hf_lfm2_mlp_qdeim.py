@@ -9,6 +9,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_mlp_qdeim import (  # noqa: E402
     LFM2_MLP_QDEIM_FIT_CORRECTED_CANDIDATE,
     LFM2_MLP_QDEIM_STRUCTURAL_PRIOR_CANDIDATE,
@@ -243,6 +244,55 @@ def test_exact_low_rank_recovery_and_deterministic_qdeim_selection() -> None:
     }
 
 
+def test_compute_device_is_explicit_receipted_and_returns_cpu_candidates() -> None:
+    fixture = _fixture()
+
+    result = _compile(fixture, compute_device="cpu")
+
+    execution = result.report["compute_execution"]
+    execution_body = dict(execution)
+    receipt_sha256 = execution_body.pop("receipt_sha256")
+    assert execution["requested_device"] == "cpu"
+    assert execution["resolved_device"] == "cpu"
+    assert execution["backend"] == "cpu"
+    assert execution["authenticated_source_archive_device"] == "cpu"
+    assert execution["materialized_candidate_device"] == "cpu"
+    assert execution["silent_device_fallback_performed"] is False
+    assert receipt_sha256 == canonical_sha256(execution_body)
+    assert all(
+        value.device.type == "cpu"
+        for value in result.state_dict(
+            LFM2_MLP_QDEIM_STRUCTURAL_PRIOR_CANDIDATE
+        ).values()
+    )
+
+    for invalid in ("cuda", "cuda:00", "cuda:\u0660"):
+        with pytest.raises(Lfm2MlpQdeimError, match="explicitly indexed"):
+            _compile(fixture, compute_device=invalid)
+    unavailable = f"cuda:{torch.cuda.device_count()}"
+    with pytest.raises(Lfm2MlpQdeimError, match="unavailable"):
+        _compile(fixture, compute_device=unavailable)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_cuda_stages_fp64_qdeim_and_returns_standalone_cpu_bf16() -> None:
+    result = _compile(_fixture(), compute_device="cuda:0")
+
+    execution = result.report["compute_execution"]
+    assert execution["requested_device"] == "cuda:0"
+    assert execution["resolved_device"] == "cuda:0"
+    assert execution["backend"] == "cuda"
+    assert execution["active_layer_staged_to_compute_device"] is True
+    assert execution["gpu_is_ephemeral_dense_algebra_workspace"] is True
+    assert execution["compute_dtype"] == "float64"
+    assert all(
+        value.device.type == "cpu" and value.dtype == torch.bfloat16
+        for value in result.state_dict(
+            LFM2_MLP_QDEIM_STRUCTURAL_PRIOR_CANDIDATE
+        ).values()
+    )
+
+
 @pytest.mark.parametrize("source_neurons,modes", ((64, 4), (64, 8), (96, 12)))
 def test_incremental_qrcp_preserves_original_deterministic_pivots(
     source_neurons: int,
@@ -279,12 +329,12 @@ def test_selected_nonlinear_producers_remain_intact_and_are_not_averaged() -> No
     result = _compile(fixture)
     selected = list(result.selected_source_neurons)
 
-    expected_gate = (
-        fixture["source_gate"][selected] @ fixture["decoder"].T
-    ).to(torch.bfloat16)
-    expected_up = (
-        fixture["source_up"][selected] @ fixture["decoder"].T
-    ).to(torch.bfloat16)
+    expected_gate = (fixture["source_gate"][selected] @ fixture["decoder"].T).to(
+        torch.bfloat16
+    )
+    expected_up = (fixture["source_up"][selected] @ fixture["decoder"].T).to(
+        torch.bfloat16
+    )
     assert torch.equal(result.gate_weight, expected_gate)
     assert torch.equal(result.up_weight, expected_up)
     assert not result.report["producer_transport"]["producer_averaging"]
@@ -294,11 +344,9 @@ def test_dense_writer_bakes_in_an_omitted_source_neuron_contribution() -> None:
     fixture = _fixture()
     baseline = _compile(fixture)
     reconstruction = baseline.interpolation_reconstruction
-    expected = (
-        fixture["chart"].T
-        @ fixture["source_down"]
-        @ reconstruction.T
-    ).to(torch.bfloat16)
+    expected = (fixture["chart"].T @ fixture["source_down"] @ reconstruction.T).to(
+        torch.bfloat16
+    )
     assert torch.equal(baseline.down_weight_structural_prior, expected)
 
     omitted = sorted(set(range(4)).difference(baseline.selected_source_neurons))
@@ -316,8 +364,7 @@ def test_dense_writer_bakes_in_an_omitted_source_neuron_contribution() -> None:
     assert bool(torch.count_nonzero(folded.down_weight_structural_prior).item())
     assert folded.report["writer_transport"]["all_source_writer_columns_consumed"]
     assert (
-        folded.report["writer_transport"]
-        ["omitted_reconstruction_nonzero_column_count"]
+        folded.report["writer_transport"]["omitted_reconstruction_nonzero_column_count"]
         > 0
     )
 
@@ -332,16 +379,13 @@ def test_optional_fit_only_w2_correction_is_a_separate_dense_candidate() -> None
     target_features = torch.nn.functional.silu(
         target_input @ materialized_gate.to(torch.float64).T
     ) * (target_input @ materialized_up.to(torch.float64).T)
-    desired_down = torch.tensor(
-        [[1.25, -0.75], [0.5, 1.5]], dtype=torch.float64
-    )
+    desired_down = torch.tensor([[1.25, -0.75], [0.5, 1.5]], dtype=torch.float64)
     fit_case = fixture["fit_cases"][0]
     fixture["fit_cases"] = (
         replace(
             fit_case,
             parent_post_mlp_residual_target_space=(
-                fit_case.target_pre_mlp_residual
-                + target_features @ desired_down.T
+                fit_case.target_pre_mlp_residual + target_features @ desired_down.T
             ),
         ),
     )
@@ -382,6 +426,8 @@ def test_rank_deficit_is_typed_and_authenticated_tangent_rows_complete_it() -> N
     assert deficit["selected_source_neurons"] == []
     assert deficit["interpolation_matrix_materialized"] is False
     assert deficit["random_mode_completion_permitted"] is False
+    assert deficit["compute_execution"]["requested_device"] == "cpu"
+    assert deficit["compute_execution"]["resolved_device"] == "cpu"
     assert (
         deficit["structural_completion_input_contract"]["public_type"]
         == "Lfm2MlpQdeimFunctionalSnapshotBlock"
@@ -406,11 +452,11 @@ def test_rank_deficit_is_typed_and_authenticated_tangent_rows_complete_it() -> N
     block_report = completed.report["functional_snapshot_blocks"][0]
     assert block_report["block_weight"] == 4.0
     assert block_report["effective_row_weights_sha256"] == (
-        lfm2_authenticated_tensor_sha256(
-            torch.tensor([9.0], dtype=torch.float64)
-        )
+        lfm2_authenticated_tensor_sha256(torch.tensor([9.0], dtype=torch.float64))
     )
-    assert completed.report["functional_snapshot_blocks_enter_fit_w2_correction"] is False
+    assert (
+        completed.report["functional_snapshot_blocks_enter_fit_w2_correction"] is False
+    )
     # A requested row-amplitude scale of 2 is represented by energy weight 2**2.
     assert torch.equal(
         tangent_rows * 2.0 * 1.5,

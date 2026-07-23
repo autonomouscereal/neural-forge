@@ -102,6 +102,7 @@ class Lfm2SwiGluTangentBank:
     provenance_sha256: str
     bank_sha256: str
     advisory_diagnostics: Mapping[str, Any]
+    compute_execution: Mapping[str, Any]
     operation_audit: Mapping[str, Any]
 
     def as_dict(self) -> dict[str, Any]:
@@ -123,9 +124,7 @@ class Lfm2SwiGluTangentBank:
             ),
             "anchor_values_or_numeric_metrics_used_for_selection": False,
             "sample_weights_used_for_anchor_selection": False,
-            "direction_policy": (
-                "every_authenticated_target_to_parent_decoder_row"
-            ),
+            "direction_policy": ("every_authenticated_target_to_parent_decoder_row"),
             "full_parent_coordinate_identity_synthesized": False,
             "source_hashes": dict(self.source_hashes),
             "tangent_rows": {
@@ -162,14 +161,11 @@ class Lfm2SwiGluTangentBank:
                 "sha256": self.recommended_tangent_row_scales_sha256,
                 "decision_role": "advisory_snapshot_balancing_only",
             },
-            "anchor_provenance": [
-                item.as_dict() for item in self.anchor_provenance
-            ],
-            "tangent_provenance": [
-                item.as_dict() for item in self.tangent_provenance
-            ],
+            "anchor_provenance": [item.as_dict() for item in self.anchor_provenance],
+            "tangent_provenance": [item.as_dict() for item in self.tangent_provenance],
             "provenance_sha256": self.provenance_sha256,
             "advisory_diagnostics": _deep_thaw(self.advisory_diagnostics),
+            "compute_execution": dict(self.compute_execution),
             "operation_audit": dict(self.operation_audit),
             "bank_sha256": self.bank_sha256,
         }
@@ -187,16 +183,13 @@ class Lfm2SwiGluTangentBank:
             raise Lfm2SwiGluTangentBankError(
                 "Q-DEIM functional snapshot block_id must be nonempty."
             )
-        recommendation = self.advisory_diagnostics[
-            "snapshot_balance_recommendation"
-        ]
+        recommendation = self.advisory_diagnostics["snapshot_balance_recommendation"]
         global_amplitude_scale = float(
             recommendation["recommended_tangent_global_scale"]
         )
         block_weight = global_amplitude_scale * global_amplitude_scale
         functional_rows = (
-            self.tangent_rows
-            * self.coordinate_rms_tangent_row_scales.unsqueeze(1)
+            self.tangent_rows * self.coordinate_rms_tangent_row_scales.unsqueeze(1)
         ).contiguous()
         if (
             fingerprint_lfm2_swiglu_tangent_tensor(functional_rows)
@@ -235,6 +228,69 @@ def _sha256_canonical(value: Any) -> str:
     return _sha256_bytes(_canonical_bytes(value))
 
 
+def _resolve_tangent_compute_device(compute_device: Any) -> torch.device:
+    """Resolve explicit fold algebra placement without a silent fallback."""
+
+    if compute_device == "cpu":
+        return torch.device("cpu")
+    if not isinstance(compute_device, str):
+        raise Lfm2SwiGluTangentBankError(
+            "compute_device must be 'cpu' or an explicitly indexed CUDA device."
+        )
+    prefix, separator, index_text = compute_device.partition(":")
+    if (
+        prefix != "cuda"
+        or separator != ":"
+        or not index_text.isascii()
+        or not index_text.isdecimal()
+        or index_text != str(int(index_text))
+    ):
+        raise Lfm2SwiGluTangentBankError(
+            "CUDA compute_device must be explicitly indexed as 'cuda:N'."
+        )
+    index = int(index_text)
+    if not torch.cuda.is_available() or index >= int(torch.cuda.device_count()):
+        raise Lfm2SwiGluTangentBankError(
+            f"CUDA compute_device index {index} is unavailable."
+        )
+    return torch.device("cuda", index)
+
+
+def _tangent_compute_receipt(
+    requested: str,
+    resolved: torch.device,
+) -> Mapping[str, Any]:
+    body: dict[str, Any] = {
+        "schema": "neural-forge-lfm2-swiglu-tangent-compute-v1",
+        "requested_device": requested,
+        "resolved_device": str(resolved),
+        "backend": resolved.type,
+        "compute_dtype": "float64",
+        "authenticated_source_archive_device": "cpu",
+        "active_layer_staged_to_compute_device": resolved.type == "cuda",
+        "materialized_tangent_bank_device": "cpu",
+        "system_memory_is_immutable_archive": True,
+        "gpu_is_ephemeral_dense_algebra_workspace": resolved.type == "cuda",
+        "silent_device_fallback_performed": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    if resolved.type == "cuda":
+        properties = torch.cuda.get_device_properties(resolved)
+        body.update(
+            {
+                "device_index": int(resolved.index),
+                "device_name": str(properties.name),
+                "compute_capability": [
+                    int(properties.major),
+                    int(properties.minor),
+                ],
+            }
+        )
+    return MappingProxyType({**body, "receipt_sha256": _sha256_canonical(body)})
+
+
 def _deep_thaw(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {str(key): _deep_thaw(item) for key, item in value.items()}
@@ -256,9 +312,7 @@ def fingerprint_lfm2_swiglu_tangent_tensor(value: Tensor) -> str:
     if not isinstance(value, Tensor):
         raise Lfm2SwiGluTangentBankError("value must be a Tensor.")
     if value.layout != torch.strided or value.device.type == "meta":
-        raise Lfm2SwiGluTangentBankError(
-            "value must be a materialized strided Tensor."
-        )
+        raise Lfm2SwiGluTangentBankError("value must be a materialized strided Tensor.")
     header = _canonical_bytes(
         {
             "dtype": str(value.dtype),
@@ -282,9 +336,7 @@ def _require_plain_finite_tensor(value: Any, name: str) -> Tensor:
     if isinstance(value, nn.Parameter):
         raise Lfm2SwiGluTangentBankError(f"{name} cannot be an nn.Parameter.")
     if value.requires_grad:
-        raise Lfm2SwiGluTangentBankError(
-            f"{name} cannot require gradients."
-        )
+        raise Lfm2SwiGluTangentBankError(f"{name} cannot require gradients.")
     if (
         value.layout != torch.strided
         or value.device.type == "meta"
@@ -323,9 +375,7 @@ def _structural_indices(length: int, count: int) -> tuple[int, ...]:
     count = min(length, count)
     if count == 1:
         return (length // 2,)
-    return tuple(
-        (slot * (length - 1)) // (count - 1) for slot in range(count)
-    )
+    return tuple((slot * (length - 1)) // (count - 1) for slot in range(count))
 
 
 def _source_row_sha256(gate: Tensor, up: Tensor, post: Tensor) -> str:
@@ -382,9 +432,7 @@ def _advisory_spectrum(tangent_rows: Tensor) -> dict[str, Any]:
                 "status": "available",
                 "rank_estimate": rank,
                 "rank_tolerance": tolerance,
-                "singular_values": [
-                    float(value) for value in singular_values.tolist()
-                ],
+                "singular_values": [float(value) for value in singular_values.tolist()],
             }
         )
     except RuntimeError as exc:
@@ -560,6 +608,7 @@ def build_lfm2_swiglu_tangent_bank(
     child_input_coordinate_rms: Tensor | None = None,
     child_input_coordinate_rms_sha256: str | None = None,
     anchor_count: int = 3,
+    compute_device: str = "cpu",
 ) -> Lfm2SwiGluTangentBank:
     """Build exact analytic SwiGLU JVP rows from sealed parent evidence.
 
@@ -572,6 +621,11 @@ def build_lfm2_swiglu_tangent_bank(
         raise Lfm2SwiGluTangentBankError("site_id must be a nonempty string.")
     site_id = site_id.strip()
     requested_anchor_count = _positive_small_int(anchor_count, "anchor_count")
+    resolved_compute_device = _resolve_tangent_compute_device(compute_device)
+    compute_execution = _tangent_compute_receipt(
+        compute_device,
+        resolved_compute_device,
+    )
 
     named_tensors = {
         "parent_w1": _require_plain_finite_tensor(parent_w1, "parent_w1"),
@@ -609,9 +663,7 @@ def build_lfm2_swiglu_tangent_bank(
             )
         weights_source_sha256 = "none"
     else:
-        sample_weights = _require_plain_finite_tensor(
-            sample_weights, "sample_weights"
-        )
+        sample_weights = _require_plain_finite_tensor(sample_weights, "sample_weights")
         if sample_weights_sha256 is None:
             raise Lfm2SwiGluTangentAuthenticationError(
                 "sample_weights_sha256 is required with sample_weights."
@@ -682,8 +734,7 @@ def build_lfm2_swiglu_tangent_bank(
     child_width, decoder_parent_hidden = decoder_shape
     if decoder_parent_hidden != parent_hidden:
         raise Lfm2SwiGluTangentBankError(
-            "target_to_parent_decoder must have shape "
-            "[child_width, parent_hidden]."
+            "target_to_parent_decoder must have shape [child_width, parent_hidden]."
         )
 
     if sample_weights is None:
@@ -729,9 +780,7 @@ def build_lfm2_swiglu_tangent_bank(
     # again only for the post-build content authentication below.
     w1_cpu = parent_w1.detach().to(device="cpu", dtype=torch.float64).clone()
     w3_cpu = parent_w3.detach().to(device="cpu", dtype=torch.float64).clone()
-    gate_cpu = (
-        cached_gate_rows.detach().to(device="cpu", dtype=torch.float64).clone()
-    )
+    gate_cpu = cached_gate_rows.detach().to(device="cpu", dtype=torch.float64).clone()
     up_cpu = cached_up_rows.detach().to(device="cpu", dtype=torch.float64).clone()
     post_cpu = cached_post_rows.detach().to(device="cpu", dtype=torch.float64).clone()
     decoder_cpu = (
@@ -744,13 +793,34 @@ def build_lfm2_swiglu_tangent_bank(
 
     with torch.inference_mode():
         # These projections depend only on authenticated decoder rows.  There
-        # is intentionally no parent-coordinate identity fallback.
-        direction_gate = decoder_cpu @ w1_cpu.transpose(0, 1)
-        direction_up = decoder_cpu @ w3_cpu.transpose(0, 1)
+        # is intentionally no parent-coordinate identity fallback.  Only the
+        # active layer and selected anchors enter the ephemeral compute
+        # workspace; the complete authenticated evidence remains archived on
+        # CPU and the sealed bank is copied back to CPU.
+        decoder_compute = decoder_cpu.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        w1_compute = w1_cpu.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        w3_compute = w3_cpu.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        direction_gate = decoder_compute @ w1_compute.transpose(0, 1)
+        direction_up = decoder_compute @ w3_compute.transpose(0, 1)
         blocks: list[Tensor] = []
         for source_row_index in anchor_indices:
-            gate = gate_cpu[source_row_index]
-            up = up_cpu[source_row_index]
+            gate = gate_cpu[source_row_index].to(
+                device=resolved_compute_device,
+                dtype=torch.float64,
+            )
+            up = up_cpu[source_row_index].to(
+                device=resolved_compute_device,
+                dtype=torch.float64,
+            )
             sigmoid_gate = torch.sigmoid(gate)
             silu_gate = gate * sigmoid_gate
             silu_prime = sigmoid_gate * (1.0 + gate * (1.0 - sigmoid_gate))
@@ -758,7 +828,12 @@ def build_lfm2_swiglu_tangent_bank(
                 direction_gate * (silu_prime * up).unsqueeze(0)
                 + direction_up * silu_gate.unsqueeze(0)
             )
-        tangent_rows = torch.cat(blocks, dim=0).contiguous().clone()
+        tangent_rows = (
+            torch.cat(blocks, dim=0)
+            .to(device="cpu", dtype=torch.float64)
+            .contiguous()
+            .clone()
+        )
         tangent_row_weights = (
             weights_cpu[torch.tensor(anchor_indices, dtype=torch.long)]
             .repeat_interleave(child_width)
@@ -821,21 +896,14 @@ def build_lfm2_swiglu_tangent_bank(
     )
     recommended_tangent_row_scales.requires_grad_(False)
     coordinate_rms_tangent_row_scales.requires_grad_(False)
-    coordinate_rms_tangent_row_scales_sha256 = (
-        fingerprint_lfm2_swiglu_tangent_tensor(
-            coordinate_rms_tangent_row_scales
-        )
+    coordinate_rms_tangent_row_scales_sha256 = fingerprint_lfm2_swiglu_tangent_tensor(
+        coordinate_rms_tangent_row_scales
     )
-    coordinate_scaled_tangent_rows_sha256 = (
-        fingerprint_lfm2_swiglu_tangent_tensor(
-            (
-                tangent_rows
-                * coordinate_rms_tangent_row_scales.unsqueeze(1)
-            ).contiguous()
-        )
+    coordinate_scaled_tangent_rows_sha256 = fingerprint_lfm2_swiglu_tangent_tensor(
+        (tangent_rows * coordinate_rms_tangent_row_scales.unsqueeze(1)).contiguous()
     )
-    recommended_tangent_row_scales_sha256 = (
-        fingerprint_lfm2_swiglu_tangent_tensor(recommended_tangent_row_scales)
+    recommended_tangent_row_scales_sha256 = fingerprint_lfm2_swiglu_tangent_tensor(
+        recommended_tangent_row_scales
     )
     operation_audit = MappingProxyType(
         {
@@ -886,6 +954,7 @@ def build_lfm2_swiglu_tangent_bank(
             coordinate_scaled_tangent_rows_sha256
         ),
         "provenance_sha256": provenance_sha256,
+        "compute_execution": dict(compute_execution),
     }
     bank_sha256 = _sha256_canonical(bank_payload)
     return Lfm2SwiGluTangentBank(
@@ -903,15 +972,12 @@ def build_lfm2_swiglu_tangent_bank(
         coordinate_rms_tangent_row_scales_sha256=(
             coordinate_rms_tangent_row_scales_sha256
         ),
-        coordinate_scaled_tangent_rows_sha256=(
-            coordinate_scaled_tangent_rows_sha256
-        ),
-        recommended_tangent_row_scales_sha256=(
-            recommended_tangent_row_scales_sha256
-        ),
+        coordinate_scaled_tangent_rows_sha256=(coordinate_scaled_tangent_rows_sha256),
+        recommended_tangent_row_scales_sha256=(recommended_tangent_row_scales_sha256),
         provenance_sha256=provenance_sha256,
         bank_sha256=bank_sha256,
         advisory_diagnostics=advisory_diagnostics,
+        compute_execution=compute_execution,
         operation_audit=operation_audit,
     )
 

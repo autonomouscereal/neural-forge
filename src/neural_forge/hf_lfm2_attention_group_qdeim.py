@@ -125,6 +125,66 @@ def _torch() -> Any:
     return torch
 
 
+def _resolve_qdeim_compute_device(torch: Any, compute_device: Any) -> Any:
+    """Resolve one explicit fold-only algebra device without silent fallback."""
+
+    if compute_device == "cpu":
+        return torch.device("cpu")
+    if not isinstance(compute_device, str):
+        raise Lfm2AttentionGroupQdeimError(
+            "compute_device must be 'cpu' or an explicitly indexed CUDA device."
+        )
+    prefix, separator, index_text = compute_device.partition(":")
+    if (
+        prefix != "cuda"
+        or separator != ":"
+        or not index_text.isascii()
+        or not index_text.isdecimal()
+        or index_text != str(int(index_text))
+    ):
+        raise Lfm2AttentionGroupQdeimError(
+            "CUDA compute_device must be explicitly indexed as 'cuda:N'."
+        )
+    index = int(index_text)
+    if not torch.cuda.is_available() or index >= int(torch.cuda.device_count()):
+        raise Lfm2AttentionGroupQdeimError(
+            f"CUDA compute_device index {index} is unavailable."
+        )
+    return torch.device("cuda", index)
+
+
+def _qdeim_compute_receipt(torch: Any, requested: str, resolved: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "schema": "neural-forge-lfm2-attention-qdeim-compute-v1",
+        "requested_device": requested,
+        "resolved_device": str(resolved),
+        "backend": resolved.type,
+        "compute_dtype": "float64",
+        "authenticated_source_archive_device": "cpu",
+        "active_layer_staged_to_compute_device": resolved.type == "cuda",
+        "materialized_candidate_device": "cpu",
+        "system_memory_is_immutable_archive": True,
+        "gpu_is_ephemeral_dense_algebra_workspace": resolved.type == "cuda",
+        "silent_device_fallback_performed": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    if resolved.type == "cuda":
+        properties = torch.cuda.get_device_properties(resolved)
+        body.update(
+            {
+                "device_index": int(resolved.index),
+                "device_name": str(properties.name),
+                "compute_capability": [
+                    int(properties.major),
+                    int(properties.minor),
+                ],
+            }
+        )
+    return {**body, "receipt_sha256": canonical_sha256(body)}
+
+
 def _deep_thaw(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {str(key): _deep_thaw(item) for key, item in value.items()}
@@ -456,7 +516,11 @@ def _deterministic_block_pivots(basis: Any) -> tuple[tuple[int, ...], Any]:
     source_groups, modes = map(int, basis.shape)
     matrix = basis.T.contiguous()
     selected: list[int] = []
-    q_columns = torch.empty((modes, 0), dtype=torch.float64)
+    q_columns = torch.empty(
+        (modes, 0),
+        dtype=torch.float64,
+        device=matrix.device,
+    )
     residual_norms: list[float] = []
     epsilon = torch.finfo(torch.float64).eps
     for _step in range(modes):
@@ -467,7 +531,9 @@ def _deterministic_block_pivots(basis: Any) -> tuple[tuple[int, ...], Any]:
             residual = matrix
         scores = residual.square().sum(dim=0)
         if selected:
-            scores[torch.tensor(selected, dtype=torch.long)] = -1.0
+            scores[
+                torch.tensor(selected, dtype=torch.long, device=matrix.device)
+            ] = -1.0
         maximum = float(scores.max().item())
         tie_tolerance = 128.0 * epsilon * max(1.0, abs(maximum))
         candidates = [
@@ -544,6 +610,7 @@ def _rank_deficit_report(
     source_groups: int,
     fit_row_count: int,
     structural_row_count: int,
+    compute_execution: Mapping[str, Any],
 ) -> dict[str, Any]:
     body = {
         "schema": LFM2_ATTENTION_GROUP_QDEIM_RANK_DEFICIT_SCHEMA,
@@ -556,6 +623,7 @@ def _rank_deficit_report(
         "residual_output_chart_sha256": chart_sha256,
         "fit_context_evidence_sha256": context_evidence_sha256,
         "functional_snapshot_evidence_sha256": snapshot_evidence_sha256,
+        "compute_execution": dict(compute_execution),
         "weighted_group_feature_matrix_sha256": _tensor_sha256(
             weighted_group_features,
             label="weighted GQA-group feature matrix",
@@ -625,6 +693,7 @@ def compile_lfm2_attention_group_qdeim(
     functional_snapshot_blocks: Sequence[Lfm2AttentionGroupQdeimSnapshotBlock] = (),
     expected_functional_snapshot_evidence_sha256: str | None = None,
     pod_rank_relative_tolerance: float | None = None,
+    compute_device: str = "cpu",
 ) -> Lfm2CompiledAttentionGroupQdeim:
     """Compile one dense intact-GQA-group attention candidate without training.
 
@@ -634,6 +703,12 @@ def compile_lfm2_attention_group_qdeim(
     """
 
     torch = _torch()
+    resolved_compute_device = _resolve_qdeim_compute_device(torch, compute_device)
+    compute_execution = _qdeim_compute_receipt(
+        torch,
+        compute_device,
+        resolved_compute_device,
+    )
     source_q_heads = _positive_int(
         source_query_head_count,
         label="source_query_head_count",
@@ -848,21 +923,56 @@ def compile_lfm2_attention_group_qdeim(
             )
 
     with torch.no_grad():
+        # CPU tensors above are the immutable authenticated archives.  Only
+        # one layer's active FP64 algebra is staged, so system memory remains
+        # the warm backing store while a selected GPU does the dense work.
+        source_q_work = source_q.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        source_k_work = source_k.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        source_v_work = source_v.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        source_o_work = source_o.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        decoder_work = decoder.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        chart_work = chart.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        contexts_work = contexts.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
         fit_group_features = _group_feature_matrix(
-            contexts,
+            contexts_work,
             key_value_head_count=source_kv_heads,
             queries_per_key_value=source_q_per_kv,
         )
         fit_feature_weights = torch.tensor(
             weights,
             dtype=torch.float64,
+            device=resolved_compute_device,
         ).repeat_interleave(source_q_per_kv * head_dim)
         all_features = [fit_group_features]
         all_feature_weights = [fit_feature_weights]
         for block in normalized_blocks:
             all_features.append(
                 _group_feature_matrix(
-                    block["context"],
+                    block["context"].to(
+                        device=resolved_compute_device,
+                        dtype=torch.float64,
+                    ),
                     key_value_head_count=source_kv_heads,
                     queries_per_key_value=source_q_per_kv,
                 )
@@ -872,6 +982,7 @@ def compile_lfm2_attention_group_qdeim(
                     torch.tensor(
                         block["row_sample_weights"],
                         dtype=torch.float64,
+                        device=resolved_compute_device,
                     )
                     * block["block_weight"]
                 ).repeat_interleave(source_q_per_kv * head_dim)
@@ -930,6 +1041,7 @@ def compile_lfm2_attention_group_qdeim(
                     structural_row_count=sum(
                         int(block["context"].shape[0]) for block in normalized_blocks
                     ),
+                    compute_execution=compute_execution,
                 )
             )
 
@@ -957,7 +1069,14 @@ def compile_lfm2_attention_group_qdeim(
         ).contiguous()
         selected_identity = group_interpolation[:, list(selected_groups)]
         selected_identity_error = float(
-            (selected_identity - torch.eye(target_kv_heads, dtype=torch.float64))
+            (
+                selected_identity
+                - torch.eye(
+                    target_kv_heads,
+                    dtype=torch.float64,
+                    device=resolved_compute_device,
+                )
+            )
             .abs()
             .max()
             .item()
@@ -978,7 +1097,11 @@ def compile_lfm2_attention_group_qdeim(
         group_block_width = source_q_per_kv * head_dim
         context_reconstruction = torch.kron(
             group_interpolation,
-            torch.eye(group_block_width, dtype=torch.float64),
+            torch.eye(
+                group_block_width,
+                dtype=torch.float64,
+                device=resolved_compute_device,
+            ),
         ).contiguous()
         reconstructed_group_features = (
             group_features[:, list(selected_groups)] @ group_interpolation
@@ -1007,18 +1130,22 @@ def compile_lfm2_attention_group_qdeim(
             for group in selected_groups
             for coordinate in range(head_dim)
         )
-        query_fp64 = (source_q[list(selected_query_rows), :] @ decoder.T).contiguous()
-        key_fp64 = (source_k[list(selected_key_value_rows), :] @ decoder.T).contiguous()
-        value_fp64 = (
-            source_v[list(selected_key_value_rows), :] @ decoder.T
+        query_fp64 = (
+            source_q_work[list(selected_query_rows), :] @ decoder_work.T
         ).contiguous()
-        mapped_parent_out = (chart.T @ source_o).contiguous()
+        key_fp64 = (
+            source_k_work[list(selected_key_value_rows), :] @ decoder_work.T
+        ).contiguous()
+        value_fp64 = (
+            source_v_work[list(selected_key_value_rows), :] @ decoder_work.T
+        ).contiguous()
+        mapped_parent_out = (chart_work.T @ source_o_work).contiguous()
         out_fp64 = (mapped_parent_out @ context_reconstruction.T).contiguous()
 
-        query = query_fp64.to(dtype=torch.bfloat16).contiguous()
-        key = key_fp64.to(dtype=torch.bfloat16).contiguous()
-        value = value_fp64.to(dtype=torch.bfloat16).contiguous()
-        out = out_fp64.to(dtype=torch.bfloat16).contiguous()
+        query = query_fp64.to(device="cpu", dtype=torch.bfloat16).contiguous()
+        key = key_fp64.to(device="cpu", dtype=torch.bfloat16).contiguous()
+        value = value_fp64.to(device="cpu", dtype=torch.bfloat16).contiguous()
+        out = out_fp64.to(device="cpu", dtype=torch.bfloat16).contiguous()
 
     source_after = lfm2_attention_group_qdeim_source_state_sha256(
         source_query_weight,
@@ -1057,6 +1184,7 @@ def compile_lfm2_attention_group_qdeim(
         "schema": LFM2_ATTENTION_GROUP_QDEIM_SCHEMA,
         "status": "materialized-for-holistic-whole-response-intelligence-evaluation",
         "method": "deterministic-block-constrained-qdeim-intact-gqa-producers",
+        "compute_execution": compute_execution,
         "topology": {
             "source_hidden_size": source_hidden,
             "target_hidden_size": target_hidden,

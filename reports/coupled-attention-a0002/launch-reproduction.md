@@ -1,0 +1,109 @@
+# Coupled-attention 4x fold launch reproduction
+
+This note records the effective child-process environment, argv, immutable inputs, output locations, and one read-only GPU snapshot for the four valid live lanes. It was reconstructed from `/proc` while the processes were running on 2026-07-23. It contains no credentials and does not include or endorse the failed `a0003`, `a0004`, or `a0005` launches.
+
+## Runtime and immutable inputs
+
+- Runtime checkout: `/home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69`
+- Runtime commit: `fc35579953b8f29d80a271853b88693c56c13b69`
+- Python: `/home/cereal/model-surgery-lab/venv/bin/python`
+- Runner: `/home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/experiments/run_lfm2_semantic_fold_to_review.py`
+- Input checkpoint: `/home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/checkpoint`
+- Input artifact SHA-256: `517515e3525c107db180953dcde6c1f5dc2ab6af3bc0f50486e442d6bf69899f`
+- Trace cache: `/home/cereal/model-surgery-lab/artifacts/lfm2_complete_causal_evidence_20260720_a0003/parent/dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b`
+- Expected cache key: `dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b`
+- Token bridge: `/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2`
+- Token-bridge artifact SHA-256: `5c1a452cbe6bb78cb0c346bc9ca5d784200aad0b8848847e559cd62fe4852384`
+- Donor tokenizer: `/home/cereal/model-surgery-lab/artifacts/lfm2_donor_tokenizer_packages_20260719/eb035507f87ad49002da1bdd10aaf5e727416e2e8cd471014af1672c120d6f46`
+- Target tokenizer: `/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2`
+- Parent model: `/home/cereal/model-surgery-lab/models/LFM2.5-230M`
+- Compiler diagnostic: `/home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/foundation-receipt.json`
+- Compiler diagnostic SHA-256: `7bffddca0fc90e026a62d625cff9f14b436955dbc799f9d8cdb804dc54e07afd`
+- Interface statistics: `/home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_statistics_20260721/02b5c6e/a0002/statistics-store/42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a`
+- Interface-statistics SHA-256: `42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a`
+- Interface-frontier companion: `/home/cereal/model-surgery-lab/artifacts/lfm2_interface_frontier_companion_20260722/48e7913/a0001/frontier-companion.json`
+- Companion file SHA-256: `703d7b458f4fcbd346521d0ecfb41ffaf8e262a99cfe480adcf9b3954c4efda9`
+- Companion artifact SHA-256: `7fa07c2c6e834f35313ef36b5a2a1d0876d8bc20be72e843a488a7ad5f6a1046`
+- Prompt set: `/home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/research/lfm2_semantic_whole_response_prompts_v1.json`
+- Prompt-file SHA-256: `ff6fa27e08a3cdbaa647bdeec1d0630d218f98ee13b195a836b85de7438974fa`
+- Parent envelope: `/home/cereal/model-surgery-lab/artifacts/lfm2_whole_response_parent_20260721/e739a88/a0002/parent-envelope.json`
+- Parent-envelope artifact SHA-256: `e985b5614ba7af0f49ff0ee4eae722c6475fd653775bfc22c4c767c9fd8a2f97`
+- Parent-envelope file SHA-256: `c45f1cf903a25571add9e3a58a6108355d672914449e77866455e3472ca6c0e7`
+- Structural recipe SHA-256: `2725779d70161592345868bad2270ca5dbeaecbb1416a3c129b32fe3449235dc`
+- Fit-corrected recipe SHA-256: `0c37f95ad809c83a1a34df61afcf080a64e228bbe19a7465d300d36a541334ce`
+
+## Exact effective launches
+
+These are the four effective child commands, including the observed thread/runtime environment and stdout/stderr destinations. They deliberately use CPU for the fold computation and the selected CUDA device for the later CUDA phase.
+
+### `a0002`: structural, anchor 0, physical GPU 0
+
+```bash
+env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=16 MKL_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 NUMEXPR_NUM_THREADS=16 PYTHONHASHSEED=0 PYTHONPATH=/home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/src /home/cereal/model-surgery-lab/venv/bin/python -u /home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/experiments/run_lfm2_semantic_fold_to_review.py --run-directory /home/cereal/model-surgery-lab/artifacts/lfm2_coupled_attention_qdeim_4x_20260722/fc35579/a0002/coupled_attention_structural_anchor_0 --input-checkpoint /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/checkpoint --expected-input-artifact-sha256 517515e3525c107db180953dcde6c1f5dc2ab6af3bc0f50486e442d6bf69899f --trace-cache /home/cereal/model-surgery-lab/artifacts/lfm2_complete_causal_evidence_20260720_a0003/parent/dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b --expected-cache-key dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b --bridge-directory /home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2 --expected-bridge-artifact-sha256 5c1a452cbe6bb78cb0c346bc9ca5d784200aad0b8848847e559cd62fe4852384 --donor-tokenizer-directory /home/cereal/model-surgery-lab/artifacts/lfm2_donor_tokenizer_packages_20260719/eb035507f87ad49002da1bdd10aaf5e727416e2e8cd471014af1672c120d6f46 --target-tokenizer-directory /home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2 --parent-model-directory /home/cereal/model-surgery-lab/models/LFM2.5-230M --compiler-diagnostic-json /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/foundation-receipt.json --expected-compiler-diagnostic-sha256 7bffddca0fc90e026a62d625cff9f14b436955dbc799f9d8cdb804dc54e07afd --interface-statistics-directory /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_statistics_20260721/02b5c6e/a0002/statistics-store/42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a --expected-interface-statistics-sha256 42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a --interface-frontier-companion-json /home/cereal/model-surgery-lab/artifacts/lfm2_interface_frontier_companion_20260722/48e7913/a0001/frontier-companion.json --expected-interface-frontier-companion-file-sha256 703d7b458f4fcbd346521d0ecfb41ffaf8e262a99cfe480adcf9b3954c4efda9 --expected-interface-frontier-companion-sha256 7fa07c2c6e834f35313ef36b5a2a1d0876d8bc20be72e843a488a7ad5f6a1046 --anchor-block-index 0 --body-recipe nonlinear_qdeim_coupled_attention_structural --expected-body-recipe-sha256 2725779d70161592345868bad2270ca5dbeaecbb1416a3c129b32fe3449235dc --tied-interface-mode strong-congruence-plus-anchor-residual --device cuda:0 --fold-compute-device cpu --dtype bfloat16 --prompts-json /home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/research/lfm2_semantic_whole_response_prompts_v1.json --expected-prompts-file-sha256 ff6fa27e08a3cdbaa647bdeec1d0630d218f98ee13b195a836b85de7438974fa --maximum-prompt-tokens 1024 --maximum-new-tokens 256 --parent-envelope /home/cereal/model-surgery-lab/artifacts/lfm2_whole_response_parent_20260721/e739a88/a0002/parent-envelope.json --expected-parent-envelope-sha256 e985b5614ba7af0f49ff0ee4eae722c6475fd653775bfc22c4c767c9fd8a2f97 --expected-parent-envelope-file-sha256 c45f1cf903a25571add9e3a58a6108355d672914449e77866455e3472ca6c0e7 > /home/cereal/model-surgery-lab/artifacts/lfm2_coupled_attention_qdeim_4x_20260722/fc35579/a0002/logs/coupled_attention_structural_anchor_0.log 2>&1
+```
+
+### `a0002`: fit-corrected, anchor 0, physical GPU 4
+
+```bash
+env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=4 OMP_NUM_THREADS=16 MKL_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 NUMEXPR_NUM_THREADS=16 PYTHONHASHSEED=0 PYTHONPATH=/home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/src /home/cereal/model-surgery-lab/venv/bin/python -u /home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/experiments/run_lfm2_semantic_fold_to_review.py --run-directory /home/cereal/model-surgery-lab/artifacts/lfm2_coupled_attention_qdeim_4x_20260722/fc35579/a0002/coupled_attention_fit_corrected_anchor_0 --input-checkpoint /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/checkpoint --expected-input-artifact-sha256 517515e3525c107db180953dcde6c1f5dc2ab6af3bc0f50486e442d6bf69899f --trace-cache /home/cereal/model-surgery-lab/artifacts/lfm2_complete_causal_evidence_20260720_a0003/parent/dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b --expected-cache-key dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b --bridge-directory /home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2 --expected-bridge-artifact-sha256 5c1a452cbe6bb78cb0c346bc9ca5d784200aad0b8848847e559cd62fe4852384 --donor-tokenizer-directory /home/cereal/model-surgery-lab/artifacts/lfm2_donor_tokenizer_packages_20260719/eb035507f87ad49002da1bdd10aaf5e727416e2e8cd471014af1672c120d6f46 --target-tokenizer-directory /home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2 --parent-model-directory /home/cereal/model-surgery-lab/models/LFM2.5-230M --compiler-diagnostic-json /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/foundation-receipt.json --expected-compiler-diagnostic-sha256 7bffddca0fc90e026a62d625cff9f14b436955dbc799f9d8cdb804dc54e07afd --interface-statistics-directory /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_statistics_20260721/02b5c6e/a0002/statistics-store/42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a --expected-interface-statistics-sha256 42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a --interface-frontier-companion-json /home/cereal/model-surgery-lab/artifacts/lfm2_interface_frontier_companion_20260722/48e7913/a0001/frontier-companion.json --expected-interface-frontier-companion-file-sha256 703d7b458f4fcbd346521d0ecfb41ffaf8e262a99cfe480adcf9b3954c4efda9 --expected-interface-frontier-companion-sha256 7fa07c2c6e834f35313ef36b5a2a1d0876d8bc20be72e843a488a7ad5f6a1046 --anchor-block-index 0 --body-recipe nonlinear_qdeim_coupled_attention_fit_corrected --expected-body-recipe-sha256 0c37f95ad809c83a1a34df61afcf080a64e228bbe19a7465d300d36a541334ce --tied-interface-mode strong-congruence-plus-anchor-residual --device cuda:0 --fold-compute-device cpu --dtype bfloat16 --prompts-json /home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/research/lfm2_semantic_whole_response_prompts_v1.json --expected-prompts-file-sha256 ff6fa27e08a3cdbaa647bdeec1d0630d218f98ee13b195a836b85de7438974fa --maximum-prompt-tokens 1024 --maximum-new-tokens 256 --parent-envelope /home/cereal/model-surgery-lab/artifacts/lfm2_whole_response_parent_20260721/e739a88/a0002/parent-envelope.json --expected-parent-envelope-sha256 e985b5614ba7af0f49ff0ee4eae722c6475fd653775bfc22c4c767c9fd8a2f97 --expected-parent-envelope-file-sha256 c45f1cf903a25571add9e3a58a6108355d672914449e77866455e3472ca6c0e7 > /home/cereal/model-surgery-lab/artifacts/lfm2_coupled_attention_qdeim_4x_20260722/fc35579/a0002/logs/coupled_attention_fit_corrected_anchor_0.log 2>&1
+```
+
+### `a0006`: structural, anchor 7, physical GPU 0
+
+```bash
+env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=16 MKL_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 NUMEXPR_NUM_THREADS=16 PYTHONHASHSEED=0 PYTHONPATH=/home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/src /home/cereal/model-surgery-lab/venv/bin/python -u /home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/experiments/run_lfm2_semantic_fold_to_review.py --run-directory /home/cereal/model-surgery-lab/artifacts/lfm2_coupled_attention_qdeim_4x_20260722/fc35579/a0006/coupled_attention_structural_anchor_7 --input-checkpoint /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/checkpoint --expected-input-artifact-sha256 517515e3525c107db180953dcde6c1f5dc2ab6af3bc0f50486e442d6bf69899f --trace-cache /home/cereal/model-surgery-lab/artifacts/lfm2_complete_causal_evidence_20260720_a0003/parent/dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b --expected-cache-key dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b --bridge-directory /home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2 --expected-bridge-artifact-sha256 5c1a452cbe6bb78cb0c346bc9ca5d784200aad0b8848847e559cd62fe4852384 --donor-tokenizer-directory /home/cereal/model-surgery-lab/artifacts/lfm2_donor_tokenizer_packages_20260719/eb035507f87ad49002da1bdd10aaf5e727416e2e8cd471014af1672c120d6f46 --target-tokenizer-directory /home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2 --parent-model-directory /home/cereal/model-surgery-lab/models/LFM2.5-230M --compiler-diagnostic-json /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/foundation-receipt.json --expected-compiler-diagnostic-sha256 7bffddca0fc90e026a62d625cff9f14b436955dbc799f9d8cdb804dc54e07afd --interface-statistics-directory /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_statistics_20260721/02b5c6e/a0002/statistics-store/42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a --expected-interface-statistics-sha256 42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a --interface-frontier-companion-json /home/cereal/model-surgery-lab/artifacts/lfm2_interface_frontier_companion_20260722/48e7913/a0001/frontier-companion.json --expected-interface-frontier-companion-file-sha256 703d7b458f4fcbd346521d0ecfb41ffaf8e262a99cfe480adcf9b3954c4efda9 --expected-interface-frontier-companion-sha256 7fa07c2c6e834f35313ef36b5a2a1d0876d8bc20be72e843a488a7ad5f6a1046 --anchor-block-index 7 --body-recipe nonlinear_qdeim_coupled_attention_structural --expected-body-recipe-sha256 2725779d70161592345868bad2270ca5dbeaecbb1416a3c129b32fe3449235dc --tied-interface-mode strong-congruence-plus-anchor-residual --device cuda:0 --fold-compute-device cpu --dtype bfloat16 --prompts-json /home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/research/lfm2_semantic_whole_response_prompts_v1.json --expected-prompts-file-sha256 ff6fa27e08a3cdbaa647bdeec1d0630d218f98ee13b195a836b85de7438974fa --maximum-prompt-tokens 1024 --maximum-new-tokens 256 --parent-envelope /home/cereal/model-surgery-lab/artifacts/lfm2_whole_response_parent_20260721/e739a88/a0002/parent-envelope.json --expected-parent-envelope-sha256 e985b5614ba7af0f49ff0ee4eae722c6475fd653775bfc22c4c767c9fd8a2f97 --expected-parent-envelope-file-sha256 c45f1cf903a25571add9e3a58a6108355d672914449e77866455e3472ca6c0e7 > /home/cereal/model-surgery-lab/artifacts/lfm2_coupled_attention_qdeim_4x_20260722/fc35579/a0006/logs/coupled_attention_structural_anchor_7.log 2>&1
+```
+
+### `a0006`: fit-corrected, anchor 7, physical GPU 4
+
+```bash
+env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=4 OMP_NUM_THREADS=16 MKL_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 NUMEXPR_NUM_THREADS=16 PYTHONHASHSEED=0 PYTHONPATH=/home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/src /home/cereal/model-surgery-lab/venv/bin/python -u /home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/experiments/run_lfm2_semantic_fold_to_review.py --run-directory /home/cereal/model-surgery-lab/artifacts/lfm2_coupled_attention_qdeim_4x_20260722/fc35579/a0006/coupled_attention_fit_corrected_anchor_7 --input-checkpoint /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/checkpoint --expected-input-artifact-sha256 517515e3525c107db180953dcde6c1f5dc2ab6af3bc0f50486e442d6bf69899f --trace-cache /home/cereal/model-surgery-lab/artifacts/lfm2_complete_causal_evidence_20260720_a0003/parent/dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b --expected-cache-key dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b --bridge-directory /home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2 --expected-bridge-artifact-sha256 5c1a452cbe6bb78cb0c346bc9ca5d784200aad0b8848847e559cd62fe4852384 --donor-tokenizer-directory /home/cereal/model-surgery-lab/artifacts/lfm2_donor_tokenizer_packages_20260719/eb035507f87ad49002da1bdd10aaf5e727416e2e8cd471014af1672c120d6f46 --target-tokenizer-directory /home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2 --parent-model-directory /home/cereal/model-surgery-lab/models/LFM2.5-230M --compiler-diagnostic-json /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_20260721/97ae4b9/a0003/foundation-receipt.json --expected-compiler-diagnostic-sha256 7bffddca0fc90e026a62d625cff9f14b436955dbc799f9d8cdb804dc54e07afd --interface-statistics-directory /home/cereal/model-surgery-lab/artifacts/lfm2_semantic_foundation_statistics_20260721/02b5c6e/a0002/statistics-store/42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a --expected-interface-statistics-sha256 42083aed1e86665fa99a53e023dfbd613608ac60f86cd7c85c4bb1b92908cd6a --interface-frontier-companion-json /home/cereal/model-surgery-lab/artifacts/lfm2_interface_frontier_companion_20260722/48e7913/a0001/frontier-companion.json --expected-interface-frontier-companion-file-sha256 703d7b458f4fcbd346521d0ecfb41ffaf8e262a99cfe480adcf9b3954c4efda9 --expected-interface-frontier-companion-sha256 7fa07c2c6e834f35313ef36b5a2a1d0876d8bc20be72e843a488a7ad5f6a1046 --anchor-block-index 7 --body-recipe nonlinear_qdeim_coupled_attention_fit_corrected --expected-body-recipe-sha256 0c37f95ad809c83a1a34df61afcf080a64e228bbe19a7465d300d36a541334ce --tied-interface-mode strong-congruence-plus-anchor-residual --device cuda:0 --fold-compute-device cpu --dtype bfloat16 --prompts-json /home/cereal/model-surgery-lab/runtime/neural-forge-fc35579953b8f29d80a271853b88693c56c13b69/research/lfm2_semantic_whole_response_prompts_v1.json --expected-prompts-file-sha256 ff6fa27e08a3cdbaa647bdeec1d0630d218f98ee13b195a836b85de7438974fa --maximum-prompt-tokens 1024 --maximum-new-tokens 256 --parent-envelope /home/cereal/model-surgery-lab/artifacts/lfm2_whole_response_parent_20260721/e739a88/a0002/parent-envelope.json --expected-parent-envelope-sha256 e985b5614ba7af0f49ff0ee4eae722c6475fd653775bfc22c4c767c9fd8a2f97 --expected-parent-envelope-file-sha256 c45f1cf903a25571add9e3a58a6108355d672914449e77866455e3472ca6c0e7 > /home/cereal/model-surgery-lab/artifacts/lfm2_coupled_attention_qdeim_4x_20260722/fc35579/a0006/logs/coupled_attention_fit_corrected_anchor_7.log 2>&1
+```
+
+## Read-only GPU inventory snapshot
+
+Captured at `2026-07-23T14:09:49Z`. Utilization and memory are instantaneous; UUIDs are included so physical-device identity remains unambiguous if CUDA enumeration changes.
+
+| Physical index | UUID | GPU | VRAM total MiB | Used MiB | Free MiB | GPU util. | Temp C | P-state |
+|---:|---|---|---:|---:|---:|---:|---:|---|
+| 0 | `GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561` | GeForce RTX 3090 | 24576 | 1634 | 22491 | 0% | 33 | P8 |
+| 1 | `GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d` | Tesla P40 | 24576 | 5 | 24435 | 0% | 30 | P8 |
+| 2 | `GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4` | Tesla P40 | 24576 | 5 | 24435 | 0% | 31 | P8 |
+| 3 | `GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8` | Tesla P40 | 24576 | 5 | 24435 | 0% | 33 | P8 |
+| 4 | `GPU-2ce6a95c-7b1f-644a-3808-d781732a0582` | GeForce RTX 3090 | 24576 | 1365 | 22761 | 0% | 36 | P8 |
+| 5 | `GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f` | Tesla P40 | 24576 | 5 | 24435 | 0% | 35 | P8 |
+| 6 | `GPU-f5a09535-fc85-a027-50f7-734b344747dd` | Quadro RTX 8000 | 46080 | 5 | 45351 | 0% | 34 | P8 |
+
+Observed compute contexts:
+
+| GPU | PID | Process | VRAM MiB |
+|---:|---:|---|---:|
+| 0 | 13369 | `python` | 256 |
+| 0 | 4054192 | coupled-attention structural anchor 0 | 668 |
+| 0 | 4118605 | coupled-attention structural anchor 7 | 668 |
+| 4 | 4054193 | coupled-attention fit-corrected anchor 0 | 668 |
+| 4 | 4118607 | coupled-attention fit-corrected anchor 7 | 668 |
+
+At the snapshot, GPUs 1, 2, 3, 5, and 6 had no compute contexts. GPU 6 has the largest free-memory envelope. The P40s do not support every modern dtype/kernel path used by the 3090 lanes, so a closure-lane scheduler must use runtime capability checks rather than free-memory alone.
+
+## Revision-swap rule
+
+For the next runtime, retain every immutable input path, digest, target shape, anchor, prompt, decode length, and lane output separation above. Swap the runtime checkout in the runner and `PYTHONPATH`, then add the explicitly versioned global-closure stage/recipe. If the recipe identity itself changes, record its new digest rather than reusing either digest above. Do not overwrite these four run directories.
+
+The four commands above must remain unchanged as the literal provenance of revision `fc35579`. For the current producer-aware v2a working tree, the launch-readiness audit identified this required command-line delta:
+
+```text
+--anchor-block-index N
+-> --anchor-candidate-index N
+
+--fold-compute-device cpu
+-> --fold-compute-device cuda:0
+
+add:
+--global-residual-closure-version producer_aware_v2a
+--global-residual-backend cuda
+--correction-scale-frontier 0.25,0.5,1.0
+--correction-scale 1.0
+```
+
+The new launch also requires a newly committed immutable runtime path and new output directories. Copying the historical commands against the new CLI without the anchor-option rename will fail argument parsing; editing the historical blocks themselves would destroy their provenance value.

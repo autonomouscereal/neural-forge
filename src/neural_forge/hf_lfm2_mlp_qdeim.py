@@ -149,7 +149,10 @@ class Lfm2CompiledMlpQdeim:
 
     def candidate_state_dicts(self) -> Mapping[str, Mapping[str, Any]]:
         return MappingProxyType(
-            {candidate_id: self.state_dict(candidate_id) for candidate_id in self.candidate_ids}
+            {
+                candidate_id: self.state_dict(candidate_id)
+                for candidate_id in self.candidate_ids
+            }
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -162,6 +165,64 @@ def _torch():
     except ImportError as exc:  # pragma: no cover - optional runtime dependency
         raise RuntimeError("PyTorch is required for LFM2 Q-DEIM compilation.") from exc
     return torch
+
+
+def _resolve_qdeim_compute_device(torch: Any, compute_device: Any) -> Any:
+    """Resolve one explicit fold-only algebra device without silent fallback."""
+
+    if compute_device == "cpu":
+        return torch.device("cpu")
+    if not isinstance(compute_device, str):
+        raise Lfm2MlpQdeimError(
+            "compute_device must be 'cpu' or an explicitly indexed CUDA device."
+        )
+    prefix, separator, index_text = compute_device.partition(":")
+    if (
+        prefix != "cuda"
+        or separator != ":"
+        or not index_text.isascii()
+        or not index_text.isdecimal()
+        or index_text != str(int(index_text))
+    ):
+        raise Lfm2MlpQdeimError(
+            "CUDA compute_device must be explicitly indexed as 'cuda:N'."
+        )
+    index = int(index_text)
+    if not torch.cuda.is_available() or index >= int(torch.cuda.device_count()):
+        raise Lfm2MlpQdeimError(f"CUDA compute_device index {index} is unavailable.")
+    return torch.device("cuda", index)
+
+
+def _qdeim_compute_receipt(torch: Any, requested: str, resolved: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "schema": "neural-forge-lfm2-mlp-qdeim-compute-v1",
+        "requested_device": requested,
+        "resolved_device": str(resolved),
+        "backend": resolved.type,
+        "compute_dtype": "float64",
+        "authenticated_source_archive_device": "cpu",
+        "active_layer_staged_to_compute_device": resolved.type == "cuda",
+        "materialized_candidate_device": "cpu",
+        "system_memory_is_immutable_archive": True,
+        "gpu_is_ephemeral_dense_algebra_workspace": resolved.type == "cuda",
+        "silent_device_fallback_performed": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    if resolved.type == "cuda":
+        properties = torch.cuda.get_device_properties(resolved)
+        body.update(
+            {
+                "device_index": int(resolved.index),
+                "device_name": str(properties.name),
+                "compute_capability": [
+                    int(properties.major),
+                    int(properties.minor),
+                ],
+            }
+        )
+    return {**body, "receipt_sha256": canonical_sha256(body)}
 
 
 def _deep_thaw(value: Any) -> Any:
@@ -386,9 +447,10 @@ def _normalized_functional_snapshot_blocks(
         if block.row_sample_weights is None:
             row_weights = tuple(1.0 for _ in range(row_count))
         else:
-            if isinstance(block.row_sample_weights, (str, bytes)) or len(
-                block.row_sample_weights
-            ) != row_count:
+            if (
+                isinstance(block.row_sample_weights, (str, bytes))
+                or len(block.row_sample_weights) != row_count
+            ):
                 raise Lfm2MlpQdeimError(
                     f"{prefix}.row_sample_weights must contain one positive "
                     "value per structural row."
@@ -593,6 +655,7 @@ def _rank_deficit_report(
     fit_snapshot_row_count: int,
     structural_snapshot_row_count: int,
     structural_snapshot_block_count: int,
+    compute_execution: Mapping[str, Any],
 ) -> dict[str, Any]:
     body = {
         "schema": LFM2_MLP_QDEIM_RANK_DEFICIT_SCHEMA,
@@ -602,9 +665,8 @@ def _rank_deficit_report(
         "normalized_input_decoder_sha256": normalized_input_decoder_sha256,
         "residual_output_chart_sha256": residual_output_chart_sha256,
         "fit_evidence_sha256": fit_evidence_sha256,
-        "functional_snapshot_evidence_sha256": (
-            functional_snapshot_evidence_sha256
-        ),
+        "functional_snapshot_evidence_sha256": (functional_snapshot_evidence_sha256),
+        "compute_execution": dict(compute_execution),
         "weighted_functional_snapshots_sha256": _tensor_hash(
             weighted_features,
             label="weighted FIT post-SwiGLU features",
@@ -664,6 +726,7 @@ def _fit_w2_residual_delta(
         delta_t = torch.zeros(
             (int(design.shape[1]), int(residual_target.shape[1])),
             dtype=torch.float64,
+            device=design.device,
         )
         scaled_ridge = 0.0
     else:
@@ -677,8 +740,7 @@ def _fit_w2_residual_delta(
                 active_singular.square() + scaled_ridge
             )
         delta_t = right_h[supported].T @ (
-            spectral_filter.unsqueeze(1)
-            * (left[:, supported].T @ residual_target)
+            spectral_filter.unsqueeze(1) * (left[:, supported].T @ residual_target)
         )
     report = {
         "method": "fit_only_fp64_svd_prior_residual_ridge",
@@ -716,13 +778,12 @@ def compile_lfm2_mlp_nonlinear_qdeim(
     fit_cases: Sequence[Lfm2MlpQdeimFitCase],
     expected_fit_evidence_sha256: str,
     case_sample_weights: Sequence[float] | None = None,
-    functional_snapshot_blocks: Sequence[
-        Lfm2MlpQdeimFunctionalSnapshotBlock
-    ] = (),
+    functional_snapshot_blocks: Sequence[Lfm2MlpQdeimFunctionalSnapshotBlock] = (),
     expected_functional_snapshot_evidence_sha256: str | None = None,
     compute_fit_residual_correction: bool = True,
     fit_correction_ridge: float = 1e-8,
     pod_rank_relative_tolerance: float | None = None,
+    compute_device: str = "cpu",
 ) -> Lfm2CompiledMlpQdeim:
     """Compile dense real-neuron Q-DEIM candidates without training.
 
@@ -737,6 +798,12 @@ def compile_lfm2_mlp_nonlinear_qdeim(
     """
 
     torch = _torch()
+    resolved_compute_device = _resolve_qdeim_compute_device(torch, compute_device)
+    compute_execution = _qdeim_compute_receipt(
+        torch,
+        compute_device,
+        resolved_compute_device,
+    )
     if not isinstance(compute_fit_residual_correction, bool):
         raise Lfm2MlpQdeimError("compute_fit_residual_correction must be boolean.")
     fit_correction_ridge = _finite_float(
@@ -777,10 +844,8 @@ def compile_lfm2_mlp_nonlinear_qdeim(
     structural_blocks = _normalized_functional_snapshot_blocks(
         functional_snapshot_blocks
     )
-    structural_snapshot_sha256 = (
-        lfm2_mlp_qdeim_functional_snapshot_evidence_sha256(
-            functional_snapshot_blocks
-        )
+    structural_snapshot_sha256 = lfm2_mlp_qdeim_functional_snapshot_evidence_sha256(
+        functional_snapshot_blocks
     )
     if expected_functional_snapshot_evidence_sha256 is None:
         if structural_blocks:
@@ -862,12 +927,10 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         target_down_weight_template,
     )
     target_intermediate, target_hidden = template_spec["w1.weight"]["shape"]
-    if (
-        template_spec["w3.weight"]["shape"]
-        != [target_intermediate, target_hidden]
-        or template_spec["w2.weight"]["shape"]
-        != [target_hidden, target_intermediate]
-    ):
+    if template_spec["w3.weight"]["shape"] != [
+        target_intermediate,
+        target_hidden,
+    ] or template_spec["w2.weight"]["shape"] != [target_hidden, target_intermediate]:
         raise Lfm2MlpQdeimError(
             "Target templates do not form one atomic dense LFM2 SwiGLU."
         )
@@ -896,10 +959,42 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         )
 
     with torch.no_grad():
-        decoder_singular = torch.linalg.svdvals(decoder)
-        chart_singular = torch.linalg.svdvals(chart)
-        decoder_rank = int(torch.linalg.matrix_rank(decoder).item())
-        chart_rank = int(torch.linalg.matrix_rank(chart).item())
+        # CPU tensors above remain immutable authenticated archives.  Stage
+        # only this layer's active FP64 algebra to the requested accelerator.
+        source_gate_work = source_gate.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        source_up_work = source_up.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        source_down_work = source_down.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        decoder_work = decoder.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        chart_work = chart.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        decoder_singular = torch.linalg.svdvals(decoder_work)
+        chart_singular = torch.linalg.svdvals(chart_work)
+        decoder_rank_tolerance = (
+            max(decoder_work.shape)
+            * torch.finfo(torch.float64).eps
+            * decoder_singular.max()
+        )
+        chart_rank_tolerance = (
+            max(chart_work.shape)
+            * torch.finfo(torch.float64).eps
+            * chart_singular.max()
+        )
+        decoder_rank = int((decoder_singular > decoder_rank_tolerance).sum().item())
+        chart_rank = int((chart_singular > chart_rank_tolerance).sum().item())
         if decoder_rank != target_hidden or chart_rank != target_hidden:
             raise Lfm2MlpQdeimError(
                 "Normalized-input decoder and residual chart must be structurally full rank."
@@ -951,16 +1046,31 @@ def compile_lfm2_mlp_nonlinear_qdeim(
             )
 
         fit_parent_features = torch.cat(
-            [value["parent_post"] for value in normalized_cases],
+            [
+                value["parent_post"].to(
+                    device=resolved_compute_device,
+                    dtype=torch.float64,
+                )
+                for value in normalized_cases
+            ],
             dim=0,
         )
         target_inputs = torch.cat(
-            [value["target_input"] for value in normalized_cases],
+            [
+                value["target_input"].to(
+                    device=resolved_compute_device,
+                    dtype=torch.float64,
+                )
+                for value in normalized_cases
+            ],
             dim=0,
         )
         endpoint_target = torch.cat(
             [
-                value["endpoint"] - value["target_residual"]
+                (value["endpoint"] - value["target_residual"]).to(
+                    device=resolved_compute_device,
+                    dtype=torch.float64,
+                )
                 for value in normalized_cases
             ],
             dim=0,
@@ -971,15 +1081,24 @@ def compile_lfm2_mlp_nonlinear_qdeim(
                     (int(value["parent_post"].shape[0]),),
                     float(value["case_weight"]),
                     dtype=torch.float64,
+                    device=resolved_compute_device,
                 )
                 for value in normalized_cases
             ]
         )
         structural_rows = [
-            value["functional_rows"] for value in structural_blocks
+            value["functional_rows"].to(
+                device=resolved_compute_device,
+                dtype=torch.float64,
+            )
+            for value in structural_blocks
         ]
         structural_row_weights = [
-            value["effective_row_weights"] for value in structural_blocks
+            value["effective_row_weights"].to(
+                device=resolved_compute_device,
+                dtype=torch.float64,
+            )
+            for value in structural_blocks
         ]
         pod_features = torch.cat(
             [fit_parent_features, *structural_rows],
@@ -1017,9 +1136,7 @@ def compile_lfm2_mlp_nonlinear_qdeim(
                     normalized_input_decoder_sha256=decoder_sha256,
                     residual_output_chart_sha256=chart_sha256,
                     fit_evidence_sha256=fit_sha256,
-                    functional_snapshot_evidence_sha256=(
-                        structural_snapshot_sha256
-                    ),
+                    functional_snapshot_evidence_sha256=(structural_snapshot_sha256),
                     weighted_features=weighted_features,
                     singular_values=pod_singular,
                     rank_tolerance=rank_tolerance,
@@ -1032,15 +1149,14 @@ def compile_lfm2_mlp_nonlinear_qdeim(
                         for value in structural_blocks
                     ),
                     structural_snapshot_block_count=len(structural_blocks),
+                    compute_execution=compute_execution,
                 )
             )
 
         pod_basis = _canonicalize_pod_signs(
             pod_right_h[:target_intermediate].T.contiguous()
         )
-        selected, pivot_residual_norms = _deterministic_pivoted_qr_indices(
-            pod_basis
-        )
+        selected, pivot_residual_norms = _deterministic_pivoted_qr_indices(pod_basis)
         sampled_basis = pod_basis[list(selected), :].contiguous()
         interpolation_singular = torch.linalg.svdvals(sampled_basis)
         interpolation_minimum = float(interpolation_singular.min().item())
@@ -1077,31 +1193,31 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         selected_identity_error = float(
             (
                 selected_identity
-                - torch.eye(target_intermediate, dtype=torch.float64)
+                - torch.eye(
+                    target_intermediate,
+                    dtype=torch.float64,
+                    device=resolved_compute_device,
+                )
             )
             .abs()
             .max()
             .item()
         )
 
-        selected_gate = source_gate[list(selected), :].contiguous()
-        selected_up = source_up[list(selected), :].contiguous()
-        gate_prior_fp64 = (selected_gate @ decoder.T).contiguous()
-        up_prior_fp64 = (selected_up @ decoder.T).contiguous()
-        mapped_source_down = (chart.T @ source_down).contiguous()
+        selected_gate = source_gate_work[list(selected), :].contiguous()
+        selected_up = source_up_work[list(selected), :].contiguous()
+        gate_prior_fp64 = (selected_gate @ decoder_work.T).contiguous()
+        up_prior_fp64 = (selected_up @ decoder_work.T).contiguous()
+        mapped_source_down = (chart_work.T @ source_down_work).contiguous()
         down_prior_fp64 = (mapped_source_down @ reconstruction.T).contiguous()
 
         materialized_gate = gate_prior_fp64.to(dtype=torch.bfloat16).contiguous()
         materialized_up = up_prior_fp64.to(dtype=torch.bfloat16).contiguous()
-        materialized_down_prior = down_prior_fp64.to(
-            dtype=torch.bfloat16
-        ).contiguous()
+        materialized_down_prior = down_prior_fp64.to(dtype=torch.bfloat16).contiguous()
         target_features = torch.nn.functional.silu(
             target_inputs @ materialized_gate.to(torch.float64).T
         ) * (target_inputs @ materialized_up.to(torch.float64).T)
-        prior_prediction = target_features @ materialized_down_prior.to(
-            torch.float64
-        ).T
+        prior_prediction = target_features @ materialized_down_prior.to(torch.float64).T
         prior_fit_relative_rmse = _relative_rmse(
             prior_prediction * fit_sqrt_row_weights,
             endpoint_target * fit_sqrt_row_weights,
@@ -1129,9 +1245,9 @@ def compile_lfm2_mlp_nonlinear_qdeim(
             materialized_down_corrected = corrected_fp64.to(
                 dtype=torch.bfloat16
             ).contiguous()
-            corrected_prediction = target_features @ materialized_down_corrected.to(
-                torch.float64
-            ).T
+            corrected_prediction = (
+                target_features @ materialized_down_corrected.to(torch.float64).T
+            )
             corrected_fit_relative_rmse = _relative_rmse(
                 corrected_prediction * fit_sqrt_row_weights,
                 endpoint_target * fit_sqrt_row_weights,
@@ -1185,8 +1301,7 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         )
         or tuple(materialized_gate.shape) != (target_intermediate, target_hidden)
         or tuple(materialized_up.shape) != tuple(materialized_gate.shape)
-        or tuple(materialized_down_prior.shape)
-        != (target_hidden, target_intermediate)
+        or tuple(materialized_down_prior.shape) != (target_hidden, target_intermediate)
         or materialized_gate.dtype != torch.bfloat16
         or materialized_up.dtype != torch.bfloat16
         or materialized_down_prior.dtype != torch.bfloat16
@@ -1254,6 +1369,7 @@ def compile_lfm2_mlp_nonlinear_qdeim(
     report_body = {
         "schema": LFM2_MLP_QDEIM_SCHEMA,
         "status": "dense-candidates-ready-for-decoded-whole-response-review",
+        "compute_execution": compute_execution,
         "source_state_sha256_before": source_before,
         "source_state_sha256_after": source_after,
         "source_state_immutable": True,
@@ -1301,8 +1417,7 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         "observed_snapshot_rank": observed_rank,
         "fit_post_swiglu_row_count": int(fit_parent_features.shape[0]),
         "structural_completion_row_count": sum(
-            int(value["functional_rows"].shape[0])
-            for value in structural_blocks
+            int(value["functional_rows"].shape[0]) for value in structural_blocks
         ),
         "weighted_functional_snapshot_row_count": int(weighted_features.shape[0]),
         "snapshot_rank_absolute_tolerance": rank_tolerance,
@@ -1335,9 +1450,7 @@ def compile_lfm2_mlp_nonlinear_qdeim(
             "selected_pivot_reorthogonalization_pass_count": (
                 2 * max(0, target_intermediate - 1)
             ),
-            "asymptotic_time_bound": (
-                "O(pivot_steps*pod_modes*source_neurons)"
-            ),
+            "asymptotic_time_bound": ("O(pivot_steps*pod_modes*source_neurons)"),
             "asymptotic_auxiliary_storage_bound": (
                 "O(pod_modes*source_neurons+pod_modes^2+source_neurons)"
             ),
@@ -1360,9 +1473,7 @@ def compile_lfm2_mlp_nonlinear_qdeim(
             "interpolation_largest_singular_value": interpolation_maximum,
             "selected_identity_maximum_absolute_error": selected_identity_error,
             "weighted_joint_snapshot_relative_rmse": interpolation_relative_rmse,
-            "weighted_fit_post_swiglu_relative_rmse": (
-                fit_interpolation_relative_rmse
-            ),
+            "weighted_fit_post_swiglu_relative_rmse": (fit_interpolation_relative_rmse),
             "numeric_diagnostics_have_selection_authority": False,
         },
         "producer_transport": {
@@ -1406,9 +1517,7 @@ def compile_lfm2_mlp_nonlinear_qdeim(
                             materialized_down_corrected,
                             label="corrected candidate W2",
                         ),
-                        "fit_relative_rmse_diagnostic": (
-                            corrected_fit_relative_rmse
-                        ),
+                        "fit_relative_rmse_diagnostic": (corrected_fit_relative_rmse),
                     }
                 }
                 if materialized_down_corrected is not None

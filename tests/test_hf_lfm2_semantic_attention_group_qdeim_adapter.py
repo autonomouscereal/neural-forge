@@ -317,6 +317,16 @@ def test_true_context_cache_route_emits_dense_candidate_and_never_loads_holdout(
     assert receipt["heldout_tensor_payload_loads"] == 0
     assert receipt["qkv_producer_averaging_performed"] is False
     assert receipt["dense_all_parent_output_columns_used"] is True
+    assert receipt["fold_compute_device"] == "cpu"
+    assert receipt["qdeim_compute_execution"]["requested_device"] == "cpu"
+    assert receipt["qdeim_compute_execution"]["resolved_device"] == "cpu"
+    assert (
+        receipt["qdeim_compute_execution"]["authenticated_source_archive_device"]
+        == "cpu"
+    )
+    assert receipt["qdeim_compute_execution"]["materialized_candidate_device"] == (
+        "cpu"
+    )
     assert receipt["numeric_metrics_have_semantic_decision_authority"] is False
     assert receipt["binary_manual_threshold_has_iteration_veto_authority"] is False
     assert receipt["binary_manual_acceptance_gate_required"] is False

@@ -33,6 +33,7 @@ def _build(
     sample_weights: torch.Tensor | None = None,
     coordinate_rms: torch.Tensor | None = None,
     anchor_count: int = 3,
+    compute_device: str = "cpu",
 ):
     gate, up, post = _cached_rows(w1, w3, normalized_inputs)
     return build_lfm2_swiglu_tangent_bank(
@@ -64,6 +65,7 @@ def _build(
             else fingerprint_lfm2_swiglu_tangent_tensor(coordinate_rms)
         ),
         anchor_count=anchor_count,
+        compute_device=compute_device,
     )
 
 
@@ -104,12 +106,8 @@ def test_exact_analytic_jvp_matches_centered_finite_difference_diagnostic() -> N
 
 
 def test_decoder_rows_are_directions_with_no_parent_identity_fallback() -> None:
-    w1 = torch.tensor(
-        [[1.0, 2.0], [-1.0, 0.5], [0.25, -0.75]], dtype=torch.float64
-    )
-    w3 = torch.tensor(
-        [[0.5, -1.0], [2.0, 1.0], [-0.5, 0.25]], dtype=torch.float64
-    )
+    w1 = torch.tensor([[1.0, 2.0], [-1.0, 0.5], [0.25, -0.75]], dtype=torch.float64)
+    w3 = torch.tensor([[0.5, -1.0], [2.0, 1.0], [-0.5, 0.25]], dtype=torch.float64)
     source = torch.tensor([[0.2, -0.4]], dtype=torch.float64)
     decoder = torch.eye(2, dtype=torch.float64)
     bank = _build(
@@ -252,14 +250,91 @@ def test_build_is_deterministic_and_preserves_every_source_tensor() -> None:
     assert audit["numeric_diagnostics_used_for_auto_veto"] is False
     copied_receipt = copy.deepcopy(first.as_dict())
     assert copied_receipt["bank_sha256"] == first.bank_sha256
+    compute = copied_receipt["compute_execution"]
+    compute_body = dict(compute)
+    compute_receipt_sha256 = compute_body.pop("receipt_sha256")
+    assert compute["requested_device"] == "cpu"
+    assert compute["resolved_device"] == "cpu"
+    assert compute["authenticated_source_archive_device"] == "cpu"
+    assert compute["materialized_tangent_bank_device"] == "cpu"
+    assert compute["active_layer_staged_to_compute_device"] is False
+    assert len(compute_receipt_sha256) == 64
+
+
+@pytest.mark.parametrize(
+    "compute_device",
+    (
+        "cuda",
+        "cuda:",
+        "cuda:00",
+        "cuda:-1",
+        "CUDA:0",
+        "cuda:\N{ARABIC-INDIC DIGIT ZERO}",
+    ),
+)
+def test_compute_device_rejects_noncanonical_cuda_names(
+    compute_device: str,
+) -> None:
+    w1 = torch.eye(2, dtype=torch.float64)
+    w3 = torch.eye(2, dtype=torch.float64)
+    source = torch.ones(1, 2, dtype=torch.float64)
+    decoder = torch.eye(2, dtype=torch.float64)
+    with pytest.raises(Lfm2SwiGluTangentBankError, match="explicitly indexed"):
+        _build(
+            w1=w1,
+            w3=w3,
+            normalized_inputs=source,
+            decoder=decoder,
+            anchor_count=1,
+            compute_device=compute_device,
+        )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_cuda_compute_stages_arithmetic_and_returns_authenticated_cpu_bank() -> None:
+    torch.manual_seed(23)
+    w1 = torch.randn(5, 3, dtype=torch.float64)
+    w3 = torch.randn(5, 3, dtype=torch.float64)
+    source = torch.randn(3, 3, dtype=torch.float64)
+    decoder = torch.randn(2, 3, dtype=torch.float64)
+    cpu_bank = _build(
+        w1=w1,
+        w3=w3,
+        normalized_inputs=source,
+        decoder=decoder,
+        anchor_count=2,
+    )
+    cuda_bank = _build(
+        w1=w1,
+        w3=w3,
+        normalized_inputs=source,
+        decoder=decoder,
+        anchor_count=2,
+        compute_device="cuda:0",
+    )
+    assert cuda_bank.tangent_rows.device.type == "cpu"
+    assert cuda_bank.tangent_rows.dtype == torch.float64
+    assert torch.allclose(
+        cuda_bank.tangent_rows,
+        cpu_bank.tangent_rows,
+        atol=1.0e-12,
+        rtol=1.0e-12,
+    )
+    compute = cuda_bank.as_dict()["compute_execution"]
+    assert compute["requested_device"] == "cuda:0"
+    assert compute["resolved_device"] == "cuda:0"
+    assert compute["backend"] == "cuda"
+    assert compute["active_layer_staged_to_compute_device"] is True
+    assert compute["gpu_is_ephemeral_dense_algebra_workspace"] is True
+    assert compute["authenticated_source_archive_device"] == "cpu"
+    assert compute["materialized_tangent_bank_device"] == "cpu"
+    assert compute["silent_device_fallback_performed"] is False
 
 
 def test_recommended_scales_equalize_blocks_without_changing_raw_bank() -> None:
     w1 = torch.tensor([[1.0, 0.0], [0.0, 2.0]], dtype=torch.float64)
     w3 = torch.tensor([[0.5, 0.0], [0.0, 1.5]], dtype=torch.float64)
-    source = torch.tensor(
-        [[0.5, 1.0], [1.0, 0.25], [0.25, 0.5]], dtype=torch.float64
-    )
+    source = torch.tensor([[0.5, 1.0], [1.0, 0.25], [0.25, 0.5]], dtype=torch.float64)
     decoder = torch.eye(2, dtype=torch.float64)
     weights = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
     coordinate_rms = torch.tensor([0.25, 2.0], dtype=torch.float64)
@@ -304,19 +379,15 @@ def test_recommended_scales_equalize_blocks_without_changing_raw_bank() -> None:
     block = Lfm2MlpQdeimFunctionalSnapshotBlock(**kwargs)
     assert torch.equal(
         block.functional_rows,
-        bank.tangent_rows
-        * bank.coordinate_rms_tangent_row_scales.unsqueeze(1),
+        bank.tangent_rows * bank.coordinate_rms_tangent_row_scales.unsqueeze(1),
     )
     assert (
         fingerprint_lfm2_swiglu_tangent_tensor(block.functional_rows)
         == bank.coordinate_scaled_tangent_rows_sha256
     )
-    assert tuple(block.row_sample_weights) == tuple(
-        bank.tangent_row_weights.tolist()
-    )
+    assert tuple(block.row_sample_weights) == tuple(bank.tangent_row_weights.tolist())
     qdeim_weighted = block.functional_rows * torch.sqrt(
-        torch.tensor(block.row_sample_weights, dtype=torch.float64)
-        * block.block_weight
+        torch.tensor(block.row_sample_weights, dtype=torch.float64) * block.block_weight
     ).unsqueeze(1)
     assert torch.allclose(
         torch.linalg.vector_norm(qdeim_weighted),
@@ -324,10 +395,9 @@ def test_recommended_scales_equalize_blocks_without_changing_raw_bank() -> None:
         atol=1.0e-12,
         rtol=1.0e-12,
     )
-    assert (
-        lfm2_mlp_qdeim_functional_snapshot_evidence_sha256([block])
-        == lfm2_mlp_qdeim_functional_snapshot_evidence_sha256([block])
-    )
+    assert lfm2_mlp_qdeim_functional_snapshot_evidence_sha256(
+        [block]
+    ) == lfm2_mlp_qdeim_functional_snapshot_evidence_sha256([block])
 
 
 def test_tangents_lift_snapshot_rank_as_an_advisory_observation() -> None:

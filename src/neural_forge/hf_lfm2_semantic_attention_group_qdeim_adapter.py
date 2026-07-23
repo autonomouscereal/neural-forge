@@ -619,24 +619,16 @@ def _verified_chart_and_decoder(
         or decoder_receipt.get("published_decoder_sha256") != decoder_sha
         or decoder_receipt.get("fit_rows_only_used_for_residual") is not True
         or decoder_receipt.get("heldout_rows_used_for_fit") != 0
-        or decoder_receipt.get("trajectory_batch_indices")
-        != ordered_partition_batches
+        or decoder_receipt.get("trajectory_batch_indices") != ordered_partition_batches
         or decoder_receipt.get("fit_batch_indices") != fit_batch_indices
         or decoder_receipt.get("heldout_batch_indices")
         != ordered_partition_batches[len(fit_batch_indices) :]
         or decoder_receipt.get("fit_trajectory_count") != len(fit_batch_indices)
-        or decoder_receipt.get(
-            "residual_chart_partition_batch_indices_sha256"
-        )
+        or decoder_receipt.get("residual_chart_partition_batch_indices_sha256")
         != canonical_sha256(
-            {
-                name: list(partition_batch_indices[name])
-                for name in partition_names
-            }
+            {name: list(partition_batch_indices[name]) for name in partition_names}
         )
-        or decoder_receipt.get(
-            "fit_batch_indices_authenticated_from_residual_chart"
-        )
+        or decoder_receipt.get("fit_batch_indices_authenticated_from_residual_chart")
         is not True
         or decoder_receipt.get("gradients_used") is not False
         or decoder_receipt.get("training_steps") != 0
@@ -1036,6 +1028,7 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
     residual_output_chart: Any,
     residual_chart_receipt: Mapping[str, Any],
     pod_rank_relative_tolerance: float | None = None,
+    fold_compute_device: str = "cpu",
 ) -> (
     Lfm2SemanticAttentionGroupQdeimCandidate
     | Lfm2SemanticAttentionGroupQdeimEvidenceDeficit
@@ -1059,10 +1052,9 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
         normalized_input_decoder=normalized_input_decoder,
         normalized_input_decoder_receipt=normalized_input_decoder_receipt,
     )
-    if (
-        chart_receipt["partition_batch_indices"]["fit"] != list(fit_indices)
-        or decoder_receipt["fit_batch_indices"] != list(fit_indices)
-    ):
+    if chart_receipt["partition_batch_indices"]["fit"] != list(
+        fit_indices
+    ) or decoder_receipt["fit_batch_indices"] != list(fit_indices):
         raise Lfm2SemanticAttentionGroupQdeimAdapterError(
             "Normalized decoder FIT batches differ from the selected cache rows."
         )
@@ -1186,6 +1178,7 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
             row_sample_weights=row_weights,
             expected_context_evidence_sha256=context_evidence_sha,
             pod_rank_relative_tolerance=pod_rank_relative_tolerance,
+            compute_device=fold_compute_device,
         )
     except Lfm2AttentionGroupQdeimInsufficientRankError as exc:
         return _deficit(
@@ -1204,6 +1197,28 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
     if not isinstance(compiled, Lfm2CompiledAttentionGroupQdeim):
         raise Lfm2SemanticAttentionGroupQdeimAdapterError(
             "Standalone intact-group compiler returned no dense candidate."
+        )
+    compute_execution = compiled.report.get("compute_execution")
+    compute_body = (
+        dict(compute_execution) if isinstance(compute_execution, Mapping) else {}
+    )
+    compute_sha256 = compute_body.pop("receipt_sha256", None)
+    if (
+        not isinstance(compute_execution, Mapping)
+        or compute_execution.get("schema")
+        != "neural-forge-lfm2-attention-qdeim-compute-v1"
+        or compute_sha256 != canonical_sha256(compute_body)
+        or compute_execution.get("requested_device") != fold_compute_device
+        or compute_execution.get("resolved_device") != fold_compute_device
+        or compute_execution.get("backend")
+        != ("cpu" if fold_compute_device == "cpu" else "cuda")
+        or compute_execution.get("compute_dtype") != "float64"
+        or compute_execution.get("authenticated_source_archive_device") != "cpu"
+        or compute_execution.get("materialized_candidate_device") != "cpu"
+        or compute_execution.get("silent_device_fallback_performed") is not False
+    ):
+        raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+            "Attention Q-DEIM did not authenticate the requested fold algebra device."
         )
     state = compiled.state_dict()
     body = {
@@ -1238,6 +1253,8 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
         "context_bank_receipt_sha256": context_receipt["result_sha256"],
         "standalone_context_evidence_sha256": context_evidence_sha,
         "standalone_compiler_result_sha256": compiled.report["result_sha256"],
+        "qdeim_compute_execution": _deep_thaw(compute_execution),
+        "fold_compute_device": fold_compute_device,
         "selected_source_key_value_groups": list(
             compiled.selected_source_key_value_groups
         ),

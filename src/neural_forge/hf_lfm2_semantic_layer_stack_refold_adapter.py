@@ -42,6 +42,18 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
     Lfm2CpcfTerminalActionDownWeightPrior,
     lfm2_cpcf_terminal_action_tensor_sha256,
 )
+from neural_forge.hf_lfm2_global_linearization import (
+    Lfm2AttentionParameters,
+    Lfm2MlpParameters,
+    Lfm2ShortConvParameters,
+    Lfm2StackPrimalBatch,
+    Lfm2TerminalNormParameters,
+    capture_lfm2_macrocell_linearization,
+    capture_lfm2_terminal_norm_primal,
+)
+from neural_forge.hf_lfm2_global_residual_closure import (
+    Lfm2GlobalResidualClosurePolicy,
+)
 from neural_forge.hf_lfm2_cpcf_model_compiler import _rope_from_target
 from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
     seal_lfm2_dense_qkvo_source_inventory,
@@ -62,6 +74,15 @@ from neural_forge.hf_lfm2_semantic_body_recipe import (
     Lfm2SemanticBodyRecipe,
     is_supported_lfm2_semantic_component_equivalence_inventory,
     resolve_lfm2_semantic_body_recipe,
+)
+from neural_forge.hf_lfm2_semantic_global_residual_integration import (
+    Lfm2SemanticGlobalResidualEvidencePackage,
+    Lfm2SemanticGlobalResidualTrajectoryEvidence,
+    compile_install_lfm2_semantic_global_residual_closure,
+)
+from neural_forge.hf_lfm2_producer_aware_semantic_integration import (
+    Lfm2ProducerAwareCorrectionScalePolicy,
+    integrate_lfm2_producer_aware_global_closure,
 )
 from neural_forge.hf_lfm2_semantic_postfold import (
     LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA,
@@ -133,6 +154,20 @@ _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS = (
     "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
 )
 _COUPLED_ATTENTION_QDEIM_LANE = "intact_gqa_group_qdeim_coupled_qkvo"
+_GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A = "producer_aware_v2a"
+_GLOBAL_RESIDUAL_OUTPUT_WRITER_V1_DIAGNOSTIC = "output_writer_v1_diagnostic"
+_GLOBAL_RESIDUAL_CLOSURE_VERSIONS = frozenset(
+    {
+        _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A,
+        _GLOBAL_RESIDUAL_OUTPUT_WRITER_V1_DIAGNOSTIC,
+    }
+)
+_GLOBAL_RESIDUAL_MLP_LANES = frozenset(
+    {
+        "nonlinear_qdeim_structural_priority",
+        "nonlinear_qdeim_fit_corrected_priority",
+    }
+)
 _MLP_FUNCTIONAL_PROVENANCE_SCHEMA = (
     "neural-forge-lfm2-direct-parent-mlp-functional-provenance-v3"
 )
@@ -177,6 +212,75 @@ def _verify_sealed(value: Mapping[str, Any], label: str) -> dict[str, Any]:
     return {**result, "result_sha256": supplied}
 
 
+def _validated_qdeim_compute_execution(
+    value: Any,
+    *,
+    requested_device: str,
+    schema: str,
+    label: str,
+) -> Mapping[str, Any]:
+    """Authenticate one CPU/CUDA FP64 Q-DEIM execution without accepting fallback."""
+
+    if not isinstance(value, Mapping):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label} omitted its Q-DEIM compute execution receipt."
+        )
+    if requested_device == "cpu":
+        backend = "cpu"
+        device_index = None
+    else:
+        prefix, separator, index_text = requested_device.partition(":")
+        if prefix != "cuda" or separator != ":" or not index_text.isdecimal():
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Fold compute device must be 'cpu' or an explicitly indexed "
+                "CUDA device."
+            )
+        backend = "cuda"
+        device_index = int(index_text)
+    receipt = dict(value)
+    supplied = receipt.pop("receipt_sha256", None)
+    _digest(supplied, f"{label} receipt SHA-256")
+    if supplied != canonical_sha256(receipt):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label} Q-DEIM compute execution seal is invalid."
+        )
+    expected_cuda = backend == "cuda"
+    if (
+        receipt.get("schema") != schema
+        or receipt.get("requested_device") != requested_device
+        or receipt.get("resolved_device") != requested_device
+        or receipt.get("backend") != backend
+        or receipt.get("compute_dtype") != "float64"
+        or receipt.get("authenticated_source_archive_device") != "cpu"
+        or receipt.get("active_layer_staged_to_compute_device") is not expected_cuda
+        or receipt.get("materialized_candidate_device") != "cpu"
+        or receipt.get("system_memory_is_immutable_archive") is not True
+        or receipt.get("gpu_is_ephemeral_dense_algebra_workspace") is not expected_cuda
+        or receipt.get("silent_device_fallback_performed") is not False
+        or receipt.get("training_steps") != 0
+        or receipt.get("backward_calls") != 0
+        or receipt.get("optimizer_steps") != 0
+        or (
+            expected_cuda
+            and (
+                receipt.get("device_index") != device_index
+                or not isinstance(receipt.get("device_name"), str)
+                or not receipt.get("device_name")
+                or not isinstance(receipt.get("compute_capability"), list)
+                or len(receipt["compute_capability"]) != 2
+                or any(
+                    isinstance(part, bool) or not isinstance(part, int) or part < 0
+                    for part in receipt["compute_capability"]
+                )
+            )
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label} did not prove requested-device FP64 Q-DEIM execution."
+        )
+    return MappingProxyType({**receipt, "receipt_sha256": supplied})
+
+
 def _require_body_recipe_binding(
     receipt: Mapping[str, Any],
     recipe: Lfm2SemanticBodyRecipe,
@@ -213,12 +317,10 @@ def _require_attention_body_recipe_binding(
     )
     if (
         recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
-        and recipe.component_lanes["value_output"]
-        == _COUPLED_ATTENTION_QDEIM_LANE
+        and recipe.component_lanes["value_output"] == _COUPLED_ATTENTION_QDEIM_LANE
     ):
         if (
-            receipt.get("recipe_value_output_lane")
-            != _COUPLED_ATTENTION_QDEIM_LANE
+            receipt.get("recipe_value_output_lane") != _COUPLED_ATTENTION_QDEIM_LANE
             or receipt.get("coupled_qkvo_single_candidate") is not True
             or receipt.get("split_qk_or_vo_fallback_used") is not False
         ):
@@ -449,8 +551,7 @@ def _direct_parent_runtime_dtype(
         for value in checkpoint_floating_dtypes
     ):
         raise Lfm2SemanticLayerStackRefoldError(
-            "Direct parent checkpoint has no single valid real floating runtime "
-            "dtype."
+            "Direct parent checkpoint has no single valid real floating runtime dtype."
         )
     checkpoint_names = {
         str(value).removeprefix("torch.") for value in checkpoint_floating_dtypes
@@ -530,8 +631,7 @@ def _direct_parent_runtime_buffers(
     inv_freq = 1.0 / (
         float(base)
         ** (
-            torch.arange(0, head_dim, 2, dtype=torch.int64).to(torch.float32)
-            / head_dim
+            torch.arange(0, head_dim, 2, dtype=torch.int64).to(torch.float32) / head_dim
         )
     )
     inv_freq = inv_freq.to(dtype=dtype)
@@ -586,8 +686,7 @@ def _validated_cache_parent_record(
         or canonical_sha256(body) != expected_identity_sha256
     ):
         raise Lfm2SemanticLayerStackRefoldError(
-            "The sealed cache parent record does not reproduce its declared "
-            "identity."
+            "The sealed cache parent record does not reproduce its declared identity."
         )
     return MappingProxyType(record)
 
@@ -863,6 +962,609 @@ def _next_residual_bank(bank: _LayerReplayBank) -> Mapping[int, Any]:
     )
 
 
+@dataclass(slots=True)
+class _GlobalResidualTrajectoryAccumulator:
+    """Only the frozen rows/primals consumed by the post-stack closure."""
+
+    batch_index: int
+    alignment_sha256: str
+    selected_target_positions: Any
+    source_donor_positions: Any
+    compact_donor_positions: Any
+    canonical_boundary_row_indices: Any
+    macrocells: list[Any] = field(default_factory=list)
+    mapped_parent_post_operator_residuals: list[Any] = field(default_factory=list)
+    mapped_parent_post_layer_residuals: list[Any] = field(default_factory=list)
+    mapped_parent_terminal_final_norm: Any | None = None
+
+
+def _global_residual_closure_required(
+    recipe: Lfm2SemanticBodyRecipe,
+) -> bool:
+    """Select the automatic closure lane without consulting quality metrics."""
+
+    return bool(
+        recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
+        and recipe.component_lanes["value_output"] == _COUPLED_ATTENTION_QDEIM_LANE
+        and recipe.component_lanes["mlp"] in _GLOBAL_RESIDUAL_MLP_LANES
+    )
+
+
+def _prepare_global_residual_accumulators(
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+) -> tuple[
+    Mapping[int, _GlobalResidualTrajectoryAccumulator],
+    Mapping[str, Any],
+]:
+    """Freeze exact semantic gather/scatter maps for every cache trajectory."""
+
+    torch = _torch()
+    ordered = tuple(sorted(alignments, key=lambda value: value.source_batch_index))
+    if tuple(value.source_batch_index for value in ordered) != tuple(
+        range(len(ordered))
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Global residual evidence requires contiguous canonical batch indices."
+        )
+    accumulators: dict[int, _GlobalResidualTrajectoryAccumulator] = {}
+    receipt_rows = []
+    canonical_offset = 0
+    for alignment in ordered:
+        final = alignment.phases[-1]
+        boundary = tuple(final.target_to_donor_boundary_positions)
+        target_positions = tuple(
+            index
+            for index, donor_position in enumerate(boundary)
+            if donor_position is not None
+        )
+        donor_positions = tuple(
+            int(donor_position)
+            for donor_position in boundary
+            if donor_position is not None
+        )
+        if not target_positions or donor_positions != tuple(
+            range(final.donor_full_prefix_tokens)
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Global residual evidence requires every exact donor boundary once."
+            )
+        row_count = len(target_positions)
+        target_index = torch.tensor(target_positions, dtype=torch.int64)
+        source_donor_index = torch.tensor(donor_positions, dtype=torch.int64)
+        compact_donor_index = torch.arange(row_count, dtype=torch.int64)
+        canonical_index = torch.arange(
+            canonical_offset,
+            canonical_offset + row_count,
+            dtype=torch.int64,
+        )
+        canonical_offset += row_count
+        accumulator = _GlobalResidualTrajectoryAccumulator(
+            batch_index=alignment.source_batch_index,
+            alignment_sha256=alignment.alignment_sha256,
+            selected_target_positions=target_index,
+            source_donor_positions=source_donor_index,
+            compact_donor_positions=compact_donor_index,
+            canonical_boundary_row_indices=canonical_index,
+        )
+        accumulators[alignment.source_batch_index] = accumulator
+        receipt_rows.append(
+            {
+                "batch_index": alignment.source_batch_index,
+                "alignment_sha256": alignment.alignment_sha256,
+                "selected_target_positions": list(target_positions),
+                "source_donor_positions": list(donor_positions),
+                "compact_donor_positions": list(range(row_count)),
+                "canonical_boundary_row_indices": list(
+                    range(canonical_offset - row_count, canonical_offset)
+                ),
+            }
+        )
+    receipt = _sealed(
+        {
+            "schema": LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA,
+            "kind": "global_residual_semantic_row_maps",
+            "trajectory_count": len(ordered),
+            "canonical_boundary_row_count": canonical_offset,
+            "trajectories": receipt_rows,
+            "exact_target_donor_canonical_maps": True,
+            "parent_histories_compacted_to_selected_donor_rows": True,
+            "numeric_or_manual_gate_used": False,
+        }
+    )
+    return MappingProxyType(accumulators), receipt
+
+
+def _capture_global_parent_layer_boundaries(
+    accumulators: Mapping[int, _GlobalResidualTrajectoryAccumulator],
+    *,
+    parent: Mapping[int, _ParentLayerTrajectory],
+    residual_chart: Any,
+    producer_encoder: Any,
+    layer_index: int,
+    terminal_layer_index: int,
+) -> None:
+    """Retain two selected mapped boundaries, then let raw histories die."""
+
+    torch = _torch()
+    chart = residual_chart.detach().to(device="cpu", dtype=torch.float64)
+    encoder = producer_encoder.detach().to(device="cpu", dtype=torch.float64)
+    if (
+        chart.ndim != 2
+        or encoder.ndim != 2
+        or not bool(torch.isfinite(chart).all().item())
+        or not bool(torch.isfinite(encoder).all().item())
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Global residual parent mappings must be finite matrices."
+        )
+    for batch_index, accumulator in accumulators.items():
+        trajectory = parent.get(batch_index)
+        if trajectory is None:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Global residual evidence lacks parent batch {batch_index}."
+            )
+        donor_index = accumulator.source_donor_positions
+
+        def mapped_boundary(name: str, mapping: Any) -> Any:
+            history = trajectory.final_histories.get(name)
+            if (
+                not isinstance(history, torch.Tensor)
+                or history.ndim != 3
+                or int(history.shape[0]) != 1
+                or int(history.shape[1]) <= int(donor_index.max().item())
+            ):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Global residual evidence lacks {name!r} at layer "
+                    f"{layer_index}, batch {batch_index}."
+                )
+            selected = history.detach().to(device="cpu", dtype=torch.float64)
+            selected = selected.index_select(1, donor_index)
+            result = (selected @ mapping).contiguous()
+            if not bool(torch.isfinite(result).all().item()):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Mapped parent boundary {name!r} is nonfinite."
+                )
+            return result
+
+        accumulator.mapped_parent_post_operator_residuals.append(
+            mapped_boundary("residual.post_operator", chart)
+        )
+        accumulator.mapped_parent_post_layer_residuals.append(
+            mapped_boundary("residual.post_layer", chart)
+        )
+        if layer_index == terminal_layer_index:
+            accumulator.mapped_parent_terminal_final_norm = mapped_boundary(
+                "output.final_norm_output",
+                encoder,
+            )
+
+
+def _positive_norm_epsilon(module: Any, label: str) -> float:
+    value = getattr(module, "variance_epsilon", None)
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) <= 0.0
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"{label}.variance_epsilon must be finite and positive."
+        )
+    return float(value)
+
+
+def _global_macrocell_parameters(
+    target_model: Any,
+    *,
+    layer_index: int,
+    residual: Any,
+    alignment: Lfm2SemanticSpanCpcfAlignment,
+    deferred_final_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior | None,
+) -> tuple[Lfm2AttentionParameters | Lfm2ShortConvParameters, Lfm2MlpParameters]:
+    """Translate one installed LFM2 layer into the public analytic FP64 API."""
+
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    if layer_index < 0 or layer_index >= len(layers):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"Global residual capture cannot resolve layer {layer_index}."
+        )
+    layer = layers[layer_index]
+    device, dtype = _layer_runtime(layer)
+    source = residual.detach().to(device=device, dtype=dtype)
+    final = alignment.phases[-1]
+    operator_epsilon = _positive_norm_epsilon(
+        layer.operator_norm,
+        f"model.layers.{layer_index}.operator_norm",
+    )
+    if bool(getattr(layer, "is_attention_layer", False)):
+        attention = layer.self_attn
+        head_dim = getattr(attention, "head_dim", None)
+        if isinstance(head_dim, bool) or not isinstance(head_dim, int) or head_dim <= 0:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Layer {layer_index} has no valid attention head dimension."
+            )
+        query_heads = int(attention.q_proj.weight.shape[0]) // head_dim
+        key_value_heads = int(attention.k_proj.weight.shape[0]) // head_dim
+        query_epsilon = _positive_norm_epsilon(
+            attention.q_layernorm,
+            f"model.layers.{layer_index}.self_attn.q_layernorm",
+        )
+        key_epsilon = _positive_norm_epsilon(
+            attention.k_layernorm,
+            f"model.layers.{layer_index}.self_attn.k_layernorm",
+        )
+        if query_epsilon != key_epsilon:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Layer {layer_index} Q/K RMSNorm epsilons differ."
+            )
+        cosine, sine = _rope_from_target(
+            target_model,
+            source,
+            final.canonical_target_position_ids,
+        )
+        additive_mask = _additive_causal_mask(
+            final.canonical_target_attention_mask,
+            source,
+        )
+        operator_parameters: Lfm2AttentionParameters | Lfm2ShortConvParameters = (
+            Lfm2AttentionParameters(
+                operator_norm_gain=layer.operator_norm.weight,
+                operator_norm_epsilon=operator_epsilon,
+                query_weight=attention.q_proj.weight,
+                key_weight=attention.k_proj.weight,
+                value_weight=attention.v_proj.weight,
+                output_weight=attention.out_proj.weight,
+                query_norm_gain=attention.q_layernorm.weight,
+                key_norm_gain=attention.k_layernorm.weight,
+                query_key_norm_epsilon=query_epsilon,
+                rope_cosine=cosine,
+                rope_sine=sine,
+                causal_mask=(additive_mask == 0),
+                query_heads=query_heads,
+                key_value_heads=key_value_heads,
+                head_dim=head_dim,
+                scaling=float(attention.scaling),
+            )
+        )
+    else:
+        short_conv = layer.conv
+        operator_parameters = Lfm2ShortConvParameters(
+            operator_norm_gain=layer.operator_norm.weight,
+            operator_norm_epsilon=operator_epsilon,
+            input_weight=short_conv.in_proj.weight,
+            input_bias=short_conv.in_proj.bias,
+            stored_fir_kernel=short_conv.conv.weight,
+            fir_bias=short_conv.conv.bias,
+            output_weight=short_conv.out_proj.weight,
+            output_bias=short_conv.out_proj.bias,
+            padding_mask=final.canonical_target_attention_mask,
+        )
+    down_weight = layer.feed_forward.w2.weight
+    terminal_layer_index = len(layers) - 1
+    if layer_index == terminal_layer_index:
+        if deferred_final_w2_prior is None:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Final global primal requires a real deferred W2 prior."
+            )
+        down_weight = deferred_final_w2_prior.down_weight
+    mlp_parameters = Lfm2MlpParameters(
+        norm_gain=layer.ffn_norm.weight,
+        norm_epsilon=_positive_norm_epsilon(
+            layer.ffn_norm,
+            f"model.layers.{layer_index}.ffn_norm",
+        ),
+        gate_weight=layer.feed_forward.w1.weight,
+        up_weight=layer.feed_forward.w3.weight,
+        down_weight=down_weight,
+    )
+    return operator_parameters, mlp_parameters
+
+
+def _capture_global_child_layer_primals(
+    accumulators: Mapping[int, _GlobalResidualTrajectoryAccumulator],
+    *,
+    target_model: Any,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    replay_bank: _LayerReplayBank,
+    layer_index: int,
+    deferred_final_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior | None,
+) -> None:
+    """Capture final installed child primals without a model/layer forward."""
+
+    by_batch = {value.source_batch_index: value for value in alignments}
+    for batch_index, accumulator in accumulators.items():
+        alignment = by_batch.get(batch_index)
+        residual = replay_bank.pre_residual_by_batch.get(batch_index)
+        if alignment is None or residual is None:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Global child primal lacks batch {batch_index}."
+            )
+        operator_parameters, mlp_parameters = _global_macrocell_parameters(
+            target_model,
+            layer_index=layer_index,
+            residual=residual,
+            alignment=alignment,
+            deferred_final_w2_prior=deferred_final_w2_prior,
+        )
+        accumulator.macrocells.append(
+            capture_lfm2_macrocell_linearization(
+                residual,
+                operator_parameters,
+                mlp_parameters,
+            )
+        )
+
+
+def _global_live_writer_state(
+    target_model: Any,
+) -> tuple[Mapping[str, Any], Mapping[str, Any], int]:
+    """Return every live output writer except the deferred terminal W2."""
+
+    torch = _torch()
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    layer_count = len(layers)
+    if layer_count <= 0:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Global residual closure requires a nonempty complete child stack."
+        )
+    terminal_layer_index = layer_count - 1
+    parameters = {}
+    head_dimensions = set()
+    for layer_index, layer in enumerate(layers):
+        if bool(getattr(layer, "is_attention_layer", False)):
+            site_id = f"model.layers.{layer_index}.self_attn.out_proj.weight"
+            parameter = layer.self_attn.out_proj.weight
+            head_dimensions.add(int(layer.self_attn.head_dim))
+        else:
+            site_id = f"model.layers.{layer_index}.conv.out_proj.weight"
+            parameter = layer.conv.out_proj.weight
+        parameters[site_id] = parameter
+        if layer_index < terminal_layer_index:
+            parameters[f"model.layers.{layer_index}.feed_forward.w2.weight"] = (
+                layer.feed_forward.w2.weight
+            )
+    if (
+        len(parameters) != (2 * layer_count) - 1
+        or len({id(value) for value in parameters.values()}) != len(parameters)
+        or any(
+            not isinstance(value, torch.nn.Parameter) for value in parameters.values()
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Global residual writer topology is not the exact dynamic "
+            "live-output/one-deferred contract."
+        )
+    if not head_dimensions:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "The v1 global residual kernel requires at least one attention site "
+            "to define its shared head dimension; conv-only topology support is "
+            "deferred to the per-site-dimension kernel."
+        )
+    if len(head_dimensions) != 1:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "The v1 global residual kernel supports one authenticated shared "
+            "attention head dimension; heterogeneous per-site head dimensions "
+            "require the general topology kernel."
+        )
+    seeds = {
+        name: value.detach().to(device="cpu").contiguous().clone()
+        for name, value in parameters.items()
+    }
+    return MappingProxyType(parameters), MappingProxyType(seeds), head_dimensions.pop()
+
+
+def _build_global_residual_evidence_from_accumulators(
+    accumulators: Mapping[int, _GlobalResidualTrajectoryAccumulator],
+    *,
+    target_model: Any,
+    mapped_parent_tied_table: Any,
+    deferred_final_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior,
+) -> tuple[
+    Lfm2SemanticGlobalResidualEvidencePackage,
+    Mapping[str, Any],
+]:
+    """Finalize typed evidence plus its authenticated v1 output-writer seeds."""
+
+    torch = _torch()
+    final_norm = getattr(
+        getattr(target_model, "model", None),
+        "embedding_norm",
+        None,
+    )
+    if final_norm is None:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Global residual closure requires the child's final RMSNorm."
+        )
+    terminal_parameters = Lfm2TerminalNormParameters(
+        gain=final_norm.weight,
+        epsilon=_positive_norm_epsilon(final_norm, "model.embedding_norm"),
+    )
+    layer_count = len(
+        tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    )
+    if layer_count <= 0:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Global residual evidence requires a nonempty child stack."
+        )
+    trajectories = []
+    for batch_index in range(len(accumulators)):
+        accumulator = accumulators[batch_index]
+        if (
+            len(accumulator.macrocells) != layer_count
+            or len(accumulator.mapped_parent_post_operator_residuals) != layer_count
+            or len(accumulator.mapped_parent_post_layer_residuals) != layer_count
+            or accumulator.mapped_parent_terminal_final_norm is None
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Global residual trajectory {batch_index} is incomplete."
+            )
+        terminal = capture_lfm2_terminal_norm_primal(
+            accumulator.macrocells[-1].mlp.output,
+            terminal_parameters,
+        )
+        primal = Lfm2StackPrimalBatch(
+            macrocells=tuple(accumulator.macrocells),
+            selected_target_positions=accumulator.selected_target_positions,
+            canonical_boundary_row_indices=(accumulator.canonical_boundary_row_indices),
+            terminal=terminal,
+        )
+        trajectories.append(
+            Lfm2SemanticGlobalResidualTrajectoryEvidence(
+                batch_index=batch_index,
+                primal_batch=primal,
+                selected_donor_positions=accumulator.compact_donor_positions,
+                mapped_parent_post_operator_residuals=tuple(
+                    accumulator.mapped_parent_post_operator_residuals
+                ),
+                mapped_parent_post_layer_residuals=tuple(
+                    accumulator.mapped_parent_post_layer_residuals
+                ),
+                mapped_parent_terminal_final_norm=(
+                    accumulator.mapped_parent_terminal_final_norm
+                ),
+            )
+        )
+    parameters, seeds, head_dimension = _global_live_writer_state(target_model)
+    if not isinstance(mapped_parent_tied_table, torch.Tensor):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Global residual closure requires the mapped parent tied table."
+        )
+    evidence = Lfm2SemanticGlobalResidualEvidencePackage(
+        trajectories=tuple(trajectories),
+        live_writer_seeds=seeds,
+        deferred_final_w2_prior=deferred_final_w2_prior,
+        mapped_parent_tied_table=(
+            mapped_parent_tied_table.detach().to(device="cpu").contiguous()
+        ),
+        head_dimension=head_dimension,
+    )
+    return evidence, parameters
+
+
+def _global_live_physical_state(target_model: Any) -> Mapping[str, Any]:
+    """Return every producer-aware physical matrix except deferred final W2."""
+
+    torch = _torch()
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    if not layers:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Producer-aware closure requires a nonempty complete child stack."
+        )
+    terminal_layer_index = len(layers) - 1
+    parameters: dict[str, Any] = {}
+    expected_count = 0
+    for layer_index, layer in enumerate(layers):
+        if bool(getattr(layer, "is_attention_layer", False)):
+            prefix = f"model.layers.{layer_index}.self_attn"
+            parameters.update(
+                {
+                    f"{prefix}.q_proj.weight": layer.self_attn.q_proj.weight,
+                    f"{prefix}.k_proj.weight": layer.self_attn.k_proj.weight,
+                    f"{prefix}.v_proj.weight": layer.self_attn.v_proj.weight,
+                    f"{prefix}.out_proj.weight": layer.self_attn.out_proj.weight,
+                }
+            )
+            expected_count += 4
+        else:
+            prefix = f"model.layers.{layer_index}.conv"
+            parameters.update(
+                {
+                    f"{prefix}.in_proj.weight": layer.conv.in_proj.weight,
+                    f"{prefix}.out_proj.weight": layer.conv.out_proj.weight,
+                }
+            )
+            expected_count += 2
+        mlp_prefix = f"model.layers.{layer_index}.feed_forward"
+        parameters[f"{mlp_prefix}.w1.weight"] = layer.feed_forward.w1.weight
+        parameters[f"{mlp_prefix}.w3.weight"] = layer.feed_forward.w3.weight
+        expected_count += 2
+        if layer_index < terminal_layer_index:
+            parameters[f"{mlp_prefix}.w2.weight"] = layer.feed_forward.w2.weight
+            expected_count += 1
+    if (
+        len(parameters) != expected_count
+        or len({id(value) for value in parameters.values()}) != len(parameters)
+        or any(
+            not isinstance(value, torch.nn.Parameter)
+            or value.layout != torch.strided
+            or value.device.type == "meta"
+            or value.ndim != 2
+            for value in parameters.values()
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Producer-aware physical topology is not the exact dynamic Q/K/V or "
+            "conv-input, output, gate/up, nonfinal-down contract."
+        )
+    return MappingProxyType(parameters)
+
+
+def _compile_install_global_residual_v1_diagnostic_from_accumulators(
+    accumulators: Mapping[int, _GlobalResidualTrajectoryAccumulator],
+    *,
+    target_model: Any,
+    mapped_parent_tied_table: Any,
+    deferred_final_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior,
+    deferred_final_writer_parameter: Any,
+    closure_policy: Lfm2GlobalResidualClosurePolicy | None = None,
+) -> tuple[Any, Lfm2SemanticGlobalResidualEvidencePackage]:
+    """Run the retained output-writer-only v1 diagnostic baseline explicitly."""
+
+    evidence, parameters = _build_global_residual_evidence_from_accumulators(
+        accumulators,
+        target_model=target_model,
+        mapped_parent_tied_table=mapped_parent_tied_table,
+        deferred_final_w2_prior=deferred_final_w2_prior,
+    )
+    installation = compile_install_lfm2_semantic_global_residual_closure(
+        evidence,
+        live_writer_parameters=parameters,
+        deferred_final_writer_parameter=deferred_final_writer_parameter,
+        policy=closure_policy,
+    )
+    return installation, evidence
+
+
+def _compile_install_global_residual_from_accumulators(
+    accumulators: Mapping[int, _GlobalResidualTrajectoryAccumulator],
+    *,
+    target_model: Any,
+    mapped_parent_tied_table: Any,
+    deferred_final_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior,
+    deferred_final_writer_parameter: Any,
+    closure_policy: Lfm2GlobalResidualClosurePolicy | None = None,
+    correction_scale_frontier: Sequence[float] = (1.0,),
+    correction_scale: float = 1.0,
+    materialization_compute_device: str = "cpu",
+) -> tuple[Any, Lfm2SemanticGlobalResidualEvidencePackage]:
+    """Execute the canonical producer-aware v2 physical residual closure."""
+
+    evidence, _output_writer_parameters = (
+        _build_global_residual_evidence_from_accumulators(
+            accumulators,
+            target_model=target_model,
+            mapped_parent_tied_table=mapped_parent_tied_table,
+            deferred_final_w2_prior=deferred_final_w2_prior,
+        )
+    )
+    physical_parameters = _global_live_physical_state(target_model)
+    scale_policy = Lfm2ProducerAwareCorrectionScalePolicy(
+        materialization_frontier=tuple(
+            float(value) for value in correction_scale_frontier
+        ),
+        materialization_scale=float(correction_scale),
+    )
+    installation = integrate_lfm2_producer_aware_global_closure(
+        evidence,
+        live_physical_parameters=physical_parameters,
+        deferred_final_writer_parameter=deferred_final_writer_parameter,
+        closure_policy=closure_policy,
+        correction_scale_policy=scale_policy,
+        materialization_compute_device=materialization_compute_device,
+    )
+    return installation, evidence
+
+
 class _DirectParentSafetensorsSession:
     """One exact local-parent identity reconstruction and open tensor session."""
 
@@ -1091,9 +1793,15 @@ class _DirectParentSafetensorsSession:
             ):
                 embedding_key = "model.embed_tokens.weight"
                 output_key = "lm_head.weight"
-                if embedding_key in state_tensor_hashes and output_key not in state_tensor_hashes:
+                if (
+                    embedding_key in state_tensor_hashes
+                    and output_key not in state_tensor_hashes
+                ):
                     state_tensor_hashes[output_key] = state_tensor_hashes[embedding_key]
-                elif output_key in state_tensor_hashes and embedding_key not in state_tensor_hashes:
+                elif (
+                    output_key in state_tensor_hashes
+                    and embedding_key not in state_tensor_hashes
+                ):
                     state_tensor_hashes[embedding_key] = state_tensor_hashes[output_key]
             if len(state_tensor_hashes) != expected_state_count:
                 raise Lfm2SemanticLayerStackRefoldError(
@@ -1166,8 +1874,7 @@ class _DirectParentSafetensorsSession:
                         "runtime_buffer_count",
                     )
                 )
-                or canonical_sha256(reconstructed_parent)
-                != self.parent_identity_sha256
+                or canonical_sha256(reconstructed_parent) != self.parent_identity_sha256
             ):
                 raise Lfm2SemanticLayerStackRefoldError(
                     "Direct parent checkpoint does not reproduce the sealed "
@@ -1891,8 +2598,7 @@ def _fit_layer_normalized_operator_input_decoder(
     trajectory_batch_indices = tuple(observed_batches)
     fit_batch_indices = partition_batches["fit"]
     ordered_alignments = tuple(
-        alignment_by_batch[batch_index]
-        for batch_index in trajectory_batch_indices
+        alignment_by_batch[batch_index] for batch_index in trajectory_batch_indices
     )
     parent_operator_rows = []
     child_operator_rows = []
@@ -2449,9 +3155,7 @@ def _authenticated_mlp_unchanged_state(
         and receipt.get("exact_noop_state_proven") is True
         and (
             receipt.get("analytic_linear_and_cluster_solves_only") is True
-            or receipt.get(
-                "analytic_linear_cluster_tangent_and_qdeim_solves_only"
-            )
+            or receipt.get("analytic_linear_cluster_tangent_and_qdeim_solves_only")
             is True
         )
         and _is_zero_operation_audit(receipt.get("operation_audit"))
@@ -2657,6 +3361,7 @@ def _install_coupled_attention_group_qdeim_operator(
     cache_key: str,
     bridge_artifact_sha256: str,
     parameter_count: int,
+    fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe,
     installer: Callable[..., Any] = (
         compile_install_lfm2_semantic_attention_group_qdeim
@@ -2667,8 +3372,7 @@ def _install_coupled_attention_group_qdeim_operator(
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     if (
         recipe.component_lanes["qk"] != _COUPLED_ATTENTION_QDEIM_LANE
-        or recipe.component_lanes["value_output"]
-        != _COUPLED_ATTENTION_QDEIM_LANE
+        or recipe.component_lanes["value_output"] != _COUPLED_ATTENTION_QDEIM_LANE
     ):
         raise Lfm2SemanticLayerStackRefoldError(
             "Coupled attention Q-DEIM requires one shared Q/K/V/O recipe lane."
@@ -2697,6 +3401,7 @@ def _install_coupled_attention_group_qdeim_operator(
             normalized_input_decoder_receipt=normalized_input_decoder_receipt,
             residual_output_chart=residual_output_chart,
             residual_chart_receipt=residual_chart_receipt,
+            fold_compute_device=fold_compute_device,
         )
         if isinstance(result, Lfm2SemanticAttentionGroupQdeimEvidenceDeficit):
             deficit = dict(result.report)
@@ -2719,6 +3424,12 @@ def _install_coupled_attention_group_qdeim_operator(
         compiler = _verify_sealed(
             result.prepared.candidate.compiled.report,
             "coupled attention Q-DEIM standalone compiler",
+        )
+        qdeim_compute_execution = _validated_qdeim_compute_execution(
+            compiler.get("compute_execution"),
+            requested_device=fold_compute_device,
+            schema="neural-forge-lfm2-attention-qdeim-compute-v1",
+            label=f"Layer {layer_index} coupled attention",
         )
         after_hashes = _state_tensor_hashes(target_model)
         after = fingerprint_lfm2_parent(target_model).identity_sha256
@@ -2759,8 +3470,7 @@ def _install_coupled_attention_group_qdeim_operator(
             or raw.get("transaction_covered_parameter_role_count") != 6
             or raw.get("all_six_roles_supplied_to_atomic_transaction") is not True
             or raw.get("six_role_transaction_coverage_proven") is not True
-            or raw.get("prepared_expected_changed_state_keys")
-            != list(expected_changed)
+            or raw.get("prepared_expected_changed_state_keys") != list(expected_changed)
             or raw.get("prepared_expected_changed_state_keys_matched") is not True
             or raw.get("changed_state_key_count") != len(expected_changed)
             or raw.get("actual_changed_bytes_cover_four_to_six_roles") is not True
@@ -2784,6 +3494,12 @@ def _install_coupled_attention_group_qdeim_operator(
             != adapter.get("result_sha256")
             or raw.get("candidate_compiler_result_sha256")
             != compiler.get("result_sha256")
+            or raw.get("fold_compute_device") != fold_compute_device
+            or raw.get("qdeim_compute_execution") != dict(qdeim_compute_execution)
+            or raw.get("qdeim_compute_execution_sha256")
+            != qdeim_compute_execution["receipt_sha256"]
+            or adapter.get("fold_compute_device") != fold_compute_device
+            or adapter.get("qdeim_compute_execution") != dict(qdeim_compute_execution)
             or raw.get("source_qkvo_inventory_sha256")
             != source_inventory.inventory_sha256
             or raw.get("source_norm_inventory_sha256")
@@ -2793,8 +3509,7 @@ def _install_coupled_attention_group_qdeim_operator(
             or adapter.get("fit_batch_indices") != list(fit_batch_indices)
             or adapter.get("heldout_tensor_payload_loads") != 0
             or raw.get("heldout_payload_used_for_compilation") is not False
-            or raw.get("numeric_metrics_have_semantic_decision_authority")
-            is not False
+            or raw.get("numeric_metrics_have_semantic_decision_authority") is not False
             or raw.get("binary_manual_acceptance_gate_required") is not False
             or raw.get("whole_decoded_behavior_is_primary_intelligence_evidence")
             is not True
@@ -2805,9 +3520,7 @@ def _install_coupled_attention_group_qdeim_operator(
             )
         evidence_sha256 = [adapter["result_sha256"]]
         body = {
-            "schema": (
-                LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA
-            ),
+            "schema": (LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA),
             "status": "installed-coupled-intact-group-qdeim-attention",
             "body_recipe": recipe.as_dict(),
             "body_recipe_sha256": recipe.recipe_sha256,
@@ -2855,20 +3568,19 @@ def _install_coupled_attention_group_qdeim_operator(
             ],
             "cache_key": cache_key,
             "bridge_artifact_sha256": bridge_artifact_sha256,
-            "cache_selective_session_sha256": raw[
-                "cache_selective_session_sha256"
-            ],
+            "cache_selective_session_sha256": raw["cache_selective_session_sha256"],
             "same_selective_cache_session_as_layer_stack": True,
             "coupled_attention_installation_receipt": raw,
             "coupled_attention_candidate_receipt": adapter,
             "coupled_attention_compiler_receipt": compiler,
+            "fold_compute_device": fold_compute_device,
+            "qdeim_pod_and_pivot_compute_device": fold_compute_device,
+            "qdeim_compute_execution": dict(qdeim_compute_execution),
+            "qdeim_compute_execution_sha256": qdeim_compute_execution["receipt_sha256"],
+            "requested_fold_compute_device_proven": True,
             "source_norm_inventory": source_norm_inventory.as_dict(),
-            "direct_attention_source_receipt": dict(
-                direct_attention_source_receipt
-            ),
-            "normalized_input_decoder_receipt": dict(
-                normalized_input_decoder_receipt
-            ),
+            "direct_attention_source_receipt": dict(direct_attention_source_receipt),
+            "normalized_input_decoder_receipt": dict(normalized_input_decoder_receipt),
             "residual_chart_receipt": dict(residual_chart_receipt),
             "complete_qkvo_bundle_installed_transactionally": True,
             "complete_qkvo_bundle_transaction_verified": True,
@@ -3653,9 +4365,7 @@ def _replay_parent_mlp_functional_provenance(
         "parent_checkpoint_manifest_sha256": parent_session.manifest_sha256,
         "parent_session_open_receipt_sha256": parent_session.open_receipt_sha256,
         "parent_config_file_sha256": parent_session.config_file_sha256,
-        "parent_normalized_config_sha256": (
-            parent_session.normalized_config_sha256
-        ),
+        "parent_normalized_config_sha256": (parent_session.normalized_config_sha256),
         "parent_norm_epsilon": float(epsilon),
         "parent_identity_reconstruction_sha256": identity_receipt["result_sha256"],
         "reconstructed_parent_identity": dict(reconstructed_parent),
@@ -4018,12 +4728,8 @@ def _direct_mlp_inventory(
             "config_sha256": cache.manifest["parent"]["config_sha256"],
             "state_dict_sha256": cache.manifest["parent"]["state_dict_sha256"],
             "state_tensor_count": cache.manifest["parent"]["state_tensor_count"],
-            "runtime_buffer_sha256": cache.manifest["parent"][
-                "runtime_buffer_sha256"
-            ],
-            "runtime_buffer_count": cache.manifest["parent"][
-                "runtime_buffer_count"
-            ],
+            "runtime_buffer_sha256": cache.manifest["parent"]["runtime_buffer_sha256"],
+            "runtime_buffer_count": cache.manifest["parent"]["runtime_buffer_count"],
         }
         or functional_provenance.get("parent_norm_epsilon")
         != parent_session.norm_epsilon
@@ -4400,18 +5106,12 @@ def _install_mlp(
                 or deferred_prior.body_recipe_id != recipe.recipe_id
                 or deferred_prior.body_recipe_sha256 != recipe.recipe_sha256
                 or deferred_prior.mlp_lane != recipe.component_lanes["mlp"]
-                or receipt.get(
-                    "deferred_selected_w2_prior_authentication_sha256"
-                )
+                or receipt.get("deferred_selected_w2_prior_authentication_sha256")
                 != deferred_prior.authentication_sha256
                 or receipt.get("deferred_selected_w2_prior_sha256")
                 != _tensor_sha256(deferred_prior.down_weight)
-                or receipt.get(
-                    "deferred_selected_w2_prior_terminal_action_sha256"
-                )
-                != lfm2_cpcf_terminal_action_tensor_sha256(
-                    deferred_prior.down_weight
-                )
+                or receipt.get("deferred_selected_w2_prior_terminal_action_sha256")
+                != lfm2_cpcf_terminal_action_tensor_sha256(deferred_prior.down_weight)
                 or deferred_prior.live_deferred_w2_sha256
                 != lfm2_cpcf_terminal_action_tensor_sha256(w2)
                 or receipt.get("deferred_selected_w2_prior_installed_before_terminal")
@@ -4770,6 +5470,25 @@ def _layer_receipt(
         if isinstance(planting, Mapping)
         else None
     )
+    mlp_qdeim_lane = recipe.component_lanes["mlp"] in _GLOBAL_RESIDUAL_MLP_LANES
+    mlp_qdeim_compute_execution: Mapping[str, Any] | None = None
+    if mlp_qdeim_lane:
+        if (
+            not isinstance(planting, Mapping)
+            or planting.get("fold_compute_device") != fold_compute_device
+            or planting.get("normalized_decoder_control_compute_device") != "cpu"
+            or planting.get("qdeim_pod_and_pivot_compute_device") != fold_compute_device
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Layer {layer_index} MLP did not bind its decoder and Q-DEIM "
+                "algebra to the authenticated compute devices."
+            )
+        mlp_qdeim_compute_execution = _validated_qdeim_compute_execution(
+            planting.get("qdeim_compute_execution"),
+            requested_device=fold_compute_device,
+            schema="neural-forge-lfm2-mlp-qdeim-compute-v1",
+            label=f"Layer {layer_index} MLP",
+        )
     if fold_compute_device != "cpu" and (
         not isinstance(planting, Mapping)
         or planting.get("fold_compute_device") != fold_compute_device
@@ -4799,6 +5518,37 @@ def _layer_receipt(
             "attention_operator_decision_receipt": dict(operator_receipt),
             "attention_operator_installation_receipt": dict(operator_receipt),
         }
+        if recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE:
+            attention_qdeim_compute_execution = _validated_qdeim_compute_execution(
+                operator_receipt.get("qdeim_compute_execution"),
+                requested_device=fold_compute_device,
+                schema="neural-forge-lfm2-attention-qdeim-compute-v1",
+                label=f"Layer {layer_index} coupled attention",
+            )
+            if (
+                operator_receipt.get("fold_compute_device") != fold_compute_device
+                or operator_receipt.get("qdeim_pod_and_pivot_compute_device")
+                != fold_compute_device
+                or operator_receipt.get("qdeim_compute_execution_sha256")
+                != attention_qdeim_compute_execution["receipt_sha256"]
+                or operator_receipt.get("requested_fold_compute_device_proven")
+                is not True
+            ):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Layer {layer_index} coupled attention did not preserve its "
+                    "requested-device Q-DEIM proof."
+                )
+            attention_receipt_fields.update(
+                {
+                    "attention_qdeim_fold_compute_device": fold_compute_device,
+                    "attention_qdeim_pod_and_pivot_compute_device": (
+                        fold_compute_device
+                    ),
+                    "attention_qdeim_compute_execution_sha256": (
+                        attention_qdeim_compute_execution["receipt_sha256"]
+                    ),
+                }
+            )
     if fold_compute_device != "cpu" and operator_kind == "short_conv":
         structural_execution = operator_receipt.get(
             "structural_cluster_compute_execution"
@@ -4894,9 +5644,7 @@ def _layer_receipt(
             ]
         ),
         "mlp_source_all_cross_kernel_replay_diagnostics_finite": (
-            verified_mlp_source_provenance[
-                "all_cross_kernel_replay_diagnostics_finite"
-            ]
+            verified_mlp_source_provenance["all_cross_kernel_replay_diagnostics_finite"]
         ),
         "mlp_source_cross_kernel_equivalence_policy_sha256": (
             verified_mlp_source_provenance["cross_kernel_equivalence_policy"][
@@ -4924,9 +5672,7 @@ def _layer_receipt(
             ]
         ),
         "mlp_source_parent_identity_reconstruction_sha256": (
-            verified_mlp_source_provenance[
-                "parent_identity_reconstruction_sha256"
-            ]
+            verified_mlp_source_provenance["parent_identity_reconstruction_sha256"]
         ),
         "mlp_source_parent_checkpoint_files_hashed_by_session": (
             verified_mlp_source_provenance["parent_checkpoint_files_hashed_by_session"]
@@ -4971,15 +5717,17 @@ def _layer_receipt(
         ),
         **(
             {
-                "mlp_requested_fold_compute_device_applies_to_normalized_decoder_control": (True),
-                "mlp_qdeim_pod_and_pivot_compute_device": "cpu",
-                "mlp_qdeim_cpu_execution_explicitly_receipted": True,
+                "mlp_normalized_decoder_control_compute_device": "cpu",
+                "mlp_qdeim_pod_and_pivot_compute_device": fold_compute_device,
+                "mlp_qdeim_compute_execution_sha256": (
+                    mlp_qdeim_compute_execution["receipt_sha256"]
+                ),
+                "mlp_requested_fold_compute_device_applies_to_qdeim_pod_and_pivot": (
+                    True
+                ),
+                "mlp_normalized_decoder_control_remains_cpu": True,
             }
-            if recipe.component_lanes["mlp"]
-            in {
-                "nonlinear_qdeim_structural_priority",
-                "nonlinear_qdeim_fit_corrected_priority",
-            }
+            if mlp_qdeim_lane and mlp_qdeim_compute_execution is not None
             else {}
         ),
         **short_conv_compute_fields,
@@ -5011,6 +5759,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     short_conv_installer: Callable[..., Mapping[str, Any]] | None = None,
     mlp_installer: Callable[..., Any] | None = None,
     fold_compute_device: str = "cpu",
+    global_residual_closure_version: str = _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A,
+    correction_scale_frontier: Sequence[float] = (1.0,),
+    correction_scale: float = 1.0,
+    global_residual_backend: str = "auto",
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     mapped_parent_tied_table: Any | None = None,
@@ -5033,9 +5785,32 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     coupled_attention_recipe = bool(
         recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
-        and recipe.component_lanes["value_output"]
-        == _COUPLED_ATTENTION_QDEIM_LANE
+        and recipe.component_lanes["value_output"] == _COUPLED_ATTENTION_QDEIM_LANE
     )
+    global_residual_closure_required = _global_residual_closure_required(recipe)
+    closure_version = str(global_residual_closure_version).strip().lower()
+    if closure_version not in _GLOBAL_RESIDUAL_CLOSURE_VERSIONS:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "global_residual_closure_version must be producer_aware_v2a or "
+            "output_writer_v1_diagnostic."
+        )
+    closure_policy = Lfm2GlobalResidualClosurePolicy(
+        backend=str(global_residual_backend).strip().lower()
+    )
+    scale_policy = Lfm2ProducerAwareCorrectionScalePolicy(
+        materialization_frontier=tuple(
+            float(value) for value in correction_scale_frontier
+        ),
+        materialization_scale=float(correction_scale),
+    )
+    if closure_version == _GLOBAL_RESIDUAL_OUTPUT_WRITER_V1_DIAGNOSTIC and (
+        scale_policy.materialization_frontier != (1.0,)
+        or scale_policy.materialization_scale != 1.0
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "The v1 diagnostic baseline does not materialize a correction-scale "
+            "frontier; use its canonical scale 1.0."
+        )
     if not coupled_attention_recipe and not callable(attention_installer):
         raise Lfm2SemanticLayerStackRefoldError(
             "The complete stack requires the analytic attention installer."
@@ -5052,12 +5827,28 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "Saved child tokenizer differs from the semantic target tokenizer."
         )
     kinds = _validated_operator_topology(cache, target_model, compiler_lineage)
+    terminal_layer_index = len(kinds) - 1
     interface_lineage = _validated_interface_lineage(
         target_model,
         interface,
         mapped_parent_tied_table=mapped_parent_tied_table,
         anchor_transport_witness=anchor_transport_witness,
     )
+    effective_global_residual_tied_table = mapped_parent_tied_table
+    global_residual_tied_table_source = (
+        "mapped_parent_tied_table"
+        if mapped_parent_tied_table is not None
+        else "not_applicable"
+    )
+    if (
+        global_residual_closure_required
+        and effective_global_residual_tied_table is None
+    ):
+        # The interface table is already byte-authenticated against the live
+        # tied child above.  It is a safe basis fallback when the stronger
+        # residual-congruence mode did not supply its mapped parent table.
+        effective_global_residual_tied_table = interface.target_weight
+        global_residual_tied_table_source = "authenticated_interface_target_weight"
     short_evidence_type, default_short_installer = _resolve_short_conv_adapter()
     (
         mlp_inventory_type,
@@ -5106,6 +5897,16 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 donor_tokenizer=donor_tokenizer,
                 target_tokenizer=target_tokenizer,
             )
+            global_residual_accumulators: Mapping[
+                int,
+                _GlobalResidualTrajectoryAccumulator,
+            ] = MappingProxyType({})
+            global_residual_row_map_receipt: Mapping[str, Any] | None = None
+            if global_residual_closure_required:
+                (
+                    global_residual_accumulators,
+                    global_residual_row_map_receipt,
+                ) = _prepare_global_residual_accumulators(alignments)
             refinement = dict(
                 audit_lfm2_semantic_span_cpcf_refinement(
                     alignments,
@@ -5149,9 +5950,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             retained_nonzero_seed_noop_count = 0
             blank_or_partially_blank_producer_chain_count = 0
             final_terminal_evidence: Mapping[str, Any] = MappingProxyType({})
-            final_terminal_w2_prior: (
-                Lfm2CpcfTerminalActionDownWeightPrior | None
-            ) = None
+            final_terminal_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior | None = None
             for layer_index, operator_kind in enumerate(kinds):
                 before_operator_replay = _replay_current_layer(
                     target_model,
@@ -5176,6 +5975,15 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         interface_lineage.get("global_residual_gauge_required") is True
                     ),
                 )
+                if global_residual_closure_required:
+                    _capture_global_parent_layer_boundaries(
+                        global_residual_accumulators,
+                        parent=parent,
+                        residual_chart=chart,
+                        producer_encoder=interface.producer_encoder,
+                        layer_index=layer_index,
+                        terminal_layer_index=terminal_layer_index,
+                    )
                 fir_receipt = None
                 operator_coverage_before = _lfm2_dense_producer_chain_coverage(
                     target_model,
@@ -5254,9 +6062,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 chart_receipt=chart_receipt,
                             )
                         )
-                        partition_batches = chart_receipt.get(
-                            "partition_batch_indices"
-                        )
+                        partition_batches = chart_receipt.get("partition_batch_indices")
                         fit_batch_indices = (
                             partition_batches.get("fit")
                             if isinstance(partition_batches, Mapping)
@@ -5285,9 +6091,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                     cache.parent_fingerprint
                                 ),
                                 source_inventory=lineage.source_inventory,
-                                source_query_norm_weight=(
-                                    parent_qk_tensors["q_norm"]
-                                ),
+                                source_query_norm_weight=(parent_qk_tensors["q_norm"]),
                                 source_key_norm_weight=parent_qk_tensors["k_norm"],
                             )
                         )
@@ -5297,17 +6101,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 session=cache_session,
                                 layer_index=layer_index,
                                 fit_batch_indices=fit_batch_indices,
-                                fit_batch_sample_weights=(
-                                    fit_batch_sample_weights
-                                ),
+                                fit_batch_sample_weights=(fit_batch_sample_weights),
                                 source_query_weight=parent_qk_tensors["q"],
                                 source_key_weight=parent_qk_tensors["k"],
                                 source_value_weight=parent_qk_tensors["v"],
                                 source_out_weight=parent_qk_tensors["o"],
                                 source_inventory=lineage.source_inventory,
-                                source_query_norm_weight=(
-                                    parent_qk_tensors["q_norm"]
-                                ),
+                                source_query_norm_weight=(parent_qk_tensors["q_norm"]),
                                 source_key_norm_weight=parent_qk_tensors["k_norm"],
                                 source_norm_inventory=source_norm_inventory,
                                 normalized_input_decoder=normalized_decoder,
@@ -5322,6 +6122,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 cache_key=cache.cache_key,
                                 bridge_artifact_sha256=bridge.artifact_sha256,
                                 parameter_count=parameter_count,
+                                fold_compute_device=fold_compute_device,
                                 body_recipe=recipe,
                             )
                         )
@@ -5345,9 +6146,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 target_rope_attention_scaling
                             ),
                             parent_qk_tensors=parent_qk_tensors,
-                            target_operator_norm_weight=(
-                                target_operator_norm_weight
-                            ),
+                            target_operator_norm_weight=(target_operator_norm_weight),
                             parent_norm_epsilon=getattr(
                                 parent_session,
                                 "norm_epsilon",
@@ -5599,6 +6398,19 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     raise Lfm2SemanticLayerStackRefoldError(
                         f"Layer {layer_index} propagation replay is not fresh."
                     )
+                if global_residual_closure_required:
+                    _capture_global_child_layer_primals(
+                        global_residual_accumulators,
+                        target_model=target_model,
+                        alignments=alignments,
+                        replay_bank=propagation_replay,
+                        layer_index=layer_index,
+                        deferred_final_w2_prior=(
+                            final_terminal_w2_prior
+                            if layer_index == terminal_layer_index
+                            else None
+                        ),
+                    )
                 layer_receipts.append(
                     _layer_receipt(
                         layer_index=layer_index,
@@ -5623,6 +6435,66 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     )
                 )
                 residual_bank = _next_residual_bank(propagation_replay)
+            causal_stack_state = fingerprint_lfm2_parent(target_model).identity_sha256
+            causal_stack_state_hashes = _state_tensor_hashes(target_model)
+            causal_stack_changed_keys = _changed_state_keys(
+                entry_state_hashes,
+                causal_stack_state_hashes,
+            )
+            global_residual_installation = None
+            global_residual_evidence_sha256 = None
+            global_residual_closure_state = causal_stack_state
+            global_residual_closure_changed_keys: tuple[str, ...] = ()
+            if global_residual_closure_required:
+                if final_terminal_w2_prior is None:
+                    raise Lfm2SemanticLayerStackRefoldError(
+                        "Coupled nonlinear Q-DEIM produced no deferred final W2 "
+                        "prior for global residual closure."
+                    )
+                (
+                    global_residual_installation,
+                    global_residual_evidence,
+                ) = (
+                    _compile_install_global_residual_from_accumulators(
+                        global_residual_accumulators,
+                        target_model=target_model,
+                        mapped_parent_tied_table=(effective_global_residual_tied_table),
+                        deferred_final_w2_prior=final_terminal_w2_prior,
+                        deferred_final_writer_parameter=final_w2,
+                        closure_policy=closure_policy,
+                        correction_scale_frontier=(
+                            scale_policy.materialization_frontier
+                        ),
+                        correction_scale=scale_policy.materialization_scale,
+                        materialization_compute_device=fold_compute_device,
+                    )
+                    if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                    else _compile_install_global_residual_v1_diagnostic_from_accumulators(
+                        global_residual_accumulators,
+                        target_model=target_model,
+                        mapped_parent_tied_table=(effective_global_residual_tied_table),
+                        deferred_final_w2_prior=final_terminal_w2_prior,
+                        deferred_final_writer_parameter=final_w2,
+                        closure_policy=closure_policy,
+                    )
+                )
+                global_residual_evidence_sha256 = (
+                    global_residual_evidence.evidence_sha256
+                )
+                final_terminal_w2_prior = (
+                    global_residual_installation.corrected_final_w2_prior
+                )
+                global_residual_closure_state = fingerprint_lfm2_parent(
+                    target_model
+                ).identity_sha256
+                global_residual_closure_state_hashes = _state_tensor_hashes(
+                    target_model
+                )
+                global_residual_closure_changed_keys = _changed_state_keys(
+                    causal_stack_state_hashes,
+                    global_residual_closure_state_hashes,
+                )
+                del global_residual_evidence
             cache_session.verify()
             cache_session_receipt = cache_session.as_dict()
             parent_session_receipt = dict(parent_session.receipt())
@@ -5634,6 +6506,162 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             split: value.authentication_sha256
             for split, value in sorted(final_terminal_evidence.items())
         }
+        composed_transition_changed_keys = tuple(
+            sorted(
+                set(causal_stack_changed_keys).union(
+                    global_residual_closure_changed_keys
+                )
+            )
+        )
+        global_residual_report: Mapping[str, Any] | None = None
+        global_residual_report_changed_keys: tuple[str, ...] = ()
+        if global_residual_installation is not None:
+            global_residual_report = global_residual_installation.report
+            before_by_writer = global_residual_report.get(
+                "dense_live_physical_sha256_before"
+                if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                else "dense_live_writer_sha256_before"
+            )
+            after_by_writer = global_residual_report.get(
+                "dense_live_physical_sha256_after"
+                if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                else "dense_live_writer_sha256_after"
+            )
+            if isinstance(before_by_writer, Mapping) and isinstance(
+                after_by_writer,
+                Mapping,
+            ):
+                global_residual_report_changed_keys = tuple(
+                    sorted(
+                        name
+                        for name in before_by_writer
+                        if before_by_writer.get(name) != after_by_writer.get(name)
+                    )
+                )
+        producer_aware_report_valid = True
+        output_writer_diagnostic_report_valid = True
+        if global_residual_report is not None:
+            if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A:
+                physical_ids = tuple(_global_live_physical_state(target_model))
+                topology_receipt = global_residual_report.get("topology_receipt")
+                topology_body = (
+                    dict(topology_receipt)
+                    if isinstance(topology_receipt, Mapping)
+                    else {}
+                )
+                topology_sha = topology_body.pop("topology_sha256", None)
+                site_specifications = global_residual_report.get("site_specifications")
+                correction_policy = global_residual_report.get(
+                    "correction_scale_policy"
+                )
+                materialization_compute_receipt = global_residual_report.get(
+                    "materialization_compute_execution_receipt"
+                )
+                materialization_compute_body = (
+                    dict(materialization_compute_receipt)
+                    if isinstance(materialization_compute_receipt, Mapping)
+                    else {}
+                )
+                materialization_compute_sha = materialization_compute_body.pop(
+                    "report_sha256",
+                    None,
+                )
+                dense_transaction_receipt = global_residual_report.get(
+                    "dense_transaction_receipt"
+                )
+                producer_aware_report_valid = bool(
+                    global_residual_report.get("closure_backend")
+                    == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                    and global_residual_report.get("global_residual_backend")
+                    == closure_policy.backend
+                    and global_residual_report.get("closure_policy")
+                    == closure_policy.as_dict()
+                    and global_residual_report.get("closure_policy_sha256")
+                    == closure_policy.authentication_sha256
+                    and materialization_compute_sha
+                    == canonical_sha256(materialization_compute_body)
+                    and materialization_compute_sha
+                    == global_residual_report.get(
+                        "materialization_compute_execution_receipt_sha256"
+                    )
+                    and materialization_compute_body.get("requested_device")
+                    == fold_compute_device
+                    and global_residual_report.get("materialization_compute_device")
+                    == fold_compute_device
+                    and isinstance(dense_transaction_receipt, Mapping)
+                    and dense_transaction_receipt.get(
+                        "compute_execution_receipt_sha256"
+                    )
+                    == materialization_compute_sha
+                    and dense_transaction_receipt.get("compute_execution_receipt")
+                    == materialization_compute_receipt
+                    and global_residual_report.get("layer_count") == len(kinds)
+                    and global_residual_report.get("writer_site_count")
+                    == 4 * len(kinds)
+                    and global_residual_report.get("four_sites_per_layer") is True
+                    and global_residual_report.get(
+                        "dynamic_layer_count_derived_from_authenticated_evidence"
+                    )
+                    is True
+                    and isinstance(site_specifications, list)
+                    and len(site_specifications) == 4 * len(kinds)
+                    and topology_sha == canonical_sha256(topology_body)
+                    and topology_sha == global_residual_report.get("topology_sha256")
+                    and global_residual_report.get("installed_parameter_ids")
+                    == list(physical_ids)
+                    and global_residual_report.get("installed_parameter_count")
+                    == len(physical_ids)
+                    and global_residual_report.get(
+                        "all_nondeferred_physical_parameters_installed"
+                    )
+                    is True
+                    and isinstance(correction_policy, Mapping)
+                    and correction_policy.get("authentication_sha256")
+                    == scale_policy.authentication_sha256
+                    and correction_policy.get("materialization_frontier")
+                    == list(scale_policy.materialization_frontier)
+                    and correction_policy.get("materialization_scale")
+                    == scale_policy.materialization_scale
+                    and global_residual_report.get("correction_scale_policy_sha256")
+                    == scale_policy.authentication_sha256
+                    and global_residual_report.get("materialization_scale")
+                    == scale_policy.materialization_scale
+                    and global_residual_report.get("materialization_frontier")
+                    == list(scale_policy.materialization_frontier)
+                    and global_residual_report.get(
+                        "materialization_scale_is_execution_variant_not_winner"
+                    )
+                    is True
+                    and global_residual_report.get("frontier_member_selected_as_winner")
+                    is False
+                    and global_residual_report.get(
+                        "separate_fold_decode_retain_required_for_each_frontier_scale"
+                    )
+                    is True
+                    and global_residual_report.get("final_w2_parameter_id")
+                    == f"model.layers.{terminal_layer_index}.feed_forward.w2.weight"
+                    and global_residual_report.get("final_w2_unchanged") is True
+                    and global_residual_report.get("numeric_or_manual_quality_gate")
+                    is False
+                    and global_residual_report.get(
+                        "all_frontier_candidates_eligible_for_decoded_behavioral_review"
+                    )
+                    is True
+                    and global_residual_report.get("autograd_grad_calls") == 0
+                    and global_residual_report.get("backward_calls") == 0
+                    and global_residual_report.get("optimizer_steps") == 0
+                    and global_residual_report.get("training_steps") == 0
+                )
+            else:
+                output_writer_diagnostic_report_valid = bool(
+                    global_residual_report.get("closure_scope", "").endswith(
+                        "output_writers_only_baseline_v1"
+                    )
+                    and global_residual_report.get(
+                        "v2_input_transport_extension_roadmap", {}
+                    ).get("implemented_in_this_result")
+                    is False
+                )
         if (
             attention_decision_count != 6
             or attention_install_count + attention_incumbent_noop_count != 6
@@ -5677,6 +6705,54 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             or not _gradient_state_matches_snapshot(target_model, snapshot)
             or set(final_state_hashes) != set(snapshot.state)
             or final_w2_after != final_w2_before
+            or causal_stack_state != layer_receipts[-1]["model_state_after_mlp_sha256"]
+            or (
+                not global_residual_closure_required
+                and (
+                    global_residual_installation is not None
+                    or global_residual_row_map_receipt is not None
+                    or causal_stack_state != final_state
+                    or causal_stack_changed_keys != changed_keys
+                    or global_residual_closure_changed_keys
+                )
+            )
+            or (
+                global_residual_closure_required
+                and (
+                    global_residual_installation is None
+                    or global_residual_report is None
+                    or global_residual_row_map_receipt is None
+                    or global_residual_evidence_sha256 is None
+                    or not global_residual_installation.verify_authentication()
+                    or global_residual_closure_state != final_state
+                    or global_residual_report.get("evidence_package_sha256")
+                    != global_residual_evidence_sha256
+                    or global_residual_report.get(
+                        "final_layer_mlp_down_weight_prior_authentication_sha256"
+                    )
+                    != final_terminal_w2_prior.authentication_sha256
+                    or global_residual_report.get(
+                        "final_layer_mlp_down_weight_prior_tensor_sha256"
+                    )
+                    != lfm2_cpcf_terminal_action_tensor_sha256(
+                        final_terminal_w2_prior.down_weight
+                    )
+                    or global_residual_report.get(
+                        "final_layer_mlp_down_weight_prior_install_count"
+                    )
+                    != 0
+                    or global_residual_report.get("quality_gate") is not False
+                    or global_residual_report.get(
+                        "numeric_diagnostics_used_for_auto_veto"
+                    )
+                    is not False
+                    or not producer_aware_report_valid
+                    or not output_writer_diagnostic_report_valid
+                    or global_residual_report_changed_keys
+                    != global_residual_closure_changed_keys
+                    or not set(changed_keys).issubset(composed_transition_changed_keys)
+                )
+            )
             or tuple(
                 (str(name), bool(module.training))
                 for name, module in target_model.named_modules()
@@ -5695,6 +6771,34 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             or any(
                 value.get("mlp_fold_compute_device") != fold_compute_device
                 for value in layer_receipts
+            )
+            or (
+                recipe.component_lanes["mlp"] in _GLOBAL_RESIDUAL_MLP_LANES
+                and any(
+                    value.get("mlp_normalized_decoder_control_compute_device") != "cpu"
+                    or value.get("mlp_qdeim_pod_and_pivot_compute_device")
+                    != fold_compute_device
+                    or not isinstance(
+                        value.get("mlp_qdeim_compute_execution_sha256"),
+                        str,
+                    )
+                    for value in layer_receipts
+                )
+            )
+            or (
+                recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
+                and any(
+                    value.get("attention_qdeim_fold_compute_device")
+                    != fold_compute_device
+                    or value.get("attention_qdeim_pod_and_pivot_compute_device")
+                    != fold_compute_device
+                    or not isinstance(
+                        value.get("attention_qdeim_compute_execution_sha256"),
+                        str,
+                    )
+                    for value in layer_receipts
+                    if value.get("operator_kind") == "full_attention"
+                )
             )
             or (
                 fold_compute_device != "cpu"
@@ -5867,6 +6971,132 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 if final_terminal_w2_prior is not None
                 else {}
             ),
+            **(
+                {
+                    "global_residual_closure_required_by_body_recipe": True,
+                    "global_residual_closure_applied": True,
+                    "global_residual_closure_version": closure_version,
+                    "global_residual_backend": closure_policy.backend,
+                    "global_residual_correction_scale_frontier": list(
+                        scale_policy.materialization_frontier
+                    ),
+                    "global_residual_correction_scale": (
+                        scale_policy.materialization_scale
+                    ),
+                    "global_residual_correction_scale_policy_sha256": (
+                        scale_policy.authentication_sha256
+                    ),
+                    "global_residual_closure_policy_sha256": (
+                        closure_policy.authentication_sha256
+                    ),
+                    "global_residual_closure_scope": (
+                        global_residual_report["closure_scope"]
+                    ),
+                    "global_residual_closure_evidence_sha256": (
+                        global_residual_evidence_sha256
+                    ),
+                    "global_residual_semantic_row_map_sha256": (
+                        global_residual_row_map_receipt["result_sha256"]
+                    ),
+                    "global_residual_semantic_row_maps": dict(
+                        global_residual_row_map_receipt
+                    ),
+                    "global_residual_closure_receipt_sha256": (
+                        global_residual_report["report_sha256"]
+                    ),
+                    "global_residual_closure_receipt": dict(global_residual_report),
+                    "global_residual_closure_result_sha256": (
+                        global_residual_report["closure_result_sha256"]
+                    ),
+                    "global_residual_corrected_final_w2_prior_sha256": (
+                        final_terminal_w2_prior.authentication_sha256
+                    ),
+                    "global_residual_corrected_final_w2_closure_lineage_sha256": (
+                        global_residual_report[
+                            "corrected_final_w2_closure_lineage_sha256"
+                        ]
+                    ),
+                    "final_layer_mlp_down_weight_prior_closure_lineage_sha256": (
+                        global_residual_report[
+                            "final_layer_mlp_down_weight_prior_closure_lineage_sha256"
+                        ]
+                    ),
+                    "global_residual_tied_table_source": (
+                        global_residual_tied_table_source
+                    ),
+                    "causal_layer_stack_model_state_after_sha256": (causal_stack_state),
+                    "causal_layer_stack_changed_state_keys": list(
+                        causal_stack_changed_keys
+                    ),
+                    "global_residual_closure_model_state_before_sha256": (
+                        causal_stack_state
+                    ),
+                    "global_residual_closure_model_state_after_sha256": (
+                        global_residual_closure_state
+                    ),
+                    "global_residual_closure_changed_state_keys": list(
+                        global_residual_closure_changed_keys
+                    ),
+                    "composed_transition_changed_state_keys": list(
+                        composed_transition_changed_keys
+                    ),
+                    "global_residual_closure_live_final_w2_unchanged": True,
+                    "global_residual_closure_parent_histories_compacted": True,
+                    **(
+                        {
+                            "global_residual_producer_aware_v2a": True,
+                            "global_residual_v1_diagnostic_baseline": False,
+                            "global_residual_dynamic_layer_count": len(kinds),
+                            "global_residual_producer_aware_site_count": (
+                                4 * len(kinds)
+                            ),
+                            "global_residual_full_physical_parameter_transaction": (
+                                True
+                            ),
+                            "global_residual_input_and_output_producer_roles_folded": (
+                                True
+                            ),
+                            "global_residual_materialization_scale_is_execution_variant_not_winner": (
+                                True
+                            ),
+                            "global_residual_frontier_member_selected_as_winner": False,
+                            "global_residual_each_frontier_scale_requires_separate_fold_decode_retain": (
+                                True
+                            ),
+                            "global_residual_materialization_compute_device": (
+                                global_residual_report["materialization_compute_device"]
+                            ),
+                            "global_residual_materialization_compute_execution_receipt_sha256": (
+                                global_residual_report[
+                                    "materialization_compute_execution_receipt_sha256"
+                                ]
+                            ),
+                            "global_residual_materialization_compute_execution_receipt": dict(
+                                global_residual_report[
+                                    "materialization_compute_execution_receipt"
+                                ]
+                            ),
+                        }
+                        if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                        else {
+                            "global_residual_producer_aware_v2a": False,
+                            "global_residual_v1_diagnostic_baseline": True,
+                            "global_residual_v1_shared_attention_head_dimension": True,
+                            "global_residual_general_per_site_head_dimensions_claimed": (
+                                False
+                            ),
+                        }
+                    ),
+                    "global_residual_closure_numeric_quality_gate": False,
+                    "global_residual_closure_manual_quality_gate": False,
+                    "decoded_behavior_review_is_evidence_for_understanding": True,
+                    "decoded_behavior_verdict_required_for_continuation": False,
+                }
+                if global_residual_installation is not None
+                and global_residual_report is not None
+                and global_residual_row_map_receipt is not None
+                else {}
+            ),
             "one_selective_cache_session_for_complete_stack": True,
             "selective_cache_session_owned_by_layer_stack": (
                 authenticated_cache_session is None
@@ -5884,16 +7114,27 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "all_mlp_layers_proved_requested_fold_compute_device": True,
             **(
                 {
-                    "all_mlp_qdeim_pod_and_pivot_layers_proved_cpu_execution": True,
+                    "all_mlp_qdeim_pod_and_pivot_layers_proved_requested_fold_compute_device": (
+                        True
+                    ),
                     "requested_fold_compute_device_scope_for_qdeim_mlp": (
-                        "normalized_decoder_control_only"
+                        "weight-signature-and-qdeim-pod-pivot"
+                    ),
+                    "mlp_normalized_decoder_control_compute_device": "cpu",
+                }
+                if recipe.component_lanes["mlp"] in _GLOBAL_RESIDUAL_MLP_LANES
+                else {}
+            ),
+            **(
+                {
+                    "all_attention_qdeim_pod_and_pivot_layers_proved_requested_fold_compute_device": (
+                        True
+                    ),
+                    "requested_fold_compute_device_scope_for_qdeim_attention": (
+                        "group-pod-pivot-interpolation-and-dense-materialization"
                     ),
                 }
-                if recipe.component_lanes["mlp"]
-                in {
-                    "nonlinear_qdeim_structural_priority",
-                    "nonlinear_qdeim_fit_corrected_priority",
-                }
+                if recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
                 else {}
             ),
             **(

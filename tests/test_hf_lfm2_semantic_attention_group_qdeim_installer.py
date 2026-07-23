@@ -147,6 +147,35 @@ def _sealed(body: dict[str, object]) -> MappingProxyType:
     return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
 
 
+def _compute_execution(requested_device: str) -> dict[str, object]:
+    cuda = requested_device != "cpu"
+    body: dict[str, object] = {
+        "schema": "neural-forge-lfm2-attention-qdeim-compute-v1",
+        "requested_device": requested_device,
+        "resolved_device": requested_device,
+        "backend": "cuda" if cuda else "cpu",
+        "compute_dtype": "float64",
+        "authenticated_source_archive_device": "cpu",
+        "active_layer_staged_to_compute_device": cuda,
+        "materialized_candidate_device": "cpu",
+        "system_memory_is_immutable_archive": True,
+        "gpu_is_ephemeral_dense_algebra_workspace": cuda,
+        "silent_device_fallback_performed": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    if cuda:
+        body.update(
+            {
+                "device_index": int(requested_device.split(":", 1)[1]),
+                "device_name": "test CUDA device",
+                "compute_capability": [6, 1],
+            }
+        )
+    return {**body, "receipt_sha256": canonical_sha256(body)}
+
+
 def _candidate_state_sha256(state: dict[str, torch.Tensor]) -> str:
     return canonical_sha256(
         {
@@ -193,10 +222,13 @@ def _candidate(**kwargs: object) -> Lfm2SemanticAttentionGroupQdeimCandidate:
         target_v,
         target_o,
     )
+    fold_compute_device = str(kwargs.get("fold_compute_device", "cpu"))
+    compute_execution = _compute_execution(fold_compute_device)
     compiler_body = {
         "schema": LFM2_ATTENTION_GROUP_QDEIM_SCHEMA,
         "status": "materialized-for-holistic-whole-response-intelligence-evaluation",
         "method": "deterministic-block-constrained-qdeim-intact-gqa-producers",
+        "compute_execution": compute_execution,
         "topology": {
             "source_hidden_size": 4,
             "target_hidden_size": 4,
@@ -331,6 +363,8 @@ def _candidate(**kwargs: object) -> Lfm2SemanticAttentionGroupQdeimCandidate:
         "context_bank_receipt_sha256": "6" * 64,
         "standalone_context_evidence_sha256": context_sha,
         "standalone_compiler_result_sha256": compiled_report["result_sha256"],
+        "qdeim_compute_execution": compute_execution,
+        "fold_compute_device": fold_compute_device,
         "selected_source_key_value_groups": [0],
         "selected_source_query_heads": [0, 1],
         "candidate_tensor_sha256": tensor_hashes,
@@ -346,8 +380,7 @@ def _candidate(**kwargs: object) -> Lfm2SemanticAttentionGroupQdeimCandidate:
     fit_indices = list(kwargs.get("fit_batch_indices", (0,)))
     capability_body = {
         "schema": (
-            "neural-forge-lfm2-semantic-attention-group-qdeim-"
-            "cache-capability-v1"
+            "neural-forge-lfm2-semantic-attention-group-qdeim-cache-capability-v1"
         ),
         "cache_key": "test-cache",
         "cache_manifest_sha256": "1" * 64,
@@ -406,6 +439,69 @@ def _bundle(model: _Model) -> dict[str, torch.Tensor]:
         name: value.detach().cpu().clone()
         for name, value in installer._transaction._parameter_bundle(model, 0).items()
     }
+
+
+def test_requested_cuda_qdeim_device_is_bound_through_preparation_and_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    arguments = _arguments(model)
+    arguments["fold_compute_device"] = "cuda:1"
+    monkeypatch.setattr(
+        installer,
+        "compile_lfm2_semantic_attention_group_qdeim_from_cache",
+        _candidate,
+    )
+
+    result = installer.compile_install_lfm2_semantic_attention_group_qdeim(**arguments)
+
+    assert isinstance(
+        result,
+        installer.Lfm2SemanticAttentionGroupQdeimInstallationResult,
+    )
+    assert result.prepared.fold_compute_device == "cuda:1"
+    assert result.receipt["fold_compute_device"] == "cuda:1"
+    assert result.receipt["qdeim_compute_execution"]["backend"] == "cuda"
+    assert (
+        result.receipt["qdeim_compute_execution_sha256"]
+        == result.prepared.qdeim_compute_execution_sha256
+    )
+
+
+def test_resealed_adapter_compute_device_tamper_is_rejected_before_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    arguments = _arguments(model)
+    arguments["fold_compute_device"] = "cuda:1"
+
+    def tampered_candidate(**kwargs: object):
+        candidate = _candidate(**kwargs)
+        report_body = dict(candidate.report)
+        report_body.pop("result_sha256")
+        execution = dict(report_body["qdeim_compute_execution"])
+        execution.pop("receipt_sha256")
+        execution["resolved_device"] = "cpu"
+        report_body["qdeim_compute_execution"] = {
+            **execution,
+            "receipt_sha256": canonical_sha256(execution),
+        }
+        return replace(candidate, report=_sealed(report_body))
+
+    monkeypatch.setattr(
+        installer,
+        "compile_lfm2_semantic_attention_group_qdeim_from_cache",
+        tampered_candidate,
+    )
+
+    with pytest.raises(
+        installer.Lfm2SemanticAttentionGroupQdeimInstallationError,
+        match="requested-device FP64 Q-DEIM execution",
+    ):
+        installer.prepare_lfm2_semantic_attention_group_qdeim_installation(**arguments)
+    assert all(
+        int(torch.count_nonzero(value).item()) == 0 for value in _bundle(model).values()
+    )
 
 
 def test_coupled_candidate_installs_all_six_tensors_and_escapes_zero_norms(
