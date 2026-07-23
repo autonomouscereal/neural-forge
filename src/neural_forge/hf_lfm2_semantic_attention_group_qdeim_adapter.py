@@ -1585,6 +1585,40 @@ def _verified_functional_tangent_role_receipts(
         actual_reduced_covariance = (
             full_group_features.T @ full_group_features
         ).contiguous()
+        eigenvalues, _eigenvectors = torch.linalg.eigh(covariance)
+        if not bool(torch.isfinite(eigenvalues).all().item()):
+            raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                f"Typed tangent role {role!r} has non-finite covariance eigenvalues."
+            )
+        maximum_eigenvalue_magnitude = float(eigenvalues.abs().max().item())
+        positive_semidefinite_tolerance = (
+            4096.0
+            * torch.finfo(torch.float64).eps
+            * max(1, group_count)
+            * max(1.0, maximum_eigenvalue_magnitude)
+        )
+        if float(eigenvalues.min().item()) < -positive_semidefinite_tolerance:
+            raise Lfm2SemanticAttentionGroupQdeimAdapterError(
+                f"Typed tangent role {role!r} has a non-PSD source covariance."
+            )
+        actual_covariance_error = float(
+            (actual_reduced_covariance - covariance).abs().max().item()
+        )
+        covariance_equality_tolerance = (
+            16384.0
+            * torch.finfo(torch.float64).eps
+            * max(1, group_count)
+            * max(1.0, maximum_eigenvalue_magnitude)
+        )
+        covariance_exact_equality = bool(
+            torch.equal(actual_reduced_covariance, covariance)
+        )
+        covariance_within_roundoff = (
+            actual_covariance_error <= covariance_equality_tolerance
+        )
+        negative_roundoff_clamp_count = int((eigenvalues < 0.0).sum().item())
+        positive_finite_mode_count = int((eigenvalues > 0.0).sum().item())
+        expected_factor_row_count = max(1, positive_finite_mode_count)
         if (
             snapshot.perturbation_kind != role
             or receipt.get("perturbation_kind") != role
@@ -1608,6 +1642,23 @@ def _verified_functional_tangent_role_receipts(
                 actual_reduced_covariance,
                 label=f"{role} full-context reduced group covariance",
             )
+            or receipt.get("covariance_maximum_absolute_error")
+            != actual_covariance_error
+            or receipt.get("covariance_equality_tolerance")
+            != covariance_equality_tolerance
+            or receipt.get("covariance_gram_exact_equality")
+            is not covariance_exact_equality
+            or receipt.get("covariance_gram_within_fp64_roundoff")
+            is not covariance_within_roundoff
+            or covariance_within_roundoff is not True
+            or receipt.get("covariance_reduction_changes_qdeim_group_pod_ftf")
+            is not (not covariance_exact_equality)
+            or receipt.get("covariance_reduction_change_is_within_fp64_roundoff")
+            is not (not covariance_exact_equality and covariance_within_roundoff)
+            or receipt.get("negative_roundoff_eigenvalues_clamped_to_zero")
+            != negative_roundoff_clamp_count
+            or receipt.get("positive_finite_eigenmodes_removed") != 0
+            or int(context.shape[0]) != expected_factor_row_count
         ):
             raise Lfm2SemanticAttentionGroupQdeimAdapterError(
                 f"Typed tangent role {role!r} does not match its bank/reduction evidence."

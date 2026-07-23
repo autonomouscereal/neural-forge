@@ -742,6 +742,97 @@ def test_typed_tangent_role_rejects_resealed_nonfactor_context_coordinate(
         compile_lfm2_semantic_attention_group_qdeim_from_cache(**_arguments(session))
 
 
+def test_typed_tangent_role_rejects_resealed_factor_attack_with_stale_relation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prefix = "prefill.layer.000.attention"
+    session = _Session(
+        [{f"{prefix}.context": _contexts(), **_enhanced_causal_phase(prefix)}]
+    )
+    original_builder = qdeim_adapter.build_lfm2_attention_tangent_bank
+
+    def tampered_builder(**kwargs):
+        bank = original_builder(**kwargs)
+        joint = bank.joint_sampled_token_query_key_value
+        tampered_context = joint.context_rows.clone()
+        tampered_context[0, 0, 0] += 10.0
+        groups = int(joint.covariance.shape[0])
+        queries_per_group = int(tampered_context.shape[1]) // groups
+        factor = tampered_context[
+            :,
+            torch.arange(groups, dtype=torch.long) * queries_per_group,
+            0,
+        ].contiguous()
+        full_group_features = (
+            tampered_context.reshape(
+                int(tampered_context.shape[0]),
+                groups,
+                queries_per_group,
+                int(tampered_context.shape[2]),
+            )
+            .permute(0, 2, 3, 1)
+            .reshape(-1, groups)
+            .contiguous()
+        )
+        reduced_covariance = (full_group_features.T @ full_group_features).contiguous()
+        receipt_body = dict(joint.reduction_receipt)
+        receipt_body.pop("result_sha256")
+        receipt_body.update(
+            {
+                "reduced_context_rows_sha256": (
+                    lfm2_authenticated_tensor_sha256(tampered_context)
+                ),
+                "factor_sha256": lfm2_authenticated_tensor_sha256(factor),
+                "reduced_group_covariance_sha256": (
+                    lfm2_authenticated_tensor_sha256(reduced_covariance)
+                ),
+            }
+        )
+        # Deliberately retain the old covariance error/tolerance/equality/change
+        # fields while resealing every tensor hash and both receipt layers.
+        tampered_receipt = MappingProxyType(
+            {
+                **receipt_body,
+                "result_sha256": canonical_sha256(receipt_body),
+            }
+        )
+        tampered_joint = replace(
+            joint,
+            context_rows=tampered_context,
+            reduction_receipt=tampered_receipt,
+        )
+        bank_body = bank.as_dict()
+        bank_body.pop("bank_sha256")
+        bank_body["joint_sampled_token_query_key_value_reduction_receipt"] = dict(
+            tampered_receipt
+        )
+        bank_body["joint_sampled_token_query_key_value_reduction_sha256"] = (
+            tampered_receipt["result_sha256"]
+        )
+        tampered_bank_report = MappingProxyType(
+            {
+                **bank_body,
+                "bank_sha256": canonical_sha256(bank_body),
+            }
+        )
+        return replace(
+            bank,
+            joint_sampled_token_query_key_value=tampered_joint,
+            report=tampered_bank_report,
+        )
+
+    monkeypatch.setattr(
+        qdeim_adapter,
+        "build_lfm2_attention_tangent_bank",
+        tampered_builder,
+    )
+    with pytest.raises(
+        Lfm2SemanticAttentionGroupQdeimAdapterError,
+        match="does not match its bank/reduction evidence",
+    ):
+        compile_lfm2_semantic_attention_group_qdeim_from_cache(**_arguments(session))
+
+
 def test_cross_dtype_probability_replay_is_diagnostic_not_numeric_veto() -> None:
     prefix = "prefill.layer.000.attention"
     phase = _enhanced_causal_phase(prefix)
