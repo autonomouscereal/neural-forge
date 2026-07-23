@@ -75,6 +75,28 @@ schemas. They are not decision-authority dependencies of this active path.
 Compatibility field or filename aliases do not restore their former gating
 semantics.
 
+## Exact-4x direct-review evidence retained on 2026-07-23
+
+The `fit-rank128-scale1` whole-response dossier has file SHA-256
+`5ca1744e0d8ac14bf4b74343c21d7ce556a834121688bfd1034171b6a68adec5`.
+Two independent review passes read all 37 candidates and all 16 responses per
+candidate (592 complete continuations). No response formed a usable task
+answer or a sentence-level coherent island. Earlier candidates showed hard
+token/subtoken attractors and repetition; middle candidates showed
+prompt-conditioned lexical soup; later candidates produced more recognizable
+English fragments but remained non-compositional, malformed, and incapable of
+conversation, instruction following, arithmetic, logic, context use, coding,
+or reliable safety guidance. Alpha and ridge changes altered surface form but
+did not restore intelligence.
+
+This is a mechanism diagnosis, not a numeric rejection threshold. The dossier
+and every candidate checkpoint remain evidence. It rules out spending another
+run on the same alpha/ridge surface and directs the next fold toward a causal
+mechanism change. The active change is full-history residual-attention folding:
+true donor FIR context is computed before tokenizer-owner expansion, inserted
+child subtokens remain in causal warmup, and the FHVR hybrid uses the compiled
+residual-writer candidate rather than a structural control.
+
 The audit specifically classified the threshold-driven engines in
 `dynamic_behavior_gate.py`, `hf_lfm2_intelligence_gate.py`,
 `hf_lfm2_parent_relative_manual_gate.py`,
